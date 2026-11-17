@@ -33,15 +33,14 @@
 //! - Storage preserves native type identity and slot order, using whole
 //!   bales rather than native fractional float amounts. Payment reads each
 //!   slot's current signed32 type value and the native income/bonus floats.
-//! - The Per_Cell DOCK_NOW refusal's Unit Scatter (`0x0073A5CE..0x0073A5E4`,
-//!   answered by a refinery in its Selling mission) is not wired. Frequency:
-//!   zero today — VERA's sale is synchronous, so no refinery is ever seen
-//!   mid-sell-down; the sale's RUN_AWAY broadcast carries the miner instead.
 //!
 //! A refinery sold (`BuildingClass::Mission_Selling`) or destroyed (the
 //! NowDead contact loop, `Simulation::building_now_dead_contacts`) under an
 //! unloading miner sends it RUN_AWAY (0x17): the latch drops and Harvest takes
-//! over (`radio::receive`, Unit `0x00737A98`).
+//! over (`radio::receive`, Unit `0x00737A98`). A tethered miner on Enter that
+//! reaches the pad of a refinery in its Selling mission sends DOCK_NOW, gets
+//! NEGATORY and calls Scatter (Per_Cell `0x0073A5CE..0x0073A5E4`,
+//! `Simulation::unit_dock_now`), which moves it only when it has no NavCom.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — sim/radio, sim/mission, sim/movement, sim/world.
@@ -115,7 +114,17 @@ pub(crate) fn mission_unload(
     // B 0x0073DF56: the hull must sit in the 8-bit East window
     // (raw 0x3F80..=0x407F); otherwise turn (unless the turret is mid-swing).
     let raw = entity.body_facing_current(now);
-    if (((u32::from(raw) >> 7) + 1) & 0x1FE) != 0x80 {
+    if rules.ares_form() {
+        // Ares 3.0 10014910 (hook 0x0073DF66): the hull must face the dock's
+        // DockUnloadFacing exactly, and a mid-swing turret counts as facing it.
+        let facing = crate::sim::radio::receive::dock_unload_facing(sim, id, rules);
+        if raw != facing && !entity.turret_rotation_latch.is_set() {
+            if let Some(entity) = sim.substrate.entities.get_mut(id) {
+                crate::sim::movement::drive_do_turn(entity, facing, now);
+            }
+            return 5;
+        }
+    } else if (((u32::from(raw) >> 7) + 1) & 0x1FE) != 0x80 {
         if !entity.turret_rotation_latch.is_set()
             && let Some(entity) = sim.substrate.entities.get_mut(id)
         {
@@ -486,6 +495,11 @@ pub(crate) fn drain_first_slot(
 /// house outside the campaign (`0x0073E3D5..0x0073E408`). A slave's deposit
 /// pays its master the same way (`0x00522D71..0x00522E36`). The unloader's
 /// `Weeder=` arm (`0x0073E474`) is not ported; no retail unit sets it.
+///
+/// In a game read the Ares way (`RuleSet::ares_form`) both payments are
+/// replaced with `TechnoExt::DepositTiberium` (`10044230`; hooks `0x73E4A2`
+/// and `0x522D75`, which zero the stock amounts so the stock calls pay
+/// nothing): [`Simulation::ares_deposit_tiberium`].
 pub(crate) fn pay_refinery_owner(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -493,33 +507,42 @@ pub(crate) fn pay_refinery_owner(
     slot: crate::rules::tiberium_type::TiberiumTypeId,
     bales: i32,
 ) {
-    use crate::sim::house_state::income_mult_for_owner;
-    use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering};
+    use crate::util::native_x87::MaskedX87Chop53 as X87;
     let Some(owner) = sim.substrate.entities.get(building).map(|b| b.owner()) else {
         return;
     };
     let owner_name = sim.interner.resolve(owner).to_string();
-    let income = income_mult_for_owner(&sim.houses, &sim.interner, rules, &owner_name);
     let purifiers = super::miner_system::effective_purifier_count(sim, rules, &owner_name);
     let amount = X87::store_f32_masked_chop(X87::load_i32(bales));
     //73E42B..73E441 /522DCD..522DE3: count * bonus * amount,
     //stored to float BEFORE the base payment and positive-bonus test.
     let bonus = purifier_bonus_amount(amount, purifiers, rules.general.purifier_bonus);
-    let value = rules
-        .tiberium_types
-        .get(slot)
-        .expect("native refinery payment requires its live Tiberium slot")
-        .value;
-    let Some(house) = sim.houses.get_mut(&owner) else {
-        return;
-    };
-    house
-        .economy_mut()
-        .add_tiberium_credits(value, amount, income);
-    if X87::compare(X87::load_f32(bonus), X87::load_i32(0)) == MaskedX87Ordering::Greater {
+    if rules.ares_form() {
+        sim.ares_deposit_tiberium(building, slot, amount, bonus, rules);
+    } else {
+        use crate::util::native_x87::MaskedX87Ordering;
+        let income = crate::sim::house_state::income_mult_for_owner(
+            &sim.houses,
+            &sim.interner,
+            rules,
+            &owner_name,
+        );
+        let value = rules
+            .tiberium_types
+            .get(slot)
+            .expect("native refinery payment requires its live Tiberium slot")
+            .value;
+        let Some(house) = sim.houses.get_mut(&owner) else {
+            return;
+        };
         house
             .economy_mut()
-            .add_tiberium_credits(value, bonus, income);
+            .add_tiberium_credits(value, amount, income);
+        if X87::compare(X87::load_f32(bonus), X87::load_i32(0)) == MaskedX87Ordering::Greater {
+            house
+                .economy_mut()
+                .add_tiberium_credits(value, bonus, income);
+        }
     }
 }
 
@@ -535,7 +558,7 @@ fn purifier_bonus_amount(
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod income_tests {
     use super::purifier_bonus_amount;
     use crate::util::native_x87::NativeF32Bits;

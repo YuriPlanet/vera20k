@@ -1,4 +1,4 @@
-//! Redraw scheduling for a visible window whose picture stands still.
+//! Redraw scheduling for a visible window.
 //!
 //! Offline, a picture that did not change was still drawn on every display
 //! refresh: the in-game menu pages over a frozen match, and the battlefield
@@ -7,7 +7,19 @@
 //! probe runs the ordinary pass (match service, audio and presentation
 //! timers) and stops short of drawing while the picture's inputs are
 //! unchanged, so every drawn frame still follows exactly one service. Window
-//! events and explicit `request_redraw` calls still draw.
+//! events draw at once.
+//!
+//! A picture that does change is limited as well (issue #4032): a draw on
+//! every refresh is more than a weak GPU can carry. Each present leaves
+//! [`DrawLimits`] for the draws after it, and explicit `request_redraw` calls
+//! follow them too, because most shell pages ask for the next draw from the
+//! end of each one. Pointer motion alone waits longer: the window system
+//! draws the cursor (`input::hardware_cursor`), so a move only changes what
+//! the pointer hovers, which gamemd also shows once per game frame. While a
+//! draw waits the loop keeps probing, so the match service holds its cadence.
+//! A probing loop also wakes when the match's next frame comes due
+//! ([`RedrawGate::probe_wake`]): each frame then ticks and draws on time, not
+//! up to a service interval late.
 //!
 //! The battlefield stands only while nothing on it moves by itself. Effects
 //! that step inside the tactical composite or read its clock (electric
@@ -17,26 +29,83 @@
 //! ([`crate::app::presentation::tactical_composite`]), so the picture keys on
 //! the tick count. Owners stepped once per pass or once per draw after a
 //! wall-clock interval (zoom easing, radar housing and movies, the power bar,
-//! the chrono screen, message typing) keep every refresh drawn until they
-//! settle; the cursor animation and superweapon timer blinks draw again once
-//! their deadline passes.
+//! the chrono screen, message typing) keep drawing until they settle; the
+//! cursor animation and superweapon timer blinks draw again once their
+//! deadline passes.
+//!
+//! A network match composites on every draw, as ThrottleFrame renders while
+//! it waits, so its battlefield stands between frames only while the last
+//! composite held none of those effects or lines
+//! ([`crate::app::presentation::tactical_composite::TacticalComposite::animated`])
+//! and no recovery line, which reads the wall clock, shows.
 
+use super::frame_pacer::{FRAME_BUCKET, SERVICE_WAKE};
 use crate::app::AppState;
 use crate::app::input::precedence::ScreenPage;
 use crate::ui::game_screen::GameScreen;
 use crate::ui::pause_menu::InGameMenuState;
+use crate::util::time::{Duration, Instant};
+
+/// The shortest time between two draws of a changing picture: about 62 draws
+/// a second, which a 60 Hz screen never reaches.
+const PICTURE_INTERVAL: Duration = FRAME_BUCKET;
+
+/// The battlefield's limit with VSync on a screen that refreshes `millihertz`
+/// thousandths of a time a second: [`PICTURE_INTERVAL`], or every refresh
+/// while the view scrolls.
+///
+/// A view that does not scroll keeps the plain interval on every screen. A
+/// battlefield that changes once per game frame draws once per game frame
+/// under either limit (see the module notes); the limit sets how often a
+/// picture that keeps changing between game frames draws: a network match's
+/// battlefield with effects or lines, or an owner that has not settled. A
+/// limit fitted to whole refreshes drew those on every second refresh of a
+/// 144 Hz screen, 72 times a second instead of about 62, more work for a slow
+/// PC.
+///
+/// `scrolling_draw` is the recent draw work while the view scrolls
+/// (`input::camera::scrolling`), the one time every refresh has something new
+/// to show: the view moves by the time passed, while the rest of the
+/// battlefield changes once per game frame and the window system draws the
+/// cursor. A scrolling view then draws every refresh, as long as a draw's
+/// work (`LocalFramePacer::draw_work`, without its wait for a free picture)
+/// takes no more than half of one, which leaves the other half to the match.
+///
+/// A picture every refresh gets a limit a little under one, so the screen
+/// sets the pace: a limit of exactly one refresh would skip a refresh
+/// whenever its clock ran behind the screen's. A rate the window system does
+/// not report, or reports outside 30 to 1,000 Hz, keeps the plain interval.
+fn screen_picture_interval(millihertz: Option<u32>, scrolling_draw: Option<Duration>) -> Duration {
+    let Some(millihertz) = millihertz.filter(|rate| (30_000..=1_000_000).contains(rate)) else {
+        return PICTURE_INTERVAL;
+    };
+    let refresh_ns = 1_000_000_000_000 / u64::from(millihertz);
+    if scrolling_draw.is_some_and(|draw| draw.as_nanos() as u64 <= refresh_ns / 2) {
+        Duration::from_nanos(refresh_ns - refresh_ns / 16)
+    } else {
+        PICTURE_INTERVAL
+    }
+}
+
+/// The same on a menu or lobby page, about 33 draws a second. The pages' own
+/// timers step every 30 ms (`ui::shell::slide::WAVE_TICK_MS`,
+/// `ui::shell::static_reveal::KIND1_TIMER_INTERVAL`), so every step still gets
+/// its draw.
+const MENU_INTERVAL: Duration = Duration::from_millis(30);
 
 /// The wall clock a pass's picture is judged by. It is read once, before the
 /// probe check and the draw: a deadline that passes during the draw then
 /// costs one extra draw instead of leaving a stale picture.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct PictureClock {
+    pub(crate) at: Instant,
     wall_ms: u64,
 }
 
 impl PictureClock {
     pub(crate) fn now() -> Self {
         Self {
+            at: Instant::now(),
             wall_ms: super::frame_pacer::wall_clock_ms(),
         }
     }
@@ -50,10 +119,12 @@ impl PictureClock {
 /// offline battlefield also changes with the camera, the sidebar view, the
 /// message rows, the published detail frame rate, the talk bubble and each
 /// published atlas growth, and stands only while none of its self-moving
-/// owners runs (module docs).
-/// `None` keeps every refresh drawn: captures, modals, other screens,
-/// network and replay matches, exits and loads, the FPS overlay, a held
-/// mouse button (gadgets repeat on it) and a shake still decaying.
+/// owners runs (module docs). The shown performance panel changes it once a
+/// second, when it has new figures.
+/// `None` keeps drawing within the limits: captures, modals, other screens,
+/// replay matches, a network match's moving composite, recovery line or
+/// in-game menu, exits and loads, a held mouse button (gadgets repeat on it)
+/// and a shake still decaying.
 pub(crate) fn still_frame(
     state: &AppState,
     capture: bool,
@@ -66,12 +137,12 @@ pub(crate) fn still_frame(
     let simulation = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|runtime| &runtime.simulation);
     let still = !capture
         && modal.is_none()
         && state.frontend.screen == GameScreen::InGame
-        && state.match_state.live_network.is_none()
+        && !network_picture_moves(state, simulation, clock)
         && !state.match_state.match_diagnostics.is_replay_playback()
         && !state
             .match_state
@@ -82,7 +153,6 @@ pub(crate) fn still_frame(
         && state.match_state.scenario_exit.is_none()
         && state.match_state.scenario_outcome.is_none()
         && !crate::app::App::house_outcome_wait_pending(state)
-        && !state.renderer.fps_overlay.is_visible()
         && !input.tactical_mouse.left_held()
         && !input.tactical_mouse.right_held()
         && !simulation.is_some_and(|sim| {
@@ -98,25 +168,30 @@ pub(crate) fn still_frame(
         .tooltips
         .active()
         .map(|tip| (tip.id, tip.x, tip.y));
+    let panel_due = state.renderer.performance_overlay.readings_due(clock.at);
+    let fonts = crate::render::text_engine::fetched_fonts();
     match page {
-        ScreenPage::InGameShell(menu) => Some(StillFrame::Menu {
-            menu,
-            revision,
-            shake_px,
-            tooltip,
-            caret: matches!(menu, InGameMenuState::SavedGame(_))
-                && presentation
-                    .saved_game_browser
-                    .as_ref()
-                    .is_some_and(|browser| {
-                        browser.description_edit.focused && browser.caret_blink_on()
-                    }),
-        }),
+        ScreenPage::InGameShell(menu) if state.match_state.live_network.is_none() => {
+            Some(StillFrame::Menu {
+                menu,
+                revision,
+                shake_px,
+                tooltip,
+                caret: matches!(menu, InGameMenuState::SavedGame(_))
+                    && presentation
+                        .saved_game_browser
+                        .as_ref()
+                        .is_some_and(|browser| {
+                            browser.description_edit.focused && browser.caret_blink_on()
+                        }),
+                panel_due,
+                fonts,
+            })
+        }
         ScreenPage::Battlefield => {
             let detail = presentation.detail.borrow();
             let moving = state.match_state.paused()
                 || !crate::app::input::camera::zoom_settled(state)
-                || presentation.interpolation.readout().sampling
                 || presentation
                     .radar_anim
                     .as_ref()
@@ -139,10 +214,132 @@ pub(crate) fn still_frame(
                 detail_fps: detail.frame_rate(),
                 talk_bubble: presentation.talk_bubble.shown(clock.wall_ms),
                 atlas_growths: presentation.atlas_growth.published(),
+                panel_due,
+                fonts,
             })
         }
         _ => None,
     }
+}
+
+/// How soon the draws after a present may follow it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DrawLimits {
+    /// The shortest time from this draw to the next one of a changed picture.
+    picture: Duration,
+    /// How long pointer motion alone may wait for a draw. `None` while the
+    /// frame itself holds the cursor, so motion changes the picture.
+    pointer: Option<Duration>,
+}
+
+/// The limits the picture just presented sets. `status_step` says it showed a
+/// new step of a status-line reveal.
+pub(crate) fn draw_limits(state: &AppState, status_step: bool) -> DrawLimits {
+    let (_, page) = crate::app::input::precedence::presented(state);
+    // In step with the screen only while the surface presents in step with
+    // it (`App::sync_present_mode`); a sealed capture keeps the plain limit.
+    let picture_interval = if state.persistence.options_profile.vsync
+        && state.platform.capture_client_size.is_none()
+    {
+        screen_picture_interval(
+            state
+                .platform
+                .window
+                .current_monitor()
+                .and_then(|monitor| monitor.refresh_rate_millihertz()),
+            crate::app::input::camera::scrolling(&state.match_state.input)
+                .then(|| state.platform.frame_pacer.draw_work()),
+        )
+    } else {
+        PICTURE_INTERVAL
+    };
+    page_limits(
+        page,
+        status_step,
+        state.platform.hardware_cursor.on_cursor_plane(),
+        super::network_match::game_frame_ms(state),
+        picture_interval,
+    )
+}
+
+fn page_limits(
+    page: ScreenPage,
+    status_step: bool,
+    os_cursor: bool,
+    game_frame_ms: Option<f32>,
+    picture_interval: Duration,
+) -> DrawLimits {
+    let picture = match page {
+        // Each pass runs one slice of the load.
+        ScreenPage::Loading => Duration::ZERO,
+        // A status line reveals one step per paint on a 15 ms timer.
+        _ if is_menu(page) => {
+            if status_step {
+                PICTURE_INTERVAL
+            } else {
+                MENU_INTERVAL
+            }
+        }
+        _ => picture_interval,
+    };
+    let pointer = os_cursor.then(|| match page {
+        // A game frame's own draw shows what the pointer hovers. The extra
+        // bucket lets it come first, so a pointer draw just before it does
+        // not push it back by the picture limit.
+        ScreenPage::Battlefield => {
+            game_frame_ms.map_or(FRAME_BUCKET, |ms| Duration::from_millis(ms as u64)) + FRAME_BUCKET
+        }
+        _ => MENU_INTERVAL,
+    });
+    DrawLimits { picture, pointer }
+}
+
+fn is_menu(page: ScreenPage) -> bool {
+    match page {
+        ScreenPage::LanLobby
+        | ScreenPage::NetworkSetup
+        | ScreenPage::LauncherOptions
+        | ScreenPage::InGameShell(_)
+        | ScreenPage::Skirmish
+        | ScreenPage::SinglePlayer
+        | ScreenPage::MoviesAndCredits
+        | ScreenPage::MovieList
+        | ScreenPage::Mods
+        | ScreenPage::Campaign
+        | ScreenPage::LoadSavedGame
+        | ScreenPage::Wol
+        | ScreenPage::MainMenu
+        | ScreenPage::CoopScore
+        | ScreenPage::CampaignScore
+        | ScreenPage::Score => true,
+        ScreenPage::Battlefield
+        | ScreenPage::FullscreenMovie
+        | ScreenPage::CreditsRoll
+        | ScreenPage::Loading
+        | ScreenPage::InGameCard
+        | ScreenPage::ResultCard => false,
+    }
+}
+
+/// A network match's picture moves without a new frame while its last
+/// composite would move again or the recovery line shows.
+fn network_picture_moves(
+    state: &AppState,
+    simulation: Option<&crate::sim::world::Simulation>,
+    clock: PictureClock,
+) -> bool {
+    let Some(live) = state.match_state.live_network.as_ref() else {
+        return false;
+    };
+    state
+        .match_state
+        .match_presentation
+        .tactical_composite
+        .animated()
+        || simulation.is_some_and(|sim| {
+            live.recovery_status(clock.wall_ms as u32, sim.session().binary_frame())
+                .is_some()
+        })
 }
 
 /// The inputs a still picture is drawn from: two passes with equal values
@@ -160,8 +357,13 @@ pub(crate) enum StillFrame {
         tooltip: Option<(u32, i32, i32)>,
         /// Whether the Save page draws its name caret.
         caret: bool,
+        /// Whether the shown performance panel has new figures.
+        panel_due: bool,
+        /// Fonts the browser build fetched, which text may now draw with
+        /// ([`crate::render::text_engine::fetched_fonts`]).
+        fonts: usize,
     },
-    /// The offline battlefield with its sidebar and HUD.
+    /// The battlefield with its sidebar and HUD.
     Battlefield {
         revision: Option<u64>,
         /// The Main_Ticks counted: each owes a tactical composite.
@@ -181,24 +383,78 @@ pub(crate) enum StillFrame {
         /// Atlas growths published; each draws sprites the last picture
         /// lacked.
         atlas_growths: u64,
+        /// Whether the shown performance panel has new figures.
+        panel_due: bool,
+        fonts: usize,
     },
 }
 
 /// What `about_to_wait` should run next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NextPass {
-    /// Draw and present, as on every refresh before.
+    /// Draw and present.
     Draw,
-    /// Service the match; draw in the same pass only if the picture changed.
+    /// Service the match; draw in the same pass only if the picture changed
+    /// and the limits let it.
     Probe,
+}
+
+/// What a probe does about the picture it would draw, after its service.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProbeVerdict {
+    Draw,
+    /// The presented picture is still right.
+    Stands,
+    /// The picture's inputs did not change, but the pointer moved: what it
+    /// hovers shows when its limit passes.
+    PointerWaits,
+    /// A draw is owed and the picture limit holds it.
+    DrawWaits,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct LastDraw {
+    started: Instant,
+    limits: DrawLimits,
+    /// The earliest the next draw of a changed picture may start. Under the
+    /// same picture limit draws keep a grid of that limit: a draw that
+    /// started late does not push the next one back, which would hold a
+    /// match that redraws every limit below its rate (a 16 ms limit drawing
+    /// about 50 times a second instead of 62). The next one may come early by
+    /// at most half the limit, so draws are never closer than that and their
+    /// rate never passes the limit's.
+    picture_due: Instant,
+}
+
+/// When the draw after one that started at `started` under `limits` may
+/// start, following `previous`'s grid ([`LastDraw::picture_due`]).
+fn next_picture_due(previous: Option<LastDraw>, started: Instant, limits: DrawLimits) -> Instant {
+    let fresh = started + limits.picture;
+    match previous {
+        Some(previous)
+            if previous.limits.picture == limits.picture && !limits.picture.is_zero() =>
+        {
+            (previous.picture_due + limits.picture).clamp(started + limits.picture / 2, fresh)
+        }
+        _ => fresh,
+    }
 }
 
 #[derive(Debug, Default)]
 pub(crate) struct RedrawGate {
-    /// A window event arrived since the last present.
+    /// A window event other than pointer motion arrived since the last
+    /// present.
     input_since_present: bool,
+    /// The pointer moved since the last present.
+    pointer_since_present: bool,
+    /// A `request_redraw` waited for the limits since the last present.
+    redraw_held: bool,
     /// The last presented picture, when it may stay on screen.
     presented: Option<StillFrame>,
+    last_draw: Option<LastDraw>,
+    /// No probe runs before this: pointer events can wake the loop far more
+    /// often than the match needs its service.
+    next_probe: Option<Instant>,
     audit: Option<GateAudit>,
 }
 
@@ -261,35 +517,130 @@ impl RedrawGate {
         audit.pixels = pixels;
     }
 
-    /// Any window event may change the next picture.
+    /// Any window event may change the next picture, and draws at once.
     pub(crate) fn note_input(&mut self) {
         self.input_since_present = true;
     }
 
-    /// Record a present. `still` is `None` while the picture may change
-    /// without input, which keeps every refresh drawn.
-    pub(crate) fn record_presented(&mut self, still: Option<StillFrame>) {
-        self.input_since_present = false;
-        self.presented = still;
+    /// The pointer moved: the next picture may change, within its limit.
+    pub(crate) fn note_pointer_motion(&mut self) {
+        self.pointer_since_present = true;
     }
 
-    pub(crate) fn next_pass(&self) -> NextPass {
-        if self.presented.is_some() && !self.input_since_present {
+    /// Record a present whose draw began at `started`. `still` is `None` while
+    /// the picture may change without input, which keeps it drawing within
+    /// `limits`.
+    pub(crate) fn record_presented(
+        &mut self,
+        still: Option<StillFrame>,
+        started: Instant,
+        limits: DrawLimits,
+    ) {
+        self.input_since_present = false;
+        self.pointer_since_present = false;
+        self.redraw_held = false;
+        self.presented = still;
+        let picture_due = next_picture_due(self.last_draw, started, limits);
+        self.last_draw = Some(LastDraw {
+            started,
+            limits,
+            picture_due,
+        });
+    }
+
+    /// Input draws at once, and so does pointer motion past its limit.
+    fn input_draw_due(&self, now: Instant) -> bool {
+        self.input_since_present
+            || (self.pointer_since_present
+                && self.last_draw.is_none_or(|last| {
+                    last.limits
+                        .pointer
+                        .is_none_or(|limit| now >= last.started + limit)
+                }))
+    }
+
+    fn inside_picture_limit(&self, now: Instant) -> bool {
+        self.last_draw.is_some_and(|last| now < last.picture_due)
+    }
+
+    pub(crate) fn next_pass(&self, now: Instant) -> NextPass {
+        if self.input_draw_due(now) {
+            NextPass::Draw
+        } else if self.inside_picture_limit(now) || (self.presented.is_some() && !self.redraw_held)
+        {
             NextPass::Probe
         } else {
             NextPass::Draw
         }
     }
 
-    /// After a probe's service: does the presented picture still stand?
-    pub(crate) fn still_presented(&self, current: Option<StillFrame>) -> bool {
-        !self.input_since_present && current.is_some() && current == self.presented
+    /// A redraw was asked for. Returns whether it must wait for the limits;
+    /// the wait is remembered, so the picture draws once they pass.
+    pub(crate) fn hold_requested_draw(&mut self, now: Instant) -> bool {
+        let hold = !self.input_draw_due(now) && self.inside_picture_limit(now);
+        self.redraw_held |= hold;
+        hold
+    }
+
+    /// After a probe's service: what happens to `current`, the picture it
+    /// would draw.
+    pub(crate) fn probe_verdict(&self, current: Option<StillFrame>, now: Instant) -> ProbeVerdict {
+        if self.input_draw_due(now) {
+            return ProbeVerdict::Draw;
+        }
+        let stands = !self.redraw_held && current.is_some() && current == self.presented;
+        match (stands, self.pointer_since_present) {
+            (true, false) => ProbeVerdict::Stands,
+            (true, true) => ProbeVerdict::PointerWaits,
+            (false, _) if self.inside_picture_limit(now) => ProbeVerdict::DrawWaits,
+            (false, _) => ProbeVerdict::Draw,
+        }
+    }
+
+    /// Whether a probe may run now.
+    pub(crate) fn probe_due(&self, now: Instant) -> bool {
+        self.next_probe.is_none_or(|at| now >= at)
+    }
+
+    /// When a probing loop should wake: for its next service, or sooner when
+    /// a limit passes. A service wake already past starts the next one.
+    /// `frame_due` is when the match's next frame comes due, if its timer
+    /// says (`LocalFramePacer::until_next_frame`): the service moves up to
+    /// it, so the frame ticks and draws on time instead of up to a
+    /// [`SERVICE_WAKE`] late. One already due moves nothing: the pass that
+    /// just ran did not admit it, and waking for it again would spin.
+    pub(crate) fn probe_wake(&mut self, now: Instant, frame_due: Option<Instant>) -> Instant {
+        let mut service = match self.next_probe {
+            Some(at) if at > now => at,
+            _ => *self.next_probe.insert(now + SERVICE_WAKE),
+        };
+        if let Some(due) = frame_due.filter(|due| *due > now && *due < service) {
+            service = *self.next_probe.insert(due);
+        }
+        let Some(last) = self.last_draw else {
+            return service;
+        };
+        let pointer = last
+            .limits
+            .pointer
+            .filter(|_| self.pointer_since_present)
+            .map(|limit| last.started + limit);
+        [Some(last.picture_due), pointer]
+            .into_iter()
+            .flatten()
+            .filter(|at| *at > now)
+            .fold(service, Instant::min)
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
+
+    const LIMITS: DrawLimits = DrawLimits {
+        picture: Duration::from_millis(16),
+        pointer: Some(Duration::from_millis(64)),
+    };
 
     fn menu(revision: u64, caret: bool, shake: [i32; 2]) -> StillFrame {
         StillFrame::Menu {
@@ -298,6 +649,8 @@ mod tests {
             shake_px: Some(shake),
             tooltip: None,
             caret,
+            panel_due: false,
+            fonts: 0,
         }
     }
 
@@ -313,57 +666,269 @@ mod tests {
             detail_fps: 15,
             talk_bubble: bubble,
             atlas_growths: 0,
+            panel_due: false,
+            fonts: 0,
         }
     }
 
     #[test]
     fn a_still_menu_is_probed_until_input_arrives() {
+        let t = Instant::now();
+        let shown = menu(120, false, [0, 0]);
         let mut gate = RedrawGate::default();
-        assert_eq!(gate.next_pass(), NextPass::Draw);
-        gate.record_presented(Some(menu(120, false, [0, 0])));
-        assert_eq!(gate.next_pass(), NextPass::Probe);
-        assert!(gate.still_presented(Some(menu(120, false, [0, 0]))));
+        assert_eq!(gate.next_pass(t), NextPass::Draw);
+        gate.record_presented(Some(shown), t, LIMITS);
+        assert_eq!(gate.next_pass(t), NextPass::Probe);
+        assert_eq!(gate.probe_verdict(Some(shown), t), ProbeVerdict::Stands);
         gate.note_input();
-        assert_eq!(gate.next_pass(), NextPass::Draw);
-        assert!(!gate.still_presented(Some(menu(120, false, [0, 0]))));
+        assert_eq!(gate.next_pass(t), NextPass::Draw);
+        assert_eq!(gate.probe_verdict(Some(shown), t), ProbeVerdict::Draw);
     }
 
     #[test]
     fn a_world_change_caret_blink_or_shake_step_draws() {
+        let t = Instant::now();
+        let after_limit = t + LIMITS.picture;
         let mut gate = RedrawGate::default();
-        gate.record_presented(Some(menu(120, false, [0, 0])));
+        gate.record_presented(Some(menu(120, false, [0, 0])), t, LIMITS);
         for changed in [
             menu(121, false, [0, 0]),
             menu(120, true, [0, 0]),
             menu(120, false, [-1, 0]),
         ] {
-            assert!(!gate.still_presented(Some(changed)));
+            assert_eq!(
+                gate.probe_verdict(Some(changed), after_limit),
+                ProbeVerdict::Draw
+            );
         }
-        assert!(!gate.still_presented(None));
-        gate.record_presented(None);
-        assert_eq!(gate.next_pass(), NextPass::Draw);
+        assert_eq!(gate.probe_verdict(None, after_limit), ProbeVerdict::Draw);
+        gate.record_presented(None, t, LIMITS);
+        assert_eq!(gate.next_pass(after_limit), NextPass::Draw);
     }
 
     /// A standing battlefield is probed; a world change, a scroll, a new
-    /// sidebar view or a talk bubble running out draws, and a draw that
-    /// showed motion (recorded as `None`) keeps every refresh drawn.
+    /// sidebar view, a talk bubble running out or new performance figures
+    /// draws, and a draw that showed motion (recorded as `None`) keeps
+    /// drawing.
     #[test]
     fn a_still_battlefield_draws_on_world_camera_view_or_bubble_changes() {
+        let t = Instant::now();
+        let after_limit = t + LIMITS.picture;
+        let shown = battlefield(120, 480.0, 7, true);
+        let mut new_figures = shown;
+        if let StillFrame::Battlefield { panel_due, .. } = &mut new_figures {
+            *panel_due = true;
+        }
         let mut gate = RedrawGate::default();
-        gate.record_presented(Some(battlefield(120, 480.0, 7, true)));
-        assert_eq!(gate.next_pass(), NextPass::Probe);
-        assert!(gate.still_presented(Some(battlefield(120, 480.0, 7, true))));
+        gate.record_presented(Some(shown), t, LIMITS);
+        assert_eq!(gate.next_pass(after_limit), NextPass::Probe);
+        assert_eq!(
+            gate.probe_verdict(Some(shown), after_limit),
+            ProbeVerdict::Stands
+        );
         for changed in [
             battlefield(121, 480.0, 7, true),
             battlefield(120, 481.0, 7, true),
             battlefield(120, 480.0, 8, true),
             battlefield(120, 480.0, 7, false),
             menu(120, false, [0, 0]),
+            new_figures,
         ] {
-            assert!(!gate.still_presented(Some(changed)));
+            assert_eq!(
+                gate.probe_verdict(Some(changed), after_limit),
+                ProbeVerdict::Draw
+            );
         }
-        gate.record_presented(None);
-        assert_eq!(gate.next_pass(), NextPass::Draw);
+        gate.record_presented(None, t, LIMITS);
+        assert_eq!(gate.next_pass(after_limit), NextPass::Draw);
+    }
+
+    /// A moving picture keeps a grid of its limit: a draw that started late
+    /// lets the next one come that much sooner, by at most half the limit,
+    /// so a late draw never pushes the ones after it back.
+    #[test]
+    fn a_late_draw_does_not_push_the_next_one_back() {
+        let t = Instant::now();
+        let ms = |n| t + Duration::from_millis(n);
+        let mut gate = RedrawGate::default();
+        gate.record_presented(None, t, LIMITS);
+        assert_eq!(gate.next_pass(ms(15)), NextPass::Probe);
+        assert_eq!(gate.next_pass(ms(16)), NextPass::Draw);
+        // 5 ms late: the next draw keeps the 32 ms grid point.
+        gate.record_presented(None, ms(21), LIMITS);
+        assert_eq!(gate.next_pass(ms(31)), NextPass::Probe);
+        assert_eq!(gate.next_pass(ms(32)), NextPass::Draw);
+        // Far behind the grid: half a limit after the draw, not sooner.
+        gate.record_presented(None, ms(1_000), LIMITS);
+        assert_eq!(gate.next_pass(ms(1_007)), NextPass::Probe);
+        assert_eq!(gate.next_pass(ms(1_008)), NextPass::Draw);
+    }
+
+    /// Pointer motion over a standing picture waits for its limit, and probes
+    /// keep the service's pace however fast the events come. Other input
+    /// draws at once, and a cursor in the frame makes motion input.
+    /// A probing loop wakes for the match's next frame when it comes due
+    /// before the service wake, so its tick and picture are on time. On the
+    /// service wake alone a 16 ms frame came out every 11, 11 and 22 ms.
+    /// A frame already due moves nothing: waking for it again would spin.
+    #[test]
+    fn a_probe_wake_moves_up_to_the_next_frames_due_time() {
+        let t = Instant::now();
+        let mut gate = RedrawGate::default();
+        gate.record_presented(Some(battlefield(120, 480.0, 7, true)), t, LIMITS);
+        let now = t + Duration::from_millis(20);
+        let due = now + Duration::from_millis(3);
+        assert_eq!(gate.probe_wake(now, Some(due)), due);
+        assert!(!gate.probe_due(due - Duration::from_millis(1)));
+        assert!(gate.probe_due(due));
+        // Already due, or due after the service wake: that wake stands.
+        let later = due + Duration::from_millis(1);
+        assert_eq!(gate.probe_wake(later, Some(due)), later + SERVICE_WAKE);
+        assert_eq!(
+            gate.probe_wake(later, Some(later + SERVICE_WAKE * 2)),
+            later + SERVICE_WAKE
+        );
+    }
+
+    #[test]
+    fn pointer_motion_waits_for_its_limit_unless_the_frame_holds_the_cursor() {
+        let t = Instant::now();
+        let shown = battlefield(120, 480.0, 7, true);
+        let early = t + Duration::from_millis(20);
+        let pointer_limit = t + LIMITS.pointer.unwrap();
+        let mut gate = RedrawGate::default();
+        gate.record_presented(Some(shown), t, LIMITS);
+        gate.note_pointer_motion();
+        assert_eq!(gate.next_pass(early), NextPass::Probe);
+        assert_eq!(
+            gate.probe_verdict(Some(shown), early),
+            ProbeVerdict::PointerWaits
+        );
+        let wake = gate.probe_wake(early, None);
+        assert_eq!(wake, early + SERVICE_WAKE);
+        assert!(!gate.probe_due(early + Duration::from_millis(1)));
+        assert!(gate.probe_due(wake));
+        // The last wake before the limit lands on it.
+        assert_eq!(
+            gate.probe_wake(pointer_limit - Duration::from_millis(4), None),
+            pointer_limit
+        );
+        assert_eq!(gate.next_pass(pointer_limit), NextPass::Draw);
+        assert_eq!(
+            gate.probe_verdict(Some(shown), pointer_limit),
+            ProbeVerdict::Draw
+        );
+
+        gate.note_input();
+        assert_eq!(gate.next_pass(early), NextPass::Draw);
+
+        let cursor_in_frame = DrawLimits {
+            pointer: None,
+            ..LIMITS
+        };
+        gate.record_presented(Some(shown), t, cursor_in_frame);
+        gate.note_pointer_motion();
+        assert_eq!(gate.next_pass(t), NextPass::Draw);
+        assert_eq!(gate.probe_verdict(Some(shown), t), ProbeVerdict::Draw);
+    }
+
+    /// A moving picture, and a redraw asked for over a standing one, wait for
+    /// the picture limit and then draw; input does not wait.
+    #[test]
+    fn a_changed_picture_or_an_asked_for_redraw_waits_for_the_picture_limit() {
+        let t = Instant::now();
+        let early = t + Duration::from_millis(10);
+        let after_limit = t + LIMITS.picture;
+        let shown = menu(120, false, [0, 0]);
+        let mut gate = RedrawGate::default();
+        gate.record_presented(None, t, LIMITS);
+        assert_eq!(gate.next_pass(early), NextPass::Probe);
+        assert_eq!(gate.probe_verdict(None, early), ProbeVerdict::DrawWaits);
+        assert_eq!(gate.next_pass(after_limit), NextPass::Draw);
+
+        gate.record_presented(Some(shown), t, LIMITS);
+        assert!(gate.hold_requested_draw(early));
+        assert_eq!(
+            gate.probe_verdict(Some(shown), early),
+            ProbeVerdict::DrawWaits
+        );
+        assert_eq!(gate.next_pass(after_limit), NextPass::Draw);
+        assert!(!gate.hold_requested_draw(after_limit));
+
+        gate.note_input();
+        assert!(!gate.hold_requested_draw(early));
+        assert_eq!(gate.probe_verdict(Some(shown), early), ProbeVerdict::Draw);
+    }
+
+    #[test]
+    fn menus_battles_and_loads_have_their_own_limits() {
+        let limits = |page, status_step, os_cursor| {
+            page_limits(page, status_step, os_cursor, Some(48.0), PICTURE_INTERVAL)
+        };
+        assert_eq!(
+            limits(ScreenPage::MainMenu, false, true),
+            DrawLimits {
+                picture: MENU_INTERVAL,
+                pointer: Some(MENU_INTERVAL),
+            }
+        );
+        // A status line's 15 ms steps keep their pace.
+        assert_eq!(
+            limits(ScreenPage::Skirmish, true, true).picture,
+            PICTURE_INTERVAL
+        );
+        assert_eq!(
+            limits(ScreenPage::Battlefield, false, true),
+            DrawLimits {
+                picture: PICTURE_INTERVAL,
+                pointer: Some(Duration::from_millis(64)),
+            }
+        );
+        assert_eq!(
+            limits(ScreenPage::Loading, false, true).picture,
+            Duration::ZERO
+        );
+        assert_eq!(limits(ScreenPage::Battlefield, false, false).pointer, None);
+        assert_eq!(
+            page_limits(ScreenPage::Battlefield, false, true, None, PICTURE_INTERVAL).pointer,
+            Some(FRAME_BUCKET * 2),
+            "unlimited speed has no game frame to wait for"
+        );
+    }
+
+    /// With VSync a battlefield that does not scroll keeps the plain limit on
+    /// a fast screen too: a picture that keeps changing between game frames
+    /// draws about 62 times a second, not on every second refresh of a 144 Hz
+    /// screen. Menus keep their own.
+    #[test]
+    fn a_still_battlefield_keeps_the_plain_limit_on_a_fast_screen() {
+        let still = |millihertz| screen_picture_interval(millihertz, None);
+        assert_eq!(still(Some(144_000)), PICTURE_INTERVAL);
+        assert_eq!(still(Some(60_000)), PICTURE_INTERVAL);
+        assert_eq!(still(None), PICTURE_INTERVAL);
+
+        let screen = still(Some(144_000));
+        let limits = |page| page_limits(page, false, true, Some(48.0), screen).picture;
+        assert_eq!(limits(ScreenPage::Battlefield), PICTURE_INTERVAL);
+        assert_eq!(limits(ScreenPage::MainMenu), MENU_INTERVAL);
+    }
+
+    /// A scrolling view draws every refresh of a fast screen while a draw
+    /// takes no more than half of one.
+    #[test]
+    fn a_scrolling_view_draws_every_refresh_while_draws_are_quick() {
+        let refresh = Duration::from_nanos(1_000_000_000_000 / 144_000);
+        let scrolling = |draw| screen_picture_interval(Some(144_000), Some(draw));
+        assert_eq!(scrolling(refresh / 2), refresh - refresh / 16);
+        assert_eq!(
+            scrolling(refresh / 2 + Duration::from_micros(1)),
+            screen_picture_interval(Some(144_000), None),
+            "a slow draw keeps the still view's limit"
+        );
+        assert_eq!(
+            screen_picture_interval(None, Some(Duration::ZERO)),
+            PICTURE_INTERVAL
+        );
     }
 
     /// The audit counts a skipped pass whose pixels differ from the last

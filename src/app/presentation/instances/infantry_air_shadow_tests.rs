@@ -2,6 +2,7 @@
 //! 0x00518F90`, `0x0051945D..0x0051958A`). The atlas is synthetic; real
 //! pixels come from captures.
 use super::*;
+use crate::app::presentation::frame::ObjectRecord;
 use crate::map::bridge_facts::{BRIDGE_FLAG_DIRECTION_ZERO, BRIDGE_FLAG_STRUCTURAL};
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::render::sprite_atlas::{ShpPaletteContext, ShpSpriteEntry, SpriteAtlas};
@@ -15,7 +16,7 @@ fn shadow_atlas() -> SpriteAtlas {
     SpriteAtlas::from_test_entries(HashMap::from([(
         ShpSpriteKey {
             palette_context: ShpPaletteContext::GlobalAnim,
-            type_id: "INFSHDW".to_string(),
+            type_id: "INFSHDW".into(),
             facing: 0,
             frame: 1,
             house_color: HouseColorIndex(0),
@@ -67,7 +68,11 @@ fn shadow(z: i32, bridges: &[((u16, u16), u32)]) -> Option<ObjectPieceInstance> 
     let cells = NativeCellQuery::isolated(&terrain);
     infantry_air_shadow_piece(
         &shadow_atlas(),
-        &rocketeer(z),
+        &ObjectRecord::of_test_in(
+            &rocketeer(z),
+            Some(&terrain),
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+        ),
         Some(&cells),
         [100.0, 50.0],
         0.25,

@@ -17,7 +17,9 @@ use crate::app::diagnostics::tactical_capture::profile::{
     CHECKPOINT_RADAR_ONLINE_V2, SealedJsonFile, TacticalCaptureContract, TacticalCaptureProfile,
     validate_new_output_directory,
 };
-use crate::app::frontend::startup_options::{RetailStartupOptions, consume_retail_switches};
+use crate::app::frontend::startup_options::{
+    RetailStartupOptions, StartupExit, consume_retail_switches,
+};
 use crate::skirmish_launch::SkirmishLaunchSession;
 
 use crate::app::diagnostics::tactical_capture::session::MapCaptureProfile;
@@ -80,9 +82,41 @@ where
     })())
 }
 
+/// `vera20k --check-language <vera20k.<tag>.ini>`: print what a language file
+/// leaves untranslated or gets wrong ([`crate::i18n::check`]). Exits 0 when it
+/// is complete, 1 otherwise.
+pub fn try_language_check<I>(args: I) -> Option<Result<i32>>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut args = args.into_iter();
+    if args.next().as_deref() != Some(OsStr::new("--check-language")) {
+        return None;
+    }
+    Some((|| {
+        let path = PathBuf::from(
+            args.next()
+                .context("usage: vera20k --check-language <vera20k.<tag>.ini>")?,
+        );
+        ensure!(args.next().is_none(), "--check-language takes one file");
+        let bytes = std::fs::read(&path).with_context(|| format!("read {}", path.display()))?;
+        let text = String::from_utf8(bytes)
+            .with_context(|| format!("{} is not UTF-8 text", path.display()))?;
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let report = crate::i18n::check(&name, &text);
+        print!("{report}");
+        Ok(if report.complete() { 0 } else { 1 })
+    })())
+}
+
 /// `vera20k --probe [--ra2-dir <dir>] [--map <path>]` (docs/spawn.md): print
 /// one JSON object describing what a spawn launch on this installation is
-/// checked against, then exit. Headless: no logger, window or audio.
+/// checked against, then exit. Headless: no logger, window or audio. `--mod
+/// <folder>` and `--no-mod` choose the mod as they do for that launch, and
+/// `--ares <Auto|On|Off>` the Ares setting spawn.ini's `[Settings] Ares=` will.
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub fn try_probe<I>(args: I) -> Option<Result<i32>>
 where
@@ -93,8 +127,26 @@ where
         return None;
     }
     Some((|| {
-        let (ra2_dir, map) = parse_probe_args(args)?;
-        let report = crate::app::spawn_probe::run_desktop(ra2_dir.as_deref(), map.as_deref())?;
+        let (mod_switch, mut args) = crate::app::mods::take_switch(args.collect())?;
+        let ares = match args.iter().position(|arg| arg == OsStr::new("--ares")) {
+            Some(at) => {
+                let setting = args
+                    .get(at + 1)
+                    .and_then(|value| value.to_str())
+                    .and_then(crate::util::ares_launch::AresSetting::parse)
+                    .context("\"--ares\" needs Auto, On or Off")?;
+                args.drain(at..=at + 1);
+                Some(setting)
+            }
+            None => None,
+        };
+        let (ra2_dir, map) = parse_probe_args(args.into_iter())?;
+        let report = crate::app::spawn_probe::run_desktop(
+            ra2_dir.as_deref(),
+            map.as_deref(),
+            mod_switch.as_ref(),
+            ares,
+        )?;
         println!("{}", serde_json::to_string(&report)?);
         Ok(0)
     })())
@@ -132,11 +184,14 @@ pub enum AppLaunchMode {
     Spawn(RetailStartupOptions),
     /// Watch a strictly reconstructed recording through the normal renderer.
     Replay(ReplayLaunchRequest),
-    /// A help switch: print usage and terminate before any window is created,
-    /// exactly as native's switch parser makes `WinMain` bail.
-    Usage,
+    /// A help switch or an invalid `-X` tail: print its text and terminate
+    /// before any window is created, exactly as native's switch parser makes
+    /// `WinMain` bail.
+    Exit(StartupExit),
     ShellCapture(ShellCaptureRequest),
     TacticalCapture(TacticalCaptureRequest),
+    /// A hidden run that draws one map's picture for the setup screens.
+    MapPicture(crate::app::map_picture::MapPictureRequest),
 }
 
 #[derive(Debug)]
@@ -357,6 +412,10 @@ where
     I: IntoIterator<Item = OsString>,
 {
     let args: Vec<OsString> = args.into_iter().collect();
+    // The menus start this run with a map name that must reach it untouched.
+    if crate::app::map_picture::is_invocation(args.iter().cloned()) {
+        return crate::app::map_picture::parse_args(args).map(AppLaunchMode::MapPicture);
+    }
     if args
         .iter()
         .any(|arg| arg == OsStr::new("--replay") || arg == OsStr::new("--replay-capture"))
@@ -383,8 +442,8 @@ where
     }
     // This is the only process-argument owner for retail startup decisions.
     let (retail_options, args) = consume_retail_switches(args);
-    if retail_options.usage_requested {
-        return Ok(AppLaunchMode::Usage);
+    if let Some(exit) = retail_options.exit {
+        return Ok(AppLaunchMode::Exit(exit));
     }
     let spawn_count = args
         .iter()
@@ -511,7 +570,7 @@ fn set_once<T>(slot: &mut Option<T>, value: T, flag: &str) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};

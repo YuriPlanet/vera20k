@@ -1,7 +1,7 @@
 # Superweapon Money.Amount
 
-Requires an explicit `--features ares` build. Default builds do not read or execute
-these extensions; see [build capability](ares.md).
+A game that ships `ares.mix` reads and plays these keys in every build ([Ares](ares.md));
+other games keep the original superweapons.
 
 ```ini
 [SuperWeaponTypes]
@@ -138,9 +138,10 @@ and hash stream. The added nondefault state is hashed only for a paid workflow.
 This closes the mechanism described in [#2107](https://github.com/YuriPlanet/vera20k/issues/2107),
 subject to the evidence boundary below.
 
-Also excluded: Money.DrainAmount/Delay, charge-drain activation, the reported
-donor's legacy SW.Money alias/test-range bypass, general Ares messages and
-animations, country restrictions, and automatic granting.
+Also excluded: charge-drain activation with `Money.Amount`, the reported
+donor's legacy SW.Money alias/test-range bypass and country restrictions.
+`Money.DrainAmount`/`Money.DrainDelay`, the common messages and
+`SW.AlwaysGranted` are described in [common keys](ares-superweapon-common.md).
 
 Evidence levels: public Ares source establishes the tag/control-flow references;
 focused Rust regressions exercise VERA's production readers, wallet, commands,

@@ -156,7 +156,8 @@ impl JumpjetParams {
             turn_rate: section.read_int("JumpjetTurnRate", ctor.turn_rate),
             // `0x007150D0 PUSH 0x8436C0` -> `0x007150E4 MOV [EBP+0xD74],EAX`:
             // ReadInt, so a fractional `JumpjetSpeed=16.5` reads as 16.
-            speed: SimFixed::from_num(section.read_int("JumpjetSpeed", CTOR_SPEED)),
+            // Saturating: SimFixed holds +-32767, ReadInt the full i32.
+            speed: SimFixed::saturating_from_num(section.read_int("JumpjetSpeed", CTOR_SPEED)),
             // `0x007150F8 PUSH 0x8436B0` -> `0x0071510A FSTP [EBP+0xD78]`.
             climb: section.read_float("JumpjetClimb", ctor.climb),
             // `0x0071511E PUSH 0x8436A0` -> `0x00715130 FSTP [EBP+0xD7C]`.
@@ -227,7 +228,7 @@ impl JumpjetOverride {
             params.turn_rate = value;
         }
         if let Some(value) = self.speed {
-            params.speed = SimFixed::from_num(value);
+            params.speed = SimFixed::saturating_from_num(value);
         }
         if let Some(value) = self.climb {
             params.climb = value;
@@ -270,7 +271,7 @@ impl JumpjetOverride {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

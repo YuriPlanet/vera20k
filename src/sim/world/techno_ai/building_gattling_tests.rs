@@ -2,6 +2,9 @@
 //! `tools/spatial_oracle/building_gattling.json` replayed through
 //! Mission_Attack's arms, Mission_Guard and the Update's Gattling block one
 //! call at a time, and its engagements through the production frame.
+//!
+//! The two charging replays hold in a stock game only: Ares' stage test reads
+//! the charged value (TechnoClass_UpdateGattling_Cycle, hook 0x70DEBA).
 
 use std::collections::BTreeMap;
 

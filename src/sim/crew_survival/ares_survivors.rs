@@ -251,7 +251,8 @@ impl Simulation {
             .entities
             .get_mut(unit_id)
             .is_some_and(|unit| {
-                unit.vehicle_driver
+                unit.ares
+                    .vehicle_driver
                     .begin_survivor_release(dying.ignore_defenses)
             });
         if release_crew {
@@ -259,7 +260,7 @@ impl Simulation {
             let captor = self.substrate.entities.get(unit_id).map(|unit| {
                 (
                     unit.capture_infantry_type_index.get(),
-                    unit.vehicle_driver.captured(),
+                    unit.ares.vehicle_driver.captured(),
                 )
             });
             if let Some((index, saved)) = captor.filter(|(index, _)| *index >= 0) {

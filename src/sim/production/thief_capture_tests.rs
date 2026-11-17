@@ -124,64 +124,66 @@ fn thief_capture_normal_ai_changes_owner_and_retains_captor_type() {
         owner,
         rules.object("THIEF").unwrap(),
     ));
-    #[cfg(feature = "ares")]
-    assert_eq!(
-        super::ares_owned_build_limit_count(
-            &sim,
-            &rules,
-            &sim.houses[&owner],
-            rules.object("THIEF").unwrap(),
-        ),
-        1
-    );
-    #[cfg(not(feature = "ares"))]
-    assert_eq!(
-        super::can_build(
-            &sim,
-            &rules,
-            owner,
-            rules.object("THIEF").unwrap(),
-            true,
-            false,
-        ),
-        super::CanBuild::AtLimit
-    );
+    if rules.ares_form() {
+        assert_eq!(
+            super::ares_owned_build_limit_count(
+                &sim,
+                &rules,
+                &sim.houses[&owner],
+                rules.object("THIEF").unwrap(),
+            ),
+            1
+        );
+    } else {
+        assert_eq!(
+            super::can_build(
+                &sim,
+                &rules,
+                owner,
+                rules.object("THIEF").unwrap(),
+                true,
+                false,
+            ),
+            super::CanBuild::AtLimit
+        );
+    }
     let other = sim.interner.get("Russians").unwrap();
     sim.change_owner_with_rules(target, other, &rules, None, FrameEffects::default());
-    assert!(!super::check_build_limit(
-        &sim,
-        &rules,
-        owner,
-        rules.object("THIEF").unwrap(),
-    ));
-    #[cfg(feature = "ares")]
+    // Under its limit again; Ares 10024F80 (hook 0x50B370) still wants a
+    // usable factory, and this house owns none.
     assert_eq!(
-        super::ares_owned_build_limit_count(
-            &sim,
-            &rules,
-            &sim.houses[&owner],
-            rules.object("THIEF").unwrap(),
-        ),
-        0
+        super::check_build_limit(&sim, &rules, owner, rules.object("THIEF").unwrap()),
+        rules.ares_form()
     );
-    #[cfg(not(feature = "ares"))]
-    assert_eq!(
-        super::can_build(
-            &sim,
-            &rules,
-            owner,
-            rules.object("THIEF").unwrap(),
-            true,
-            false,
-        ),
-        super::CanBuild::Yes
-    );
+    if rules.ares_form() {
+        assert_eq!(
+            super::ares_owned_build_limit_count(
+                &sim,
+                &rules,
+                &sim.houses[&owner],
+                rules.object("THIEF").unwrap(),
+            ),
+            0
+        );
+    } else {
+        assert_eq!(
+            super::can_build(
+                &sim,
+                &rules,
+                owner,
+                rules.object("THIEF").unwrap(),
+                true,
+                false,
+            ),
+            super::CanBuild::Yes
+        );
+    }
 }
 
 #[test]
 fn thief_capture_keeps_the_original_role_alliance_and_distance_gates() {
     use crate::sim::components::DriveCoord;
-    // EC6 alone cannot take a vehicle in an original build. Ares replaces
+    // EC6 alone cannot take a vehicle in a stock game. Ares replaces
     // the EC5 gate with its own admission; that is a separate feature.
     let (mut sim, rules, _) = scene();
     let actor = spawn(&mut sim, &rules, "VEHICLEONLY", "Americans", 15);

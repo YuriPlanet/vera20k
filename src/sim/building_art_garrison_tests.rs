@@ -69,6 +69,8 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64) {
         })
         .collect();
     rules.install_art_data(art);
+    // Slot 9's record belongs to the rules type, not to art.
+    rules.set_turret_anim_names_for_test("B", "OLD", "OLD");
     let (mut sim, _, id) = slot_test_fixture();
     for slot in input["live_slots"].as_array().unwrap() {
         let slot = integer(slot) as u8;
@@ -81,6 +83,13 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64) {
             .unwrap()
             .runtime_mut_for_test()
             .current_frame = i32::from(slot) + 1;
+    }
+    if let Some(variants) = input["slot_names"].get("9") {
+        rules.set_turret_anim_names_for_test(
+            "B",
+            variants["normal"].as_str().unwrap(),
+            variants["damaged"].as_str().unwrap(),
+        );
     }
     let entry = rules.art_entry_mut_for_test("B").unwrap();
     for (slot, variants) in input["slot_names"].as_object().unwrap() {

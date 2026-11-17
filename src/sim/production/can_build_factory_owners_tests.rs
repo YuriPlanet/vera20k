@@ -39,6 +39,7 @@ fn factory(sim: &mut Simulation, rules: &RuleSet, id: u64, ty: &str) {
 
 #[test]
 fn campaign_does_not_apply_the_ares_skirmish_superweapon_shell_gate() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner) = fixture(
         "",
         "SuperWeapon=SW0\n[SuperWeaponTypes]\n0=SW0\n[SW0]\nType=MultiMissile\nDisableableFromShell=yes",
@@ -64,6 +65,7 @@ fn campaign_does_not_apply_the_ares_skirmish_superweapon_shell_gate() {
 
 #[test]
 fn negative_one_tech_level_is_human_only_in_installed_ares_qualification() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let data = crate::test_fixture::json("tools/rules_oracle/ares_factory_owners.json");
     for row in data["human_tech_level_rows"].as_array().unwrap() {
         let input = &row["input"];
@@ -108,6 +110,7 @@ fn negative_one_tech_level_is_human_only_in_installed_ares_qualification() {
 
 #[test]
 fn ares_build_limit_matches_executed_signed_capacity_and_held_object_controls() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let data = crate::test_fixture::json("tools/rules_oracle/ares_factory_owners.json");
     for row in data["build_limit_rows"].as_array().unwrap() {
         let input = &row["input"];
@@ -187,6 +190,7 @@ fn ares_build_limit_matches_executed_signed_capacity_and_held_object_controls() 
 
 #[test]
 fn ares_owned_count_matches_executed_conversion_and_installed_slot_controls() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let data = crate::test_fixture::json("tools/rules_oracle/ares_factory_owners.json");
     let rows = data["owned_count_rows"].as_array().unwrap();
     let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -262,6 +266,7 @@ fn ares_owned_count_matches_executed_conversion_and_installed_slot_controls() {
 
 #[test]
 fn passing_factory_country_is_not_final_permission_without_an_available_factory() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner) = fixture("", "FactoryOwners=SOURCE", 1);
     let target = rules.object("TARGET").unwrap();
     let source = rules.country_index("SOURCE").unwrap();
@@ -312,6 +317,7 @@ fn passing_factory_country_is_not_final_permission_without_an_available_factory(
 
 #[test]
 fn built_at_overrides_explicit_only_and_an_offline_tail_does_not_hide_an_online_factory() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner) = fixture("Factory.ExplicitOnly=yes", "BuiltAt=YARD", 1);
     let target = rules.object("TARGET").unwrap();
     factory(&mut sim, &rules, 1, "YARD");

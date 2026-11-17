@@ -58,6 +58,7 @@ fn build_nuke(
     )]);
     build(
         Some(sim),
+        Some(&crate::app::presentation::frame::PresentationFrame::of_test(sim, rules)),
         Some(rules),
         &[],
         Some("NukeSpecial"),
@@ -188,9 +189,8 @@ fn armed_nuke_rings_reach_offscreen_surface_line_gpu() {
         &radials,
         viewport,
         |_| true,
-        |_| u16::MAX,
     );
-    terrain.draw_surface_lines(&mut encoder, &color_view, prepared);
+    terrain.draw_surface_lines(&mut encoder, &color_view, &[prepared]);
     let reads = [
         gpu.read(&mut encoder, &color),
         gpu.read(&mut encoder, &depth),

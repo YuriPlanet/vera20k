@@ -1,7 +1,8 @@
 //! In-game LAN application records inside the global connection envelope.
 //!
 //! `SessionClass` loading progress `0x0069AE90` sends 51 bytes; chat's
-//! `0x0055EDBF` construction and `TauntCommandClass::Execute` `0x00536350`
+//! `0x0055EDBF` construction, `TauntCommandClass::Execute` `0x00536350` and
+//! the beacon text of `BeaconManagerClass::EditBeaconMessage` `0x00431450`
 //! send 455; the beacon placement and deletion records of
 //! `BeaconManagerClass::PlaceBeacon` `0x00430BA0` and `DeleteBeacon`
 //! `0x004311C0` send 61. `Network__ProcessGlobalPackets` `0x0048D1E0`
@@ -50,6 +51,12 @@ const BEACON_DELETED_KIND: u32 = 0x21;
 const BEACON_COORD_OFFSET: usize = 0x2f;
 const BEACON_SLOT_OFFSET: usize = 0x3b;
 const BEACON_HOUSE_OFFSET: usize = 0x3c;
+const BEACON_TEXT_KIND: u32 = 0x22;
+const BEACON_TEXT_SLOT_OFFSET: usize = 0x2f;
+const BEACON_TEXT_HOUSE_OFFSET: usize = 0x30;
+const BEACON_TEXT_OFFSET: usize = 0x31;
+/// The units the packet copies (`wcsncpy(.., 0x80)`, `0x004315B3`).
+pub const BEACON_TEXT_UNITS: usize = 0x80;
 
 /// One beacon record's fields. House and slot are the sender's bytes; the
 /// receiver sign-extends both (`MOVSX`, `0x0048D798`/`0x0048D7B8`,
@@ -220,6 +227,26 @@ impl InGameChat<'_> {
     }
 }
 
+/// Packet `0x22`'s fields. House and slot are the sender's bytes, which the
+/// receiver passes on unchecked; the text runs to its terminator, and the
+/// receiving record keeps at most 127 units of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InGameBeaconText<'a> {
+    pub house: i8,
+    pub slot: i8,
+    text_bytes: &'a [u8],
+}
+
+impl InGameBeaconText<'_> {
+    pub fn text_units(&self) -> Vec<u16> {
+        self.text_bytes
+            .chunks_exact(2)
+            .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+            .take_while(|unit| *unit != 0)
+            .collect()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InGameTaunt {
     pub relay_mask: u8,
@@ -286,6 +313,38 @@ impl LanMessage {
         Ok(message)
     }
 
+    /// `EditBeaconMessage 0x00431450`'s packet `0x22`
+    /// (`0x0043152A..0x00431678`, sent with length `0x1C7`): the sender's
+    /// narrowed node name at `+0x04`, the slot at `+0x2F`, the House at
+    /// `+0x30` and at most 128 UTF-16 units from `+0x31`. Native leaves the
+    /// stack bytes after the copied text unspecified; here they are zero.
+    pub fn beacon_text(
+        name: &str,
+        house: i8,
+        slot: i8,
+        text: &[u16],
+    ) -> Result<Self, LanMessageError> {
+        let mut message = Self::with_name(LanMessageKind::Unknown(BEACON_TEXT_KIND), name)?;
+        message.bytes[BEACON_TEXT_SLOT_OFFSET] = slot as u8;
+        message.bytes[BEACON_TEXT_HOUSE_OFFSET] = house as u8;
+        let units = text.iter().take_while(|unit| **unit != 0);
+        for (index, unit) in units.take(BEACON_TEXT_UNITS).enumerate() {
+            let offset = BEACON_TEXT_OFFSET + index * 2;
+            message.bytes[offset..offset + 2].copy_from_slice(&unit.to_le_bytes());
+        }
+        Ok(message)
+    }
+
+    /// The receive arm `0x0048D7F4..0x0048D810`: both bytes sign-extended
+    /// and the text from `+0x31`.
+    pub fn beacon_text_fields(&self) -> Option<InGameBeaconText<'_>> {
+        (self.u32(0) == BEACON_TEXT_KIND).then(|| InGameBeaconText {
+            house: self.bytes[BEACON_TEXT_HOUSE_OFFSET] as i8,
+            slot: self.bytes[BEACON_TEXT_SLOT_OFFSET] as i8,
+            text_bytes: &self.bytes[BEACON_TEXT_OFFSET..],
+        })
+    }
+
     /// `0x0048D9BD..0x0048DA3B`: hash at35 and playback byte at30; color is
     /// carried by the sender although this receiver does not use it.
     pub fn in_game_taunt_fields(&self) -> Option<InGameTaunt> {
@@ -298,6 +357,6 @@ impl LanMessage {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 #[path = "ingame_tests.rs"]
 mod tests;

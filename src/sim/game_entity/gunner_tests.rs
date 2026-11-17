@@ -58,14 +58,13 @@ fn replay_selector_events(entity: &mut GameEntity, object: &ObjectType, events: 
     let before_delay = entity.turret_selection.charge_turret_delay;
     for event in events.as_array().unwrap() {
         assert_eq!(event["event"], "set_gunner", "unexpected native event");
-        entity.set_gunner_weapon(int(event, "mode"), object);
+        entity.set_gunner_weapon(int(event, "mode"), object, false);
     }
     assert_eq!(entity.rearm_timer.timer(), before_timer);
     assert_eq!(entity.turret_selection.charge_turret_delay, before_delay);
 }
 
 // The installed Ares SwitchGunner hook uses WeaponCount instead of eighteen.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn gunner_constructor_and_selector_match_original_components() {
     let native = corpus();
@@ -93,7 +92,6 @@ fn gunner_constructor_and_selector_match_original_components() {
 }
 
 // The installed Ares SwitchGunner hook uses WeaponCount instead of eighteen.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn native_selector_ignores_turret_count_and_gattling_gates() {
     let native = corpus();
@@ -207,4 +205,26 @@ fn fireat_rearm_copy_matches_original_normal_and_disk_writers() {
             "FireAt does not update the draw index: {row}"
         );
     }
+}
+
+/// Ares `PassengerTurret` (TechnoClass_Update 1004B320, hook 0x6F9E50):
+/// the current turret is the passenger count, capped by `TurretCount - 1`.
+#[test]
+fn ares_passenger_turret_follows_the_passenger_count() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=IFV\n[IFV]\nPassengers=5\nTurretCount=3\nPassengerTurret=yes\n",
+    ))
+    .unwrap();
+    let object = rules.object("IFV").unwrap();
+    let turret = |passengers: usize| {
+        let mut entity = GameEntity::test_default(1, "IFV", "A", 1, 1);
+        entity
+            .passenger_role
+            .ensure_hold()
+            .set_passengers_for_test((10..10 + passengers as u64).collect());
+        entity.update_passenger_turret(object);
+        entity.current_turret_index()
+    };
+    assert_eq!((turret(0), turret(1), turret(4)), (0, 1, 2));
 }

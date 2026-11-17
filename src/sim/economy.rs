@@ -12,6 +12,13 @@
 //! separate store `+0x314`. Raw native Save/Load preserves these slots, so
 //! the empty-store boundary must not be extended to arbitrary native saves.
 //!
+//! Ares fills those stores (`Refinery.UseStorage`, Ares
+//! `HouseClass_GiveTiberium_Storage @ 10024290`), so the wallet also keeps
+//! them (`sim::ares_tiberium_storage::AresTiberiumStorage`), empty unless
+//! Ares plays. The two arms that read them are ported for it: Spend_Money's
+//! silo drain and Available_Money's storage value. They run in every game
+//! and keep the empty boundary while the stores are empty.
+//!
 //! `Fill_In_Data`'s exact `[Basic] FillSilos=` path (`0x00684F02..0x00684F7C`)
 //! is a fresh-start cash/score writer, not a storage fill: it retains
 //! the initial Available_Money as a local budget. While that budget exceeds
@@ -24,6 +31,7 @@
 //! Never depends on render/ui/audio/net (sim invariant #1). The wallet is
 //! serialized and hashed.
 
+use crate::sim::ares_tiberium_storage::AresTiberiumStorage;
 use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF32Bits};
 
 /// Per-house wallet and statistics. There is no second house credit balance.
@@ -40,18 +48,35 @@ pub struct Economy {
     /// House `+0x54E8`, the score: refinery deposits, kills and captures add
     /// to it, and the score screen reads it.
     score: i32,
+    /// The House store (`+0x2FC`) and its buildings' stores, which only
+    /// Ares fills; empty unless Ares plays.
+    #[serde(default)]
+    storage: AresTiberiumStorage,
 }
 
 impl Economy {
     /// A wallet holding `credits`: `HouseClass::Set_Credits_And_Color @
-    /// 0x004FCE00` seeds the balance of a new house.
+    /// 0x004FCE00` seeds the balance of a new house. RESIDUAL (invisible): it
+    /// also writes `+0x1DC` (`scenario_credits`), which stays 0 here for
+    /// multiplayer houses; no live multiplayer path reads it.
     pub(crate) const fn new(credits: i32) -> Self {
         Self {
             credits,
             scenario_credits: 0,
             spent_credits: 0,
             score: 0,
+            storage: AresTiberiumStorage::new(),
         }
+    }
+
+    /// Ares' tiberium storage (`sim::ares_tiberium_storage`), empty unless
+    /// Ares plays.
+    pub(crate) fn ares_storage(&self) -> &AresTiberiumStorage {
+        &self.storage
+    }
+
+    pub(crate) fn ares_storage_mut(&mut self) -> &mut AresTiberiumStorage {
+        &mut self.storage
     }
 
     pub const fn credits(&self) -> i32 {
@@ -99,8 +124,13 @@ impl Economy {
     /// this is exactly the retained signed balance for every i32 balance.
     /// Nonempty/native-save and nonfinite-income inputs remain outside this
     /// represented domain; the two consumed oracle controls use empty storage.
-    pub const fn available_money(&self) -> i32 {
-        self.credits
+    ///
+    /// When Ares plays the stored tiberium's value is added
+    /// ([`AresTiberiumStorage::available_money`]). One body serves every
+    /// game: only Ares' deposits fill the store, and an empty store leaves
+    /// the balance, as above.
+    pub fn available_money(&self) -> i32 {
+        self.storage.available_money(self.credits)
     }
 
     /// Fresh empty-store arm of FillInData684F2A..684F6B. Source/controls:
@@ -146,12 +176,21 @@ impl Economy {
     /// (signed `<=`) comes off it; otherwise the whole balance, even a
     /// negative one, is taken and zeroed, and the rest would drain the silos
     /// (`0x004F97DD..`, empty here). What was taken joins `+0x2DC`.
+    ///
+    /// When Ares plays that drain runs
+    /// (`AresTiberiumStorage::drain_for_spend`): the stored units it sells
+    /// join what was taken, and the last unit's excess is the new balance.
     pub(crate) fn spend_money(&mut self, amount: i32) {
         let taken = if amount <= self.credits {
             self.credits = self.credits.wrapping_sub(amount);
             amount
         } else {
-            std::mem::take(&mut self.credits)
+            let taken = std::mem::take(&mut self.credits);
+            // Runs in every game: an empty store, which only Ares' deposits
+            // fill, drains nothing and leaves the balance at 0.
+            let (drained, change) = self.storage.drain_for_spend(amount.wrapping_sub(taken));
+            self.credits = change;
+            taken.wrapping_add(drained)
         };
         self.spent_credits = self.spent_credits.wrapping_add(taken);
     }
@@ -207,7 +246,7 @@ impl Economy {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use serde_json::Value;

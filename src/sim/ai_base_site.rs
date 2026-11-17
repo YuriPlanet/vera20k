@@ -38,10 +38,14 @@
 //! the defense key. The map answers themselves are the owners'
 //! (`sim::cell_rect`, `sim::build_site`).
 //!
-//! RESIDUAL: a `CloakGenerator=` type keys cells by their 3D distance from the
-//! house's base coordinate instead (`0x00506329..0x0050640D`). No retail
-//! BuildingType sets the key (`ai_base_building_tests.rs` checks the retail
-//! rules), so every type takes the ordinary key.
+//! A `CloakGenerator=` type keys cells by their 3D distance from the house's
+//! base coordinate instead (`0x00506329..0x0050640D`, [`SiteKey::InnerBase`]).
+//! Under Ares, `[BuildingType] AIInnerBase=` decides that in place of
+//! `CloakGenerator=` (HouseClass_FindPlaceToBuild_Evaluate, Ares.dll
+//! 10023860, hook 0x506306). RESIDUAL (a game read the stock way): the
+//! inner-base key is not taken, so a `CloakGenerator=` type takes the
+//! ordinary key. No retail BuildingType sets the key
+//! (`ai_base_building_tests.rs` checks the retail rules).
 
 use crate::rules::object_type::ObjectType;
 use crate::rules::overlay_types::OverlayTypeRegistry;
@@ -108,6 +112,11 @@ pub(crate) enum SiteKey<'a> {
         grid: &'a CoverageGrid,
         argument: i32,
     },
+    /// The inner-base key (`0x00506329..0x0050640D`), which an inner-base
+    /// type takes in place of the caller's key, with the GetCoords (Cell
+    /// vt+0x48) of the house's base-or-starting cell (`0x0050DEF0`), or
+    /// NullCoord for the empty cell.
+    InnerBase { base: [i32; 3] },
 }
 
 impl SiteKey<'_> {
@@ -115,6 +124,7 @@ impl SiteKey<'_> {
         match self {
             Self::Ordinary => ordinary_key(index, cell, center),
             Self::Defense { grid, argument } => grid.key(index, cell, center, argument),
+            Self::InnerBase { base } => inner_base_key(index, cell, base),
         }
     }
 }
@@ -166,6 +176,24 @@ pub(crate) fn find_base_building_site(
         .map(|&packed| unpack_base_plan_cell(packed))
         .collect();
     let (width, height) = foundation_size(ty);
+    // Ares 3.0 10023860 (hook 0x506306): `AIInnerBase.Get(CloakGenerator)`
+    // replaces the `CloakGenerator=` test.
+    let key = if rules.ares_form() && ty.building_type_ext().ai_inner_base(ty.cloak_generator) {
+        let origin = house.base_origin();
+        let base = if origin == (0, 0) {
+            [0, 0, 0]
+        } else {
+            let cells = sim
+                .resolved_terrain
+                .as_ref()
+                .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+            let coord = crate::sim::movement::target_cell_coord(origin.0, origin.1, cells.as_ref());
+            [coord.x, coord.y, coord.z]
+        };
+        SiteKey::InnerBase { base }
+    } else {
+        key
+    };
     ordinary_site(
         &mut world,
         &SiteSearch {
@@ -316,6 +344,16 @@ fn ordinary_key(index: i32, cell: (i16, i16), center: (i16, i16)) -> i32 {
     index.wrapping_add(dx.max(dy).wrapping_mul(1000))
 }
 
+/// The inner-base key (`0x00506329..0x0050640D`): `index + 1000 * d`, `d` the
+/// distance from the centre of `cell` at height 0 to `base`, its deltas
+/// summed `(dy² + dz²) + dx²` through `Sqrt_Approx` and `Math__ftol`.
+fn inner_base_key(index: i32, cell: (i16, i16), base: [i32; 3]) -> i32 {
+    let dx = base[0].wrapping_sub(i32::from(cell.0) * 256 + 128);
+    let dy = base[1].wrapping_sub(i32::from(cell.1) * 256 + 128);
+    let distance = crate::util::native_x87::sqrt_approx_length([dy, base[2], dx]);
+    index.wrapping_add(distance.wrapping_mul(1000))
+}
+
 /// `0x005065E6..0x0050664C`: the eight-way direction (`DirStruct` of
 /// `atan2`) of the negated sum of the steps towards the reserved neighbours.
 fn away_direction(into_base: (i16, i16)) -> usize {
@@ -451,6 +489,6 @@ fn signed(cell: (u16, u16)) -> (i16, i16) {
     (cell.0 as i16, cell.1 as i16)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ai_base_site_tests.rs"]
 mod tests;

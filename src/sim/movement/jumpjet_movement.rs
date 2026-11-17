@@ -176,6 +176,8 @@ impl JumpjetRuntime {
     /// returns at54BB32 before Mark and the phase3 write; State3's tail at
     ///54C4FD reads the destination that setter changed. The working value is
     /// never an independent destination authority across either callback.
+    /// A synchronous receiver can remove the owner or replace its locomotor.
+    /// In that case there is no installed Jumpjet to read back.
     pub(crate) fn with_owner_call<R>(
         &mut self,
         sim: &mut Simulation,
@@ -189,14 +191,15 @@ impl JumpjetRuntime {
             .and_then(|locomotor| locomotor.jumpjet_runtime_mut())
             .expect("Jumpjet callback retains its installed instance") = self.clone();
         let result = call(sim);
-        *self = sim
+        if let Some(installed) = sim
             .substrate
             .entities
             .get(id)
             .and_then(|entity| entity.locomotor.as_ref())
             .and_then(|locomotor| locomotor.jumpjet_runtime())
-            .expect("Jumpjet callback retains its installed instance")
-            .clone();
+        {
+            self.clone_from(installed);
+        }
         result
     }
 
@@ -495,6 +498,7 @@ impl JumpjetOrderHost for WorldOrderHost<'_> {
             self.id,
             destination,
             false,
+            self.rules.ares_form(),
         );
     }
     fn owner_kind(&self) -> FlightOwnerKind {
@@ -596,13 +600,15 @@ impl Simulation {
             .jumpjet_runtime()?
             .clone();
         let result = process(&mut runtime, self);
-        *self
+        if let Some(installed) = self
             .substrate
             .entities
-            .get_mut(id)?
-            .locomotor
-            .as_mut()?
-            .jumpjet_runtime_mut()? = runtime;
+            .get_mut(id)
+            .and_then(|entity| entity.locomotor.as_mut())
+            .and_then(|locomotor| locomotor.jumpjet_runtime_mut())
+        {
+            *installed = runtime;
+        }
         Some(result)
     }
 
@@ -610,7 +616,7 @@ impl Simulation {
     /// Jumpjet's [`JumpjetRuntime::mark_all_occupation_bits_remove`]. For an
     /// infantryman that is what clears his sub-cell: Infantry Mark clears none
     /// (`0x0047EAFE`).
-    pub(crate) fn release_jumpjet_occupation_before_foot_limbo(&mut self, id: u64) {
+    pub(crate) fn release_jumpjet_occupation_before_foot_limbo(&mut self, id: u64, ares: bool) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
@@ -633,6 +639,7 @@ impl Simulation {
                     id,
                     head,
                     false,
+                    ares,
                 );
             });
         });
@@ -813,7 +820,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::ResolvedTerrainGrid;

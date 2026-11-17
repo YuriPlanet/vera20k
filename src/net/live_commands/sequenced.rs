@@ -1,35 +1,33 @@
 //! VERA online ordering adaptation. The authenticated relay seals an immutable
 //! timeline; no client infers a missing participant's input or rewrites a tick.
 //! Native Event/OutList/DoList and the ordinary simulation transaction retain
-//! gameplay authority. Fresh packet caches make each encrypted batch standalone.
+//! gameplay authority. Fresh packet caches make each batch standalone.
 
 use std::collections::{BTreeMap, VecDeque};
 
 use vera20k_relay_protocol::{
-    CHECKSUM_INTERVAL, ORDERING_BATCH_CAPACITY, OrderEntry, OrderError, OrderEvent, OrderPace,
-    OrderingCertificate, paced_rates,
+    CHECKSUM_INTERVAL, ClientLinkStats, ORDERING_BATCH_CAPACITY, OrderEntry, OrderError,
+    OrderEvent, OrderPace, OrderingCertificate, paced_rates,
 };
 
 use super::{LiveCommandError, StartupAgreement, StartupError};
-use crate::net::event_packet::{EventPacketCodec, decode_frame_info};
+use crate::net::event_packet::{EVENT_PACKET_HEADER_LEN, EventPacketCodec};
 use crate::net::udp::LanUdpTransport;
 use crate::sim::command::{CommandRecord, ExitRecord, REMOVE_PLAYER_OPCODE};
 use crate::sim::command_queue::FrameInfo;
-use crate::sim::world::{NetworkCommandQueues, NetworkQueueContext, NetworkQueuePass};
+use crate::sim::world::{
+    NetworkCommandQueues, NetworkInterruption, NetworkQueueContext, NetworkQueuePass,
+};
 use crate::util::time::Instant;
 
 const BUFFERED_FRAMES: usize = 64;
 const REORDER_WINDOW: u64 = 256;
 const MAX_FRAME_RECORDS: usize = 4096;
 const SAMPLE_HISTORY: usize = 4096;
-// A batch's version byte before its EventPacketCodec packet.
-const BATCH_HEADER: usize = 1;
-const BATCH_VERSION: u8 = 2;
-const PUSH_PROBE_INTERVAL_MS: i32 = 500;
-const PUSH_REPROBE_INTERVAL_MS: i32 = 5_000;
-const PUSH_WATERMARK_INTERVAL_MS: i32 = 100;
+// READY_REQUEST resends until the start (spec §6.0).
+const CONFIGURE_INTERVAL_MS: i32 = 125;
+// A restoring process reads history by PULL every 100 ms (spec §7.7).
 const REPLAY_RETRY_INTERVAL_MS: i32 = 100;
-const PUSH_SILENCE_REPAIR_MS: u32 = 1_000;
 const PAUSE_PROBE_INTERVAL_MS: i32 = 500;
 const PAUSE_COMPATIBILITY_PROBE_INTERVAL_MS: i32 = 5_000;
 const COMMAND_TRACE_HISTORY: usize = 256;
@@ -43,17 +41,25 @@ const PACE_REPORT_INTERVAL_MS: i32 = 1_000;
 const PACE_BACKLOG_MS: u32 = 2_000;
 // Ticks kept for one pace report's tick-cost percentile.
 const MAX_TICK_COSTS: usize = 256;
+// VERA watching (relay README "Watchers"): the relay never pushes to a
+// watcher, so it pulls this often. It starts a whole match behind and keeps
+// every frame it reads, so it has read a match to its end before the relay
+// forgets it (300 s after its end), however long its world takes to play it.
+const WATCH_PULL_INTERVAL_MS: u32 = 100;
+const WATCH_REORDER_WINDOW: u64 = 2048;
+// The relay's agreed samples kept until this world reaches their frames.
+const WATCH_SAMPLES: usize = 16;
+// A watcher that hears nothing from its relay this long has lost the match:
+// the relay dropped it long before.
+const WATCH_SILENCE_MS: u32 = 60_000;
 
 /// App diagnostics for one match's ordered delivery, counted by the session
 /// that owns it. Wall-clock observations; never simulation or delivery input.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DeliveryCounters {
-    /// Times the pushed stream stood behind the relay's head past its
-    /// one-frame reorder grace: lost datagrams, or push credit the relay had
-    /// not yet sent while this PC was behind.
-    pub gaps: u64,
-    /// Pull requests sent to repair a gap or a silent push subscription.
-    pub repair_pulls: u64,
+    /// The relay session's link measurements as last read (spec §10.1),
+    /// including the stream gaps it was told of and its fallback Pulls.
+    pub link: Option<ClientLinkStats>,
     /// Local command batches whose sealed frame came back, with the
     /// first-transmission to frame-receipt time of each.
     pub round_trips: u64,
@@ -61,6 +67,11 @@ pub struct DeliveryCounters {
     pub round_trip_max_ms: u64,
     /// The sampled frame whose checksums differed, from the relay's DESYNC.
     pub desync_frame: Option<u32>,
+    /// The relay's clock for this match has started, even if the relay
+    /// lost the match later.
+    pub started: bool,
+    /// The name (`SequencedError::code`) of the error that ended the match here.
+    pub failure: Option<&'static str>,
 }
 
 /// App diagnostics for one local command batch: its first transmission, the
@@ -85,6 +96,9 @@ pub struct SequencedTiming {
     /// Changes at a synchronized pause/resume boundary. Presentation must
     /// not turn time spent paused into simulation catch-up or receipt jitter.
     pub clock_epoch: u64,
+    /// Frames that reach this game together: the relay's turn for a player
+    /// (`turn_frames`), more for a watcher (`watch_turn`).
+    pub turn_frames: u32,
 }
 
 /// Authenticated relay capability and the latest contiguous pause marker.
@@ -107,6 +121,27 @@ pub enum MatchSpeedChange {
     SlowedBy(i8),
     /// The match runs at its own speed again.
     Normal,
+}
+
+/// VERA: a shared pause or resume another player asked for, released when
+/// the world reaches it: a pause once the frame it follows has dispatched, a
+/// resume with the frame after it. The app names that player in a line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MatchPauseChange {
+    /// The House of the player who asked.
+    pub house: i8,
+    pub paused: bool,
+}
+
+/// VERA: another player the relay has not heard from for 10 seconds, or
+/// hears again while they are still in the match (relay README "Silence").
+/// The app names them in a line. gamemd holds the match for a silent player
+/// and names them in its Wait_For_Players dialog (called from ProcessNetwork
+/// `0x0064800E`); the relay plays on without them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MatchConnectionChange {
+    pub house: i8,
+    pub responding: bool,
 }
 
 /// This PC's progress against the relay's clock, reported about once a
@@ -207,13 +242,6 @@ struct PauseRequest {
     acknowledged_epoch: Option<u64>,
 }
 
-#[derive(Debug)]
-enum PushDelivery {
-    Probing { attempts: u8 },
-    Active,
-    PullOnly,
-}
-
 #[derive(Debug, Clone, Copy)]
 struct Unreadable {
     since: u32,
@@ -266,10 +294,73 @@ pub enum SequencedError {
     },
     #[error("online ordering service cannot recover this match")]
     Unavailable,
+    /// The transport released the relay route: the relay answered nothing for
+    /// longer than it keeps a silent player's place (`relay_absent`), so this
+    /// game cannot come back to its match.
+    #[error(
+        "no answer from the online game server for ten minutes: this player's place in the match is gone"
+    )]
+    Absent,
+    /// The relay closed this match's room before it started: a player left.
+    #[error("a player left before the online match started")]
+    StartCancelled,
     #[error("online command queue is full")]
     QueueFull,
     #[error("this online match needs a newer VERA20k")]
     NewerClientRequired,
+    /// A watcher's world differs from the checksum every player reported
+    /// for `frame` (relay README "Watchers").
+    #[error(
+        "this watcher's simulation differs from the players' at frame {frame}: \
+         local {local:#010x}, players {remote:#010x}"
+    )]
+    WatchDesync { frame: u32, local: u32, remote: u32 },
+    /// A watcher's relay answered nothing for `WATCH_SILENCE_MS`.
+    #[error("no answer from the online game server: watching ended")]
+    WatchLost,
+    /// A refusal the session cannot act on, such as the games' start
+    /// agreements differing.
+    #[error("the online ordering service refused this match: {0:?}")]
+    Refused(OrderError),
+}
+
+impl SequencedError {
+    /// The name match reports give this error (`docs/lobby-protocol.md`).
+    fn code(&self) -> &'static str {
+        match self {
+            Self::HistoryExpired => "history_expired",
+            Self::InvalidTimeline => "invalid_timeline",
+            Self::Desync { .. } => "desync",
+            Self::Unavailable => "unavailable",
+            Self::Absent => "absent",
+            Self::StartCancelled => "start_cancelled",
+            Self::QueueFull => "queue_full",
+            Self::NewerClientRequired => "newer_client_required",
+            Self::WatchDesync { .. } => "watch_desync",
+            Self::WatchLost => "watch_lost",
+            Self::Refused(OrderError::AgreementMismatch) => "agreement_mismatch",
+            Self::Refused(OrderError::ModifiedRetry) => "modified_retry",
+            Self::Refused(OrderError::InvalidCursor) => "invalid_cursor",
+            Self::Refused(_) => "refused",
+        }
+    }
+
+    /// What a match this error ended tells the player.
+    pub fn interruption(&self) -> NetworkInterruption {
+        match self {
+            Self::Desync { .. } | Self::WatchDesync { .. } => NetworkInterruption::ScenariosDiffer,
+            Self::QueueFull => NetworkInterruption::QueueFull,
+            Self::NewerClientRequired => NetworkInterruption::NewerClientRequired,
+            Self::Refused(OrderError::AgreementMismatch) => NetworkInterruption::StartMismatch,
+            Self::StartCancelled => NetworkInterruption::StartCancelled,
+            Self::HistoryExpired
+            | Self::InvalidTimeline
+            | Self::Unavailable
+            | Self::Absent
+            | Self::WatchLost
+            | Self::Refused(_) => NetworkInterruption::ConnectionFailed,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -277,7 +368,8 @@ struct Submission {
     id: u64,
     records: Vec<CommandRecord>,
     bytes: Vec<u8>,
-    last_sent: Option<u32>,
+    // Handed to the relay session, which schedules its UPLINKs (spec §6).
+    sealed: bool,
 }
 
 /// The relay's DESYNC record: the sampled frame and the outlier's and the
@@ -297,12 +389,30 @@ struct CommittedFrame {
     lost: Vec<i8>,
     // A rate marker after the previous frame.
     speed: Option<MatchSpeedChange>,
+    // Other players' pause markers the world reaches with this frame: a
+    // resume after the previous frame, then a pause after this one.
+    pauses: Vec<MatchPauseChange>,
     // A DESYNC record after the previous frame ends the match here.
     desync: Option<RelayDesync>,
 }
 
+/// VERA: a game that watches the match instead of playing in it (relay
+/// README "Watchers"). Its `local_source` is the player it follows; it
+/// pulls the stream and sends nothing into it.
+#[derive(Debug)]
+struct Watch {
+    /// How far behind the players its relay holds the stream.
+    delay_seconds: u32,
+    /// The relay's checksums every player reported alike, by frame, kept
+    /// until this world has its own for that frame.
+    samples: VecDeque<(u32, u32)>,
+    /// Sources whose departure this game has read.
+    departed: u32,
+}
+
 #[derive(Debug)]
 pub(super) struct SequencedSession {
+    watch: Option<Watch>,
     houses: [Option<i8>; 30],
     local_source: u8,
     agreement: [u8; 32],
@@ -323,13 +433,7 @@ pub(super) struct SequencedSession {
     statuses: u64,
     unreadable: Option<Unreadable>,
     last_control: Option<u32>,
-    push: PushDelivery,
-    last_push_control: Option<u32>,
-    push_watermark: u64,
-    push_confirmations: u64,
     remote_next_sequence: u64,
-    repair_gap_since: Option<u32>,
-    gap_counted: bool,
     delivery: DeliveryCounters,
     pause: CanonicalPause,
     /// VERA: the current pause found this game catching up, and it has not
@@ -370,6 +474,11 @@ pub(super) struct SequencedSession {
     // Released when their frame dispatches; the app posts each line.
     lost: Vec<i8>,
     speed_changes: Vec<MatchSpeedChange>,
+    pause_changes: Vec<MatchPauseChange>,
+    // Other players the relay last said it has not heard from lately, and
+    // the changes the app has yet to post.
+    silent: u32,
+    connection_changes: Vec<MatchConnectionChange>,
 }
 
 impl SequencedSession {
@@ -384,28 +493,51 @@ impl SequencedSession {
                 .ok_or(StartupError::InvalidAdmission)?,
         )
         .map_err(|_| StartupError::InvalidAdmission)?;
-        let local_source = transport
-            .relay_source()
-            .ok_or(StartupError::InvalidAdmission)?;
+        let watch_delay = transport.relay_watch_delay();
+        let player_source = match watch_delay {
+            Some(_) => None,
+            None => Some(
+                transport
+                    .relay_source()
+                    .ok_or(StartupError::InvalidAdmission)?,
+            ),
+        };
         let mut houses = [None; 30];
-        houses[usize::from(local_source)] = Some(local_house);
+        if let Some(source) = player_source {
+            houses[usize::from(source)] = Some(local_house);
+        }
         for (house, endpoint) in transport.connections().peers() {
             let source = vera20k_relay_protocol::endpoint_peer(endpoint)
                 .ok_or(StartupError::InvalidAdmission)?;
             houses[usize::from(source)] =
                 Some(i8::try_from(house).map_err(|_| StartupError::InvalidAdmission)?);
         }
+        let local_source = match player_source {
+            Some(source) => source,
+            // A watcher's game follows one player: the one source of the
+            // match its roster holds as no peer.
+            None => {
+                let followed = cert.sources_mask & !roster_mask(&houses);
+                let source = followed.trailing_zeros() as usize;
+                if followed.count_ones() != 1 || source >= houses.len() {
+                    return Err(StartupError::InvalidAdmission.into());
+                }
+                houses[source] = Some(local_house);
+                source as u8
+            }
+        };
         let mask = roster_mask(&houses);
         let (identity, fps, count) = agreement.sequencing_identity()?;
         if mask != cert.sources_mask || fps != cert.tick_hz || count != mask.count_ones() as usize {
             return Err(StartupError::InvalidAdmission.into());
         }
-        Ok(Self::with_roster(
-            houses,
-            local_source,
-            identity,
-            cert.tick_hz,
-        ))
+        let mut session = Self::with_roster(houses, local_source, identity, cert.tick_hz);
+        session.watch = watch_delay.map(|delay_seconds| Watch {
+            delay_seconds,
+            samples: VecDeque::new(),
+            departed: 0,
+        });
+        Ok(session)
     }
 
     fn with_roster(
@@ -416,6 +548,7 @@ impl SequencedSession {
     ) -> Self {
         let mask = roster_mask(&houses);
         Self {
+            watch: None,
             houses,
             local_source,
             agreement,
@@ -431,13 +564,7 @@ impl SequencedSession {
             statuses: 0,
             unreadable: None,
             last_control: None,
-            push: PushDelivery::Probing { attempts: 0 },
-            last_push_control: None,
-            push_watermark: 1,
-            push_confirmations: 0,
             remote_next_sequence: 1,
-            repair_gap_since: None,
-            gap_counted: false,
             delivery: DeliveryCounters::default(),
             pause: CanonicalPause::default(),
             pause_found_behind: false,
@@ -472,15 +599,59 @@ impl SequencedSession {
             command_traces: VecDeque::new(),
             lost: Vec::new(),
             speed_changes: Vec::new(),
+            pause_changes: Vec::new(),
+            silent: 0,
+            connection_changes: Vec::new(),
         }
     }
 
+    /// A watcher joins a match under way too, but sends nothing: it has no
+    /// batch counter to restore.
     pub(super) fn begin_restore(&mut self) {
-        self.restoring = true;
+        self.restoring = self.watch.is_none();
     }
 
     pub(super) fn restoring(&self) -> bool {
         self.restoring
+    }
+
+    /// This game watches the match instead of playing in it.
+    pub(super) fn watching(&self) -> bool {
+        self.watch.is_some()
+    }
+
+    /// A watcher's match is over: every player's departure has been read and
+    /// every frame before it handed to the world.
+    pub(super) fn watch_over(&self) -> bool {
+        self.watch.as_ref().is_some_and(|watch| {
+            (watch.departed | self.refused) == roster_mask(&self.houses)
+                && self.frames.is_empty()
+                && self.assembling.records.is_empty()
+        })
+    }
+
+    fn buffered_frames(&self) -> usize {
+        if self.watch.is_some() {
+            usize::MAX
+        } else {
+            BUFFERED_FRAMES
+        }
+    }
+
+    fn reorder_window(&self) -> u64 {
+        if self.watch.is_some() {
+            WATCH_REORDER_WINDOW
+        } else {
+            REORDER_WINDOW
+        }
+    }
+
+    /// Frames that reach this game together (`SequencedTiming::turn_frames`).
+    fn playout_turn(&self) -> u32 {
+        match &self.watch {
+            Some(watch) => watch_turn(self.pace_fps, watch.delay_seconds),
+            None => vera20k_relay_protocol::turn_frames(self.pace_fps),
+        }
     }
 
     /// Ends a restore once the world at `frame` has reached the shared one.
@@ -513,6 +684,16 @@ impl SequencedSession {
         std::mem::take(&mut self.speed_changes)
     }
 
+    /// Other players' shared pauses and resumes the world has reached.
+    pub(super) fn take_pause_changes(&mut self) -> Vec<MatchPauseChange> {
+        std::mem::take(&mut self.pause_changes)
+    }
+
+    /// Other players the relay stopped or started hearing since the last call.
+    pub(super) fn take_connection_changes(&mut self) -> Vec<MatchConnectionChange> {
+        std::mem::take(&mut self.connection_changes)
+    }
+
     pub(super) fn set_presentation_hidden(&mut self, hidden: bool) {
         self.pace_meter.hidden = hidden;
     }
@@ -520,6 +701,7 @@ impl SequencedSession {
     #[cfg(any(test, feature = "test-support"))]
     pub(super) fn mark_started_for_test(&mut self) {
         self.started = true;
+        self.delivery.started = true;
     }
 
     pub(super) fn frontier(&self) -> u32 {
@@ -555,6 +737,15 @@ impl SequencedSession {
         self.delivery
     }
 
+    /// Keeps the error that ended this match for its report.
+    pub(super) fn record_failure(&mut self, error: &LiveCommandError) {
+        let code = match error {
+            LiveCommandError::Sequenced(error) => error.code(),
+            _ => "local_error",
+        };
+        self.delivery.failure.get_or_insert(code);
+    }
+
     /// The relay's sealed head as this PC last learned it.
     pub(super) fn head_frame(&self) -> u32 {
         self.head_frame
@@ -571,9 +762,7 @@ impl SequencedSession {
     }
 
     pub(super) fn timing(&self) -> Option<SequencedTiming> {
-        matches!(self.push, PushDelivery::Active)
-            .then_some(self.latest_frame_receipt)
-            .flatten()
+        self.latest_frame_receipt
     }
 
     pub(super) fn pause_status(&self) -> MultiplayerPauseStatus {
@@ -625,7 +814,7 @@ impl SequencedSession {
         if self.restoring && service_due(self.last_restore_log, now, 5000) {
             self.last_restore_log = Some(now);
             log::info!(
-                "Rejoin: frame {:?}, frontier {}, head {}, next sequence {} of {}, buffered {}, started {}, statuses {}, push {:?}",
+                "Rejoin: frame {:?}, frontier {}, head {}, next sequence {} of {}, buffered {}, started {}, statuses {}",
                 self.current.map(|(context, done)| (context.frame, done)),
                 self.frontier(),
                 self.head_frame,
@@ -634,7 +823,6 @@ impl SequencedSession {
                 self.frames.len(),
                 self.started,
                 self.statuses,
-                self.push,
             );
         }
         while let Some(received) = transport.pop_ordering_received_with_time() {
@@ -649,6 +837,24 @@ impl SequencedSession {
                     self.error.get_or_insert(error.into());
                 }
             }
+        }
+        // Network silence is recoverable until the relay departs this source
+        // after ten minutes: until then the same stream cursor, unacknowledged
+        // bytes and world wait for the route/lease to return, and neither a
+        // shorter timeout nor peer progress may manufacture an EXIT or fail a
+        // frame. Past it the transport releases the route, and the match ends
+        // here instead of showing Reconnecting for as long as the game stays
+        // open. Before anything below asks the released route to send.
+        if transport.relay_absent() {
+            self.error.get_or_insert(SequencedError::Absent.into());
+        }
+        if self.watch.is_some()
+            && self
+                .last_response
+                .or(self.first_service)
+                .is_some_and(|last| now.wrapping_sub(last) > WATCH_SILENCE_MS)
+        {
+            self.error.get_or_insert(SequencedError::WatchLost.into());
         }
         if self.error.is_some() {
             return;
@@ -670,35 +876,27 @@ impl SequencedSession {
             self.last_progress = Some((now, position));
         }
         self.service_delivery(transport, now);
+        if self.watch.is_some() {
+            // A watcher only reads the stream (relay README "Watchers").
+            return;
+        }
         self.service_pause(transport, now);
         self.service_pace(transport, now);
-        for pending in &mut self.submissions {
-            // An unready route or failed local send cannot start the remote
-            // receipt timer. The next service retries the same retained bytes.
-            if pending.id > self.accepted_batch && service_due(pending.last_sent, now, 100) {
-                // A fresh transmission goes out twice. The relay accepts batch
-                // IDs in order, so one lost datagram would otherwise hold this
-                // and every later batch until the retry; the copy is an
-                // idempotent retry of identical ciphertext.
-                let copies = if pending.last_sent.is_none() { 2 } else { 1 };
-                let mut sent = false;
-                for _ in 0..copies {
-                    sent |= transport
-                        .submit_ordering(pending.id, &pending.bytes)
-                        .is_ok();
-                }
-                if sent {
-                    pending.last_sent = Some(now);
-                    if let Some(trace) = trace_mut(&mut self.command_traces, pending.id) {
-                        trace.sent_at.get_or_insert_with(Instant::now);
-                    }
-                }
-            }
+        if let Err(error) = self.seal_submissions(transport) {
+            self.error = Some(error.into());
+            return;
         }
-        // Network silence is recoverable until the relay departs this source
-        // after ten minutes. Keep the same stream cursor,
-        // unacknowledged bytes and world until the route/lease returns. Neither
-        // a timeout nor peer progress may manufacture an EXIT or fail a frame.
+        // The relay session decides every UPLINK (spec §6.3); this layer only
+        // hands over its stream position.
+        let gap = self.ordering_gap();
+        transport.report_ordering_position(
+            self.next_sequence,
+            gap,
+            vera20k_relay_protocol::turn_ms(self.pace_fps),
+        );
+        if self.started {
+            let _ = transport.poll_uplink();
+        }
     }
 
     fn service_pause(&mut self, transport: &mut LanUdpTransport, now: u32) {
@@ -737,8 +935,8 @@ impl SequencedSession {
             self.pace_meter
                 .report(now, self.frames.len(), self.pace_fps, measured)
         {
-            // A lost report only goes stale at the relay.
-            let _ = transport.report_ordering_pace(pace, ran, tick_micros);
+            // It rides the next UPLINK once; a lost one only goes stale.
+            transport.queue_ordering_pace(pace, ran, tick_micros);
         }
     }
 
@@ -762,93 +960,95 @@ impl SequencedSession {
         }
     }
 
-    fn service_delivery(&mut self, transport: &mut LanUdpTransport, now: u32) {
-        if self.started {
-            match &mut self.push {
-                PushDelivery::Probing { attempts } => {
-                    // Old relays reject unknown controls, but three lost
-                    // replies look the same. Pull meanwhile and keep probing
-                    // at a slower rate; only a relay's explicit refusal ends
-                    // the handshake.
-                    let interval = if *attempts < 3 {
-                        PUSH_PROBE_INTERVAL_MS
-                    } else {
-                        PUSH_REPROBE_INTERVAL_MS
-                    };
-                    if service_due(self.last_push_control, now, interval) {
-                        let confirmations = transport.relay_confirmations();
-                        if transport
-                            .set_ordering_push(true, self.next_sequence)
-                            .is_ok()
-                        {
-                            *attempts = attempts.saturating_add(1);
-                            self.last_push_control = Some(now);
-                            self.push_watermark = self.next_sequence;
-                            self.push_confirmations = confirmations;
-                        }
-                    }
-                }
-                PushDelivery::Active => {
-                    // RelayServer::confirm starts a renewed lease or a new path
-                    // without the old subscription. Re-subscribe on any READY
-                    // rather than up to a watermark interval later; after a
-                    // keepalive READY that is only an early watermark.
-                    let confirmations = transport.relay_confirmations();
-                    if (confirmations != self.push_confirmations
-                        || self.next_sequence.saturating_sub(self.push_watermark) >= 32
-                        || service_due(self.last_push_control, now, PUSH_WATERMARK_INTERVAL_MS))
-                        && transport
-                            .set_ordering_push(true, self.next_sequence)
-                            .is_ok()
-                    {
-                        self.last_push_control = Some(now);
-                        self.push_watermark = self.next_sequence;
-                        self.push_confirmations = confirmations;
-                    }
-                }
-                PushDelivery::PullOnly => {}
+    /// Seals each local batch with the relay session in order; it retries
+    /// them until acknowledged (spec §6.1-§6.3). An unready route seals on a
+    /// later service.
+    fn seal_submissions(&mut self, transport: &mut LanUdpTransport) -> Result<(), SequencedError> {
+        for pending in self
+            .submissions
+            .iter_mut()
+            .filter(|pending| !pending.sealed)
+        {
+            let Ok(id) = transport.seal_ordering_batch(&pending.bytes) else {
+                break;
+            };
+            if id != pending.id {
+                return Err(SequencedError::InvalidTimeline);
+            }
+            pending.sealed = true;
+            if let Some(trace) = trace_mut(&mut self.command_traces, pending.id) {
+                trace.sent_at.get_or_insert_with(Instant::now);
             }
         }
-        let active_push = self.started && matches!(self.push, PushDelivery::Active);
-        let gap = self.cursor_gap();
-        // A status can overtake its immediately following pushed datagrams.
-        // Allow one nominal frame for reordering before requesting repair;
-        // healthy delivery must not turn every watermark into another Pull.
-        let gap_ready = if gap {
-            let since = *self.repair_gap_since.get_or_insert(now);
-            now.wrapping_sub(since) >= 1000_u32.div_ceil(u32::from(self.pace_fps))
-        } else {
-            self.repair_gap_since = None;
-            self.gap_counted = false;
-            false
-        };
-        if active_push && gap_ready && !self.gap_counted {
-            self.gap_counted = true;
-            self.delivery.gaps += 1;
+        Ok(())
+    }
+
+    /// The gap the uplink scheduler acts on (spec §6.3 row 2), while the
+    /// frame buffer has room for what is missing.
+    fn ordering_gap(&self) -> Option<vera20k_relay_protocol::OrderingGap> {
+        use vera20k_relay_protocol::OrderingGap;
+        if self.frames.len() >= BUFFERED_FRAMES {
+            return None;
         }
-        let silent = self
-            .last_response
-            .is_some_and(|last| now.wrapping_sub(last) > PUSH_SILENCE_REPAIR_MS);
-        let pull_needed = !active_push || gap_ready || silent;
-        let interval = if active_push {
-            REPLAY_RETRY_INTERVAL_MS
-        } else if self.started {
-            16
+        if self
+            .entries
+            .first_key_value()
+            .is_some_and(|(seq, _)| *seq > self.next_sequence)
+        {
+            Some(OrderingGap::Reordered)
+        } else if self.remote_next_sequence > self.next_sequence {
+            Some(OrderingGap::BehindStatus)
         } else {
-            125
-        };
-        if pull_needed && service_due(self.last_control, now, interval) {
-            if !self.started {
-                let _ = transport.configure_ordering(self.agreement);
+            None
+        }
+    }
+
+    fn service_delivery(&mut self, transport: &mut LanUdpTransport, now: u32) {
+        if self.watch.is_some() {
+            // Ready until the start, then a Pull from the cursor: the relay
+            // pushes nothing to a watcher.
+            let sent = if !self.started {
+                service_due(self.last_control, now, CONFIGURE_INTERVAL_MS)
+                    && transport.configure_watch(self.agreement).is_ok()
+            } else {
+                service_due(self.last_control, now, WATCH_PULL_INTERVAL_MS as i32)
+                    && transport.pull_ordering(self.next_sequence).is_ok()
+            };
+            if sent {
+                self.last_control = Some(now);
+            }
+            if let Some(stats) = transport.relay_link_stats() {
+                self.delivery.link = Some(stats);
+            }
+            return;
+        }
+        if !self.started {
+            // Only READY_REQUEST until the start: its STATUS replies carry
+            // the start, and there are no records to pull (spec §6.0).
+            if service_due(self.last_control, now, CONFIGURE_INTERVAL_MS)
+                && transport.configure_ordering(self.agreement).is_ok()
+            {
                 // Before the first request that can bring back an entry.
                 transport.set_ordering_restore(self.restoring);
-            }
-            if transport.pull_ordering(self.next_sequence).is_ok() {
                 self.last_control = Some(now);
-                if active_push {
-                    self.delivery.repair_pulls += 1;
-                }
             }
+            return;
+        }
+        if self.restoring {
+            // RESTORING: the relay pushes no new records; read them by PULL.
+            if self.cursor_gap()
+                && service_due(self.last_control, now, REPLAY_RETRY_INTERVAL_MS)
+                && transport.pull_ordering(self.next_sequence).is_ok()
+            {
+                self.last_control = Some(now);
+            }
+            return;
+        }
+        // Gaps go to the relay first by UPLINK; the session pulls only
+        // after its grace (spec §7.7).
+        let _ = transport.poll_repair_pull();
+        if let Some(stats) = transport.relay_link_stats() {
+            self.delivery.link = Some(stats);
         }
     }
 
@@ -892,7 +1092,7 @@ impl SequencedSession {
     /// The relay holds entries past the contiguous cursor, and the frame
     /// buffer has room for them.
     fn cursor_gap(&self) -> bool {
-        self.frames.len() < BUFFERED_FRAMES
+        self.frames.len() < self.buffered_frames()
             && (self.remote_next_sequence > self.next_sequence
                 || self
                     .entries
@@ -928,9 +1128,20 @@ impl SequencedSession {
                     self.last_progress = None;
                 }
                 self.started |= status.started;
+                self.delivery.started |= status.started;
                 self.head_frame = self.head_frame.max(status.head_frame);
                 self.remote_next_sequence = self.remote_next_sequence.max(status.next_seq);
                 self.pause_active_sources &= status.active_sources;
+                self.note_silent(status.silent_sources);
+                if let Some(watch) = &mut self.watch
+                    && let Some(sample) = status.watch_sample
+                    && watch.samples.back().is_none_or(|last| last.0 < sample.0)
+                {
+                    if watch.samples.len() == WATCH_SAMPLES {
+                        watch.samples.pop_front();
+                    }
+                    watch.samples.push_back(sample);
+                }
             }
             OrderEvent::PauseStatus {
                 supported_sources,
@@ -961,20 +1172,9 @@ impl SequencedSession {
                 }
                 self.finish_pause_request();
             }
-            OrderEvent::PushState {
-                enabled,
-                next_sequence,
+            OrderEvent::Ack {
+                batch_id, frame, ..
             } => {
-                if next_sequence == 0 || next_sequence > self.next_sequence {
-                    return Err(SequencedError::InvalidTimeline);
-                }
-                self.push = if enabled {
-                    PushDelivery::Active
-                } else {
-                    PushDelivery::PullOnly
-                };
-            }
-            OrderEvent::Ack { batch_id, frame } => {
                 if batch_id == 0 {
                     return Err(SequencedError::InvalidTimeline);
                 }
@@ -991,8 +1191,9 @@ impl SequencedSession {
                         ..
                     } => {
                         // A returning process's own source in the stream is
-                        // the process it replaces.
-                        if *source == self.local_source && !self.restoring {
+                        // the process it replaces; a watcher's is the player
+                        // it follows.
+                        if *source == self.local_source && !self.restoring && self.watch.is_none() {
                             self.accept_through(*batch_id)?;
                             self.trace_assignment(*batch_id, *frame, received_at);
                         }
@@ -1004,7 +1205,8 @@ impl SequencedSession {
                     | OrderEntry::Rate { sequence, .. }
                     | OrderEntry::Desync { sequence, .. } => *sequence,
                 };
-                if sequence >= self.next_sequence && sequence - self.next_sequence < REORDER_WINDOW
+                if sequence >= self.next_sequence
+                    && sequence - self.next_sequence < self.reorder_window()
                 {
                     self.entries
                         .entry(sequence)
@@ -1015,32 +1217,27 @@ impl SequencedSession {
                 OrderError::NotConfigured => {
                     self.started = false;
                     self.last_control = None;
-                    self.push = PushDelivery::Probing { attempts: 0 };
-                    self.last_push_control = None;
-                    self.repair_gap_since = None;
                 }
                 OrderError::NotStarted | OrderError::Backpressure => {}
                 OrderError::BatchGap => {
                     let accepted = expected
                         .checked_sub(1)
                         .ok_or(SequencedError::InvalidTimeline)?;
-                    // Reordered submissions and retries of older accepted
-                    // IDs both return the relay's next expected ID. Its
-                    // authenticated prefix receipt never moves backwards.
+                    // The relay's authenticated prefix receipt never moves
+                    // backwards. It resets no batch: the session's RTO
+                    // resends them (spec §6.4).
                     self.accept_through(accepted)?;
-                    if expected > self.accepted_batch {
-                        for pending in &mut self.submissions {
-                            if pending.id >= expected {
-                                pending.last_sent = None;
-                            }
-                        }
-                    }
                 }
                 OrderError::HistoryGap => return Err(SequencedError::HistoryExpired),
+                // Only a match that never started: a restored session has not
+                // heard from the relay yet, and its match did start.
+                OrderError::Inactive if !self.delivery.started && !self.restoring => {
+                    return Err(SequencedError::StartCancelled);
+                }
                 OrderError::Inactive | OrderError::StorageUnavailable => {
                     return Err(SequencedError::Unavailable);
                 }
-                _ => return Err(SequencedError::InvalidTimeline),
+                refused => return Err(SequencedError::Refused(refused)),
             },
         }
         Ok(())
@@ -1075,7 +1272,13 @@ impl SequencedSession {
     /// half a second of frames: the Catching up status line.
     fn catching_up_frames(&self, current_frame: u32) -> Option<u32> {
         let frames = self.head_frame.saturating_sub(current_frame);
-        (frames > u32::from(self.pace_fps) / 2).then_some(frames)
+        // A watcher's frames come a pull or a second at a time and wait
+        // to be played evenly (`watch_turn`); only more than that is behind.
+        let waiting = match self.watch {
+            Some(_) => self.playout_turn(),
+            None => 0,
+        };
+        (frames > u32::from(self.pace_fps) / 2 + waiting).then_some(frames)
     }
 
     /// VERA: true once, when this game reaches a pause that found it
@@ -1097,7 +1300,7 @@ impl SequencedSession {
     }
 
     fn assemble(&mut self) -> Result<(), SequencedError> {
-        while self.frames.len() < BUFFERED_FRAMES {
+        while self.frames.len() < self.buffered_frames() {
             let Some(received) = self.entries.remove(&self.next_sequence) else {
                 break;
             };
@@ -1128,9 +1331,7 @@ impl SequencedSession {
                     if self.refused & 1 << source != 0 {
                         continue;
                     }
-                    let decoded = bytes
-                        .as_ref()
-                        .and_then(|bytes| decode_batch(bytes.as_bytes(), house, frame).ok());
+                    let decoded = decode_batch(&bytes, house, frame).ok();
                     let Some(records) = decoded else {
                         // VERA relay adaptation: every client reads the same
                         // ordered bytes, so each refuses the same batch. Its
@@ -1166,6 +1367,15 @@ impl SequencedSession {
                     }
                     let house =
                         self.houses[usize::from(source)].ok_or(SequencedError::InvalidTimeline)?;
+                    if let Some(watch) = &mut self.watch {
+                        watch.departed |= 1 << source;
+                    }
+                    // The relay ends a pause that its last player left with a
+                    // resume in that player's name (`retire`); the player
+                    // leaves in this frame, so nobody asked for it.
+                    self.assembling
+                        .pauses
+                        .retain(|change| change.house != house);
                     if self.refused & 1 << source != 0 {
                         // It already left at its refused batch.
                         continue;
@@ -1175,8 +1385,9 @@ impl SequencedSession {
                         // DestroyConnection(house, 1) (0x005DA750) sends
                         // EVENT_REMOVEPLAYER (0x005DA898..0x005DA8F0), which
                         // kills the House on every peer; each peer retires its
-                        // own connection and posts the line.
-                        if source != self.local_source {
+                        // own connection and posts the line. A watcher posts
+                        // the line of the player it follows too.
+                        if source != self.local_source || self.watch.is_some() {
                             self.assembling.lost.push(house);
                         }
                         CommandRecord::encode(
@@ -1233,6 +1444,7 @@ impl SequencedSession {
                         received_at,
                         frames_per_second: self.pace_fps,
                         clock_epoch: self.pause.epoch,
+                        turn_frames: self.playout_turn(),
                     });
                 }
                 OrderEntry::Pause {
@@ -1254,6 +1466,24 @@ impl SequencedSession {
                     self.pause.paused = paused;
                     self.pause.frame = frame;
                     self.pause.epoch = epoch;
+                    // VERA: another player's marker names them once the world
+                    // reaches it; gamemd's speed line likewise skips its own
+                    // sender (0x004C794B). A watcher names every player.
+                    if let Some(house) = self.houses[usize::from(source)]
+                        && (source != self.local_source || self.watch.is_some())
+                    {
+                        let change = MatchPauseChange { house, paused };
+                        if !paused {
+                            // The world runs on from the next frame.
+                            self.assembling.pauses.push(change);
+                        } else if let Some(last) = self.frames.back_mut() {
+                            // The world stops after `frame`, still queued.
+                            last.pauses.push(change);
+                        } else if !self.restoring {
+                            // `frame` has dispatched: the world is there.
+                            self.pause_changes.push(change);
+                        }
+                    }
                     // The authenticated sequencer only emits these markers
                     // after every active source advertises support. That is
                     // sufficient proof even if all of our status replies were
@@ -1268,6 +1498,7 @@ impl SequencedSession {
                             received_at: self.contiguous_received_at.expect("consumed resume"),
                             frames_per_second: self.pace_fps,
                             clock_epoch: epoch,
+                            turn_frames: self.playout_turn(),
                         });
                     }
                     self.finish_pause_request();
@@ -1300,6 +1531,7 @@ impl SequencedSession {
                         received_at: self.contiguous_received_at.expect("consumed rate marker"),
                         frames_per_second,
                         clock_epoch: self.pause.epoch,
+                        turn_frames: self.playout_turn(),
                     });
                 }
                 OrderEntry::Desync {
@@ -1352,6 +1584,57 @@ impl SequencedSession {
         }
     }
 
+    /// VERA: a player's STATUS names the sources its relay has not heard from
+    /// lately. One newly named is not responding; one no longer named is
+    /// back. A source any report so far showed gone is never named, even by
+    /// a late STATUS, and neither is this game's own player.
+    pub(super) fn note_silent(&mut self, silent: u32) {
+        let active = self.pause_active_sources;
+        let silent = silent & active & !(1 << self.local_source);
+        for (source, house) in self.houses.iter().enumerate() {
+            let bit = 1 << source;
+            let responding = if silent & !self.silent & bit != 0 {
+                false
+            } else if self.silent & !silent & active & bit != 0 {
+                true
+            } else {
+                continue;
+            };
+            if let Some(house) = *house {
+                self.connection_changes
+                    .push(MatchConnectionChange { house, responding });
+            }
+        }
+        self.silent = silent;
+    }
+
+    /// A watcher's world against the checksums every player reported alike,
+    /// once it has its own sample of their frames (relay README "Watchers").
+    fn check_watch_samples(&mut self, frame: u32) -> Result<(), SequencedError> {
+        let Some(watch) = &mut self.watch else {
+            return Ok(());
+        };
+        while let Some(&(sample_frame, remote)) = watch.samples.front()
+            && sample_frame <= frame
+        {
+            watch.samples.pop_front();
+            if let Some(&(_, local)) = self
+                .samples
+                .iter()
+                .rev()
+                .find(|(frame, _)| *frame == sample_frame)
+                && local != remote
+            {
+                return Err(SequencedError::WatchDesync {
+                    frame: sample_frame,
+                    local,
+                    remote,
+                });
+            }
+        }
+        Ok(())
+    }
+
     /// Service fresh input without another Logic visit. The current context
     /// is an already sampled post-Logic/pre-dispatch CRC, even when its frame
     /// has completed. It is historical metadata; only the relay assigns the
@@ -1388,9 +1671,10 @@ impl SequencedSession {
                 transport.set_ordering_restore(false);
             }
         }
-        if self.restoring {
-            // Orders given to a world still replaying the past are dropped
-            // here, the one boundary every local command crosses.
+        if self.restoring || self.watch.is_some() {
+            // Orders given to a world still replaying the past, or by a
+            // watcher, are dropped here, the one boundary every local
+            // command crosses.
             let records: Vec<_> = queues
                 .local_records_after(std::iter::empty())
                 .map_err(super::CommandExchangeError::from)?
@@ -1425,7 +1709,8 @@ impl SequencedSession {
                     .find(|(frame, _)| *frame + CHECKSUM_INTERVAL == context.frame)
                     .copied(),
             );
-            if transport.report_ordering_checksums(&reports).is_ok() {
+            reports.reverse();
+            if transport.queue_ordering_checksums(&reports).is_ok() {
                 self.sample_sent = Some(context.frame);
             }
         }
@@ -1444,6 +1729,9 @@ impl SequencedSession {
                 {
                     return Err(SequencedError::InvalidTimeline.into());
                 }
+                // A batch is the packet's command records alone: no version
+                // byte and no FRAME_INFO, which every reader rebuilds
+                // (bandwidth-compaction spec §4).
                 let encoded = EventPacketCodec::default()
                     .encode_packet(
                         &records,
@@ -1455,15 +1743,13 @@ impl SequencedSession {
                             delay: 0,
                         },
                         0,
-                        ORDERING_BATCH_CAPACITY - BATCH_HEADER,
+                        EVENT_PACKET_HEADER_LEN + ORDERING_BATCH_CAPACITY,
                     )
                     .map_err(super::CommandExchangeError::from)?;
                 if encoded.mirrors.is_empty() {
                     return Err(SequencedError::InvalidTimeline.into());
                 }
-                let mut bytes = Vec::with_capacity(ORDERING_BATCH_CAPACITY);
-                bytes.push(BATCH_VERSION);
-                bytes.extend(encoded.bytes);
+                let bytes = encoded.bytes[EVENT_PACKET_HEADER_LEN..].to_vec();
                 let next_batch = self
                     .next_batch
                     .checked_add(1)
@@ -1481,7 +1767,7 @@ impl SequencedSession {
                     id: self.next_batch,
                     records: encoded.mirrors,
                     bytes,
-                    last_sent: None,
+                    sealed: false,
                 });
                 self.next_batch = next_batch;
                 self.service(transport, now);
@@ -1543,6 +1829,7 @@ impl SequencedSession {
             }
             self.samples.push_back((context.frame, context.checksum));
         }
+        self.check_watch_samples(context.frame)?;
         self.flush_local_commands(transport, queues, context, now)?;
         if self
             .frames
@@ -1568,6 +1855,7 @@ impl SequencedSession {
         // A rejoining world replays the past without its lines.
         if !self.restoring {
             self.speed_changes.extend(frame.speed);
+            self.pause_changes.extend(frame.pauses);
         }
         self.current = Some((context, true));
         Ok(NetworkQueuePass::Dispatch)
@@ -1581,6 +1869,19 @@ fn gameplay_opcode(opcode: u8) -> bool {
     )
 }
 
+/// Frames that reach a watcher together at `fps`: what its relay releases
+/// at once (a second's mark when it holds the stream back, a turn when it
+/// does not; relay README "Watchers"), and two pulls' worth for the pull
+/// that brings them.
+fn watch_turn(fps: u16, delay_seconds: u32) -> u32 {
+    let released = if delay_seconds > 0 {
+        u32::from(fps)
+    } else {
+        vera20k_relay_protocol::turn_frames(fps)
+    };
+    released + 2 * (u32::from(fps) * WATCH_PULL_INTERVAL_MS / 1000).max(1)
+}
+
 fn roster_mask(houses: &[Option<i8>; 30]) -> u32 {
     houses
         .iter()
@@ -1589,18 +1890,25 @@ fn roster_mask(houses: &[Option<i8>; 30]) -> u32 {
         .fold(0, |m, (s, _)| m | (1 << s))
 }
 
+/// A batch's command records (bandwidth-compaction spec §4): the packet
+/// rebuilt with the FRAME_INFO of its source's `house`, its record's
+/// `frame` and zeros, then the unchanged `EventPacketCodec` decode.
 fn decode_batch(bytes: &[u8], house: i8, frame: u32) -> Result<Vec<CommandRecord>, SequencedError> {
-    if bytes.len() < BATCH_HEADER + 14
-        || bytes.len() > ORDERING_BATCH_CAPACITY
-        || bytes[0] != BATCH_VERSION
-    {
+    if bytes.is_empty() || bytes.len() > ORDERING_BATCH_CAPACITY {
         return Err(SequencedError::InvalidTimeline);
     }
-    let packet = &bytes[BATCH_HEADER..];
-    if decode_frame_info(packet).is_none_or(|info| info.house_id != house || info.event_frame != 0)
-    {
-        return Err(SequencedError::InvalidTimeline);
+    let header = FrameInfo {
+        house_id: house,
+        event_frame: i32::try_from(frame).map_err(|_| SequencedError::InvalidTimeline)?,
+        checksum: 0,
+        timing_word: 0,
+        delay: 0,
     }
+    .encode();
+    let mut packet = Vec::with_capacity(EVENT_PACKET_HEADER_LEN + bytes.len());
+    packet.extend_from_slice(&header.as_bytes()[..EVENT_PACKET_HEADER_LEN]);
+    packet.extend_from_slice(bytes);
+    let packet = packet.as_slice();
     let mut records = Vec::new();
     let mut invalid = false;
     let mut header = true;
@@ -1628,7 +1936,7 @@ fn decode_batch(bytes: &[u8], house: i8, frame: u32) -> Result<Vec<CommandRecord
     Ok(records)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 mod service_clock_tests {
     use super::service_due;
 
@@ -1643,7 +1951,7 @@ mod service_clock_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 mod desync_tests {
     use super::*;
 
@@ -1706,7 +2014,7 @@ mod desync_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 mod restore_tests {
     use super::*;
     use vera20k_relay_protocol::OrderStatus;
@@ -1720,7 +2028,70 @@ mod restore_tests {
             tick_hz: 30,
             start_delay_ms: 0,
             started: true,
+            feedback: Default::default(),
+            watch_sample: None,
+            silent_sources: 0,
         })
+    }
+
+    /// A relay that loses the match later does not unsay that it started.
+    #[test]
+    fn the_report_keeps_that_the_match_started() {
+        let mut houses = [None; 30];
+        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
+        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        assert!(!session.delivery_counters().started);
+        session.receive(status(1, 0), Instant::now()).unwrap();
+        let lost = OrderEvent::Error {
+            code: OrderError::NotConfigured,
+            expected: 0,
+        };
+        session.receive(lost, Instant::now()).unwrap();
+        assert!(!session.started());
+        assert!(session.delivery_counters().started);
+    }
+
+    /// A room closed before the start means a player left. The same refusal
+    /// later, or to a restored session, is the service losing the match.
+    #[test]
+    fn an_inactive_room_is_a_cancelled_start_only_before_the_match_started() {
+        let mut houses = [None; 30];
+        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
+        let session = || SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let inactive = || OrderEvent::Error {
+            code: OrderError::Inactive,
+            expected: 0,
+        };
+
+        let refused = session().receive(inactive(), Instant::now()).unwrap_err();
+        assert_eq!(refused.code(), "start_cancelled");
+        assert_eq!(refused.interruption(), NetworkInterruption::StartCancelled);
+
+        let mut started = session();
+        started.receive(status(1, 0), Instant::now()).unwrap();
+        let refused = started.receive(inactive(), Instant::now()).unwrap_err();
+        assert_eq!(refused.code(), "unavailable");
+        assert_eq!(
+            refused.interruption(),
+            NetworkInterruption::ConnectionFailed
+        );
+
+        let mut restored = session();
+        restored.begin_restore();
+        let refused = restored.receive(inactive(), Instant::now()).unwrap_err();
+        assert_eq!(refused.code(), "unavailable");
+    }
+
+    #[test]
+    fn only_differing_start_agreements_read_as_a_start_mismatch() {
+        assert_eq!(
+            SequencedError::Refused(OrderError::AgreementMismatch).interruption(),
+            NetworkInterruption::StartMismatch
+        );
+        assert_eq!(
+            SequencedError::Refused(OrderError::ModifiedRetry).interruption(),
+            NetworkInterruption::ConnectionFailed
+        );
     }
 
     /// The counter the departed process reached comes from the history: its
@@ -1751,7 +2122,7 @@ mod restore_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 mod stall_tests {
     use super::*;
 
@@ -1845,6 +2216,9 @@ mod stall_tests {
             tick_hz: 30,
             start_delay_ms: 0,
             started: true,
+            feedback: Default::default(),
+            watch_sample: None,
+            silent_sources: 0,
         };
         session
             .receive(OrderEvent::Status(status), Instant::now())
@@ -1853,7 +2227,7 @@ mod stall_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 mod delivery_counter_tests {
     use super::*;
 
@@ -1890,7 +2264,7 @@ mod delivery_counter_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 mod departure_tests {
     use super::*;
     use crate::sim::command::EXIT_OPCODE;
@@ -2000,6 +2374,9 @@ mod departure_tests {
             tick_hz: 30,
             start_delay_ms: 0,
             started: false,
+            feedback: Default::default(),
+            watch_sample: None,
+            silent_sources: 0,
         };
         session
             .receive(OrderEvent::Status(status), Instant::now())
@@ -2014,7 +2391,7 @@ mod departure_tests {
         ));
     }
 
-    /// A batch the payload key cannot open departs its sender in its frame
+    /// A batch that does not decode departs its sender in its frame
     /// instead of leaving a sequence gap that every pull repeats.
     #[test]
     fn an_unreadable_batch_departs_its_sender_in_its_frame() {
@@ -2031,7 +2408,7 @@ mod departure_tests {
                 frame: 2,
                 source: 1,
                 batch_id: 1,
-                bytes: None,
+                bytes: b"not a batch".to_vec(),
             },
             OrderEntry::FrameEnd {
                 sequence: 3,
@@ -2074,12 +2451,14 @@ mod departure_tests {
             replies
                 .unwrap()
                 .into_iter()
-                .flat_map(|reply| match client.receive(&reply.bytes).unwrap() {
-                    ServerEvent::Ordering(event) => vec![Ok(event)],
-                    ServerEvent::OrderingPack(events) => events.into_iter().map(Ok).collect(),
-                    ServerEvent::Challenge(cookie) => vec![Err(cookie.to_vec())],
-                    _ => Vec::new(),
-                })
+                .flat_map(
+                    |reply| match client.receive_at(&reply.bytes, now_ms).unwrap() {
+                        ServerEvent::Ordering(event) => vec![Ok(event)],
+                        ServerEvent::OrderingPack(events) => events.into_iter().map(Ok).collect(),
+                        ServerEvent::Challenge(cookie) => vec![Err(cookie.to_vec())],
+                        _ => Vec::new(),
+                    },
+                )
                 .collect::<Vec<_>>()
         };
         let certificate = OrderingCertificate {
@@ -2109,30 +2488,40 @@ mod departure_tests {
             .collect();
         let mut bytes = Vec::new();
         for client in &mut clients {
-            client.probe(&mut bytes).unwrap();
+            client.probe_at(0, &mut bytes).unwrap();
             let [Err(cookie)] = &events(client, &bytes, 0)[..] else {
                 panic!("challenge");
             };
-            client.confirm(&cookie.clone(), &mut bytes).unwrap();
+            client.confirm_at(&cookie.clone(), 0, &mut bytes).unwrap();
             events(client, &bytes, 0);
             client
-                .configure_ordering(&certificate, [7; 32], &mut bytes)
+                .configure_ordering_at(&certificate, [7; 32], 0, &mut bytes)
                 .unwrap();
             events(client, &bytes, 0);
         }
-        for batch_id in 1..=2 {
-            clients[1]
-                .submit_ordering(batch_id, b"not a batch", &mut bytes)
+        // The start is due 200 ms after both were ready; the next
+        // READY_REQUEST's STATUS reports it.
+        for client in &mut clients {
+            client
+                .configure_ordering_at(&certificate, [7; 32], 300, &mut bytes)
                 .unwrap();
-            events(&mut clients[1], &bytes, 0);
+            events(client, &bytes, 300);
         }
-        clients[1].leave_ordering(&mut bytes).unwrap();
-        events(&mut clients[1], &bytes, 100);
-        clients[0].pull_ordering(1, &mut bytes).unwrap();
+        for batch_id in 1..=2 {
+            assert_eq!(
+                clients[1].seal_ordering_batch(b"not a batch").unwrap(),
+                batch_id
+            );
+            assert!(clients[1].poll_uplink(300 + batch_id, &mut bytes));
+            events(&mut clients[1], &bytes, 300 + batch_id);
+        }
+        clients[1].leave_ordering_at(400, &mut bytes).unwrap();
+        events(&mut clients[1], &bytes, 400);
+        clients[0].pull_ordering_at(1, 700, &mut bytes).unwrap();
         let mut houses = [None; 30];
         houses[..2].copy_from_slice(&[Some(0), Some(1)]);
         let mut session = SequencedSession::with_roster(houses, 0, [7; 32], 30);
-        for event in events(&mut clients[0], &bytes, 400) {
+        for event in events(&mut clients[0], &bytes, 700) {
             if let Ok(event @ OrderEvent::Entry(_)) = event {
                 session.receive(event, Instant::now()).unwrap();
             }
@@ -2149,7 +2538,7 @@ mod departure_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 mod pace_tests {
     use super::*;
 
@@ -2229,6 +2618,251 @@ mod pace_tests {
         assert!(matches!(
             session.assemble(),
             Err(SequencedError::InvalidTimeline)
+        ));
+    }
+
+    /// VERA: another player's pause names them with the frame it follows, or
+    /// at once when that frame has dispatched, and a resume with the next
+    /// frame. This game's own pause names nobody, nor does a resume whose
+    /// player leaves in the next frame (the relay's own, for a pause every
+    /// player left).
+    #[test]
+    fn another_players_pause_names_them_when_the_world_reaches_it() {
+        let mut houses = [None; 30];
+        houses[..2].copy_from_slice(&[Some(0), Some(4)]);
+        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let pause = |sequence, frame, epoch, paused, source| OrderEntry::Pause {
+            sequence,
+            frame,
+            epoch,
+            paused,
+            source,
+        };
+        let frame_end = |sequence, frame| OrderEntry::FrameEnd { sequence, frame };
+        let by = |paused| MatchPauseChange { house: 4, paused };
+        let receive = |session: &mut SequencedSession, entries: Vec<OrderEntry>| {
+            for entry in entries {
+                session
+                    .receive(OrderEvent::Entry(entry), Instant::now())
+                    .unwrap();
+            }
+            session.assemble().unwrap();
+        };
+        receive(
+            &mut session,
+            vec![
+                frame_end(1, 1),
+                pause(2, 1, 1, true, 1),
+                pause(3, 1, 2, false, 1),
+                frame_end(4, 2),
+            ],
+        );
+        let named: Vec<_> = session
+            .frames
+            .iter()
+            .map(|frame| frame.pauses.clone())
+            .collect();
+        assert_eq!(named, [vec![by(true)], vec![by(false)]]);
+        // Both frames have dispatched: the world is already where the next
+        // pause stops it.
+        session.frames.clear();
+        receive(&mut session, vec![pause(5, 2, 3, true, 1)]);
+        assert_eq!(session.take_pause_changes(), [by(true)]);
+        receive(
+            &mut session,
+            vec![
+                pause(6, 2, 4, false, 1),
+                frame_end(7, 3),
+                pause(8, 3, 5, true, 0),
+            ],
+        );
+        let named: Vec<_> = session
+            .frames
+            .iter()
+            .map(|frame| frame.pauses.clone())
+            .collect();
+        assert_eq!(named, [vec![by(false)]]);
+        assert!(session.take_pause_changes().is_empty());
+        // A resume by a player who leaves in the next frame names nobody:
+        // the relay's own resume for a pause every player left, which only
+        // watchers read, comes this way.
+        session.frames.clear();
+        receive(
+            &mut session,
+            vec![
+                pause(9, 3, 6, false, 1),
+                OrderEntry::Departure {
+                    sequence: 10,
+                    frame: 4,
+                    source: 1,
+                    lost: false,
+                },
+                frame_end(11, 4),
+            ],
+        );
+        assert_eq!(session.frames.len(), 1);
+        assert!(session.frames[0].pauses.is_empty());
+    }
+
+    /// VERA: a player the relay stops hearing is named once, and once more
+    /// when it hears them again; one who left while silent is not back, nor
+    /// named again by a late STATUS, and this game's own player is never
+    /// named.
+    #[test]
+    fn another_player_the_relay_stops_hearing_is_named_until_heard_again() {
+        use vera20k_relay_protocol::OrderStatus;
+        let mut houses = [None; 30];
+        houses[..3].copy_from_slice(&[Some(0), Some(4), Some(7)]);
+        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let status = |session: &mut SequencedSession, silent_sources: u32, active_sources: u32| {
+            let status = OrderStatus {
+                head_frame: 0,
+                oldest_seq: 1,
+                next_seq: 1,
+                active_sources,
+                tick_hz: 30,
+                start_delay_ms: 0,
+                started: true,
+                feedback: Default::default(),
+                watch_sample: None,
+                silent_sources,
+            };
+            session
+                .receive(OrderEvent::Status(status), Instant::now())
+                .unwrap();
+            session.take_connection_changes()
+        };
+        let named = |house, responding| MatchConnectionChange { house, responding };
+        assert_eq!(status(&mut session, 0b011, 0b111), [named(4, false)]);
+        assert!(status(&mut session, 0b011, 0b111).is_empty());
+        assert_eq!(
+            status(&mut session, 0b100, 0b111),
+            [named(4, true), named(7, false)]
+        );
+        assert!(status(&mut session, 0, 0b011).is_empty());
+        assert!(status(&mut session, 0b100, 0b111).is_empty());
+    }
+}
+
+#[cfg(all(test, tests_net))]
+mod watch_tests {
+    use super::*;
+    use vera20k_relay_protocol::OrderStatus;
+
+    fn watcher(houses: [Option<i8>; 30]) -> SequencedSession {
+        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        session.watch = Some(Watch {
+            delay_seconds: 120,
+            samples: VecDeque::new(),
+            departed: 0,
+        });
+        session.mark_started_for_test();
+        session
+    }
+
+    /// A watcher stands in the place of the player it follows: that
+    /// player's batches are the stream's like any other's, its loss gets a
+    /// line, and the match is over once every player left and their frames
+    /// ran.
+    #[test]
+    fn a_watcher_reads_its_players_stream_to_the_end() {
+        let mut houses = [None; 30];
+        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
+        let batch = || {
+            OrderEvent::Entry(OrderEntry::Batch {
+                sequence: 1,
+                frame: 1,
+                source: 0,
+                batch_id: 1,
+                bytes: vec![0],
+            })
+        };
+        let mut player = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        assert!(player.receive(batch(), Instant::now()).is_err());
+        assert!(watcher(houses).receive(batch(), Instant::now()).is_ok());
+
+        let mut session = watcher(houses);
+        let departure = |sequence, source, lost| {
+            OrderEvent::Entry(OrderEntry::Departure {
+                sequence,
+                frame: 1,
+                source,
+                lost,
+            })
+        };
+        for event in [
+            departure(1, 1, false),
+            departure(2, 0, true),
+            OrderEvent::Entry(OrderEntry::FrameEnd {
+                sequence: 3,
+                frame: 1,
+            }),
+        ] {
+            session.receive(event, Instant::now()).unwrap();
+        }
+        session.assemble().unwrap();
+        assert_eq!(
+            session.frames.back().map(|frame| &frame.lost[..]),
+            Some(&[0][..])
+        );
+        assert!(!session.watch_over());
+        session.frames.clear();
+        assert!(session.watch_over());
+    }
+
+    /// A watcher keeps every frame it reads however far its world is behind,
+    /// so it has read a match before the relay forgets it.
+    #[test]
+    fn a_watcher_keeps_every_frame_it_reads() {
+        let mut houses = [None; 30];
+        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
+        let mut session = watcher(houses);
+        for frame in 1..=600 {
+            let end = OrderEntry::FrameEnd {
+                sequence: u64::from(frame),
+                frame,
+            };
+            session
+                .receive(OrderEvent::Entry(end), Instant::now())
+                .unwrap();
+        }
+        session.assemble().unwrap();
+        assert_eq!(session.frames.len(), 600);
+    }
+
+    /// A watcher's world is checked against each checksum every player
+    /// reported alike once it has its own of that frame; a difference ends
+    /// the watch, an equal one or a frame not reached yet does not.
+    #[test]
+    fn a_watcher_stops_where_its_world_differs_from_the_players() {
+        let mut houses = [None; 30];
+        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
+        let mut session = watcher(houses);
+        let status = |sample| {
+            OrderEvent::Status(OrderStatus {
+                head_frame: 600,
+                oldest_seq: 1,
+                next_seq: 1,
+                active_sources: 3,
+                tick_hz: 30,
+                start_delay_ms: 0,
+                started: true,
+                feedback: Default::default(),
+                watch_sample: Some(sample),
+                silent_sources: 0,
+            })
+        };
+        session.receive(status((240, 7)), Instant::now()).unwrap();
+        session.receive(status((480, 9)), Instant::now()).unwrap();
+        session.samples.extend([(240, 7), (480, 8)]);
+        session.check_watch_samples(300).unwrap();
+        assert!(matches!(
+            session.check_watch_samples(480),
+            Err(SequencedError::WatchDesync {
+                frame: 480,
+                local: 8,
+                remote: 9
+            })
         ));
     }
 }

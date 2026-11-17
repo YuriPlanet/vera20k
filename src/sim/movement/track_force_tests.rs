@@ -118,6 +118,15 @@ fn owner_state(entity: &GameEntity, exclude_bunker_speed_write: bool) -> Value {
             .unwrap()
             .remove("applied_fraction");
     }
+    // Ares TechnoExt AltOccupation (hooks 0x007441B6/0x00744216) is outside
+    // the native Unit these rows describe.
+    if let Some(ares) = value
+        .get_mut("seldom")
+        .and_then(|seldom| seldom.get_mut("ares"))
+        .and_then(Value::as_object_mut)
+    {
+        ares.remove("ares_alt_occupation");
+    }
     value
 }
 
@@ -304,7 +313,7 @@ fn bunker_dispatch_matches_separate_native_force_then_owner_speed_write() {
         building.set_owner_for_test(sim.intern("Americans"));
         building.set_type_ref_for_test(sim.intern("NATBNK"));
         building.position.put_location(supplied(case));
-        building.bunker_runtime = Some({
+        building.building.bunker_runtime = Some({
             let mut runtime = BunkerRuntime::idle();
             runtime.set_state_for_test(BunkerState::TurnToBuilding);
             runtime
@@ -331,6 +340,7 @@ fn bunker_dispatch_matches_separate_native_force_then_owner_speed_write() {
                 .entities
                 .get(2)
                 .unwrap()
+                .building
                 .bunker_runtime
                 .unwrap()
                 .state(),

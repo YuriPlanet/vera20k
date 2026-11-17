@@ -43,7 +43,7 @@ impl QuitCascade {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use std::time::Duration;

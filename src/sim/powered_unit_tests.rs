@@ -33,7 +33,8 @@ fn spark_rules() -> RuleSet {
 /// `UnitClass::AI`'s spark block (`0x007360C9..0x007361A4`) through
 /// [`Simulation::deactivated_unit_sparks`]: the phase over the Location, the
 /// Frame and the ID, the two Scenario draws (Y, then X) and the system's
-/// constructor arguments.
+/// constructor arguments. Ares hook736135 adds an IsPowered veto to this
+/// stock block (`powered_by_tests`), which these untyped rows would hit.
 #[test]
 fn offline_sparks_match_original_execution() {
     let vectors: serde_json::Value =
@@ -164,6 +165,14 @@ fn retail_rules_read_the_robot_keys() {
 /// computer `Russians`.
 fn arena(rules: &RuleSet) -> (Simulation, PathGrid) {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x0050_E0E0);
+    // A loaded match always has an overlay grid, and a Spark particle's
+    // collision query reads it: without one every spark is refused and
+    // retired at once, so an offline tank's spark system is never seen.
+    let (width, height) = {
+        let terrain = sim.resolved_terrain.as_ref().expect("arena terrain");
+        (terrain.width(), terrain.height())
+    };
+    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(width, height));
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     sim.session
@@ -467,6 +476,7 @@ fn a_captured_center_counts_for_its_captor_only_at_its_next_edge() {
             .entities
             .get(center)
             .unwrap()
+            .building
             .building_last_operational
             .is_operational()
     };
@@ -736,6 +746,7 @@ fn robot_tank_state_is_saved_and_hashed() {
         .entities
         .get_mut(center)
         .unwrap()
+        .building
         .building_powered_center
         .set_for_test(true);
     seen.push(sim.state_hash());
@@ -762,9 +773,97 @@ fn robot_tank_state_is_saved_and_hashed() {
             .entities
             .get(center)
             .unwrap()
+            .building
             .building_powered_center
             .is_counted()
     );
     assert!(restored.has_powered_center(house));
     assert_eq!(restored.state_hash(), sim.state_hash());
+}
+
+/// Ares InfantryClass_UpdatePanic1004CC80 (hook5200B3) and Scatter1004CC60
+/// (hook51D0DD): a Deactivated infantryman's fear only counts down, even a
+/// Fearless one's, and a forced Scatter leaves it standing.
+#[test]
+fn ares_deactivated_infantry_only_counts_fear_down_and_never_scatters() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    use crate::sim::movement::ScatterFlags;
+    let ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[InfantryTypes]\n0=BRAVE\n[BRAVE]\nStrength=100\nSpeed=4\nFearless=yes\n",
+    );
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 5);
+    sim.intern_rule_type_ids(&rules);
+    let offline = sim
+        .spawn_object("BRAVE", "Russians", 10, 10, 0, &rules)
+        .unwrap();
+    let online = sim
+        .spawn_object("BRAVE", "Russians", 20, 20, 0, &rules)
+        .unwrap();
+    sim.resolve_type_handles(&rules);
+    for id in [offline, online] {
+        // A standing (Doing 0) infantryman, which a forced Scatter admits.
+        sim.substrate.entities.get_mut(id).unwrap().mission_leaf =
+            crate::sim::mission::leaf::MissionLeafState::infantry_raw_for_test(0, 0);
+    }
+    let entity = sim.substrate.entities.get_mut(offline).unwrap();
+    entity.infantry.as_mut().unwrap().set_fear_level_for_test(3);
+    entity.deactivated.set_for_test(true);
+    assert!(
+        !sim.infantry_fear_turn(offline, &rules, None, FrameEffects::default())
+            .unwrap()
+    );
+    let fear = |sim: &Simulation| {
+        sim.substrate
+            .entities
+            .get(offline)
+            .unwrap()
+            .infantry
+            .as_ref()
+            .unwrap()
+            .fear_level()
+    };
+    assert_eq!(fear(&sim), 2);
+    // An admitted null-coordinate Scatter draws its fallback direction.
+    let draws = |sim: &mut Simulation, id| {
+        let before = sim.scenario_rng.logical_state();
+        sim.scatter(
+            id,
+            None,
+            ScatterFlags::new(true, false),
+            &rules,
+            None,
+            FrameEffects::default(),
+        )
+        .unwrap();
+        sim.scenario_rng.logical_state() != before
+    };
+    assert!(draws(&mut sim, online), "an active one scatters");
+    assert!(!draws(&mut sim, offline));
+}
+
+/// Ares Deactivate `1004CDC0` (hook `0x70FC90`) plays `DeactivateSound=`
+/// only while IKnowWhatImDoing (`0xA8E7AC`, VERA's object placement scope)
+/// is clear; stock `0x0070FC90` has no such test.
+#[test]
+fn deactivate_sound_waits_for_the_ares_placement_mutex() {
+    let Some(rules) = retail_rules() else {
+        return;
+    };
+    let (mut sim, _grid) = arena(&rules);
+    let tanks = [
+        spawn(&mut sim, &rules, "ROBO", "Americans", 12, 14),
+        spawn(&mut sim, &rules, "ROBO", "Americans", 15, 14),
+    ];
+    sim.sound_events.take_for_test();
+    sim.with_object_placement_scope(|sim| {
+        sim.techno_deactivate(tanks[0], &rules, FrameEffects::default())
+    });
+    sim.techno_deactivate(tanks[1], &rules, FrameEffects::default());
+    let events = sim.sound_events.take_for_test();
+    assert!(tanks.iter().all(|&id| offline(&sim, id)));
+    assert_eq!(
+        sounds(&events, "RobotTankOffline"),
+        if rules.ares() { 1 } else { 2 }
+    );
 }

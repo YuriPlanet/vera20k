@@ -127,21 +127,18 @@ impl TerrainPixels {
     }
 }
 
-pub(crate) fn minimap_overlay_datum(
-    rx: u16,
-    ry: u16,
+/// The kind of overlay `overlay_id` is, for the minimap and for VERA's map
+/// pictures' ore and gem marks (`app::map_picture`). Only Ore against Gem
+/// reads the stock three-character name family.
+pub(crate) fn overlay_classification(
     overlay_id: u8,
-    frame: u8,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    rules: Option<&RuleSet>,
-) -> MinimapOverlayDatum {
+) -> OverlayClassification {
     let flags = overlay_registry.and_then(|registry| registry.flags(overlay_id));
-    let name = overlay_registry
-        .and_then(|registry| registry.name(overlay_id))
-        .unwrap_or("");
-    let is_tiberium = flags.is_some_and(|flags| flags.tiberium);
-    let has_cell_anim = flags.is_some_and(|flags| flags.cell_anim.is_some());
-    let classification = if is_tiberium {
+    if flags.is_some_and(|flags| flags.tiberium) {
+        let name = overlay_registry
+            .and_then(|registry| registry.name(overlay_id))
+            .unwrap_or("");
         if name
             .get(..3)
             .is_some_and(|prefix| prefix.eq_ignore_ascii_case("GEM"))
@@ -156,12 +153,32 @@ pub(crate) fn minimap_overlay_datum(
         OverlayClassification::Bridge
     } else {
         OverlayClassification::Other
-    };
+    }
+}
+
+pub(crate) fn minimap_overlay_datum(
+    rx: u16,
+    ry: u16,
+    overlay_id: u8,
+    frame: u8,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    rules: Option<&RuleSet>,
+) -> MinimapOverlayDatum {
+    let flags = overlay_registry.and_then(|registry| registry.flags(overlay_id));
+    let is_tiberium = flags.is_some_and(|flags| flags.tiberium);
+    let has_cell_anim = flags.is_some_and(|flags| flags.cell_anim.is_some());
+    let classification = overlay_classification(overlay_id, overlay_registry);
     let has_tiberium_type = is_tiberium
         && overlay_registry
             .zip(rules)
             .and_then(|(registry, rules)| {
-                registry.tiberium_type_for_overlay(&rules.tiberium_types, overlay_id)
+                match registry.tiberium_type_for_overlay(&rules.tiberium_types, overlay_id) {
+                    Ok(class) => class,
+                    Err(error) => {
+                        log::warn!("Cannot classify radar Tiberium at ({rx},{ry}): {error}");
+                        None
+                    }
+                }
             })
             .is_some();
     MinimapOverlayDatum {
@@ -176,18 +193,6 @@ pub(crate) fn minimap_overlay_datum(
             has_tiberium_type,
         },
     }
-}
-
-/// One generated-primary terrain pixel plus the exact cell gamemd queries for
-/// shroud/fog when `RenderCellPixel @ 0x00655C50` refreshes that pixel.
-#[derive(Clone, Copy)]
-pub(super) struct RadarSurfacePixel {
-    pub rx: u16,
-    pub ry: u16,
-    pub px: u32,
-    pub py: u32,
-    pub packed_rgb565: u16,
-    pub color: [u8; 4],
 }
 
 /// Compute the minimap color for a terrain cell.
@@ -401,12 +406,10 @@ pub(super) fn cell_visibility_color(
     fog: &FogState,
     pixel: &TerrainPixel,
 ) -> Option<[u8; 4]> {
-    // Hostile gap generator: terrain renders black like unexplored shroud.
-    // Checked before fog so black wins over half-bright on overlap (native order).
-    if fog.is_cell_gap_covered(local_owner, pixel.rx, pixel.ry) {
-        return Some(COLOR_SHROUD);
-    }
-    // Friendly (own/allied) gap generator: half-bright fog over the terrain.
+    // RenderCellPixel @ 0x00655E7E: IsFogged (an own or allied gap
+    // generator, Cell+13C) half-brightens before the shroud test blackens,
+    // so it wins where a hostile gap generator overlaps. A hostile gap's
+    // cover clears the revealed bit, which the shroud test reads.
     if fog.is_cell_gap_fog(local_owner, pixel.rx, pixel.ry) {
         return Some(dim_color(pixel.color, 0.5));
     }
@@ -467,6 +470,16 @@ pub(super) fn minimap_entity_visible(
     ) || fog.is_cell_revealed(local_owner, pos.rx(), pos.ry())
 }
 
+/// The live ally table of a world whose graph is `graph` (test helper).
+#[cfg(test)]
+pub(super) fn test_alliances(
+    graph: crate::map::houses::HouseAllianceMap,
+) -> crate::sim::house_diplomacy::HouseAlliances {
+    let mut sim = crate::sim::world::Simulation::new();
+    *sim.house_alliances_mut_for_test() = graph;
+    sim.house_alliances().clone()
+}
+
 /// Default minimap screen rectangle (bottom-left corner with margin).
 pub fn default_minimap_rect(screen_h: f32) -> (f32, f32, f32, f32) {
     let mm_w = MINIMAP_WIDTH as f32;
@@ -476,22 +489,7 @@ pub fn default_minimap_rect(screen_h: f32) -> (f32, f32, f32, f32) {
     (mm_x, mm_y, mm_w, mm_h)
 }
 
-pub(super) fn surface_visibility_color(
-    local_owner: InternedId,
-    fog: &FogState,
-    pixel: &RadarSurfacePixel,
-) -> Option<[u8; 4]> {
-    if fog.is_cell_gap_covered(local_owner, pixel.rx, pixel.ry) {
-        return Some(COLOR_SHROUD);
-    }
-    if fog.is_cell_gap_fog(local_owner, pixel.rx, pixel.ry) {
-        return Some(super::terrain::half_bright_rgb565(pixel.packed_rgb565));
-    }
-    fog.is_cell_revealed(local_owner, pixel.rx, pixel.ry)
-        .then_some(pixel.color)
-}
-
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod terrain_pixel_tests {
     use super::*;
 
@@ -525,7 +523,7 @@ mod terrain_pixel_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod radar_color_tests {
     use super::*;
     use crate::map::terrain::TerrainCell;

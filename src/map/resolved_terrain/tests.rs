@@ -226,6 +226,7 @@ fn scenario_land_speed_rows_survive_nonempty_and_empty_grid_construction() {
     for cells in [
         Vec::new(),
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 0,
             ry: 0,
             tile_index: 0,
@@ -259,6 +260,142 @@ fn scenario_land_speed_rows_survive_nonempty_and_empty_grid_construction() {
     }
 }
 
+#[test]
+fn fractional_retail_land_row_reaches_rhino_entry_and_drive() {
+    use crate::sim::movement::infantry_entry::{EntryQueryMode, InfantryEntryArgs};
+    use crate::sim::movement::track_process::TrackFamily;
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &IniFile::from_str("[Clear]\nTrack=0.5%\nWheel=1.00001%\n"),
+    ) else {
+        return;
+    };
+    let rules = &retail.rules;
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE")
+        .expect("retail temperate theater");
+    let mut map = make_map(
+        vec![
+            MapCell {
+                legacy_ice_byte: 0,
+                rx: 12,
+                ry: 12,
+                tile_index: 0,
+                sub_tile: 0,
+                z: 0,
+            },
+            MapCell {
+                legacy_ice_byte: 0,
+                rx: 13,
+                ry: 12,
+                tile_index: 0,
+                sub_tile: 0,
+                z: 0,
+            },
+        ],
+        Vec::new(),
+        Vec::new(),
+    );
+    map.header.width = 16;
+    map.header.height = 16;
+    map.header.local_width = 16;
+    map.header.local_height = 16;
+    let bounds = crate::sim::cell_rect::PlayfieldBounds::from_map_header(&map.header);
+    let mut variants = crate::map::tile_variant_selector::TileVariantSelectorCache::default();
+    let mut raw_draw = || 0;
+    let mut selector = variants.begin_load(&mut raw_draw);
+    let mut fill = |low, _high| low;
+    let terrain = ResolvedTerrainGrid::build_with_variant_selector(
+        &map,
+        Some(&theater),
+        Some(&assets),
+        Some(&rules.terrain_rules),
+        Some(rules.overlay_registry()),
+        None,
+        false,
+        rules.general.cliff_back_impassability,
+        &mut fill,
+        &mut selector,
+    );
+    let cells = NativeCellQuery::canonical(&terrain);
+    assert!(crate::sim::cell_rect::retained_cell_is_in_playfield(
+        cells.lookup((13, 12)),
+        Some(bounds),
+        &cells
+    ));
+    assert_eq!(terrain.cell(13, 12).unwrap().zone_type, zone_class::GROUND);
+    let mut sim = crate::sim::arena_fixture::rival_arena(rules, 29);
+    sim.intern_rule_type_ids(rules);
+    sim.resolve_type_handles(rules);
+    sim.install_bridge_runtime(
+        crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain_with_map_size(
+            &terrain,
+            true,
+            rules.bridge_rules.strength,
+            (map.header.width as i32, map.header.height as i32),
+        ),
+    );
+    sim.install_resolved_terrain_for_new_map(terrain);
+    sim.install_playfield_from_map_header(&map.header);
+    sim.session.set_map_width_for_test(map.header.width as u16);
+    sim.session
+        .set_map_height_for_test(map.header.height as u16);
+    assert!(sim.rebuild_dynamic_navigation(rules));
+    let tank = sim
+        .spawn_object_with_overlay_registry(
+            "HTNK",
+            "Russians",
+            12,
+            12,
+            64,
+            rules,
+            rules.overlay_registry(),
+        )
+        .expect("Rhino enters the fractional Clear row");
+    assert_eq!(
+        sim.mover_can_enter(
+            tank,
+            (13, 12),
+            InfantryEntryArgs::REPAIR,
+            EntryQueryMode::CheckLocomotor,
+            rules,
+            Some(rules.overlay_registry())
+        )
+        .unwrap(),
+        0
+    );
+    assert!(sim.set_unit_destination(
+        tank,
+        crate::sim::components::NavTargetRef::cell(13, 12),
+        rules,
+        true,
+        crate::sim::world::FrameEffects::default()
+    ));
+    sim.session.set_binary_frame_for_test(101);
+    sim.entities_mut_for_test()
+        .get_mut(tank)
+        .unwrap()
+        .mission_leaf
+        .set_foot_idle_entry_latch(0);
+    let grid = sim.path_grid().cloned();
+    sim.process_ground_locomotor_for_test(tank, Some(rules), grid.as_ref(), None)
+        .unwrap();
+    let tank = sim.entities().get(tank).unwrap();
+    let value = tank
+        .locomotor
+        .as_ref()
+        .unwrap()
+        .track_target_fraction_native(TrackFamily::Drive)
+        .unwrap();
+    let value = f64::from_bits(value.bits());
+    assert!(
+        value > 0.0 && value < 0.01,
+        "fractional land value must reach Drive, got {value}"
+    );
+}
+
 /// The production builder binds the scenario registry's `Wall=` and
 /// `Crushable=` for every overlay identity, on empty and nonempty grids, so
 /// `0x004834A0` reads retail sandbags as a crushable wall.
@@ -273,6 +410,7 @@ fn scenario_overlay_wall_flags_bind_with_the_grid() {
     for cells in [
         Vec::new(),
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 0,
             ry: 0,
             tile_index: 0,
@@ -323,14 +461,14 @@ fn retail_clear_test_rows_are_the_retail_scenario_clear_row() {
     };
     assert_eq!(
         clear(&test_retail_clear_rules()),
-        TEST_RETAIL_CLEAR_SPEED_COSTS
+        test_retail_clear_speed_costs()
     );
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
     };
     assert_eq!(
         clear(&retail.rules.terrain_rules),
-        TEST_RETAIL_CLEAR_SPEED_COSTS
+        test_retail_clear_speed_costs()
     );
 }
 
@@ -476,7 +614,7 @@ fn gsi_04_01_production_size_diamond_closes_exact_capacity_edge() {
         rejected
             .native_allocated
             .as_ref()
-            .is_some_and(Vec::is_empty)
+            .is_some_and(|v| v.is_empty())
     );
     assert_eq!(rejected_stats.fill_calls, 0);
     assert!(rejected.cell(0, 0).is_none());
@@ -492,6 +630,7 @@ fn gsi_04_01_smaller_production_load_replaces_larger_grid_without_stale_state() 
     let mut cache = crate::map::tile_variant_selector::TileVariantSelectorCache::default();
     let mut larger = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 4,
             ry: 8,
             tile_index: theater::NO_TILE,
@@ -676,6 +815,7 @@ fn native_tmp_catalog_covers_unused_pristine_types_and_live_subtile_replacements
     );
     let map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 1,
             ry: 1,
             tile_index: 0,
@@ -754,6 +894,7 @@ fn projectile_level_uses_loaded_theater_interval_through_runtime() {
     for (tile, semantic_water, admit) in [(0, true, true), (1, false, false)] {
         let map = make_map(
             vec![MapCell {
+                legacy_ice_byte: 0,
                 rx: 3,
                 ry: 3,
                 tile_index: tile,
@@ -905,6 +1046,7 @@ fn gsi_04_02_last_tiles_pack_materialization_precedes_tmp_lat_and_final_state() 
     assert_eq!(theater.lookup.total_file_count(8), 2);
     let mut map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 3,
             ry: 2,
             tile_index: 5,
@@ -984,6 +1126,7 @@ fn gsi_04_02_last_tiles_provenance_gates_both_materialization_paths() {
     let theater = gsi_04_02_last_tiles_theater();
     let mut pack = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 2,
             ry: 2,
             tile_index: 5,
@@ -1087,6 +1230,7 @@ fn gsi_04_02_last_tiles_does_not_translate_fill_or_dummy_only_pack_misses() {
     let theater = gsi_04_02_last_tiles_theater();
     let mut map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 99,
             ry: 99,
             tile_index: 5,
@@ -1192,6 +1336,7 @@ fn gsi_04_01_isomap_misses_stamp_raw_coord_without_payload_leak() {
     let mut map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 2,
                 ry: 1,
                 tile_index: 41,
@@ -1199,6 +1344,7 @@ fn gsi_04_01_isomap_misses_stamp_raw_coord_without_payload_leak() {
                 z: 5,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 3,
                 ry: 1,
                 tile_index: 99,
@@ -1264,6 +1410,7 @@ fn gsi_04_01_isomap_misses_stamp_raw_coord_without_payload_leak() {
 fn gsi_04_01_valid_isomap_lookup_does_not_stamp_dummy() {
     let mut map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 2,
             ry: 1,
             tile_index: 41,
@@ -1483,6 +1630,7 @@ fn authored_fill_defers_all_executable_projection() {
     assert_eq!(theater.lookup.total_file_count(0), 2);
     let mut map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 2,
             ry: 3,
             tile_index: 0,
@@ -1752,6 +1900,7 @@ fn gsi_04_01_production_overlaypack_stamps_two_anchors_in_row_major_order() {
 fn gsi_04_12_generated_materialized_overlays_never_replay_fixed_map_mark() {
     let map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 4,
             ry: 4,
             tile_index: 0,
@@ -1828,6 +1977,7 @@ fn gsi_04_03a_level_prefill_wraps_before_absolute_last_isomap_overwrite() {
     let mut map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 2,
                 ry: 2,
                 tile_index: 98,
@@ -1835,6 +1985,7 @@ fn gsi_04_03a_level_prefill_wraps_before_absolute_last_isomap_overwrite() {
                 z: 5,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 2,
                 ry: 2,
                 tile_index: 99,
@@ -1958,6 +2109,7 @@ fn gsi_04_02_clear_and_unknown_fill_zero_with_equal_scenario_bounds() {
 fn gsi_04_02_production_build_prefills_before_selector_and_skips_outside_slots() {
     let mut map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 2,
             ry: 2,
             tile_index: theater::NO_TILE,
@@ -2329,6 +2481,7 @@ fn invalid_non_8_direction_does_not_wrap() {
 fn gsi_02_11_clear_fallback_calls_selector_even_with_pristine_only() {
     let map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 1,
             ry: 4,
             tile_index: theater::NO_TILE,
@@ -2376,6 +2529,7 @@ fn gsi_02_11_clear_fallback_calls_selector_even_with_pristine_only() {
 fn gsi_02_11_positive_registry_oor_uses_clear_and_invokes_selector() {
     let map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 1,
             ry: 4,
             tile_index: 1,
@@ -2439,6 +2593,7 @@ fn no_tile_presentation_uses_theater_clear_tile_without_rewriting_semantics() {
     theater_data.rmg_tiles.clear_tile = Some(37);
     let map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 1,
             ry: 0,
             tile_index: theater::NO_TILE,
@@ -2487,6 +2642,7 @@ fn wood_bridge_repair_tile_uses_first_16_tiles_of_wood_bridge_set() {
     let map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 0,
                 ry: 0,
                 tile_index: 9,
@@ -2494,6 +2650,7 @@ fn wood_bridge_repair_tile_uses_first_16_tiles_of_wood_bridge_set() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 0,
                 tile_index: 10,
@@ -2501,6 +2658,7 @@ fn wood_bridge_repair_tile_uses_first_16_tiles_of_wood_bridge_set() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 2,
                 ry: 0,
                 tile_index: 25,
@@ -2508,6 +2666,7 @@ fn wood_bridge_repair_tile_uses_first_16_tiles_of_wood_bridge_set() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 3,
                 ry: 0,
                 tile_index: 26,
@@ -2535,6 +2694,7 @@ fn gsi_04_03a_special_terrain_identity_is_not_promoted_to_hard_blocking() {
     theater.cliff_ranges.cliff_set = Some(10);
     let map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 0,
             ry: 0,
             tile_index: 10,
@@ -2579,6 +2739,7 @@ fn tileset_names_never_decide_land_without_a_tmp() {
     let theater = synthetic_theater_from_ini(ini.as_bytes());
     let cells = (0..names.len())
         .map(|index| MapCell {
+            legacy_ice_byte: 0,
             rx: index as u16,
             ry: 0,
             tile_index: index as i32,
@@ -2620,6 +2781,7 @@ fn tileset_names_never_decide_land_row_attributes() {
     let map = make_map(
         (0..2)
             .map(|tile| MapCell {
+                legacy_ice_byte: 0,
                 rx: tile,
                 ry: 0,
                 tile_index: i32::from(tile),
@@ -2682,6 +2844,7 @@ fn an_unauthored_rock_row_is_zero_for_tmp_and_cliff_back_rock_alike() {
         (filenames[1].as_str(), rock_tmp.as_slice()),
     ]);
     let cell = |rx, ry, tile_index, z| MapCell {
+        legacy_ice_byte: 0,
         rx,
         ry,
         tile_index,
@@ -2710,13 +2873,14 @@ fn an_unauthored_rock_row_is_zero_for_tmp_and_cliff_back_rock_alike() {
     assert_eq!(tmp_rock.land_type, LandType::Rock.as_index());
     assert_eq!(cliff_back.land_type, LandType::Rock.as_index());
     let zero = SpeedCostProfile {
-        foot: Some(0),
-        track: Some(0),
-        wheel: Some(0),
-        float: Some(0),
-        amphibious: Some(0),
-        float_beach: Some(0),
-        hover: Some(0),
+        foot: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        track: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        wheel: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        float: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        amphibious: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        float_beach: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        hover: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        winged: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
     };
     let attributes = |cell: &ResolvedTerrainCell| {
         (
@@ -2760,6 +2924,7 @@ fn resolved_terrain_allow_tiberium_uses_final_lat_tile() {
     let map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 5,
                 ry: 5,
                 tile_index: 5,
@@ -2767,6 +2932,7 @@ fn resolved_terrain_allow_tiberium_uses_final_lat_tile() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 5,
                 ry: 4,
                 tile_index: 0,
@@ -2774,6 +2940,7 @@ fn resolved_terrain_allow_tiberium_uses_final_lat_tile() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 4,
                 ry: 5,
                 tile_index: 6,
@@ -2781,6 +2948,7 @@ fn resolved_terrain_allow_tiberium_uses_final_lat_tile() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 6,
                 ry: 5,
                 tile_index: 1,
@@ -2788,6 +2956,7 @@ fn resolved_terrain_allow_tiberium_uses_final_lat_tile() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 5,
                 ry: 6,
                 tile_index: 7,
@@ -2880,6 +3049,7 @@ fn gsi_04_04_valid_tile_sparse_and_oob_entries_materialize_no_tile_cells() {
     let map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 0,
                 tile_index: theater::NO_TILE,
@@ -2887,6 +3057,7 @@ fn gsi_04_04_valid_tile_sparse_and_oob_entries_materialize_no_tile_cells() {
                 z: 4,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 3,
                 ry: 0,
                 tile_index: theater::NO_TILE,
@@ -2894,6 +3065,7 @@ fn gsi_04_04_valid_tile_sparse_and_oob_entries_materialize_no_tile_cells() {
                 z: 4,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 1,
                 tile_index: 0,
@@ -2901,6 +3073,7 @@ fn gsi_04_04_valid_tile_sparse_and_oob_entries_materialize_no_tile_cells() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 3,
                 ry: 1,
                 tile_index: 0,
@@ -3172,6 +3345,7 @@ fn bridge_overlay_stamps_anchor_structural_and_transition_flags_without_theater(
     let reg = OverlayTypeRegistry::from_ini(&IniFile::from_str(&ini_str), None);
     let map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 5,
             ry: 5,
             tile_index: 0,
@@ -3225,6 +3399,7 @@ IsRubble=yes
     let map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 0,
                 ry: 0,
                 tile_index: 0,
@@ -3232,6 +3407,7 @@ IsRubble=yes
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 0,
                 tile_index: 0,
@@ -3239,6 +3415,7 @@ IsRubble=yes
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 2,
                 ry: 0,
                 tile_index: 0,
@@ -3246,6 +3423,7 @@ IsRubble=yes
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 3,
                 ry: 0,
                 tile_index: 0,
@@ -3323,6 +3501,7 @@ SnowOccupationBits=-1
     let mut map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 0,
                 ry: 1,
                 tile_index: 0,
@@ -3330,6 +3509,7 @@ SnowOccupationBits=-1
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 0,
                 tile_index: 0,
@@ -3415,7 +3595,7 @@ fn gsi_04_04_outside_precedes_overlay_land_and_terrain_occupation() {
             outside,
             Some(zone_class::CRUSHABLE),
             LandType::Water.as_index(),
-            Some(0),
+            Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
             Some(7),
         ),
         zone_class::OUTSIDE
@@ -3469,6 +3649,7 @@ NoUseTileLandType=yes
     let registry = OverlayTypeRegistry::from_ini(&ini, None);
     let cells = (0..6)
         .map(|rx| MapCell {
+            legacy_ice_byte: 0,
             rx,
             ry: 0,
             tile_index: 0,
@@ -3705,6 +3886,37 @@ NoUseTileLandType=no
 }
 
 #[test]
+fn a_tmp_ramp_byte_past_the_slope_tables_is_flat_ground() {
+    let tile = |ramp_type| TmpTile {
+        height: 0,
+        terrain_type: 14,
+        ramp_type,
+        radar_left: [0, 0, 0],
+        radar_right: [0, 0, 0],
+        pixels: Vec::new(),
+        depth: Vec::new(),
+        pixel_width: 60,
+        pixel_height: 30,
+        relative_extra_y: 0,
+        offset_x: 0,
+        offset_y: 0,
+        has_damaged_data: false,
+    };
+    let mut last_slope = TileMetadata::default();
+    merge_tmp_metadata(&mut last_slope, &tile(20));
+    assert_eq!(last_slope.slope_type, 20);
+    assert!(last_slope.has_ramp);
+    for ramp_type in [21, 255] {
+        let mut metadata = TileMetadata::default();
+        merge_tmp_metadata(&mut metadata, &tile(ramp_type));
+        assert_eq!(metadata.slope_type, 0, "ramp byte {ramp_type}");
+        assert!(!metadata.has_ramp);
+        // Every ground-height read takes the stored slope.
+        assert!(crate::util::lepton::ground_height_leptons(0, metadata.slope_type, 0, 0).is_ok());
+    }
+}
+
+#[test]
 fn gsi_04_04_rules_backed_land_type_uses_canonical_tmp_conversion() {
     let terrain_rules =
         TerrainRules::from_ini(&IniFile::from_str("[Rough]\nBuildable=yes\nTrack=75%\n"));
@@ -3731,7 +3943,12 @@ fn gsi_04_04_rules_backed_land_type_uses_canonical_tmp_conversion() {
     apply_land_type_semantics(&mut metadata, Some(&terrain_rules));
 
     assert_eq!(metadata.land_type, LandType::Rough.as_index());
-    assert_eq!(metadata.speed_costs.track, Some(75));
+    assert_eq!(
+        metadata.speed_costs.track,
+        Some(crate::util::native_x87::NativeF32Bits::from_bits(
+            0x3f40_0000
+        ))
+    );
     assert!(!metadata.ground_blocked);
     assert!(!metadata.build_blocked);
 }
@@ -3740,6 +3957,7 @@ fn gsi_04_04_rules_backed_land_type_uses_canonical_tmp_conversion() {
 fn test_canonical_ramp_is_ground_passable_but_stays_non_buildable() {
     let map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 0,
             ry: 0,
             tile_index: 0,
@@ -4208,6 +4426,7 @@ fn gsi_04_04_normal_cliff_back_writer_accepts_clear_but_not_road() {
     let map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 0,
                 tile_index: 0,
@@ -4215,6 +4434,7 @@ fn gsi_04_04_normal_cliff_back_writer_accepts_clear_but_not_road() {
                 z: 4,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 1,
                 tile_index: 0,
@@ -4222,6 +4442,7 @@ fn gsi_04_04_normal_cliff_back_writer_accepts_clear_but_not_road() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 3,
                 ry: 0,
                 tile_index: 0,
@@ -4229,6 +4450,7 @@ fn gsi_04_04_normal_cliff_back_writer_accepts_clear_but_not_road() {
                 z: 4,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 3,
                 ry: 1,
                 tile_index: 1,
@@ -4271,6 +4493,7 @@ fn gsi_04_04_early_overlay_writer_does_not_bake_rock_into_road_base() {
     let map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 0,
                 tile_index: 0,
@@ -4278,6 +4501,7 @@ fn gsi_04_04_early_overlay_writer_does_not_bake_rock_into_road_base() {
                 z: 4,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 1,
                 tile_index: 0,
@@ -4326,6 +4550,7 @@ fn gsi_04_04_cliff_back_neighbor_lookup_keeps_fixed_stride_alias() {
     let map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 0,
                 ry: 0,
                 tile_index: -1,
@@ -4333,6 +4558,7 @@ fn gsi_04_04_cliff_back_neighbor_lookup_keeps_fixed_stride_alias() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 511,
                 ry: 0,
                 tile_index: -1,
@@ -4360,6 +4586,7 @@ fn gsi_04_04_invalid_clear_cliff_back_writer_bakes_base() {
     let map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 0,
                 ry: 0,
                 tile_index: -1,
@@ -4367,6 +4594,7 @@ fn gsi_04_04_invalid_clear_cliff_back_writer_bakes_base() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 0,
                 tile_index: -1,
@@ -4374,6 +4602,7 @@ fn gsi_04_04_invalid_clear_cliff_back_writer_bakes_base() {
                 z: 4,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 0,
                 ry: 1,
                 tile_index: -1,
@@ -4381,6 +4610,7 @@ fn gsi_04_04_invalid_clear_cliff_back_writer_bakes_base() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 1,
                 tile_index: -1,
@@ -4428,6 +4658,7 @@ fn gsi_04_04_sentinel_tile_uses_final_cliff_back_copy_for_overlay_water() {
     let map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 0,
                 tile_index: theater::NO_TILE,
@@ -4435,6 +4666,7 @@ fn gsi_04_04_sentinel_tile_uses_final_cliff_back_copy_for_overlay_water() {
                 z: 4,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 1,
                 tile_index: theater::NO_TILE,
@@ -4477,6 +4709,7 @@ fn gsi_04_03b_cliff_back_compares_levels_as_signed_bytes() {
     let map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 0,
                 ry: 0,
                 tile_index: -1,
@@ -4484,6 +4717,7 @@ fn gsi_04_03b_cliff_back_compares_levels_as_signed_bytes() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 0,
                 tile_index: -1,
@@ -4491,6 +4725,7 @@ fn gsi_04_03b_cliff_back_compares_levels_as_signed_bytes() {
                 z: 3,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 0,
                 ry: 1,
                 tile_index: -1,
@@ -4498,6 +4733,7 @@ fn gsi_04_03b_cliff_back_compares_levels_as_signed_bytes() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 1,
                 tile_index: -1,
@@ -4522,6 +4758,7 @@ fn cliff_back_impassability_skips_when_disabled() {
     let map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 0,
                 ry: 0,
                 tile_index: -1,
@@ -4529,6 +4766,7 @@ fn cliff_back_impassability_skips_when_disabled() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 0,
                 tile_index: -1,
@@ -4536,6 +4774,7 @@ fn cliff_back_impassability_skips_when_disabled() {
                 z: 4,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 0,
                 ry: 1,
                 tile_index: -1,
@@ -4543,6 +4782,7 @@ fn cliff_back_impassability_skips_when_disabled() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 1,
                 tile_index: -1,
@@ -4609,6 +4849,7 @@ Tile03ZAdjust=-10
 
 fn anim_cell(rx: u16, ry: u16, tile_index: i32, sub_tile: u8, z: u8) -> MapCell {
     MapCell {
+        legacy_ice_byte: 0,
         rx,
         ry,
         tile_index,
@@ -4940,7 +5181,7 @@ fn destroyable_cliff_a_collapses_old_sparse_footprint_then_stamps_two_halves() {
     grid.test_install_destroyable_cliff_catalog(100);
 
     let mutation = grid
-        .collapse_destroyable_cliff_terrain(4, 1, |_, _| {})
+        .collapse_destroyable_cliff_terrain(4, 1, None, |_, _| {})
         .expect("family-A destroyable cliff");
 
     assert_eq!(mutation.family, DestroyableCliffFamily::A);
@@ -4973,6 +5214,47 @@ fn destroyable_cliff_a_collapses_old_sparse_footprint_then_stamps_two_halves() {
             assert_eq!(cell.bridge_facts, BridgeCellFacts::default());
         }
     }
+}
+
+#[test]
+fn destroyable_cliff_collapse_turns_land_under_a_higher_neighbour_to_rock() {
+    use crate::rules::terrain_rules::{LandType, LandTypeSemantics, SpeedCostProfile};
+    let mut cells = Vec::new();
+    for ry in 0..6u16 {
+        for rx in 0..8u16 {
+            let mut cell = make_test_cell(rx, ry);
+            cell.level = 1;
+            if (1..7).contains(&rx) && (1..5).contains(&ry) {
+                let sub_tile = (ry - 1) * 6 + (rx - 1);
+                if ![0, 5, 18, 23].contains(&sub_tile) {
+                    cell.final_tile_index = 100;
+                    cell.final_sub_tile = sub_tile as u8;
+                }
+            }
+            cells.push(cell);
+        }
+    }
+    // (3, 0) stands four levels over the stamped (3, 1)'s final Level 1.
+    cells[3].level = 5;
+    let mut grid = ResolvedTerrainGrid::from_cells(8, 6, cells);
+    grid.test_install_destroyable_cliff_catalog(100);
+    let rock = LandTypeSemantics {
+        buildable: false,
+        ground_blocked: true,
+        speed_costs: SpeedCostProfile::ZERO,
+    };
+
+    grid.collapse_destroyable_cliff_terrain(4, 2, Some(&rock), |_, _| {})
+        .expect("family-A destroyable cliff");
+
+    let behind = grid.cell(3, 1).unwrap();
+    assert_eq!(behind.land_type, LandType::Rock.as_index());
+    assert_eq!(behind.base_land_type, LandType::Rock.as_index());
+    assert!(behind.ground_walk_blocked);
+    assert_eq!(behind.zone_type, zone_class::IMPASSABLE);
+    let open = grid.cell(3, 3).unwrap();
+    assert_eq!(open.land_type, LandType::Clear.as_index());
+    assert!(!open.ground_walk_blocked);
 }
 
 #[test]
@@ -5018,7 +5300,7 @@ fn destroyable_cliff_origin_recovery_accepts_every_present_a_and_b_subtile() {
             );
 
             let mutation = grid
-                .collapse_destroyable_cliff_terrain(selected.0, selected.1, |_, _| {})
+                .collapse_destroyable_cliff_terrain(selected.0, selected.1, None, |_, _| {})
                 .expect("present sparse subtile selects its family");
 
             assert_eq!(mutation.family, family);

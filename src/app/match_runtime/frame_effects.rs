@@ -5,6 +5,7 @@
 use std::cell::{Cell, RefCell};
 
 use super::sound_dispatch::dispatch_sim_sound_events;
+use crate::app::input::messages::HudMessage;
 use crate::app::input::planning_mode::PlanningInputState;
 use crate::app::presentation::building_anim::SoundPlaybackInputs;
 use crate::audio::events::SoundEventQueue;
@@ -16,11 +17,11 @@ use crate::sim::world::{
     SimSoundEvent, Simulation, SoundBoundary, TacticalRadarBoundary,
 };
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 #[path = "planning_defeat_tests.rs"]
 mod planning_defeat_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 #[path = "outcome_wait_tests.rs"]
 mod outcome_wait_tests;
 
@@ -50,6 +51,8 @@ pub(crate) struct FrameClientBoundary<'a> {
     tactical_radar: Option<RefCell<&'a mut TacticalRadarSetter<'a>>>,
     planning: Option<RefCell<(&'a mut PlanningInputState, &'a mut SelectionState)>>,
     network: Option<RefCell<&'a mut super::session::MatchSession>>,
+    /// The host's process-lifetime checksum history (`SimHost::tick_parts`).
+    frame_checksums: Option<RefCell<&'a mut crate::sim::command_queue::FrameChecksumState>>,
     live_network: Option<RefCell<&'a mut crate::net::live_commands::LiveCommandSession>>,
     logic_frame_rate: u32,
     outcome_wait: Option<RefCell<&'a mut Option<super::scenario_exit::ScenarioOutcomeVoiceWait>>>,
@@ -64,6 +67,14 @@ pub(crate) struct FrameClientBoundary<'a> {
     /// exit router after the clip. Only sound delivery and the result's Vox
     /// wait read this; the simulation never sees it.
     defer_verdict_to_clip: bool,
+    /// Accessibility rows from the frame's synchronously delivered sound
+    /// prefix. Audio takes only the suffix, but HUD consumers inspect the
+    /// complete facts, so this sink is filled in the same pass that plays the
+    /// prefix and drained by the frame tail alongside the suffix rows.
+    eva_text: Option<&'a RefCell<Vec<HudMessage>>>,
+    /// Sounds of the player's own automatic orders this game skips
+    /// ([`crate::app::match_audio::QuietSounds`]).
+    quiet: Option<RefCell<&'a mut crate::app::match_audio::QuietSounds>>,
 }
 
 impl<'a> FrameClientBoundary<'a> {
@@ -82,12 +93,33 @@ impl<'a> FrameClientBoundary<'a> {
             tactical_radar: None,
             planning: None,
             network: None,
+            frame_checksums: None,
             live_network: None,
             logic_frame_rate: 0,
             outcome_wait: None,
             scenario_pause: None,
             defer_verdict_to_clip: false,
+            eva_text: None,
+            quiet: None,
         }
+    }
+
+    /// Skip the sounds the player's own automatic orders cause. `None`, as
+    /// in every headless and test frame, plays them all.
+    pub(crate) fn with_quiet_sounds(
+        mut self,
+        quiet: &'a mut crate::app::match_audio::QuietSounds,
+    ) -> Self {
+        self.quiet = Some(RefCell::new(quiet));
+        self
+    }
+
+    /// Collect the accessibility rows from the synchronously delivered sound
+    /// prefix. `None` keeps the boundary's native audio-only behaviour, which
+    /// is what every headless and test frame uses.
+    pub(crate) fn with_eva_text(mut self, sink: Option<&'a RefCell<Vec<HudMessage>>>) -> Self {
+        self.eva_text = sink;
+        self
     }
 
     /// Hold the result's EVA line for the losing commander's clip. See
@@ -123,6 +155,14 @@ impl<'a> FrameClientBoundary<'a> {
         session: &'a mut super::session::MatchSession,
     ) -> Self {
         self.network = Some(RefCell::new(session));
+        self
+    }
+
+    pub(crate) fn with_frame_checksums(
+        mut self,
+        checksums: &'a mut crate::sim::command_queue::FrameChecksumState,
+    ) -> Self {
+        self.frame_checksums = Some(RefCell::new(checksums));
         self
     }
 
@@ -300,16 +340,7 @@ impl NetworkCommandBoundary for FrameClientBoundary<'_> {
         .map_err(|error| {
             log::error!("live network command exchange: {error}");
             match error {
-                LiveCommandError::Sequenced(
-                    crate::net::live_commands::SequencedError::Desync { .. },
-                ) => NetworkInterruption::ScenariosDiffer.into(),
-                LiveCommandError::Sequenced(
-                    crate::net::live_commands::SequencedError::QueueFull,
-                ) => NetworkInterruption::QueueFull.into(),
-                LiveCommandError::Sequenced(
-                    crate::net::live_commands::SequencedError::NewerClientRequired,
-                ) => NetworkInterruption::NewerClientRequired.into(),
-                LiveCommandError::Sequenced(_) => NetworkInterruption::ConnectionFailed.into(),
+                LiveCommandError::Sequenced(error) => error.interruption().into(),
                 LiveCommandError::Startup(crate::net::live_commands::StartupError::Aborted) => {
                     NetworkInterruption::ConnectionFailed.into()
                 }
@@ -328,8 +359,10 @@ impl NetworkCommandBoundary for FrameClientBoundary<'_> {
     }
 
     fn record_frame_checksum(&self, frame: u32, checksum: u32) {
-        if let Some(network) = &self.network {
-            network.borrow_mut().record_frame_checksum(frame, checksum);
+        if let Some(checksums) = &self.frame_checksums {
+            checksums
+                .borrow_mut()
+                .record_frame_checksum(frame, checksum);
         }
     }
 
@@ -338,9 +371,9 @@ impl NetworkCommandBoundary for FrameClientBoundary<'_> {
         record: &crate::sim::command::CommandRecord,
         current_frame: i32,
     ) -> Result<bool, NetworkCommandError> {
-        let network = self.network.as_ref().ok_or_else(|| {
+        let checksums = self.frame_checksums.as_ref().ok_or_else(|| {
             NetworkCommandError::Unavailable(
-                "FRAMEINFO requires the network session checksum owner".to_owned(),
+                "FRAMEINFO requires the host's checksum owner".to_owned(),
             )
         })?;
         let info = crate::net::lockstep::FrameInfo::decode(record).ok_or_else(|| {
@@ -348,7 +381,7 @@ impl NetworkCommandBoundary for FrameClientBoundary<'_> {
                 "network comparison received a non-FRAMEINFO record".to_owned(),
             )
         })?;
-        network
+        checksums
             .borrow()
             .compare_frame_info(info, current_frame)
             .map_err(NetworkCommandError::Mismatch)
@@ -389,6 +422,9 @@ impl SoundBoundary for FrameClientBoundary<'_> {
             return;
         }
         let mut output = self.output.borrow_mut();
+        let mut eva_text = self.eva_text.map(|sink| sink.borrow_mut());
+        let mut quiet = self.quiet.as_ref().map(RefCell::borrow_mut);
+        let frame = sim.session().tick();
         {
             let mut admit_radar = self.admit_radar.borrow_mut();
             dispatch_sim_sound_events(
@@ -397,14 +433,17 @@ impl SoundBoundary for FrameClientBoundary<'_> {
                     // [`FrameClientBoundary::defer_verdict_to_clip`].
                     !(self.defer_verdict_to_clip
                         && matches!(event, SimSoundEvent::MatchOutcome { .. }))
+                        && quiet.as_mut().is_none_or(|quiet| quiet.admit(event, frame))
                 }),
                 sim,
                 rules,
                 self.local_owner,
                 &mut |request| (*admit_radar)(request, sim.session().tick(), rules),
                 &mut output,
+                eva_text.as_deref_mut(),
             );
         }
+        drop(eva_text);
         drop(output);
         self.consume_queued_audio(sim);
         self.delivered.set(delivered + pending.len());
@@ -450,7 +489,7 @@ impl TacticalRadarBoundary for FrameClientBoundary<'_> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tactical_radar_tests {
     use super::*;
     use crate::sim::world::FrameEffects;
@@ -519,7 +558,7 @@ mod tactical_radar_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod radar_persistence_tests {
     use super::*;
     use crate::render::radar::{ClientRadarEvents, saved_radar_fixture};
@@ -571,14 +610,15 @@ mod radar_persistence_tests {
     }
 }
 
-#[cfg(test)]
-mod network_command_tests {
+#[cfg(all(test, tests_app_match))]
+pub(super) mod network_command_tests {
     use super::*;
     use crate::sim::house_state::HouseState;
     use crate::sim::runtime::SimRuntime;
     use crate::sim::world::{FrameEffects, TickLane};
 
-    fn frame_256_runtime() -> SimRuntime {
+    /// A WOL world at frame 256, the first frame its House gate admits.
+    pub(in crate::app::match_runtime) fn frame_256_runtime() -> SimRuntime {
         let mut sim = Simulation::with_seed(73);
         let owner = sim.intern("Human");
         sim.houses_mut_for_test()
@@ -604,9 +644,9 @@ mod network_command_tests {
             .unwrap()
             .value;
         let mut runtime = frame_256_runtime();
-        let mut session = crate::app::match_runtime::session::MatchSession::default();
-        session.record_frame_checksum(0, 0);
-        session.record_frame_checksum(255, expected ^ 2);
+        let mut checksums = crate::sim::command_queue::FrameChecksumState::default();
+        checksums.record_frame_checksum(0, 0);
+        checksums.record_frame_checksum(255, expected ^ 2);
         let info = crate::net::lockstep::FrameInfo {
             house_id: 0,
             event_frame: 256,
@@ -621,7 +661,7 @@ mod network_command_tests {
         let mut radar = |_, _, _: &RuleSet| false;
         let prefix = {
             let boundary = FrameClientBoundary::new(None, Some("Human"), &mut sounds, &mut radar)
-                .with_network_session(&mut session);
+                .with_frame_checksums(&mut checksums);
             runtime
                 .advance_frame(
                     &[],
@@ -636,7 +676,7 @@ mod network_command_tests {
             .expect("real session comparator rejects the peer CRC");
         assert_eq!(failure.local_checksum, expected);
         assert_eq!(failure.remote_checksum, expected ^ 1);
-        assert_eq!(session.checksum_history().get(256), expected);
+        assert_eq!(checksums.checksum_history().get(256), expected);
         assert_eq!(runtime.simulation.session().binary_frame(), 256);
         assert!(!prefix.tick.frame_committed);
         let suffix = runtime

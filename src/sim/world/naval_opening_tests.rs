@@ -182,18 +182,13 @@ fn an_accepted_default_survives_capture_when_the_replacement_event_is_refused() 
     let rules = &retail.rules;
     let (mut sim, id) = yard_fixture(rules, "GAYARD", true);
     let old_owner = sim.entities().get(id).unwrap().owner();
-    for _ in 0..127 {
-        assert!(
-            sim.issue_local_command(crate::sim::command::CommandEnvelope::new(
-                old_owner,
-                1,
-                Command::Stop { entity_id: 999 },
-            ))
-        );
-    }
+    let capacity = sim.available_local_command_slots();
+    let stop =
+        crate::sim::command::CommandEnvelope::new(old_owner, 1, Command::Stop { entity_id: 999 });
+    assert!(sim.issue_local_commands(std::iter::repeat_n(stop, capacity - 1)));
     open(&mut sim, id, false, rules);
     let accepted = sim.pending_command_snapshot();
-    assert_eq!(accepted.len(), 128);
+    assert_eq!(accepted.len(), capacity);
     let expected = match accepted.last().unwrap().payload {
         Command::SetRally { rx, ry, .. } => Some((rx, ry)),
         _ => panic!("the last slot belongs to the default rally"),
@@ -226,17 +221,12 @@ fn naval_default_rally_obeys_outlist_saturation_and_recorded_replay() {
     let rules = &retail.rules;
     let (mut sim, id) = yard_fixture(rules, "GAYARD", true);
     let owner = sim.substrate.entities.get(id).unwrap().owner();
-    for _ in 0..128 {
-        assert!(
-            sim.issue_local_command(crate::sim::command::CommandEnvelope::new(
-                owner,
-                1,
-                Command::Stop { entity_id: 999 },
-            ))
-        );
-    }
+    let capacity = sim.available_local_command_slots();
+    let stop =
+        crate::sim::command::CommandEnvelope::new(owner, 1, Command::Stop { entity_id: 999 });
+    assert!(sim.issue_local_commands(std::iter::repeat_n(stop, capacity)));
     open(&mut sim, id, false, rules);
-    assert_eq!(sim.pending_command_snapshot().len(), 128);
+    assert_eq!(sim.pending_command_snapshot().len(), capacity);
     assert_eq!(
         sim.substrate.entities.get(id).unwrap().archive_target(),
         None
@@ -429,7 +419,7 @@ fn two_searches_and_event_birth_match_the_original_supplied_map_control() {
         actor.position.put_world_xy([1344, 1344]);
         sim.substrate.entities.insert(actor);
         sim.resolved_terrain = Some(terrain);
-        sim.zone_grid = Some(zones);
+        sim.zone_grid = Some(zones.into());
         sim.substrate.raw_cell_occupation = raw;
         sim.playfield_bounds = Some(bounds());
         sim.playfield_size_height = Some(8);

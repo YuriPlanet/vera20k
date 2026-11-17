@@ -107,7 +107,7 @@ fn tile_block_from_tmp(tmp: &TmpFile) -> TileBlock {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::theater::parse_tileset_ini;

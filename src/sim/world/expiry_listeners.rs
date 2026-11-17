@@ -19,7 +19,7 @@ use super::Simulation;
 use super::substrate::ObjectKind;
 use crate::sim::anim_class::{AnimStore, AnimTouchReader};
 use crate::sim::entity_store::{EntityStore, TouchReader};
-use crate::sim::particles::ParticleSystemStore;
+use crate::sim::particles::{ParticleSystemStore, ParticleTouchReader};
 use crate::sim::projectile::ProjectileStore;
 use crate::sim::terrain_object::TerrainObjectStore;
 use crate::sim::touch_log::Touched;
@@ -126,7 +126,7 @@ impl ExpiryListeners {
             anims.get(id).map(|anim| named(names, anim.expiry_names()))
         });
         let ids = self.particle_systems.rereads(
-            particle_systems.take_touched(),
+            particle_systems.take_touched(ParticleTouchReader::ExpiryListeners),
             particle_systems.len(),
             || particle_systems.iter().map(|(&id, _)| id).collect(),
         );
@@ -398,7 +398,7 @@ impl StoreIndex {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod tests {
     use super::*;
     use crate::rules::particle_system_type::ParticleSystemTypeId;
@@ -491,8 +491,11 @@ mod tests {
         let mut entities = EntityStore::new();
         entities.insert(attacker(1, 3));
         let mut controller = GameEntity::test_default(2, "YURI", "Russians", 12, 12);
-        controller.capture_manager =
-            Some(CaptureManagerState::with_victims_for_test(3, false, &[3]));
+        controller.capture_manager = Some(Box::new(CaptureManagerState::with_victims_for_test(
+            3,
+            false,
+            &[3],
+        )));
         entities.insert(controller);
         entities.insert(GameEntity::test_default(3, "HTNK", "Russians", 14, 14));
         let mut docked = attacker(4, 3);
@@ -550,7 +553,7 @@ mod tests {
         );
         manager.set_current_target_for_test(Some(TargetKind::Entity(6)));
         manager.set_queued_target_for_test(Some(TargetKind::Cell(3, 3)));
-        launcher.spawn_manager = Some(manager);
+        launcher.spawn_manager = Some(Box::new(manager));
         let mut entities = EntityStore::new();
         entities.insert(launcher);
         let mut stores = Stores {

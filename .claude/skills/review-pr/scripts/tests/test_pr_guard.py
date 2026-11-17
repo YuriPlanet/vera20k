@@ -92,9 +92,12 @@ class PrGuardTest(unittest.TestCase):
 
     def test_protected_paths(self):
         for path in ('AGENTS.md', 'docs/CLAUDE.md', '.claude/settings.json', '.github/workflows/ci.yml',
-                     'src/Cargo.toml', 'build.rs', 'tools/cargo_run.py', 'tools/x.sh', '.agents/skills/s/SKILL.md'):
+                     'src/Cargo.toml', 'build.rs', 'tools/cargo_run.py', 'tools/x.sh', '.agents/skills/s/SKILL.md',
+                     'android/gradlew', 'android/app/build.gradle.kts', 'android/gradle.properties',
+                     'android/gradle/wrapper/gradle-wrapper.properties'):
             self.assertTrue(pr_guard.PROTECTED.search(path), path)
-        for path in ('src/sim/mod.rs', 'tools/spatial_oracle/x.py', 'README.md'):
+        for path in ('src/sim/mod.rs', 'tools/spatial_oracle/x.py', 'README.md',
+                     'android/app/src/main/java/org/vera20k/VeraActivity.kt'):
             self.assertFalse(pr_guard.PROTECTED.search(path), path)
 
 

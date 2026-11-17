@@ -5,9 +5,11 @@
 
 use super::ResolvedTerrainGrid;
 use super::native_cell::NativeAllocatedCellCursor;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
-#[cfg(test)]
+use crate::util::sync::OnceLock;
+
+#[cfg(all(test, tests_map))]
 #[path = "allocated_order_tests.rs"]
 mod tests;
 
@@ -208,6 +210,15 @@ impl InteriorCells {
     pub(crate) fn contains(&self, (x, y): (u16, u16)) -> bool {
         let index = usize::from(y) * usize::from(self.width) + usize::from(x);
         x < self.width && self.contains_index(index)
+    }
+
+    /// Whether [`Self::contains`] holds for every cell of row `y` from
+    /// `x0` to `x1`, both included.
+    pub(crate) fn contains_row(&self, y: u16, x0: u16, x1: u16) -> bool {
+        let row = usize::from(y) * usize::from(self.width);
+        x1 < self.width
+            && crate::util::bit_span::span_words(row + usize::from(x0), row + usize::from(x1))
+                .all(|(word, mask)| self.bits.get(word).is_some_and(|bits| bits & mask == mask))
     }
 
     /// The index of the cell one `(dx, dy)` step from the cell with storage

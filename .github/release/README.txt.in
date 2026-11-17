@@ -25,7 +25,9 @@ replays in ~/.local/share/VERA20k. To use another game folder, change ra2_dir
 in that config.toml.
 
 REQUIREMENTS
-  A GPU with Vulkan, DirectX 12 or Metal.
+  A GPU with Vulkan, DirectX 12 or Metal. Some older GPUs with DirectX 12,
+    such as Intel's 4th generation, are not enough; VERA20k then draws with
+    the processor, very slowly, and says so when it starts.
   Windows: VERA20k is not code-signed yet. SmartScreen may warn about an
     unknown app; choose More info, then Run anyway. Smart App Control, which
     some Windows 11 PCs have on, blocks unsigned programs outright: there,
@@ -49,9 +51,11 @@ Copyright 2026 Halvor Nikolai Rusten and VERA20k contributors.
 VERA20k is licensed under the GNU General Public License version 3
 (LICENSE-GPL). The source of this build is at
 https://github.com/YuriPlanet/vera20k/tree/@COMMIT@
-Its Bink video decoder is ported from FFmpeg, copyright 2007-2011 Peter Ross,
-2009 Daniel Verkamp and 2009 Konstantin Shishkov, and licensed under the GNU
-Lesser General Public License version 2.1 or later (LGPL-2.1-or-later.txt).
+Its Bink video decoder and its sidebar's xBR scaler are ported from FFmpeg and,
+as section 3 of FFmpeg's LGPL 2.1 allows, licensed under the GNU General Public
+License version 3 or later (LICENSE-GPL). The decoder is copyright 2007-2011
+Peter Ross, 2009 Daniel Verkamp and 2009 Konstantin Shishkov; the scaler
+2011-2012 Hyllian/Jararaca and 2014 Arwa Arif.
 THIRD_PARTY_LICENSES.html lists the open-source libraries it includes and
 their licenses.
 

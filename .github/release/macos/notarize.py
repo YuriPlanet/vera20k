@@ -27,9 +27,9 @@ class CommandFailed(RuntimeError):
         self.status = status
 
 
-def command(args: list[str]) -> str:
+def command(args: list[str], expect: int = 0) -> str:
     result = subprocess.run(args, capture_output=True, text=True)
-    if result.returncode:
+    if result.returncode != expect:
         # stapler reports on stdout and leaves stderr empty.
         detail = result.stderr.strip() or result.stdout.strip()[-2000:]
         raise CommandFailed(f"{args[0]} failed ({result.returncode}): {detail}", result.returncode)
@@ -217,7 +217,9 @@ def verify_distribution(image: Path, *, smoke_test: bool = False):
             command(["codesign", "--verify", "--strict", "--verbose=2", str(app)])
             command(["spctl", "--assess", "--type", "execute", "--verbose=4", str(app)])
             if smoke_test:
-                command([str(program), "-h"])
+                # The usage switch leaves through gamemd's WinMain shutdown,
+                # which returns 1 (0x006BE161).
+                command([str(program), "-h"], expect=1)
         finally:
             command(["hdiutil", "detach", str(mount)])
     print("Mac installer and app signatures and Apple notarization verified.", flush=True)

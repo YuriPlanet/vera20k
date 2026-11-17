@@ -14,7 +14,8 @@ oracle families index their own fixtures and producers.
 | Play the latest stable and newest dev build's relay client code against a relay change (CI only) | `.github/workflows/relay-compat.yml`, `tools/relay_compat.py` |
 | Inspect process audio definitions, sample sources and retention evidence | [Process audio catalog owner](audio_catalog_owner.md), `asset sound` |
 | Wait for builds; test, check, lint or build the current checkout; preserve A/B binaries | `python -m tools.cargo_run` (below) |
-| Compile and test one optional capability (`ares`, `phobos`, `npatch`, diagnostic builds), or all of them | [capabilities](../docs/capabilities.md), `python -m tools.capability_tests` |
+| Avoid shell traps that make a failed run look clean | [shell pitfalls](#shell-pitfalls) |
+| Compile and test one optional capability (`phobos`, `npatch`, diagnostic builds), or all of them | [capabilities](../docs/capabilities.md), `python -m tools.capability_tests` |
 | Run a committed test map headless or interactive, by scenario name | [capabilities](../docs/capabilities.md#test-maps), `python -m tools.run_test_map` |
 | Generate a large map, such as 500×500 with 30 starts | `python -m tools.scale_map large500.map --size 500 --starts 30` |
 | Find a built or preserved host executable for shell use | `python -m tools.cargo_run --resolve asset --profile release` (below) |
@@ -53,6 +54,29 @@ oracle families index their own fixtures and producers.
 | Run one bounded child with retained diagnostics | `tools.child_process.run_child` (shared by capture wrappers) |
 | Check shell UI matrices | [exact shell matrix](exact_shell_ui_matrix/README.md) |
 | Synchronize authoritative skill sources | `python tools/skill_sync.py --write`, then `--check` |
+
+## Capture files
+
+The JSON a Rust test reads is the golden. Raw capture archives, receipts and
+validation records are not committed, and the committed JSON holds only fields
+some Rust source names, written compact (no indentation).
+
+On 2026-11-14 the raw archives that no Rust test read were removed and the
+test-read JSON under the `*_oracle` folders was trimmed this way. A harness
+whose archive is gone can no longer rebuild its JSON from the repository: a
+rebuild needs a new capture, and Git history holds the old archives and the
+untrimmed files. A harness that still runs writes more than is committed; trim
+its output the same way before committing it. Hand-written profiles and the
+palette fixtures, which a tool checks by hash, keep their formatting.
+
+A corpus that records the RNG streams before and after every row can store
+each distinct state once: `python -m tools.share_rng_states FILE` moves them
+into a top-level `shared_rng_states` table and leaves `{"rng_state": n}` in their
+place. A corpus that is a bare list becomes `{"rows": list}`, so its tests
+read `["rows"]`. Tests that load it through `test_fixture::json` see the
+states where they were, so read such a corpus only that way. This took nine
+corpora, `anytown_damage/foot_missions.json` among them, from 55.5 MB to
+24.2 MB.
 
 ## Retail-backed ignored tests
 
@@ -112,6 +136,79 @@ configuration locally with:
 ```sh
 python -m tools.cargo_run -- build --locked --release --no-default-features --bin vera20k
 ```
+
+## Test groups
+
+A test run that names one part of one crate compiles only that part's tests:
+
+```sh
+python -m tools.cargo_run -- test -p vera20k-core --lib sim::combat::gattling
+python -m tools.cargo_run -- test -p vera20k --lib app::input::camera::
+python -m tools.cargo_run --all-tests -- test -p vera20k-core --lib sim::combat::gattling
+python -m tools.group_tests list
+python -m tools.group_tests check
+python -m tools.group_tests tag
+python -m tools.group_tests lend sim::deploy_tests sim-movement
+```
+
+Each crate's test modules belong to groups. A group is a `tests-<group>` feature
+and, under `[package.metadata.test-groups]` in the crate's Cargo.toml
+(`src/Cargo.toml` for the engine), the module path prefixes it owns; the longest
+prefix that starts a module's path owns it. A test module is declared
+`#[cfg(all(test, tests_<group>))]`. The crate's build script
+(`src/test_group_cfgs.rs`) switches every group on, so `cargo test`, a
+`--workspace` run, the Test workflow and the Release test job compile and run
+every test as before. Only the `test-focus` feature narrows a build, to the groups
+whose features are on.
+
+The runner adds those features itself. When a test run names one crate with `-p`
+and every filter is a module path from the crate root (`sim::combat::`, not
+`gattling_`) that falls inside one or two groups, it builds with `test-focus` and
+those groups and prints `Test groups: sim-combat-d-z of vera20k-core`. Every other
+test run compiles every test: no filter, a bare test name, a filter that spans
+three or more groups, `--workspace`, or `--all-tests` before `--`. A test run in
+which no test matched exits 101, focused or not, so a mistyped filter cannot pass.
+
+Measured on the same one-value edit with the same command, with every test
+compiled and with one group (November 2026, Cargo time):
+
+| Crate and filter | Every test | One group | First build of a group |
+| --- | --- | --- | --- |
+| `vera20k-core`, `sim::combat::gattling` | 26.5 to 27.6 s | 10.0 to 12.0 s | 51 s |
+| `vera20k`, `app::input::camera::` | 18.0 to 20.9 s | about 12 s | 63 s |
+
+With no test at all the engine crate rebuilds in about 8 s and the client crate in
+about 10 s, and a group adds roughly 0.05 s per 1,000 test lines it compiles: the
+client crate cannot go far below half, and an engine group should stay under about
+65,000 compiled lines. Each group, and each pair of groups a run names, is its
+own build of the crate's tests. Its first build compiles them from nothing, and it
+keeps its own incremental cache (0.5 to 1.3 GiB) and test executable (0.13 to
+0.18 GiB); the build of every test keeps 2.6 GiB and 0.3 GiB for the engine. The
+cache retention below treats them like any other build: its budgets and the
+free-space reserve evict a checkout's incremental caches together, least recently
+used first, and keep only the newest test executable of a crate.
+
+Test code that more than one group uses:
+
+- A test module that code outside the groups uses (a `#[cfg(test)]` function or
+  impl in production files) is marked `#[cfg(test)] // shared by test groups` and
+  compiles in every test build.
+- A test module another group's tests use lists that group after its own:
+  `#[cfg(all(test, any(tests_sim_h_o, tests_sim_movement)))]`.
+  `python -m tools.group_tests lend <test module path> <group>` writes it, and
+  `lend <test module path> all` marks the module shared. Lend the smallest module
+  that holds the helper: every lent line compiles in the borrower's builds.
+
+When a focused build fails on an item rustc reports as "configured out", a test of
+the group has started using another group's test code. The runner then compiles
+every test instead, in the same run, and says so; `lend` the module the error
+names to repair the group.
+
+A new `#[cfg(test)] mod tests` works without a group: it compiles in every test
+build. `python -m tools.group_tests tag` writes each test module's group, `check`
+lists the modules that are out of step, and a focused run prints the first of
+them. To add or split a group, edit the table and the features in the crate's
+Cargo.toml, then run `tag` and build the new groups once.
 
 ## Cargo ownership and labeled builds
 
@@ -265,11 +362,11 @@ are adopted only when their live checkout/common Git directory and namespace
 prove ownership. A registered cache whose checkout no longer exists is abandoned
 once it has been idle ten minutes (`ABANDONED_SECONDS`), it sits in this repository's
 cache root under its checkout's namespace, and no run holds that checkout's lock.
-Every pass then removes the Cargo profile output in it, whatever the budgets, apart
-from files a preserved or latest build still names; its latest record goes first,
-since only its live checkout could resolve it. Empty directories go with it, and a
-cache left empty leaves the registry. Unregistered or unverifiable caches stay
-untouched.
+Every pass then removes the Cargo profile output in it, `--target` builds of any
+profile included, whatever the budgets, apart from files a preserved or latest build
+still names; its latest record goes first, since only its live checkout could resolve
+it. Empty directories go with it, and a cache left empty leaves the registry.
+Unregistered or unverifiable caches stay untouched.
 Only orphaned `deps/*.rcgu.o`, complete finalized incremental sessions and older
 Mach-O/ELF executables in `deps` are eligible; paths must belong to exact Cargo
 profile directories. An older executable is a `<name>-<16 hex>` file with a newer
@@ -420,6 +517,28 @@ successful builds, and discovery verifies executable bytes. Cross-target and
 other custom-profile builds (such as `shipping`) still support explicit
 paths/labels; they are not auto-run by host tooling. Conventional target paths
 are not a fallback.
+
+## Shell pitfalls
+
+These fail quietly, so a broken run can read as a clean one.
+
+- **Chain build steps with `&&`.** Some agent shells ignore `set -e`, so a step
+  after a failed `cargo_run` still runs and the log can end in a false OK. Count
+  one `Finished` line per compile before trusting a log.
+- **Don't edit the checkout while `cargo_run` runs.** It compares the sources
+  before and after; an edit anywhere in the checkout, even in another crate, ends
+  the run with "Source changed during Cargo" (or "during the tests") and no
+  results, although Cargo printed `Finished`.
+- **zsh doesn't split unquoted variables.** In `cargo_run -- $args`, `$args` stays
+  one word and `cargo_run` runs nothing; write `${=args}` or spell the arguments
+  out. zsh also reads `$sha:r...` as a modifier, so `$sha:refs/heads/x` loses
+  text; write `"${sha}:refs/heads/x"`.
+- **`git grep -E '\bword\b'` matches nothing on macOS**, with no error. Use
+  `git grep -w word` or `-P`, and before trusting an empty search, check that it
+  finds a known use.
+- **Not every file on `main` is rustfmt-clean.** Run
+  `rustfmt --edition 2024 --check <file>` first; format only if the hunks are
+  your own, otherwise re-apply your edit by hand.
 
 ## Python regression suite
 

@@ -8,8 +8,10 @@ use crate::ui::wol_lobby;
 use std::io::Read;
 
 mod exit_reentry;
+mod watch;
 use crate::app::diagnostics::shell_capture::loading_host_loss::LoadingHostLoss;
 use exit_reentry::ExitReentry;
+use watch::WatchRun;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RoundPhase {
@@ -20,13 +22,15 @@ enum RoundPhase {
     /// Quick Match pressed: the runner, the matchbot's pairing and the
     /// automatic room run until gameplay.
     QuickMatch,
+    /// `online-live-watch` from the settled lobby: the watch list, the
+    /// watched match and Escape back to the lobby.
+    Watch,
     Create,
     Discover,
     HostSetup,
     HostAi,
     HostReady,
     GuestSetup,
-    Loading,
     Running,
     HoldFailureGuest,
     EndRound,
@@ -71,6 +75,7 @@ pub(super) struct LiveRoundFlow {
     quick_match_wait: Option<(Instant, bool, Option<Instant>)>,
     /// Quick Match: the paired room, recorded once per round.
     quick_match_room: Option<String>,
+    watch: Option<WatchRun>,
 }
 
 impl LiveRoundFlow {
@@ -121,6 +126,7 @@ impl LiveRoundFlow {
             guest_back: false,
             quick_match_wait: None,
             quick_match_room: None,
+            watch: None,
         }
     }
 
@@ -209,7 +215,7 @@ impl LiveRoundFlow {
                 .network_setup()
                 .context("restored online setup")?;
             ensure!(
-                restored.mode.class.lists_in_skirmish(),
+                restored.mode.class.policy().lists_in_skirmish,
                 "ordinary online setup did not offer computer opponents"
             );
             self.record(
@@ -340,7 +346,7 @@ impl LiveRoundFlow {
         let prefix_frame = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("prefix world")?
             .simulation
             .session()
@@ -410,7 +416,7 @@ impl LiveRoundFlow {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("checkpoint world")?
             .simulation;
         let port = state
@@ -489,7 +495,7 @@ impl LiveRoundFlow {
         let sim = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|runtime| &runtime.simulation);
         let native_frame = sim.map(|sim| sim.session().binary_frame());
         let fps = sim
@@ -695,7 +701,7 @@ impl LiveRoundFlow {
         }
         if self.config.is_some()
             && !self.input_host(core)
-            && matches!(self.phase, RoundPhase::GuestSetup | RoundPhase::Loading)
+            && self.phase == RoundPhase::GuestSetup
             && lobby_ready(state, rendered)
         {
             ensure!(
@@ -753,44 +759,38 @@ impl LiveRoundFlow {
                 if rendered == PresentedShell::WolLogin
                     && MoviesCapture::slide_settled(state, ShellSlideKind::WolLogin) =>
             {
-                let layout = crate::app::shell_wol::login_layout(state);
-                click(
-                    state,
-                    RectPx::new(
-                        layout.nickname_face.x,
-                        layout.nickname_face.y,
-                        layout.nickname_face.w / 2,
-                        layout.nickname_face.h,
-                    ),
-                );
+                // The page's form starts from the last username: replace it.
+                let username = crate::app::shell_wol::login_layout(state)
+                    .online
+                    .context("the online sign-in form")?
+                    .fields[0]
+                    .1;
+                click(state, username);
                 App::handle_wol_key(state, Some(KeyCode::Home), true, None);
                 for _ in 0..32 {
                     App::handle_wol_key(state, Some(KeyCode::Delete), true, None);
                 }
                 App::handle_wol_key(state, None, true, Some(&self.online_config().account));
-                let control = crate::ui::wol_login::LOGIN;
                 ensure!(
                     state
                         .frontend
                         .wol
                         .as_ref()
                         .and_then(|visit| visit.login())
-                        .is_some_and(|login| login.button_enabled(control)),
-                    "online credentials did not enable login"
+                        .is_some_and(|login| login.button_enabled(crate::ui::wol_login::PLAY)),
+                    "the online username did not enable Play"
                 );
-                click(
-                    state,
-                    layout
-                        .page
-                        .button_rect(control)
-                        .context("online authentication button")?,
-                );
-                self.record(frame, "Username submitted through OK");
+                App::handle_wol_key(state, Some(KeyCode::Enter), true, None);
+                self.record(frame, "Username submitted through Play");
                 self.phase = RoundPhase::Lobby;
             }
             RoundPhase::Lobby if lobby_ready(state, rendered) => {
                 if self.reentering() {
                     self.observe_reentry_lobby(state, frame)?;
+                    return Ok(());
+                }
+                if core.target == LanTarget::OnlineWatch {
+                    self.watch_from_lobby(frame);
                     return Ok(());
                 }
                 if self.online_config().quick_match {
@@ -860,54 +860,13 @@ impl LiveRoundFlow {
                             .position(|row| row.name.eq_ignore_ascii_case(&expected))
                     });
                 if let Some(row) = selected {
-                    let layout = crate::app::shell_wol::lobby::layout(state);
-                    let lobby = state
-                        .frontend
-                        .wol
-                        .as_ref()
-                        .and_then(|visit| visit.lobby())
-                        .context("online lobby")?;
-                    let geometry = lobby.ui.game_list.geometry(
-                        layout.games,
-                        lobby.ui.game_rows.len(),
-                        layout.page.scale,
-                    );
-                    if row < lobby.ui.game_list.top_index
-                        || row >= lobby.ui.game_list.top_index + geometry.visible_rows
-                    {
-                        let rect = if let Some(bar) = geometry.scrollbar {
-                            let y = if row < lobby.ui.game_list.top_index {
-                                bar.y + 1
-                            } else {
-                                bar.y + bar.h - 2 - geometry.metrics.arrow_h
-                            };
-                            RectPx::new(bar.x + 1, y, bar.w - 2, geometry.metrics.arrow_h)
-                        } else {
-                            // replace_games preserves the old top row by name.
-                            // With a newly shorter list its ordinary mouse input
-                            // reconciles that stale viewport before any row click.
-                            ensure!(
-                                lobby.ui.game_list.top_index > geometry.max_top,
-                                "offscreen online game has no ordinary scroll input"
-                            );
-                            RectPx::new(layout.games.x, layout.games.y, layout.games.w, 1)
-                        };
-                        click(state, rect);
+                    if !join_game_row(state, row)? {
                         self.record(
                             frame,
                             "Game list scrolled toward the configured discovered room",
                         );
                         return Ok(()); // Re-read the row on its next presented frame.
                     }
-                    let rect = geometry.row(row - lobby.ui.game_list.top_index);
-                    click(state, rect);
-                    click(
-                        state,
-                        layout
-                            .page
-                            .button_rect(wol_lobby::JOIN)
-                            .context("Join button")?,
-                    );
                     self.record(frame, "Configured discovered game joined");
                     self.phase = RoundPhase::GuestSetup;
                 } else if self.last_refresh.elapsed() >= Duration::from_secs(2) {
@@ -1059,10 +1018,7 @@ impl LiveRoundFlow {
                     );
                 }
             }
-            RoundPhase::Loading
-            | RoundPhase::HostReady
-            | RoundPhase::GuestSetup
-            | RoundPhase::QuickMatch
+            RoundPhase::HostReady | RoundPhase::GuestSetup | RoundPhase::QuickMatch
                 if state.frontend.screen == GameScreen::InGame =>
             {
                 ensure!(
@@ -1616,6 +1572,7 @@ impl LiveRoundFlow {
                 );
                 self.phase = RoundPhase::MainReturn;
             }
+            RoundPhase::Watch => self.watch_step(state, rendered, frame)?,
             RoundPhase::ExitFault => {
                 if self.exit_block_applied(state, rendered, frame)? {
                     let rect = crate::app::shell_wol::lobby::layout(state)
@@ -1667,7 +1624,7 @@ impl LiveRoundFlow {
                 let scenario_retired = state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .is_none_or(|runtime| !runtime.simulation.session().started());
                 ensure!(
                     visits_retired
@@ -1708,6 +1665,9 @@ impl LiveRoundFlow {
     }
 
     pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
+        if let Some(watch) = &self.watch {
+            return self.watch_receipt(state, watch);
+        }
         let startup_failure = self
             .config
             .as_ref()
@@ -1827,6 +1787,56 @@ pub(super) fn online_setup_settled(state: &AppState, host: bool) -> bool {
         .multiplayer_setup
         .as_ref()
         .is_some_and(|ui| ui.statics.is_terminal())
+}
+
+/// Select a game list row and press Join, through the ordinary mouse
+/// adapter. False after a click that scrolls toward a row outside the list's
+/// view instead.
+fn join_game_row(state: &mut AppState, row: usize) -> Result<bool> {
+    let layout = crate::app::shell_wol::lobby::layout(state);
+    let lobby = state
+        .frontend
+        .wol
+        .as_ref()
+        .and_then(|visit| visit.lobby())
+        .context("online lobby")?;
+    let geometry =
+        lobby
+            .ui
+            .game_list
+            .geometry(layout.games, lobby.ui.game_rows.len(), layout.page.scale);
+    let top = lobby.ui.game_list.top_index;
+    if row < top || row >= top + geometry.visible_rows {
+        let rect = if let Some(bar) = geometry.scrollbar {
+            let y = if row < top {
+                bar.y + 1
+            } else {
+                bar.y + bar.h - 2 - geometry.metrics.arrow_h
+            };
+            RectPx::new(bar.x + 1, y, bar.w - 2, geometry.metrics.arrow_h)
+        } else {
+            // replace_games preserves the old top row by name. With a newly
+            // shorter list its ordinary mouse input reconciles that stale
+            // viewport before any row click.
+            ensure!(
+                top > geometry.max_top,
+                "offscreen online game has no ordinary scroll input"
+            );
+            RectPx::new(layout.games.x, layout.games.y, layout.games.w, 1)
+        };
+        click(state, rect);
+        return Ok(false);
+    }
+    let rect = geometry.row(row - top);
+    click(state, rect);
+    click(
+        state,
+        layout
+            .page
+            .button_rect(wol_lobby::JOIN)
+            .context("Join button")?,
+    );
+    Ok(true)
 }
 
 fn click(state: &mut AppState, rect: RectPx) {

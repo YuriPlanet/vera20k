@@ -184,6 +184,7 @@ fn impact_rules() -> RuleSet {
 [AircraftTypes]\n\n\
 [BuildingTypes]\n\n\
 [Warheads]\n0=AP\n\n\
+[Animations]\n0=TWLT070\n\n\
 [MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=105mm\n\n\
 [105mm]\nDamage=65\nROF=50\nRange=6\nWarhead=AP\n\n\
 [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\nAnimList=TWLT070\n",

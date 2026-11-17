@@ -56,7 +56,7 @@ fn scene() -> Option<(SimRuntime, InternedId)> {
     assert!(sim.rebuild_dynamic_navigation(&rules));
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources::new(rules),
+        resources: std::sync::Arc::new(SimResources::new(rules)),
     };
     frame(&mut runtime, owner);
     frame(&mut runtime, owner);

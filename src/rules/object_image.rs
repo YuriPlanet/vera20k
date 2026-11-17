@@ -40,6 +40,21 @@ impl ImageTheater {
         }
     }
 
+    /// The TheaterType ordinal FindTheater48DBE0 returns: Temperate0 to
+    /// Lunar5, and -1 for an unknown name (Ares `Theater::FindIndex
+    /// @ 1003DAE0` and `ScenarioClass+Theater`).
+    pub(crate) const fn native_index(self) -> i32 {
+        match self {
+            Self::Uninitialized => -1,
+            Self::Temperate => 0,
+            Self::Snow => 1,
+            Self::Urban => 2,
+            Self::Desert => 3,
+            Self::NewUrban => 4,
+            Self::Lunar => 5,
+        }
+    }
+
     /// Full_Init687633..687649 invokes ReadTheater475870 with default0
     /// before resetting Types. This reads the raw map, not the merged Rules.
     pub(crate) fn from_map(map: &IniFile) -> Self {
@@ -119,6 +134,8 @@ pub(crate) struct ObjectImageState {
     anim_bounds_loads: Option<Vec<ObjectImageLoad>>,
     anim_theater_bounds_loads: Option<Vec<ObjectImageLoad>>,
     voxel_load: Option<String>,
+    #[serde(default)]
+    pub(crate) model_slots: super::voxel_model_plan::ModelSlots,
 }
 
 impl ObjectImageState {
@@ -136,6 +153,7 @@ impl ObjectImageState {
             anim_bounds_loads: None,
             anim_theater_bounds_loads: None,
             voxel_load: None,
+            model_slots: Default::default(),
         }
     }
 

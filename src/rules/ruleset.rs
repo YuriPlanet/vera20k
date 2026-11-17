@@ -34,7 +34,8 @@ use crate::rules::object_type::{
     BuildCategory, FactoryType, HouseMasks, ObjectCategory, ObjectType,
 };
 use crate::rules::particle_system_type::{ParticleSystemType, ParticleSystemTypeId};
-use crate::rules::particle_type::{ParticleType, ParticleTypeId, PendingParticleType};
+use crate::rules::particle_type::{ParticleType, ParticleTypeId};
+use crate::rules::phobos_switch::phobos_read;
 use crate::rules::prerequisite::{Prerequisite, PrerequisiteGroup};
 use crate::rules::projectile_type::ProjectileType;
 use crate::rules::radar_event_config::RadarEventConfig;
@@ -51,15 +52,26 @@ use crate::util::lookup_hash::LookupMap;
 use crate::util::native_random::unit_draw_threshold;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
+thread_local! {
+    /// Test builds only: this thread's [`RuleSet::object`] calls, for checks
+    /// of what a draw looks up by name ([`RuleSet::type_name_lookups`]). The
+    /// bound handle's debug cross-check calls `type_handle` and is not counted.
+    static TYPE_NAME_LOOKUPS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// Test builds only: this thread's uppercase copies of a type name made
+    /// to look it up ([`upper_name_key`], [`RuleSet::name_key_copies`]).
+    static NAME_KEY_COPIES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "building_damage_sound_tests.rs"]
 mod building_damage_sound_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "command_bar_sound_rules_tests.rs"]
 mod command_bar_sound_rules_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "multiplayer_rules_tests.rs"]
 mod multiplayer_rules_tests;
 
@@ -166,15 +178,12 @@ pub struct CountryRules {
     pub name: Option<String>,
     /// Ares country presentation state (flag/status/taunt/order/weights and
     /// observer art). GUI/process state, not a simulation hash input.
-    #[cfg(feature = "ares")]
     pub(crate) presentation: crate::rules::ares_country_presentation::AresCountryPresentation,
     /// Ares country `ParaDrop.*` / `Parachute.Anim=` overrides. Simulation
     /// state: which units a paradrop superweapon sends.
-    #[cfg(feature = "ares")]
     pub(crate) paradrop: crate::rules::ares_country_paradrop::AresCountryParadrop,
     /// Ares country `AI.PowerPlants=` candidates. Simulation state: which
     /// building the AI splices when its base runs short of power.
-    #[cfg(feature = "ares")]
     pub(crate) power_plants: Vec<String>,
 }
 
@@ -195,6 +204,43 @@ impl HouseCostFactors {
         use crate::util::native_x87::MaskedX87Chop53 as X87;
         X87::ftol_i32_low_masked(X87::mul(
             X87::mul(X87::load_i32(cost), X87::load_f32(self.factory_plant[slot])),
+            X87::load_f32(self.country[slot]),
+        ))
+    }
+
+    /// Ares `HouseClass_GetCostMult` (`10041780`, hook `0x0050BEB0`,
+    /// resuming at its `ret 4` `0x0050BF1E`), the FactoryPlant factor every
+    /// caller stores as a float: `1 - (1 - product) * FactoryPlant.Multiplier`,
+    /// spilled as binary64 (`10041833`). A multiplier of 1.0 returns the
+    /// stock product.
+    pub(crate) fn ares_factory_plant(
+        &self,
+        slot: usize,
+        multiplier: crate::util::native_x87::NativeF64Bits,
+    ) -> NativeF32Bits {
+        use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF64Bits};
+        let one = X87::load_f64(NativeF64Bits::ONE);
+        let discount = X87::sub(one, X87::load_f32(self.factory_plant[slot]));
+        let factor = X87::store_f64_masked_chop(X87::sub(
+            one,
+            X87::mul(discount, X87::load_f64(multiplier)),
+        ));
+        X87::store_f32_masked_chop(X87::load_f64(factor))
+    }
+
+    /// [`Self::adjust`] through [`Self::ares_factory_plant`].
+    pub(crate) fn ares_adjust(
+        &self,
+        cost: i32,
+        slot: usize,
+        multiplier: crate::util::native_x87::NativeF64Bits,
+    ) -> i32 {
+        use crate::util::native_x87::MaskedX87Chop53 as X87;
+        X87::ftol_i32_low_masked(X87::mul(
+            X87::mul(
+                X87::load_i32(cost),
+                X87::load_f32(self.ares_factory_plant(slot, multiplier)),
+            ),
             X87::load_f32(self.country[slot]),
         ))
     }
@@ -240,12 +286,9 @@ impl Default for CountryRules {
             build_time: 1.0,
             ui_name: None,
             name: None,
-            #[cfg(feature = "ares")]
             presentation: crate::rules::ares_country_presentation::AresCountryPresentation::default(
             ),
-            #[cfg(feature = "ares")]
             paradrop: crate::rules::ares_country_paradrop::AresCountryParadrop::default(),
-            #[cfg(feature = "ares")]
             power_plants: Vec::new(),
         }
     }
@@ -332,12 +375,9 @@ impl CountryRules {
             // `UIName` into 0x20 (0x00410AFB).
             ui_name: section.read_name("UIName", 0x20).map(str::to_owned),
             name: section.read_name("Name", 0x31).map(str::to_owned),
-            #[cfg(feature = "ares")]
             presentation: crate::rules::ares_country_presentation::AresCountryPresentation::default(
             ),
-            #[cfg(feature = "ares")]
             paradrop: crate::rules::ares_country_paradrop::AresCountryParadrop::default(),
-            #[cfg(feature = "ares")]
             power_plants: Vec::new(),
         }
     }
@@ -580,6 +620,11 @@ pub struct GeneralRules {
     /// (`0x00665711`), read by ReadInteger at `0x00671981` without a clamp.
     /// The radar combat flash's toggle period.
     pub flash_frame_time: i32,
+    /// `[General] WeedCapacity=`, Rules `+0x17D0`: the constructor's 0
+    /// (`0x006676FD`), read by ReadInteger at `0x00671962` without a clamp.
+    /// A Weeder building's Tiberium pip maximum
+    /// (`BuildingTypeClass::GetPipMax @ 0x0045ECE0`).
+    pub weed_capacity: i32,
     /// `[General] RadarCombatFlashTime=`, Rules `+0x8C`: the constructor's 21
     /// (`0x0066571B`), read by ReadInteger at `0x006719A1` without a clamp.
     /// ReceiveDamage starts each Techno's radar combat flash with it.
@@ -849,11 +894,16 @@ pub struct GeneralRules {
     /// house at `MaxIQLevels` (`0x004FC0FF`), and a human house's MakeAlly
     /// (`0x004F9C5F`), run Computer_Paranoid. Retail yes.
     pub paranoid: bool,
-    /// Low byte of `CliffBackImpassability=` in `[General]`.
-    /// Byte 0 skips the scan; only byte 2 can write Rock. Default 2 in standard YR.
+    /// Low byte of `CliffBackImpassability=` in `[General]`, as
+    /// `read_cliff_back_impassability` reads it. Byte 0 skips the scan; only
+    /// byte 2 can write Rock.
     pub cliff_back_impassability: u8,
-    /// Underground travel speed for Tunnel locomotor units (TunnelSpeed=).
-    /// Default 6.0 cells/second matching RA2 default.
+    /// `[General] TunnelSpeed=` (`Rules+0x20`): ReadDouble at `0x0066EDA9`
+    /// over the constructor's 1.0 (`0x00665685..0x00665688`); retail 1. The
+    /// Tunnel locomotor scales its sink and rise speed by it and divides its
+    /// dig-in time by it (`movement::tunnel_movement`). Kept as `SimFixed`,
+    /// whose rounding of a non-dyadic value can move a truncated product by
+    /// one.
     pub tunnel_speed: SimFixed,
     /// Rules+598: ReadDouble at 66EC37, constructor .25 at 665DBD.
     /// Bullet guidance uses sin((signed native ID + frame) % 15 * 2pi/15).
@@ -884,6 +934,21 @@ pub struct GeneralRules {
     /// Rules+420, [JumpjetControls] CruiseHeight. Object5F4260 uses this
     /// global threshold; linked Jumpjets instead use their own +2C height.
     pub display_cruise_height: i32,
+    /// VERA: `[JumpjetControls] SmoothFacing=` (default no). When set, a
+    /// Jumpjet's body no longer snaps to its locomotor's stale heading on
+    /// take-off and turns at its ROT for an Unload
+    /// ([docs/jumpjet-smooth-facing.md]).
+    pub jumpjet_smooth_facing: bool,
+    /// VERA: `[JumpjetControls] LandNearby=` (default 0, at most 8). A
+    /// Jumpjet refused its landing cell lands on the nearest clear cell
+    /// within this many cells instead of hovering
+    /// ([docs/jumpjet-land-nearby.md]).
+    pub jumpjet_land_nearby: i32,
+    /// VERA: `[General] AINearestEnemy=` (default no). When set, a computer
+    /// house picks the nearest enemy base instead of the first house in the
+    /// array, and equal anger goes to the nearer house
+    /// ([docs/ai-nearest-enemy.md]).
+    pub ai_nearest_enemy: bool,
     /// `[General] HoverHeight=`, Rules+0x5CC: the Hover altitude controller's
     /// cruise height in leptons (0x00513D20). Constructor 120 (0x00665E2B).
     pub hover_height: i32,
@@ -956,6 +1021,12 @@ pub struct GeneralRules {
     /// vector (`0x00667034`), which native would index out of bounds; VERA treats
     /// a missing entry as 0 (no grant).
     pub multiplayer_ai_cm: Vec<i32>,
+    /// `[General] AIHateDelays=`: raw frame counts in Hard/Normal/Easy order.
+    /// RulesClass::ReadGeneral0066FDB1..0066FDD9 reads the retained vector
+    /// through ReadINI_IntVector00475D70. Post_Map_Init00686A12..00686A2B
+    /// starts each nonhuman, nonpassive House's enemy-search timer from it.
+    /// The native constructor leaves the vector empty, not at retail30,50,70.
+    ai_hate_delays: Vec<i32>,
     /// Aircraft types in native Rules `PadAircraft` order. BuildingType's
     /// virtual value calculation reads the first two entries for the bundled
     /// helipad-cost branch.
@@ -983,12 +1054,6 @@ pub struct GeneralRules {
     /// `WallTower=` (Rules `+0x86C..+0x87C`) and the four power plants
     /// (`+0x89C..+0x8A8`).
     pub building_types: GeneralBuildingTypes,
-    /// Whether ore cells grow denser over time (TiberiumGrows= in [General]).
-    /// Default true. Can be overridden per-map in [SpecialFlags].
-    pub tiberium_grows: bool,
-    /// Whether rich ore spreads to adjacent empty cells (TiberiumSpreads= in [General]).
-    /// Default true. Can be overridden per-map in [SpecialFlags].
-    pub tiberium_spreads: bool,
     /// `GrowthRate=` in [General], in minutes. Fallback 2.0 matches the engine
     /// constructor default; retail rulesmd.ini always supplies its own (5), so
     /// the fallback only fires for a non-retail INI missing the key. Parsed for
@@ -1017,9 +1082,14 @@ pub struct GeneralRules {
     /// Slots 3/4/6..10 come from `[General]`; slot 5 is the second declared
     /// `[Animations]` entry. Slots 0..2 intentionally have no external anim.
     pub infantry_death_anims: [Option<String>; 11],
-    /// Whether the attack cursor appears on a disguised Spy (AttackCursorOnDisguise= in [General]).
-    /// Default false (vanilla RA2). When false, a disguised Spy does not show the attack cursor.
+    /// `[General] AttackCursorOnDisguise`, Rules+D6C: constructor66681A
+    /// clears it; ReadGeneral66FC36..66FC50 retains the current byte.
+    /// The shared manual-attack query owns the disguise and blink exceptions.
     pub attack_cursor_on_disguise: bool,
+    /// `[General] AllowShroudedSubteranneanMoves`, Rules+17EF. Constructor
+    /// 665650 clears it at66776F; ReadGeneral66EB03..66EB1C retains the
+    /// current bool. Foot object-click4D785F consumes this shroud gate.
+    allow_shrouded_subterannean_moves: bool,
     /// `[General] DefaultMirageDisguises=` selection pool, in source order.
     pub default_mirage_disguises: Vec<String>,
     /// General AlliedDisguise/SovietDisguise/ThirdDisguise (Rules
@@ -1061,6 +1131,10 @@ pub struct GeneralRules {
     /// `NavalUnitEmerge`; the native constructor's invalid Voc index is silence
     /// when the key is absent or cannot resolve.
     pub cloak_sound: Option<String>,
+    /// Ares RulesExt+38/+3C nullable `[AudioVisual] DecloakSound=`
+    /// (NullableIdx<Voc>1000E9D0 in LoadAfterTypeData1002A800), bound by the
+    /// fixed-catalog sound binder. Unset falls back to `cloak_sound`.
+    pub(crate) ares_decloak_sound: Option<Option<String>>,
     /// `[AudioVisual] LeaveBioReactorSound=` is RulesClass+0x274, read by
     /// `RulesClass::ReadAudioVisual @ 0x006691E0` and played by the successful
     /// InfantryAbsorb arm of `BuildingClass::Mission_Unload @ 0x0044D880`.
@@ -1150,6 +1224,13 @@ pub struct GeneralRules {
     /// VocFindIndex7514D0, retaining the current index on a miss (ctor -1).
     pub airstrike_abort_sound: Option<String>,
     pub airstrike_attack_voice: Option<String>,
+    /// `[AudioVisual] GateDown`/`GateUp` (Rules+0x408/+0x404, ReadString128
+    /// then VocFindIndex, constructor -1): the sounds Mission_Open plays as a
+    /// gate opens (`0x0044E550`) and closes (`0x0044E61E`). Only the Ares
+    /// gate-sound hooks read them, so they are bound only in Rules read the
+    /// Ares way; a stock game leaves the stock sound a residual
+    /// (`sim::gate_runtime`).
+    gate_sounds: [Option<String>; 2],
     /// `ConditionRedSparkingProbability=` ([General]) — per-tick probability that
     /// the `AI_Update` damage-Spark particle system spawns while health is below
     /// ConditionRed. Default **0.02** (verified `RulesClass__Constructor`; stock INI
@@ -1233,7 +1314,7 @@ pub struct GeneralRules {
     /// `0x004F94FB` and then jumps (`0x004F9500 JMP`) to `LAB_004F95D4`, so a
     /// harvester under attack gets the EVA and **no** siren. The
     /// `EVA_OurAllyIsUnderAttack` branch does NOT jump past — native sirens
-    /// for an ally's base too, which VERA does not (pre-existing residual).
+    /// for an ally's base too, and so does VERA (`AllyUnderAttack`).
     pub base_under_attack_sound: Option<String>,
     /// Building crumble cue from `[AudioVisual] BuildingDieSound=` (stock
     /// `BuildingGenericDie`).
@@ -1343,13 +1424,19 @@ pub struct GeneralRules {
     ///
     /// gamemd: `RulesClass::ReadAudioVisual @ 0x00669331..0x00669367` reads
     /// the key at `0x0083AB70` (`"DigSound"`). Despite the name it is the
-    /// nuke siren — stock `rulesmd.ini` says so in a comment — and
-    /// `SuperClass::Launch @ 0x006CC390` case 0 (`Type=MultiMissile`) is its
-    /// only reader, playing it at the target coordinate through
-    /// `VocClass::PlayAtCoord @ 0x00750E20` on both branches
-    /// (`0x006CDCA8`/`0x006CDCAE` when the silo animates the launch,
-    /// `0x006CDDE3`/`0x006CDDE9` when it does not).
+    /// nuke siren — stock `rulesmd.ini` says so in a comment.
+    /// `SuperClass::Launch @ 0x006CC390` case 0 (`Type=MultiMissile`) plays
+    /// it at the target coordinate through `VocClass::PlayAtCoord @
+    /// 0x00750E20` on both branches (`0x006CDCA8`/`0x006CDCAE` when the silo
+    /// animates the launch, `0x006CDDE3`/`0x006CDDE9` when it does not), and
+    /// the Tunnel locomotor plays it at the digger as it digs in and out
+    /// (`movement::tunnel_movement`).
     pub dig_sound: Option<String>,
+    /// `[AudioVisual] Dig=` (`Rules+0x294`), the AnimType the Tunnel
+    /// locomotor spawns at the digger as it digs in and out: ReadString and
+    /// the AnimType lookup at `0x0066A587..0x0066A5B1` over the constructor's
+    /// null (`0x00665A10`). Retail leaves it unset.
+    pub dig_anim: Option<String>,
     /// `[General] NukeTakeOff=` (stock `NUKETO`), the AnimType at `Rules+0x98`
     /// (ReadString then the AnimType lookup, `0x0066D829..0x0066D850`;
     /// constructor null at `0x00665735`). `BuildingClass::Mission_Missile`
@@ -1519,17 +1606,15 @@ pub struct GeneralRules {
     /// `[AudioVisual] GUIBuildSound=` (`Rules+0x18C`, read at `0x006693C1`
     /// through `VocClass::FindByName`; retail `MenuClick`): the sidebar cameo
     /// click sound, played by `SelectClass::Action @ 0x006AAD00` for every
-    /// click that acts (e.g. `0x006AAE2A`, `0x006AB713`). Residual: gamemd
-    /// resolves the name as it reads it and keeps the previous layer's sound
-    /// when the name does not resolve; VERA stores the name and resolves it at
-    /// play time. Retail's `MenuClick` resolves.
+    /// click that acts (e.g. `0x006AAE2A`, `0x006AB713`). The retained
+    /// GlobalSoundReferences owner resolves against the fixed Voc catalog.
     pub gui_build_sound: Option<String>,
     /// `[AudioVisual] BuildingSlam=` (`Rules+0x6EC`, read at `0x0066AAA7`
     /// through `VocClass::FindByName`; retail `PlaceBuilding`): the PLACE
     /// event handler `HouseClass @ 0x004FB0E0` plays it centred at full
     /// volume (`0x004FB2FD..0x004FB314`) for the player's own house after the
-    /// building's Unlimbo succeeds. Same name-resolution residual as
-    /// `gui_build_sound`; retail's `PlaceBuilding` resolves.
+    /// building's Unlimbo succeeds. GlobalSoundReferences retains its fixed
+    /// Voc binding; constructor666009 starts at -1.
     pub building_slam: Option<String>,
     /// Sidebar tab click sound from [AudioVisual] GUITabSound (retail
     /// `MenuTab`; `Rules+0x190`, read at `0x00669402..0x0066942C`).
@@ -1694,6 +1779,10 @@ pub struct GeneralRules {
     /// Fire/smoke anim types spawned on buildings below ConditionYellow health.
     /// Parsed from DamageFireTypes= in [General]. Default: FIRE01,FIRE02,FIRE03.
     pub damage_fire_types: Vec<AnimRef>,
+    /// ReadAudioVisual66B0E4..66B1CF retains the ordered OnFire Anim pointers
+    /// for BuildingReceiveDamage442785. RulesCtor666568..66659E starts empty;
+    /// these runtime keys preserve distinct Anim slots with equal stored IDs.
+    pub on_fire: Vec<String>,
     /// Particle system spawned by exploding barrels.
     /// Parsed from `BarrelParticle=` in `[General]` (NOT `[AudioVisual]`,
     /// despite the proximity to other AudioVisual keys).
@@ -1739,15 +1828,20 @@ pub struct GeneralRules {
     /// `0x006AF748`). ReadRange at `0x00670300`; constructor `0x1000`
     /// (`0x00667656`). Retail `14` is 3584.
     pub slave_miner_slave_scan: i32,
-    /// `[General] DrainMoneyFrameDelay=` (`Rules+0x314`, stock 30). The drained
+    /// `[CombatDamage] DrainMoneyFrameDelay=` (`Rules+0x314`, stock 30).
+    /// RulesClass::Constructor665650 writes100 at665AC8; ReadCombatDamage
+    /// 66C973..66C98C retains the current signed value through ReadInt5276D0.
+    /// The drained
     /// object's `TechnoClass::AI_Update @ 0x006FA167..0x006FA17B` transfers
     /// money only on frames where `g_CurrentFrameCounter % delay == 0`
-    /// (signed `IDIV`, remainder test). Constructor default UNCHECKED.
+    /// (signed `IDIV`, remainder test).
     pub drain_money_frame_delay: i32,
-    /// `[General] DrainMoneyAmount=` (`Rules+0x318`, stock 30). Per transfer
+    /// `[CombatDamage] DrainMoneyAmount=` (`Rules+0x318`, stock 30).
+    /// Constructor665AD2 writes0; ReadCombatDamage66C992..66C9AC retains it.
+    /// Per transfer
     /// `min(amount, Available_Money(victim))` moves from the victim's wallet
     /// (`Spend_Money @ 0x004F9790`) to the drainer's (`Add_Credits @
-    /// 0x004F9950`) at `0x006FA183..0x006FA1C0`. Constructor default UNCHECKED.
+    /// 0x004F9950`) at `0x006FA183..0x006FA1C0`.
     pub drain_money_amount: i32,
     /// `Rules+0x1788`, `[General] SlaveMinerLongScan=` in leptons: how far a
     /// slave miner looks for a field. ReadRange at `0x0067031F`; constructor
@@ -1778,26 +1872,22 @@ pub struct GeneralRules {
     /// admits every building, not only the `UndeploysInto=` ones the retail ID
     /// match admits (`0x00732C61..0x00732C83`). Phobos disables the switch
     /// without Ares (`BuildingClass_Is1x1AndUndeployable_BuildingMassSelectable`).
-    #[cfg(all(feature = "phobos", feature = "ares"))]
+    #[cfg(feature = "phobos")]
     pub building_type_selectable: bool,
     /// Phobos `[General] AIFireSale=` (default true): whether a computer
     /// house on its last legs (`0x004FD879..0x004FD904`, no live
     /// `Factory=` building) sells every building.
-    #[cfg(feature = "phobos")]
     pub ai_fire_sale: bool,
     /// Phobos `[General] AIFireSaleDelay=` in frames (default 0): the first
     /// last-legs tick starts this timer instead of selling; the sale waits
     /// until it completes. Non-positive sells at once.
-    #[cfg(feature = "phobos")]
     pub ai_fire_sale_delay: i32,
     /// Phobos `[General] AIAllToHunt=` (default true): whether the same
     /// last-legs block sends every techno to hunt.
-    #[cfg(feature = "phobos")]
     pub ai_all_to_hunt: bool,
     /// Phobos `[General] GatherWhenMCVDeploy=` (default true): whether a
     /// computer house's yard deploy runs
     /// `HouseClass::MoveGroundForcesToBase @ 0x0050C920` (`0x00739926`).
-    #[cfg(feature = "phobos")]
     pub gather_when_mcv_deploy: bool,
     /// Phobos `[AudioVisual] TimerBlinkColorScheme=`: the runtime ColorScheme
     /// a finished superweapon timer blinks in, `[Colors]` entry `R / 2`, or -1
@@ -1997,6 +2087,27 @@ pub struct GeneralRules {
     /// that serviced a contact (`0x0044C92F`).
     pub reload_rate: f64,
 
+    // -- Tiberium heal and transmogrify (read by gamemd, consumed by Ares) --
+    /// `[General] TiberiumHeal=` (`RulesClass::TiberiumHeal`), minutes:
+    /// constructor 1/60 (`0x3F91111111111111`), ReadDouble over the current
+    /// value at `0x0066E6D2`. Ares' Foot heal (`10014BA0`) is its consumer.
+    pub tiberium_heal_minutes: f64,
+    /// `[General] TiberiumTransmogrify=` (`Rules+0x1688`), ReadInt over the
+    /// current value at `0x00670F62`. gamemd's constructor leaves it unset;
+    /// Ares 1002C990 (hook `0x66748A`) zeroes it. The visceroid chance of
+    /// Ares' tiberium damage (`10049280`).
+    pub tiberium_transmogrify: i32,
+    /// `[General] SmallVisceroid=`, a UnitType pointer the RulesClass
+    /// constructor nulls (`0x00665650`); ReadGeneral's ReadString (returning
+    /// at `0x0066E6B0`) keeps it on an empty read, else UnitType
+    /// FindOrAllocate. Published by `RulesTypeReferences`. Ares' tiberium
+    /// death spawns it (`10049280` -> `TechnoExt::SpawnVisceroid @ 100468B0`).
+    pub small_visceroid: Option<String>,
+    /// `[General] LargeVisceroid=` (`Rules+0x10`), read the same way just
+    /// before it (ReadString returning at `0x0066E677`). Ares' visceroid
+    /// merge makes two small ones this type (`1004C530`).
+    pub large_visceroid: Option<String>,
+
     // -- Movement delay timers --
     /// Retained [AI] PathDelay double, in minutes (Rules+1760).
     /// Convert at the timer producer with the native PC53 multiply/ftol.
@@ -2005,6 +2116,19 @@ pub struct GeneralRules {
     /// ([AI] BlockagePathDelay). Native signed dword, in frames directly.
     /// When this timer expires, the unit re-pathfinds with urgency=2 (scatter).
     pub blockage_path_delay_ticks: i32,
+    /// `Rules+0x1134`, `[AI] PowerSurplus=`: `RulesClass::ReadAI` reads it
+    /// through `CCINIClass::ReadInteger 0x005276D0` (`0x00673A8B..0x00673AB0`)
+    /// over the constructor's 50 (`0x00666DDC`). Stock code never uses it;
+    /// Phobos' `EnablePowerSurplus` makes it the AI's spare power
+    /// (`PowerState::power_surplus`).
+    pub power_surplus: i32,
+    /// Phobos `[AI] EnablePowerSurplus=` (`RulesExt`, default false): computer
+    /// houses plan to keep `PowerSurplus` power spare.
+    pub enable_power_surplus: bool,
+    /// Phobos `[AI] PowerSurplus.ScaleToDrainAmount=` (`RulesExt`, default 0):
+    /// above 0, the spare power is `PowerSurplus` times the house's drain over
+    /// this amount.
+    pub power_surplus_scale_to_drain_amount: i32,
     /// [General] AIAutoDeployFrameDelay, native signed DynamicVector at
     /// Rules+E2C (data+E30), indexed Hard/Normal/Easy by Infantry52155C.
     /// Constructor666932..666961 leaves it empty; stock15,25,100 is authored.
@@ -2278,7 +2402,9 @@ pub struct ParadropList {
     /// and `<none>` and allocates a name it does not know). The processed
     /// rules own it (`native_processing`).
     pub infantry: Vec<String>,
-    /// `*ParaDropNum=` through the IntVector reader (`0x00475D70`).
+    /// `*ParaDropNum=` through the IntVector reader (`0x00475D70`); Ares
+    /// 3.0 Buf_General (1005BB00, hook 0x66D55E) reads it through
+    /// ParseList<int> (1005B030) instead.
     pub counts: Vec<i32>,
 }
 
@@ -2286,9 +2412,14 @@ impl ParadropList {
     /// The counts as the projected INI holds them; the infantry are the
     /// processed rules' ([`RuleSet::from_processed_rules`]).
     fn read_counts(general: &crate::rules::ini_parser::IniSection, key: &str) -> Self {
+        let counts = if crate::rules::ares_switch::ares_way() {
+            crate::rules::ares_switch::not_ares_read(|| general.read_ares_int_list(key))
+        } else {
+            general.read_int_list(key)
+        };
         Self {
             infantry: Vec::new(),
-            counts: general.read_int_list(key).unwrap_or_default(),
+            counts: counts.unwrap_or_default(),
         }
     }
 }
@@ -2498,14 +2629,17 @@ impl PrismSupportRules {
         // hook0x00671152: FILD Rules+49C; FDIV 100.0; pass that fraction to
         // ReadDouble. Without this, each keyless map/mode multiplies the
         // retained percentage by another 100 (original ReadGeneral67114F).
-        #[cfg(feature = "ares")]
-        let current = f64::from_bits(
-            X87::store_f64_masked_chop(X87::div(
-                X87::load_f64(NativeF64Bits::from_bits(current.to_bits())),
-                X87::load_f64(NativeF64Bits::from_bits(100.0_f64.to_bits())),
-            ))
-            .bits(),
-        );
+        let current = if crate::rules::ares_switch::ares_way() {
+            f64::from_bits(
+                X87::store_f64_masked_chop(X87::div(
+                    X87::load_f64(NativeF64Bits::from_bits(current.to_bits())),
+                    X87::load_f64(NativeF64Bits::from_bits(100.0_f64.to_bits())),
+                ))
+                .bits(),
+            )
+        } else {
+            current
+        };
         let percent = general.read_double("PrismSupportModifier", current);
         let modifier = X87::ftol_i32_low_masked(X87::mul(
             X87::load_f64(NativeF64Bits::from_bits(percent.to_bits())),
@@ -2564,6 +2698,7 @@ impl Default for GeneralRules {
             max_waypoint_path_length: 15,
             talk_bubble_time: 300,
             flash_frame_time: 7,
+            weed_capacity: 0,
             radar_combat_flash_time: 21,
             detail: DetailRules::default(),
             pose_dir: 0,
@@ -2628,7 +2763,7 @@ impl Default for GeneralRules {
             ally_change_allowed: true,
             comp_easy_bonus: true,
             paranoid: true,
-            tunnel_speed: SimFixed::from_num(6.0_f32),
+            tunnel_speed: SimFixed::ONE,
             missile_rot_var: 0.25,
             safety_altitude: 500,
             line_trail_color_override: [0; 3],
@@ -2636,6 +2771,9 @@ impl Default for GeneralRules {
             flight_level: 500,
             attacking_aircraft_sight_range: 5,
             display_cruise_height: 400, // Rules constructor665C3A
+            jumpjet_smooth_facing: false,
+            jumpjet_land_nearby: 0,
+            ai_nearest_enemy: false,
             // Rules constructor 0x00665E2B..0x00665E81.
             hover_height: 120,
             hover_bob: NativeF64Bits::from_bits(0x403e_0000_0000_0000),
@@ -2656,6 +2794,7 @@ impl Default for GeneralRules {
             anim_to_infantry: Vec::new(),
             base_unit_types: Vec::new(),
             multiplayer_ai_cm: Vec::new(),
+            ai_hate_delays: Vec::new(),
             pad_aircraft_types: Vec::new(),
             separate_aircraft: false,
             prism_type: None,
@@ -2664,8 +2803,6 @@ impl Default for GeneralRules {
             prerequisite_proc_alternate: None,
             prism_support: PrismSupportRules::default(),
             building_types: GeneralBuildingTypes::default(),
-            tiberium_grows: true,
-            tiberium_spreads: true,
             growth_rate_minutes: 2.0,
             // The RulesClass constructor's null pointers (+338..+344, +94 and
             // +BB4: `0x00665B02..0x00665B14`, `0x0066572F`, `0x006665CF`).
@@ -2704,6 +2841,7 @@ impl Default for GeneralRules {
                 None,
             ],
             attack_cursor_on_disguise: false,
+            allow_shrouded_subterannean_moves: false,
             default_mirage_disguises: Vec::new(),
             infantry_disguises: Default::default(),
             secret_lab_choices: Default::default(),
@@ -2715,6 +2853,7 @@ impl Default for GeneralRules {
             cloaking_stages: 9,
             cloak_delay_frames: 0,
             cloak_sound: None,
+            ares_decloak_sound: None,
             leave_bio_reactor_sound: None,
             enter_bio_reactor_sound: None,
             enter_grinder_sound: None,
@@ -2740,6 +2879,7 @@ impl Default for GeneralRules {
             berserk_color: 0,
             airstrike_abort_sound: None,
             airstrike_attack_voice: None,
+            gate_sounds: [None, None],
             condition_red_sparking_probability: 0.02,
             condition_yellow_sparking_probability: 0.01,
             condition_red_spark_threshold: unit_draw_threshold(0.02),
@@ -2772,6 +2912,7 @@ impl Default for GeneralRules {
             // definition of EAX before it is `0x00667202 MOV EAX,0x1`.
             lightning_print_text: true,
             dig_sound: None,
+            dig_anim: None,
             nuke_take_off: String::new(),
             ai_super_defense_probability: Vec::new(),
             ai_super_defense_distance: 10,
@@ -2851,6 +2992,7 @@ impl Default for GeneralRules {
             spy_power_blackout: 0,
             spy_money_steal_percent: NativeF32Bits::from_bits(0x3F00_0000),
             damage_fire_types: vec![],
+            on_fire: Vec::new(),
             barrel_particle: None,
             barrel_explode: None,
             barrel_debris: Vec::new(),
@@ -2859,23 +3001,19 @@ impl Default for GeneralRules {
             buildup_time: f64::from_bits(0x3FA9_9999_9999_999A),
             slave_miner_short_scan: 0x500,
             slave_miner_slave_scan: 0x1000,
-            drain_money_frame_delay: 30,
-            drain_money_amount: 30,
+            drain_money_frame_delay: 100,
+            drain_money_amount: 0,
             slave_miner_long_scan: 0x5000,
             slave_miner_scan_correction: 0x300,
             slave_miner_kick_frame_delay: 0x7FFF_FFFF,
             maximum_queued_objects: 5,
             #[cfg(feature = "phobos")]
             building_production_queue: false,
-            #[cfg(all(feature = "phobos", feature = "ares"))]
+            #[cfg(feature = "phobos")]
             building_type_selectable: false,
-            #[cfg(feature = "phobos")]
             ai_fire_sale: true,
-            #[cfg(feature = "phobos")]
             ai_fire_sale_delay: 0,
-            #[cfg(feature = "phobos")]
             ai_all_to_hunt: true,
-            #[cfg(feature = "phobos")]
             gather_when_mcv_deploy: true,
             #[cfg(feature = "phobos")]
             timer_blink_color_scheme: 5,
@@ -2934,10 +3072,17 @@ impl Default for GeneralRules {
             prone_speed_no_crawls: 1.5,
             // RulesClass constructor 0x0066738F.
             reload_rate: 0.05,
+            tiberium_heal_minutes: f64::from_bits(0x3F91_1111_1111_1111),
+            tiberium_transmogrify: 0,
+            small_visceroid: None,
+            large_visceroid: None,
             // PathDelay=.01 min = 0.6 sec = 9 ticks at 15 Hz.
             path_delay: 0.016,
             // BlockagePathDelay=60 frames (directly in frames, not minutes).
             blockage_path_delay_ticks: 60,
+            power_surplus: 50,
+            enable_power_surplus: false,
+            power_surplus_scale_to_drain_amount: 0,
             ai_auto_deploy_frame_delay: Vec::new(),
             #[cfg(feature = "phobos")]
             infantry_auto_deploy: false,
@@ -2967,7 +3112,7 @@ impl Default for GeneralRules {
             iq_auto_crush: 2,
             iq_sell_back: 2,
             credit_reserve: 1000,
-            cliff_back_impassability: 2,
+            cliff_back_impassability: read_cliff_back_impassability(None),
             lightning_storm_duration: 900,
             lightning_damage: 200,
             lightning_deferment: 250,
@@ -3346,10 +3491,11 @@ impl RadiationRules {
             light_delay: section.read_int("RadLightDelay", d.light_delay).max(1),
             // Double fields (`0x0066D057..0x0066D0A5`).
             level_factor: section.read_double("RadLevelFactor", d.level_factor),
-            light_factor: SimFixed::from_num(
+            // Saturating: an out-of-range literal scans as infinity.
+            light_factor: SimFixed::saturating_from_num(
                 section.read_double("RadLightFactor", d.light_factor.to_num()) as f32,
             ),
-            tint_factor: SimFixed::from_num(
+            tint_factor: SimFixed::saturating_from_num(
                 section.read_double("RadTintFactor", d.tint_factor.to_num()) as f32,
             ),
             color: (red, green, blue),
@@ -3408,7 +3554,26 @@ pub(crate) fn ambient_change_terms(rate: f64, step: f64) -> (bool, i32, i32) {
     )
 }
 
+/// `[General] CliffBackImpassability=` (`Rules+0x664`, a byte): ReadInt in
+/// RulesClass::ReadGeneral (`0x0066D530`, `0x0066F1CB..0x0066F1E6`) over the
+/// constructor's 0 (`0x00665F3B`), keeping the low byte. Retail RULESMD sets 2.
+/// The early overlay branch of `CellClass::RecalcAttributes` (`0x0047D2B0`)
+/// skips its neighbour test when the byte is 0 (`0x0047D386..0x0047D393`) and
+/// writes Rock only when it is 2 (`0x0047D52F..0x0047D53E`).
+///
+/// Residual: gamemd constructs RulesClass once, in Init_Game (`0x0052BA60`,
+/// call at `0x0052BAD1`), so rules that never set the key keep the byte of the
+/// scenario played before. VERA starts every scenario at 0. No retail rules
+/// omit the key.
+pub(crate) fn read_cliff_back_impassability(general: Option<&IniSection>) -> u8 {
+    general.map_or(0, |general| general.read_int("CliffBackImpassability", 0)) as u8
+}
+
 impl GeneralRules {
+    pub fn allow_shrouded_subterannean_moves(&self) -> bool {
+        self.allow_shrouded_subterannean_moves
+    }
+
     pub(crate) fn threat_coefficient_defaults(
         &self,
     ) -> super::threat_coefficients::ThreatCoefficients {
@@ -3509,6 +3674,10 @@ impl GeneralRules {
         self.maximum_cheer_rate
     }
 
+    pub(crate) fn ai_hate_delays(&self) -> &[i32] {
+        &self.ai_hate_delays
+    }
+
     pub(crate) fn cheer_sound(&self) -> Option<&str> {
         self.cheer_sound.as_deref()
     }
@@ -3550,6 +3719,11 @@ impl GeneralRules {
         native_minutes_to_frames(self.placement_delay)
     }
 
+    /// `[AudioVisual] GateUp` (`up`) or `GateDown`.
+    pub(crate) fn gate_sound(&self, up: bool) -> Option<&str> {
+        self.gate_sounds[usize::from(up)].as_deref()
+    }
+
     pub fn infantry_death_anim(&self, inf_death: i32) -> Option<&str> {
         usize::try_from(inf_death)
             .ok()
@@ -3565,6 +3739,19 @@ impl GeneralRules {
             .map_or(defaults.display_cruise_height, |s| {
                 s.read_int("CruiseHeight", defaults.display_cruise_height)
             });
+        // VERA key, not a gamemd one; absent means the original's snaps.
+        let jumpjet_smooth_facing = ini
+            .section("JumpjetControls")
+            .is_some_and(|s| s.read_bool("SmoothFacing", false));
+        // VERA key; 0 keeps the original's hover over a taken cell.
+        let jumpjet_land_nearby = ini
+            .section("JumpjetControls")
+            .map_or(0, |s| s.read_int("LandNearby", 0))
+            .clamp(0, 8);
+        // VERA key; absent keeps the original's first-house enemy search.
+        let ai_nearest_enemy = ini
+            .section("General")
+            .is_some_and(|s| s.read_bool("AINearestEnemy", false));
         // AI IQ thresholds live in their own [IQ] read.
         let iq = ini.section_or_empty("IQ");
         // gamemd-derived: `RulesClass__ReadIQ @ 0x00674240` reads signed
@@ -3591,19 +3778,12 @@ impl GeneralRules {
             .wrapping_shl(5);
         let condition_yellow_native = audio_visual.read_double("ConditionYellow", 0.5);
         let condition_red_native = audio_visual.read_double("ConditionRed", defaults.condition_red);
-        // The bomb sounds (Rules+0x20C/+0x210) come from the same pass.
-        let audio_visual_sound = |key: &str| {
-            audio_visual
-                .read_name(key, 0x80)
-                .filter(|name| !name.eq_ignore_ascii_case("none"))
-                .map(str::to_owned)
-        };
-        let bomb_ticking_sound = audio_visual_sound("BombTickingSound");
-        let bomb_attach_sound = audio_visual_sound("BombAttachSound");
+        // Fixed-catalog IDs are read by the retained native Process owner;
+        // this scalar projection alone has no catalog or sound-name reader.
+        let bomb_ticking_sound = defaults.bomb_ticking_sound.clone();
+        let bomb_attach_sound = defaults.bomb_attach_sound.clone();
         let ally_reveal = audio_visual.read_bool("AllyReveal", defaults.ally_reveal);
-        let psychic_reveal_activate_sound = audio_visual
-            .read_name("PsychicRevealActivateSound", 0x80)
-            .map(str::to_owned);
+        let psychic_reveal_activate_sound = defaults.psychic_reveal_activate_sound.clone();
         // RulesProcess668F36 reaches ReadCombatDamage66BBB0 independently of
         // ReadGeneral too; it gates on its own section only.
         let psychic_reveal_radius = ini
@@ -3624,31 +3804,34 @@ impl GeneralRules {
         let path_delay = ai.read_double("PathDelay", defaults.path_delay);
         let blockage_path_delay_ticks =
             ai.read_int("BlockagePathDelay", defaults.blockage_path_delay_ticks);
-        // ReadAudioVisual6691E0 is independent of the ReadGeneral section
-        // gate.66B673..66B754 reads all three class lights and stores signed
-        // milliunits after the active x87 chop-toward-zero conversion.
-        // Original no-General GI control: infantry_berserk_body.json.
-        // Retained residual: a later AudioVisual pass with a missing key uses
-        // native signed integer /1000 defaults; this projection retains fractions.
-        let extra_unit_light = (audio_visual
-            .read_double("ExtraUnitLight", defaults.extra_unit_light as f64 / 1000.0)
-            * 1000.0) as i32;
-        let extra_infantry_light = (audio_visual.read_double(
-            "ExtraInfantryLight",
-            defaults.extra_infantry_light as f64 / 1000.0,
-        ) * 1000.0) as i32;
-        let extra_aircraft_light = (audio_visual.read_double(
-            "ExtraAircraftLight",
-            defaults.extra_aircraft_light as f64 / 1000.0,
-        ) * 1000.0) as i32;
+        let power_surplus = ai.read_int("PowerSurplus", defaults.power_surplus);
+        // Phobos `RulesExt::ExtData::LoadBeforeTypeData` (src/Ext/Rules/Body.cpp
+        // at c783774a) reads these from hook 0x00679A15 in
+        // `RulesClass::ReadTypeData`, which `Process` runs for every Rules pass.
+        // Its `Read<bool, 1>` gives the stock reader's verdict, except that a
+        // first comma piece of 128 bytes or more keeps the value.
+        let enable_power_surplus =
+            phobos_read(|| ai.read_bool("EnablePowerSurplus", defaults.enable_power_surplus));
+        let power_surplus_scale_to_drain_amount = phobos_read(|| {
+            ai.read_phobos_int(
+                "PowerSurplus.ScaleToDrainAmount",
+                defaults.power_surplus_scale_to_drain_amount,
+            )
+        });
+        // ReadAudioVisual66B673..66B74E belongs to the retained Process
+        // owner; a final merged INI cannot reproduce omitted-key defaults.
+        let extra_unit_light = defaults.extra_unit_light;
+        let extra_infantry_light = defaults.extra_infantry_light;
+        let extra_aircraft_light = defaults.extra_aircraft_light;
         // Phobos `RulesExt` reads these `[AudioVisual]` keys independently of
         // RulesClass's `[General]` gate.
         #[cfg(feature = "phobos")]
         let airstrike_line_color =
             audio_visual.read_phobos_color("AirstrikeLineColor", defaults.airstrike_line_color);
         #[cfg(feature = "phobos")]
-        let airstrike_line_z_adjust =
-            audio_visual.read_ares_int("AirstrikeLineZAdjust", defaults.airstrike_line_z_adjust);
+        let airstrike_line_z_adjust = crate::rules::ares_switch::not_ares_read(|| {
+            audio_visual.read_ares_int("AirstrikeLineZAdjust", defaults.airstrike_line_z_adjust)
+        });
         let Some(general) = ini.section("General") else {
             return Self {
                 message_delay_minutes,
@@ -3659,11 +3842,17 @@ impl GeneralRules {
                 iq_harvester,
                 iq_super_weapons,
                 display_cruise_height,
+                jumpjet_smooth_facing,
+                jumpjet_land_nearby,
+                ai_nearest_enemy,
                 condition_yellow: condition_yellow_native,
                 condition_red: condition_red_native,
                 path_delay,
                 attack_delay,
                 blockage_path_delay_ticks,
+                power_surplus,
+                enable_power_surplus,
+                power_surplus_scale_to_drain_amount,
                 bomb_ticking_sound,
                 bomb_attach_sound,
                 ally_reveal,
@@ -3708,6 +3897,7 @@ impl GeneralRules {
             max_waypoint_path_length: general
                 .read_int("MaxWaypointPathLength", defaults.max_waypoint_path_length),
             flash_frame_time: general.read_int("FlashFrameTime", defaults.flash_frame_time),
+            weed_capacity: general.read_int("WeedCapacity", defaults.weed_capacity),
             radar_combat_flash_time: general
                 .read_int("RadarCombatFlashTime", defaults.radar_combat_flash_time),
             scroll_multiplier: audio_visual
@@ -3862,13 +4052,19 @@ impl GeneralRules {
             ally_change_allowed,
             comp_easy_bonus: defaults.comp_easy_bonus,
             paranoid,
-            tunnel_speed: SimFixed::from_num(general.read_double("TunnelSpeed", 6.0) as f32),
+            // Saturating: an out-of-range literal scans as infinity.
+            tunnel_speed: SimFixed::saturating_from_num(
+                general.read_double("TunnelSpeed", 1.0) as f32
+            ),
             flight_level: general.read_int("FlightLevel", 500),
             attacking_aircraft_sight_range: general.read_int(
                 "AttackingAircraftSightRange",
                 defaults.attacking_aircraft_sight_range,
             ),
             display_cruise_height,
+            jumpjet_smooth_facing,
+            jumpjet_land_nearby,
+            ai_nearest_enemy,
             // ReadGeneral 0x0066EDC5..0x0066EE83 reads these into their
             // fields with the current value as default (%-aware ReadDouble).
             hover_height: general.read_int("HoverHeight", defaults.hover_height),
@@ -3893,15 +4089,17 @@ impl GeneralRules {
             multiplayer_ai_cm: general
                 .read_int_list("MultiplayerAICM")
                 .unwrap_or(defaults.multiplayer_ai_cm),
+            // The retained RulesClass vector is projected after all passes.
+            ai_hate_delays: defaults.ai_hate_delays,
             pad_aircraft_types: defaults.pad_aircraft_types.clone(),
             separate_aircraft: general.read_bool("SeparateAircraft", defaults.separate_aircraft),
             // Only the ordered Process projection binds these references/reads.
             drop_zone_anim: defaults.drop_zone_anim,
             drop_zone_radius: defaults.drop_zone_radius,
-            tiberium_grows: general.read_bool("TiberiumGrows", true),
-            tiberium_spreads: general.read_bool("TiberiumSpreads", true),
             growth_rate_minutes: general.read_double("GrowthRate", 2.0) as f32,
-            attack_cursor_on_disguise: general.read_bool("AttackCursorOnDisguise", false),
+            // Published from the retained General pass owner.
+            attack_cursor_on_disguise: defaults.attack_cursor_on_disguise,
+            allow_shrouded_subterannean_moves: defaults.allow_shrouded_subterannean_moves,
             // Filled from the native ordered TerrainType list owner after
             // processing, including allocation/none-token/retention semantics.
             default_mirage_disguises: Vec::new(),
@@ -3925,6 +4123,7 @@ impl GeneralRules {
             cloak_sound: audio_visual
                 .read_name("CloakSound", 0x80)
                 .map(str::to_owned),
+            ares_decloak_sound: None,
             // The fixed SOUNDMD binder resolves Rules+0x274 as a Voc index.
             // Keep the constructor's invalid index until that owner binds it.
             leave_bio_reactor_sound: None,
@@ -3964,6 +4163,7 @@ impl GeneralRules {
                 .read_double("IdleActionFrequency", defaults.idle_action_frequency),
             airstrike_abort_sound: None,
             airstrike_attack_voice: None,
+            gate_sounds: [None, None],
             building_garrisoned_sound: audio_visual
                 .read_name("BuildingGarrisonedSound", 0x80)
                 .map(str::to_owned),
@@ -4002,6 +4202,9 @@ impl GeneralRules {
             // constructor's `true` (see the field doc).
             lightning_print_text: general.read_bool("LightningPrintText", true),
             dig_sound: audio_visual.read_name("DigSound", 0x80).map(str::to_owned),
+            // Published by the Rules processor's `Dig` pointer
+            // (`rules_type_references`).
+            dig_anim: None,
             nuke_take_off: defaults.nuke_take_off.clone(),
             ai_super_defense_probability: general
                 .read_int_list("AISuperDefenseProbability")
@@ -4068,15 +4271,11 @@ impl GeneralRules {
             ore_twinkle: defaults.ore_twinkle.clone(),
             ore_twinkle_chance: audio_visual
                 .read_int("OreTwinkleChance", defaults.ore_twinkle_chance),
-            gui_build_sound: audio_visual
-                .read_name("GUIBuildSound", 0x80)
-                .map(str::to_owned),
-            building_slam: audio_visual
-                .read_name("BuildingSlam", 0x80)
-                .map(str::to_owned),
-            gui_tab_sound: audio_visual
-                .read_name("GUITabSound", 0x80)
-                .map(str::to_owned),
+            // ReadAudioVisual owns these independently of ReadGeneral.
+            // The process projection supplies retained fixed Voc bindings.
+            gui_build_sound: None,
+            building_slam: None,
+            gui_tab_sound: None,
             // The fixed sound registry binds these readers below, including
             // current-ID retention through the actual Rules pass history.
             voice_ifv_repair: None,
@@ -4103,11 +4302,12 @@ impl GeneralRules {
             // reached ReadString128 value, including failed-read retention.
             gui_open_sound: None,
             gui_close_sound: None,
-            // Float fields (`FSTP dword` at `0x0066B8B1`/`0x0066B8DB`).
-            direct_rocking_coefficient: SimFixed::from_num(
+            // Float fields (`FSTP dword` at `0x0066B8B1`/`0x0066B8DB`),
+            // saturating: an out-of-range literal scans as infinity.
+            direct_rocking_coefficient: SimFixed::saturating_from_num(
                 audio_visual.read_float("DirectRockingCoefficient", 1.5),
             ),
-            fallback_coefficient: SimFixed::from_num(
+            fallback_coefficient: SimFixed::saturating_from_num(
                 audio_visual.read_float("FallBackCoefficient", 0.1),
             ),
             // ChronoInSound/ChronoOutSound live in [AudioVisual], not [General].
@@ -4149,6 +4349,7 @@ impl GeneralRules {
             spy_money_steal_percent: general
                 .read_double_to_float("SpyMoneyStealPercent", defaults.spy_money_steal_percent),
             damage_fire_types: defaults.damage_fire_types.clone(),
+            on_fire: defaults.on_fire.clone(),
             barrel_particle: defaults.barrel_particle.clone(),
             barrel_explode: defaults.barrel_explode.clone(),
             barrel_debris: defaults.barrel_debris.clone(),
@@ -4157,24 +4358,22 @@ impl GeneralRules {
             buildup_time: general.read_double("BuildupTime", f64::from_bits(0x3FA9_9999_9999_999A)),
             slave_miner_short_scan: general.read_range("SlaveMinerShortScan", 0x500),
             slave_miner_slave_scan: general.read_range("SlaveMinerSlaveScan", 0x1000),
-            drain_money_frame_delay: general.read_int("DrainMoneyFrameDelay", 30),
-            drain_money_amount: general.read_int("DrainMoneyAmount", 30),
+            // Published from the retained CombatDamage pass owner below.
+            drain_money_frame_delay: defaults.drain_money_frame_delay,
+            drain_money_amount: defaults.drain_money_amount,
             slave_miner_long_scan: general.read_range("SlaveMinerLongScan", 0x5000),
             slave_miner_scan_correction: general.read_range("SlaveMinerScanCorrection", 0x300),
             slave_miner_kick_frame_delay: general.read_int("SlaveMinerKickFrameDelay", 0x7FFF_FFFF),
             maximum_queued_objects: general.read_int("MaximumQueuedObjects", 5),
             #[cfg(feature = "phobos")]
             building_production_queue: general.read_bool("BuildingProductionQueue", false),
-            #[cfg(all(feature = "phobos", feature = "ares"))]
-            building_type_selectable: general.read_bool("BuildingTypeSelectable", false),
             #[cfg(feature = "phobos")]
-            ai_fire_sale: general.read_bool("AIFireSale", true),
-            #[cfg(feature = "phobos")]
-            ai_fire_sale_delay: general.read_int("AIFireSaleDelay", 0),
-            #[cfg(feature = "phobos")]
-            ai_all_to_hunt: general.read_bool("AIAllToHunt", true),
-            #[cfg(feature = "phobos")]
-            gather_when_mcv_deploy: general.read_bool("GatherWhenMCVDeploy", true),
+            building_type_selectable: crate::rules::ares_switch::ares_way()
+                && general.read_bool("BuildingTypeSelectable", false),
+            ai_fire_sale: phobos_read(|| general.read_bool("AIFireSale", true)),
+            ai_fire_sale_delay: phobos_read(|| general.read_int("AIFireSaleDelay", 0)),
+            ai_all_to_hunt: phobos_read(|| general.read_bool("AIAllToHunt", true)),
+            gather_when_mcv_deploy: phobos_read(|| general.read_bool("GatherWhenMCVDeploy", true)),
             harvester_too_far_distance: general.read_int("HarvesterTooFarDistance", 5),
             approach_target_reset_multiplier: general.read_int("ApproachTargetResetMultiplier", 1),
             chrono_harv_too_far_distance: general.read_int("ChronoHarvTooFarDistance", 50),
@@ -4223,7 +4422,8 @@ impl GeneralRules {
                     )
                     .to_bits(),
             ),
-            ship_sinking_weight: SimFixed::from_num(
+            // Saturating: an out-of-range literal scans as infinity.
+            ship_sinking_weight: SimFixed::saturating_from_num(
                 general.read_double("ShipSinkingWeight", defaults.ship_sinking_weight.to_num())
                     as f32,
             ),
@@ -4255,8 +4455,26 @@ impl GeneralRules {
             infantry_repair_step: defaults.infantry_repair_step,
             infantry_repair_rate: defaults.infantry_repair_rate,
             reload_rate: general.read_double("ReloadRate", defaults.reload_rate),
+            // Only Ares reads these back; Rules read the stock way keep the
+            // constructor's values.
+            tiberium_heal_minutes: if crate::rules::ares_switch::ares_way() {
+                general.read_double("TiberiumHeal", defaults.tiberium_heal_minutes)
+            } else {
+                defaults.tiberium_heal_minutes
+            },
+            tiberium_transmogrify: if crate::rules::ares_switch::ares_way() {
+                general.read_int("TiberiumTransmogrify", defaults.tiberium_transmogrify)
+            } else {
+                defaults.tiberium_transmogrify
+            },
+            // The ordered Process owner publishes them (`RulesTypeReferences`).
+            small_visceroid: None,
+            large_visceroid: None,
             path_delay,
             blockage_path_delay_ticks,
+            power_surplus,
+            enable_power_surplus,
+            power_surplus_scale_to_drain_amount,
             // ReadGeneral670235..670267 uses the same475D70 signed vector
             // reader as the existing Recalc difficulty tables below.
             ai_auto_deploy_frame_delay: general
@@ -4269,17 +4487,26 @@ impl GeneralRules {
             #[cfg(feature = "phobos")]
             decloak_damaged_targets: general.read_bool("DecloakDamagedTargets", true),
             #[cfg(feature = "phobos")]
-            rof_random_delay: combat_damage.read_ares_partial_int_pair(
-                "ROF.RandomDelay",
-                crate::rules::ini_value::PartialIntPair {
-                    low: 0,
-                    high: 2,
-                    values: 2,
-                },
-            ),
-            ai_force_prediction_fudge: ai
-                .read_int_list("AIForcePredictionFudge")
-                .unwrap_or_default(),
+            rof_random_delay: crate::rules::ares_switch::not_ares_read(|| {
+                combat_damage.read_ares_partial_int_pair(
+                    "ROF.RandomDelay",
+                    crate::rules::ini_value::PartialIntPair {
+                        low: 0,
+                        high: 2,
+                        values: 2,
+                    },
+                )
+            }),
+            // Ares 3.0 Buf_AI (1005B830, hook 0x672B0E): ParseList<int>
+            // (1005B030) replaces the original IntVector read.
+            ai_force_prediction_fudge: if crate::rules::ares_switch::ares_way() {
+                crate::rules::ares_switch::not_ares_read(|| {
+                    ai.read_ares_int_list("AIForcePredictionFudge")
+                })
+            } else {
+                ai.read_int_list("AIForcePredictionFudge")
+            }
+            .unwrap_or_default(),
             ai_pick_wall_defense_percent: general
                 .read_int_list("AIPickWallDefensePercent")
                 .unwrap_or_default(),
@@ -4298,7 +4525,7 @@ impl GeneralRules {
             iq_auto_crush: iq.read_int("AutoCrush", defaults.iq_auto_crush),
             iq_sell_back: iq.read_int("SellBack", defaults.iq_sell_back),
             credit_reserve: ai.read_int("CreditReserve", defaults.credit_reserve),
-            cliff_back_impassability: general.read_int("CliffBackImpassability", 2) as u8,
+            cliff_back_impassability: read_cliff_back_impassability(Some(general)),
             lightning_storm_duration: general
                 .read_int("LightningStormDuration", defaults.lightning_storm_duration),
             lightning_damage: general.read_int("LightningDamage", defaults.lightning_damage),
@@ -4440,6 +4667,27 @@ pub struct TypeHandle(pub u32);
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct WeaponHandle(u32);
 
+/// O(1) index into a `RuleSet`'s warheads.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) struct WarheadHandle(u32);
+
+/// O(1) index into a `RuleSet`'s projectiles.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) struct ProjectileHandle(u32);
+
+/// A weapon's `Warhead=` and `Projectile=` types, which gamemd's
+/// WeaponTypeClass holds as pointers (`+0xAC`, `+0xA0`), resolved once by
+/// the set that holds the weapon ([`RuleSet::resolve_handles`]), so
+/// per-shot reads skip hashing the names. Derived: never hashed or
+/// serialized.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct WeaponParts {
+    /// The resolving set's serial; 0 for a weapon no set resolved.
+    rules_serial: u64,
+    warhead: Option<WarheadHandle>,
+    projectile: Option<ProjectileHandle>,
+}
+
 /// A weapon name as one `RuleSet` resolved it ([`RuleSet::weapon_handle`]).
 /// [`RuleSet::resolved_weapon`] reads the handle only in that set and looks
 /// the name up anywhere else.
@@ -4452,7 +4700,7 @@ pub struct ResolvedWeapon {
 
 /// The weapons a type's records name — `Weapon[]`, `EliteWeapon[]`,
 /// `OccupyWeapon=` and `EliteOccupyWeapon=` — resolved once by the set that
-/// built the type ([`RuleSet::resolve_type_weapons`]), so per-object reads
+/// built the type ([`RuleSet::resolve_handles`]), so per-object reads
 /// skip hashing the name. Derived: never hashed or serialized.
 #[derive(Clone, Debug, Default)]
 pub struct TypeWeapons {
@@ -4485,6 +4733,67 @@ impl TypeWeapons {
     }
 }
 
+/// `id` as the uppercase key the type name indexes hold: the name itself
+/// unless it has a lowercase letter. Retail type names are uppercase, so a
+/// lookup by name rarely copies it.
+fn upper_name_key(id: &str) -> std::borrow::Cow<'_, str> {
+    if id.bytes().any(|byte| byte.is_ascii_lowercase()) {
+        #[cfg(any(test, feature = "test-support"))]
+        NAME_KEY_COPIES.with(|count| count.set(count.get() + 1));
+        std::borrow::Cow::Owned(id.to_ascii_uppercase())
+    } else {
+        std::borrow::Cow::Borrowed(id)
+    }
+}
+
+/// A value for each type name of the four native TechnoType arrays: one
+/// uppercase-keyed [`LookupMap`] per array, so a lookup borrows the name it
+/// is given ([`upper_name_key`]) and hashes it once with the cheap hasher.
+/// Only looked up, never walked.
+#[derive(Clone, Debug)]
+struct CategoryIndex<V>([LookupMap<String, V>; 4]);
+
+impl<V> Default for CategoryIndex<V> {
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
+impl<V: Copy> CategoryIndex<V> {
+    fn array(&self, category: ObjectCategory) -> &LookupMap<String, V> {
+        &self.0[Self::slot(category)]
+    }
+
+    fn slot(category: ObjectCategory) -> usize {
+        match category {
+            ObjectCategory::Infantry => 0,
+            ObjectCategory::Vehicle => 1,
+            ObjectCategory::Aircraft => 2,
+            ObjectCategory::Building => 3,
+        }
+    }
+
+    /// The value of `id` in `category`'s array, ignoring ASCII case.
+    fn get(&self, category: ObjectCategory, id: &str) -> Option<V> {
+        self.array(category).get(&*upper_name_key(id)).copied()
+    }
+
+    fn contains(&self, category: ObjectCategory, id: &str) -> bool {
+        self.get(category, id).is_some()
+    }
+
+    fn insert(&mut self, category: ObjectCategory, id: &str, value: V) {
+        self.0[Self::slot(category)].insert(id.to_ascii_uppercase(), value);
+    }
+
+    /// The value of `id`, after giving it `value` if it had none.
+    fn get_or_insert(&mut self, category: ObjectCategory, id: &str, value: V) -> V {
+        *self.0[Self::slot(category)]
+            .entry(id.to_ascii_uppercase())
+            .or_insert(value)
+    }
+}
+
 /// Master container for all game data parsed from rules.ini.
 ///
 /// Name lookups are case-insensitive (matching the engine's find-or-allocate),
@@ -4507,7 +4816,7 @@ pub struct RuleSet {
     /// Per-native-registry identity authority. Unlike the broad lookup above,
     /// this retains distinct types when malformed/custom rules list the same
     /// ID in more than one category.
-    object_category_index: HashMap<(ObjectCategory, String), TypeHandle>,
+    object_category_index: CategoryIndex<TypeHandle>,
     /// Read-only projection of the process owner's global TechnoType array.
     /// Constructor order can interleave categories across lazy allocations
     /// and later Rules passes; it is not TYPE_REGISTRIES order. An absent
@@ -4516,7 +4825,7 @@ pub struct RuleSet {
     native_techno_type_order: Vec<(ObjectCategory, String, Option<TypeHandle>)>,
     /// Case-insensitive identity of each type in the four native TechnoType
     /// registries to its ordered array index (`+0xDF8`).
-    type_array_indices: HashMap<(ObjectCategory, String), i32>,
+    type_array_indices: CategoryIndex<i32>,
     /// All weapons' handles indexed by ID (e.g., "105mm" → its
     /// `weapon_types` index). Built once with the set, never changed.
     weapons: LookupMap<String, WeaponHandle>,
@@ -4527,10 +4836,16 @@ pub struct RuleSet {
     /// unambiguously into the existing name projection. Rebuilt with Rules;
     /// it never allocates or mutates Type state (see issue1784).
     weapon_array: Vec<(String, bool)>,
-    /// All warheads indexed by ID (e.g., "AP" → WarheadType).
-    warheads: LookupMap<String, WarheadType>,
-    /// All projectiles indexed by ID (e.g., "InvisibleLow" → ProjectileType).
-    projectiles: LookupMap<String, ProjectileType>,
+    /// All warheads' handles indexed by ID (e.g., "AP" → its
+    /// `warhead_types` index). Built once with the set, never changed.
+    warheads: LookupMap<String, WarheadHandle>,
+    /// The warheads `warheads` indexes, one per key.
+    warhead_types: Vec<WarheadType>,
+    /// All projectiles' handles indexed by ID (e.g., "InvisibleLow" → its
+    /// `projectile_types` index). Built once with the set, never changed.
+    projectiles: LookupMap<String, ProjectileHandle>,
+    /// The projectiles `projectiles` indexes, one per key.
+    projectile_types: Vec<ProjectileType>,
     /// Country-level rules indexed by country/house type ID.
     countries: HashMap<String, CountryRules>,
     /// Country identities in native `[Countries]` registration order.
@@ -4556,13 +4871,13 @@ pub struct RuleSet {
     end_game_screens: crate::rules::end_game::EndGameCatalog,
     /// Read-only projection of the live SideExt owner, in the same native
     /// array order as side_ids. Rebuilt after every Process/reset/save restore.
-    #[cfg(feature = "ares")]
+    /// Empty when the Rules were read the stock way, which allocates no SideExt.
     side_extensions: Vec<crate::rules::ares_side_extension::AresSideExtension>,
     /// Uppercase side identity -> source-order index.
     side_indices: HashMap<String, SideIdx>,
     /// Phobos `[SOMESIDE] Sidebar.GDIPositions=`, in `[Sides]` order.
     /// The first side defaults to GDI positions; all others default to the
-    /// NOD table. Unlike SideExt+88 this is read without the Ares feature.
+    /// NOD table. Unlike SideExt+88 this is read in stock games too.
     #[cfg(feature = "phobos")]
     side_gdi_positions: Vec<bool>,
     /// Phobos `[GlobalControls]`/`[AudioVisual]` switches for the left
@@ -4592,7 +4907,9 @@ pub struct RuleSet {
     /// Effective side for each country after `[Sides]` membership and the
     /// per-country `Side=` override have both run.
     country_sides: Vec<Option<SideIdx>>,
-    /// `[Colors]` scheme entries in declaration order. Source of truth for every
+    /// `[Colors]` scheme entries in declaration order, then the built-in extra
+    /// lobby colours that section leaves out
+    /// ([`crate::rules::skirmish_colors`]). Source of truth for every
     /// house-color producer (loading-bar backing, lobby swatch, map `Color=`,
     /// skirmish slot priority).
     pub color_schemes: Vec<crate::rules::color_scheme::ColorSchemeEntry>,
@@ -4687,8 +5004,20 @@ pub struct RuleSet {
     /// Immutable projection of NativeRulesRegistryState's ordered armor catalog.
     ares_armors: Option<crate::rules::ares_armor::ArmorCatalog>,
     emp_sparkles: Option<String>,
-    #[cfg(feature = "ares")]
+    /// Whether Ares plays in this game, decided once from its Rules layers
+    /// and `ares.mix` by `rules::ares_switch`. Read through [`Self::ares`].
+    ares: bool,
+    /// Whether Phobos plays in this game, decided once from its Rules
+    /// projection by `rules::phobos_switch`. Read through [`Self::phobos`].
+    phobos: bool,
+    /// Whether its Rules were read the Ares way (`ares_switch::ares_way`).
+    /// Read through [`Self::reads_ares_way`].
+    reads_ares_way: bool,
     ares_global_controls: crate::rules::native_processing::AresGlobalControls,
+    /// Presentation projection of the retained Ares `[MouseCursors]` list.
+    ares_mouse_cursors: crate::rules::ares_mouse_cursor::MouseCursors,
+    /// Each SuperWeaponType's Ares `Cursor`/`NoCursor`, by uppercase ID.
+    ares_super_weapon_cursors: HashMap<String, crate::rules::ares_mouse_cursor::SuperWeaponCursors>,
     /// Derived type-membership index for the lifecycle hooks; rebuilt together
     /// with the RuleSet after every load/reset/pass. The catalog above is its
     /// only source of truth. This cache is not serialized or hashed separately.
@@ -4696,7 +5025,6 @@ pub struct RuleSet {
     /// All registered SW availability, independent of supported effect Types.
     /// Immutable projection of the retained ProcessedRules registry; the typed
     /// aux/list fields remain read-only compatibility views from that source.
-    #[cfg(feature = "ares")]
     ares_super_weapon_metadata:
         BTreeMap<String, crate::rules::superweapon_type::AresSuperWeaponMetadata>,
     /// Phobos `SW.TechLevel`/`SW.AuxTechnos`/`SW.NegTechnos` for every
@@ -4706,7 +5034,6 @@ pub struct RuleSet {
         BTreeMap<String, crate::rules::superweapon_type::PhobosSuperWeaponAvailability>,
     /// Phobos `[GlobalControls] AllowParallelAIQueues=` and the
     /// `ForbidParallelAIQueues.*` category switches.
-    #[cfg(feature = "phobos")]
     parallel_ai_queues: crate::rules::phobos_parallel_ai_queues::ParallelAiQueueRules,
     /// Rules-driven terrain land-type semantics keyed by TMP land byte.
     pub terrain_rules: TerrainRules,
@@ -4787,9 +5114,9 @@ pub struct RuleSet {
     #[cfg(feature = "phobos")]
     pub(crate) placement_preview_globals:
         crate::rules::phobos_placement_preview::PlacementPreviewGlobals,
-    /// Phobos `[General] SkirmishUnlimitedColors=`: the player-colour
-    /// conversion every launcher and loading-screen consumer reads.
-    #[cfg(feature = "phobos")]
+    /// The player-colour conversion every launcher and loading-screen consumer
+    /// reads, and the colours a lobby lists: `[SkirmishColors]` and Phobos
+    /// `[General] SkirmishUnlimitedColors=`.
     pub(crate) skirmish_color_mode: crate::rules::skirmish_colors::SkirmishColorMode,
     /// Radar event visual parameters (ping rectangles on minimap).
     pub radar_event_config: RadarEventConfig,
@@ -4836,7 +5163,8 @@ pub struct RuleSet {
     /// it once; every later binding and consumer uses this same registry.
     art_registry: crate::rules::art_data::ArtRegistry,
     /// Existing AnimTypes for Building451890's lookup-only427CB0 gate.
-    /// Membership is independent of a same-named art section or loaded SHP.
+    /// Includes distinct runtime keys for colliding native slots. Membership
+    /// is independent of a same-named art section or loaded SHP.
     pub anim_type_names: BTreeSet<String>,
     /// Ordered native registry receipt: whether this type actually reached a
     /// successful fixed-ART ReadINI before the final rules pass completed.
@@ -4853,6 +5181,7 @@ pub struct RuleSet {
     /// active AssetManager with effect assets. Gameplay and rendering share
     /// the GPU-independent physical model loader.
     voxel_assets: crate::rules::voxel_asset_catalog::VoxelAssetCatalog,
+    pub(crate) voxel_model_plan: super::voxel_model_plan::VoxelModelPlan,
     /// Every building type's construction control from its Buildup SHP,
     /// bound once from the active assets (`bind_building_buildup_assets`).
     buildup_assets: crate::rules::buildup_asset_catalog::BuildupAssetCatalog,
@@ -4862,6 +5191,10 @@ pub struct RuleSet {
     /// Raw terrain SHP counts used by authoritative TIBTRE animation timing.
     /// Presentation keeps its separate body-frame projection.
     terrain_assets: crate::rules::terrain_asset_catalog::TerrainAssetCatalog,
+    /// Every loaded ObjectType `AlphaImage=` SHP (`bind_alpha_images`). Not
+    /// in the fingerprint: it places and draws light glows, which no
+    /// gameplay reads.
+    alpha_images: crate::rules::alpha_image_assets::AlphaImageCatalog,
     /// Complete immutable per-object animation timing catalog. Gameplay reads
     /// this rules-owned resource directly; presentation cannot replace timing
     /// on an individual frame.
@@ -4885,69 +5218,204 @@ pub struct RuleSet {
     source_ini_hash: u64,
 }
 
+/// Source for the shared sound binder. Production uses the retained process
+/// receipt; synthetic tests can explicitly supply a bare INI without a live
+/// native registry. There is one binding implementation for both inputs.
+#[doc(hidden)]
+#[derive(Clone, Copy)]
+pub enum SoundReferenceSource<'a> {
+    Processed(&'a ProcessedRulesLayers),
+    #[cfg(any(test, feature = "test-support"))]
+    Fixture(&'a IniFile),
+}
+
+impl<'a> From<&'a ProcessedRulesLayers> for SoundReferenceSource<'a> {
+    fn from(value: &'a ProcessedRulesLayers) -> Self {
+        Self::Processed(value)
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl<'a> From<&'a IniFile> for SoundReferenceSource<'a> {
+    fn from(value: &'a IniFile) -> Self {
+        Self::Fixture(value)
+    }
+}
+
+impl<'a> SoundReferenceSource<'a> {
+    fn ini(self) -> &'a IniFile {
+        match self {
+            Self::Processed(processed) => processed.ini(),
+            #[cfg(any(test, feature = "test-support"))]
+            Self::Fixture(ini) => ini,
+        }
+    }
+}
+
 impl RuleSet {
     /// Ares1003DB30/1003DB50. Both group labels and ordinary type IDs share
     /// one namespace; callers compare these keys case-insensitively.
     pub fn type_selection_key<'a>(&'a self, category: ObjectCategory, type_id: &'a str) -> &'a str {
-        #[cfg(feature = "ares")]
-        if let Some(object) = self.object_in_category(category, type_id) {
+        if self.ares
+            && let Some(object) = self.object_in_category(category, type_id)
+        {
             return object.type_selection_key();
         }
-        #[cfg(not(feature = "ares"))]
-        let _ = category;
         type_id
     }
 
     /// CollectSelectedIDs732D47 -> Ares10041990/10041A3F gates the
-    /// DeploysInto/UndeploysInto seeds. Default builds keep retail behavior.
+    /// DeploysInto/UndeploysInto seeds. A stock game keeps retail behavior.
     pub fn type_select_uses_deploy(&self) -> bool {
-        #[cfg(feature = "ares")]
-        {
+        if self.ares {
             self.ares_global_controls.type_select_use_deploy()
-        }
-        #[cfg(not(feature = "ares"))]
-        {
+        } else {
             true
         }
     }
 
-    #[cfg(feature = "ares")]
+    /// RulesExt `[General] ChronoInfantryCrush` (constructor true): whether
+    /// warping infantry may land on a cell holding anything but infantry.
+    pub(crate) fn ares_chrono_infantry_crush(&self) -> bool {
+        self.ares_global_controls.chrono_infantry_crush()
+    }
+
+    /// RulesExt `[General]`/`[AudioVisual]` keys of the team, starting-unit,
+    /// wrench, disk-laser and electric-death hooks.
+    pub(crate) fn ares_general(&self) -> &crate::rules::native_processing::AresGeneralRules {
+        self.ares_global_controls.general()
+    }
+
+    /// RulesExt `[General] EnemyWrench` (constructor true): a player not
+    /// allied with a repairing building's owner sees its wrench.
+    pub fn ares_enemy_wrench(&self) -> bool {
+        self.ares_global_controls.general().enemy_wrench()
+    }
+
+    /// RulesExt `[CrateRules] RandomCrateMoney` (constructor 900).
+    pub(crate) fn ares_random_crate_money(&self) -> i32 {
+        self.ares_global_controls.random_crate_money()
+    }
+
+    /// RulesExt `[General] RepairStopOnInsufficientFunds` (constructor true).
+    pub(crate) fn ares_repair_stop_on_insufficient_funds(&self) -> bool {
+        self.ares_global_controls
+            .repair_stop_on_insufficient_funds()
+    }
+
     pub(crate) fn bounty_rules(&self) -> &crate::rules::ares_bounty::BountyGlobalRules {
         self.ares_global_controls.bounty()
     }
 
+    /// RulesExt CloakHeight, dim factors and detection speak delays.
+    pub fn ares_cloak_power(&self) -> &crate::rules::ares_cloak_power::CloakPowerGlobalRules {
+        self.ares_global_controls.cloak_power()
+    }
+
+    /// RulesExt `[AudioVisual] VeteranFlashTimer` (`rules::ares_veterancy`).
+    pub(crate) fn ares_veterancy(&self) -> &crate::rules::ares_veterancy::VeterancyGlobalRules {
+        self.ares_global_controls.veterancy()
+    }
+
+    /// The Ares `[MouseCursors]` list the client draws cursors from
+    /// ([`crate::rules::ares_mouse_cursor`]); presentation only.
+    pub fn ares_mouse_cursors(&self) -> &crate::rules::ares_mouse_cursor::MouseCursors {
+        &self.ares_mouse_cursors
+    }
+
+    /// The `[MouseCursors]` cursors `SWTypeExt::ExtData::WhatAction @
+    /// 10033EB0` shows over a cell superweapon `id` may or may not fire at.
+    /// It answers only for a type a NewSWType handles or whose `Action=` is
+    /// `Custom`; the others keep the stock action cursor. VERA's handled types
+    /// are its implemented handlers (`SuperWeaponKind::has_ares_handler`).
+    pub fn ares_super_weapon_cursors(
+        &self,
+        id: &str,
+    ) -> Option<crate::rules::ares_mouse_cursor::SuperWeaponCursors> {
+        let sw = self.super_weapon(id)?;
+        (sw.kind.has_ares_handler()
+            || sw
+                .action
+                .as_deref()
+                .is_some_and(|action| action.eq_ignore_ascii_case("Custom")))
+        .then(|| {
+            self.ares_super_weapon_cursors
+                .get(&sw.id.to_ascii_uppercase())
+                .copied()
+                .unwrap_or_default()
+        })
+    }
+
+    /// RulesExt BerserkROFMultiplier, AutoRepel and PlayerAutoRepel.
+    pub(crate) fn ares_techno_combat(
+        &self,
+    ) -> &crate::rules::ares_techno_type::TechnoCombatGlobalRules {
+        self.ares_global_controls.techno_combat()
+    }
+
+    /// RulesExt EngineerDamage and EngineerAlwaysCaptureTech.
+    pub(crate) fn ares_building_globals(
+        &self,
+    ) -> &crate::rules::ares_building_type::BuildingGlobalRules {
+        self.ares_global_controls.building()
+    }
+
+    /// RulesExt DamageAirConsiderBridges and IronCurtainFlash.
+    pub(crate) fn ares_warhead_globals(&self) -> &crate::rules::ares_warhead::WarheadGlobalRules {
+        self.ares_global_controls.warhead()
+    }
+
+    /// RulesExt TiberiumDamageEnabled, TiberiumHealEnabled, the explosive
+    /// warhead and anim, and OverlayExplodeThreshold.
+    pub(crate) fn ares_tiberium_globals(
+        &self,
+    ) -> &crate::rules::ares_tiberium::TiberiumGlobalRules {
+        self.ares_global_controls.tiberium()
+    }
+
+    /// RulesExt's firestorm anims, warhead and damage coefficient
+    /// (`+0xF0..+0x108`, `sim::ares_firestorm`).
+    pub(crate) fn ares_firestorm_globals(
+        &self,
+    ) -> &crate::rules::ares_firestorm::FirestormGlobalRules {
+        self.ares_global_controls.firestorm()
+    }
+
     /// Ares RulesExt+70, used by SW_HunterSeeker::Activate100728EB.
-    #[cfg(feature = "ares")]
     pub(crate) fn hunter_seeker_buildings(&self) -> &[String] {
         self.ares_global_controls.hunter_seeker_buildings()
     }
 
+    /// Ares RulesExt's DropPod globals with the stock locomotor keys, used by
+    /// SW_DropPod::Activate (10070E40) and the DropPod locomotor.
+    pub(crate) fn ares_drop_pod(&self) -> &crate::rules::superweapon_type::AresDropPodGlobalRules {
+        self.ares_global_controls.drop_pod()
+    }
+
+    /// `TreeFire=` and `TreeFlammability=`, read by the Ares terrain fire.
+    pub(crate) fn forest_fire(&self) -> &crate::rules::terrain_object_type::ForestFireRules {
+        self.ares_global_controls.forest_fire()
+    }
+
     /// RulesExt+14A indexed by native House difficulty0/1/2 (hardest first).
-    /// Only the compiled Ares CanBuild owner consumes this retained policy.
+    /// Only the Ares CanBuild owner consumes this retained policy.
     pub fn ares_ai_bypasses_build_limit(&self, difficulty_index: usize) -> bool {
-        #[cfg(feature = "ares")]
-        {
+        if self.ares {
             self.ares_global_controls
                 .ai_bypasses_build_limit(difficulty_index)
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = difficulty_index;
+        } else {
             false
         }
     }
 
-    /// RulesExt+160/+164 retained nullable named mission. Default builds
-    /// neither read this extension key nor supply an AI EMP recovery producer.
+    /// RulesExt+160/+164 retained nullable named mission. A stock game
+    /// neither reads this extension key nor supplies an AI EMP recovery producer.
     pub(crate) fn ares_emp_ai_recover_mission(
         &self,
     ) -> Option<crate::rules::mission_data::MissionType> {
-        #[cfg(feature = "ares")]
-        {
+        if self.ares {
             self.ares_global_controls.emp_ai_recover_mission()
-        }
-        #[cfg(not(feature = "ares"))]
-        {
+        } else {
             None
         }
     }
@@ -4973,7 +5441,24 @@ impl RuleSet {
         Self::from_processed_rules(&layers.process()?)
     }
 
+    /// Project processed Rules into the game's rules, the Ares way when their
+    /// registry reads that way (`ares_switch::ares_way`). The projection's
+    /// reader lookups are recorded, so the per-game Ares and Phobos switches
+    /// it stores ([`Self::ares`], [`Self::phobos`]) also count the keys only
+    /// these readers read.
     pub fn from_processed_rules(processed: &ProcessedRulesLayers) -> Result<Self, RulesError> {
+        let _ares_way = crate::rules::ares_switch::read_ares_way(
+            processed.native_registry_state().reads_ares_way(),
+        );
+        let (rules, reads) = crate::rules::ares_switch::record(|| Self::project(processed));
+        let mut rules = rules?;
+        rules.ares = processed.ares_inputs().decide(&reads);
+        rules.phobos = crate::rules::phobos_switch::decide(&reads);
+        rules.reads_ares_way = processed.native_registry_state().reads_ares_way();
+        Ok(rules)
+    }
+
+    fn project(processed: &ProcessedRulesLayers) -> Result<Self, RulesError> {
         processed.validate_saved_state()?;
         let mut rules = Self::from_projected_ini(
             processed,
@@ -4992,8 +5477,7 @@ impl RuleSet {
             let key = (category, id.to_ascii_uppercase());
             let object = rules
                 .object_category_index
-                .get(&key)
-                .copied()
+                .get(category, id)
                 .filter(|handle| rules.object_by_handle(*handle).id == id);
             if let Some(object) = object {
                 // TechnoType+634 is retained typed state, not a merged INI
@@ -5008,8 +5492,7 @@ impl RuleSet {
                 .push((category, id.to_owned(), handle));
         }
         for (category, id, coefficients) in processed.techno_threat_coefficients() {
-            let key = (category, id.to_ascii_uppercase());
-            if let Some(handle) = rules.object_category_index.get(&key).copied()
+            if let Some(handle) = rules.object_category_index.get(category, id)
                 && rules.object_by_handle(handle).id == id
             {
                 rules.object_list[handle.0 as usize].project_threat_coefficients(coefficients);
@@ -5078,6 +5561,7 @@ impl RuleSet {
         );
         rules.general.prism_support = processed.prism_support();
         rules.general.patrol_scan_minutes = processed.patrol_scan_minutes();
+        rules.general.ai_hate_delays = processed.ai_hate_delays().to_vec();
         (rules.general.shroud_grow, rules.general.shroud_rate) = processed.shroud_growth_inputs();
         rules.general.fog_rate = processed.fog_rate();
         rules.general.prism_type = processed.prism_type().map(str::to_owned);
@@ -5103,8 +5587,7 @@ impl RuleSet {
             .filter_map(|alternate| {
                 rules
                     .object_category_index
-                    .get(&(alternate.category(), alternate.id().to_ascii_uppercase()))
-                    .copied()
+                    .get(alternate.category(), alternate.id())
             })
             .collect();
         rules.general.building_types = processed.building_types().clone();
@@ -5117,16 +5600,13 @@ impl RuleSet {
         rules.combat_damage.tiberium_explosion_damage = processed.tiberium_explosion_damage();
         rules.combat_damage.death_weapon =
             processed.combat_damage_death_weapon().map(str::to_owned);
-        for (name, conventional, em_effect, anim_list, debris_types, verses, ares_verses) in
+        for (name, conventional, em_effect, sparky, anim_list, debris_types, verses, ares_verses) in
             processed.warhead_read_states()
         {
-            if let Some(warhead) = rules
-                .warheads
-                .values_mut()
-                .find(|wh| wh.id.eq_ignore_ascii_case(name))
-            {
+            if let Some(warhead) = rules.warhead_mut(name) {
                 warhead.conventional = conventional;
                 warhead.em_effect = em_effect;
+                warhead.sparky = sparky;
                 warhead.anim_list = anim_list.to_vec();
                 warhead.debris_types = debris_types.to_vec();
                 warhead.verses_f64 = verses.map(|value| f64::from_bits(value.bits()));
@@ -5134,11 +5614,7 @@ impl RuleSet {
             }
         }
         for (name, particle_system) in processed.warhead_particle_states() {
-            if let Some(warhead) = rules
-                .warheads
-                .values_mut()
-                .find(|warhead| warhead.id.eq_ignore_ascii_case(name))
-            {
+            if let Some(warhead) = rules.warhead_mut(name) {
                 warhead.particle_system = particle_system.map(str::to_owned);
             }
         }
@@ -5151,6 +5627,7 @@ impl RuleSet {
             cloak_allowed,
             turret_rot,
             aircraft_crashable,
+            curtain_modifiers,
         ) in processed.ares_techno_states()
         {
             if let Some(object) = rules
@@ -5165,89 +5642,131 @@ impl RuleSet {
                     cloak_allowed,
                     turret_rot,
                     aircraft_crashable,
+                    curtain_modifiers,
                 );
             }
         }
-        #[cfg(feature = "ares")]
-        for (category, name, enabled, options) in processed.ares_spotlight_states() {
-            if let Some(handle) = rules
-                .object_category_index
-                .get(&(category, name.to_ascii_uppercase()))
-                .copied()
-            {
-                rules.object_list[handle.0 as usize].bind_ares_spotlight(enabled, options);
+        // The retained canopy key can enable Ares in a stock-way game too.
+        for (category, name, retained) in processed.techno_combat_states() {
+            if let Some(handle) = rules.object_category_index.get(category, name) {
+                rules.object_list[handle.0 as usize].bind_techno_combat_rules(retained);
             }
         }
-        #[cfg(feature = "ares")]
-        for (category, name, retained) in processed.super_weapon_techno_states() {
-            if let Some(handle) = rules
-                .object_category_index
-                .get(&(category, name.to_ascii_uppercase()))
-                .copied()
-            {
-                rules.object_list[handle.0 as usize].bind_super_weapon_techno_rules(
-                    retained.designator_range,
-                    retained.inhibitor_range,
-                    retained.hunter_seeker_ignore,
-                );
+        if crate::rules::ares_switch::ares_way() {
+            for (category, name, enabled, options) in processed.ares_spotlight_states() {
+                if let Some(handle) = rules.object_category_index.get(category, name) {
+                    rules.object_list[handle.0 as usize].bind_ares_spotlight(enabled, options);
+                }
             }
-        }
-        #[cfg(feature = "ares")]
-        for (category, name, group) in processed.selection_group_states() {
-            if let Some(handle) = rules
-                .object_category_index
-                .get(&(category, name.to_ascii_uppercase()))
-                .copied()
-            {
-                rules.object_list[handle.0 as usize].bind_selection_group(group);
+            for (category, name, retained) in processed.super_weapon_techno_states() {
+                if let Some(handle) = rules.object_category_index.get(category, name) {
+                    rules.object_list[handle.0 as usize].bind_super_weapon_techno_rules(retained);
+                }
             }
-        }
-        #[cfg(feature = "ares")]
-        for (category, name, driver) in processed.driver_states() {
-            if let Some(handle) = rules
-                .object_category_index
-                .get(&(category, name.to_ascii_uppercase()))
-                .copied()
-            {
-                rules.object_list[handle.0 as usize].bind_driver_rules(driver);
+            for (category, name, group) in processed.selection_group_states() {
+                if let Some(handle) = rules.object_category_index.get(category, name) {
+                    rules.object_list[handle.0 as usize].bind_selection_group(group);
+                }
             }
-        }
-        #[cfg(feature = "ares")]
-        for (category, name, bounty) in processed.bounty_states() {
-            if let Some(handle) = rules
-                .object_category_index
-                .get(&(category, name.to_ascii_uppercase()))
-                .copied()
-            {
-                rules.object_list[handle.0 as usize].bind_bounty_rules(bounty);
+            for (category, name, driver) in processed.driver_states() {
+                if let Some(handle) = rules.object_category_index.get(category, name) {
+                    rules.object_list[handle.0 as usize].bind_driver_rules(driver);
+                }
             }
-        }
-        #[cfg(feature = "ares")]
-        for (category, name, crew) in processed.crew_states() {
-            if let Some(handle) = rules
-                .object_category_index
-                .get(&(category, name.to_ascii_uppercase()))
-                .copied()
-            {
-                rules.object_list[handle.0 as usize].bind_crew_rules(crew);
+            for (category, name, bounty) in processed.bounty_states() {
+                if let Some(handle) = rules.object_category_index.get(category, name) {
+                    rules.object_list[handle.0 as usize].bind_bounty_rules(bounty);
+                }
+            }
+            for (category, name, crew) in processed.crew_states() {
+                if let Some(handle) = rules.object_category_index.get(category, name) {
+                    rules.object_list[handle.0 as usize].bind_crew_rules(crew);
+                }
+            }
+            for (name, infiltration) in processed.infiltration_states() {
+                if let Some(handle) = rules
+                    .object_category_index
+                    .get(ObjectCategory::Building, name)
+                {
+                    rules.object_list[handle.0 as usize].bind_infiltration_rules(infiltration);
+                }
+            }
+            for (category, name, veterancy) in processed.veterancy_states() {
+                if let Some(handle) = rules.object_category_index.get(category, name) {
+                    rules.object_list[handle.0 as usize].bind_ares_veterancy(veterancy);
+                }
+            }
+            for (category, name, production) in processed.production_states() {
+                if let Some(handle) = rules.object_category_index.get(category, name) {
+                    rules.object_list[handle.0 as usize].bind_ares_production(production);
+                }
+            }
+            for (category, name, cursors) in processed.ares_cursor_states() {
+                if let Some(handle) = rules.object_category_index.get(category, name) {
+                    rules.object_list[handle.0 as usize].bind_ares_cursors(cursors);
+                }
+            }
+            // Ares ValidateThings100677B0 (hook687C16), after every INI
+            // read: a Factory= building cannot be a ClonedAt source nor a
+            // CloningFacility.
+            let factories: HashSet<String> = rules
+                .object_list
+                .iter()
+                .filter(|object| {
+                    object.category == ObjectCategory::Building && object.factory_type().is_some()
+                })
+                .map(|object| object.id.to_ascii_uppercase())
+                .collect();
+            for object in &mut rules.object_list {
+                let factory =
+                    object.category == ObjectCategory::Building && object.factory_type().is_some();
+                object.ares_production_mut().validate(factory, |source| {
+                    factories.contains(&source.to_ascii_uppercase())
+                });
+            }
+            for (name, academy) in processed.academy_states() {
+                if let Some(handle) = rules
+                    .object_category_index
+                    .get(ObjectCategory::Building, name)
+                {
+                    rules.object_list[handle.0 as usize].bind_academy(academy);
+                }
+            }
+            for (category, name, retained) in processed.cloak_power_states() {
+                if let Some(handle) = rules.object_category_index.get(category, name) {
+                    rules.object_list[handle.0 as usize].bind_cloak_power_rules(retained);
+                }
+            }
+            // Ares ValidateThings100677B0 (hook687C16), after every INI read:
+            // PoweredBy replaces PoweredUnit, and a PowersUnit naming a
+            // PoweredBy type is cleared. Both write the live Type.
+            let powered_by_types: HashSet<String> = rules
+                .object_list
+                .iter()
+                .filter(|object| !object.cloak_power().powered_by().is_empty())
+                .map(|object| object.id.to_ascii_uppercase())
+                .collect();
+            for object in &mut rules.object_list {
+                if !object.cloak_power().powered_by().is_empty() {
+                    object.powered_unit = false;
+                }
+                if object
+                    .powers_unit
+                    .as_deref()
+                    .is_some_and(|unit| powered_by_types.contains(&unit.to_ascii_uppercase()))
+                {
+                    object.powers_unit = None;
+                }
             }
         }
         for (name, ares) in processed.ares_warhead_states() {
-            if let Some(warhead) = rules
-                .warheads
-                .values_mut()
-                .find(|wh| wh.id.eq_ignore_ascii_case(name))
-            {
+            if let Some(warhead) = rules.warhead_mut(name) {
                 warhead.bind_ares_rules(ares);
             }
         }
         for (category, name, armor) in processed.object_armor_states() {
             if let Some(category) = category {
-                if let Some(handle) = rules
-                    .object_category_index
-                    .get(&(category, name.to_ascii_uppercase()))
-                    .copied()
-                {
+                if let Some(handle) = rules.object_category_index.get(category, name) {
                     rules.object_list[handle.0 as usize].bind_armor(armor);
                 }
             } else if let Some(terrain) = rules
@@ -5279,6 +5798,11 @@ impl RuleSet {
             rules.general.unit_repair_rate,
             rules.general.infantry_repair_rate,
         ) = processed.repair_service_inputs();
+        [
+            rules.general.extra_unit_light,
+            rules.general.extra_infantry_light,
+            rules.general.extra_aircraft_light,
+        ] = processed.class_extra_lights();
         rules.general.charge_to_drain_ratio = processed.charge_to_drain_ratio();
         let mut weapon_name_counts = HashMap::<String, usize>::new();
         for weapon in processed.weapon_states() {
@@ -5370,34 +5894,55 @@ impl RuleSet {
                 object.gunner_turrets = gunner_turrets.clone();
             }
         }
-        #[cfg(feature = "ares")]
-        for (category, name, state) in processed.factory_owner_states() {
+        for (category, name, is_gattling, stages) in processed.gattling_states() {
             if let Some(object) = rules
                 .object_list
                 .iter_mut()
                 .find(|object| object.category == category && object.id == name)
             {
-                object.project_factory_owners(state);
+                object.is_gattling = is_gattling;
+                object.gattling_stages = *stages;
             }
         }
-        #[cfg(feature = "ares")]
-        for (name, state) in processed.explicit_factory_states() {
-            if let Some(object) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == ObjectCategory::Building && object.id == name)
-            {
-                object.project_explicit_factory(state);
+        if crate::rules::ares_switch::ares_way() {
+            for (category, name, state) in processed.factory_owner_states() {
+                if let Some(object) = rules
+                    .object_list
+                    .iter_mut()
+                    .find(|object| object.category == category && object.id == name)
+                {
+                    object.project_factory_owners(state);
+                }
+            }
+            for (name, state) in processed.explicit_factory_states() {
+                if let Some(object) = rules
+                    .object_list
+                    .iter_mut()
+                    .find(|object| object.category == ObjectCategory::Building && object.id == name)
+                {
+                    object.project_explicit_factory(state);
+                }
             }
         }
-        for (category, name, references, image) in processed.techno_reference_states() {
+        for (category, name, references, image, crush_sound) in processed.techno_reference_states()
+        {
             if let Some(object) = rules
                 .object_list
                 .iter_mut()
                 .find(|object| object.category == category && object.id == name)
             {
                 object.project_image_state(image);
+                object.crush_sound = crush_sound.map(str::to_owned);
                 references.apply_to(object);
+            }
+        }
+        for (name, trailer) in processed.aircraft_trailer_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == ObjectCategory::Aircraft && object.id == name)
+            {
+                object.project_aircraft_trailer(trailer);
             }
         }
         for (category, name, shadow_index) in processed.voxel_shadow_states() {
@@ -5418,6 +5963,24 @@ impl RuleSet {
                 object.project_infantry_pips(pips);
             }
         }
+        for (name, civilian) in processed.infantry_civilian_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == ObjectCategory::Infantry && object.id == name)
+            {
+                object.civilian = civilian;
+            }
+        }
+        for (name, sparks) in processed.infantry_damage_spark_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == ObjectCategory::Infantry && object.id == name)
+            {
+                object.damage_sparks = sparks;
+            }
+        }
         for (name, art) in processed.infantry_art_states() {
             if let Some(object) = rules
                 .object_list
@@ -5427,13 +5990,13 @@ impl RuleSet {
                 object.project_infantry_art(art);
             }
         }
-        for (name, reads) in processed.infantry_sequence_sound_reads() {
+        for (name, bank) in processed.infantry_sequence_banks() {
             if let Some(object) = rules
                 .object_list
                 .iter_mut()
                 .find(|object| object.category == ObjectCategory::Infantry && object.id == name)
             {
-                object.project_sequence_sound_reads(reads);
+                object.project_infantry_sequence_bank(bank);
             }
         }
         for (name, flags) in processed.infantry_infiltration_states() {
@@ -5449,6 +6012,20 @@ impl RuleSet {
             .anim_type_art_read_states()
             .map(|(name, read)| (name.to_owned(), read))
             .collect();
+        rules
+            .anim_type_names
+            .extend(
+                (0..rules.anim_type_art_read_states.len()).filter_map(|index| {
+                    crate::rules::native_processing::anim_type_runtime_key(
+                        rules
+                            .anim_type_art_read_states
+                            .iter()
+                            .map(|(name, _)| name.as_str()),
+                        index,
+                    )
+                    .map(|key| key.to_ascii_uppercase())
+                }),
+            );
         rules.anim_type_images = processed
             .anim_type_image_states()
             .map(|(name, image)| (name.to_owned(), image.clone()))
@@ -5483,6 +6060,37 @@ impl RuleSet {
                 building.base_reservation_spacing = building
                     .base_reservation_writer_eligible()
                     .then_some(rules.ai_base_spacing);
+            }
+        }
+        if crate::rules::ares_switch::ares_way() {
+            for (name, ext) in processed.building_type_ext_states() {
+                if let Some(handle) = rules
+                    .object_category_index
+                    .get(ObjectCategory::Building, name)
+                {
+                    let building = &mut rules.object_list[handle.0 as usize];
+                    building.bind_building_type_ext(ext);
+                    // AIBaseNormal joins the base-reservation gate above.
+                    building.base_reservation_spacing = building
+                        .base_reservation_writer_eligible()
+                        .then_some(rules.ai_base_spacing);
+                }
+            }
+            // Ares CompleteInitialization 1000D380 (hook 0x679CAF), once the
+            // foundations above are final: a rubble pair shares one foundation.
+            let foundations: HashMap<String, crate::rules::foundation::Foundation> = rules
+                .object_list
+                .iter()
+                .filter(|object| object.category == ObjectCategory::Building)
+                .map(|object| (object.id.to_ascii_uppercase(), object.foundation.clone()))
+                .collect();
+            for object in rules
+                .object_list
+                .iter_mut()
+                .filter(|object| object.category == ObjectCategory::Building)
+            {
+                object
+                    .complete_building_type_ext(|name| foundations.get(&name.to_ascii_uppercase()));
             }
         }
         for (name, flag) in processed.building_spotlight_flags() {
@@ -5542,20 +6150,12 @@ impl RuleSet {
         // The registry processor owns native read timing and retained values;
         // the runtime definition receives that result, not another ART read.
         for (name, art, image) in processed.projectile_art_states() {
-            if let Some(projectile) = rules
-                .projectiles
-                .values_mut()
-                .find(|projectile| projectile.id.eq_ignore_ascii_case(name))
-            {
+            if let Some(projectile) = rules.projectile_mut(name) {
                 art.apply_to(image, projectile);
             }
         }
         for (name, (airburst, shrapnel)) in processed.projectile_weapon_states() {
-            if let Some(projectile) = rules
-                .projectiles
-                .values_mut()
-                .find(|projectile| projectile.id.eq_ignore_ascii_case(name))
-            {
+            if let Some(projectile) = rules.projectile_mut(name) {
                 projectile.airburst_weapon = airburst.map(str::to_owned);
                 projectile.shrapnel_weapon = shrapnel.map(str::to_owned);
             }
@@ -5596,8 +6196,7 @@ impl RuleSet {
                 }
             }
         }
-        #[cfg(feature = "ares")]
-        {
+        if crate::rules::ares_switch::ares_way() {
             rules.ares_super_weapon_metadata.clear();
             for (name, metadata) in processed.super_weapon_availability_states() {
                 rules
@@ -5652,15 +6251,6 @@ impl RuleSet {
                 settings.warhead = warhead.map(str::to_owned);
             }
         }
-        for (name, warhead) in processed.particle_warhead_states() {
-            if let Some(particle) = rules
-                .particle_types
-                .iter_mut()
-                .find(|particle| particle.name.eq_ignore_ascii_case(name))
-            {
-                particle.warhead = warhead.map(str::to_owned);
-            }
-        }
         for (name, references, damage) in processed.voxel_anim_reference_states() {
             if let Some(voxel_anim) = rules
                 .voxel_anim_types
@@ -5672,8 +6262,38 @@ impl RuleSet {
             }
         }
         processed.rules_type_references().apply_to(&mut rules);
+        // Ares 3.0 InfantryClass_ReceiveDamage_ElectricDeath (1002C930, hook
+        // 0x518744) replaces the InfDeath=5 anim, AnimTypes[1]: the RulesExt
+        // InfantryElectrocuted, else Find("ELECTRO") over the live registry,
+        // else AnimTypes[1]. The first death caches it; no later read
+        // changes the registry, so it is resolved here.
+        if crate::rules::ares_switch::ares_way() {
+            let anims = processed
+                .anim_type_art_read_states()
+                .map(|(id, _)| id)
+                .collect::<Vec<_>>();
+            let key = |index| {
+                crate::rules::native_processing::anim_type_runtime_key(anims.iter().copied(), index)
+                    .map(|key| key.into_owned())
+            };
+            let electric = rules
+                .ares_general()
+                .infantry_electrocuted()
+                .map(str::to_owned)
+                .or_else(|| {
+                    anims
+                        .iter()
+                        .position(|id| id.eq_ignore_ascii_case("ELECTRO"))
+                        .and_then(key)
+                })
+                .or_else(|| key(1));
+            if electric.is_some() {
+                rules.general.infantry_death_anims[5] = electric;
+            }
+        }
         rules.project_house_masks();
-        rules.resolve_type_weapons();
+        rules.rebuild_animation_sequences();
+        rules.resolve_handles();
         Ok(rules)
     }
 
@@ -5698,10 +6318,7 @@ impl RuleSet {
     /// approved exclusion that retail never reaches.
     pub(crate) fn ids_with_objects(&self, ids: &[String], category: ObjectCategory) -> Vec<String> {
         ids.iter()
-            .filter(|id| {
-                self.object_category_index
-                    .contains_key(&(category, id.to_ascii_uppercase()))
-            })
+            .filter(|id| self.object_category_index.contains(category, id))
             .cloned()
             .collect()
     }
@@ -5713,9 +6330,13 @@ impl RuleSet {
             object.build_const_eligible = false;
         }
         for id in self.build_const_types.clone() {
-            let handle =
-                self.object_category_index[&(ObjectCategory::Building, id.to_ascii_uppercase())];
-            self.object_list[handle.0 as usize].build_const_eligible = true;
+            // `ids_with_objects` kept only ids this index holds.
+            if let Some(handle) = self
+                .object_category_index
+                .get(ObjectCategory::Building, &id)
+            {
+                self.object_list[handle.0 as usize].build_const_eligible = true;
+            }
         }
     }
 
@@ -5723,169 +6344,182 @@ impl RuleSet {
     /// SOUNDMD registry. The processed projection retains only passes where
     /// each type existed, including the native current-ID retention order.
     /// Type defaults and Rules+208 start at -1; [AudioVisual] owns the latter.
-    pub fn bind_type_sound_references(
+    pub fn bind_type_sound_references<'a>(
         &mut self,
-        ini: &IniFile,
+        source: impl Into<SoundReferenceSource<'a>>,
         sounds: &crate::rules::sound_ini::SoundRegistry,
     ) {
+        let source = source.into();
+        let ini = source.ini();
         // Original669423..6694B6, in native open/close read order. The
         // processed section already owns the reached Rules pass history.
         self.general.gui_open_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "GUIOpenSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "GUIOpenSound", None));
         self.general.gui_close_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "GUICloseSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "GUICloseSound", None));
         self.general.disk_laser_charge_up = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "DiskLaserChargeUp"));
+            .and_then(|section| sounds.read_rules_reference(section, "DiskLaserChargeUp", None));
         self.general.create_unit_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "CreateUnitSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "CreateUnitSound", None));
         self.general.create_infantry_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "CreateInfantrySound"));
+            .and_then(|section| sounds.read_rules_reference(section, "CreateInfantrySound", None));
         self.general.create_aircraft_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "CreateAircraftSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "CreateAircraftSound", None));
         // Original66A763..66A973, in native read order for these bound fields. Use the same fixed
         // registry and history-aware reader as every other bound Voc ID.
         self.general.game_closed_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "GameClosed"));
+            .and_then(|section| sounds.read_rules_reference(section, "GameClosed", None));
         self.general.incoming_message_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "IncomingMessage"));
+            .and_then(|section| sounds.read_rules_reference(section, "IncomingMessage", None));
         self.general.message_char_typed_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "MessageCharTyped"));
+            .and_then(|section| sounds.read_rules_reference(section, "MessageCharTyped", None));
         self.general.system_error_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "SystemError"));
+            .and_then(|section| sounds.read_rules_reference(section, "SystemError", None));
         self.general.options_changed_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "OptionsChanged"));
+            .and_then(|section| sounds.read_rules_reference(section, "OptionsChanged", None));
         self.general.game_forming_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "GameForming"));
+            .and_then(|section| sounds.read_rules_reference(section, "GameForming", None));
         self.general.player_left_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "PlayerLeft"));
+            .and_then(|section| sounds.read_rules_reference(section, "PlayerLeft", None));
         self.general.player_joined_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "PlayerJoined"));
+            .and_then(|section| sounds.read_rules_reference(section, "PlayerJoined", None));
         self.general.airstrike_abort_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "AirstrikeAbortSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "AirstrikeAbortSound", None));
         self.general.airstrike_attack_voice = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "AirstrikeAttackVoice"));
+            .and_then(|section| sounds.read_rules_reference(section, "AirstrikeAttackVoice", None));
+        if crate::rules::ares_switch::ares_way() {
+            self.general.gate_sounds = ["GateDown", "GateUp"].map(|key| {
+                ini.section("AudioVisual")
+                    .and_then(|section| sounds.read_rules_reference(section, key, None))
+            });
+        }
         self.general.leave_bio_reactor_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "LeaveBioReactorSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "LeaveBioReactorSound", None));
         self.general.enter_bio_reactor_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "EnterBioReactorSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "EnterBioReactorSound", None));
         self.general.enter_grinder_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "EnterGrinderSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "EnterGrinderSound", None));
         self.general.sinking_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "SinkingSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "SinkingSound", None));
         self.general.score_anim_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "ScoreAnimSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "ScoreAnimSound", None));
         self.general.construction_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "Construction"));
-        self.general.building_abandoned_sound = ini
-            .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "BuildingAbandonedSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "Construction", None));
+        self.general.building_abandoned_sound = ini.section("AudioVisual").and_then(|section| {
+            sounds.read_rules_reference(section, "BuildingAbandonedSound", None)
+        });
         self.general.building_damage_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "BuildingDamageSound"));
-        self.general.building_repaired_sound = ini
-            .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "BuildingRepairedSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "BuildingDamageSound", None));
+        self.general.building_repaired_sound = ini.section("AudioVisual").and_then(|section| {
+            sounds.read_rules_reference(section, "BuildingRepairedSound", None)
+        });
         self.general.spy_plane_camera = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "SpyPlaneCamera"));
+            .and_then(|section| sounds.read_rules_reference(section, "SpyPlaneCamera", None));
+        if crate::rules::ares_switch::ares_way() {
+            self.general.ares_decloak_sound = ini
+                .section("AudioVisual")
+                .and_then(|section| sounds.read_ares_reference(section, "DecloakSound"));
+        }
         self.general.stop_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "StopSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "StopSound", None));
         self.general.guard_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "GuardSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "GuardSound", None));
         // Original66AAC0..66AB53: fixed process catalog, exact keys and
         // current-ID retention across the existing processed read history.
         self.general.radar_on = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "RadarOn"));
+            .and_then(|section| sounds.read_rules_reference(section, "RadarOn", None));
         self.general.radar_off = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "RadarOff"));
+            .and_then(|section| sounds.read_rules_reference(section, "RadarOff", None));
         self.general.movie_on = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "MovieOn"));
+            .and_then(|section| sounds.read_rules_reference(section, "MovieOn", None));
         self.general.movie_off = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "MovieOff"));
+            .and_then(|section| sounds.read_rules_reference(section, "MovieOff", None));
         // Original66A4EF..66A582 shares the retained fixed-catalog reader.
-        self.general.spy_sat_activation_sound = ini
-            .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "SpySatActivationSound"));
-        self.general.spy_sat_deactivation_sound = ini
-            .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "SpySatDeactivationSound"));
+        self.general.spy_sat_activation_sound = ini.section("AudioVisual").and_then(|section| {
+            sounds.read_rules_reference(section, "SpySatActivationSound", None)
+        });
+        self.general.spy_sat_deactivation_sound = ini.section("AudioVisual").and_then(|section| {
+            sounds.read_rules_reference(section, "SpySatDeactivationSound", None)
+        });
         self.general.voice_ifv_repair = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "VoiceIFVRepair"));
+            .and_then(|section| sounds.read_rules_reference(section, "VoiceIFVRepair", None));
         // Original ReadAudioVisual order: Start6696C0, End66970A, Add669B25.
         // The processed section owns pass history; the fixed catalog owns IDs.
-        self.general.start_planning_mode_sound = ini
-            .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "StartPlanningModeSound"));
+        self.general.start_planning_mode_sound = ini.section("AudioVisual").and_then(|section| {
+            sounds.read_rules_reference(section, "StartPlanningModeSound", None)
+        });
         self.general.end_planning_mode_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "EndPlanningModeSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "EndPlanningModeSound", None));
         self.general.add_planning_mode_command_sound =
             ini.section("AudioVisual").and_then(|section| {
-                sounds.read_rules_reference(section, "AddPlanningModeCommandSound")
+                sounds.read_rules_reference(section, "AddPlanningModeCommandSound", None)
             });
         // Original669BA8, after Add669B25 in the same AudioVisual pass.
         self.general.place_beacon_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "PlaceBeaconSound"));
-        self.general.time_warp_out_sound = ini
-            .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "LetsDoTheTimeWarpOutAgain"));
-        self.general.time_warp_in_sound = ini
-            .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "LetsDoTheTimeWarpInAgain"));
+            .and_then(|section| sounds.read_rules_reference(section, "PlaceBeaconSound", None));
+        self.general.time_warp_out_sound = ini.section("AudioVisual").and_then(|section| {
+            sounds.read_rules_reference(section, "LetsDoTheTimeWarpOutAgain", None)
+        });
+        self.general.time_warp_in_sound = ini.section("AudioVisual").and_then(|section| {
+            sounds.read_rules_reference(section, "LetsDoTheTimeWarpInAgain", None)
+        });
         self.general.cheer_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "CheerSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "CheerSound", None));
         self.general.scatter_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "ScatterSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "ScatterSound", None));
         self.general.scold_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "ScoldSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "ScoldSound", None));
         // RulesClass::ReadAudioVisual66AD24..66AD56: ReadString128 then
         // VocFind7514D0; unknown later passes retain the previous resolved ID.
         self.general.generic_click_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "GenericClick"));
+            .and_then(|section| sounds.read_rules_reference(section, "GenericClick", None));
         // Original RulesClass::ReadAudioVisual669CE2..669D68 resolves
         // +228/+22C through ReadString128/VocFind7514D0, independently of
         // ReadGeneral. Reuse the fixed-catalog/pass-history owner, including
         // invalid later reads retaining their previous IDs (ctor66596A/70=-1).
         self.general.upgrade_veteran_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "UpgradeVeteranSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "UpgradeVeteranSound", None));
         self.general.upgrade_elite_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "UpgradeEliteSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "UpgradeEliteSound", None));
         // WeaponTypeClass::ReadINI @ `0x00772080` calls
         // CCINIClass::ReadSoundList @ `0x00525430` for Report/DownReport at
         // `0x00772394`/`0x0077241A`; use its shared catalog/list owner.
@@ -5897,25 +6531,38 @@ impl RuleSet {
             weapon.down_report = section.map_or_else(Vec::new, |section| {
                 sounds.read_rules_sound_list(section, "DownReport")
             });
+            // WeaponTypeExt LoadFromINIFile10055520: NullableIdx<Voc>
+            // 1000E9D0 reads of the custom Ivan bomb's two cues.
+            if crate::rules::ares_switch::ares_way() {
+                weapon.ares_ivan_bomb.ticking_sound = section.and_then(|section| {
+                    sounds.read_ares_reference(section, "IvanBomb.TickingSound")
+                });
+                weapon.ares_ivan_bomb.attach_sound = section.and_then(|section| {
+                    sounds.read_ares_reference(section, "IvanBomb.AttachSound")
+                });
+            }
         }
         for sw in self.super_weapons.values_mut() {
             let section = ini.section(&sw.id);
-            #[cfg(feature = "ares")]
-            {
+            if crate::rules::ares_switch::ares_way() {
                 // SWTypeExt::LoadFromINI10033522 -> NullableIdx<Voc>
                 // 1000E9D0: successful names/none set presence; unknown
                 // retains. Read against fixed SOUNDMD, in rules-pass order.
                 sw.presentation.sound =
                     section.and_then(|section| sounds.read_ares_reference(section, "SW.Sound"));
+                // 10033538: SW.ActivationSound, the same NullableIdx<Voc> read.
+                sw.presentation.activation_sound = section
+                    .and_then(|section| sounds.read_ares_reference(section, "SW.ActivationSound"));
             }
             // Original6CEB74..6CEBD8 keeps each current Voc ID when
             // ReadString128 or FindIndex7514D0 finds no replacement.
-            sw.special_sound =
-                section.and_then(|section| sounds.read_rules_reference(section, "SpecialSound"));
-            sw.start_sound =
-                section.and_then(|section| sounds.read_rules_reference(section, "StartSound"));
-            #[cfg(feature = "ares")]
-            if let Some(delivery) = sw.unit_delivery.as_mut() {
+            sw.special_sound = section
+                .and_then(|section| sounds.read_rules_reference(section, "SpecialSound", None));
+            sw.start_sound = section
+                .and_then(|section| sounds.read_rules_reference(section, "StartSound", None));
+            if crate::rules::ares_switch::ares_way()
+                && let Some(delivery) = sw.unit_delivery.as_mut()
+            {
                 // Ares NullableIdx<VocClass>: unknown retains the previous
                 // resolved cue; an explicit none sentinel clears it. The
                 // retained type INI owns the ordered read history.
@@ -5924,8 +6571,23 @@ impl RuleSet {
                     .flatten();
             }
         }
+        // WarheadTypeExt ReadINI10051D80: DieSound.Override/VoiceDie.Override
+        // are NullableIdx<Voc> 1000E9D0 reads against the fixed SOUNDMD.
+        for warhead in &mut self.warhead_types {
+            let section = ini.section(&warhead.id);
+            if let Some(ares) = warhead.ares_rules_mut() {
+                ares.combat_mut().bind_sound_overrides(section, sounds);
+            }
+        }
+        let type_array_indices = &self.type_array_indices;
         for object in &mut self.object_list {
-            let section = ini.section(&object.id);
+            let section = match source {
+                SoundReferenceSource::Processed(processed) => type_array_indices
+                    .get(object.category, &object.id)
+                    .and_then(|index| processed.techno_type_read_section(object.category, index)),
+                #[cfg(any(test, feature = "test-support"))]
+                SoundReferenceSource::Fixture(ini) => ini.section(&object.id),
+            };
             object.bind_scalar_sound_references(section, sounds);
             object.bind_deploy_voice_references(section, sounds);
             object.bind_order_voice_references(section, sounds);
@@ -5949,21 +6611,22 @@ impl RuleSet {
             });
             if object.category == crate::rules::object_type::ObjectCategory::Building {
                 object.buildup_sound = section
-                    .and_then(|section| sounds.read_rules_reference(section, "BuildupSound"));
+                    .and_then(|section| sounds.read_rules_reference(section, "BuildupSound", None));
                 // BuildingType46088F/4608DD read WorkingSound (+0xE80) and
                 // NotWorkingSound (+0xE84) the same way.
                 object.working_sound = section
-                    .and_then(|section| sounds.read_rules_reference(section, "WorkingSound"));
-                object.not_working_sound = section
-                    .and_then(|section| sounds.read_rules_reference(section, "NotWorkingSound"));
+                    .and_then(|section| sounds.read_rules_reference(section, "WorkingSound", None));
+                object.not_working_sound = section.and_then(|section| {
+                    sounds.read_rules_reference(section, "NotWorkingSound", None)
+                });
             }
-            object.sinking_sound =
-                section.and_then(|section| sounds.read_rules_reference(section, "SinkingSound"));
-            object.voice_sinking =
-                section.and_then(|section| sounds.read_rules_reference(section, "VoiceSinking"));
+            object.sinking_sound = section
+                .and_then(|section| sounds.read_rules_reference(section, "SinkingSound", None));
+            object.voice_sinking = section
+                .and_then(|section| sounds.read_rules_reference(section, "VoiceSinking", None));
             // TechnoType712FEC reads VoiceFalling (+0x54C) the same way.
-            object.voice_falling =
-                section.and_then(|section| sounds.read_rules_reference(section, "VoiceFalling"));
+            object.voice_falling = section
+                .and_then(|section| sounds.read_rules_reference(section, "VoiceFalling", None));
             // InfantryType524193 reads VoiceComment (+0xE88) through
             // ReadSoundList525430; no other type class reads the key.
             if object.category == crate::rules::object_type::ObjectCategory::Infantry {
@@ -5974,28 +6637,31 @@ impl RuleSet {
             // TechnoType7133BA reads TurretRotateSound (+0x560) through
             // ReadString128 and Voc7514D0 for every techno type; the key is not
             // category-gated even though only buildings consume it.
-            object.turret_rotate_sound = section
-                .and_then(|section| sounds.read_rules_reference(section, "TurretRotateSound"));
+            object.turret_rotate_sound = section.and_then(|section| {
+                sounds.read_rules_reference(section, "TurretRotateSound", None)
+            });
             // TechnoType7138D1/71390D read ActivateSound (+0x5A8) and
             // DeactivateSound (+0x5AC) the same way, for every techno type.
-            object.activate_sound =
-                section.and_then(|section| sounds.read_rules_reference(section, "ActivateSound"));
-            object.deactivate_sound =
-                section.and_then(|section| sounds.read_rules_reference(section, "DeactivateSound"));
+            object.activate_sound = section
+                .and_then(|section| sounds.read_rules_reference(section, "ActivateSound", None));
+            object.deactivate_sound = section
+                .and_then(|section| sounds.read_rules_reference(section, "DeactivateSound", None));
             // ObjectType5F93C1 reads AmbientSound (+0x1F4) the same way, for
             // every object type.
-            object.ambient_sound =
-                section.and_then(|section| sounds.read_rules_reference(section, "AmbientSound"));
+            object.ambient_sound = section
+                .and_then(|section| sounds.read_rules_reference(section, "AmbientSound", None));
             if object.category == crate::rules::object_type::ObjectCategory::Infantry {
                 // Infantry52440B then524447: missing/empty/unregistered names
                 // keep the prior signed ID across the existing processed passes.
-                object.enter_water_sound = section
-                    .and_then(|section| sounds.read_rules_reference(section, "EnterWaterSound"));
-                object.leave_water_sound = section
-                    .and_then(|section| sounds.read_rules_reference(section, "LeaveWaterSound"));
+                object.enter_water_sound = section.and_then(|section| {
+                    sounds.read_rules_reference(section, "EnterWaterSound", None)
+                });
+                object.leave_water_sound = section.and_then(|section| {
+                    sounds.read_rules_reference(section, "LeaveWaterSound", None)
+                });
                 // ReadSequenceData (`0x0052403F`) resolves each pair through
                 // VocClass::FindByName (`0x007514D0`, first _strcmpi match).
-                object.bind_sequence_sounds(|name| sounds.get(name).map(|entry| entry.id.clone()));
+                object.bind_sequence_sounds(sounds);
             }
         }
     }
@@ -6017,20 +6683,59 @@ impl RuleSet {
 
     /// Resolve Ares refusal cues through the same fixed EVAMD catalog that
     /// owns process playback. The retained INI body supplies each read pass.
+    /// Only Rules read the Ares way (`ares_switch::ares_way`) have them.
     pub fn bind_type_eva_references(
         &mut self,
         ini: &IniFile,
         eva: &crate::rules::sound_ini::EvaRegistry,
     ) {
-        #[cfg(not(feature = "ares"))]
-        let _ = (ini, eva);
-        #[cfg(feature = "ares")]
-        for sw in self.super_weapons.values_mut() {
-            sw.insufficient_funds_eva = eva.read_rules_reference(
-                ini.section(&sw.id),
-                "EVA.InsufficientFunds",
-                "EVA_InsufficientFunds",
-            );
+        if crate::rules::ares_switch::ares_way() {
+            for sw in self.super_weapons.values_mut() {
+                // LoadFromINI10033370 reads these ValueableIdx<VoxClass> in this
+                // order after Ready/Activated/Detected; neither has a handler
+                // Initialize write. Ctor10031460: Impatient -1, SelectTarget
+                // and InsufficientFunds FindIndex of their literal names.
+                sw.impatient_eva =
+                    eva.read_rules_reference(ini.section(&sw.id), "EVA.Impatient", "");
+                sw.insufficient_funds_eva = eva.read_rules_reference(
+                    ini.section(&sw.id),
+                    "EVA.InsufficientFunds",
+                    "EVA_InsufficientFunds",
+                );
+                sw.select_target_eva = eva.read_rules_reference(
+                    ini.section(&sw.id),
+                    "EVA.SelectTarget",
+                    "EVA_SelectTarget",
+                );
+            }
+            for object in &mut self.object_list {
+                // TypeExt LoadFromINI1003DFB0 reads both ValueableIdx<VoxClass>
+                // after the promotion sounds; Initialize1003DEC0 seeds each with
+                // FindIndex("EVA_UnitPromoted").
+                let section = ini.section(&object.id);
+                object.bind_promotion_eva([
+                    eva.read_rules_reference(section, "EVA.VeteranPromoted", "EVA_UnitPromoted"),
+                    eva.read_rules_reference(section, "EVA.ElitePromoted", "EVA_UnitPromoted"),
+                ]);
+                // EVA.Lost, read before those; Initialize1003DEC0 seeds
+                // FindIndex("EVA_UnitLost") for every type but a building.
+                let building =
+                    object.category == crate::rules::object_type::ObjectCategory::Building;
+                object.bind_unit_lost_eva(eva.read_rules_reference(
+                    section,
+                    "EVA.Lost",
+                    if building { "" } else { "EVA_UnitLost" },
+                ));
+                // BuildingTypeExt LoadFromINIFile 1000DD40 reads LostEvaEvent;
+                // the Initialize of 1000DCF0 seeds FindIndex("EVA_TechBuildingLost").
+                if object.category == crate::rules::object_type::ObjectCategory::Building {
+                    object.bind_lost_eva(eva.read_rules_reference(
+                        section,
+                        "LostEvaEvent",
+                        "EVA_TechBuildingLost",
+                    ));
+                }
+            }
         }
     }
 
@@ -6049,10 +6754,40 @@ impl RuleSet {
     /// where the game passes the scenario's rules.
     #[cfg(any(test, feature = "test-support"))]
     pub fn empty_for_test() -> &'static RuleSet {
-        static EMPTY: std::sync::OnceLock<RuleSet> = std::sync::OnceLock::new();
-        EMPTY.get_or_init(|| {
+        // One for each Rules-reading mode (`ares_switch::ares_way`).
+        static EMPTY: [std::sync::OnceLock<RuleSet>; 2] =
+            [std::sync::OnceLock::new(), std::sync::OnceLock::new()];
+        EMPTY[usize::from(crate::rules::ares_switch::ares_way())].get_or_init(|| {
             RuleSet::from_ini(&IniFile::from_str("")).expect("an empty rules INI reads")
         })
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn from_ini_with_fixed_art_and_sounds_for_test(
+        ini: &IniFile,
+        art: &IniFile,
+        sound_names: &[&str],
+    ) -> Result<Self, RulesError> {
+        let mut catalog = String::from("[SoundList]\n");
+        for (index, name) in sound_names.iter().enumerate() {
+            catalog.push_str(&format!("{index}={name}\n"));
+        }
+        let mut owner =
+            crate::rules::process_owner::NativeRulesProcessOwner::from_cold_start_sources(
+                ini.clone(),
+                None,
+                art.clone(),
+                std::sync::Arc::new(crate::rules::sound_ini::SoundRegistry::from_ini(
+                    &IniFile::from_str(&catalog),
+                )),
+                std::sync::Arc::default(),
+            )?;
+        owner
+            .load_scenario(
+                crate::rules::process_owner::NativeScenarioRulesPrefix::Campaign(None),
+                &IniFile::empty(),
+            )
+            .map(|loaded| loaded.into_parts().0)
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -6070,16 +6805,7 @@ impl RuleSet {
         ini: &IniFile,
         sound_names: &[&str],
     ) -> Result<Self, RulesError> {
-        let mut catalog = String::from("[SoundList]\n");
-        for (index, name) in sound_names.iter().enumerate() {
-            catalog.push_str(&format!("{index}={name}\n"));
-        }
-        let processed = RulesLayerStack::new(ini.clone()).process()?;
-        let mut rules = Self::from_processed_rules(&processed)?;
-        let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(&catalog));
-        rules.bind_type_sound_references(processed.ini(), &sounds);
-        rules.bind_terrain_type_sound_references(&processed, &sounds);
-        Ok(rules)
+        Self::from_ini_with_fixed_art_and_sounds_for_test(ini, &IniFile::empty(), sound_names)
     }
 
     fn from_projected_ini(
@@ -6089,17 +6815,28 @@ impl RuleSet {
         let ini = processed.ini();
         let mut object_list: Vec<ObjectType> = Vec::new();
         let mut object_index: LookupMap<String, TypeHandle> = LookupMap::default();
-        let mut object_category_index: HashMap<(ObjectCategory, String), TypeHandle> =
-            HashMap::new();
-        let mut type_array_indices: HashMap<(ObjectCategory, String), i32> = HashMap::new();
+        let mut object_category_index: CategoryIndex<TypeHandle> = CategoryIndex::default();
+        let mut type_array_indices: CategoryIndex<i32> = CategoryIndex::default();
         let mut infantry_ids: Vec<String> = Vec::new();
         let mut vehicle_ids: Vec<String> = Vec::new();
         let mut aircraft_ids: Vec<String> = Vec::new();
         let mut building_ids: Vec<String> = Vec::new();
         let production: ProductionRules = ProductionRules::from_ini(ini);
         let mut general: GeneralRules = GeneralRules::from_ini(ini);
+        (general.drain_money_frame_delay, general.drain_money_amount) =
+            processed.drain_money_controls();
+        general.attack_cursor_on_disguise = processed.attack_cursor_on_disguise();
+        general.allow_shrouded_subterannean_moves = processed.allow_shrouded_subterannean_moves();
         general.tree_strength = processed.tree_strength();
         general.threat_coefficient_defaults = processed.threat_coefficient_defaults();
+        general.bomb_ticking_sound = processed.bomb_ticking_sound().map(str::to_owned);
+        general.bomb_attach_sound = processed.bomb_attach_sound().map(str::to_owned);
+        general.psychic_reveal_activate_sound =
+            processed.psychic_reveal_activate_sound().map(str::to_owned);
+        let [gui_build, gui_tab, building_slam] = processed.ui_sounds();
+        general.gui_build_sound = gui_build.map(str::to_owned);
+        general.gui_tab_sound = gui_tab.map(str::to_owned);
+        general.building_slam = building_slam.map(str::to_owned);
         let (_, color_indexes) = processed.color_add_state();
         general.laser_target_color = color_indexes.laser_target_color();
         general.iron_curtain_color = color_indexes.iron_curtain_color();
@@ -6129,7 +6866,7 @@ impl RuleSet {
         let initial_veteran = ini
             .section_or_empty("SpecialFlags")
             .read_bool("InitialVeteran", false);
-        let terrain_rules: TerrainRules = TerrainRules::from_ini(ini);
+        let terrain_rules: TerrainRules = processed.terrain_rules().clone();
         let tiberium_types = TiberiumTypeRegistry::from_processed_rules(processed);
         let bridge_rules: BridgeRules = BridgeRules::from_ini(ini);
         let crate_rules = CrateRules::default();
@@ -6193,8 +6930,6 @@ impl RuleSet {
         let placement_preview_globals =
             crate::rules::phobos_placement_preview::PlacementPreviewGlobals::from_ini(ini);
         #[cfg(feature = "phobos")]
-        let skirmish_color_mode = crate::rules::skirmish_colors::SkirmishColorMode::from_ini(ini);
-        #[cfg(feature = "phobos")]
         let radiation = {
             let mut radiation = radiation;
             radiation.radiation_types = processed.radiation_types().cloned().unwrap_or_default();
@@ -6250,7 +6985,12 @@ impl RuleSet {
                     .unwrap_or_default()
             })
             .collect();
-        let color_schemes = crate::rules::color_scheme::parse_color_schemes(ini);
+        let mut color_schemes = crate::rules::color_scheme::parse_color_schemes(ini);
+        // Product extension: the lobby's colours beyond YR's eight. The mode
+        // appends the built-in ones `[Colors]` leaves out, so the ramps below
+        // and every other scheme consumer hold them.
+        let skirmish_color_mode =
+            crate::rules::skirmish_colors::SkirmishColorMode::from_ini(ini, &mut color_schemes);
         let house_color_ramps =
             crate::rules::house_colors::HouseColorRamps::from_schemes(&color_schemes);
         let color_add = processed.color_add_state().0.clone();
@@ -6261,26 +7001,21 @@ impl RuleSet {
             log::info!("Registry [{}]: {} entries", registry_name, ids.len());
 
             for (registry_index, id) in ids.iter().enumerate() {
-                type_array_indices
-                    .entry((category, id.to_ascii_uppercase()))
-                    .or_insert(registry_index as i32);
+                let array_index =
+                    type_array_indices.get_or_insert(category, id, registry_index as i32);
                 if let Some(section) = ini.section(id) {
                     let mut obj: ObjectType = ObjectType::from_ini_section(id, section, category);
                     if category == ObjectCategory::Building {
-                        obj.base_plan_type_index = type_array_indices
-                            .get(&(category, id.to_ascii_uppercase()))
-                            .copied()
-                            .expect("BuildingType index was registered above");
+                        obj.base_plan_type_index = array_index;
                     }
                     if obj.base_reservation_writer_eligible() {
                         obj.base_reservation_spacing = Some(ai_base_spacing);
                     }
                     let key = id.to_ascii_uppercase();
-                    let category_key = (category, key.clone());
                     // Find-or-allocate is per native type registry. A duplicate
                     // within one registry reuses its slot; the same ID in a
                     // different registry remains a distinct native type.
-                    let handle = match object_category_index.get(&category_key).copied() {
+                    let handle = match object_category_index.get(category, id) {
                         Some(TypeHandle(idx)) => {
                             log::warn!(
                                 "Object '{}' merges onto an existing case-duplicate {:?} type",
@@ -6293,7 +7028,7 @@ impl RuleSet {
                         None => {
                             let handle = TypeHandle(object_list.len() as u32);
                             object_list.push(obj);
-                            object_category_index.insert(category_key, handle);
+                            object_category_index.insert(category, id, handle);
                             handle
                         }
                     };
@@ -6351,6 +7086,12 @@ impl RuleSet {
             weapon.occupant_anim = state.occupant_anim.map(str::to_owned);
             weapon.open_topped_anim = state.open_topped_anim.map(str::to_owned);
             weapon.attached_particle_system = state.attached_particle_system.map(str::to_owned);
+            if crate::rules::ares_switch::ares_way() {
+                weapon.ares_visuals.bolt_particle_system = state.ares_bolt_particle_system.clone();
+                weapon.ares_ivan_bomb.warhead = state.ares_ivan_bomb_warhead.clone();
+                weapon.ares_abductor.anim = state.ares_abductor_anim.map(str::to_owned);
+                weapon.ares_cursors = state.ares_cursors;
+            }
             // A repeated ID replaces the earlier weapon under its key. The
             // reserve is `insert`'s, so the keys iterate in the order they
             // did when the map held the weapons themselves.
@@ -6370,23 +7111,26 @@ impl RuleSet {
         // every reference-driven allocation, weapons' warheads and the
         // [Radiation] RadSiteWarhead included.
         let warhead_ids: HashSet<String> = parse_registry(ini, "Warheads").into_iter().collect();
-        let mut warheads: LookupMap<String, WarheadType> = LookupMap::default();
+        let mut warheads: LookupMap<String, WarheadHandle> = LookupMap::default();
+        let mut warhead_types: Vec<WarheadType> = Vec::new();
         for warhead_id in &warhead_ids {
             if let Some(section) = ini.section(warhead_id) {
                 // Find-or-allocate by the section's canonical header name, so
                 // two references differing only in case resolve to one type
                 // (the original engine matches case-insensitively).
                 let canonical = section.name.clone();
-                warheads
-                    .entry(canonical.clone())
-                    .or_insert_with(|| WarheadType::from_ini_section(&canonical, section));
+                warheads.entry(canonical.clone()).or_insert_with(|| {
+                    warhead_types.push(WarheadType::from_ini_section(&canonical, section));
+                    WarheadHandle(warhead_types.len() as u32 - 1)
+                });
             } else {
                 log::trace!("Warhead '{}' referenced but has no section", warhead_id);
             }
         }
 
         // Step 4: Collect projectile IDs referenced by weapons and parse them.
-        let mut projectiles: LookupMap<String, ProjectileType> = LookupMap::default();
+        let mut projectiles: LookupMap<String, ProjectileHandle> = LookupMap::default();
+        let mut projectile_types: Vec<ProjectileType> = Vec::new();
         let mut projectile_ids: HashSet<String> = HashSet::new();
         for weapon in &weapon_types {
             if let Some(ref proj_id) = weapon.projectile {
@@ -6400,9 +7144,11 @@ impl RuleSet {
                 // and "Invisiblelow"; this collapses them to one entry, as the
                 // original engine does.
                 let canonical = section.name.clone();
-                projectiles
-                    .entry(canonical.clone())
-                    .or_insert_with(|| ProjectileType::from_ini_section(&canonical, section, None));
+                projectiles.entry(canonical.clone()).or_insert_with(|| {
+                    projectile_types
+                        .push(ProjectileType::from_ini_section(&canonical, section, None));
+                    ProjectileHandle(projectile_types.len() as u32 - 1)
+                });
             } else {
                 log::trace!("Projectile '{}' referenced but has no section", proj_id);
             }
@@ -6445,10 +7191,14 @@ impl RuleSet {
         // ordered Process owner's, published by from_processed_rules.
         let bridge_warheads = crate::rules::bridge_warheads::BridgeWarheads::default();
 
-        let mind_control = crate::rules::mind_control_rules::MindControlRules::from_ini(
+        let mut mind_control = crate::rules::mind_control_rules::MindControlRules::from_ini(
             ini,
             processed.mind_control_attack_line_frames(),
         );
+        let [capture, release, overload] = processed.mind_control_sounds();
+        mind_control.mind_control_sound = capture.map(str::to_owned);
+        mind_control.mind_cleared_sound = release.map(str::to_owned);
+        mind_control.overload_sound = overload.map(str::to_owned);
 
         // [General] rocket blocks + [CombatDamage] missile warheads, retained
         // pass by pass by the ordered Process owner.
@@ -6475,13 +7225,12 @@ impl RuleSet {
                 .count(),
         );
 
-        // Step 7: Two-pass parse for [Particles] and [ParticleSystems].
-        // NextParticle is resolved in pass 2 so that INI ordering does not
-        // matter; HoldsWhat is the ordered Rules processor's retained binding.
-        let (particle_types, particle_types_by_name) = parse_particle_types(ini);
+        // Preserve actual allocations and per-pass bindings, including
+        // constructor-only particles reached through HoldsWhat/NextParticle.
+        let particle_types = processed.particle_type_projections().collect::<Vec<_>>();
         let (particle_system_types, particle_system_types_by_name) =
-            parse_particle_system_types(processed, &particle_types_by_name);
-        let (voxel_anim_types, voxel_anim_types_by_name) = parse_voxel_anim_types(ini);
+            parse_particle_system_types(processed);
+        let (voxel_anim_types, voxel_anim_types_by_name) = parse_voxel_anim_types(processed);
 
         log::info!(
             "RuleSet loaded: {} objects ({} inf, {} veh, {} air, {} bld), \
@@ -6552,7 +7301,9 @@ impl RuleSet {
             weapon_types,
             weapon_array: Vec::new(),
             warheads,
+            warhead_types,
             projectiles,
+            projectile_types,
             countries,
             country_ids: country_side_registry.country_ids,
             country_indices: country_side_registry.country_indices,
@@ -6577,7 +7328,6 @@ impl RuleSet {
             phobos_airburst,
             #[cfg(feature = "phobos")]
             side_sw_sidebar_art,
-            #[cfg(feature = "ares")]
             side_extensions: country_side_registry.side_extensions,
             side_indices: country_side_registry.side_indices,
             country_sides: country_side_registry.country_sides,
@@ -6624,13 +7374,19 @@ impl RuleSet {
             ares_prerequisites: None,
             ares_armors: processed.ares_armors().cloned(),
             emp_sparkles: None,
-            #[cfg(feature = "ares")]
+            // Decided by `from_processed_rules` once its readers ran.
+            ares: false,
+            phobos: false,
+            reads_ares_way: false,
             ares_global_controls: processed.ares_global_controls().clone(),
-            #[cfg(feature = "ares")]
+            ares_mouse_cursors: processed.ares_mouse_cursors().clone(),
+            ares_super_weapon_cursors: processed
+                .ares_super_weapon_cursor_states()
+                .map(|(name, cursors)| (name.to_ascii_uppercase(), cursors))
+                .collect(),
             ares_super_weapon_metadata: BTreeMap::new(),
             #[cfg(feature = "phobos")]
             phobos_super_weapon_metadata: BTreeMap::new(),
-            #[cfg(feature = "phobos")]
             parallel_ai_queues:
                 crate::rules::phobos_parallel_ai_queues::ParallelAiQueueRules::from_ini(ini),
             ares_prerequisite_alternates: HashSet::new(),
@@ -6672,7 +7428,6 @@ impl RuleSet {
             attach_effect_globals,
             #[cfg(feature = "phobos")]
             placement_preview_globals,
-            #[cfg(feature = "phobos")]
             skirmish_color_mode,
             radar_event_config,
             super_weapons,
@@ -6701,9 +7456,11 @@ impl RuleSet {
                 .collect(),
             effect_assets: crate::rules::effect_asset_catalog::EffectAssetCatalog::default(),
             voxel_assets: crate::rules::voxel_asset_catalog::VoxelAssetCatalog::default(),
+            voxel_model_plan: processed.voxel_model_plan().clone(),
             buildup_assets: crate::rules::buildup_asset_catalog::BuildupAssetCatalog::default(),
             rubble_assets: crate::rules::building_rubble::RubbleAssetCatalog::default(),
             terrain_assets: crate::rules::terrain_asset_catalog::TerrainAssetCatalog::default(),
+            alpha_images: crate::rules::alpha_image_assets::AlphaImageCatalog::default(),
             animation_sequences: BTreeMap::new(),
             animation_sequence_by_handle: Vec::new(),
             unit_shp_read_states: BTreeMap::new(),
@@ -6711,7 +7468,7 @@ impl RuleSet {
             // The boundary-sensitive RulesLayerStack hash.
             source_ini_hash: processed.content_hash(),
         };
-        rules.rebuild_animation_sequences(None);
+        rules.rebuild_animation_sequences();
         Ok(rules)
     }
 
@@ -6757,15 +7514,23 @@ impl RuleSet {
         ))
     }
 
+    /// Test builds only: how many times this thread has looked a type's
+    /// record up by name ([`Self::object`]).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn type_name_lookups() -> u64 {
+        TYPE_NAME_LOOKUPS.with(std::cell::Cell::get)
+    }
+
+    /// Test builds only: how many uppercase copies of a type name this
+    /// thread has made to look one up ([`upper_name_key`]).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn name_key_copies() -> u64 {
+        NAME_KEY_COPIES.with(std::cell::Cell::get)
+    }
+
     /// Resolve a type name to its handle, case-insensitively (engine parity).
     pub fn type_handle(&self, id: &str) -> Option<TypeHandle> {
-        // The keys are uppercase, so a name without a lowercase letter is its
-        // own key and needs no uppercase copy.
-        if id.bytes().any(|byte| byte.is_ascii_lowercase()) {
-            self.object_index.get(&id.to_ascii_uppercase()).copied()
-        } else {
-            self.object_index.get(id).copied()
-        }
+        self.object_index.get(&*upper_name_key(id)).copied()
     }
 
     /// TAction106's active6DF5D1 and FlashCameo115's6E4150 compare IDs with exact case,
@@ -6785,6 +7550,21 @@ impl RuleSet {
             .map(|handle| self.object_by_handle(handle))
     }
 
+    /// Ares 3.0 TechnoTypeClass::Find (Ares.dll 10007EA0): unless the name is
+    /// `none` or `<none>` (CCINIClass::IsBlank 10003950), the first type of
+    /// the same TechnoType array whose ID matches ignoring ASCII case
+    /// (`strcmpi`). An unrepresentable first match answers None, as above.
+    pub(crate) fn ares_find_techno_type(&self, id: &str) -> Option<&ObjectType> {
+        if crate::rules::ini_parser::is_native_none_type_name(id) {
+            return None;
+        }
+        self.native_techno_type_order
+            .iter()
+            .find(|(_, stored_id, _)| stored_id.eq_ignore_ascii_case(id))
+            .and_then(|(_, _, handle)| *handle)
+            .map(|handle| self.object_by_handle(handle))
+    }
+
     /// This set's identity: nonzero and distinct from every other `RuleSet`
     /// built in the process. It reaches no result; caches of handles compare
     /// it to know whose handles they hold.
@@ -6796,7 +7576,7 @@ impl RuleSet {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_fresh_serial(mut self) -> Self {
         self.serial = next_rule_set_serial();
-        self.resolve_type_weapons();
+        self.resolve_handles();
         self
     }
 
@@ -6809,27 +7589,24 @@ impl RuleSet {
 
     /// Look up a game object by ID (case-insensitive, engine parity).
     pub fn object(&self, id: &str) -> Option<&ObjectType> {
+        #[cfg(any(test, feature = "test-support"))]
+        TYPE_NAME_LOOKUPS.with(|count| count.set(count.get() + 1));
         self.type_handle(id).map(|h| self.object_by_handle(h))
     }
 
     /// Cameo10034E75/10034F3F and SPECIAL_PLACE10038EB9 use the same
     /// retained flag. Expose the fact without exporting mutable SWExt state.
     pub fn super_weapon_uses_ai_targeting(&self, id: &str) -> bool {
-        #[cfg(feature = "ares")]
-        {
+        if self.ares {
             self.super_weapon_target_policy(id)
                 .is_some_and(|policy| policy.use_ai_targeting())
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = id;
+        } else {
             false
         }
     }
 
     /// The ordered SWTypeExt targeting fields of an Ares GenericWarhead or
     /// UnitDelivery type. Stock types keep their retail dispatch owners.
-    #[cfg(feature = "ares")]
     pub(crate) fn super_weapon_target_policy(
         &self,
         id: &str,
@@ -6841,12 +7618,90 @@ impl RuleSet {
             .map(|metadata| metadata.targeting())
     }
 
-    /// `Type == Rules+0x498` (`[General] PrismType=`, `0x0044B2F8`).
+    /// `Type == Rules+0x498` (`[General] PrismType=`, `0x0044B2F8`). Ares
+    /// asks the type's `PrismForwarding=` instead (`rules::ares_prism_forwarding`).
     pub(crate) fn is_prism_type(&self, object: &ObjectType) -> bool {
         self.general
             .prism_type
             .as_deref()
             .is_some_and(|prism_type| object.id.eq_ignore_ascii_case(prism_type))
+    }
+
+    /// The RocketStruct a Rocket owner of this type flies by and whether its
+    /// Type is the CMisl type ([`MissileSpawnRules::rocket_block`]). A game
+    /// Ares plays in takes a `Missile.Custom` AircraftType's own block first:
+    /// hooks 0x6622E0 (Ares.dll 100610F0), 0x66305A (10060FA0), 0x6632F2
+    /// (100610C0) and 0x6634F6 (10061090). That block's Type is the type
+    /// itself, which Process's Boomer arms compare with CMislType.
+    ///
+    /// [`MissileSpawnRules::rocket_block`]: crate::rules::missile_spawn::MissileSpawnRules::rocket_block
+    pub fn rocket_block(
+        &self,
+        type_name: &str,
+    ) -> (&crate::rules::missile_spawn::MissileSpawnParams, bool) {
+        if self.ares
+            && let Some(block) = self
+                .ares_missile(type_name)
+                .and_then(|missile| missile.custom_block())
+        {
+            let cmisl = block
+                .type_name
+                .eq_ignore_ascii_case(&self.missile_spawn.cmisl.type_name);
+            return (block, cmisl);
+        }
+        self.missile_spawn.rocket_block(type_name)
+    }
+
+    /// The puffs and impact weapon of a Rocket owner of this type. Ares
+    /// reads them for every AircraftType (`Missile.TakeOffAnim`,
+    /// `Missile.TrailerAnim`, `Missile.TrailerSeparation`, hooks 0x66238A,
+    /// 0x662512, 0x6627E5 and 0x662D85; the weapons only for
+    /// `Missile.Custom`, 0x663218).
+    pub fn rocket_type_ext(
+        &self,
+        type_name: &str,
+    ) -> crate::rules::missile_spawn::RocketTypeExt<'_> {
+        if self.ares
+            && let Some(missile) = self.ares_missile(type_name)
+        {
+            return crate::rules::missile_spawn::RocketTypeExt {
+                takeoff_anim: missile.takeoff_anim(),
+                trailer_anim: missile.trailer_anim(),
+                trailer_separation: missile.trailer_separation(),
+                weapons: [missile.weapon(false), missile.weapon(true)],
+            };
+        }
+        crate::rules::missile_spawn::RocketTypeExt::STOCK
+    }
+
+    /// Frames a launched missile node of a `Spawns=` pool of this type waits
+    /// before it expires its child, or `None` when the pool's nodes are not
+    /// missiles. The node flag is set for the three Rules families
+    /// (`0x006B6D60`, `0x006B78F8`) and the wait reads their frames
+    /// (`0x006B7A72`); Ares adds a `Missile.Custom` type with its own
+    /// PauseFrames + TiltFrames (SpawnManagerClass_CTOR_CustomMissile
+    /// 10061320, Update_CustomMissile 100613A0, Update_CustomMissile2
+    /// 100613C0).
+    pub(crate) fn spawn_missile_wait_frames(&self, type_name: &str) -> Option<u32> {
+        if self.ares
+            && let Some(block) = self
+                .ares_missile(type_name)
+                .and_then(|missile| missile.custom_block())
+        {
+            return Some(block.tilt_frames.wrapping_add(block.pause_frames).max(0) as u32);
+        }
+        self.missile_spawn
+            .family_of(type_name)
+            .map(|family| self.missile_spawn.kamikaze_wait_frames(family))
+    }
+
+    fn ares_missile(
+        &self,
+        type_name: &str,
+    ) -> Option<&crate::rules::ares_techno_type::CustomMissileRules> {
+        self.object_in_category(ObjectCategory::Aircraft, type_name)?
+            .techno_combat()
+            .missile()
     }
 
     /// Resolve one name within a specific native TechnoType registry.
@@ -6867,17 +7722,16 @@ impl RuleSet {
         category: ObjectCategory,
         id: &str,
     ) -> Option<TypeHandle> {
-        self.object_category_index
-            .get(&(category, id.to_ascii_uppercase()))
-            .copied()
+        self.object_category_index.get(category, id)
     }
 
     /// The computer's base defense candidates of a House's side
     /// (`HouseTypeClass+0xBC`): Allied for side 0, Soviet for 1, Third for any
     /// other (`0x00507BCA..0x00507BFA`).
     pub(crate) fn base_defense_types(&self, side_index: i32) -> &[String] {
-        #[cfg(feature = "ares")]
-        if let Some(types) = self.side_base_defenses(side_index) {
+        if self.ares
+            && let Some(types) = self.side_base_defenses(side_index)
+        {
             return types;
         }
         match side_index {
@@ -6932,9 +7786,7 @@ impl RuleSet {
 
     /// The native array index (`+0xDF8`) of `id` in `category`'s array.
     pub fn type_array_index(&self, category: ObjectCategory, id: &str) -> Option<i32> {
-        self.type_array_indices
-            .get(&(category, id.to_ascii_uppercase()))
-            .copied()
+        self.type_array_indices.get(category, id)
     }
 
     /// Installed Ares Building Find10007E50, shared with BuiltAt's current-pass
@@ -6954,7 +7806,7 @@ impl RuleSet {
     /// by `gamemd.exe 0x004C4EF0`: Infantry, Unit, then Aircraft. BuildingType
     /// is never searched.
     pub(crate) fn task_force_member_object(&self, id: &str) -> Option<&ObjectType> {
-        let key = id.to_ascii_uppercase();
+        let key = upper_name_key(id);
         [
             ObjectCategory::Infantry,
             ObjectCategory::Vehicle,
@@ -6968,7 +7820,7 @@ impl RuleSet {
     /// by `gamemd.exe 0x0041F77D..0x0041F7E4`: Infantry, Unit, Aircraft,
     /// then Building.
     pub(crate) fn ai_trigger_object(&self, id: &str) -> Option<&ObjectType> {
-        let key = id.to_ascii_uppercase();
+        let key = upper_name_key(id);
         [
             ObjectCategory::Infantry,
             ObjectCategory::Vehicle,
@@ -7034,7 +7886,17 @@ impl RuleSet {
     /// `0x00711F00` over the type's virtual `+0xAC` cost ([`Self::type_cost`]).
     fn adjusted_cost(&self, object: &ObjectType, house: Option<&HouseCostFactors>) -> i32 {
         let cost = self.type_cost(object);
-        house.map_or(cost, |house| house.adjust(cost, object.factor_slot()))
+        if self.ares {
+            house.map_or(cost, |house| {
+                house.ares_adjust(
+                    cost,
+                    object.factor_slot(),
+                    object.ares_production().factory_plant_multiplier(),
+                )
+            })
+        } else {
+            house.map_or(cost, |house| house.adjust(cost, object.factor_slot()))
+        }
     }
 
     /// The two PadAircraft a BuildingType bundles into its price: with
@@ -7081,8 +7943,11 @@ impl RuleSet {
     }
 
     /// Look up a TerrainObjectType by section name, case-insensitive.
+    /// Short names use a stack key instead of allocating a temporary string.
     pub fn terrain_object_type_case_insensitive(&self, name: &str) -> Option<&TerrainObjectType> {
-        self.terrain_object_types.get(&name.to_ascii_uppercase())
+        crate::util::native_string::with_ascii_uppercase(name, |key| {
+            self.terrain_object_types.get(key)
+        })
     }
 
     /// Incremental projection of the retained FindOrAllocate71E2A0 result.
@@ -7133,10 +7998,11 @@ impl RuleSet {
     }
 
     /// Resolve every type's weapon records against this set's weapons
-    /// ([`TypeWeapons`]). Runs when the set is built, after the records'
+    /// ([`TypeWeapons`]) and every weapon's warhead and projectile
+    /// ([`WeaponParts`]). Runs when the set is built, after the records'
     /// last writer (`RulesTypeReferences::apply_to` sets the occupy
     /// weapons), and when a copy takes its own serial.
-    fn resolve_type_weapons(&mut self) {
+    fn resolve_handles(&mut self) {
         let resolve = |id: Option<&str>| id.and_then(|id| self.weapon_handle(id));
         let resolved: Vec<TypeWeapons> = self
             .object_list
@@ -7162,6 +8028,24 @@ impl RuleSet {
         for (object, weapons) in self.object_list.iter_mut().zip(resolved) {
             object.project_resolved_weapons(weapons);
         }
+        let parts: Vec<WeaponParts> = self
+            .weapon_types
+            .iter()
+            .map(|weapon| WeaponParts {
+                rules_serial: self.serial,
+                warhead: weapon
+                    .warhead
+                    .as_deref()
+                    .and_then(|id| self.warhead_handle(id)),
+                projectile: weapon
+                    .projectile
+                    .as_deref()
+                    .and_then(|id| self.projectile_handle(id)),
+            })
+            .collect();
+        for (weapon, parts) in self.weapon_types.iter_mut().zip(parts) {
+            weapon.project_parts(parts);
+        }
     }
 
     /// Number of WeaponType global88756C allocation slots, including refused
@@ -7180,7 +8064,48 @@ impl RuleSet {
 
     /// Look up a warhead by ID (case-insensitive, gamemd parity).
     pub fn warhead(&self, id: &str) -> Option<&WarheadType> {
-        Self::lookup_ci(&self.warheads, id)
+        self.warhead_handle(id)
+            .map(|handle| self.warhead_by_handle(handle))
+    }
+
+    /// The handle of the warhead [`Self::warhead`] answers for `id`.
+    pub(crate) fn warhead_handle(&self, id: &str) -> Option<WarheadHandle> {
+        Self::lookup_ci(&self.warheads, id).copied()
+    }
+
+    /// The warhead `handle` names in this set, which made it.
+    pub(crate) fn warhead_by_handle(&self, handle: WarheadHandle) -> &WarheadType {
+        &self.warhead_types[handle.0 as usize]
+    }
+
+    /// The warhead [`Self::warhead`] answers for `id`, to rewrite. Its
+    /// handle stays the same, so the weapons' resolved parts stay current.
+    fn warhead_mut(&mut self, id: &str) -> Option<&mut WarheadType> {
+        let handle = self.warhead_handle(id)?;
+        Some(&mut self.warhead_types[handle.0 as usize])
+    }
+
+    /// [`Self::warhead`] of `weapon`'s `Warhead=`, through the handle this
+    /// set resolved when it holds `weapon`; debug builds compare the handle
+    /// with the name's.
+    #[inline]
+    pub fn weapon_warhead(&self, weapon: &WeaponType) -> Option<&WarheadType> {
+        let parts = weapon.parts();
+        if parts.rules_serial != self.serial {
+            return weapon.warhead.as_deref().and_then(|id| self.warhead(id));
+        }
+        debug_assert!(
+            !crate::util::debug_checks::live_read_check_enabled()
+                || parts.warhead
+                    == weapon
+                        .warhead
+                        .as_deref()
+                        .and_then(|id| self.warhead_handle(id)),
+            "weapon {:?} resolved its warhead to {:?}, unlike its name",
+            weapon.id,
+            parts.warhead
+        );
+        parts.warhead.map(|handle| self.warhead_by_handle(handle))
     }
 
     /// Phobos `[InsigniaTypes]` catalog.
@@ -7296,30 +8221,78 @@ impl RuleSet {
         &self.placement_preview_globals
     }
 
-    /// The player-colour conversion this rules load selects.
+    /// The player-colour conversion this rules load selects and the colours
+    /// its lobby lists.
     ///
     /// A build without the `phobos` feature reads no
-    /// `[General] SkirmishUnlimitedColors=` and always answers the vanilla
-    /// eight-priority table, so callers need no `cfg`.
+    /// `[General] SkirmishUnlimitedColors=`, so callers need no `cfg`.
     pub fn skirmish_colors(&self) -> crate::rules::skirmish_colors::SkirmishColorMode {
-        #[cfg(feature = "phobos")]
-        {
-            self.skirmish_color_mode
-        }
-        #[cfg(not(feature = "phobos"))]
-        {
-            crate::rules::skirmish_colors::SkirmishColorMode::VANILLA
-        }
+        self.skirmish_color_mode
     }
 
     /// Look up a projectile by ID (case-insensitive, gamemd parity).
     pub fn projectile(&self, id: &str) -> Option<&ProjectileType> {
-        Self::lookup_ci(&self.projectiles, id)
+        self.projectile_handle(id)
+            .map(|handle| self.projectile_by_handle(handle))
+    }
+
+    /// The handle of the projectile [`Self::projectile`] answers for `id`.
+    pub(crate) fn projectile_handle(&self, id: &str) -> Option<ProjectileHandle> {
+        Self::lookup_ci(&self.projectiles, id).copied()
+    }
+
+    /// The projectile `handle` names in this set, which made it.
+    pub(crate) fn projectile_by_handle(&self, handle: ProjectileHandle) -> &ProjectileType {
+        &self.projectile_types[handle.0 as usize]
+    }
+
+    /// The projectile [`Self::projectile`] answers for `id`, to rewrite. Its
+    /// handle stays the same, so the weapons' resolved parts stay current.
+    fn projectile_mut(&mut self, id: &str) -> Option<&mut ProjectileType> {
+        let handle = self.projectile_handle(id)?;
+        Some(&mut self.projectile_types[handle.0 as usize])
+    }
+
+    /// [`Self::projectile`] of `weapon`'s `Projectile=`, through the handle
+    /// this set resolved when it holds `weapon`; debug builds compare the
+    /// handle with the name's.
+    #[inline]
+    pub fn weapon_projectile(&self, weapon: &WeaponType) -> Option<&ProjectileType> {
+        let parts = weapon.parts();
+        if parts.rules_serial != self.serial {
+            return weapon
+                .projectile
+                .as_deref()
+                .and_then(|id| self.projectile(id));
+        }
+        debug_assert!(
+            !crate::util::debug_checks::live_read_check_enabled()
+                || parts.projectile
+                    == weapon
+                        .projectile
+                        .as_deref()
+                        .and_then(|id| self.projectile_handle(id)),
+            "weapon {:?} resolved its projectile to {:?}, unlike its name",
+            weapon.id,
+            parts.projectile
+        );
+        parts
+            .projectile
+            .map(|handle| &self.projectile_types[handle.0 as usize])
     }
 
     /// Registered projectile types, including their retained animation references.
     pub fn projectiles_iter(&self) -> impl Iterator<Item = &ProjectileType> {
-        self.projectiles.values()
+        self.projectiles
+            .values()
+            .map(|handle| &self.projectile_types[handle.0 as usize])
+    }
+
+    /// Every projectile with its ID, in the ID map's order.
+    fn projectile_entries(&self) -> impl Iterator<Item = (&String, &ProjectileType)> {
+        self.projectiles
+            .iter()
+            .map(|(id, handle)| (id, &self.projectile_types[handle.0 as usize]))
     }
 
     /// Deterministic hash of the processed source INI this RuleSet was built from
@@ -7329,6 +8302,44 @@ impl RuleSet {
     /// sensitive to scalar value overrides, not just the type-registry lists.
     pub fn source_ini_hash(&self) -> u64 {
         self.source_ini_hash
+    }
+
+    /// Whether Ares plays in this game: its Rules layers or map hold an Ares
+    /// key, or the game ships `ares.mix` (`rules::ares_switch`). Sim and
+    /// presentation read this one answer, in every build.
+    #[inline]
+    pub fn ares(&self) -> bool {
+        self.ares
+    }
+
+    /// Whether Phobos plays in this game: its Rules layers or map hold a key
+    /// of a Phobos piece that runs in every build, or the build has the
+    /// `phobos` feature (`rules::phobos_switch`). Sim and presentation read
+    /// this one answer.
+    #[inline]
+    pub fn phobos(&self) -> bool {
+        self.phobos
+    }
+
+    /// Whether this game's Rules were read the Ares way
+    /// (`ares_switch::ares_way`). The game's readers after the projection (its
+    /// fixed ART, the asset closures) open the same mode with
+    /// `ares_switch::read_ares_way`.
+    pub fn reads_ares_way(&self) -> bool {
+        self.reads_ares_way
+    }
+
+    /// Whether the code that needs Ares' own Rules takes its Ares form in this
+    /// game: the superweapons, production, power and money. Their Ares arms
+    /// read data only Rules read the Ares way hold (the SWTypeExt metadata
+    /// and handler kinds, BuildingTypeExt, the factory owners, the generic
+    /// prerequisites, a House type's power plants), and a stock arm can
+    /// misread such data (a handler type's absent PreDependent). So they
+    /// follow how the Rules were read, not [`Self::ares`] alone. A game Ares
+    /// turned on in by its keys, read the stock way, keeps the stock form of
+    /// these until loading reads its Rules the Ares way.
+    pub fn ares_form(&self) -> bool {
+        self.reads_ares_way
     }
 
     /// Resolve one retained palette request. Ares715857->715876 removes
@@ -7350,8 +8361,9 @@ impl RuleSet {
                 .ok()
                 .map(|palette| (name, palette))
         };
-        #[cfg(feature = "ares")]
-        if let Some(name) = requested_name {
+        if self.ares
+            && let Some(name) = requested_name
+        {
             return load(name);
         }
         let selected = self
@@ -7405,6 +8417,58 @@ impl RuleSet {
         // v34: Country starting-veterancy; optional extensions add domains below.
         b"rules-simulation-config-v34".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
+        // A previous scenario's list survives RulesClass's Type reset even
+        // when the incoming source text omits AIHateDelays.
+        if !self.general.ai_hate_delays.is_empty() {
+            b"ai-hate-delays-v1".hash(&mut hasher);
+            self.general.ai_hate_delays.hash(&mut hasher);
+        }
+        // Identical current text can inherit different CombatDamage values.
+        b"drain-money-controls-v1".hash(&mut hasher);
+        self.general.drain_money_frame_delay.hash(&mut hasher);
+        self.general.drain_money_amount.hash(&mut hasher);
+        // The separately saved global89EA40 table can differ for identical
+        // current INI text after earlier Process passes or a load.
+        self.terrain_rules.hash(&mut hasher);
+        // ReadAudioVisual669A60/669A99/669FC3 can retain different fixed
+        // sound references for identical current INI text after a reset/load.
+        b"global-sound-references-v1".hash(&mut hasher);
+        self.general.bomb_ticking_sound.hash(&mut hasher);
+        self.general.bomb_attach_sound.hash(&mut hasher);
+        self.general.psychic_reveal_activate_sound.hash(&mut hasher);
+        [
+            &self.general.gui_build_sound,
+            &self.general.gui_tab_sound,
+            &self.general.building_slam,
+        ]
+        .hash(&mut hasher);
+        b"mind-control-sound-references-v1".hash(&mut hasher);
+        (
+            &self.mind_control.mind_control_sound,
+            &self.mind_control.mind_cleared_sound,
+            &self.mind_control.overload_sound,
+        )
+            .hash(&mut hasher);
+        self.object_list
+            .iter()
+            .map(|object| {
+                (
+                    (object.category, object.id.to_ascii_uppercase()),
+                    &object.mind_cleared_sound,
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
+        b"infantry-sequence-bank-v1".hash(&mut hasher);
+        Self::by_upper_id(self.object_list.iter().filter_map(|object| {
+            object
+                .infantry_sequence_bank()
+                .map(|bank| (&object.id, bank))
+        }))
+        .hash(&mut hasher);
+
+        b"powerups-v1".hash(&mut hasher);
+        self.powerups.hash(&mut hasher);
         // ReadINI71551E..715720 can retain different weights for identical
         // current text. Include the projected bits and process-resident defaults.
         b"threat-coefficients-v1".hash(&mut hasher);
@@ -7419,6 +8483,25 @@ impl RuleSet {
             })
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
+        b"attack-cursor-disguise-v1".hash(&mut hasher);
+        self.general.attack_cursor_on_disguise.hash(&mut hasher);
+        b"allow-shrouded-subterannean-moves-v1".hash(&mut hasher);
+        self.general
+            .allow_shrouded_subterannean_moves
+            .hash(&mut hasher);
+        // InfantryTypeRead52455F retains this byte across missing/invalid
+        // reads; equal current source text may therefore evacuate differently.
+        let mut civilian_types: Vec<_> = self
+            .object_list
+            .iter()
+            .filter(|object| object.category == ObjectCategory::Infantry && object.civilian)
+            .map(|object| object.id.to_ascii_uppercase())
+            .collect();
+        if !civilian_types.is_empty() {
+            civilian_types.sort_unstable();
+            b"infantry-civilian-v1".hash(&mut hasher);
+            civilian_types.hash(&mut hasher);
+        }
         // InfantryType ReadINI5245B8..5245F5 retains both theft bytes across
         // invalid later reads. Flattened text alone cannot identify that state.
         let mut theft_flags: Vec<_> = self
@@ -7444,6 +8527,19 @@ impl RuleSet {
         // OverlayRead5FE8BE / InitTheater5FE620 retain typed history that a
         // flattened Image key cannot recover; saved resource plans matter too.
         self.overlay_registry.hash_configuration(&mut hasher);
+        // ObjectTypeRead5F93D5 can retain a different Voc ID for identical
+        // current text. Keep concrete type identities distinct in the hash.
+        b"object-crush-sounds-v1".hash(&mut hasher);
+        self.object_list
+            .iter()
+            .map(|object| {
+                (
+                    (object.category, object.id.to_ascii_uppercase()),
+                    &object.crush_sound,
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
         // Fixed ART foundation state is not covered by the layered RULES
         // source hash. Include retained declared/list/outline geometry, also
         // when a later rules pass no longer authors the original custom key.
@@ -7474,8 +8570,7 @@ impl RuleSet {
         // invalid. Equal flattened INIs can therefore have different flight
         // damage. Preserve the previous hash domain for all-false stock rules.
         let mut degenerating_projectiles: Vec<_> = self
-            .projectiles
-            .values()
+            .projectiles_iter()
             .filter(|projectile| projectile.degenerates)
             .map(|projectile| projectile.id.to_ascii_uppercase())
             .collect();
@@ -7484,6 +8579,19 @@ impl RuleSet {
             b"projectile-degenerates-v1".hash(&mut hasher);
             degenerating_projectiles.hash(&mut hasher);
         }
+        // Per-pass gates and overlapping writes can retain different tables
+        // for identical current sources.
+        b"gattling-v1".hash(&mut hasher);
+        self.object_list
+            .iter()
+            .map(|object| {
+                (
+                    (object.category, object.id.to_ascii_uppercase()),
+                    (object.is_gattling, object.gattling_stages),
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
         b"country-parent-v1".hash(&mut hasher);
         // The native parent lookup scans registration order and checks Name
         // aliases as well as IDs. These retained inputs can differ after an
@@ -7503,9 +8611,11 @@ impl RuleSet {
                 .map(|(id, country)| (id, &country.veteran_types)),
         )
         .hash(&mut hasher);
+        // Peers must list the same lobby colours and draw a priority alike.
+        b"skirmish-colors-v1".hash(&mut hasher);
+        self.skirmish_color_mode.hash(&mut hasher);
         // Which plant a computer house splices is simulation state.
-        #[cfg(feature = "ares")]
-        {
+        if self.ares {
             b"ares-country-powerplants-v1".hash(&mut hasher);
             Self::by_upper_id(
                 self.countries
@@ -7516,8 +8626,7 @@ impl RuleSet {
         }
         // Which units a country's paradrop sends is simulation state, so the
         // Ares country overrides enter the state hash alongside it.
-        #[cfg(feature = "ares")]
-        {
+        if self.ares {
             b"ares-country-paradrop-v1".hash(&mut hasher);
             Self::by_upper_id(
                 self.countries
@@ -7530,10 +8639,11 @@ impl RuleSet {
         {
             b"phobos-super-availability-v1".hash(&mut hasher);
             self.phobos_super_weapon_metadata.hash(&mut hasher);
+        }
+        if self.phobos {
             self.parallel_ai_queues.hash_into(&mut hasher);
         }
-        #[cfg(feature = "ares")]
-        {
+        if self.ares {
             b"ares-side-defaults-v1".hash(&mut hasher);
             b"ares-super-availability-v1".hash(&mut hasher);
             self.ares_super_weapon_metadata.hash(&mut hasher);
@@ -7595,8 +8705,6 @@ impl RuleSet {
             self.digital_display_globals.hash(&mut hasher);
             b"phobos-placement-preview-v1".hash(&mut hasher);
             self.placement_preview_globals.hash(&mut hasher);
-            b"phobos-skirmish-colors-v1".hash(&mut hasher);
-            self.skirmish_color_mode.hash(&mut hasher);
             self.object_list
                 .iter()
                 .map(|object| {
@@ -7625,11 +8733,17 @@ impl RuleSet {
             .hash(&mut hasher);
         // The process registry is admitted only when its retained capability
         // matches this binary. Include that immutable build identity even if
-        // the selected INIs contain no extension keys.
+        // the selected INIs contain no extension keys. The `false` held the
+        // retired `ares` build feature and keeps a released game's hash.
         b"rules-build-compatibility-v1".hash(&mut hasher);
-        crate::rules::ARES_ENABLED.hash(&mut hasher);
-        #[cfg(feature = "ares")]
-        {
+        false.hash(&mut hasher);
+        // The game's Ares switch: two peers or a replay with the same layers
+        // but another `ares.mix` answer play different games. Folded only
+        // when Ares plays, so a stock game's hash stays as it was.
+        if self.ares {
+            b"ares-plays-v1".hash(&mut hasher);
+        }
+        if self.ares {
             b"ares-global-controls-v1".hash(&mut hasher);
             self.ares_global_controls.hash(&mut hasher);
             b"ares-factory-owners-v1".hash(&mut hasher);
@@ -7656,6 +8770,18 @@ impl RuleSet {
                 })
                 .collect::<BTreeMap<_, _>>()
                 .hash(&mut hasher);
+            // ObjectType IgnoresFirestorm=, which only the Ares firestorm
+            // walls read; folded only once a type sets it.
+            let ignores_firestorm = self
+                .object_list
+                .iter()
+                .filter(|object| object.ignores_firestorm)
+                .map(|object| (object.category, object.id.to_ascii_uppercase()))
+                .collect::<std::collections::BTreeSet<_>>();
+            if !ignores_firestorm.is_empty() {
+                b"ares-ignores-firestorm-v1".hash(&mut hasher);
+                ignores_firestorm.hash(&mut hasher);
+            }
             b"ares-keep-alive-v1".hash(&mut hasher);
             let influence_types = self
                 .object_list
@@ -7679,6 +8805,21 @@ impl RuleSet {
             if !influence_types.is_empty() {
                 b"ares-sw-influence-types-v2".hash(&mut hasher);
                 influence_types.hash(&mut hasher);
+            }
+            let chronoshift = self
+                .object_list
+                .iter()
+                .filter(|object| object.ares_chronoshift() != Default::default())
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        object.ares_chronoshift(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !chronoshift.is_empty() {
+                b"ares-chronoshift-types-v1".hash(&mut hasher);
+                chronoshift.hash(&mut hasher);
             }
             self.object_list
                 .iter()
@@ -7786,14 +8927,12 @@ impl RuleSet {
         }))
         .hash(&mut hasher);
         Self::by_upper_id(
-            self.warheads
-                .iter()
+            self.warhead_entries()
                 .map(|(name, warhead)| (name, warhead.ares_verses_hash_state())),
         )
         .hash(&mut hasher);
 
-        #[cfg(feature = "ares")]
-        {
+        if self.ares {
             // TypeExt bounty values and the attacker's enable bit are gameplay
             // inputs; display-only overrides do not enter this map or its hash.
             let bounty = self
@@ -7849,6 +8988,108 @@ impl RuleSet {
                 b"ares-aircraft-crashable-v1".hash(&mut hasher);
                 aircraft_crash_overrides.hash(&mut hasher);
             }
+            // TypeExt IronCurtain.Modifier/ForceShield.Modifier scale every
+            // curtain TechnoClass::IronCurtain (hook 70E2B0) applies.
+            let curtain_modifiers = self
+                .object_list
+                .iter()
+                .filter(|object| object.ares_curtain_modifiers() != [NativeF64Bits::ONE; 2])
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        object.ares_curtain_modifiers(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !curtain_modifiers.is_empty() {
+                b"ares-curtain-modifiers-v1".hash(&mut hasher);
+                curtain_modifiers.hash(&mut hasher);
+            }
+            let cloak_power = self
+                .object_list
+                .iter()
+                .filter(|object| {
+                    object.cloak_power()
+                        != &crate::rules::ares_cloak_power::CloakPowerTypeRules::default()
+                })
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        object.cloak_power(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !cloak_power.is_empty() {
+                b"ares-cloak-power-rules-v1".hash(&mut hasher);
+                cloak_power.hash(&mut hasher);
+            }
+            // TypeExt BuildTime.*, FactoryPlant.Multiplier and cloning
+            // decide build times, prices and clones.
+            let production = self
+                .object_list
+                .iter()
+                .filter(|object| {
+                    object.ares_production()
+                        != &crate::rules::ares_production::ProductionTypeRules::default()
+                })
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        object.ares_production(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !production.is_empty() {
+                b"ares-production-rules-v1".hash(&mut hasher);
+                production.hash(&mut hasher);
+            }
+            // TypeExt Experience.*/Promote.* and BuildingTypeExt Academy.*
+            // decide who gains experience and what a promotion converts to.
+            let veterancy = self
+                .object_list
+                .iter()
+                .filter(|object| {
+                    object.ares_veterancy()
+                        != &crate::rules::ares_veterancy::VeterancyTypeRules::default()
+                        || object.academy()
+                            != &crate::rules::ares_veterancy::AcademyTypeRules::default()
+                })
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        (object.ares_veterancy(), object.academy()),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !veterancy.is_empty() || self.ares_veterancy().veteran_flash_timer() != 0 {
+                b"ares-veterancy-rules-v1".hash(&mut hasher);
+                veterancy.hash(&mut hasher);
+                self.ares_veterancy().hash(&mut hasher);
+            }
+            // BuildingTypeExt rubble, repair and garrison keys.
+            let building_type_ext = self
+                .object_list
+                .iter()
+                .filter(|object| {
+                    object.building_type_ext()
+                        != &crate::rules::ares_building_type::BuildingTypeExtRules::default()
+                })
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        object.building_type_ext(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            let building_globals = self.ares_building_globals();
+            if !building_type_ext.is_empty()
+                || building_globals
+                    != &crate::rules::ares_building_type::BuildingGlobalRules::default()
+            {
+                b"ares-building-type-ext-rules-v1".hash(&mut hasher);
+                building_type_ext.hash(&mut hasher);
+                building_globals.hash(&mut hasher);
+            }
             let crews = self
                 .object_list
                 .iter()
@@ -7884,8 +9125,7 @@ impl RuleSet {
                 .collect::<BTreeMap<_, _>>()
                 .hash(&mut hasher);
             Self::by_upper_id(
-                self.warheads
-                    .iter()
+                self.warhead_entries()
                     .map(|(name, wh)| (name, wh.ares_rules())),
             )
             .hash(&mut hasher);
@@ -7933,6 +9173,12 @@ impl RuleSet {
         self.general.parachute_max_fall_rate.hash(&mut hasher);
         self.general.no_parachute_max_fall_rate.hash(&mut hasher);
         self.general.detail.hash(&mut hasher);
+        [
+            self.general.extra_unit_light,
+            self.general.extra_infantry_light,
+            self.general.extra_aircraft_light,
+        ]
+        .hash(&mut hasher);
         self.general.ambient_change_rate_nonzero.hash(&mut hasher);
         self.general
             .ambient_change_interval_frames
@@ -7942,8 +9188,7 @@ impl RuleSet {
         // These current-default inputs survive a process registry handoff.
         self.general.ion_cannon_damage.hash(&mut hasher);
         self.general.spotlight.hash(&mut hasher);
-        #[cfg(feature = "ares")]
-        {
+        if self.ares {
             let extensions: Vec<_> = self
                 .object_list
                 .iter()
@@ -8078,6 +9323,17 @@ impl RuleSet {
         // RulesClass Type pointers and lists. RulesClass also keeps the crate
         // and rocket blocks across Process calls, their scalars across
         // Full_Init's reset.
+        // AircraftTypeSave41CE90/Load41CE20 retain this pair independently
+        // of final source text. Native ComputeCRC41CDB0 omits it; this is
+        // VERA's complete simulation configuration identity, not that CRC.
+        b"aircraft-trailer-v1".hash(&mut hasher);
+        Self::by_upper_id(
+            self.object_list
+                .iter()
+                .filter(|object| object.category == ObjectCategory::Aircraft)
+                .map(|object| (&object.id, object.aircraft_trailer())),
+        )
+        .hash(&mut hasher);
         b"retained-type-references-v3".hash(&mut hasher);
         self.object_list
             .iter()
@@ -8120,13 +9376,12 @@ impl RuleSet {
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
         Self::by_upper_id(
-            self.projectiles
-                .iter()
+            self.projectile_entries()
                 .map(|(id, projectile)| (id, &projectile.shrapnel_weapon)),
         )
         .hash(&mut hasher);
         let airburst_weapons =
-            Self::by_upper_id(self.projectiles.iter().filter_map(|(id, projectile)| {
+            Self::by_upper_id(self.projectile_entries().filter_map(|(id, projectile)| {
                 projectile
                     .airburst_weapon
                     .as_ref()
@@ -8139,8 +9394,7 @@ impl RuleSet {
         // A later invalid raw token retains BulletType+294. Equal flattened
         // INIs can therefore differ in the child-fan and parent-cluster gates.
         let airburst_flags = self
-            .projectiles
-            .iter()
+            .projectile_entries()
             .filter(|(_, projectile)| projectile.airburst)
             .map(|(id, _)| id.to_ascii_uppercase())
             .collect::<std::collections::BTreeSet<_>>();
@@ -8148,12 +9402,27 @@ impl RuleSet {
             b"airburst-retained-flag-v1".hash(&mut hasher);
             airburst_flags.hash(&mut hasher);
         }
+        // Ares BulletTypeExt keys: solidity, trenches and launch scatter.
+        if self.ares {
+            let bullet_type_ext = self
+                .projectile_entries()
+                .filter(|(_, projectile)| {
+                    projectile.bullet_type_ext
+                        != crate::rules::ares_bullet_type::BulletTypeExtRules::default()
+                })
+                .map(|(id, projectile)| (id.to_ascii_uppercase(), &projectile.bullet_type_ext))
+                .collect::<std::collections::BTreeMap<_, _>>();
+            if !bullet_type_ext.is_empty() {
+                b"ares-bullet-type-ext-v1".hash(&mut hasher);
+                bullet_type_ext.hash(&mut hasher);
+            }
+        }
         // Phobos airburst/splits inputs. Defaults leave the stock hash
         // unchanged; any authored value must invalidate a save.
         #[cfg(feature = "phobos")]
         {
             let phobos_projectiles =
-                Self::by_upper_id(self.projectiles.iter().filter_map(|(id, projectile)| {
+                Self::by_upper_id(self.projectile_entries().filter_map(|(id, projectile)| {
                     let value = &projectile.phobos_airburst;
                     (value != &crate::rules::phobos_airburst::PhobosAirburstType::default()).then(
                         || {
@@ -8250,10 +9519,11 @@ impl RuleSet {
         if !hunters.is_empty() {
             b"ares-hunter-seeker-v1".hash(&mut hasher);
             hunters.hash(&mut hasher);
-            #[cfg(feature = "ares")]
-            self.ares_global_controls
-                .hunter_seeker_buildings()
-                .hash(&mut hasher);
+            if self.ares {
+                self.ares_global_controls
+                    .hunter_seeker_buildings()
+                    .hash(&mut hasher);
+            }
         }
         // No extension tags means no extra hash input: preserve stock hashes.
         let building_requirements =
@@ -8276,8 +9546,7 @@ impl RuleSet {
             "Ares.SuperWeaponMoney".hash(&mut hasher);
             superweapon_money.hash(&mut hasher);
         }
-        #[cfg(feature = "ares")]
-        {
+        if self.ares {
             let default = crate::rules::superweapon_type::AresSuperWeaponPresentation::default();
             let presentation = Self::by_upper_id(
                 self.super_weapons
@@ -8312,16 +9581,14 @@ impl RuleSet {
         }))
         .hash(&mut hasher);
         Self::by_upper_id(
-            self.warheads
-                .iter()
+            self.warhead_entries()
                 .map(|(id, warhead)| (id, &warhead.debris_types)),
         )
         .hash(&mut hasher);
         #[cfg(feature = "phobos")]
         {
             let jumpjet_overrides = Self::by_upper_id(
-                self.warheads
-                    .iter()
+                self.warhead_entries()
                     .filter(|(_, warhead)| !warhead.jumpjet_override.is_empty())
                     .map(|(id, warhead)| (id, warhead.jumpjet_override)),
             );
@@ -8360,8 +9627,36 @@ impl RuleSet {
                 &tiberium.section,
                 tiberium.color_scheme(),
                 tiberium.debris(),
+                tiberium.image(),
             )
                 .hash(&mut hasher);
+        }
+        // Ares TiberiumExt and the TechnoTypeExt tiberium/harvester keys keep
+        // retained reads. Defaults leave the stock hash unchanged.
+        if self.ares {
+            let tiberium_ext = self
+                .tiberium_types
+                .types()
+                .iter()
+                .filter(|tiberium| tiberium.ares() != &Default::default())
+                .map(|tiberium| (&tiberium.section, tiberium.ares()))
+                .collect::<Vec<_>>();
+            let techno_tiberium = self
+                .object_list
+                .iter()
+                .filter(|object| object.techno_combat().tiberium() != &Default::default())
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        object.techno_combat().tiberium(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !tiberium_ext.is_empty() || !techno_tiberium.is_empty() {
+                b"ares-tiberium-rules-v1".hash(&mut hasher);
+                tiberium_ext.hash(&mut hasher);
+                techno_tiberium.hash(&mut hasher);
+            }
         }
         self.general.barrel_explode.hash(&mut hasher);
         self.general.barrel_debris.hash(&mut hasher);
@@ -8461,6 +9756,7 @@ impl RuleSet {
             .map(|anim| &anim.name)
             .collect::<Vec<_>>()
             .hash(&mut hasher);
+        general.on_fire.hash(&mut hasher);
         (
             &general.dead_bodies,
             &general.base_unit_types,
@@ -8514,25 +9810,31 @@ impl RuleSet {
         self.general.weapon_nullify_anim.hash(&mut hasher);
         #[cfg(feature = "phobos")]
         self.general.building_production_queue.hash(&mut hasher);
-        #[cfg(feature = "phobos")]
-        {
+        if self.phobos {
             b"phobos-ai-dehardcode-v1".hash(&mut hasher);
             self.general.ai_fire_sale.hash(&mut hasher);
             self.general.ai_fire_sale_delay.hash(&mut hasher);
             self.general.ai_all_to_hunt.hash(&mut hasher);
             self.general.gather_when_mcv_deploy.hash(&mut hasher);
+            b"phobos-power-surplus-v1".hash(&mut hasher);
+            self.general.enable_power_surplus.hash(&mut hasher);
+            self.general.power_surplus.hash(&mut hasher);
+            self.general
+                .power_surplus_scale_to_drain_amount
+                .hash(&mut hasher);
         }
         self.combat_damage.splash_list.hash(&mut hasher);
         self.combat_damage.death_weapon.hash(&mut hasher);
         // The live family order is independent of HashMap iteration and may
         // survive earlier passes absent from the current source stack.
         self.weapon_array.hash(&mut hasher);
-        Self::by_upper_id(self.warheads.iter().map(|(name, wh)| {
+        Self::by_upper_id(self.warhead_entries().map(|(name, wh)| {
             (
                 name,
                 (
                     wh.conventional,
                     wh.em_effect,
+                    wh.sparky,
                     &wh.anim_list,
                     wh.verses_f64.map(f64::to_bits),
                 ),
@@ -8542,7 +9844,7 @@ impl RuleSet {
         #[cfg(feature = "phobos")]
         {
             let warhead_anims =
-                Self::by_upper_id(self.warheads.iter().filter_map(|(name, warhead)| {
+                Self::by_upper_id(self.warhead_entries().filter_map(|(name, warhead)| {
                     (warhead.phobos_anim
                         != crate::rules::phobos_warhead_anim::PhobosWarheadAnimRules::default())
                     .then_some((name, &warhead.phobos_anim))
@@ -8558,11 +9860,12 @@ impl RuleSet {
         }
         #[cfg(feature = "phobos")]
         {
-            let control_anims = Self::by_upper_id(self.warheads.iter().filter_map(|(name, wh)| {
-                wh.mind_control_anim
-                    .as_ref()
-                    .map(|anim| (name, anim.to_ascii_uppercase()))
-            }));
+            let control_anims =
+                Self::by_upper_id(self.warhead_entries().filter_map(|(name, wh)| {
+                    wh.mind_control_anim
+                        .as_ref()
+                        .map(|anim| (name, anim.to_ascii_uppercase()))
+                }));
             if !control_anims.is_empty() {
                 b"phobos-warhead-mind-control-anim-v1".hash(&mut hasher);
                 control_anims.hash(&mut hasher);
@@ -8602,6 +9905,7 @@ impl RuleSet {
         self.unit_shp_read_states.hash(&mut hasher);
         self.effect_assets.hash(&mut hasher);
         self.voxel_assets.hash(&mut hasher);
+        self.voxel_model_plan.hash(&mut hasher);
         self.buildup_assets.hash(&mut hasher);
         self.rubble_assets.hash(&mut hasher);
         self.terrain_assets.hash(&mut hasher);
@@ -8628,7 +9932,7 @@ impl RuleSet {
         // consumed values in canonical type order, not ART insertion order,
         // authored-key presence, or unrelated presentation metadata.
         b"art-projectile-config-v4".hash(&mut hasher);
-        Self::by_upper_id(self.projectiles.iter().map(|(id, p)| {
+        Self::by_upper_id(self.projectile_entries().map(|(id, p)| {
             (
                 id,
                 (
@@ -8663,8 +9967,7 @@ impl RuleSet {
         // draws; list order/duplicates select the sound. Hash effective lists
         // in canonical type order, independently of registry insertion order.
         b"resolved-type-sound-lists-v4".hash(&mut hasher);
-        #[cfg(feature = "ares")]
-        {
+        if self.ares {
             let promotion_sounds = self
                 .object_list
                 .iter()
@@ -8924,10 +10227,7 @@ impl RuleSet {
         self.country_ids = projection.country_ids;
         self.country_indices = projection.country_indices;
         self.side_ids = projection.side_ids;
-        #[cfg(feature = "ares")]
-        {
-            self.side_extensions = projection.side_extensions;
-        }
+        self.side_extensions = projection.side_extensions;
         self.side_indices = projection.side_indices;
         self.country_sides = projection.country_sides;
         self.project_house_masks();
@@ -8955,17 +10255,12 @@ impl RuleSet {
     }
 
     /// Ares `File.Flag=` (stock/unknown defaults included). None in a stock
-    /// build, where the shell keeps its fixed flag table.
+    /// game, where the shell keeps its fixed flag table.
     pub fn country_flag(&self, id: &str) -> Option<&str> {
-        #[cfg(feature = "ares")]
-        {
-            return self
-                .country_rules(id)
-                .and_then(|country| country.presentation.flag.as_deref());
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = id;
+        if self.ares {
+            self.country_rules(id)
+                .and_then(|country| country.presentation.flag.as_deref())
+        } else {
             None
         }
     }
@@ -8973,22 +10268,18 @@ impl RuleSet {
     /// The insignia surface a Country selection draws, as `Game_GetFlagSurface
     /// @ 0x1001DCE0` (Ares patch site `0x4E3562`, 5 bytes) answers it: the
     /// country's own `File.Flag`, or the stock `rani.pcx` branch at `0x4E3567`
-    /// when that file is cleared. `None` in a stock build, where each shell
+    /// when that file is cleared. `None` in a stock game, where each shell
     /// keeps its fixed country table.
     pub fn country_flag_surface(&self, id: &str) -> Option<String> {
-        #[cfg(feature = "ares")]
-        {
-            return self.country_rules(id).map(|country| {
+        if self.ares {
+            self.country_rules(id).map(|country| {
                 country
                     .presentation
                     .flag
                     .clone()
                     .unwrap_or_else(|| STOCK_UNKNOWN_INSIGNIA.to_owned())
-            });
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = id;
+            })
+        } else {
             None
         }
     }
@@ -9003,31 +10294,21 @@ impl RuleSet {
 
     /// Ares `MenuText.Status=` CSF key (stock/unknown defaults included).
     pub fn country_status_key(&self, id: &str) -> Option<&str> {
-        #[cfg(feature = "ares")]
-        {
-            return self
-                .country_rules(id)
-                .and_then(|country| country.presentation.status.as_deref());
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = id;
+        if self.ares {
+            self.country_rules(id)
+                .and_then(|country| country.presentation.status.as_deref())
+        } else {
             None
         }
     }
 
     /// Ares `File.Taunt=` pattern; `~~` or the stock `%02i` receives the
-    /// taunt number elsewhere. None in a stock build.
+    /// taunt number elsewhere. None in a stock game.
     pub fn country_taunt_pattern(&self, id: &str) -> Option<&str> {
-        #[cfg(feature = "ares")]
-        {
-            return self
-                .country_rules(id)
-                .and_then(|country| country.presentation.taunt.as_deref());
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = id;
+        if self.ares {
+            self.country_rules(id)
+                .and_then(|country| country.presentation.taunt.as_deref())
+        } else {
             None
         }
     }
@@ -9038,33 +10319,23 @@ impl RuleSet {
         self.country_taunt_pattern(id)
     }
 
-    /// Ares `ListIndex=`; negative hides the country. A stock build returns
+    /// Ares `ListIndex=`; negative hides the country. A stock game returns
     /// the common 100, preserving registry order.
     pub fn country_list_index(&self, id: &str) -> i32 {
-        #[cfg(feature = "ares")]
-        {
-            return self
-                .country_rules(id)
-                .map_or(100, |country| country.presentation.list_index);
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = id;
+        if self.ares {
+            self.country_rules(id)
+                .map_or(100, |country| country.presentation.list_index)
+        } else {
             100
         }
     }
 
     /// Ares `RandomSelectionWeight=`, default 1.
     pub fn country_random_weight(&self, id: &str) -> i32 {
-        #[cfg(feature = "ares")]
-        {
-            return self
-                .country_rules(id)
-                .map_or(1, |country| country.presentation.random_weight);
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = id;
+        if self.ares {
+            self.country_rules(id)
+                .map_or(1, |country| country.presentation.random_weight)
+        } else {
             1
         }
     }
@@ -9072,14 +10343,10 @@ impl RuleSet {
     /// Ares `AIRandomSelectionWeight=` once set, else the human weight
     /// (`0x1001CA11..0x1001CA1A`).
     pub fn country_ai_random_weight(&self, id: &str) -> i32 {
-        #[cfg(feature = "ares")]
-        {
-            return self
-                .country_rules(id)
-                .map_or(1, |country| country.presentation.ai_weight());
-        }
-        #[cfg(not(feature = "ares"))]
-        {
+        if self.ares {
+            self.country_rules(id)
+                .map_or(1, |country| country.presentation.ai_weight())
+        } else {
             self.country_random_weight(id)
         }
     }
@@ -9090,7 +10357,6 @@ impl RuleSet {
     /// `[GDIPowerPlant]`, 1 `[NodRegularPower, NodAdvancedPower]`
     /// (`0x1001BD6C..0x1001BD8C`), 2 `[ThirdPowerPlant]`, each without its
     /// unset slots, and any other side none.
-    #[cfg(feature = "ares")]
     pub fn ares_power_plants(&self, id: &str, side: i32) -> Vec<i32> {
         let index = |name: &Option<String>| {
             name.as_deref()
@@ -9117,15 +10383,11 @@ impl RuleSet {
 
     /// `HouseTypeExt::GetParadropContent @ 0x1001BC20` for a country: its own
     /// `ParaDrop.Types`/`.Num` while the type list is non-empty, else `None`,
-    /// which defers to the side layer (also the answer in a stock build).
+    /// which defers to the side layer (also the answer in a stock game).
     pub fn country_paradrop_lists(&self, id: &str) -> Option<(&[String], &[i32])> {
-        #[cfg(feature = "ares")]
-        {
-            return self.country_rules(id)?.paradrop.lists();
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = id;
+        if self.ares {
+            self.country_rules(id)?.paradrop.lists()
+        } else {
             None
         }
     }
@@ -9135,13 +10397,9 @@ impl RuleSet {
     /// never-set or `none` index is `-1` there, so this answers `None` and the
     /// caller keeps the side layer.
     pub fn country_paradrop_aircraft(&self, id: &str) -> Option<&str> {
-        #[cfg(feature = "ares")]
-        {
-            return self.country_rules(id)?.paradrop.aircraft.as_deref();
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = id;
+        if self.ares {
+            self.country_rules(id)?.paradrop.aircraft.as_deref()
+        } else {
             None
         }
     }
@@ -9151,19 +10409,14 @@ impl RuleSet {
     /// rules default. The canopy hook reaches it only when the type names no
     /// parachute of its own.
     pub fn country_parachute_anim(&self, id: &str) -> Option<&str> {
-        #[cfg(feature = "ares")]
-        {
-            return self.country_rules(id)?.paradrop.parachute_anim.as_deref();
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = id;
+        if self.ares {
+            self.country_rules(id)?.paradrop.parachute_anim.as_deref()
+        } else {
             None
         }
     }
 
     /// Ares `File.ObserverBackground=` (PCX or SHP), when retained.
-    #[cfg(feature = "ares")]
     pub fn country_observer_background(&self, id: &str) -> Option<&str> {
         self.country_rules(id)?
             .presentation
@@ -9172,7 +10425,6 @@ impl RuleSet {
     }
 
     /// Ares `File.ObserverFlag=` (PCX or SHP), when retained.
-    #[cfg(feature = "ares")]
     pub fn country_observer_flag(&self, id: &str) -> Option<&str> {
         self.country_rules(id)?
             .presentation
@@ -9181,7 +10433,6 @@ impl RuleSet {
     }
 
     /// Ares `File.ObserverFlagAltPalette=`.
-    #[cfg(feature = "ares")]
     pub fn country_observer_flag_alt_palette(&self, id: &str) -> bool {
         self.country_rules(id)
             .is_some_and(|country| country.presentation.observer_flag_alt_palette)
@@ -9189,7 +10440,6 @@ impl RuleSet {
 
     /// Ares capture1004524F..10045275 reads CountryExt+1BC when present,
     /// otherwise the live HouseType+1A6 MultiplayPassive byte.
-    #[cfg(feature = "ares")]
     pub(crate) fn country_can_be_driven(&self, id: &str) -> bool {
         self.country_rules(id).is_some_and(|country| {
             country
@@ -9199,8 +10449,33 @@ impl RuleSet {
         })
     }
 
+    /// Ares `HouseClass_Update_DamageDelay @ 100247A0`: CountryExt+1BA
+    /// `Degrades=` when set; `None` leaves the HouseType's
+    /// `!MultiplayPassive` default to the caller.
+    pub(crate) fn country_degrades(&self, id: &str) -> Option<bool> {
+        self.country_rules(id)
+            .and_then(|country| country.veteran_types.degrades_override())
+    }
+
+    /// CountryExt+1C0 `StartInMultiplayer.Types=` of the country itself
+    /// (MPGameMode_SpawnStartingUnits_Types 1001F220 reads House+34's ext);
+    /// `None` when unset.
+    pub(crate) fn country_start_in_multiplayer_types(
+        &self,
+        id: &str,
+    ) -> Option<&[crate::rules::superweapon_type::TechnoTypeReference]> {
+        self.country_rules(id)
+            .and_then(|country| country.veteran_types.start_in_multiplayer_types())
+    }
+
+    /// The country's `StartInMultiplayer.WithConst=` (CountryExt+1D0), which
+    /// MPGameMode_SpawnBaseUnit_BuildConst (1001F0B0) tests.
+    pub(crate) fn country_start_in_multiplayer_with_const(&self, id: &str) -> bool {
+        self.country_rules(id)
+            .is_some_and(|country| country.veteran_types.start_in_multiplayer_with_const())
+    }
+
     /// Victim CountryExt+1D1 gate in Ares bounty payout10043279..10043289.
-    #[cfg(feature = "ares")]
     pub(crate) fn country_gives_bounty(&self, id: &str) -> bool {
         self.country_rules(id)
             .is_some_and(|country| country.veteran_types.gives_bounty())
@@ -9403,7 +10678,9 @@ impl RuleSet {
 
     /// Resolve a side name to its stable `[Sides]` registration index.
     pub fn side_index(&self, id: &str) -> Option<SideIdx> {
-        self.side_indices.get(&id.to_ascii_uppercase()).copied()
+        crate::util::native_string::with_ascii_uppercase(id, |key| {
+            self.side_indices.get(key).copied()
+        })
     }
 
     /// Commander personalities from `[AIPersonalities]`. Empty for retail data.
@@ -9509,9 +10786,9 @@ impl RuleSet {
     /// TechnoClass checks (`0x006FC030`); this admits every building of the
     /// type.
     pub fn structure_type_selectable(&self, id: &str) -> bool {
-        #[cfg(all(feature = "phobos", feature = "ares"))]
+        #[cfg(feature = "phobos")]
         {
-            if self.general.building_type_selectable {
+            if self.ares && self.general.building_type_selectable {
                 return true;
             }
         }
@@ -9579,16 +10856,13 @@ impl RuleSet {
 
     /// Signed SideExt+88. Zero and negative values are intentional native
     /// selector inputs, not missing values or an instruction to clamp to one.
-    /// An ordinary retail build has no SideExt configuration.
+    /// A stock game has no SideExt configuration.
     pub fn side_sidebar_mix_file_index(&self, index: SideIdx) -> Option<i32> {
-        #[cfg(feature = "ares")]
-        return self
-            .side_extensions
-            .get(usize::from(index.0))
-            .map(|extension| extension.sidebar_mix_file_index);
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = index;
+        if self.ares {
+            self.side_extensions
+                .get(usize::from(index.0))
+                .map(|extension| extension.sidebar_mix_file_index)
+        } else {
             None
         }
     }
@@ -9596,14 +10870,11 @@ impl RuleSet {
     /// SideExt+8C selects Yuri-specific sidebar filenames independently of
     /// the Side array index and Sidebar.MixFileIndex.
     pub fn side_sidebar_yuri_file_names(&self, index: SideIdx) -> Option<bool> {
-        #[cfg(feature = "ares")]
-        return self
-            .side_extensions
-            .get(usize::from(index.0))
-            .map(|extension| extension.sidebar_yuri_file_names);
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = index;
+        if self.ares {
+            self.side_extensions
+                .get(usize::from(index.0))
+                .map(|extension| extension.sidebar_yuri_file_names)
+        } else {
             None
         }
     }
@@ -9611,13 +10882,11 @@ impl RuleSet {
     /// Signed SideExt+90 after reached EVA.Tag reads. Binding uses saved
     /// Scenario.Side and preserves an out-of-catalog value; filename selection
     /// decides whether that value has a column. Native: Ares1002FB00.
-    #[cfg(feature = "ares")]
     pub fn side_eva_voice_index(&self, side: i32) -> Option<i32> {
         self.side_extension(side)
             .map(|extension| extension.eva_voice_index)
     }
 
-    #[cfg(feature = "ares")]
     fn side_extension(
         &self,
         side: i32,
@@ -9628,9 +10897,8 @@ impl RuleSet {
     /// Ares Side default fallbacks use the side's array index; a fourth or
     /// later side takes the Allied branch (3.0 getters at 0x1002DE60,
     /// 0x1002DEA0, 0x1002E130, 0x1002DDD0, 0x1002DD40, 0x1002DFB0,
-    /// 0x1002E060). `None` means the installed build has no SideExt for this
-    /// index, so the caller keeps its stock path.
-    #[cfg(feature = "ares")]
+    /// 0x1002E060). `None` means the game has no SideExt for this index, so
+    /// the caller keeps its stock path.
     fn ares_default_side_index(side: i32) -> usize {
         match side {
             1 => 1,
@@ -9643,28 +10911,23 @@ impl RuleSet {
     /// index. `Some(None)` is an explicit `none` (no crew), distinct from an
     /// unset key (caller falls back as native `SideExt::GetCrew @ 0x1002DE60`).
     pub(crate) fn side_crew(&self, side: i32) -> Option<Option<&str>> {
-        #[cfg(feature = "ares")]
-        {
+        if self.ares {
             let extension = self.side_extension(side)?;
-            return Some(match &extension.crew {
+            Some(match &extension.crew {
                 Some(value) => value.as_deref(),
                 None => match side {
                     1 => self.general.soviet_crew.as_deref(),
                     2 => self.general.third_crew.as_deref(),
                     _ => self.general.allied_crew.as_deref(),
                 },
-            });
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = side;
+            })
+        } else {
             None
         }
     }
 
     /// `[Side] Engineer=` else global `[General] Engineer=`
     /// (`SideExt::GetEngineer @ 0x1002DEE0`).
-    #[cfg(feature = "ares")]
     pub(crate) fn side_engineer(&self, side: i32) -> Option<Option<&str>> {
         let extension = self.side_extension(side)?;
         Some(match &extension.engineer {
@@ -9676,17 +10939,13 @@ impl RuleSet {
     /// `[Side] Technician=` else global `[General] Technician=`
     /// (`SideExt::GetTechnician @ 0x1002E170`).
     pub(crate) fn side_technician(&self, side: i32) -> Option<Option<&str>> {
-        #[cfg(feature = "ares")]
-        {
+        if self.ares {
             let extension = self.side_extension(side)?;
-            return Some(match &extension.technician {
+            Some(match &extension.technician {
                 Some(value) => value.as_deref(),
                 None => self.general.technician.as_deref(),
-            });
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = side;
+            })
+        } else {
             None
         }
     }
@@ -9694,19 +10953,15 @@ impl RuleSet {
     /// `[Side] DefaultDisguise=` else the stock side disguise by array index
     /// (`SideExt::GetDisguise @ 0x1002DEA0`).
     pub(crate) fn side_disguise(&self, side: i32) -> Option<Option<&str>> {
-        #[cfg(feature = "ares")]
-        {
+        if self.ares {
             let extension = self.side_extension(side)?;
-            return Some(match &extension.default_disguise {
+            Some(match &extension.default_disguise {
                 Some(value) => value.as_deref(),
                 None => {
                     self.general.infantry_disguises[Self::ares_default_side_index(side)].as_deref()
                 }
-            });
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = side;
+            })
+        } else {
             None
         }
     }
@@ -9714,25 +10969,20 @@ impl RuleSet {
     /// `[Side] SurvivorDivisor=` else `Allied/Soviet/ThirdSurvivorDivisor`
     /// (`SideExt::GetSurvivorDivisor @ 0x1002E130`).
     pub(crate) fn side_survivor_divisor(&self, side: i32) -> Option<i32> {
-        #[cfg(feature = "ares")]
-        {
+        if self.ares {
             let extension = self.side_extension(side)?;
-            return Some(extension.survivor_divisor.unwrap_or(match side {
+            Some(extension.survivor_divisor.unwrap_or(match side {
                 1 => self.general.soviet_survivor_divisor,
                 2 => self.general.third_survivor_divisor,
                 _ => self.general.allied_survivor_divisor,
-            }));
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = side;
+            }))
+        } else {
             None
         }
     }
 
     /// `[Side] AI.BaseDefenses=` else the side-index list; a fourth or later
     /// side takes the Allied list (`SideExt::GetBaseDefenses @ 0x1002DDD0`).
-    #[cfg(feature = "ares")]
     pub(crate) fn side_base_defenses(&self, side: i32) -> Option<&[String]> {
         let extension = self.side_extension(side)?;
         Some(
@@ -9751,10 +11001,9 @@ impl RuleSet {
     /// a fourth or later side takes the Allied vector
     /// (`SideExt::GetBaseDefenseCounts @ 0x1002DD40`).
     pub(crate) fn side_base_defense_counts(&self, side: i32) -> Option<&[i32]> {
-        #[cfg(feature = "ares")]
-        {
+        if self.ares {
             let extension = self.side_extension(side)?;
-            return Some(
+            Some(
                 extension
                     .base_defense_counts
                     .as_deref()
@@ -9763,11 +11012,8 @@ impl RuleSet {
                         2 => &self.third_base_defense_counts,
                         _ => &self.allied_base_defense_counts,
                     }),
-            );
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = side;
+            )
+        } else {
             None
         }
     }
@@ -9777,8 +11023,7 @@ impl RuleSet {
     /// Allied pair (`SideExt::GetParaDropTypes @ 0x1002E060`,
     /// `GetParaDropNum @ 0x1002DFB0`).
     pub(crate) fn side_paradrop(&self, side: i32) -> Option<(&[String], &[i32])> {
-        #[cfg(feature = "ares")]
-        {
+        if self.ares {
             let extension = self.side_extension(side)?;
             if let (Some(types), Some(counts)) =
                 (&extension.paradrop_types, &extension.paradrop_num)
@@ -9790,11 +11035,8 @@ impl RuleSet {
                 2 => &self.general.yuri_paradrop,
                 _ => &self.general.ally_paradrop,
             };
-            return Some((lists.infantry.as_slice(), lists.counts.as_slice()));
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = side;
+            Some((lists.infantry.as_slice(), lists.counts.as_slice()))
+        } else {
             None
         }
     }
@@ -9805,17 +11047,12 @@ impl RuleSet {
     /// `HouseTypeExt::GetParadropPlane @ 0x1001BCB0` falls back to
     /// `FindIndex("PDPLANE")` rather than cancelling the drop.
     pub(crate) fn side_paradrop_aircraft(&self, side: i32) -> Option<&str> {
-        #[cfg(feature = "ares")]
-        {
-            return self
-                .side_extension(side)?
+        if self.ares {
+            self.side_extension(side)?
                 .paradrop_aircraft
                 .as_ref()?
-                .as_deref();
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = side;
+                .as_deref()
+        } else {
             None
         }
     }
@@ -9825,17 +11062,13 @@ impl RuleSet {
     /// `Some(None)` is an explicit `none`, which the canopy consumer resolves
     /// to `PARACH` (`HouseTypeExt::GetParachuteAnim @ 0x1001BBC0`).
     pub(crate) fn side_parachute_override(&self, side: i32) -> Option<Option<&str>> {
-        #[cfg(feature = "ares")]
-        {
+        if self.ares {
             let extension = self.side_extension(side)?;
-            return extension
+            extension
                 .parachute_anim
                 .as_ref()
-                .map(|name| name.as_deref());
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = side;
+                .map(|name| name.as_deref())
+        } else {
             None
         }
     }
@@ -9843,15 +11076,10 @@ impl RuleSet {
     /// `[Side] ToolTipColor=` as RGB (initialized 255,255,0 for Nod/ThirdSide,
     /// 164,210,255 otherwise; `SideExt+80`).
     pub fn side_tooltip_color(&self, side: i32) -> Option<[u8; 3]> {
-        #[cfg(feature = "ares")]
-        {
-            return self
-                .side_extension(side)
-                .map(|extension| extension.tooltip_color);
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = side;
+        if self.ares {
+            self.side_extension(side)
+                .map(|extension| extension.tooltip_color)
+        } else {
             None
         }
     }
@@ -9860,22 +11088,16 @@ impl RuleSet {
     /// (initialized 11 for Nod, 25 for ThirdSide, 21 otherwise) or -1 for an
     /// explicit `none` (`SideExt+84`).
     pub fn side_message_text_color_index(&self, side: i32) -> Option<i32> {
-        #[cfg(feature = "ares")]
-        {
-            return self
-                .side_extension(side)
-                .map(|extension| extension.message_text_color_index);
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = side;
+        if self.ares {
+            self.side_extension(side)
+                .map(|extension| extension.message_text_color_index)
+        } else {
             None
         }
     }
 
     /// `[Side] HunterSeeker=` (SideExt+0x94), the fallback UnitType of
     /// SW_HunterSeeker::Activate10072885.
-    #[cfg(feature = "ares")]
     pub(crate) fn side_hunter_seeker(&self, side: i32) -> Option<&str> {
         self.side_extension(side)?
             .hunter_seeker
@@ -9883,13 +11105,21 @@ impl RuleSet {
             .as_deref()
     }
 
-    /// Every distinct `[Side] Parachute.Anim=` identity, for the animation
-    /// asset preload and canopy owner scan.
-    #[cfg(feature = "ares")]
-    pub fn side_parachute_animations(&self) -> impl Iterator<Item = &str> {
+    /// Configured Type, Country and Side canopy identities for the shared
+    /// animation asset closure (Ares ObjectClass hook5F5ADD/10047C60).
+    pub fn parachute_animations(&self) -> impl Iterator<Item = &str> {
         self.side_extensions
             .iter()
             .filter_map(|extension| extension.parachute_anim.as_ref()?.as_deref())
+            .chain(
+                self.countries
+                    .values()
+                    .filter_map(|country| country.paradrop.parachute_anim.as_deref()),
+            )
+            .chain(
+                self.all_objects()
+                    .filter_map(|object| object.techno_combat().presentation().parachute_anim()),
+            )
     }
 
     /// `[Side] GraphicalText.Image=` (SideExt `+0x1F8`) and
@@ -9898,8 +11128,7 @@ impl RuleSet {
     /// tactical-overlay slot, and `TacticalClass_DrawOverlay_GraphicalText`
     /// (`0x1002FAD0`, patch site `0x6D4E79`) reads them through `0x1002DF10` /
     /// `0x1002DF00`, which fall back to InitGame's literal `GRFXTXT` files per
-    /// slot. `None` when the installed build has no SideExt for this index.
-    #[cfg(feature = "ares")]
+    /// slot. `None` when the game has no SideExt for this index.
     pub fn side_graphical_text(&self, side: i32) -> Option<(Option<&str>, Option<&str>)> {
         let extension = self.side_extension(side)?;
         Some((
@@ -9958,13 +11187,13 @@ impl RuleSet {
         Self::lookup_ci(&self.super_weapons, id)
     }
 
-    #[cfg(feature = "ares")]
     pub(crate) fn super_weapon_metadata(
         &self,
         id: &str,
     ) -> Option<&crate::rules::superweapon_type::AresSuperWeaponMetadata> {
-        self.ares_super_weapon_metadata
-            .get(&id.to_ascii_uppercase())
+        crate::util::native_string::with_ascii_uppercase(id, |key| {
+            self.ares_super_weapon_metadata.get(key)
+        })
     }
 
     /// The Phobos techno gates for a superweapon, if the capability is
@@ -9974,16 +11203,23 @@ impl RuleSet {
         &self,
         id: &str,
     ) -> Option<&crate::rules::superweapon_type::PhobosSuperWeaponAvailability> {
-        self.phobos_super_weapon_metadata
-            .get(&id.to_ascii_uppercase())
+        crate::util::native_string::with_ascii_uppercase(id, |key| {
+            self.phobos_super_weapon_metadata.get(key)
+        })
     }
 
     /// The `[GlobalControls]` parallel AI queue switches (Phobos extension).
-    #[cfg(feature = "phobos")]
     pub fn parallel_ai_queues(
         &self,
     ) -> &crate::rules::phobos_parallel_ai_queues::ParallelAiQueueRules {
         &self.parallel_ai_queues
+    }
+
+    /// Whether the Phobos parallel AI queue hooks act in this game: Phobos
+    /// plays ([`Self::phobos`]) and Ares' `AllowParallelAIQueues=` gate is on.
+    /// Each hook of that chain does nothing otherwise.
+    pub fn parallel_ai_queues_act(&self) -> bool {
+        self.phobos && self.parallel_ai_queues.allows_parallel()
     }
 
     /// A superweapon type's `SuperWeaponTypeClass` array index (its
@@ -10029,9 +11265,9 @@ impl RuleSet {
 
     /// Resolve a particle system type name to its ID (case-insensitive).
     pub fn ps_type_id_by_name(&self, name: &str) -> Option<ParticleSystemTypeId> {
-        self.particle_system_types_by_name
-            .get(&name.to_ascii_uppercase())
-            .copied()
+        crate::util::native_string::with_ascii_uppercase(name, |key| {
+            self.particle_system_types_by_name.get(key).copied()
+        })
     }
 
     /// Parsed VoxelAnim Types in their retained registry order.
@@ -10046,9 +11282,9 @@ impl RuleSet {
 
     /// Resolve a `[VoxelAnims]` type name to its ID (case-insensitive).
     pub fn voxel_anim_type_id_by_name(&self, name: &str) -> Option<VoxelAnimTypeId> {
-        self.voxel_anim_types_by_name
-            .get(&name.to_ascii_uppercase())
-            .copied()
+        crate::util::native_string::with_ascii_uppercase(name, |key| {
+            self.voxel_anim_types_by_name.get(key).copied()
+        })
     }
 
     /// Number of `[VoxelAnims]` types loaded, also used to validate saved IDs.
@@ -10071,9 +11307,9 @@ impl RuleSet {
     /// Look up the factory type for a structure by ID (case-insensitive).
     /// Returns None if the structure has no Factory= key in rules.ini.
     pub fn factory_type(&self, structure_id: &str) -> Option<FactoryType> {
-        self.factory_map
-            .get(&structure_id.to_ascii_uppercase())
-            .copied()
+        crate::util::native_string::with_ascii_uppercase(structure_id, |key| {
+            self.factory_map.get(key).copied()
+        })
     }
 
     /// `group`'s `[General] Prerequisite*` list.
@@ -10101,8 +11337,8 @@ impl RuleSet {
         id: &str,
     ) -> bool {
         self.object_category_index
-            .get(&(category, id.to_ascii_uppercase()))
-            .is_some_and(|handle| self.ares_prerequisite_alternates.contains(handle))
+            .get(category, id)
+            .is_some_and(|handle| self.ares_prerequisite_alternates.contains(&handle))
     }
 
     /// Resolve BuildingType FreeUnit, read by Grand_Opening446AA9. The native
@@ -10188,8 +11424,14 @@ impl RuleSet {
                 // fallback paths (e.g. refinery_pad_cell's rightmost-column
                 // anchor) keep firing. Otherwise zero-padding would silently
                 // shift refinery dock positions, which is out of scope here.
+                //
+                // Only slots below the contact capacity can be selected, so
+                // padding stops at VERA's `DOCK_CONTACT_LIMIT`.
                 if !entry.pads.is_empty() {
-                    let n = obj.number_of_docks.max(0) as usize;
+                    let n = obj
+                        .number_of_docks
+                        .clamp(0, crate::rules::object_type::DOCK_CONTACT_LIMIT)
+                        as usize;
                     obj.pads = entry.pads.iter().take(n).copied().collect();
                     while obj.pads.len() < n {
                         obj.pads.push(crate::rules::object_type::DockPad {
@@ -10210,7 +11452,7 @@ impl RuleSet {
             dock_patched,
             buildings_checked,
         );
-        self.rebuild_animation_sequences(None);
+        self.rebuild_animation_sequences();
     }
 
     /// Read the same bound ART owner used during construction and gameplay.
@@ -10247,6 +11489,18 @@ impl RuleSet {
             .map(|(name, _)| name.as_str())
     }
 
+    /// Identity consumed by the shared animation/asset owners for an indexed
+    /// pointer (Pickup483371, TAction6E2357, Team6EF610). Unlike the stored
+    /// name, this preserves distinct slots with colliding24-byte IDs.
+    pub fn anim_type_runtime_key_by_index(&self, index: i32) -> Option<std::borrow::Cow<'_, str>> {
+        crate::rules::native_processing::anim_type_runtime_key(
+            self.anim_type_art_read_states
+                .iter()
+                .map(|(name, _)| name.as_str()),
+            usize::try_from(index).ok()?,
+        )
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn anim_type_art_read_states(&self) -> &[(String, bool)] {
         &self.anim_type_art_read_states
@@ -10258,9 +11512,9 @@ impl RuleSet {
         assets: &crate::assets::asset_manager::AssetManager,
         theater_ext: &str,
         theater_name: &str,
-    ) -> Result<(), crate::rules::art_data::AnimAssetBindError> {
+    ) {
         self.art_registry
-            .bind_scheduler_anim_assets(roots, assets, theater_ext, theater_name)
+            .bind_scheduler_anim_assets(roots, assets, theater_ext, theater_name);
     }
 
     pub fn bind_anim_class_assets(
@@ -10293,7 +11547,7 @@ impl RuleSet {
         assets: &crate::assets::asset_manager::AssetManager,
         theater_ext: &str,
         theater_name: &str,
-    ) -> Result<(), crate::rules::art_data::AnimAssetBindError> {
+    ) {
         let mut roots: Vec<String> = self
             .art_registry
             .scheduler_anim_types()
@@ -10303,11 +11557,7 @@ impl RuleSet {
         roots.push(name.to_ascii_uppercase());
         roots.sort();
         roots.dedup();
-        // Preserve the existing strict load failure boundary. RESIDUAL: a
-        // previously tolerant root with a missing chained SHP can fail here.
-        // This affects modded art; none of retail's nine chain keys starts
-        // from a tolerant root. No new asset admission policy is introduced.
-        self.bind_scheduler_anim_assets(&roots, assets, theater_ext, theater_name)
+        self.bind_scheduler_anim_assets(&roots, assets, theater_ext, theater_name);
     }
 
     /// Synthetic fixtures that previously projected ART then restored the raw
@@ -10395,6 +11645,20 @@ impl RuleSet {
         self.object_list[handle.0 as usize].size = size;
     }
 
+    /// Write a type's slot-9 names (`BuildingType +0x11B0`, `+0x11C0`) as the
+    /// native slot corpora do, past ReadINI's empty-damaged copy.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_turret_anim_names_for_test(&mut self, id: &str, normal: &str, damaged: &str) {
+        let name = |name: &str| (!name.is_empty()).then(|| name.to_owned());
+        let object = self
+            .object_list
+            .iter_mut()
+            .find(|object| object.id == id)
+            .unwrap();
+        object.turret_anim = name(normal);
+        object.turret_anim_damaged = name(damaged);
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn art_entry_mut_for_test(
         &mut self,
@@ -10402,15 +11666,6 @@ impl RuleSet {
     ) -> Option<&mut crate::rules::art_data::ArtEntry> {
         self.voxel_assets = Default::default();
         self.art_registry.get_mut(name)
-    }
-
-    /// Resolve every registered object type's authoritative animation timing
-    /// after ART's `[*Sequence]` sections have been parsed.
-    pub fn bind_animation_sequences(
-        &mut self,
-        infantry_sequences: &crate::rules::infantry_sequence::InfantrySequenceRegistry,
-    ) {
-        self.rebuild_animation_sequences(Some(infantry_sequences));
     }
 
     /// Resolve particle image SHP frame counts from the active theater assets
@@ -10429,6 +11684,25 @@ impl RuleSet {
         );
         self.voxel_assets =
             crate::rules::voxel_asset_catalog::VoxelAssetCatalog::bind(self, asset_manager);
+    }
+
+    pub fn loaded_voxel_model(
+        &self,
+        type_id: &str,
+    ) -> Option<&crate::rules::voxel_asset_catalog::LoadedVoxelModel> {
+        let object = self.object(type_id)?;
+        self.voxel_assets.model(object.category, &object.id)
+    }
+
+    pub fn voxel_anim_model(
+        &self,
+        id: VoxelAnimTypeId,
+    ) -> Option<&crate::rules::voxel_asset_catalog::VoxelPart> {
+        self.voxel_assets.voxel_anim(id.0 as usize)
+    }
+
+    pub(crate) fn voxel_models_bound(&self) -> bool {
+        self.voxel_assets.is_bound()
     }
 
     /// Techno6F9E10's loaded-main-VXL predicate for the type `object` names,
@@ -10538,6 +11812,12 @@ impl RuleSet {
         self.buildup_assets.control(type_id)
     }
 
+    /// Ares: a building type's sale frame rate (`SellFrameDuration`, 0 while
+    /// its Buildup SHP is unbound).
+    pub fn buildup_sell_rate(&self, type_id: &str) -> i32 {
+        self.buildup_assets.sell_rate(type_id)
+    }
+
     /// Whether a building type's Buildup SHP is bound (`+0x6E9`,
     /// [`crate::rules::buildup_asset_catalog::BuildupAssetCatalog::has_buildup`]).
     pub fn has_buildup(&self, type_id: &str) -> bool {
@@ -10551,20 +11831,49 @@ impl RuleSet {
         self.buildup_assets.insert_for_test(type_id, control);
     }
 
+    /// Install one building type's Ares sale rate (fixtures without assets).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_buildup_sell_rate_for_test(&mut self, type_id: &str, rate: i32) {
+        self.buildup_assets.insert_sell_rate_for_test(type_id, rate);
+    }
+
     /// Raw SHP header count used by `TerrainClass::AI` midpoint timing.
     pub fn terrain_spawner_frame_count(&self, name: &str) -> Option<u16> {
         self.terrain_assets.frame_count(name)
     }
 
-    fn rebuild_animation_sequences(
+    /// Load every ObjectType `AlphaImage=` SHP the folded rules name
+    /// ([`crate::rules::alpha_image_assets`]).
+    pub fn bind_alpha_images(
         &mut self,
-        infantry_sequences: Option<&crate::rules::infantry_sequence::InfantrySequenceRegistry>,
+        overlays: &crate::rules::overlay_types::OverlayTypeRegistry,
+        assets: &crate::assets::asset_manager::AssetManager,
     ) {
+        self.alpha_images =
+            crate::rules::alpha_image_assets::AlphaImageCatalog::bind(self, overlays, assets);
+    }
+
+    /// The loaded AlphaImage a type's `AlphaImage=` names: the type's +0xAC
+    /// pointer, `None` where it stays null.
+    pub fn alpha_image(
+        &self,
+        name: &str,
+    ) -> Option<&std::sync::Arc<crate::rules::alpha_image_assets::AlphaImage>> {
+        self.alpha_images.get(name)
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn supply_alpha_image_for_test(
+        &mut self,
+        name: &str,
+        image: crate::rules::alpha_image_assets::AlphaImage,
+    ) {
+        self.alpha_images.insert_for_test(name, image);
+    }
+
+    fn rebuild_animation_sequences(&mut self) {
         self.animation_sequences =
-            crate::rules::animation_sequence::build_animation_sequence_catalog(
-                self,
-                infantry_sequences,
-            );
+            crate::rules::animation_sequence::build_animation_sequence_catalog(self);
         self.index_animation_sequences();
     }
 
@@ -10572,7 +11881,14 @@ impl RuleSet {
         self.animation_sequence_by_handle = self
             .object_list
             .iter()
-            .map(|object| self.animation_sequences.get(&object.id).cloned())
+            .map(|object| {
+                // Native InfantryType+E3C belongs to this concrete type, even
+                // when a Building/Unit registry contains the same stored ID.
+                object
+                    .infantry_sequence_bank()
+                    .map(|bank| bank.sequence_set())
+                    .or_else(|| self.animation_sequences.get(&object.id).cloned())
+            })
             .collect();
     }
 
@@ -10587,6 +11903,16 @@ impl RuleSet {
         type_id: &str,
     ) -> Option<&crate::rules::animation_sequence::SequenceSet> {
         self.animation_sequence_by_handle(self.type_handle(type_id)?)
+    }
+
+    /// Select a concrete class's retained bank, including duplicate names in
+    /// another registry. Native Infantry51D707/518DCF uses that Type pointer.
+    pub fn animation_sequence_in_category(
+        &self,
+        category: ObjectCategory,
+        type_id: &str,
+    ) -> Option<&crate::rules::animation_sequence::SequenceSet> {
+        self.animation_sequence_by_handle(self.type_handle_in_category(category, type_id)?)
     }
 
     /// The sequences of the object `handle` names, as
@@ -10604,15 +11930,6 @@ impl RuleSet {
     ) -> Option<&crate::rules::shp_vehicle_sequence::UnitShpReadState> {
         let object = self.object(type_id)?;
         self.unit_shp_read_states.get(&object.id)
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn replace_animation_sequences_for_test(
-        &mut self,
-        animation_sequences: BTreeMap<String, crate::rules::animation_sequence::SequenceSet>,
-    ) {
-        self.animation_sequences = animation_sequences;
-        self.index_animation_sequences();
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -10649,7 +11966,16 @@ impl RuleSet {
 
     /// Iterate all parsed warhead types.
     pub fn warheads_iter(&self) -> impl Iterator<Item = &WarheadType> {
-        self.warheads.values()
+        self.warheads
+            .values()
+            .map(|handle| &self.warhead_types[handle.0 as usize])
+    }
+
+    /// Every warhead with its ID, in the ID map's order.
+    fn warhead_entries(&self) -> impl Iterator<Item = (&String, &WarheadType)> {
+        self.warheads
+            .iter()
+            .map(|(id, handle)| (id, &self.warhead_types[handle.0 as usize]))
     }
 
     /// Iterate all parsed weapon types.
@@ -10688,7 +12014,7 @@ impl RuleSet {
         for object in &self.object_list {
             visit(&object.alpha_image);
         }
-        for projectile in self.projectiles.values() {
+        for projectile in self.projectiles_iter() {
             visit(&projectile.alpha_image);
         }
         for particle in &self.particle_types {
@@ -10769,7 +12095,6 @@ struct ProjectedCountrySideRegistry {
     country_ids: Vec<String>,
     country_indices: LookupMap<String, CountryIdx>,
     side_ids: Vec<String>,
-    #[cfg(feature = "ares")]
     side_extensions: Vec<crate::rules::ares_side_extension::AresSideExtension>,
     side_indices: HashMap<String, SideIdx>,
     country_sides: Vec<Option<SideIdx>>,
@@ -10785,11 +12110,13 @@ fn project_country_side_registry<'a>(
 ) -> ProjectedCountrySideRegistry {
     let sides = sides.collect::<Vec<_>>();
     let side_ids: Vec<String> = sides.iter().map(|(id, _)| (*id).to_owned()).collect();
-    #[cfg(feature = "ares")]
+    // Every allocated Side owns its Ares extension when the Rules were read
+    // the Ares way, and none does when they were read the stock way.
     let side_extensions = sides
         .iter()
-        .map(|(_, extension)| (*extension.expect("allocated Side owns its Ares extension")).clone())
-        .collect();
+        .map(|(_, extension)| extension.cloned())
+        .collect::<Option<Vec<_>>>()
+        .unwrap_or_default();
     let mut side_indices = HashMap::with_capacity(side_ids.len());
     for (index, id) in side_ids.iter().enumerate() {
         side_indices
@@ -10820,8 +12147,7 @@ fn project_country_side_registry<'a>(
             fields.color_scheme = color;
             fields.parent_country = parent.to_owned();
             fields.veteran_types = veteran.clone();
-            #[cfg(feature = "ares")]
-            {
+            if crate::rules::ares_switch::ares_way() {
                 fields.presentation = veteran.presentation().clone();
                 fields.paradrop = veteran.paradrop().clone();
                 fields.power_plants = veteran.power_plants().to_vec();
@@ -10834,69 +12160,10 @@ fn project_country_side_registry<'a>(
         country_ids,
         country_indices,
         side_ids,
-        #[cfg(feature = "ares")]
         side_extensions,
         side_indices,
         country_sides,
     }
-}
-
-/// Two-pass parse of `[Particles]`: collect `Pending` entries from each
-/// referenced section, then resolve each `NextParticle=` name to a
-/// `ParticleTypeId`. Missing references log a warning and stay `None`.
-fn parse_particle_types(ini: &IniFile) -> (Vec<ParticleType>, HashMap<String, ParticleTypeId>) {
-    let ids: Vec<String> = parse_registry(ini, "Particles");
-    if ids.is_empty() {
-        return (Vec::new(), HashMap::new());
-    }
-
-    // Pass 1: parse each section into PendingParticleType. Skip IDs whose
-    // section is missing — matches the behavior used elsewhere in this file.
-    let mut pending: Vec<PendingParticleType> = Vec::with_capacity(ids.len());
-    for id in &ids {
-        if let Some(section) = ini.section(id) {
-            pending.push(ParticleType::from_ini_section_pending(id, section));
-        } else {
-            log::trace!(
-                "ParticleType '{}' listed in [Particles] but has no section",
-                id
-            );
-        }
-    }
-
-    // Build the name → ID map (uppercase keys for case-insensitive lookup).
-    let mut by_name: HashMap<String, ParticleTypeId> = HashMap::with_capacity(pending.len());
-    for (idx, p) in pending.iter().enumerate() {
-        by_name.insert(
-            p.partial.name.to_ascii_uppercase(),
-            ParticleTypeId(idx as u32),
-        );
-    }
-
-    // Pass 2: resolve NextParticle references.
-    let particle_types: Vec<ParticleType> = pending
-        .into_iter()
-        .map(|p| {
-            let mut partial = p.partial;
-            if let Some(ref next_name) = p.next_particle_name {
-                let key = next_name.to_ascii_uppercase();
-                match by_name.get(&key) {
-                    Some(&id) => partial.next_particle = Some(id),
-                    None => {
-                        log::warn!(
-                            "ParticleType '{}': NextParticle='{}' references unknown particle, leaving unresolved",
-                            partial.name,
-                            next_name
-                        );
-                    }
-                }
-            }
-            partial
-        })
-        .collect();
-
-    log::info!("Particles: {} loaded", particle_types.len());
-    (particle_types, by_name)
 }
 
 /// `[VoxelAnims]` registry: the flying-debris types a death throws.
@@ -10905,90 +12172,39 @@ fn parse_particle_types(ini: &IniFile) -> (Vec<ParticleType>, HashMap<String, Pa
 /// systems, because `DebrisTypes=` and `Spawns=` resolve by name and the ids
 /// are hashed.
 ///
-/// RESIDUAL: RulesClass::ReadVoxelAnims (`0x00672920`) allocates a type for
-/// every listed name through FindOrAllocate (`0x0074B960`), section or not;
-/// VERA skips an entry without a section, which shifts later ids and leaves a
-/// `DebrisTypes=` reference to it unresolved. Every retail entry has a
-/// section.
-fn parse_voxel_anim_types(ini: &IniFile) -> (Vec<VoxelAnimType>, HashMap<String, VoxelAnimTypeId>) {
-    let ids: Vec<String> = parse_registry(ini, "VoxelAnims");
-    let mut types: Vec<VoxelAnimType> = Vec::with_capacity(ids.len());
-    let mut by_name: HashMap<String, VoxelAnimTypeId> = HashMap::with_capacity(ids.len());
-    for id in &ids {
-        let Some(section) = ini.section(id) else {
-            log::trace!(
-                "VoxelAnimType '{}' listed in [VoxelAnims] but has no section",
-                id
-            );
-            continue;
-        };
-        by_name.insert(id.to_ascii_uppercase(), VoxelAnimTypeId(types.len() as u32));
-        types.push(VoxelAnimType::from_ini_section(id, section));
+/// Native ReadVoxelAnims672920 allocates every listed identity, including
+/// constructor-only entries; the retained processor supplies that exact order.
+fn parse_voxel_anim_types(
+    processed: &ProcessedRulesLayers,
+) -> (Vec<VoxelAnimType>, HashMap<String, VoxelAnimTypeId>) {
+    let types: Vec<_> = processed.voxel_anim_type_projections().collect();
+    let mut by_name = HashMap::new();
+    for (index, kind) in types.iter().enumerate() {
+        by_name
+            .entry(kind.name.to_ascii_uppercase())
+            .or_insert(VoxelAnimTypeId(index as u32));
     }
     (types, by_name)
 }
 
-/// `[ParticleSystems]` in registry order, each bound to the ParticleType its
-/// retained `HoldsWhat` names (ParticleSystemType+294).
-///
-/// RESIDUAL: a reached pass that omits `HoldsWhat` binds the native
-/// empty-named ParticleType, a section-less type with constructor values that
-/// the `[Particles]` projection cannot list. VERA holds `None`, so the system
-/// spawns none of that type's particles. Only a layer that states a system
-/// without its `HoldsWhat` reaches it; every retail ParticleSystem section is
-/// in RULESMD and names a particle.
+/// System allocations retain their own body and direct HoldsWhat index.
 fn parse_particle_system_types(
     processed: &ProcessedRulesLayers,
-    p_by_name: &HashMap<String, ParticleTypeId>,
 ) -> (
     Vec<ParticleSystemType>,
     HashMap<String, ParticleSystemTypeId>,
 ) {
-    let ini = processed.ini();
-    let ids: Vec<String> = parse_registry(ini, "ParticleSystems");
-    if ids.is_empty() {
-        return (Vec::new(), HashMap::new());
+    let types: Vec<_> = processed.particle_system_type_projections().collect();
+    let mut by_name = HashMap::with_capacity(types.len());
+    for (index, system) in types.iter().enumerate() {
+        by_name
+            .entry(system.name.to_ascii_uppercase())
+            .or_insert(ParticleSystemTypeId(index as u32));
     }
-    // Equal truncated stored IDs share one projected body, the last such
-    // member's; its binding is inserted last.
-    let holds_what: HashMap<String, Option<&str>> = processed
-        .particle_system_holds_what_states()
-        .map(|(id, particle)| (id.to_ascii_uppercase(), particle))
-        .collect();
-
-    let mut particle_system_types = Vec::with_capacity(ids.len());
-    let mut by_name: HashMap<String, ParticleSystemTypeId> = HashMap::with_capacity(ids.len());
-    for id in &ids {
-        let Some(section) = ini.section(id) else {
-            log::trace!(
-                "ParticleSystemType '{}' listed in [ParticleSystems] but has no section",
-                id
-            );
-            continue;
-        };
-        let mut system = ParticleSystemType::from_ini_section(id, section);
-        if let Some(&Some(particle)) = holds_what.get(&id.to_ascii_uppercase()) {
-            system.holds_what = p_by_name.get(&particle.to_ascii_uppercase()).copied();
-            if system.holds_what.is_none() && !particle.is_empty() {
-                log::warn!(
-                    "ParticleSystemType '{}': HoldsWhat='{}' references unknown particle, leaving unresolved",
-                    id,
-                    particle
-                );
-            }
-        }
-        by_name.insert(
-            id.to_ascii_uppercase(),
-            ParticleSystemTypeId(particle_system_types.len() as u32),
-        );
-        particle_system_types.push(system);
-    }
-
-    log::info!("ParticleSystems: {} loaded", particle_system_types.len());
-    (particle_system_types, by_name)
+    (types, by_name)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     #[test]
     fn ares_emp_ai_global_mission_uses_production_layers_and_config_hash() {
@@ -10996,53 +12212,53 @@ mod tests {
             mission_data::MissionType,
             native_processing::{RulesLayerKind, RulesLayerStack},
         };
-        let root = "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=400\n[CombatDamage]\nEMPAIRecoverMission=Guard\n";
-        let make = |language: &str| {
-            let mut layers = RulesLayerStack::new(IniFile::from_str(root));
-            layers.push(
-                RulesLayerKind::LangRule,
-                IniFile::from_str(&format!("[CombatDamage]\nEMPAIRecoverMission={language}\n")),
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            let root = "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=400\n[CombatDamage]\nEMPAIRecoverMission=Guard\n";
+            let make = |language: &str| {
+                let mut layers = RulesLayerStack::new(IniFile::from_str(root));
+                layers.push(
+                    RulesLayerKind::LangRule,
+                    IniFile::from_str(&format!("[CombatDamage]\nEMPAIRecoverMission={language}\n")),
+                );
+                layers.push(
+                    RulesLayerKind::GameMode,
+                    IniFile::from_str("[CombatDamage]\nEMPAIRecoverMission=junk\n"),
+                );
+                layers.push(
+                    RulesLayerKind::Scenario,
+                    IniFile::from_str("[CombatDamage]\nEMPAIRecoverMission=\n"),
+                );
+                RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap()
+            };
+            let rules = make("Area Guard");
+            let expected = ares_way.then_some(MissionType::AreaGuard);
+            assert_eq!(rules.ares_emp_ai_recover_mission(), expected);
+            let retained_hash = rules.simulation_config_hash();
+            let mut changed = make("Hunt");
+            // Source identity deliberately includes layer history, even when the
+            // final merged text agrees. Normalize only this private test input to
+            // isolate the retained extension state in the compatibility hash.
+            assert_ne!(rules.source_ini_hash(), changed.source_ini_hash());
+            changed.source_ini_hash = rules.source_ini_hash;
+            assert_eq!(
+                changed.ares_emp_ai_recover_mission(),
+                ares_way.then_some(MissionType::Hunt)
             );
-            layers.push(
-                RulesLayerKind::GameMode,
-                IniFile::from_str("[CombatDamage]\nEMPAIRecoverMission=junk\n"),
+            assert_eq!(retained_hash == changed.simulation_config_hash(), !ares_way);
+            let fresh = RuleSet::from_processed_rules(
+                &RulesLayerStack::new(IniFile::from_str(
+                    "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=400\n",
+                ))
+                .process()
+                .unwrap(),
+            )
+            .unwrap();
+            assert!(
+                fresh.ares_emp_ai_recover_mission().is_none(),
+                "new RulesClass constructor"
             );
-            layers.push(
-                RulesLayerKind::Scenario,
-                IniFile::from_str("[CombatDamage]\nEMPAIRecoverMission=\n"),
-            );
-            RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap()
-        };
-        let rules = make("Area Guard");
-        let expected = crate::rules::ARES_ENABLED.then_some(MissionType::AreaGuard);
-        assert_eq!(rules.ares_emp_ai_recover_mission(), expected);
-        let retained_hash = rules.simulation_config_hash();
-        let mut changed = make("Hunt");
-        // Source identity deliberately includes layer history, even when the
-        // final merged text agrees. Normalize only this private test input to
-        // isolate the retained extension state in the compatibility hash.
-        assert_ne!(rules.source_ini_hash(), changed.source_ini_hash());
-        changed.source_ini_hash = rules.source_ini_hash;
-        assert_eq!(
-            changed.ares_emp_ai_recover_mission(),
-            crate::rules::ARES_ENABLED.then_some(MissionType::Hunt)
-        );
-        assert_eq!(
-            retained_hash == changed.simulation_config_hash(),
-            !crate::rules::ARES_ENABLED
-        );
-        let fresh = RuleSet::from_processed_rules(
-            &RulesLayerStack::new(IniFile::from_str(
-                "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=400\n",
-            ))
-            .process()
-            .unwrap(),
-        )
-        .unwrap();
-        assert!(
-            fresh.ares_emp_ai_recover_mission().is_none(),
-            "new RulesClass constructor"
-        );
+        }
     }
     #[test]
     fn infantry_occupy_pip_uses_each_admitted_rules_section_pass() {
@@ -11129,6 +12345,7 @@ mod tests {
                     &IniFile::empty(),
                     None,
                     &crate::rules::sound_ini::EvaRegistry::default(),
+                    &crate::rules::sound_ini::SoundRegistry::default(),
                 )
                 .unwrap()
                 .into_registry_state_discarding_events();
@@ -11292,16 +12509,13 @@ SpawnCount=3
         // Rules+0xF0 MaximumQueuedObjects ([General], 0x00671DA7), +0x18C
         // GUIBuildSound, +0x6EC BuildingSlam and +0x700 ScoldSound
         // ([AudioVisual], 0x006693C1, 0x0066AAA7 and 0x0066ABE8).
-        let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
-            return;
-        };
-        let general = GeneralRules::from_ini(&ini);
-        assert_eq!(general.maximum_queued_objects, 29);
-        assert_eq!(general.gui_build_sound.as_deref(), Some("MenuClick"));
-        assert_eq!(general.building_slam.as_deref(), Some("PlaceBuilding"));
         let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
             return;
         };
+        let general = &retail.rules.general;
+        assert_eq!(general.maximum_queued_objects, 29);
+        assert_eq!(general.gui_build_sound.as_deref(), Some("MenuClick"));
+        assert_eq!(general.building_slam.as_deref(), Some("PlaceBuilding"));
         assert_eq!(
             retail.rules.general.scold_sound.as_deref(),
             Some("MenuScold")
@@ -11346,10 +12560,15 @@ SpawnCount=3
         assert!(!off.ally_reveal);
         // Both readers run whether or not [General] exists (`0x00668F36`,
         // `0x00668F56`), and so does the case's activate sound.
-        let alone = GeneralRules::from_ini(&IniFile::from_str(
-            "[CombatDamage]\nPsychicRevealRadius=7\n[AudioVisual]\nAllyReveal=no\n\
+        let alone = RuleSet::from_ini_with_sounds_for_test(
+            &IniFile::from_str(
+                "[CombatDamage]\nPsychicRevealRadius=7\n[AudioVisual]\nAllyReveal=no\n\
              PsychicRevealActivateSound=PsychicRevealActivate\n",
-        ));
+            ),
+            &["PsychicRevealActivate"],
+        )
+        .unwrap()
+        .general;
         assert_eq!((alone.psychic_reveal_radius, alone.ally_reveal), (7, false));
         assert_eq!(
             alone.psychic_reveal_activate_sound.as_deref(),
@@ -11434,9 +12653,9 @@ SpawnCount=3
         );
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn unit_delivery_negative_deferment_keeps_the_twenty_frame_fallback() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let mut layers = RulesLayerStack::new(IniFile::from_str(
             "[SuperWeaponTypes]\n0=Delivery\n[Delivery]\nType=UnitDelivery\nSW.Deferment=-1",
         ));
@@ -11457,9 +12676,9 @@ SpawnCount=3
         );
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn unit_delivery_activation_sound_binding_keeps_known_values_across_unknown_layers() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
             "[SoundList]\n0=DeliveryCue\n",
         ));
@@ -12296,18 +13515,20 @@ CellSpread=0
 
     #[test]
     fn gsi_13_10_extra_object_lights_default_zero_and_parse_signed_truncated_milliunits() {
-        let defaults = GeneralRules::from_ini(&IniFile::from_str(
+        let defaults = RuleSet::from_ini(&IniFile::from_str(
             "[General]\n\
              FixtureOnly=1\n\
              ExtraUnitLight=9.0\n\
              ExtraInfantryLight=8.0\n\
              ExtraAircraftLight=7.0\n",
-        ));
+        ))
+        .unwrap()
+        .general;
         assert_eq!(defaults.extra_unit_light, 0);
         assert_eq!(defaults.extra_infantry_light, 0);
         assert_eq!(defaults.extra_aircraft_light, 0);
 
-        let parsed = GeneralRules::from_ini(&IniFile::from_str(
+        let parsed = RuleSet::from_ini(&IniFile::from_str(
             "[General]\n\
              FixtureOnly=1\n\
              ExtraUnitLight=9.0\n\
@@ -12317,14 +13538,18 @@ CellSpread=0
              ExtraUnitLight=.2\n\
              ExtraInfantryLight=-.1259\n\
              ExtraAircraftLight=.3339\n",
-        ));
+        ))
+        .unwrap()
+        .general;
         assert_eq!(parsed.extra_unit_light, 200);
         assert_eq!(parsed.extra_infantry_light, -125);
         assert_eq!(parsed.extra_aircraft_light, 333);
 
-        let without_general = GeneralRules::from_ini(&IniFile::from_str(
+        let without_general = RuleSet::from_ini(&IniFile::from_str(
             "[AudioVisual]\nExtraUnitLight=.2\nExtraInfantryLight=-.1259\nExtraAircraftLight=.3339\n",
-        ));
+        ))
+        .unwrap()
+        .general;
         assert_eq!(without_general.extra_unit_light, parsed.extra_unit_light);
         assert_eq!(
             without_general.extra_infantry_light,
@@ -12346,6 +13571,26 @@ CellSpread=0
                 "raw INI integer {raw}"
             );
         }
+    }
+
+    /// The RulesClass constructor (`0x00665650`) stores 0 at `Rules+0x664`
+    /// (`0x00665F3B`), and RulesClass::ReadGeneral (`0x0066D530`) hands ReadInt
+    /// that byte as its default (`0x0066F1CB..0x0066F1E6`). Retail RULESMD
+    /// sets 2, which the overlay registry reads from the processed rules too.
+    #[test]
+    fn cliff_back_rule_without_the_key_keeps_the_constructors_zero() {
+        assert_eq!(GeneralRules::default().cliff_back_impassability, 0);
+        let other_key = IniFile::from_str("[General]\nTreeStrength=200\n");
+        assert_eq!(
+            GeneralRules::from_ini(&other_key).cliff_back_impassability,
+            0
+        );
+        assert_eq!(read_cliff_back_impassability(None), 0);
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
+            return;
+        };
+        assert_eq!(retail.general.cliff_back_impassability, 2);
+        assert!(retail.overlay_registry().cliff_back_rock().is_some());
     }
 
     #[test]
@@ -12450,6 +13695,74 @@ CellSpread=0
         let ini = IniFile::from_str("[General]\n");
         let general = GeneralRules::from_ini(&ini);
         assert!(general.multiplayer_ai_cm.is_empty());
+    }
+
+    #[test]
+    fn ai_hate_delays_retain_layers_and_saved_rules_lifetime() {
+        use crate::rules::native_processing::RulesLayerKind;
+        let Some(root) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let mut layers = RulesLayerStack::new(root);
+        assert_eq!(
+            RuleSet::from_rules_layers(&layers)
+                .unwrap()
+                .general
+                .ai_hate_delays(),
+            [30, 50, 70]
+        );
+        layers.push(
+            RulesLayerKind::LangRule,
+            IniFile::from_str("[General]\nAIHateDelays=31,51,71\n"),
+        );
+        assert_eq!(
+            RuleSet::from_rules_layers(&layers)
+                .unwrap()
+                .general
+                .ai_hate_delays(),
+            [31, 51, 71]
+        );
+        layers.push(
+            RulesLayerKind::GameMode,
+            IniFile::from_str("[General]\nAIHateDelays=32,52,72\n"),
+        );
+        assert_eq!(
+            RuleSet::from_rules_layers(&layers)
+                .unwrap()
+                .general
+                .ai_hate_delays(),
+            [32, 52, 72]
+        );
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[General]\nAIHateDelays=-7junk,0,15,99\n"),
+        );
+        let processed = layers.process().unwrap();
+        assert_eq!(
+            RuleSet::from_processed_rules(&processed)
+                .unwrap()
+                .general
+                .ai_hate_delays(),
+            [-7, 0, 15, 99]
+        );
+        let (_, trace) = processed.into_ini_and_native_type_construction_trace();
+        let retained = trace
+            .into_registry_state_discarding_events()
+            .destructive_reset();
+        let bytes = crate::util::save_codec::serialize(&retained).unwrap();
+        let retained = crate::util::save_codec::deserialize(&bytes).unwrap();
+        let missing = IniFile::from_str("[General]\naihatedelays=1,2,3\nAIHateDelays=\n");
+        let processed = RulesLayerStack::new(missing.clone())
+            .process_with_fixed_art_and_registry_state(&IniFile::empty(), retained)
+            .unwrap();
+        let retained = RuleSet::from_processed_rules(&processed).unwrap();
+        assert_eq!(retained.general.ai_hate_delays(), [-7, 0, 15, 99]);
+        let fresh = RuleSet::from_ini(&missing).unwrap();
+        assert!(fresh.general.ai_hate_delays().is_empty());
+        assert_ne!(
+            retained.simulation_config_hash(),
+            fresh.simulation_config_hash()
+        );
     }
 
     #[test]
@@ -13036,7 +14349,8 @@ MutateWarhead=MyMutate\n\
     #[test]
     fn resolved_bridge_animation_order_and_duplicates_affect_simulation_hash() {
         let mut rules = RuleSet::from_ini(&IniFile::from_str(
-            "[General]\nMetallicDebris=A,B,A\nBridgeExplosions=X,Y\n",
+            // X and Y are registered for Ares's Find-only BridgeExplosions.
+            "[Animations]\n0=X\n1=Y\n[General]\nMetallicDebris=A,B,A\nBridgeExplosions=X,Y\n",
         ))
         .unwrap();
         let original = rules.simulation_config_hash();
@@ -13332,8 +14646,9 @@ BuildingGarrisonedSound=BuildingGarrisoned
     /// `0x006CDCA8`), the nuke siren despite the name.
     #[test]
     fn superweapon_activate_sounds_parse_their_stock_values() {
-        let stock = GeneralRules::from_ini(&IniFile::from_str(
-            "[General]
+        let stock = RuleSet::from_ini_with_sounds_for_test(
+            &IniFile::from_str(
+                "[General]
 FlightLevel=500
 [AudioVisual]
              PsychicDominatorActivateSound=PsychicDominatorActivate
@@ -13342,7 +14657,17 @@ FlightLevel=500
              DigSound=NukeSiren		; HACK: Nuke siren here
              StormSound=WeatherIntro
 ",
-        ));
+            ),
+            &[
+                "PsychicDominatorActivate",
+                "GeneticMutatorActivate",
+                "PsychicRevealActivate",
+                "NukeSiren",
+                "WeatherIntro",
+            ],
+        )
+        .unwrap()
+        .general;
         assert_eq!(
             stock.psychic_dominator_activate_sound.as_deref(),
             Some("PsychicDominatorActivate")
@@ -13766,7 +15091,10 @@ ChuteSound=
 
     #[test]
     fn base_unit_types_parse_from_general() {
-        let ini = IniFile::from_str("[General]\nBaseUnit=AMCV,SMCV,PCV\n");
+        // Registered for Ares's Find-only BaseUnit read.
+        let ini = IniFile::from_str(
+            "[VehicleTypes]\n0=AMCV\n1=SMCV\n2=PCV\n[General]\nBaseUnit=AMCV,SMCV,PCV\n",
+        );
         let general = RuleSet::from_ini(&ini).unwrap().general;
         assert_eq!(general.base_unit_types, vec!["AMCV", "SMCV", "PCV"]);
     }
@@ -13863,7 +15191,7 @@ MaxLowPowerProductionSpeed=0.85
     }
 
     #[test]
-    fn two_pass_resolves_next_particle_regardless_of_order() {
+    fn factory_resolves_next_particle_regardless_of_order() {
         let extra = "\
 [Particles]
 1=ChainEnd
@@ -13885,7 +15213,7 @@ BehavesLike=Gas
     }
 
     #[test]
-    fn two_pass_resolves_holds_what() {
+    fn factory_resolves_holds_what() {
         let extra = "\
 [Particles]
 1=Smoke1
@@ -13908,7 +15236,7 @@ BehavesLike=Smoke
     }
 
     #[test]
-    fn missing_reference_logs_and_leaves_none() {
+    fn next_particle_allocates_a_missing_section_type() {
         let extra = "\
 [Particles]
 1=GhostRef
@@ -13920,7 +15248,12 @@ BehavesLike=Gas
         let ini = IniFile::from_str(&make_particle_test_rules(extra));
         let rs = RuleSet::from_ini(&ini).unwrap();
         let id = rs.p_type_id_by_name("GhostRef").unwrap();
-        assert_eq!(rs.particle_type(id).next_particle, None);
+        let next = rs.particle_type(id).next_particle.unwrap();
+        assert_eq!(rs.particle_type(next).name, "DoesNotExist");
+        assert_eq!(
+            rs.particle_type(next).behaves_like,
+            crate::rules::particle_type::ParticleBehavesLike::Unknown
+        );
     }
 
     #[test]
@@ -14015,7 +15348,6 @@ DefaultSparkSystem=SparkSys
         IniFile::from_str(&text)
     }
 
-    #[cfg(feature = "phobos")]
     #[test]
     fn ai_dehardcode_keys_default_and_read_general() {
         let defaults = GeneralRules::default();
@@ -14157,8 +15489,9 @@ DefaultSparkSystem=SparkSys
     }
 
     /// Each list is read on its own: the infantry through the InfantryType
-    /// list reader, which keeps a name it does not know and drops `none`, the
-    /// counts as ints. Nothing pairs them or compares their lengths.
+    /// list reader, which drops `none`, the counts as ints. Nothing pairs them
+    /// or compares their lengths. The infantry are registered, as Ares's
+    /// Find-only read (Buf_General 1005BB00, hook 0x66D55E) needs.
     #[test]
     fn paradrop_lists_read_separately() {
         let rules = RuleSet::from_ini(&ini_with_general(
@@ -14166,7 +15499,8 @@ DefaultSparkSystem=SparkSys
              AmerParaDropInf=E1,GHOST,none,ENGINEER\n\
              AmerParaDropNum=6,-2\n\
              SovParaDropInf=E2\n\
-             SovParaDropNum=9,4",
+             SovParaDropNum=9,4\n\
+             [InfantryTypes]\n0=E1\n1=GHOST\n2=ENGINEER\n3=E2",
         ))
         .unwrap();
         let g = &rules.general;
@@ -14583,6 +15917,35 @@ Projectile=Invisible
     }
 
     #[test]
+    fn a_weapons_warhead_and_projectile_answer_as_their_names_in_any_rule_set() {
+        // GUN names its types in another case than their sections.
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[InfantryTypes]\n0=GI\n[GI]\nStrength=100\nPrimary=GUN\n\
+             [GUN]\nWarhead=wh\nProjectile=shot\n[WH]\n[SHOT]\n",
+        ))
+        .unwrap();
+        // OTHER's only types take the indexes GUN's handles hold, so a handle
+        // read in the wrong set names one of them.
+        let other = RuleSet::from_ini(&IniFile::from_str(
+            "[InfantryTypes]\n0=GI\n[GI]\nStrength=100\nPrimary=OTHER\n\
+             [OTHER]\nWarhead=AP\nProjectile=Cannon\n[AP]\n[Cannon]\n",
+        ))
+        .unwrap();
+        let copy = rules.clone().with_fresh_serial();
+        for owner in [&rules, &copy] {
+            let gun = owner.weapon("GUN").unwrap();
+            for set in [&rules, &copy] {
+                let warhead = set.weapon_warhead(gun).unwrap();
+                assert!(std::ptr::eq(warhead, set.warhead("WH").unwrap()));
+                let projectile = set.weapon_projectile(gun).unwrap();
+                assert!(std::ptr::eq(projectile, set.projectile("SHOT").unwrap()));
+            }
+            assert!(other.weapon_warhead(gun).is_none());
+            assert!(other.weapon_projectile(gun).is_none());
+        }
+    }
+
+    #[test]
     fn naval_base_rules_preserve_source_order_defaults_and_buildconst_identity() {
         let ini = IniFile::from_str(
             "[General]\n\
@@ -14651,6 +16014,8 @@ Projectile=Invisible
         assert!(!defaults.object("YARD").unwrap().build_const_eligible);
     }
 
+    // Read the stock way: Ares reads these lists Find-only through ParseList
+    // (Misc/Bugfixes.Buffer.cpp).
     #[test]
     fn build_const_readai_does_not_trim_individual_tokens() {
         let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -14673,6 +16038,8 @@ Projectile=Invisible
         );
     }
 
+    // Read the stock way: Ares reads these lists Find-only through ParseList
+    // (Misc/Bugfixes.Buffer.cpp).
     #[test]
     fn build_const_readai_uses_native_127_source_byte_prefix() {
         let oversized = format!("GACNST,{},LATE", "X".repeat(120));
@@ -14716,6 +16083,8 @@ Projectile=Invisible
         assert!(!rules.object("LATE").unwrap().build_const_eligible);
     }
 
+    // Read the stock way: Ares reads these lists Find-only through ParseList
+    // (Misc/Bugfixes.Buffer.cpp).
     #[test]
     fn recalc_type_lists_share_native_parser_and_registered_family_resolution() {
         let ini = IniFile::from_str(
@@ -14934,6 +16303,49 @@ Projectile=Invisible
         assert_eq!(obj.pads.len(), 2, "truncated to NumberOfDocks=2");
         assert_eq!(obj.pads[0].lepton_offset, (0, 0, 0));
         assert_eq!(obj.pads[1].lepton_offset, (128, 0, 0));
+    }
+
+    #[test]
+    fn a_huge_dock_count_stops_at_the_contact_bound() {
+        let rules = parse_rules_with_art(
+            "[GAAIRC]\nName=Airforce\nCost=1000\nStrength=1000\nNumberOfDocks=100000\n",
+            "[GAAIRC]\nDockingOffset0=0,-128,0\n",
+        );
+        let obj = rules.object("GAAIRC").expect("obj");
+        let limit = crate::rules::object_type::DOCK_CONTACT_LIMIT;
+        assert_eq!(obj.pads.len(), limit as usize);
+        assert_eq!(obj.dock_contact_capacity(), limit as u32);
+    }
+
+    #[test]
+    fn out_of_range_rules_numbers_saturate_instead_of_stopping_the_game() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nTunnelSpeed=1e999\nShipSinkingWeight=-1e999\n\
+             [Radiation]\nRadLightFactor=1e999\n\
+             [AudioVisual]\nDirectRockingCoefficient=1e999\n\
+             [VehicleTypes]\n0=TANK\n\
+             [TANK]\nWeight=1e999\nPitchAngle=1e999\nJumpjetSpeed=40000\n\
+             [VoxelAnims]\n0=PIECE\n[PIECE]\nMinAngularVelocity=1e999\n",
+        ))
+        .unwrap();
+        assert_eq!(rules.general.tunnel_speed, SimFixed::MAX);
+        assert_eq!(rules.general.ship_sinking_weight, SimFixed::MIN);
+        assert_eq!(rules.radiation.light_factor, SimFixed::MAX);
+        let tank = rules.object("TANK").unwrap();
+        assert_eq!(tank.weight, SimFixed::MAX);
+        assert_eq!(tank.jumpjet_params.speed, SimFixed::MAX);
+        // The infinite spin keeps the constructor value.
+        let piece = rules.voxel_anim_type(rules.voxel_anim_type_id_by_name("PIECE").unwrap());
+        let default = crate::rules::voxel_anim_type::VoxelAnimType::with_defaults("PIECE");
+        assert_eq!(piece.min_angular_velocity, default.min_angular_velocity);
+    }
+
+    #[test]
+    fn sides_past_one_byte_are_not_allocated() {
+        let sides: String = (0..257).map(|i| format!("S{i}=Americans\n")).collect();
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!("[Sides]\n{sides}"))).unwrap();
+        assert_eq!(rules.allocated_sides().count(), 256);
+        assert!(rules.side_index("S256").is_none());
     }
 
     #[test]
@@ -15225,7 +16637,7 @@ Projectile=Invisible
                 rules.weapon_mut_for_test("GUN").unwrap().range_leptons = 1;
             }),
             ("ShrapnelWeapon", |rules| {
-                rules.projectiles.get_mut("SHOT").unwrap().shrapnel_weapon = Some("GUN".into());
+                rules.projectile_mut("SHOT").unwrap().shrapnel_weapon = Some("GUN".into());
             }),
             ("WeaponType", |rules| {
                 rules.super_weapons.get_mut("NUKE").unwrap().weapon_type = Some("GUN".into());
@@ -15344,7 +16756,7 @@ Projectile=Invisible
             ),
             (
                 "Warhead DebrisTypes",
-                Box::new(move |rules| rules.warheads.get_mut("WH").unwrap().debris_types = names()),
+                Box::new(move |rules| rules.warhead_mut("WH").unwrap().debris_types = names()),
             ),
             (
                 "Particle Warhead",
@@ -15912,7 +17324,6 @@ Projectile=Invisible
         );
     }
 
-    #[cfg(feature = "phobos")]
     #[test]
     fn parallel_ai_queue_switches_default_the_gate_on_and_read_global_controls() {
         // Phobos RulesExt constructs AllowParallelAIQueues { true }.
@@ -15935,7 +17346,6 @@ Projectile=Invisible
         assert!(!controls.forbids_category(ObjectCategory::Building, false));
     }
 
-    #[cfg(feature = "phobos")]
     #[test]
     fn techno_forbid_parallel_ai_queues_reads_per_type() {
         let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -15947,14 +17357,18 @@ Projectile=Invisible
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "map_lighting_tests.rs"]
 mod map_lighting_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
+#[path = "name_lookup_tests.rs"]
+mod name_lookup_tests;
+
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "global_promotion_tests.rs"]
 mod global_promotion_tests;
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "ares_script_conversion_tests.rs"]
 mod ares_script_conversion_tests;

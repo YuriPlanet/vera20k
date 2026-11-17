@@ -1,6 +1,6 @@
 //! VERA's offline WOL test service: a developer stand-in behind the same
-//! request/event boundary a real service will use, chosen by the Options
-//! page's `[VERA] WolTestService=` box. It is not gamemd behavior: it lets
+//! request/event boundary a real service will use, chosen by
+//! `[VERA] WolTestService=`. It is not gamemd behavior: it lets
 //! the Internet screens (login `0x10F`, lobby `0x113`, setup C2/C9) be
 //! opened and clicked without a server.
 //!
@@ -46,8 +46,8 @@ const SERVER_STATUS_READY: u32 = 0x0004_012F;
 /// join, a join asks for both lists).
 const ROUNDS: usize = 8;
 
-const MOTD: &str = "VERA20k offline test service: these lobbies, games and players are \
-                    stand-ins and nobody else is online.\nTurn it off on the Options page.";
+/// The label of this service's message of the day.
+const MOTD: &str = "VERA:TestServiceMotd";
 
 /// Answer the queued requests of a visit that uses this service; returns
 /// "now" while requests wait for a running transition.
@@ -125,6 +125,10 @@ fn answer_setup(state: &mut AppState, request: NetworkSetupRequest) {
         {
             log::warn!("WOL test service: host options refused: {error:#}");
         }
+        return;
+    }
+    // The stand-in lobby rates nobody, so its balance moves nobody.
+    if request == NetworkSetupRequest::Balance {
         return;
     }
     // 0x0078F000: the stand-in server keeps the host's new record.
@@ -364,6 +368,7 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
             store_credential(&mut state.frontend.wol_test_credentials, nickname, password);
             return;
         }
+        WolServiceRequest::ForgetSignIn => return,
         WolServiceRequest::ForgetCredential { slot } => {
             state
                 .frontend
@@ -375,9 +380,8 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
             service_event(state, WolServiceEvent::NetStatus(SERVER_STATUS_READY));
             WolServiceEvent::ServerList(Ok(servers()))
         }
-        // VERA's own message of the day, then this service's.
         WolServiceRequest::Connect { .. } => WolServiceEvent::Login(Ok(WolLoginAccepted {
-            motd: format!("{}\n{MOTD}", super::service::vera_motd(state)),
+            motd: crate::i18n::tr(MOTD),
         })),
         WolServiceRequest::ListChannels { kind, .. } => WolServiceEvent::Channels {
             kind,
@@ -435,7 +439,7 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
         WolServiceRequest::SquadInfo { id: 0 | SQUAD } => WolServiceEvent::Squad {
             id: SQUAD,
             squad: Ok(crate::ui::wol_lobby::WolSquad {
-                name: "VERA Testers".into(),
+                name: crate::i18n::tr("VERA:TestServiceClan"),
                 tag: "VERA".into(),
             }),
         },
@@ -525,8 +529,16 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
                 .collect();
             WolServiceEvent::UserLocales(Ok(locales))
         }
-        // Every WOL:Locale00..37 the retail CSF holds.
-        WolServiceRequest::LocaleCount => WolServiceEvent::LocaleCount(38),
+        WolServiceRequest::LocaleCount => {
+            WolServiceEvent::LocaleCount(crate::ui::wol_persona::LOCALE_COUNT)
+        }
+        // VERA online's account requests: the stand-in lobby accepts each.
+        WolServiceRequest::Account(_) => WolServiceEvent::Account(Ok(())),
+        // Nobody plays, so no match can be watched.
+        WolServiceRequest::ListMatches => WolServiceEvent::Matches(Vec::new()),
+        WolServiceRequest::Watch { .. } => {
+            WolServiceEvent::WatchRefused(super::lobby::WATCH_UNKNOWN_MATCH)
+        }
         // Nothing to cancel or deliver: nobody is online.
         WolServiceRequest::SetLocale(_)
         | WolServiceRequest::LeaveChannel
@@ -561,21 +573,25 @@ fn lobby_greeting(state: &mut AppState) {
         WolServiceEvent::UserLocales(Ok(vec![("Tanya".into(), 2)])),
         line(
             member("Tanya", MEMBER_OPERATOR),
-            "Welcome to the VERA20k test lobby.",
+            &crate::i18n::tr("VERA:TestLobbyWelcome"),
         ),
-        line(member("Boris", MEMBER_VOICE), "Anyone up for a game?"),
+        line(
+            member("Boris", MEMBER_VOICE),
+            &crate::i18n::tr("VERA:TestLobbyInvite"),
+        ),
     ] {
         service_event(state, event);
     }
 }
 
-/// Tanya's ladder record.
+/// Tanya's ladder record: OS 48.51, the lobby's points being it rounded.
 fn tanya_ladder() -> WolLadderRecord {
     WolLadderRecord {
         name: "Tanya".into(),
         wins: 12,
         losses: 3,
-        points: 1520,
+        points: 49,
+        os_hundredths: 4851,
         rank: 1,
         disconnects: 0,
     }
@@ -591,7 +607,8 @@ fn ladder_record(name: &str) -> Option<WolLadderRecord> {
             name: "Boris".into(),
             wins: 4,
             losses: 6,
-            points: 300,
+            points: 27,
+            os_hundredths: 2730,
             rank: 17,
             disconnects: 1,
         })
@@ -600,14 +617,15 @@ fn ladder_record(name: &str) -> Option<WolLadderRecord> {
     }
 }
 
-/// The high scores: Tanya's 1520 points (a three-star general's badge) at
-/// rank 7; Boris's 90 points (lieutenant) at rank 123 with every co-op
-/// campaign finished.
+/// The high scores, as the lobby gives them from the ladder: Tanya, the
+/// season's number 1 at OS 48.51, has commander in chief's 2001 points;
+/// Boris, 17th at OS 27.30, a lieutenant's 81, with every co-op campaign
+/// finished.
 fn high_score(name: &str) -> Option<WolHighScoreRecord> {
     let (name, points, rank, coop) = if name.eq_ignore_ascii_case("Tanya") {
-        ("Tanya", 1520, 7, 0)
+        ("Tanya", 2001, 1, 0)
     } else if name.eq_ignore_ascii_case("Boris") {
-        ("Boris", 90, 123, 0xF)
+        ("Boris", 81, 17, 0xF)
     } else {
         return None;
     };
@@ -648,7 +666,9 @@ fn page(state: &mut AppState, name: &str) {
         state,
         WolServiceEvent::Page {
             from: stand_in,
-            text: "Got your page.".encode_utf16().collect(),
+            text: crate::i18n::tr("VERA:TestPageReply")
+                .encode_utf16()
+                .collect(),
             ansi: false,
         },
     );
@@ -688,10 +708,12 @@ fn member(name: &str, flags: u32) -> WolMember {
     }
 }
 
-/// Record 0 is never connected to (`0x0078753D`); record 1 is selected.
+/// Record 0 is never connected to (`0x0078753D`) or shown; record 1 is
+/// selected.
 fn servers() -> WolServerList {
+    let test_server = crate::i18n::tr("VERA:TestServer");
     WolServerList {
-        servers: ["Ladder", "VERA20k Test Server"]
+        servers: ["Ladder", test_server.as_str()]
             .into_iter()
             .map(|name| WolServer {
                 name: format!("vera20k.test:{name}"),
@@ -890,7 +912,7 @@ fn store_credential(stored: &mut Vec<WolCredential>, nickname: String, password:
     stored.sort_by_key(|stored| stored.slot);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

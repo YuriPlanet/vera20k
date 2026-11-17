@@ -5,19 +5,26 @@ use crate::audio::arbiter::{
     ArbiterAction, EntryFacts, HandleOwner, PlayRequest, PlayoutEnd, SoundArbiter, TestPlayback,
 };
 use crate::rules::{
-    retail_ini_fixture::{retail_ini, retail_unlayered_rules_with_art},
+    native_processing::RulesLayerStack,
+    retail_ini_fixture::{art_registry, retail_ini, retail_rules_and_art},
     sound_ini::SoundRegistry,
 };
 use crate::util::fixed_math::SimFixed;
 
 #[test]
 fn retail_landing_child_reports_release_instead_of_cutting_samples() {
-    let (Some(mut rules), Some(sound)) =
-        (retail_unlayered_rules_with_art(), retail_ini("soundmd.ini"))
+    let (Some((ini, art)), Some(sound)) = (retail_rules_and_art(), retail_ini("soundmd.ini"))
     else {
         return;
     };
     let registry = SoundRegistry::from_ini(&sound);
+    let mut rules = RuleSet::from_processed_rules(
+        &RulesLayerStack::new(ini)
+            .process_with_fixed_art_and_sounds(&art, &registry)
+            .unwrap(),
+    )
+    .unwrap();
+    rules.install_art_data(art_registry(&art));
     let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
         "tools/rules_oracle/bridge_child_sound.json",
     ))
@@ -29,10 +36,11 @@ fn retail_landing_child_reports_release_instead_of_cutting_samples() {
     for report in native["anim_reports"].as_array().unwrap() {
         let name = report["name"].as_str().unwrap();
         let config = rules.art().anim_runtime_config(name).unwrap();
-        // Native resolves Report with case-insensitive Voc FindByName;
-        // ArtRegistry stores the same identity in uppercase.
+        // None of these sets StartSound=, so the start slot holds Report=,
+        // resolved with case-insensitive Voc FindByName; ArtRegistry stores
+        // the same identity in uppercase.
         assert_eq!(
-            config.report,
+            config.start_sound,
             report["report_name"].as_str().map(str::to_ascii_uppercase)
         );
         assert!(config.stop_sound.is_none());
@@ -113,7 +121,8 @@ fn retail_landing_child_reports_release_instead_of_cutting_samples() {
         // child's entire timer/Middle/Scenario RNG trajectory.
         for frame in 0..100 {
             sim.session_mut_for_test().set_binary_frame_for_test(frame);
-            sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default());
+            sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
+                .unwrap();
             if sim.pending_delete().contains_object(&id) {
                 break;
             }
@@ -122,7 +131,7 @@ fn retail_landing_child_reports_release_instead_of_cutting_samples() {
         assert!(!sim.anim(id).unwrap().in_logic_vector(), "{name}");
         let events = sim.take_sound_events_for_test();
         let mut output = SoundEventQueue::default();
-        dispatch_sim_sound_events(events, &sim, &rules, None, &mut |_| true, &mut output);
+        dispatch_sim_sound_events(events, &sim, &rules, None, &mut |_| true, &mut output, None);
         let events = output.drain();
         assert!(
             matches!(events.as_slice(), [

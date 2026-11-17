@@ -5,9 +5,9 @@
 //!
 //! F12 owner tree: options persistence lives here beside the save repository.
 
+pub(crate) mod account;
 pub(crate) mod commands;
 pub(crate) mod intro_play;
-pub(crate) mod ladder_keys;
 pub(crate) mod options;
 pub(crate) mod options_profile;
 #[cfg(feature = "phobos")]
@@ -308,6 +308,8 @@ impl PreparedLoad {
         // InfantryLoad521A0C -> TechnoNoInit6F4335 resets the transition
         // clock. This user-file seam is separate from internal continuations.
         simulation.restart_cloak_progress_after_player_load();
+        simulation.reconstruct_building_repair_progress_after_player_load();
+        simulation.validate_ares_state_for_load(rules.ares())?;
         simulation.restore_after_snapshot_load()?;
         crate::sim::production::validate_restored_factory_state(&simulation, rules)?;
         simulation.rebuild_caches_after_load(terrain_template, terrain_speed_config, rules);
@@ -331,6 +333,12 @@ impl PreparedLoad {
         simulation.intern_rule_type_ids(rules);
         simulation.resolve_type_handles(rules);
         simulation.rebuild_lighting_sources_after_load(rules);
+        // Post_Load_Game6851AC/6851B1 reselects lighting, then refreshes the
+        // flagged Anim conversions from the incoming stored Locations.
+        simulation.reinitialize_lighting_after_user_load();
+        simulation
+            .refresh_animated_tiberium_after_load(rules, overlay_registry)
+            .map_err(SnapshotRestoreError::from)?;
 
         // A render cache can retain an outgoing ID until its next sweep. Only
         // restored entity identities may re-enter the new presentation owner;
@@ -644,11 +652,12 @@ impl SaveRepository {
         self.readable_entries().collect()
     }
 
-    /// Whether any compatible save reads: the scan stops at the first one, like
-    /// `LoadOptionsClass__HasLoadableSave` `0x00559C20`.
+    /// Whether any save reads: the scan stops at the first one, like
+    /// `LoadOptionsClass__HasLoadableSave` `0x00559C20`. VERA-only: a save
+    /// another build wrote counts too, because Load lists it (marked, not
+    /// loadable) where gamemd hides it.
     pub(crate) fn has_browser_entry(&self) -> bool {
-        self.readable_entries()
-            .any(|(entry, _)| entry.header.is_compatible())
+        self.readable_entries().next().is_some()
     }
 
     /// SaveInfo681840/559ED0 needs metadata, not the simulation body. Reuse
@@ -727,7 +736,7 @@ fn newest_modified_path(
         .map(|(path, _)| path)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::app::match_runtime::frame_pacer::LocalFramePacer;
@@ -944,6 +953,8 @@ mod tests {
         in_game_menu: crate::ui::pause_menu::InGameMenuState,
     }
 
+    mod animated_tiberium_restore_tests;
+    mod building_repair_restore_tests;
     mod cloak_restore_tests;
     mod factory_restore_tests;
     mod infantry_death_restore_tests;
@@ -1210,9 +1221,9 @@ mod tests {
 
         let startup_before = state.startup.clone();
         let baseline = state.baseline();
-        state.runtime.resources.rules = rules;
-        state.runtime.resources.overlay_registry = registry;
-        state.runtime.resources.terrain_template = Some(terrain);
+        state.runtime.resources_mut().rules = rules;
+        state.runtime.resources_mut().overlay_registry = registry;
+        state.runtime.resources_mut().terrain_template = Some(terrain);
         let rules_before = state.runtime.resources.rules.simulation_config_hash();
         let prepared = PreparedLoad::from_repository(
             LoadPreparationView::from_runtime(
@@ -1334,9 +1345,9 @@ mod tests {
         assert_eq!(current.session().current_house(), Some(outgoing_owner));
         assert!(!current.houses()[&saved_owner].is_human());
         let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(current);
-        runtime.resources.rules = rules;
-        runtime.resources.overlay_registry = registry;
-        runtime.resources.terrain_template = Some(terrain);
+        runtime.resources_mut().rules = rules;
+        runtime.resources_mut().overlay_registry = registry;
+        runtime.resources_mut().terrain_template = Some(terrain);
         let outgoing_hash = runtime.simulation.state_hash();
         let outgoing_rng = runtime.simulation.rng_state();
         let prepared = PreparedLoad::from_repository(
@@ -1417,9 +1428,9 @@ mod tests {
                 .session_mut_for_test()
                 .set_current_house_for_test(Some(ai));
             let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(outgoing);
-            runtime.resources.rules = load_fixture_rules();
-            runtime.resources.overlay_registry = OverlayTypeRegistry::empty();
-            runtime.resources.terrain_template = Some(load_fixture_terrain());
+            runtime.resources_mut().rules = load_fixture_rules();
+            runtime.resources_mut().overlay_registry = OverlayTypeRegistry::empty();
+            runtime.resources_mut().terrain_template = Some(load_fixture_terrain());
             let prepared = PreparedLoad::from_repository(
                 LoadPreparationView::from_runtime(
                     &repository,
@@ -1599,11 +1610,11 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 #[path = "tests/save_write_tests.rs"]
 mod save_write_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 #[path = "tests/save_browser_tests.rs"]
 mod save_browser_tests;
 

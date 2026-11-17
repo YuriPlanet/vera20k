@@ -18,7 +18,8 @@ overlays or terrain objects: sim-bench's march scenario adds its own houses.
 
 `--starts N` writes the map for sim-bench's match scenario instead: N start
 waypoints on a grid across the diamond, an ore field beside each start, and
-clumps of trees between the starts. A fixed seed places the ore and trees, so
+clumps of trees between the starts. Above eight starts it also
+writes `[Basic] MaxPlayers=N`, so the lobby seats a player at each. A fixed seed places the ore and trees, so
 the same arguments always write the same map.
 """
 
@@ -155,10 +156,13 @@ def build_map(size: int, starts: int | None = None, *, cell_array_width: int | N
     if cell_array_width > 512:
         name = f'Large Size {size}x{size} - {len(start_cells)} Starts'
     waypoints = '\n'.join(f'{index}={ry * 1000 + rx}' for index, (rx, ry) in enumerate(start_cells))
+    # VERA's lobby seats more than the eight retail starts only on a map that
+    # declares them (`skirmish_player_capacity`: MaxPlayers 9 to 30).
+    max_players = f'MaxPlayers={len(start_cells)}\n' if len(start_cells) > 8 else ''
     margin = 4
     return f'''[Basic]
 Name={name}
-NewINIFormat=4
+{max_players}NewINIFormat=4
 MultiplayerOnly=1
 Official=no
 

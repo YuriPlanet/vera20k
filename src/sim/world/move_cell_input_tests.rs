@@ -27,6 +27,7 @@ fn ordinary_foot_input_matches_native_admission_rows() {
             zones: &zones,
             raw: &raw,
             overlays: None,
+            burrowing_contents: None,
             bounds: bounds(),
             size: (8, 8),
             frame: input["frame"].as_u64().unwrap_or(100) as u32,
@@ -240,7 +241,7 @@ fn an_aircraft_click_keeps_a_river_cell() {
         let order = sim.decode_native_command_record(&record, 0).unwrap();
         assert!(sim.apply_command("Local", &order.payload, Some(&rules)));
     }
-    let graph = sim.planning_draw_graph(owner, &[gi, harrier], None, None);
+    let graph = sim.planning_draw_graph(owner, None, None);
     assert_eq!(graph.nodes.len(), 1, "one river click is one shared node");
     assert_eq!(graph.nodes[0].coord, DriveCoord::cell(9, 5, 0));
     assert_eq!(graph.nodes[0].members, vec![gi, harrier]);
@@ -674,14 +675,17 @@ impl Simulation {
                 active: true,
                 bridge_kind: BridgeRecordKind::High,
             }];
-            sim.zone_grid = Some(ZoneGrid::build_with_native_bridge_geometry(
-                sim.path_grid().unwrap(),
-                sim.resolved_terrain.as_ref().unwrap(),
-                &records,
-                16,
-                16,
-                Some((8, 8)),
-            ));
+            sim.zone_grid = Some(
+                ZoneGrid::build_with_native_bridge_geometry(
+                    sim.path_grid().unwrap(),
+                    sim.resolved_terrain.as_ref().unwrap(),
+                    &records,
+                    16,
+                    16,
+                    Some((8, 8)),
+                )
+                .into(),
+            );
         }
         let start = if bridge { (7, 6) } else { (5, 5) };
         let actor = sim

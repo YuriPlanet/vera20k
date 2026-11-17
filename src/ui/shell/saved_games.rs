@@ -180,7 +180,7 @@ pub fn main_menu_saved_game_responsive_layout(width: u32, height: u32) -> MainMe
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

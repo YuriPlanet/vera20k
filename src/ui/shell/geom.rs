@@ -53,6 +53,13 @@ pub const LOWER_STRIP_H: i32 = 32;
 /// edge; the surrounding chrome remains 168 pixels wide.
 pub const SDBTNANM_CELL_W_NARROW: i32 = 156;
 
+/// VERA's own: the widest centred caption that stays on the right panel's
+/// art. An SDBTNANM button's red face spans about 13..134 px of the 156-px
+/// cell, whose caption rect, the cell less 2 px, centres text 77 px in (78
+/// pressed); the title window spans 658..774 at 800x600, where the title
+/// rect centres text at 713 (716 in battle). Measured on the art at 1:1.
+pub const RIGHT_PANEL_FACE_W: u32 = 110;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RightPanelRects {
     pub top: RectPx,
@@ -191,6 +198,9 @@ pub const SHELL_BASE_H: i32 = 600;
 pub struct ShellScale {
     screen_w: i32,
     screen_h: i32,
+    /// The scaled shell stands at the window's right edge instead of its
+    /// centre ([`Self::anchored_right`]).
+    right: bool,
 }
 
 impl ShellScale {
@@ -200,10 +210,44 @@ impl ShellScale {
     pub const RETAIL: Self = Self {
         screen_w: SHELL_BASE_W,
         screen_h: SHELL_BASE_H,
+        right: false,
     };
 
     pub fn from_screen(screen_w: i32, screen_h: i32) -> Self {
-        Self { screen_w, screen_h }
+        Self {
+            screen_w,
+            screen_h,
+            right: false,
+        }
+    }
+
+    /// The same mapping with the scaled shell at the window's right edge, the
+    /// spare width all at its left: VERA's game room spreads into it.
+    pub fn anchored_right(self) -> Self {
+        Self {
+            right: true,
+            ..self
+        }
+    }
+
+    /// The same mapping with the scaled shell centred again.
+    pub fn centred(self) -> Self {
+        Self {
+            right: false,
+            ..self
+        }
+    }
+
+    /// The mapping the front-end shell takes in a window. Only the two sizes
+    /// gamemd's shell runs at keep the retail layout: 800x600, and 640x480 with
+    /// its own 640-wide art (`AllowModeToggle`). Any other window gets the
+    /// 800x600 dialog scaled to fit at its own shape, centred.
+    pub fn for_window(screen_w: i32, screen_h: i32) -> Self {
+        if matches!((screen_w, screen_h), (800, 600) | (640, 480)) {
+            Self::RETAIL
+        } else {
+            Self::from_screen(screen_w, screen_h)
+        }
     }
 
     /// The one factor both axes scale by: the largest at which the 800x600
@@ -221,7 +265,9 @@ impl ShellScale {
         let factor = self.factor();
         let w = (SHELL_BASE_W as f32 * factor).round() as i32;
         let h = (SHELL_BASE_H as f32 * factor).round() as i32;
-        RectPx::new((self.screen_w - w) / 2, (self.screen_h - h) / 2, w, h)
+        let spare = self.screen_w - w;
+        let x = if self.right { spare } else { spare / 2 };
+        RectPx::new(x, (self.screen_h - h) / 2, w, h)
     }
 
     /// The whole window this scale maps into. A layout's `screen` is this on
@@ -473,7 +519,7 @@ pub fn snap_button_biased_truncate(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

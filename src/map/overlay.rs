@@ -1,7 +1,8 @@
 //! Overlay and terrain object parsing from RA2 map files.
 //!
 //! RA2 maps have three overlay-related sections:
-//! - `[OverlayPack]`: base64 → LCW compressed → 262,144 bytes (512×512 grid).
+//! - `[OverlayPack]`: base64 → LCW compressed → 262,144 bytes (512×512 grid),
+//!   or 1024×1024 on VERA's extended sizes (`docs/map-format.md`).
 //!   Each byte is an overlay type ID (0xFF = no overlay).
 //! - `[OverlayDataPack]`: same format. Each byte is a frame/value for the overlay
 //!   (e.g., ore density 0-11, wall connection frame).
@@ -231,6 +232,9 @@ pub fn parse_overlay_packs(ini: &IniFile, grid: CellGrid) -> ParsedOverlayPacks 
 /// selects radix128 for signed NewINIFormat<4, otherwise1000 (71CAE3..71CB44).
 /// The caller supplies ReadBasic's retained format, whose native default is0.
 /// Values are object names like "INTREE01", "CACTUS01", "ROCK01".
+/// The writer `TerrainClass::Write_Map_Section @ 0x0071CB90` has no port: its
+/// one caller, Save_Scenario_Map_File 0x00687CE0, is reached only from the
+/// random-map dialog under the map-editor flag 0x00A8ED6B (0x00596A38..72).
 pub fn parse_terrain_objects(ini: &IniFile, signed_new_ini_format: i32) -> Vec<TerrainObject> {
     let section = match ini.section("Terrain") {
         Some(s) => s,
@@ -307,7 +311,7 @@ fn decode_pack_section(ini: &IniFile, section_name: &str, grid: CellGrid) -> Opt
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 
@@ -401,7 +405,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod large_map_tests {
     use super::*;
     #[test]

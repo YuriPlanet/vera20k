@@ -127,25 +127,15 @@ impl FootPathRuntime {
     /// (`0x004B3285`, `0x006A28D5`), Hover (`0x00516BCD`) and Walk
     /// (`0x0075B2E2`, `0x0075BA27`).
     ///
-    /// `Process_Movement` reads `[ECX+0x64C]` at `0x004B2DC8`, and on `> 0`
-    /// decrements and stores it back (`0x004B2DD2`/`0x004B2DD3`) before
-    /// continuing; on `<= 0` it clears the drive coord, calls
-    /// `FootClass::Stop_Moving` plus vtable `+0x480`/`+0x484`, and plays the
-    /// blocked voice at `Foot+0x68A`. So it *is* decremented and it *does* end
-    /// the move at zero.
-    ///
-    /// Recorded difference: **what decrements it.** Native decrements it on every
-    /// pass through the generic blocked label `LAB_004B3282` — reached from
-    /// `Is_Cell_In_Playfield == 0`, from code 3, from `code != 6` and from two
-    /// code-6 sub-failures — and the same label is where the literal 10 is stored.
-    /// VERA decrements per failed repath instead. The escalation clock is a
-    /// separate record: `Foot+0x668` = frame, `Foot+0x66C`, and `Foot+0x670` =
-    /// `Rules+0x1768`, stored only on the `Foot+0x6B7 == 0` transition of the code-2
-    /// arm — which contains no `Scatter_Objects` call at all. Trigger: a unit
-    /// blocked long enough to exhaust the counter. Player effect: the give-up point
-    /// arrives after a different number of ticks than retail's. Frequency: every
-    /// traffic jam, many times a minute once a base has armour queuing. Downstream
-    /// risk: the two clocks are separate fields and must stay separate.
+    /// On a failed route `Process_Movement` reads `[ECX+0x64C]` at
+    /// `0x004B2DC8`, and on `> 0` decrements and stores it back
+    /// (`0x004B2DD2`/`0x004B2DD3`) before continuing; on `<= 0` it clears the
+    /// drive coord, calls `FootClass::Stop_Moving` plus vtable `+0x480`/`+0x484`,
+    /// and plays the blocked voice at `Foot+0x68A`. The generic blocked label
+    /// `LAB_004B3282` stores the literal 10. The escalation clock is a separate
+    /// record: `Foot+0x668` = frame, `Foot+0x66C`, and `Foot+0x670` =
+    /// `Rules+0x1768`, stored only on the `Foot+0x6B7 == 0` transition of the
+    /// code-2 arm, which contains no `Scatter_Objects` call at all.
     pub(crate) const RETRY_RELOAD: u32 = 10;
 
     pub const fn at_frame(frame: u32) -> Self {
@@ -374,6 +364,7 @@ impl FootPathQueue {
     /// [`FIND_PATH_WINDOW_WORDS`] words of the whole AStar route; tube jumps
     /// count as one word. The Vec's end represents a short route's
     /// terminator without retaining unused native backing words.
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn install(
         &mut self,
         reference: (u16, u16),
@@ -569,20 +560,19 @@ pub struct FootSpeedState {
     /// native writer is the Speed crate (`accept_speed_crate`), reached from
     /// `CellClass::PickupCrate` (`crates::pickup`) when a Foot commits to a
     /// crate cell; saved and hashed (v181). With Ares this is the permanent
-    /// Ext+90 baseline; the separately owned derived Foot+580 is below.
+    /// Ext+90 baseline; the derived Foot+580 lives in the object's Ares part.
     crate_multiplier: crate::util::native_x87::NativeF64Bits,
-    /// Ares100460A0's derived Foot+580, distinct from its permanent
-    /// TechnoExt+90 crate baseline above. None denotes an unchanged baseline.
-    /// The attachment owner updates it synchronously after native mutations;
-    /// snapshot restore validates it against that owner's ordered vector.
-    #[cfg(feature = "ares")]
-    #[serde(default)]
-    attached_speed: Option<crate::util::native_x87::NativeF64Bits>,
     /// Foot+6B5, constructor0 at4D3444. Drive's straight/CrusherAll
     /// pre-entry arm4B1A2F sets it; Unit's admitted overlay tail73B067
     /// clears it. Both the Track speed prefix and RockingUpdate read it.
     /// It survives class replacement and ordinary movement/Stop calls.
     crush_slowdown: bool,
+    /// Whether Ares100460A0 derived a Foot+580 other than the permanent
+    /// baseline above. The derived value lives in the object's Ares part
+    /// (`GameEntity::speed_multiplier`); this byte, in the struct's padding,
+    /// spares every speed query of a game Ares doesn't play in that read.
+    #[serde(default)]
+    attached: bool,
 }
 
 impl Default for FootSpeedState {
@@ -590,9 +580,8 @@ impl Default for FootSpeedState {
         Self {
             applied_fraction: crate::util::native_x87::NativeF64Bits::POSITIVE_ZERO,
             crate_multiplier: crate::util::native_x87::NativeF64Bits::ONE,
-            #[cfg(feature = "ares")]
-            attached_speed: None,
             crush_slowdown: false,
+            attached: false,
         }
     }
 }
@@ -623,22 +612,13 @@ impl FootSpeedState {
         self.crate_multiplier
     }
 
-    /// Live Foot+580. Crate eligibility continues to read the permanent
-    /// baseline; GetCurrentSpeed reads this derived value under Ares.
-    pub fn effective_multiplier(&self) -> crate::util::native_x87::NativeF64Bits {
-        #[cfg(feature = "ares")]
-        if let Some(multiplier) = self.attached_speed {
-            return multiplier;
-        }
-        self.crate_multiplier
+    /// Whether Ares attachments hold a derived Foot+580 in the Ares part.
+    pub(crate) fn attached(&self) -> bool {
+        self.attached
     }
 
-    #[cfg(feature = "ares")]
-    pub(crate) fn set_attached_speed(
-        &mut self,
-        multiplier: crate::util::native_x87::NativeF64Bits,
-    ) {
-        self.attached_speed = (multiplier != self.crate_multiplier).then_some(multiplier);
+    pub(crate) fn set_attached(&mut self, attached: bool) {
+        self.attached = attached;
     }
 
     /// Fixed projection for diagnostics and fixed-input fixture adapters.
@@ -862,7 +842,7 @@ pub struct BunkerWallAnimEvent {
     pub damaged: bool,
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::sim::movement::DriveLocomotionRuntime;

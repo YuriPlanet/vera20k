@@ -92,8 +92,8 @@ fn scene(case: &Value, corpus: &Value) -> (Simulation, RuleSet, u64) {
     sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(32));
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     sim.session.set_game_mode(
-        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
-            inputs["game_mode"].as_i64().unwrap() != 0,
+        crate::sim::scenario_session::ScenarioGameMode::from_game_mode(
+            inputs["game_mode"].as_i64().unwrap() as i32,
         ),
     );
     for (name, country) in [("OLD", "Americans"), ("NEW", "SaleNewCountry")] {
@@ -345,4 +345,163 @@ fn sale_completion_tag_callbacks_match_original_histories() {
         );
     }
     assert_eq!((compared, native_only), (8, 1));
+}
+
+fn initial_techno_state(sim: &Simulation, objects: &[u64]) -> Value {
+    let rows = objects
+        .iter()
+        .map(|&id| {
+            let entity = sim.entities().get(id).unwrap();
+            let coord = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+            json!({"type": sim.interner.resolve(entity.type_ref()),
+                "owner": sim.interner.resolve(entity.owner()),
+                "health": entity.health.current(),
+                "alive": entity.lifecycle.object_alive(),
+                "marked": entity.lifecycle.cell_marked(),
+                "limbo": entity.lifecycle.in_limbo(),
+                "location": [coord.x, coord.y, coord.z]})
+        })
+        .collect::<Vec<_>>();
+    let records = ["OLD", "NEW"]
+        .into_iter()
+        .map(|name| {
+            let house = &sim.houses[&sim.interner.get(name).unwrap()];
+            let records = (0..house.initial_techno_record_count())
+                .map(|index| {
+                    let (typ, cell) = house.initial_techno_record(index).unwrap();
+                    json!({"type": sim.interner.resolve(typ), "cell": [cell.0, cell.1]})
+                })
+                .collect::<Vec<_>>();
+            (name.to_owned(), json!(records))
+        })
+        .collect::<serde_json::Map<_, _>>();
+    let pending = sim
+        .pending_delete()
+        .object_ids()
+        .iter()
+        .map(|id| objects.iter().position(|object| object == id).unwrap())
+        .collect::<Vec<_>>();
+    json!({"objects": rows, "records": records, "pending": pending})
+}
+
+#[test]
+fn restore130_after_owner_transfer_matches_native_blocked_and_cleared_cells() {
+    // Native50D610 -> sale/Action14 -> optional original F8 ->6E3120/50D320
+    // ->458A80. Reuse the same declared GAPOWR/country/ART input owner as the
+    // sale comparison. Rust dispatches Action14 directly: refund/RecordKill
+    // and the prepared sale boundary are compared by the separate test above.
+    let corpus = crate::test_fixture::json("tools/spatial_oracle/house_initial_technos.json");
+    let sale_corpus = crate::test_fixture::json("tools/spatial_oracle/building_sale_triggers.json");
+    let mut prior = sale_corpus["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["input"]["name"] == "callback_changes_owner")
+        .unwrap()
+        .clone();
+    prior["input"]["definitions"] = corpus["definitions"].clone();
+    let cases = corpus["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 2);
+    for case in cases {
+        let (mut sim, rules, id) = scene(&prior, sale_corpus);
+        let old = sim.interner.get("OLD").unwrap();
+        assert_eq!(
+            case["input"]["game_mode"],
+            prior["native_inputs"]["game_mode"]
+        );
+        Simulation::retain_initial_house_technos(&sim.substrate, &mut sim.houses);
+        assert_eq!(initial_techno_state(&sim, &[id]), case["captured"]);
+
+        let tag_type = sim.trigger_runtime.definitions.tag_type("OWNER").unwrap();
+        let tag = sim.shared_trigger_tag(tag_type);
+        let live = sim.trigger_runtime.tag(tag).unwrap().triggers[0];
+        let action = sim
+            .trigger_runtime
+            .definitions
+            .trigger_types
+            .iter()
+            .find(|typ| typ.id == "OWNER_0")
+            .unwrap()
+            .actions[0]
+            .clone();
+        assert!(sim.apply_live_trigger_action(
+            &action,
+            TriggerActionContext {
+                live_index: Some(live),
+                incoming_house: Some(old),
+                input: TagEventInput::default()
+            },
+            &mut Vec::new(),
+            &rules,
+            None,
+            FrameEffects::default(),
+        ));
+        assert_eq!(initial_techno_state(&sim, &[id]), case["after_transfer"]);
+        if case["input"]["clear_foreign_resident"].as_bool().unwrap() {
+            let before = sim.scenario_rng.native_state_hex();
+            sim.uninit_with_context(id, UninitContext::with_rules(&rules));
+            assert_eq!(sim.scenario_rng.native_state_hex(), before);
+        }
+        assert_eq!(case["clear_rng_unchanged"], true);
+        assert_eq!(initial_techno_state(&sim, &[id]), case["before_restore"]);
+
+        let tag_type = sim.trigger_runtime.definitions.tag_type("RESTORE").unwrap();
+        let tag = sim.shared_trigger_tag(tag_type);
+        let live = sim.trigger_runtime.tag(tag).unwrap().triggers[0];
+        let action = sim
+            .trigger_runtime
+            .definitions
+            .trigger_types
+            .iter()
+            .find(|typ| typ.id == "RESTORE_0")
+            .unwrap()
+            .actions[0]
+            .clone();
+        // Adopt the measured original boundary, including setup's earlier
+        // draws, rather than deriving expected RNG from the Rust setup.
+        sim.scenario_rng = SimRng::from_native_state_hex_for_test(
+            case["rng_before"]["scenario"].as_str().unwrap(),
+        );
+        sim.main_rng =
+            SimRng::from_native_state_hex_for_test(case["rng_before"]["main"].as_str().unwrap())
+                .into();
+        sim.mapgen_rng =
+            SimRng::from_native_state_hex_for_test(case["rng_before"]["mapgen"].as_str().unwrap());
+        let returned = sim.apply_live_trigger_action(
+            &action,
+            TriggerActionContext {
+                live_index: Some(live),
+                incoming_house: Some(old),
+                input: TagEventInput::default(),
+            },
+            &mut Vec::new(),
+            &rules,
+            None,
+            FrameEffects::default(),
+        );
+        assert_eq!(
+            u8::from(returned),
+            case["action_return"].as_u64().unwrap() as u8
+        );
+        let objects = (0..sim.substrate.entities.techno_registry_len())
+            .map(|index| sim.substrate.entities.techno_registry_at(index).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(initial_techno_state(&sim, &objects), case["after_restore"]);
+        let resident = sim.substrate.occupancy.first_building_on_layer(
+            10,
+            10,
+            crate::sim::movement::locomotor::MovementLayer::Ground,
+        );
+        assert_eq!(
+            json!(resident.map(|id| objects.iter().position(|&p| p == id).unwrap())),
+            case["resident"]
+        );
+        assert_eq!(
+            json!({"scenario": sim.scenario_rng.native_state_hex(),
+            "main": sim.main_rng.native_state_hex(), "mapgen": sim.mapgen_rng.native_state_hex()}),
+            case["rng_after"]
+        );
+        assert_eq!(case["code_unchanged"], true);
+        assert_eq!(case["vtables_unchanged"], true);
+    }
 }

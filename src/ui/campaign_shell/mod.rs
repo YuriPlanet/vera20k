@@ -503,7 +503,7 @@ impl CampaignShellState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

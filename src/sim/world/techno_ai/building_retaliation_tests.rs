@@ -233,6 +233,7 @@ fn the_block_matches_the_original() {
             building,
             source,
             result(input["result"].as_i64().unwrap_or(1)),
+            true,
             &rules,
             None,
             crate::sim::world::FrameEffects::default(),

@@ -1,7 +1,7 @@
 // Constants ported from FFmpeg's libavcodec/binkaudio.c and libavcodec/wma_freqs.c.
 // Copyright (c) 2007-2011 Peter Ross (pross@xvid.org)
 // Copyright (c) 2009 Daniel Verkamp (daniel@drv.nu)
-// Licensed LGPL-2.1-or-later. See LICENSES/LGPL-2.1-or-later.txt in the repo root.
+// Licensed GPL-3.0-or-later. See LICENSE-GPL in the repo root.
 
 //! Constant tables for Bink audio decoding.
 //!

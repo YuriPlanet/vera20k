@@ -157,6 +157,17 @@ pub(crate) fn receive_damage(
         };
     }
 
+    // Ares ObjectClass_ReceiveDamage_Relative (10053A80, hook 0x5F53E5):
+    // after the entry gate and before the Verses kernel, RelativeDamage
+    // replaces the packet and keeps its sign; ignoreDefenses does not skip it.
+    if let Some(relative) = target.relative_damage {
+        dmg = if dmg < 0 {
+            relative.wrapping_neg()
+        } else {
+            relative
+        };
+    }
+
     // Verses kernel (falloff -> Verses -> cap; also re-runs the D1/D2 early-outs).
     let delta = if gates.ignore_defenses {
         dmg
@@ -185,7 +196,7 @@ pub(crate) fn receive_damage(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 pub(crate) mod tests {
     use super::*;
     use crate::sim::combat::damage::{DefenceDivisors, ImmunityInputs, TargetDamageView};
@@ -383,6 +394,7 @@ pub(crate) mod tests {
         TargetDamageView {
             current_hp: hp,
             object_immune: false,
+            relative_damage: None,
         }
     }
     fn allow() -> ImmunityInputs {

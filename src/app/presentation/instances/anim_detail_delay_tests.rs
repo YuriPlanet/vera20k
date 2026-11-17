@@ -28,8 +28,8 @@ fn render(
     let mut parents = Vec::new();
     build_display_effect_instances(
         &DisplayEffectInputs {
-            interpolation: None,
             sim,
+            frame: &crate::app::presentation::frame::PresentationFrame::of_test(sim, rules),
             rules,
             camera: [center.0 - 80., center.1 - 60.],
             render_size: [160, 120],
@@ -48,7 +48,7 @@ fn render(
             observe_particles: false,
         },
         &mut parents,
-        &NativeDisplayOrder::from_display(sim.display_layers()),
+        &NativeDisplayOrder::from_world(&sim, None),
         Default::default(),
     );
     assert_eq!((sim.state_hash(), sim.rng_state()), before);
@@ -106,7 +106,7 @@ fn random_loop_delay_skips_detail_until_real_anim_ai_restarts_it() {
                 (
                     ShpSpriteKey {
                         palette_context: ShpPaletteContext::GlobalAnim,
-                        type_id: "LOOP".to_owned(),
+                        type_id: "LOOP".into(),
                         facing: 0,
                         frame,
                         house_color: HouseColorIndex(0),
@@ -137,7 +137,8 @@ fn random_loop_delay_skips_detail_until_real_anim_ai_restarts_it() {
     for _ in 0..16 {
         frame += 1;
         sim.session_mut_for_test().set_binary_frame_for_test(frame);
-        sim.visit_anim(id, &rules, None, FrameEffects::default());
+        sim.visit_anim(id, &rules, None, FrameEffects::default())
+            .unwrap();
         if sim.anim(id).unwrap().runtime().delay_remaining != 0 {
             break;
         }
@@ -161,7 +162,8 @@ fn random_loop_delay_skips_detail_until_real_anim_ai_restarts_it() {
         );
         frame += 1;
         sim.session_mut_for_test().set_binary_frame_for_test(frame);
-        sim.visit_anim(id, &rules, None, FrameEffects::default());
+        sim.visit_anim(id, &rules, None, FrameEffects::default())
+            .unwrap();
     }
     assert_eq!(sim.anim(id).unwrap().runtime().delay_remaining, 0);
     assert_eq!(sim.display_layers().layer_of(id), Some(display));

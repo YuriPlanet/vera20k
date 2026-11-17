@@ -22,10 +22,12 @@ use std::hash::{Hash, Hasher};
 
 /// Techno+294 has one identity: an owned manager or a borrowed aircraft/marker
 /// link. Its manager ID is the owning Techno's stable ID, not a second entity.
+/// The manager is boxed: only a type with an airstrike team constructs one,
+/// and every object carries this state.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AirstrikeState {
     link: Option<u64>,
-    manager: Option<AirstrikeManager>,
+    manager: Option<Box<AirstrikeManager>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,6 +44,10 @@ struct AirstrikeManager {
 }
 
 impl AirstrikeState {
+    /// Whether Techno+294 names `id`, as a designating Techno's own link does.
+    pub fn links_to(&self, id: u64) -> bool {
+        self.link == Some(id)
+    }
     pub(crate) fn owns_manager(&self) -> bool {
         self.manager.is_some()
     }
@@ -115,7 +121,7 @@ impl Simulation {
         };
         let e = substrate.entities.get_mut(owner).unwrap();
         e.airstrike.link = Some(owner);
-        e.airstrike.manager = Some(AirstrikeManager {
+        e.airstrike.manager = Some(Box::new(AirstrikeManager {
             settings,
             aircraft: Vec::new(),
             remaining: 0,
@@ -123,7 +129,7 @@ impl Simulation {
             active: false,
             target: None,
             returned_at: None,
-        });
+        }));
     }
 
     /// Bullet469705..469789 admits any Techno target through the firer's link.
@@ -211,13 +217,8 @@ impl Simulation {
         }
         m.target = Some(target);
         if let Some(first) = first {
-            self.airstrike_sound(
-                first,
-                rules.general.airstrike_attack_voice.as_deref(),
-                None,
-                rules,
-                effects,
-            );
+            let voice = self.airstrike_voice(false, first, owner, rules);
+            self.airstrike_sound(first, voice, None, rules, effects);
         }
         Self::airstrike_mark_target(&self.session, &mut self.substrate, owner, target);
     }
@@ -374,6 +375,37 @@ impl Simulation {
         self.substrate.airstrike_manager_mut(owner).unwrap().target = None;
     }
 
+    /// The sound an airstrike plays as it starts (`abort` false) or is
+    /// called off: `[AudioVisual] AirstrikeAttackVoice`/`AirstrikeAbortSound`.
+    /// Ares AirstrikeClass_Fire_AirstrikeAttackVoice (10048D60, hook
+    /// 0x41D940) and AirstrikeClass_PointerGotInvalid_AirstrikeAbortSound
+    /// (10048DE0, hook 0x41D5AE) let the first aircraft's type and then the
+    /// designator's `VoiceAirstrikeAttack`/`VoiceAirstrikeAbort` replace it.
+    fn airstrike_voice<'r>(
+        &self,
+        abort: bool,
+        first: u64,
+        designator: u64,
+        rules: &'r RuleSet,
+    ) -> Option<&'r str> {
+        let general = if abort {
+            rules.general.airstrike_abort_sound.as_deref()
+        } else {
+            rules.general.airstrike_attack_voice.as_deref()
+        };
+        if !rules.ares_form() {
+            return general;
+        }
+        [first, designator].into_iter().fold(general, |voice, id| {
+            self.substrate
+                .entities
+                .get(id)
+                .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
+                .and_then(|object| object.techno_combat().presentation().airstrike_voice(abort))
+                .unwrap_or(voice)
+        })
+    }
+
     fn airstrike_sound(
         &mut self,
         source: u64,
@@ -454,13 +486,8 @@ impl Simulation {
                 // here and the common sound boundary resolves that audience,
                 // so another human player's Boris does not play our abort voice.
                 let house = self.substrate.entities.get(owner).unwrap().owner();
-                self.airstrike_sound(
-                    first,
-                    rules.general.airstrike_abort_sound.as_deref(),
-                    Some([house, house]),
-                    rules,
-                    effects,
-                );
+                let voice = self.airstrike_voice(true, first, owner, rules);
+                self.airstrike_sound(first, voice, Some([house, house]), rules, effects);
             }
             self.airstrike_clear_target(owner, rules, effects);
             for id in aircraft {
@@ -505,7 +532,9 @@ impl Simulation {
     /// Tactical6D47FB..6D48D4 reads the owning manager and current Building
     /// target, irrespective of active/busy or remaining aircraft. Source is
     /// GetFLH(0,zero); target is GetCoords(+48), without TargetCoordOffset.
-    /// Presentation owns the planning/Health gate and clock-driven wobble.
+    /// Presentation owns the planning gate and clock-driven wobble. A Techno
+    /// with no Health skips only the CaptureManager links (`0x006D47A4`
+    /// jumps to `0x006D47FB`), so its beam still draws.
     /// No RNG draw, timer write or detach; isolate the shared fallback Cell.
     ///
     /// Phobos `DEFINE_JUMP(LJMP, 0x6D481D, 0x6D482D)` ("Allow airstrike flare
@@ -519,7 +548,7 @@ impl Simulation {
         use crate::sim::combat::fire_coord::{FireSource, fire_coordinate};
         use crate::sim::movement::ground_pose::object_get_coords;
         let source = self.substrate.entities.get(owner)?;
-        if source.airstrike.link != Some(owner) {
+        if !source.airstrike.links_to(owner) {
             return None;
         }
         let target = self
@@ -589,7 +618,7 @@ impl Simulation {
 
 impl crate::sim::world::ObjectSubstrate {
     fn airstrike_manager(&self, owner: u64) -> Option<&AirstrikeManager> {
-        self.entities.get(owner)?.airstrike.manager.as_ref()
+        self.entities.get(owner)?.airstrike.manager.as_deref()
     }
 
     /// Whether `target` is a Structure whose strike owner's manager targets it.
@@ -614,10 +643,14 @@ impl crate::sim::world::ObjectSubstrate {
             .link = Some(owner);
     }
     fn airstrike_manager_mut(&mut self, owner: u64) -> Option<&mut AirstrikeManager> {
-        self.entities.get_mut(owner)?.airstrike.manager.as_mut()
+        self.entities
+            .get_mut(owner)?
+            .airstrike
+            .manager
+            .as_deref_mut()
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "airstrike_tests.rs"]
 mod tests;

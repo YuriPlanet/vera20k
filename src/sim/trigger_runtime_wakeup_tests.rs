@@ -291,7 +291,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
     }
     let cropped = super::tests::trigger_fixture_map(&body);
     sim.initialize_trigger_definitions(&cropped, &teams, None, None, None);
-    sim.install_team_ai_registry(&teams, &rules).unwrap();
+    sim.install_team_ai_registry(&teams, &rules);
     sim.install_authored_cell_trigger_tags(&cropped);
     sim.classify_map_triggers(&rules);
 
@@ -435,7 +435,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
     for candidate in [&mut sim, &mut restored] {
         let before: Vec<_> = prisoners
             .iter()
-            .map(|&id| candidate.substrate.entities.get(id).unwrap().mission)
+            .map(|&id| candidate.substrate.entities.get(id).unwrap().mission.clone())
             .collect();
         let rng = candidate.rng_state();
         poll(candidate);
@@ -476,7 +476,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
         candidate.session.set_binary_frame_for_test(1);
         for &id in &prisoners {
             candidate.mission_host_promote(id, 1, &rules);
-            let mission = candidate.substrate.entities.get(id).unwrap().mission;
+            let mission = candidate.substrate.entities.get(id).unwrap().mission.clone();
             assert_eq!(mission.current().known(), Some(MissionType::Guard));
             assert_eq!(mission.queued(), crate::sim::mission::MissionId::NONE);
         }

@@ -81,6 +81,29 @@ fn credits(s: &SlaveScene) -> i32 {
     s.scene.sim.houses[&owner].economy().credits()
 }
 
+/// Event IDLE's Unit gate (`0x004C7655..0x004C765F`) stands before the slave
+/// reset (`0x004C769C..0x004C76AC`): Stop on a selected slave refinery
+/// leaves its manager and its working slaves alone.
+#[test]
+fn stop_on_a_slave_refinery_leaves_its_slaves_working() {
+    let mut s = refinery_with_slaves(3);
+    for _ in 0..21 {
+        frame(&mut s);
+    }
+    let nodes = node_states(&s);
+    assert_eq!(nodes, vec![SlaveState::Scanning; 3]);
+    let stop = Command::Stop {
+        entity_id: s.master,
+    };
+    assert!(
+        s.scene
+            .sim
+            .apply_command("Americans", &stop, Some(&s.scene.rules))
+    );
+    assert_eq!(manager_state(&s), ManagerState::Working);
+    assert_eq!(node_states(&s), nodes);
+}
+
 /// The first visit (10 frames) moves the built refinery to state 5; the next
 /// lets every slave out onto the drop cell's spots and scatters them; the
 /// third sends each to ore. Each digs one level per 150 frames, walks its

@@ -198,7 +198,12 @@ impl MainMenuCover {
 
     fn of(state: &AppState) -> Self {
         Self::new(
-            state.frontend.shell_message_box.is_some() || state.frontend.quit_cascade.is_some(),
+            state
+                .frontend
+                .shell_message_box
+                .as_ref()
+                .is_some_and(|message_box| !message_box.keeps_page())
+                || state.frontend.quit_cascade.is_some(),
             external_menu_wait(state),
         )
     }
@@ -229,7 +234,7 @@ fn main_menu_paint_labels<'a>(
 ) -> Vec<PaintLabel<'a>> {
     use crate::render::shell_text::ShellAlign;
     let mut out = Vec::new();
-    let button_align = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
+    let button_align = ShellAlign::BUTTON_CAPTION;
     // The slide engine draws the button frames only (`0x006071E0`).
     for button in layout.buttons.iter().filter(|_| captions) {
         let pressed = pressed_button == Some(button.id);
@@ -246,7 +251,7 @@ fn main_menu_paint_labels<'a>(
         out.push(PaintLabel {
             text: main_menu_title_text(state),
             rect: layout.title,
-            align: ShellAlign::H_CENTER,
+            align: ShellAlign::PANEL_TITLE,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: Some(shell_reveal_path_a(window)),
         });
@@ -264,6 +269,25 @@ fn main_menu_paint_labels<'a>(
         rgb: SHELL_TEXT_RGB_ENABLED,
         path_a_reveal: None,
     }));
+    // VERA: the mod in use (`app::mods`), on the same line, between the
+    // status help and the right panel. Retail 640x480 has no room there.
+    if version_text.is_some()
+        && let Some(active) = state.frontend.mods.active.as_ref()
+    {
+        // As far from the panel as the status help is from the strip's left.
+        let gap = layout.tooltip_line.x - layout.lower_strip.x;
+        let left = layout.tooltip_line.x + layout.tooltip_line.w;
+        let width = layout.right_panel.top.x - gap - left;
+        if width > 0 {
+            out.push(PaintLabel {
+                text: crate::i18n::tr_fill("VERA:MainMenuMod", &[("mod", &active.title)]).into(),
+                rect: RectPx::new(left, version_rect.y, width, version_rect.h),
+                align: ShellAlign::H_RIGHT,
+                rgb: SHELL_TEXT_RGB_ENABLED,
+                path_a_reveal: None,
+            });
+        }
+    }
     out
 }
 
@@ -355,14 +379,17 @@ pub(crate) fn ensure_movie_for_current_layout(
         state
             .frontend
             .main_menu_shell_error
-            .get_or_insert_with(|| "Game archives are unavailable.".to_owned());
+            .get_or_insert_with(|| crate::i18n::tr("VERA:GameArchivesUnavailable"));
         return Ok(());
     };
     let asset_name = layout.movie_base.asset_name();
 
     let Some((bytes, source)) = menu_movie_bytes(assets, asset_name, yr_original_style) else {
         log::warn!("Missing main-menu movie asset {asset_name}");
-        state.frontend.main_menu_shell_error = Some(format!("Missing menu movie: {asset_name}"));
+        state.frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
+            "VERA:MenuMovieMissing",
+            &[("movie", &asset_name)],
+        ));
         return Ok(());
     };
 
@@ -377,8 +404,13 @@ pub(crate) fn ensure_movie_for_current_layout(
         Ok(movie) => movie,
         Err(err) => {
             log::warn!("Failed to load main-menu movie {asset_name} from {source}: {err:#}");
-            state.frontend.main_menu_shell_error = Some(format!(
-                "Could not load {asset_name} from {source}: {err:#}"
+            state.frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
+                "VERA:MenuMovieUnreadable",
+                &[
+                    ("movie", &asset_name),
+                    ("source", &source),
+                    ("error", &format!("{err:#}")),
+                ],
             ));
             return Ok(());
         }
@@ -536,7 +568,7 @@ fn render_main_menu_shell_to_target_inner(
         state
             .frontend
             .main_menu_shell_error
-            .get_or_insert_with(|| "Required game-menu artwork is unavailable.".to_owned());
+            .get_or_insert_with(|| crate::i18n::tr("VERA:MenuArtworkUnavailable"));
         return Ok(MainMenuShellRenderResult::Fallback);
     }
 
@@ -556,8 +588,10 @@ fn render_main_menu_shell_to_target_inner(
         state.frontend.main_menu_movie_last_step = now;
         if let Err(err) = movie.step(&state.renderer.gpu, elapsed) {
             log::warn!("Failed to step main-menu RA2TS movie: {err:#}");
-            state.frontend.main_menu_shell_error =
-                Some(format!("Could not play the menu movie: {err:#}"));
+            state.frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
+                "VERA:MenuMovieFailed",
+                &[("error", &format!("{err:#}"))],
+            ));
             return Ok(MainMenuShellRenderResult::Fallback);
         }
     }
@@ -880,25 +914,69 @@ const EXIT_CONFIRM_MODAL_DEPTHS: shell_paint::ModalDepths = shell_paint::ModalDe
     text: 0.00040,
 };
 
+/// Paint the open message box over a page that keeps showing: the page has
+/// been composed on the shell surface, so the box and the cursor go on top
+/// and the surface is presented again.
+pub(crate) fn render_shell_message_box_over_page(
+    state: &AppState,
+    encoder: &mut wgpu::CommandEncoder,
+    destination: &wgpu::Texture,
+) {
+    let (Some(overlay), Some(chrome)) = (
+        build_shell_message_box_overlay(state),
+        state.frontend.skirmish_shell_chrome.as_ref(),
+    ) else {
+        return;
+    };
+    let draws = [crate::app::frontend::shell_pass::TexturedDraw {
+        texture: &chrome.texture,
+        instances: overlay.sprites,
+    }];
+    crate::app::frontend::shell_pass::encode_shell_pass_over_page(
+        state,
+        encoder,
+        destination,
+        "Shell message box over page",
+        crate::app::frontend::shell_pass::ShellComposition {
+            draws: &draws,
+            text: &overlay.text,
+            cursor: crate::app::frontend::shell_pass::top_software_cursor(state, CURSOR_DEPTH),
+            effects: None,
+            // Over the online client's pages the box matches the page.
+            smooth_art: state.smooth_online_menus()
+                && matches!(
+                    crate::app::input::precedence::presented(state).1,
+                    crate::app::input::precedence::ScreenPage::Wol
+                        | crate::app::input::precedence::ScreenPage::NetworkSetup
+                ),
+        },
+    );
+}
+
 /// Build the shell message box (0xCE/0x120/0x121) SHP modal overlay when it is open: the centered
 /// PUDLGBGN panel + populated MNBTTN buttons and labels, sourced from
 /// the skirmish chrome atlas (the only atlas that loads PUDLGBGN/MNBTTN). The
 /// pressed button is read from the shared shell controller (its top dialog is the
 /// modal while open). Returns `None` when the modal is closed or its art is absent.
 fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::ModalDraw> {
-    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     use crate::app::frontend::state::ShellMessageBoxPurpose;
     use crate::ui::shell::modal;
     let message_box = state.frontend.shell_message_box.as_ref()?;
     let modal_state = &message_box.labels;
     let atlas = state.frontend.skirmish_shell_chrome.as_ref()?;
-    // VERA's updater boxes draw Red Alert 2's art, the others gamemd's.
+    // VERA's own boxes pick their art: the Esc menu the Allied eagle, the
+    // updater's Red Alert 2's. The others draw gamemd's.
     let background = match message_box.purpose {
+        ShellMessageBoxPurpose::ShellMenu(_) => {
+            atlas.mode_two_dialog_background(Some(crate::ui::sidebar::SidebarTheme::Allied))
+        }
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         ShellMessageBoxPurpose::UpdateOffer(_)
         | ShellMessageBoxPurpose::UpdateProgress
-        | ShellMessageBoxPurpose::UpdateCheck
-        | ShellMessageBoxPurpose::UpdateNotice => atlas.ra2_dialog_background,
+        | ShellMessageBoxPurpose::UpdateCheck => atlas.ra2_dialog_background,
+        ShellMessageBoxPurpose::Notice
+        | ShellMessageBoxPurpose::ModRestart(_)
+        | ShellMessageBoxPurpose::ModFiles(_) => atlas.ra2_dialog_background,
         _ => None,
     }
     .or_else(|| atlas.mode_two_dialog_background(None));
@@ -975,7 +1053,6 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
                 }),
         );
     }
-    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), allow(unused_mut))]
     let mut draw = shell_paint::paint_modal_shp(
         &state.renderer.bit_font,
         background,
@@ -986,6 +1063,15 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
         layout.scale,
         EXIT_CONFIRM_MODAL_DEPTHS,
     );
+    if let Some(settings) = message_box.menu_settings() {
+        crate::app::frontend::skirmish_shell_render::paint_options_settings(
+            &mut draw,
+            &state.renderer.bit_font,
+            atlas,
+            &shell_layout::shell_menu_settings_layout(state),
+            settings,
+        );
+    }
     // The list lies on the dialog's picture, which has no list backing.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     if let Some((notes, geometry)) = notes {
@@ -1003,7 +1089,7 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
     Some(draw)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
 

@@ -49,7 +49,7 @@ pub fn run(
     }))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
     #[test]
@@ -76,7 +76,9 @@ mod tests {
             b"[Child]\nValue=yes\n",
         )]);
         dir.write("custom.mix", &mix);
-        assert!(crate::asset_tools::root::open_manager(dir.path(), false).is_err());
+        assert!(
+            crate::asset_tools::root::open_manager(dir.path(), false, Default::default()).is_err()
+        );
         let normal = crate::asset_tools::root::open_ini_probe_manager(dir.path(), false).unwrap();
         assert!(run(&normal, "root.ini", true, 64, false, true).is_err());
         let wide = crate::asset_tools::root::open_ini_probe_manager(dir.path(), true).unwrap();

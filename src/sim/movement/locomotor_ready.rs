@@ -62,6 +62,10 @@ pub(crate) enum LocomotorReadyState {
     Jumpjet {
         state: i32,
     },
+    /// Tunnel's State (`+0x18`).
+    Tunnel {
+        state: u8,
+    },
 }
 
 impl LocomotorReadyState {
@@ -97,11 +101,13 @@ impl LocomotorReadyState {
             // `0x0054D0D0`: any state but ground (0) and hold (2), the
             // `jumpjet_flight` `STATE_GROUND` and `STATE_HOLD`.
             Self::Jumpjet { state } => state != 0 && state != 2,
+            // `0x00728A60`: moving and past PreDigIn.
+            Self::Tunnel { state } => state != 0 && state != 1,
         }
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};

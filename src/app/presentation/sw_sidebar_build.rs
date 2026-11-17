@@ -7,7 +7,7 @@
 use crate::app::AppState;
 use crate::app::presentation::sidebar_build::{
     CameoStatusLabels, READY_PAD_X, READY_PAD_Y, build_gclock_stage_instance,
-    place_canvas_crop_in_slot, superweapon_status_label,
+    place_canvas_crop_in_slot, status_label_fit, superweapon_status_label,
 };
 use crate::render::batch::SpriteInstance;
 use crate::render::sidebar_chrome::SidebarChromeEntry;
@@ -202,9 +202,11 @@ pub(crate) fn build(
         {
             // Native screen pixels, like `SWButtonClass::Draw` on
             // `DSurface::Composite`.
-            let text_w = state.renderer.bit_font.text_width(text) as f32;
+            let font = &state.renderer.bit_font;
+            let fit = status_label_fit(font, text, slot.w, None);
+            let text_w = font.fitted(fit, |font| font.text_width(text)) as f32;
             let strip_w = text_w + READY_PAD_X * 2.0;
-            let strip_h = state.renderer.bit_font.cell_height() + READY_PAD_Y * 2.0;
+            let strip_h = font.cell_height() + READY_PAD_Y * 2.0;
             out.overlay.push(SpriteInstance {
                 position: [slot.x + (slot.w - strip_w) * 0.5, slot.y],
                 size: [strip_w, strip_h.min(slot.h)],
@@ -216,15 +218,17 @@ pub(crate) fn build(
                 ..Default::default()
             });
             let text_x = slot.x + (slot.w - text_w) * 0.5;
-            out.text.extend(state.renderer.bit_font.build_text(
-                text,
-                text_x,
-                slot.y + READY_PAD_Y,
-                1.0,
-                DEPTH_TEXT,
-                ready_tint,
-                [0.0, 0.0],
-            ));
+            out.text.extend(font.fitted(fit, |font| {
+                font.build_text(
+                    text,
+                    text_x,
+                    slot.y + READY_PAD_Y,
+                    1.0,
+                    DEPTH_TEXT,
+                    ready_tint,
+                    [0.0, 0.0],
+                )
+            }));
         }
     }
     out
@@ -234,7 +238,8 @@ fn readiness_text<'a>(
     view: &crate::sim::superweapon::SuperWeaponView,
     labels: CameoStatusLabels<'a>,
 ) -> Option<&'a str> {
-    superweapon_status_label(view.display, labels).or(view.is_ready.then_some(labels.ready))
+    superweapon_status_label(Some(&view.display_name), view.display, labels)
+        .or(view.is_ready.then_some(labels.ready))
 }
 
 fn sprite_cameo(

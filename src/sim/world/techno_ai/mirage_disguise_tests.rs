@@ -313,14 +313,7 @@ fn whole_unit_fixture(
                 None,
                 CellListInsertion::PrependNonBuilding,
             );
-            Simulation::submit_object_display(
-                &fixture.sim.interner,
-                &fixture.sim.terrain_objects,
-                &mut fixture.sim.substrate,
-                id,
-                DisplayLayer::GROUND,
-                rules,
-            );
+            Simulation::submit_object_display(&mut fixture.sim.substrate, id, DisplayLayer::GROUND);
         }
     }
     let native_order = |name: &str| {
@@ -342,10 +335,21 @@ fn whole_unit_fixture(
         native_order("techno"),
         "constructor ordinal transport"
     );
+    // VERA keeps Ground as an unordered set (`DisplayLayers::submit`).
+    let sorted = |mut ids: Vec<u64>| {
+        ids.sort_unstable();
+        ids
+    };
     assert_eq!(
-        fixture.sim.display_layers().members(DisplayLayer::GROUND),
-        native_order("ground_display"),
-        "independent Display order"
+        sorted(
+            fixture
+                .sim
+                .display_layers()
+                .members(DisplayLayer::GROUND)
+                .to_vec()
+        ),
+        sorted(native_order("ground_display")),
+        "independent Display membership"
     );
     fixture.sim.set_logic_order_for_test(native_order("logic"));
     for (role, before) in actors.as_object().unwrap() {

@@ -250,7 +250,7 @@ impl crate::sim::world::Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
 
@@ -336,7 +336,7 @@ mod tests {
         master.set_type_ref_for_test(interner.intern("MASTER"));
         let slav = interner.intern("SLAV");
         // An existing manager that does not hold the slave refuses it.
-        master.slave_manager = Some(SlaveManager::new(slav, [None; 0], 0, 0, 0));
+        master.slave_manager = Some(Box::new(SlaveManager::new(slav, [None; 0], 0, 0, 0)));
         entities.insert(master);
         let mut slave = GameEntity::test_default(2, "SLAV", "Owner", 3, 4);
         slave.set_owner_for_test(owner);
@@ -397,7 +397,7 @@ mod tests {
             "failed selection restores the cleared current slot"
         );
         entities.get_mut(1).unwrap().slave_manager =
-            Some(SlaveManager::new(slav, [Some(2)], 0, 0, 0));
+            Some(Box::new(SlaveManager::new(slav, [Some(2)], 0, 0, 0)));
         assert!(prepare_step_head(
             &mut entities,
             2,
@@ -961,6 +961,10 @@ pub(super) fn select_step_head_at(
     };
     let next = ((input.x / 256) as u16, (input.y / 256) as u16);
     let mut priority = false;
+    // RESIDUAL: 0x0075C2F3..0x0075C333 ask Get_Mission (0x005B3040: current,
+    // else queued); this reads current. They differ only while current is
+    // NONE with one of these missions queued, before the first Commence
+    // (rare): native already grants the target cell's priority, VERA waits.
     if [7, 8, 9, 11, 25].contains(&entity.mission.current().raw()) {
         let target = match entity.navigation.nav_com() {
             Some(crate::sim::components::NavTargetRef::Object { id }) => entities.get(id),

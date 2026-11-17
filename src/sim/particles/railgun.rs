@@ -13,7 +13,7 @@
 use glam::{IVec3, Mat4, Vec3};
 use thiserror::Error;
 
-use super::{Particle, ParticleSystem, RailgunRuntimeState};
+use super::{Particle, ParticleSystem};
 use crate::rules::particle_type::ParticleType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::rng::SimRng;
@@ -40,8 +40,6 @@ pub(crate) enum RailgunParticleError {
     NativeX87(#[from] NativeX87Error),
     #[error(transparent)]
     World(#[from] super::spark_world::SparkWorldError),
-    #[error("Railgun particle has no behavior-4 state")]
-    MissingRuntimeState,
     #[error("Railgun spiral point left the finite affine domain")]
     NonFiniteRing,
 }
@@ -59,27 +57,7 @@ pub(super) fn tick_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules:
         }
         let pst = rules.particle_system_type(sys.type_id);
         if pst.laser {
-            // `0x0062F890..0x0062F940`: LaserDraw from Location to the target
-            // coordinate, width 1, `LaserColor` inside and black outside,
-            // fading from 0.5.
-            let point = |coord: IVec3| {
-                crate::sim::projectile::ProjectileCoord::new(coord.x, coord.y, coord.z)
-            };
-            let birth = crate::sim::combat::laser::construct(
-                &sim.session,
-                &mut sim.lifecycle_outputs,
-                point(sys.coords),
-                point(sys.target_coords),
-                0,
-                LASER_DURATION,
-                crate::sim::combat::laser::LaserColor::Explicit {
-                    inner: pst.laser_color,
-                    outer: [0; 3],
-                    spread: [0; 3],
-                },
-                NativeF32Bits::POSITIVE_ZERO,
-            );
-            birth.fade_start = LASER_FADE_START;
+            draw_laser(sim, pst, sys.coords, sys.target_coords);
         }
         sys.mark_done_spawning();
     }
@@ -89,6 +67,57 @@ pub(super) fn tick_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules:
             sys.stable_id
         );
     }
+}
+
+/// `0x0062F890..0x0062F940`: LaserDraw from Location to the target
+/// coordinate, width 1, `LaserColor` inside and black outside, fading from
+/// 0.5 over 10 frames. Ares' UpdateRailgun (`100277AC..10027851`) passes the
+/// same arguments.
+pub(super) fn draw_laser(
+    sim: &mut Simulation,
+    pst: &crate::rules::particle_system_type::ParticleSystemType,
+    from: IVec3,
+    to: IVec3,
+) {
+    let point =
+        |coord: IVec3| crate::sim::projectile::ProjectileCoord::new(coord.x, coord.y, coord.z);
+    let birth = crate::sim::combat::laser::construct(
+        &sim.session,
+        &mut sim.lifecycle_outputs,
+        point(from),
+        point(to),
+        0,
+        LASER_DURATION,
+        crate::sim::combat::laser::LaserColor::Explicit {
+            inner: pst.laser_color,
+            outer: [0; 3],
+            spread: [0; 3],
+        },
+        NativeF32Bits::POSITIVE_ZERO,
+    );
+    birth.fade_start = LASER_FADE_START;
+}
+
+/// `0x0062F38D..0x0062F3BB` (and Ares' UpdateRailgun at `10027088`, `100270A7`):
+/// Identity, RotateZ(azimuth) (`0x005AF1A0`), RotateX(elevation)
+/// (`0x005AEF60`). Each rotation reads the table sine and cosine of its float
+/// angle.
+pub(super) fn rail_rotation(
+    azimuth: NativeF32Bits,
+    elevation: NativeF32Bits,
+) -> Result<Mat4, NativeX87Error> {
+    let trig = TrigTable::embedded();
+    let sin_cos = |angle: NativeF32Bits| -> Result<(f32, f32), NativeX87Error> {
+        let angle = Fpu::load_f32(angle)?;
+        Ok((
+            to_f32(Fpu::store_f32(trig.sin_from_table(angle))?),
+            to_f32(Fpu::store_f32(trig.cos_from_table(angle))?),
+        ))
+    };
+    let (sin, cos) = sin_cos(azimuth)?;
+    let matrix = crate::util::native_affine::rotate_z(Mat4::IDENTITY, sin, cos);
+    let (sin, cos) = sin_cos(elevation)?;
+    Ok(crate::util::native_affine::rotate_x(matrix, sin, cos))
 }
 
 /// The spawn half of `AI_Railgun` (`0x0062F25E..0x0062F87C`).
@@ -151,20 +180,8 @@ fn lay_spiral(
     if delta[1] < 0 {
         azimuth = NativeF32Bits::from_bits(azimuth.bits() ^ 0x8000_0000);
     }
-    // 62F38D..62F3BB: Identity, RotateZ(azimuth), RotateX(elevation). Each
-    // rotation reads the table sine and cosine of its float angle.
+    let matrix = rail_rotation(azimuth, elevation)?;
     let trig = TrigTable::embedded();
-    let sin_cos = |angle: NativeF32Bits| -> Result<(f32, f32), NativeX87Error> {
-        let angle = Fpu::load_f32(angle)?;
-        Ok((
-            to_f32(Fpu::store_f32(trig.sin_from_table(angle))?),
-            to_f32(Fpu::store_f32(trig.cos_from_table(angle))?),
-        ))
-    };
-    let (sin, cos) = sin_cos(azimuth)?;
-    let matrix = crate::util::native_affine::rotate_z(Mat4::IDENTITY, sin, cos);
-    let (sin, cos) = sin_cos(elevation)?;
-    let matrix = crate::util::native_affine::rotate_x(matrix, sin, cos);
 
     let count_f32 = Fpu::store_f32(Fpu::load_i32(count))?;
     let scale = Fpu::load_f64(RANDOM_RANGED_UNIT_SCALE)?;
@@ -236,7 +253,7 @@ fn lay_spiral(
         );
 
         // 62F5FA..62F654: the constructor, both coordinates the point.
-        let (mut particle, start_rgb) = Particle::new_with_ground(
+        let mut particle = Particle::new_with_ground(
             particle_type_id,
             point,
             point,
@@ -310,18 +327,7 @@ fn lay_spiral(
             Fpu::load_f32(particle_type.velocity)?,
         ))?;
 
-        // Constructor62B707..62B71B: the float position is the point itself.
-        let position = [point.x, point.y, point.z]
-            .map(|axis| Fpu::store_f32(Fpu::load_i32(axis)))
-            .into_iter()
-            .collect::<Result<Vec<_>, _>>()?;
         particle.direction = direction;
-        particle.railgun = Some(RailgunRuntimeState {
-            position: [position[0], position[1], position[2]],
-            start_rgb,
-            color_index: 0,
-            color_accumulator: NativeF64Bits::POSITIVE_ZERO,
-        });
         Simulation::reveal_particle(&mut sim.substrate, particle.stable_id());
         sys.particles.push(particle);
     }
@@ -336,9 +342,6 @@ pub(super) fn tick_particle(
     particle_type: &ParticleType,
     rng: &mut SimRng,
 ) -> Result<(), RailgunParticleError> {
-    let mut state = particle
-        .railgun
-        .ok_or(RailgunParticleError::MissingRuntimeState)?;
     let speed = Fpu::load_f32(particle.velocity)?;
     let mut step = [NativeF32Bits::POSITIVE_ZERO; 3];
     for (axis, direction) in particle.direction.into_iter().enumerate() {
@@ -357,27 +360,26 @@ pub(super) fn tick_particle(
     );
     particle.velocity = Fpu::store_f32(Fpu::add(jitter, speed))?;
     for axis in 0..3 {
-        state.position[axis] = Fpu::store_f32(Fpu::add(
+        particle.float_position[axis] = Fpu::store_f32(Fpu::add(
             Fpu::load_f32(step[axis])?,
-            Fpu::load_f32(state.position[axis])?,
+            Fpu::load_f32(particle.float_position[axis])?,
         ))?;
     }
     // vt+0x1B4 at 0x0062C48E is a plain Location write for a particle.
     let mut location = [0; 3];
-    for (axis, value) in state.position.into_iter().enumerate() {
+    for (axis, value) in particle.float_position.into_iter().enumerate() {
         location[axis] = Fpu::ftol_i32_low_masked(Fpu::load_f32(value)?);
     }
     particle.coords = IVec3::from_array(location);
     let color_count = i32::try_from(particle_type.color_list.len()).unwrap_or(i32::MAX);
     let sample = rng.next_range_u32_inclusive(0, MAX_SAMPLE);
     super::spark::advance_point_color(
-        &mut state.color_index,
-        &mut state.color_accumulator,
+        &mut particle.color_index,
+        &mut particle.color_accumulator,
         particle_type.color_speed,
         sample,
         color_count,
     )?;
-    particle.railgun = Some(state);
     Ok(())
 }
 

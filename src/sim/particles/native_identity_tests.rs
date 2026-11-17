@@ -1,5 +1,7 @@
 //! Original constructor/Logic continuation, bounded to the flat Spark controls
 //! in `procedural_drawing_oracle/electric_bolt` and the retained save envelope.
+// Ares simulates this Spark system itself (hooks 0x62DF05, 0x62FD60), so the
+// stock control holds in a stock game only.
 
 use super::{Particle, ParticleSystem};
 use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
@@ -126,21 +128,20 @@ fn assert_state(sim: &Simulation, id: u64, expected: &Value) {
             particle.marked_for_deletion,
             native["time_to_die"].as_bool().unwrap()
         );
-        let spark = particle.spark.as_ref().unwrap();
         assert_eq!(
             serde_json::json!([
-                spark.velocity_x.bits(),
-                spark.velocity_y.bits(),
-                spark.velocity_z.bits()
+                particle.direction[0].bits(),
+                particle.direction[1].bits(),
+                particle.direction[2].bits()
             ]),
             native["velocity_bits"]
         );
-        assert_eq!(serde_json::json!(spark.start_rgb), native["color"]);
+        assert_eq!(serde_json::json!(particle.start_rgb), native["color"]);
         assert_eq!(
-            spark.color_index,
+            particle.color_index,
             native["color_index"].as_i64().unwrap() as i32
         );
-        let color_hex: String = spark
+        let color_hex: String = particle
             .color_accumulator
             .bits()
             .to_le_bytes()

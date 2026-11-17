@@ -31,6 +31,10 @@
 //!   6. game mode 5 with flag 0x00A8ED91: `TMCJ4F.INI` Process (0x00687B76).
 //! - ART, SOUNDMD, EVAMD, THEMEMD are never layered; only ARTMD enters g_ArtINI
 //!   (0x0052D053, reload 0x00679EE0). A later `Image=` still redirects a type's art.
+//! - VERA's Original/No mod selection deliberately skips LANGRULE, including
+//!   a copy in a language archive, so installations share the same original
+//!   rules. Selected mods retain the native optional layer and Digest check
+//!   (`retail_sources::RetailRulesSources::select`).
 //!
 //! ### Parser: `INIClass::LoadFromStraw` 0x00525A60
 //! - Bytes, not text. LF ends a line, CR is dropped anywhere, 511 bytes are kept and the
@@ -115,6 +119,7 @@
 //! - rules/ is depended on by: sim/, map/, render/, app/, audio/, ui/, net/
 //! - rules/ does NOT depend on (outside tests): sim/, render/, ui/, audio/, net/
 
+pub mod aircraft_trailer;
 pub mod airstrike;
 pub(crate) mod threat_coefficients;
 #[cfg(feature = "phobos")]
@@ -126,10 +131,11 @@ pub mod insignia_type;
 #[cfg(feature = "phobos")]
 pub mod invulnerability_rules;
 pub mod phobos_parallel_ai_queues;
-#[cfg(all(test, feature = "phobos"))]
+pub mod phobos_switch;
+#[cfg(all(test, tests_rules_o_z, feature = "phobos"))]
 #[path = "phobos_infantry_deploy_tests.rs"]
 mod phobos_infantry_deploy_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_rules_o_z, feature = "phobos"))]
 #[path = "phobos_prone_speed_tests.rs"]
 mod phobos_prone_speed_tests;
 #[cfg(feature = "phobos")]
@@ -152,9 +158,11 @@ pub mod phobos_sw_sidebar;
 pub mod phobos_warhead_anim;
 pub mod phobos_radiation;
 pub mod phobos_shields;
-/// Whether this binary includes the supported Ares extensions. INIs cannot change it.
-pub const ARES_ENABLED: bool = cfg!(feature = "ares");
-/// Whether this binary includes the supported Phobos extensions. INIs cannot change it.
+/// Whether this binary compiles all the supported Phobos extensions. Whether
+/// Phobos plays in a game is the per-game switch [`ruleset::RuleSet::phobos`],
+/// decided from the game's data by [`phobos_switch`], which a build with this
+/// feature turns on in every game; this gates the `cfg(feature = "phobos")`
+/// sites not yet moved to that switch, and launch and network identity.
 pub const PHOBOS_ENABLED: bool = cfg!(feature = "phobos");
 /// Whether this binary includes supported NPatch behavior. INIs cannot change it.
 pub const NPATCH_ENABLED: bool = cfg!(feature = "npatch");
@@ -164,31 +172,39 @@ pub const VERAX_ENABLED: bool = cfg!(feature = "verax");
 /// Whether this binary includes the NPBUG bug-fix extension. INIs cannot
 /// change it; builds without the feature keep every native path.
 pub const NPBUG_ENABLED: bool = cfg!(feature = "npbug");
+pub mod ares_switch;
 pub(crate) mod ares_prerequisites;
 pub(crate) mod ares_armor;
 pub(crate) mod ares_emp;
 pub(crate) mod ares_abilities;
-#[cfg(feature = "ares")]
 pub(crate) mod ares_country_paradrop;
-#[cfg(feature = "ares")]
 pub(crate) mod ares_country_presentation;
-#[cfg(feature = "ares")]
 pub(crate) mod ares_side_extension;
 pub(crate) mod ares_warhead;
-#[cfg(feature = "ares")]
+pub mod ares_weapon;
 pub(crate) mod ares_spotlight;
-#[cfg(feature = "ares")]
 pub(crate) mod ares_driver;
-#[cfg(feature = "ares")]
 pub(crate) mod ares_crew;
-#[cfg(feature = "ares")]
 pub(crate) mod ares_bounty;
+pub(crate) mod ares_infiltration;
+pub(crate) mod ares_building_type;
+pub(crate) mod ares_bullet_type;
+pub(crate) mod ares_firestorm;
+pub(crate) mod ares_prism_forwarding;
+pub mod ares_cloak_power;
+pub mod ares_mouse_cursor;
+pub(crate) mod ares_veterancy;
+pub(crate) mod ares_production;
+pub(crate) mod ares_techno_type;
+pub(crate) mod ares_tiberium;
 pub mod armor;
 pub mod alpha_image_assets;
 pub mod country_loading;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod ares_manual_control_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
+mod ares_switch_tests;
+#[cfg(all(test, tests_rules_a_n))]
 mod ares_type_selection_tests;
 pub mod compatibility;
 pub mod animation_sequence;
@@ -200,16 +216,16 @@ pub mod building_rubble;
 pub mod building_upgrade;
 pub mod buildup_asset_catalog;
 pub mod campaign_loading;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod campaign_start_tests;
 pub mod campaigns;
 pub mod color_add;
 pub mod color_scheme;
 pub mod combat_damage;
 pub mod crate_rules;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod country_parent_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod country_veterancy_tests;
 pub mod effect_asset_catalog;
 pub mod end_game;
@@ -245,7 +261,7 @@ pub mod prerequisite;
 pub mod process_owner;
 pub mod projectile_type;
 pub mod radar_event_config;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod radial_indicator_tests;
 pub mod recoil;
 pub mod secret_lab;
@@ -257,7 +273,6 @@ pub mod skirmish_colors;
 pub mod smudge_type;
 pub mod sound_ini;
 pub mod theme_ini;
-#[cfg(feature = "ares")]
 pub(crate) mod superweapon_influence;
 pub mod superweapon_targeting;
 pub mod superweapon_type;
@@ -269,9 +284,10 @@ pub mod terrain_rules;
 pub mod tiberium_type;
 pub mod voxel_anim_type;
 pub mod voxel_asset_catalog;
+mod voxel_model_plan;
 pub mod voxel_frame_catalog;
 pub mod warhead_type;
-#[cfg(all(test, not(feature = "ares")))]
+#[cfg(all(test, tests_rules_o_z))]
 mod warhead_verses_tests;
 pub mod weapon_type;
 
@@ -279,17 +295,19 @@ pub mod weapon_type;
 pub mod area_guard_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod deploy_voice_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod disk_laser_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod ini_token_readers_tests;
-#[cfg(test)]
+#[cfg(all(test, any(tests_rules_a_n, tests_rules_o_z)))]
 mod mirage_disguise_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod move_sound_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod path_delay_rules_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
+mod allow_shrouded_subterannean_moves_tests;
+#[cfg(all(test, tests_rules_o_z))]
 mod read_double_percent_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod retail_ini_fixture;

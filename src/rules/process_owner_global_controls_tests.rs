@@ -34,6 +34,7 @@ fn load(
 
 #[test]
 fn ordinary_new_scenario_clears_previous_map_flags_before_early_campaign_process() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut owner = owner();
     let first = load(
         &mut owner,
@@ -66,6 +67,7 @@ fn ordinary_new_scenario_clears_previous_map_flags_before_early_campaign_process
 
 #[test]
 fn admitted_random_map_preserves_rules_extension_and_later_mode_prefix_writes() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut owner = owner();
     let first = load(
         &mut owner,

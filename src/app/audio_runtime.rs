@@ -82,8 +82,8 @@ pub(crate) struct AppAudioRuntime {
     /// Rust-native substitute for native's one shared DirectSound-device gate.
     /// Frozen after both process-start output constructor attempts.
     pub(crate) launcher_audio_available: bool,
-    /// Native has a startup-suppression gate. Current Rust has no non-default
-    /// route, so production initializes this false and keeps one explicit seam.
+    /// `-X…Q` (`Parse_Command_Line` writes `0x00A8ED64` at `0x0052FB0A`):
+    /// every Theme entry point and Vox's dequeue refuse to run.
     pub(crate) theme_startup_suppressed: bool,
 }
 
@@ -181,10 +181,8 @@ impl AppAudioRuntime {
             sfx.set_movie_held(held, wall_ms);
         }
         if let Some(music) = self.music_player.as_mut() {
-            if held {
-                music.pause_output();
-            } else {
-                music.resume_output();
+            music.set_movie_hold(held);
+            if !held {
                 music.restore_stream_volume(wall_ms);
             }
         }
@@ -301,7 +299,8 @@ impl AppAudioRuntime {
     }
 
     pub(crate) fn initialize_theme(&mut self, assets: &AssetManager) {
-        self.theme.initialize_catalog(assets);
+        let gates = self.theme_gates();
+        self.theme.initialize_catalog(assets, gates);
     }
 
     pub(crate) fn maintain_main_menu_theme(&mut self, assets: &AssetManager, wall_ms: u64) {
@@ -388,7 +387,6 @@ impl AppAudioRuntime {
     }
 
     /// Ares loading hook inputs use the existing Theme catalog/stream owner.
-    #[cfg(feature = "ares")]
     pub(crate) fn play_ares_loading_theme<'a>(
         &mut self,
         names: impl IntoIterator<Item = Option<&'a str>>,
@@ -411,8 +409,8 @@ impl AppAudioRuntime {
         assets: &AssetManager,
         wall_ms: u64,
     ) {
-        self.theme.initialize_catalog(assets);
         let gates = self.theme_gates();
+        self.theme.initialize_catalog(assets, gates);
         let physical = self.music_output_state();
         let action = self
             .theme
@@ -598,7 +596,7 @@ impl AppAudioRuntime {
 /// here; reset retains the outgoing cache until this explicit replacement.
 pub(crate) fn bind_match_eva_context(state: &mut crate::app::AppState) {
     if let (Some(runtime), Some(sfx)) = (
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.runtime(),
         state.audio.sfx_player.as_mut(),
     ) {
         sfx.set_eva_side(
@@ -615,7 +613,7 @@ pub(crate) fn bind_match_theme_context(state: &mut crate::app::AppState) {
     if let Some(assets) = state.process_assets.manager() {
         state.audio.initialize_theme(assets);
     }
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return;
     };
     let simulation = &runtime.simulation;
@@ -643,6 +641,28 @@ pub(crate) fn bind_match_theme_context(state: &mut crate::app::AppState) {
 }
 
 #[cfg(test)]
+impl AppAudioRuntime {
+    /// A runtime with an EVA/SFX output and no music output, or `None` after
+    /// a `SKIPPED` line when the machine has no output device.
+    pub(crate) fn with_sfx_output_for_test() -> Option<Self> {
+        let Some(sfx_player) = SfxPlayer::new() else {
+            eprintln!("SKIPPED: no audio output device");
+            return None;
+        };
+        Some(Self {
+            theme: ThemeRuntime::default(),
+            service_clock: AudioServiceClock::default(),
+            music_player: None,
+            sfx_player: Some(sfx_player),
+            launcher_audio_available: true,
+            theme_startup_suppressed: false,
+            master_groups: Default::default(),
+            restore_muted: false,
+        })
+    }
+}
+
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 
@@ -766,8 +786,8 @@ mod tests {
             master_groups: Default::default(),
             restore_muted: false,
         };
-        let mut frontend = crate::sim::rng::MainRng::new(1);
-        let mut main = crate::app::state::process_main_draws(None, &mut frontend);
+        let frontend = crate::sim::rng::MainRng::new(1);
+        let mut main = crate::app::state::process_main_draws(&frontend);
         runtime.service_audio(100, false, Some(&assets), None, &mut main);
         assert!(!runtime.service_clock.admit(100));
         runtime.service_audio(133, false, Some(&assets), None, &mut main);

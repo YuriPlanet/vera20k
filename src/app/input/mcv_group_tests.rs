@@ -69,7 +69,7 @@ fn scene(yard: bool, blocked: bool) -> Option<(SimRuntime, MatchInputState, u64,
         .unwrap();
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources::new(rules),
+        resources: SimResources::new(rules).into(),
     };
     let mut input = MatchInputState::new(Default::default());
     frame(

@@ -4,9 +4,9 @@
 //! - `[Map]`: metadata (theater, size, local bounds)
 //! - `[IsoMapPack5]`: base64-encoded, LZO-compressed terrain cell data
 //!
-//! Each terrain cell is 11 bytes: x(i16) y(u16) tile_index(i32)
-//! sub_tile(u8) level(u8) ice_growth(u8). Cells describe the isometric tile grid.
-//! (Confirmed by ModEnc IsoMapPack5 docs + FinalAlert2 EA source release.)
+//! Each terrain cell is 11 bytes: x(i16) y(i16) tile_index(i32)
+//! sub_tile(u8) level(u8) legacy_ice_byte(u8). ReadIsoMapPack5 (gamemd.exe
+//! 0x0056BAC0) stores the final byte unchanged; no growth behavior is inferred.
 //!
 //! ## Dependency rules
 //! - Part of map/ — depends on assets/ (MIX archives), rules/ (INI parser), util/ (base64, lzo).
@@ -193,7 +193,7 @@ pub struct MapSmudgeEntry {
 
 /// A single isometric terrain cell from IsoMapPack5.
 ///
-/// Layout per ModEnc + FinalAlert2 source: 11 bytes total.
+/// Layout from gamemd.exe ReadIsoMapPack5 (0x0056BAC0): 11 bytes total.
 /// `tile_index` is the signed raw value from the pack. Map materialization
 /// translates it through the active theater's `LastTilesInSet` table before
 /// treating it as an actual cumulative tileset index. Consequently, raw `-1`
@@ -212,6 +212,9 @@ pub struct MapCell {
     pub sub_tile: u8,
     /// Elevation level (0 = ground, higher = elevated). Each level ~15px visual shift.
     pub z: u8,
+    /// Raw CellClass+0x119 value, read without a boolean conversion or clamp
+    /// by ReadIsoMapPack5 (gamemd.exe 0x0056BB93..0x0056BBA9).
+    pub legacy_ice_byte: u8,
 }
 
 /// One native fixed-table lookup performed while decoding IsoMapPack5.
@@ -222,7 +225,7 @@ pub struct MapCell {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IsoMapPackLookup {
     pub(crate) raw_x: i16,
-    pub(crate) raw_y: u16,
+    pub(crate) raw_y: i16,
     pub(crate) canonical: Option<(u16, u16)>,
 }
 
@@ -373,6 +376,19 @@ impl MapFile {
     /// Parse a map from raw INI bytes.
     pub fn from_bytes(data: &[u8]) -> Result<Self, MapError> {
         Self::from_ini(IniFile::from_bytes(data)?)
+    }
+
+    /// VERA: this map read again with a mod's map additions
+    /// (`app::mod_additions`). Each addition in turn sets its keys over the
+    /// map's and the earlier additions', and adds the sections and keys they
+    /// lack, as a launcher merges such a file into the map it hands the game.
+    /// gamemd has no such step.
+    pub fn with_additions(self, additions: &[IniFile]) -> Result<Self, MapError> {
+        let mut ini = self.ini;
+        for addition in additions {
+            ini.merge_source_sections(addition, true);
+        }
+        Self::from_ini(ini)
     }
 
     /// Decode already-resolved INI through the same bounded map parser as
@@ -623,7 +639,7 @@ fn pick_map_ini(archive: &MixArchive, transferred: bool) -> Result<IniFile, MapE
 }
 
 /// Extract the [Map] header fields.
-fn parse_header(ini: &IniFile) -> Result<MapHeader, MapError> {
+pub fn parse_header(ini: &IniFile) -> Result<MapHeader, MapError> {
     let map_section = ini
         .section("Map")
         .ok_or(MapError::MissingSection { name: "Map".into() })?;
@@ -740,7 +756,7 @@ fn parse_iso_map_pack_records(
         }
 
         let x: i16 = i16::from_le_bytes([decompressed[offset], decompressed[offset + 1]]);
-        let y: u16 = u16::from_le_bytes([decompressed[offset + 2], decompressed[offset + 3]]);
+        let y: i16 = i16::from_le_bytes([decompressed[offset + 2], decompressed[offset + 3]]);
         if x == 0 && y == 0 {
             break;
         }
@@ -756,17 +772,13 @@ fn parse_iso_map_pack_records(
         let tile_index: i32 = i32::from_le_bytes([d[4], d[5], d[6], d[7]]);
         let sub_tile: u8 = d[8];
         let z: u8 = d[9];
-        // d[10] is the legacy ice-growth byte; loading consumes but does not apply it here.
+        let legacy_ice_byte: u8 = d[10];
         offset += CELL_RECORD_SIZE;
 
-        // gamemd.exe IsoMapPack5 decoder @ 0x0056BAC0: X is sign-extended,
-        // Y is unsigned, and every non-sentinel header performs this fixed
-        // 512-wide lookup before either applying or discarding its payload.
-        let row_width = i32::from(grid.side());
-        let linear: i32 = i32::from(y) * row_width + i32::from(x);
-        let canonical = (0..row_width * row_width)
-            .contains(&linear)
-            .then_some(((linear % row_width) as u16, (linear / row_width) as u16));
+        // ReadIsoMapPack5 0x0056BB15..0x0056BB27 sign-extends both words
+        // before the fixed-table lookup. The shared owner also preserves our
+        // map-owned extended-grid policy.
+        let canonical = grid.canonical_coord(i32::from(x), i32::from(y));
         lookups.push(IsoMapPackLookup {
             raw_x: x,
             raw_y: y,
@@ -782,6 +794,7 @@ fn parse_iso_map_pack_records(
             tile_index,
             sub_tile,
             z,
+            legacy_ice_byte,
         });
     }
 
@@ -824,7 +837,7 @@ fn parse_map_smudges(ini: &IniFile) -> Vec<MapSmudgeEntry> {
     out
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod smudge_parse_tests {
     use super::*;
 
@@ -866,12 +879,45 @@ mod smudge_parse_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 
     const ONE_CELL_ISO_MAP_PACK: &str = "DwALABwBAAIA/////wAAABEAAA==";
     const TWO_PIXEL_PREVIEW_PACK: &str = "CgAGABcBAgMEBQYRAAA=";
+
+    /// VERA: a mod's map additions set their keys over the map's, as a
+    /// launcher merges such a file into the map, a later addition over an
+    /// earlier one, and reach what is read from the INI.
+    #[test]
+    fn map_additions_set_their_keys_over_the_map_and_earlier_files() {
+        let map = MapFile::from_ini(IniFile::from_str(&format!(
+            "[Map]\nSize=0,0,500,500\n[IsoMapPack5]\n1={ONE_CELL_ISO_MAP_PACK}\n\
+             [Basic]\nName=Own\nIgnoreGlobalAITriggers=no\n[TeamTypes]\n0=OWN\n[OWN]\nMax=1\n"
+        )))
+        .unwrap();
+        let first = IniFile::from_str(
+            "[Basic]\nIgnoreGlobalAITriggers=yes\n[TeamTypes]\nMODTEAM=MOD\n\
+             [OWN]\nMax=5\nPriority=9\n[MOD]\nMax=2\n",
+        );
+        let second = IniFile::from_str("[OWN]\nMax=7\n");
+        let merged = map.with_additions(&[first, second]).unwrap();
+        assert_eq!(merged.basic.name.as_deref(), Some("Own"));
+        assert_eq!(merged.basic.ignore_global_ai_triggers, Some(true));
+        let teams: Vec<_> = merged
+            .ini
+            .section("TeamTypes")
+            .unwrap()
+            .raw_entries()
+            .collect();
+        assert_eq!(teams, [("0", "OWN"), ("MODTEAM", "MOD")]);
+        let own = merged.ini.section("OWN").unwrap();
+        assert_eq!(
+            (own.get_for_test("Max"), own.get_for_test("Priority")),
+            (Some("7"), Some("9"))
+        );
+        assert!(merged.ini.section("MOD").is_some());
+    }
 
     #[test]
     fn large_map_parser_admits_literal_500_size_and_keeps_high_cell_identity() {
@@ -1301,6 +1347,18 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![102, 103]
         );
+    }
+
+    #[test]
+    fn packed_map_lookup_sign_extends_both_coordinate_words() {
+        // ReadIsoMapPack5 56BB15/56BB18 uses MOVSX on Y and X. This
+        // header aliases cell(2,2) in the native 512-wide pointer table.
+        let record = iso_map_record(1538, u16::MAX, 7, 0, 0);
+        let parsed =
+            parse_iso_map_pack_records(&record, crate::map::cell_index::CellGrid::Retail).unwrap();
+        assert_eq!(parsed.lookups[0].canonical, Some((2, 2)));
+        assert_eq!(parsed.cells.len(), 1);
+        assert_eq!((parsed.cells[0].rx, parsed.cells[0].ry), (2, 2));
     }
 
     #[test]

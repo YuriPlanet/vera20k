@@ -51,7 +51,7 @@ use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, LEPTONS_PER_LEVEL};
 use crate::util::native_random::unit_draw_threshold;
 use crate::util::native_x87::{NativeF64Bits, X87Chop53};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "bridge_debris_tests.rs"]
 mod debris_tests;
 
@@ -993,7 +993,7 @@ fn drop_in_bridge_deck_entities(
     }
 }
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 mod tests {
     use super::*;
     use crate::map::bridge_facts::{BRIDGE_FLAG_DESTROYED_OR_RAMP, BRIDGE_FLAG_DIRECTION_ZERO};
@@ -1143,12 +1143,13 @@ mod tests {
         let mut rules = crate::rules::ruleset::RuleSet::from_ini(&ini).expect("rules parse");
         let mut art = crate::rules::art_data::ArtRegistry::from_ini(
             &crate::rules::ini_parser::IniFile::from_str(
-                "[BRIDGEEXP1]\nTranslucent=yes\nReport=Explosion06\n\
-                 [BRIDGEEXP2]\nTranslucent=yes\nReport=Explosion07\n",
+                "[BRIDGEEXP1]\nTranslucent=yes\n[BRIDGEEXP2]\nTranslucent=yes\n",
             ),
         );
         art.bind_anim_frame_count_for_test("BRIDGEEXP1", 8);
         art.bind_anim_frame_count_for_test("BRIDGEEXP2", 8);
+        art.set_anim_sounds_for_test("BRIDGEEXP1", Some("Explosion06"), None);
+        art.set_anim_sounds_for_test("BRIDGEEXP2", Some("Explosion07"), None);
         rules.replace_art_registry_for_test(art);
         rules
     }
@@ -1697,6 +1698,6 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "bridge_deck_tests.rs"]
 mod deck_tests;

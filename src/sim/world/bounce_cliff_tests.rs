@@ -189,6 +189,7 @@ fn native_physical_hills_tyre_constructor_flight_and_host_retirement() {
             ),
             true,
             &mut Vec::new(),
+            rules,
         )
         .unwrap();
     });
@@ -238,7 +239,8 @@ fn native_physical_hills_tyre_constructor_flight_and_host_retirement() {
                 "before visit{visit}"
             );
         }
-        sim.visit_voxel_anim(id, rules, crate::sim::world::FrameEffects::default());
+        sim.visit_voxel_anim(id, rules, crate::sim::world::FrameEffects::default())
+            .unwrap();
         sim.process_pending_delete_with(
             rules,
             Some(rules.overlay_registry()),
@@ -353,7 +355,8 @@ fn retail_hills_harv_death_admits_a_cliff_tyre_and_retires_its_display() {
                 .voxel_anims()
                 .get(id)
                 .map(|piece| piece.bounce().clone());
-            sim.visit_voxel_anim(id, rules, crate::sim::world::FrameEffects::default());
+            sim.visit_voxel_anim(id, rules, crate::sim::world::FrameEffects::default())
+                .unwrap();
             sim.process_pending_delete_with(
                 rules,
                 Some(rules.overlay_registry()),

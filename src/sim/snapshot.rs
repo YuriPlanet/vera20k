@@ -35,14 +35,31 @@ use crate::util::save_codec;
 /// layouts. A change in what an unchanged field means renames that field. The
 /// top bit is always set; the hand-kept counter used before stayed far below
 /// it, so those saves read as another layout.
+///
+/// The browser build takes the same id from the build instead
+/// (`VERA20K_SNAPSHOT_LAYOUT`, which tools/wasm/build.py sets from
+/// `src/bin/snapshot-layout.rs`), so the tracing code stays out of the
+/// package every player downloads.
 fn snapshot_layout() -> u32 {
-    static LAYOUT: OnceLock<u32> = OnceLock::new();
-    *LAYOUT.get_or_init(|| {
-        let description = save_codec::layout::describe::<GameSnapshot>()
-            .unwrap_or_else(|error| panic!("cannot describe the snapshot layout: {error}"));
-        let digest = crate::util::sha256::sha256_bytes(description.as_bytes());
-        u32::from_le_bytes([digest[0], digest[1], digest[2], digest[3]]) | 0x8000_0000
-    })
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    {
+        env!("VERA20K_SNAPSHOT_LAYOUT")
+            .parse()
+            .expect("VERA20K_SNAPSHOT_LAYOUT is a snapshot layout id")
+    }
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    {
+        static LAYOUT: OnceLock<u32> = OnceLock::new();
+        *LAYOUT.get_or_init(traced_snapshot_layout)
+    }
+}
+
+/// [`snapshot_layout`], traced from the saved types.
+pub fn traced_snapshot_layout() -> u32 {
+    let description = save_codec::layout::describe::<GameSnapshot>()
+        .unwrap_or_else(|error| panic!("cannot describe the snapshot layout: {error}"));
+    let digest = crate::util::sha256::sha256_bytes(description.as_bytes());
+    u32::from_le_bytes([digest[0], digest[1], digest[2], digest[3]]) | 0x8000_0000
 }
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
@@ -62,21 +79,31 @@ pub enum SavedCameoId {
 ///
 /// SidebarClass Save 6AC5E0 / Load 6AC5D0 only forward to RadarClass; Mouse
 /// Save5BE6D0 writes the whole 0x556C object at5BE715..5BE71C, including
-/// four strips at +1544, stride F94. Load5BDF70 reads it at5BE089..5BE092;
-/// no-init5BE9B0->6A4F20 resets progress6AC7C0, preserving count/type/order.
+/// four strips at +1544, stride F94, and ActiveTab at +539C. Load5BDF70 reads
+/// it at5BE089..5BE092; no-init5BE9B0->6A4F20 resets progress6AC7C0,
+/// preserving count/type/order and the open tab.
 /// Each strip's saved TopRow is absent: Load_Game_From_File calls TabClass Init
 /// 6D03A0 at 67E68F, whose SidebarClass Init 6A5310 hides and shows the shown
 /// sidebar, and ToggleSidebar 6A7D70 zeroes every strip's TopRow on the show.
+/// Residual: each strip's PendingScroll, saved inside the same object, is not
+/// carried, so a scroll still rolling at the save does not finish after the
+/// load. Trigger: saving within the few frames after an arrow or wheel
+/// scroll; a player cannot see it.
 /// This neutral transport does not introduce a sim dependency on a UI owner.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavedSidebarOrder {
     owner: InternedId,
     strips: [Vec<SavedCameoId>; 4],
+    /// Each strip's record flash deadlines (+0x88): one per entry, then the
+    /// empty records up to the last one a cameo flash lit (at most 75 records).
     flash_deadlines: [Vec<i32>; 4],
     redraw_until: i32,
     request_states: [Vec<u8>; 4],
     factory_links: [Vec<Option<crate::sim::production::ProductionFactoryVisit>>; 4],
     prediction_categories: Vec<crate::sim::production::ProductionCategory>,
+    /// The open strip's index (Sidebar `ActiveTab`, `+0x539C`), part of the
+    /// same 0x556C object Mouse Save/Load write and read.
+    active_tab: u8,
     /// Phobos `ScenarioExt::SWSidebar_Enable`, false while the left sidebar is
     /// collapsed. Companion state to this local presentation envelope.
     #[cfg(feature = "phobos")]
@@ -96,6 +123,7 @@ impl SavedSidebarOrder {
             request_states,
             factory_links,
             prediction_categories: Vec::new(),
+            active_tab: 0,
             // `ScenarioExt::SWSidebar_Enable { true }` in Phobos's constructor.
             #[cfg(feature = "phobos")]
             sw_sidebar_expanded: true,
@@ -164,6 +192,15 @@ impl SavedSidebarOrder {
 
     pub fn prediction_categories(&self) -> &[crate::sim::production::ProductionCategory] {
         &self.prediction_categories
+    }
+
+    pub fn with_active_tab(mut self, index: u8) -> Self {
+        self.active_tab = index;
+        self
+    }
+
+    pub fn active_tab(&self) -> u8 {
+        self.active_tab
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -326,7 +363,8 @@ pub enum SnapshotError {
 /// Structural failures found before a deserialized simulation is admitted.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SnapshotRestoreError {
-    #[cfg(feature = "ares")]
+    #[error(transparent)]
+    Tiberium(#[from] crate::rules::overlay_types::TiberiumImageError),
     #[error("object {object_id} has invalid attached stats: {reason}")]
     InvalidAttachedStatsState {
         object_id: u64,
@@ -340,7 +378,6 @@ pub enum SnapshotRestoreError {
     InvalidUnitDelivery(&'static str),
     #[error("invalid paid two-stage selection: {0}")]
     InvalidPaidSuperWeaponSelection(&'static str),
-    #[cfg(feature = "ares")]
     #[error("invalid superweapon launch history: {0}")]
     InvalidSuperWeaponLaunchHistory(&'static str),
     #[error("invalid detached Particle {object_id}: {reason}")]
@@ -408,7 +445,6 @@ pub enum SnapshotRestoreError {
     InvalidFrameContinuation { reason: &'static str },
     #[error("invalid saved multiplayer session: {reason}")]
     InvalidMultiplayerSession { reason: &'static str },
-    #[cfg(feature = "ares")]
     #[error("invalid saved factory-source Country reference: {reason}")]
     InvalidFactoryCountry { reason: &'static str },
     #[error("entity {object_id} is a live infantryman with the dying mark")]
@@ -1225,7 +1261,7 @@ fn restore_object_references(
                 reason: "charging intent belongs to a Foot",
             });
         }
-        if !entity.tesla_charge.is_default()
+        if !entity.building.tesla_charge.is_default()
             && entity.category() != crate::map::entities::EntityCategory::Structure
         {
             return Err(SnapshotRestoreError::InvalidTeslaChargingState {
@@ -1234,7 +1270,7 @@ fn restore_object_references(
             });
         }
         let mut seen_chargers = BTreeSet::new();
-        for &charger in entity.tesla_charge.chargers() {
+        for &charger in entity.building.tesla_charge.chargers() {
             require_resolved_reference(
                 entity_ids.contains(&charger),
                 "EntityStore",
@@ -1371,7 +1407,7 @@ fn restore_object_references(
 
         // A bomb's planter (`BombClass+0x24`) is a pointer its expiry nulls
         // (`BombListClass::PointerGotInvalid @ 0x00439150`).
-        if let Some(planter) = entity.bomb.and_then(|bomb| bomb.planter()) {
+        if let Some(planter) = entity.bomb.as_ref().and_then(|bomb| bomb.planter()) {
             require_resolved_reference(
                 entity_ids.contains(&planter),
                 "EntityStore",
@@ -1526,10 +1562,7 @@ fn restore_object_references(
         }
 
         for (field, system_id) in [
-            (
-                "fire_particle_system",
-                entity.fire_particle_system.system(),
-            ),
+            ("fire_particle_system", entity.fire_particle_system.system()),
             (
                 "spark_particle_system",
                 entity.spark_particle_system.system(),
@@ -1541,6 +1574,14 @@ fn restore_object_references(
             (
                 "damage_smoke_system_id",
                 entity.damage_smoke_system_id.system(),
+            ),
+            (
+                "natural_particle_system",
+                entity.building.natural_particle_system.system(),
+            ),
+            (
+                "destroy_smoke_particle_system",
+                entity.building.destroy_smoke_particle_system.system(),
             ),
         ]
         .into_iter()
@@ -1591,7 +1632,12 @@ fn restore_object_references(
     }
 
     for (&system_id, system) in sim.substrate.particle_systems.iter() {
-        if let Some(owner_id) = system.owner_entity() {
+        // A VoxelAnim owns its AttachedSystem (`0x007498A5`); Smoke follows
+        // it through `target_get_coords`, which resolves that store too.
+        if let Some(owner_id) = system
+            .owner_entity()
+            .filter(|&owner| !sim.substrate.voxel_anims.contains_key(owner))
+        {
             require_object_reference(
                 &entity_ids,
                 sim.terrain_objects.objects(),
@@ -1742,12 +1788,13 @@ fn restore_object_references(
     // A deliberate weak identity: C4 kill credit may outlive its attacker.
     for entity in sim.substrate.entities.values_mut() {
         if entity
+            .building
             .pending_c4_detonation
             .pending()
             .and_then(|pending| pending.source_entity_id())
             .is_some_and(|id| !entity_ids.contains(&id))
         {
-            entity.pending_c4_detonation.forget_source();
+            entity.building.pending_c4_detonation.forget_source();
         }
     }
 
@@ -1760,6 +1807,36 @@ fn restore_object_references(
 }
 
 impl Simulation {
+    /// BuildingLoad453ECF invokes NoInit43B680 after the saved global Frame
+    /// has loaded. Reconstruct its independent repair Stage at the player-file
+    /// boundary, preserving mission state, radio links and internal continuations.
+    pub fn reconstruct_building_repair_progress_after_player_load(&mut self) {
+        let frame = self.session.binary_frame() as i32;
+        for entity in self.substrate.entities.values_mut() {
+            entity
+                .mission_leaf
+                .reconstruct_building_repair_progress_after_player_load(frame);
+        }
+    }
+
+    /// Saved Ares state (a delivery base override, an attached superweapon,
+    /// a pending unit delivery, a paid superweapon selection) loads only into
+    /// a game Ares plays in; the player load checks it with the loading
+    /// game's switch before restoring.
+    pub fn validate_ares_state_for_load(&self, ares: bool) -> Result<(), SnapshotRestoreError> {
+        for (_, entity) in self.substrate.entities.iter_sorted() {
+            entity
+                .validate_ares_compatibility(ares)
+                .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
+        }
+        self.unit_deliveries
+            .validate_ares_compatibility(ares)
+            .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
+        self.validate_paid_super_weapon_selections_for_load(ares)
+            .map_err(SnapshotRestoreError::InvalidPaidSuperWeaponSelection)?;
+        Ok(())
+    }
+
     /// Validate and re-register a deserialized simulation before it can resume.
     ///
     /// Native load registers old identities and pointer slots, resolves them,
@@ -1775,13 +1852,9 @@ impl Simulation {
                     object_id: entity.stable_id(),
                 });
             }
-            entity
-                .validate_ares_build_compatibility()
-                .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
         }
         self.validate_paid_super_weapon_selections()
             .map_err(SnapshotRestoreError::InvalidPaidSuperWeaponSelection)?;
-        #[cfg(feature = "ares")]
         self.super_weapons
             .validate_ares_launch_history()
             .map_err(SnapshotRestoreError::InvalidSuperWeaponLaunchHistory)?;
@@ -2147,7 +2220,11 @@ impl Simulation {
                 }
             })?;
             if !terrain.in_logic_vector()
-                && terrain.joins_logic_on_unlimbo(terrain_type, self.session.game_mode())
+                && terrain.joins_logic_on_unlimbo(
+                    terrain_type,
+                    self.session.game_mode(),
+                    rules.ares_form(),
+                )
             {
                 return Err(SnapshotRestoreError::MissingRequiredLogicIdentity {
                     registry: "TerrainObjectStore",
@@ -2155,17 +2232,18 @@ impl Simulation {
                 });
             }
         }
-        #[cfg(feature = "ares")]
-        self.validate_attached_stats_after_restore(rules)
-            .map_err(
-                |(object_id, reason)| SnapshotRestoreError::InvalidAttachedStatsState {
-                    object_id,
-                    reason,
-                },
-            )?;
-        #[cfg(feature = "ares")]
-        self.validate_factory_country_references(rules)
-            .map_err(|reason| SnapshotRestoreError::InvalidFactoryCountry { reason })?;
+        let ares = rules.ares_form();
+        if ares {
+            self.validate_attached_stats_after_restore(rules)
+                .map_err(
+                    |(object_id, reason)| SnapshotRestoreError::InvalidAttachedStatsState {
+                        object_id,
+                        reason,
+                    },
+                )?;
+            self.validate_factory_country_references(rules)
+                .map_err(|reason| SnapshotRestoreError::InvalidFactoryCountry { reason })?;
+        }
         self.validate_disk_lasers_after_restore(rules)
             .map_err(
                 |(object_id, reason)| SnapshotRestoreError::InvalidDiskLaserState {
@@ -2321,6 +2399,11 @@ impl Simulation {
                 .map_err(|error| SnapshotRestoreError::InvalidSavedCellLand(error.to_string()))?;
         }
 
+        // Ares 3.0 10014B70 (hook 0x483D94): a powered firestorm section's
+        // Impassable class is a Recalc product the template lacks.
+        if ares {
+            self.ares_firestorm_restore_zone_classes(rules);
+        }
         if !self.rebuild_dynamic_navigation(rules) {
             return Err(SnapshotRestoreError::NavigationAuthorityPublicationFailed);
         }
@@ -2335,7 +2418,7 @@ impl Simulation {
         // CellTag identities are meaningful only after the canonical Cell
         // allocation is restored. Keep their final owner validation in this
         // shared admission seam, before an app can publish the candidate.
-        self.validate_restored_trigger_runtime()
+        self.validate_restored_trigger_runtime(rules.ares_form())
             .map_err(|reason| SnapshotRestoreError::InvalidTriggerRuntime { reason })?;
         Ok(SnapshotMapRestoreOutput {
             occupied_overlays,
@@ -2403,11 +2486,11 @@ impl Simulation {
                 spreads,
                 current_frame,
                 native_rect,
-            ))
+            )?)
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -2562,10 +2645,16 @@ mod tests {
         use std::collections::BTreeSet;
 
         fn tiberium_fixture() -> (RuleSet, OverlayTypeRegistry, u8) {
-            let ini = IniFile::from_str(
+            tiberium_fixture_with_general("")
+        }
+
+        /// [`tiberium_fixture`] with `general` added to `[General]`.
+        fn tiberium_fixture_with_general(general: &str) -> (RuleSet, OverlayTypeRegistry, u8) {
+            let ini = IniFile::from_str(&format!(
                 "[General]\n\
                  TiberiumGrows=yes\n\
                  TiberiumSpreads=yes\n\
+                 {general}\
                  [InfantryTypes]\n\
                  [VehicleTypes]\n\
                  [AircraftTypes]\n\
@@ -2585,7 +2674,8 @@ mod tests {
                  GrowthPercentage=1\n\
                  Spread=23\n\
                  SpreadPercentage=1\n",
-            );
+            ));
+            let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&ini);
             let rules = RuleSet::from_ini(&ini).expect("post-load tiberium fixture rules");
             let registry = OverlayTypeRegistry::from_ini(&ini, None);
             let ore_id = registry.id_for_name("ORE").expect("fixture ORE id");
@@ -2651,7 +2741,7 @@ mod tests {
             sim.add_entity_occupancy(stable_id);
             sim.substrate
                 .logic
-                .try_push(stable_id)
+                .try_push(stable_id, crate::sim::world::ObjectKind::Entity)
                 .expect("fixture LogicClass registration");
         }
 
@@ -2695,12 +2785,14 @@ mod tests {
                                 &rules.tiberium_types,
                                 overlay.cell(ore_cell.0, ore_cell.1).overlay_id.unwrap()
                             )
+                            .unwrap()
                             .unwrap(),
                         ore_cell.0,
                         ore_cell.1,
                         41,
                         &mut throwaway_rng,
                     )
+                    .unwrap()
                     .is_some()
             );
             assert!(
@@ -2711,6 +2803,7 @@ mod tests {
                                 &rules.tiberium_types,
                                 overlay.cell(ore_cell.0, ore_cell.1).overlay_id.unwrap()
                             )
+                            .unwrap()
                             .unwrap(),
                         overlay,
                         registry,
@@ -2724,6 +2817,7 @@ mod tests {
                         true,
                         &mut throwaway_rng,
                     )
+                    .unwrap()
                     .is_some()
             );
         }
@@ -2859,7 +2953,8 @@ mod tests {
                         true,
                         7,
                         (8, 8),
-                    );
+                    )
+                    .unwrap();
                 assert_eq!(fresh.growth_entries, 2);
             }
             assert_eq!(sim.ore_growth_state.native_rect(), (8, 8));
@@ -2881,6 +2976,28 @@ mod tests {
             assert_eq!(
                 class.growth.capacity(),
                 crate::sim::ore_growth::native_tiberium_queue_capacity((8, 8))
+            );
+        }
+
+        /// No load function calls `CellClass::RecalcAttributes`
+        /// (`0x0047D2B0`), and MapClass::Resize's whole-map pass
+        /// (`0x00567110`, through `0x00568BB0`) comes before it reconstructs
+        /// the Dummy (`0x005670E7..0x005670F2`). The rebuild's overlay sweep
+        /// stands for no Recalc, so it leaves the shared Dummy cell where it
+        /// was. Ore cell (0, 5) lacks the neighbours (-1, 5) and (-1, 6).
+        #[test]
+        fn postload_overlay_sweep_reads_no_cell_through_the_dummy() {
+            let (rules, registry, ore_id) =
+                tiberium_fixture_with_general("CliffBackImpassability=2\n");
+            let sim = base_sim_sized(ore_id, 12, &[(0, 5)]);
+            let mut restored = restore_before_map_authority(&sim);
+            restored.effective_shared_cell_dummy().stamp_coord(7, 9);
+            restored
+                .restore_map_authority_after_snapshot_load(&rules, &registry, None)
+                .expect("all map-authority rebuild dependencies");
+            assert_eq!(
+                restored.effective_shared_cell_dummy().snapshot().coord,
+                (7, 9)
             );
         }
 
@@ -2930,6 +3047,7 @@ mod tests {
                 live_grid.as_ref(),
                 (8, 8),
             )
+            .unwrap()
             .expect("overlay grid present");
             sim.overlay_grid = live_grid;
 
@@ -3516,8 +3634,9 @@ mod tests {
         let bytes = GameSnapshot::save_validated(&Simulation::new(), 0, 0, "synthetic", 0);
         let mut header = GameSnapshot::read_header(&bytes).unwrap();
         // Flip every capability bit: the result is a foreign mode for any build.
+        // No build records the Ares bit any more, so it flips to set.
         header.compatibility = RulesCompatibility::from_capabilities(
-            !crate::rules::ARES_ENABLED,
+            true,
             !crate::rules::PHOBOS_ENABLED,
             !crate::rules::NPATCH_ENABLED,
             !crate::rules::VERAX_ENABLED,
@@ -3945,7 +4064,7 @@ mod tests {
                 .as_ref()
                 .expect("overlay authority")
                 .retained_neighbor_counts(),
-            &[0, 7, 255, 4][..]
+            &[0u8, 7, 255, 4][..]
         );
     }
 
@@ -4242,7 +4361,7 @@ mod tests {
             } else {
                 let mut miner = Miner::new(MinerKind::War, &MinerConfig::default(), 40);
                 miner.set_cargo_for_test(cargo);
-                entity.miner = Some(miner);
+                entity.miner = Some(Box::new(miner));
             }
             sim.substrate.entities.insert(entity);
             // Native loading resets Scenario RNG to Seed(0). Keep that
@@ -4278,7 +4397,13 @@ mod tests {
             crate::sim::game_entity::GameEntity::test_default(1, "SMIN", "Americans", 4, 5);
         parent.set_techno_ctor_random_word_for_test(0x1111);
         let slav = sim.intern("SLAV");
-        parent.slave_manager = Some(SlaveManager::new(slav, [Some(2), Some(3)], 500, 25, 7));
+        parent.slave_manager = Some(Box::new(SlaveManager::new(
+            slav,
+            [Some(2), Some(3)],
+            500,
+            25,
+            7,
+        )));
         sim.substrate.entities.insert(parent);
         for (stable_id, word) in [(2, 0x2222), (3, 0x3333)] {
             let mut slave = crate::sim::game_entity::GameEntity::test_default(
@@ -4839,7 +4964,7 @@ mod tests {
             sim.substrate.entities.insert(entity);
             sim.substrate
                 .logic
-                .try_push(stable_id)
+                .try_push(stable_id, crate::sim::world::ObjectKind::Entity)
                 .expect("owner Logic registration");
         }
 
@@ -4860,6 +4985,7 @@ mod tests {
                 owner_fire_coordinate: Some(active_source),
                 owner_current_target: Some(active_target),
                 target_position: Some(active_endpoint),
+                ares: None,
                 target_is_unit: false,
             },
             None,
@@ -4872,6 +4998,7 @@ mod tests {
                 owner_fire_coordinate: Some(active_source),
                 owner_current_target: Some(active_target),
                 target_position: Some(moved_endpoint),
+                ares: None,
                 target_is_unit: false,
             },
             None,
@@ -5112,7 +5239,10 @@ mod tests {
             .paused = true;
         let building = sim.substrate.entities.get_mut(id).unwrap();
         building.building_art.anim_effect_replay_mut_for_test()[16] = true;
-        building.building_last_operational.set_for_test(true);
+        building
+            .building
+            .building_last_operational
+            .set_for_test(true);
         building.building_art.set_stuff_enabled_for_test(false);
         building
             .building_art
@@ -5173,6 +5303,7 @@ mod tests {
                 .entities()
                 .get(id)
                 .unwrap()
+                .building
                 .building_last_operational
                 .is_operational()
         );
@@ -5382,6 +5513,7 @@ mod tests {
             .entities
             .get_mut(1)
             .expect("Tesla Coil")
+            .building
             .pending_building_fire
             .set_for_test(Some(shot));
         let with_latch = sim.state_hash();
@@ -5393,8 +5525,11 @@ mod tests {
             },
         );
         let supporter = sim.substrate.entities.get_mut(2).expect("second tower");
-        supporter.pending_building_fire.set_for_test(Some(beam));
-        supporter.prism_support_count.set_for_test(3);
+        supporter
+            .building
+            .pending_building_fire
+            .set_for_test(Some(beam));
+        supporter.building.prism_support_count.set_for_test(3);
         let with_beam = sim.state_hash();
         assert_ne!(with_beam, with_latch);
 
@@ -5404,14 +5539,32 @@ mod tests {
             .sim;
         let entities = &restored.substrate.entities;
         assert_eq!(
-            entities.get(1).unwrap().pending_building_fire.pending(),
+            entities
+                .get(1)
+                .unwrap()
+                .building
+                .pending_building_fire
+                .pending(),
             Some(shot)
         );
         assert_eq!(
-            entities.get(2).unwrap().pending_building_fire.pending(),
+            entities
+                .get(2)
+                .unwrap()
+                .building
+                .pending_building_fire
+                .pending(),
             Some(beam)
         );
-        assert_eq!(entities.get(2).unwrap().prism_support_count.count(), 3);
+        assert_eq!(
+            entities
+                .get(2)
+                .unwrap()
+                .building
+                .prism_support_count
+                .count(),
+            3
+        );
         assert_eq!(restored.state_hash(), with_beam);
     }
 
@@ -5830,7 +5983,7 @@ mod tests {
         sim.substrate.entities.insert(entity);
         sim.substrate
             .logic
-            .try_push(entity_id)
+            .try_push(entity_id, crate::sim::world::ObjectKind::Entity)
             .expect("active TubeMovement fixture enters LogicClass order");
         // Native in-scenario load restarts Scenario RNG from Seed0; isolate
         // TubeMovement persistence on that same post-load cursor.
@@ -5950,14 +6103,14 @@ mod tests {
             .ai_sell_repair
             .set_was_attacked_by_enemy_for_test(true);
         aircraft.damage_smoke_system_id.set_for_test(Some(2));
-        aircraft.capture_manager = Some(
+        aircraft.capture_manager = Some(Box::new(
             crate::sim::capture_manager::CaptureManagerState::with_victims_for_test(
                 3,
                 false,
                 &[3, 4],
             ),
-        );
-        aircraft.pending_c4_detonation.set_for_test(Some(
+        ));
+        aircraft.building.pending_c4_detonation.set_for_test(Some(
             crate::sim::c4_plant::PendingC4Detonation::new(
                 crate::sim::timer::CdTimer::started(11, 35),
                 Some(3),
@@ -6168,13 +6321,13 @@ mod tests {
         let entity = restored.substrate.entities.get(entity_id).unwrap();
         assert_eq!(entity.air_spatial_bucket(), Some(143));
         assert_eq!(entity.air_spatial_enter_order(), 91);
-        assert_eq!(entity.crate_multipliers.armor().bits(), 1.5_f64.to_bits());
+        assert_eq!(entity.armor_multiplier().bits(), 1.5_f64.to_bits());
         assert!(entity.berserk.is_active());
         assert_eq!(entity.berserk.timer(), -17);
         assert!(entity.ai_sell_repair.was_attacked_by_enemy());
         assert_eq!(entity.damage_smoke_system_id.system(), Some(2));
         assert_eq!(
-            entity.pending_c4_detonation.pending(),
+            entity.building.pending_c4_detonation.pending(),
             Some(crate::sim::c4_plant::PendingC4Detonation::new(
                 crate::sim::timer::CdTimer::started(11, 35),
                 Some(3)
@@ -6531,7 +6684,7 @@ mod tests {
         );
         let mut cloak = CloakRuntime::new(0);
         cloak.establish_unlimbo_fully_cloaked();
-        entity.cloak = Some(cloak);
+        entity.cloak = Some(Box::new(cloak));
         sim.substrate.entities.insert(entity);
         // Native in-scenario load restarts Scenario RNG from Seed0; isolate
         // fog/sensor/cloak persistence on that same post-load cursor.
@@ -6591,6 +6744,7 @@ mod tests {
             &"4x3".into(),
             profile,
             Some((32, 32)),
+            false,
         );
         assert_ne!(sim.state_hash(), expected_hash);
         sim.substrate.hidden_occupation.enter_building(
@@ -6598,6 +6752,7 @@ mod tests {
             &"4x3".into(),
             profile,
             Some((32, 32)),
+            false,
         );
         let mut stored = profile;
         stored.occupy_height = 4;
@@ -6974,7 +7129,7 @@ mod tests {
         let mut entity = GameEntity::test_default(entity_id, "MTNK", "AMERICANS", 5, 6);
         entity.set_owner_for_test(owner);
         entity.set_type_ref_for_test(type_ref);
-        entity.pending_c4_detonation.set_for_test(Some(
+        entity.building.pending_c4_detonation.set_for_test(Some(
             crate::sim::c4_plant::PendingC4Detonation::new(
                 crate::sim::timer::CdTimer::from_raw(-1, 0),
                 Some(999),
@@ -7041,6 +7196,7 @@ mod tests {
                 .entities
                 .get(entity_id)
                 .expect("entity")
+                .building
                 .pending_c4_detonation
                 .pending()
                 .and_then(|pending| pending.source_entity_id()),
@@ -7079,7 +7235,7 @@ mod tests {
         let mut sim = Simulation::new();
         let entity_id = sim.substrate.allocate_stable_id();
         let mut entity = GameEntity::test_default(entity_id, "MTNK", "AMERICANS", 5, 6);
-        entity.pending_c4_detonation.set_for_test(Some(
+        entity.building.pending_c4_detonation.set_for_test(Some(
             crate::sim::c4_plant::PendingC4Detonation::new(
                 crate::sim::timer::CdTimer::from_raw(-1, 0),
                 Some(999),
@@ -7112,6 +7268,7 @@ mod tests {
                 .entities
                 .get(entity_id)
                 .expect("entity")
+                .building
                 .pending_c4_detonation
                 .pending()
                 .and_then(|pending| pending.source_entity_id()),
@@ -7485,12 +7642,13 @@ mod tests {
         let target = sim.substrate.allocate_stable_id();
 
         let mut parent_entity = GameEntity::test_default(parent, "CARRIER", "AMERICANS", 1, 1);
-        parent_entity.pending_c4_detonation.set_for_test(Some(
-            crate::sim::c4_plant::PendingC4Detonation::new(
+        parent_entity
+            .building
+            .pending_c4_detonation
+            .set_for_test(Some(crate::sim::c4_plant::PendingC4Detonation::new(
                 crate::sim::timer::CdTimer::from_raw(-1, 0),
                 Some(9_999),
-            ),
-        ));
+            )));
         let mut manager = SpawnManagerState::for_test(
             sim.interner.intern("HORNET"),
             vec![
@@ -7514,7 +7672,7 @@ mod tests {
         manager.set_current_target_for_test(Some(TargetKind::Entity(target)));
         manager.set_queued_target_for_test(Some(TargetKind::Entity(target)));
         manager.set_mode_for_test(SpawnManagerMode::Launching);
-        parent_entity.spawn_manager = Some(manager);
+        parent_entity.spawn_manager = Some(Box::new(manager));
         sim.substrate.entities.insert(parent_entity);
 
         let mut child_entity = GameEntity::test_default(child, "HORNET", "AMERICANS", 2, 1);
@@ -7655,6 +7813,7 @@ mod tests {
                     .entities
                     .get(ids.parent)
                     .unwrap()
+                    .building
                     .pending_c4_detonation
                     .pending()
                     .and_then(|pending| pending.source_entity_id()),
@@ -8510,7 +8669,7 @@ mod tests {
         sim.substrate.entities.insert(off_cell_member);
         sim.substrate
             .logic
-            .try_push(1)
+            .try_push(1, crate::sim::world::ObjectKind::Entity)
             .expect("logic fixture append");
 
         let mut marked_non_member = GameEntity::test_default(2, "MTNK", "Americans", 6, 6);

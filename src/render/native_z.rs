@@ -441,7 +441,7 @@ pub fn depth_for_native_z(z: i32, camera_y: i32, origin_y: f32, world_height: f3
     depth_for_row((DEFAULT_Z - z + camera_y) as f32, origin_y, world_height)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     #[test]
     fn voxel_candidate_envelope_covers_existing_regions_and_shader_clip_boundaries() {

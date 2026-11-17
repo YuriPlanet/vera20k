@@ -22,8 +22,7 @@ pub(crate) fn apply_speed_crate(
     radius: i32,
     multiplier: NativeF64Bits,
 ) -> bool {
-    #[cfg(not(feature = "ares"))]
-    let _ = (rules, interner);
+    let ares = rules.ares_form();
     let mut announce = false;
     // This arm has no callback that changes the display vector. Coordinate
     // getters are retained XYZ; Ares writes the permanent Ext+90 and its
@@ -50,14 +49,15 @@ pub(crate) fn apply_speed_crate(
         // Original vtable+2C: Unit7F5C70->746E20 returns1,
         // Aircraft7E22A4->41C180 returns2, Infantry7EB058->523340 returns15.
         // RTTI3 is AircraftType7E2868->41CFB0, never a GameEntity/Foot.
-        if !crate::rules::ARES_ENABLED && entity.category() == EntityCategory::Aircraft {
+        if !rules.ares() && entity.category() == EntityCategory::Aircraft {
             continue;
         }
         if entity.foot_speed.accept_speed_crate(multiplier) {
             // Installed Speed2 hook1005FA00 stores Ext+90, then calls
             //100460A0 before returning to the ordinary recipient loop.
-            #[cfg(feature = "ares")]
-            entity.recompute_ares_attached_stats(rules, interner);
+            if ares {
+                entity.recompute_ares_attached_stats(rules, interner);
+            }
             announce |= houses
                 .get(&entity.owner())
                 .is_some_and(|house| house.player_control());
@@ -66,7 +66,7 @@ pub(crate) fn apply_speed_crate(
     announce
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
@@ -195,10 +195,9 @@ mod tests {
                 sim.substrate.display.submit(
                     id,
                     Some(crate::sim::world::display_layers::DisplayLayer::GROUND),
-                    &|_| 0,
                 );
-                let expected = !already_upgraded
-                    && (crate::rules::ARES_ENABLED || category != EntityCategory::Aircraft);
+                let expected =
+                    !already_upgraded && (rules.ares() || category != EntityCategory::Aircraft);
                 let slot = super::super::pickup::multiplayer_eligible_slot(
                     &sim,
                     &rules,
@@ -235,12 +234,11 @@ mod tests {
                         NativeF64Bits::ONE
                     }
                 );
-                assert_eq!(state.effective_multiplier(), state.crate_multiplier());
+                assert!(!state.attached());
             }
         }
     }
 
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn original_speed_effect_updates_live_foot_speed_for_every_recipient() {
         let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
@@ -327,7 +325,6 @@ mod tests {
                 sim.substrate.display.submit(
                     id,
                     Some(crate::sim::world::display_layers::DisplayLayer::GROUND),
-                    &|_| 0,
                 );
             }
             let center = DriveCoord {

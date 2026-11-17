@@ -132,6 +132,7 @@ fn seed_growth(
                 sim.session.binary_frame(),
                 &mut sim.scenario_rng,
             )
+            .unwrap()
             .is_some()
     );
 }

@@ -19,9 +19,6 @@ fn native_cheer_record_resolves_registered_house_and_runs_the_shared_receiver() 
     let ini = IniFile::from_str(source);
     let (mut sim, mut rules, _) =
         entry_test_fixture::fixture_with_rules_and_fixed_art(source, &art);
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     rules.bind_type_sound_references(
         &ini,
         &SoundRegistry::from_ini(&IniFile::from_str("[SoundList]\n0=Cheer\n[Cheer]\n")),

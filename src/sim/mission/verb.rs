@@ -50,11 +50,16 @@ pub(super) fn queue_base(state: &mut MissionCom, requested: MissionId) -> QueueC
 
 /// Promote a queued selector and apply the exact Commence reset set.
 pub(super) fn commence_base(state: &mut MissionCom, now: u32) -> bool {
-    if state.queued() == MissionId::NONE {
+    if !commences(state) {
         return false;
     }
     state.promote_queue(now);
     true
+}
+
+/// Whether [`commence_base`] promotes: something is queued.
+pub(super) fn commences(state: &MissionCom) -> bool {
+    state.queued() != MissionId::NONE
 }
 
 /// Apply the common Override transition.

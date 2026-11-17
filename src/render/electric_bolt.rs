@@ -46,6 +46,11 @@ pub(crate) struct ElectricBoltDraw {
     pub z_adjust: i32,
     pub phase: i32,
     pub alternate_color: bool,
+    /// Ares `Bolt.Color1..3` (EBolt_Draw_Colors, Ares.dll 100561F0, hook
+    /// 0x4C1F33), packed by PackBoltColor 100560D0 with the surface's shifts
+    /// and returned by the colour 1/2/3 hooks (10056190 at 0x4C24BE, 100561B0
+    /// at 0x4C25CB, 100561D0 at 0x4C26CF) in place of the palette words.
+    pub colors: [Option<[u8; 3]>; 3],
 }
 
 /// Pending second half of a split. Each triplet stores center, side1, side2;
@@ -111,6 +116,17 @@ impl ElectricBoltDraw {
         } else {
             palette.ordinary
         };
+        let color = |slot: usize, palette_word: u16| {
+            self.colors[slot].map_or(palette_word, |rgb| {
+                super::native_surface_format::RGB565.pack_rgb8(rgb)
+            })
+        };
+        // Strands 1, 2 and 0 draw colours 1, 2 and 3.
+        let strand_colors = [
+            color(2, palette.center),
+            color(0, outer_color),
+            color(1, outer_color),
+        ];
         loop {
             while current.length > 64 && depth < pending.len() {
                 // The original uses ADD/SAR, including negative odd sums and
@@ -204,11 +220,7 @@ impl ElectricBoltDraw {
                             .wrapping_sub(adjust_for_z_standard(to[2]))
                             .wrapping_sub(2),
                     ],
-                    blend: SurfaceLineBlend::Replace(if strand == 0 {
-                        palette.center
-                    } else {
-                        outer_color
-                    }),
+                    blend: SurfaceLineBlend::Replace(strand_colors[strand]),
                 });
             }
             if depth == 0 {

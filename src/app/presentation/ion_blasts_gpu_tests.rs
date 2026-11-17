@@ -180,6 +180,7 @@ fn production_ripple_matches_original_draw_all() {
             let draws = ion_blast_draws(
                 blasts.into_iter(),
                 [int(&origin[0]) as f32, (int(&origin[1]) + 15) as f32],
+                [0.0, 0.0],
                 VIEW.map(|v| v as f32),
                 int(&row["detail"]) as u32,
             );

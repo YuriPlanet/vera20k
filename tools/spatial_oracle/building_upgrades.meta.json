@@ -6,7 +6,7 @@
     1,
     33621247
   ],
-  "scope": "Original452670 admission,4408DF..440A26 own-building Unlimbo upgrade arm with451400 PowerUp,451690 ordinary PowerDown,44E7B0/44E880 power and drain.",
+  "scope": "Original452670 admission,4408DF..440A26 own-building Unlimbo upgrade arm with451400 PowerUp,451690 ordinary/turret PowerDown,44E7B0/44E880 power and drain.",
   "assumptions": [
     "Candidate lookup and Building RTTI already accepted; fixtures supply an ordinary own-house host, original Building vtable/type getter and original image bytes.",
     "No WallTower, InfantryAbsorb, UnitAbsorb, overpower or satellite upgrade flags; health ratio and integer conversion execute originally with PC53/chop0E7F.",
@@ -57,5 +57,5 @@
     }
   ],
   "replay_command": "python -m tools.spatial_oracle.building_upgrades",
-  "payload_sha256": "8650c49cf186eda8eba7e53fa44b60f577346dc0c2122c2865cfca5b3b493a61"
+  "payload_sha256": "2130b91cb7b005474cb1e473656ea3facb21ec7ffb983981dafd403568ae3061"
 }

@@ -144,14 +144,14 @@ fn emit_with_lighting(
     detail.throttle_tail(0);
     let detail = RefCell::new(detail);
     let hidden = Default::default();
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let before_hash = sim.state_hash();
     let before_rng = sim.rng_state();
     let mut out = Vec::new();
     build_display_effect_instances(
         &DisplayEffectInputs {
-            interpolation: None,
             sim,
+            frame: &crate::app::presentation::frame::PresentationFrame::of_test(sim, rules),
             rules,
             camera,
             render_size: [160, 160],
@@ -176,6 +176,52 @@ fn emit_with_lighting(
     assert_eq!(sim.state_hash(), before_hash);
     assert_eq!(sim.rng_state(), before_rng);
     out
+}
+
+#[test]
+fn attached_effect_sharing_canopy_art_keeps_its_lighting() {
+    use crate::map::entities::EntityCategory;
+    use crate::sim::combat::Health;
+    use crate::sim::game_entity::GameEntity;
+
+    let (mut sim, mut rules, id, atlas) = fixture("SHARED", "", 0x600, 0);
+    rules.general.parachute_shp = Some("SHARED".into());
+    let mut entity = GameEntity::new_at_frame_zero_for_test(
+        9001,
+        64,
+        64,
+        0,
+        0,
+        sim.intern("Americans"),
+        Health::new(100),
+        sim.intern("E1"),
+        EntityCategory::Infantry,
+        0,
+        5,
+        false,
+    );
+    entity.lifecycle.set_in_limbo_for_test(false);
+    sim.entities_mut_for_test().insert(entity);
+    sim.anims_mut_for_test()
+        .set_owner_entity_for_test(id, Some(9001));
+    *sim.anims_mut_for_test()
+        .get_mut(id)
+        .unwrap()
+        .world_coord_mut_for_test() = AnimWorldCoord { x: 0, y: 0, z: 0 };
+    let mut light = CellLightGrid::new();
+    light.set_compat_tint((64, 64), [0.5, 0.625, 0.75]);
+    let effect = emit_with_lighting(&sim, &rules, id, &atlas, &Default::default(), &light, None);
+    assert_eq!(effect.len(), 1);
+    assert_eq!(effect[0].pieces[0].instance.tint, [0.5, 0.625, 0.75]);
+
+    // Decode the production entity payload with Object+88 holding this anim.
+    let mut saved = serde_json::to_value(sim.entities().get(9001).unwrap()).unwrap();
+    saved["fall"]["parachute_animation"] = serde_json::json!(id);
+    sim.entities_mut_for_test()
+        .insert(serde_json::from_value::<GameEntity>(saved).unwrap());
+    let canopy = emit_with_lighting(&sim, &rules, id, &atlas, &Default::default(), &light, None);
+    assert_eq!(canopy.len(), 1);
+    assert_eq!(canopy[0].pieces[0].instance.tint, [1.; 3]);
 }
 
 #[test]
@@ -591,8 +637,8 @@ fn free_anim_material_transport_preserves_special_draw_fallbacks() {
         // after the separate HasBounce ground shadow.
         ("BOUNCER", "Bouncer=yes\n", 0x600, 1., 4),
         ("METEOR", "IsMeteor=yes\n", 0x600, 1., 4),
-        ("RING1", "", 0x600, 0.5, 0),
-        ("TILED", "Tiled=yes\n", 0x600, 0.5, 0),
+        // Retail never sets 8A0DF0, so 422CB3 skips RING1's D3D ring.
+        ("RING1", "Flat=yes\n", 0x600, 1., 4),
     ] {
         let (sim, rules, id, atlas) = fixture(name, keys, flags, 0);
         let bounce = sim.anim(id).unwrap().bounce().is_some();
@@ -643,6 +689,57 @@ fn free_anim_material_transport_preserves_special_draw_fallbacks() {
             "{name}: actual replay route"
         );
         assert_eq!(layer.instances.last().unwrap().alpha, alpha, "{name}");
+    }
+}
+
+/// The free-anim caller hands DrawIt's Tiled column AC + Start (423055) and
+/// the view's top, 70 rows above the point: frame 0 is 10 tall, so the rows
+/// climb by 10 from 65 below that top, and the eighth, 5 above it, is last.
+#[test]
+fn a_free_tiled_anim_draws_its_start_frame_column_through_anim_pal() {
+    use crate::render::sprite_atlas::tiled_anim_key;
+    let (sim, rules, id, _) = fixture("TILED", "Tiled=yes\nStart=1\n", 0x600, 0);
+    let entry = ShpSpriteEntry {
+        uv_origin: [0.25, 0.125],
+        uv_size: [0.125, 0.25],
+        pixel_size: [8., 6.],
+        offset_x: -4.,
+        offset_y: -3.,
+        canvas_rect: [-4., -3., 8., 6.],
+        extended: false,
+        page: 4,
+        source_palette: 7,
+    };
+    let atlas = SpriteAtlas::from_test_entries(HashMap::from([
+        (
+            tiled_anim_key("TILED", 0),
+            ShpSpriteEntry {
+                pixel_size: [8., 10.],
+                page: 1,
+                ..entry
+            },
+        ),
+        (tiled_anim_key("TILED", 1), entry),
+    ]));
+    let out = emit(&sim, &rules, id, &atlas);
+    assert_eq!(out.len(), 1);
+    let tiles = &out[0].pieces;
+    assert_eq!(tiles.len(), 8);
+    for pair in tiles.windows(2) {
+        assert_eq!(
+            pair[0].instance.position[1] - pair[1].instance.position[1],
+            10.
+        );
+    }
+    for tile in tiles {
+        assert_eq!(tile.target, ObjectTexture::ShpPage(4));
+        assert_eq!(tile.instance.source_palette, 7);
+        assert_eq!(tile.instance.alpha, 1.);
+        assert_eq!(tile.instance.draw_state.native_selector_bits(), 4);
+        assert_eq!(
+            tile.instance.palette_light,
+            crate::render::palette_light::PaletteLight::plain(53, 1000)
+        );
     }
 }
 

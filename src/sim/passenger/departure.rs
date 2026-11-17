@@ -27,6 +27,10 @@ pub enum DepartureRoute {
     /// Hospital44B9A8/44B9E0 removes Cargo's head and ignores ExitObject's
     /// return. It neither retries nor reattaches a refused exit.
     Hospital,
+    /// A Carryall's drop (`AircraftClass::Carryall_Unload @ 0x00416AF0`):
+    /// CargoClass's own removal, so no gunner reset, and a refused Unlimbo
+    /// puts the cargo back at the head (`0x00416C4E`).
+    Carryall,
     /// A dying Unit's passenger (`UnitClass::ReceiveDamage` `0x00737FD4`,
     /// `FootClass::RemoveFirstPassenger @ 0x004DE710`). Its attempt never
     /// fails: a refused passenger dies instead of re-boarding.
@@ -75,17 +79,7 @@ pub fn depart_cargo_head(
     if emptied {
         // Foot4DE710 also calls the empty-hold reset when RemoveFirst returns
         // null. Keep that lifecycle effect before reporting NoCargo.
-        super::remove_gunner(
-            &sim.interner,
-            &sim.session,
-            &mut sim.scenario_rng,
-            &mut sim.substrate,
-            &mut sim.houses,
-            &mut sim.power_states,
-            rules,
-            transport_id,
-            removed.map(|(id, _)| id),
-        );
+        sim.remove_gunner(rules, transport_id, removed.map(|(id, _)| id));
     }
     let (passenger_id, passenger_size) = removed.ok_or(DepartureFailure::NoCargo)?;
     if route == DepartureRoute::Hospital
@@ -171,7 +165,10 @@ fn restore_departure(
         DepartureRoute::DeathEscape | DepartureRoute::Hospital => {
             unreachable!("this departure route never reattaches its passenger")
         }
-        DepartureRoute::Vehicle | DepartureRoute::LandedAircraft | DepartureRoute::Absorber => {
+        DepartureRoute::Vehicle
+        | DepartureRoute::LandedAircraft
+        | DepartureRoute::Absorber
+        | DepartureRoute::Carryall => {
             assert!(
                 matches!(
                     failure,

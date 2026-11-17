@@ -140,7 +140,8 @@ fn stock_sniper_patrol_scans_then_approaches_through_the_existing_owners() {
             id,
             &rules,
             ObjectAiCtx::default(),
-        );
+        )
+        .unwrap();
         let actor = sim.substrate.entities.get(id).unwrap();
         assert_eq!(actor.mission.handler_state(), 1, "{kind}");
         assert_eq!(
@@ -157,7 +158,8 @@ fn stock_sniper_patrol_scans_then_approaches_through_the_existing_owners() {
             id,
             &rules,
             ObjectAiCtx::default(),
-        );
+        )
+        .unwrap();
         let actor = sim.substrate.entities.get(id).unwrap();
         assert_eq!(actor.mission.handler_state(), 1, "{kind}");
         assert_eq!(
@@ -241,13 +243,15 @@ fn patrol_saved_pursuit_and_return_continue_in_independent_worlds() {
                 id,
                 &rules,
                 ObjectAiCtx::default(),
-            );
+            )
+            .unwrap();
             super::super::mission_handlers::dispatch_foot_mission(
                 &mut restored,
                 id,
                 &rules,
                 ObjectAiCtx::default(),
-            );
+            )
+            .unwrap();
             let a = live.substrate.entities.get(id).unwrap();
             let b = restored.substrate.entities.get(id).unwrap();
             assert!(

@@ -1443,7 +1443,7 @@ impl Simulation {
                             .as_ref()
                             .and_then(|terrain| terrain.cell(rx, ry))
                             .map_or(0, |cell| {
-                                i32::from(cell.level)
+                                i32::from(cell.level as i8)
                                     .wrapping_mul(crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS)
                             });
                         let centre = crate::sim::cell_kernel::cell_center(
@@ -2362,7 +2362,7 @@ impl Simulation {
         if !target.phobos_unkillable() || target.health.current() <= 0 || input == 0 {
             return false;
         }
-        let Some(warhead) = rules.warhead(self.interner.resolve(event.warhead_ref)) else {
+        let Some(warhead) = self.interner.warhead_type(event.warhead_ref, rules) else {
             return false;
         };
         let Some(object) = self.interner.object_type(target.type_ref(), rules) else {
@@ -2705,7 +2705,7 @@ impl Simulation {
         if damage <= 0 || self.reflected_warhead == Some(warhead_ref) {
             return;
         }
-        let Some(warhead) = rules.warhead(self.interner.resolve(warhead_ref)) else {
+        let Some(warhead) = self.interner.warhead_type(warhead_ref, rules) else {
             return;
         };
         let info = warhead.attach_effect.clone();
@@ -3099,7 +3099,7 @@ impl Simulation {
         effects: crate::sim::world::FrameEffects<'_>,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) {
-        let Some(warhead) = rules.warhead(self.interner.resolve(warhead_ref)) else {
+        let Some(warhead) = self.interner.warhead_type(warhead_ref, rules) else {
             return;
         };
         let info = warhead.attach_effect.clone();
@@ -3227,7 +3227,7 @@ fn affects_house(
     crate::sim::combat::can_target_house(flags, source, target, houses, alliances, interner)
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_a_b, feature = "phobos"))]
 mod tests {
     use super::*;
 

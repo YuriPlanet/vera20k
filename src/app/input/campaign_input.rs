@@ -9,7 +9,7 @@ pub(crate) fn is_locked(state: &AppState) -> bool {
     state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_some_and(|runtime| {
             runtime.simulation.session().input_locked()
                 || (runtime.simulation.session().scenario_paused()
@@ -21,6 +21,21 @@ pub(crate) fn is_locked(state: &AppState) -> bool {
         })
 }
 
+/// TActionClass::Execute 0x006DD8B0, case 46 (`0x006DED8B..0x006DEDD7`;
+/// `0x006E2660` is an unreferenced copy), nulls the current placement object, type and
+/// house and the active foundation (SetActiveFoundation 0x004A8BF0), then
+/// SetRepairMode(0) 0x004AC8C0 and SetSellMode(0) 0x004AC660, which always
+/// clear because the type is already null, and the Power, Planning and
+/// Beacon bytes +0x11B2..+0x11B4. The pending foundation 0x0088097C and the
+/// super pointer +0x11B8 stay armed.
+pub(crate) fn cancel_placement_modes(
+    input: &mut crate::app::input::state::MatchInputState,
+    gadgets: &mut crate::ui::sidebar::gadget_flash::SidebarGadgetState,
+) {
+    input.clear_building_placement();
+    gadgets.disable_cursor_modes();
+}
+
 /// Ordered effect emitted after the authoritative Scenario mutation. The
 /// prior flag is carried by that owner: Unlock684290 restores cursor depth
 /// only for prior byte1, including after repeated locks.
@@ -28,30 +43,32 @@ pub(crate) fn apply_lock_effect(state: &mut AppState, locked: bool, was_locked: 
     if locked {
         state
             .match_state
-            .input
-            .cancel_tactical_gesture_and_targeting();
-        state
-            .match_state
-            .match_presentation
-            .sidebar_gadget_state
-            .disable_cursor_modes();
-        state
-            .match_state
             .match_presentation
             .in_game_gadgets
             .cancel_pointer_capture();
         crate::app::input::cursor::reset_cursor_shape();
     }
-    state
-        .match_state
-        .input
-        .cursor_visibility
-        .apply_input_lock(locked, was_locked);
-    state.match_state.input.clear_command_latches();
+    lock_input(&mut state.match_state.input, locked, was_locked);
     crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
 }
 
-#[cfg(test)]
+/// The input half of a lock. Lock_User_Input 0x00684240 (and the pause's
+/// inline copy at 0x00684060) cancels the drag through
+/// ScrollClass::CancelMouseDrag 0x006938C0; armed placement, cursor and super
+/// modes stay.
+fn lock_input(
+    input: &mut crate::app::input::state::MatchInputState,
+    locked: bool,
+    was_locked: bool,
+) {
+    if locked {
+        input.cancel_tactical_drag();
+    }
+    input.cursor_visibility.apply_input_lock(locked, was_locked);
+    input.clear_command_latches();
+}
+
+#[cfg(all(test, tests_app_input_a_c))]
 mod tests {
     use crate::app::input::cursor::CursorVisibility;
     use crate::app::input::state::MatchInputState;
@@ -59,7 +76,7 @@ mod tests {
     use winit::keyboard::KeyCode;
 
     #[test]
-    fn lock_cleanup_cancels_gestures_and_targets_without_clearing_selection_or_held_keys() {
+    fn lock_cleanup_cancels_gestures_but_keeps_armed_modes_selection_and_held_keys() {
         let mut interner = crate::sim::intern::StringInterner::new();
         let owner = interner.intern("FixtureHouse");
         for building in [true, false] {
@@ -105,11 +122,10 @@ mod tests {
                 .press(KeyCode::KeyT, std::time::Instant::now(), false);
             input.queued_order_mode = OrderMode::AttackMove;
 
-            input.cancel_tactical_gesture_and_targeting();
-            input.clear_command_latches();
+            super::lock_input(&mut input, true, false);
 
-            assert!(input.targeting_mode.is_none());
-            assert!(input.building_placement_preview.is_none());
+            assert!(input.targeting_mode.is_some());
+            assert!(input.building_placement_preview.is_some());
             assert!(!input.minimap_press_active());
             assert!(!input.selection_state.is_dragging());
             assert!(!input.tactical_mouse.captured);
@@ -120,7 +136,8 @@ mod tests {
             assert_eq!((input.camera_x, input.camera_y), (30.0, 60.0));
             assert!(input.keys_held.contains(&KeyCode::ArrowLeft));
             assert!(input.keys_held.contains(&KeyCode::KeyT));
-            assert!(!input.type_select.held());
+            // TypeSelect's latch 0x00B0FE65 survives the lock.
+            assert!(input.type_select.held());
             assert_eq!(input.queued_order_mode, OrderMode::Move);
         }
     }
@@ -242,5 +259,31 @@ mod tests {
         cursor.leave_menus(true);
         cursor.apply_input_lock(false, true);
         assert!(cursor.is_visible());
+    }
+
+    /// TAction 46 (`0x006DED8B..0x006DEDD7`) drops the current placement and the cursor
+    /// modes, but never the super pointer +0x11B8.
+    #[test]
+    fn taction_46_drops_placement_and_cursor_modes_but_keeps_the_super_pointer() {
+        let mut interner = crate::sim::intern::StringInterner::new();
+        let owner = interner.intern("FixtureHouse");
+        for building in [true, false] {
+            let mut input = MatchInputState::new(
+                crate::app::input::hotkeys::HotkeyBindings::from_ini_bytes(None),
+            );
+            if building {
+                assert!(input.begin_building_placement("FixtureBuilding", 23, owner));
+            } else {
+                input.targeting_mode = Some(TargetingMode::SuperWeapon("FixtureSuper".to_owned()));
+            }
+            let mut gadgets = crate::ui::sidebar::gadget_flash::SidebarGadgetState::new();
+            gadgets.repair_mode_on = true;
+            gadgets.place_beacon_mode_on = true;
+
+            super::cancel_placement_modes(&mut input, &mut gadgets);
+
+            assert_eq!(input.targeting_mode.is_some(), !building);
+            assert!(!gadgets.repair_mode_on && !gadgets.place_beacon_mode_on);
+        }
     }
 }

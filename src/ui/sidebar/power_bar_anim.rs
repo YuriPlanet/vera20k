@@ -140,9 +140,11 @@ impl PowerBarAnimState {
             self.compute_targets(self.cached_output, self.cached_drain, theoretical_total());
     }
 
-    /// One ordinary visible Sidebar AI visit (`63FEA0..640385`). The caller
-    /// supplies its wall clock even when no simulation frame was admitted.
-    /// The rated-list read runs only after the native unchanged/idle return.
+    /// One Sidebar Action visit (`63FEA0..640385`, called at `6A7B0A`);
+    /// the caller runs as many as the pass holds
+    /// ([`crate::app::presentation::sidebar_gadgets::sidebar_action_visits`]),
+    /// with its wall clock. The rated-list read runs only after the native
+    /// unchanged/idle return.
     pub fn update(
         &mut self,
         output: i32,
@@ -301,7 +303,7 @@ impl PowerBarAnimState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod native_draw_tests {
     use super::*;
     use serde::Deserialize;
@@ -348,7 +350,7 @@ mod native_draw_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod native_state_tests {
     use super::*;
     use serde::Deserialize;
@@ -586,7 +588,7 @@ mod native_state_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod strip_resize_tests {
     use super::*;
 

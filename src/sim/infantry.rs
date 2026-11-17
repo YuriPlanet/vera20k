@@ -308,6 +308,22 @@ impl crate::sim::world::Simulation {
         if actor.category() != crate::map::entities::EntityCategory::Infantry {
             return Ok(false);
         }
+        let ares = rules.ares_form();
+        // Ares InfantryClass_UpdatePanic1004CC80 (hook5200B3): a
+        // Deactivated infantryman only counts its fear down, even Fearless,
+        // and takes none of the stance, refill or Scatter work.
+        if ares && actor.deactivated.is_offline() {
+            if let Some(infantry) = self
+                .substrate
+                .entities
+                .get_mut(id)
+                .and_then(|actor| actor.infantry.as_mut())
+                && infantry.fear_level > 0
+            {
+                infantry.fear_level -= 1;
+            }
+            return Ok(false);
+        }
         let infantry = actor
             .infantry
             .as_ref()
@@ -333,30 +349,30 @@ impl crate::sim::world::Simulation {
             // armed actor. Copy the current type's signed Ammo; no reload
             // timer, RNG draw or detach belongs to this arm. Installed Ares
             // InfantryClass_UpdatePanic_DontReload (5200D7) resumes at 52010B.
-            #[cfg(not(feature = "ares"))]
-            let refill = self.substrate.entities.get(id).and_then(|actor| {
-                if actor.infantry.as_ref()?.fear_level != 0 || actor.ammo()?.current() != 0 {
-                    return None;
+            if !ares {
+                let refill = self.substrate.entities.get(id).and_then(|actor| {
+                    if actor.infantry.as_ref()?.fear_level != 0 || actor.ammo()?.current() != 0 {
+                        return None;
+                    }
+                    let object = self.object_type(actor.type_ref(), rules)?;
+                    crate::sim::combat::combat_weapon::is_armed(
+                        actor,
+                        object,
+                        &self.substrate.entities,
+                        rules,
+                        &self.interner,
+                    )
+                    .then_some(object.ammo)
+                });
+                if let Some(type_ammo) = refill {
+                    self.substrate
+                        .entities
+                        .get_mut(id)
+                        .expect("retained fear receiver")
+                        .ammo_mut()
+                        .expect("empty Techno ammo was read above")
+                        .refill_empty_from_type(type_ammo);
                 }
-                let object = self.object_type(actor.type_ref(), rules)?;
-                crate::sim::combat::combat_weapon::is_armed(
-                    actor,
-                    object,
-                    &self.substrate.entities,
-                    rules,
-                    &self.interner,
-                )
-                .then_some(object.ammo)
-            });
-            #[cfg(not(feature = "ares"))]
-            if let Some(type_ammo) = refill {
-                self.substrate
-                    .entities
-                    .get_mut(id)
-                    .expect("retained fear receiver")
-                    .ammo_mut()
-                    .expect("empty Techno ammo was read above")
-                    .refill_empty_from_type(type_ammo);
             }
             let actor = self
                 .substrate
@@ -390,7 +406,24 @@ impl crate::sim::world::Simulation {
                         && (actor.navigation.nav_com().is_some()
                             || crate::sim::movement::motion_query::is_moving(actor)
                                 .ok_or("Infantry fear requires active IsMoving state")?);
-                    if !under_way && !fraidycat {
+                    // Ares 3.0 InfantryClass_UpdatePanic_ProneWater 100256F0
+                    // (hook 0x005201CC): no prone Down on a Beach or Water
+                    // cell (GetCell's LandType); the tail at 0x005201DC runs.
+                    let wet = if ares {
+                        use crate::rules::terrain_rules::LandType;
+                        self.resolved_terrain
+                            .as_ref()
+                            .and_then(|terrain| {
+                                terrain.cell(actor.position.rx(), actor.position.ry())
+                            })
+                            .is_some_and(|cell| {
+                                cell.land_type == LandType::Beach.as_index()
+                                    || cell.land_type == LandType::Water.as_index()
+                            })
+                    } else {
+                        false
+                    };
+                    if !under_way && !fraidycat && !wet {
                         //5201CE..1D6: Crawls and accepted/refused prone/clock
                         // writes belong solely to Infantry51D6F0.
                         let _accepted = self.infantry_do_action(id, 5, false, rules, effects)?;
@@ -535,6 +568,7 @@ enum IdleTurn {
 
 /// Single Infantry51CDB0 decision body. The world receiver applies its class
 /// action immediately, before a mission caller can spend its cadence draw.
+/// `ares` is the game's `RuleSet::ares_form`.
 fn select_idle_action(
     entity: &mut GameEntity,
     object: &ObjectType,
@@ -542,6 +576,7 @@ fn select_idle_action(
     frequency: f64,
     rng: &mut crate::sim::rng::SimRng,
     frame: u32,
+    ares: bool,
 ) -> Result<IdleTurn, String> {
     use crate::sim::movement::infantry_action::{DO_IDLE1, DO_IDLE2};
     if !idle_action_ready(entity, frame)? {
@@ -560,8 +595,20 @@ fn select_idle_action(
     if object.fraidycat && !controlled_by_human && infantry.fear_level > IDLE_PANIC_FEAR {
         return Ok(IdleTurn::NullSourceScatter);
     }
-    let biased_type = object.id.eq_ignore_ascii_case(IDLE_BIASED_TYPE);
     let mut roll = rng.next_range_u32_inclusive(0, IDLE_ROLL_MAX);
+    // Ares 3.0 InfantryClass_Idle (10049740, hook 0x51CE9A) tests `IsCow`
+    // in place of the ID, and under EMP takes no bias and leaves the roll
+    // register (EDI) holding the frame it loaded at 0x0051CE10.
+    let biased_type = if ares {
+        if entity.emp_remaining() > 0 {
+            roll = frame;
+            false
+        } else {
+            object.techno_combat().roles().is_cow()
+        }
+    } else {
+        object.id.eq_ignore_ascii_case(IDLE_BIASED_TYPE)
+    };
     if biased_type && rng.next_range_u32_inclusive(0, IDLE_ROLL_MAX) < IDLE_BIAS_THRESHOLD {
         roll = 8;
     }
@@ -616,6 +663,7 @@ impl crate::sim::world::Simulation {
             rules.general.idle_action_frequency,
             &mut self.scenario_rng,
             self.session.binary_frame(),
+            rules.ares_form(),
         )?;
         match turn {
             IdleTurn::Refused => return Ok(false),
@@ -721,6 +769,7 @@ pub(crate) fn tick_idle_actions(
             rules.general.idle_action_frequency,
             rng,
             frame,
+            rules.ares_form(),
         )
         .expect("native idle fixture requires represented Infantry state")
         {
@@ -760,11 +809,11 @@ pub fn apply_prone_speed(speed: SimFixed, crawls: bool, multiplier: Option<f64>)
     SimFixed::from_num(adjusted)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "infantry_damage_fear_tests.rs"]
 mod damage_fear_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;
@@ -936,9 +985,6 @@ mod tests {
             input["crawls"].as_bool().unwrap_or(true),
             "supplied native Crawls input: {}",
             input["name"]
-        );
-        rules.bind_animation_sequences(
-            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
         );
         let mut sim = Simulation::with_seed(31);
         sim.session.set_binary_frame_for_test(100);
@@ -1119,6 +1165,31 @@ mod tests {
         assert_eq!(compared, 42);
     }
 
+    /// Ares 100256F0 (hook 0x5201CC): the native `down_threshold51` control
+    /// goes prone on clear ground, but not standing on a Beach cell.
+    #[test]
+    fn ares_panicking_infantry_does_not_go_prone_on_a_beach() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        use crate::rules::terrain_rules::LandType;
+        let native = fear_corpus();
+        let row = native["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["input"]["name"] == "down_threshold51")
+            .unwrap();
+        for (land, prone) in [(LandType::Clear, true), (LandType::Beach, false)] {
+            let (mut sim, rules) = fear_fixture(row);
+            let mut terrain = crate::map::resolved_terrain::test_retail_clear_grid(4, 4);
+            terrain.cell_mut_for_test(0, 0).unwrap().land_type = land.as_index();
+            sim.install_resolved_terrain_for_new_map(terrain);
+            sim.infantry_fear_turn(1, &rules, None, crate::sim::world::FrameEffects::default())
+                .unwrap();
+            let infantry = sim.entities().get(1).unwrap().infantry.as_ref().unwrap();
+            assert_eq!(infantry.is_prone, prone, "{land:?}");
+        }
+    }
+
     #[test]
     fn native_fear_down_uses_actual_walk_motion_not_movement_order() {
         let native = fear_corpus();
@@ -1260,12 +1331,8 @@ mod tests {
         assert_eq!(e.infantry.unwrap().fear_level, 0);
     }
 
-    fn idle_corpus() -> serde_json::Value {
-        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/spatial_oracle/anytown_damage/foot_missions.json",
-        ))
-        .unwrap();
-        native
+    fn idle_corpus() -> &'static serde_json::Value {
+        crate::test_fixture::json("tools/spatial_oracle/anytown_damage/foot_missions.json")
     }
 
     fn native_rng_state(rng: &crate::sim::rng::SimRng) -> serde_json::Value {
@@ -1286,9 +1353,6 @@ mod tests {
         let mut rules =
             RuleSet::from_processed_rules(&layers.process_with_fixed_art(&art).unwrap()).unwrap();
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-        rules.bind_animation_sequences(
-            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-        );
         Some(rules)
     }
 

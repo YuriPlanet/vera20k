@@ -11,43 +11,43 @@ use crate::sim::mission::{MISSION_STUB_FRAMES, MissionId, MissionType};
 use crate::sim::world::FrameEffects;
 use crate::util::direction::DIRECTION_DELTAS;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "foot_mission_oracle_tests.rs"]
 pub(in crate::sim::world::techno_ai) mod foot_mission_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "deployed_guard_oracle_tests.rs"]
 mod deployed_guard_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "automatic_deploy_oracle_tests.rs"]
 mod automatic_deploy_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "infantry_move_oracle_tests.rs"]
 mod infantry_move_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "../infantry_fire_oracle_tests.rs"]
 mod infantry_fire_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "hover_attack_tests.rs"]
 mod hover_attack_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "guard_sabotage_tests.rs"]
 mod guard_sabotage_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "hunt_idle_tests.rs"]
 mod hunt_idle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "campaign_hunt_oracle_tests.rs"]
 mod campaign_hunt_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "area_guard_post_tests.rs"]
 mod area_guard_post_tests;
 
@@ -84,15 +84,15 @@ pub(crate) fn dispatch_foot_mission(
     id: u64,
     rules: &RuleSet,
     ctx: super::ObjectAiCtx<'_>,
-) -> bool {
+) -> Result<bool, crate::rules::overlay_types::TiberiumImageError> {
     let mut bridge_changed = false;
     let now = sim.session.binary_frame();
     if !foot_mission_handler_due(sim, id, now) {
-        return bridge_changed;
+        return Ok(bridge_changed);
     }
     let input = {
         let Some(entity) = sim.substrate.entities.get(id) else {
-            return bridge_changed;
+            return Ok(bridge_changed);
         };
         let category = entity.category();
         let mission = entity.mission.current().known();
@@ -135,7 +135,9 @@ pub(crate) fn dispatch_foot_mission(
                     .try_resolve(entity.type_ref())
                     .and_then(|name| rules.object(name))
                     .is_some_and(|obj| {
-                        obj.deploy_fire && !obj.immune_to_radiation && obj.undeploy_delay < 0
+                        obj.deploy_fire
+                            && !deploy_shim_desolator(obj, rules.ares())
+                            && obj.undeploy_delay < 0
                     }),
         }
     };
@@ -167,8 +169,9 @@ pub(crate) fn dispatch_foot_mission(
                 ctx.overlay_registry,
                 id,
                 ctx.effects,
-            ) else {
-                return bridge_changed;
+            )?
+            else {
+                return Ok(bridge_changed);
             };
             MissionHandlerEvaluation::cadence(delay)
         }
@@ -217,7 +220,13 @@ pub(crate) fn dispatch_foot_mission(
                     .substrate
                     .entities
                     .get(id)
-                    .and_then(|actor| sim.object_type(actor.type_ref(), rules))
+                    .and_then(|actor| {
+                        sim.interner.object_type_in_category(
+                            actor.type_ref(),
+                            crate::rules::object_type::ObjectCategory::Infantry,
+                            rules,
+                        )
+                    })
                     .is_some_and(|object| object.undeploy_delay < 0) =>
         {
             let _ = sim.infantry_do_action(
@@ -231,8 +240,19 @@ pub(crate) fn dispatch_foot_mission(
                 .substrate
                 .entities
                 .get(id)
-                .and_then(|actor| sim.object_type(actor.type_ref(), rules))
-                .and_then(|object| rules.animation_sequence(&object.id))
+                .and_then(|actor| {
+                    sim.interner.object_type_in_category(
+                        actor.type_ref(),
+                        crate::rules::object_type::ObjectCategory::Infantry,
+                        rules,
+                    )
+                })
+                .and_then(|object| {
+                    rules.animation_sequence_in_category(
+                        crate::rules::object_type::ObjectCategory::Infantry,
+                        &object.id,
+                    )
+                })
                 .and_then(|set| set.infantry_action(31))
                 .map_or(0, |record| record.frames_per_facing);
             MissionHandlerEvaluation::cadence(count)
@@ -443,9 +463,16 @@ pub(crate) fn dispatch_foot_mission(
                 .substrate
                 .entities
                 .get(id)
-                .and_then(|actor| sim.object_type(actor.type_ref(), rules))
+                .and_then(|actor| {
+                    sim.interner.object_type_in_category(
+                        actor.type_ref(),
+                        crate::rules::object_type::ObjectCategory::Infantry,
+                        rules,
+                    )
+                })
                 .is_some_and(|object| {
-                    object.undeploy_delay >= 0 || (object.deploy_fire && object.immune_to_radiation)
+                    object.undeploy_delay >= 0
+                        || (object.deploy_fire && deploy_shim_desolator(object, rules.ares()))
                 }) =>
         {
             infantry_guard_handled = true;
@@ -453,13 +480,22 @@ pub(crate) fn dispatch_foot_mission(
                 .substrate
                 .entities
                 .get(id)
-                .and_then(|actor| sim.object_type(actor.type_ref(), rules))
+                .and_then(|actor| {
+                    sim.interner.object_type_in_category(
+                        actor.type_ref(),
+                        crate::rules::object_type::ObjectCategory::Infantry,
+                        rules,
+                    )
+                })
                 .expect("deployed shim type resolved");
             if object.undeploy_delay >= 0 {
                 //521355..52137D: unforced Undeploy31, then raw Count31.
                 let _ = sim.infantry_do_action(id, 31, false, rules, ctx.effects);
                 let count = rules
-                    .animation_sequence(&object.id)
+                    .animation_sequence_in_category(
+                        crate::rules::object_type::ObjectCategory::Infantry,
+                        &object.id,
+                    )
                     .and_then(|set| set.infantry_action(31))
                     .map_or(0, |record| record.frames_per_facing);
                 MissionHandlerEvaluation::cadence(count)
@@ -467,7 +503,7 @@ pub(crate) fn dispatch_foot_mission(
                 //52139A..5213EE: native GetCell/MapCell, Cell's site and
                 // fixed GetWeapon1. This lookup never substitutes the deck.
                 let Some(at) = sim.own_map_cell(id) else {
-                    return bridge_changed;
+                    return Ok(bridge_changed);
                 };
                 let target = crate::sim::combat::TargetKind::Cell(at.0, at.1);
                 let actor = sim.substrate.entities.get(id).expect("deployed shim actor");
@@ -479,7 +515,7 @@ pub(crate) fn dispatch_foot_mission(
                     &sim.substrate.entities,
                     &sim.interner,
                 ) else {
-                    return bridge_changed;
+                    return Ok(bridge_changed);
                 };
                 let below = sim.radiation.site_at(at).is_none_or(|site| {
                     crate::sim::radiation::RadiationState::current_site_level(site)
@@ -539,7 +575,10 @@ pub(crate) fn dispatch_foot_mission(
                 if fired {
                     let _ = sim.infantry_do_action(id, 29, false, rules, ctx.effects);
                     let count = rules
-                        .animation_sequence(&object.id)
+                        .animation_sequence_in_category(
+                            crate::rules::object_type::ObjectCategory::Infantry,
+                            &object.id,
+                        )
                         .and_then(|set| set.infantry_action(29))
                         .map_or(0, |record| record.frames_per_facing);
                     MissionHandlerEvaluation::cadence(count)
@@ -578,7 +617,7 @@ pub(crate) fn dispatch_foot_mission(
         // effects synchronously; its signed return reaches this epilogue.
         (EntityCategory::Infantry, Some(MissionType::Unload)) => {
             let Ok(delay) = sim.infantry_mission_unload(id, rules, ctx.effects) else {
-                return bridge_changed;
+                return Ok(bridge_changed);
             };
             MissionHandlerEvaluation::cadence(delay)
         }
@@ -637,7 +676,7 @@ pub(crate) fn dispatch_foot_mission(
             }) =>
         {
             let Ok(delay) = sim.unit_simple_mission_unload(id, rules, ctx.effects) else {
-                return bridge_changed;
+                return Ok(bridge_changed);
             };
             MissionHandlerEvaluation::cadence(delay)
         }
@@ -665,9 +704,13 @@ pub(crate) fn dispatch_foot_mission(
             // Miner's kick (`0x00740815..0x0074084F`, `sim::slave_manager`),
             // then the harvester arms and the Construction Yard maker's Unload
             // arm, in that order.
-            if let Some(delay) =
-                sim.slave_master_mission_kick(id, mission, rules, ctx.overlay_registry, ctx.effects)
-            {
+            if let Some(delay) = sim.slave_master_mission_kick(
+                id,
+                mission,
+                rules,
+                ctx.overlay_registry,
+                ctx.effects,
+            )? {
                 MissionHandlerEvaluation::cadence(delay)
             } else if harvester_guard_override_requeues_harvest(sim, id, rules) {
                 // `Queue_Mission(10, 0); return 1` at `0x0074092C` /
@@ -690,7 +733,7 @@ pub(crate) fn dispatch_foot_mission(
         // `InfantryClass::Mission_Harvest @ 0x00522E70` (Infantry `vt+0x224`),
         // the slave's dig (`sim::slave_manager`).
         (EntityCategory::Infantry, Some(MissionType::Harvest)) => {
-            match sim.infantry_mission_harvest(id, rules, ctx.overlay_registry, ctx.effects) {
+            match sim.infantry_mission_harvest(id, rules, ctx.overlay_registry, ctx.effects)? {
                 (delay, true) => MissionHandlerEvaluation::queue(delay, MissionType::Guard),
                 (delay, false) => MissionHandlerEvaluation::cadence(delay),
             }
@@ -727,7 +770,7 @@ pub(crate) fn dispatch_foot_mission(
                 rules,
                 ctx.overlay_registry,
                 ctx.effects,
-            ) {
+            )? {
                 Some(delay) => MissionHandlerEvaluation::cadence(delay),
                 None => evaluate_foot_area_guard(sim, id, rules, ctx),
             }
@@ -827,7 +870,7 @@ pub(crate) fn dispatch_foot_mission(
         // original never writes.
         (category, mission) => match base_mission_handler_delay(category, mission) {
             Some(delay) => MissionHandlerEvaluation::cadence(delay),
-            None => return bridge_changed,
+            None => return Ok(bridge_changed),
         },
     };
 
@@ -865,7 +908,7 @@ pub(crate) fn dispatch_foot_mission(
             .mission
             .write_dispatch_epilogue(now as i32, evaluation.delay);
     }
-    bridge_changed
+    Ok(bridge_changed)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -938,6 +981,17 @@ impl MissionHandlerEvaluation {
     }
 }
 
+/// The deploy shim521320's desolator test, `ImmuneToRadiation=` (`+0xD37`)
+/// at `0x0052138C` and `0x005215F9`; Ares 3.0 tests `IsDesolator` there
+/// instead (Ares.dll 100497F0 and 100497C0) while Ares plays (`ares`).
+fn deploy_shim_desolator(object: &crate::rules::object_type::ObjectType, ares: bool) -> bool {
+    if ares {
+        object.techno_combat().roles().is_desolator()
+    } else {
+        object.immune_to_radiation
+    }
+}
+
 /// Undeployed half of Infantry Guard521320, original5214F7..5216B6.
 /// The shared class callers treat only signed-1 as the Foot fallback. Native
 /// executions and stop-before-latch observations: infantry_auto_deploy.json.
@@ -954,7 +1008,11 @@ fn infantry_automatic_guard_delay(
     let Some(house) = sim.houses.get(&actor.owner()) else {
         return -1;
     };
-    let Some(object) = sim.object_type(actor.type_ref(), rules) else {
+    let Some(object) = sim.interner.object_type_in_category(
+        actor.type_ref(),
+        crate::rules::object_type::ObjectCategory::Infantry,
+        rules,
+    ) else {
         return -1;
     };
     if house.is_controlled_by_human(sim.session.game_mode_nonzero())
@@ -994,7 +1052,7 @@ fn infantry_automatic_guard_delay(
             return -1;
         }
     }
-    if object.immune_to_radiation {
+    if deploy_shim_desolator(object, rules.ares()) {
         return -1;
     }
     let Some(moving) = crate::sim::movement::motion_query::is_moving(actor) else {
@@ -1004,7 +1062,10 @@ fn infantry_automatic_guard_delay(
         //521631..521659 returns raw signed Count27 even when DoAction refuses.
         let _ = sim.infantry_do_action(id, 27, false, rules, effects);
         return rules
-            .animation_sequence(&object.id)
+            .animation_sequence_in_category(
+                crate::rules::object_type::ObjectCategory::Infantry,
+                &object.id,
+            )
             .and_then(|set| set.infantry_action(27))
             .map_or(0, |record| record.frames_per_facing);
     }
@@ -1343,7 +1404,8 @@ pub(crate) fn foot_enter_idle_mode_selection(
 ///    movement-zone gate ON (`0x006F8EC4` computes the hunter's zone id and
 ///    `0x006F9D69` hands it to `Evaluate_Candidate`, which rejects any
 ///    candidate outside it at `0x006F7E9C`), so the hunter reaches the far side
-///    of the map but not the far side of a river.
+///    of the map but not the far side of a river, unless Phobos plays and its
+///    type's `TargetZoneScanType` lets it (`combat::greatest_threat::zone_admits`).
 /// 3. **The infantry arms**, taken only by an infantryman (`What_Am_I` 0xF,
 ///    `0x004D53A0..0x004D53B4`) whose scan came back with a target: the
 ///    engineer's, the C4 one, the VehicleThief's and the no-flag arm are
@@ -2842,7 +2904,13 @@ fn infantry_deployed_attack_reacquire(
             .substrate
             .entities
             .get(id)
-            .and_then(|actor| sim.object_type(actor.type_ref(), rules))
+            .and_then(|actor| {
+                sim.interner.object_type_in_category(
+                    actor.type_ref(),
+                    crate::rules::object_type::ObjectCategory::Infantry,
+                    rules,
+                )
+            })
             .is_some_and(|object| object.jumpjet)
     {
         return None;
@@ -2869,7 +2937,7 @@ fn attack_target_is_stale(sim: &Simulation, id: u64) -> bool {
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 mod guard_rearm_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -3008,7 +3076,7 @@ mod guard_rearm_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 mod terrain_target_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

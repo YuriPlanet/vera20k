@@ -77,26 +77,58 @@ impl ActorMotionObservation {
         sim: &crate::sim::world::Simulation,
         entity: &crate::sim::game_entity::GameEntity,
     ) -> Self {
-        use crate::sim::movement::track_process::TrackFamily;
-        let drive = entity.locomotor.as_ref().filter(|loco| {
-            loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Drive
-        });
-        let bits = entity.foot_speed.native_applied_fraction().bits();
-        Self {
-            actor_type: sim.interner().resolve(entity.type_ref()).to_owned(),
-            locomotor: entity
+        Self::of_parts(
+            sim.interner().resolve(entity.type_ref()),
+            entity
                 .locomotor
                 .as_ref()
-                .map(|loco| format!("{:?}", loco.active_kind())),
-            applied_fraction: f64::from_bits(bits),
-            applied_fraction_bits: bits,
-            moving: crate::sim::movement::motion_query::is_moving(entity),
-            drive_destination: drive.and_then(|loco| loco.track_destination(TrackFamily::Drive)),
-            drive_head: drive.and_then(|loco| loco.track_head(TrackFamily::Drive)),
-            mission: (
+                .map(|locomotor| {
+                    crate::app::presentation::frame::LocomotorView::of(locomotor, || None)
+                })
+                .as_ref(),
+            entity.foot_speed.native_applied_fraction().bits(),
+            crate::sim::movement::motion_query::is_moving(entity),
+            (
                 entity.mission.current().raw(),
                 entity.mission.queued().raw(),
             ),
+        )
+    }
+
+    /// [`Self::read`] of an object's presentation record.
+    pub(crate) fn of_record(
+        sim: &crate::sim::world::Simulation,
+        entity: &crate::app::presentation::frame::ObjectRecord,
+    ) -> Self {
+        Self::of_parts(
+            sim.interner().resolve(entity.type_ref()),
+            entity.locomotor.as_ref(),
+            entity.applied_fraction.bits(),
+            entity.place.moving,
+            (
+                entity.mission.current().raw(),
+                entity.mission.queued().raw(),
+            ),
+        )
+    }
+
+    fn of_parts(
+        actor_type: &str,
+        locomotor: Option<&crate::app::presentation::frame::LocomotorView>,
+        bits: u64,
+        moving: Option<bool>,
+        mission: (i32, i32),
+    ) -> Self {
+        let drive = locomotor.and_then(|loco| loco.drive_track());
+        Self {
+            actor_type: actor_type.to_owned(),
+            locomotor: locomotor.map(|loco| format!("{:?}", loco.active_kind())),
+            applied_fraction: f64::from_bits(bits),
+            applied_fraction_bits: bits,
+            moving,
+            drive_destination: drive.and_then(|[destination, _]| destination),
+            drive_head: drive.and_then(|[_, head]| head),
+            mission,
         }
     }
 }
@@ -128,7 +160,6 @@ pub(crate) struct ActorPresentation {
     pub screen: [f32; 2],
     pub body: u16,
     pub motion: ActorMotionObservation,
-    pub sampled_from_frame: u32,
     pub gpu_done: GpuCompletion,
 }
 impl ActorPresentation {
@@ -141,7 +172,7 @@ impl ActorPresentation {
 }
 struct ActorPresentationProbe {
     actor: u64,
-    pending: Option<(u32, [f32; 2], u16, ActorMotionObservation, u32)>,
+    pending: Option<(u32, [f32; 2], u16, ActorMotionObservation)>,
     submitted: Option<ActorPresentation>,
 }
 pub(crate) struct CommandTimingObservation {
@@ -237,11 +268,10 @@ impl MatchDiagnosticsState {
     pub(crate) fn record_actor_draw(
         &self,
         sim: &crate::sim::world::Simulation,
-        entity: &crate::sim::game_entity::GameEntity,
+        entity: &crate::app::presentation::frame::ObjectRecord,
         frame: u32,
         screen: [f32; 2],
         body: u16,
-        interpolation: &crate::app::presentation::interpolation::RenderInterpolation,
     ) {
         if let Some(probe) = self.actor_presentation.borrow_mut().as_mut()
             && probe.actor == entity.stable_id()
@@ -250,8 +280,7 @@ impl MatchDiagnosticsState {
                 frame,
                 screen,
                 body,
-                ActorMotionObservation::read(sim, entity),
-                interpolation.sampled_from_frame(entity, frame),
+                ActorMotionObservation::of_record(sim, entity),
             ));
         }
     }
@@ -261,17 +290,14 @@ impl MatchDiagnosticsState {
                 probe
                     .pending
                     .take()
-                    .map(
-                        |(frame, screen, body, motion, sampled_from_frame)| ActorPresentation {
-                            at: ObservationTime::now(),
-                            frame,
-                            screen,
-                            body,
-                            motion,
-                            sampled_from_frame,
-                            gpu_done: Default::default(),
-                        },
-                    );
+                    .map(|(frame, screen, body, motion)| ActorPresentation {
+                        at: ObservationTime::now(),
+                        frame,
+                        screen,
+                        body,
+                        motion,
+                        gpu_done: Default::default(),
+                    });
             return probe.submitted.as_ref().map(|frame| frame.gpu_done.clone());
         }
         None
@@ -328,20 +354,25 @@ impl MatchDiagnosticsState {
 
     pub(crate) fn playback_status(&self) -> Option<String> {
         Some(match self.replay_playback.as_ref()? {
-            ReplayPlaybackState::Loading(_) => "Loading replay".to_owned(),
-            ReplayPlaybackState::Failed(error) => format!("Replay failed: {error} — Esc to exit"),
+            ReplayPlaybackState::Loading(_) => crate::i18n::tr("VERA:LoadingReplay"),
+            ReplayPlaybackState::Failed(error) => {
+                crate::i18n::tr_fill("VERA:ReplayFailed", &[("error", error)])
+            }
             ReplayPlaybackState::Playing(playback) => match playback.failure() {
-                Some(error) => format!("Replay failed: {error} — Esc to exit"),
-                None if playback.is_finished() => {
-                    "Replay ended — camera controls available; Esc to exit".to_owned()
-                }
-                None => "Replay — camera controls available; Esc to exit".to_owned(),
+                Some(error) => crate::i18n::tr_fill("VERA:ReplayFailed", &[("error", &error)]),
+                None if playback.is_finished() => crate::i18n::tr("VERA:ReplayEnded"),
+                None => crate::i18n::tr("VERA:ReplayPlaying"),
             },
         })
     }
 
     /// Disjoint borrows keep the recorder/observation owner beside playback;
     /// no caller moves the cursor out or temporarily disables the input gate.
+    /// Whether a command execution log observes each applied command.
+    pub(crate) fn observes_commands(&self) -> bool {
+        self.command_executions.is_some()
+    }
+
     pub(crate) fn playback_and_observations_mut(
         &mut self,
     ) -> (
@@ -547,7 +578,7 @@ impl MatchDiagnosticsState {
                 log.header.version = crate::sim::replay::REPLAY_VERSION;
                 log.startup = Some(Box::new(startup));
             }
-            Err(error) => log::debug!("Standalone replay startup unavailable: {error}"),
+            Err(error) => log::warn!("This match's replay cannot be replayed: {error:#}"),
         }
     }
 
@@ -742,7 +773,7 @@ fn reserve_segment_path(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::{MatchDiagnosticsState, prune_old_segments};
     use crate::sim::replay::{ReplayHeader, ReplayLog};

@@ -37,9 +37,9 @@ fn scene_rules(sounds: &str) -> (NativeRulesProcessOwner, RuleSet) {
     (owner, rules)
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn promotion_sound_overrides_retain_layers_silence_save_and_bound_catalog_identity() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (owner, rules) = scene_rules(SOUNDS);
     let hero = rules.object("HERO").unwrap();
     assert_eq!(
@@ -124,7 +124,7 @@ fn promotion_sound_ai_selects_overrides_silence_and_stock_fallback() {
         } else {
             "GlobalVeteran"
         };
-        let expected = if cfg!(feature = "ares") {
+        let expected = if rules.ares() {
             vec![
                 Some(if elite { "HeroElite" } else { "HeroVeteran" }.to_owned()),
                 if elite { Some(global.to_owned()) } else { None },
@@ -142,4 +142,43 @@ fn promotion_sound_ai_selects_overrides_silence_and_stock_fallback() {
             "same rank never repeats its cue"
         );
     }
+}
+
+/// The EVA voice says only "Unit promoted". The promoted object's own interned
+/// type is already on the entity at the emit point, so the accessibility row
+/// can name it without a second lookup, a coordinate guess, or a translation.
+#[test]
+fn promotion_event_carries_the_promoted_objects_type() {
+    let (_, rules) = scene_rules(SOUNDS);
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
+    let ids: Vec<_> = [("HERO", 10), ("SILENT", 12), ("DEFAULT", 14)]
+        .into_iter()
+        .map(|(name, x)| {
+            sim.spawn_object(name, "Americans", x, 10, 0, &rules)
+                .unwrap()
+        })
+        .collect();
+    sim.object_ai_stage(Some(&rules)); // first sampling caches silently
+    let _ = sim.take_sound_events_for_test();
+    for id in &ids {
+        sim.substrate
+            .entities
+            .get_mut(*id)
+            .unwrap()
+            .veterancy
+            .set_veteran();
+    }
+    sim.object_ai_stage(Some(&rules));
+    let mut types: Vec<_> = sim
+        .take_sound_events_for_test()
+        .iter()
+        .filter_map(|event| match event {
+            SimSoundEvent::UnitPromoted { type_id, .. } => {
+                Some(sim.interner.resolve(*type_id).to_owned())
+            }
+            _ => None,
+        })
+        .collect();
+    types.sort();
+    assert_eq!(types, ["DEFAULT", "HERO", "SILENT"]);
 }

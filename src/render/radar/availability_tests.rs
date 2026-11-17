@@ -78,7 +78,7 @@ fn retail_local_defeat_delivers_radar_off_then_on_in_one_house_frame() {
             })
             .collect();
         let boundary = RadarBoundary {
-            radar: RefCell::new(RadarPresentation::new(vec![vec![0; 4]; 33], 1, 1).unwrap()),
+            radar: RefCell::new(RadarPresentation::new(&vec![vec![0; 4]; 33], 1, 1).unwrap()),
             cues: RefCell::new(Vec::new()),
         };
         frame(&mut sim, &rules, &boundary);

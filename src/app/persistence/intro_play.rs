@@ -56,7 +56,7 @@ pub(crate) fn consume(settings_dir: &Path) -> bool {
     play
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

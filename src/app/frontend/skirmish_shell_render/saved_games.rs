@@ -47,9 +47,19 @@ pub(crate) fn render_saved_game_shell(
     let (prompt_key, prompt_fallback) = browser.mode.prompt_label();
     // 558F8A's hide40C condition is false in the active-game route. Both
     // resource statics use lowstylebits1: ownerdraw615A81 selects top/H_CENTER.
-    for (key, fallback, rect) in [
-        (title_key, title_fallback, layout.title),
-        (prompt_key, prompt_fallback, layout.prompt),
+    for (key, fallback, rect, align) in [
+        (
+            title_key,
+            title_fallback,
+            layout.title,
+            ShellAlign::PANEL_TITLE,
+        ),
+        (
+            prompt_key,
+            prompt_fallback,
+            layout.prompt,
+            ShellAlign::H_CENTER,
+        ),
     ] {
         push_text_draw(
             &mut texts,
@@ -57,7 +67,7 @@ pub(crate) fn render_saved_game_shell(
             &localized_label(state, key, fallback),
             rect_to_text_rect(rect),
             SHELL_LABEL_TEXT_RGB,
-            ShellAlign::H_CENTER,
+            align,
             SHELL_CONTROL_TEXT_DEPTH,
             1.0,
         );

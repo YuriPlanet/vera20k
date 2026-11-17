@@ -1,8 +1,8 @@
 /**
- * Schema mirror of `src/sim/telemetry.rs` (v30); keep both in step.
+ * Schema mirror of `src/sim/telemetry.rs` (v31); keep both in step.
  */
 
-export const SCHEMA_VERSION = 30;
+export const SCHEMA_VERSION = 32;
 
 export type EntityCategory = "Unit" | "Infantry" | "Aircraft" | "Structure";
 
@@ -319,16 +319,18 @@ export interface ReportPoint {
 export interface PathBatchStats {
   /** Registrations waiting when the latest pass started. */
   waiting: number;
-  /** Registrations it searched: after the per-pass cap, before the urgency-2 budget cut. */
+  /** Registrations it searched: after the per-pass cap, before the re-path budgets' cuts. */
   searched: number;
   /** Registrations it answered. */
   answered: number;
-  /** Registrations the cap or the urgency-2 budget left for a later pass. */
+  /** Registrations the cap, a re-path turn or a re-path budget left for a later pass. */
   left_out: number;
   /** Cells every search of the latest pass expanded. */
   steps: number;
   /** Of those, the urgency-2 re-paths' share. */
   urgency2_steps: number;
+  /** Of those, the urgency-1 re-paths' share. */
+  urgency1_steps: number;
   last_ms: number;
   mean_ms: number;
   peak_ms: number;
@@ -336,7 +338,7 @@ export interface PathBatchStats {
   samples: number;
 }
 
-/** Per-phase means of one in-game render, in milliseconds (schema v14). */
+/** Per-phase means of one in-game render, in milliseconds (schema v31). */
 export interface RenderTimingReport {
   frames: number;
   world_ms: number;
@@ -345,6 +347,10 @@ export interface RenderTimingReport {
   ui_ms: number;
   sidebar_ms: number;
   upload_ms: number;
+  lights_ms: number;
+  effects_ms: number;
+  draw_calls_ms: number;
+  handoff_ms: number;
   other_ms: number;
 }
 

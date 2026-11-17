@@ -812,8 +812,11 @@ impl ReplayStartup {
             "standalone replay requires a started frame-zero world"
         );
         anyhow::ensure!(
-            sim.path_batch_stats().is_some() && sim.target_scans_batched(),
-            "standalone replay requires the normal App's batched paths and target scans"
+            sim.path_batch_stats().is_some()
+                && sim.target_scans_batched()
+                && sim.effect_anims_presented(),
+            "standalone replay requires the normal App's batched paths, target scans and \
+             presentation effect anims"
         );
         anyhow::ensure!(
             launch.mode.class != crate::skirmish_modes::MpModeClass::Cooperative,
@@ -1291,9 +1294,12 @@ impl ReplayRunner {
         .map_err(anyhow::Error::msg)?;
         // The ordinary App handoff enables the path-search and target-scan
         // batches before recording frame zero. They change movement and
-        // acquisition timing and are hashed.
+        // acquisition timing and are hashed. Presentation anims change the
+        // unique ids later objects take.
         loaded.runtime.simulation.batch_path_searches();
         loaded.runtime.simulation.batch_target_scans();
+        loaded.runtime.simulation.present_effect_anims();
+        loaded.runtime.simulation.sleep_idle_objects_in_match();
         let mut playback = ReplayPlayback::prepare(
             &mut loaded.runtime,
             std::sync::Arc::new(replay.clone()),
@@ -1460,7 +1466,7 @@ impl ReplayRunner {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
 
@@ -1560,6 +1566,7 @@ mod tests {
         // and scan policy; the headless reconstruction must install the same.
         sim.batch_path_searches();
         sim.batch_target_scans();
+        sim.present_effect_anims();
         assert_eq!(
             sim.houses()[&sim.session().current_house().unwrap()].native_scenario_name(),
             Some("ReplayGuest")

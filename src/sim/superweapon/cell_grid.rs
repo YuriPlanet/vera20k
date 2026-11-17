@@ -106,7 +106,7 @@ pub(super) fn live_successor(
     cell.next_on_layer(layer, current)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 mod tests {
     use super::*;
 

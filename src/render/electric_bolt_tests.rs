@@ -161,6 +161,7 @@ fn visit_lines(row: &Value, index: usize) -> (Vec<SurfaceLine>, Vec<bool>, Vec<u
                 z_adjust: integer(&bolt["z_adjust"]),
                 phase: integer(&bolt["phase"]),
                 alternate_color: bolt["alternate"].as_bool().unwrap(),
+                colors: [None; 3],
             };
             let admitted = draw.lines(
                 viewport(&row["input"]),
@@ -376,6 +377,13 @@ fn production_electric_bolt_pixels_match_native_with_bounded_edge_residuals() {
                     let (lines, _, _, main) = visit_lines(row, index);
                     assert_eq!(main, visit["rng_after"]["main"].as_str().unwrap());
                     let trails = trails(row, visit);
+                    terrain.bind_surface_line_a_fixture(&gpu.device, &gpu.queue, size, |[x, y]| {
+                        match input["alpha"].as_str() {
+                            Some("mixed") => [0, 1, 63, 127, 255][((x / 9 + y / 7) % 5) as usize],
+                            Some("black") => 0,
+                            _ => 127,
+                        }
+                    });
                     terrain.begin_surface_lines();
                     let prepared_lines = terrain.prepare_surface_lines(
                         &gpu.device,
@@ -390,11 +398,6 @@ fn production_electric_bolt_pixels_match_native_with_bounded_edge_residuals() {
                         &[],
                         viewport(input),
                         |_| true,
-                        |[x, y]| match input["alpha"].as_str() {
-                            Some("mixed") => [0, 1, 63, 127, 255][((x / 9 + y / 7) % 5) as usize],
-                            Some("black") => 0,
-                            _ => 127,
-                        },
                     );
                     let mut encoder = gpu.device.create_command_encoder(&Default::default());
                     if input["z"].is_array() {
@@ -402,7 +405,7 @@ fn production_electric_bolt_pixels_match_native_with_bounded_edge_residuals() {
                     } else {
                         clear(&mut encoder, &cv, &dv, z[0], wgpu::LoadOp::Load);
                     }
-                    terrain.draw_surface_lines(&mut encoder, &cv, prepared_lines);
+                    terrain.draw_surface_lines(&mut encoder, &cv, &[prepared_lines]);
                     let reads = [
                         gpu.read(&mut encoder, &color),
                         gpu.read(&mut encoder, &depth),
@@ -454,4 +457,40 @@ fn production_electric_bolt_pixels_match_native_with_bounded_edge_residuals() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Ares EBolt_Draw_Colors (Ares.dll 100561F0) and the colour 1/2/3 hooks:
+/// a set `Bolt.ColorN` replaces only its strand's palette word, packed by
+/// PackBoltColor 100560D0. One unsplit piece draws strands 1, 2, 0.
+#[test]
+fn ares_bolt_colors_replace_their_strand_palette_words() {
+    let main: MainRng = SimRng::from_native_state_hex_for_test(
+        native()["draw_cases"][0]["visits"][0]["rng_before"]["main"]
+            .as_str()
+            .unwrap(),
+    )
+    .into();
+    let mut lines = Vec::new();
+    let draw = ElectricBoltDraw {
+        from: ProjectileCoord::new(1280, 1280, 0),
+        to: ProjectileCoord::new(1320, 1280, 0),
+        z_adjust: 0,
+        phase: 0,
+        alternate_color: false,
+        colors: [Some([255, 0, 0]), None, Some([0, 0, 255])],
+    };
+    let input = serde_json::json!({ "camera": [0, 0], "clip": [-10000, -10000, 20000, 20000] });
+    assert!(
+        draw.lines(viewport(&input), palette(), &mut main.draws(), |line| {
+            lines.push(line.blend)
+        })
+    );
+    assert_eq!(
+        lines,
+        [
+            crate::render::surface_line::SurfaceLineBlend::Replace(0xF800),
+            crate::render::surface_line::SurfaceLineBlend::Replace(palette().ordinary),
+            crate::render::surface_line::SurfaceLineBlend::Replace(0x001F),
+        ]
+    );
 }

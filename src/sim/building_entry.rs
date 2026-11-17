@@ -102,7 +102,6 @@ pub(crate) struct BuildingEntryLatches {
 
 impl BuildingEntryLatches {
     /// Ares10046A8B/10046ACC reuses the native +691 seek latch.
-    #[cfg(feature = "ares")]
     pub(crate) fn set_nearest_occupiable_seek(&mut self, value: bool) {
         self.should_enter_nearest_occupiable = value;
     }
@@ -316,9 +315,20 @@ impl Simulation {
             }
         }
         self.dispatch_object_tag_event(id, 48, Some(id), None, context);
-        if let Some(building) = self.substrate.entities.get(building_id)
+        let grinding = self
+            .substrate
+            .entities
+            .get(building_id)
+            .and_then(|building| self.object_type(building.type_ref(), rules))
+            .is_some_and(|object| object.grinding);
+        // Ares 3.0 100498D0 (hook 0x5198AD) / 1004C460 (hook 0x73A1BC), first
+        // in the Grinding arm: reverse engineering and the hijacker refund.
+        if rules.ares_form() && grinding {
+            self.ares_entered_grinder(id, building_id, rules, context);
+        }
+        if grinding
+            && let Some(building) = self.substrate.entities.get(building_id)
             && let Some(object) = self.object_type(building.type_ref(), rules)
-            && object.grinding
         {
             let damaged = building.building_art.anim_slots()[3].map(|_| {
                 crate::sim::building_art::requested_damage_state(
@@ -563,12 +573,12 @@ impl Simulation {
         effects: FrameEffects<'_>,
     ) -> bool {
         // Installed Ares Foot4DFE00 hook10049130 redirects only Ext+B0.
-        #[cfg(feature = "ares")]
-        if self
-            .substrate
-            .entities
-            .get(id)
-            .is_some_and(|foot| foot.vehicle_driver.vehicle_seek())
+        if rules.ares_form()
+            && self
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|foot| foot.ares.vehicle_driver.vehicle_seek())
         {
             return self.ares_enter_nearest_vehicle(id, rules, registry, effects);
         }
@@ -723,10 +733,10 @@ pub(crate) fn set_should_enter_nearest_occupiable_for_test(entity: &mut GameEnti
     entity.building_entry.should_enter_nearest_occupiable = value;
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "building_entry_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "grinder_tests.rs"]
 mod grinder_tests;

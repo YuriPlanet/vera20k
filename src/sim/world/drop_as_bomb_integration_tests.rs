@@ -19,6 +19,7 @@ const EXTRA: &str = "[General]\nWake=DROPWAKE\nAlliedCrew=ENGINEER\nAlliedSurviv
     [TRANSPORT]\nStrength=200\nSpeed=6\nPassengers=5\nSizeLimit=2\nCrewed=yes\n\
     Cost=1000\nExplosion=DROPBOOM\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
     [CombatDamage]\nC4Warhead=FORCEDC4\nSplashList=DROPSMALL,DROPLARGE\n\
+    [Animations]\n0=DROPSMALL\n1=DROPLARGE\n\
     [Warheads]\n2=FORCEDC4\n\
     [FORCEDC4]\nVerses=0%,0%,0%,0%,0%,0%,0%,0%,0%,0%,0%\nInfDeath=3\n";
 const ART: &str = "[DROPWAKE]\nEnd=40\n[DROPSMALL]\nEnd=40\n\
@@ -471,7 +472,6 @@ fn vanished_structural_deck_per_cell_arms_the_same_object_fall() {
 /// flags (Unit737F80): being shot while still falling must never escape a
 /// passenger merely because this ordinary hit did not use ignoreDefenses.
 // The +8F passenger kill (7380AF) is in the stock Unit tail Ares replaces.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn a_transport_shot_mid_fall_kills_its_passenger_without_the_landing_force_flags() {
     use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags};

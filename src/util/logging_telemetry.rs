@@ -114,7 +114,7 @@ pub(super) fn record(level: log::Level, target: &str, message: &str) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

@@ -31,13 +31,13 @@ use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::world::{SimSoundEvent, Simulation};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "thief_capture_tests.rs"]
 mod thief_capture_tests;
 
 /// `HouseClass::CanBuild`'s answer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CanBuild {
+pub enum CanBuild {
     /// 0.
     No,
     /// 1.
@@ -76,14 +76,14 @@ pub(crate) enum CanBuild {
 /// factory building's, so a captured factory of another side builds that
 /// side's types.
 ///
-/// With `ares`, installed CanBuild10021B00 replaces that stock outer route:
+/// When Ares plays, installed CanBuild10021B00 replaces that stock outer route:
 /// ordinary qualification includes FactoryOwners100221A0, and a prerequisite
 /// override or lab grant still needs the shared factory search10020D40. Offline
 /// factories answer AtLimit; online candidates continue to the common limit
 /// owner, whose Ares signed-capacity branch has executed component controls in
 /// `tools/rules_oracle/ares_factory_owners.json`. This does not claim the whole
 /// Ares qualification prefix, every additional prerequisite policy or hijacking.
-pub(crate) fn can_build(
+pub fn can_build(
     sim: &Simulation,
     rules: &RuleSet,
     owner: InternedId,
@@ -110,8 +110,75 @@ pub(crate) fn can_build(
         return CanBuild::No;
     };
     let controlled_by_human = house.is_controlled_by_human(sim.session.game_mode_nonzero());
+    let ares = rules.ares_form();
+    let status = requirements_met(sim, rules, owner, house, obj);
+    let bypass_prerequisites = status == RequirementStatus::Overridden;
+    if !ares && bypass_prerequisites {
+        return build_limit(sim, rules, owner, obj, count_in_production);
+    }
+    // Ares qualification4 skips ordinary requirements/prerequisites, but its
+    // outer CanBuild10021BA1 still asks the real factory and build-limit owners.
+    // Ares PrereqValidate10021B00 refuses every answer below Complete, its
+    // Unbuildable included.
+    if status < RequirementStatus::Complete {
+        return CanBuild::No;
+    }
+    if !rules.ares_form() && !controlled_by_human {
+        return CanBuild::Yes;
+    }
+    if !bypass_prerequisites && controlled_by_human && !owns_prerequisites(sim, rules, house, obj) {
+        return CanBuild::No;
+    }
+    if ares {
+        match query_factory(sim, rules, owner, obj, true, true, false, true) {
+            FactorySearch::Missing | FactorySearch::BuildLimitRefused => return CanBuild::No,
+            FactorySearch::Offline => return CanBuild::AtLimit,
+            FactorySearch::Online(_) | FactorySearch::Primary(_) => {}
+        }
+    }
+    build_limit(sim, rules, owner, obj, count_in_production)
+}
+
+/// `HouseClass::CanBuild`'s qualification ahead of the prerequisites
+/// (`0x004F7889..0x004F7BE5`, in the order [`can_build`] lists), which when
+/// Ares plays is `HouseExt::ExtData::RequirementsMet @ 10021FF0`: the status
+/// Ares's CanBuild (`10021B00`) and UpdateSecretLab's boon pick
+/// (`sim::secret_lab`) ask. The variants keep Ares's order, which
+/// PrereqValidate compares (`< Complete` refuses).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum RequirementStatus {
+    /// 0: `Prerequisite.RequiredTheaters` without the scenario's theater
+    /// (Ares only). `TechnoType+0xC98`, its other source, only the
+    /// constructor writes (0, `0x007113CC`).
+    Unbuildable,
+    /// 1: an owned `Prerequisite.Negative` entry (Ares), `RequiredHouses=`,
+    /// `ForbiddenHouses=` or the disabled shell.
+    Forbidden,
+    /// 2: `Prerequisite.StolenTechs` (Ares), `TechLevel=-1`, stolen tech,
+    /// FactoryOwners or the tech level.
+    Incomplete,
+    /// 3.
+    Complete,
+    /// 4: reverse engineered, an on-map `PrerequisiteOverride=` or a lab
+    /// grant; the prerequisites are skipped.
+    Overridden,
+}
+
+/// [`RequirementStatus`] of `obj` for `house` (owned by `owner`).
+pub(crate) fn requirements_met(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    house: &HouseState,
+    obj: &ObjectType,
+) -> RequirementStatus {
+    #[cfg(feature = "debug-tools")]
+    let trainer = sim.debug_flags_for(owner);
+    #[cfg(not(feature = "debug-tools"))]
+    let _ = owner;
+    let controlled_by_human = house.is_controlled_by_human(sim.session.game_mode_nonzero());
     let override_on_map = obj.prerequisite_override.iter().any(|&entry| {
-        if crate::rules::ARES_ENABLED {
+        if rules.ares_form() {
             // Ares3.0 qualification10021FF0 calls
             // HouseOwnsAny100081E0 at100220C0, before its human/AI split.
             prerequisite_on_map(sim, rules, house, entry)
@@ -127,97 +194,123 @@ pub(crate) fn can_build(
     // House4F78E4..4F7925 scans House+110 and calls459840. This
     // shortcut precedes all ordinary tech/country/prerequisite gates, for
     // humans and AI alike, and still asks the common build-limit owner.
-    let bypass_prerequisites =
-        override_on_map || crate::sim::secret_lab::house_grants(sim, rules, house, obj);
-    #[cfg(not(feature = "ares"))]
-    if bypass_prerequisites {
-        return build_limit(sim, rules, owner, obj, count_in_production);
-    }
-    // Ares qualification4 skips ordinary requirements/prerequisites, but its
-    // outer CanBuild10021BA1 still asks the real factory and build-limit owners.
-    if !bypass_prerequisites {
-        // `0x004F7976..0x004F79E2`: each `RequiresStolen*Tech=` needs the
-        // house's stolen-tech byte, which a spy's BuildTech infiltration sets.
-        let type_tech_level = sim.object_tech_level(obj);
-        // Installed qualification100220FE calls10020AD0, the same session-
-        //aware human predicate; only its human arm rejects TechLevel=-1.
-        if (type_tech_level == -1 && (!crate::rules::ARES_ENABLED || controlled_by_human))
-            || !house.has_stolen_tech_for(obj)
+    // Ares 3.0 RequirementsMet (10021FF0) opens with its own gates, in order:
+    // the theater mask (Unbuildable), HouseOwnsAny100081E0 of the
+    // Prerequisite.Negative list (Forbidden), the house's ReverseEngineered
+    // list (`sim::reverse_engineering`, Overridden) and the HouseExt
+    // StolenTech bits (+0x40) Prerequisite.StolenTechs needs (Incomplete).
+    let ares = rules.ares_form();
+    if ares {
+        let prerequisites = obj.techno_combat().prerequisites();
+        if !prerequisites.admits_theater(sim.session.theater()) {
+            return RequirementStatus::Unbuildable;
+        }
+        if prerequisites
+            .negatives()
+            .iter()
+            .any(|&entry| prerequisite_on_map(sim, rules, house, entry))
         {
-            return CanBuild::No;
+            return RequirementStatus::Forbidden;
         }
-        let house_bit = crate::sim::ai_buildable::house_country_bit(
-            rules,
-            sim.interner.resolve(house.house_type_id()),
-        );
-        let required = obj.required_houses_mask(rules);
-        if required != u32::MAX && required & house_bit == 0 {
-            return CanBuild::No;
+        if house.has_ares_reverse_engineered(obj.category, &obj.id) {
+            return RequirementStatus::Overridden;
         }
-        // CanBuild4F7A7D treats raw-1 as its skip sentinel, even when a
-        // nonempty authored list actually resolved to all32 Country bits.
-        let forbidden = obj.forbidden_houses_mask(rules);
-        if forbidden != u32::MAX && forbidden & house_bit != 0 {
-            return CanBuild::No;
-        }
-        #[cfg(feature = "ares")]
-        if !crate::sim::factory_owners::qualifies(sim, rules, house, obj) {
-            return CanBuild::No;
-        }
-        // Ares disabled-shell predicate10021A00..10021A6A bypasses this
-        // skirmish-shell restriction in mode0, before inspecting the Type.
-        if (!crate::rules::ARES_ENABLED || sim.session.game_mode_nonzero())
-            && !sim.session.game_options().super_weapons
-            && obj.category == ObjectCategory::Building
-            && let Some(super_weapon) = obj.super_weapon.as_deref()
-            && !rules.is_build_tech(&obj.id)
-            && rules
-                .super_weapon(super_weapon)
-                .is_some_and(|super_weapon| super_weapon.disableable_from_shell)
-        {
-            return CanBuild::No;
-        }
-        #[cfg(feature = "debug-tools")]
-        let exceeds_tech_level = type_tech_level > house.tech_level() && !trainer.tech_boost;
-        #[cfg(not(feature = "debug-tools"))]
-        let exceeds_tech_level = type_tech_level > house.tech_level();
-        if exceeds_tech_level {
-            return CanBuild::No;
+        if !house.has_ares_stolen_techs(prerequisites.required_stolen_techs()) {
+            return RequirementStatus::Incomplete;
         }
     }
-    if !crate::rules::ARES_ENABLED && !controlled_by_human {
-        return CanBuild::Yes;
+    if override_on_map || crate::sim::secret_lab::house_grants(sim, rules, house, obj) {
+        return RequirementStatus::Overridden;
     }
-    if !bypass_prerequisites && controlled_by_human && !owns_prerequisites(sim, rules, house, obj) {
-        return CanBuild::No;
+    // `0x004F7976..0x004F79E2`: each `RequiresStolen*Tech=` needs the
+    // house's stolen-tech byte, which a spy's BuildTech infiltration sets.
+    let type_tech_level = sim.object_tech_level(obj);
+    // Installed qualification100220FE calls10020AD0, the same session-
+    //aware human predicate; only its human arm rejects TechLevel=-1.
+    if (type_tech_level == -1 && (!rules.ares_form() || controlled_by_human))
+        || !house.has_stolen_tech_for(obj)
+    {
+        return RequirementStatus::Incomplete;
     }
-    #[cfg(feature = "ares")]
-    match query_factory(sim, rules, owner, obj, true, true, false, true) {
-        FactorySearch::Missing | FactorySearch::BuildLimitRefused => return CanBuild::No,
-        FactorySearch::Offline => return CanBuild::AtLimit,
-        FactorySearch::Online(_) | FactorySearch::Primary(_) => {}
+    let house_bit = crate::sim::ai_buildable::house_country_bit(
+        rules,
+        sim.interner.resolve(house.house_type_id()),
+    );
+    let required = obj.required_houses_mask(rules);
+    if required != u32::MAX && required & house_bit == 0 {
+        return RequirementStatus::Forbidden;
     }
-    build_limit(sim, rules, owner, obj, count_in_production)
+    // CanBuild4F7A7D treats raw-1 as its skip sentinel, even when a
+    // nonempty authored list actually resolved to all32 Country bits.
+    let forbidden = obj.forbidden_houses_mask(rules);
+    if forbidden != u32::MAX && forbidden & house_bit != 0 {
+        return RequirementStatus::Forbidden;
+    }
+    if ares && !crate::sim::factory_owners::qualifies(sim, rules, house, obj) {
+        return RequirementStatus::Incomplete;
+    }
+    // Ares disabled-shell predicate10021A00..10021A6A bypasses this
+    // skirmish-shell restriction in mode0, before inspecting the Type.
+    if (!rules.ares_form() || sim.session.game_mode_nonzero())
+        && !sim.session.game_options().super_weapons
+        && obj.category == ObjectCategory::Building
+        && let Some(super_weapon) = obj.super_weapon.as_deref()
+        && !rules.is_build_tech(&obj.id)
+        && rules
+            .super_weapon(super_weapon)
+            .is_some_and(|super_weapon| super_weapon.disableable_from_shell)
+    {
+        return RequirementStatus::Forbidden;
+    }
+    #[cfg(feature = "debug-tools")]
+    let exceeds_tech_level = type_tech_level > house.tech_level() && !trainer.tech_boost;
+    #[cfg(not(feature = "debug-tools"))]
+    let exceeds_tech_level = type_tech_level > house.tech_level();
+    if exceeds_tech_level {
+        return RequirementStatus::Incomplete;
+    }
+    RequirementStatus::Complete
 }
 
 /// Whether `house` has every `Prerequisite=` entry of `obj` on the map
 /// ([`prerequisite_on_map`]; an empty list is met): CanBuild's human arm, and
-/// with `ares` the power plant filter `0x10021CA0` of `sim::ai_base_building`.
+/// when Ares plays the power plant filter `0x10021CA0` of `sim::ai_base_building`.
 /// That filter asks HouseOwnsAll `0x10008110` of each of the type's
-/// prerequisite lists (TechnoTypeExt `+0x40`) and is met by any one. Ares
-/// reads list 0 from `Prerequisite=` (`0x1003E0B7`); VERA reads no
-/// `Prerequisite.Lists=`/`Prerequisite.List#=` (`0x1003E093`, `0x1003E0F1`),
-/// so a type that adds lists is judged by list 0 alone. No retail INI sets
-/// either key.
+/// prerequisite lists (TechnoTypeExt `+0x40`,
+/// `ObjectType::ares_prerequisite_lists`) and is met by any one; the same
+/// `PrerequisitesMet @ 10021CA0` is CanBuild's human arm under Ares
+/// (PrereqValidate10021B00).
 pub(crate) fn owns_prerequisites(
     sim: &Simulation,
     rules: &RuleSet,
     house: &HouseState,
     obj: &ObjectType,
 ) -> bool {
-    obj.prerequisite
-        .iter()
-        .all(|&entry| prerequisite_on_map(sim, rules, house, entry))
+    let on_map = |list: &[Prerequisite]| {
+        list.iter()
+            .all(|&entry| prerequisite_on_map(sim, rules, house, entry))
+    };
+    if rules.ares_form() {
+        obj.ares_prerequisite_lists().any(on_map)
+    } else {
+        on_map(obj.prerequisite.as_slice())
+    }
+}
+
+/// Ares `TechnoTypeExt::ExtData::CanBeBuiltAt @ 1003D9A0`: an explicit
+/// `BuiltAt=` list names `factory`'s type; an empty one admits any factory
+/// type that is not `Factory.ExplicitOnly=`. No country aliases.
+pub(crate) fn ares_can_be_built_at(
+    rules: &RuleSet,
+    product: &ObjectType,
+    factory: &ObjectType,
+) -> bool {
+    if product.built_at().is_empty() {
+        return !factory.factory_explicit_only();
+    }
+    rules
+        .type_array_index(ObjectCategory::Building, &factory.id)
+        .is_some_and(|index| product.built_at().contains(&index))
 }
 
 /// One `Prerequisite=` entry of CanBuild's human arm
@@ -239,8 +332,9 @@ fn prerequisite_on_map(
     house: &HouseState,
     entry: Prerequisite,
 ) -> bool {
-    #[cfg(feature = "ares")]
-    if let Some(group) = rules.ares_prerequisite_group(entry) {
+    if rules.ares_form()
+        && let Some(group) = rules.ares_prerequisite_group(entry)
+    {
         // Ares3.0 HouseOwnsAll10008110/Any100081E0 call Specific100082B0
         // for each immediate building member; generic codes do not recurse.
         return group.members().iter().any(|member| match *member {
@@ -295,18 +389,18 @@ fn specific_prerequisite_on_map(
         return false;
     };
     let count = buildings_on_map(sim, rules, house, index);
-    if crate::rules::ARES_ENABLED && count > 0 {
+    if rules.ares_form() && count > 0 {
         // Ares HouseOwnsSpecific100082B0 accepts a positive direct/member
         // count before PowersUpBuilding, including a separately on-map upgrade.
         return true;
     }
     if building_type.building_upgrade().host().is_none() {
-        return !crate::rules::ARES_ENABLED && count != 0;
+        return !rules.ares_form() && count != 0;
     }
     let Some(type_id) = sim.interner.get(&building_type.id) else {
         return false;
     };
-    if crate::rules::ARES_ENABLED {
+    if rules.ares_form() {
         // Ares HouseOwnsSpecific100082B0 resolves the declared host, requires
         // its active count>0, then scans every House+6C building of that type. It reads
         // all three installed slots and no HP/limbo/online/Selling/count gate.
@@ -386,7 +480,6 @@ fn matching_installed_upgrades<'a>(
 
 /// Installed Ares CountOwned10020AF0. Counter values remain authoritative in
 ///HouseTracking; conversion partners and installed slots are queried, not cached.
-#[cfg(feature = "ares")]
 fn ares_owned_build_limit_count(
     sim: &Simulation,
     rules: &RuleSet,
@@ -432,6 +525,33 @@ fn ares_owned_build_limit_count(
     }))
 }
 
+/// Ares `HouseExt::BuildLimitRemaining` (inlined in CanBuild at
+/// `10021BEB..10021C46` and in HouseClass_CanInstantiateTeam `100240D0`):
+/// signed wrapping capacity left under `BuildLimit=`. A negative limit
+/// counts what the house produced, zero or more what it owns now.
+pub(crate) fn ares_build_limit_remaining(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    obj: &ObjectType,
+) -> i32 {
+    let limit = obj.build_limit;
+    if limit < 0 {
+        let produced = rules
+            .type_array_index(obj.category, &obj.id)
+            .zip(sim.houses.get(&owner))
+            .map_or(0, |(index, house)| {
+                house.produced_count(obj.category, index)
+            });
+        limit.wrapping_add(produced).wrapping_neg()
+    } else {
+        let owned = sim.houses.get(&owner).map_or(0, |house| {
+            ares_owned_build_limit_count(sim, rules, house, obj)
+        });
+        limit.wrapping_sub(owned)
+    }
+}
+
 /// CanBuild's build limit (`0x004F7F9E..0x004F8357`): a type at or over
 /// its positive `BuildLimit=` by the house's tracked count
 /// (`HouseTracking::owned_count`) is at its limit, unless
@@ -446,33 +566,18 @@ fn build_limit(
     count_in_production: bool,
 ) -> CanBuild {
     let limit = obj.build_limit;
-    #[cfg(feature = "ares")]
-    if sim.houses.get(&owner).is_some_and(|house| {
-        !house.is_controlled_by_human(sim.session.game_mode_nonzero())
-            && rules.ares_ai_bypasses_build_limit(house.difficulty().table_index())
-    }) {
+    let ares = rules.ares_form();
+    if ares
+        && sim.houses.get(&owner).is_some_and(|house| {
+            !house.is_controlled_by_human(sim.session.game_mode_nonzero())
+                && rules.ares_ai_bypasses_build_limit(house.difficulty().table_index())
+        })
+    {
         //10021BD2..10021BE9 consult the retained RulesExt difficulty slot,
         //including limit-only calls. Humans never receive this bypass.
         return CanBuild::Yes;
     }
     let type_id = sim.interner.get(&obj.id);
-    #[cfg(not(feature = "ares"))]
-    let owned = type_id
-        .zip(sim.houses.get(&owner))
-        .map_or(0, |(type_id, house)| {
-            house
-                .tracking()
-                .owned_count(EntityCategory::from(obj.category), type_id)
-        })
-        .wrapping_add(captured_vehicle_thief_count(sim, rules, owner, obj));
-    let produced = || {
-        rules
-            .type_array_index(obj.category, &obj.id)
-            .zip(sim.houses.get(&owner))
-            .map_or(0, |(index, house)| {
-                house.produced_count(obj.category, index)
-            })
-    };
     let held_in_factory = || {
         type_id.is_some_and(|type_id| {
             sim.production
@@ -487,20 +592,12 @@ fn build_limit(
                 })
         })
     };
-    #[cfg(feature = "ares")]
-    {
+    if ares {
         // Installed CanBuild10021BEB..10021C46 uses signed wrapping
-        // remaining capacity for every class. Negative limits count produced;
-        // zero uses owned. Its held-object exception also admits Infantry above
-        // the limit, unlike the original gamemd-specific class branch below.
-        let remaining = if limit < 0 {
-            limit.wrapping_add(produced()).wrapping_neg()
-        } else {
-            let owned = sim.houses.get(&owner).map_or(0, |house| {
-                ares_owned_build_limit_count(sim, rules, house, obj)
-            });
-            limit.wrapping_sub(owned)
-        };
+        // remaining capacity for every class. Its held-object exception also
+        // admits Infantry above the limit, unlike the original
+        // gamemd-specific class branch below.
+        let remaining = ares_build_limit_remaining(sim, rules, owner, obj);
         if limit > 0 && remaining <= 0 {
             return if count_in_production && held_in_factory() {
                 CanBuild::Yes
@@ -513,9 +610,23 @@ fn build_limit(
         } else {
             CanBuild::No
         }
-    }
-    #[cfg(not(feature = "ares"))]
-    {
+    } else {
+        let owned = type_id
+            .zip(sim.houses.get(&owner))
+            .map_or(0, |(type_id, house)| {
+                house
+                    .tracking()
+                    .owned_count(EntityCategory::from(obj.category), type_id)
+            })
+            .wrapping_add(captured_vehicle_thief_count(sim, rules, owner, obj));
+        let produced = || {
+            rules
+                .type_array_index(obj.category, &obj.id)
+                .zip(sim.houses.get(&owner))
+                .map_or(0, |(index, house)| {
+                    house.produced_count(obj.category, index)
+                })
+        };
         //4F7FD6/4F80A1/4F81D0/4F829B use the retained produced counter;
         //CDQ/XOR/SUB keeps INT_MIN's magnitude negative. The owner/corpus is
         //tools/can_build_produced_history, shared with Record4FB6B0.
@@ -541,6 +652,22 @@ fn build_limit(
     }
 }
 
+/// CheckBuildLimit for house `owner` and type `obj`: gamemd's own body
+/// ([`stock_check_build_limit`]), or the Ares hook that replaces the whole of
+/// it when Ares plays ([`ares_check_build_limit`]).
+pub(crate) fn check_build_limit(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    obj: &ObjectType,
+) -> bool {
+    if rules.ares_form() {
+        ares_check_build_limit(sim, rules, owner, obj)
+    } else {
+        stock_check_build_limit(sim, rules, owner, obj)
+    }
+}
+
 /// `HouseClass::CheckBuildLimit @ 0x0050B370`: whether `owner` is at its
 /// limit for one more `obj`, counting what its factory for the type's strip
 /// holds (`FactoryRegistry::count_total`; both structure strips count the
@@ -555,43 +682,23 @@ fn build_limit(
 /// holds; with a positive one, once the
 /// tracked count (`owned_count`) and the factory's reach it. An infantry
 /// `VehicleThief=` adds the units that hold one (`0x0050B4C4..0x0050B506`).
-pub(crate) fn check_build_limit(
+fn stock_check_build_limit(
     sim: &Simulation,
     rules: &RuleSet,
     owner: InternedId,
     obj: &ObjectType,
 ) -> bool {
-    let strip = match obj.category {
-        ObjectCategory::Building => super::ProductionCategory::Building,
-        _ => super::production_tech::production_category_for_object(obj),
-    };
-    let tracking = sim.houses.get(&owner).map(HouseState::tracking);
-    let in_factory = |type_id: Option<InternedId>| {
-        type_id.map_or(0, |type_id| {
-            sim.production
-                .factories()
-                .count_total(owner, strip, type_id)
-        })
-    };
+    let strip = primary_factory_category(obj);
     if obj.category == ObjectCategory::Aircraft && obj.airport_bound {
-        let pads = rules
-            .general
-            .pad_aircraft_types
-            .iter()
-            .filter_map(|name| rules.object_in_category(ObjectCategory::Aircraft, name))
-            .map(|pad| {
-                let type_id = sim.interner.get(&pad.id);
-                let on_map = type_id.zip(tracking).map_or(0, |(type_id, tracking)| {
-                    tracking.active_count(EntityCategory::Aircraft, type_id)
-                });
-                on_map.wrapping_add(in_factory(type_id))
-            })
-            .fold(0, i32::wrapping_add);
-        return pads >= tracking.map_or(0, HouseTracking::airport_docks);
+        return airport_docks_full(sim, rules, owner, strip);
     }
     let limit = obj.build_limit;
     let type_id = sim.interner.get(&obj.id);
-    let queued = in_factory(type_id);
+    let queued = type_id.map_or(0, |type_id| {
+        sim.production
+            .factories()
+            .count_total(owner, strip, type_id)
+    });
     if limit < 1 {
         // 50B405/48B/537/60B use the same retained produced item as
         // CanBuild, add Factory CountTotal with ADD32, then compare signed.
@@ -603,13 +710,103 @@ pub(crate) fn check_build_limit(
             });
         return produced.wrapping_add(queued) >= limit.wrapping_abs();
     }
-    let owned = type_id.zip(tracking).map_or(0, |(type_id, tracking)| {
-        tracking.owned_count(EntityCategory::from(obj.category), type_id)
-    });
+    let owned = type_id
+        .zip(sim.houses.get(&owner))
+        .map_or(0, |(type_id, house)| {
+            house
+                .tracking()
+                .owned_count(EntityCategory::from(obj.category), type_id)
+        });
     owned
         .wrapping_add(captured_vehicle_thief_count(sim, rules, owner, obj))
         .wrapping_add(queued)
         >= limit
+}
+
+/// When Ares plays, hook `0x0050B370` (HouseClass_ShouldDisableCameo, Ares.dll
+/// `10024F80`) replaces the whole of CheckBuildLimit and returns at
+/// `0x0050B669`, for every caller. It counts what the house's primary factory
+/// for the type holds (GetPrimaryFactory `0x00500510` with BuildCat DontCare,
+/// the Buildings factory for every structure). An `AirportBound=` aircraft is
+/// still at its limit once the `[General] PadAircraft=` aircraft present and
+/// queued reach the AirportDocks, but otherwise goes on to its `BuildLimit=`.
+/// Under a positive limit the object that factory holds counts once less, as
+/// the house's counters hold it too. The type is at its limit when
+/// [`ares_build_limit_remaining`] less that count is not positive, and
+/// otherwise unless the shared search `10020D40`, with Ares CanBuild's
+/// arguments, finds a usable factory.
+fn ares_check_build_limit(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    obj: &ObjectType,
+) -> bool {
+    let strip = primary_factory_category(obj);
+    if obj.category == ObjectCategory::Aircraft
+        && obj.airport_bound
+        && airport_docks_full(sim, rules, owner, strip)
+    {
+        return true;
+    }
+    let factories = sim.production.factories();
+    let queued = sim.interner.get(&obj.id).map_or(0, |type_id| {
+        let total = factories.count_total(owner, strip, type_id);
+        let held = obj.build_limit > 0
+            && factories
+                .view(owner, strip)
+                .and_then(|factory| factory.object)
+                .is_some_and(|object| object.type_id == type_id);
+        if held { total.wrapping_sub(1) } else { total }
+    });
+    ares_build_limit_remaining(sim, rules, owner, obj).wrapping_sub(queued) <= 0
+        || !matches!(
+            query_factory(sim, rules, owner, obj, true, true, false, true),
+            FactorySearch::Online(_) | FactorySearch::Primary(_)
+        )
+}
+
+/// The House factory that GetPrimaryFactory `0x00500510` answers for `obj`'s
+/// kind with BuildCat DontCare: the Buildings factory for every structure.
+/// CheckBuildLimit counts it (`0x0050B3B9`; Ares' hook asks the same one),
+/// and StripClass::Draw's count badge asks it what it holds (BuildCat 0 at
+/// `0x006A9C52`, call at `0x006A9C67`).
+pub fn primary_factory_category(obj: &ObjectType) -> super::ProductionCategory {
+    match obj.category {
+        ObjectCategory::Building => super::ProductionCategory::Building,
+        _ => super::production_tech::production_category_for_object(obj),
+    }
+}
+
+/// CheckBuildLimit's `AirportBound=` arm (`0x0050B570..0x0050B5EB`, kept by
+/// Ares `10024F80`): the `[General] PadAircraft=` aircraft on the map
+/// (`+0x558C`) and in the house's factory for `strip` have reached its
+/// AirportDocks ([`HouseTracking::airport_docks`]).
+fn airport_docks_full(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    strip: super::ProductionCategory,
+) -> bool {
+    let tracking = sim.houses.get(&owner).map(HouseState::tracking);
+    let pads = rules
+        .general
+        .pad_aircraft_types
+        .iter()
+        .filter_map(|name| rules.object_in_category(ObjectCategory::Aircraft, name))
+        .map(|pad| {
+            let type_id = sim.interner.get(&pad.id);
+            let on_map = type_id.zip(tracking).map_or(0, |(type_id, tracking)| {
+                tracking.active_count(EntityCategory::Aircraft, type_id)
+            });
+            let in_factory = type_id.map_or(0, |type_id| {
+                sim.production
+                    .factories()
+                    .count_total(owner, strip, type_id)
+            });
+            on_map.wrapping_add(in_factory)
+        })
+        .fold(0, i32::wrapping_add);
+    pads >= tracking.map_or(0, HouseTracking::airport_docks)
 }
 
 /// The shared Unit census in House::CanBuild4F80E6..4F8128 and
@@ -697,9 +894,7 @@ pub fn find_factory(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FactorySearch {
     Missing,
-    #[cfg(feature = "ares")]
     BuildLimitRefused,
-    #[cfg(feature = "ares")]
     Offline,
     Online(u64),
     Primary(u64),
@@ -712,6 +907,83 @@ impl FactorySearch {
             _ => None,
         }
     }
+}
+
+/// One building of a house that a FindFactory scan may pick for some type.
+#[derive(Clone, Copy)]
+struct FactoryCandidate<'a> {
+    id: u64,
+    building: &'a crate::sim::game_entity::GameEntity,
+    building_type: &'a ObjectType,
+    factory_type: FactoryType,
+}
+
+/// `house`'s buildings that pass the tests of the 5F7900 scan which do not
+/// read the wanted type, in House+6C order: out of limbo, a factory of some
+/// kind, and neither Selling selector.
+fn factory_candidates<'a>(
+    sim: &'a Simulation,
+    rules: &'a RuleSet,
+    house: &'a HouseState,
+) -> impl Iterator<Item = FactoryCandidate<'a>> + 'a {
+    let selling = MissionId::from_known(MissionType::Selling);
+    house
+        .base_projection()
+        .buildings()
+        .iter()
+        .filter_map(move |&id| {
+            let building = sim.substrate.entities.get(id)?;
+            let building_type = sim.entity_object_type(building, rules)?;
+            let factory_type = building_type.factory_type()?;
+            (!building.lifecycle.in_limbo()
+                && building.mission.effective() != selling
+                && building.mission.queued() != selling)
+                .then_some(FactoryCandidate {
+                    id,
+                    building,
+                    building_type,
+                    factory_type,
+                })
+        })
+}
+
+/// VERA-only: one house's [`factory_candidates`], kept for a caller that asks
+/// FindFactory of many types in a row ([`find_factory_among`]) while the
+/// world stands, so each question walks the factories and not every building
+/// of the house. It borrows the world, which therefore cannot change under it.
+pub(crate) struct FactoryRoster<'a>(Vec<FactoryCandidate<'a>>);
+
+impl<'a> FactoryRoster<'a> {
+    /// `None` for an owner without a House: its every search is empty.
+    pub(crate) fn of(sim: &'a Simulation, rules: &'a RuleSet, owner: InternedId) -> Option<Self> {
+        let house = sim.houses.get(&owner)?;
+        Some(Self(factory_candidates(sim, rules, house).collect()))
+    }
+}
+
+/// [`find_factory`] for `owner`, asked of the `roster` built for that house.
+pub(crate) fn find_factory_among(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    roster: &FactoryRoster<'_>,
+    obj: &ObjectType,
+    skip_busy_airfield: bool,
+    require_online: bool,
+    require_can_build: bool,
+) -> Option<u64> {
+    scan_factories(
+        sim,
+        rules,
+        owner,
+        roster.0.iter().copied(),
+        obj,
+        skip_busy_airfield,
+        require_online,
+        require_can_build,
+        false,
+    )
+    .available_factory()
 }
 
 /// One scan owner for stock5F7900 and the installed Ares10020D40 replacement.
@@ -730,32 +1002,53 @@ fn query_factory(
     let Some(house) = sim.houses.get(&owner) else {
         return FactorySearch::Missing;
     };
+    scan_factories(
+        sim,
+        rules,
+        owner,
+        factory_candidates(sim, rules, house),
+        obj,
+        skip_busy_airfield,
+        require_online,
+        require_can_build,
+        stop_first,
+    )
+}
+
+/// The 5F7900 scan over `owner`'s `candidates`, in their order.
+fn scan_factories<'a>(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    candidates: impl Iterator<Item = FactoryCandidate<'a>>,
+    obj: &ObjectType,
+    skip_busy_airfield: bool,
+    require_online: bool,
+    require_can_build: bool,
+    stop_first: bool,
+) -> FactorySearch {
     //10020D43..10020D7A asks the limit-only CanBuild once, before scanning.
     // The first flag bypasses qualification and this factory query, so this
     // does not recurse through either admission gate.
-    #[cfg(feature = "ares")]
-    if require_can_build && can_build(sim, rules, owner, obj, true, true) != CanBuild::Yes {
+    let ares = rules.ares_form();
+    if ares && require_can_build && can_build(sim, rules, owner, obj, true, true) != CanBuild::Yes {
         return FactorySearch::BuildLimitRefused;
     }
     let factory_type = FactoryType::for_category(obj.category);
     let game_mode_nonzero = sim.session.game_mode_nonzero();
     let ownable = get_ownable(obj, rules, game_mode_nonzero);
-    let selling = MissionId::from_known(MissionType::Selling);
     let naval_unit = obj.category == ObjectCategory::Vehicle && obj.naval;
     let mut candidate = FactorySearch::Missing;
-    for &id in house.base_projection().buildings() {
-        let Some(building) = sim.substrate.entities.get(id) else {
-            continue;
-        };
-        let Some(building_type) = sim.entity_object_type(building, rules) else {
-            continue;
-        };
-        if !building.lifecycle.in_limbo()
-            && building_type.factory_type() == Some(factory_type)
-            && (crate::rules::ARES_ENABLED || !require_online || building.building_online())
-            && building.mission.effective() != selling
-            && building.mission.queued() != selling
-            && (crate::rules::ARES_ENABLED
+    for FactoryCandidate {
+        id,
+        building,
+        building_type,
+        factory_type: building_factory_type,
+    } in candidates
+    {
+        if building_factory_type == factory_type
+            && (rules.ares_form() || !require_online || building.building_online())
+            && (rules.ares_form()
                 || !require_can_build
                 || can_build(sim, rules, building.owner(), obj, true, true) == CanBuild::Yes)
             && ownable & get_ownable(building_type, rules, game_mode_nonzero) != 0
@@ -773,20 +1066,9 @@ fn query_factory(
                 building_type.naval == naval_unit
             }
         {
-            #[cfg(feature = "ares")]
-            {
-                //10020E65 ->1003D9A0: an explicit BuiltAt list overrides the
-                // candidate Type's ExplicitOnly default; no country aliases.
-                if !obj.built_at().is_empty() {
-                    let Some(index) =
-                        rules.type_array_index(ObjectCategory::Building, &building_type.id)
-                    else {
-                        continue;
-                    };
-                    if !obj.built_at().contains(&index) {
-                        continue;
-                    }
-                } else if building_type.factory_explicit_only() {
+            if ares {
+                //10020E65 ->1003D9A0.
+                if !ares_can_be_built_at(rules, obj, building_type) {
                     continue;
                 }
                 //10020E73..10020E92 preserves offline availability separately
@@ -809,7 +1091,7 @@ fn query_factory(
             } else {
                 FactorySearch::Online(id)
             };
-            if primary || (crate::rules::ARES_ENABLED && stop_first) {
+            if primary || (rules.ares_form() && stop_first) {
                 break;
             }
         }
@@ -969,14 +1251,14 @@ fn get_ownable(obj: &ObjectType, rules: &RuleSet, game_mode_nonzero: bool) -> u3
     obj.owner_mask(rules)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "can_build_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "can_build_produced_history_tests.rs"]
 mod produced_history_tests;
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_sim_production))]
 #[path = "can_build_factory_owners_tests.rs"]
 mod factory_owners_tests;

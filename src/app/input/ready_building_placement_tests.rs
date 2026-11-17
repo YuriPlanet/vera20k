@@ -36,6 +36,19 @@ use crate::ui::sidebar::{
     build_sidebar_view_with_spec, hit_test_item,
 };
 
+/// The presentation frame of `sim` as `owner` sees it: the sidebar reads its
+/// cameo answers from the frame's local player.
+fn frame_for(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+) -> crate::app::presentation::frame::PresentationFrame {
+    let mut sim = sim.clone();
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(owner));
+    crate::app::presentation::frame::PresentationFrame::of_test(&sim, rules)
+}
+
 #[path = "ready_building_placement_tests/pending_production_tests.rs"]
 mod pending_production_tests;
 #[path = "ready_building_placement_tests/produced_build_limit_tests.rs"]
@@ -131,7 +144,8 @@ fn roundtrip_fixture_save(fixture: &mut Fixture, label: &str) {
             overlay_registry: fixture.overlays.clone(),
             terrain_template: Some(terrain),
             ..crate::sim::runtime::SimResources::empty()
-        },
+        }
+        .into(),
     };
     let prepared = crate::app::persistence::PreparedLoad::from_repository(
         crate::app::persistence::LoadPreparationView::from_runtime(
@@ -164,7 +178,7 @@ fn paid_ready_fixture() -> Option<Fixture> {
     let options = production::all_build_options_for_owner(&sim, &rules, "Americans");
     let candidates = cameo_candidates(&sim, &rules, None, owner, &options, &[]);
     let additions = production::initial_construction_options(&sim, &rules);
-    projection.reconcile_cameos(owner, &candidates, 12, &additions);
+    projection.reconcile_cameos(owner, &candidates, 12, &additions, false);
     let starting_credits = production::credits_for_owner(&sim, "Americans");
     let total_cost: i32 = ["GAPOWR", "GAPILL"]
         .iter()
@@ -200,7 +214,7 @@ fn paid_ready_fixture() -> Option<Fixture> {
             )
             .expect("ordinary paid production frame");
         for fact in output.lifecycle_outputs {
-            projection.apply_lifecycle_output(&fact, Some(owner));
+            projection.apply_lifecycle_output(&fact, Some(owner), rules.ares());
         }
         if production::ready_buildings_for_owner(&sim, &rules, "Americans").len() == 2 {
             break;
@@ -253,9 +267,13 @@ fn refresh_fixture_sidebar(
         .needs_cameo_seed(fixture.owner)
         .then(|| production::initial_construction_options(&fixture.sim, &fixture.rules))
         .unwrap_or_default();
-    fixture
-        .projection
-        .reconcile_cameos(fixture.owner, &candidates, visible_rows, &seed_additions);
+    fixture.projection.reconcile_cameos(
+        fixture.owner,
+        &candidates,
+        visible_rows,
+        &seed_additions,
+        false,
+    );
     fixture
         .projection
         .reconcile_factory_links(&fixture.sim, fixture.owner);
@@ -300,6 +318,7 @@ fn refresh_fixture_sidebar(
     fixture.projection.apply_cameo_draw_state(
         &mut view,
         &fixture.sim,
+        &frame_for(&fixture.sim, &fixture.rules, fixture.owner),
         &fixture.rules,
         fixture.owner,
         armed_building,
@@ -721,7 +740,11 @@ fn loaded_ready_tabs_wait_for_the_saved_factory_changed_edge() {
             None,
         );
         assert_eq!(
-            fixture.projection.ready_building_tabs(&fixture.sim, owner),
+            fixture.projection.ready_building_tabs(
+                &fixture.sim,
+                &frame_for(&fixture.sim, RuleSet::empty_for_test(), owner),
+                owner
+            ),
             [true, true],
         );
         let published = advance_commands(&mut fixture, &[]);
@@ -936,6 +959,9 @@ fn pending_produce_right_click_suspends_on_arrival_without_duplicate_orders() {
     }
 }
 
+// The Infantry request mark falls through to the Vehicle one only without
+// Ares (FactoryClass flag fixes 1005CBD0/1005CB30/1005CBF0, hooks
+// 0x5005CC/0x50067C/0x5007BE).
 #[test]
 fn pending_alternating_clicks_retain_native_hold_request_and_resume_on_arrival() {
     let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -1093,9 +1119,10 @@ fn consume_lifecycle_output(
     output: &LifecycleOutput,
     local_house: Option<InternedId>,
 ) -> bool {
+    let ares = fixture.rules.ares();
     if let Some(cursor_clear) = fixture
         .projection
-        .apply_lifecycle_output(output, local_house)
+        .apply_lifecycle_output(output, local_house, ares)
     {
         fixture
             .input
@@ -2410,6 +2437,63 @@ fn queued_only_cameo_right_retains_pending_and_preview_before_abandon() {
 /// cell invalid when that flag is zero, before its own IsClearToBuild call.
 /// This regression covers that production decision and queued refusal/input
 /// cleanup, not native terrain production, cursor projection or PLACE raster.
+/// `UpdateFoundationCenter @ 0x004A91B0` writes the whole-foundation
+/// visibility (`+0x1181`, `0x004A94DA`) only when the foundation moves
+/// (`0x004A9356..0x004A936E`): a Cell revealed under a still foundation, or a
+/// call that leaves the centre (the tactical gadget's, off the map), keeps it
+/// hidden until the foundation moves.
+#[test]
+fn a_still_foundation_keeps_its_visibility_until_it_moves() {
+    let Some(mut fixture) = paid_ready_fixture() else {
+        return;
+    };
+    fn preview_at(
+        fixture: &Fixture,
+    ) -> impl FnOnce((u16, u16)) -> Option<production::BuildingPlacementPreview> + '_ {
+        move |(rx, ry)| {
+            production::placement_preview_for_owner_with_overlays(
+                &fixture.sim,
+                &fixture.rules,
+                "Americans",
+                "GAPOWR",
+                rx,
+                ry,
+                Some(&fixture.overlays),
+            )
+        }
+    }
+    let owner = fixture.owner;
+    let (near, far) = ((8, 4), (25, 25));
+    let mut latch = super::FoundationLatch::default();
+    let fog = |fixture: &mut Fixture, bits| {
+        fixture
+            .sim
+            .fog_mut_for_test()
+            .set_ground_bits_for_test(owner, near.0, near.1, bits);
+    };
+    fog(&mut fixture, 0);
+    let hidden = latch.place(Some(near), preview_at(&fixture)).unwrap();
+    assert!(!hidden.foundation_visible);
+    fog(&mut fixture, 0x18);
+    for still in [Some(near), None] {
+        let kept = latch.place(still, preview_at(&fixture)).unwrap();
+        assert_eq!((kept.rx, kept.ry), near);
+        assert!(!kept.foundation_visible, "{still:?}");
+    }
+    assert!(
+        latch
+            .place(Some(far), preview_at(&fixture))
+            .unwrap()
+            .foundation_visible
+    );
+    assert!(
+        latch
+            .place(Some(near), preview_at(&fixture))
+            .unwrap()
+            .foundation_visible
+    );
+}
+
 #[test]
 fn mixed_slope_preview_uses_proximity_and_preserves_paid_product_lifecycle() {
     let Some(mut fixture) = paid_ready_fixture() else {
@@ -2837,118 +2921,123 @@ fn retry_then_linked_abandon_preserves_current_until_product_expiry_in_the_same_
 
 #[test]
 fn unlinked_abandon_clears_current_before_product_expiry() {
-    let Some(mut fixture) = paid_ready_fixture() else {
-        return;
-    };
-    let owner = fixture.owner;
-    let power_type = fixture.sim.interner().get("GAPOWR").unwrap();
-    let power_product = ready_product(&fixture, "GAPOWR");
-    let pill_type = fixture.sim.interner().get("GAPILL").unwrap();
-    let pill_product = ready_product(&fixture, "GAPILL");
-    let pill_order = fixture
-        .sim
-        .production()
-        .factories()
-        .view(owner, ProductionCategory::Defense)
-        .unwrap()
-        .construction_order();
-    // Supply the executed StripClear6A81B0 helper boundary: no Building
-    // links, an independent Defense link, and the real completed product
-    // still current. This is not whole UI/scenario reset coverage. Other
-    // regressions cover actual gadget Select through the same input owner.
-    fixture.projection.reset_cameo_seed();
-    refresh_fixture_sidebar(&mut fixture, SidebarTab::Building);
-    let _ = fixture.projection.apply_lifecycle_output(
-        &LifecycleOutput::ProductionFactoryLinked {
-            owner,
-            type_id: pill_type,
-            category: ProductionCategory::Defense,
-            construction_order: pill_order,
-        },
-        Some(owner),
-    );
-    production::object_find_factory(&fixture.sim, &fixture.rules, power_product, false, false)
-        .expect("the real completed product finds its healthy builder");
-    assert!(
-        fixture
-            .input
-            .begin_building_placement("GAPOWR", power_product, owner)
-    );
-    assert!(
-        fixture
-            .projection
-            .cameo_factory(&fixture.sim, owner, power_type)
-            .is_none()
-    );
-    let history = "local_unlinked_strip_clear_active_abandon_order";
-    assert_current_matches_native(
-        &fixture,
-        &native_after(history, "strip_clear", 0)["placement"],
-    );
-
-    let cancel = cancel_envelope(&fixture, "GAPOWR");
-    let frame = advance_commands(&mut fixture, &[cancel]);
-    let expiry = frame
-        .lifecycle_outputs
-        .iter()
-        .position(|output| {
-            *output
-                == LifecycleOutput::ObjectPointerExpired {
-                    stable_id: power_product,
-                }
-        })
-        .unwrap();
-    let native_calls = native_step(history, "house_abandon", 0)["native_calls"]
-        .as_array()
-        .unwrap();
-    let native_expiry = native_calls
-        .iter()
-        .find(|call| call["name"] == "dispatch_pointer_expired")
-        .unwrap();
-    let mut clears = 0;
-    for (index, output) in frame.lifecycle_outputs.iter().enumerate() {
-        if let Some(cursor_clear) = fixture
-            .projection
-            .apply_lifecycle_output(output, Some(owner))
-        {
-            clears += 1;
-            fixture
-                .input
-                .apply_lifecycle_output(&cursor_clear, Some(owner));
-        }
-        fixture.input.apply_lifecycle_output(output, Some(owner));
-        if index == expiry {
-            assert_current_matches_native(&fixture, &native_expiry["placement"]);
-            assert_eq!(clears, 1, "zero-link House prefix precedes product expiry");
-        }
-    }
-    assert_eq!(clears, 1, "the finish boundary must not clear twice");
-    assert_current_matches_native(
-        &fixture,
-        &native_after(history, "house_abandon", 0)["placement"],
-    );
-    assert_saved_matches_native(
-        &fixture,
-        &native_after(history, "house_abandon", 0)["placement"],
-    );
-    assert!(!fixture.sim.entities().contains(power_product));
-    assert!(
-        fixture
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let Some(mut fixture) = paid_ready_fixture() else {
+            return;
+        };
+        let owner = fixture.owner;
+        let power_type = fixture.sim.interner().get("GAPOWR").unwrap();
+        let power_product = ready_product(&fixture, "GAPOWR");
+        let pill_type = fixture.sim.interner().get("GAPILL").unwrap();
+        let pill_product = ready_product(&fixture, "GAPILL");
+        let pill_order = fixture
             .sim
             .production()
             .factories()
-            .view(owner, ProductionCategory::Building)
-            .is_none()
-    );
-    assert_eq!(
-        fixture
-            .projection
-            .cameo_factory(&fixture.sim, owner, pill_type)
+            .view(owner, ProductionCategory::Defense)
             .unwrap()
-            .construction_order(),
-        pill_order
-    );
-    assert_eq!(ready_product(&fixture, "GAPILL"), pill_product);
+            .construction_order();
+        // Supply the executed StripClear6A81B0 helper boundary: no Building
+        // links, an independent Defense link, and the real completed product
+        // still current. This is not whole UI/scenario reset coverage. Other
+        // regressions cover actual gadget Select through the same input owner.
+        fixture.projection.reset_cameo_seed();
+        refresh_fixture_sidebar(&mut fixture, SidebarTab::Building);
+        let _ = fixture.projection.apply_lifecycle_output(
+            &LifecycleOutput::ProductionFactoryLinked {
+                owner,
+                type_id: pill_type,
+                category: ProductionCategory::Defense,
+                construction_order: pill_order,
+            },
+            Some(owner),
+            ares_way,
+        );
+        production::object_find_factory(&fixture.sim, &fixture.rules, power_product, false, false)
+            .expect("the real completed product finds its healthy builder");
+        assert!(
+            fixture
+                .input
+                .begin_building_placement("GAPOWR", power_product, owner)
+        );
+        assert!(
+            fixture
+                .projection
+                .cameo_factory(&fixture.sim, owner, power_type)
+                .is_none()
+        );
+        let history = "local_unlinked_strip_clear_active_abandon_order";
+        assert_current_matches_native(
+            &fixture,
+            &native_after(history, "strip_clear", 0)["placement"],
+        );
+
+        let cancel = cancel_envelope(&fixture, "GAPOWR");
+        let frame = advance_commands(&mut fixture, &[cancel]);
+        let expiry = frame
+            .lifecycle_outputs
+            .iter()
+            .position(|output| {
+                *output
+                    == LifecycleOutput::ObjectPointerExpired {
+                        stable_id: power_product,
+                    }
+            })
+            .unwrap();
+        let native_calls = native_step(history, "house_abandon", 0)["native_calls"]
+            .as_array()
+            .unwrap();
+        let native_expiry = native_calls
+            .iter()
+            .find(|call| call["name"] == "dispatch_pointer_expired")
+            .unwrap();
+        let mut clears = 0;
+        for (index, output) in frame.lifecycle_outputs.iter().enumerate() {
+            if let Some(cursor_clear) =
+                fixture
+                    .projection
+                    .apply_lifecycle_output(output, Some(owner), ares_way)
+            {
+                clears += 1;
+                fixture
+                    .input
+                    .apply_lifecycle_output(&cursor_clear, Some(owner));
+            }
+            fixture.input.apply_lifecycle_output(output, Some(owner));
+            if index == expiry {
+                assert_current_matches_native(&fixture, &native_expiry["placement"]);
+                assert_eq!(clears, 1, "zero-link House prefix precedes product expiry");
+            }
+        }
+        assert_eq!(clears, 1, "the finish boundary must not clear twice");
+        assert_current_matches_native(
+            &fixture,
+            &native_after(history, "house_abandon", 0)["placement"],
+        );
+        assert_saved_matches_native(
+            &fixture,
+            &native_after(history, "house_abandon", 0)["placement"],
+        );
+        assert!(!fixture.sim.entities().contains(power_product));
+        assert!(
+            fixture
+                .sim
+                .production()
+                .factories()
+                .view(owner, ProductionCategory::Building)
+                .is_none()
+        );
+        assert_eq!(
+            fixture
+                .projection
+                .cameo_factory(&fixture.sim, owner, pill_type)
+                .unwrap()
+                .construction_order(),
+            pill_order
+        );
+        assert_eq!(ready_product(&fixture, "GAPILL"), pill_product);
+    }
 }
 
 #[test]

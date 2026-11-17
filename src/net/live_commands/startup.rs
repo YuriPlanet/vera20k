@@ -120,6 +120,26 @@ impl StartupAgreement {
         ))
     }
 
+    /// Each part of this client's start identity, for the report of a match
+    /// that never started: two clients' reports show which part differs.
+    pub fn report_parts(&self) -> [(&'static str, u64); 7] {
+        let mut houses = Vec::with_capacity(2 * self.houses.len());
+        for &(row, house) in &self.houses {
+            houses.extend([row, house as u8]);
+        }
+        let houses = crate::util::sha256::sha256_bytes(&houses);
+        let houses = u64::from_le_bytes(houses[..8].try_into().expect("a digest of 32 bytes"));
+        [
+            ("setup_houses", houses),
+            ("setup_active", u64::from(self.active)),
+            ("setup_seed", u64::from(self.seed)),
+            ("setup_max_ahead", self.max_ahead as u64),
+            ("setup_fps", u64::from(self.fps)),
+            ("setup_send_rate", u64::from(self.send_rate)),
+            ("world", self.world_hash),
+        ]
+    }
+
     fn row_for_house(&self, house: i8) -> Option<u8> {
         self.houses
             .iter()

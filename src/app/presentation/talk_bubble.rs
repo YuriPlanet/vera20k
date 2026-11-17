@@ -44,7 +44,7 @@ impl TalkBubble {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
     #[test]

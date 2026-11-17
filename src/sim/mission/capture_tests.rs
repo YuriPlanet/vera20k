@@ -162,6 +162,7 @@ fn retail_occupier_capture_dispatch_matches_native_rng_and_timer() {
         let mapgen_before = sim.mapgen_rng.logical_state();
         let (_, draws) = crate::sim::rng::trace_draws(|| {
             crate::sim::world::dispatch_foot_mission(&mut sim, gi, rules, ObjectAiCtx::default())
+                .unwrap()
         });
 
         assert_eq!(heading(&sim, gi), Some(building), "{name}");

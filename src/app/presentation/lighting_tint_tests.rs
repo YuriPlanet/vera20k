@@ -198,6 +198,26 @@ fn twenty_original_palette_histories_keep_mutable_normal_rgb_and_native_pixels()
     }
 }
 
+/// TechnoClass_DrawSHP's TerrainPalette arm (`0x00705ED5..0x00705F52`) lights
+/// a building from the cell of its GetCoords (`0x00447AC0`, the foundation
+/// centre: (12, 12) for retail CITY06's 4x4 at (10, 10)); the house-scheme arm
+/// keeps the Location cell's top scalar.
+#[test]
+fn terrain_palette_building_takes_its_foundation_centre_cell() {
+    let mut grid = crate::map::lighting::CellLightGrid::new();
+    grid.insert_profiled_light((10, 10), [0.5, 0.5, 0.5], 0.5);
+    grid.insert_profiled_light((12, 12), [1.5, 1.0, 0.5], 1.5);
+    let art = ArtRegistry::from_ini(&IniFile::from_str("[CITY06]\nTerrainPalette=yes\n"));
+    assert_eq!(
+        building_palette_light(&grid, (10, 10), (12, 12), art.get("CITY06"), false),
+        PaletteLight::cell(&grid, (12, 12), false)
+    );
+    assert_eq!(
+        building_palette_light(&grid, (10, 10), (12, 12), None, false),
+        body_palette_light(&grid, (10, 10), 0)
+    );
+}
+
 #[test]
 fn mutable_lookup_keeps_old_cell_pointers_and_row_counts_while_new_samples_get_new_converts() {
     //544E94 returns neutral index0;544EF8 compares normal cache from
@@ -268,7 +288,7 @@ fn live_tag_rgb_overrides_reach_packets_and_survive_ambient_writes_during_storm(
     let expected = PaletteLight::color_scheme([1200, 800, 600], brightness);
     assert_eq!(body_palette_light(&lights.grid, (0, 0), 0), expected);
     assert_eq!(
-        building_palette_light(&lights.grid, (0, 0), None, false),
+        building_palette_light(&lights.grid, (0, 0), (0, 0), None, false),
         expected
     );
     let art = ArtRegistry::from_ini(&IniFile::from_str("[ALT]\nAltPalette=yes\n"));
@@ -421,14 +441,22 @@ fn attach_effect_tint_ors_colours_and_sums_intensities_by_viewer() {
     sim.session_mut_for_test()
         .set_current_house_for_test(Some(americans));
     assert_eq!(
-        attach_effect_tint(sim.entities().get(target).unwrap(), &sim, &rules),
+        attach_effect_tint(
+            &crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, target),
+            &sim,
+            &rules
+        ),
         (0xF800, 1000),
         "the owner sees RED only; enem-only and none stay out"
     );
     sim.session_mut_for_test()
         .set_current_house_for_test(Some(russians));
     assert_eq!(
-        attach_effect_tint(sim.entities().get(target).unwrap(), &sim, &rules),
+        attach_effect_tint(
+            &crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, target),
+            &sim,
+            &rules
+        ),
         (0xF800 | 0x001F, 1500),
         "an enemy also sees BLUE; HIDDEN never applies"
     );
@@ -464,14 +492,22 @@ fn cumulative_effect_tint_stacks_by_type_or_once() {
     // Base (10,20,30)/(0.5) stacked twice sums to (20,40,60)/1.0.
     let (sim, rules, target) = scene("");
     assert_eq!(
-        attach_effect_tint(sim.entities().get(target).unwrap(), &sim, &rules),
+        attach_effect_tint(
+            &crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, target),
+            &sim,
+            &rules
+        ),
         (0x1147, 1000),
         "the two instances of one type sum their tint"
     );
 
     let (sim, rules, target) = scene("Tint.Cumulative=no\n");
     assert_eq!(
-        attach_effect_tint(sim.entities().get(target).unwrap(), &sim, &rules),
+        attach_effect_tint(
+            &crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, target),
+            &sim,
+            &rules
+        ),
         (0x08A3, 500),
         "without Tint.Cumulative the type tints once"
     );

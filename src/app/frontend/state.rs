@@ -24,6 +24,9 @@ pub(crate) struct FrontendState {
     /// The decided network match's winners still in it, for the online
     /// lobby's `finish` (docs/lobby-protocol.md).
     pub(crate) match_winners: Option<Vec<String>>,
+    /// VERA: when `match_result` was decided, for the online lobby's
+    /// `finish` (`ended_ago`), which the score screen holds back.
+    pub(crate) match_result_at: Option<Instant>,
     /// Frames, duration and opponent departure for the launch report.
     pub(crate) external_progress: crate::app::cncnet::ExternalLaunchProgress,
     /// The game is closing and waits until this for its network goodbyes
@@ -123,6 +126,9 @@ pub(crate) struct FrontendState {
     pub(crate) movie_list_selection: i32,
     /// Full-screen Play_Movie session (Sneak Peeks or a movie-list entry).
     pub(crate) fullscreen_movie: Option<crate::app::frontend::fullscreen_movie::FullscreenMovie>,
+    /// The "import game files" dialog on the startup-failure card: what step it
+    /// is on, and therefore which buttons the card shows.
+    pub(crate) asset_import: crate::ui::asset_import::AssetImport,
     /// Show_Credits session.
     pub(crate) credits_roll: Option<crate::app::frontend::credits_roll::CreditsRollSession>,
     /// Campaign selection `0x94` instance while its route shows.
@@ -159,6 +165,9 @@ pub(crate) struct FrontendState {
     /// The host unticked Ranked game at its last Create Game in VERA's
     /// online lobby, which its next Create Game shows.
     pub(crate) wol_room_unranked: bool,
+    /// The host's Watching at its last Create Game in VERA's online lobby,
+    /// which its next Create Game shows and its room publishes.
+    pub(crate) wol_room_watching: crate::ui::wol_lobby::RoomWatching,
     /// VERA: how this player returns to its LAN room after the match.
     pub(crate) lan_rematch: Option<crate::app::shell_lan::LanRematch>,
     /// `0x10E`'s background and icon art (`0x0072C7E0`).
@@ -247,6 +256,8 @@ pub(crate) struct FrontendState {
     pub(crate) random_map_retention: RandomMapGenerationRetention,
     pub(crate) skirmish_preview_texture:
         Option<crate::app::frontend::skirmish_shell_render::SkirmishPreviewTexture>,
+    /// VERA's enlarged map preview, while it shows.
+    pub(crate) preview_zoom: Option<crate::app::frontend::preview_zoom::PreviewZoom>,
     /// Minimap renderer — created at map load time.
     pub(crate) loading_screen_atlas:
         Option<crate::render::loading_screen_chrome::LoadingScreenAtlas>,
@@ -262,6 +273,12 @@ pub(crate) struct FrontendState {
     pub(crate) shell_preview_overlay_registry: Option<OverlayTypeRegistry>,
     /// The online map library's catalog and Choose Map's map download.
     pub(crate) map_library: crate::app::map_library::MapLibrary,
+    /// The online login page's lobby counts.
+    pub(crate) login_info: crate::app::shell_wol::login_info::LoginInfo,
+    /// VERA's own map pictures for the setup screens' previews.
+    pub(crate) map_pictures: crate::app::map_picture::MapPictures,
+    /// The mod this run reads on top of the game folder (`app::mods`).
+    pub(crate) mods: crate::app::mods::Mods,
     /// The release check, its main-menu offer and the download (desktop only).
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     pub(crate) updater: crate::app::updater::Updater,
@@ -274,8 +291,46 @@ pub(crate) struct ShellMessageBox {
     pub(crate) purpose: ShellMessageBoxPurpose,
 }
 
+impl ShellMessageBox {
+    /// VERA's Esc menu and the Mods page's boxes ask over the page that is
+    /// showing, so an answer that changes nothing leaves the
+    /// page as it was. gamemd's callers destroy their dialog first and ask
+    /// over the empty backdrop.
+    pub(crate) fn keeps_page(&self) -> bool {
+        matches!(
+            self.purpose,
+            ShellMessageBoxPurpose::ShellMenu(_)
+                | ShellMessageBoxPurpose::ModRestart(_)
+                | ShellMessageBoxPurpose::ModFiles(_)
+                | ShellMessageBoxPurpose::ModMade(_)
+        )
+    }
+
+    /// The settings VERA's Esc menu shows.
+    pub(crate) fn menu_settings(
+        &self,
+    ) -> Option<&crate::ui::main_menu_dialogs::OptionsDialogState> {
+        match &self.purpose {
+            ShellMessageBoxPurpose::ShellMenu(settings) => Some(settings),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn menu_settings_mut(
+        &mut self,
+    ) -> Option<&mut crate::ui::main_menu_dialogs::OptionsDialogState> {
+        match &mut self.purpose {
+            ShellMessageBoxPurpose::ShellMenu(settings) => Some(settings),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) enum ShellMessageBoxPurpose {
+    /// VERA's Esc menu (`app::shell_menu`): Options, Exit Game or Cancel, with
+    /// a few settings from the Options page.
+    ShellMenu(Box<crate::ui::main_menu_dialogs::OptionsDialogState>),
     /// Main_Game state 6: OK quits, Cancel rebuilds `0xE2`.
     ExitGame,
     /// GameExit::Defeat `0x006860E5`: Yes restarts this start, if VERA can
@@ -294,7 +349,27 @@ pub(crate) enum ShellMessageBoxPurpose {
     /// button stops waiting.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     UpdateCheck,
-    /// The updater's notice (`0xCE`): a failure, or what a check found.
-    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    UpdateNotice,
+    /// An OK notice (`0xCE`): the updater's failure or what its check found,
+    /// or why a mod is not in use (`app::mods`).
+    Notice,
+    /// The Mods page's Use This Mod: Restart keeps this folder, or the
+    /// original game, for the next start and starts the game again.
+    ModRestart(Option<String>),
+    /// The Mods page's Check Files (`App::check_picked_mod`).
+    ModFiles(ModFilesBox),
+    /// The Mods page's New Mod made this folder: Open Folder shows it, Close
+    /// closes.
+    ModMade(std::path::PathBuf),
+}
+
+/// The boxes of the Mods page's Check Files, in the order they come.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ModFilesBox {
+    /// The mod's files are being read; the button stops the wait.
+    Reading,
+    /// What the check found, or what came of writing the list: OK.
+    Found,
+    /// The mod has no list, or differs from it: the first button writes the
+    /// folder's files as the mod's list, the second closes.
+    Offer,
 }

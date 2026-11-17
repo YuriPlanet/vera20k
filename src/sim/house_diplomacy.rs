@@ -124,6 +124,15 @@ impl PartialEq for HouseAlliances {
 impl Eq for HouseAlliances {}
 
 impl HouseAlliances {
+    /// A copy that shares no storage with this one, for the presentation
+    /// copy of the world (docs/sim-thread.md); its matrix builds on demand.
+    pub(crate) fn detached(&self) -> Self {
+        Self {
+            graph: Arc::new((*self.graph).clone()),
+            matrix: OnceLock::new(),
+        }
+    }
+
     /// A graph with no matrix built yet.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn new(graph: HouseAllianceMap) -> Self {
@@ -415,13 +424,29 @@ impl Simulation {
         effects: FrameEffects<'_>,
     ) {
         // 0x00501640..0x00501662: the mode's vt+4, else Rules AlliesAllowed.
-        // Battle and FreeForAll, the skirmish-listed modes, share vt+4
-        // 0x005C0E30, which answers false.
-        if !rules.general.allies_allowed {
+        // Only Cooperative's vt+4 (0x005C4EE0) answers true, so its
+        // computers turn paranoid although MPCoopMD sets AlliesAllowed=no.
+        let mode_permits = self
+            .session
+            .multiplayer_mode_class()
+            .is_some_and(|class| class.policy().permits_all_allied);
+        if !mode_permits && !rules.general.allies_allowed {
+            return;
+        }
+        // VERA `[General] AINearestEnemy=` (off by default): the computers
+        // neither band together nor all turn on the humans.
+        if rules.general.ai_nearest_enemy {
             return;
         }
         // 0x00501668..0x00501675.
         if self.session.computer_slot_has_team() {
+            return;
+        }
+        // VERA: in a match only AI play there is no human for the computers
+        // to turn on together (`Simulation::network_ai_alone`); Can_Ally
+        // refuses only an alliance that leaves no enemy, so two of three
+        // left would gang up on the third.
+        if self.network_ai_alone() {
             return;
         }
         let game_mode_nonzero = self.session.game_mode_nonzero();
@@ -586,6 +611,9 @@ impl Simulation {
             owner,
             other,
             anger.wrapping_neg(),
+            self.session.game_mode_nonzero(),
+            rules.ares_form(),
+            rules.general.ai_nearest_enemy,
         );
         if let Some(house) = self.houses.get_mut(&owner)
             && house.enemy_house() == Some(other)
@@ -732,6 +760,9 @@ impl Simulation {
             owner,
             other,
             1,
+            self.session.game_mode_nonzero(),
+            rules.ares_form(),
+            rules.general.ai_nearest_enemy,
         );
         // 0x004F9FE7..0x004FA01A: only an alliance is broken.
         if is_ally_by_object(Some(&self.house_alliances), &self.interner, owner, other) {
@@ -765,6 +796,9 @@ impl Simulation {
                     other,
                     other,
                     1,
+                    self.session.game_mode_nonzero(),
+                    rules.ares_form(),
+                    rules.general.ai_nearest_enemy,
                 );
             }
             if !self.object_placement_scope_active() {
@@ -905,6 +939,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "house_diplomacy_tests.rs"]
 mod tests;

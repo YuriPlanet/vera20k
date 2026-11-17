@@ -61,7 +61,7 @@ struct VertexOutput {
     @location(9) @interpolate(flat) z_gradient: u32,
     @location(10) @interpolate(flat) zshape_origin: vec2f,
     @location(11) @interpolate(flat) palette_light: vec4u,
-    // Only vs_read_only supplies an ordered destination command ordinal.
+    // Only vs_ordinal supplies an ordered destination command ordinal.
     @location(12) @interpolate(flat) command_ordinal: u32,
     @location(13) @interpolate(flat) source_palette: u32,
 };
@@ -112,7 +112,7 @@ fn vs_main(@builtin(vertex_index) idx: u32, instance: Instance) -> VertexOutput 
 // The first vertex carries command sequence, independently of instance index:
 // draw(ordinal*6..ordinal*6+6, original_instance..original_instance+1).
 @vertex
-fn vs_read_only(@builtin(vertex_index) idx: u32, instance: Instance) -> VertexOutput {
+fn vs_ordinal(@builtin(vertex_index) idx: u32, instance: Instance) -> VertexOutput {
     var output = shp_vertex(idx % 6u, instance);
     output.command_ordinal = idx / 6u + 1u;
     return output;
@@ -193,19 +193,10 @@ struct FragOutput {
 
 // Palette and stored-depth mechanisms are supplied by tactical_shader::source.
 
-@fragment
-fn fs_main(input: VertexOutput) -> FragOutput {
-    let index: u32 = textureLoad(source_indices, source_texel(input.uv), 0).r;
-    var color: vec4f = textureSample(t_sprite, s_sprite, input.uv);
-    if (input.source_palette != 0u) {
-        color = indexed_color(index, input.source_palette);
-    }
-    if (color.a < 0.01) {
-        discard;
-    }
-
-    let z = native_candidate(input);
-
+// What an admitted source pixel stores. Both discards stay at the depth they
+// have here: one more call level around them makes optimizing FXC stop with an
+// internal error (terrain_depth.wgsl).
+fn zsprite_store(input: VertexOutput, color: vec4f, index: u32, z: i32) -> FragOutput {
     // The shared attachment stores the low16 native word, independent of map bounds.
     let frag_depth: f32 = stored_native_depth(z);
 
@@ -219,5 +210,38 @@ fn fs_main(input: VertexOutput) -> FragOutput {
     if (camera.pad1 > 0.5) {
         output.color = debug_depth_color(frag_depth);
     }
+    return output;
+}
+
+@fragment
+fn fs_main(input: VertexOutput) -> FragOutput {
+    let index: u32 = textureLoad(source_indices, source_texel(input.uv), 0).r;
+    let color = sampled_source_color(input.uv, index, input.source_palette);
+    if (color.a < 0.01) {
+        discard;
+    }
+    return zsprite_store(input, color, index, native_candidate(input));
+}
+
+// An opaque body inside a depth-tested edit interval (terrain_depth.wgsl): the
+// same store, which also restarts the pixel's shadow count. VERA scheduling
+// only (terrain_draw.rs `draw_interval_tail`).
+struct CountedFragOutput {
+    @location(0) color: vec4f,
+    @location(1) shadows: vec4f,
+    @builtin(frag_depth) depth: f32,
+};
+
+@fragment
+fn fs_counted(input: VertexOutput) -> CountedFragOutput {
+    let index: u32 = textureLoad(source_indices, source_texel(input.uv), 0).r;
+    let color = sampled_source_color(input.uv, index, input.source_palette);
+    if (color.a < 0.01) {
+        discard;
+    }
+    let pixel = zsprite_store(input, color, index, native_candidate(input));
+    var output: CountedFragOutput;
+    output.color = pixel.color;
+    output.depth = pixel.depth;
     return output;
 }

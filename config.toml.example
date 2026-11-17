@@ -8,6 +8,10 @@ ra2_dir = "C:/Westwood/RA2"
 # Optional VERA.INI location (defaults to VERA20k's user data folder).
 # Relative paths are resolved beside this config file, outside the game folder.
 # settings_dir = "."
+# Optional mod to play with: the name of a folder in VERA20k's Mods folder,
+# read on top of the game folder (docs/modding.md). Without it, the original game.
+# The game's Mods menu writes this line.
+# mod = "MyMod"
 
 [ini]
 # Root-file selection only, not full MOD gameplay or a different MIX mount policy.
@@ -20,6 +24,9 @@ profile = "yr" # yr | mo | auto | custom
 # ai = "my-ai.ini"
 # sound = "my-sound.ini"
 # eva = "my-eva.ini"
+# Theater INI suffix for any profile, the MD of SNOWMD.INI: "md" reads
+# snowmd.ini, "xx" reads snowxx.ini, or snowmd.ini when that is absent.
+# theater_suffix = "md"
 
 [graphics]
 extra_animations = true   # cosmetic effects: water/ore sparkles (future: laser pulses, particle trails)

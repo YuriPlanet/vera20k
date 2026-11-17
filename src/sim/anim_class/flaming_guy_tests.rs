@@ -181,7 +181,8 @@ fn compare_state(actual: &Value, expected: &Value, label: &str) {
 
 fn visit(sim: &mut Simulation, rules: &RuleSet, id: AnimId, frame: u32) {
     sim.session.set_binary_frame_for_test(frame);
-    sim.visit_anim(id, rules, None, FrameEffects::default());
+    sim.visit_anim(id, rules, None, FrameEffects::default())
+        .unwrap();
 }
 
 #[test]
@@ -429,19 +430,17 @@ fn stock_oil_derrick_death_weapon_produces_a_running_flameguy_in_master_frames()
     let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
     let roots = crate::rules::effect_asset_catalog::anim_class_roots(&rules);
     rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
-    rules
-        .bind_scheduler_anim_assets(
-            &rules
-                .general
-                .damage_fire_types
-                .iter()
-                .map(|anim| anim.name.clone())
-                .collect::<Vec<_>>(),
-            &assets,
-            "TEM",
-            "TEMPERATE",
-        )
-        .expect("physical damage-fire assets for the ordinary blast victims");
+    rules.bind_scheduler_anim_assets(
+        &rules
+            .general
+            .damage_fire_types
+            .iter()
+            .map(|anim| anim.name.clone())
+            .collect::<Vec<_>>(),
+        &assets,
+        "TEM",
+        "TEMPERATE",
+    );
     rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
     assert_eq!(
         rules.object("CAOILD").unwrap().death_weapon.as_deref(),

@@ -91,11 +91,6 @@ impl BinkMovieSurface {
         self.current_frame
     }
 
-    /// The actual decoded frame, for the retained sidebar surface consumer.
-    pub fn rgba(&self) -> &[u8] {
-        &self.rgba
-    }
-
     pub fn file(&self) -> &BinkFile {
         &self.file
     }
@@ -238,7 +233,7 @@ fn yuv_to_rgb_jpeg(y: i32, u: i32, v: i32) -> (u8, u8, u8) {
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
 

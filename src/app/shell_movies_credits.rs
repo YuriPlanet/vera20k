@@ -5,12 +5,12 @@
 
 use crate::sim::trigger_runtime::ThemeRequest;
 use crate::ui::shell::list::ListMetrics;
-use std::sync::Arc;
 use crate::util::time::Instant;
+use std::sync::Arc;
 
 use super::{App, AppState};
 use crate::app::frontend::credits_roll::{
-    CreditsInput, CreditsReturn, CreditsRoll, CreditsRollSession,
+    CreditsInput, CreditsReturn, CreditsRoll, CreditsRollSession, CreditsViewport,
 };
 use crate::app::frontend::fullscreen_movie::{FullscreenMovie, MovieReturn, movie_stem};
 use crate::app::shell_route::ShellRoute;
@@ -259,7 +259,7 @@ impl App {
             && state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .is_some_and(|runtime| runtime.simulation.session().game_mode_nonzero())
         {
             return;
@@ -308,20 +308,17 @@ impl App {
             .options_profile
             .voice_volume
             .clamp(0.0, 1.0);
-        // 0x006C99D0: the movie's subtitlemd.txt cues, when it has any.
+        // 0x006C99D0: the movie's cues, when it has any.
         let header = &surface.file().header;
-        let subtitles = state
-            .process_assets
-            .manager()
-            .and_then(|assets| assets.get_ref(crate::app::movie_subtitles::SUBTITLE_FILE))
-            .and_then(|file| crate::app::movie_subtitles::movie_subtitles(file, stem))
-            .and_then(|cues| {
-                crate::app::movie_subtitles::SubtitleTrack::new(
-                    cues,
-                    header.fps_num,
-                    header.fps_den,
-                )
-            });
+        let subtitles =
+            crate::app::movie_subtitles::cues_for_movie(state.process_assets.manager(), stem)
+                .and_then(|cues| {
+                    crate::app::movie_subtitles::SubtitleTrack::new(
+                        cues,
+                        header.fps_num,
+                        header.fps_den,
+                    )
+                });
         let movie = FullscreenMovie::new(
             surface,
             state.audio.music_player.as_ref().map(|music| music.mixer()),
@@ -452,9 +449,13 @@ impl App {
             return;
         };
         let lookup = |key: &str| Self::csf_label(state, key, &format!("MISSING:'{key}'"));
+        let viewport = CreditsViewport::new(
+            state.renderer.gpu.config.width,
+            state.renderer.gpu.config.height,
+        );
         let lines = crate::ui::movies_credits_shell::parse_credits(
             &bytes,
-            state.renderer.gpu.config.height as i32,
+            viewport.surface_height,
             &lookup,
         );
         let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();

@@ -45,6 +45,7 @@ fn list(sim: &mut Simulation, owner: InternedId, ids: Vec<u64>) {
 
 #[test]
 fn factory_qualification_matches_executed_ares_suffix_controls() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let data = crate::test_fixture::json("tools/rules_oracle/ares_factory_owners.json");
     for row in data["rows"].as_array().unwrap() {
         let input = &row["input"];
@@ -122,6 +123,7 @@ fn factory_qualification_matches_executed_ares_suffix_controls() {
 
 #[test]
 fn factory_country_is_initialized_from_direct_parent_and_survives_owner_transfer_and_conversion() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner) = fixture("");
     assert!(
         sim.houses[&owner].permanent_factory_plans().is_empty(),
@@ -185,6 +187,7 @@ fn factory_country_is_initialized_from_direct_parent_and_survives_owner_transfer
 
 #[test]
 fn factory_qualification_uses_one_candidate_for_both_lists_and_requires_a_matching_factory_kind() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner) = fixture("");
     let target = rules.object("TARGET").unwrap();
     assert!(!qualifies(&sim, &rules, &sim.houses[&owner], target));
@@ -218,6 +221,7 @@ fn factory_qualification_uses_one_candidate_for_both_lists_and_requires_a_matchi
 
 #[test]
 fn permanent_grant_scans_all_upgrade_slots_and_persists_without_the_building() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner) = fixture("");
     let yard = construct(&mut sim, &rules, "YARD");
     let upgrade = sim.interner.get("UP").unwrap();
@@ -253,9 +257,12 @@ fn permanent_grant_scans_all_upgrade_slots_and_persists_without_the_building() {
         sim.houses[&owner].permanent_factory_plans(),
         &[source, source]
     );
-    // Native restore deliberately resets Scenario RNG to seed zero. Isolate
-    //the retained factory state from that independent load transition.
+    // Native restore deliberately resets Scenario RNG to seed zero and
+    // discards active planning, including the yard's constructor token
+    // (ClearScene6370B0 / TechnoLoad70BF79). Isolate the retained factory
+    // state from those independent load transitions.
     sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    sim.reset_planning_after_player_load();
     let before = sim.state_hash();
     let bytes = GameSnapshot::save_validated(&sim, 1, 2, "factory plans", 0);
     let mut restored = GameSnapshot::load_validated(&bytes, 1, 2, "").unwrap().sim;

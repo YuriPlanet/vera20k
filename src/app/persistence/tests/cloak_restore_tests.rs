@@ -4,7 +4,13 @@ use crate::sim::cloak_disguise::CloakRuntime;
 use crate::sim::world::{FrameEffects, TickLane};
 
 fn cloak(sim: &Simulation, id: u64) -> CloakRuntime {
-    sim.entities().get(id).unwrap().cloak.unwrap()
+    sim.entities()
+        .get(id)
+        .unwrap()
+        .cloak
+        .as_deref()
+        .copied()
+        .unwrap()
 }
 
 fn transition_fixture(state: i32) -> Option<(Simulation, RuleSet, ResolvedTerrainGrid, u64)> {
@@ -55,7 +61,7 @@ fn transition_fixture(state: i32) -> Option<(Simulation, RuleSet, ResolvedTerrai
         value["state"] = serde_json::json!(3);
         value["step_delta"] = serde_json::json!(-1);
         sim.entities_mut_for_test().get_mut(id).unwrap().cloak =
-            Some(serde_json::from_value(value).unwrap());
+            Some(Box::new(serde_json::from_value(value).unwrap()));
     }
     Some((sim, rules, terrain, id))
 }

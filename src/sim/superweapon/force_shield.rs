@@ -32,14 +32,14 @@
 //!   util/native_x87.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "force_shield_tests.rs"]
 mod tests;
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
-use crate::sim::superweapon::invulnerability::{InvulnKind, apply_invulnerability};
+use crate::sim::superweapon::invulnerability::{InvulnKind, techno_iron_curtain};
 use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 
 /// The coordinates the walk skips (`0x006CD1C8..0x006CD1FF`): `0x00B0C020`,
@@ -127,11 +127,14 @@ pub fn launch(
     let shielded = walk(centre, general.force_shield_radius, &buildings);
     for &index in &shielded {
         if let Some(building) = sim.substrate.entities.get_mut(ids[index]) {
-            apply_invulnerability(
+            let object = sim.interner.object_type(building.type_ref(), rules);
+            techno_iron_curtain(
                 building,
+                object,
                 frame,
                 general.force_shield_duration,
                 InvulnKind::ForceShield,
+                rules.ares(),
             );
         }
     }

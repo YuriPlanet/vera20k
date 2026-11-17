@@ -645,7 +645,7 @@ fn retail_damage_scene(route: &Value) -> Option<RetailDamageScene> {
         &rules,
         Some(&map.ini),
     );
-    sim.install_team_ai_registry(&teams, &rules).unwrap();
+    sim.install_team_ai_registry(&teams, &rules);
     let eva =
         EvaRegistry::from_ini(&IniFile::from_bytes(assets.get_ref("EVAMD.INI").unwrap()).unwrap());
     sim.initialize_trigger_definitions(&excerpt, &teams, Some(&eva), None, None);
@@ -671,7 +671,8 @@ fn retail_damage_scene(route: &Value) -> Option<RetailDamageScene> {
             &[],
             Some((32, 32)),
             Some(bounds),
-        ),
+        )
+        .into(),
     );
     sim.install_fixture_path_grid(Some(&path));
     sim.install_resolved_terrain_for_new_map(terrain);
@@ -988,9 +989,14 @@ fn retail_all06_red_damage_runs_parliament_destroy_attached_synchronously() {
         .iter()
         .map(|row| row.1)
         .collect();
+    // Ares (hook 0x5F57B5) adds 84 and 83 while the object lives on.
+    let expected: &[i32] = if rules.ares() {
+        &[43, 48, 29, 84, 83]
+    } else {
+        &[43, 48, 29]
+    };
     assert_eq!(
-        raised,
-        [43, 48, 29],
+        raised, expected,
         "nested kill visits retain the Tag dispatch guard; the outer receiver must reread Alive before first-damage events"
     );
     assert!(matches!(
@@ -1011,14 +1017,16 @@ fn retail_all06_red_damage_runs_parliament_destroy_attached_synchronously() {
     assert_eq!(retained.refs, retained_refs);
     assert_eq!(retained.pending, integer(&native_tag["pending"]) != 0);
     assert!(sim.trigger_runtime.logic_tags.contains(&tag));
-    sim.validate_restored_trigger_runtime().unwrap();
+    sim.validate_restored_trigger_runtime(rules.ares_form())
+        .unwrap();
     let bytes = save_codec::serialize(&sim.trigger_runtime).unwrap();
     let mut restored: TriggerRuntime = save_codec::deserialize(&bytes).unwrap();
     assert_eq!(restored, sim.trigger_runtime);
     restored.action_trace = std::mem::take(&mut sim.trigger_runtime.action_trace);
     restored.dispatch_trace = std::mem::take(&mut sim.trigger_runtime.dispatch_trace);
     sim.trigger_runtime = restored;
-    sim.validate_restored_trigger_runtime().unwrap();
+    sim.validate_restored_trigger_runtime(rules.ares_form())
+        .unwrap();
     // A repeated direct hit or deferred retirement must not book another
     // death after the nested receiver already completed it.
     let hit = EntityDamageEvent::direct_receiver(

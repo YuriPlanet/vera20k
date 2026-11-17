@@ -273,7 +273,7 @@ pub fn update_scroll<I>(
     true
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     use crate::ui::skirmish_shell::{SavedSeedBrowserRow, SavedSeedPrompt, SavedSeedPromptPurpose};
@@ -290,6 +290,7 @@ mod tests {
                 description: format!("Save {i}").into(),
                 last_write_time: (count - i) as u64,
                 visible: true,
+                loadable: true,
             })
             .collect();
         let browser = SavedSeedBrowserState::open_rows(

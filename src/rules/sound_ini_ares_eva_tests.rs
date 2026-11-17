@@ -23,79 +23,84 @@ fn registry() -> EvaRegistry {
 
 #[test]
 fn fixed_catalog_uses_feature_specific_registration_and_voice_lookup() {
-    let registry = registry();
-    for (tag, index) in [("aLLied", 0), ("rUSsian", 1), ("yURI", 2)] {
-        assert_eq!(registry.voice_index_for_tag(tag), Some(index));
-    }
-    for tag in ["", "unknown", " VoiceA", "VoiceA ", " Allied"] {
-        assert_eq!(registry.voice_index_for_tag(tag), None, "{tag:?}");
-    }
-    assert_eq!(registry.len(), 2, "duplicate event retains its first slot");
-    assert_eq!(registry.entry_by_index(0).unwrap().name, "EVA_TEST");
-    assert_eq!(registry.index_of("eva_test"), Some(0));
-
-    #[cfg(feature = "ares")]
-    {
-        let expected = control("registration");
-        let names: Vec<_> = registry.entries.iter().map(|entry| &entry.name).collect();
-        assert_eq!(
-            serde_json::to_value(names).unwrap(),
-            expected["event_names"]
-        );
-        assert_eq!(
-            serde_json::to_value(&registry.extra_tags).unwrap(),
-            expected["tags"],
-            "stock names skipped; duplicate tags retain first spelling and order",
-        );
-        for (ordinal, tag) in expected["tags"].as_array().unwrap().iter().enumerate() {
-            assert_eq!(
-                registry.voice_index_for_tag(&tag.as_str().unwrap().to_ascii_lowercase()),
-                Some(ordinal as i32 + 3),
-            );
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let registry = registry();
+        for (tag, index) in [("aLLied", 0), ("rUSsian", 1), ("yURI", 2)] {
+            assert_eq!(registry.voice_index_for_tag(tag), Some(index));
         }
-        assert_eq!(registry.voice_index_for_tag(&"X".repeat(205)), None);
-        assert_eq!(registry.index_of(&"N".repeat(45)), None);
-    }
-    #[cfg(not(feature = "ares"))]
-    {
-        assert_eq!(registry.voice_index_for_tag("VoiceA"), None);
-        assert_eq!(registry.voice_index_for_tag("VoiceB"), None);
-        assert_eq!(registry.entry_by_index(1).unwrap().name, "N".repeat(45));
-        assert_eq!(registry.index_of(&"N".repeat(45)), Some(1));
+        for tag in ["", "unknown", " VoiceA", "VoiceA ", " Allied"] {
+            assert_eq!(registry.voice_index_for_tag(tag), None, "{tag:?}");
+        }
+        assert_eq!(registry.len(), 2, "duplicate event retains its first slot");
+        assert_eq!(registry.entry_by_index(0).unwrap().name, "EVA_TEST");
+        assert_eq!(registry.index_of("eva_test"), Some(0));
+
+        if ares_way {
+            let expected = control("registration");
+            let names: Vec<_> = registry.entries.iter().map(|entry| &entry.name).collect();
+            assert_eq!(
+                serde_json::to_value(names).unwrap(),
+                expected["event_names"]
+            );
+            assert_eq!(
+                serde_json::to_value(&registry.extra_tags).unwrap(),
+                expected["tags"],
+                "stock names skipped; duplicate tags retain first spelling and order",
+            );
+            for (ordinal, tag) in expected["tags"].as_array().unwrap().iter().enumerate() {
+                assert_eq!(
+                    registry.voice_index_for_tag(&tag.as_str().unwrap().to_ascii_lowercase()),
+                    Some(ordinal as i32 + 3),
+                );
+            }
+            assert_eq!(registry.voice_index_for_tag(&"X".repeat(205)), None);
+            assert_eq!(registry.index_of(&"N".repeat(45)), None);
+        } else {
+            assert_eq!(registry.voice_index_for_tag("VoiceA"), None);
+            assert_eq!(registry.voice_index_for_tag("VoiceB"), None);
+            assert_eq!(registry.entry_by_index(1).unwrap().name, "N".repeat(45));
+            assert_eq!(registry.index_of(&"N".repeat(45)), Some(1));
+        }
     }
 }
 
 #[test]
 fn filenames_match_native_columns_and_keep_stock_fallback_without_ares() {
-    let registry = registry();
-    let entry = registry.entry("EVA_TEST").unwrap();
-    for row in controls().iter().filter(|row| row["kind"] == "filename") {
-        let voice = i32::try_from(row["voice_index"].as_i64().unwrap()).unwrap();
-        let expected = if crate::rules::ARES_ENABLED || (0..=2).contains(&voice) {
-            row["filename"].as_str().unwrap()
-        } else {
-            "STOCK_Y"
-        };
-        assert_eq!(
-            entry.column_by_voice(voice).unwrap_or(""),
-            expected,
-            "{row}"
-        );
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let registry = registry();
+        let entry = registry.entry("EVA_TEST").unwrap();
+        for row in controls().iter().filter(|row| row["kind"] == "filename") {
+            let voice = i32::try_from(row["voice_index"].as_i64().unwrap()).unwrap();
+            let expected = if ares_way || (0..=2).contains(&voice) {
+                row["filename"].as_str().unwrap()
+            } else {
+                "STOCK_Y"
+            };
+            assert_eq!(
+                entry.column_by_voice(voice).unwrap_or(""),
+                expected,
+                "{row}"
+            );
+        }
+        // This registered tag has no per-event sample; an empty extra slot stays empty.
+        if ares_way {
+            assert_eq!(entry.column_by_voice(5), None);
+        }
+        assert_eq!(entry.column(EvaSide::Yuri), Some("STOCK_Y"));
     }
-    // This registered tag has no per-event sample; an empty extra slot stays empty.
-    #[cfg(feature = "ares")]
-    assert_eq!(entry.column_by_voice(5), None);
-    assert_eq!(entry.column(EvaSide::Yuri), Some("STOCK_Y"));
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn extra_columns_match_native_read_and_missing_reread_clears_previous_sample() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut registry = registry();
     let samples = |entry: &EvaEntry| {
         entry
             .extra_columns
             .iter()
+            .flatten()
             .map(|sample| sample.as_deref().unwrap_or(""))
             .map(str::to_string)
             .collect::<Vec<_>>()
@@ -121,13 +126,14 @@ fn extra_columns_match_native_read_and_missing_reread_clears_previous_sample() {
         registry.entries[0]
             .extra_columns
             .iter()
+            .flatten()
             .all(Option::is_none)
     );
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn registered_none_spellings_are_resolved_before_side_none_handling() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for row in controls()
         .iter()
         .filter(|row| row["kind"] == "none_tag_precedence")

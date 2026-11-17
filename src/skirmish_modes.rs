@@ -20,6 +20,47 @@ pub enum MpModeClass {
     Cooperative,
 }
 
+/// Orthogonal capability and room-behavior policy owned by a multiplayer mode
+/// class. Each variant supplies its exact policy row so callers query a
+/// capability directly instead of branching on mode names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModePolicy {
+    /// Native vtable `+0x40`, required by Skirmish's game-type dropdown and AI
+    /// slot admission (`0x005D6130` at `0x005D6263`). Battle (`0x005C0E20`) and
+    /// FreeForAll (`0x005C5E30`) answer true; ManBattle, Siege, Unholy and
+    /// Cooperative keep base `0x005D6360` (false).
+    pub lists_in_skirmish: bool,
+    /// Native vtable `+0xBC`: admits observer seats (`0x005C0FD0` returns true
+    /// for ordinary modes; `0x005C4F00` returns false for Cooperative).
+    pub observers_allowed: bool,
+    /// Native vtable `+0x98`: mode-level player cap composed with map capacity by
+    /// `0x005EC3A0`/`0x005E9E70` (`0x005C42C0` returns 2; ordinary `0x005C0F30`
+    /// returns `-1`, no extra cap).
+    pub setup_player_limit: Option<usize>,
+    /// Native vtable `+0x4`: whether an all-allied room is allowed to start
+    /// (`0x005C4EE0` returns true only for Cooperative; `0x005C0E30` false).
+    pub permits_all_allied: bool,
+    /// Native vtable `+0x4` and `+0x8`, which the sidebar Diplomacy button asks
+    /// before choosing mission briefing over Diplomacy in LAN/WOL
+    /// (`0x00653918..0x00653938`). Cooperative (`0x007EE27C`) overrides base
+    /// `0x005C0E30`/`0x005C0E40` (false) with `0x005C4EE0`/`0x005C4EF0` (true).
+    pub restates_mission_for_diplomacy: bool,
+    /// Whether VERA's network room seats players into numbered teams when
+    /// alliances are allowed outside clan rooms.
+    pub room_teams: bool,
+    /// Whether multiple players may pick the same start position to share a
+    /// House in network setup.
+    pub shared_start_positions: bool,
+    /// Native `GameExit` mode `vt+0x8`: in a LAN or WOL game, skips the score
+    /// dialog and its Scenario RNG draws (`0x00685843..0x0068586A`).
+    pub skips_network_score_dialog: bool,
+    /// Native vtable `+0x4` and `+0x8`, both of which `MPlayer_Defeated` asks
+    /// in a LAN or WOL game (`0x004FC5CF..0x004FC5F1`): when all surviving
+    /// contenders are allied and a human survives, defeated human allies win
+    /// too.
+    pub shared_allied_victory: bool,
+}
+
 impl MpModeClass {
     const SECTIONS: [(Self, &'static str); 6] = [
         (Self::Battle, "Battle"),
@@ -30,21 +71,43 @@ impl MpModeClass {
         (Self::Cooperative, "Cooperative"),
     ];
 
-    /// Vtable `+0x40`, which Skirmish's game-type list requires
-    /// (`0x005D6130` at `0x005D6263`). Battle (`0x005C0E20`) and FreeForAll
-    /// (`0x005C5E30`) answer true; ManBattle, Siege, Unholy and Cooperative
-    /// keep the base `0x005D6360` (false).
-    pub const fn lists_in_skirmish(self) -> bool {
-        matches!(self, Self::Battle | Self::FreeForAll)
-    }
-
-    /// Vtable `+0x4` and `+0x8`, which the sidebar Diplomacy button asks
-    /// before choosing the mission briefing over Diplomacy in LAN/WOL
-    /// (`0x00653918..0x00653938`). Only Cooperative (vtable `0x007EE27C`)
-    /// overrides the base `0x005C0E30`/`0x005C0E40` (false) with
-    /// `0x005C4EE0`/`0x005C4EF0` (true).
-    pub const fn restates_mission_for_diplomacy(self) -> bool {
-        matches!(self, Self::Cooperative)
+    /// Exhaustive mode policy row for this multiplayer mode class.
+    pub const fn policy(self) -> ModePolicy {
+        match self {
+            Self::Battle | Self::FreeForAll => ModePolicy {
+                lists_in_skirmish: true,
+                observers_allowed: true,
+                setup_player_limit: None,
+                permits_all_allied: false,
+                restates_mission_for_diplomacy: false,
+                room_teams: true,
+                shared_start_positions: true,
+                skips_network_score_dialog: false,
+                shared_allied_victory: false,
+            },
+            Self::ManBattle | Self::Siege | Self::Unholy => ModePolicy {
+                lists_in_skirmish: false,
+                observers_allowed: true,
+                setup_player_limit: None,
+                permits_all_allied: false,
+                restates_mission_for_diplomacy: false,
+                room_teams: true,
+                shared_start_positions: true,
+                skips_network_score_dialog: false,
+                shared_allied_victory: false,
+            },
+            Self::Cooperative => ModePolicy {
+                lists_in_skirmish: false,
+                observers_allowed: false,
+                setup_player_limit: Some(2),
+                permits_all_allied: true,
+                restates_mission_for_diplomacy: true,
+                room_teams: false,
+                shared_start_positions: false,
+                skips_network_score_dialog: true,
+                shared_allied_victory: true,
+            },
+        }
     }
 }
 
@@ -60,26 +123,6 @@ pub enum ModeStartEffect {
 }
 
 impl MpModeClass {
-    /// Active original vtable+BC:5C0FD0 for ordinary modes,5C4F00 for Coop.
-    pub const fn allows_observers(self) -> bool {
-        !matches!(self, Self::Cooperative)
-    }
-
-    /// Active original vtable+4:5C4EE0 is true only for Cooperative.
-    pub const fn permits_all_allied(self) -> bool {
-        matches!(self, Self::Cooperative)
-    }
-
-    /// Mode-specific cap used alongside the map's capacity by5EC3A0/5E9E70.
-    /// vtable+98:5C42C0 returns2; ordinary5C0F30 returns-1(no extra cap).
-    pub const fn setup_player_limit(self) -> Option<usize> {
-        if matches!(self, Self::Cooperative) {
-            Some(2)
-        } else {
-            None
-        }
-    }
-
     ///5C21D0/5C2500 show Cooperative's description/difficulty controls and
     /// hide rows beyond the two human positions. Ordinary options keep their
     /// existing resource visibility; this method does not invent forced values.
@@ -337,7 +380,7 @@ pub fn mode_by_id(modes: &[SkirmishGameMode], id: i32) -> Option<&SkirmishGameMo
     modes.iter().find(|mode| mode.id == id)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_scenario))]
 mod tests {
 
     #[test]
@@ -389,7 +432,7 @@ mod tests {
         };
         let listed: Vec<(i32, String)> = parse_mpmodes_ini(&ini)
             .into_iter()
-            .filter(|mode| mode.class.lists_in_skirmish())
+            .filter(|mode| mode.class.policy().lists_in_skirmish)
             .map(|mode| (mode.id, mode.ui_name_key))
             .collect();
         assert_eq!(

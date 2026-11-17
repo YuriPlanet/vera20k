@@ -197,6 +197,8 @@ fn all_five_original_stop_controls_only_mark_alive_same_cell_systems() {
     }
 }
 
+// Ares simulates retail BigGreySmokeSys itself (hooks 0x62DF05, 0x62FD60) and
+// builds no ParticleClass children.
 #[test]
 fn retail_smoke_stop_keeps_existing_children_and_saved_flag_until_their_shared_retirement() {
     let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {

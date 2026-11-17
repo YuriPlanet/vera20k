@@ -25,6 +25,11 @@ impl Simulation {
     /// operational visit. Dormant LaserFencePost/CloakGenerator tails still
     /// require their separate, currently unported mechanisms.
     pub(crate) fn set_building_stuff_enabled(&mut self, id: u64, enabled: bool, rules: &RuleSet) {
+        // Ares BuildingClass_DisableThings10016D00 (hook4524A3) updates a
+        // sensor array at DisableStuff452480's head.
+        if rules.ares_form() && !enabled {
+            self.update_ares_sensor_array(id, rules, None);
+        }
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;
         };
@@ -67,7 +72,7 @@ impl Simulation {
             return;
         };
         if entity.category() == crate::map::entities::EntityCategory::Structure
-            && !entity.building_has_engineer.is_set()
+            && !entity.building.building_has_engineer.is_set()
             && self
                 .interner
                 .object_type(entity.type_ref(), rules)
@@ -75,6 +80,17 @@ impl Simulation {
         {
             self.set_building_stuff_enabled(id, false, rules);
         }
+    }
+
+    /// Ares 3.0 `10024150` after a structure's return to its first owner: a
+    /// `NeedsEngineer=` one loses HasEngineer and is disabled again
+    /// (`DisableStuff @ 0x00452480`), as an unengineered tech building is.
+    pub(crate) fn disable_returned_tech_building(&mut self, id: u64, rules: &RuleSet) {
+        let Some(entity) = self.substrate.entities.get_mut(id) else {
+            return;
+        };
+        entity.building.building_has_engineer.set = false;
+        self.set_building_stuff_enabled(id, false, rules);
     }
 
     /// Every changed-owner Building path writes HasEngineer (4484AF), including
@@ -86,7 +102,7 @@ impl Simulation {
         if entity.category() != crate::map::entities::EntityCategory::Structure {
             return;
         }
-        entity.building_has_engineer.set = true;
+        entity.building.building_has_engineer.set = true;
         if self
             .interner
             .object_type(entity.type_ref(), rules)
@@ -179,7 +195,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod tests {
     use super::*;
     use crate::map::entities::{EntityCategory, MapEntity};
@@ -277,6 +293,7 @@ mod tests {
             !sim.entities()
                 .get(id)
                 .unwrap()
+                .building
                 .building_has_engineer
                 .is_set()
         );
@@ -292,6 +309,7 @@ mod tests {
             sim.entities()
                 .get(id)
                 .unwrap()
+                .building
                 .building_has_engineer
                 .is_set()
         );
@@ -313,6 +331,7 @@ mod tests {
                 .entities()
                 .get(id)
                 .unwrap()
+                .building
                 .building_has_engineer
                 .is_set()
         );
@@ -332,8 +351,11 @@ mod tests {
             .set_for_test(25);
         sim.refresh_building_damage_state(id, &rules);
         let replaced = sim.entities().get(id).unwrap().building_art.anim_slots[3].unwrap();
-        assert!(
-            !sim.anim(replaced).unwrap().runtime().paused,
+        // Ares 3.0 10014400 (hook 0x451A54) counts the unengineered
+        // NeedsEngineer type as Powered, so its replacement starts paused.
+        assert_eq!(
+            sim.anim(replaced).unwrap().runtime().paused,
+            rules.ares_form(),
             "replacement does not copy pause; TypePowered is false"
         );
         assert!(!sim.entities().get(id).unwrap().building_art.stuff_enabled);

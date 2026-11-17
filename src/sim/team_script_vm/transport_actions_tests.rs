@@ -61,7 +61,7 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
         &mut sim.houses,
         &map.ini,
     );
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     sim.initialize_trigger_definitions(&map, &registry, None, None, None);
     let mut placements: Vec<_> = map
         .entities
@@ -270,8 +270,7 @@ impl Fixture {
         let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
-        sim.install_team_ai_registry(&registry, &rules)
-            .expect("the test AIMD installs");
+        sim.install_team_ai_registry(&registry, &rules);
         Self {
             sim,
             rules,
@@ -474,8 +473,7 @@ fn retail_team_ai() -> Option<(RuleSet, Simulation)> {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules)
-        .expect("retail AIMD installs");
+    sim.install_team_ai_registry(&registry, &rules);
     Some((rules, sim))
 }
 
@@ -488,28 +486,30 @@ fn the_retail_transport_scripts_run_ported_actions() {
         return;
     };
     let vm = &sim.team_script_vm;
-    let mut transport_teams = 0;
-    let mut first_unported = std::collections::BTreeMap::new();
-    for team_type in vm.team_types.values() {
-        let actions = &vm.scripts[&team_type.script_id].actions;
-        if actions.iter().any(|action| action.action_id == 14) {
-            transport_teams += 1;
-            assert!(
-                actions
-                    .iter()
-                    .all(|action| action_is_ported(action.action_id))
-            );
+    for ares_way in [false, true] {
+        let mut transport_teams = 0;
+        let mut first_unported = std::collections::BTreeMap::new();
+        for team_type in vm.team_types.values() {
+            let actions = &vm.scripts[&team_type.script_id].actions;
+            if actions.iter().any(|action| action.action_id == 14) {
+                transport_teams += 1;
+                assert!(
+                    actions
+                        .iter()
+                        .all(|action| action_is_ported(action.action_id, ares_way))
+                );
+            }
+            if let Some(action) = actions
+                .iter()
+                .find(|action| !action_is_ported(action.action_id, ares_way))
+            {
+                *first_unported.entry(action.action_id).or_insert(0) += 1;
+            }
         }
-        if let Some(action) = actions
-            .iter()
-            .find(|action| !action_is_ported(action.action_id))
-        {
-            *first_unported.entry(action.action_id).or_insert(0) += 1;
-        }
+        assert_eq!(vm.team_types.len(), 163);
+        assert_eq!(transport_teams, 16);
+        assert!(first_unported.is_empty(), "{first_unported:?}");
     }
-    assert_eq!(vm.team_types.len(), 163);
-    assert_eq!(transport_teams, 16);
-    assert!(first_unported.is_empty(), "{first_unported:?}");
 }
 
 /// Through the production readers: the five retail AIMD TeamTypes whose
@@ -763,8 +763,7 @@ impl OracleTeam {
         let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
-        sim.install_team_ai_registry(&registry, &rules)
-            .expect("the row's AIMD installs");
+        sim.install_team_ai_registry(&registry, &rules);
         let deploy = action == 9;
         let place = |sim: &mut Simulation, name: &str, slot: u16, [x, y, z]: [i32; 3]| {
             let (rx, ry) = if deploy {

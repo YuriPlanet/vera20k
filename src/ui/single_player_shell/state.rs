@@ -75,7 +75,7 @@ pub fn return_code_for_action(action: SinglePlayerShellAction) -> Option<i32> {
         .and_then(|button| button.result)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     use crate::ui::shell::controller::DialogController;

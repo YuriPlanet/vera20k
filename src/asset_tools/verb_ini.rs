@@ -344,7 +344,7 @@ fn run_inner(
     let id = options.mode_id.expect("validated mode id");
     let mode = crate::skirmish_modes::mode_by_id(&modes, id)
         .ok_or_else(|| format!("mode id {id} is absent from MPModesMD.ini"))?;
-    if !mode.class.lists_in_skirmish() {
+    if !mode.class.policy().lists_in_skirmish {
         return Err(format!(
             "mode id {id} is not in the supported noncampaign skirmish list"
         ));
@@ -434,7 +434,7 @@ fn run_inner(
     Ok(report)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
     use crate::rules::process_owner::NativeRulesProcessOwner;
@@ -720,8 +720,8 @@ mod tests {
     #[ignore = "requires retail YR installation containing RiverRam.yro; run explicitly"]
     fn retail_yro_scenario_inspection_uses_retained_discovery() {
         let retail = std::path::PathBuf::from(std::env::var("RA2_DIR").expect("set RA2_DIR"));
-        let mut assets =
-            crate::asset_tools::root::open_manager(&retail, false).expect("retail manager");
+        let mut assets = crate::asset_tools::root::open_manager(&retail, false, Default::default())
+            .expect("retail manager");
         let query = IniOptions {
             domain: Some("rules".into()),
             reader: Some("speed".into()),

@@ -183,6 +183,11 @@ pub(super) struct Options {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cooperative_campaign: Option<String>,
     pub seed: Option<u32>,
+    /// The room's Watching, `delayed` or `live` (docs/lobby-protocol.md
+    /// "Watching"). Absent while it is off, which the lobby reads as off;
+    /// lobbies before it refuse the field. Guests have no use for it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub watching: Option<String>,
 }
 
 impl Options {
@@ -242,12 +247,49 @@ pub(super) struct Session {
     // The operator's welcome, when one is set; the game's own otherwise.
     #[serde(default)]
     pub motd: Option<String>,
+    /// An account's password sign-in with `remember`: this computer's
+    /// remembered sign-in (docs/lobby-protocol.md "Accounts").
+    #[serde(default)]
+    pub sign_in_token: Option<String>,
 }
 
 #[derive(Deserialize)]
 pub(super) struct ChannelList {
     pub kind: u32,
     pub channels: Vec<Channel>,
+}
+
+/// `GET /v1/matches` (docs/lobby-protocol.md "Watching"). The game keeps
+/// only these fields of each match.
+#[derive(Deserialize)]
+pub(super) struct MatchList {
+    pub matches: Vec<Match>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct Match {
+    pub match_id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub map: Option<String>,
+    pub watchers: u32,
+    pub max_watchers: u32,
+    #[serde(default)]
+    pub names: Vec<String>,
+}
+
+impl From<Match> for crate::app::shell_wol::WolMatch {
+    fn from(value: Match) -> Self {
+        Self {
+            match_id: value.match_id,
+            name: value.name.unwrap_or_default(),
+            map: value.map.unwrap_or_default(),
+            watchers: value.watchers,
+            max_watchers: value.max_watchers,
+            names: value.names,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -295,17 +337,89 @@ pub(super) struct Start {
     pub relay: RelayGrant,
 }
 
-/// The `ladder` event: the running season's records of the names a `ladder`
-/// command asked for; a name without a rated game there has none.
+/// `watch_started` (docs/lobby-protocol.md "Watching"): the start every
+/// player's game got, with the timing it agreed, and this watcher's grant.
 #[derive(Deserialize)]
-pub(super) struct Ladder {
-    pub records: Vec<LadderRecord>,
+pub(super) struct WatchStarted {
+    pub match_id: String,
+    pub version: String,
+    pub rules_digest: String,
+    pub seed: u32,
+    /// The room's tournament value (`[0xB779C4]`), and whether it is a
+    /// Quick Co-op room: the start terms every player's game took.
+    pub tournament: i32,
+    pub quick_coop: bool,
+    pub users: Vec<WatchedUser>,
+    pub options: Options,
+    pub pings: Vec<i32>,
+    pub relay: WatchGrant,
 }
 
+#[derive(Deserialize)]
+pub(super) struct WatchedUser {
+    pub name: String,
+    pub flags: u32,
+    pub source_index: u8,
+}
+
+// Deliberately no Debug: a watch grant is a credential.
+#[derive(Deserialize)]
+pub(super) struct WatchGrant {
+    pub address: std::net::SocketAddrV4,
+    pub ticket: String,
+    pub packet_key: String,
+    pub payload_key: String,
+    pub ordering_certificate: String,
+}
+
+/// The `ladder` event for the names a `ladder` command asked for, or the
+/// rated players' tables the lobby sends unasked after a rated game, or none
+/// when a season starts or ends: the running season's records, which a name
+/// without a rated game there lacks, and the badge points of those that have
+/// played one.
+#[derive(Deserialize)]
+pub(super) struct Ladder {
+    /// The running season's number; `None` when none runs, as from a lobby
+    /// from before seasons.
+    #[serde(default)]
+    pub season: Option<u32>,
+    pub records: Vec<LadderRecord>,
+    /// Absent from a lobby from before all-time badges.
+    #[serde(default)]
+    pub high_scores: Vec<HighScoreRecord>,
+}
+
+impl Ladder {
+    /// The ladder table from the season's records, and the high-score table,
+    /// whose points pick the badges (`0x00783B80`), from the badge points.
+    pub(super) fn tables(&self) -> (Vec<WolLadderRecord>, Vec<WolHighScoreRecord>) {
+        (
+            self.records.iter().map(WolLadderRecord::from).collect(),
+            self.high_scores
+                .iter()
+                .map(WolHighScoreRecord::from)
+                .collect(),
+        )
+    }
+}
+
+/// A player's badge points, the points that pick the badge of their OS, and
+/// their rank in the running season, 0 when unranked.
+#[derive(Deserialize)]
+pub(super) struct HighScoreRecord {
+    pub name: String,
+    pub points: u32,
+    pub rank: u32,
+}
+
+/// A player's season record: `points` their OS rounded and `os` their OS to
+/// the hundredth, which a lobby from before it leaves out.
 #[derive(Deserialize)]
 pub(super) struct LadderRecord {
     pub name: String,
     pub points: u32,
+    #[serde(default)]
+    pub os: Option<f64>,
     pub rank: u32,
     pub wins: u32,
     pub losses: u32,
@@ -324,6 +438,10 @@ impl From<&LadderRecord> for WolLadderRecord {
             wins: signed(record.wins),
             losses: signed(record.losses),
             points: signed(record.points),
+            os_hundredths: record.os.map_or_else(
+                || signed(record.points).saturating_mul(100),
+                |os| (os * 100.0).round().max(0.0) as i32,
+            ),
             rank: signed(record.rank),
             disconnects: signed(record.disconnects),
         }
@@ -331,8 +449,8 @@ impl From<&LadderRecord> for WolLadderRecord {
 }
 
 /// The co-op icon's campaign bits have no lobby source and stay clear.
-impl From<&LadderRecord> for WolHighScoreRecord {
-    fn from(record: &LadderRecord) -> Self {
+impl From<&HighScoreRecord> for WolHighScoreRecord {
+    fn from(record: &HighScoreRecord) -> Self {
         Self {
             name: record.name.clone(),
             points: record.points,

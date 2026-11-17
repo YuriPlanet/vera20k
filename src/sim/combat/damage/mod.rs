@@ -110,6 +110,11 @@ pub(crate) struct TargetDamageView {
     pub current_hp: i32,
     /// ObjectType `Immune=` entry gate in ObjectClass::ReceiveDamage.
     pub object_immune: bool,
+    /// Ares `RelativeDamage=yes`: WarheadTypeExt::GetRelativeDamage
+    /// (installed 10051C50) for this victim, which
+    /// ObjectClass_ReceiveDamage_Relative (10053A80, hook 0x5F53E5)
+    /// substitutes for the packet with its sign. `None` without the key.
+    pub relative_damage: Option<i32>,
 }
 
 /// What the receiver-side gates decide before the kernel runs.
@@ -117,7 +122,9 @@ pub(crate) struct TargetDamageView {
 pub(crate) enum DamageGate {
     Pass,
     /// Short-circuit to 0 HP delta, no state change.
-    Nullified { clear_damage: bool },
+    Nullified {
+        clear_damage: bool,
+    },
     /// Active IronCurtain/ForceShield short-circuit. Kept distinct because
     /// TechnoClass emits its transient combat-light before returning.
     Invulnerable,

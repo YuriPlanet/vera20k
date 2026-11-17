@@ -8,11 +8,12 @@ native comparator or a gameplay/pixel parity certification.
 ## Accepted random maps
 
 A profile selecting the exact normal `RandMap.Sed` record can observe a generated
-match. Place the desired `.SED` in a real isolated retail directory and point the
-capture's `config.toml` there. The capture runs the existing setup generator and
-acceptance before normal launch regeneration. Setup writes `RandMap.Sed` and
-`RandMap.img` in that directory; retain original retail files separately. The
-`.SED` seed controls MapGen, while the profile seed controls match startup.
+match. Place the desired seed as `RandMap.Sed` in the `Maps` folder of the
+capture's `[paths] settings_dir`, a private profile, never the player's. The
+capture runs the existing setup generator and acceptance before normal launch
+regeneration. Setup rewrites `RandMap.Sed` and writes `RandMap.img` in that
+folder; the game folder is not written. The `.SED` seed controls MapGen, while
+the profile seed controls match startup.
 
 The generated `map_source` receipt retains `seed_name` and nested `seed_source`
 (`path`, `payload_len`, `source_sha256`) from the exact seed buffer consumed by
@@ -20,6 +21,18 @@ launch loading. Setup may normalize the record and stamp its localized descripti
 before that read. Legacy name-only sources and empty seed files cannot certify a
 capture. Other selected `.SED` names are not supported by this setup adapter.
 This demonstrates the recorded production path, not native full-generation parity.
+
+## Zoom and sidebar size
+
+Optional v2/v3 `presentation: {"zoom": 0, "sidebar": 100}` runs the battle at those
+`[VERA]` Options values: `zoom` 0 is Auto, otherwise a 50-step percent from 100;
+`sidebar` is 100, 150 or 200; an optional `"hd_radar": true` turns on the HD radar,
+and `"smooth_sidebar": true` the smooth sidebar. The match frame is then the window
+over the zoom (`render.internal_extent`), and `frame.bgra` stays the full window, so
+a 3840×2160 profile shows what a 4K player sees. Gestures and `cursor_position` use
+frame pixels at zoom 100% and cannot be combined with it. The cursor then rests at
+the middle of the tactical view; when a unit stands there its cursor animates and the
+capture refuses, so move the view with `camera_cell`.
 
 ## Named commands and outcome inspection
 
@@ -76,7 +89,9 @@ those retained outcomes, marked tank occupancy and 6,000 credits spent. The pad
 is the radio producer's building origin plus `(3,1)`, distinct from the ART
 queueing offset `(4,1)`. Actor selectors bind after normal production. Exact steps
 are this Rust integration witness, not native timing goldens or direct query-PC
-observations; native Unit-query/caller controls remain separate evidence.
+observations; native Unit-query/caller controls remain separate evidence. The dock
+contact is checked as present and the unload within a window, because stable IDs
+and the unload's steps shift with unrelated changes.
 
 Inspect a completed capture without restarting the game:
 
@@ -672,9 +687,6 @@ lifting, interrupted fade and Wave cleanup through ordinary commands. For a
 shot-in-progress image, copy the profile with `ticks = 20` and remove commands
 at or after step 20. Run the same map/profile/config bytes before and after the
 change, then use `tools.map_observation compare` on the completed captures.
-These exact-step captures disable render interpolation: they check ordinary
-output and cleanup, while the production interpolation regression covers an
-interpolated foldback that reproduces the scanline overflow.
 
 The [Dolphin Sonic profile](map_observation.sonic-wave.example.json) uses a
 stock DLPH, enemy CARRIER and a distant enemy survivor. Extract the physical
@@ -868,32 +880,16 @@ House row: `allies`, the other Houses its own ally mask names in House array
 order, and `enemy`, the House its anger chose (null for none). It follows the
 same presence rules as `observe_super_weapons`.
 
-Optional v2 `camera_top_left: [x, y]` places the tactical view's world top-left
-there, clamped like any view change, instead of centring `camera_cell`; the two are
-exclusive. Every child records the battlefield's `[width, height]`, which starts at
-the frame's top-left, as `render.tactical_extent`, and the world rectangle
-`[x, y, width, height]` the camera can show on the map (every clamped top-left
-across the battlefield) as `render.view_area`. `tools/map_render.py` places and
-crops the tiles of a whole-map picture by them.
-
-Optional v2 `observe_start_markers: true` adds `render.start_markers`, one row per
-multiplayer start waypoint in waypoint order: `label`, its 1-based number;
-`anchor`, the world pixel `[x, y]` at the centre of its cell on the terrain; and
-`picture`, the skirmish preview's marker for it (STARTBUT.SHP and the number in
-GAME.FNT, as `DrawStartPositions` 0x00640710 draws them at 800 x 600) as `size`
-`[width, height]`, `origin`, the anchor's pixel in it, and `rgba`, base64 RGBA rows.
-`tools/map_render.py` pastes them onto its picture. `false` or an absent field adds
-nothing; version 1 rejects the option.
-
 `render.frame_wall_mean_ms`, when present, reads the existing frame timer's last
 up-to-60 intervals. It includes simulation, diagnostic observation, rendering and
 presentation pacing. It is cadence metadata, not GPU duration or ordinary play
 FPS, and does not participate in deterministic comparisons.
 
 Build through the shared Cargo owner, then run from the checkout with an existing
-`config.toml` pointing at retail assets; the capture always renders at native
-resolution. All supplied paths must be absolute without symlink
-ancestors; use canonical temporary paths on macOS. The output parent must exist,
+`config.toml` pointing at retail assets; the capture renders at zoom 100% with the
+Normal sidebar unless the profile's `presentation` says otherwise. All supplied paths
+must be absolute without symlink ancestors; use canonical temporary paths on macOS.
+The output parent must exist,
 and the output directory itself must not exist.
 
 ```sh
@@ -1138,9 +1134,10 @@ remains exact: no radar masks, channel tolerances or skipped pixels are applied.
 
 The [retail opening profile](map_observation.sidebar-opening.example.json)
 uses stock AnyTown and ordinary MCV deployment/production before clicking the GI.
-Numeric command handles belong to that seeded launch; rediscover them with a
-zero-step observation after population changes. Pass absolute profile/contract
-paths to the wrapper.
+Its commands name the MCV and the building types (profile v3), so they do not
+depend on that launch's numeric handles, and its cursor rests over the sidebar,
+where no unit can pass under it. Pass absolute profile/contract paths to the
+wrapper.
 
 A v2 profile may opt in to `observe_sidebar_steps: [0, 1, 100]`. Each listed
 capture completed step records the local retained sidebar view: tabs, ordered
@@ -2629,15 +2626,18 @@ and native/GPU checks do not replace that production coverage.
 The final rendered frame records `render.unit_atlas` in the v6 child manifest;
 the validated wrapper retains it as `capture.unit_atlas` in `run.json`. The
 `UnitAtlas` owner reads actual wgpu texture descriptors and resident entries.
-It reports resident sprite count, the last actual build's rasterized sprite count,
-and each page's extent, format, dimensions, mip/sample counts and texel payload
-bytes, plus their total. Page count is the length of `pages`.
+It reports resident sprite count, the count of sprites rasterized since the atlas
+was made (`last_build_rasterized_sprite_count`), and each page's extent, format,
+dimensions, mip/sample counts and texel payload bytes, plus their total. Page
+count is the length of `pages`. Pictures are drawn the first time a frame asks for
+them, so both counts cover what the captured frames drew, not every picture the
+map's voxel models could draw.
 
 Pages are currently single-layer, single-mip, single-sample D2 `R8Uint`, so the
 payload is width × height bytes, including unused page space. Unsupported
 descriptors fail observation rather than retaining stale byte arithmetic. The
-last-build count includes rasterized shadow sprites, can differ from admitted
-resident entries, and stays unchanged on a no-op refresh.
+rasterized count includes shadow sprites and can differ from resident entries,
+since a sprite too large for a page is counted but not kept.
 
 This is resident UnitAtlas texture payload for the captured scenario. It excludes
 CPU caches, `VxlPoseFrameCache`, other atlases, palettes,

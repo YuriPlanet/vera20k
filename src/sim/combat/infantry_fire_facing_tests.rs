@@ -279,10 +279,6 @@ fn rocketeer_pair() -> (EntityStore, RuleSet) {
     )
     .unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
-    let registry = crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art_ini);
-    rules.replace_animation_sequences_for_test(
-        crate::rules::animation_sequence::build_animation_sequence_catalog(&rules, Some(&registry)),
-    );
     let mut store = EntityStore::new();
     let mut firer = make_infantry_entity(1, "JJ", 5, 5, 125);
     firer.body_facing = FacingClass::new(0x4000, 127);
@@ -405,9 +401,6 @@ fn production_rules(fire_up: u32) -> RuleSet {
     ));
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art_ini),
-    );
     rules
 }
 

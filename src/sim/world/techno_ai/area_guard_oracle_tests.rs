@@ -13,14 +13,7 @@ use crate::sim::command::{
 use crate::sim::snapshot::GameSnapshot;
 
 fn corpus() -> &'static Value {
-    static CORPUS: OnceLock<Value> = OnceLock::new();
-    CORPUS.get_or_init(|| {
-        let value: Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/input_oracle/area_guard.json",
-        ))
-        .unwrap();
-        value
-    })
+    crate::test_fixture::json("tools/input_oracle/area_guard.json")
 }
 
 fn streams(row: &Value, state: &Value) -> Value {
@@ -459,7 +452,8 @@ fn area_guard_events_commence_and_in_range_dispatch_match_original_histories() {
                     actor,
                     &rules,
                     crate::sim::world::ObjectAiCtx::default(),
-                );
+                )
+                .unwrap();
                 dispatch_count += 1;
             }
             assert_state(&mut f, row, &boundary["after"]);

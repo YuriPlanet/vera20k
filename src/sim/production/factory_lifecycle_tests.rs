@@ -79,14 +79,12 @@ fn paid_destroyer_runs_shipyard_production_animation_through_idle_recovery() {
     };
     let mut rules = retail.rules;
     crate::map::theater::load_theater(&mut assets, "TEMPERATE").expect("retail temperate assets");
-    rules
-        .bind_scheduler_anim_assets(
-            &["GAYARD_A".into(), "GAYARD_C".into(), "GAYARD_D".into()],
-            &assets,
-            "tem",
-            "TEMPERATE",
-        )
-        .expect("production animation bounds come from physical retail SHPs");
+    rules.bind_scheduler_anim_assets(
+        &["GAYARD_A".into(), "GAYARD_C".into(), "GAYARD_D".into()],
+        &assets,
+        "tem",
+        "TEMPERATE",
+    );
     let mut sim = Simulation::with_seed(0x4441_7500);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -131,10 +129,10 @@ fn paid_destroyer_runs_shipyard_production_animation_through_idle_recovery() {
     let cost = sim.cost_of(owner, rules.object("DEST").unwrap(), &rules);
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources {
+        resources: std::sync::Arc::new(SimResources {
             rules,
             ..SimResources::empty()
-        },
+        }),
     };
     for _ in 0..8 {
         runtime
@@ -478,7 +476,12 @@ fn record_last_built_enforces_map_authored_negative_limit() {
         super::can_build::can_build(&sim, rules, owner, e2, true, true),
         super::can_build::CanBuild::Yes
     );
-    assert!(!super::can_build::check_build_limit(&sim, rules, owner, e2));
+    // Ares 10024F80 (hook 0x50B370) also wants a usable factory, and this
+    // house owns none.
+    assert_eq!(
+        super::can_build::check_build_limit(&sim, rules, owner, e2),
+        rules.ares_form()
+    );
 
     let product = sim
         .construct_object_limbo_at_height(
@@ -687,10 +690,10 @@ pub(super) fn retail_barracks_sale_runtime(
     Some((
         SimRuntime {
             simulation: sim,
-            resources: SimResources {
+            resources: std::sync::Arc::new(SimResources {
                 rules,
                 ..SimResources::empty()
-            },
+            }),
         },
         owner,
         2,
@@ -827,6 +830,7 @@ fn offline_backup_recovery_distinguishes_saved_system_and_user_holds() {
             &mut sim.houses,
             &mut sim.power_states,
             attacker,
+            rules.ares_form(),
         );
         assert!(sim.entities().get(backup).unwrap().building_online());
         let held = sim
@@ -1059,10 +1063,10 @@ fn selling_last_retail_barracks_keeps_paid_head_before_map_exit() {
         );
         let mut restored = crate::sim::runtime::SimRuntime {
             simulation: restored,
-            resources: crate::sim::runtime::SimResources {
+            resources: std::sync::Arc::new(crate::sim::runtime::SimResources {
                 rules: rules.clone(),
                 ..crate::sim::runtime::SimResources::empty()
-            },
+            }),
         };
         let spent_at_sale = runtime.simulation.houses[&owner].economy().spent_credits();
         let mut sale_visits = 0;
@@ -1135,6 +1139,71 @@ fn selling_last_retail_barracks_keeps_paid_head_before_map_exit() {
             50_250
         );
     }
+}
+
+/// Cancelling the active item while the only barracks sells: StartNext4CA5A0
+/// pops one queued type and its forced Begin (4CA60A) refuses, so the
+/// Factory keeps one queued type and no object. A save made then must load.
+#[test]
+fn restore_accepts_a_queued_tail_left_by_a_refused_start_next() {
+    use crate::sim::world::{FrameEffects, TickLane};
+
+    let Some((mut runtime, owner, barracks)) = retail_barracks_sale_runtime(false, true, 50_000)
+    else {
+        return;
+    };
+    for _ in 0..8 {
+        runtime
+            .advance_frame(&[], 67, TickLane::Ordinary, FrameEffects::default())
+            .unwrap();
+    }
+    for name in ["E2", "FLAKT", "FLAKT"] {
+        assert!(enqueue_by_type(
+            &mut runtime.simulation,
+            &runtime.resources.rules,
+            "Russians",
+            name,
+            FrameEffects::default(),
+            false
+        ));
+    }
+    for _ in 0..100 {
+        if runtime.simulation.houses[&owner].economy().spent_credits() > 0 {
+            break;
+        }
+        runtime
+            .advance_frame(&[], 67, TickLane::Ordinary, FrameEffects::default())
+            .unwrap();
+    }
+    let rules = &runtime.resources.rules;
+    let sim = &mut runtime.simulation;
+    assert!(super::production_sell::sell_back(
+        sim,
+        rules,
+        barracks,
+        super::SellOrder::Player,
+        None,
+        FrameEffects::default()
+    ));
+    assert!(cancel_production_for_owner(
+        sim,
+        rules,
+        "Russians",
+        super::ProductionCancellation::Type {
+            type_id: "E2",
+            naval: false
+        },
+        false,
+        FrameEffects::default(),
+    ));
+    let factory = sim
+        .production
+        .factories()
+        .view(owner, ProductionCategory::Infantry)
+        .unwrap();
+    assert!(factory.object.is_none());
+    assert_eq!(factory.queue.len(), 1);
+    super::validate_restored_factory_state(sim, rules).unwrap();
 }
 
 /// Execute the callback boundary separately from sale crew/animation. The
@@ -1390,10 +1459,10 @@ fn paid_boris_delivery_requests_its_creation_cue_once_at_the_delivered_location(
     assert!(cost > 0);
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources {
+        resources: std::sync::Arc::new(SimResources {
             rules,
             ..SimResources::empty()
-        },
+        }),
     };
     let mut product = None;
     let mut cues = Vec::new();
@@ -1656,7 +1725,7 @@ fn retail_prerequisite_loss_refunds_after_the_factory_charge_sweep() {
         resources.rules = retail.rules;
         let mut runtime = crate::sim::runtime::SimRuntime {
             simulation: sim,
-            resources,
+            resources: std::sync::Arc::new(resources),
         };
         let mut output = runtime
             .advance_frame(
@@ -1806,13 +1875,13 @@ fn prerequisite_loss_events_preserve_player_copies_cleanup_and_snapshot_replay()
     resources.rules = rules;
     let mut live = SimRuntime {
         simulation: sim,
-        resources,
+        resources: std::sync::Arc::new(resources),
     };
     let mut replay_resources = SimResources::empty();
     replay_resources.rules = manager_rules();
     let mut replay = SimRuntime {
         simulation: restored,
-        resources: replay_resources,
+        resources: std::sync::Arc::new(replay_resources),
     };
     let type_id = live.simulation.interner.get("SMIN").unwrap();
     let cancellation = |event| {
@@ -3856,4 +3925,45 @@ fn secret_lab_fallback_capture_paid_queue_snapshot_and_loss_share_the_existing_o
             .secret_labs()
             .is_empty()
     );
+}
+
+/// Ares 10025100 (hook 0x509140): the yard's GoOffline refreshes the
+/// BuildingType queue for BuildCat::Combat as well, so the defense under
+/// construction loses its only online factory and is suspended; stock
+/// refreshes the building strip alone.
+#[test]
+fn a_yard_going_offline_refreshes_the_defense_queue_with_ares() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[Countries]\n0=Americans\n[BuildingTypes]\n0=YARD\n1=PILL\n\
+         [YARD]\nOwner=Americans\nFactory=BuildingType\nPower=-10\nStrength=1000\n\
+         [PILL]\nOwner=Americans\nTechLevel=1\nCost=100\nStrength=100\nBuildCat=Combat\n\
+         Foundation=1x1\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::new();
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 50_000, 10,
+        ));
+    spawn_structure(&mut sim, &rules, 1, "Americans", "YARD", 10, 10);
+    assert!(enqueue_by_type(
+        &mut sim,
+        &rules,
+        "Americans",
+        "PILL",
+        crate::sim::world::FrameEffects::default(),
+        false,
+    ));
+    let suspended = |sim: &Simulation| {
+        sim.production
+            .factories()
+            .view(owner, ProductionCategory::Defense)
+            .is_some_and(|factory| factory.suspended)
+    };
+    assert!(!suspended(&sim));
+    assert!(sim.go_building_offline(1, &rules, crate::sim::world::FrameEffects::default()));
+    assert_eq!(suspended(&sim), rules.ares_form());
 }

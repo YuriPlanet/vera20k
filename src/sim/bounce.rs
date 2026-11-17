@@ -982,7 +982,7 @@ fn ranged_i32(rng: &mut SimRng, low: i32, high: i32) -> i32 {
     (low as i64 + drawn as i64) as i32
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod tests {
     use super::*;
 

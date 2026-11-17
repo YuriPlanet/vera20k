@@ -304,8 +304,7 @@ pub(crate) fn should_retaliate(
     // `0x007087F9` a slaver (SlaveManager `+0x2D8`). A slave freed by its
     // master's death (`0x006B0B73`) retaliates again.
     // Ares7087EB ->1004B2D0 refuses a driverless victim before the slave gates.
-    #[cfg(feature = "ares")]
-    if victim.driver_killed() {
+    if rules.ares() && victim.driver_killed() {
         return false;
     }
     if !victim_type.can_retaliate
@@ -475,7 +474,7 @@ pub(crate) fn should_retaliate(
     // warhead skips the test and retaliates (`0x00708AD4`, `0x00708ADE`).
     subject
         .weapon_at(subject.weapon_index)
-        .and_then(|weapon| super::combat_weapon::warhead_of(rules, weapon))
+        .and_then(|weapon| rules.weapon_warhead(weapon))
         .is_none_or(|warhead| {
             // Ares 3.0 hook100543E0 replaces only this original threshold
             // with the independently retained Retaliate flag.

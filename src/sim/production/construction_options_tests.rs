@@ -65,7 +65,9 @@ fn cameo_draw_state_darkens_where_draw_does_not_decide_retention() {
     assert!(strip_refusal(&sim, &rules, owner, plain).is_none());
     let offline = cameo_draw_state(&sim, &rules, owner, plain);
     assert!(!offline.enabled);
-    assert!(!offline.at_build_limit);
+    // Ares hook 0x50B370 (10024F80) also answers at-limit without a usable
+    // factory.
+    assert_eq!(offline.at_build_limit, rules.ares_form());
     // The same live query clears the overlay when the yard is back online.
     sim.substrate
         .entities
@@ -83,10 +85,56 @@ fn cameo_draw_state_darkens_where_draw_does_not_decide_retention() {
     assert!(at_limit.at_build_limit);
     // The ready-factory query asks the limit itself (`CanBuild(type, 1, 1)`),
     // so its null answer comes first; both arms draw the same overlay.
+    let factories = FactoryRoster::of(&sim, &rules, owner);
     assert_eq!(
-        sidebar_state(&sim, &rules, owner, limit),
+        sidebar_state(&sim, &rules, owner, factories.as_ref(), limit),
         Some(BuildDisabledReason::NoReadyFactory)
     );
+}
+
+/// The sidebar's batch asks every type's FindFactory of one roster of the
+/// house's factories. Each answer is the one the type gets when asked alone,
+/// with the yard online and with it offline.
+#[test]
+fn every_build_option_is_the_one_its_type_gets_alone() {
+    let (mut sim, rules, owner, yard) = draw_state_world();
+    for offline in [false, true] {
+        if offline {
+            sim.substrate
+                .entities
+                .get_mut(yard)
+                .unwrap()
+                .set_temporal_for_test(TemporalState::warped_by_for_test(yard));
+        }
+        let batch = all_build_options_for_owner(&sim, &rules, "H");
+        for id in &rules.building_ids {
+            let alone = build_option_for_owner(&sim, &rules, Some(owner), id).unwrap();
+            assert!(batch.contains(&alone), "{id} offline={offline}: {alone:?}");
+        }
+        let plain = sim.interner.get("Plain").unwrap();
+        let plain = batch.iter().find(|option| option.type_id == plain).unwrap();
+        assert_eq!(plain.enabled, !offline);
+    }
+}
+
+/// Ares 3.0 BuildingClass_UpdateConstructionOptions_ExcludeDisabled
+/// (10053D80, hook 0x4456E5): a factory under EMP attempts no cameo.
+#[test]
+fn ares_factory_under_emp_attempts_no_construction_option() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let (mut sim, rules, owner, yard) = draw_state_world();
+    sim.discover_techno(
+        yard,
+        owner,
+        crate::sim::world::UninitContext::new(&rules, None),
+    );
+    assert!(!initial_construction_options(&sim, &rules).is_empty());
+    sim.substrate
+        .entities
+        .get_mut(yard)
+        .unwrap()
+        .set_emp_remaining_for_test(3);
+    assert!(initial_construction_options(&sim, &rules).is_empty());
 }
 
 #[test]
@@ -169,157 +217,163 @@ fn house_pass_carries_stored_building_order_before_recalculation() {
 
 #[test]
 fn construction_options_match_original_gates_type_order_limit_and_warp_grant() {
-    let native = crate::test_fixture::json("tools/can_build_construction_options.json");
-    assert_eq!(native["rows"].as_array().unwrap().len(), 13);
-    let families = [
-        ("building", "BuildingTypes"),
-        ("unit", "VehicleTypes"),
-        ("infantry", "InfantryTypes"),
-        ("aircraft", "AircraftTypes"),
-    ];
-    for row in native["rows"].as_array().unwrap() {
-        // The rows are stock gamemd. Ares's outer CanBuild (Ares.dll
-        // 0x10021BA1) also asks the factory finder, which refuses this row's
-        // Naval=yes unit at its land factory.
-        if crate::rules::ARES_ENABLED && row["name"] == "unit uses its registry order" {
-            continue;
-        }
-        let mut text = String::from("[Countries]\n0=C0\n[C0]\nSide=GDI\n");
-        let factory_kind = match row["factory_rtti"].as_i64().unwrap() {
-            7 => "BuildingType",
-            40 => "UnitType",
-            16 => "InfantryType",
-            3 => "AircraftType",
-            _ => "None",
-        };
-        writeln!(text, "[Factory]\nFactory={factory_kind}\nStrength=1000\nTechLevel=-1\nOwner=C0\n[Lab]\nStrength=1000\nTechLevel=-1\nSecretLab=yes").unwrap();
-        for (family, section) in families {
-            writeln!(text, "[{section}]").unwrap();
-            if family == "building" {
-                writeln!(text, "900=Factory\n901=Lab").unwrap();
-            }
-            let Some(catalog) = row["catalogs"][family].as_array() else {
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let native = crate::test_fixture::json("tools/can_build_construction_options.json");
+        assert_eq!(native["rows"].as_array().unwrap().len(), 13);
+        let families = [
+            ("building", "BuildingTypes"),
+            ("unit", "VehicleTypes"),
+            ("infantry", "InfantryTypes"),
+            ("aircraft", "AircraftTypes"),
+        ];
+        for row in native["rows"].as_array().unwrap() {
+            // The rows are stock gamemd. Ares's outer CanBuild (Ares.dll
+            // 0x10021BA1) also asks the factory finder, which refuses this row's
+            // Naval=yes unit at its land factory.
+            if ares_way && row["name"] == "unit uses its registry order" {
                 continue;
+            }
+            let mut text = String::from("[Countries]\n0=C0\n[C0]\nSide=GDI\n");
+            let factory_kind = match row["factory_rtti"].as_i64().unwrap() {
+                7 => "BuildingType",
+                40 => "UnitType",
+                16 => "InfantryType",
+                3 => "AircraftType",
+                _ => "None",
             };
-            for (index, spec) in catalog.iter().enumerate() {
-                writeln!(text, "{index}={}", spec["id"].as_str().unwrap()).unwrap();
-            }
-            for spec in catalog {
-                writeln!(
-                    text,
-                    "[{}]\nStrength=100\nTechLevel={}\nBuildLimit={}\nNaval={}\nOwner=C0",
-                    spec["id"].as_str().unwrap(),
-                    spec["tech"].as_i64().unwrap_or(1),
-                    spec["limit"].as_i64().unwrap_or(i32::MAX as i64),
-                    if spec["naval"].as_bool().unwrap_or(false) {
-                        "yes"
-                    } else {
-                        "no"
-                    }
-                )
-                .unwrap();
-            }
-        }
-        let mut ini = IniFile::from_str("[Clear]\nBuildable=yes\n");
-        ini.merge(&IniFile::from_str(&text));
-        let rules = RuleSet::from_ini(&ini).unwrap();
-        let mut sim = Simulation::new();
-        sim.intern_rule_type_ids(&rules);
-        sim.resolve_type_handles(&rules);
-        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-        let country = sim.interner.intern("C0");
-        let owner = sim.interner.intern("H");
-        let other = sim.interner.intern("Other");
-        for (id, human) in [(owner, true), (other, false)] {
-            sim.houses
-                .register(HouseState::new(id, 0, Some(country), human, 1000, 10));
-        }
-        sim.session.set_current_house_for_test(Some(owner));
-        let factory_owner = if row["owner"] == "other" {
-            "Other"
-        } else {
-            "H"
-        };
-        let factory = sim
-            .spawn_object("Factory", factory_owner, 8, 8, 0, &rules)
-            .unwrap();
-        let lab = sim.spawn_object("Lab", "Other", 12, 12, 0, &rules).unwrap();
-        for (family, _) in families {
-            for spec in row["catalogs"][family].as_array().into_iter().flatten() {
-                for n in 0..spec["owned"].as_u64().unwrap_or(0) {
-                    sim.spawn_object(
+            writeln!(text, "[Factory]\nFactory={factory_kind}\nStrength=1000\nTechLevel=-1\nOwner=C0\n[Lab]\nStrength=1000\nTechLevel=-1\nSecretLab=yes").unwrap();
+            for (family, section) in families {
+                writeln!(text, "[{section}]").unwrap();
+                if family == "building" {
+                    writeln!(text, "900=Factory\n901=Lab").unwrap();
+                }
+                let Some(catalog) = row["catalogs"][family].as_array() else {
+                    continue;
+                };
+                for (index, spec) in catalog.iter().enumerate() {
+                    writeln!(text, "{index}={}", spec["id"].as_str().unwrap()).unwrap();
+                }
+                for spec in catalog {
+                    writeln!(
+                        text,
+                        "[{}]\nStrength=100\nTechLevel={}\nBuildLimit={}\nNaval={}\nOwner=C0",
                         spec["id"].as_str().unwrap(),
-                        "H",
-                        20 + n as u16,
-                        20,
-                        0,
-                        &rules,
+                        spec["tech"].as_i64().unwrap_or(1),
+                        spec["limit"].as_i64().unwrap_or(i32::MAX as i64),
+                        if spec["naval"].as_bool().unwrap_or(false) {
+                            "yes"
+                        } else {
+                            "no"
+                        }
                     )
                     .unwrap();
                 }
             }
-        }
-        if row["limbo"].as_bool() == Some(true) {
-            sim.techno_limbo_with_rules(factory, &rules, None);
-        }
-        sim.substrate
-            .entities
-            .get_mut(factory)
-            .unwrap()
-            .discovery
-            .set_discovered_by_current_house_for_test(row["discovered"].as_bool().unwrap_or(true));
-        for phase in row["results"].as_array().unwrap() {
+            let mut ini = IniFile::from_str("[Clear]\nBuildable=yes\n");
+            ini.merge(&IniFile::from_str(&text));
+            let rules = RuleSet::from_ini(&ini).unwrap();
+            let mut sim = Simulation::new();
+            sim.intern_rule_type_ids(&rules);
+            sim.resolve_type_handles(&rules);
+            crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+            let country = sim.interner.intern("C0");
+            let owner = sim.interner.intern("H");
+            let other = sim.interner.intern("Other");
+            for (id, human) in [(owner, true), (other, false)] {
+                sim.houses
+                    .register(HouseState::new(id, 0, Some(country), human, 1000, 10));
+            }
+            sim.session.set_current_house_for_test(Some(owner));
+            let factory_owner = if row["owner"] == "other" {
+                "Other"
+            } else {
+                "H"
+            };
+            let factory = sim
+                .spawn_object("Factory", factory_owner, 8, 8, 0, &rules)
+                .unwrap();
+            let lab = sim.spawn_object("Lab", "Other", 12, 12, 0, &rules).unwrap();
+            for (family, _) in families {
+                for spec in row["catalogs"][family].as_array().into_iter().flatten() {
+                    for n in 0..spec["owned"].as_u64().unwrap_or(0) {
+                        sim.spawn_object(
+                            spec["id"].as_str().unwrap(),
+                            "H",
+                            20 + n as u16,
+                            20,
+                            0,
+                            &rules,
+                        )
+                        .unwrap();
+                    }
+                }
+            }
+            if row["limbo"].as_bool() == Some(true) {
+                sim.techno_limbo_with_rules(factory, &rules, None);
+            }
             sim.substrate
                 .entities
                 .get_mut(factory)
                 .unwrap()
-                .set_temporal_for_test(if phase["online"].as_bool().unwrap() {
-                    TemporalState::default()
-                } else {
-                    TemporalState::warped_by_for_test(factory)
-                });
-            if let Some(grant) = phase["grant"].as_str() {
-                let id = sim.interner.get(grant).unwrap();
+                .discovery
+                .set_discovered_by_current_house_for_test(
+                    row["discovered"].as_bool().unwrap_or(true),
+                );
+            for phase in row["results"].as_array().unwrap() {
                 sim.substrate
                     .entities
-                    .get_mut(lab)
+                    .get_mut(factory)
                     .unwrap()
-                    .assign_secret_lab_fallback((ObjectCategory::Infantry, id));
-                sim.change_owner_with_rules(lab, owner, &rules, None, Default::default());
+                    .set_temporal_for_test(if phase["online"].as_bool().unwrap() {
+                        TemporalState::default()
+                    } else {
+                        TemporalState::warped_by_for_test(factory)
+                    });
+                if let Some(grant) = phase["grant"].as_str() {
+                    let id = sim.interner.get(grant).unwrap();
+                    sim.substrate
+                        .entities
+                        .get_mut(lab)
+                        .unwrap()
+                        .assign_secret_lab_fallback((ObjectCategory::Infantry, id));
+                    sim.change_owner_with_rules(lab, owner, &rules, None, Default::default());
+                }
+                let label = format!("{} / {}", row["name"], phase["name"]);
+                for call in phase["can_build"].as_array().unwrap() {
+                    let object = rules
+                        .object(call["type_id"].as_str().unwrap())
+                        .unwrap_or_else(|| panic!("{label}: missing {}", call["type_id"]));
+                    let answer = can_build(&sim, &rules, owner, object, false, true);
+                    let expected = match call["answer"].as_i64().unwrap() {
+                        1 => CanBuild::Yes,
+                        -1 => CanBuild::AtLimit,
+                        0 => CanBuild::No,
+                        value => panic!("unknown native CanBuild {value}"),
+                    };
+                    assert_eq!(answer, expected, "{label}: {}", call["type_id"]);
+                }
+                let mut attempts = Vec::new();
+                let (_, draws) = trace_draws(|| {
+                    append_construction_options(&sim, &rules, factory, &mut attempts)
+                });
+                let actual: Vec<_> = attempts
+                    .iter()
+                    .map(|id| sim.interner.resolve(*id))
+                    .collect();
+                let expected: Vec<_> = phase["attempted_additions"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|entry| entry["type_id"].as_str().unwrap())
+                    .collect();
+                assert_eq!(actual, expected, "{label}");
+                assert!(draws.is_empty(), "{label}: admission spends no RNG");
+                assert_eq!(
+                    row["rng_unchanged"],
+                    serde_json::json!({"main":true,"mapgen":true,"scenario":true})
+                );
             }
-            let label = format!("{} / {}", row["name"], phase["name"]);
-            for call in phase["can_build"].as_array().unwrap() {
-                let object = rules
-                    .object(call["type_id"].as_str().unwrap())
-                    .unwrap_or_else(|| panic!("{label}: missing {}", call["type_id"]));
-                let answer = can_build(&sim, &rules, owner, object, false, true);
-                let expected = match call["answer"].as_i64().unwrap() {
-                    1 => CanBuild::Yes,
-                    -1 => CanBuild::AtLimit,
-                    0 => CanBuild::No,
-                    value => panic!("unknown native CanBuild {value}"),
-                };
-                assert_eq!(answer, expected, "{label}: {}", call["type_id"]);
-            }
-            let mut attempts = Vec::new();
-            let (_, draws) =
-                trace_draws(|| append_construction_options(&sim, &rules, factory, &mut attempts));
-            let actual: Vec<_> = attempts
-                .iter()
-                .map(|id| sim.interner.resolve(*id))
-                .collect();
-            let expected: Vec<_> = phase["attempted_additions"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|entry| entry["type_id"].as_str().unwrap())
-                .collect();
-            assert_eq!(actual, expected, "{label}");
-            assert!(draws.is_empty(), "{label}: admission spends no RNG");
-            assert_eq!(
-                row["rng_unchanged"],
-                serde_json::json!({"main":true,"mapgen":true,"scenario":true})
-            );
         }
     }
 }

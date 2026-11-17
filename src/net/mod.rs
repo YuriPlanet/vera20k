@@ -22,7 +22,7 @@ pub mod event_packet;
 pub mod global;
 pub mod live_commands;
 pub mod lockstep;
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 mod lockstep_sim_convergence_tests;
 pub mod reliable;
 pub mod udp;

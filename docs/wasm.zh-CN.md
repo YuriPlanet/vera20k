@@ -6,15 +6,17 @@ Wasm 是与 macOS、Windows 和 Linux 并列的第四个可选构建目标，复
 
 ## 构建
 
-需要稳定版 Rust、Python 3.11 或更新版本，以及与 `Cargo.lock` 中 `wasm-bindgen` 版本一致的 `wasm-bindgen-cli`（当前为 0.2.114）。
+需要稳定版 Rust、Python 3.11 或更新版本，以及与 `Cargo.lock` 中 `wasm-bindgen` 版本一致的 `wasm-bindgen-cli`（当前为 0.2.127）。
 
 ```sh
 rustup target add wasm32-unknown-unknown
-cargo install wasm-bindgen-cli --version 0.2.114 --locked
+cargo install wasm-bindgen-cli --version 0.2.127 --locked
 python3 tools/wasm/build.py
 ```
 
-构建工具使用 `--target wasm32-unknown-unknown --no-default-features --features wasm`，按现有 `fast` profile 将客户端库构建为 `cdylib`，再将绑定代码和不含游戏资源的宿主页面打包到 `target/wasm-dist/`。可加 `--profile release` 使用 release 优化。工具会检查绑定 CLI 与 lockfile 的版本是否一致，并为引擎设置 8 MiB 的 Wasm 栈。桌面版的产物类型、默认 feature 和构建命令保持不变。
+构建工具使用 `--target wasm32-unknown-unknown --no-default-features --features wasm` 将客户端库构建为 `cdylib`，再将绑定代码和不含游戏资源的宿主页面打包到 `target/wasm-dist/`。默认使用玩家下载的 `wasm` profile：按体积优化、fat LTO、单个 codegen unit、不含符号名，构建耗时是 `fast` 的数倍（2026-11-09 实测：单人版 Wasm 为 16.5 MB，brotli 压缩后 4.6 MB；`fast` 为 45.6 MB 和 10.3 MB）。修改代码时可加 `--profile fast`，也可加 `--profile release`。工具会检查绑定 CLI 与 lockfile 的版本是否一致，并为引擎设置 8 MiB 的 Wasm 栈。它还会先为主机构建 `src/bin/snapshot-layout.rs`：浏览器版引擎把存档布局 ID（`VERA20K_SNAPSHOT_LAYOUT`）编译进去，而不是在运行时追踪存档类型。桌面版的产物类型、默认 feature 和构建命令保持不变。
+
+浏览器版引擎不内嵌任何界面字体。这些字体（Noto Sans、Noto Sans CJK 及 19 种文字的字体，约 30 MB）和 Unifont 的 CJK 字形表连同许可证复制到 `pkg/fonts/`。引擎加载后立即开始获取用于补画 GAME.FNT 缺字的 Noto Sans 和字形表，两者都到达后 `fonts_ready()` 才 resolve：调用 `start_game` 或 `start_spawn` 前需先 await 它，否则这两个函数会报错。其余字体在文字首次需要只有该字体才有的字符时（例如聊天里的泰文名字）才获取。托管该包的站点也必须提供这个目录。每个 URL 带有文件版本，浏览器在引擎更新后仍可沿用已缓存的字体。浏览器版不设置窗口图标。
 
 可选联机版的构建命令：
 
@@ -47,7 +49,7 @@ python3 -m http.server 8000 --bind 127.0.0.1 --directory target/wasm-dist
 
 ## 多线程构建（实验性）
 
-`--threads` 让模拟工作运行在由 Web Worker 组成的 Rayon 线程池上，可以和 `--network`、`--lan` 同时使用。它需要固定版本的 nightly，因为标准库要带 Wasm atomics 重新编译。桌面版和默认浏览器包仍使用 stable。
+`--threads` 让每个 tick 在绘制旁边的模拟 Web Worker 上运行，tick 内的并行工作运行在由 Web Worker 组成的 Rayon 线程池上，可以和 `--network`、`--lan` 同时使用。它需要固定版本的 nightly，因为标准库要带 Wasm atomics 重新编译。桌面版和默认浏览器包仍使用 stable。
 
 ```sh
 rustup toolchain install nightly-2026-10-15 --profile minimal --component rust-src --target wasm32-unknown-unknown
@@ -55,19 +57,19 @@ python3 tools/wasm/build.py --threads
 python3 tools/wasm/serve.py
 ```
 
-共享内存要求跨源隔离，所以页面必须带上 `Cross-Origin-Opener-Policy: same-origin` 和 `Cross-Origin-Embedder-Policy: require-corp` 响应头。`serve.py` 会发送这两个头；普通的 `http.server` 不会，此时宿主页面会提示缺少响应头。其他宿主同样要发送它们，并在 `init()` 之后等待 `initThreadPool(workers)` 完成；不调用时，这个包会串行执行模拟工作。
+共享内存要求跨源隔离，所以页面必须带上 `Cross-Origin-Opener-Policy: same-origin` 和 `Cross-Origin-Embedder-Policy: require-corp` 响应头。`serve.py` 会发送这两个头；普通的 `http.server` 不会，此时宿主页面会提示缺少响应头。其他宿主同样要发送它们，并在 `init()` 之后等待 `initThreadPool(workers)` 完成；不调用时，这个包会在主线程上串行执行模拟工作。
 
-渲染、音频和输入留在主线程，线程池工作时主线程自旋等待。这段时间主线程不运行引擎代码，因为在主线程等待有竞争的锁会 trap。结果不依赖线程池大小。Worker 上的 panic 会中止该 Worker，主线程会一直自旋，所以页面会卡死，而不是上报 `engine-error`。
+渲染、音频、输入和网络会话留在主线程，主线程从不等待其他线程，因为在主线程等待会 trap。页面还可以让 tick 在绘制旁边的模拟 Worker 上运行，和桌面版的模拟线程一样（[浏览器](sim-thread.md#the-browser)）。它默认关闭：在 `start_game` 或 `start_spawn` 之前调用 `set_simulation_thread("1")`（自带宿主页面用 `?simulation-thread=1`）。之后 tick 的开销超过发布一帧时，这一帧交给 Worker；`"always"` 把 Worker 能接的每一帧都交给它，`"0"` 保持关闭。tick 运行期间，页面绘制最近发布的帧，并把窗口事件留到 tick 回来后再处理。仍在主线程 tick 的帧（关闭 Worker 时是全部帧；否则是后面还有一轮的追帧、回放、网络恢复）在线程池工作期间自旋等待，不运行引擎代码。结果不依赖线程池大小，也不依赖 tick 在哪个线程运行。模拟 Worker 上的 panic 或 trap，或线程池 Worker 在它的 tick 中的 panic，会在下一帧以 `engine-error` 上报；线程池 Worker 在主线程 tick 中的 panic 仍会让主线程一直自旋，页面会卡死。
 
 ## 兼容边界
 
 所有浏览器实现都要求同时启用 `wasm` Cargo feature 和 `wasm32-unknown-unknown` 目标。在桌面目标上启用 `wasm` 仍会选择桌面实现。未启用 `wasm` 的浏览器构建会被拒绝。
 
 - `util::time` 在桌面端重新导出现有标准时钟，在浏览器端导出 `web-time`；模拟 tick 和 RNG 算法不变。
-- `util::file_system` 在桌面端重新导出标准文件操作。浏览器导入资源位于 `/retail`，存档位于 `/saves`，配置位于 `/saves/profile`；MIX 归档共享导入字节，不使用内存映射。
+- `util::file_system` 在桌面端重新导出标准文件操作。浏览器导入资源位于 `/retail`，Mod 位于 `/mods/<文件夹>`，存档位于 `/saves`，配置位于 `/saves/profile`；MIX 归档共享导入字节，不使用内存映射。
 - 浏览器通过现有并行工作接口串行执行工作。桌面端仍选择原生 Rayon 和工作线程路径。
 - GPU 获取通过现有初始化任务让出执行。渲染使用离屏 sRGB 帧和 canvas 呈现 pass。浏览器纹理上传不会阻塞等待 GPU 完成。
-- 没有可用的 WebGPU 适配器时，浏览器构建回退到 WebGL2。WebGL2 没有存储缓冲、计算着色器、片元原子操作和重解释格式的纹理视图，因此用到这些能力的渲染器只在该设备上改用等价的渲染目标实现（`render::webgl`、`gpu::webgl_fallback`）；其他设备的路径不变。原生测试会把这些着色器翻译为 GLSL ES 3.00，设置 `VERA20K_TEST_WEBGL_FALLBACK=1` 可在原生设备上让 GPU 基准测试走回退路径。
+- 没有可用的 WebGPU 适配器时，浏览器构建回退到 WebGL2。WebGL2 没有存储缓冲、计算着色器和重解释格式的纹理视图，因此用到这些能力的渲染器只在该设备上改用等价的渲染目标实现（`render::webgl`、`gpu::webgl_fallback`）；其他设备的路径不变。原生测试会把这些着色器翻译为 GLSL ES 3.00，设置 `VERA20K_TEST_WEBGL_FALLBACK=1` 可在原生设备上让 GPU 基准测试走回退路径。
 - 浏览器入口提供 canvas、状态回调和存储回调；现有 App 继续负责启动和对局生命周期。
 
 只有同时启用 `wasm-net` 和浏览器目标，才会启用 Fetch、WS socket 和延后的联机加载等待。桌面构建（包括启用 `wasm-net` 的构建）仍使用原生 UDP、阻塞 HTTPS 和线程调度。仅启用 `wasm` 的单机包仍会在网络入口明确返回不支持错误。浏览器不支持 LAN 发现和直接 UDP 连接。
@@ -101,6 +103,10 @@ python3 -m unittest tools.tests.test_wasm_build
   战役重开按 `quit` 结束，局内读档直接替换对局、不发送该事件。原版多人地图通常
   没有 `[Basic] Name`，此时 `map_name` 为 `null`。
   结算快照直接读取模拟已有结果，不额外消耗 RNG；没有快照时 `scores` 为 `null`。
+  只有在线 relay 对局附带 `network_quality`：本客户端按墙钟时间观察到的对局时长、
+  追帧、网络缺口与修复、指令往返时间、帧耗时与帧率、降速以及失步和重连情况。桌面
+  `-SPAWN` 把同一对象写入 `spawn_result.json`，每个客户端也会在对局交还网络传输时
+  记录一次 `Network quality:` 日志。
 - `engine-exited`：引擎收尾后通知一次，`reason` 为 `quit`、`match-ended` 或
   `error`，`error` 携带错误文本或 `null`。资源加载失败后点击退出也携带原错误。
 - `engine-error`：panic 的尽力通知，不能视为已正常收尾。浏览器终止页面或
@@ -121,6 +127,17 @@ finish/leave 收尾完成后发送 `match-ended`，随即请求退出引擎，�
 文件在退出时删除。`can_start_spawn()` 表示能否再次启动；对局运行中、`start_game`
 之后和 panic 之后都为 false，这些情况需要新页面/实例。线性内存不会缩小，宿主可在
 `memory.buffer.byteLength` 接近 4 GiB 上限时改用新页面。
+
+### Mod 和分块导入
+
+浏览器构建和桌面一样使用 Mod（`app::mods`、docs/modding.md）：Mod 的文件像复制到游戏目录上一样被读取。页面没有玩家自己的 Mods 文件夹，由页面导入一局要用的 Mod：
+
+- `import_mod_file(folder, name, bytes)` 把 Mod 的一个文件放到 `/mods/<folder>/<name>`，和 `import_spawn_file` 一样只能在两局之间调用。
+- `set_mod(folder)` 指定下一次 `start_spawn`、`start_game` 或 `probe` 用哪个 Mod（`null` 为不用）。它相当于桌面 config.toml 的 `[paths] mod`：文件夹不存在或 `Needs=` 高于当前版本时，按原版开局并说明原因。`probe` 会报告该 Mod 的规则摘要和战役。
+- `remove_mod(folder)` 在导入下一个 Mod 前把它的文件移出引擎内存。线性内存不会缩小，但下一次导入会复用。
+- 同一页面这一局用一个 Mod，下一局可以换另一个或不用。每次启动都会重新设置 Mod 的地图目录（`map::source::set_mod_dir`）。浏览器不保留桌面的启动记录（`mod-start.txt`）：启动失败会结束整个页面。
+
+任何文件也可以分块导入，大文件就不必在页面和引擎里各存一份完整副本：`import_begin(kind, name, length)` 在引擎内存里预留空间，`kind` 为 `"retail"`、`"spawn"` 或 `"mod:<folder>"`，规则与对应的三个导入函数相同；`import_part(bytes)` 按顺序填入，最后一块写完后返回 `true`。页面可以在块与块之间让出主线程，自己的进度显示就能继续刷新。
 
 回调内再次启动会被拒绝。JS 回调抛错不阻止退出，Rust 不等待回调返回的 Promise。
 

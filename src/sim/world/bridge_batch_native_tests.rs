@@ -119,7 +119,7 @@ fn bridge_batch_simulation(case: &serde_json::Value) -> Simulation {
     ));
     sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(width, width));
     sim.path_grid = Some(Arc::new(path));
-    sim.zone_grid = Some(zones);
+    sim.zone_grid = Some(zones.into());
     sim.install_resolved_terrain_for_new_map(terrain);
     sim
 }

@@ -149,7 +149,7 @@ impl CooperativeOptionsRecord {
 
 const _: () = assert!(AI_TEAM_OFFSET + ROWS * 4 <= LAN_MESSAGE_LEN);
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 mod tests {
     use super::*;
 

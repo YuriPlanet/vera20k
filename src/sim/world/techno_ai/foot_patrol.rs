@@ -15,7 +15,7 @@ use crate::sim::mission::MissionType;
 use crate::sim::movement::ground_pose;
 use crate::sim::pathfinding::zone_map::ZoneQueryCell;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "foot_patrol_tests.rs"]
 mod tests;
 
@@ -452,7 +452,7 @@ fn zone_cost(
     goal_bridge: bool,
     rules: &RuleSet,
 ) -> i32 {
-    sim.estimate_zone_cost_in_query(id, start, goal, start_bridge, goal_bridge, rules)
+    sim.estimate_zone_cost_in_query(id, start, goal, start_bridge, goal_bridge, rules, None)
         .expect("Patrol zone-cost topology")
 }
 

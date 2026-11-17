@@ -15,10 +15,8 @@ use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::movement::infantry_entry::{InfantryEntryArgs, InfantryEntryClass};
 use crate::sim::world::{
-    FrameEffects, PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, Simulation,
-    UninitContext,
+    FrameEffects, PlacementEvidence, RevealOutcome, RevealRequest, Simulation, UninitContext,
 };
-use crate::util::lepton;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GarrisonEjectMode {
@@ -112,7 +110,7 @@ fn garrison_inside_foundation_fallback(rx: u16, ry: u16, width: u16, height: u16
 /// `KillOccupants(NULL)` (`0x00458184`) UnInits each remaining occupant
 /// (vtable `+0xF8`, `0x004585F3`), last first, with no RecordKill and no
 /// Health store.
-fn uninit_garrison_passenger_without_exit(
+pub(crate) fn uninit_garrison_passenger_without_exit(
     sim: &mut Simulation,
     passenger_id: u64,
     context: UninitContext<'_>,
@@ -323,7 +321,7 @@ fn eject_garrison_passengers_at_edges(
     let Some((exit_rx, exit_ry)) = exit_cell else {
         // 458180..458190: no exit and not interior -> KillOccupants(NULL),
         // then return without the placement bracket or the 4581D6 refresh.
-        kill_building_occupants(sim, building_id, uninit_context);
+        kill_building_occupants(sim, building_id, None, uninit_context);
         return None;
     };
 
@@ -363,14 +361,27 @@ fn eject_garrison_passengers_at_edges(
     Some(ejected)
 }
 
-/// KillOccupants4585C0(NULL): reset +69C, UnInit the live vector last
-/// first, then clear it and refresh threat. This is separate from Cargo
-/// KillPassengers707CB0 (which books kills and walks the Cargo head).
+/// `BuildingClass::KillOccupants @ 0x004585C0`: reset +69C, UnInit the live
+/// vector last first, then clear it and refresh threat. This is separate
+/// from Cargo KillPassengers707CB0 (which books kills and walks the Cargo
+/// head).
+///
+/// With an `assaulter` (AddGarrisonOccupant's `Assaulter=` arm, `0x00522A18`),
+/// each occupant first gets the `AssaultAnim=` of the assaulter's weapon 0
+/// (vt+0x3F8(0), WeaponType `+0x114`) at its firing port
+/// ([`Simulation::occupant_port_coord`]; `AnimClass(type, coord, 0, 1, 0x600,
+/// 0, 0)`, then ZAdjust -200; `0x00458613..0x004586C0`), then the assaulter's
+/// Record_The_Kill (vt+0xE0) with the occupant as the killer
+/// (`0x004586CA..0x004586D9`). gamemd swaps the two there: the assaulter is
+/// booked as lost to each occupant he kills, and the occupant earns the
+/// experience. Ares fixes the swap (`1005C510`, hook `0x004586D6`).
 pub(crate) fn kill_building_occupants(
     sim: &mut Simulation,
     building_id: u64,
+    assaulter: Option<u64>,
     context: UninitContext<'_>,
 ) {
+    let ares = context.rules().ares_form();
     let Some(building) = sim.substrate.entities.get_mut(building_id) else {
         return;
     };
@@ -378,12 +389,64 @@ pub(crate) fn kill_building_occupants(
     occupants.reset_fire_index();
     let initial_count = occupants.ids().len();
     for index in (0..initial_count).rev() {
-        if let Some(id) = live_occupant_at(sim, building_id, index) {
-            uninit_garrison_passenger_without_exit(sim, id, context);
+        let Some(id) = live_occupant_at(sim, building_id, index) else {
+            continue;
+        };
+        if let Some(assaulter) = assaulter {
+            let anim = crate::sim::world::weapon_at_index(sim, context.rules(), assaulter, 0)
+                .and_then(|weapon| weapon.assault_anim.clone());
+            if let Some(anim) = anim
+                && let Some(coord) = sim.occupant_port_coord(building_id, index, context.rules())
+            {
+                sim.spawn_once_anim(
+                    &anim,
+                    coord,
+                    Some(crate::sim::temporal::PORT_ANIM_Z_ADJUST),
+                    context.rules(),
+                );
+            }
+            if ares {
+                // Ares 3.0 100136C0 (hook 0x4586CA): evalRaidStatus; the
+                // vector still holds every occupant here, so it returns
+                // nothing yet.
+                sim.ares_eval_raid_status(
+                    building_id,
+                    context.rules(),
+                    context.registry(),
+                    context.effects(),
+                );
+                // Ares 3.0 1005C510 (hook 0x4586D6) books the occupant as
+                // killed by the assaulter, as it is UnInit next.
+                sim.record_the_kill(
+                    id,
+                    crate::sim::combat::KillSource::Techno(Some(assaulter)),
+                    crate::sim::combat::KillCallback::Terminal,
+                    context,
+                );
+            } else {
+                // The assaulter lives on: a callback that leaves its victim
+                // alive.
+                sim.record_the_kill(
+                    assaulter,
+                    crate::sim::combat::KillSource::Techno(Some(id)),
+                    crate::sim::combat::KillCallback::OwnerChange,
+                    context,
+                );
+            }
         }
+        uninit_garrison_passenger_without_exit(sim, id, context);
     }
     if let Some(building) = sim.substrate.entities.get_mut(building_id) {
         building.passenger_role.occupants_mut().clear();
+    }
+    // Ares 3.0 100136C0 (hook 0x458729): an emptied raided building goes back.
+    if ares {
+        sim.ares_eval_raid_status(
+            building_id,
+            context.rules(),
+            context.registry(),
+            context.effects(),
+        );
     }
     sim.refresh_spatial_threat(building_id, context.rules(), context.terrain());
 }
@@ -438,6 +501,10 @@ pub(crate) fn sell_building_occupants(
     if let Some(building) = sim.substrate.entities.get_mut(building_id) {
         building.passenger_role.occupants_mut().clear();
     }
+    // Ares 3.0 100136C0 (hook 0x4581CD): an emptied raided building goes back.
+    if rules.ares_form() {
+        sim.ares_eval_raid_status(building_id, rules, registry, frame_effects);
+    }
 
     //SellBuilding4581D6 refreshes after its complete occupant ejection.
     sim.refresh_spatial_threat(building_id, rules, None);
@@ -445,13 +512,14 @@ pub(crate) fn sell_building_occupants(
     ejected
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 pub(crate) mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::movement::locomotor::LocomotorState;
+    use crate::util::lepton;
 
     /// A clear map with its playfield: `SellBuilding`'s exit probe and the
     /// occupants' Scatter read the live cells.
@@ -1249,14 +1317,17 @@ pub(crate) mod tests {
                 let id = sim
                     .spawn_object("E1", "Americans", x - 2, y - 1, 0, &rules)
                     .expect("stock GI beside the house");
-                assert!(crate::sim::passenger::add_garrison_occupant(
-                    &mut sim,
-                    &rules,
-                    id,
-                    building,
-                    None,
-                    FrameEffects::default(),
-                ));
+                assert!(
+                    crate::sim::passenger::add_garrison_occupant(
+                        &mut sim,
+                        &rules,
+                        id,
+                        building,
+                        None,
+                        FrameEffects::default(),
+                    )
+                    .unwrap()
+                );
                 occupants.push(id);
             }
             sim.scenario_rng = SimRng::new(seed);

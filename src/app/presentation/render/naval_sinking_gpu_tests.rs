@@ -248,7 +248,7 @@ fn assert_ground_pose_upload_and_replay(
                     .render(&assets, Some(rules), &key, PoseTilt::Ground(pose), false)
                     .unwrap();
                 assert_eq!(entry.page > 0, overflow);
-                cache.upload(&gpu.device, &gpu.queue, &batch);
+                cache.submit(&gpu.device, &gpu.queue, &batch);
                 for manual in [false, true].into_iter().take(if overflow { 2 } else { 1 }) {
                     let rect: [i32; 6] =
                         std::array::from_fn(|i| raster["rect"][i].as_i64().unwrap() as i32);

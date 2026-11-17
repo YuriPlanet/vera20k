@@ -141,7 +141,7 @@ pub fn acquire(_window_title: &str) -> SingleInstance {
     SingleInstance::Acquired(InstanceGuard {})
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

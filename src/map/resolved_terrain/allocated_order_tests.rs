@@ -157,6 +157,14 @@ fn interior_cells_are_those_whose_neighbourhood_looks_up_itself() {
                 assert_eq!(interior.contains((x, y)), looks_up_itself, "({x},{y})");
             }
         }
+        // A row span holds when each of its cells does: across a word
+        // boundary (row 5's bit 64), at the map's edges and past its width.
+        for y in 0..=terrain.height() {
+            for (x0, x1) in [(1, 10), (0, 10), (1, 11), (4, 4), (3, 12)] {
+                let each = (x0..=x1).all(|x| interior.contains((x, y)));
+                assert_eq!(interior.contains_row(y, x0, x1), each, "{y}: {x0}..={x1}");
+            }
+        }
     }
     // A step from an interior cell's index finds the cell its neighbour's
     // lookup does, down to the first cell and up to the last; a cell that is

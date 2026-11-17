@@ -82,13 +82,16 @@ impl Simulation {
             let powerup = object
                 .crate_beneath_is_money
                 .then_some(crate::rules::powerups::POWERUP_MONEY as u8);
-            crate::sim::crates::place_crate(
+            if let Err(error) = crate::sim::crates::place_crate(
                 self,
                 rules,
                 registry,
                 (origin.0 as i16, origin.1 as i16),
                 powerup,
-            );
+                effects,
+            ) {
+                log::error!("CrateBeneath placement failed: {error}");
+            }
         }
     }
 

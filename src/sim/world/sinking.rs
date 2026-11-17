@@ -96,10 +96,12 @@ impl Simulation {
             let announcement = self.substrate.entities.get(id).and_then(|entity| {
                 crate::sim::combat::death_announcement_event(
                     self.object_type(entity.type_ref(), rules)?,
+                    entity.type_ref(),
                     entity.category(),
                     entity.position.rx(),
                     entity.position.ry(),
                     entity.owner(),
+                    rules.ares_form(),
                 )
             });
             if let Some(event) = announcement {
@@ -248,10 +250,10 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "sinking_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "aircraft_sinking_tests.rs"]
 mod aircraft_tests;

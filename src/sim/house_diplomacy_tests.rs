@@ -106,9 +106,26 @@ fn computer_paranoid_allies_the_computers_against_the_human() {
     assert_eq!(sim.houses[&ids[1]].grudge_scores().get(&player), Some(&2));
 }
 
-/// The gate (`0x00501640..0x00501675`): Rules `AlliesAllowed=`, and no
-/// computer slot with a team, which `Create_Houses` records
-/// (`0x006881F5..0x00688209`).
+/// VERA `[General] AINearestEnemy=`: the computers stay apart and none is
+/// turned on the human.
+#[test]
+fn ai_nearest_enemy_keeps_the_computers_from_banding_against_the_human() {
+    let mut rules = rules();
+    rules.general.ai_nearest_enemy = true;
+    let houses = [
+        ("Player", "Americans", true),
+        ("Computer1", "Russians", false),
+        ("Computer2", "Russians", false),
+    ];
+    let (mut sim, ids) = sim_with(&rules, &houses);
+    paranoid(&mut sim, &rules);
+    assert!(sim.house_alliances.as_map().is_empty());
+    assert!(sim.houses[&ids[1]].grudge_scores().is_empty());
+}
+
+/// The gate (`0x00501640..0x00501675`): the mode's vt+4 (Cooperative only)
+/// or Rules `AlliesAllowed=`, and no computer slot with a team, which
+/// `Create_Houses` records (`0x006881F5..0x00688209`).
 #[test]
 fn computer_paranoid_needs_allies_allowed_and_no_computer_team() {
     let mut rules = rules();
@@ -163,6 +180,42 @@ fn computer_paranoid_needs_allies_allowed_and_no_computer_team() {
             allies(&sim, "Computer1") == set(&["Computer2"]),
             paranoid_runs,
             "human team {human_team:?}, computer team {computer_team:?}"
+        );
+    }
+}
+
+/// Cooperative's vt+4 (`0x005C4EE0`) answers true, so its computers turn
+/// paranoid although retail MPCoopMD sets `AlliesAllowed=no` (`0x00501659`);
+/// FreeForAll's (`0x005C0E30`) answers false, like every other mode's.
+#[test]
+fn cooperative_computers_turn_paranoid_without_allies_allowed() {
+    use crate::skirmish_modes::MpModeClass;
+    let mut rules = rules();
+    rules.general.allies_allowed = false;
+    for (mode, paranoid_runs) in [
+        (MpModeClass::Cooperative, true),
+        (MpModeClass::FreeForAll, false),
+    ] {
+        let (mut sim, ids) = sim_with(
+            &rules,
+            &[
+                ("Player", "Americans", true),
+                ("Computer1", "Russians", false),
+                ("Computer2", "Russians", false),
+            ],
+        );
+        sim.session
+            .install_multiplayer_house_identity(mode, Vec::new());
+        paranoid(&mut sim, &rules);
+        assert_eq!(
+            allies(&sim, "Computer1") == set(&["Computer2"]),
+            paranoid_runs,
+            "{mode:?}"
+        );
+        assert_eq!(
+            !sim.houses[&ids[1]].grudge_scores().is_empty(),
+            paranoid_runs,
+            "{mode:?}"
         );
     }
 }
@@ -250,7 +303,8 @@ fn ally_writes_reach_the_remembered_reveal_viewers() {
         (direct.to_vec(), allied.to_vec())
     };
     let (alone, with_ally) = (vec![ids[1]], vec![ids[1], ids[2]]);
-    sim.reveal_viewers.begin();
+    let clients = sim.fog_viewers();
+    sim.reveal_viewers.begin(clients);
     assert_eq!(viewers(&mut sim), (alone.clone(), alone.clone()));
     sim.make_ally(ids[1], ids[2], &rules, None, FrameEffects::default(), false);
     assert_eq!(viewers(&mut sim), (with_ally.clone(), with_ally));
@@ -322,6 +376,30 @@ fn ally_matrix_answers_as_the_graph_through_ally_writes() {
     agree(&sim, &ids);
     assert!(!allied(&sim, first, second) && !allied(&sim, second, first));
     assert!(allied(&sim, first, late));
+}
+
+/// A house the headless scenario adds after the load gets a matrix row, as
+/// a launch's houses do, instead of every question about it going to the
+/// graph by name: the load has already built the matrix.
+#[test]
+fn a_house_added_after_the_load_gets_a_matrix_row() {
+    let Some((retail, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let mut scene = crate::headless_scenario::load(&retail, "XMP03T4.MAP", 0x1269)
+        .expect("physical AnyTown Battle scenario");
+    let has_row = |sim: &Simulation, id| {
+        let matrix = sim.house_alliances.matrix(&sim.interner);
+        matrix.is_some_and(|matrix| matrix.row(id).is_some())
+    };
+    let local = scene.sim().session.current_house().expect("local house");
+    assert!(has_row(scene.sim(), local));
+    assert!(
+        scene.sim().interner.get("Late").is_none(),
+        "a name the load never interned"
+    );
+    let late = scene.add_human_house("Late", crate::skirmish_launch::LaunchCountry::Yuri);
+    assert!(has_row(scene.sim(), late));
 }
 
 /// MakeEnemy adds the anger first (`0x004F9FDD`), while the house is still

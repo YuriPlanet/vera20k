@@ -4,7 +4,7 @@
 //! whole InfantryAI or audible playback. Wet death cleanup uses the existing
 //! production sequencer's native20/21 UnInit arm, not a second action port.
 
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use serde_json::{Value, json};
 
@@ -20,15 +20,11 @@ use crate::sim::timer::CdTimer;
 use crate::sim::world::SimSoundEvent;
 
 fn oracle() -> &'static [Value] {
-    static NATIVE: OnceLock<Vec<Value>> = OnceLock::new();
-    NATIVE.get_or_init(|| {
-        let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
-            "tools/spatial_oracle/infantry_water_action.json",
-        ))
+    let rows = crate::test_fixture::json("tools/spatial_oracle/infantry_water_action.json")["rows"]
+        .as_array()
         .unwrap();
-        assert_eq!(rows.len(), 356);
-        rows
-    })
+    assert_eq!(rows.len(), 356);
+    rows
 }
 
 fn signed(value: &Value) -> i32 {
@@ -90,12 +86,9 @@ fn physical_rules() -> RuleSet {
         )
         .unwrap()
         .into_parts();
-    // The process owner returns fixed ART separately; the normal loader's
-    // init2467 installs it, then binds its parsed signed42-record bank.
+    // The process owner has retained the signed bank; metadata installation
+    // follows without replaying its sequence reads.
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&fixed_art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&fixed_art),
-    );
     rules
 }
 
@@ -153,9 +146,6 @@ fn supplied_rules(input: &Value) -> RuleSet {
         .unwrap()
         .into_parts();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&fixed_art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&fixed_art),
-    );
     rules
 }
 

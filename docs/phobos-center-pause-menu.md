@@ -1,8 +1,10 @@
 # Optional Phobos centred pause-menu background
 
 Build with `--features phobos` and set `[Sidebar] CenterPauseMenuBackground=yes`
-in `uimd.ini` to place the active-scenario modal background at the centre of the
-battlefield instead of the top-left corner. Default is `no`.
+in `uimd.ini` to place the active-scenario modal background at its own size at
+the centre of the battlefield. Default is `no`, where VERA stretches the art over
+the whole battlefield instead, since VERA's frames take any size
+(`InGameShellLayout::with_battlefield_background`).
 
 ```ini
 [Sidebar]
@@ -13,10 +15,10 @@ CenterPauseMenuBackground=false  ; boolean, default no
 `0x00B0FC30` as `(0, 0, canvas)`. The switch moves that rectangle's corner to
 the centre of the battlefield: the frame less the 168-pixel right column and the
 32-pixel bottom strip. Retail `BKGDSM/MD/LG[Y].SHP` fills that area exactly at
-640x480, 800x600 and 1024x768, so the stock sizes do not move; the switch
-matters at larger resolutions or with art sized differently from the frame,
-where the canvas is cropped evenly on both sides instead of only at the right
-and bottom.
+640x480, 800x600 and 1024x768, so the stock sizes neither move nor stretch;
+the switch matters at other frame sizes or with art sized differently from the
+frame, where the canvas keeps its size and is cropped, or framed by black,
+evenly on both sides.
 
 Source: the `[Sidebar]` read in `src/Phobos.INI.cpp` (default `false`) and the
 `InitSideRectangles_CenterBackground` hook at `0x72FCB5`

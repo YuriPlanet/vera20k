@@ -323,7 +323,7 @@ fn constructor_side_admission_matches_original_foot_receiver() {
             cell.bridge_facts.raw_flags = flags;
             // Original674000 reads Foot=1.0 for the Clear0/Road1 cells in
             // this corpus; the fixture catalog only recalculates its body.
-            cell.speed_costs.foot = Some(100);
+            cell.speed_costs.foot = Some(crate::util::native_x87::NativeF32Bits::ONE);
             sim.substrate.raw_cell_occupation.mark_ground(
                 x,
                 y,

@@ -85,9 +85,9 @@ disabled (`gh workflow list --all` shows its state). By hand:
    done
    ```
 
-5. In a PR, raise the version in `Cargo.toml`, `src/Cargo.toml` and their two `Cargo.lock`
-   entries above the release and check all four versions agree. This allows the development
-   build workflow to start again.
+5. In a PR, raise the version in `Cargo.toml`, `src/Cargo.toml`, `android/Cargo.toml` and
+   their three `Cargo.lock` entries above the release and check all six versions agree. This
+   allows the development build workflow to start again.
 
 For example, after publishing `v0.2.0`, main can move to `0.2.1` for future development
 builds while `v0.2.0` remains Latest.

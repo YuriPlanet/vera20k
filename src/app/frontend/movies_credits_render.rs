@@ -181,7 +181,7 @@ fn push_list_scrollbar(
 /// The family pages' parent background (`0x0060D20B`: MNSCRNL, MNSCRNS at
 /// 640 wide) with its darkened copy for list interiors, at its origin: the
 /// native canvas at the centered dialog origin on the retail layout, scaled
-/// over the page's dialog rect on a page that scales the shell.
+/// with the page while retaining the SHP canvas extent.
 pub(crate) struct FamilyBackdrop {
     background: Option<MainMenuShellChromeEntry>,
     darkened: Option<MainMenuShellChromeEntry>,
@@ -196,7 +196,7 @@ pub(crate) fn family_backdrop(
     screen_h: i32,
     scale: ShellScale,
 ) -> FamilyBackdrop {
-    let (background, darkened) = if screen_w == 640 {
+    let (background, darkened) = if scale.is_retail() && screen_w == 640 {
         (
             atlas.parent_background_640_mnscrns,
             atlas.parent_background_640_mnscrns_list,
@@ -224,8 +224,8 @@ impl FamilyBackdrop {
     /// The backdrop's own pixels behind `rect`, taken with the mapping the
     /// backdrop is drawn with: 1:1 from the centered dialog canvas on the
     /// retail layout, and, on a scaled page, proportionally from the canvas
-    /// scaled over the page's dialog rect. The list's darkened interior and the
-    /// scrollbar track go through this, so they match what lies behind them.
+    /// scaled with the page, not stretched to its full extent. The list's darkened
+    /// interior and scrollbar track use this same mapping.
     fn push_pixels(
         &self,
         out: &mut Vec<SpriteInstance>,
@@ -239,7 +239,12 @@ impl FamilyBackdrop {
         if self.scale.is_retail() {
             push_entry_crop(out, entry, self.origin, rect, depth);
         } else {
-            push_entry_window_crop(out, entry, self.scale.dialog_rect(), rect, depth);
+            // 0x0060D20B selects MNSCRNL; its retail SHP canvas is 632x568,
+            // not the enclosing 800x600 dialog. Preserve that authored extent
+            // when scaling, including the darkened list/scrollbar under-patches.
+            let (w, h) = entry.native_size();
+            let area = self.scale.scale_rect(RectPx::new(0, 0, w, h));
+            push_entry_window_crop(out, entry, area, rect, depth);
         }
     }
 }
@@ -424,7 +429,7 @@ fn movie_list_composition<'a>(
         labels.push(PaintLabel {
             text: resolve_csf(state, spec.csf_key),
             rect: owner_draw_button_label_rect(button.rect, pressed == Some(button.id)),
-            align: ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0),
+            align: ShellAlign::BUTTON_CAPTION,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: None,
         });
@@ -433,7 +438,7 @@ fn movie_list_composition<'a>(
         labels.push(PaintLabel {
             text: resolve_csf(state, MOVIE_LIST_PAGE.title_key),
             rect: layout.page.title,
-            align: ShellAlign::H_CENTER,
+            align: ShellAlign::PANEL_TITLE,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: Some(
                 crate::app::frontend::main_menu_shell_render::shell_reveal_path_a(window),
@@ -535,6 +540,7 @@ pub(crate) fn render_movie_list(
             text: &text,
             cursor: software_cursor(state, CURSOR_DEPTH),
             effects: None,
+            smooth_art: false,
         },
     );
     Ok(true)
@@ -603,26 +609,18 @@ pub(crate) fn render_credits_roll(
 ) -> Result<()> {
     let screen_w = state.renderer.gpu.config.width;
     let screen_h = state.renderer.gpu.config.height;
+    let viewport = super::credits_roll::CreditsViewport::new(screen_w, screen_h);
     let active = state.platform.window_active;
     let Some(session) = state.frontend.credits_roll.as_mut() else {
         return Ok(());
     };
     if active || session.last_drawn.is_empty() {
-        session.last_drawn = session
-            .roll
-            .instances(&state.renderer.bit_font, screen_w as i32);
+        session.last_drawn = session.roll.instances(&state.renderer.bit_font, viewport);
     }
     // Glyphs are clipped to the 520 px box (0x006211D0 sets the clip rect).
-    let box_x = crate::app::frontend::credits_roll::credits_box_x(screen_w as i32).max(0) as u32;
     let text = [ShellTextDraw {
         instances: session.last_drawn.clone(),
-        scissor: crate::render::shell_text::ScissorRect {
-            x: box_x,
-            y: 0,
-            w: (crate::app::frontend::credits_roll::CREDITS_BOX_WIDTH as u32)
-                .min(screen_w.saturating_sub(box_x)),
-            h: screen_h,
-        },
+        scissor: viewport.scissor,
     }];
     encode_shell_pass(
         state,
@@ -632,7 +630,7 @@ pub(crate) fn render_credits_roll(
         ShellComposition {
             text: &text,
             effects: Some(SurfaceEffects {
-                fade_rows: crate::app::frontend::credits_roll::CREDITS_FADE_ROWS,
+                fade_rows: viewport.fade_rows,
             }),
             ..ShellComposition::default()
         },
@@ -640,9 +638,41 @@ pub(crate) fn render_credits_roll(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn family_background_preserves_retail_canvas_when_scaled() {
+        let entry = MainMenuShellChromeEntry {
+            uv_origin: [0.0, 0.0],
+            uv_size: [1.0, 1.0],
+            pixel_size: [632.0, 568.0],
+        };
+        for (w, h) in [(1600, 1200), (1920, 1080), (640, 360)] {
+            let scale = ShellScale::from_screen(w, h);
+            let backdrop = FamilyBackdrop {
+                background: Some(entry),
+                darkened: Some(entry),
+                origin: (0, 0),
+                screen: (w, h),
+                scale,
+            };
+            let mut sprites = Vec::new();
+            push_family_backdrop(&mut sprites, &backdrop);
+            let expected = scale.scale_rect(RectPx::new(0, 0, 632, 568));
+            assert_eq!(sprites[0].position, [expected.x as f32, expected.y as f32]);
+            assert_eq!(sprites[0].size, [expected.w as f32, expected.h as f32]);
+            assert_eq!(sprites[0].uv_size, [1.0, 1.0]);
+            let inset = scale.scale_rect(RectPx::new(158, 142, 316, 284));
+            backdrop.push_pixels(&mut sprites, Some(entry), inset, LIST_FILL_DEPTH);
+            let patch = &sprites[1];
+            assert!((patch.uv_origin[0] - 0.25).abs() < 0.002);
+            assert!((patch.uv_origin[1] - 0.25).abs() < 0.002);
+            assert!((patch.uv_size[0] - 0.5).abs() < 0.002);
+            assert!((patch.uv_size[1] - 0.5).abs() < 0.002);
+        }
+    }
 
     #[test]
     fn list_interior_and_rows_match_the_native_capture() {

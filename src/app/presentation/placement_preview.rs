@@ -242,7 +242,12 @@ pub(crate) fn preview_screen_point(
         z,
     );
     let (sx, sy) = crate::util::lepton::absolute_leptons_to_screen(center.x, center.y, center.z);
-    Some((sx + offset[0] as f32, sy + offset[1] as f32))
+    let correction =
+        crate::render::locomotor_visual::building_terrain_correction(i32::from(level as i8));
+    Some((
+        sx + offset[0] as f32,
+        sy + offset[1] as f32 - correction as f32,
+    ))
 }
 
 /// Phobos `ApplyTheaterSuffixToString` plus the `.shp`/`.pal` extension rule:

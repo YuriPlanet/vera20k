@@ -13,7 +13,6 @@
 
 use crate::sim::movement::DriveLocomotionRuntime;
 use std::collections::BTreeMap;
-use std::sync::OnceLock;
 
 use serde_json::{Value, json};
 
@@ -44,14 +43,7 @@ use crate::util::native_x87::MaskedX87Chop53;
 mod area_guard_oracle_tests;
 
 pub(in crate::sim::world::techno_ai) fn oracle() -> &'static Value {
-    static CORPUS: OnceLock<Value> = OnceLock::new();
-    CORPUS.get_or_init(|| {
-        let value: Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/spatial_oracle/anytown_damage/foot_missions.json",
-        ))
-        .unwrap();
-        value
-    })
+    crate::test_fixture::json("tools/spatial_oracle/anytown_damage/foot_missions.json")
 }
 
 pub(in crate::sim::world::techno_ai) fn signed(value: &Value) -> i32 {
@@ -204,9 +196,6 @@ fn build_rules_with_native_reader_context(unread_weapons: bool, context: &str) -
     let mut rules =
         RuleSet::from_processed_rules(&layers.process_with_fixed_art(&art).unwrap()).unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     assert_eq!(
         rules.object("MTNK").unwrap().strength,
         signed(&native["inputs"]["strength"])
@@ -889,14 +878,7 @@ impl SuppliedFootFixture {
                 sub_cell,
                 CellListInsertion::PrependNonBuilding,
             );
-            Simulation::submit_object_display(
-                &sim.interner,
-                &sim.terrain_objects,
-                &mut sim.substrate,
-                id,
-                DisplayLayer::GROUND,
-                rules,
-            );
+            Simulation::submit_object_display(&mut sim.substrate, id, DisplayLayer::GROUND);
         }
         sim.set_logic_order_for_test(logic);
         // The original row writes pose/layer controls AFTER Unlimbo. They do
@@ -950,12 +932,18 @@ impl SuppliedFootFixture {
                 "Ground Display",
             ),
         ] {
-            let expected: Vec<u64> = native_order
+            let mut actual = actual;
+            let mut expected: Vec<u64> = native_order
                 .as_array()
                 .unwrap()
                 .iter()
                 .map(|pointer| fixture.id(pointer).unwrap())
                 .collect();
+            // VERA keeps Ground as an unordered set (`DisplayLayers::submit`).
+            if list == "Ground Display" {
+                actual.sort_unstable();
+                expected.sort_unstable();
+            }
             assert_eq!(actual, expected, "supplied {list} registration order");
         }
         assert_rng(
@@ -1391,7 +1379,7 @@ fn install_recorded_anytown_query_state(
         }
     }
     zones.test_supply_uniform_raw_zone_rows(2);
-    fixture.sim.zone_grid = Some(zones);
+    fixture.sim.zone_grid = Some(zones.into());
     fixture.sim.install_fixture_path_grid(Some(&path));
     if row["house_return"].is_object() {
         let state = &row["house_return"];
@@ -1705,7 +1693,7 @@ fn run_recorded_handler(
         }
     }
     if row["input"]["dispatch_entry"] == true {
-        super::dispatch_foot_mission(&mut fixture.sim, fixture.actor, rules, ctx);
+        super::dispatch_foot_mission(&mut fixture.sim, fixture.actor, rules, ctx).unwrap();
     } else {
         let actual = if row["input"]["mission"] == 21 {
             super::evaluate_foot_rescue(&mut fixture.sim, fixture.actor, rules, ctx)

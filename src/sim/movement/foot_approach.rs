@@ -32,15 +32,15 @@ const OFFSETS: [i16; 25] = [
     0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 8, -8, 16, -16, 24, -24, 32, -32, 48, -48, 64, -64,
 ]; // original signed table8224DC
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "foot_approach_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "approach_crush_tests.rs"]
 mod approach_crush_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "mission_approach_tests.rs"]
 mod mission_approach_tests;
 
@@ -133,7 +133,11 @@ impl Simulation {
             reach: rules.combat_damage.crush,
             techno: true,
             object: true,
-            omni: object.omni_crusher,
+            // Ares UnitClass_ApproachTarget_OmniCrusher (Ares.dll 1004BC10,
+            // hook 0x741613): `OmniCrusher.Aggressive=no` skips the arm.
+            omni: object.omni_crusher
+                && (!rules.ares_form()
+                    || object.techno_combat().combat().omni_crusher_aggressive()),
             is_human: self
                 .houses
                 .get(&actor.owner())
@@ -176,17 +180,8 @@ impl Simulation {
     /// the call, or None where native goes on to FootClass::Approach_Target
     /// (`0x00741685`).
     ///
-    /// Residuals:
-    /// - With the no-move flag set, native returns the Target without the
-    ///   destination. Every mission passes 0, and no VERA caller passes 1.
-    /// - Mission_Patrol calls Approach too (`0x004D473A`), and VERA has no
-    ///   Foot Patrol body (`FootClass::Mission_Patrol @ 0x004D4280`). Trigger:
-    ///   a Foot on Patrol holding a target. Effect: it does not approach the
-    ///   target; only the reach block's (`0x006FAB74`) does, for one it
-    ///   cannot reach. Frequency: a map can author Patrol in an object's
-    ///   `MISSION=` column (retail maps not surveyed); the team script's
-    ///   Patrol action (`0x006ECCE0`) is not ported. Risk: a whole unported
-    ///   mission.
+    /// Residual: with the no-move flag set, native returns the Target without
+    /// the destination. Every mission passes 0, and no VERA caller passes 1.
     pub(crate) fn unit_approach_head(&self, id: u64, rules: &RuleSet) -> Option<NavTargetRef> {
         let crush = self.approach_crush(id, rules);
         if let Some((facts, target)) = crush
@@ -535,6 +530,7 @@ impl Simulation {
             overlay_grid: self.overlay_grid.as_ref(),
             overlay_registry: registry,
             alliances: Some(&self.house_alliances),
+            buildings: Some(combat::line_of_fire::CellBuildings::of(self)),
         };
         let can_fire = match (weapon, identity) {
             //0x006F7242: In_Range answers false ahead of any map query when
@@ -568,10 +564,14 @@ impl Simulation {
             .houses
             .get(&actor.owner())
             .is_none_or(|h| h.is_controlled_by_human(self.session.game_mode_nonzero()));
+        // Ares 3.0 FootClass_ApproachTarget_Passive (1005C9F0, hook
+        // 0x4D5782): a passively acquired Target (`+0x50C`) is not chased
+        // either.
+        let passive_target = rules.ares_form() && actor.passive_scan.acquired();
         let may_approach = object.can_approach_target
             && actor.drain.target().is_none()
             && actor.bunker.link().installed_in().is_none()
-            && !actor.passenger_role.in_open_transport();
+            && !(actor.passenger_role.in_open_transport() || passive_target);
         //4D5716..4D57E4: the drop arms ahead of the search. A Sticky mission,
         // or a mover that may not approach off Attack, a human's Area Guard or
         // a computer's Hunt, clears the Target and the destination.
@@ -1135,6 +1135,7 @@ impl Simulation {
                     overlay_grid: self.overlay_grid.as_ref(),
                     overlay_registry: registry,
                     alliances: Some(&self.house_alliances),
+                    buildings: Some(combat::line_of_fire::CellBuildings::of(self)),
                 },
             )
         });
@@ -1329,10 +1330,8 @@ fn balloon_hover_destination(
     target: TargetKind,
     rules: &RuleSet,
 ) -> Option<NavTargetRef> {
-    weapon?
-        .projectile
-        .as_deref()
-        .and_then(|name| rules.projectile(name))
+    rules
+        .weapon_projectile(weapon?)
         .is_some_and(|projectile| projectile.vertical)
         .then_some(NavTargetRef::from(target))
 }

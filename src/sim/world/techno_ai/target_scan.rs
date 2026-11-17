@@ -117,6 +117,13 @@ impl PassiveScan {
         self.acquired = true;
     }
 
+    /// Ares TechnoClass_Fire_FSW (`10024C00`) stores the same byte (YRpp's
+    /// ShouldLoseTargetNow) when a firestorm wall took the firer's bullet,
+    /// so its next passive scan may drop the target.
+    pub(crate) fn ares_lose_target_now(&mut self) {
+        self.acquired = true;
+    }
+
     /// Assign_Target's first statement (`0x006FCDC4`) and the off-mission
     /// clear (`0x006FA5F0`).
     pub(crate) fn clear_acquired(&mut self) {
@@ -322,6 +329,11 @@ pub(super) fn targeting_slot(
     if !entity.passive_scan.timer().due(now) {
         return TargetingSlot::Skip;
     }
+    targeting_slot_when_due(entity)
+}
+
+/// [`targeting_slot`] once the targeting timer has run out.
+fn targeting_slot_when_due(entity: &crate::sim::game_entity::GameEntity) -> TargetingSlot {
     if entity.mega_mission.is_attack_move() {
         return TargetingSlot::ArrivalHandler;
     }
@@ -333,6 +345,28 @@ pub(super) fn targeting_slot(
         return TargetingSlot::Skip;
     }
     TargetingSlot::PassiveAcquire
+}
+
+/// Whether the passive block acts for `id` when its targeting timer runs out:
+/// an attack-mover's arrival handler, or a scan [`passive_acquire_gate`]
+/// admits. On Guard and Area Guard every term reads `id`'s own state and
+/// type and its owner's control, so it holds while those stay as they are
+/// (`world::idle_sleep`).
+pub(in crate::sim::world) fn passive_block_acts(
+    sim: &Simulation,
+    id: u64,
+    rules: &RuleSet,
+) -> bool {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return false;
+    };
+    match targeting_slot_when_due(entity) {
+        TargetingSlot::Skip => false,
+        TargetingSlot::ArrivalHandler => true,
+        TargetingSlot::PassiveAcquire => {
+            passive_acquire_gate(sim, id, rules, entity.passive_acquire_mission())
+        }
+    }
 }
 
 /// `TechnoClass::Passive_Target_Acquire @ 0x00709480`: false unless
@@ -522,8 +556,7 @@ pub(super) fn can_acquire_target(sim: &Simulation, id: u64, rules: &RuleSet) -> 
         return false;
     }
     // Ares7091D6 ->10049F70 returns70927D before the remaining passive gates.
-    #[cfg(feature = "ares")]
-    if entity.driver_killed() {
+    if rules.ares() && entity.driver_killed() {
         return false;
     }
     if entity.slave.owner().is_some() {
@@ -842,10 +875,8 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
     }
 
     fn inaccurate(&self, weapon: &'r WeaponType) -> bool {
-        weapon
-            .projectile
-            .as_deref()
-            .and_then(|id| self.rules.projectile(id))
+        self.rules
+            .weapon_projectile(weapon)
             .is_some_and(|projectile| projectile.inaccurate)
     }
 
@@ -900,6 +931,7 @@ impl Simulation {
         mask: ScanMission,
         scan_coord: Option<[i32; 3]>,
     ) -> crate::sim::combat::greatest_threat::ThreatScanOutcome {
+        let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::TARGETING);
         crate::sim::combat::combat_targeting::greatest_threat_for_entity(
             &self.substrate.entities,
             &self.substrate.occupancy,
@@ -915,6 +947,7 @@ impl Simulation {
                 overlay_grid: self.overlay_grid.as_ref(),
                 overlay_registry,
                 alliances: Some(&self.house_alliances),
+                buildings: Some(crate::sim::combat::line_of_fire::CellBuildings::of(self)),
             },
             Some(self),
             scan_coord,
@@ -978,7 +1011,7 @@ pub(crate) fn direct_greatest_threat(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 mod tests {
     use super::*;
     use serde_json::Value;

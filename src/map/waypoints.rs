@@ -153,7 +153,7 @@ pub fn first_multiplayer_start(waypoints: &HashMap<u32, Waypoint>) -> Option<Way
     multiplayer_start_waypoints(waypoints).into_iter().next()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod extended_capacity_tests {
     use super::*;
 

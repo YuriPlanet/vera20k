@@ -16,8 +16,11 @@
 //! * Presentation only. The queue, the clip choice and the subtitle are local:
 //!   they consume no simulation RNG, are not synchronised and never touch a
 //!   save. Two clients legitimately show different clips.
-//! * `[VERA] CommanderFeedback=no` turns the whole layer off. Turning it off
-//!   leaves the personality — and therefore the AI's trigger weights — intact.
+//! * `[VERA] CommanderFeedback=no` (Commander Clips, on the Gameplay page)
+//!   silences every commander. Turning it off leaves the personality — and
+//!   therefore the AI's trigger weights — intact, and the layer keeps
+//!   watching: each moment is spent unsaid, so ticking the box again in a match
+//!   says nothing about what happened while it was off.
 //!
 //! The events come from the world's own observable state rather than from new
 //! simulation events, so nothing in the simulation knows this exists:
@@ -223,6 +226,11 @@ pub(crate) struct CommanderFeedback {
     /// it has already been on screen — a clip that played under it has spent
     /// that beat, and the card is not held again after the clip ends.
     verdict_card_at_ms: Option<u64>,
+    /// Whether the frame that flagged the local House withheld the result's
+    /// own EVA line. It follows the switches until that frame and then stays,
+    /// so a switch changed afterwards neither loses the line nor says it
+    /// twice. See [`withholds_verdict_line`].
+    verdict_line_withheld: bool,
     /// Whether the result's own EVA line has been said after the frame's
     /// sound delivery withheld it. See [`withholds_verdict_line`].
     verdict_line_said: bool,
@@ -245,8 +253,10 @@ struct VerdictWait {
 pub(crate) const MAX_HELD_RESULT_MS: u64 = 45_000;
 
 impl CommanderFeedback {
-    /// Drop everything. Used when the feature is switched off, the screen
-    /// leaves the battle, or the scenario is torn down. A clip already handed
+    /// Drop everything. Used when the layer stops applying (the rules turn it
+    /// off, the screen leaves the battle, the exit router takes the result)
+    /// or the scenario is torn down; the player's own switch only mutes it
+    /// ([`CommanderFeedback::service_inner`]). A clip already handed
     /// to the radar FIFO ends with that FIFO's own teardown
     /// (`crate::app::radar_movie::retire`), which every retire path runs.
     pub(crate) fn retire(&mut self) {
@@ -265,6 +275,30 @@ impl CommanderFeedback {
     /// layer's queue nor the radar FIFO holds a clip.
     fn verdict_line_clear(&self, radar_pending: bool) -> bool {
         !self.verdict_held && self.queue.is_empty() && !radar_pending
+    }
+
+    /// The frame's question before it runs: whether its sound delivery holds
+    /// the result's own line back. `holds` is what the switches say now. Until
+    /// the local House is `flagged` the answer follows them; the frame that
+    /// flags it settles the line, so a switch ticked or unticked while the
+    /// clip plays neither loses the line nor says it a second time.
+    fn withhold_verdict_line(&mut self, flagged: bool, holds: bool) -> bool {
+        if !flagged {
+            self.verdict_line_withheld = holds;
+        }
+        self.verdict_line_owed()
+    }
+
+    /// Whether the result's line was withheld and has not been said yet.
+    fn verdict_line_owed(&self) -> bool {
+        self.verdict_line_withheld && !self.verdict_line_said
+    }
+
+    /// The withheld line, once: `true` for whoever says it first.
+    fn take_verdict_line(&mut self) -> bool {
+        let owed = self.verdict_line_owed();
+        self.verdict_line_said |= owed;
+        owed
     }
 }
 
@@ -320,20 +354,19 @@ pub(crate) fn skip_verdict_clip(state: &mut AppState, wall_ms: u64) {
     log::info!("The commander clip is skipped; the verdict goes out now");
 }
 
-/// The feature's own admit test. Only a live skirmish draws clips, and only
-/// while the switches say so: the player's own option, and the rules' — a mod
-/// or a map that ships its own scripted AI writes
-/// `[CommanderFeedback] Enabled=no` (no clips) or `Personalities=no` (no
-/// commander at all) and gets no talking heads.
-fn enabled(state: &AppState) -> bool {
-    state.persistence.options_profile.commander_feedback
-        && state
-            .rules()
-            .map(|rules| {
-                let rules = rules.commander_feedback();
-                rules.enabled && rules.personalities
-            })
-            .unwrap_or(true)
+/// Whether the layer applies to this frame. Only a live skirmish draws clips,
+/// and only while the rules say so: a mod or a map that ships its own scripted
+/// AI writes `[CommanderFeedback] Enabled=no` (no clips) or `Personalities=no`
+/// (no commander at all) and gets no talking heads. The player's own switch is
+/// not part of this: it mutes the commanders while the layer keeps watching.
+fn applies(state: &AppState) -> bool {
+    state
+        .rules()
+        .map(|rules| {
+            let rules = rules.commander_feedback();
+            rules.enabled && rules.personalities
+        })
+        .unwrap_or(true)
         && state.frontend.screen == GameScreen::InGame
         // Nothing is said once the verdict has landed. The rival's line belongs
         // before the result, and the route to the score page owns the screen
@@ -355,18 +388,20 @@ pub(crate) fn retire(state: &mut AppState) {
         .retire();
 }
 
-/// Whether a finished match could owe the player a clip at all: the layer is
-/// on, this is a skirmish, and some commander exists to speak.
+/// Whether a finished match could owe the player a clip at all: Commander
+/// Clips is on, the layer applies, this is a skirmish, and some commander
+/// exists to speak.
 ///
 /// A wrong `true` holds the result's line and the card for one pass, until
 /// this layer has looked and found no clip; a wrong `false` would let a clip
 /// cut the line the player just earned, so the test is generous on purpose.
 pub(crate) fn may_speak(state: &AppState) -> bool {
-    enabled(state)
+    state.persistence.options_profile.commander_feedback
+        && applies(state)
         && state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .is_some_and(|runtime| {
                 runtime.simulation.session().game_mode() == ScenarioGameMode::Skirmish
             })
@@ -386,48 +421,42 @@ pub(crate) fn holds_terminal_outcome(state: &AppState) -> bool {
     state.persistence.options_profile.custom_end_game_movie && may_speak(state)
 }
 
-/// Whether this match's verdict waited for a clip at all.
-///
-/// The exit router reads this for the result's theme, which started when the
-/// wait opened so the rest of the clip plays over it. A verdict that never
-/// waited starts it on retail's own timing.
-pub(crate) fn verdict_was_held_for_a_clip(state: &AppState) -> bool {
-    state
-        .match_state
-        .match_presentation
-        .commander_feedback
-        .verdict_held
-}
-
-/// Whether the result's own EVA line is withheld for a clip.
+/// Whether this frame's sound delivery withholds the result's own EVA line
+/// for a clip. Asked before each frame.
 ///
 /// `Flag_To_Win 0x004FCBA9` / `Flag_To_Lose 0x004FCDA1` say it on the frame
 /// the House is flagged, and the clip that kill earns would clear it out of
 /// the queue on its entrance (`RadarMovieCommand::Announce` ->
 /// `clear_eva_queues`). With `Custom End Game Movie` on, the frame's sound
 /// delivery holds it back until [`service`] sees no clip in the way, or the
-/// exit router says it after the clip it waited for.
-pub(crate) fn withholds_verdict_line(state: &AppState) -> bool {
-    holds_terminal_outcome(state)
-        && !state
-            .match_state
-            .match_presentation
-            .commander_feedback
-            .verdict_line_said
+/// exit router says it after the clip it waited for. Both switches stay open
+/// in a match, so the frame that flags the House settles which it is.
+pub(crate) fn withholds_verdict_line(state: &mut AppState) -> bool {
+    let flagged = local_outcome(state).is_some();
+    let holds = !flagged && holds_terminal_outcome(state);
+    state
+        .match_state
+        .match_presentation
+        .commander_feedback
+        .withhold_verdict_line(flagged, holds)
 }
 
 /// Take the withheld line for the exit router to say after the clip. `false`
 /// when nothing was withheld or [`service`] has already said it.
 pub(crate) fn take_withheld_verdict_line(state: &mut AppState) -> bool {
-    if !withholds_verdict_line(state) {
-        return false;
-    }
     state
         .match_state
         .match_presentation
         .commander_feedback
-        .verdict_line_said = true;
-    true
+        .take_verdict_line()
+}
+
+/// The local House's result, from the frame that flags it.
+fn local_outcome(state: &AppState) -> Option<crate::sim::house_state::HouseOutcomeState> {
+    state.match_state.sim_runtime.runtime().and_then(|runtime| {
+        let sim = &runtime.simulation;
+        sim.houses().get(&sim.session().current_house()?)?.outcome()
+    })
 }
 
 /// Whether the exit router must leave the published result alone while the
@@ -436,15 +465,11 @@ pub(crate) fn take_withheld_verdict_line(state: &mut AppState) -> bool {
 /// The simulation has published the result on its own frame, and the app runs
 /// no further frame while the result waits (`App::service_match_runtime_once`),
 /// so this delays only the router: the card, the teardown and the score page.
-/// The first call opens the wait, stops the score page's clock and switches
-/// the battlefield theme. The wait ends once this layer has looked at the
-/// world again and neither its own queue nor the radar FIFO holds a clip, or
-/// after [`MAX_HELD_RESULT_MS`]; it never re-opens.
-pub(crate) fn owe_the_verdict_a_clip(
-    state: &mut AppState,
-    outcome: crate::sim::house_state::HouseOutcomeKind,
-    wall_ms: u64,
-) -> bool {
+/// The first call opens the wait and stops the score page's clock. The wait
+/// ends once this layer has looked at the world again and neither its own
+/// queue nor the radar FIFO holds a clip, or after [`MAX_HELD_RESULT_MS`]; it
+/// never re-opens.
+pub(crate) fn owe_the_verdict_a_clip(state: &mut AppState, wall_ms: u64) -> bool {
     let feedback = &state.match_state.match_presentation.commander_feedback;
     if feedback.verdict_released {
         return false;
@@ -472,7 +497,6 @@ pub(crate) fn owe_the_verdict_a_clip(
         // open wait keeps it stopped through the clip's own pause and resume
         // ([`CommanderFeedback::result_waits`]).
         state.match_state.scenario_elapsed_clock.pause(wall_ms);
-        crate::app::match_runtime::sim_tick::start_verdict_theme(state, outcome, wall_ms);
         return true;
     };
     let outstanding = !feedback.queue.is_empty() || crate::app::radar_movie::has_pending(state);
@@ -505,7 +529,7 @@ fn house_name(state: &AppState, house: InternedId) -> String {
     state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|runtime| runtime.simulation.resolve(house).to_string())
         .unwrap_or_else(|| format!("{house:?}"))
 }
@@ -531,32 +555,27 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
 /// so a clip the kill earns is already queued here. A result the exit router
 /// has taken, or leaves waiting, gets its line from the router.
 fn say_the_verdict_line_when_clear(state: &mut AppState) {
-    if !withholds_verdict_line(state)
-        || !state
-            .match_state
-            .match_presentation
-            .commander_feedback
-            .verdict_line_clear(crate::app::radar_movie::has_pending(state))
-    {
+    let radar_pending = crate::app::radar_movie::has_pending(state);
+    let feedback = &state.match_state.match_presentation.commander_feedback;
+    if !feedback.verdict_line_owed() || !feedback.verdict_line_clear(radar_pending) {
         return;
     }
-    let Some(outcome) = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
-        let sim = &runtime.simulation;
-        sim.houses().get(&sim.session().current_house()?)?.outcome()
-    }) else {
+    let Some(outcome) = local_outcome(state) else {
         return;
     };
-    state
+    if state
         .match_state
         .match_presentation
         .commander_feedback
-        .verdict_line_said = true;
-    crate::app::match_runtime::sim_tick::play_outcome_eva(state, outcome.kind);
+        .take_verdict_line()
+    {
+        crate::app::match_runtime::sim_tick::play_outcome_eva(state, outcome.kind);
+    }
 }
 
 impl CommanderFeedback {
     fn service_inner(&mut self, state: &mut AppState, wall_ms: u64) {
-        if !enabled(state) {
+        if !applies(state) {
             self.retire();
             return;
         }
@@ -565,6 +584,10 @@ impl CommanderFeedback {
             self.retire();
             return;
         };
+        if !state.persistence.options_profile.commander_feedback {
+            self.mute(&observed, &scans);
+            return;
+        }
         for scan in scans {
             self.apply_scan(state, scan, wall_ms);
         }
@@ -577,7 +600,7 @@ impl CommanderFeedback {
     /// Read-only sweep. `None` means the layer does not apply at all this
     /// frame; an empty pair means it applies but nothing happened.
     fn observe(&mut self, state: &AppState) -> Option<(Vec<Observed>, Vec<Scan>)> {
-        let runtime = state.match_state.sim_runtime.as_ref()?;
+        let runtime = state.match_state.sim_runtime.runtime()?;
         let sim = &runtime.simulation;
         // `game_mode_nonzero()` is true for LAN, WOL *and* skirmish, so it
         // cannot stand in for "this is a skirmish"; only mode 5 is one.
@@ -775,6 +798,12 @@ impl CommanderFeedback {
             observed.seed,
             observed.relation,
         );
+        self.spend(&observed);
+    }
+
+    /// Mark a moment as had: each is said at most once a match, and not at
+    /// all when it comes while the player has the clips off.
+    fn spend(&mut self, observed: &Observed) {
         match observed.event {
             FeedbackEvent::StartGame => {
                 self.greeted.insert(observed.house);
@@ -789,6 +818,26 @@ impl CommanderFeedback {
                 self.local_defeat_announced = true;
             }
             FeedbackEvent::InTrouble => {}
+        }
+    }
+
+    /// A pass with the player's own switch off. It mutes the commanders and
+    /// nothing else: no clip is queued, and what the world showed is spent
+    /// unsaid, so ticking the box again in a match replays no greeting, taunt
+    /// or defeat it missed. An open verdict wait or a withheld result line
+    /// outlives the switch.
+    fn mute(&mut self, observed: &[Observed], scans: &[Scan]) {
+        self.queue.clear();
+        for observed in observed {
+            self.spend(observed);
+        }
+        // Buildings lost meanwhile are spent too: the trouble watch starts
+        // again from them, so nobody calls for help over a base that fell
+        // while the box was off.
+        for scan in scans {
+            let watch = self.trouble.entry(scan.house).or_default();
+            watch.baseline = scan.buildings_lost;
+            watch.last_scan_tick = scan.tick;
         }
     }
 
@@ -1061,7 +1110,7 @@ fn feedback_seed(house_index: usize, kind: u64, tick: u64) -> u64 {
         .wrapping_add(kind.wrapping_mul(0x0100_0000_01b3))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 
@@ -1522,5 +1571,83 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    /// Both switches stay open in a match, so the frame that flags the local
+    /// House settles the result's line: unticked while the clip plays, the
+    /// withheld line is still said, once; ticked after the frame said it, it
+    /// is not said again.
+    #[test]
+    fn the_flagging_frame_settles_the_result_line() {
+        let mut withheld = CommanderFeedback::default();
+        assert!(
+            withheld.withhold_verdict_line(false, true),
+            "the kill holds it"
+        );
+        assert!(
+            withheld.withhold_verdict_line(true, false),
+            "unticked: still owed"
+        );
+        assert!(withheld.take_verdict_line());
+        assert!(!withheld.take_verdict_line(), "said once");
+
+        let mut said = CommanderFeedback::default();
+        assert!(
+            !said.withhold_verdict_line(false, false),
+            "the kill says it"
+        );
+        assert!(
+            !said.withhold_verdict_line(true, true),
+            "ticked: nothing owed"
+        );
+        assert!(!said.take_verdict_line());
+    }
+
+    /// Unticking Commander Clips mutes the commanders and forgets nothing: a
+    /// muted pass spends the moments it sees, so ticking the box again replays
+    /// none of them, and a result the router waits on keeps waiting and keeps
+    /// its line.
+    #[test]
+    fn a_muted_pass_spends_its_moments_and_keeps_the_verdict() {
+        let ally = InternedId::from_index(1);
+        let enemy = InternedId::from_index(2);
+        let mut feedback = CommanderFeedback {
+            queue: VecDeque::from([ClipRequest {
+                house: enemy,
+                entry: entry(FeedbackEvent::FirstSeen, Some("AWAGR1")),
+                relation: Relation::Enemy,
+            }]),
+            passes: 4,
+            verdict_wait: Some(VerdictWait {
+                since_ms: 0,
+                start_passes: 3,
+            }),
+            verdict_held: true,
+            ..CommanderFeedback::default()
+        };
+        assert!(feedback.withhold_verdict_line(false, true));
+        feedback.mute(
+            &[Observed {
+                house: enemy,
+                personality: 0,
+                event: FeedbackEvent::DefeatedByLocalPlayer,
+                seed: 0,
+                relation: Relation::Enemy,
+            }],
+            &[Scan {
+                house: ally,
+                personality: 0,
+                buildings_lost: 3,
+                tick: 75,
+                seed: 0,
+                relation: Relation::Ally,
+            }],
+        );
+        assert!(feedback.queue.is_empty(), "nothing is said");
+        assert!(feedback.announced.contains(&enemy), "the defeat is spent");
+        let lost = 3 - feedback.trouble[&ally].baseline;
+        assert_eq!(trouble_loss(lost, 1), None, "and so are the losses");
+        assert!(feedback.result_waits(), "the router still waits");
+        assert!(feedback.take_verdict_line(), "and still owes the line");
     }
 }

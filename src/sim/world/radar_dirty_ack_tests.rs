@@ -6,7 +6,7 @@ use crate::sim::overlay_grid::{OverlayGrid, WallPointerTarget};
 use crate::sim::snapshot::GameSnapshot;
 
 #[test]
-fn radar_dirty_ack_dedups_one_window_rearms_and_never_changes_hash() {
+fn radar_dirty_drain_dedups_one_window_rearms_and_never_changes_hash() {
     let mut sim = Simulation::new();
     let cell = (17, 23);
     let other = (18, 23);
@@ -23,15 +23,11 @@ fn radar_dirty_ack_dedups_one_window_rearms_and_never_changes_hash() {
     assert_eq!(sim.dirty_cells.radar_generation(), generation);
     assert_eq!(sim.state_hash(), baseline_hash);
 
-    // A skipped/absent presentation performs no acknowledgement. A stale
-    // acknowledgement likewise cannot erase the pending native dirty batch.
-    assert!(
-        !sim.dirty_cells
-            .acknowledge_radar(generation.wrapping_add(1))
-    );
-    assert_eq!(sim.dirty_cells.radar(), vec![cell, other]);
-    assert!(sim.dirty_cells.acknowledge_radar(generation));
+    // The client drains the whole batch into the minimap's backlog, which
+    // owns retry and stale-acknowledgement handling from then on.
+    assert_eq!(sim.dirty_cells.take_radar(), vec![cell, other]);
     assert!(sim.dirty_cells.radar().is_empty());
+    assert_eq!(sim.dirty_cells.radar_generation(), generation);
     assert_eq!(sim.state_hash(), baseline_hash);
 
     sim.dirty_cells.mark_radar([cell]);
@@ -62,7 +58,7 @@ fn radar_dirty_wall_partial_damage_marks_nothing() {
 }
 
 #[test]
-fn radar_dirty_ack_survives_action40_and_load_rebuild_needs_no_stale_batch() {
+fn radar_dirty_batch_survives_action40_and_load_rebuild_needs_no_stale_batch() {
     let header = MapHeader {
         theater: "TEMPERATE".to_string(),
         fill: "Clear".to_string(),
@@ -84,18 +80,17 @@ fn radar_dirty_ack_survives_action40_and_load_rebuild_needs_no_stale_batch() {
         )
     ));
     assert_eq!(sim.playfield_revision, 1);
-    assert_eq!(sim.dirty_cells.radar(), vec![(20, 20)]);
-    assert!(sim.dirty_cells.acknowledge_radar(1));
+    assert_eq!(sim.dirty_cells.take_radar(), vec![(20, 20)]);
 
     sim.dirty_cells.mark_radar([(20, 20)]);
     let hash_with_pending_client_state = sim.state_hash();
     let bytes_with_pending = GameSnapshot::save(&sim, 0, 0, "all06umd.map", 0);
-    assert!(sim.dirty_cells.acknowledge_radar(2));
+    assert_eq!(sim.dirty_cells.take_radar(), vec![(20, 20)]);
     assert_eq!(sim.state_hash(), hash_with_pending_client_state);
-    let bytes_after_ack = GameSnapshot::save(&sim, 0, 0, "all06umd.map", 0);
+    let bytes_after_drain = GameSnapshot::save(&sim, 0, 0, "all06umd.map", 0);
     assert_eq!(
-        bytes_with_pending, bytes_after_ack,
-        "client-local pending/ack state is absent from snapshot bytes",
+        bytes_with_pending, bytes_after_drain,
+        "client-local pending state is absent from snapshot bytes",
     );
     let restored = GameSnapshot::load(&bytes_with_pending)
         .expect("snapshot loads")

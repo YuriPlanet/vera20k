@@ -90,13 +90,16 @@ impl Arena {
         sim.session.set_map_height_for_test(SIZE);
         // Retail [Clear]: Foot/Track/Wheel 100%, Hover 50%, Amphibious 80%.
         let clear = crate::rules::terrain_rules::SpeedCostProfile {
-            foot: Some(100),
-            track: Some(100),
-            wheel: Some(100),
+            foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
             float: None,
-            amphibious: Some(80),
+            amphibious: Some(crate::rules::terrain_rules::test_speed_percent(80)),
             float_beach: None,
-            hover: Some(50),
+            hover: Some(crate::util::native_x87::NativeF32Bits::from_bits(
+                0x3f00_0000,
+            )),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
         };
         let cell = |x, y| {
             let mut cell = crate::map::resolved_terrain::test_flat_cell(x, y);
@@ -595,6 +598,7 @@ fn retail_drone_fire_frames_survive_launch_parasitism_and_release() {
         facing,
         actor.body_frame_counter.get(),
         actor.unit_firing_counter.get(),
+        actor.unit_death_counter.get(),
         crate::sim::movement::motion_query::is_moving(actor) == Some(true),
         false,
     );
@@ -626,6 +630,7 @@ fn retail_drone_fire_frames_survive_launch_parasitism_and_release() {
             actor.body_facing_byte(arena.frame()),
             actor.body_frame_counter.get(),
             counter,
+            -1,
             crate::sim::movement::motion_query::is_moving(actor) == Some(true),
             false,
         )
@@ -1410,4 +1415,23 @@ fn grinder_arrival_refunds_the_infesting_drone_before_forced_release() {
         "suppression50 precedes ExitUnit's nonnaval arm"
     );
     assert_eq!(arena.eater_of(tank), None);
+}
+
+/// Ares FootClass_PointerGotInvalid_Parasite10048280 (hook4D99AA) and
+/// ParasiteClass_PointerGotInvalid_Cloak100482D0 (hook62A283): the host's
+/// cloak Detach_All(false) keeps the drone attached; only a removal ejects.
+#[test]
+fn ares_a_cloaking_host_keeps_its_drone() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = rules();
+    let mut arena = Arena::new(&rules);
+    let drone = arena.spawn(&rules, "DRON", "Russians", (10, 10));
+    let tank = arena.spawn(&rules, "MTNK", "Americans", (11, 10));
+    arena.infect(&rules, drone, tank);
+    arena.sim.detach_all(
+        tank,
+        false,
+        crate::sim::world::UninitContext::with_rules(&rules),
+    );
+    assert_eq!(arena.eater_of(tank), Some(drone));
 }

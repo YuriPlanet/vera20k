@@ -12,14 +12,14 @@
 mod render;
 pub(crate) use render::transfer_progress_draws;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests;
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_app))]
 #[path = "pump/country_loading_tests.rs"]
 mod country_loading_tests;
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_app))]
 #[path = "pump/loading_theme_tests.rs"]
 mod loading_theme_tests;
 
@@ -34,6 +34,7 @@ use crate::app::loading::fresh_scenario::FreshScenarioLoadContextDescriptor;
 use crate::app::loading::init::{self, MapLoadInitial, MapLoadResult};
 use crate::app::loading::progress_row::LoadingProgressRowSnapshot;
 use crate::app::match_bootstrap::{LoadingStartup, PreparedMatchStartup};
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::pal_file::Color;
 use crate::assets::pcx_file::PcxFile;
@@ -298,6 +299,9 @@ pub(crate) struct LoadingRequest {
     /// owner stamps it from the rules it just loaded; the constructors leave it
     /// unset, which resolves to the vanilla priority table.
     skirmish_colors: Option<SkirmishColorMode>,
+    /// Freeze the process flag before the early generated-map Full_Init; the
+    /// later continuation consumes its result without selecting sources again.
+    the_team_enabled: bool,
 }
 
 impl LoadingRequest {
@@ -325,6 +329,7 @@ impl LoadingRequest {
             accepted_rmg_start_staging: None,
             random_map_preview: None,
             skirmish_colors: None,
+            the_team_enabled: false,
         }
     }
 
@@ -334,6 +339,7 @@ impl LoadingRequest {
             accepted_rmg_start_staging: None,
             random_map_preview: None,
             skirmish_colors: None,
+            the_team_enabled: false,
         }
     }
 
@@ -347,6 +353,7 @@ impl LoadingRequest {
             accepted_rmg_start_staging: None,
             random_map_preview: None,
             skirmish_colors: None,
+            the_team_enabled: false,
         }
     }
 
@@ -356,6 +363,7 @@ impl LoadingRequest {
             accepted_rmg_start_staging: None,
             random_map_preview: None,
             skirmish_colors: None,
+            the_team_enabled: false,
         }
     }
 
@@ -371,6 +379,7 @@ impl LoadingRequest {
             accepted_rmg_start_staging: None,
             random_map_preview: None,
             skirmish_colors: None,
+            the_team_enabled: false,
         }
     }
 
@@ -383,6 +392,7 @@ impl LoadingRequest {
             accepted_rmg_start_staging: None,
             random_map_preview: None,
             skirmish_colors: None,
+            the_team_enabled: false,
         }
     }
 
@@ -406,19 +416,30 @@ impl LoadingRequest {
     /// Run the request's authoritative initial-map entry. The retained random
     /// preview is intentionally not an argument: active retail's `.SED` reader
     /// regenerates gameplay after Start, while the preview remains a loading-
-    /// composition fallback only.
+    /// composition fallback only. VERA: after a network room's checks of the
+    /// map file, the map takes the mod's map additions
+    /// (`MapLoadInitial::with_mod_additions`).
     fn load_initial_with_assets(
         &self,
         ra2_dir: std::path::PathBuf,
         asset_manager: &mut AssetManager,
-        native_rules: Option<&crate::rules::process_owner::NativeRulesProcessOwner>,
+        native_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
+        resident: Option<&mut crate::sim::world::Simulation>,
+        map_additions: Option<&crate::app::mod_additions::MapAdditions>,
         progress: &mut dyn LoadingProgressSink,
     ) -> anyhow::Result<MapLoadInitial> {
         let mut loaded = init::load_map_initial_with_assets(
             ra2_dir,
             asset_manager,
             native_rules,
+            resident,
             Some(self.startup().physical_map_file()),
+            self.startup()
+                .launch_session()
+                .map(|launch| launch.mode.override_file.as_str()),
+            self.startup().session_mode(),
+            self.the_team_enabled,
+            self.startup().match_seed(),
             progress,
         )?;
         if let LoadingStartup::Network(_) = self.startup() {
@@ -440,6 +461,7 @@ impl LoadingRequest {
                         == Some(
                             crate::map::source::effective_network_map_digest(
                                 &loaded.map_data().ini,
+                                false,
                                 false
                             )
                             .as_str()
@@ -448,7 +470,10 @@ impl LoadingRequest {
                 );
             }
         }
-        Ok(loaded)
+        match map_additions {
+            Some(additions) => loaded.with_mod_additions(additions),
+            None => Ok(loaded),
+        }
     }
 
     fn skirmish_launch_session(&self) -> Option<&SkirmishLaunchSession> {
@@ -520,12 +545,20 @@ impl LoadingRequest {
         self,
         ra2_dir: PathBuf,
         assets: &mut AssetManager,
-        native_rules: Option<&crate::rules::process_owner::NativeRulesProcessOwner>,
+        native_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
+        map_additions: Option<&crate::app::mod_additions::MapAdditions>,
         mapgen_retention: &mut crate::app::shell_random_map::RandomMapGenerationRetention,
-        resident: Option<&mut crate::sim::world::Simulation>,
+        mut resident: Option<&mut crate::sim::world::Simulation>,
         progress: &mut dyn LoadingProgressSink,
     ) -> anyhow::Result<PreparedScenarioLoad> {
-        let mut initial = self.load_initial_with_assets(ra2_dir, assets, native_rules, progress)?;
+        let mut initial = self.load_initial_with_assets(
+            ra2_dir,
+            assets,
+            native_rules,
+            resident.as_deref_mut(),
+            map_additions,
+            progress,
+        )?;
         initial.retain_process_state(mapgen_retention, resident);
         self.prepare_initial(initial)
     }
@@ -535,13 +568,14 @@ impl LoadingRequest {
         self,
         ra2_dir: PathBuf,
         assets: &mut AssetManager,
-        native_rules: Option<&crate::rules::process_owner::NativeRulesProcessOwner>,
+        native_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
         progress: &mut dyn LoadingProgressSink,
     ) -> anyhow::Result<init::RandomMapLaunchSnapshot> {
         let prepared = self.prepare(
             ra2_dir,
             assets,
             native_rules,
+            None,
             &mut Default::default(),
             None,
             progress,
@@ -569,7 +603,6 @@ impl LoadingRequest {
             request: self,
             initial,
             context,
-            #[cfg(feature = "ares")]
             rules_prefix: None,
         })
     }
@@ -584,17 +617,16 @@ struct PreparedScenarioLoad {
     request: LoadingRequest,
     initial: MapLoadInitial,
     context: FreshScenarioLoadContextDescriptor,
-    #[cfg(feature = "ares")]
+    /// Bound only when the Rules are read the Ares way; `None` keeps the stock prefix.
     rules_prefix: Option<crate::rules::process_owner::NativeNonCampaignPrefixPreparation>,
 }
 
 struct ConstructingScenarioLoad {
     load: init::FreshMapLoadJob,
-    #[cfg(feature = "ares")]
+    /// Bound only when the Rules are read the Ares way; `None` keeps the stock prefix.
     rules_prefix: Option<crate::rules::process_owner::NativeNonCampaignPrefixPreparation>,
 }
 
-#[cfg(feature = "ares")]
 fn retire_rules_prefix(
     preparation: Option<crate::rules::process_owner::NativeNonCampaignPrefixPreparation>,
     assets: &mut crate::app::process_assets::ProcessAssets,
@@ -609,7 +641,6 @@ fn retire_rules_prefix(
 }
 
 impl PreparedScenarioLoad {
-    #[cfg(feature = "ares")]
     fn cancel_rules_prefix(&mut self, assets: &mut crate::app::process_assets::ProcessAssets) {
         retire_rules_prefix(self.rules_prefix.take(), assets);
     }
@@ -788,9 +819,8 @@ pub(crate) enum NativeLoadingArt {
 pub(crate) struct NativeLoadingScreenState {
     pub variant: NativeLoadingArt,
     local_side_index: i32,
-    #[cfg(feature = "ares")]
+    /// Both bound only when the Rules are read the Ares way; `None` keeps the stock screen.
     early_country_loading: Option<EarlyCountryLoading>,
-    #[cfg(feature = "ares")]
     late_country_loading: Option<crate::rules::country_loading::AresCountryLoading>,
     /// Local player's MP color scheme — source of the progress outline and bar
     /// remap. Derived from the launch session, not the country variant.
@@ -818,7 +848,6 @@ pub(crate) struct NativeLoadingScreenState {
 
 /// Two immutable observations, not a second Country owner: Color/PAL are
 /// resolved before Full_Init; the later file/labels are read after E_multi.
-#[cfg(feature = "ares")]
 struct EarlyCountryLoading {
     country: crate::rules::ruleset::CountryIdx,
     palette_name: String,
@@ -838,9 +867,7 @@ impl NativeLoadingScreenState {
         Self {
             variant: NativeLoadingArt::StockOffline(variant),
             local_side_index,
-            #[cfg(feature = "ares")]
             early_country_loading: None,
-            #[cfg(feature = "ares")]
             late_country_loading: None,
             color_index,
             // Static placeholders; replaced by `resolve_player_colors` once rules load.
@@ -864,9 +891,7 @@ impl NativeLoadingScreenState {
             // BeginProgress684620 passes Campaign.CD; color resolver642B30
             // distinguishes exactly zero from all nonzero values.
             local_side_index: cd,
-            #[cfg(feature = "ares")]
             early_country_loading: None,
-            #[cfg(feature = "ares")]
             late_country_loading: None,
             color_index: HouseColorIndex(0),
             backing_rgb: FALLBACK_BACKING_RGB,
@@ -917,7 +942,8 @@ impl NativeLoadingScreenState {
         }
         // Ares1002F8F0 publishes this signed index once for the loading
         // attempt; negative resumes the stock side-color branch above.
-        #[cfg(feature = "ares")]
+        // GetSideColor642B60's hook (0x642B91, 1002F870) follows its
+        // observer LightGrey test, and an observer publishes no Country here.
         if let Some(text_rgb) = self
             .early_country_loading
             .as_ref()
@@ -963,11 +989,9 @@ impl LoadingSession {
     }
 
     fn retire(mut self, assets: &mut crate::app::process_assets::ProcessAssets) {
-        #[cfg(feature = "ares")]
         if let LoadingStage::Prepared(prepared) = &mut self.stage {
             prepared.cancel_rules_prefix(assets);
         }
-        #[cfg(feature = "ares")]
         if let LoadingStage::ConstructingScenario(constructing) = &mut self.stage {
             retire_rules_prefix(constructing.rules_prefix.take(), assets);
         }
@@ -1081,7 +1105,6 @@ impl LoadingJob {
     }
 }
 
-#[cfg(feature = "ares")]
 fn ordinary_country_loading_index(
     startup: &LoadingStartup,
 ) -> Option<crate::rules::ruleset::CountryIdx> {
@@ -1099,7 +1122,6 @@ fn ordinary_country_loading_index(
     Some(launch.local_slot().country.index())
 }
 
-#[cfg(feature = "ares")]
 fn bind_early_country_loading(
     native: &mut NativeLoadingScreenState,
     startup: &LoadingStartup,
@@ -1140,7 +1162,6 @@ fn bind_early_country_loading(
     Ok(())
 }
 
-#[cfg(feature = "ares")]
 fn prepare_country_loading_prefix(
     process_assets: &mut crate::app::process_assets::ProcessAssets,
     resident: Option<&mut crate::sim::world::Simulation>,
@@ -1166,12 +1187,7 @@ fn prepare_country_loading_prefix(
         // loading fails. Shell/failure screens retain it only for projection;
         // it must never restart after its runtime Rules writes are transferred.
         resident.retire_scenario_started();
-        owner.consume_outgoing_scenario_rules(
-            resident.retire_object_type_tech_levels(),
-            resident.retire_ambient_change_inputs(),
-            resident.retire_building_upgrade_art_names(),
-            resident.retire_voxel_type_damage(),
-        )?;
+        crate::app::process_assets::transfer_outgoing_simulation_rules(owner, resident)?;
     }
     let preparation = owner.prepare_noncampaign_scenario_prefix();
     native.late_country_loading = Some(
@@ -1256,10 +1272,12 @@ pub(crate) fn cancel_network_loading(state: &mut AppState, text: &str) -> bool {
     if !network_loading_active(state) {
         return false;
     }
-    fail_loading(
+    // No box: the lobby line below is this cancellation's message.
+    fail_loading_with(
         state,
         LoadingFailurePolicy::RetryNetworkShell,
         anyhow::anyhow!(text.to_owned()),
+        false,
     );
     // The failure has reopened the lobby. Native returns without a word;
     // VERA's lobbies say why the load stopped.
@@ -1361,6 +1379,33 @@ fn prepare_session_for_loading(
     }
 }
 
+/// VERA: a network match plays the rules its room took from its host
+/// (`HostRules`), which the room's agreement already compared, and so does
+/// a replay that recorded them; every other game, offline replays included,
+/// plays the player's own Options switches.
+fn play_startup_personal_rules(
+    process_assets: &mut crate::app::process_assets::ProcessAssets,
+    startup: &LoadingStartup,
+) {
+    let room = match startup {
+        LoadingStartup::Network(startup) => &startup.launch_session().options.host_rules,
+        // A network match recorded the room's, none included.
+        LoadingStartup::Replay {
+            session, game_mode, ..
+        } if game_mode.is_network() => &session.options.host_rules,
+        _ => return process_assets.use_own_personal_rules(),
+    };
+    match room.personal_rules() {
+        Ok(rules) => process_assets.use_personal_rules(rules),
+        // A network room refused these before its start; a replay plays on
+        // without them and its check reports the difference.
+        Err(error) => {
+            log::error!("The room's rules do not read: {error}");
+            process_assets.use_personal_rules(Default::default());
+        }
+    }
+}
+
 pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
     state
         .frontend
@@ -1369,14 +1414,20 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     crate::app::radar_movie::retire(state, wall_ms);
     crate::app::chrono_screen::retire(state, wall_ms);
+    play_startup_personal_rules(&mut state.process_assets, request.startup());
     // The shell writes GameMode before the loading screen (`0x0052E10F`
     // Skirmish, `0x0052E175` campaign); the session owner is live from here.
     prepare_session_for_loading(&mut state.match_state.session, request.startup());
-    let request = request.with_skirmish_colors(
+    let mut request = request.with_skirmish_colors(
         state
             .rules()
             .map(crate::rules::ruleset::RuleSet::skirmish_colors),
     );
+    request.the_team_enabled = state
+        .frontend
+        .main_menu_shell_state
+        .typed_codes
+        .the_team_enabled();
     let mut session = LoadingSession::from_request(request);
     session.job.ra2_dir = state
         .platform
@@ -1419,6 +1470,7 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
         session,
         now_ms,
     );
+    crate::app::App::close_shell_menu_at_launch(state);
     state.frontend.screen = GameScreen::Loading;
 }
 
@@ -1461,21 +1513,19 @@ fn lease_loading_assets_and_play_loading_theme(
     now_ms: u64,
 ) -> LoadingSession {
     session.job.asset_manager = process_assets.lease_for_loading();
-    #[cfg(not(feature = "ares"))]
-    if let Some(assets) = audio_service_asset_manager(process_assets, Some(&session)) {
+    // Ares683C70 needs the selected map INI. When the Rules are read the Ares
+    // way its one playback occurs at the consuming Selected->Prepared
+    // transition, before the Rules prefix reset.
+    let ares = process_assets.reads_ares_way();
+    if !ares && let Some(assets) = audio_service_asset_manager(process_assets, Some(&session)) {
         let _ = audio.play_theme("LOADING", assets, now_ms);
     }
-    // Ares683C70 needs the selected map INI. Its one playback occurs at the
-    // consuming Selected->Prepared transition, before the Rules prefix reset.
-    #[cfg(feature = "ares")]
-    let _ = (audio, now_ms);
     session
 }
 
 /// Installed Ares683C70/683D05 select from the already parsed map (campaign)
 /// or the early process Rules/Country/Side authority (other sessions). Called
 /// only by Selected->Prepared, before E_multi and later mode/map type writes.
-#[cfg(feature = "ares")]
 fn play_ares_loading_theme(
     process_assets: &crate::app::process_assets::ProcessAssets,
     audio: &mut crate::app::audio_runtime::AppAudioRuntime,
@@ -1606,8 +1656,7 @@ pub(crate) fn clear_loading_state(state: &mut AppState) {
 }
 
 fn reset_loading_presentation(state: &mut AppState) {
-    state.match_state.match_presentation.interpolation.clear();
-    state.renderer.fps_overlay.set_simulation_readout(None);
+    state.renderer.performance_overlay.clear_simulation_rate();
     state.frontend.loading_screen_atlas = None;
     state.frontend.loading_progress = LoadingProgressState::standard_skirmish();
 }
@@ -1764,7 +1813,7 @@ fn pump_loading_after_present(
                 state
                     .match_state
                     .sim_runtime
-                    .as_mut()
+                    .write_sim(SimWrite::Lifecycle)
                     .map(|runtime| &mut runtime.simulation),
                 session,
                 false,
@@ -1796,8 +1845,7 @@ fn pump_loading_after_present(
         request,
         initial,
         context: fresh_scenario_context,
-        #[cfg(feature = "ares")]
-            rules_prefix: mut prepared_rules_prefix,
+        rules_prefix: mut prepared_rules_prefix,
     } = prepared;
     state
         .frontend
@@ -1840,7 +1888,7 @@ fn pump_loading_after_present(
                 &state.renderer.depth_view,
                 &state.renderer.batch_renderer,
                 &state.renderer.bit_font,
-                &state.renderer.fps_overlay,
+                &state.renderer.performance_overlay,
                 native,
                 8,
                 render_size,
@@ -1868,22 +1916,15 @@ fn pump_loading_after_present(
         // The outgoing scene no longer advances. Return its live Type and
         // ambient Rules writes before Full_Init's optional prefix Process.
         // Type reset deletes Types but retains the ambient scalar defaults.
-        let should_retire_outgoing = {
-            #[cfg(feature = "ares")]
-            {
-                prepared_rules_prefix.is_none()
-            }
-            #[cfg(not(feature = "ares"))]
-            {
-                true
-            }
-        };
-        if should_retire_outgoing && let Some(runtime) = state.match_state.sim_runtime.as_mut() {
-            native_rules_owner.consume_outgoing_scenario_rules(
-                runtime.simulation.retire_object_type_tech_levels(),
-                runtime.simulation.retire_ambient_change_inputs(),
-                runtime.simulation.retire_building_upgrade_art_names(),
-                runtime.simulation.retire_voxel_type_damage(),
+        // Only Rules read the Ares way bind a prefix, which already returned them.
+        let should_retire_outgoing = prepared_rules_prefix.is_none();
+        if !initial.has_generated_rules()
+            && should_retire_outgoing
+            && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle)
+        {
+            crate::app::process_assets::transfer_outgoing_simulation_rules(
+                native_rules_owner,
+                &mut runtime.simulation,
             )?;
         }
         let the_team_enabled = state
@@ -1910,7 +1951,7 @@ fn pump_loading_after_present(
                         &state.renderer.depth_view,
                         &state.renderer.batch_renderer,
                         &state.renderer.bit_font,
-                        &state.renderer.fps_overlay,
+                        &state.renderer.performance_overlay,
                         render_size,
                         scale,
                     )
@@ -1934,7 +1975,6 @@ fn pump_loading_after_present(
                     progress.runtime_color_scheme_count,
                     the_team_enabled,
                     native_rules_owner,
-                    #[cfg(feature = "ares")]
                     &mut prepared_rules_prefix,
                     audio,
                     state.audio.theme.catalog(),
@@ -1958,7 +1998,6 @@ fn pump_loading_after_present(
                     asset_manager,
                     native_rules_owner,
                     the_team_enabled,
-                    #[cfg(feature = "ares")]
                     prepared_noncampaign_prefix: &mut prepared_rules_prefix,
                     audio,
                     themes: state.audio.theme.catalog(),
@@ -1994,7 +2033,6 @@ fn pump_loading_after_present(
     // init borrows the ticket until its actual Rules reset boundary. Any
     // earlier asset/map validation failure leaves it here for explicit retire;
     // a consumed ticket's load_scenario already restored its partial Live state.
-    #[cfg(feature = "ares")]
     if continuing.is_none() {
         retire_rules_prefix(prepared_rules_prefix.take(), &mut state.process_assets);
     }
@@ -2003,7 +2041,6 @@ fn pump_loading_after_present(
             state.frontend.loading_session = Some(LoadingSession {
                 stage: LoadingStage::ConstructingScenario(ConstructingScenarioLoad {
                     load: continuing.expect("pending native construction"),
-                    #[cfg(feature = "ares")]
                     rules_prefix: prepared_rules_prefix,
                 }),
                 native,
@@ -2117,7 +2154,7 @@ fn pump_map_construction(
                     &state.renderer.depth_view,
                     &state.renderer.batch_renderer,
                     &state.renderer.bit_font,
-                    &state.renderer.fps_overlay,
+                    &state.renderer.performance_overlay,
                     render_size,
                     scale,
                 )
@@ -2129,7 +2166,6 @@ fn pump_map_construction(
             asset_manager,
             native_rules_owner,
             the_team_enabled,
-            #[cfg(feature = "ares")]
             prepared_noncampaign_prefix: &mut constructing.rules_prefix,
             audio,
             themes: state.audio.theme.catalog(),
@@ -2149,7 +2185,6 @@ fn pump_map_construction(
             Ok(LoadingPump::Pending)
         }
         Ok(Some(mut result)) => {
-            #[cfg(feature = "ares")]
             if let LoadingStage::ConstructingScenario(constructing) = &mut session.stage {
                 retire_rules_prefix(constructing.rules_prefix.take(), &mut state.process_assets);
             }
@@ -2226,7 +2261,7 @@ fn publish_load_complete(
             &state.renderer.depth_view,
             &state.renderer.batch_renderer,
             &state.renderer.bit_font,
-            &state.renderer.fps_overlay,
+            &state.renderer.performance_overlay,
             native,
             terminal_raw_percent,
             render_size,
@@ -2255,11 +2290,7 @@ fn pump_presentation(
         .pending_atlases
         .as_mut()
         .expect("pending presentation owner")
-        .poll(
-            &state.renderer.gpu,
-            &state.renderer.batch_renderer,
-            &mut result.presentation,
-        );
+        .poll(&state.renderer.gpu, &mut result.presentation);
     match polled {
         Err(error) => {
             session.retire(&mut state.process_assets);
@@ -2532,8 +2563,8 @@ fn prepare_loading_session(
                 // an immutable request, while retained catalog fields update.
                 process_assets.reload_campaigns(assets);
             }
-            #[cfg(feature = "ares")]
-            if let Some(native) = native.as_mut() {
+            let ares = process_assets.reads_ares_way();
+            if ares && let Some(native) = native.as_mut() {
                 let early = process_assets
                     .native_rules()
                     .ok_or_else(|| {
@@ -2547,46 +2578,60 @@ fn prepare_loading_session(
                     return Err(err);
                 }
             }
-            let prepared = if !before_first_frame && let Some(native) = native.as_mut() {
-                let mut sink = GatedProgressSink {
-                    progress: &mut native.progress,
-                    cadence: native.progress_cadence,
-                    progress_row: &mut native.progress_row,
-                    network,
-                };
-                request.prepare(
-                    ra2_dir,
-                    assets,
-                    process_assets.native_rules(),
-                    mapgen_retention,
-                    resident.as_deref_mut(),
-                    &mut sink,
-                )
+            // VERA: the mod's map additions, read once a start, for the
+            // matches they reach.
+            let additions = if crate::app::mod_additions::reach(request.startup()) {
+                process_assets.map_additions(assets)
             } else {
-                request.prepare(
-                    ra2_dir,
-                    assets,
-                    process_assets.native_rules(),
-                    mapgen_retention,
-                    resident.as_deref_mut(),
-                    &mut NoopProgressSink,
-                )
+                Ok(None)
+            };
+            let prepared = match additions {
+                Err(err) => Err(anyhow::anyhow!(err)),
+                Ok(additions) => {
+                    let additions = additions.as_deref();
+                    if !before_first_frame && let Some(native) = native.as_mut() {
+                        let mut sink = GatedProgressSink {
+                            progress: &mut native.progress,
+                            cadence: native.progress_cadence,
+                            progress_row: &mut native.progress_row,
+                            network,
+                        };
+                        request.prepare(
+                            ra2_dir,
+                            assets,
+                            process_assets.native_rules_mut_with_tile_cache().0,
+                            additions,
+                            mapgen_retention,
+                            resident.as_deref_mut(),
+                            &mut sink,
+                        )
+                    } else {
+                        request.prepare(
+                            ra2_dir,
+                            assets,
+                            process_assets.native_rules_mut_with_tile_cache().0,
+                            additions,
+                            mapgen_retention,
+                            resident.as_deref_mut(),
+                            &mut NoopProgressSink,
+                        )
+                    }
+                }
             };
             match prepared {
-                Ok(prepared) => {
-                    #[cfg(feature = "ares")]
-                    play_ares_loading_theme(
-                        process_assets,
-                        audio,
-                        prepared.request.startup(),
-                        &prepared.initial.map_data().ini,
-                        assets,
-                        crate::app::match_runtime::frame_pacer::wall_clock_ms(),
-                    );
-                    #[cfg(feature = "ares")]
-                    let mut prepared = prepared;
-                    #[cfg(feature = "ares")]
-                    if let Some(native) = native.as_mut()
+                Ok(mut prepared) => {
+                    if ares {
+                        play_ares_loading_theme(
+                            process_assets,
+                            audio,
+                            prepared.request.startup(),
+                            &prepared.initial.map_data().ini,
+                            assets,
+                            crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+                        );
+                    }
+                    if ares
+                        && let Some(native) = native.as_mut()
                         && let Err(err) = prepare_country_loading_prefix(
                             process_assets,
                             resident,
@@ -2654,7 +2699,7 @@ fn prepare_scenario_initial_before_first_frame(state: &mut AppState) -> anyhow::
         state
             .match_state
             .sim_runtime
-            .as_mut()
+            .write_sim(SimWrite::Lifecycle)
             .map(|runtime| &mut runtime.simulation),
         session,
         true,
@@ -2679,7 +2724,7 @@ fn decode_random_map_loading_preview(
 ) -> Option<DecodedPreview> {
     let path = match source {
         Some(crate::map::source::LoadedMapSource::Loose { path, .. }) => path.clone(),
-        _ => ra2_dir.join(RANDOM_MAP_PREVIEW_FILE),
+        _ => crate::map::source::random_map_dir(ra2_dir).join(RANDOM_MAP_PREVIEW_FILE),
     };
     let bytes = match std::fs::read(&path) {
         Ok(bytes) => bytes,
@@ -2828,7 +2873,6 @@ fn ensure_loading_composition_snapshot(state: &mut AppState) {
         .as_mut()
         .and_then(|session| session.native.as_mut())
     {
-        #[cfg(feature = "ares")]
         let snapshot = {
             let mut snapshot = snapshot;
             if let Some(country) = native.late_country_loading.as_ref() {
@@ -2945,6 +2989,23 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
             metadata.apply_ini(&selected.ini, scenario);
             names.apply_ini(&selected.ini, scenario, csf);
         }
+        // Ares ProgressScreenClass_GetLoadTextColor (1002F870, hook
+        // 0x642B36) colours the campaign title and briefing with the scheme
+        // CacheSP (1002F680, hook 0x686D7F) found, where Get_Side_ColorScheme
+        // 0x642B30 picks AlliedLoad/SovietLoad by Campaign.CD; no scheme of
+        // that name keeps the stock colour. Only when the Rules are read the
+        // Ares way.
+        let ares = state.process_assets.reads_ares_way();
+        let ares_text_rgb = if ares {
+            state.rules().and_then(|rules| {
+                let schemes = &rules.color_schemes;
+                scheme_entry_by_name(schemes, metadata.load_text_color())
+                    .and_then(|entry| scheme_hsv_by_entry(schemes, entry))
+                    .map(|hsv| normalize_rgb(hsv_to_rgb(hsv)))
+            })
+        } else {
+            None
+        };
         let presentation = super::campaign_presentation::CampaignLoadingPresentation::new(
             &metadata,
             csf,
@@ -2975,6 +3036,9 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
             .and_then(|session| session.native.as_mut())
             .expect("campaign native session");
         native.campaign_presentation = Some(presentation);
+        if let Some(text_rgb) = ares_text_rgb {
+            native.text_rgb = text_rgb;
+        }
         native.campaign_names = Some(names);
         native.atlas = atlas;
         log::info!("Native campaign loading atlas ready");
@@ -2982,6 +3046,25 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
     }
     let variant = selected_loading_art_variant(state);
     ensure_loading_composition_snapshot(state);
+    // DrawLoading553311..5533C0 asks the current mode's Cooperative slot,
+    // then selects by ScenarioName rather than the active progress record.
+    let cooperative_background = state
+        .frontend
+        .loading_session
+        .as_ref()
+        .map(|session| session.stage.startup())
+        .filter(|startup| {
+            startup.launch_session().is_some_and(|launch| {
+                launch.mode.class == crate::skirmish_modes::MpModeClass::Cooperative
+            })
+        })
+        .and_then(|startup| {
+            state
+                .frontend
+                .multiplayer_shell_runtime
+                .cooperative_registry()
+                .loading_art(startup.selected_map_file())
+        });
     let Some(assets) = state
         .frontend
         .loading_session
@@ -3073,7 +3156,6 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
             },
         )
         .collect();
-    #[cfg(feature = "ares")]
     let country_background = state
         .frontend
         .loading_session
@@ -3090,10 +3172,18 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
                     String::new()
                 })
         });
-    let art = crate::render::loading_screen_chrome::LoadingScreenArtInput {
-        variant,
-        #[cfg(feature = "ares")]
-        background: country_background.as_ref().map(|file| {
+    let cooperative_palette = cooperative_background.and_then(|(_, name)| {
+        crate::render::loading_screen_chrome::load_named_ui_palette(assets, name)
+    });
+    let background = cooperative_background.map(|(name, palette_name)| {
+        crate::render::loading_screen_chrome::LoadingCountryBackground {
+            name,
+            palette: cooperative_palette.as_ref(),
+            palette_name,
+        }
+    });
+    let background = background.or_else(|| {
+        country_background.as_ref().map(|file| {
             let early = state
                 .frontend
                 .loading_session
@@ -3106,9 +3196,11 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
                 palette: early.palette.as_ref(),
                 palette_name: &early.palette_name,
             }
-        }),
-        #[cfg(not(feature = "ares"))]
-        background: None,
+        })
+    });
+    let art = crate::render::loading_screen_chrome::LoadingScreenArtInput {
+        variant,
+        background,
     };
     let atlas = build_loading_screen_atlas_with_composition(
         &state.renderer.gpu,
@@ -3297,7 +3389,35 @@ fn apply_network_loading_disconnects(
         .collect()
 }
 
+/// What the shell says after a failed load returned to it, for the policies
+/// that go back to the menu or lobby. Native retries the shell without a
+/// word (`0x0052E732`, `0x0052E75F`); VERA-only: the player is told why, as
+/// the skirmish result card already does.
+fn failed_load_notice(policy: LoadingFailurePolicy, err: &anyhow::Error) -> Option<String> {
+    matches!(
+        policy,
+        LoadingFailurePolicy::RetryCampaignShell | LoadingFailurePolicy::RetryNetworkShell
+    )
+    .then(|| {
+        let mut detail = format!("{err:#}");
+        if let Some((end, _)) = detail.char_indices().nth(400) {
+            detail.truncate(end);
+            detail.push('…');
+        }
+        format!("{}\n\n{detail}", crate::i18n::tr("VERA:LoadingFailed"))
+    })
+}
+
 fn fail_loading(state: &mut AppState, policy: LoadingFailurePolicy, err: anyhow::Error) {
+    fail_loading_with(state, policy, err, true);
+}
+
+fn fail_loading_with(
+    state: &mut AppState,
+    policy: LoadingFailurePolicy,
+    err: anyhow::Error,
+    notify: bool,
+) {
     log::warn!("Could not load map: {err:#}");
     let policy = retire_failed_loading_attempt(
         &mut state.frontend.loading_session,
@@ -3320,9 +3440,12 @@ fn fail_loading(state: &mut AppState, policy: LoadingFailurePolicy, err: anyhow:
         // network StartScenario call52E745 follows the same retry at52E75F;
         // GameMode3 re-enters LAN at52DAEF/52E356, so retain its lobby context.
         crate::app::App::return_to_main_menu(state);
+        if notify && let Some(text) = failed_load_notice(policy, &err) {
+            crate::app::App::open_shell_notice(state, text);
+        }
     } else if policy == LoadingFailurePolicy::ReportNativeFailure {
         state.frontend.screen = GameScreen::MissionResult {
-            title: "Loading Failed".to_string(),
+            title: crate::i18n::tr("VERA:LoadingFailed"),
             detail: format!("{err:#}"),
         };
     } else {
@@ -3376,17 +3499,24 @@ pub(crate) fn present_saved_game_loading(state: &mut AppState) -> anyhow::Result
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Saved Game Loading"),
             });
+    state.renderer.window_ui.begin_frame();
     crate::app::frontend::skirmish_shell_render::render_saved_game_loading(
         state,
         &mut encoder,
         &output.texture,
     )?;
-    state.renderer.fps_overlay.encode(
+    state.renderer.performance_overlay.encode(
         &state.renderer.gpu,
         &state.renderer.batch_renderer,
         &mut encoder,
         &output.texture,
+        &state.renderer.bit_font,
+        None,
     );
+    state
+        .renderer
+        .gpu
+        .encode_color_vision(&mut encoder, &output.texture);
     state
         .renderer
         .gpu
@@ -3404,7 +3534,8 @@ pub(crate) fn present_game_mode_blank(state: &AppState) {
         &state.renderer.gpu,
         &state.renderer.shell_surface_presenter,
         &state.renderer.batch_renderer,
-        &state.renderer.fps_overlay,
+        &state.renderer.performance_overlay,
+        &state.renderer.bit_font,
     ) {
         log::warn!("Game-mode blank frame failed: {err:#}");
     }
@@ -3458,7 +3589,8 @@ pub(super) fn loading_art_variant_from_launch_country(
 /// answers each loading row's insignia from that row's own HouseType index, so
 /// an added Country draws its `File.Flag` where the stock chain at `0x4E3579`
 /// has no entry. An observer row is not a Country index and keeps the stock
-/// `-3` insignia; a stock build's rules return `None` and keep the table.
+/// `-3` insignia; a game without Ares (`RuleSet::ares`) answers `None` and
+/// keeps the table.
 fn loading_row_insignia(
     rules: Option<&crate::rules::ruleset::RuleSet>,
     variant: Option<LoadingArtVariant>,
@@ -3497,7 +3629,7 @@ fn advance_and_present_native_progress<'a>(
     depth_view: &'a wgpu::TextureView,
     batch: &'a BatchRenderer,
     font: &'a BitFont,
-    fps_overlay: &'a crate::app::diagnostics::fps_overlay::FpsOverlay,
+    performance_overlay: &'a crate::app::diagnostics::performance_overlay::PerformanceOverlay,
     native: &'a mut NativeLoadingScreenState,
     raw_percent: u32,
     render_size: [u32; 2],
@@ -3514,7 +3646,7 @@ fn advance_and_present_native_progress<'a>(
                 depth_view,
                 batch,
                 font,
-                fps_overlay,
+                performance_overlay,
                 render_size,
                 scale,
             )
@@ -3532,7 +3664,7 @@ struct RenderingProgressSink<'a> {
     depth_view: &'a wgpu::TextureView,
     batch: &'a BatchRenderer,
     font: &'a BitFont,
-    fps_overlay: &'a crate::app::diagnostics::fps_overlay::FpsOverlay,
+    performance_overlay: &'a crate::app::diagnostics::performance_overlay::PerformanceOverlay,
     gate: GatedProgressSink<'a>,
     atlas: &'a LoadingScreenAtlas,
     composition: Option<&'a LoadingCompositionSnapshot>,
@@ -3552,7 +3684,7 @@ impl<'a> RenderingProgressSink<'a> {
         depth_view: &'a wgpu::TextureView,
         batch: &'a BatchRenderer,
         font: &'a BitFont,
-        fps_overlay: &'a crate::app::diagnostics::fps_overlay::FpsOverlay,
+        performance_overlay: &'a crate::app::diagnostics::performance_overlay::PerformanceOverlay,
         render_size: [u32; 2],
         scale: ShellScale,
     ) -> Self {
@@ -3562,7 +3694,7 @@ impl<'a> RenderingProgressSink<'a> {
             depth_view,
             batch,
             font,
-            fps_overlay,
+            performance_overlay,
             gate: GatedProgressSink {
                 progress: &mut native.progress,
                 progress_row: &mut native.progress_row,
@@ -3594,7 +3726,7 @@ impl LoadingProgressSink for RenderingProgressSink<'_> {
                 self.depth_view,
                 self.batch,
                 self.font,
-                self.fps_overlay,
+                self.performance_overlay,
                 self.atlas,
                 self.composition,
                 self.campaign_presentation,

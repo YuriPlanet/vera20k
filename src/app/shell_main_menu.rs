@@ -1,5 +1,7 @@
 use super::*;
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::persistence::options::audio::AudioVolumeOperations;
+use crate::util::time::{Duration, Instant};
 
 /// Private operation seam for the retail shell's confirmed quit transaction.
 /// Keeping the ordering here lets unit tests observe persistence dispatch
@@ -34,6 +36,55 @@ fn dispatch_shell_controller_confirmed_quit(operations: &mut impl ConfirmedQuitO
     operations.start_cascade();
 }
 
+impl AppState {
+    /// Puts `tag`'s language in use as a pick in the Language list does:
+    /// from the next frame every label reads in it, as the string table takes
+    /// its texts, the map titles read from the table follow, and the fonts
+    /// take its script's letter forms. False, changing nothing, when no
+    /// language file provides `tag`.
+    pub(crate) fn use_language(&mut self, tag: &str) -> bool {
+        if !crate::i18n::select(tag) {
+            return false;
+        }
+        self.refresh_string_key_labels();
+        self.renderer.bit_font.set_locale(tag);
+        true
+    }
+
+    /// Re-resolve the loaded string table and the map titles after a new
+    /// language, the String Keys box or its hotkey changed what labels answer.
+    pub(crate) fn refresh_string_key_labels(&mut self) {
+        if let Some(csf) = self.process_assets.csf.as_mut() {
+            crate::i18n::apply(csf);
+            crate::map::scenario_sources::relabel_records(
+                &mut self.frontend.scenario_catalog.records_mut(),
+                csf,
+            );
+        }
+        // The login form keeps its status line as resolved text; the rest of
+        // that page resolves every frame.
+        if let Some(visit) = self.frontend.wol.as_mut()
+            && let crate::app::shell_wol::WolPage::Login(login) = &mut visit.page
+        {
+            for form in login.form.iter_mut().chain(login.account.iter_mut()) {
+                form.refresh_text();
+            }
+        }
+    }
+
+    /// The String Keys hotkey: with the Developer box ticked, keys and texts
+    /// swap in place; with it off, the key does nothing.
+    pub(crate) fn toggle_string_keys_view(&mut self) {
+        if !crate::i18n::string_keys_enabled() {
+            return;
+        }
+        let keys = crate::i18n::toggle_string_keys();
+        self.refresh_string_key_labels();
+        log::info!("String keys: {}", if keys { "keys" } else { "values" });
+        self.platform.window.request_redraw();
+    }
+}
+
 impl crate::app::persistence::options::launcher::LauncherPreviewOperations for AppState {
     fn play_cue(&mut self, cue: crate::ui::main_menu_dialogs::options::LauncherCue) {
         App::play_launcher_options_cue(self, cue);
@@ -46,10 +97,29 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // The next battle frame lays out and draws the sidebar at this size.
         self.persistence.options_profile.sidebar = size;
     }
+    fn store_sidebar_columns(
+        &mut self,
+        columns: crate::ui::main_menu_dialogs::options::SidebarColumns,
+    ) {
+        // The spec is rebuilt from this every refresh, so the next frame lays
+        // the cameo grid out again; Options' accept writes it out.
+        self.persistence.options_profile.sidebar_columns = columns;
+    }
     fn store_health_bars(&mut self, mode: crate::ui::main_menu_dialogs::options::HealthBarMode) {
         // Presentation reads it every frame, so the next frame draws the new
         // strip policy; Options' accept writes it out.
         self.persistence.options_profile.health_bars = mode;
+    }
+    fn store_ares(&mut self, setting: crate::util::ares_launch::AresSetting) {
+        // Read at start, as the mod is: this launch keeps the setting it
+        // opened its files with. Options' accept writes it out.
+        self.persistence.options_profile.ares = setting;
+    }
+    fn store_color_vision(&mut self, mode: crate::ui::main_menu_dialogs::options::ColorVisionMode) {
+        // The final-frame pass reads the profile every frame, so the very next
+        // frame is corrected; no atlas or ramp has to be rebuilt. Options'
+        // accept writes it out.
+        self.persistence.options_profile.color_vision = mode;
     }
     fn set_display(&mut self, display: crate::ui::main_menu_dialogs::options::DisplayTarget) {
         // Applied at once, like Full Screen: the window moves to the picked
@@ -61,9 +131,21 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
     fn set_full_screen(&mut self, full_screen: bool) {
         App::set_full_screen(self, full_screen);
     }
-    fn set_fps_counter(&mut self, shown: bool) {
+    fn restore_launch_window(&mut self) {
+        App::restore_launch_window(self);
+    }
+    fn set_performance_stats(&mut self, shown: bool) {
         // Live state only; no profile stores it, so each launch starts hidden.
-        self.renderer.fps_overlay.set_visible(shown);
+        self.renderer.performance_overlay.set_visible(shown);
+    }
+    fn set_show_string_keys(&mut self, shown: bool) {
+        // Saved, and applied at once: the box arms the hotkey but leaves the
+        // texts showing, so ticking it never swaps the page under the pointer.
+        // The loaded table and the language catalog both answer with keys once
+        // the hotkey asks; map titles follow, as on a language change.
+        self.persistence.options_profile.show_string_keys = shown;
+        crate::i18n::set_show_string_keys(shown);
+        self.refresh_string_key_labels();
     }
     fn store_original_shape(&mut self, original_shape: bool) {
         self.persistence.options_profile.original_shape = original_shape;
@@ -97,16 +179,30 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // waiting, so the switch never cuts a line that is halfway said.
         self.persistence.options_profile.custom_end_game_movie = enabled;
     }
+    fn store_commander_feedback(&mut self, enabled: bool) {
+        // The clip layer's next pass reads it, so a match mutes or unmutes
+        // its commanders at once; muted, it still spends what it sees.
+        self.persistence.options_profile.commander_feedback = enabled;
+    }
     fn store_shift_queue(&mut self, shift_queue: bool) {
         // The next cameo press reads it; Options' accept writes it out.
         self.persistence.options_profile.shift_queue = shift_queue;
     }
-    fn store_render_interpolation(&mut self, enabled: bool) {
-        self.persistence.options_profile.render_interpolation = enabled;
-        self.match_state
-            .match_presentation
-            .interpolation
-            .set_enabled(enabled);
+    fn store_auto_repair(&mut self, enabled: bool) {
+        // The next logic frame's pass reads it; Options' accept writes it out.
+        self.persistence.options_profile.auto_repair = enabled;
+    }
+    fn store_minimap_beacons(&mut self, enabled: bool) {
+        // The next radar click reads it; Options' accept writes it out.
+        self.persistence.options_profile.minimap_beacons = enabled;
+    }
+    fn store_detailed_eva_text(&mut self, enabled: bool) {
+        // Presentation only: the next EVA text line reads it.
+        self.persistence.options_profile.detailed_eva_text = enabled;
+    }
+    fn store_compact_super_timers(&mut self, enabled: bool) {
+        // Presentation only: the next timer draw reads it.
+        self.persistence.options_profile.compact_super_timers = enabled;
     }
     fn store_lock_cursor(&mut self, locked: bool) {
         // Saved, and applied at once: the window holds or frees the pointer.
@@ -119,6 +215,15 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // star, the window keeps VERA's icon until the next launch, which
         // starts with the program's own.
         self.persistence.options_profile.vera_icon = vera_icon;
+        // Android's launcher icon is a compiled resource carried by the two
+        // activity aliases, and changing it closes the app, so the choice has to
+        // be on disk first. Every other platform applies the icon to the live
+        // window below and keeps its own write timing.
+        #[cfg(target_os = "android")]
+        {
+            crate::app::persistence::options::persist_options_profile(self);
+            crate::util::app_icon::apply(vera_icon);
+        }
         if self.platform.window.is_visible() == Some(false) {
             return;
         }
@@ -134,15 +239,40 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
     fn store_right_click_orders(&mut self, enabled: bool) {
         self.persistence.options_profile.right_click_orders = enabled;
     }
+    fn store_hd_radar(&mut self, enabled: bool) {
+        // A battle's next frame sizes the sidebar and radar from it.
+        self.persistence.options_profile.hd_radar = enabled;
+    }
+    fn store_smooth_sidebar(&mut self, enabled: bool) {
+        // A battle's next frame sizes the sidebar and scales its art from it.
+        self.persistence.options_profile.smooth_sidebar = enabled;
+    }
+    fn store_smooth_online_menus(&mut self, enabled: bool) {
+        // The online client's next frame draws its art by it.
+        self.persistence.options_profile.smooth_online_menus = enabled;
+    }
+    fn store_vsync(&mut self, vsync: bool) {
+        // Applied at once: the window's surface presents by it from the
+        // next frame.
+        self.persistence.options_profile.vsync = vsync;
+        App::sync_present_mode(self);
+    }
+    fn store_hd_map_previews(&mut self, enabled: bool) {
+        // The next setup screen picks its preview from it.
+        self.persistence.options_profile.hd_map_previews = enabled;
+    }
+    fn store_language(&mut self, tag: String) {
+        // The open Options page reads its captions again once the events
+        // have run; Options' accept writes the choice out.
+        if self.use_language(&tag) {
+            self.persistence.options_profile.language = Some(tag);
+        }
+    }
     fn store_mouse_wheel_zoom(&mut self, enabled: bool) {
         self.persistence.options_profile.mouse_wheel_zoom = enabled;
         if !enabled {
             crate::app::input::camera::reset_view_distance(self);
         }
-    }
-    fn store_wol_test_service(&mut self, wol_test_service: bool) {
-        // The next Internet visit picks its provider from it.
-        self.persistence.options_profile.wol_test_service = wol_test_service;
     }
     fn store_house_color_strength(&mut self, strength: u8) {
         // Baked into a battle's colour tables when it loads, like the
@@ -180,7 +310,7 @@ impl crate::app::persistence::options::launcher::LauncherParentOperations
         // Display4AE450 resamples synchronously, before the next Logic visit
         // can copy a Cell's light into a grapple anim. This local operation
         // never enters Simulation's replay/sync hash.
-        if let Some(runtime) = self.state.match_state.sim_runtime.as_ref()
+        if let Some(runtime) = self.state.match_state.sim_runtime.runtime()
             && let Some(terrain) = runtime.simulation.resolved_terrain()
         {
             let presentation = &mut self.state.match_state.match_presentation;
@@ -303,6 +433,10 @@ impl crate::app::persistence::options::launcher::LauncherParentOperations
             App::open_launcher_options_dialog(self.state);
         }
     }
+
+    fn route_mods(&mut self) {
+        App::open_mods_page(self.state);
+    }
 }
 
 /// The options profile's `[Video]` bytes behind HIRES and TOGGLE, which the
@@ -347,8 +481,9 @@ impl CardHost {
     };
 }
 
-/// The startup error card's title and text. `menu_assets` says the game
-/// archives loaded; `details` is the failure, already fit for the card.
+/// The startup error card's title and text, in the language in use: the card
+/// draws VERA's bundled fonts, so any script and any path shows as it is.
+/// `menu_assets` says the game archives loaded; `details` is the failure.
 fn shell_error_card(
     host: CardHost,
     files: &crate::app::initialize::StartupFiles,
@@ -356,118 +491,104 @@ fn shell_error_card(
     game_files: Option<&std::path::Path>,
     log_file: Option<&std::path::Path>,
     details: &str,
-) -> (&'static str, String) {
+) -> (String, String) {
     use crate::app::initialize::StartupProblem;
+    use crate::i18n::{tr, tr_fill};
 
     let config = files.config_file.as_deref().map_or_else(
         || "config.toml".to_owned(),
         |path| path.display().to_string(),
     );
     let log = log_file.map_or_else(
-        || "none could be written".to_owned(),
+        || tr("VERA:NoLogWritten"),
         |path| path.display().to_string(),
     );
     let (title, mut text) = match &files.problem {
         Some(StartupProblem::ConfigFile) => (
-            "config.toml could not be read",
-            format!(
-                "VERA20K could not read its settings file:\n{config}\n\n\
-It must be plain text saved as UTF-8. Correct the problem named below, or move the file away \
-and start VERA20K again without it.\n\n\
-Log: {log}"
+            tr("VERA:ConfigUnreadable"),
+            tr_fill(
+                "VERA:ConfigUnreadableText",
+                &[("config", &config), ("log", &log)],
             ),
         ),
-        Some(StartupProblem::Settings(folder)) => (
-            "Cannot use the settings folder",
-            format!(
-                "VERA20K keeps VERA.INI and VERARULES.INI in its settings folder:\n{}\n\n\
-It could not create, write or read them there. Make sure that folder can be written, or set \
-[paths] settings_dir in {config} to a folder you can write to.\n\n\
-Log: {log}",
-                folder.as_deref().map_or_else(
-                    || "(its location could not be found)".to_owned(),
-                    |folder| folder.display().to_string()
+        Some(StartupProblem::Settings(folder)) => {
+            let folder = folder.as_deref().map_or_else(
+                || tr("VERA:SettingsFolderUnknown"),
+                |folder| folder.display().to_string(),
+            );
+            (
+                tr("VERA:SettingsFolderUnusable"),
+                tr_fill(
+                    "VERA:SettingsFolderUnusableText",
+                    &[("folder", &folder), ("config", &config), ("log", &log)],
                 ),
-            ),
-        ),
+            )
+        }
         None => {
             // No archives at all means the installation is missing or wrong;
             // some archives but no menu artwork means the install is
             // incomplete. Say which, so the player is not sent looking for
             // files that are present.
-            let title = if menu_assets {
-                "Unable to load the game menu"
+            let title = tr(if menu_assets {
+                "VERA:GameMenuUnavailable"
             } else {
-                "Game files not found"
-            };
-            let advice = match host {
-                CardHost::Windows => format!(
-                    "1. Copy vera20k.exe into your Red Alert 2: Yuri's Revenge folder and start it \
-there.\n\n\
-2. Or set [paths] ra2_dir in config.toml, either in the folder you start it from or beside \
-vera20k.exe:\n{config}"
-                ),
-                CardHost::Unix => format!(
-                    "Set [paths] ra2_dir in\n{config}\nto your Yuri's Revenge folder, the one \
-holding ra2md.mix and ra2.mix with the rest of the game, then start VERA20K again."
-                ),
-            };
-            let game_files = game_files.map_or_else(
-                || "No game installation configured".to_owned(),
-                |path| path.display().to_string(),
+                "VERA:GameFilesNotFound"
+            });
+            let advice = tr_fill(
+                match host {
+                    CardHost::Windows => "VERA:GameFilesAdviceWindows",
+                    CardHost::Unix => "VERA:GameFilesAdviceUnix",
+                },
+                &[("config", &config)],
             );
+            // An unconfigured launch resolves the installation to the
+            // executable's own directory, which on Android is `/system/bin`
+            // (app_process). Naming that path sends the player looking for game
+            // files that were never there, so say what is actually true: no
+            // installation is configured.
+            let game_files = game_installation_label(game_files.as_deref());
             (
                 title,
-                format!(
-                    "VERA20K needs Red Alert 2: Yuri's Revenge to run.\n\n{advice}\n\n\
-Game files: {game_files}\nLog: {log}"
+                tr_fill(
+                    "VERA:GameFilesNeededText",
+                    &[
+                        ("advice", &advice),
+                        ("game_files", &game_files),
+                        ("log", &log),
+                    ],
                 ),
             )
         }
     };
-    // The card's in-repo face carries ASCII only, so a non-ASCII path draws
-    // as boxes. Point the player at the log, which holds the exact path in
-    // UTF-8.
-    if !text.is_ascii() {
-        text.push_str(
-            "\n(characters this screen cannot draw are shown as boxes; the log has the exact path)",
-        );
-    }
-    text.push_str("\n\nDetails: ");
-    text.push_str(details);
+    text.push_str("\n\n");
+    text.push_str(&tr_fill("VERA:StartupDetails", &[("details", &details)]));
     (title, text)
 }
 
-/// Reduce a startup error to text the status card can draw.
+/// What the card and the import dialog name as the game installation.
 ///
-/// The card's in-repo face carries ASCII only, while `std::io::Error` is
-/// localized: on a Chinese Windows the detail line would otherwise be a row of
-/// boxes. Dropping the inaccessible characters keeps the error code and the
-/// asset-manager context, and the log still holds the full original message.
-fn display_error(error: &str) -> String {
-    let mut ascii = String::with_capacity(error.len());
-    let mut pending_space = false;
-    for ch in error.chars() {
-        if ch.is_ascii() {
-            if ch.is_whitespace() {
-                pending_space = true;
-                continue;
+/// An unconfigured launch resolves the installation to the executable's own
+/// directory, which on Android is `/system/bin` (app_process). Naming that path
+/// sends the player looking for game files that were never there, so on Android
+/// the fallback reads as "no installation configured". The desktop builds keep
+/// printing whatever path they resolved.
+///
+/// One function for both screens: the import dialog sits on the same card and
+/// must never name a path the card behind it has stopped naming.
+fn game_installation_label(game_files: Option<&std::path::Path>) -> String {
+    let executable_dir = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(std::path::Path::to_path_buf));
+    game_files.map_or_else(
+        || crate::i18n::tr("VERA:NoGameInstallation"),
+        |path| {
+            if cfg!(target_os = "android") && executable_dir.as_deref() == Some(path) {
+                crate::i18n::tr("VERA:NoGameInstallation")
+            } else {
+                path.display().to_string()
             }
-            if pending_space && !ascii.is_empty() {
-                ascii.push(' ');
-            }
-            pending_space = false;
-            ascii.push(ch);
-        } else {
-            // The run becomes a word boundary rather than a hole.
-            pending_space = true;
-        }
-    }
-    if ascii.trim().chars().count() < 12 {
-        "could not open the game files (see the log for the exact error)".to_owned()
-    } else {
-        ascii
-    }
+        },
+    )
 }
 
 impl App {
@@ -475,16 +596,17 @@ impl App {
     /// failed IPX admission) at52E37D. Preferences stay in their process
     /// caches; the original reads INI8870C0, not disk.
     pub(crate) fn prepare_multiplayer_settings(state: &mut AppState) {
+        // VERA: setup screens start from the player's own Options switches,
+        // which a previous room's replaced; a room's agreement plays its
+        // host's.
+        state.process_assets.use_own_personal_rules();
         //6980D6→6722F0 and475540 read the same process INI each visit and
         // may allocate a Country before the52E123 body pass.
         state
             .frontend
             .multiplayer_shell_runtime
             .read_multiplayer_settings(&mut state.process_assets);
-        let main = crate::app::state::process_main_draws(
-            state.match_state.sim_runtime.as_mut(),
-            &mut state.frontend.frontend_main_rng,
-        );
+        let main = crate::app::state::process_main_draws(&state.frontend.frontend_main_rng);
         state
             .match_state
             .session
@@ -496,17 +618,17 @@ impl App {
         if let Some(rules) = state.frontend.frontend_rules.as_mut() {
             state.process_assets.project_multiplayer_countries(rules);
         }
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Rules) {
             state
                 .process_assets
-                .project_multiplayer_countries(&mut runtime.resources.rules);
+                .project_multiplayer_countries(&mut runtime.resources_mut().rules);
         }
         if let Some(rules) = state.frontend.frontend_rules.as_ref() {
             state
                 .frontend
                 .skirmish_shell_state
                 .refresh_country_catalog(rules);
-        } else if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+        } else if let Some(runtime) = state.match_state.sim_runtime.runtime() {
             state
                 .frontend
                 .skirmish_shell_state
@@ -516,6 +638,14 @@ impl App {
             .frontend
             .multiplayer_shell_runtime
             .refresh_multiplayer_country_catalog(&state.process_assets);
+        // The lobby's colour list comes from the same rules as the shell's
+        // catalog above; its random draws and the room's claims follow it.
+        let lobby_colors = state.frontend.skirmish_shell_state.lobby_colors();
+        state
+            .frontend
+            .multiplayer_shell_runtime
+            .set_lobby_colors(lobby_colors);
+        state.match_state.session.set_lobby_colors(lobby_colors);
     }
 
     /// The score page `0x108` owns the result screen once its model is set
@@ -930,7 +1060,7 @@ impl App {
     pub(crate) fn retire_finished_scenario(state: &mut AppState) {
         // Main_Game48CEBF also retires ScenarioStarted after score Continue;
         // source: original gamemd.exe Main_Game48CCC0 (EBX=0 at48CCD4).
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
             runtime.simulation.retire_scenario_started();
         }
         // The accepted match owns the socket until either exit path returns
@@ -1031,32 +1161,10 @@ impl App {
         // `prepare_multiplayer_settings` just refreshed above. The retained Rust
         // controls follow that same order, so a durable record changed since the
         // last visit reaches the page instead of the page keeping its old face.
-        state.frontend.multiplayer_shell_runtime.hydrate_shell(
+        state.frontend.multiplayer_shell_runtime.open_skirmish_page(
             &mut state.frontend.skirmish_shell_state,
-            state.frontend.scenario_catalog.shell_maps(),
+            &state.frontend.scenario_catalog,
             &state.frontend.skirmish_modes,
-        );
-        // VERA: a saved index on an Online row (the list grew since it was
-        // saved) names no file here. It moves to the first local map; with none,
-        // it goes past the end, which Start reports as no selected map.
-        let shell = &mut state.frontend.skirmish_shell_state;
-        let catalog = &state.frontend.scenario_catalog;
-        if catalog
-            .records()
-            .get(shell.selected_map_idx)
-            .is_some_and(|record| record.is_online())
-        {
-            shell.selected_map_idx = catalog
-                .first_local_index()
-                .unwrap_or(catalog.records().len());
-        }
-        crate::ui::skirmish_shell::repair_teams_for_selected_mode(
-            &mut state.frontend.skirmish_shell_state,
-            &state.frontend.skirmish_modes,
-        );
-        crate::ui::skirmish_shell::initialize_rows_for_selected_map(
-            &mut state.frontend.skirmish_shell_state,
-            state.frontend.scenario_catalog.shell_maps(),
         );
         // The skirmish dialog (0x102) slides its controls in on first paint like
         // every shell dialog; the per-frame slide trigger starts that wave once
@@ -1070,6 +1178,7 @@ impl App {
         state.frontend.shell_first_paint_slide = None;
         state.frontend.skirmish_shell_state.choose_map_modal = None;
         state.frontend.skirmish_shell_state.validation_modal = None;
+        state.frontend.skirmish_shell_state.game_options = None;
         state.frontend.skirmish_shell_state.open_combo_dropdown = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_drag = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_press = None;
@@ -1091,41 +1200,73 @@ impl App {
         let error = state
             .frontend
             .main_menu_shell_error
-            .get_or_insert_with(|| "Required game-menu resources could not be loaded.".to_owned())
+            .get_or_insert_with(|| crate::i18n::tr("VERA:MenuResourcesMissing"))
             .clone();
         let game_files = state
             .platform
             .game_config
             .as_ref()
             .map(|config| config.paths.ra2_dir.clone());
-        let (title, text) = shell_error_card(
-            CardHost::CURRENT,
-            &state.frontend.startup_files,
-            state.process_assets.manager().is_some(),
-            game_files.as_deref(),
-            crate::util::logging::log_file(),
-            &display_error(&error),
-        );
+        let (title, text) =
+            if crate::ui::asset_import::AVAILABLE && state.frontend.asset_import.is_open() {
+                // Same label as the card behind it: the dialog must not name a
+                // fallback path the card has just stopped naming.
+                let game_files_text = game_installation_label(game_files.as_deref());
+                (
+                    state.frontend.asset_import.title(),
+                    state.frontend.asset_import.body(&game_files_text, ""),
+                )
+            } else {
+                let (title, mut text) = shell_error_card(
+                    CardHost::CURRENT,
+                    &state.frontend.startup_files,
+                    state.process_assets.manager().is_some(),
+                    game_files.as_deref(),
+                    crate::util::logging::log_file(),
+                    &error,
+                );
+                // The next start is without the mod (`mods::finish_start`).
+                if let Some(active) = &state.frontend.mods.active {
+                    text.push_str("\n\n");
+                    text.push_str(&crate::app::mods::start_failed_text(&active.title));
+                }
+                (title, text)
+            };
         crate::app::frontend::status_screen::render(
             state,
             encoder,
             view,
-            title,
+            &title,
             &text,
-            crate::app::frontend::status_screen::Buttons::QUIT,
+            crate::app::frontend::status_screen::shell_error_buttons(state),
         );
         Ok(())
+    }
+
+    /// While the Developer page's String Keys box is ticked, reload a language
+    /// file rewritten in the settings folder or the checkout's `src/i18n`, so
+    /// its texts (and their keys) follow without a restart. Returns the next
+    /// check, keeping the event loop awake for it even on a still screen.
+    pub(super) fn poll_language_files(state: &mut AppState) -> Option<Instant> {
+        if !crate::i18n::string_keys_enabled() {
+            return None;
+        }
+        let settings_dir = state
+            .platform
+            .game_config
+            .as_ref()
+            .map(|config| config.paths.settings_dir().to_path_buf());
+        if crate::i18n::poll_language_files(settings_dir.as_deref()) {
+            state.refresh_string_key_labels();
+            state.platform.window.request_redraw();
+        }
+        Some(Instant::now() + Duration::from_secs(1))
     }
 
     /// Resolve a CSF string key to display text, falling back to the supplied
     /// English string when the table is absent or missing the key.
     pub(super) fn csf_label(state: &AppState, key: &str, fallback: &str) -> String {
-        state
-            .process_assets
-            .csf
-            .as_ref()
-            .map(|csf| csf.text(key).into_owned())
-            .unwrap_or_else(|| fallback.to_string())
+        crate::i18n::label(state.process_assets.csf.as_ref(), key, fallback)
     }
 
     /// Construct a fresh launcher Options primary from the current retained
@@ -1139,21 +1280,24 @@ impl App {
         Self::ensure_skirmish_shell_chrome(state);
         if state.frontend.skirmish_shell_chrome.is_none() {
             state.frontend.main_menu_shell_error =
-                Some("Could not load the retail Options artwork.".to_owned());
+                Some(crate::i18n::tr("VERA:OptionsArtworkMissing"));
             state.platform.window.request_redraw();
             return;
         }
-        use crate::app::persistence::options::launcher::launcher_dialog_from_profile;
-        use crate::ui::main_menu_dialogs::options::LauncherOptionsLabels;
+        let mut dialog = Self::launcher_options_from_state(state);
+        if let Some(category) = state.frontend.options_reopen_at.take() {
+            dialog.select_category(category);
+        }
+        state.frontend.options_dialog = Some(dialog);
+    }
 
-        let labels = LauncherOptionsLabels::resolve(&|key| {
-            state
-                .process_assets
-                .csf
-                .as_ref()
-                .and_then(|csf| csf.get(key))
-                .map(str::to_owned)
-        });
+    /// The Options values as they stand now.
+    pub(crate) fn launcher_options_from_state(
+        state: &AppState,
+    ) -> crate::ui::main_menu_dialogs::OptionsDialogState {
+        use crate::app::persistence::options::launcher::launcher_dialog_from_profile;
+
+        let labels = Self::launcher_options_labels(state);
         // The Display list is VERA's own: it reads the screens attached now, so
         // a screen plugged in or removed since the last launch shows correctly.
         let displays = crate::app::display_target::current_displays(&state.platform.window)
@@ -1164,14 +1308,34 @@ impl App {
             &state.persistence.options_profile,
             labels,
             state.platform.window.fullscreen().is_some(),
-            state.renderer.fps_overlay.is_visible(),
+            state.renderer.performance_overlay.is_visible(),
             state.audio.launcher_audio_available,
             displays,
         );
-        if let Some(category) = state.frontend.options_reopen_at.take() {
-            dialog.select_category(category);
+        dialog.set_languages(crate::i18n::choices(), crate::i18n::selected_language());
+        let launch = state.platform.launch_window_size;
+        dialog.set_launch_window_size((launch.width, launch.height));
+        dialog
+    }
+
+    /// The Options captions the string table names, in the language in use.
+    pub(crate) fn launcher_options_labels(
+        state: &AppState,
+    ) -> crate::ui::main_menu_dialogs::options::LauncherOptionsLabels {
+        let mut labels =
+            crate::ui::main_menu_dialogs::options::LauncherOptionsLabels::resolve(&|key| {
+                state
+                    .process_assets
+                    .csf
+                    .as_ref()
+                    .and_then(|csf| csf.get(key))
+                    .map(str::to_owned)
+            });
+        // VERA's Esc menu opens Options over a page: the button returns there.
+        if state.frontend.shell_route != crate::app::shell_route::ShellRoute::MainMenu {
+            labels.main_menu = Self::csf_label(state, "GUI:Back", "Back");
         }
-        state.frontend.options_dialog = Some(dialog);
+        labels
     }
 
     pub(crate) fn play_launcher_options_cue(
@@ -1201,22 +1365,30 @@ impl App {
     /// semantic transaction; profile and audio authority remain in their owners.
     fn dispatch_launcher_options_output(
         state: &mut AppState,
-        dialog: crate::ui::main_menu_dialogs::OptionsDialogState,
+        mut dialog: crate::ui::main_menu_dialogs::OptionsDialogState,
         output: crate::ui::main_menu_dialogs::options::LauncherOptionsFrameOutput,
     ) {
-        {
-            for event in output.events {
-                crate::app::persistence::options::launcher::dispatch_launcher_preview_event(
-                    state, event,
-                );
-            }
+        use crate::ui::main_menu_dialogs::options::LauncherOptionsEvent;
+        let relabel = output
+            .events
+            .iter()
+            .any(|event| matches!(event, LauncherOptionsEvent::LanguageSelected(_)));
+        for event in output.events {
+            crate::app::persistence::options::launcher::dispatch_launcher_preview_event(
+                state, event,
+            );
+        }
+        if relabel {
+            dialog.set_labels(Self::launcher_options_labels(state));
         }
         match output.result {
             // 0x0055FD06 tears D5 down before every continuation, including
-            // Keyboard and the final Main Menu return.
+            // Keyboard and the final Main Menu return. VERA's Mods leaves the
+            // same way.
             Some(
                 result @ (crate::ui::main_menu_dialogs::options::LauncherParentResult::Back
-                | crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard),
+                | crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard
+                | crate::ui::main_menu_dialogs::options::LauncherParentResult::Mods),
             ) => {
                 state.frontend.options_dialog = Some(dialog);
                 Self::leave_shell_dialog(
@@ -1230,6 +1402,7 @@ impl App {
                     &mut operations,
                     dialog,
                     result,
+                    None,
                 );
             }
             None => {
@@ -1246,17 +1419,18 @@ impl App {
     }
 
     /// `0xD5`'s teardown slide has run: commit the controls (`0x0055FAA0`),
-    /// then write the profile and build `0xE2` (Main Menu, `0x005FAD10`) or
-    /// run the Keyboard page.
+    /// then write the profile and build `0xE2` (Main Menu, `0x005FAD10`), or
+    /// run the Keyboard page or VERA's Mods page.
     pub(super) fn commit_launcher_options_result(
         state: &mut AppState,
         result: crate::ui::main_menu_dialogs::options::LauncherParentResult,
     ) {
-        // The key page is a child of Options: closing it reopens the dialog
-        // on the page the player left. Back and Terminal end the dialog for
-        // good.
+        // The key page and VERA's Mods page are children of Options: closing
+        // one reopens the dialog on the page the player left. Back and
+        // Terminal end the dialog for good.
         state.frontend.options_reopen_at = match result {
-            crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard => state
+            crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard
+            | crate::ui::main_menu_dialogs::options::LauncherParentResult::Mods => state
                 .frontend
                 .options_dialog
                 .as_ref()
@@ -1271,6 +1445,23 @@ impl App {
             &mut operations,
             dialog,
             result,
+            None,
+        );
+    }
+
+    /// The in-game menu's Options page has closed: the controls the player
+    /// moved commit as the main menu's do, and the profile is written once.
+    pub(crate) fn commit_in_game_options_page(
+        state: &mut AppState,
+        dialog: crate::ui::main_menu_dialogs::OptionsDialogState,
+        opened: crate::ui::main_menu_dialogs::options::LauncherOptionsPacked,
+    ) {
+        let mut operations = AppStateLauncherParentOperations { state };
+        crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
+            &mut operations,
+            dialog,
+            crate::ui::main_menu_dialogs::options::LauncherParentResult::Back,
+            Some(opened),
         );
     }
 
@@ -1309,6 +1500,7 @@ impl App {
             &mut operations,
             dialog,
             crate::ui::main_menu_dialogs::options::LauncherParentResult::Terminal,
+            None,
         );
     }
 
@@ -1432,7 +1624,7 @@ impl App {
             });
         }
         Some((
-            crate::ui::shell::descriptor::DialogId(kind.template_id(false)),
+            crate::ui::shell::descriptor::DialogId(kind.template_id()),
             feed,
         ))
     }
@@ -1447,6 +1639,9 @@ impl App {
         }
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         if crate::app::updater::notes::pointer_button(state, true) {
+            return;
+        }
+        if Self::shell_menu_pointer(state, Some(true)) {
             return;
         }
         state.frontend.shell_controller.on_pointer_down(x, y, &feed);
@@ -1468,6 +1663,7 @@ impl App {
         }
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         crate::app::updater::notes::pointer_button(state, false);
+        Self::shell_menu_pointer(state, Some(false));
         let activated = state.frontend.shell_controller.on_pointer_up(x, y, &feed);
         if let Some(result) =
             activated.and_then(crate::ui::shell::modal::ModalResult::from_message_box_control)
@@ -1487,6 +1683,10 @@ impl App {
             return;
         };
         match message_box.purpose {
+            ShellMessageBoxPurpose::ShellMenu(_) => {
+                Self::close_shell_message_box_from_controller(state);
+                Self::answer_shell_menu(state, result);
+            }
             // OK -> quit (result 0). The screen fade-to-black is sub-step 4b-ii-b.
             ShellMessageBoxPurpose::ExitGame
                 if result == crate::ui::shell::modal::ModalResult::MessageBox(0) =>
@@ -1526,10 +1726,33 @@ impl App {
                 Self::close_shell_message_box_from_controller(state);
                 crate::app::updater::cancel_check(state);
             }
-            #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-            ShellMessageBoxPurpose::UpdateNotice => {
+            ShellMessageBoxPurpose::Notice => {
                 Self::close_shell_message_box_from_controller(state);
                 state.platform.window.request_redraw();
+            }
+            ShellMessageBoxPurpose::ModRestart(folder) => {
+                Self::close_shell_message_box_from_controller(state);
+                Self::answer_mod_restart(
+                    state,
+                    folder,
+                    result == crate::ui::shell::modal::ModalResult::MessageBox(0),
+                );
+            }
+            ShellMessageBoxPurpose::ModFiles(which) => {
+                Self::close_shell_message_box_from_controller(state);
+                Self::answer_mod_files(
+                    state,
+                    which,
+                    result == crate::ui::shell::modal::ModalResult::MessageBox(0),
+                );
+            }
+            ShellMessageBoxPurpose::ModMade(dir) => {
+                Self::close_shell_message_box_from_controller(state);
+                Self::answer_mod_made(
+                    state,
+                    &dir,
+                    result == crate::ui::shell::modal::ModalResult::MessageBox(0),
+                );
             }
         }
     }
@@ -1541,6 +1764,29 @@ impl App {
     pub(super) fn confirm_quit(state: &mut AppState) {
         let mut operations = AppStateConfirmedQuitOperations { state };
         dispatch_shell_controller_confirmed_quit(&mut operations);
+    }
+
+    /// What ending the program from any shell page saves first.
+    pub(super) fn prepare_shell_terminal_exit(state: &mut AppState) {
+        // Active YR treats a terminated launcher Options pump as an
+        // always-apply final result: Apply -> destroy -> one write.
+        // Complete that transaction before unrelated shell teardown.
+        crate::app::input::keyboard::prepare_terminal_exit(state);
+        Self::close_launcher_options_terminal(state);
+        crate::app::input::pause_menu::on_match_end(state);
+        if Self::native_skirmish_shell_active(state) {
+            // A terminal exit has no Start/Back transaction, so pack the
+            // page's current controls into the durable record first. The
+            // pack spends no `Scenario` draw: Random markers keep the
+            // value already cached behind them.
+            state.frontend.multiplayer_shell_runtime.pack_durable_state(
+                &state.frontend.skirmish_shell_state,
+                state.frontend.scenario_catalog.shell_maps(),
+                &state.frontend.skirmish_modes,
+            );
+            Self::teardown_skirmish_shell_for_start(state);
+            state.frontend.multiplayer_shell_runtime.persist_snapshot();
+        }
     }
 
     /// Bind the shared controller to the active menu page for one pointer
@@ -1728,12 +1974,17 @@ impl App {
             }
             ShellExitThen::PlayMovie => Self::play_selected_movie(state),
             ShellExitThen::MovieListBack => Self::open_movies_credits_page(state),
+            ShellExitThen::ModsBack => {
+                Self::close_mods_page(state);
+                Self::open_launcher_options_dialog(state);
+            }
             ShellExitThen::SkirmishStart(session) => Self::commit_skirmish_start(state, *session),
             ShellExitThen::SkirmishBack => Self::commit_skirmish_back(state),
             ShellExitThen::CampaignBack => Self::commit_campaign_back(state),
             ShellExitThen::CampaignStart(side) => Self::commit_campaign_start(state, side),
             ShellExitThen::LoadSavedGameBack => Self::commit_load_saved_game_back(state),
             ShellExitThen::Options(result) => Self::commit_launcher_options_result(state, result),
+            ShellExitThen::ShellMenuOptions(_) => Self::open_launcher_options_dialog(state),
             ShellExitThen::KeyboardClose(exit) => {
                 crate::app::input::keyboard::commit_close(state, exit)
             }
@@ -1752,7 +2003,7 @@ impl App {
                 crate::app::shell_network_setup::commit_start(state, agreed_seed)
             }
             ShellExitThen::SkirmishChooseMap => {
-                let mode_id = state.frontend.skirmish_shell_state.selected_mode_id;
+                let mode_id = state.frontend.skirmish_shell_state.selected_mode.id;
                 let record_index = Self::current_choose_map_record_index(state);
                 Self::open_choose_map_modal(state, mode_id, record_index);
             }
@@ -2007,8 +2258,15 @@ impl App {
             MainMenuShellAction::MoviesAndCredits => {
                 Self::open_movies_credits_page(state);
             }
-            MainMenuShellAction::Network => Self::open_lan_lobby(state),
-            MainMenuShellAction::WwOnline => Self::open_wol_welcome_page(state),
+            // Both lead to a pre-match check, which compares a mod's files.
+            MainMenuShellAction::Network => {
+                state.process_assets.read_mod_files_ahead();
+                Self::open_lan_lobby(state)
+            }
+            MainMenuShellAction::WwOnline => {
+                state.process_assets.read_mod_files_ahead();
+                Self::open_wol_welcome_page(state)
+            }
         }
     }
 
@@ -2042,13 +2300,42 @@ impl App {
         // teardown pops back to it with focus restored. (ensure_active would
         // reset_to-clobber the stack — the prior "0x120 over 0xE2" comment
         // described behavior that never happened.)
+        state.frontend.shell_message_box = Some(message_box);
+        Self::raise_shell_message_box(state);
+        state.platform.window.request_redraw();
+    }
+
+    /// An OK box that only says `text`, in place of any box already open.
+    pub(crate) fn open_shell_notice(state: &mut AppState, text: String) {
+        if state.frontend.shell_message_box.is_some() {
+            Self::close_shell_message_box_from_controller(state);
+        }
+        let ok = Self::csf_label(state, "TXT_OK", "OK");
+        Self::open_shell_message_box(
+            state,
+            crate::app::frontend::state::ShellMessageBox {
+                labels: crate::ui::main_menu_dialogs::ShellMessageBoxLabels {
+                    title: text,
+                    confirm: ok,
+                    third: String::new(),
+                    cancel: String::new(),
+                },
+                purpose: crate::app::frontend::state::ShellMessageBoxPurpose::Notice,
+            },
+        );
+    }
+
+    /// Put the open box on top of the controller. A page under the box still
+    /// runs, and its network events can reset the controller to itself.
+    pub(super) fn raise_shell_message_box(state: &mut AppState) {
+        let Some(message_box) = state.frontend.shell_message_box.as_ref() else {
+            return;
+        };
         let dialog =
-            crate::ui::shell::descriptor::DialogId(message_box.labels.kind().template_id(false));
+            crate::ui::shell::descriptor::DialogId(message_box.labels.kind().template_id());
         if state.frontend.shell_controller.top_id() != Some(dialog) {
             state.frontend.shell_controller.push(dialog, true);
         }
-        state.frontend.shell_message_box = Some(message_box);
-        state.platform.window.request_redraw();
     }
 
     /// Whether any main-menu modal dialog is currently open. Used to route
@@ -2109,9 +2396,9 @@ impl App {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod status_error_tests {
-    use super::{CardHost, display_error, shell_error_card};
+    use super::{CardHost, shell_error_card};
     use crate::app::initialize::{StartupFiles, StartupProblem};
     use std::path::Path;
 
@@ -2130,7 +2417,7 @@ mod status_error_tests {
             problem: Some(StartupProblem::of_config_load(&error)),
         };
         let _ = std::fs::remove_dir_all(&root);
-        let details = display_error(&format!("{error:#}"));
+        let details = format!("{error:#}");
         let (title, text) = shell_error_card(CardHost::Unix, &files, false, None, None, &details);
         assert_eq!(title, "config.toml could not be read");
         assert!(text.contains(config.to_str().unwrap()), "{text}");
@@ -2172,34 +2459,19 @@ mod status_error_tests {
     }
 
     #[test]
-    fn localized_os_text_is_dropped_and_the_code_kept() {
-        // A zh-CN host reports ERROR_PATH_NOT_FOUND as the localized sentence
-        // "the system cannot find the path specified"; the card cannot draw it.
-        let text = display_error(
-            "Could not load the game archives: IO error reading asset file: \
-\u{7cfb}\u{7edf}\u{627e}\u{4e0d}\u{5230}\u{6307}\u{5b9a}\u{7684}\u{8def}\u{5f84}\u{3002} (os error 3)",
-        );
-        assert!(text.is_ascii(), "{text}");
-        assert!(text.contains("os error 3"), "{text}");
-        assert!(text.contains("game archives"), "{text}");
-    }
-
-    #[test]
-    fn ascii_errors_pass_through() {
-        let text =
-            display_error("Required game-menu artwork SDBTNANM.SHP is missing or unreadable");
-        assert_eq!(
-            text,
-            "Required game-menu artwork SDBTNANM.SHP is missing or unreadable"
-        );
-    }
-
-    #[test]
-    fn an_error_with_nothing_drawable_becomes_a_generic_line() {
-        let text = display_error(
-            "\u{7cfb}\u{7edf}\u{627e}\u{4e0d}\u{5230}\u{6307}\u{5b9a}\u{7684}\u{8def}\u{5f84}\u{3002}",
-        );
-        assert!(text.is_ascii(), "{text}");
-        assert!(text.contains("see the log"), "{text}");
+    fn paths_and_details_in_any_script_reach_the_card_whole() {
+        // The card draws VERA's bundled fonts, so a Chinese folder name and a
+        // zh-CN host's ERROR_PATH_NOT_FOUND sentence show as they are, with no
+        // note about boxes.
+        let files = StartupFiles {
+            config_file: Some("C:/\u{6e38}\u{620f}/config.toml".into()),
+            problem: None,
+        };
+        let details = "Could not load the game archives: IO error reading asset file: \
+\u{7cfb}\u{7edf}\u{627e}\u{4e0d}\u{5230}\u{6307}\u{5b9a}\u{7684}\u{8def}\u{5f84}\u{3002} (os error 3)";
+        let (_, text) = shell_error_card(CardHost::Windows, &files, false, None, None, details);
+        assert!(text.contains("C:/\u{6e38}\u{620f}/config.toml"), "{text}");
+        assert!(text.ends_with(&format!("Details: {details}")), "{text}");
+        assert!(!text.contains("boxes"), "{text}");
     }
 }

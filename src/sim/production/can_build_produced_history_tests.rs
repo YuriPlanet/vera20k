@@ -83,186 +83,194 @@ fn assert_state(sim: &Simulation, owner: InternedId, expected: &Value, context: 
 
 #[test]
 fn record_and_both_lifetime_limit_queries_match_original_retained_histories() {
-    let corpus = crate::test_fixture::json("tools/can_build_produced_history.json");
-    assert_eq!(corpus["schema_version"], 1);
-    let cases = corpus["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 14);
-    let mut compared_phases = 0;
-    for case in cases {
-        let spec = &case["input"];
-        let family = spec["family"].as_str().unwrap();
-        let initial_index = int(&spec["type_index"]);
-        let mut rules = rules_for(case, int(&spec["limit"]));
-        let mut sim = Simulation::new();
-        sim.intern_rule_type_ids(&rules);
-        sim.resolve_type_handles(&rules);
-        sim.session.set_game_mode(
-            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
-        );
-        let country = sim.interner.intern("C0");
-        let owner = sim.interner.intern("H0");
-        let other = sim.interner.intern("H1");
-        for owner in [owner, other] {
-            sim.houses
-                .register(HouseState::new(owner, 0, Some(country), true, 0, 10));
-        }
-        if let Some(prior) = spec["produced_prior"].as_i64() {
-            sim.houses
-                .get_mut(&owner)
-                .unwrap()
-                .set_produced_count_for_test(
-                    category(family),
-                    initial_index,
-                    i32::try_from(prior).unwrap(),
-                );
-        }
-        for (ordinal, phase) in case["phases"].as_array().unwrap().iter().enumerate() {
-            let step = &phase["input"];
-            match step["kind"].as_str().unwrap() {
-                "observe" => {}
-                "set_limit" => rules = rules_for(case, int(&step["limit"])),
-                "record" => {
-                    let selected = step["family"].as_str().unwrap_or(family);
-                    let index = step["type_index"]
-                        .as_i64()
-                        .map_or(initial_index, |index| i32::try_from(index).unwrap());
-                    let name = type_name(selected, index);
-                    assert_eq!(
-                        rules.type_array_index(category(selected), &name),
-                        Some(index)
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let corpus = crate::test_fixture::json("tools/can_build_produced_history.json");
+        assert_eq!(corpus["schema_version"], 1);
+        let cases = corpus["cases"].as_array().unwrap();
+        assert_eq!(cases.len(), 14);
+        let mut compared_phases = 0;
+        for case in cases {
+            let spec = &case["input"];
+            let family = spec["family"].as_str().unwrap();
+            let initial_index = int(&spec["type_index"]);
+            let mut rules = rules_for(case, int(&spec["limit"]));
+            let mut sim = Simulation::new();
+            sim.intern_rule_type_ids(&rules);
+            sim.resolve_type_handles(&rules);
+            sim.session.set_game_mode(
+                crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+            );
+            let country = sim.interner.intern("C0");
+            let owner = sim.interner.intern("H0");
+            let other = sim.interner.intern("H1");
+            for owner in [owner, other] {
+                sim.houses
+                    .register(HouseState::new(owner, 0, Some(country), true, 0, 10));
+            }
+            if let Some(prior) = spec["produced_prior"].as_i64() {
+                sim.houses
+                    .get_mut(&owner)
+                    .unwrap()
+                    .set_produced_count_for_test(
+                        category(family),
+                        initial_index,
+                        i32::try_from(prior).unwrap(),
                     );
-                    let target = if step["owner"].as_str() == Some("other") {
+            }
+            for (ordinal, phase) in case["phases"].as_array().unwrap().iter().enumerate() {
+                let step = &phase["input"];
+                match step["kind"].as_str().unwrap() {
+                    "observe" => {}
+                    "set_limit" => rules = rules_for(case, int(&step["limit"])),
+                    "record" => {
+                        let selected = step["family"].as_str().unwrap_or(family);
+                        let index = step["type_index"]
+                            .as_i64()
+                            .map_or(initial_index, |index| i32::try_from(index).unwrap());
+                        let name = type_name(selected, index);
+                        assert_eq!(
+                            rules.type_array_index(category(selected), &name),
+                            Some(index)
+                        );
+                        let target = if step["owner"].as_str() == Some("other") {
+                            other
+                        } else {
+                            owner
+                        };
+                        let owner_name = sim.interner.resolve(target).to_owned();
+                        let product = sim
+                            .construct_object_limbo_at_height(
+                                &name,
+                                &owner_name,
+                                0,
+                                0,
+                                0,
+                                0,
+                                &rules,
+                                FrameEffects::default(),
+                            )
+                            .expect("valid typed actor for original Record prior");
+                        let product_view =
+                            crate::sim::production::factory_lifecycle::BuiltObject::capture(
+                                &sim, product,
+                            );
+                        crate::sim::production::factory_lifecycle::record_last_built(
+                            &sim.interner,
+                            &mut sim.sound_events,
+                            &mut sim.houses,
+                            &rules,
+                            target,
+                            product_view,
+                        );
+                        // Actor construction/cleanup are Rust fixture preparation,
+                        // outside the original Record/limit comparison interval.
+                        sim.discard_constructed_limbo(product, &rules, FrameEffects::default());
+                    }
+                    "factory" => {
+                        let strip = match category(family) {
+                            ObjectCategory::Building => ProductionCategory::Building,
+                            ObjectCategory::Vehicle => ProductionCategory::Vehicle,
+                            ObjectCategory::Infantry => ProductionCategory::Infantry,
+                            ObjectCategory::Aircraft => ProductionCategory::Aircraft,
+                        };
+                        let held = sim
+                            .production
+                            .factories()
+                            .view(owner, strip)
+                            .and_then(|factory| factory.object)
+                            .and_then(|object| object.entity_id);
+                        if let Some(held) = held {
+                            sim.discard_constructed_limbo(held, &rules, FrameEffects::default());
+                        }
+                        sim.production
+                            .factories_mut()
+                            .remove_factory(FactoryHolder::House(owner, strip));
+                        let queued = step["queued"].as_array().unwrap();
+                        if let Some(index) = step["held_index"].as_i64() {
+                            let name = type_name(family, i32::try_from(index).unwrap());
+                            let type_id = sim.interner.get(&name).unwrap();
+                            assert!(
+                                sim.production
+                                    .factories_mut()
+                                    .test_enqueue_kernel(owner, strip, type_id, 0, 0,)
+                            );
+                            construct_active_factory_fixture(
+                                &mut sim, &rules, owner, strip, type_id,
+                            )
+                            .expect("declared held Factory prior");
+                            for index in queued {
+                                let name = type_name(family, int(index));
+                                let type_id = sim.interner.get(&name).unwrap();
+                                sim.production
+                                    .factories_mut()
+                                    .test_enqueue_kernel(owner, strip, type_id, 0, 0);
+                            }
+                        } else {
+                            assert!(queued.is_empty(), "profile's NULL-held phase is empty");
+                        }
+                        let query = sim.interner.get(&type_name(family, initial_index)).unwrap();
+                        sim.houses
+                            .get_mut(&owner)
+                            .unwrap()
+                            .tracking_mut()
+                            .set_owned_for_test(
+                                EntityCategory::from(category(family)),
+                                query,
+                                int(&step["owned"]),
+                            );
+                    }
+                    other => panic!("unknown history operation {other}"),
+                }
+                let context = format!("{} phase{ordinal}", case["name"].as_str().unwrap());
+                let expected = &phase["expected"];
+                assert_state(&sim, owner, expected, &context);
+                if spec["second_house"].as_bool() == Some(true) {
+                    assert_state(&sim, other, &expected["other_house"], &context);
+                }
+                for query in expected["queries"].as_array().unwrap() {
+                    let family = query["family"].as_str().unwrap();
+                    let name = type_name(family, int(&query["type_index"]));
+                    let obj = rules.object_in_category(category(family), &name).unwrap();
+                    assert_eq!(obj.build_limit, int(&query["limit"]));
+                    let owner = if query["owner"].as_str() == Some("other") {
                         other
                     } else {
                         owner
                     };
-                    let owner_name = sim.interner.resolve(target).to_owned();
-                    let product = sim
-                        .construct_object_limbo_at_height(
-                            &name,
-                            &owner_name,
-                            0,
-                            0,
-                            0,
-                            0,
-                            &rules,
-                            FrameEffects::default(),
-                        )
-                        .expect("valid typed actor for original Record prior");
-                    let product_view =
-                        crate::sim::production::factory_lifecycle::BuiltObject::capture(
-                            &sim, product,
-                        );
-                    crate::sim::production::factory_lifecycle::record_last_built(
-                        &sim.interner,
-                        &mut sim.sound_events,
-                        &mut sim.houses,
-                        &rules,
-                        target,
-                        product_view,
-                    );
-                    // Actor construction/cleanup are Rust fixture preparation,
-                    // outside the original Record/limit comparison interval.
-                    sim.discard_constructed_limbo(product, &rules, FrameEffects::default());
-                }
-                "factory" => {
-                    let strip = match category(family) {
-                        ObjectCategory::Building => ProductionCategory::Building,
-                        ObjectCategory::Vehicle => ProductionCategory::Vehicle,
-                        ObjectCategory::Infantry => ProductionCategory::Infantry,
-                        ObjectCategory::Aircraft => ProductionCategory::Aircraft,
-                    };
-                    let held = sim
-                        .production
-                        .factories()
-                        .view(owner, strip)
-                        .and_then(|factory| factory.object)
-                        .and_then(|object| object.entity_id);
-                    if let Some(held) = held {
-                        sim.discard_constructed_limbo(held, &rules, FrameEffects::default());
-                    }
-                    sim.production
-                        .factories_mut()
-                        .remove_factory(FactoryHolder::House(owner, strip));
-                    let queued = step["queued"].as_array().unwrap();
-                    if let Some(index) = step["held_index"].as_i64() {
-                        let name = type_name(family, i32::try_from(index).unwrap());
-                        let type_id = sim.interner.get(&name).unwrap();
-                        assert!(
-                            sim.production
-                                .factories_mut()
-                                .test_enqueue_kernel(owner, strip, type_id, 0, 0,)
-                        );
-                        construct_active_factory_fixture(&mut sim, &rules, owner, strip, type_id)
-                            .expect("declared held Factory prior");
-                        for index in queued {
-                            let name = type_name(family, int(index));
-                            let type_id = sim.interner.get(&name).unwrap();
-                            sim.production
-                                .factories_mut()
-                                .test_enqueue_kernel(owner, strip, type_id, 0, 0);
+                    // These answers execute the complete stock gamemd CanBuild;
+                    // Ares's replaced factory/limit path has its own executed corpus.
+                    if !ares_way {
+                        for control in query["can_build"].as_array().unwrap() {
+                            let args = control["args"].as_array().unwrap();
+                            let answer = can_build(
+                                &sim,
+                                &rules,
+                                owner,
+                                obj,
+                                args[0].as_bool().unwrap(),
+                                args[1].as_bool().unwrap(),
+                            );
+                            let answer = match answer {
+                                CanBuild::No => 0,
+                                CanBuild::Yes => 1,
+                                CanBuild::AtLimit => -1,
+                            };
+                            assert_eq!(answer, int(&control["answer"]), "{context}: {name}");
                         }
-                    } else {
-                        assert!(queued.is_empty(), "profile's NULL-held phase is empty");
                     }
-                    let query = sim.interner.get(&type_name(family, initial_index)).unwrap();
-                    sim.houses
-                        .get_mut(&owner)
-                        .unwrap()
-                        .tracking_mut()
-                        .set_owned_for_test(
-                            EntityCategory::from(category(family)),
-                            query,
-                            int(&step["owned"]),
+                    // Ares hook 0x50B370 (10024F80) replaces CheckBuildLimit too.
+                    if !ares_way {
+                        assert_eq!(
+                            check_build_limit(&sim, &rules, owner, obj),
+                            query["check_build_limit"].as_bool().unwrap(),
+                            "{context}: {name}"
                         );
-                }
-                other => panic!("unknown history operation {other}"),
-            }
-            let context = format!("{} phase{ordinal}", case["name"].as_str().unwrap());
-            let expected = &phase["expected"];
-            assert_state(&sim, owner, expected, &context);
-            if spec["second_house"].as_bool() == Some(true) {
-                assert_state(&sim, other, &expected["other_house"], &context);
-            }
-            for query in expected["queries"].as_array().unwrap() {
-                let family = query["family"].as_str().unwrap();
-                let name = type_name(family, int(&query["type_index"]));
-                let obj = rules.object_in_category(category(family), &name).unwrap();
-                assert_eq!(obj.build_limit, int(&query["limit"]));
-                let owner = if query["owner"].as_str() == Some("other") {
-                    other
-                } else {
-                    owner
-                };
-                // These answers execute the complete stock gamemd CanBuild;
-                // Ares's replaced factory/limit path has its own executed corpus.
-                if !crate::rules::ARES_ENABLED {
-                    for control in query["can_build"].as_array().unwrap() {
-                        let args = control["args"].as_array().unwrap();
-                        let answer = can_build(
-                            &sim,
-                            &rules,
-                            owner,
-                            obj,
-                            args[0].as_bool().unwrap(),
-                            args[1].as_bool().unwrap(),
-                        );
-                        let answer = match answer {
-                            CanBuild::No => 0,
-                            CanBuild::Yes => 1,
-                            CanBuild::AtLimit => -1,
-                        };
-                        assert_eq!(answer, int(&control["answer"]), "{context}: {name}");
                     }
                 }
-                assert_eq!(
-                    check_build_limit(&sim, &rules, owner, obj),
-                    query["check_build_limit"].as_bool().unwrap(),
-                    "{context}: {name}"
-                );
+                compared_phases += 1;
             }
-            compared_phases += 1;
         }
+        assert_eq!(compared_phases, 45);
     }
-    assert_eq!(compared_phases, 45);
 }

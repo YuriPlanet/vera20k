@@ -31,7 +31,7 @@ oracles, scripts) until steps 1 and 2 are clean.
      `AGENTS.md` for Claude sessions.
    - For other protected paths, read every changed line. They steer agents
      (skills, hooks, settings) or run on maintainer machines (CI, Cargo config,
-     build scripts, `tools/cargo_run.py`, shell scripts).
+     build scripts, `tools/cargo_run.py`, shell scripts, Gradle files).
 2. **Malware.** Read each guard hit in context, plus every new script and every
    changed protected file in full. A clean guard report is not a clearance.
    - New crates come from crates.io at a pinned version. Git, path or registry

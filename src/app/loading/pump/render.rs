@@ -87,7 +87,8 @@ pub(super) fn present_blank(
     gpu: &GpuContext,
     presenter: &ShellSurfacePresenter,
     batch: &BatchRenderer,
-    fps_overlay: &crate::app::diagnostics::fps_overlay::FpsOverlay,
+    performance_overlay: &crate::app::diagnostics::performance_overlay::PerformanceOverlay,
+    font: &BitFont,
 ) -> anyhow::Result<()> {
     let Some(output) = gpu
         .acquire_frame()
@@ -101,7 +102,10 @@ pub(super) fn present_blank(
             label: Some("Game Mode Blank"),
         });
     encode_blank(presenter, &mut encoder, &output.texture);
-    fps_overlay.encode(gpu, batch, &mut encoder, &output.texture);
+    performance_overlay.encode(gpu, batch, &mut encoder, &output.texture, font, None);
+    // Synchronous repaints present outside the frame loop: the shared filter
+    // keeps the loading screen corrected like every other presented frame.
+    gpu.encode_color_vision(&mut encoder, &output.texture);
     gpu.queue.submit(std::iter::once(encoder.finish()));
     output.present(&gpu.queue);
     Ok(())
@@ -465,6 +469,9 @@ fn build_native_loading_text_draw(
         glyph_scale,
     );
     let mut backing = Vec::new();
+    // Text that lays out no glyph gets no backing, in every build: what Ares'
+    // LoadProgressMgr_Draw_SkipShadowOnNullString3 (1002F850, hook 0x55403D)
+    // does for an empty GUI:LoadingEx, where stock still blends the box.
     if let Some(padding) = backing_padding
         && !text_draw.instances.is_empty()
     {
@@ -765,6 +772,11 @@ fn build_native_loading_frame_plan(
         scale,
     );
     if campaign.is_some() {
+        // Redraw643BB9 hands this row the AlliedLoad/SovietLoad scheme, which
+        // Ares ProgressScreenClass_UpdateSingleProgressBar (1002F890, hook
+        // 0x643BB9) swaps for the cached load text colour. Nothing here shows
+        // a scheme: DrawFill643400 uses the +0x74 SPLDBR convert, +0x71 draws
+        // no outline in mode 0 and the row's label is empty.
         if let Some(layout) = native_loading_row_layout(
             font,
             atlas.progress_frame0,
@@ -853,7 +865,7 @@ pub(super) fn present_native_loading(
     depth_view: &wgpu::TextureView,
     batch: &BatchRenderer,
     font: &BitFont,
-    fps_overlay: &crate::app::diagnostics::fps_overlay::FpsOverlay,
+    performance_overlay: &crate::app::diagnostics::performance_overlay::PerformanceOverlay,
     atlas: &LoadingScreenAtlas,
     composition: Option<&LoadingCompositionSnapshot>,
     campaign: Option<&CampaignLoadingPresentation>,
@@ -899,7 +911,10 @@ pub(super) fn present_native_loading(
         &mut encoder,
         &output.texture,
     )?;
-    fps_overlay.encode(gpu, batch, &mut encoder, &output.texture);
+    performance_overlay.encode(gpu, batch, &mut encoder, &output.texture, font, None);
+    // Synchronous repaints present outside the frame loop: the shared filter
+    // keeps the loading screen corrected like every other presented frame.
+    gpu.encode_color_vision(&mut encoder, &output.texture);
     gpu.queue.submit(std::iter::once(encoder.finish()));
     output.present(&gpu.queue);
     Ok(())
@@ -1114,7 +1129,7 @@ fn push_progress_fill(
     });
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use serde_json::Value;

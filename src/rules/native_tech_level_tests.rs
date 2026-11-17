@@ -164,6 +164,17 @@ fn native_techno_lookup_uses_exact_case_and_global_allocation_chronology() {
     .process()
     .unwrap();
     let rules = RuleSet::from_processed_rules(&lazy).unwrap();
+    let infantry = rules
+        .type_handle_in_category(ObjectCategory::Infantry, "SHARED")
+        .unwrap();
+    assert!(
+        rules
+            .animation_sequence_by_handle(infantry)
+            .unwrap()
+            .infantry_action(0)
+            .is_some(),
+        "a same-named Building cannot replace the InfantryType's bank"
+    );
     assert_eq!(
         rules.native_techno_type_exact("SHARED").unwrap().category,
         ObjectCategory::Building,

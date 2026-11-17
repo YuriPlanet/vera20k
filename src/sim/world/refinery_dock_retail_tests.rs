@@ -63,6 +63,7 @@ fn retail_riparius_and_vinifera_pay_on_separate_unload_gates() {
                     bounds.contains_geometry_packed(i32::from(entry.rx), i32::from(entry.ry))
                         && overlays
                             .tiberium_type_for_overlay(&rules.tiberium_types, entry.overlay_id)
+                            .unwrap()
                             == Some(kind)
                 })
                 .expect("stock map contains this native type inside LocalSize");
@@ -199,7 +200,10 @@ fn retail_riparius_and_vinifera_pay_on_separate_unload_gates() {
             credits,
             "one native type per gate"
         );
-        assert_eq!(sim.houses[&owner].economy().score(), score);
+        // Ares' DepositTiberium (10044230, hook 0x73E4A2) adds no score.
+        if !rules.ares() {
+            assert_eq!(sim.houses[&owner].economy().score(), score);
+        }
         assert_eq!(
             sim.substrate
                 .entities
@@ -250,10 +254,7 @@ fn retail_docking_inputs_match_original_readers_and_installed_art() {
         // asset-free CI retains the repository's usual optional retail gate.
         return;
     };
-    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/spatial_oracle/refinery_dock.json",
-    ))
-    .unwrap();
+    let corpus = crate::test_fixture::json("tools/spatial_oracle/refinery_dock.json");
     let input = &corpus["retail_inputs"];
     let stock = &input["after"];
     let harv_receipt = &input["harv"]["after"];

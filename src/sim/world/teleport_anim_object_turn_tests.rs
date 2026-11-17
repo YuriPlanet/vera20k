@@ -497,6 +497,47 @@ fn warp_moves_a_units_occupation_through_the_mark_pair() {
     assert!(sim.substrate.occupancy.contains_entity(8, 9, 1));
 }
 
+/// Teleport Process runs the arrival Per_Cell_Process (`0x0071971C`) before
+/// its own Stop_Moving (`0x00719725`), so the Unit's own-cell arm reads
+/// Is_Moving set (`0x0073AE65`): a unit warped onto a cell its Can_Enter_Cell
+/// refuses keeps its strength, and the request is retired by the turn's end.
+#[test]
+fn a_warp_arrival_skips_the_units_own_cell_arm() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=CMON\n[CMON]\nStrength=100\nSpeed=4\nSensorsSight=1\n\
+         [Clear]\nFoot=100%\n[CombatDamage]\nC4Warhead=Super\n[Warheads]\n0=Super\n\
+         [Super]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .unwrap();
+    let mut sim = relocating_chrono_unit((8, 9));
+    install_destination_cells(&mut sim, &rules);
+    let zero = Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+    let terrain = sim.resolved_terrain.as_mut().unwrap();
+    terrain.cell_mut_for_test(8, 9).unwrap().speed_costs =
+        crate::rules::terrain_rules::SpeedCostProfile {
+            foot: zero,
+            track: zero,
+            wheel: zero,
+            float: zero,
+            amphibious: zero,
+            float_beach: zero,
+            hover: zero,
+            winged: zero,
+        };
+
+    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
+        .unwrap();
+
+    let unit = sim.substrate.entities.get(1).unwrap();
+    assert_eq!((unit.position.rx(), unit.position.ry()), (8, 9));
+    assert_eq!(unit.health.current(), 100);
+    assert!(sim.combat_light_requests.as_slice().is_empty());
+    assert_eq!(
+        crate::sim::movement::motion_query::is_moving(unit),
+        Some(false)
+    );
+}
+
 /// The same Mark pair moves an infantryman's cell list entry but not his raw
 /// sub-cell bit: Remove/AddContent return for Infantry before any receiver
 /// (`0x0047EAFE` / `0x0047E9EA`), and nothing from `0x007195DB` to

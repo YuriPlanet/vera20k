@@ -333,13 +333,14 @@ fn production_bullet_decoded_zero_runs_preserve_color_and_depth() {
     }
 }
 
+/// A body without a native palette has a colour its packed word does not hold.
+/// Bullet body leaves 00494B60/00497FD0 store that word.
 #[test]
-#[ignore = "bounded CPU/completed-submission timing; close other renderers before uncontended measurements"]
-fn production_bullet_small_piece_workload_timing() {
-    use std::time::{Duration, Instant};
+#[ignore = "requires GPU; a read-only body without a native palette stores its RGB565 word"]
+fn compat_read_only_body_stores_its_packed_word() {
     let gpu = Gpu::new();
-    let size = [1024, 768];
     let format = wgpu::TextureFormat::Bgra8UnormSrgb;
+    let size = [1, 1];
     let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
     batch.write_camera(&gpu.queue, camera(size));
     let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
@@ -348,119 +349,49 @@ fn production_bullet_small_piece_workload_timing() {
     let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
     let dv = depth.create_view(&Default::default());
     terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
-    let atlases = [[80, 180, 80, 255], [16, 64, 240, 255]].map(|rgba| {
-        batch.create_texture_on_device(&gpu.device, &gpu.queue, &rgba, 1, 1, Some(&[1]))
-    });
-    let mut results = Vec::new();
-    for pairs in [32usize, 128, 512] {
-        for layout in ["separated", "dense"] {
-            let instances = (0..pairs)
-                .flat_map(|index| {
-                    let [x, y] = if layout == "separated" {
-                        [
-                            4. + (index % 32) as f32 * 32.,
-                            4. + (index / 32) as f32 * 32.,
-                        ]
-                    } else {
-                        [516., 388.]
-                    };
-                    // Within-pair overlap is intentional; separated pairs fit
-                    // independent32px dependency tiles on the declared target.
-                    [
-                        sprite([x, y], [4.; 2], -1.),
-                        sprite([x + 1., y + 3.], [4.; 2], -1.),
-                    ]
-                })
-                .collect::<Vec<_>>();
-            let buffer = gpu
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Bounded four-pixel Bullet workload"),
-                    contents: bytemuck::cast_slice(&instances),
-                    usage: wgpu::BufferUsages::VERTEX,
-                });
-            for atlas_count in [1, 2] {
-                eprintln!(
-                    "Bullet timing begins: pairs={pairs}, layout={layout}, atlases={atlas_count}"
-                );
-                // One warm-up and three single-frame samples. No asynchronous
-                // frame backlog or per-frame asset/upload work is introduced.
-                // Cross-pass GPU timestamps returned reversed intervals on M4
-                // Metal; use an explicitly CPU+submission+GPU+wait wall interval
-                // instead of claiming an invalid GPU-only duration.
-                for sample in 0..4 {
-                    let begin = Instant::now();
-                    let mut encoder = gpu.device.create_command_encoder(&Default::default());
-                    clear(
-                        &mut encoder,
-                        &cv,
-                        &dv,
-                        65535,
-                        wgpu::LoadOp::Clear(wgpu::Color::WHITE),
-                    );
-                    let stats = terrain.draw_span(
-                        &mut encoder,
-                        &cv,
-                        &dv,
-                        &batch,
-                        |slot| atlases.get(slot),
-                        &buffer,
-                        &instances,
-                        (0..instances.len()).map(|index| {
-                            read_only(
-                                index as u32,
-                                if index % 2 == 0 {
-                                    TerrainPiece::Body
-                                } else {
-                                    TerrainPiece::Shadow
-                                },
-                                (index / 2) % atlas_count,
-                            )
-                        }),
-                        [0, 0, size[0], size[1]],
-                    );
-                    let cpu_ms = begin.elapsed().as_secs_f64() * 1000.;
-                    let submission = gpu.queue.submit([encoder.finish()]);
-                    gpu.device
-                        .poll(wgpu::PollType::Wait {
-                            submission_index: Some(submission),
-                            timeout: Some(Duration::from_secs(60)),
-                        })
-                        .unwrap();
-                    let completed_ms = begin.elapsed().as_secs_f64() * 1000.;
-                    assert_eq!(stats.pieces, pairs * 2);
-                    assert_eq!(stats.waves, 1);
-                    assert_eq!(stats.passes, 4);
-                    assert_eq!(stats.tile_dependencies, 0);
-                    if sample > 0 {
-                        eprintln!(
-                            "Bullet timing sample: pairs={pairs}, layout={layout}, atlases={atlas_count}, sample={sample}, pieces={}, waves={}, passes={}, tile_dependencies={}, cpu_prepare_encode_ms={cpu_ms}, completed_submission_wall_ms={completed_ms}",
-                            stats.pieces, stats.waves, stats.passes, stats.tile_dependencies
-                        );
-                        results.push(serde_json::json!({
-                            "shell_pairs": pairs, "layout": layout, "atlas_pages": atlas_count,
-                            "sample": sample, "frames": 1, "pieces": stats.pieces,
-                            "waves": stats.waves, "passes": stats.passes,
-                            "tile_dependencies": stats.tile_dependencies,
-                            "cpu_prepare_encode_ms_per_frame": cpu_ms,
-                            "completed_submission_wall_ms_per_frame": completed_ms,
-                        }));
-                    }
-                }
-            }
-        }
-    }
-    let report = serde_json::json!({
-        "target": size, "color_format": "Bgra8UnormSrgb",
-        "source": "synthetic4x4 opaque body/shadow pairs through production read-only destination-edit owner; no full-scene performance claim",
-        "interval": "CPU: encoder creation, frame clears, scheduler reset/preparation and encoding. Wall: same start through completed submission, including CPU+finish+submission+GPU+poll wait. Both exclude setup/upload. One warmup then three measured frames per workload. Debug test executable, not release app FPS.",
-        "gpu_only_timing": "unavailable: encoder and cross-pass marker timestamps returned non-increasing/reversed intervals on Apple M4 Metal; no GPU-only duration reported",
-        "samples": results,
-    });
-    eprintln!("{}", serde_json::to_string_pretty(&report).unwrap());
-    if let Some(path) = std::env::var_os("VERA20K_PROJECTILE_PERF_OUTPUT") {
-        std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
-    }
+    // RGB565 keeps only the high bits of each of these channels: 0x55a9.
+    let atlases = [batch.create_texture_on_device(
+        &gpu.device,
+        &gpu.queue,
+        &[83, 181, 77, 255],
+        1,
+        1,
+        Some(&[1]),
+    )];
+    let mut instance = sprite([0.; 2], [1.; 2], 4096. - 32768.);
+    instance.palette_light = Default::default();
+    let instances = [instance];
+    let buffer = gpu
+        .device
+        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(&instances),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    clear(
+        &mut encoder,
+        &cv,
+        &dv,
+        5000,
+        wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+    );
+    terrain.draw_span(
+        &mut encoder,
+        &cv,
+        &dv,
+        &batch,
+        |slot| atlases.get(slot),
+        &buffer,
+        &instances,
+        [read_only(0, TerrainPiece::Body, 0)],
+        [0, 0, 1, 1],
+    );
+    let reads = [gpu.read(&mut encoder, &color)];
+    assert_eq!(
+        gpu.finish(encoder, &reads, size)[0],
+        encoded(0x55a9, format)
+    );
 }
 
 #[path = "projectile_ordered_gpu_tests.rs"]

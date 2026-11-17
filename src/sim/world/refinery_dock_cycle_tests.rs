@@ -348,7 +348,11 @@ fn retail_ore_deposit_funds_the_retained_cash_stalled_build() {
                 assert!(stalled, "the paid head stalled before the unload");
                 assert_eq!(cargo_before, 40);
                 assert_eq!(credits(&s), cash_before + payout - spent);
-                assert_eq!(s.sim.houses[&owner].economy().score(), score);
+                // Ares' DepositTiberium (10044230, hook 0x73E4A2) adds no
+                // score.
+                if !s.rules.ares() {
+                    assert_eq!(s.sim.houses[&owner].economy().score(), score);
+                }
                 assert_eq!(after.object(), before.object());
                 assert_eq!(after.queue(), first.queue());
                 assert_eq!(after.insertion_seq(), first.insertion_seq());
@@ -412,7 +416,10 @@ fn retail_ore_deposit_funds_the_retained_cash_stalled_build() {
         let spent = 2 * s.rules.object("E1").unwrap().cost;
         assert_eq!(s.sim.houses[&owner].economy().spent_credits(), spent);
         assert_eq!(credits(&s), 50 + payout - spent);
-        assert_eq!(s.sim.houses[&owner].economy().score(), score);
+        // Ares' DepositTiberium (10044230, hook 0x73E4A2) adds no score.
+        if !s.rules.ares() {
+            assert_eq!(s.sim.houses[&owner].economy().score(), score);
+        }
         assert!(!sample(&s, s.miner).tethered);
     }
     assert_eq!(phases, [true, true]);
@@ -765,6 +772,7 @@ fn a_refinery_destroyed_mid_unload_hands_the_miner_to_harvest() {
          [Warheads]\n0=C4\n[C4]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
         super::refinery_dock_oracle_tests::RULES,
     ));
+    let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&ini);
     let art = IniFile::from_str(
         "[GAREFN]\nFoundation=4x3\nQueueingCell=4,1\n\
          [GAREFX]\nFoundation=4x3\nQueueingCell=4,1\n[GAOREP]\nFoundation=2x2\n",

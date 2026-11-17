@@ -6,11 +6,15 @@
 //! catalogs added later belong to the retained Rules registry, not a second
 //! mutable policy on RuleSet or Simulation.
 //!
-//! The five capabilities are orthogonal: Ares, Phobos, NPatch, VeraX and the
-//! NPBUG bug-fix extension compile independently and combine freely, so every
+//! The capabilities are orthogonal: Phobos, NPatch, VeraX and the NPBUG
+//! bug-fix extension compile independently and combine freely, so every
 //! combination needs its own wire variant. A feature added under one capability
 //! must keep working when the others are compiled in — the modes differ in what
 //! they read, never in whether a feature is available.
+//!
+//! Ares was such a capability until every build played it (`RuleSet::ares`).
+//! Its variants stay, so a save from an `ares` build still reads and is
+//! refused; no build records them any more.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum RulesCompatibility {
@@ -52,7 +56,7 @@ pub enum RulesCompatibility {
 impl Default for RulesCompatibility {
     fn default() -> Self {
         Self::from_capabilities(
-            super::ARES_ENABLED,
+            false,
             super::PHOBOS_ENABLED,
             super::NPATCH_ENABLED,
             super::VERAX_ENABLED,
@@ -225,6 +229,6 @@ impl RulesCompatibility {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "compatibility_tests.rs"]
 mod tests;

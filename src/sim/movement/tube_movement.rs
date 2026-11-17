@@ -272,6 +272,7 @@ impl Simulation {
             id,
             location,
             false,
+            rules.ares_form(),
         );
         let actor = self
             .substrate
@@ -527,6 +528,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Result<TubeObjectTurn, FrameAdvanceError> {
+        let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::MOVEMENT);
         let mut turn = TubeObjectTurn::default();
         self.complete_pending_order(id, rules, registry, effects);
         let Some(terrain) = self.resolved_terrain.as_ref() else {
@@ -824,6 +826,7 @@ impl Simulation {
                 id,
                 location,
                 true,
+                rules.ares_form(),
             );
         }
 
@@ -947,7 +950,7 @@ fn advance_amount(
     DriveCoord { x, y, z }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
@@ -1035,7 +1038,8 @@ mod tests {
         .expect("rules");
         let mut terrain = explicit_terrain(vec![2, 2]);
         for x in 0..=3 {
-            terrain.cell_mut_for_test(x, 0).unwrap().speed_costs.foot = Some(100);
+            terrain.cell_mut_for_test(x, 0).unwrap().speed_costs.foot =
+                Some(crate::util::native_x87::NativeF32Bits::ONE);
         }
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Americans");
@@ -1176,6 +1180,7 @@ mod tests {
             1,
             spot,
             true,
+            rules.ares_form(),
         );
         (sim, rules)
     }
@@ -1220,6 +1225,7 @@ mod tests {
             2,
             centre,
             true,
+            rules.ares_form(),
         );
         let exit_bits = |sim: &Simulation| {
             sim.substrate.raw_cell_occupation.bits_at(

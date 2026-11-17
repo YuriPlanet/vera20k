@@ -152,7 +152,7 @@ fn assert_shp_light(
                 (
                     ShpSpriteKey {
                         palette_context: ShpPaletteContext::Legacy,
-                        type_id: "E1".to_owned(),
+                        type_id: "E1".into(),
                         facing: 0,
                         frame,
                         house_color: HouseColorIndex(0),
@@ -162,23 +162,24 @@ fn assert_shp_light(
             })
             .collect(),
     );
-    let interpolation = crate::app::presentation::interpolation::RenderInterpolation::new(false);
     let voxel_images = std::cell::RefCell::default();
     let colors =
         crate::map::houses::HouseColorMap::from([(owner_name.clone(), HouseColorIndex(0))]);
     let location = crate::sim::movement::ground_pose::object_location(actor, Some(terrain));
     let screen =
         crate::util::lepton::absolute_leptons_to_screen(location.x, location.y, location.z);
+    let frame =
+        crate::app::presentation::frame::PresentationFrame::capture(runtime, &Default::default());
     let mut draws = Vec::new();
     build_shp_instances_from_inputs(
         &ShpInputs {
             runtime,
+            frame: &frame,
             atlas: Some(&atlas),
             overlay_atlas: None,
             unit_atlas: None,
             voxel_images: &voxel_images,
             depth_tested_images: None,
-            interpolation: &interpolation,
             camera: [screen.0 - 400.0, screen.1 - 300.0],
             render_size: [800, 600],
             zoom: 1.0,
@@ -198,7 +199,7 @@ fn assert_shp_light(
             building_zshape: false,
         },
         &mut draws,
-        &NativeDisplayOrder::from_display(sim.display_layers()),
+        &NativeDisplayOrder::from_world(&sim, None),
     );
     let mut bodies = draws
         .iter()
@@ -246,7 +247,7 @@ fn infantry_shp_top_light_follows_public_move_head_production() {
         .unwrap();
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources::new(rules),
+        resources: SimResources::new(rules).into(),
     };
     // Observed whole GI draws: null-head/destination-only700; a produced
     // head over top1000 gives1200, or700 when only the two tops are swapped.

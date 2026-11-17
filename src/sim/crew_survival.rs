@@ -102,7 +102,6 @@
 //!   such a Bio Reactor (more infantry than foundation cells) starts Phase B
 //!   past the list (open native question); VERA skips Phase B's cells.
 
-#[cfg(feature = "ares")]
 mod ares_survivors;
 
 use crate::map::entities::EntityCategory;
@@ -162,6 +161,8 @@ impl HasBeenCaptured {
 /// A building's NoSurvivor byte, `BuildingClass+0x6E0`. The constructor
 /// clears it (`0x0043B95A`) and DestructionEffects sets it from the killing
 /// ReceiveDamage's IgnoreDefenses (`0x00441EFC..0x00441F0B`, [`Self::mark`]).
+/// With Ares, Mission_Selling's stage-1 tail sets it once the sale's survivors
+/// are out (BuildingClass_Mi_Selling_Crew 1005C530, hook 0x44A8A2).
 /// How_Many_Survivors (`0x00451334`), SpawnSurvivors' absorbed passengers
 /// (`0x00442F2A`) and Mission_Selling (`0x0044A4CA`) read it, and the frame CRC
 /// hashes it (`0x00454407`). A building that outlives its killing blow at
@@ -285,15 +286,14 @@ impl Simulation {
     ) -> Option<String> {
         let entity = substrate.entities.get(building_id)?;
         let object = interner.object_type(entity.type_ref(), rules)?;
-        #[cfg(not(feature = "ares"))]
-        if !object.crewed {
+        let ares = rules.ares_form();
+        if !ares && !object.crewed {
             return None;
         }
-        let captured = entity.has_been_captured.is_set();
+        let captured = entity.building.has_been_captured.is_set();
         let yard = object.factory_type() == Some(FactoryType::BuildingType);
         let house = houses.get(&entity.owner())?;
-        #[cfg(feature = "ares")]
-        {
+        if ares {
             // Installed Building GetCrew1004C650 replaces44EB10. Its optional
             // Engineer chance is tested before Techno's Crewed gate; unlike
             // retail it draws only with a positive admitted chance.
@@ -319,9 +319,7 @@ impl Simulation {
                 interner,
                 &substrate.entities,
             )
-        }
-        #[cfg(not(feature = "ares"))]
-        {
+        } else {
             let armed = crate::sim::combat::combat_weapon::is_armed(
                 entity,
                 object,
@@ -347,7 +345,7 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return 0;
         };
-        if entity.no_survivor.is_set() || !object.crewed {
+        if entity.building.no_survivor.is_set() || !object.crewed {
             return 0;
         }
         let Some(house) = self.houses.get(&entity.owner()) else {
@@ -368,7 +366,7 @@ impl Simulation {
         if divisor == 0 || (side_divisor.is_some() && divisor < 0) {
             return 0;
         }
-        let divisor = if entity.has_been_captured.is_set() {
+        let divisor = if entity.building.has_been_captured.is_set() {
             divisor.wrapping_add(divisor)
         } else {
             divisor
@@ -410,17 +408,28 @@ impl Simulation {
         };
         let owner = entity.owner();
         let origin = (entity.position.rx(), entity.position.ry());
-        let captured = entity.has_been_captured.is_set();
+        let captured = entity.building.has_been_captured.is_set();
         let cells = foundation_cells(origin.0, origin.1, &object.foundation);
         // C4AppliedBy (+0x540); the pointer-expiry broadcast clears it when
         // the planter leaves play.
         let c4_source = entity
+            .building
             .pending_c4_detonation
             .pending()
             .and_then(|pending| pending.source_entity_id());
         let chance_max = if c4_source.is_some() { 1 } else { 2 } + if captured { 6 } else { 0 };
         let mut count = self.building_survivor_count(rules, building_id);
 
+        // Ares 3.0 10017350 (hook 0x442DF2), ahead of Phase A: the last
+        // entrance of a tunnel kills its owner's network, credited to the C4
+        // planter (`sim::ares_tunnel`).
+        if rules.ares_form() {
+            self.ares_kill_tunnel_feet_if_last(
+                building_id,
+                c4_source,
+                crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
+            );
+        }
         // Phase A (0x00442DF2..0x00443011): every absorbed passenger advances
         // the foundation cursor that Phase B then continues from.
         let cursor = self.eject_absorbed_passengers(
@@ -543,7 +552,10 @@ impl Simulation {
                 );
                 if let Some(survivor) = sim.substrate.entities.get_mut(id) {
                     crate::sim::mission::concrete_effects::represented_assign_target_admitted(
-                        survivor, target, stored,
+                        survivor,
+                        target,
+                        stored,
+                        rules.ares_form(),
                     );
                 }
             }
@@ -578,7 +590,7 @@ impl Simulation {
             return 0;
         };
         // `0x00442F2A`, `0x0044A4CA`.
-        let no_survivor = building.no_survivor.is_set();
+        let no_survivor = building.building.no_survivor.is_set();
         let absorbs = self
             .object_type(building.type_ref(), rules)
             .is_some_and(|object| object.absorbs_passengers());
@@ -1263,7 +1275,8 @@ impl Simulation {
     /// (How_Many_Survivors, counted before the passengers left). Each takes
     /// the building's crew type (`vt+0x30C`: the Engineer roll, then
     /// GetCrew), picked again while it names an Engineer once one has been
-    /// picked (`0x0044A5F0..0x0044A623`); is constructed (the TechnoClass
+    /// picked (`0x0044A5F0..0x0044A623`; with Ares at most nine times);
+    /// is constructed (the TechnoClass
     /// constructor's draw); picks a cell of the occupy list `cells` with
     /// `RandomRanged(0, n - 1)` (`0x0044A67A`) and places at its request
     /// there (PlaceInfantryInCell's draw); Unlimboes in priority mode
@@ -1297,10 +1310,11 @@ impl Simulation {
             return false;
         };
         let is_engineer = |crew: &str| rules.object(crew).is_some_and(|object| object.engineer);
+        let ares = rules.ares_form();
         let mut engineer_picked = false;
         let mut spawned = false;
         for _ in 0..count {
-            let Some(mut crew) = Self::building_crew_type(
+            let Some(crew) = Self::building_crew_type(
                 &self.interner,
                 &mut self.scenario_rng,
                 &self.substrate,
@@ -1310,19 +1324,52 @@ impl Simulation {
             ) else {
                 continue;
             };
-            while engineer_picked && is_engineer(&crew) {
-                match Self::building_crew_type(
-                    &self.interner,
-                    &mut self.scenario_rng,
-                    &self.substrate,
-                    &self.houses,
-                    rules,
-                    building_id,
-                ) {
-                    Some(next) => crew = next,
-                    None => break,
+            // Ares 3.0 BuildingClass_Mi_Selling_EngineerFreeze (1005C550,
+            // hook 0x44A5F0): once an Engineer is out, at most nine more
+            // picks; a tenth Engineer, or no type, leaves this survivor out.
+            let crew = if ares {
+                if engineer_picked && is_engineer(&crew) {
+                    let mut repick = None;
+                    for _ in 0..9 {
+                        let Some(next) = Self::building_crew_type(
+                            &self.interner,
+                            &mut self.scenario_rng,
+                            &self.substrate,
+                            &self.houses,
+                            rules,
+                            building_id,
+                        ) else {
+                            break;
+                        };
+                        if !is_engineer(&next) {
+                            repick = Some(next);
+                            break;
+                        }
+                    }
+                    let Some(crew) = repick else {
+                        continue;
+                    };
+                    crew
+                } else {
+                    crew
                 }
-            }
+            } else {
+                let mut crew = crew;
+                while engineer_picked && is_engineer(&crew) {
+                    match Self::building_crew_type(
+                        &self.interner,
+                        &mut self.scenario_rng,
+                        &self.substrate,
+                        &self.houses,
+                        rules,
+                        building_id,
+                    ) {
+                        Some(next) => crew = next,
+                        None => break,
+                    }
+                }
+                crew
+            };
             if is_engineer(&crew) {
                 engineer_picked = true;
             }
@@ -1432,7 +1479,6 @@ fn techno_crew_type(rng: &mut SimRng, rules: &RuleSet, side: i32, armed: bool) -
 /// Installed Ares GetCrew707D20 hook1004C780..1004C867. This is the optional
 /// replacement of the retail query above, shared by every Ares crew caller.
 /// Side readers10021230/10021520 and1002DE60/1002E170 preserve explicit NULL.
-#[cfg(feature = "ares")]
 fn ares_techno_crew_type(
     rng: &mut SimRng,
     rules: &RuleSet,
@@ -1501,6 +1547,6 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "crew_survival_tests.rs"]
 mod tests;

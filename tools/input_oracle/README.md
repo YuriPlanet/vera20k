@@ -321,15 +321,18 @@ OS-specific pointer capture, or network service cadence.
 
 The camera controller in `src/app/input/camera.rs` owns drag polling, the
 method-zero distance calculation and pending scroll requests. The runtime's
-existing `RuntimePassDecision` admits native scrolling once per offline game
-frame. Zoom and placement retain their separate presentation cadence; VERA's
-developer pause still admits camera input. Networking is not live in this build
-and its existing extra-poll policy is not a native cadence claim.
+existing `RuntimePassDecision` admits the native input poll, which writes the
+right-drag latch, once per offline game frame. Scroll movement deliberately
+leaves that cadence: the camera takes the oracle's distances on its own 16 ms
+clock, so the scroll speed is the same at every game speed. Zoom and placement
+retain their separate presentation cadence; VERA's developer pause still admits
+camera input. The network modes' extra-poll policy is not a native cadence claim.
 
 Mouse input is sampled before simulation. At the existing pre-follow seam the
 camera consumes the previous keyboard request and current mouse request in one
-clamp against this frame's playfield authority. Main_Tick's later keyboard
-request remains pending until the next admitted frame. Absolute view changes
+clamp against this frame's playfield authority; a pass without a game frame
+commits through the same clamp. The keyboard request queued at the end of a pass
+remains pending until the next commit. Absolute view changes
 (follow, bookmarks, minimap, loading and VERA zoom) discard pending requests
 through `set_camera_position`. This prevents an outward request at a boundary
 from being discarded before an opposing inward request arrives. The private
@@ -343,8 +346,8 @@ outputs. The camera sequence test enters the production request commit and
 clamp with bounds from the production playfield-geometry owner. It converts the
 native center to VERA's top-left frame using the verified viewport half-extents
 and the existing shared world-row bias. `camera_cadence_tests.rs` also drives the
-real local frame pacer to ensure extra redraws cannot add scroll steps or latch
-a drag between admitted polls.
+real local frame pacer to ensure extra redraws cannot add input polls or latch a
+drag between admitted polls, and that scroll steps do not follow the game speed.
 
 Validation on macOS, 2026-10-01:
 

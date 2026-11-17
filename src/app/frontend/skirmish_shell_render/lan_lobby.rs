@@ -60,7 +60,6 @@ fn paint_create_box(
     }
     let mut controls = Vec::new();
     super::wol_lobby::paint_room_limits(
-        state,
         atlas,
         &mut controls,
         &mut labels,
@@ -206,6 +205,7 @@ pub(crate) fn render_lan_lobby(
                 composition,
                 rect,
                 lobby.enabled && lobby.caret_visible(now),
+                SHELL_LABEL_TEXT_RGB,
                 SHELL_CONTROL_TEXT_DEPTH,
                 scale,
             );
@@ -310,7 +310,7 @@ pub(crate) fn render_lan_lobby(
                 font,
                 &localized_label(state, PAGE.title_key, "Lobby"),
                 rect_to_text_rect(layout.page.title),
-                ShellAlign::H_CENTER,
+                ShellAlign::PANEL_TITLE,
                 [0.0; 2],
                 SHELL_CONTROL_TEXT_DEPTH,
                 PathAReveal {
@@ -348,7 +348,7 @@ pub(crate) fn render_lan_lobby(
                         } else {
                             crate::render::shell_paint::SHELL_TEXT_RGB_DISABLED
                         },
-                        ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+                        ShellAlign::BUTTON_CAPTION,
                         [0.0; 2],
                         SHELL_CONTROL_TEXT_DEPTH,
                         scale.factor(),
@@ -372,7 +372,9 @@ pub(crate) fn render_lan_lobby(
             );
             overlay.texts.push(shell_text::draw_in_rect(
                 font,
-                &localized_label(state, key, key),
+                &runtime.modal_body.clone().unwrap_or_else(|| {
+                    crate::i18n::label(state.process_assets.csf.as_ref(), key, key)
+                }),
                 rect_to_text_rect(modal.body),
                 SHELL_LABEL_TEXT_RGB,
                 super::text::validation_modal_body_text_align(),

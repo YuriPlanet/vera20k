@@ -473,7 +473,7 @@ fn distance(a: PhysicalPosition<f64>, b: PhysicalPosition<f64>) -> f64 {
     (a.x - b.x).hypot(a.y - b.y)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
     use winit::event::Force;

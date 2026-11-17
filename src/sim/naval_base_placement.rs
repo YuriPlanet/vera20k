@@ -25,6 +25,9 @@ pub(crate) fn find_naval_base_placement(
 ) -> Option<(u16, u16)> {
     let house = sim.houses.get(&owner)?;
 
+    // No buildable shipyard answers the empty cell, as Ares 3.0
+    // HouseClass_FindPositionForBuilding_FixShipyard 100238A0 (hook
+    // 0x0050610E) returns at 0x005060CE instead of dereferencing it.
     // Native invokes the source-ordered selector twice rather than retaining
     // the first pointer. Keep the two calls independent even though ordinary
     // immutable Rules yield the same type both times.
@@ -67,6 +70,9 @@ fn first_buildable_shipyard<'a>(
     sim: &Simulation,
     house: &HouseState,
 ) -> Option<&'a ObjectType> {
+    // RESIDUAL (dormant): native reads the HouseType (`house_type_id`), so a
+    // map house with no `Country=` would still get a shipyard; no retail map
+    // has one.
     let country = house.country()?;
     let country_name = sim.interner.resolve(country);
     crate::sim::ai_buildable::first_buildable_from_array(
@@ -124,7 +130,7 @@ fn first_yard_distance_accepts(
     distance <= cap
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use super::find_naval_base_placement;
     use crate::rules::ini_parser::IniFile;

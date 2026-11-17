@@ -31,7 +31,7 @@ fn setup_control_at_row(
         }) {
             return Ok(Some(combo.id));
         }
-        if view.first_row + view.dialog.rows_per_page() >= view.row_count {
+        if view.first_row + view.page_len >= view.row_count {
             return Ok(None);
         }
         setup_button(state, NEXT_ROWS)?;
@@ -90,7 +90,7 @@ impl StopObservation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod stop_observation_tests {
     use super::{AiActivity, LanTarget, LiveLanCapture, StopObservation};
     use crate::app::match_diagnostics::CommandExecutionObservation;
@@ -199,7 +199,7 @@ impl AiActivity {
         let runtime = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("AI diagnostic simulation")?;
         let sim = &runtime.simulation;
         let owner = self
@@ -258,7 +258,7 @@ impl AiActivity {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("AI live simulation")?
             .simulation;
         let owner = sim
@@ -798,7 +798,7 @@ impl LiveLanCapture {
             state.match_state.network_failure.is_none() || expected_checksum || expected_startup,
             "unexpected network failure modal during live capture"
         );
-        if let Some(runtime) = &state.match_state.sim_runtime {
+        if let Some(runtime) = state.match_state.sim_runtime.runtime() {
             ensure!(
                 runtime.simulation.pending_network_failure().is_none() || expected_checksum,
                 "live LAN checksum failure: {:?}",
@@ -1259,7 +1259,7 @@ impl LiveLanCapture {
             let simulation = &state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("live simulation")?
                 .simulation;
             // A pending native frame may already have applied commands, but
@@ -1272,7 +1272,7 @@ impl LiveLanCapture {
         let simulation = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("live simulation")?
             .simulation;
         let committed = simulation.session().binary_frame();
@@ -1323,7 +1323,7 @@ impl LiveLanCapture {
             self.checksums.push(
                 state
                     .match_state
-                    .session
+                    .sim_runtime
                     .checksum_history()
                     .get(self.checksums.len() as u32),
             );
@@ -1470,7 +1470,7 @@ impl LiveLanCapture {
             let entity = state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("simulation")?
                 .simulation
                 .entities()
@@ -1714,7 +1714,7 @@ impl LiveLanCapture {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("simulation")?
             .simulation;
         let live = state.match_state.live_network.as_ref();
@@ -1797,7 +1797,7 @@ fn terminal_simulation_receipt(state: &AppState) -> Result<Value> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("terminal simulation")?
         .simulation;
     ensure!(
@@ -1839,7 +1839,7 @@ fn startup_receipt(state: &AppState) -> Result<Value> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("simulation")?
         .simulation;
     crate::app::diagnostics::shell_capture::network_startup_receipt(state, launch, Some(sim))

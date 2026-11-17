@@ -8,7 +8,6 @@
 //! - Part of rules/ — no dependencies on sim/, render/, ui/, etc.
 //! - References `ParticleTypeId` from `crate::rules::particle_type`.
 
-use glam::IVec3;
 use serde::{Deserialize, Serialize};
 
 use crate::rules::ini_parser::IniSection;
@@ -34,27 +33,32 @@ pub struct ParticleSystemTypeId(pub u32);
 /// Variant ordering matches the binary's string table:
 /// `Smoke=0, Gas=1, Fire=2, Spark=3, Railgun=4`. This is **different** from
 /// `ParticleBehavesLike` — Smoke and Gas are swapped at the particle level.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[repr(i32)]
 pub enum ParticleSystemBehavesLike {
     Smoke = 0,
     Gas = 1,
     Fire = 2,
     Spark = 3,
     Railgun = 4,
+    /// Constructor and unrecognized/empty ReadINI result.
+    #[default]
+    Unknown = -1,
 }
 
 impl ParticleSystemBehavesLike {
     /// Parse a `BehavesLike=` value from INI. Returns `None` for unknown strings.
     pub fn parse(s: &str) -> Option<Self> {
-        match s.trim() {
-            "Smoke" => Some(Self::Smoke),
-            "Gas" => Some(Self::Gas),
-            "Fire" => Some(Self::Fire),
-            "Spark" => Some(Self::Spark),
-            "Railgun" => Some(Self::Railgun),
-            _ => None,
-        }
+        [
+            Self::Smoke,
+            Self::Gas,
+            Self::Fire,
+            Self::Spark,
+            Self::Railgun,
+        ]
+        .into_iter()
+        .zip(["Smoke", "Gas", "Fire", "Spark", "Railgun"])
+        .find_map(|(behavior, name)| s.eq_ignore_ascii_case(name).then_some(behavior))
     }
 }
 
@@ -89,8 +93,9 @@ pub struct ParticleSystemType {
     pub spawn_frames: i32,
     /// Rate at which smoke particles decelerate (default 0.0).
     pub slowdown: NativeF32Bits,
-    /// Maximum particles this system can hold simultaneously (default 50).
-    pub particle_cap: u32,
+    /// Spark burst size and light divisor (default 50). Signed as stored:
+    /// ReadINI keeps whatever `ReadInteger` returns.
+    pub particle_cap: i32,
     /// Random radius for spawn position offset.
     pub spawn_radius: i32,
     /// Distance threshold to stop spawning new particles.
@@ -100,8 +105,9 @@ pub struct ParticleSystemType {
     /// System lifetime in frames. -1 = infinite (system stays alive until all
     /// particles die). Default -1 per constructor.
     pub lifetime: i32,
-    /// Direction vector for spawning (CoordStruct).
-    pub spawn_direction: IVec3,
+    /// The float vector `AI_Spark` adds to each spark's velocity
+    /// (`+0x2BC..+0x2C4`).
+    pub spawn_direction: [NativeF32Bits; 3],
 
     // ── Railgun-only: the exact `ReadDouble` doubles that
     // `ParticleSystemClass::AI_Railgun @ 0x0062F230` reads ─────────────
@@ -145,37 +151,45 @@ impl ParticleSystemType {
     ///
     /// `holds_what` keeps the constructor's unbound value (-1, `0x006440B3`):
     /// `RuleSet` resolves the ordered Rules processor's binding.
+    #[cfg(test)]
     pub fn from_ini_section(name: &str, section: &IniSection) -> Self {
-        let behaves_like = section
+        Self::from_read_state(name, section, Self::read_behavior(section), None)
+    }
+
+    pub(super) fn read_behavior(section: &IniSection) -> ParticleSystemBehavesLike {
+        // ParticleSystemTypeClass::ReadINI @ 0x006442D0,64441E..644461:
+        // ReadString64 then strcmpi; absent and unknown store -1.
+        section
             .read_name("BehavesLike", 0x40)
             .and_then(ParticleSystemBehavesLike::parse)
-            // Binary's string-table loop falls through to index 0 (Smoke) when
-            // the INI string doesn't match any entry.
-            .unwrap_or(ParticleSystemBehavesLike::Smoke);
+            .unwrap_or(ParticleSystemBehavesLike::Unknown)
+    }
 
+    pub(super) fn from_read_state(
+        name: &str,
+        section: &IniSection,
+        behaves_like: ParticleSystemBehavesLike,
+        holds_what: Option<ParticleTypeId>,
+    ) -> Self {
         Self {
             name: name.to_string(),
             image: section.read_name("Image", 0x19).unwrap_or(name).to_owned(),
             alpha_image: section.read_object_alpha_image(""),
             behaves_like,
-            holds_what: None,
+            holds_what,
             spawns: section.read_bool("Spawns", false),
             spawn_frames: section.read_int("SpawnFrames", 1),
             // Float fields (`FSTP dword` at `0x0064439F..0x006443DD`).
             slowdown: section.read_double_to_float("Slowdown", NativeF32Bits::POSITIVE_ZERO),
-            particle_cap: section.read_int("ParticleCap", 50).max(0) as u32,
+            particle_cap: section.read_int("ParticleCap", 50),
             spawn_radius: section.read_int("SpawnRadius", 0),
             spawn_cutoff: section.read_double_to_float("SpawnCutoff", NativeF32Bits::POSITIVE_ZERO),
             spawn_translucency_cutoff: section
                 .read_double_to_float("SpawnTranslucencyCutoff", NativeF32Bits::POSITIVE_ZERO),
             lifetime: section.read_int("Lifetime", -1),
-            // A float vector natively; VERA keeps whole components for its
-            // integer velocity math. Retail sets no `SpawnDirection=`.
-            spawn_direction: IVec3::from_array(
-                section
-                    .read_float_tokens("SpawnDirection", [0.0; 3])
-                    .map(|component| component as i32),
-            ),
+            // ReadFloatTokens at `0x0064447B`. Retail sets no `SpawnDirection=`.
+            spawn_direction: section
+                .read_float_tokens("SpawnDirection", [NativeF32Bits::POSITIVE_ZERO; 3]),
 
             // Double fields (`FSTP qword` at `0x006444B0..0x00644555`).
             particles_per_coord: section
@@ -208,10 +222,24 @@ impl ParticleSystemType {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
+
+    /// ReadINI keeps `SpawnDirection=` as three floats (`0x0064447B`) and
+    /// `ParticleCap=` signed.
+    #[test]
+    fn spawn_direction_keeps_fractions_and_particle_cap_keeps_its_sign() {
+        let ini = IniFile::from_str("[Foo]\nSpawnDirection=0.5,-1.25,3\nParticleCap=-4\n");
+        let pst = ParticleSystemType::from_ini_section("Foo", ini.section("Foo").unwrap());
+        assert_eq!(
+            pst.spawn_direction
+                .map(|value| f32::from_bits(value.bits())),
+            [0.5, -1.25, 3.0]
+        );
+        assert_eq!(pst.particle_cap, -4);
+    }
 
     #[test]
     fn behaves_like_discriminants_match_binary() {
@@ -237,13 +265,13 @@ mod tests {
         assert_eq!(pst.spiral_radius.bits(), 0x4039_0000_0000_0000);
         assert_eq!(pst.slowdown, NativeF32Bits::POSITIVE_ZERO);
         assert_eq!(pst.spawn_radius, 0);
-        assert_eq!(pst.spawn_direction, IVec3::ZERO);
+        assert_eq!(pst.spawn_direction, [NativeF32Bits::POSITIVE_ZERO; 3]);
         assert!(!pst.spawns);
         assert!(!pst.laser);
         assert!(!pst.one_frame_light);
         assert_eq!(pst.laser_color, [0, 0, 0]);
-        // Unknown / absent BehavesLike falls through to the index-0 entry (Smoke).
-        assert_eq!(pst.behaves_like, ParticleSystemBehavesLike::Smoke);
+        // The native constructor and unknown reader result are -1.
+        assert_eq!(pst.behaves_like, ParticleSystemBehavesLike::Unknown);
     }
 
     #[test]
@@ -275,10 +303,10 @@ mod tests {
     }
 
     #[test]
-    fn from_ini_unknown_behaves_like_falls_through_to_smoke() {
+    fn from_ini_unknown_behaves_like_is_minus_one() {
         let ini = IniFile::from_str("[Foo]\nBehavesLike=Bogus\n");
         let section = ini.section("Foo").unwrap();
         let pst = ParticleSystemType::from_ini_section("Foo", section);
-        assert_eq!(pst.behaves_like, ParticleSystemBehavesLike::Smoke);
+        assert_eq!(pst.behaves_like, ParticleSystemBehavesLike::Unknown);
     }
 }

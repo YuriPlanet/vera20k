@@ -22,7 +22,6 @@ use crate::render::tile_atlas::{self, TileAtlas};
 use crate::render::unit_atlas::{self, UnitAtlas};
 use crate::rules::effect_asset_catalog::tolerant_anim_class_roots;
 use crate::rules::ini_parser::IniFile;
-use crate::rules::process_owner::NativeRulesProcessOwner;
 #[cfg(test)]
 use crate::rules::retail_sources::load_startup_rules;
 use crate::rules::ruleset::RuleSet;
@@ -206,12 +205,19 @@ pub(crate) fn cells_by_distance_from(cells: &[(u16, u16)], anchor: (u16, u16)) -
 }
 
 /// Build a texture atlas from pre-loaded theater data and the terrain grid.
+/// `terrain_deformation` is the scenario rules' `[CombatDamage]
+/// TerrainDeformation=`.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "theater inputs, the grid, the GPU pair and the deformation switch"
+)]
 pub(crate) fn build_tile_atlas(
     asset_manager: &AssetManager,
     lookup: &theater::TilesetLookup,
     palette: &Palette,
     _ext: &str,
     grid: &TerrainGrid,
+    terrain_deformation: bool,
     gpu: &GpuContext,
     batch: &BatchRenderer,
 ) -> Option<TileAtlas> {
@@ -235,6 +241,22 @@ pub(crate) fn build_tile_atlas(
         theater::inject_bridge_middle_tiles(&mut needed, table, lookup, asset_manager);
         log::info!(
             "Atlas pre-load: injected {} bridge middle TileKeys",
+            needed.len() - before,
+        );
+    }
+    // Terrain deformation stamps clear and ramp tiles, and its LAT and slope
+    // fixups pick neighbours' tiles, that the map may never use.
+    if terrain_deformation && !grid.deformation_tiles.is_empty() {
+        let before = needed.len();
+        for &tile_id in &grid.deformation_tiles {
+            if let Err(error) =
+                theater::inject_template_tiles(&mut needed, tile_id, lookup, asset_manager)
+            {
+                log::debug!("Deformation tile_id {tile_id} not pre-loaded: {error}");
+            }
+        }
+        log::info!(
+            "Atlas pre-load: injected {} terrain deformation TileKeys",
             needed.len() - before,
         );
     }
@@ -313,36 +335,6 @@ pub(crate) fn load_rules_with_prefix_for_test(
     Some((rules, processed_ini, fixed_art_ini, receipt))
 }
 
-/// Resolve the neutral tech buildings the random map generator may place.
-///
-/// The type list lives in `[AI] NeutralTechBuildings` and each footprint in
-/// `Foundation=`, so RULESMD/LANGRULE and fixed ARTMD are both needed.
-/// An unavailable INI yields an empty catalog, which the placement phase
-/// treats as "place nothing" rather than as an error.
-pub(crate) fn load_neutral_tech_types(
-    owner: Option<&NativeRulesProcessOwner>,
-) -> Vec<crate::map::rmg::phases::tech_buildings::TechType> {
-    let Some(owner) = owner else {
-        log::warn!("random map: startup rules/art unavailable; placing no neutral tech buildings");
-        return Vec::new();
-    };
-    let Ok(processed) = owner.startup_compatibility_projection() else {
-        log::warn!(
-            "random map: startup rules projection failed; placing no neutral tech buildings"
-        );
-        return Vec::new();
-    };
-    let types = crate::map::rmg::tech_catalog::resolve(
-        processed.neutral_tech_buildings(),
-        owner.fixed_art(),
-    );
-    log::info!(
-        "random map: resolved {} neutral tech building type(s)",
-        types.len()
-    );
-    types
-}
-
 /// Install the process-selected ART metadata before terrain construction or
 /// saved-cell rebinding. RulesLoad675210 restores type state, while the
 /// hierarchy/theater loaders rebind resident images (LoadContent67E730).
@@ -354,6 +346,8 @@ pub(crate) fn bind_rules_art_metadata(
     theater_ext: &str,
     theater_name: &str,
 ) {
+    // ARTMD is read the way the game's Rules were (`ares_switch::ares_way`).
+    let _ares_way = crate::rules::ares_switch::read_ares_way(rules.reads_ares_way());
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(fixed_art));
     let (populated, fallback) = rules.populate_anim_frame_dims(assets, theater_ext, theater_name);
     log::info!("Anim frame dims: {populated} populated, {fallback} fallback (defaults to 30x30)");
@@ -367,7 +361,6 @@ pub(crate) fn bind_rules_art_metadata(
 /// bind join that closure.
 pub(crate) fn bind_rules_asset_closure(
     rules: &mut RuleSet,
-    fixed_art: &IniFile,
     overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
     roots: &[String],
     authored_anim_roots: &[String],
@@ -376,7 +369,9 @@ pub(crate) fn bind_rules_asset_closure(
     theater_name: &str,
     terrain_phase: crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase,
 ) -> anyhow::Result<()> {
-    rules.bind_scheduler_anim_assets(roots, assets, theater_ext, theater_name)?;
+    // The asset closures follow the way the game's Rules were read.
+    let _ares_way = crate::rules::ares_switch::read_ares_way(rules.reads_ares_way());
+    rules.bind_scheduler_anim_assets(roots, assets, theater_ext, theater_name);
     // The strict pass replaces the scheduler set; tolerant bindings must follow.
     let tolerant_roots = tolerant_anim_class_roots(rules);
     let unbound = rules.bind_anim_class_assets(&tolerant_roots, assets, theater_ext, theater_name);
@@ -386,10 +381,7 @@ pub(crate) fn bind_rules_asset_closure(
     rules.bind_building_buildup_assets(assets, theater_name);
     rules.bind_building_rubble_assets(assets, theater_ext, theater_name);
     rules.bind_terrain_assets(assets, theater_ext, terrain_phase);
-    let _alpha_image_bindings =
-        crate::rules::alpha_image_assets::bind(rules, overlay_registry, assets);
-    let sequences = crate::rules::infantry_sequence::parse_infantry_sequence_registry(fixed_art);
-    rules.bind_animation_sequences(&sequences);
+    rules.bind_alpha_images(overlay_registry, assets);
     Ok(())
 }
 
@@ -411,9 +403,14 @@ pub(crate) fn startup_crate_anim_remap_keys(
     .filter_map(|overlay_id| {
         let flags = overlay_registry.flags(overlay_id)?;
         let anim = flags.cell_anim.as_deref()?;
-        let tiberium = overlay_registry
-            .tiberium_type_for_overlay(&rules.tiberium_types, overlay_id)
-            .and_then(|type_id| rules.tiberium_types.get(type_id))?;
+        // This is speculative prefetch, not a reached Mark: an unused
+        // cold-null Image needs no palette. Actual CellAnim Mark is checked.
+        let Ok(Some(type_id)) =
+            overlay_registry.tiberium_type_for_overlay(&rules.tiberium_types, overlay_id)
+        else {
+            return None;
+        };
+        let tiberium = rules.tiberium_types.get(type_id)?;
         let color = u8::try_from(tiberium.color_scheme() / 2)
             .ok()
             .map(crate::rules::house_colors::HouseColorIndex)?;
@@ -432,7 +429,7 @@ mod presentation_jobs;
 pub(crate) use presentation_jobs::PresentationAtlasJob;
 
 pub(crate) struct PreparedManifest {
-    unit_work: Option<(unit_atlas::UnitRasterWork, unit_atlas::UnitAtlasUpload)>,
+    unit_atlas: Option<UnitAtlas>,
     sprite_work: Option<sprite_atlas::PreparedSpriteAtlas>,
     palette_set: Option<crate::render::palette_textures::PaletteSet>,
 }
@@ -532,15 +529,19 @@ pub(crate) fn prepare_presentation_manifest(
     // `load_theater` publishes them and mid-match atlas growth re-reads them.
     // Without a loaded theater nothing renders, so no entity atlas is built.
     let palette = theater_unit_palette;
-    let unit_work = palette.map(|_| {
-        unit_atlas::prepare_unit_atlas(
+    // The world's voxel models, admitted without drawing a picture: each is
+    // drawn the first time a frame shows it.
+    let mut unit_atlas = None;
+    if palette.is_some() {
+        unit_atlas::admit_world_models(
+            &mut unit_atlas,
             sim.entities(),
             asset_manager,
             rules,
-            None,
             Some(sim.interner()),
-        )
-    });
+            gpu.device.limits().max_texture_dimension_2d,
+        );
+    }
     // Mid-match growth collects the same coverage; only the scenario-start
     // crate remaps are load-only.
     let mut coverage = sprite_atlas::EntityAtlasCoverage::collect(sim, rules, house_colors);
@@ -588,10 +589,26 @@ pub(crate) fn prepare_presentation_manifest(
             crate::render::palette_textures::PaletteSet::new(gpu, pal, global, house_ramps, &active)
         });
     PreparedManifest {
-        unit_work,
+        unit_atlas,
         sprite_work,
         palette_set,
     }
+}
+
+/// Read the mod's `veraui.ini` (loose in the game or mod folder, or in a mod
+/// MIX) for the match being loaded. The match lays the player's own file
+/// over it and reports what either refuses (`presentation::player_layout`).
+fn read_match_layouts(asset_manager: &AssetManager) -> Option<crate::rules::ini_parser::IniFile> {
+    let (bytes, source) = asset_manager.get_with_source_ref(crate::ui::match_layout::FILE_NAME)?;
+    log::info!(
+        "Interface layout file {} found in {source}",
+        crate::ui::match_layout::FILE_NAME
+    );
+    // `LoadFromStraw` drops a last line that has no line break.
+    let mut complete = Vec::with_capacity(bytes.len() + 1);
+    complete.extend_from_slice(bytes);
+    complete.push(b'\n');
+    crate::rules::ini_parser::IniFile::from_bytes(&complete).ok()
 }
 
 /// Complete the common presentation preparation after the caller's world is
@@ -629,6 +646,7 @@ pub(crate) fn finish_presentation_assets(
         }
     }
     let sidebar_cameo_atlas = build_sidebar_cameo_atlas(gpu, batch, asset_manager, Some(rules));
+    let match_layout_ini = read_match_layouts(asset_manager);
     #[cfg(feature = "phobos")]
     let uimd_bytes = asset_manager.get_ref("UIMD.INI");
     #[cfg(feature = "phobos")]
@@ -667,8 +685,8 @@ pub(crate) fn finish_presentation_assets(
     // 0x1002ECC0 on every game load, freeing the previous match's surfaces
     // first. Only a side that names one of the two keys differs from the
     // process InitGame art, so the override atlas belongs to this world.
-    #[cfg(feature = "ares")]
-    let outcome_banner_side_art = {
+    // Only when Ares plays in the game (`RuleSet::ares`).
+    let outcome_banner_side_art = if rules.ares() {
         let (image, palette) = rules
             .side_graphical_text(simulation.session().scenario_side())
             .unwrap_or((None, None));
@@ -683,9 +701,9 @@ pub(crate) fn finish_presentation_assets(
         } else {
             None
         }
+    } else {
+        None
     };
-    #[cfg(not(feature = "ares"))]
-    let outcome_banner_side_art = None;
     // `[EndGameScreens]` may name the local player's own country a win/lose
     // card. It takes the retail `GRFXTXT` banner's slot in the tactical
     // viewport, so it is built with the world like the banner art above; the
@@ -725,8 +743,18 @@ pub(crate) fn finish_presentation_assets(
     if building_zshape.is_none() {
         log::warn!("BUILDNGZ.SHA not loaded: building bodies write flat depth");
     }
-    let software_cursor =
-        crate::render::cursor_atlas::build_software_cursor(gpu, batch, asset_manager);
+    // Ares draws every cursor through the scenario's [MouseCursors] list
+    // (`render::cursor_atlas`, hook 0x5BDC8C).
+    let software_cursor = if crate::app::input::ares_cursor::draws_through_list(rules) {
+        crate::render::cursor_atlas::build_ares_software_cursor(
+            gpu,
+            batch,
+            asset_manager,
+            rules.ares_mouse_cursors(),
+        )
+    } else {
+        crate::render::cursor_atlas::build_software_cursor(gpu, batch, asset_manager)
+    };
     if software_cursor.is_some() {
         log::info!("Software cursor loaded from mouse.sha — OS cursor will be hidden");
     } else {
@@ -748,6 +776,7 @@ pub(crate) fn finish_presentation_assets(
         bridge_atlas: overlays.bridge_atlas,
         sidebar_cameo_atlas,
         sidebar_chrome,
+        match_layout_ini,
         #[cfg(feature = "phobos")]
         sw_sidebar_ui,
         #[cfg(feature = "phobos")]
@@ -766,11 +795,11 @@ pub(crate) fn finish_presentation_assets(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 #[path = "init_helpers_retail_placement_oracle_tests.rs"]
 mod retail_placement_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 #[path = "init_helpers_retail_buildup_tests.rs"]
 mod retail_buildup_tests;
 
@@ -799,7 +828,7 @@ fn voxel_palette_demand(
     colors
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     /// Building animations are tolerant roots, and only those the rules
     /// register as AnimTypes: art sections no rules list names (retail
@@ -937,6 +966,7 @@ mod tests {
              [OverlayTypes]\n0=STARTBOX\n[STARTBOX]\nTiberium=yes\nCellAnim=crate_spark\n\
              [CrateRules]\nCrateImg=STARTBOX\nWoodCrateImg=STARTBOX\nWaterCrateImg=STARTBOX\n",
         );
+        let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&ini);
         let rules = RuleSet::from_ini(&ini).expect("rules");
         let overlay_registry =
             crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
@@ -955,6 +985,7 @@ mod tests {
         assert_eq!(flags.cell_anim.as_deref(), Some("CRATE_SPARK"));
         let tiberium = overlay_registry
             .tiberium_type_for_overlay(&rules.tiberium_types, overlay_id)
+            .unwrap()
             .and_then(|type_id| rules.tiberium_types.get(type_id))
             .expect("tiberium authority for startup crate CellAnim");
         assert_eq!(tiberium.color_scheme(), 3);
@@ -974,10 +1005,11 @@ mod tests {
         let mut rules =
             RuleSet::from_ini(&IniFile::from_str("[General]\nDamageFireTypes=\n")).expect("rules");
         let mut art = ArtRegistry::from_ini(&IniFile::from_str(
-            "[CUSTOM_TOP]\nLoopCount=-1\nStartSound=WaterfallLoop\n\
+            "[CUSTOM_TOP]\nLoopCount=-1\n\
              [CUSTOM_GROUND]\nLayer=ground\nLoopCount=-1\nYSortAdjust=1000\n",
         ));
         art.bind_anim_frame_count_for_test("CUSTOM_TOP", 16);
+        art.set_anim_sounds_for_test("CUSTOM_TOP", Some("WaterfallLoop"), None);
         art.bind_anim_frame_count_for_test("CUSTOM_GROUND", 2);
         rules.replace_art_registry_for_test(art);
 
@@ -1293,16 +1325,20 @@ mod tests {
              [Riparius]\nImage=4\n\
              [TIB01]\nTiberium=yes\n",
         );
+        let rulesmd = crate::rules::tiberium_type::with_tiberium_image_slots(&rulesmd);
 
         let (rules, merged_ini, _fixed_art_ini) = scenario_rules(rulesmd, langrule, &mode, &map);
         let registry = OverlayTypeRegistry::from_ini(&merged_ini, None);
 
         assert_eq!(rules.tiberium_types.types()[0].section, "Riparius");
-        assert_eq!(rules.tiberium_types.types()[0].image, 4);
-        assert_eq!(registry.len(), 2);
+        assert_eq!(
+            rules.tiberium_types.types()[0].image().base_overlay(),
+            Some(147)
+        );
+        assert_eq!(registry.len(), 149);
         assert_eq!(registry.id_for_name("TIB01"), Some(0));
         assert_eq!(registry.name(0), Some("TIB01"));
-        assert_eq!(registry.name(1), Some("GASAND"));
+        assert_eq!(registry.name(148), Some("GASAND"));
         assert!(registry.flags(0).is_some_and(|flags| flags.tiberium));
     }
 

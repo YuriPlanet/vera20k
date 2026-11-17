@@ -3,8 +3,8 @@
 //!
 //! Building/Defense tabs pulse while retained Factory links hold completed
 //! buildings; Defense also pulses while a Super passes its native tab-flash
-//! predicate. Infantry never pulses.
-//! Vehicle's aircraft-waiting predicate remains a separate existing residual.
+//! predicate. Infantry and Vehicle never pulse: StripClass::AI polls only
+//! tabs 0 and 1, and ShapeButton StartFlashing 69DFC0 has no other live caller.
 //! Phase, catch-up and gadget state belong to `SidebarGadgetState`.
 
 use crate::app::AppState;
@@ -48,18 +48,68 @@ pub(crate) fn exit_sell_mode_without_buildings(
     }
 }
 
+/// How many times Sidebar Action 6A7780 runs on this pass, for the per-visit
+/// work it drives: StripClass::AI's scroll step and tab poll, FlashAI 69E010
+/// (6A7A8C), PowerClass AnimationTick
+/// 63FEA0 (its only call, 6A7B0A) and, through TabClass::Action 6D099D,
+/// CreditsClass::AI 4A2600. GScreen Input 4F4320 reaches it, behind the gates
+/// of `RuntimePassDecision::sidebar_action`. Main_Tick polls Input once per
+/// frame (55D8AB); in g_GameMode 0 and 5 that is all, since ThrottleFrame
+/// skips its spin (55E1A5..55E1B6). The network modes' spin also polls Input,
+/// then draws a picture, while more than 10 ms of the frame remain
+/// (55E23A..55E271): one VERA pass stands for that poll.
+pub(crate) fn sidebar_action_visits(
+    sidebar_action: bool,
+    single_player: bool,
+    tick: u64,
+    last_tick: u64,
+) -> u64 {
+    if !sidebar_action {
+        0
+    } else if single_player {
+        tick.saturating_sub(last_tick)
+    } else {
+        1
+    }
+}
+
+/// [`sidebar_action_visits`] for the running match's current pass.
+pub(crate) fn current_sidebar_action_visits(state: &AppState, sidebar_action: bool) -> u64 {
+    let tick = state
+        .match_state
+        .sim_runtime
+        .presentation()
+        .map_or(0, |rt| rt.simulation.session().tick());
+    sidebar_action_visits(
+        sidebar_action,
+        state.match_state.session_mode().is_single_player(),
+        tick,
+        state
+            .match_state
+            .match_presentation
+            .sidebar_gadget_state
+            .last_sim_tick,
+    )
+}
+
 /// Roll queued strip scrolls, then poll the retained strip links before the
 /// current frame's tab FlashAI.
 /// Original StripAI 0x006A8D07..0x006A8D7A admits completed Building objects
 /// on tabs0/1, independently of which tab is selected. The Defense predicate
 /// also includes ready Supers; the shared gadget owner supplies phase/timing.
-/// The scroll roll moves one row per simulation frame; the view is rebuilt
-/// from the moved row by the idle tick that follows.
-pub(crate) fn update_sidebar_gadget_state(state: &mut AppState) {
+/// The scroll roll moves one row per Sidebar Action visit
+/// ([`sidebar_action_visits`]); the view is rebuilt from the moved row by the
+/// idle tick that follows.
+pub(crate) fn update_sidebar_gadget_state(state: &mut AppState, visits: u64) {
+    // A ready tab's completed object is the frame's (`presentation::frame`).
+    state.match_state.sim_runtime.ensure_frame();
+    let Some(frame) = state.match_state.sim_runtime.frame() else {
+        return;
+    };
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|rt| &rt.simulation)
     else {
         return;
@@ -78,7 +128,7 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState) {
             .match_state
             .match_presentation
             .sidebar_projection
-            .ready_building_tabs(sim, owner)
+            .ready_building_tabs(sim, frame, owner)
     });
     let (tick, frame) = (sim.session().tick(), sim.session().binary_frame() as i32);
     let presentation = &mut state.match_state.match_presentation;
@@ -88,7 +138,6 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState) {
         .view()
         .map(|view| view.layout.side2_tile_count)
     {
-        let visits = tick.saturating_sub(presentation.sidebar_gadget_state.last_sim_tick);
         presentation
             .sidebar_projection
             .step_pending_scroll(rows, visits);
@@ -97,9 +146,10 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState) {
         &mut presentation.sidebar_gadget_state,
         ready,
         &superweapon_views,
-        tick,
+        visits,
         frame,
     );
+    presentation.sidebar_gadget_state.last_sim_tick = tick;
 }
 
 /// StripClass::AI @ 0x006A8B30 calls SuperClass::ShouldFlashTab @
@@ -112,12 +162,12 @@ fn update_tab_flashes_for_owner(
     gadgets: &mut SidebarGadgetState,
     ready_building_tabs: [bool; 2],
     superweapon_views: &[crate::sim::superweapon::SuperWeaponView],
-    tick: u64,
+    visits: u64,
     frame: i32,
 ) {
     let has_flash_eligible_super = superweapon_views.iter().any(|sw| sw.should_flash_tab);
     gadgets.update_tab_flashes(
-        tick,
+        visits,
         frame,
         [
             ready_building_tabs[0],
@@ -128,6 +178,6 @@ fn update_tab_flashes_for_owner(
     );
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "sidebar_gadgets_tests.rs"]
 mod tests;

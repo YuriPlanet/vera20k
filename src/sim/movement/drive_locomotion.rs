@@ -843,7 +843,7 @@ pub(super) fn track_speed_prefix(
     unchanged_target(None)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
     use crate::sim::movement::foot_speed::owner_current_speed_from_fraction;

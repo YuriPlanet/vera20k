@@ -7,10 +7,10 @@
 //! Source decoding, generated W staging and cache installation have one shared
 //! owner with WOL in shell_network_setup::maps and map::source.
 
+use crate::util::time::{Duration, Instant};
 use std::net::SocketAddrV4;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
-use crate::util::time::{Duration, Instant};
 
 use anyhow::{Result, anyhow, ensure};
 
@@ -1048,7 +1048,7 @@ pub(super) fn setup_request(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::net::global::{GlobalDestination, GlobalMessage};
@@ -1121,7 +1121,7 @@ mod tests {
         let mut options = crate::map::rmg::RmgOptions::default();
         options.seed = 1234;
         options.normalize();
-        let mut bytes = options.to_sed_bytes();
+        let mut bytes = options.to_sed_bytes(false);
         bytes.extend_from_slice(b"\n;");
         bytes.extend(std::iter::repeat_n(b'x', WINDOW_BYTES));
         let key = key(TransferResource::Seed, &bytes);
@@ -1200,7 +1200,7 @@ mod tests {
             panic!("received seed INI");
         };
         let mut decoded = crate::map::rmg::RmgOptions::default();
-        decoded.apply_sed(&ini);
+        decoded.apply_sed(&ini, false);
         decoded.normalize();
         assert_eq!(decoded, options);
     }

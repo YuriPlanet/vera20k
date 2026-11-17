@@ -173,9 +173,6 @@ impl Fixture {
             &IniFile::from_str(&extra),
             &crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(&sounds)),
         );
-        rules.bind_animation_sequences(
-            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-        );
         // The native packet also carries constructor inputs for other
         // buildings and debris. This bounded fixture installs only GAPOWR's
         // normal/damaged ART, so bind its native SHP counts alone.
@@ -231,7 +228,10 @@ impl Fixture {
             entity.position.put_location(coord(&before["position"]));
             entity.health.set_for_test(int(&before["actual_hp"]));
             entity.estimated_health.reset(int(&before["estimated_hp"]));
-            entity.repairing.set_for_test(before["paid_repair"] == 1);
+            entity
+                .building
+                .repairing
+                .set_for_test(before["paid_repair"] == 1);
             entity.sample_building_health_for_power();
         }
         sim.set_building_anim_slot(building, 3, true, false, 0, &rules)
@@ -293,8 +293,11 @@ impl Fixture {
                 crate::sim::world::FrameEffects::default(),
             );
             let entity = sim.substrate.entities.get_mut(building).unwrap();
-            entity.repairing.set_for_test(before["paid_repair"] == 1);
-            entity.has_been_captured.set_for_test(false);
+            entity
+                .building
+                .repairing
+                .set_for_test(before["paid_repair"] == 1);
+            entity.building.has_been_captured.set_for_test(false);
             // The preceding fixture transfer is supplied setup, not this
             // arrival. Consume its identical idle request through the owner.
             entity.apply_queued_building_body(0, sim.session.game_options());
@@ -426,7 +429,7 @@ impl Fixture {
             "{boundary}: retained HP sample"
         );
         assert_eq!(
-            entity.repairing.is_on(),
+            entity.building.repairing.is_on(),
             native["paid_repair"] == 1,
             "{boundary}: paid repair"
         );
@@ -723,6 +726,8 @@ impl Fixture {
     }
 }
 
+/// Ares replaces the hostile arm (hooks `0x51E5BB`, `0x51E5E1`; see
+/// `sim::ares_rubble`'s tests).
 #[test]
 fn original_half_threshold_and_friendly_repair_object_actions() {
     let native = corpus();

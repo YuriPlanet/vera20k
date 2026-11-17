@@ -355,7 +355,7 @@ fn parse_scenario_base_plan(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 
@@ -463,33 +463,33 @@ mod tests {
     /// both the long-list result and the deliberately one-way control.
     #[test]
     fn long_house_allies_keep_late_members_only_with_ares() {
-        let names: Vec<_> = (0..19).map(|i| format!("Guard{i:02} House")).collect();
-        let mut source = String::from("[Houses]\n");
-        for (index, name) in names.iter().enumerate() {
-            source.push_str(&format!("{index}={name}\n"));
-        }
-        let list = names[..18].join(",");
-        assert!(list.len() > 127 && list.len() < 511);
-        for (index, name) in names.iter().enumerate() {
-            source.push_str(&format!("[{name}]\nCountry=Russians\n"));
-            if index == 0 {
-                source.push_str(&format!("Allies={list}\n"));
-            } else if index == 17 {
-                source.push_str(&format!("Allies={}\n", names[0]));
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            let names: Vec<_> = (0..19).map(|i| format!("Guard{i:02} House")).collect();
+            let mut source = String::from("[Houses]\n");
+            for (index, name) in names.iter().enumerate() {
+                source.push_str(&format!("{index}={name}\n"));
             }
+            let list = names[..18].join(",");
+            assert!(list.len() > 127 && list.len() < 511);
+            for (index, name) in names.iter().enumerate() {
+                source.push_str(&format!("[{name}]\nCountry=Russians\n"));
+                if index == 0 {
+                    source.push_str(&format!("Allies={list}\n"));
+                } else if index == 17 {
+                    source.push_str(&format!("Allies={}\n", names[0]));
+                }
+            }
+            let roster = parse_house_roster(&IniFile::from_str(&source), &[], None);
+            assert_eq!(roster.houses.len(), 19);
+            let alliances = roster.alliance_map();
+            assert_eq!(is_allied_with(&alliances, &names[0], &names[17]), ares_way);
+            assert!(is_allied_with(&alliances, &names[17], &names[0]));
+            assert!(is_allied_with(&alliances, &names[0], &names[1]));
+            assert!(!is_allied_with(&alliances, &names[1], &names[0]));
+            assert!(!is_allied_with(&alliances, &names[0], &names[18]));
+            assert!(!is_allied_with(&alliances, &names[18], &names[0]));
         }
-        let roster = parse_house_roster(&IniFile::from_str(&source), &[], None);
-        assert_eq!(roster.houses.len(), 19);
-        let alliances = roster.alliance_map();
-        assert_eq!(
-            is_allied_with(&alliances, &names[0], &names[17]),
-            crate::rules::ARES_ENABLED,
-        );
-        assert!(is_allied_with(&alliances, &names[17], &names[0]));
-        assert!(is_allied_with(&alliances, &names[0], &names[1]));
-        assert!(!is_allied_with(&alliances, &names[1], &names[0]));
-        assert!(!is_allied_with(&alliances, &names[0], &names[18]));
-        assert!(!is_allied_with(&alliances, &names[18], &names[0]));
     }
 
     #[test]

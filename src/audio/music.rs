@@ -125,6 +125,11 @@ impl Source for MusicStream {
 pub struct MusicPlayer {
     /// rodio mixer device sink — must be kept alive or all audio stops.
     _device: MusicOutput,
+    /// Set by the stream's error callback when the device goes away.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    health: crate::audio::output_health::OutputHealth,
+    /// The track was playing on a device that went away: it reads as finished.
+    track_cut: bool,
     current_player: Option<Player>,
     volume: f64,
     /// The Theme stream's own `+0x10` interp (`stream+0x14 -> +0x10`), built
@@ -137,15 +142,62 @@ pub struct MusicPlayer {
     /// (`0x00720FE1` -> `0x004080D0`).
     own: VolumeInterp,
     focus_output_scale: f64,
-    paused: bool,
+    /// The movie hold on this stream: `Audio__HoldAllStreamPlayersAgainstStop
+    /// @ 0x00408200` (`+0x88`) with `Audio__PauseAllStreamPlayers @
+    /// 0x00408270` (`+0x80`), released by `0x00408230`/`0x004082F0`. Only
+    /// the hold pauses the Theme stream, so one flag carries both counts.
+    held: bool,
+}
+
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+fn open_music_sink(
+    health: &crate::audio::output_health::OutputHealth,
+) -> Result<MixerDeviceSink, rodio::DeviceSinkError> {
+    // With no usable default device, rodio's own opener tries every other.
+    DeviceSinkBuilder::from_default_device()
+        .and_then(|builder| {
+            builder
+                .with_error_callback(health.callback("Music"))
+                .open_sink_or_fallback()
+        })
+        .or_else(|_| DeviceSinkBuilder::open_default_sink())
 }
 
 impl MusicPlayer {
+    /// VERA-only: when the device went away, open the default device again.
+    /// The track on the dead stream reads as finished, so Theme plays on with
+    /// its next one.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    fn reopen_lost_output(&mut self, now_ms: u64) {
+        if !self.health.reopen_due(now_ms) {
+            return;
+        }
+        let health = crate::audio::output_health::OutputHealth::default();
+        let Ok(device) = open_music_sink(&health) else {
+            return;
+        };
+        log::info!("Music output reopened on the default device");
+        self.cut_track();
+        #[cfg(test)]
+        let device = MusicOutput::Device(device);
+        self._device = device;
+        self.health = health;
+    }
+
+    fn cut_track(&mut self) {
+        if let Some(player) = self.current_player.as_ref() {
+            player.stop();
+            self.track_cut = true;
+        }
+    }
+
     /// Create a physical music output. Theme construction never depends on
     /// this succeeding.
     pub fn new() -> Option<Self> {
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-        let device = DeviceSinkBuilder::open_default_sink()
+        let health = crate::audio::output_health::OutputHealth::default();
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let device = open_music_sink(&health)
             .map_err(|error| log::error!("Failed to initialize music audio: {error}"))
             .ok()?;
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
@@ -154,17 +206,26 @@ impl MusicPlayer {
             .ok()?;
         #[cfg(test)]
         let device = MusicOutput::Device(device);
-        Some(Self::with_output(device))
+        #[allow(unused_mut)]
+        let mut player = Self::with_output(device);
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        {
+            player.health = health;
+        }
+        Some(player)
     }
 
     fn with_output(device: MusicOutput) -> Self {
         Self {
             _device: device,
+            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+            health: Default::default(),
+            track_cut: false,
             current_player: None,
             volume: DEFAULT_SCORE_VOLUME,
             own: VolumeInterp::new(VOLUME_SCALE, 0),
             focus_output_scale: 1.0,
-            paused: false,
+            held: false,
         }
     }
 
@@ -175,21 +236,30 @@ impl MusicPlayer {
     }
 
     pub(crate) fn state(&self) -> MusicOutputState {
+        if self.held {
+            return MusicOutputState::Held;
+        }
         match self.current_player.as_ref() {
-            Some(player) if player.empty() => MusicOutputState::Finished,
+            Some(player) if player.empty() || self.track_cut => MusicOutputState::Finished,
             Some(_) if self.own.moving() => MusicOutputState::Ramping,
             Some(_) => MusicOutputState::Playing,
             None => MusicOutputState::Idle,
         }
     }
 
+    /// `StreamPlayer__PlayFile @ 0x00407B60`, which does nothing and fails
+    /// while the stream is held against stops (`+0x88`).
     pub(crate) fn submit(&mut self, prepared: PreparedTrack) -> bool {
+        if self.held {
+            return false;
+        }
         let Some(sample_rate) = NonZero::new(prepared.sample_rate) else {
             return false;
         };
         if let Some(player) = self.current_player.take() {
             player.stop();
         }
+        self.track_cut = false;
         // `StreamPlayer__PlayFile`: `SetTargetImmediate(+0x10, 0x4000)`.
         self.own.set_target_immediate(VOLUME_SCALE);
         self.own.tick(0);
@@ -200,33 +270,32 @@ impl MusicPlayer {
             track: prepared,
             sample_rate,
         });
-        if self.paused {
-            player.pause();
-        }
         self.current_player = Some(player);
         true
     }
 
+    /// `StreamPlayer__Stop @ 0x00407F40`, a no-op while the stream is held
+    /// against stops (`+0x88`).
     pub fn stop(&mut self) {
+        if self.held {
+            return;
+        }
         if let Some(player) = self.current_player.take() {
             player.stop();
         }
     }
 
-    /// Play_Movie `0x005BED40` blocks and pauses every stream player
-    /// (`0x00408270`) and resumes them afterwards (`0x00408230`), so the
-    /// theme continues from where it stopped rather than restarting.
-    pub fn pause_output(&mut self) {
-        self.paused = true;
+    /// Every movie takes the hold (`0x005BF580`, full-screen `0x005BEE0D`)
+    /// and its release resumes the paused song where it stopped
+    /// (`0x004082F0`): Theme's Stops and PlayFiles in between do nothing.
+    pub fn set_movie_hold(&mut self, held: bool) {
+        self.held = held;
         if let Some(player) = self.current_player.as_ref() {
-            player.pause();
-        }
-    }
-
-    pub fn resume_output(&mut self) {
-        self.paused = false;
-        if let Some(player) = self.current_player.as_ref() {
-            player.play();
+            if held {
+                player.pause();
+            } else {
+                player.play();
+            }
         }
     }
 
@@ -264,6 +333,8 @@ impl MusicPlayer {
     }
 
     pub(crate) fn tick_stream_volume(&mut self, now_ms: u64) {
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        self.reopen_lost_output(now_ms);
         if self.own.tick(now_ms) {
             self.apply_effective_volume();
         }
@@ -290,7 +361,7 @@ impl MusicPlayer {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod tests {
     use std::sync::Arc;
 
@@ -334,6 +405,34 @@ mod tests {
         player.tick_stream_volume(1_501);
         assert_eq!(player.own.value(), VOLUME_SCALE / 2);
         player.tick_stream_volume(2_002);
+        assert_eq!(player.state(), MusicOutputState::Playing);
+    }
+
+    /// A dead stream never pulls the track's last sample, so the cut itself
+    /// must read as the end for Theme to play its next track.
+    #[test]
+    fn a_track_cut_by_a_lost_device_reads_as_finished_until_the_next_one() {
+        let (mut player, _output) = MusicPlayer::offline_for_test();
+        let silence = || PreparedTrack::decoded("Silence".into(), vec![0.0; 44_100], 22_050);
+        assert!(player.submit(silence()));
+        player.cut_track();
+        assert_eq!(player.state(), MusicOutputState::Finished);
+        assert!(player.submit(silence()));
+        assert_eq!(player.state(), MusicOutputState::Playing);
+    }
+
+    /// A movie holds the stream (`0x00408200`): Stop (`0x00407F40`) and
+    /// PlayFile (`0x00407B60`) do nothing until the release resumes the song.
+    #[test]
+    fn a_held_stream_refuses_stop_and_play_until_released() {
+        let (mut player, _output) = MusicPlayer::offline_for_test();
+        let silence = || PreparedTrack::decoded("Silence".into(), vec![0.0; 44_100], 22_050);
+        assert!(player.submit(silence()));
+        player.set_movie_hold(true);
+        assert_eq!(player.state(), MusicOutputState::Held);
+        player.stop();
+        assert!(!player.submit(silence()));
+        player.set_movie_hold(false);
         assert_eq!(player.state(), MusicOutputState::Playing);
     }
 

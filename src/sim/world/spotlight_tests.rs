@@ -27,6 +27,7 @@ fn overflowed_authored_spotlight_motion_keeps_its_last_pose_and_cleanup() {
             .entities
             .get(p)
             .unwrap()
+            .building
             .building_light
             .light()
             .unwrap();
@@ -34,9 +35,10 @@ fn overflowed_authored_spotlight_motion_keeps_its_last_pose_and_cleanup() {
         sim.set_spotlight_behavior(id, 2);
         sim.visit_spotlight(id, &rules, UninitContext::new(&rules, None));
         assert_eq!(sim.substrate.spotlights.get(id).unwrap().coord, before);
-        assert!(sim.building_spotlight(id, &rules).is_some());
+        assert!(sim.building_spotlight(id, None, &rules).is_some());
         // Invalid authored motion must not bypass ordinary orphan cleanup.
-        sim.substrate.spotlights_pointer_expired(p, true);
+        sim.substrate
+            .spotlights_pointer_expired(p, true, rules.ares());
         sim.visit_spotlight(id, &rules, UninitContext::new(&rules, None));
         assert!(
             sim.substrate
@@ -45,6 +47,33 @@ fn overflowed_authored_spotlight_motion_keeps_its_last_pose_and_cleanup() {
                 .any(|i| i == id)
         );
     }
+}
+/// BuildingLight Draw_It (`0x00435C44..0x00435C4C`) draws nothing while its
+/// building is fogged (`+0x6E7`) on the drawing player's map.
+#[test]
+fn a_fogged_building_draws_no_spotlight() {
+    let rules = rules();
+    let mut sim = Simulation::with_seed(9);
+    let p = parent(&mut sim, EntityCategory::Structure);
+    sim.construct_spotlight(p, &rules);
+    let id = sim
+        .substrate
+        .entities
+        .get(p)
+        .unwrap()
+        .building
+        .building_light
+        .light()
+        .unwrap();
+    sim.set_spotlight_behavior(id, 2);
+    let (player, other) = (
+        sim.interner.intern("Americans"),
+        sim.interner.intern("Russians"),
+    );
+    assert!(sim.building_spotlight(id, Some(player), &rules).is_some());
+    sim.fog.set_object_fogged_for_test(player, p, true);
+    assert!(sim.building_spotlight(id, Some(player), &rules).is_none());
+    assert!(sim.building_spotlight(id, Some(other), &rules).is_some());
 }
 fn parent(sim: &mut Simulation, category: EntityCategory) -> u64 {
     parent_id(sim, category, 1)
@@ -80,7 +109,7 @@ fn parent_id(sim: &mut Simulation, category: EntityCategory, id: u64) -> u64 {
         crate::util::fixed_math::SimFixed::from_num(128),
         crate::util::fixed_math::SimFixed::ZERO,
     );
-    e.building_light.stamp(true);
+    e.building.building_light.stamp(true);
     e.lifecycle.set_in_limbo_for_test(false);
     sim.substrate.entities.insert(e);
     sim.set_next_stable_object_id_for_test(sim.next_stable_object_id().max(id + 1));
@@ -169,6 +198,7 @@ fn shared_ids_logic_snapshot_and_parent_limbo_retire_the_independent_child() {
         .entities
         .get(p)
         .unwrap()
+        .building
         .building_light
         .light()
         .unwrap();
@@ -195,6 +225,7 @@ fn shared_ids_logic_snapshot_and_parent_limbo_retire_the_independent_child() {
             .entities
             .get(p)
             .unwrap()
+            .building
             .building_light
             .light(),
         None
@@ -241,6 +272,7 @@ fn spotlight_action52_counts_only_matching_live_trigger_buildings_and_keeps_full
             .entities
             .get(first)
             .unwrap()
+            .building
             .building_light
             .light()
             .unwrap();
@@ -249,6 +281,7 @@ fn spotlight_action52_counts_only_matching_live_trigger_buildings_and_keeps_full
             .entities
             .get(second)
             .unwrap()
+            .building
             .building_light
             .light()
             .unwrap();
@@ -278,6 +311,7 @@ fn spotlight_event35_uses_child_ground_lists_mode_gate_and_synchronous_tag_actio
             .entities
             .get(p)
             .unwrap()
+            .building
             .building_light
             .light()
             .unwrap();
@@ -350,13 +384,14 @@ fn spotlight_cone_geometry_matches_original_before_projection() {
             .entities
             .get(p)
             .unwrap()
+            .building
             .building_light
             .light()
             .unwrap();
         sim.substrate.spotlights.get_mut(id).unwrap().coord =
             serde_json::from_value(row["coord"].clone()).unwrap();
         let light = sim
-            .building_spotlight(id, &rules)
+            .building_spotlight(id, None, &rules)
             .expect("operational spotlight draws");
         assert_eq!(
             light.beam_origin,
@@ -369,6 +404,7 @@ fn spotlight_cone_geometry_matches_original_before_projection() {
     }
 }
 
+// An Ares game keeps the direct delete (`uninit_spotlight_for_parent_limbo`).
 #[test]
 fn spotlight_real_building_unlimbo_registers_the_child_and_limbo_cleans_both_owners() {
     use crate::sim::superweapon::chronosphere_tests::{place, world_with};
@@ -379,6 +415,7 @@ fn spotlight_real_building_unlimbo_registers_the_child_and_limbo_cleans_both_own
         .entities
         .get(p)
         .unwrap()
+        .building
         .building_light
         .light()
         .expect("successful Building Unlimbo constructs its child");
@@ -389,17 +426,53 @@ fn spotlight_real_building_unlimbo_registers_the_child_and_limbo_cleans_both_own
         order.iter().position(|&x| x == id).unwrap() < order.iter().position(|&x| x == p).unwrap()
     );
     sim.uninit_with_context(p, UninitContext::new(&rules, None));
-    assert!(!sim.substrate.spotlights.contains_key(id));
+    // BuildingClass::Limbo @ 0x00445D81 UnInits the light (0x005F65F0): it
+    // is dead, out of Logic and Display and queued, and Building+0x600 is
+    // clear (0x0044E93A), but it keeps its 8B4190 slot until the drain.
+    let light = sim
+        .substrate
+        .spotlights
+        .get(id)
+        .expect("deleted at the drain");
+    assert!(!light.alive && !light.in_logic_vector);
+    assert!(!sim.substrate.logic.as_slice().contains(&id));
+    assert!(!sim.display_layers().ordered_ids().any(|&x| x == id));
+    assert!(sim.substrate.spotlights.order.contains(&id));
+    assert!(
+        sim.substrate
+            .pending_delete
+            .object_tickets()
+            .any(|i| i == id)
+    );
+    assert!(sim.building_spotlight(id, None, &rules).is_none());
     assert_eq!(
         sim.substrate
             .entities
             .get(p)
             .unwrap()
+            .building
             .building_light
             .light(),
         None
     );
     sim.debug_assert_logic_membership_consistent();
+    // A light constructed before the drain takes vector index 1, so its
+    // +0xD8 sweep direction is set (Constructor @ 0x00435B0F..0x00435B3F).
+    let q = place(&mut sim, &rules, "LIGHT", (30, 30), 0, false, false);
+    let second = sim
+        .substrate
+        .entities
+        .get(q)
+        .unwrap()
+        .building
+        .building_light
+        .light()
+        .unwrap();
+    assert!(sim.substrate.spotlights.get(second).unwrap().increasing);
+    sim.process_pending_delete();
+    assert!(!sim.substrate.spotlights.contains_key(id));
+    assert_eq!(sim.substrate.spotlights.order, [second]);
+    assert!(sim.substrate.spotlights.get(second).unwrap().alive);
 }
 #[test]
 fn spotlight_tracking_selects_first_nearest_enemy_and_expiry_clears_the_pointer() {
@@ -412,6 +485,7 @@ fn spotlight_tracking_selects_first_nearest_enemy_and_expiry_clears_the_pointer(
         .entities
         .get(p)
         .unwrap()
+        .building
         .building_light
         .light()
         .unwrap();
@@ -455,4 +529,52 @@ fn spotlight_tracking_selects_first_nearest_enemy_and_expiry_clears_the_pointer(
     assert_eq!(sim.substrate.spotlights.get(id).unwrap().target, Some(4));
     sim.notify_pointer_expired(4, UninitContext::new(&rules, None));
     assert_eq!(sim.substrate.spotlights.get(id).unwrap().target, None);
+    // AI436321: a lost target goes through SetBehaviour(1); the pose stays.
+    let light = sim.substrate.spotlights.get_mut(id).unwrap();
+    light.mode = 3;
+    light.angle = NativeF64Bits::from_bits(0x3ff0000000000000);
+    let before = light.coord;
+    sim.visit_spotlight(id, &rules, UninitContext::new(&rules, None));
+    let light = sim.substrate.spotlights.get(id).unwrap();
+    assert_eq!(
+        (light.mode, light.angle.bits(), light.coord),
+        (1, 0, before)
+    );
+}
+
+/// Ares 3.0 TechnoClass_Put_1/_2 (1004EDE0, hooks 0x6F6D0E/0x6F6F20): a
+/// `HasSpotlight=` vehicle gets its light when it is put on the map, and a
+/// building keeps exactly one (BuildingClass_Put_DontSpawnSpotlight
+/// 1004EA10, hook 0x441163).
+#[test]
+fn ares_spotlighted_technos_get_their_light_at_unlimbo() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=100\nHasSpotlight=yes\n\
+         [BuildingTypes]\n0=LIGHT\n[LIGHT]\nHasSpotlight=yes\nStrength=100\nFoundation=1x1\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::with_seed(9);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let tank = sim
+        .spawn_object("TANK", "Americans", 5, 5, 0, &rules)
+        .unwrap();
+    let light = sim
+        .spawn_object("LIGHT", "Americans", 9, 9, 0, &rules)
+        .unwrap();
+    for parent in [tank, light] {
+        assert!(
+            sim.substrate
+                .entities
+                .get(parent)
+                .unwrap()
+                .building
+                .building_light
+                .light()
+                .is_some(),
+            "{parent}"
+        );
+    }
+    assert_eq!(sim.substrate.spotlights.objects.len(), 2);
 }

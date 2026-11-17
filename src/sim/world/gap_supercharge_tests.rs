@@ -117,6 +117,7 @@ fn a_retail_gap_generator_supercharges_and_discharges_through_its_unload() {
             .entities
             .get(gap)
             .unwrap()
+            .building
             .gap_generator
             .viewers()[&owner]
             .active(),
@@ -132,6 +133,7 @@ fn a_retail_gap_generator_supercharges_and_discharges_through_its_unload() {
         .entities
         .get(gap)
         .unwrap()
+        .building
         .gap_generator
         .viewers()[&owner];
     assert!(deposit.active());
@@ -148,6 +150,7 @@ fn a_retail_gap_generator_supercharges_and_discharges_through_its_unload() {
             .entities
             .get(gap)
             .unwrap()
+            .building
             .gap_generator
             .viewers()[&owner]
             .active()
@@ -195,6 +198,7 @@ fn low_power_discharges_a_supercharged_gap_generator() {
         .entities
         .get(gap)
         .unwrap()
+        .building
         .gap_generator
         .viewers()[&owner];
     assert!(deposit.active());
@@ -218,7 +222,7 @@ fn powering_off_keeps_the_supercharge_without_its_drain() {
         run(&mut sim, rules, &grid, &[]);
     }
     let entity = sim.substrate.entities.get(gap).unwrap();
-    assert!(!entity.gap_generator.viewers()[&owner].active());
+    assert!(!entity.building.gap_generator.viewers()[&owner].active());
     assert!(entity.gap_supercharged());
     assert_eq!(totals(&sim, owner), (10000, 0));
 
@@ -237,7 +241,7 @@ fn powering_off_keeps_the_supercharge_without_its_drain() {
     let entity = sim.substrate.entities.get(gap).unwrap();
     assert!(entity.building_online());
     assert!(entity.gap_supercharged());
-    assert!(entity.gap_generator.viewers()[&owner].active());
+    assert!(entity.building.gap_generator.viewers()[&owner].active());
     assert_eq!(totals(&sim, owner), (10000, 9100));
 }
 
@@ -264,7 +268,7 @@ fn an_unpowered_gap_generator_unload_keeps_the_normal_radius_and_no_charge() {
 
     sim.toggle_gap_supercharge(gap, rules);
     let entity = sim.substrate.entities.get(gap).unwrap();
-    let deposit = entity.gap_generator.viewers()[&owner];
+    let deposit = entity.building.gap_generator.viewers()[&owner];
     assert_eq!((deposit.active(), deposit.radius()), (false, 10));
     assert!(!entity.gap_supercharged());
     assert!(!sim.power_states[&owner].power_recheck_for_test());
@@ -278,7 +282,7 @@ fn an_unpowered_gap_generator_unload_keeps_the_normal_radius_and_no_charge() {
     assert_eq!(sim.building_operational_state(gap, rules), Some(true));
     sim.toggle_gap_supercharge(gap, rules);
     let entity = sim.substrate.entities.get(gap).unwrap();
-    let deposit = entity.gap_generator.viewers()[&owner];
+    let deposit = entity.building.gap_generator.viewers()[&owner];
     assert_eq!((deposit.active(), deposit.radius()), (true, 15));
     assert!(entity.gap_supercharged());
     assert!(sim.power_states[&owner].power_recheck_for_test());
@@ -290,8 +294,10 @@ fn an_unpowered_gap_generator_unload_keeps_the_normal_radius_and_no_charge() {
 /// with the human under retail `AllyReveal=yes`. The remove bracket
 /// (`0x004F9B9A`, before the ally bit) takes the gap arm on the human's
 /// client and the re-add bracket (`0x004F9F4F`) the allied-Building arm, so
-/// the human's copy stays 0 while the owner's is 1. The outage then skips
-/// the removal and the super-charge reset: the charge and its drain survive.
+/// the human's copy stays 0. The AI owner runs no client, so it has no copy:
+/// gap add (`0x006FB170`) and remove (`0x006FB470`) write only the running
+/// client's `+0x269` and Map. The outage then skips the removal and the
+/// super-charge reset: the charge and its drain survive.
 #[test]
 fn an_allied_current_house_without_the_gap_keeps_the_charge_through_the_outage() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
@@ -341,6 +347,7 @@ fn an_allied_current_house_without_the_gap_keeps_the_charge_through_the_outage()
             .entities
             .get(gap)
             .unwrap()
+            .building
             .gap_generator
             .viewers()
             .clone()
@@ -349,7 +356,7 @@ fn an_allied_current_house_without_the_gap_keeps_the_charge_through_the_outage()
 
     sim.make_ally(owner, player, rules, None, FrameEffects::default(), false);
     let deposits = viewers(&sim);
-    assert!(deposits[&owner].active(), "the owner's copy is re-added");
+    assert!(!deposits.contains_key(&owner), "the AI owner has no copy");
     assert!(!deposits[&player].active(), "the new ally's copy stays 0");
 
     // Native allied-Building branches4ADFB9/4ADE1C refresh sight only.
@@ -372,7 +379,7 @@ fn an_allied_current_house_without_the_gap_keeps_the_charge_through_the_outage()
     );
     // The kept 9000 drain holds the House in low power.
     assert!(
-        !entity.building_last_operational.is_operational(),
+        !entity.building.building_last_operational.is_operational(),
         "the outage ran the off edge"
     );
     assert_eq!(totals(&sim, owner), (10000, 10100));

@@ -318,6 +318,130 @@ fn retail_crater11_matches_original_cell_raster() {
             let output = read_raster(&gpu, &mut batch, &atlas, &instances, row, format, size);
             assert_native_color_and_depth(&output, row, format, size);
         }
+
+        // Smudge6B5623..5661 recenters from the stored byte and current signed
+        // Width, then 6B5665..56B4 retains the source cell's height and light.
+        // These authored dimensions produce the same shape arguments as the
+        // existing retail_xmp_clear capture, without inventing pixel goldens.
+        let row = packet["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["name"] == "retail_xmp_clear")
+            .unwrap();
+        let input = &row["input"];
+        let anchor = coords(&input["coords"]);
+        let level = input["level"].as_u64().unwrap() as u8;
+        let camera = view(row, size);
+        for (width, height, origin, source) in [
+            (
+                257,
+                2,
+                (anchor.0 + 1, anchor.1 - 1),
+                (anchor.0 + 255, anchor.1),
+            ),
+            (1, 257, anchor, (anchor.0, anchor.1 + 255)),
+            // Byte wrapping also occurs with both dimensions below 256.
+            (17, 17, anchor, (anchor.0, anchor.1 + 15)),
+        ] {
+            let custom = crate::rules::smudge_type::SmudgeTypeRegistry::from_rules_ini(
+                &crate::rules::ini_parser::IniFile::from_str(&format!(
+                    "[SmudgeTypes]\n0=CRATER11\n[CRATER11]\nWidth={width}\nHeight={height}\n"
+                )),
+            );
+            let terrain = crate::map::resolved_terrain::test_grid(
+                origin.0 + u16::try_from(width).unwrap(),
+                origin.1 + u16::try_from(height).unwrap(),
+                |x, y| crate::map::resolved_terrain::ResolvedTerrainCell {
+                    level: if (x, y) == source { level } else { 0 },
+                    ..crate::map::resolved_terrain::test_smudge_cell(x, y)
+                },
+            );
+            let overlay =
+                crate::sim::overlay_grid::OverlayGrid::new(terrain.width(), terrain.height());
+            let placed = SmudgeGrid::from_map_entries(
+                &[MapSmudgeEntry {
+                    type_name: "CRATER11".into(),
+                    rx: origin.0,
+                    ry: origin.1,
+                }],
+                &custom,
+                &terrain,
+                &overlay,
+                terrain.width(),
+                terrain.height(),
+            );
+            let mark = *placed.cell(source.0, source.1);
+            assert_eq!(mark.frame_offset, 255);
+            assert!(mark.type_id.is_some());
+            // Keep one surviving source from the production placement. Raw
+            // per-cell clearing may leave precisely this retained state.
+            let mut retained = SmudgeGrid::new(terrain.width(), terrain.height());
+            retained.test_force_set(source.0, source.1, mark);
+            let lights = build_cell_light_grid_from_heights_and_units(
+                [(source, level), (anchor, 0)],
+                scene_profile(input),
+            );
+            let lookup = |type_id: u16, frame: u8| {
+                assert_eq!(frame, 0, "cell data is not an SHP frame");
+                let def = custom.get(type_id)?;
+                let entry = atlas.get(&smudge_key(&def.name))?;
+                Some(TilePlacement {
+                    uv_origin: entry.uv_origin,
+                    uv_size: entry.uv_size,
+                    pixel_size: entry.pixel_size,
+                    draw_offset: [entry.offset_x, entry.offset_y],
+                })
+            };
+            let build =
+                |grid: &SmudgeGrid, registry: &crate::rules::smudge_type::SmudgeTypeRegistry| {
+                    build_visible_instances(
+                        grid,
+                        registry,
+                        &terrain,
+                        &lights,
+                        &lookup,
+                        atlas.art_extent(),
+                        camera.camera_pos[0],
+                        camera.camera_pos[1],
+                        size[0] as f32,
+                        size[1] as f32,
+                    )
+                };
+            let instances = build(&retained, &custom);
+            assert_eq!(instances.len(), 1, "decoded {width}x{height} source");
+            assert_eq!(
+                instances[0].palette_light,
+                crate::render::palette_light::PaletteLight::cell(&lights, source, false)
+            );
+            assert_ne!(
+                instances[0].palette_light,
+                crate::render::palette_light::PaletteLight::cell(&lights, anchor, false)
+            );
+            let output = read_raster(&gpu, &mut batch, &atlas, &instances, row, format, size);
+            assert_native_color_and_depth(&output, row, format, size);
+            if width == 257 {
+                // Native6B5621 bypasses IDIV for data0 even with Width0.
+                // Nonzero data with that width safely refuses the draw.
+                let zero = crate::rules::smudge_type::SmudgeTypeRegistry::from_rules_ini(
+                    &crate::rules::ini_parser::IniFile::from_str(
+                        "[SmudgeTypes]\n0=CRATER11\n[CRATER11]\nWidth=0\nHeight=0\n",
+                    ),
+                );
+                retained.test_force_set(source.0, source.1, Default::default());
+                retained.test_force_set(
+                    anchor.0,
+                    anchor.1,
+                    crate::sim::smudge_grid::SmudgeCell {
+                        type_id: Some(0),
+                        frame_offset: 0,
+                    },
+                );
+                assert_eq!(build(&retained, &zero).len(), 1);
+                retained.test_force_set(anchor.0, anchor.1, mark);
+                assert!(build(&retained, &zero).is_empty());
+            }
+        }
     }
 }
 
@@ -496,13 +620,25 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
     let mark_id = mark
         .type_id
         .expect("the actual destruction leaves a persistent footprint");
-    let mark_origin = mark.footprint_origin.unwrap();
+    let rules = &scene.runtime.resources.rules;
+    let definition = rules.smudge_types.get(mark_id).unwrap();
+    let decoded_origin = |x: u16, y: u16, data: u8| {
+        definition.encoded_cell_offset(data).map(|(dx, dy)| {
+            (
+                (x as i16).wrapping_sub(dx as i16) as u16,
+                (y as i16).wrapping_sub(dy as i16) as u16,
+            )
+        })
+    };
+    let mark_origin = decoded_origin(rx, ry, mark.frame_offset).unwrap();
     let mark_cells: Vec<_> = grid
         .iter_occupied()
-        .filter(|(_, _, cell)| cell.footprint_origin == Some(mark_origin))
+        .filter(|(x, y, cell)| {
+            cell.type_id == Some(mark_id)
+                && decoded_origin(*x, *y, cell.frame_offset) == Some(mark_origin)
+        })
         .map(|(x, y, _)| (x, y))
         .collect();
-    let rules = &scene.runtime.resources.rules;
     eprintln!(
         "normal produced {} at {:?}, {}cells",
         rules.smudge_types.get(mark_id).unwrap().name,

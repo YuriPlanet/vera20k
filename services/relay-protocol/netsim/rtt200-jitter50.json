@@ -1,0 +1,46 @@
+[
+  {
+    "name": "2p-rtt200-jitter50-idle",
+    "players": 2,
+    "apm": 0,
+    "network": {
+      "link": {
+        "delay_ms": 100,
+        "jitter_ms": 50
+      }
+    }
+  },
+  {
+    "name": "2p-rtt200-jitter50-300apm",
+    "players": 2,
+    "apm": 300,
+    "network": {
+      "link": {
+        "delay_ms": 100,
+        "jitter_ms": 50
+      }
+    }
+  },
+  {
+    "name": "30p-rtt200-jitter50-idle",
+    "players": 30,
+    "apm": 0,
+    "network": {
+      "link": {
+        "delay_ms": 100,
+        "jitter_ms": 50
+      }
+    }
+  },
+  {
+    "name": "30p-rtt200-jitter50-300apm",
+    "players": 30,
+    "apm": 300,
+    "network": {
+      "link": {
+        "delay_ms": 100,
+        "jitter_ms": 50
+      }
+    }
+  }
+]

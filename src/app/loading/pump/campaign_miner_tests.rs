@@ -87,7 +87,9 @@ fn load_campaign(
         .load_initial_with_assets(
             root.to_owned(),
             assets,
-            process.native_rules(),
+            process.native_rules_mut_with_tile_cache().0,
+            None,
+            None,
             &mut SilentProgress,
         )
         .unwrap();
@@ -95,8 +97,7 @@ fn load_campaign(
         request,
         initial,
         context,
-        #[cfg(feature = "ares")]
-            rules_prefix: mut prepared_rules_prefix,
+        rules_prefix: mut prepared_rules_prefix,
     } = request.prepare_initial(initial).unwrap();
     let dummy = process.shared_cell_dummy.clone();
     let (rules, cache, audio) = process.native_rules_mut_with_tile_cache();
@@ -111,7 +112,6 @@ fn load_campaign(
         8,
         false,
         rules.unwrap(),
-        #[cfg(feature = "ares")]
         &mut prepared_rules_prefix,
         audio,
         None,
@@ -127,7 +127,8 @@ fn load_campaign(
             rules: result.scenario.rules.take().unwrap(),
             overlay_registry: result.scenario.overlay_registry,
             terrain_template: result.scenario.resolved_terrain.take(),
-        },
+        }
+        .into(),
     }
 }
 
@@ -252,8 +253,7 @@ fn retail_all05_campaign_miner_obeys_shroud_through_normal_loading_and_frames() 
     let owner = probe.simulation.session().current_house().unwrap();
     probe
         .simulation
-        .fog_mut_for_test()
-        .reveal_all_for_owner(owner);
+        .set_map_explored_for_test(owner, true, &probe.resources.rules);
     let target = dispatch(&mut probe, id).expect("ALL05 must offer reachable distant ore");
     eprintln!("retail campaign miner selected reachable control cell {target:?}");
     let computer_owner = probe
@@ -292,10 +292,7 @@ fn retail_all05_campaign_miner_obeys_shroud_through_normal_loading_and_frames() 
         if computer {
             assert!(!sim.houses()[&miner_owner].is_human());
         }
-        sim.fog_mut_for_test().reset_explored_for_owner(owner);
-        if visible {
-            sim.fog_mut_for_test().reveal_all_for_owner(owner);
-        }
+        sim.set_map_explored_for_test(owner, visible, &runtime.resources.rules);
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(
             sim.resolved_terrain().unwrap(),
         );

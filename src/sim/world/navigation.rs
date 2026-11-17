@@ -48,14 +48,15 @@ pub(super) fn marked_structure_movement_cells(
 }
 
 /// Structure presence over every marked structure. Consumers are
-/// order-insensitive (cell blocks, sets and presence tests).
+/// order-insensitive (cell blocks, sets and presence tests). The store's
+/// category column picks the structures, so no other object is loaded.
 fn visit_structure_movement_cells(
     entities: &EntityStore,
     interner: &StringInterner,
     rules: &RuleSet,
     mut visit: impl FnMut((u16, u16)),
 ) {
-    for entity in entities.values() {
+    for entity in entities.values_of_category(EntityCategory::Structure) {
         for cell in marked_structure_movement_cells(entity, interner, rules) {
             visit(cell);
         }
@@ -116,7 +117,10 @@ impl NavigationCaches<'_> {
         let cell = terrain
             .cell(coord.0, coord.1)
             .ok_or("Recalc cell is outside terrain")?;
-        if let Some(zones) = self.zones.as_mut() {
+        // Only a changed cell rewrites the grid.
+        if let Some(zones) = self.zones.as_mut()
+            && !zones.base_cell_attributes_current(terrain, coord.0, coord.1)
+        {
             zones.refresh_base_cell_attributes_at(terrain, coord.0, coord.1);
         }
         if let Some(path) = self.path.as_mut() {
@@ -276,15 +280,18 @@ impl NavigationCaches<'_> {
         terrain: &ResolvedTerrainGrid,
         bridges: Option<&BridgeRuntimeState>,
     ) {
-        *self.zones = Some(ZoneGrid::build_with_native_map_context(
-            path_grid,
-            terrain,
-            bridges
-                .map(BridgeRuntimeState::endpoint_records)
-                .unwrap_or(&[]),
-            bridges.and_then(BridgeRuntimeState::native_zone_source_size),
-            self.playfield_bounds,
-        ));
+        *self.zones = Some(
+            ZoneGrid::build_with_native_map_context(
+                path_grid,
+                terrain,
+                bridges
+                    .map(BridgeRuntimeState::endpoint_records)
+                    .unwrap_or(&[]),
+                bridges.and_then(BridgeRuntimeState::native_zone_source_size),
+                self.playfield_bounds,
+            )
+            .into(),
+        );
         *self.path = Some(Arc::new(path_grid.clone()));
     }
 }

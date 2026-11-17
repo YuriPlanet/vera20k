@@ -294,14 +294,17 @@ fn retail_capture_walk_rechecks_admission_and_respects_a_replacement_order() {
                         .simulation
                         .spawn_object("E1", occupant_owner, 89, 118, 0, &runtime.resources.rules)
                         .unwrap();
-                    assert!(crate::sim::passenger::add_garrison_occupant(
-                        &mut runtime.simulation,
-                        &runtime.resources.rules,
-                        occupant,
-                        castle,
-                        None,
-                        crate::sim::world::FrameEffects::default(),
-                    ));
+                    assert!(
+                        crate::sim::passenger::add_garrison_occupant(
+                            &mut runtime.simulation,
+                            &runtime.resources.rules,
+                            occupant,
+                            castle,
+                            None,
+                            crate::sim::world::FrameEffects::default(),
+                        )
+                        .unwrap()
+                    );
                 }
                 count
             }

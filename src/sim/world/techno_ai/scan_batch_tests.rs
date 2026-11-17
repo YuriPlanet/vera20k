@@ -44,10 +44,39 @@ fn run_mission(sim: &mut Simulation, rules: &RuleSet, hunter: u64) -> Option<Tar
         hunter,
         rules,
         ObjectAiCtx::default(),
-    );
+    )
+    .unwrap();
     let actor = sim.substrate.entities.get(hunter).unwrap();
     assert!(actor.mission.dispatch_timer().delay() > 0, "Hunt ran");
     actor.attack_target.target()
+}
+
+/// An object whose scan cannot be due ([`scan_may_be_due`]) costs the pass's
+/// look-ahead one lookup by id: a guarding tank whose targeting timer still
+/// runs is passed before the Area Guard and Hunt handlers look it up again.
+#[test]
+fn a_tank_whose_scan_cannot_be_due_is_looked_up_once() {
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &fixture.rules;
+    let mut sim = crate::sim::arena_fixture::rival_arena(rules, 626);
+    let tank = sim
+        .spawn_object("MTNK", "Americans", 12, 12, 0, rules)
+        .unwrap();
+    on_mission(&mut sim, tank, MissionType::Guard);
+    sim.session.set_binary_frame_for_test(100);
+    sim.substrate
+        .entities
+        .get_mut(tank)
+        .unwrap()
+        .passive_scan
+        .timer_mut_for_test()
+        .arm(100, 30);
+    sim.batch_target_scans();
+    let before = sim.substrate.entities.lookups().0;
+    sim.answer_batched_scans(rules, None);
+    assert_eq!(sim.substrate.entities.lookups().0 - before, 1);
 }
 
 /// The module's sim-scale deviation: Foot::Mission_Hunt scans at its turn

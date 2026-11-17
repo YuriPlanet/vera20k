@@ -7,7 +7,8 @@
 //! chrono screen holds (`0x0053BAE0`), `0x004F4480` skips the tactical draw.
 //! So the effects that step inside the composite (laser jitter, electric bolts,
 //! airstrike flare shades, line trails, radiation beams, the superweapon range
-//! pulse and Ares flying credits) and the lines that read `timeGetTime` while
+//! pulse, Ares flying credits and the radar housing, `RadarClass::Draw @
+//! 0x00653100` through GScreenClass vt+0x40) and the lines that read `timeGetTime` while
 //! drawing (mind-control links, psychic lines and rings, the airstrike wobble,
 //! planning dashes) move once per tick, however fast the display refreshes.
 //!
@@ -16,6 +17,11 @@
 //! composite's output again. Online, `0x0055E23A..0x0055E271` also renders
 //! while ThrottleFrame waits, so network matches composite on every draw, as
 //! do the capture drivers, whose recorded frames are built that way.
+//!
+//! Each draw records whether its composite held any of those effects or
+//! clock-reading lines. While it held none, another composite draws the same
+//! pixels, so a network match's picture may stand between frames
+//! (`match_runtime::redraw_gate`).
 
 /// How often a draw composites.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,6 +43,7 @@ pub(crate) struct TacticalComposite {
     ticks: u64,
     shown: u64,
     clock_ms: u64,
+    animated: bool,
 }
 
 impl TacticalComposite {
@@ -78,9 +85,20 @@ impl TacticalComposite {
     pub(crate) fn clock_ms(&self) -> u64 {
         self.clock_ms
     }
+
+    /// Record the draw's composite: `animated` while it holds an effect that
+    /// steps in each composite or a line that reads the clock.
+    pub(crate) fn record_contents(&mut self, animated: bool) {
+        self.animated = animated;
+    }
+
+    /// Whether another composite would move the last draw's picture.
+    pub(crate) fn animated(&self) -> bool {
+        self.animated
+    }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
 

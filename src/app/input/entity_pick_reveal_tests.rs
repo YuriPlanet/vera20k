@@ -85,7 +85,7 @@ fn native_click_shroud_controls_match_cursor_and_both_object_pickers() {
             // The bounded ScreenSelection list wrongly removes projected-only
             // foreign mobiles before the actual pointer picker can see them.
             let encounter_order =
-                crate::app::presentation::instances::tactical_entity_encounter_order(&sim);
+                crate::app::presentation::instances::tactical_entity_encounter_order(&sim, None);
             assert_eq!(encounter_order, [1]);
             let terrain = sim.resolved_terrain().unwrap();
 

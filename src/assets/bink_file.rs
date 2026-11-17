@@ -1,7 +1,7 @@
 // Ported from FFmpeg's libavformat/bink.c.
 // Copyright (c) 2008-2010 Peter Ross (pross@xvid.org)
 // Copyright (c) 2009 Daniel Verkamp (daniel@drv.nu)
-// Licensed LGPL-2.1-or-later. See LICENSES/LGPL-2.1-or-later.txt in the repo root.
+// Licensed GPL-3.0-or-later. See LICENSE-GPL in the repo root.
 
 //! Bink 1 container demuxer.
 //!
@@ -440,7 +440,7 @@ impl BinkFile {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod tests {
     use super::*;
 

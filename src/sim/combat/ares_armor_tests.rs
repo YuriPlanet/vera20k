@@ -63,6 +63,7 @@ fn fire_error(sim: &Simulation, rules: &RuleSet, scorer: u64, target: u64) -> Fi
 
 #[test]
 fn custom_armor_selection_preserves_numeric_zero_and_secondary_first_order() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     // Installed hook10054360 checks secondary zero first, independently of
     // the ForceFire override which allows a zero record through CanFire.
     for (primary, secondary, expected) in [
@@ -106,6 +107,7 @@ fn custom_armor_selection_preserves_numeric_zero_and_secondary_first_order() {
 
 #[test]
 fn custom_armor_can_fire_uses_force_fire_or_nonzero_multiplier() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (multiplier, force_fire, admitted) in [
         ("0%", "no", false),
         ("0%", "yes", true),
@@ -126,6 +128,7 @@ fn custom_armor_can_fire_uses_force_fire_or_nonzero_multiplier() {
 
 #[test]
 fn custom_armor_passive_and_retaliation_flags_are_independent_of_each_other_and_damage() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (multiplier, passive, retaliate) in [
         ("25%", false, false),
         ("0%", true, false),
@@ -159,6 +162,7 @@ fn custom_armor_passive_and_retaliation_flags_are_independent_of_each_other_and_
 
 #[test]
 fn custom_armor_positive_receive_and_estimate_share_the_effective_record() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("25%", "25%", "");
     let (mut sim, scorer, target) = scene(&rules);
     let weapon = rules.weapon("PRIMARY").unwrap();
@@ -196,6 +200,7 @@ fn custom_armor_positive_receive_and_estimate_share_the_effective_record() {
 
 #[test]
 fn custom_armor_threat_score_consumes_both_effectiveness_terms() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let score = |multiplier: &str, mine: f64, theirs: f64| {
         let rules = rules(multiplier, multiplier, "");
         let (sim, scorer, target) = scene(&rules);

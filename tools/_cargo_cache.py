@@ -359,11 +359,22 @@ def _abandoned_roots(root: Path, store: Path) -> set[Path]:
 
 
 def _abandoned_output(cache: Path, path: Path) -> bool:
-    """Cargo's own output in an abandoned cache: host profile trees and root files."""
+    """Cargo's own output in an abandoned cache: profile trees and root files.
+
+    A `--target` build keeps one tree per profile in <triple>, beside a CACHEDIR.TAG.
+    The profile can be one the runner has no name for (tools/wasm/build.py builds
+    `wasm`), so such a tree is known by Cargo's .fingerprint directory, which a
+    stopped pass leaves behind: only a finished pass removes directories. Host trees
+    alone were reclaimed until four removed worktrees' wasm32 output, 8.3 GB that no
+    pass could select, held builds below the free-space reserve on 2026-11-09.
+    """
     from tools.cargo_run import HOST_PROFILES
     parts = path.relative_to(cache).parts
-    return (len(parts) > 1 and parts[0] in HOST_PROFILES) or parts in (
-        ('.rustc_info.json',), ('.future-incompat-report.json',), ('CACHEDIR.TAG',))
+    if (len(parts) > 1 and parts[0] in HOST_PROFILES) or parts in (
+            ('.rustc_info.json',), ('.future-incompat-report.json',), ('CACHEDIR.TAG',)):
+        return True
+    return parts[1:] == ('CACHEDIR.TAG',) or (
+        len(parts) > 2 and (cache / parts[0] / parts[1] / '.fingerprint').is_dir())
 
 
 def _inputs(root: Path, store: Path, *, preserved_checks=None, profiles=None, notes=None, uses=None):

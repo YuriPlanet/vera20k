@@ -266,7 +266,7 @@ pub fn value_text_rect(window: RectPx, scale: ShellScale) -> RectPx {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

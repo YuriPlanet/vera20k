@@ -72,6 +72,8 @@ fn langrule_digest_verification_accepts_matching_sha1_and_rejects_changed_sha1()
     assert_eq!(short.verify_digest(8), DigestVerification::Indeterminate);
 }
 
+// Vanilla duplicate keys, read the stock way: Ares's `INIClass_Parse_Override`
+// (`0x5260D9`) keeps only the later one (rules::ini_parser::ares_syntax).
 #[test]
 fn packed_reader_visits_duplicate_physical_keys_through_the_value_index() {
     // ReadUUBlock526FB0 uses the physical entry count at52708C and walks
@@ -257,6 +259,8 @@ fn omitted_fixture_key_preserves_source_order_case_and_reader_defaults() {
     assert_eq!(omitted.section("After").unwrap().get("Keep"), Some("after"));
 }
 
+// Vanilla duplicate keys, read the stock way: Ares's `INIClass_Parse_Override`
+// (`0x5260D9`) keeps only the later one (rules::ini_parser::ares_syntax).
 #[test]
 fn fresh_duplicate_lookup_keeps_physical_bytes_and_projection_copy_separate() {
     // FindEntryByNames526B10 -> signed CRC qsort52B6A0 and midpoint52B6D0.
@@ -410,22 +414,31 @@ fn aimd_digest_matches_its_save_to_pipe_bytes() {
 /// empty sections, spacing, comments and an unterminated last line.
 #[test]
 fn save_to_pipe_matches_the_native_streams() {
-    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/storage_oracle/ini_crc.json",
-    ))
-    .unwrap();
-    for case in corpus["synthetic"].as_array().unwrap() {
-        if case["absent"].as_bool() == Some(true) {
-            continue;
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/ini_crc.json",
+        ))
+        .unwrap();
+        for case in corpus["synthetic"].as_array().unwrap() {
+            if case["absent"].as_bool() == Some(true) {
+                continue;
+            }
+            // Ares's `INIClass_Parse_Override` (`0x5260D9`) keeps only the later
+            // of two equal keys; this control records the vanilla reader.
+            if ares_way && case["name"] == "duplicate_key" {
+                continue;
+            }
+            let input = case["input"].as_str().unwrap();
+            let ini =
+                IniFile::from_bytes(&crate::util::native_string::narrow_widened(input)).unwrap();
+            assert_eq!(
+                crate::util::native_string::widen_bytes(&ini.save_to_pipe(None)),
+                case["stream"].as_str().unwrap(),
+                "{}",
+                case["name"]
+            );
         }
-        let input = case["input"].as_str().unwrap();
-        let ini = IniFile::from_bytes(&crate::util::native_string::narrow_widened(input)).unwrap();
-        assert_eq!(
-            crate::util::native_string::widen_bytes(&ini.save_to_pipe(None)),
-            case["stream"].as_str().unwrap(),
-            "{}",
-            case["name"]
-        );
     }
 }
 

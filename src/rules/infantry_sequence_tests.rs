@@ -74,16 +74,12 @@ fn catalog_preserves_signed_actions_and_distinct_ready_guard() {
     use crate::rules::art_data::ArtRegistry;
     use crate::rules::ruleset::RuleSet;
 
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(
-        "[InfantryTypes]\n0=TEST\n[TEST]\nImage=TEST\n",
-    ))
-    .unwrap();
+    let ini = IniFile::from_str("[InfantryTypes]\n0=TEST\n[TEST]\nImage=TEST\n");
     let art = IniFile::from_str(
         "[TEST]\nSequence=ArbitraryActions\n[ArbitraryActions]\nReady=7,1,1\nGuard=91,2,2\nDeploy=-8,65536,-3,S\n",
     );
-    rules.replace_art_registry_for_test(ArtRegistry::from_ini(&art));
-    let registry = parse_infantry_sequence_registry(&art);
-    let catalog = build_animation_sequence_catalog(&rules, Some(&registry));
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    let catalog = build_animation_sequence_catalog(&rules);
     let set = &catalog["TEST"];
     assert_eq!(set.infantry_action(0).unwrap().start_frame, 7);
     assert_eq!(set.infantry_action(1).unwrap().start_frame, 91);
@@ -101,21 +97,23 @@ fn catalog_preserves_signed_actions_and_distinct_ready_guard() {
         InfantrySequenceEntry::default()
     );
 
-    // No u16 draw entry can represent this bank. It still owns action data.
-    let signed_only = IniFile::from_str("[ArbitraryActions]\nDeploy=-8,65536,-3\n");
-    let registry = parse_infantry_sequence_registry(&signed_only);
-    let catalog = build_animation_sequence_catalog(&rules, Some(&registry));
+    // Late metadata changes must not replace the retained signed bank.
+    rules.install_art_data(ArtRegistry::from_ini(&IniFile::empty()));
     assert_eq!(
-        catalog["TEST"]
-            .infantry_action(27)
+        rules
+            .animation_sequence("TEST")
             .unwrap()
-            .frames_per_facing,
-        65536
+            .infantry_action(27),
+        set.infantry_action(27)
     );
-    let missing = build_animation_sequence_catalog(&rules, None);
+    let empty = RuleSet::from_ini_with_fixed_art_for_test(&ini, &IniFile::empty()).unwrap();
     for action in 0..42 {
         assert_eq!(
-            *missing["TEST"].infantry_action(action).unwrap(),
+            *empty
+                .animation_sequence("TEST")
+                .unwrap()
+                .infantry_action(action)
+                .unwrap(),
             InfantrySequenceEntry::default()
         );
     }
@@ -556,65 +554,114 @@ fn corrected_action_ids_give_the_native_frame_delays() {
 #[test]
 fn sequence_sound_reader_takes_frame_name_pairs_in_action_order() {
     let art = IniFile::from_str(
-        "[GI]\nSequence=GISeq\n\
-         [GISeq]\nFireUpSounds= 2 SlaveAttack,5\tOther, 7\nReadySounds=x First\n\
+        "[GI]\nSequence=GISeq\n[GISeq]\nFireUpSounds=2 SlaveAttack,5\tOther,7\nReadySounds=x First\n\
          WalkSounds=1 ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\n",
     );
-    let read = |action: u8, frame: i32, name: &str| SequenceSoundRead {
-        action,
-        frame,
-        name: name.to_owned(),
-    };
+    let catalog = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+        "[SoundList]\n0=First\n1=ABCDEFGHIJKLMNOPQRSTUVWXYZ012\n2=SlaveAttack\n3=Other\n",
+    ));
+    let mut bank = InfantrySequenceBank::default();
+    bank.read_pass(&art, "GI", &catalog);
+    let sounds: Vec<_> = bank
+        .bound_sounds(&catalog)
+        .into_iter()
+        .map(|sound| (sound.action, sound.frame, sound.sound_id))
+        .collect();
     assert_eq!(
-        read_sequence_sounds(&art, "GI"),
+        sounds,
         [
-            // atoi of a non-number is 0.
-            read(0, 0, "First"),
-            // ReadString capacity 0x20 keeps 31 bytes.
-            read(3, 1, "ABCDEFGHIJKLMNOPQRSTUVWXYZ012"),
-            // A trailing frame with no name ends the list.
-            read(4, 2, "SlaveAttack"),
-            read(4, 5, "Other"),
+            (0, 0, "First".into()),
+            (3, 1, "ABCDEFGHIJKLMNOPQRSTUVWXYZ012".into()),
+            (4, 2, "SlaveAttack".into()),
+            (4, 5, "Other".into())
         ]
     );
-    assert!(read_sequence_sounds(&art, "Missing").is_empty());
-    assert!(read_sequence_sounds(&IniFile::from_str("[GI]\nCrawls=yes\n"), "GI").is_empty());
+    let before = bank.clone();
+    bank.read_pass(&art, "Missing", &catalog);
+    bank.read_pass(&IniFile::from_str("[GI]\nCrawls=yes\n"), "GI", &catalog);
+    assert_eq!(bank, before);
 }
 
 #[test]
 fn bound_sequence_sounds_keep_two_resolved_pairs_per_record() {
-    let read = |action: u8, frame: i32, name: &str| SequenceSoundRead {
-        action,
-        frame,
-        name: name.to_owned(),
-    };
-    let reads = [
-        read(4, 1, "Missing"),
-        read(4, 2, "a"),
-        read(0, 9, "b"),
-        read(4, 3, "b"),
-        read(4, 4, "a"),
-    ];
-    let sounds = bind_sequence_sounds(&reads, |name| {
-        ["A", "B"]
-            .into_iter()
-            .find(|id| id.eq_ignore_ascii_case(name))
-            .map(str::to_owned)
-    });
-    let sound = |action: u8, frame: i32, id: &str| SequenceSound {
-        action,
-        frame,
-        sound_id: id.to_owned(),
-    };
+    let catalog = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+        "[SoundList]\n0=A\n1=B\n",
+    ));
+    let mut bank = InfantrySequenceBank::default();
+    bank.read_pass(
+        &IniFile::from_str(
+            "[GI]\nSequence=S\n[S]\nReadySounds=9 b\nFireUpSounds=1 Missing,2 a,3 b,4 a\n",
+        ),
+        "GI",
+        &catalog,
+    );
+    let sounds: Vec<_> = bank
+        .bound_sounds(&catalog)
+        .into_iter()
+        .map(|sound| (sound.action, sound.frame, sound.sound_id))
+        .collect();
     assert_eq!(
         sounds,
-        [sound(4, 2, "A"), sound(0, 9, "B"), sound(4, 3, "B")],
+        [(0, 9, "B".into()), (4, 2, "A".into()), (4, 3, "B".into())],
         "an unresolved name takes no slot; a third resolved pair is dropped"
     );
 }
 
 /// ReadSequenceData runs at the end of every reached InfantryType ReadINI
 /// (`0x0052473A`) and appends without resetting the record's sounds.
+#[test]
+fn sequence_bank_retains_partial_image_reads_and_saved_records() {
+    use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
+    use crate::rules::sound_ini::SoundRegistry;
+    use std::sync::Arc;
+    let root = IniFile::from_str("[InfantryTypes]\n0=TEST\n[TEST]\nImage=A\n");
+    let art = IniFile::from_str(
+        "[A]\nSequence=First\n[First]\nWalk=8,6,6,S\nWalkSounds=2 First\n\
+         [B]\nSequence=Second\n[Second]\nWalk=100\nWalkSounds=3 Second\n[C]\n",
+    );
+    let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+        root,
+        None,
+        art,
+        Arc::new(SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=First\n1=Second\n",
+        ))),
+        Arc::default(),
+    )
+    .unwrap();
+    let layer = IniFile::from_str("[TEST]\nImage=B\n");
+    let (rules, _, _, _) = owner
+        .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &layer)
+        .unwrap()
+        .into_parts();
+    let walk = rules
+        .animation_sequence("TEST")
+        .unwrap()
+        .infantry_action(3)
+        .unwrap();
+    assert_eq!(
+        (walk.start_frame, walk.frames_per_facing, walk.facings),
+        (100, 6, 6)
+    );
+    assert_eq!(walk.facing_hint, Some(FacingHint::S));
+    let bytes = crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
+    owner.install_saved_scenario_rules(crate::util::save_codec::deserialize(&bytes).unwrap());
+    let saved = owner
+        .project_saved_scenario_rules(owner.saved_scenario_rules().unwrap())
+        .unwrap();
+    assert_eq!(
+        saved.animation_sequence("TEST").unwrap().infantry_action(3),
+        Some(walk)
+    );
+    let cues: Vec<_> = saved
+        .object("TEST")
+        .unwrap()
+        .sequence_sounds(3)
+        .map(|cue| (cue.frame, cue.sound_id.as_str()))
+        .collect();
+    assert_eq!(cues, [(2, "First"), (3, "Second")]);
+}
+
 #[test]
 fn every_reached_infantry_pass_appends_its_sequence_sounds() {
     use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
@@ -626,7 +673,15 @@ fn every_reached_infantry_pass_appends_its_sequence_sounds() {
         "[SoundList]\n0=SlaveAttack\n",
     ));
     let fire_up = |layers: &RulesLayerStack| {
-        let processed = layers.process_with_fixed_art(&art).unwrap();
+        let processed = layers
+            .process_with_fixed_art_and_registry_state_recovering(
+                &art,
+                Default::default(),
+                crate::rules::native_processing::RulesProcessContext::Ordinary,
+                &crate::rules::sound_ini::EvaRegistry::default(),
+                &sounds,
+            )
+            .unwrap();
         let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
         rules.bind_type_sound_references(processed.ini(), &sounds);
         rules

@@ -112,13 +112,14 @@ fn fixture(row: &Value, rules: &RuleSet) -> (Simulation, u64, InternedId) {
                 // Original fixture installs nine land0 speed entries of1.0 at
                 //89EA40; this is supplied terrain, independently of retail INIs.
                 cell.speed_costs = crate::rules::terrain_rules::SpeedCostProfile {
-                    foot: Some(100),
-                    track: Some(100),
-                    wheel: Some(100),
-                    float: Some(100),
-                    amphibious: Some(100),
-                    float_beach: Some(100),
-                    hover: Some(100),
+                    foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                    track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                    wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                    float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                    amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                    float_beach: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                    hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                    winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
                 };
                 cell.base_speed_costs = cell.speed_costs;
                 cell
@@ -1149,6 +1150,62 @@ fn a_deferred_restore_keeps_a_cleg_object_navcom() {
             .requested,
         "his Teleport Move_To ran"
     );
+}
+
+/// ResolveDestination's Infantry fallback (`0x00718ECB..0x00719088`): a CLEG
+/// refused at a friendly vehicle's cell lands beside it while the vehicle is
+/// his NavCom. With a Cell NavCom the same refusal stands.
+#[test]
+fn a_cleg_refused_at_an_object_lands_beside_it() {
+    let Some(rules) = command_fixture_rules() else {
+        return;
+    };
+    let data = corpus();
+    let row = row_named(&data, "guard_two_distinct_cells");
+    for object_navcom in [true, false] {
+        let (mut sim, id, _) = fixture(row, &rules);
+        crate::sim::arena_fixture::supply_native_map(&mut sim);
+        let vehicle = sim
+            .spawn_object("FV", "Americans", 13, 10, 0, &rules)
+            .expect("FV spawns");
+        let target = if object_navcom {
+            NavTargetRef::object(vehicle)
+        } else {
+            NavTargetRef::cell(13, 10)
+        };
+        let actor = sim.substrate.entities.get_mut(id).unwrap();
+        actor.navigation.set_nav_com_for_test(Some(target));
+        let accepted = sim
+            .teleport_move_to(
+                id,
+                DriveCoord::cell(13, 10, 0),
+                &rules,
+                false,
+                None,
+                crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
+        assert_eq!(accepted, object_navcom);
+        let marked = sim
+            .substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .teleport_runtime()
+            .unwrap()
+            .resolved_destination();
+        match marked {
+            Some(point) => assert_eq!(
+                (point.x / 256 - 13).abs().max((point.y / 256 - 10).abs()),
+                1,
+                "{point:?} is in the ring around the vehicle"
+            ),
+            None => assert!(!object_navcom, "the object fallback marks a cell"),
+        }
+    }
 }
 
 /// An absent caller dependency is a Rust transaction error, not native

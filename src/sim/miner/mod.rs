@@ -9,26 +9,26 @@
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
 mod harvest_mission;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 pub mod miner_dock;
 pub(crate) mod miner_system;
 pub(crate) mod ore_scan;
 mod refinery_dock;
 pub(crate) use refinery_dock::UnloadImage;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "outbound_drive_tests.rs"]
 mod outbound_drive_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "pad_nudge_tests.rs"]
 mod pad_nudge_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "no_ore_park_tests.rs"]
 mod no_ore_park_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "refinery_reach_tests.rs"]
 mod refinery_reach_tests;
 
@@ -63,7 +63,6 @@ pub enum MinerKind {
     Slave,
     /// Retained StorageClass data after an in-place conversion to a type
     /// without a miner role. The ore, unload latch and cursor are not reset.
-    #[cfg(feature = "ares")]
     Inactive,
 }
 
@@ -136,15 +135,25 @@ pub struct CargoBale {
     /// Native StorageClass slot. Grouping and payment use this identity;
     /// multiple types can have the same ore/gem presentation classification.
     pub tiberium_type: crate::rules::tiberium_type::TiberiumTypeId,
-    /// Presentation only, derived from the harvested type's Image.
+    /// Presentation only: native Storage slot 1 is gems; the other slots are ore.
     pub resource_type: ResourceType,
     pub value: u16,
+}
+
+/// StorageClass::AddAmount @ 0x006C9690, represented as whole bales.
+/// Native adds to the selected slot without clearing or capacity clamping;
+/// harvesting owns its admission limit, while Full reinforcements add the
+/// positive Type.Storage to a freshly zeroed hold (CreateMembers65DE7B).
+/// Both holds that stand for Techno Storage (`+0x33C`), the [`Miner`]'s and
+/// the [`crate::sim::slave_manager::SlaveLink`]'s, add through it.
+pub(crate) fn add_amount(hold: &mut Vec<CargoBale>, bale: CargoBale, amount: u16) {
+    hold.extend(std::iter::repeat_n(bale, usize::from(amount)));
 }
 
 impl CargoBale {
     /// Unit Harvest_Ore_Tick73D450 and Infantry Harvest522E70 preserve the
     /// Cell's native Tiberium index when storing the reduction. Value comes
-    /// from that TiberiumClass, not the many-to-one Image classification.
+    /// from that TiberiumClass; Image does not change Storage slot identity.
     /// Native executions: spatial_oracle/harvest_field.json ore_tick rows.
     fn from_reduction(
         reduction: crate::sim::tiberium::ReduceTiberiumOutcome,
@@ -255,9 +264,11 @@ impl Miner {
                     config.chrono_miner_capacity
                 }
             }
-            // Slave Miners don't carry cargo — their slave infantry harvest instead.
+            // Slave Miners never harvest (their slaves do), so nothing admits
+            // bales against this capacity. A Full team still fills their
+            // Storage with Type.Storage (CreateMembers 0x0065DE7B), which no
+            // reader consumes for a Slave Miner.
             MinerKind::Slave => 0,
-            #[cfg(feature = "ares")]
             MinerKind::Inactive => 0,
         };
         Self {
@@ -278,16 +289,15 @@ impl Miner {
     /// Ares10043740 changes the live Type without reconstructing Unit storage.
     /// Unit Harvest73E5E0 reads the new Type's Storage (+800); only VERA's
     /// derived role/capacity change, not its existing bales or unload state.
-    #[cfg(feature = "ares")]
-    pub(crate) fn change_type_binding(slot: &mut Option<Self>, object: &ObjectType) {
+    pub(crate) fn change_type_binding(slot: &mut Option<Box<Self>>, object: &ObjectType) {
         let kind = miner_kind_for_object(object);
         if slot.is_none() {
             let Some(kind) = kind else { return };
-            *slot = Some(Self::new(
+            *slot = Some(Box::new(Self::new(
                 kind,
                 &MinerConfig::default(),
                 object.storage.max(0) as u16,
-            ));
+            )));
         }
         let miner = slot
             .as_mut()
@@ -308,13 +318,9 @@ impl Miner {
         &self.cargo
     }
 
-    /// StorageClass::AddAmount @ 0x006C9690, represented as whole bales.
-    /// Native adds to the selected slot without clearing or capacity clamping;
-    /// harvesting owns its admission limit, while Full reinforcements add the
-    /// positive Type.Storage to a freshly zeroed hold (CreateMembers65DE7B).
+    /// [`add_amount`] on this Miner's hold.
     pub(crate) fn add_bales(&mut self, bale: CargoBale, amount: u16) {
-        self.cargo
-            .extend(std::iter::repeat_n(bale, usize::from(amount)));
+        add_amount(&mut self.cargo, bale, amount);
     }
 
     /// The hold's capacity in bales.
@@ -385,7 +391,7 @@ pub fn miner_kind_for_object(object: &ObjectType) -> Option<MinerKind> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use super::*;
 

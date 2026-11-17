@@ -625,7 +625,6 @@ impl Simulation {
                 }
                 if matches!(outcome, RevealOutcome::Revealed { .. }) {
                     Self::initialize_cloak_after_unlimbo(&sim.interner, &sim.session, &mut sim.substrate, stable_id, rules);
-                    sim.add_unit_sensor_after_unlimbo(stable_id, rules, overlay_registry);
                     // ReadScenarioBuildings (0x0044F820) makes no sensor call:
                     // a map building stamps only if the first opening its
                     // Unlimbo already ran (0x00440D61 / 0x00440E76) passed
@@ -642,7 +641,7 @@ impl Simulation {
                         .substrate
                         .entities
                         .get(stable_id)
-                        .and_then(|entity| entity.building_light.light())
+                        .and_then(|entity| entity.building.building_light.light())
                     {
                         sim.set_spotlight_behavior(
                             light,
@@ -1166,7 +1165,6 @@ impl Simulation {
             stable_id,
             rules,
         );
-        self.add_unit_sensor_after_unlimbo(stable_id, rules, overlay_registry);
         self.substrate.ready_finished_spawn_adapter(stable_id);
         Ok(Some(stable_id))
     }
@@ -1436,75 +1434,19 @@ impl Simulation {
         )
     }
 
-    /// Ground-delivery search for an already-constructed object. Aircraft
-    /// first need ground suitability; their own +1AC only checks shroud.
-    /// Ares 4f1d9299, UnitDeliveryStateMachine::PlaceUnits uses Track/Normal
-    /// for this search, then the usual class admission at Put. Final Unlimbo
-    /// still performs fresh admission.
-    #[cfg(feature = "ares")]
-    pub(crate) fn constructed_object_can_enter_at(
-        &self,
-        stable_id: u64,
-        cell: (u16, u16),
-        rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    ) -> bool {
-        if self
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|entity| entity.category() == EntityCategory::Aircraft)
-        {
-            use crate::rules::locomotor_type::{MovementZone, SpeedType};
-            use crate::sim::cell_rect::{CellPassabilityArgs, CellRef, check_cell_passability};
-
-            let Some(target) = self
-                .resolved_terrain
-                .as_ref()
-                .and_then(|terrain| terrain.cell(cell.0, cell.1))
-            else {
-                return false;
-            };
-            if !check_cell_passability(
-                &CellRef::Real(target),
-                CellPassabilityArgs {
-                    speed_type: SpeedType::Track,
-                    ignore_infantry: false,
-                    ignore_vehicles: false,
-                    zone: None,
-                    movement_zone: MovementZone::Normal,
-                    level: None,
-                    is_bridge: false,
-                },
-                &self.cell_passability_map(),
-            )
-            .admits()
-            {
-                return false;
-            }
-        }
-        let position = RevealPosition::new(
-            cell.0,
-            cell.1,
-            self.terrain_cell_level(cell.0, cell.1).unwrap_or(0),
-            None,
-            SimFixed::from_num(128),
-            SimFixed::from_num(128),
-        );
-        self.constructor_unlimbo_placement(stable_id, position, rules, registry)
-            != PlacementEvidence::RejectedEarly
-    }
-
-    /// Place a delivered object standing complete, retaining the normal entry,
-    /// Unlimbo, sensor, tracking and discovery owners. A delivery is not paid
-    /// construction and must not leave a building waiting on a buildup.
-    /// Ares PlaceUnits supplies GetCoordsWithBridge and explicitly sets
-    /// OnBridge before Put; the class query's local plane is not that store.
-    #[cfg(feature = "ares")]
-    pub(crate) fn reveal_finished_object_at_coord(
+    /// Put a UnitDelivery payload (Ares PlaceUnits `10075A60`), retaining the
+    /// normal entry, Unlimbo, sensor, tracking and discovery owners. Ares
+    /// supplies GetCoordsWithBridge and sets OnBridge before Put; the class
+    /// query's local plane is not that store. `facing` is the DirType Put
+    /// receives. 3.0 reads no `Deliver.Buildups` (SW+0x4A8, default true), so a
+    /// building, which the caller has given a queued Construction, builds up
+    /// through the ordinary Unlimbo and is then DiscoveredBy its owner with
+    /// its ready byte (`+0x6DD`) set.
+    pub(crate) fn reveal_delivered_object_at_coord(
         &mut self,
         stable_id: u64,
         coord: crate::sim::components::DriveCoord,
+        facing: u8,
         on_bridge: bool,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
@@ -1515,18 +1457,33 @@ impl Simulation {
         if let Some(locomotor) = entity.locomotor.as_mut() {
             locomotor.store_ground_layer(on_bridge);
         }
-        let result = self.with_buildup_bypass(|sim| {
-            sim.reveal_constructed_object_at_coord_with_overlay_context(
-                stable_id,
-                coord,
-                0,
-                PlacementEvidence::EvaluateMark,
-                rules,
-                registry,
-                effects,
+        let result = self.reveal_constructed_object_at_coord_with_overlay_context(
+            stable_id,
+            coord,
+            facing,
+            PlacementEvidence::EvaluateMark,
+            rules,
+            registry,
+            effects,
+        )?;
+        let Some((owner, building)) = self.substrate.entities.get(result).map(|entity| {
+            (
+                entity.owner(),
+                entity.category() == EntityCategory::Structure,
             )
-        })?;
-        self.substrate.ready_finished_spawn_adapter(result);
+        }) else {
+            return Some(result);
+        };
+        if building {
+            self.discover_techno(
+                result,
+                owner,
+                super::lifecycle::UninitContext::new(rules, registry).with_effects(effects),
+            );
+            if let Some(entity) = self.substrate.entities.get_mut(result) {
+                entity.mission_leaf.set_building_ready_latch(1);
+            }
+        }
         Some(result)
     }
 
@@ -1559,6 +1516,7 @@ impl Simulation {
             rules,
             overlay_registry,
             frame_effects,
+            true,
         ) {
             return (outcome == RevealOutcome::Consumed).then_some(stable_id);
         }
@@ -1608,13 +1566,6 @@ impl Simulation {
             // Infantry51E114 restores its class water sentinel after Foot.
             entity.mission_leaf.reset_infantry_water_state();
         }
-        Self::allocate_building_light(
-            &self.interner,
-            &self.substrate,
-            &mut self.lighting_sources,
-            stable_id,
-            rules,
-        );
         Self::initialize_cloak_after_unlimbo(
             &self.interner,
             &self.session,
@@ -1622,7 +1573,6 @@ impl Simulation {
             stable_id,
             rules,
         );
-        self.add_unit_sensor_after_unlimbo(stable_id, rules, overlay_registry);
         Some(stable_id)
     }
 
@@ -2196,6 +2146,7 @@ impl Simulation {
             rules,
             overlay_registry,
             frame_effects,
+            !scenario_initialization,
         ) {
             return (stable_id, outcome);
         }
@@ -2228,13 +2179,6 @@ impl Simulation {
                 .with_unlimbo_facing(facing),
         );
         if matches!(outcome, RevealOutcome::Revealed { .. }) {
-            Self::allocate_building_light(
-                &self.interner,
-                &self.substrate,
-                &mut self.lighting_sources,
-                stable_id,
-                rules,
-            );
             if self
                 .substrate
                 .entities
@@ -2254,12 +2198,13 @@ impl Simulation {
                 if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
                     entity.initialize_building_idle_body(self.session.binary_frame() as i32);
                 }
-                // BuildingUnlimbo440D25..440D6C discovers for Player only on
-                // revealed ground in campaign mode;440E5C..440E76 discovers
-                // for an AI owner. The shared discovery owner already ran
-                // both admitted routes. Do not add an eager human opening:
-                // GrandOpening4467C9 and UpdateAnimation451145..451218 own
-                // readiness, and a hidden turret must keep Guard queued.
+                // BuildingUnlimbo440D25..440D6C lights a campaign building or
+                // discovers it for Player, and 440E5C..440E76 discovers it for
+                // an AI owner: the Unlimbo above already ran both through the
+                // shared discovery owner. Do not add
+                // an eager human opening: GrandOpening4467C9 and
+                // UpdateAnimation451145..451218 own readiness, and a hidden
+                // turret must keep Guard queued.
             }
         }
         (stable_id, outcome)
@@ -2424,7 +2369,14 @@ impl Simulation {
         stable_id: u64,
         rules: &RuleSet,
     ) {
-        let Some((category, veterancy, in_playfield, type_ref, stealth_ability)) =
+        let Some((
+            category,
+            veterancy,
+            in_playfield,
+            type_ref,
+            stealth_ability,
+            attached_cloak,
+        )) =
             substrate.entities.get(stable_id).map(|entity| {
                 (
                     entity.category(),
@@ -2432,6 +2384,7 @@ impl Simulation {
                     entity.in_playfield(),
                     entity.type_ref(),
                     entity.stealth_ability,
+                    entity.cloak_attached(),
                 )
             })
         else {
@@ -2445,7 +2398,7 @@ impl Simulation {
             return;
         };
         let rank_cloak = has_weapon_ability(rank_from_u16(veterancy), object, Ability::Cloak);
-        let intrinsic_cloak = stealth_ability.active(object.cloakable);
+        let intrinsic_cloak = attached_cloak || stealth_ability.active(object.cloakable);
         if !intrinsic_cloak && !rank_cloak {
             return;
         }
@@ -2467,9 +2420,9 @@ impl Simulation {
     /// already facing it, becomes that building. False when it refuses.
     ///
     /// Not carried over to the building: the unit's AttachedTag
-    /// (`+0x34`, `0x007399EE`), its looping sound handles (`+0x4DC..+0x4F4`,
-    /// `0x00739971`), `DiscoveredBy(owner)` (vt+0x198, `0x00739848`) and the
-    /// turret facing a `+0x16CA`/`+0x16C4` type starts at (`0x007397FB`).
+    /// (`+0x34`, `0x007399EE`), `DiscoveredBy(owner)` (vt+0x198,
+    /// `0x00739848`) and the turret facing a `+0x16CA`/`+0x16C4` type starts
+    /// at (`0x007397FB`).
     /// Phobos `TechnoExt::SyncInvulnerability` (`Techno/Body.cpp:156`): a
     /// deploy or undeploy conversion carries an active curtain to the new
     /// object when the source type's `KeptOnDeploy` (else its global) allows
@@ -2501,6 +2454,80 @@ impl Simulation {
             ),
         };
         kept.unwrap_or(fallback).then(|| state.synced())
+    }
+
+    /// The AI half of a construction yard's arrival for a house no human
+    /// controls: `HouseClass::RefreshBuildOptionsAfterDeploy @ 0x00505180`
+    /// (Computer_Paranoid in a nonzero game mode, `0x005051AF`, then Recalc
+    /// for an empty plan, `0x005051C5..0x005051D1`), then node zero and the
+    /// BasePlan center (`+0x5750`) take `cell` and Production,
+    /// AITriggersActive and AutoBaseBuilding are set. `UnitClass::Deploy`
+    /// (`0x007398D9..0x00739919`) runs it with the yard's origin after its
+    /// primary center write; Ares 3.0 MPGameMode_SpawnBaseUnit_BuildConst
+    /// (1001F0B0, hook 0x5D7048) with the house's base cell, before the yard
+    /// exists. Native indexes Recalc's vectors unchecked; a plan VERA cannot
+    /// preflight stays empty.
+    pub(crate) fn refresh_ai_base_after_deploy(
+        &mut self,
+        owner_id: InternedId,
+        cell: (u16, u16),
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) {
+        let Some(house) = self.houses.get(&owner_id) else {
+            return;
+        };
+        if self.session.game_mode_nonzero() && !house.is_controlled_by_human(true) {
+            self.computer_paranoid(rules, registry, frame_effects);
+        }
+        let house = &self.houses[&owner_id];
+        if house.base_plan().nodes().is_empty() {
+            let country_name = house
+                .country()
+                .map(|country| self.interner.resolve(country).to_owned());
+            let (side_index, difficulty, tech_level) =
+                (house.side_index(), house.difficulty(), house.tech_level());
+            match country_name {
+                Some(country_name)
+                    if preflight_recalc(
+                        rules,
+                        &country_name,
+                        side_index,
+                        difficulty,
+                        self.session.game_options().super_weapons,
+                    )
+                    .is_ok() =>
+                {
+                    recalc_base_plan(
+                        self.houses
+                            .get_mut(&owner_id)
+                            .expect("refreshed owner remains registered")
+                            .base_plan_mut(),
+                        rules,
+                        &self.type_tech_levels,
+                        &country_name,
+                        side_index,
+                        difficulty,
+                        tech_level,
+                        self.session.game_options().super_weapons,
+                        &mut self.scenario_rng,
+                    );
+                }
+                _ => log::warn!(
+                    "AI base Recalc skipped: unusable country, difficulty tables or BuildPower/BuildRefinery lists"
+                ),
+            }
+        }
+        let house = self
+            .houses
+            .get_mut(&owner_id)
+            .expect("refreshed owner remains registered");
+        house
+            .base_plan_mut()
+            .anchor_first_node(pack_base_plan_cell(i32::from(cell.0), i32::from(cell.1)));
+        house.anchor_base_plan(cell);
+        house.enable_ai_deploy_latches();
     }
 
     pub(crate) fn deploy_mcv(
@@ -2602,7 +2629,7 @@ impl Simulation {
         // back (`0x0073953B..0x00739565` / `0x0073959C..0x007395B4`) before
         // either outcome acts.
         self.foot_mark_remove(stable_id, rules, registry, frame_effects);
-        self.locomotor_mark_all_occupation_bits(stable_id, false);
+        self.locomotor_mark_all_occupation_bits(stable_id, false, rules.ares_form());
         let yard = rules.object(&yard_type);
         let placeable = yard.is_some_and(|yard| {
             crate::sim::build_site::can_place_building_at(
@@ -2627,7 +2654,7 @@ impl Simulation {
                 frame_effects,
             );
         }
-        self.locomotor_mark_all_occupation_bits(stable_id, true);
+        self.locomotor_mark_all_occupation_bits(stable_id, true, rules.ares_form());
         self.foot_mark_put(stable_id, rules, registry, frame_effects);
         if !placeable {
             log::info!("MCV deploy blocked at origin {origin:?}");
@@ -2694,12 +2721,11 @@ impl Simulation {
                     country_name,
                     house.side_index(),
                     house.difficulty(),
-                    house.tech_level(),
                     house.base_plan().nodes().is_empty(),
                 )
             })
         });
-        if let Some((country_name, side_index, difficulty, _, true)) = &recalc_context {
+        if let Some((country_name, side_index, difficulty, true)) = &recalc_context {
             let Some(country_name) = country_name.as_deref() else {
                 // Controlled unavailable Rust prerequisite; no native
                 // constructor/placement transaction has started here.
@@ -2708,7 +2734,16 @@ impl Simulation {
                 }
                 return false;
             };
-            if preflight_recalc(rules, country_name, *side_index, *difficulty).is_err() {
+            if preflight_recalc(
+                rules,
+                country_name,
+                *side_index,
+                *difficulty,
+                self.session.game_options().super_weapons,
+            )
+            .is_err()
+            {
+                log::warn!("MCV deploy refused: no usable AI base plan for {country_name}");
                 if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
                     entity.mcv_deploy_pending.clear();
                 }
@@ -2740,7 +2775,7 @@ impl Simulation {
         // Slave Miner's DeploysInto transaction. Original Steam739660..739711
         // and failure739A6E..739AA7 are retained in mcv-placement-causality.
         self.foot_mark_remove(stable_id, rules, registry, frame_effects);
-        self.locomotor_mark_all_occupation_bits(stable_id, false);
+        self.locomotor_mark_all_occupation_bits(stable_id, false, rules.ares_form());
         let owner_str = self.interner.resolve(owner_id).to_string();
         let Some(mut destination) = self
             .construct_runtime_techno(
@@ -2756,7 +2791,7 @@ impl Simulation {
             .expect("fresh Techno constructor initialization cannot fail")
         else {
             //739A77..739AA7 restores locomotor head bits before Mark(DOWN).
-            self.locomotor_mark_all_occupation_bits(stable_id, true);
+            self.locomotor_mark_all_occupation_bits(stable_id, true, rules.ares_form());
             self.foot_mark_put(stable_id, rules, registry, frame_effects);
             if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
                 entity.mcv_deploy_pending.clear();
@@ -2797,7 +2832,7 @@ impl Simulation {
             //739A6E first scalar-deletes the refused constructor-complete
             // Building; only then739A94/+124(1) restore the original Unit.
             self.discard_constructed_limbo(new_sid, rules, frame_effects);
-            self.locomotor_mark_all_occupation_bits(stable_id, true);
+            self.locomotor_mark_all_occupation_bits(stable_id, true, rules.ares_form());
             self.foot_mark_put(stable_id, rules, registry, frame_effects);
             //739AA7 clears+68C only after both original restoration calls.
             if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
@@ -2885,53 +2920,33 @@ impl Simulation {
             new_sid,
             rules,
         );
-        self.add_unit_sensor_after_unlimbo(new_sid, rules, registry);
         self.mission_spawned_entities = true;
-        if let Some((country_name, side_index, difficulty, tech_level, _)) = recalc_context {
+        if recalc_context.is_some() {
             // The new Building's committed north-west anchor is the native
             // `+0x9C/+0xA0` source. This bounded write order is load-bearing:
-            // primary center, Computer_Paranoid, optional Recalc, node zero,
-            // BasePlan center, the three independent House AI activation
-            // latches, then MoveGroundForcesToBase (`0x00739926`). The block
-            // ends before the slave transfer and UnInit below.
+            // primary center, then the shared AI half (Computer_Paranoid,
+            // optional Recalc, node zero, BasePlan center, the three
+            // independent House AI activation latches), then
+            // MoveGroundForcesToBase (`0x00739926`). The block ends before the
+            // slave transfer and UnInit below.
             self.houses
                 .get_mut(&owner_id)
                 .expect("qualifying deploy owner remains registered")
                 .set_base_center((rx, ry));
-            // `0x00505180` turns the computers paranoid for a house no human
-            // controls (`0x005051AF`) before its Recalc.
-            self.computer_paranoid(rules, registry, frame_effects);
-            let house = self
-                .houses
-                .get_mut(&owner_id)
-                .expect("qualifying deploy owner remains registered");
-            if house.base_plan().nodes().is_empty() {
-                recalc_base_plan(
-                    house.base_plan_mut(),
-                    rules,
-                    &self.type_tech_levels,
-                    country_name
-                        .as_deref()
-                        .expect("empty qualifying plan was preflighted with a country"),
-                    side_index,
-                    difficulty,
-                    tech_level,
-                    self.session.game_options().super_weapons,
-                    &mut self.scenario_rng,
-                );
-            }
-            house
-                .base_plan_mut()
-                .anchor_first_node(pack_base_plan_cell(i32::from(rx), i32::from(ry)));
-            house.anchor_base_plan((rx, ry));
-            house.enable_ai_deploy_latches();
+            self.refresh_ai_base_after_deploy(owner_id, (rx, ry), rules, registry, frame_effects);
             // Phobos `[General] GatherWhenMCVDeploy=` skips the native
             // regroup (hook at `0x739920`) while keeping every earlier write.
-            #[cfg(feature = "phobos")]
-            let gather = rules.general.gather_when_mcv_deploy;
-            #[cfg(not(feature = "phobos"))]
-            let gather = true;
-            if gather {
+            let gather = !rules.phobos() || rules.general.gather_when_mcv_deploy;
+            // A command-layer-driven house manages its own forces: the
+            // regroup overwrites every own ground unit's NavCom, which the
+            // external controller only observes a tick later. Every write
+            // above this gate stays.
+            if gather
+                && !self
+                    .houses
+                    .get(&owner_id)
+                    .is_some_and(|house| house.command_driven())
+            {
                 self.move_ground_forces_to_base(owner_id, rules, registry, frame_effects);
             }
         }
@@ -2939,9 +2954,16 @@ impl Simulation {
         // 0x00739956: a Slave Miner's manager moves to its refinery (the
         // hand-off 0x006B0D10, then SetOwner 0x006AF580) before the unit
         // leaves; the refinery's own fresh slaves are freed.
-        #[cfg(feature = "ares")]
-        self.transfer_factory_country(stable_id, new_sid);
+        // Ares UnitClass_Deploy_Transfer (10048E90 -> 10045A80): the bomb,
+        // then the original owner.
+        if rules.ares() {
+            self.transfer_ivan_bomb(stable_id, new_sid);
+            self.transfer_factory_country(stable_id, new_sid);
+        }
         self.transfer_slave_manager(stable_id, new_sid, true, rules, registry, frame_effects);
+        // 0x00739971..0x007399B2: the building takes the unit's voice handle
+        // and latch, so a line the unit is speaking plays on.
+        self.move_unit_voice(stable_id, new_sid);
         self.uninit_with_context(
             stable_id,
             super::UninitContext::new(rules, registry).with_effects(frame_effects),
@@ -2994,7 +3016,8 @@ impl Simulation {
     /// managers' children, the building's live attackers are listed
     /// (`0x00449F23..0x00449FDC`, Techno array order) and the building leaves
     /// the map (vt+0xD4, whose Detach_All clears their targets) for the
-    /// unit's Unlimbo (`0x0044A002`). After its health
+    /// unit's Unlimbo (`0x0044A002`), which faces the building type's
+    /// DeployFacing (`0x00449FED..0x00449FFA`). After its health
     /// (`0x0044A010..0x0044A039`) a building's slave manager moves to it
     /// (SetOwner `0x006AF580` at `0x0044A047`, which frees the unit's own
     /// fresh slaves), the unit takes the building's veterancy
@@ -3014,14 +3037,15 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let Some((unit_type, owner_id, rx, ry, z, was_selected)) =
+        let Some((unit_type, owner_id, rx, ry, z, was_selected, unlimbo_facing)) =
             self.substrate.entities.get(sid).and_then(|entity| {
                 let type_str = self.interner.resolve(entity.type_ref());
                 let unit_type = production::undeploy_target(rules, type_str)?;
+                let building_type = rules.object(type_str)?;
                 let (rx, ry) = undeploy_unit_cell(
                     entity.position.rx(),
                     entity.position.ry(),
-                    &rules.object(type_str)?.foundation,
+                    &building_type.foundation,
                 );
                 Some((
                     unit_type,
@@ -3030,6 +3054,9 @@ impl Simulation {
                     ry,
                     entity.position.z(),
                     entity.selection.is_selected(),
+                    // Selling449FED..44A002: the unit's Unlimbo direction is
+                    // the building type's DeployFacing (+0xEDC, 0x00465D70).
+                    building_type.deploy_facing,
                 ))
             })
         else {
@@ -3065,7 +3092,7 @@ impl Simulation {
                 &owner,
                 rx,
                 ry,
-                0,
+                unlimbo_facing,
                 z,
                 rules,
                 TechnoConstructorInit::FreshScenario,
@@ -3088,6 +3115,8 @@ impl Simulation {
         // Selling449E74/449E80 caches the building's refund before its Limbo
         // and the new Unit's Unlimbo. Those callbacks may change the owner.
         let failed_unlimbo_refund = production::techno_refund(self, rules, sid);
+        // Selling449F12..449F1E turns the light off before the attacker list.
+        self.lighting_sources.set_building_light_active(sid, false);
         let targeters: Vec<u64> = self
             .substrate
             .entities
@@ -3107,12 +3136,14 @@ impl Simulation {
             sid,
             super::UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
         );
+        // Ares 3.0 BuildingClass_Mi_Selling_PutMcv (1005C5D0, hook 0x449FF8)
+        // puts the unit with A8E7AC raised, so no Can_Enter_Cell refuses it.
         let (new_sid, outcome) = self.unlimbo_constructed_parent(
             new_sid,
             position,
             rules,
             overlay_registry,
-            false,
+            rules.ares(),
             frame_effects,
         );
         if !matches!(
@@ -3122,7 +3153,13 @@ impl Simulation {
             //44A16B..44A176 pays the cached signed amount to the live owner.
             //The following tail never deletes the new Unit: its existing
             //limbo identity/Tracking remain, including ShortGame's BaseUnit count.
-            if let Some(refund) = failed_unlimbo_refund
+            // 1005C5D0 ignores the result: no refund, and the building goes
+            // with the unit left in limbo. RESIDUAL: Ares runs the rest of
+            // the conversion (health, veterancy, archive, attackers) on that
+            // limbo unit; VERA stops here. Trigger: a forced Put that still
+            // fails (no cell under the yard). Effect: none visible.
+            if !rules.ares()
+                && let Some(refund) = failed_unlimbo_refund
                 && let Some(owner) = self
                     .substrate
                     .entities
@@ -3144,7 +3181,6 @@ impl Simulation {
             new_sid,
             rules,
         );
-        self.add_unit_sensor_after_unlimbo(new_sid, rules, overlay_registry);
         if let Some(unit) = self.substrate.entities.get_mut(new_sid) {
             converted_health.apply(unit);
             // RESIDUAL: native Selects the new unit (vt+0x14C, `0x0044A137`)
@@ -3160,9 +3196,20 @@ impl Simulation {
             // the unit's own.
             unit.veterancy.inherit(&veterancy);
         }
-        #[cfg(feature = "ares")]
-        self.transfer_factory_country(sid, new_sid);
+        // Ares BuildingClass_Mi_Selling_Transfer (10048E90 -> 10045A80).
+        if rules.ares() {
+            self.transfer_ivan_bomb(sid, new_sid);
+            self.transfer_factory_country(sid, new_sid);
+        }
         self.transfer_slave_manager(sid, new_sid, false, rules, overlay_registry, frame_effects);
+        // Ares hook 0x44A04C (10053D60), right after that handover: the unit
+        // takes the building's EMP counter and sparkle.
+        if rules.ares() {
+            self.copy_ares_emp_to_undeployed(sid, new_sid, rules);
+        }
+        // BuildingClass::Mission_Selling 0x0044A0D4..0x0044A115: the unit
+        // takes the building's voice handle and latch.
+        self.move_unit_voice(sid, new_sid);
         // Cell clicks, object clicks (event 0x1E) and the SlaveManager
         // relocation share ArchiveTarget; conversion sends the new Unit to
         // that existing goal, a Cell or an object: vt+0x480
@@ -3242,9 +3289,9 @@ impl Simulation {
 }
 
 impl crate::sim::world::ObjectSubstrate {
-    /// The explicit finished-object adapters (diagnostic spawn and supported
-    /// Ares delivery) bypass buildup and request a ready building. This is
-    /// their retained adapter contract, not a native Unlimbo or map-reader
+    /// The explicit finished-object adapter (diagnostic spawn) bypasses
+    /// buildup and requests a ready building. This is
+    /// its retained adapter contract, not a native Unlimbo or map-reader
     /// write. Authored campaign structures never enter this adapter.
     fn ready_finished_spawn_adapter(&mut self, stable_id: u64) {
         if let Some(entity) = self
@@ -3315,10 +3362,10 @@ fn undeploy_unit_cell(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "world_spawn/tests.rs"]
 mod techno_constructor_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "failed_yard_repack_tests.rs"]
 mod failed_yard_repack_tests;

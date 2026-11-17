@@ -4,7 +4,7 @@
 use super::lifecycle_tests::{insert_entity, install_common_raw_terrain};
 use super::{PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, Simulation};
 use crate::map::entities::EntityCategory;
-use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+use crate::rules::{armor::armor_index, ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::components::DriveCoord;
 use crate::sim::movement::FacingClass;
 use crate::sim::movement::locomotor::LocomotorState;
@@ -157,8 +157,11 @@ fn lifted_impact_scene(kind: &str, overrides: &str) -> (Simulation, RuleSet, u64
         let warhead = rules.warhead(name).unwrap();
         assert_eq!(warhead.cell_spread_f64, 1.0);
         assert_eq!(warhead.percent_at_max_f64, 1.0);
-        assert_eq!(warhead.verses_f64[0], verses);
-        assert_eq!(warhead.verses_f64[3], 0.0);
+        // Under Ares the native raw11 read is skipped and the extension owns
+        // Verses, so check the interaction a game read either way consults.
+        let multiplier = |armor| f64::from_bits(warhead.interaction(armor).multiplier().bits());
+        assert_eq!(multiplier(armor_index("none")), verses);
+        assert_eq!(multiplier(armor_index("light")), 0.0);
     }
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
     sim.intern_rule_type_ids(&rules);
@@ -358,13 +361,14 @@ fn aircraft_drop_landing_uses_original_wheel_controls() {
             .unwrap();
         cell.land_type = input["land_type"].as_u64().unwrap() as u8;
         cell.speed_costs = SpeedCostProfile {
-            foot: Some(percent),
-            track: Some(percent),
-            wheel: Some(percent),
-            float: Some(percent),
-            amphibious: Some(percent),
-            float_beach: Some(percent),
-            hover: Some(percent),
+            foot: Some(crate::rules::terrain_rules::test_speed_percent(percent)),
+            track: Some(crate::rules::terrain_rules::test_speed_percent(percent)),
+            wheel: Some(crate::rules::terrain_rules::test_speed_percent(percent)),
+            float: Some(crate::rules::terrain_rules::test_speed_percent(percent)),
+            amphibious: Some(crate::rules::terrain_rules::test_speed_percent(percent)),
+            float_beach: Some(crate::rules::terrain_rules::test_speed_percent(percent)),
+            hover: Some(crate::rules::terrain_rules::test_speed_percent(percent)),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
         };
         cell.base_speed_costs = cell.speed_costs.clone();
         assert_eq!(
@@ -771,15 +775,16 @@ fn rules_for(input: &serde_json::Value) -> RuleSet {
     let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
         "[General]\nFlightLevel=1500\n\
          [AudioVisual]\nConditionRed=0.25\nImpactLandSound=RulesLand\nImpactWaterSound=RulesWater\n\
-         [AircraftTypes]\n0=TEST\n[VehicleTypes]\n0=VICTIM\n\
+         [AircraftTypes]\n0=TEST\n[VehicleTypes]\n0=VICTIM\n[Animations]\n0=SGRYSMK1\n\
          [TEST]\nStrength={}\nSpeed={}\nLandable=yes\nPrimary=CrashGun\n\
-         Locomotor={{4A582746-9839-11D1-B709-00A024DDAFD1}}\n{sounds}\
+         Locomotor={{4A582746-9839-11D1-B709-00A024DDAFD1}}\n{sounds}{}\n\
          [VICTIM]\nStrength=1000\nArmor=none\n\
          [CrashGun]\nDamage=150\nWarhead=CrashWH\n\
          [CrashWH]\nCellSpread=1\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
          [Clear]\nTrack=100%\n",
         int(input, "strength", 150),
         int(input, "ini_speed", 14),
+        input["type_extra"].as_str().unwrap_or(""),
     )))
     .unwrap();
     // The oracle records Crash's Stun without running it. VERA's runs, and
@@ -1272,6 +1277,68 @@ fn crash_smoke_matches_native_rows() {
     }
 }
 
+/// Ares AircraftClass_Update_DamageSmoke (Ares.dll 10047B60, hook
+/// 0x415085), over the native smoke rows: `Smoke.Anim=none` neither puffs
+/// nor draws, and `Smoke.ChanceRed`/`Smoke.ChanceDead` of 100 puff on every
+/// draw.
+#[test]
+fn ares_smoke_keys_replace_the_aircraft_smoke() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let smoke = |input: &serde_json::Value, extra: &str| {
+        let mut input = input.clone();
+        input["type_extra"] = serde_json::json!(extra);
+        let (mut sim, rules) = fixture(&input);
+        let anims_before = sim.substrate.anims.len();
+        let rng_before = sim.scenario_rng.state();
+        sim.aircraft_crash_smoke(1, &rules);
+        (
+            sim.substrate.anims.len() > anims_before,
+            sim.scenario_rng.state() != rng_before,
+        )
+    };
+    let mut drawn = 0;
+    for row in oracle()["smoke"].as_array().unwrap() {
+        let input = &row["input"];
+        let (_, drew) = smoke(input, "");
+        drawn += usize::from(drew);
+        assert_eq!(smoke(input, "Smoke.Anim=none"), (false, false));
+        assert_eq!(
+            smoke(input, "Smoke.ChanceRed=100\nSmoke.ChanceDead=100"),
+            (drew, drew)
+        );
+    }
+    assert!(drawn > 0);
+}
+
+/// Ares FootClass_Crash_Spin (Ares.dll 10049050, hook 0x4DECAE):
+/// `CrashSpin=no` crashes without the spin and its three draws.
+#[test]
+fn ares_crash_spin_no_skips_the_spin_draws() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let row = oracle()["crash"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| {
+            row["draws"].as_array().unwrap().len() == 3 && int(&row["input"], "i_know", 0) == 0
+        })
+        .unwrap();
+    let mut input = row["input"].clone();
+    input["crashing"] = serde_json::json!(0);
+    input["type_extra"] = serde_json::json!("CrashSpin=no");
+    let (mut sim, rules) = fixture(&input);
+    let before = sim.scenario_rng.state();
+    assert!(sim.foot_crash(
+        1,
+        None,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default()
+    ));
+    assert!(sim.substrate.entities.get(1).unwrap().rocking.is_none());
+    assert_eq!(sim.scenario_rng.state(), before);
+}
+
 /// A save in mid-fall restores the latch, its seen edge, the fall counter and
 /// the spin: the loaded and the continuing worlds fall frame for frame to the
 /// same impact.
@@ -1400,9 +1467,10 @@ fn a_death_weapon_detonates_once_without_cluster_draws() {
 /// `BalloonHover=` as asked (a Kirov's impact fires its current weapon, any
 /// other type's plays its `Explosion=` once more) and seats two `RIDER`s. The
 /// type names an `ImpactLandSound=` the Jumpjet impact must not play.
-fn jumpjet_rules(balloon: bool) -> RuleSet {
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
-        "[General]\n\
+fn jumpjet_rules(balloon: bool, art: &str) -> RuleSet {
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(&format!(
+            "[General]\n\
          [AudioVisual]\nConditionRed=0.25\nImpactLandSound=RulesLand\n\
          [VehicleTypes]\n0=TEST\n1=VICTIM\n\
          [InfantryTypes]\n0=RIDER\n\
@@ -1415,8 +1483,10 @@ fn jumpjet_rules(balloon: bool) -> RuleSet {
          [RIDER]\nStrength=100\nArmor=none\n\
          [CrashGun]\nDamage=150\nRange=6\nWarhead=CrashWH\n\
          [CrashWH]\nCellSpread=1\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
-        if balloon { "yes" } else { "no" },
-    )))
+            if balloon { "yes" } else { "no" },
+        )),
+        &IniFile::from_str(art),
+    )
     .unwrap();
     assert_eq!(rules.general.condition_red, 0.25, "crash fixture threshold");
     let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
@@ -1434,9 +1504,13 @@ fn jumpjet_rules(balloon: bool) -> RuleSet {
 /// its cargo, a `VICTIM` stands below and a Soviet shooter at (40, 40).
 /// Answers the victim's and the shooter's ids.
 fn jumpjet_fixture(balloon: bool) -> (Simulation, RuleSet, u64, u64) {
+    jumpjet_fixture_with_art(balloon, "")
+}
+
+fn jumpjet_fixture_with_art(balloon: bool, art: &str) -> (Simulation, RuleSet, u64, u64) {
     use crate::sim::house_state::HouseState;
     use crate::sim::passenger::{PassengerCargo, PassengerRole};
-    let mut rules = jumpjet_rules(balloon);
+    let mut rules = jumpjet_rules(balloon, art);
     // Explicit loaded-main-VXL input for the native Jumpjet crash boundary.
     rules.supply_loaded_voxel_for_test("TEST");
     let mut sim = Simulation::with_seed(0);
@@ -1648,6 +1722,33 @@ fn shoot_down(sim: &mut Simulation, rules: &RuleSet, shooter: u64) {
         &[AreaDamageReceiver::Entity(hit)],
         crate::sim::world::FrameEffects::default(),
     );
+}
+
+/// Art `DeathFrames=` on a `Crashable=` Jumpjet: the kill skips
+/// `Death_Explosion` (`0x00737DDD`) and the wreck falls while its death count
+/// runs; Unit AI explodes and UnInits it once the count before a step has
+/// reached `MaxDeathCounter=` (`0x0073635B..0x007363A3`), ahead of its impact.
+#[test]
+fn a_death_frames_jumpjet_explodes_when_its_count_ends() {
+    let (mut sim, rules, _, shooter) = jumpjet_fixture_with_art(
+        false,
+        "[TEST]\nVoxel=yes\nDeathFrames=3\nMaxDeathCounter=2\n",
+    );
+    shoot_down(&mut sim, &rules, shooter);
+    assert_eq!(
+        sim.substrate.anims.iter().count(),
+        0,
+        "no Explosion= at the kill"
+    );
+    let wreck = sim
+        .substrate
+        .entities
+        .get(1)
+        .expect("a crashing unit stays");
+    assert!(wreck.crash.is_crashing());
+    assert_eq!(wreck.unit_death_counter.get(), 0);
+    let fall = fall_to_the_impact(&mut sim, &rules);
+    assert_eq!((fall.impact_frame, fall.impact_booms), (3, 1));
 }
 
 /// A drain link breaks at the killing hit (the Techno death arm,

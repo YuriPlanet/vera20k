@@ -89,6 +89,6 @@ pub(super) fn centered<H: OrdinaryBridgeHost>(
     Some((point, ns))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ordinary_test_host.rs"]
 pub(super) mod test_host;

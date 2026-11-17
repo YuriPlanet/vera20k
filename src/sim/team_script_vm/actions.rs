@@ -17,12 +17,12 @@
 //! `deploy` rows (actions 14, 43, 8 and 9) in `transport_tests`.
 //!
 //! RESIDUALS:
-//! - Actions outside [`action_is_ported`] are not ported. A team that reaches
-//!   one stays on it and records the first as its refusal; the rest of its
-//!   update runs. Trigger: an authored script reaches an unsupported action.
-//!   Effect: the team idles on that action for good, keeping its
-//!   members and its TeamType's `Max=` slot, and nothing else sends those
-//!   units out.
+//! - Every stock action, 0 to 64, is ported, and Ares' 67 and 68 in an Ares
+//!   game ([`action_is_ported`]). As natively, a higher action and action 2
+//!   finish nothing, so the team stays on that step for good. Where native
+//!   indexes a type array out of bounds, or would build a team from a
+//!   TeamType VERA holds no definition for (action 18), the team stays on
+//!   the step instead and records the first as its refusal.
 //! - Script22's LAN/WOL path remains refused: Map580BC0 reads process-current
 //!   shroud586360; native LAN guest setup5E0841..5E0931 installs its local
 //!   participant at index0, then688109 makes that House PlayerPtr. Feeding
@@ -40,7 +40,10 @@
 //!   answer false. No retail type sets either key, so every retail member
 //!   answers false. That includes the "Soviet SChop" teams' Siege Choppers,
 //!   which action 9 sets unloading just before the team's attack actions:
-//!   natively, as in VERA, those actions take them off Unload in the air.
+//!   natively, as in VERA, those actions queue Attack over the Unload, and
+//!   each takes it once it is down, undeployed (a descending jumpjet is
+//!   moving, and `UnitClass::Is_Ready_To_Commence @ 0x00744270` holds the
+//!   queued mission meanwhile).
 //!   Trigger: a member of a modded type deploying when its team attacks.
 //!   Effect: it stops deploying and attacks.
 
@@ -64,7 +67,7 @@ use crate::sim::world::Simulation;
 
 use super::super_actions::ChronoshiftTarget;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "idle_animation_tests.rs"]
 mod idle_animation_tests;
 use super::team_ai::member_is_live_joined;
@@ -75,15 +78,22 @@ use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::team_script_vm::TeamScriptVm;
 use crate::sim::world::ObjectSubstrate;
 
-#[cfg(test)]
+#[path = "scout_houses.rs"]
+mod scout_houses;
+
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "scout_tests.rs"]
 mod scout_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
+#[path = "scout_houses_tests.rs"]
+mod scout_houses_tests;
+
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "result_tests.rs"]
 mod result_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "spy_waypoint_tests.rs"]
 mod spy_waypoint_tests;
 
@@ -123,64 +133,9 @@ impl Simulation {
 
 /// Whether the dispatch has a port of `action_id`'s handler. Mode-specific
 /// residuals can still refuse a path (Script22 currently admits single player).
-pub(super) const fn action_is_ported(action_id: i32) -> bool {
-    matches!(
-        action_id,
-        0 | 1
-            | 2
-            | 3
-            | 4
-            | 5
-            | 6
-            | 7
-            | 8
-            | 9
-            | 10
-            | 11
-            | 12
-            | 13
-            | 14
-            | 15
-            | 16
-            | 17
-            | 19
-            | 20
-            | 21
-            | 22
-            | 23
-            | 24
-            | 25
-            | 26
-            | 27
-            | 30
-            | 31
-            | 34
-            | 37
-            | 38
-            | 39
-            | 40
-            | 41
-            | 42
-            | 43
-            | 46
-            | 47
-            | 49
-            | 50
-            | 51
-            | 52
-            | 53
-            | 54
-            | 55
-            | 56
-            | 57
-            | 58
-            | 59
-            | 60
-            | 61
-            | 62
-            | 63
-            | 64
-    ) || (cfg!(feature = "ares") && matches!(action_id, 67 | 68))
+/// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
+pub(super) const fn action_is_ported(action_id: i32, ares: bool) -> bool {
+    matches!(action_id, 0..=64) || (ares && matches!(action_id, 67 | 68))
 }
 
 /// A member's NavCom as a team target, for `Distance`.
@@ -201,7 +156,8 @@ impl Simulation {
     /// and the member carries passengers; a script run past its end
     /// destroys the team; the mission target and move target are cleared.
     /// Otherwise the move target falls back to the mission target. Stock
-    /// actions outside `0..=0x40` do nothing; an Ares build also admits68.
+    /// actions outside `0..=0x40` do nothing; a game Ares plays in also
+    /// admits68.
     pub(super) fn team_step_script(
         &mut self,
         team_id: u64,
@@ -274,7 +230,7 @@ impl Simulation {
                 argument: 0,
             },
         );
-        if action.action_id as u32 > 0x40 && !(cfg!(feature = "ares") && action.action_id == 68) {
+        if action.action_id as u32 > 0x40 && !(rules.ares() && action.action_id == 68) {
             return;
         }
         self.team_run_action(team_id, action, first, rules, registry, frame_effects);
@@ -291,7 +247,10 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) {
         let current_frame = self.session.binary_frame() as i32;
+        // The Ares action bodies below follow how the Rules were read.
+        let ares = rules.ares_form();
         match action.action_id {
+            48 => self.team_action_scout_houses(team_id, rules, registry, frame_effects),
             0 => self.team_action_attack_quarry(
                 team_id,
                 action.argument,
@@ -558,7 +517,7 @@ impl Simulation {
                     team.advance_pending = true;
                 }
             }
-            64 | 67 if action.action_id == 64 || cfg!(feature = "ares") => {
+            64 | 67 if action.action_id == 64 || rules.ares() => {
                 //6E9F0D -> each member's vt34C/Foot4DFE00. Cache the next
                 //member before its seek callback; successful entrants leave
                 //the Team via the shared6EA870 owner with no_idle=true.
@@ -575,9 +534,10 @@ impl Simulation {
                         .and_then(|team| team.next_member_after(current));
                     // Installed Ares dispatcher1003A110 sets Ext+B0 for67,
                     // clears it for64, then calls the same Foot vt+34C.
-                    #[cfg(feature = "ares")]
-                    if let Some(foot) = self.substrate.entities.get_mut(current) {
-                        foot.vehicle_driver.set_vehicle_seek(action.action_id != 64);
+                    if ares && let Some(foot) = self.substrate.entities.get_mut(current) {
+                        foot.ares
+                            .vehicle_driver
+                            .set_vehicle_seek(action.action_id != 64);
                     }
                     if self.foot_enter_nearest_occupiable(current, rules, registry, frame_effects) {
                         self.team_remove_member(team_id, current, true, rules, frame_effects);
@@ -829,6 +789,39 @@ impl Simulation {
                     team.advance_pending = true;
                 }
             }
+            // Case 32 (`0x006E9A74..0x006E9A9F`), named Ion Storm Start but
+            // the Lightning Storm in YR, like trigger action 44: unless
+            // IsActive `0x0053A100`, Start `0x00539EB0` with the argument as
+            // duration, LightningDeferment (Rules `+0x1794`), the zero cell
+            // `[0x00B0E948]` and no house. Then Team+80=1 either way.
+            32 => {
+                if !crate::sim::superweapon::lightning_storm::raging(self) {
+                    crate::sim::superweapon::lightning_storm::start(
+                        self,
+                        rules,
+                        action.argument,
+                        rules.general.lightning_deferment,
+                        (0, 0),
+                        None,
+                    );
+                }
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
+            // Case 33 (`0x006E9AAE..0x006E9AC0`), like trigger action 45: a
+            // raging storm gets Stop `0x0053A090`'s end request. Then
+            // Team+80=1 either way.
+            33 => {
+                if crate::sim::superweapon::lightning_storm::raging(self) {
+                    crate::sim::superweapon::lightning_storm::request_end(
+                        &mut self.lightning_storm,
+                    );
+                }
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
             43 => Self::team_action_wait_until_loaded(
                 &self.interner,
                 &self.substrate,
@@ -882,13 +875,27 @@ impl Simulation {
             ),
             53 => self.team_action_gather_at_enemy_base(
                 team_id,
+                action.argument,
                 first,
                 rules,
                 registry,
                 frame_effects,
             ),
-            54 => self.team_action_regroup_at_base(team_id, first, rules, registry, frame_effects),
-            55 => self.team_action_iron_curtain(team_id, rules, registry, frame_effects),
+            54 => self.team_action_regroup_at_base(
+                team_id,
+                action.argument,
+                first,
+                rules,
+                registry,
+                frame_effects,
+            ),
+            55 => self.team_action_iron_curtain(
+                team_id,
+                action.argument,
+                rules,
+                registry,
+                frame_effects,
+            ),
             56 => self.team_action_chronoshift(
                 team_id,
                 ChronoshiftTarget::Building(action.argument),
@@ -943,8 +950,8 @@ impl Simulation {
                     team.advance_pending = true;
                 }
             }
-            #[cfg(feature = "ares")]
-            68 => {
+            // A game not read the Ares way takes the refusal arm below.
+            68 if ares => {
                 // Installed TeamClass_Update hook6E9443 ->1003A310 ->
                 // dispatch10039C30/action6810039D7C: linked members use
                 // their own current Type's Convert.Script pointer. The
@@ -970,11 +977,195 @@ impl Simulation {
                     team.advance_pending = true;
                 }
             }
+            18 => self.team_action_change_team(
+                team_id,
+                action.argument,
+                rules,
+                registry,
+                frame_effects,
+            ),
+            // Case 28 (`0x006E9958..0x006E99C7`): head first, each member's
+            // GetCoords (`vt+0x48`) as a cell (signed /256 into shorts) is
+            // reduced around (Map `0x0057B790`); then Team+80=1, also for an
+            // empty team. A reduction cannot unlink a member.
+            28 => {
+                let members: Vec<u64> = self
+                    .team_script_vm
+                    .teams
+                    .get(&team_id)
+                    .map(|team| team.members().collect())
+                    .unwrap_or_default();
+                for member in members {
+                    let Some(cell) = self.substrate.entities.get(member).map(|entity| {
+                        let coord = object_get_coords(entity, self.resolved_terrain.as_ref());
+                        ((coord.x / 256) as i16 as u16, (coord.y / 256) as i16 as u16)
+                    }) else {
+                        continue;
+                    };
+                    if let Err(error) = Self::reduce_tiberium_in_radius(
+                        &self.terrain_objects,
+                        &self.ore_growth_config,
+                        &mut self.ore_growth_state,
+                        &self.session,
+                        &mut self.scenario_rng,
+                        &self.substrate,
+                        &mut self.resolved_terrain,
+                        &mut self.overlay_grid,
+                        &mut self.dirty_cells,
+                        cell,
+                        rules,
+                        registry,
+                    ) {
+                        log::error!("Team {team_id} Script28 stopped reducing ore: {error}");
+                        break;
+                    }
+                }
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
+            // Case 29 (`0x006E99C8..0x006E99E0`): the team's House+1EE
+            // Production latch, as trigger action 3 sets it; then Team+80=1.
+            29 => {
+                let owner = self
+                    .team_script_vm
+                    .teams
+                    .get(&team_id)
+                    .map(TeamScriptState::owner);
+                if let Some(house) = owner.and_then(|owner| self.houses.get_mut(&owner)) {
+                    house.enable_scripted_production();
+                }
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
+            // Cases 35 and 36 (`0x006E9B6B`, `0x006E9B86`): Reset_Shroud
+            // `0x00577BB0` or RevealEntireMap `0x00577F30`, both with no
+            // House; then Team+80=1.
+            35 | 36 => {
+                let context = crate::sim::world::UninitContext::new(rules, registry)
+                    .with_effects(frame_effects);
+                if action.action_id == 35 {
+                    self.reset_shroud_keeping_counters(context);
+                } else {
+                    self.reveal_entire_map(None, context);
+                }
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
+            // Cases 44 and 45 (`0x006E9462..0x006E94C8`,
+            // `0x006E94C9..0x006E952F`): head first, each Unit member
+            // (WhatAmI 1) whose Type ID is TRUCKB (44) or TRUCKA (45),
+            // compared by `_strcmpi`, gets the other one's Type
+            // (UnitTypeClass::FindIndexByName `0x00747370`), a bare store of
+            // Unit+6C4; then Team+80=1. These literals are gamemd's own.
+            44 | 45 => {
+                let (from, to) = if action.action_id == 44 {
+                    ("TRUCKB", "TRUCKA")
+                } else {
+                    ("TRUCKA", "TRUCKB")
+                };
+                let members: Vec<u64> = self
+                    .team_script_vm
+                    .teams
+                    .get(&team_id)
+                    .map(|team| team.members().collect())
+                    .unwrap_or_default();
+                for member in members {
+                    let matches = self.substrate.entities.get(member).is_some_and(|entity| {
+                        entity.category() == EntityCategory::Unit
+                            && self
+                                .interner
+                                .resolve(entity.type_ref())
+                                .eq_ignore_ascii_case(from)
+                    });
+                    // Native reads the slot before the array when the type is
+                    // missing; a rules set without it changes nothing.
+                    if matches
+                        && let Some(destination) =
+                            rules.object_in_category(ObjectCategory::Vehicle, to)
+                    {
+                        self.store_techno_type(member, destination, rules);
+                    }
+                }
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
             action_id => {
-                debug_assert!(!action_is_ported(action_id));
+                debug_assert!(!action_is_ported(action_id, rules.ares()));
                 self.refuse_team_script_action(team_id, action_id);
             }
         }
+    }
+
+    /// Team script action 18, Change Team: case 18 of `TeamClass::AI`
+    /// (`0x006E96BD..0x006E972B`). It constructs a team
+    /// (`TeamClass::TeamClass @ 0x006E8A90`, no `Max=` gate) of
+    /// `TeamTypeClass::Array[argument]` (`0x00A8ECA4`) for this team's House;
+    /// then, head first, each member leaves this team (`Remove_Member @
+    /// 0x006EA870(member, -1, 0)`, so it takes its idle mode) and joins the
+    /// new one (`Add_Member @ 0x006EA500(member, 0)`), and this team is
+    /// deleted (`vt+0x20(1)`, the destructor recording its AI trigger
+    /// outcome) without setting Team+80. A member the new team's `Can_Add`
+    /// refuses is left in no team. The new team runs on the next update.
+    /// Native indexes the array with no bounds check; VERA keeps a team whose
+    /// argument names no TeamType it can build (past the array, or a
+    /// TeamType without a definition) on this step instead.
+    fn team_action_change_team(
+        &mut self,
+        team_id: u64,
+        argument: i32,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) {
+        let Some(owner) = self
+            .team_script_vm
+            .teams
+            .get(&team_id)
+            .map(TeamScriptState::owner)
+        else {
+            return;
+        };
+        let new_team = usize::try_from(argument)
+            .ok()
+            .and_then(|index| self.trigger_runtime.team_type_at(index))
+            .and_then(|id| self.interner.get(id))
+            .and_then(|team_type| self.construct_team_unlimited(team_type, owner));
+        let Some(new_team) = new_team else {
+            if let Some(team) = self.team_script_vm.teams.get_mut(&team_id)
+                && team.refusal.is_none()
+            {
+                team.refusal = Some(TeamScriptRefusal::InvalidArgument {
+                    action_id: 18,
+                    argument,
+                });
+                log::warn!("Team {team_id} Script18 cannot build TeamType ordinal {argument}");
+            }
+            return;
+        };
+        while let Some(member) = self
+            .team_script_vm
+            .teams
+            .get(&team_id)
+            .and_then(|team| team.members().next())
+        {
+            self.team_remove_member(team_id, member, false, rules, frame_effects);
+            if self
+                .team_script_vm
+                .teams
+                .get(&team_id)
+                .and_then(|team| team.members().next())
+                == Some(member)
+            {
+                // The owner refused to unlink it; native cannot reach this.
+                break;
+            }
+            self.team_add_member(new_team, member, false, rules, registry, frame_effects);
+        }
+        self.destroy_team(team_id, rules, frame_effects);
     }
 
     /// Team script action 51: play an animation at every team member.
@@ -996,7 +1187,7 @@ impl Simulation {
     ) {
         if first {
             let index = argument & 0xffff;
-            let type_name = rules.anim_type_name_by_index(index).map(str::to_owned);
+            let type_name = rules.anim_type_runtime_key_by_index(index);
             if let Some(type_name) = type_name {
                 let type_id = self.interner.intern(&type_name);
                 let members: Vec<u64> = self
@@ -1816,10 +2007,13 @@ impl Simulation {
     /// with `RandomRanged(0, 255)` on the Scenario stream without an enemy):
     /// the passable 3x3 area nearest that cell (FNPC), or the off-map cell
     /// `(0, 0)` without one, which the action does not check. Each frame the
-    /// team moves there.
+    /// team moves there. Ares TeamClass_GatherAtFriendlyBase_Distance
+    /// (1003A2A0, hook 0x6EFB69) makes the distance `argument` plus
+    /// `[General] AIFriendlyDistance=`, else `AISafeDistance=`.
     fn team_action_regroup_at_base(
         &mut self,
         team_id: u64,
+        argument: i32,
         first: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
@@ -1846,7 +2040,16 @@ impl Simulation {
                 let [x, y, _] = self.house_base_coordinate(enemy, cells.as_ref());
                 [x, y]
             });
-            let seed = regroup_seed_cell(own, enemy, rules.general.ai_safe_distance, || {
+            let distance = if rules.ares_form() {
+                argument.wrapping_add(
+                    rules
+                        .ares_general()
+                        .ai_friendly_distance(rules.general.ai_safe_distance),
+                )
+            } else {
+                rules.general.ai_safe_distance
+            };
+            let seed = regroup_seed_cell(own, enemy, distance, || {
                 self.scenario_rng.next_range_i32_inclusive(0, 255)
             });
             self.team_assign_gather_cell(team_id, seed, speed_type, rules, registry, frame_effects);
@@ -1861,10 +2064,12 @@ impl Simulation {
     /// base), or the off-map cell `(0, 0)` without one, which the action
     /// does not check. Without members, or when the leader's house has no
     /// enemy with a base, the action finishes at once instead. Each later
-    /// frame the team moves there.
+    /// frame the team moves there. Ares TeamClass_GatherAtEnemyBase_Distance
+    /// (1003A270, hook 0x6EF8A1) adds `argument` to `AISafeDistance=`.
     fn team_action_gather_at_enemy_base(
         &mut self,
         team_id: u64,
+        argument: i32,
         first: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
@@ -1890,11 +2095,16 @@ impl Simulation {
                 return None;
             }
             let own = self.house_base_coordinate(owner, cells.as_ref());
+            let distance = if rules.ares_form() {
+                argument.wrapping_add(rules.general.ai_safe_distance)
+            } else {
+                rules.general.ai_safe_distance
+            };
             let seed = gather_seed_cell(
                 [own[0], own[1]],
                 [enemy[0], enemy[1]],
                 crate::sim::movement::ground_pose::position_world_xy(&entity.position),
-                rules.general.ai_safe_distance,
+                distance,
             )?;
             let speed_type = self
                 .object_type(entity.type_ref(), rules)
@@ -2154,6 +2364,13 @@ impl Simulation {
             if !in_playfield {
                 for member in members {
                     self.team_member_set_destination(member, None, rules, registry, frame_effects);
+                }
+            } else {
+                // Every visit of an infantry member in the playfield sets the
+                // byte again (`InfantryClass::AI @ 0x0051BE3E`); a sleeping
+                // one must take that visit (`world::idle_sleep`).
+                for member in members {
+                    self.substrate.entities.wake(member);
                 }
             }
         }
@@ -3245,19 +3462,23 @@ pub(super) fn target_building_pick(
     if only_enemy { enemy_best } else { any_best }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "force_facing_tests.rs"]
 mod force_facing_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "removal_actions_tests.rs"]
 mod removal_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "actions_tests.rs"]
 mod tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "transport_actions_tests.rs"]
 mod transport_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "unpanic_tests.rs"]
 mod unpanic_tests;
+
+#[cfg(all(test, tests_sim_t_z))]
+#[path = "world_actions_tests.rs"]
+mod world_actions_tests;

@@ -62,6 +62,11 @@ impl RulesTypeReferences {
         }
     }
 
+    /// A kept pointer's current stored ID, `None` while it is null.
+    pub(crate) fn pointer(&self, key: &str) -> Option<&str> {
+        self.pointers.get(key).map(String::as_str)
+    }
+
     pub(crate) fn list(&self, key: &str) -> &[String] {
         self.lists.get(key).map_or(&[], Vec::as_slice)
     }
@@ -71,6 +76,7 @@ impl RulesTypeReferences {
         for &(key, publish) in POINTERS
             .iter()
             .chain(&DEFAULT_PARTICLE_SYSTEMS)
+            .chain(ares_pointers())
             .chain(npatch_pointers())
         {
             publish(rules, self.pointers.get(key).map_or("", String::as_str));
@@ -90,6 +96,16 @@ fn named(id: &str) -> Option<String> {
     (!id.is_empty()).then(|| id.to_owned())
 }
 
+/// The pointers only Ares reads: kept when the Rules are read the Ares way
+/// (`ares_switch::ares_way`). ReadGeneral reads their keys either way.
+fn ares_pointers() -> &'static [(&'static str, PublishPointer)] {
+    if crate::rules::ares_switch::ares_way() {
+        ARES_POINTERS
+    } else {
+        &[]
+    }
+}
+
 /// The extension pointers this build's rules processor keeps: none without
 /// the capability, which never reads their keys.
 fn npatch_pointers() -> &'static [(&'static str, PublishPointer)] {
@@ -105,6 +121,7 @@ fn kept_pointer(key: &str) -> bool {
     POINTERS
         .iter()
         .chain(&DEFAULT_PARTICLE_SYSTEMS)
+        .chain(ares_pointers())
         .chain(npatch_pointers())
         .any(|&(kept, _)| kept == key)
 }
@@ -213,6 +230,9 @@ const POINTERS: &[(&str, PublishPointer)] = &[
     ("ChronoBlastDest", |rules, id| {
         rules.general.chrono_blast_dest_anim = id.to_owned();
     }),
+    // ReadAudioVisual's Dig +294 (constructor `0x00665A10`, read
+    // `0x0066A587..0x0066A5B1`), the Tunnel locomotor's dig anim.
+    ("Dig", |rules, id| rules.general.dig_anim = named(id)),
     // WarpIn +338, WarpOut +33C, WarpAway +340, ChronoSparkle1 +344,
     // IronCurtainInvokeAnim +348, ForceShieldInvokeAnim +34C (constructor
     // `0x00665B02..0x00665B20`, read `0x0066E188..0x0066E327`).
@@ -279,6 +299,21 @@ const POINTERS: &[(&str, PublishPointer)] = &[
     }),
 ];
 
+/// The pointers kept only when the Rules are read the Ares way.
+const ARES_POINTERS: &[(&str, PublishPointer)] = &[
+    // ReadGeneral's LargeVisceroid (ReadString returning at `0x0066E677`,
+    // UnitType FindOrAllocate), just before SmallVisceroid; Ares' visceroid
+    // merge reads it.
+    ("LargeVisceroid", |rules, id| {
+        rules.general.large_visceroid = named(id);
+    }),
+    // ReadGeneral's SmallVisceroid (ReadString returning at `0x0066E6B0`,
+    // UnitType FindOrAllocate); Ares' tiberium death visceroid reads it.
+    ("SmallVisceroid", |rules, id| {
+        rules.general.small_visceroid = named(id);
+    }),
+];
+
 /// The pointers an installed extension keeps, by reader. They are part of the
 /// same retained set as [`POINTERS`] when the capability is compiled in: the
 /// extension's reader runs inside the rules load, so its FindOrAllocate
@@ -330,6 +365,12 @@ pub(crate) const DEFAULT_PARTICLE_SYSTEMS: [(&str, PublishPointer); 9] = [
 /// The kept lists. Each Rules offset is the constructor's empty vector and the
 /// read's store; the empty read keeps the vector at the address given.
 const LISTS: &[(&str, PublishList)] = &[
+    // RulesCtor666568..66659E starts +B74 empty. ReadAudioVisual66B0E4..
+    //66B1CF retains the ordered Anim pointers; Save6750B5/Load677050 keep
+    // this vector. Full Type reset uses the shared expired-pointer policy.
+    ("OnFire", |rules, ids| {
+        rules.general.on_fire = ids.to_vec();
+    }),
     // RulesCtor6656C0..6656E4; ReadGeneral66D6E2..66D7B1.
     ("BarrelDebris", |rules, ids| {
         rules.general.barrel_debris = ids.to_vec();

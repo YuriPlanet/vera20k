@@ -82,11 +82,11 @@ impl Scene {
         let terrain_template = sim.resolved_terrain().cloned();
         Some(Self(SimRuntime {
             simulation: sim,
-            resources: SimResources {
+            resources: std::sync::Arc::new(SimResources {
                 rules,
                 overlay_registry: registry,
                 terrain_template,
-            },
+            }),
         }))
     }
 

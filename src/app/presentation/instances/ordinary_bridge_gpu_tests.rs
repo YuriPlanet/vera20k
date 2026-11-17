@@ -777,7 +777,7 @@ impl Probe {
             point.1 - input["cell_point"][1].as_i64().unwrap() as f32,
         ];
         let (source, owner) = self.live_a.as_mut().unwrap();
-        source.rebuild_if_needed(
+        source.rebuild_submitted(
             &self.gpu.device,
             &self.gpu.queue,
             scene.sim().fog(),

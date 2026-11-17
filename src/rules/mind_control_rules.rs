@@ -104,7 +104,6 @@ impl MindControlRules {
     /// `attack_line_frames` is the ordered Rules processor's retained value.
     pub fn from_ini(ini: &IniFile, attack_line_frames: i32) -> Self {
         let combat = ini.section_or_empty("CombatDamage");
-        let audio = ini.section_or_empty("AudioVisual");
         let general = ini.section_or_empty("General");
         // `DifficultyClass::ReadINI_IntVector @ 0x00475D70`.
         let list = |section: &IniSection, key: &str| section.read_int_list(key).unwrap_or_default();
@@ -117,16 +116,11 @@ impl MindControlRules {
             overload_count: list(combat, "OverloadCount"),
             overload_damage: list(combat, "OverloadDamage"),
             overload_frames: list(combat, "OverloadFrames"),
-            // ReadString 0x80, then the sound lookup.
-            mind_control_sound: audio
-                .read_type_name("YuriMindControlSound", 0x80)
-                .map(str::to_string),
-            mind_cleared_sound: audio
-                .read_type_name("MindClearedSound", 0x80)
-                .map(str::to_string),
-            overload_sound: audio
-                .read_type_name("MasterMindOverloadDeathSound", 0x80)
-                .map(str::to_string),
+            // GlobalSoundReferences owns the reached fixed-Voc reads and
+            // retained IDs. RuleSet projects those results after this parse.
+            mind_control_sound: None,
+            mind_cleared_sound: None,
+            overload_sound: None,
             ai_capture: [
                 list(general, "AICaptureLowMoney"),
                 list(general, "AICaptureLowPower"),
@@ -137,7 +131,9 @@ impl MindControlRules {
             // ReadDouble -> `FSTP dword [ESI+0xEC0]` (`0x00670509`).
             ai_capture_wounded_mark: general.read_float("AICaptureWoundedMark", 0.0),
             #[cfg(feature = "phobos")]
-            mind_control_ignore_size: general.read_ares_bool("MindControl.IgnoreSize", true),
+            mind_control_ignore_size: crate::rules::ares_switch::not_ares_read(|| {
+                general.read_ares_bool("MindControl.IgnoreSize", true)
+            }),
             #[cfg(not(feature = "phobos"))]
             mind_control_ignore_size: true,
             #[cfg(feature = "phobos")]
@@ -149,8 +145,9 @@ impl MindControlRules {
             #[cfg(not(feature = "phobos"))]
             mind_control_link_visible_to_house: crate::rules::phobos_shields::AffectedHouse::ALL,
             #[cfg(feature = "phobos")]
-            multi_mind_control_release_victim: general
-                .read_ares_bool("MultiMindControl.ReleaseVictim", false),
+            multi_mind_control_release_victim: crate::rules::ares_switch::not_ares_read(|| {
+                general.read_ares_bool("MultiMindControl.ReleaseVictim", false)
+            }),
             #[cfg(not(feature = "phobos"))]
             multi_mind_control_release_victim: false,
         }
@@ -168,7 +165,7 @@ impl MindControlRules {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::*;
 
@@ -183,9 +180,12 @@ mod tests {
              [AudioVisual]\nYuriMindControlSound=YuriMindControl\n\
              MasterMindOverloadDeathSound=MasterMindOverloadVoice\nMindClearedSound=MindCleared\n",
         );
-        let rules = crate::rules::ruleset::RuleSet::from_ini(&ini)
-            .unwrap()
-            .mind_control;
+        let rules = crate::rules::ruleset::RuleSet::from_ini_with_sounds_for_test(
+            &ini,
+            &["YuriMindControl", "MindCleared", "MasterMindOverloadVoice"],
+        )
+        .unwrap()
+        .mind_control;
         assert_eq!(rules.controlled_anim.as_deref(), Some("MINDANIM"));
         assert_eq!(rules.overload_count, [3, 6, 10, 50]);
         assert_eq!(rules.overload_damage, [0, 50, 100, 500]);

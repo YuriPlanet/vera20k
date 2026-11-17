@@ -11,12 +11,21 @@ use winit::dpi::PhysicalSize;
 use winit::event::{MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
-#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+#[cfg(any(
+    all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
+    target_os = "android"
+))]
+mod keyboard_shim;
+#[cfg(any(
+    all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
+    target_os = "android"
+))]
+use keyboard_shim::KeyEventExtModifierSupplement;
+#[cfg(not(any(
+    all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
+    target_os = "android"
+)))]
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
-#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-mod web_keyboard;
-#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-use web_keyboard::KeyEventExtModifierSupplement;
 use winit::window::{Window, WindowAttributes, WindowId};
 
 use crate::app::match_runtime::sim_tick;
@@ -45,6 +54,7 @@ pub(crate) mod chrono_screen;
 mod cncnet;
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
 mod browser_lifecycle;
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
 pub(crate) use cncnet::SpawnAction;
 pub(crate) mod commander_feedback;
 mod cooperative_round;
@@ -58,36 +68,46 @@ mod frame;
 pub mod frontend;
 mod game_data_check;
 mod handler;
+mod hidden_run;
 mod in_game;
 mod initialize;
 pub(crate) mod input;
 pub(crate) mod lan_service;
 pub(crate) mod loading;
 pub(crate) mod map_library;
+pub mod map_picture;
 pub(crate) mod match_audio;
 pub mod match_bootstrap;
 pub(crate) mod match_diagnostics;
 pub(crate) mod match_runtime;
+pub(crate) mod mod_additions;
+pub(crate) mod mod_files;
+pub(crate) mod mods;
 pub(crate) mod movie_playback;
+pub(crate) mod new_mod;
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 mod network_goodbye;
 pub(crate) mod movie_subtitles;
 pub(crate) mod persistence;
 /// The build description's native version metadata (`Phobos.version.h`).
+pub(crate) mod os_clipboard;
 pub(crate) mod phobos_version;
 pub(crate) mod presentation;
 pub(crate) mod process_assets;
 #[cfg(feature = "telemetry-dashboard")]
 pub(crate) mod process_stats;
 pub(crate) mod radar_movie;
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod random_map_lifecycle_tests;
 pub(crate) mod renderer_state;
+pub(crate) mod restart;
 pub(crate) mod scenario_catalog;
 mod shell_campaign;
 pub(crate) mod shell_lan;
 mod shell_load_saved_game;
 mod shell_main_menu;
+mod shell_menu;
+mod shell_mods;
 mod shell_movies_credits;
 pub(crate) mod shell_network_setup;
 mod shell_random_map;
@@ -97,7 +117,7 @@ mod shell_saved_seeds;
 mod shell_skirmish;
 mod shell_wol;
 pub(crate) mod sidebar_projection;
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod sidebar_projection_tests;
 pub(crate) mod spawn_probe;
 mod state;
@@ -112,33 +132,25 @@ pub(crate) mod telemetry_server;
 pub(crate) mod types;
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub(crate) mod updater;
+pub(crate) mod web_link;
 mod window_icon;
 
 /// Main window title. The single-instance gate finds a running copy's window by
 /// this exact title, so `main` hands the same constant to
 /// `util::single_instance::acquire`.
 pub const WINDOW_TITLE: &str = match (
-    crate::rules::ARES_ENABLED,
     crate::rules::PHOBOS_ENABLED,
     crate::rules::NPATCH_ENABLED,
     crate::rules::NPBUG_ENABLED,
 ) {
-    (true, true, true, false) => "VERA20K [Ares+Phobos+NPatch]",
-    (true, true, false, false) => "VERA20K [Ares+Phobos]",
-    (true, false, true, false) => "VERA20K [Ares+NPatch]",
-    (true, false, false, false) => "VERA20K [Ares]",
-    (false, true, true, false) => "VERA20K [Phobos+NPatch]",
-    (false, true, false, false) => "VERA20K [Phobos]",
-    (false, false, true, false) => "VERA20K [NPatch]",
-    (false, false, false, false) => "VERA20K",
-    (true, true, true, true) => "VERA20K [Ares+Phobos+NPatch+NPBug]",
-    (true, true, false, true) => "VERA20K [Ares+Phobos+NPBug]",
-    (true, false, true, true) => "VERA20K [Ares+NPatch+NPBug]",
-    (false, true, true, true) => "VERA20K [Phobos+NPatch+NPBug]",
-    (true, false, false, true) => "VERA20K [Ares+NPBug]",
-    (false, true, false, true) => "VERA20K [Phobos+NPBug]",
-    (false, false, true, true) => "VERA20K [NPatch+NPBug]",
-    (false, false, false, true) => "VERA20K [NPBug]",
+    (true, true, false) => "VERA20K [Phobos+NPatch]",
+    (true, false, false) => "VERA20K [Phobos]",
+    (false, true, false) => "VERA20K [NPatch]",
+    (false, false, false) => "VERA20K",
+    (true, true, true) => "VERA20K [Phobos+NPatch+NPBug]",
+    (true, false, true) => "VERA20K [Phobos+NPBug]",
+    (false, true, true) => "VERA20K [NPatch+NPBug]",
+    (false, false, true) => "VERA20K [NPBug]",
 };
 
 /// Identity stamp shared by the status screen and the telemetry capture. Not a
@@ -153,9 +165,10 @@ pub(crate) use state::{AppState, PlatformState, reset_scenario_exit_runtime};
 pub struct App {
     state: Option<AppState>,
     pending_initialization: Option<initialize::InitializationJob>,
-    shell_capture: Option<crate::app::diagnostics::shell_capture::ShellCaptureSession>,
-    tactical_capture:
-        Option<crate::app::diagnostics::tactical_capture::session::TacticalCaptureSession>,
+    shell_capture:
+        hidden_run::DesktopRun<crate::app::diagnostics::shell_capture::ShellCaptureSession>,
+    /// A tactical capture or a map picture, which the app drives itself.
+    hidden_run: hidden_run::DesktopRun<hidden_run::HiddenRun>,
     /// Render admission for hidden captures; service events may wake earlier.
     capture_render_not_before: Option<Instant>,
     /// Retained until `resumed()` so the profile's pre-window Video read can
@@ -166,6 +179,8 @@ pub struct App {
     spawn_result_path: Option<std::path::PathBuf>,
     replay_request: Option<crate::app::frontend::launch::ReplayLaunchRequest>,
     startup_failure: Option<String>,
+    /// `--mod <folder>` or `--no-mod`, in place of config.toml's choice.
+    mod_switch: Option<mods::ModSwitch>,
     /// Make sure config.toml names a game folder before the window opens
     /// ([`app_bundle`]).
     ask_for_game_folder: bool,
@@ -173,6 +188,14 @@ pub struct App {
     /// (`input::touch`). A synthetic `CursorMoved` must not pass for the OS
     /// pointer, which is what clears the touch-parked cursor.
     dispatching_touch: bool,
+    /// docs/sim-thread.md: window events that came while a tick was on the
+    /// simulation thread, in order, for the pass that finds it back
+    /// ([`Self::release_held_events`]).
+    held_window_events: Vec<(winit::window::WindowId, winit::event::WindowEvent)>,
+    /// Wakes the event loop when a tick on the simulation thread ends
+    /// ([`Self::set_sim_wake`]).
+    #[cfg(not(target_arch = "wasm32"))]
+    sim_wake: Option<winit::event_loop::EventLoopProxy<()>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -215,16 +238,20 @@ impl App {
         Self {
             state: None,
             pending_initialization: None,
-            shell_capture: None,
-            tactical_capture: None,
+            shell_capture: hidden_run::DesktopRun::NONE,
+            hidden_run: hidden_run::DesktopRun::NONE,
             capture_render_not_before: None,
             startup_options,
             spawn_request: None,
             spawn_result_path: None,
             replay_request: None,
             startup_failure: None,
+            mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
+            held_window_events: Vec::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            sim_wake: None,
         }
     }
 
@@ -234,18 +261,22 @@ impl App {
         Self {
             state: None,
             pending_initialization: None,
-            shell_capture: Some(
+            shell_capture: hidden_run::DesktopRun::new(
                 crate::app::diagnostics::shell_capture::ShellCaptureSession::new(request),
             ),
-            tactical_capture: None,
+            hidden_run: hidden_run::DesktopRun::NONE,
             capture_render_not_before: None,
             startup_options: crate::app::frontend::startup_options::RetailStartupOptions::default(),
             spawn_request: None,
             spawn_result_path: None,
             replay_request: None,
             startup_failure: None,
+            mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
+            held_window_events: Vec::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            sim_wake: None,
         }
     }
 
@@ -255,20 +286,51 @@ impl App {
         Self {
             state: None,
             pending_initialization: None,
-            shell_capture: None,
-            tactical_capture: Some(
+            shell_capture: hidden_run::DesktopRun::NONE,
+            hidden_run: hidden_run::DesktopRun::new(hidden_run::HiddenRun::Capture(Box::new(
                 crate::app::diagnostics::tactical_capture::session::TacticalCaptureSession::new(
                     request,
                 ),
-            ),
+            ))),
             capture_render_not_before: None,
             startup_options: crate::app::frontend::startup_options::RetailStartupOptions::default(),
             spawn_request: None,
             spawn_result_path: None,
             replay_request: None,
             startup_failure: None,
+            mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
+            held_window_events: Vec::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            sim_wake: None,
+        }
+    }
+
+    /// A hidden map-picture run (`map_picture`), silent: it never opens audio.
+    pub fn new_map_picture(request: crate::app::map_picture::MapPictureRequest) -> Self {
+        Self {
+            state: None,
+            pending_initialization: None,
+            shell_capture: hidden_run::DesktopRun::NONE,
+            hidden_run: hidden_run::DesktopRun::new(hidden_run::HiddenRun::Picture(Box::new(
+                crate::app::map_picture::session::MapPictureSession::new(request),
+            ))),
+            capture_render_not_before: None,
+            startup_options: crate::app::frontend::startup_options::RetailStartupOptions {
+                audio_enabled: false,
+                ..Default::default()
+            },
+            spawn_request: None,
+            spawn_result_path: None,
+            replay_request: None,
+            startup_failure: None,
+            mod_switch: None,
+            ask_for_game_folder: false,
+            dispatching_touch: false,
+            held_window_events: Vec::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            sim_wake: None,
         }
     }
 
@@ -277,6 +339,38 @@ impl App {
     /// AppImage.
     pub fn ask_for_game_folder_first(&mut self) {
         self.ask_for_game_folder = true;
+    }
+
+    /// The launch's own mod choice (`mods::take_switch`), before the window
+    /// opens.
+    pub(crate) fn set_mod_switch(&mut self, switch: Option<mods::ModSwitch>) {
+        self.mod_switch = switch;
+    }
+
+    /// The event loop's proxy, which a tick on the simulation thread wakes
+    /// when it ends (docs/sim-thread.md).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn set_sim_wake(&mut self, proxy: winit::event_loop::EventLoopProxy<()>) {
+        self.sim_wake = Some(proxy);
+    }
+
+    /// Hand the simulation host the wake once the match state exists. The
+    /// browser has none: its frame loop runs every animation frame.
+    fn install_sim_wake(&mut self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let (Some(state), Some(proxy)) = (self.state.as_mut(), self.sim_wake.as_ref())
+            && !state.match_state.sim_runtime.has_wake()
+        {
+            let proxy = std::sync::Mutex::new(proxy.clone());
+            state
+                .match_state
+                .sim_runtime
+                .set_wake(std::sync::Arc::new(move || {
+                    if let Ok(proxy) = proxy.lock() {
+                        let _ = proxy.send_event(());
+                    }
+                }));
+        }
     }
 
     pub fn new_replay(request: crate::app::frontend::launch::ReplayLaunchRequest) -> Self {
@@ -293,7 +387,7 @@ impl App {
         }) {
             anyhow::bail!("{error}");
         }
-        match (self.shell_capture.as_mut(), self.tactical_capture.as_mut()) {
+        match (self.shell_capture.as_mut(), self.hidden_run.as_mut()) {
             (Some(session), None) => session.take_outcome(),
             (None, Some(session)) => session.take_outcome(),
             (None, None) => Ok(()),
@@ -311,7 +405,7 @@ impl App {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

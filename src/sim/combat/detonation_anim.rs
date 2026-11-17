@@ -144,10 +144,10 @@ pub(crate) fn select_with_context(
     if damage == 0 && !create_zero_damage {
         return None;
     }
-    // Phobos `SelectDamageAnimation_NegativeZeroDamage` (`0x48A4F3`): a
-    // negative packet selects by its magnitude.
-    #[cfg(feature = "phobos")]
-    let damage = if damage < 0 {
+    // Phobos `SelectDamageAnimation_NegativeZeroDamage` (`0x48A4F3`) and
+    // Ares 3.0 SelectDamageAnimation_FixNegatives (1005D070, hook 0x48A4F9):
+    // a negative packet selects by its magnitude (`std::abs`, wrapping).
+    let damage = if (rules.ares() || crate::rules::PHOBOS_ENABLED) && damage < 0 {
         damage.wrapping_neg()
     } else {
         damage
@@ -204,6 +204,16 @@ pub(crate) fn select_with_context(
                 splashed: true,
             });
         }
+    }
+    // Ares hook 48A59A (100377E0): a current Ares storm's own warhead and
+    // bolt explosion come first; no Ares storm is current without Ares.
+    if let Some(name) =
+        crate::sim::superweapon::lightning_storm::ares_bolt_explosion(world, rules, warhead)
+    {
+        return Some(SelectedAnim {
+            name: world.interner.intern(name),
+            splashed: false,
+        });
     }
     // 48A594..48A5A6 compares the retained LightningWarhead pointer, then
     // returns WeatherConBoltExplosion (including its null default).
@@ -541,7 +551,7 @@ pub(crate) fn projectile_impact_cell(
     (rx, ry, sub_x, sub_y, impact.z)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod tests {
     use super::*;
     use crate::sim::rng::SimRng;
@@ -872,7 +882,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod phobos_enhancement_tests {
     use super::*;
     use crate::map::entities::EntityCategory;
@@ -1395,6 +1405,7 @@ CreateUnit.Owner=special
                     effect.world_z,
                     effect.z_adjust,
                     effect.owner_house,
+                    false,
                 )
                 .unwrap()
         };

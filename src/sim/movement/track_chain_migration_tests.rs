@@ -36,13 +36,16 @@ const MOVER: u64 = 1;
 const CANDIDATE: (u16, u16) = (11, 9);
 
 fn chain_fixture(passive: bool) -> (Simulation, RuleSet, TrackInvocation) {
-    let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
-        "[VehicleTypes]\n0=MTNK\n[InfantryTypes]\n0=E1\n[BuildingTypes]\n0=GAGATE_A\n\
+    let rules = RuleSet::from_ini_with_sounds_for_test(
+        &IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=MTNK\n[InfantryTypes]\n0=E1\n[BuildingTypes]\n0=GAGATE_A\n\
          [MTNK]\nSpeed=4\nCrusher=yes\nPassive={}\n\
          [E1]\nCrushable=yes\nStrength=100\nCrushSound=Squish\n\
          [GAGATE_A]\nFoundation=3x1\nGate=yes\nDeployTime=.044\nGateCloseDelay=.2\n",
-        if passive { "yes" } else { "no" },
-    )))
+            if passive { "yes" } else { "no" },
+        )),
+        &["Squish"],
+    )
     .unwrap();
     let mut sim = Simulation::with_seed(17);
     // The chain query (0x4B1C3E) asks the native Unit+1AC over map cells.
@@ -159,7 +162,7 @@ fn production_chain_code3_opens_gate_without_consuming_the_queue() {
         CANDIDATE.1,
         EntityCategory::Structure,
     );
-    gate.building_gate = Some(BuildingGateRuntime::default());
+    gate.building.building_gate = Some(BuildingGateRuntime::default());
     gate.lifecycle.set_object_alive_for_test(true);
     gate.lifecycle.set_in_limbo_for_test(false);
     gate.lifecycle.set_cell_marked_for_test(true);
@@ -179,24 +182,46 @@ fn production_chain_code3_opens_gate_without_consuming_the_queue() {
     assert_eq!(sim.scenario_rng.logical_state(), rng_before);
 }
 
+/// Answer 6 scatters the head cell's objects (`0x004B1F3B`), not the refused
+/// candidate's: the stopped ally ahead stays where it is until a fresh step
+/// asks about its cell, and an ally on the head cell moves off.
 #[test]
-fn production_chain_code6_scatters_once_without_adopting_the_candidate() {
+fn production_chain_code6_scatters_the_head_cell_without_adopting_the_candidate() {
     let (mut sim, rules, invocation) = chain_fixture(false);
     add_blocker(&mut sim, false);
+    let mut on_head = GameEntity::test_default(3, "MTNK", "Americans", 10, 9);
+    on_head.set_category_for_test(EntityCategory::Unit);
+    on_head.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
+    on_head.lifecycle.set_object_alive_for_test(true);
+    on_head.lifecycle.set_in_limbo_for_test(false);
+    on_head.lifecycle.set_cell_marked_for_test(true);
+    sim.substrate.entities.insert(on_head);
+    sim.interner = test_interner();
+    sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
     // The Unit receiver's Find_Nearby_Passable_Cell bounds its search by the
     // map Size.
     sim.set_playfield_bounds_for_test(Some(crate::sim::arena_fixture::OPEN_PLAYFIELD));
     sim.set_playfield_size_height_for_test(Some(20));
-    let before = sim.substrate.entities.get(2).unwrap().position;
+    let before = sim.substrate.entities.get(3).unwrap().position;
     let rng = sim.scenario_rng.logical_state();
     sim.run_track_points(invocation, 8, Some(&rules), None);
-    let blocker = sim.substrate.entities.get(2).unwrap();
     assert!(
-        blocker.navigation.nav_com().is_some(),
+        sim.substrate
+            .entities
+            .get(2)
+            .unwrap()
+            .navigation
+            .nav_com()
+            .is_none(),
+        "the ally on the refused candidate stays put"
+    );
+    let on_head = sim.substrate.entities.get(3).unwrap();
+    assert!(
+        on_head.navigation.nav_com().is_some(),
         "the Unit receiver sets a destination"
     );
     assert_eq!(
-        serde_json::to_value(blocker.position).unwrap(),
+        serde_json::to_value(on_head.position).unwrap(),
         serde_json::to_value(before).unwrap(),
         "scatter does not teleport the occupant"
     );

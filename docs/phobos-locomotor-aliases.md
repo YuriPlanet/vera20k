@@ -22,11 +22,12 @@ read uses (Phobos `Utilities/TemplateDef.h`, `read<CLSID>`):
 | `Teleport` | chrono movement (instant relocation) |
 | `Jumpjet` | jumpjet hover-flight (Rocketeer, Kirov), not `Fly` |
 | `Ship` | naval vessels |
+| `Tunnel` | subterranean movement (`TunnelLocomotionClass`, [ares-subterranean.md](ares-subterranean.md)) |
 
 Braced CLSIDs keep working unchanged, and a braced value is never treated as
-an alias. The dormant Tiberian Sun classes (`Tunnel`, `Mech`, `DropPod`) have
-no VERA movement kind, so their aliases resolve exactly like their CLSIDs —
-to nothing — rather than selecting a different system. `Chrono` is not an
+an alias. The dormant Tiberian Sun classes `Mech` and `DropPod` have no VERA
+movement kind, so their aliases resolve exactly like their CLSIDs — to
+nothing — rather than selecting a different system. `Chrono` is not an
 alias; it keeps the Teleport constructor seed.
 
 ## Where VERA20K owns it

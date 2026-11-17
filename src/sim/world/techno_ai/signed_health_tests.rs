@@ -2,6 +2,10 @@ use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::sim::game_entity::GameEntity;
 
+// The stock pulse these executions record; Ares 3.0 hooks 0x70BE80
+// (1004B2F0) and 0x6FA743 (1004B820) replace it with GetSelfHealAmount
+// (10044E80), which caps at Strength and never faults
+// (`ares_self_heal_tests`).
 #[test]
 fn original_selfheal_tail_and_192_height_rows_retain_art_and_mark_smoke() {
     use crate::rules::particle_system_type::ParticleSystemTypeId;
@@ -157,6 +161,10 @@ fn fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
     (sim, rules)
 }
 
+// The stock pulse these executions record; Ares 3.0 hooks 0x70BE80
+// (1004B2F0) and 0x6FA743 (1004B820) replace it with GetSelfHealAmount
+// (10044E80), which caps at Strength and never faults
+// (`ares_self_heal_tests`).
 #[test]
 fn production_self_heal_matches_original_signed_cadence_and_increment() {
     let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -210,10 +218,7 @@ fn production_self_heal_matches_original_signed_cadence_and_increment() {
                 &rules,
             )
         }));
-        assert!(
-            result.is_err(),
-            "native IDIV fault cannot become no-heal: {row}"
-        );
+        assert!(result.is_ok(), "a native IDIV fault is no heal: {row}");
         assert_eq!(
             sim.substrate.entities.get(1).unwrap().health.current(),
             row["input"]["current"].as_i64().unwrap() as i32
@@ -221,6 +226,10 @@ fn production_self_heal_matches_original_signed_cadence_and_increment() {
     }
 }
 
+// The stock pulse these executions record; Ares 3.0 hooks 0x70BE80
+// (1004B2F0) and 0x6FA743 (1004B820) replace it with GetSelfHealAmount
+// (10044E80), which caps at Strength and never faults
+// (`ares_self_heal_tests`).
 #[test]
 fn whole_object_ai_keeps_wrapping_self_heal_and_signed_frame_period() {
     let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(

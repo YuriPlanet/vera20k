@@ -1131,11 +1131,11 @@ fn repair_receiver_failure_stops_runtime_before_consumption_or_frame_commit() {
         .nav_com();
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources {
+        resources: std::sync::Arc::new(SimResources {
             rules,
             overlay_registry: registry,
             ..SimResources::empty()
-        },
+        }),
     };
     let error = runtime
         .advance_frame(
@@ -1655,7 +1655,7 @@ fn failed_jumpjet_stop_stock_fatal_receiver_precedes_cache_retirement() {
                     .cell_mut_for_test(x, y)
                     .unwrap()
                     .speed_costs
-                    .hover = Some(0);
+                    .hover = Some(crate::rules::terrain_rules::test_speed_percent(0));
             }
         }
         let e = sim.substrate.entities.get_mut(id).unwrap();

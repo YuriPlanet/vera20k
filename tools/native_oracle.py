@@ -112,6 +112,16 @@ class NativeCallTrace:
         return index
 
 
+def stored_value(size: int, value: int) -> int:
+    """The bytes a UC_HOOK_MEM_WRITE store writes, as an unsigned integer.
+
+    For a store narrower than its source register, Unicorn passes the whole
+    register on some hosts (arm64) and only the stored bytes on others
+    (x86-64), so recording the raw hook value makes a corpus host-dependent.
+    """
+    return value & ((1 << (8 * size)) - 1)
+
+
 def reconstruct_byte_spans(before: bytes, changed: list) -> bytes:
     """Reconstruct the exact byte-delta receipt without executing a VM."""
     reconstructed = bytearray(before)
@@ -519,6 +529,45 @@ def corpus_text(data, depth=0) -> str:
         entries = (indent + corpus_text(value, depth + 1) for value in data)
         return "[\n" + ",\n".join(entries) + "\n" + " " * depth + "]" + ("\n" if depth == 0 else "")
     return json.dumps(data, separators=(",", ":"), allow_nan=False) + ("\n" if depth == 0 else "")
+
+
+RNG_STATE_KEYS = ["disabled", "index_a", "index_b", "state"]
+
+
+def shared_rng_states(data: dict | list) -> dict:
+    """The corpus with each distinct RNG stream state stored once, in `shared_rng_states`.
+
+    A corpus that records every stream before and after each row repeats a few
+    250-word states thousands of times. Each state becomes `{"rng_state": n}`,
+    numbered in the order first met. Rust tests read the corpus through
+    `test_fixture::json`, which puts the states back, so they see the same data.
+    A corpus that is a bare list has no place for the table and becomes
+    `{"rows": list}`.
+    """
+    if isinstance(data, list):
+        data = {"rows": data}
+    if "shared_rng_states" in data:
+        raise OracleError("The corpus already stores its RNG states in shared_rng_states")
+    table, numbers = [], {}
+
+    def share(value):
+        if isinstance(value, dict):
+            if list(value) == ["rng_state"]:
+                raise OracleError("A corpus object already reads as an rng_state reference")
+            if sorted(value) == RNG_STATE_KEYS and isinstance(value["state"], list):
+                key = _canonical(value)
+                if key not in numbers:
+                    numbers[key] = len(table)
+                    table.append(value)
+                return {"rng_state": numbers[key]}
+            return {key: share(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [share(item) for item in value]
+        return value
+
+    shared = share(data)
+    shared["shared_rng_states"] = table
+    return shared
 
 
 def first_difference(expected, actual, path="$", limit=180) -> str | None:

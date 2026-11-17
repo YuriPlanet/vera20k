@@ -393,7 +393,8 @@ macro_rules! object_kinds {
         }
 
         impl ObjectKind {
-            /// Every kind, in [`Simulation::classify_object`]'s probe order.
+            /// Every kind, in the order [`Simulation::classify_object`] probes
+            /// the stores it has not already asked.
             ///
             /// [`Simulation::classify_object`]: super::Simulation::classify_object
             pub(crate) const ALL: [Self; [$(ObjectKind::$kind),+].len()] = [$(Self::$kind),+];
@@ -505,6 +506,30 @@ pub struct ObjectSubstrate {
     /// the state hash folds queue identities in insertion order.
     #[serde(default)]
     pub(crate) pending_delete: DeferredDeleteQueue,
+    /// Buildings whose Temporal online latch changed since the last factory
+    /// sweep, in order, for the Ares factory queue refresh
+    /// (`Simulation::ares_refresh_temporal_factories`). Empty in a game
+    /// without Ares.
+    #[serde(default)]
+    ares_temporal_factory_refresh: Vec<u64>,
+}
+
+impl ObjectSubstrate {
+    /// The buildings waiting for the Ares factory queue refresh, in order.
+    pub(crate) fn ares_temporal_factory_refresh(&self) -> &[u64] {
+        &self.ares_temporal_factory_refresh
+    }
+
+    /// A building's Temporal online latch changed: queue it for the next
+    /// factory sweep.
+    pub(crate) fn queue_ares_temporal_factory_refresh(&mut self, id: u64) {
+        self.ares_temporal_factory_refresh.push(id);
+    }
+
+    /// The factory sweep takes the queued buildings and leaves none.
+    pub(crate) fn take_ares_temporal_factory_refresh(&mut self) -> Vec<u64> {
+        std::mem::take(&mut self.ares_temporal_factory_refresh)
+    }
 }
 
 impl ObjectSubstrate {
@@ -529,6 +554,7 @@ impl ObjectSubstrate {
             spotlights: Default::default(),
             particle_systems: ParticleSystemStore::default(),
             pending_delete: DeferredDeleteQueue::default(),
+            ares_temporal_factory_refresh: Vec::new(),
         }
     }
 }

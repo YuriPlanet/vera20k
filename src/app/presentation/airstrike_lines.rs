@@ -194,6 +194,8 @@ pub(crate) enum TacticalLineCall {
     Opaque {
         rect: [i32; 4],
         word: u16,
+        /// The A offset of a store kept only where A is nonzero.
+        a_offset: Option<[i32; 2]>,
     },
     Designation {
         /// The designating Techno.
@@ -203,26 +205,32 @@ pub(crate) enum TacticalLineCall {
     },
 }
 
-/// The existing action-line producer emits opaque white-texture rectangles.
-/// At logical zoom1 their resolved rectangles and RGB565 words can feed the
-/// same surface command stream as the following translucent beam. Geometry
-/// and action-line admission remain with target_lines, not another producer.
+/// The action-line producer's opaque strokes, drained in order into the same
+/// surface command stream as the following translucent beam, as their
+/// stored rectangles and RGB565 words. Geometry and action-line admission
+/// remain with target_lines, not another producer. A psychic detection dash
+/// keeps its A gate: `a_offset` takes a drained pixel to the A pixel its
+/// gate reads (the stores' rounded camera minus the floored camera of the
+/// surface and A planes).
 pub(crate) fn drain_opaque(
     calls: &mut Vec<TacticalLineCall>,
-    instances: &mut Vec<crate::render::batch::SpriteInstance>,
+    strokes: &mut Vec<crate::render::surface_line::SurfaceStroke>,
     camera: [i32; 2],
+    a_offset: [i32; 2],
 ) {
-    for instance in instances.drain(..) {
-        debug_assert_eq!(instance.alpha, 1.);
-        let rect = [
-            instance.position[0] as i32 - camera[0],
-            instance.position[1] as i32 - camera[1],
-            instance.size[0] as i32,
-            instance.size[1] as i32,
-        ];
-        let word = crate::render::native_surface_format::RGB565
-            .pack_rgb8(instance.tint.map(|v| (v * 255.).round() as u8));
-        calls.push(TacticalLineCall::Opaque { rect, word });
+    use crate::render::surface_line::StoreGate;
+    for stroke in strokes.drain(..) {
+        // Only the rally's second pass stores where A is zero, and it is
+        // not in this stream.
+        debug_assert_ne!(stroke.gate(), StoreGate::AZero);
+        let a_offset = (stroke.gate() == StoreGate::ANonzero).then_some(a_offset);
+        stroke.for_each_rect(|[x, y, width, height]| {
+            calls.push(TacticalLineCall::Opaque {
+                rect: [x - camera[0], y - camera[1], width, height],
+                word: stroke.word(),
+                a_offset,
+            });
+        });
     }
 }
 
@@ -239,16 +247,45 @@ pub(crate) fn composite(
     let mut draws = Vec::new();
     for call in calls {
         match *call {
-            TacticalLineCall::Opaque { rect, word } => {
-                draws.push(SurfaceDraw::OpaqueRect { rect, word })
-            }
+            TacticalLineCall::Opaque {
+                rect,
+                word,
+                a_offset: None,
+            } => draws.push(SurfaceDraw::OpaqueRect { rect, word }),
+            TacticalLineCall::Opaque {
+                rect,
+                word,
+                a_offset: Some(a_offset),
+            } => draws.push(SurfaceDraw::GatedOpaqueRect {
+                rect,
+                word,
+                a_offset,
+            }),
             TacticalLineCall::Designation {
                 id,
                 coords: [from, to],
                 style,
             } => {
                 if let Some(shade) = shades.get(id) {
-                    draws.extend(geometry(from, wobble(to, wall_ms), shade, style, view));
+                    // 70597E stores the dot at its client point, with no
+                    // clip corner added. The original's battlefield starts
+                    // at the surface's corner; a layout's comes in by it.
+                    draws.extend(
+                        geometry(from, wobble(to, wall_ms), shade, style, view)
+                            .into_iter()
+                            .map(|draw| match draw {
+                                SurfaceDraw::OpaqueRect { rect, word } => SurfaceDraw::OpaqueRect {
+                                    rect: [
+                                        rect[0] + view.clip[0],
+                                        rect[1] + view.clip[1],
+                                        rect[2],
+                                        rect[3],
+                                    ],
+                                    word,
+                                },
+                                other => other,
+                            }),
+                    );
                 }
             }
         }
@@ -256,6 +293,6 @@ pub(crate) fn composite(
     draws
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "airstrike_lines_tests.rs"]
 mod tests;

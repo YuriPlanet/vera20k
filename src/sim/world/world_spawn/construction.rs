@@ -44,6 +44,20 @@ impl Simulation {
             .object_type_in_category(entity.type_ref(), entity.category().into(), rules)
     }
 
+    /// Eligibility helper FUN_00413CD0: only an actual InfantryType's Civilian+EC1 and
+    /// the instance's clear nominal-survivor+6D9 qualify. Neither health nor
+    /// limbo adds a gate. Shared by Fly evacuation and Aircraft DOCK_NOW;
+    /// source: original gamemd.exe instructions.
+    pub(crate) fn is_evacuation_civilian(&self, id: u64, rules: &RuleSet) -> bool {
+        self.substrate.entities.get(id).is_some_and(|entity| {
+            entity.category() == EntityCategory::Infantry
+                && !entity.is_nominal_survivor()
+                && self
+                    .entity_object_type(entity, rules)
+                    .is_some_and(|object| object.civilian)
+        })
+    }
+
     pub(super) fn construct_runtime_techno(
         &mut self,
         type_id: &str,
@@ -115,6 +129,20 @@ impl Simulation {
             rules,
             ComponentOrigin::Runtime,
         );
+        // Ares ApplyAcademy10020750 closes each class's InitFromType hook,
+        // after the spy veterancy above; a map's authored objects are read
+        // inside the A8E7AC scope, which skips it.
+        if rules.ares() {
+            self.apply_ares_academy(&mut ge, obj, rules);
+        }
+        // Ares TechnoClass_Init_1 (1004A530, hook 0x6F407D): an object
+        // constructed inside the A8E7AC scope after frame 0 (a conversion
+        // or deploy product) never makes an InitialPayload. A map's authored
+        // objects are constructed at frame 0 (`sim::ares_transports`).
+        if rules.ares() && self.object_placement_scope_active() && self.session.binary_frame() != 0
+        {
+            ge.ares.ares_initial_payload.mark_created();
+        }
         Ok(Some(ge))
     }
 
@@ -149,16 +177,17 @@ impl Simulation {
         // InitManagers6F3F40 classifies the owner after construction; it does
         // not manufacture either discovery-history byte. The launch-owned
         // current house is distinct from the notification/viewer binding.
-        ge.discovery
-            .classify_owner(session.current_house() == Some(ge.owner()));
+        let owner_is_playing = session.current_house() == Some(ge.owner());
+        ge.discovery.classify_owner(owner_is_playing);
 
-        #[cfg(feature = "ares")]
-        ge.initialize_factory_country(houses.get(&ge.owner()).and_then(|house| {
-            crate::sim::factory_owners::parent_or_self_country(
-                rules,
-                interner.resolve(house.house_type_id()),
-            )
-        }));
+        if rules.ares() {
+            ge.initialize_factory_country(houses.get(&ge.owner()).and_then(|house| {
+                crate::sim::factory_owners::parent_or_self_country(
+                    rules,
+                    interner.resolve(house.house_type_id()),
+                )
+            }));
+        }
 
         // Building InitManagers442C48..442C5C records the owner's Country
         // array index (+0xB8), not its House registration index. Capture and
@@ -195,7 +224,17 @@ impl Simulation {
             ge.set_body_facing_rot(obj.turret_rot);
         }
         if let Some(obj) = obj.filter(|obj| GameEntity::type_has_secondary_facing(obj, category)) {
-            let mut secondary = crate::sim::movement::FacingClass::new(initial, obj.turret_rot);
+            // Ares 3.0 UnitClass_CTOR_TurretROT (1004BC40, hook 0x735584) and
+            // AircraftClass_Init_TurretROT (10048AC0, hook 0x413FFA) give the
+            // secondary controller `TurretROT=`, else `ROT=`.
+            let rot = if rules.ares()
+                && matches!(category, EntityCategory::Unit | EntityCategory::Aircraft)
+            {
+                obj.secondary_turn_rate()
+            } else {
+                obj.turret_rot
+            };
+            let mut secondary = crate::sim::movement::FacingClass::new(initial, rot);
             if category == EntityCategory::Aircraft {
                 // Aircraft413FD2..414015 supplies ROT to BOTH controllers;
                 // Unlimbo414310 -> Foot4D7170 -> Techno6F6DAA snaps Primary;
@@ -242,21 +281,26 @@ impl Simulation {
         // Unit constructor735678 and InitFromType74689B initialize the empty
         // Gunner through the shared selector, including its charge-type gate.
         if category == EntityCategory::Unit && obj.gunner {
-            ge.set_gunner_weapon(0, obj);
+            ge.set_gunner_weapon(0, obj, rules.ares());
         }
         ge.initialize_voxel_recoil(obj.recoil);
         if category == EntityCategory::Structure && obj.gate {
-            ge.building_gate = Some(crate::sim::game_entity::BuildingGateRuntime::at_frame(
-                session.binary_frame(),
-            ));
+            ge.building.building_gate = Some(
+                crate::sim::game_entity::BuildingGateRuntime::at_frame(session.binary_frame()),
+            );
         }
         if category == EntityCategory::Structure && obj.bunker {
-            ge.bunker_runtime = Some(crate::sim::docking::bunker_install::BunkerRuntime::idle());
+            ge.building.bunker_runtime =
+                Some(crate::sim::docking::bunker_install::BunkerRuntime::idle());
         }
         // BuildingClass::Init_Managers, from the constructor (`0x0043BB29`):
         // no Buildup SHP clears the AI sale byte (`0x00442CBC`).
         if category == EntityCategory::Structure {
             ge.bind_building_construction_control(rules.buildup_control(&obj.id));
+            // Ares' sale rate, which the body folds into its hash once bound.
+            if rules.ares_form() {
+                ge.bind_building_sell_rate(rules.buildup_sell_rate(&obj.id));
+            }
             if matches!(origin, ComponentOrigin::Authored { .. }) {
                 ge.initialize_building_idle_body(session.binary_frame() as i32);
             }
@@ -307,7 +351,7 @@ impl Simulation {
         if let Some(kind) = miner_kind_for_object(obj) {
             let mcfg = MinerConfig::default();
             let storage = obj.storage.max(0) as u16;
-            ge.miner = Some(Miner::new(kind, &mcfg, storage));
+            ge.miner = Some(Box::new(Miner::new(kind, &mcfg, storage)));
         }
         // Cargo+114 is independent of Building occupants+684 (Ctor43B8DC).
         if obj.passengers > 0 {
@@ -318,7 +362,8 @@ impl Simulation {
 
         // TechnoClass::Init_Managers — manager-owned children are committed
         // after this parent enters the limbo store and before its Unlimbo.
-        ge.capture_manager = crate::sim::capture_manager::init_capture_manager(obj, rules);
+        ge.capture_manager =
+            crate::sim::capture_manager::init_capture_manager(obj, rules).map(Box::new);
         ge.temporal = crate::sim::temporal::init_temporal(obj, rules);
         ge.spawn_manager = crate::sim::spawn_manager::init_spawn_manager(
             obj,
@@ -332,6 +377,8 @@ impl Simulation {
         // no owner guard; a Techno without a represented house is a
         // fixture case. Rust never re-runs this InitFromType tail (Unit
         // slot +0x24 can); only retail [SPY], an Infantry, sets the keys.
+        // Ares 3.0 Sides_Disguise (1002F9C0, hook 0x6F422F) wears the owner
+        // house's GetDisguise instead, which `side_disguise` answers.
         if obj.can_disguise
             && obj.perma_disguise
             && let Some(side) = houses.get(&ge.owner()).map(|h| h.side_index())
@@ -381,6 +428,22 @@ impl Simulation {
                 }
                 _ => false,
             });
+        // Ares 3.0 100237C0, 10023600 and 100236D0 (hooks 0x00735678 and
+        // 0x0074689B, 0x00413FD2, 0x00442D1B): the owner's SpyEffect
+        // veterancy (HouseExt +0x48..+0x4A, `sim::spy_infiltration`) makes a
+        // `Trainable=` naval unit, aircraft or building veteran too.
+        let veteran = if rules.ares() {
+            veteran
+                || obj.trainable
+                    && house.is_some_and(|house| match category {
+                        EntityCategory::Unit => obj.naval && house.naval_veterancy(),
+                        EntityCategory::Aircraft => house.aircraft_veterancy(),
+                        EntityCategory::Structure => house.building_veterancy(),
+                        EntityCategory::Infantry => false,
+                    })
+        } else {
+            veteran
+        };
         if veteran {
             ge.veterancy.set_veteran();
         }
@@ -441,6 +504,11 @@ fn stamp_scoring_flags(
     rules: &RuleSet,
 ) {
     ge.tracking_facts = crate::sim::house_tracking::TrackingFacts::of(ge.category(), obj, rules);
+    if let Some(multiplier) =
+        crate::sim::house_tracking::retained_plant_multiplier(ge.category(), obj, rules)
+    {
+        ge.ares.factory_plant_multiplier = Some(multiplier);
+    }
 }
 
 fn stamp_building_cell_profile(
@@ -450,8 +518,13 @@ fn stamp_building_cell_profile(
     let Some(obj) = obj else {
         return;
     };
-    ge.building_light.stamp(obj.has_spotlight);
-    ge.type_facts.stamp(ge.category(), obj);
+    // Written only on a change, so a type without a spotlight leaves a unit's
+    // building part unwritten.
+    if ge.building.building_light.spotlight_capable() != obj.has_spotlight {
+        ge.building.building_light.stamp(obj.has_spotlight);
+    }
+    let category = ge.category();
+    ge.type_facts.stamp(category, obj);
 }
 
 /// `Crushable=` and `DeployedCrushable=`, copied when the object is built for
@@ -625,9 +698,11 @@ pub struct TypeFacts {
     foundation: crate::rules::foundation::Foundation,
     /// A building's hidden-object counter inputs
     /// (`ObjectType::hidden_occupancy`), so cell-list exit can reverse its
-    /// contribution.
+    /// contribution. Boxed: every object carries these facts, and only a
+    /// building has a profile.
     #[serde(default)]
-    building_hidden_occupancy: Option<crate::rules::object_type::BuildingHiddenOccupancyProfile>,
+    building_hidden_occupancy:
+        Option<Box<crate::rules::object_type::BuildingHiddenOccupancyProfile>>,
     /// `[AI] AIBaseSpacing=` for a building that runs the House base
     /// reservation writer; `None` is the native BuildingType gate.
     #[serde(default)]
@@ -664,8 +739,7 @@ impl TypeFacts {
         Self {
             spawned_non_missile_aircraft: false,
             foundation: default_foundation(),
-            building_hidden_occupancy: (category == EntityCategory::Structure)
-                .then(crate::rules::object_type::BuildingHiddenOccupancyProfile::default),
+            building_hidden_occupancy: (category == EntityCategory::Structure).then(Box::default),
             base_reservation_spacing: None,
             build_const_eligible: false,
             base_plan_type_index: default_base_plan_type_index(),
@@ -681,7 +755,7 @@ impl TypeFacts {
             category == EntityCategory::Aircraft && obj.spawned && !obj.missile_spawn;
         self.foundation = obj.foundation.clone();
         if category == EntityCategory::Structure {
-            self.building_hidden_occupancy = Some(obj.hidden_occupancy);
+            self.building_hidden_occupancy = Some(Box::new(obj.hidden_occupancy));
             self.base_reservation_spacing = obj.base_reservation_spacing;
             self.build_const_eligible = obj.build_const_eligible;
             self.base_plan_type_index = obj.base_plan_type_index;
@@ -703,7 +777,7 @@ impl TypeFacts {
     pub(crate) fn building_hidden_occupancy(
         &self,
     ) -> Option<crate::rules::object_type::BuildingHiddenOccupancyProfile> {
-        self.building_hidden_occupancy
+        self.building_hidden_occupancy.as_deref().copied()
     }
 
     /// `[AI] AIBaseSpacing=` for a base-reserving building.
@@ -743,7 +817,7 @@ impl TypeFacts {
         &mut self,
         value: Option<crate::rules::object_type::BuildingHiddenOccupancyProfile>,
     ) {
-        self.building_hidden_occupancy = value;
+        self.building_hidden_occupancy = value.map(Box::new);
     }
 
     /// Install a fixture's `base_reservation_spacing`.
@@ -791,7 +865,7 @@ fn should_construct_locomotor(category: EntityCategory, object: &ObjectType) -> 
             && matches!(object.locomotor, LocomotorKind::Drive | LocomotorKind::Ship))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "perma_disguise_tests.rs"]
 mod perma_disguise_tests;
 

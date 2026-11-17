@@ -60,7 +60,6 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
     let theater =
         crate::map::theater::load_theater(&mut assets, &map.header.theater).expect("ALL01 theater");
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
-    let sequences = crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art_ini);
     let overlays = OverlayTypeRegistry::from_ini(&rules_ini, Some(&art_ini));
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
@@ -141,9 +140,7 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         &rules,
         &map.actions,
     ));
-    rules
-        .bind_scheduler_anim_assets(&roots, &assets, theater.extension, &map.header.theater)
-        .expect("physical scheduler animation assets");
+    rules.bind_scheduler_anim_assets(&roots, &assets, theater.extension, &map.header.theater);
     let tolerant = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&rules);
     rules.bind_anim_class_assets(&tolerant, &assets, theater.extension, &map.header.theater);
     rules.populate_anim_frame_dims(&assets, theater.extension, &map.header.theater);
@@ -155,7 +152,6 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         theater.extension,
         crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
     );
-    rules.bind_animation_sequences(&sequences);
     let overlay_shps = crate::rules::effect_asset_catalog::resolved_overlay_shp_ids(
         &overlays,
         &assets,
@@ -188,8 +184,7 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
     .expect("physical terrain, objects and their authored Tags");
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&teams, &rules)
-        .expect("resolved stock team AI");
+    sim.install_team_ai_registry(&teams, &rules);
     let post = crate::sim::runtime::finalize_constructed_scenario(
         &mut sim,
         &map,
@@ -198,7 +193,8 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         output.overlay_grid,
         &roster,
         None,
-    );
+    )
+    .unwrap();
     assert!(post.navigation_published && sim.path_grid().is_some());
     if remove_home {
         assert_eq!((map.header.width, map.header.height), (65, 120));
@@ -212,11 +208,11 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         },
         runtime: crate::sim::runtime::SimRuntime {
             simulation: sim,
-            resources: crate::sim::runtime::SimResources {
+            resources: std::sync::Arc::new(crate::sim::runtime::SimResources {
                 overlay_registry: overlays,
                 terrain_template: None,
                 rules,
-            },
+            }),
         },
         map,
     }

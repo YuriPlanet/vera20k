@@ -49,7 +49,6 @@ impl OutcomeBannerArt {
     /// and the draw resolves each slot through `0x1002DF10` / `0x1002DF00`,
     /// which answer InitGame's literal surface whenever that slot is unset or
     /// never loaded. Each slot therefore falls back on its own.
-    #[cfg(feature = "ares")]
     pub(crate) fn build_for_side(
         gpu: &GpuContext,
         batch: &BatchRenderer,
@@ -263,7 +262,7 @@ fn router_verdict(state: &AppState) -> Option<HouseOutcomeKind> {
 /// stays on screen through the clip until the score page takes the picture.
 fn local_outcome(state: &AppState) -> Option<HouseOutcomeKind> {
     router_verdict(state)
-        .or_else(|| sim_outcome(&state.match_state.sim_runtime.as_ref()?.simulation))
+        .or_else(|| sim_outcome(&state.match_state.sim_runtime.presentation()?.simulation))
 }
 
 /// The local House's result as the simulation holds it: the one it published,
@@ -291,7 +290,7 @@ pub(crate) fn active_art(state: &AppState) -> Option<&OutcomeBannerArt> {
     if !state
         .match_state
         .sim_runtime
-        .as_ref()?
+        .presentation()?
         .simulation
         .session()
         .game_mode_nonzero()
@@ -381,15 +380,20 @@ pub(crate) fn instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteIns
     let campaign = !state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .is_some_and(|runtime| runtime.simulation.session().game_mode_nonzero());
     let (frame, label) = result_view(outcome_kind, campaign);
-    let (width, height) = crate::app::input::camera::tactical_viewport_size(state);
-    let view = [width as i32, height as i32];
-    let camera = [
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-    ];
+    use crate::app::presentation::field_parts;
+    use crate::ui::field_layout::FieldPart;
+    // A layout that leaves the banner out draws none.
+    if !field_parts::shows(state, FieldPart::Banner) {
+        return Default::default();
+    }
+    // The banner is centred in its box, the battlefield in the original
+    // interface, and laid out in the box's own pixels.
+    let [_, _, width, height] = field_parts::rect(state, FieldPart::Banner);
+    let view = [width, height];
+    let camera = field_parts::lane_camera(state, FieldPart::Banner);
     if let Some(quad) = active_art(state).and_then(|art| art.fit_quad(view, camera)) {
         return (vec![quad], Vec::new());
     }
@@ -428,7 +432,7 @@ pub(crate) fn instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteIns
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
 

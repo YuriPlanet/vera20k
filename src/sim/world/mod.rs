@@ -15,31 +15,40 @@
 //! - `techno_ai.rs` — per-object AI dispatch within each turn
 
 pub(crate) mod authored_load_host;
+mod bounce_terrain;
 pub mod bridge_orchestrator;
 #[cfg(any(test, feature = "test-support"))]
 pub mod bridge_test_evidence;
 mod building_after_destruction;
-#[cfg(test)]
+
+#[cfg(all(test, tests_sim_world_a_b))]
 mod building_after_destruction_tests;
 pub(crate) mod building_anim;
 mod building_scatter;
 mod building_upgrade_art;
 mod camera_home;
-mod bounce_terrain;
 mod cell_content;
 mod crash;
+mod death_frames;
 mod disk_laser;
 pub use disk_laser::DiskLaserObservation;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod disk_laser_tests;
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 pub(crate) mod entry_test_fixture;
 mod frame_channel;
 mod frame_effects;
+mod idle_sleep;
+#[cfg(all(test, tests_sim_world_c_o))]
+mod idle_sleep_tests;
 mod network_commands;
-mod queued_command;
 mod object_entry;
+mod queued_command;
+mod quiet_units;
+#[cfg(all(test, tests_sim_world_p_s))]
+mod quiet_units_tests;
 mod sinking;
+mod terrain_deformation;
 mod time_warp;
 mod trigger_chrono;
 mod type_tech_levels;
@@ -47,23 +56,30 @@ mod voxel_anim_effects;
 pub(crate) use voxel_anim_effects::BounceContactDamage;
 mod unit_repair_seek;
 pub(crate) use frame_channel::FrameChannel;
-pub use network_commands::{NetworkCommandQueues, NetworkQueueError, NetworkQueueContext, NetworkQueuePass, NetworkInterruption};
-pub use frame_effects::{FrameEffects, LocalPlanningBoundary, NetworkCommandBoundary, NetworkCommandError, SoundBoundary, OutcomeWaitBoundary, TacticalRadarBoundary};
+pub use frame_effects::{
+    FrameEffects, LocalPlanningBoundary, NetworkCommandBoundary, NetworkCommandError,
+    OutcomeWaitBoundary, SoundBoundary, TacticalRadarBoundary,
+};
+pub use network_commands::{
+    NetworkCommandQueues, NetworkInterruption, NetworkQueueContext, NetworkQueueError,
+    NetworkQueuePass,
+};
 pub(crate) use type_tech_levels::TypeTechLevels;
-#[cfg(test)]
-mod unit_unlimbo_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod unit_follows_tests;
+#[cfg(all(test, tests_sim_world_t_z))]
+mod unit_unlimbo_tests;
 pub(crate) use sinking::{LivingSinkTrigger, SinkingState};
 pub mod edge_cell;
 mod gap_generator;
 pub(crate) use gap_generator::GapGeneratorRuntime;
 pub(crate) use gap_generator::LastOperational;
 mod house_base;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod house_cheer_tests;
 mod house_defeat;
 pub(crate) use house_defeat::{HouseBlowupSubset, PlayerOutcomeRequest};
+mod alpha_shape;
 mod ion_blast;
 mod spotlight;
 pub(crate) use house_base::HouseBaseState;
@@ -80,6 +96,8 @@ mod aircraft_move;
 pub(crate) use aircraft_move::tests::fixture as aircraft_search_fixture;
 mod building_working_sound;
 pub use building_working_sound::working_sound_building;
+#[cfg(all(test, tests_sim_world_c_o))]
+mod civilian_evacuation_tests;
 pub(crate) mod damage_consequences;
 pub mod display_layers;
 mod display_registry;
@@ -88,7 +106,6 @@ mod fly_landing;
 mod fly_orders;
 mod fly_process;
 mod frame_error;
-mod ground_keys;
 mod lifecycle;
 mod master_frame;
 #[cfg(any(test, feature = "test-support"))]
@@ -99,15 +116,16 @@ mod move_cell_input;
 pub use move_cell_input::{CellActionQuery, MoveAction};
 mod move_sound;
 mod object_sound;
+pub use object_sound::{ambient_sound_owner, object_sound_object};
 mod turret_rotate_sound;
 pub(crate) use move_sound::MoveSoundState;
 pub(crate) use playfield_membership::PlayfieldMembership;
 pub(crate) use selection_voice::DeployVoiceSuppression;
 pub(crate) use turret_rotate_sound::TurretRotateLatch;
 pub use turret_rotate_sound::turret_rotate_sound_techno;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod main_sound_identity_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod move_sound_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod native_cell_input_test_fixture;
@@ -117,24 +135,27 @@ mod playfield_membership;
 mod rally_cell_input;
 mod rocket_flight;
 pub use frame_error::FrameAdvanceError;
+pub use world_orders::AresHeal;
 pub(crate) use world_orders::CapturedInfantryType;
 pub use world_orders::EngineerBuildingAction;
+pub use world_orders::HealArmKeys;
+pub use world_orders::InfiltrateAction;
 pub use world_orders::UnitRepairAction;
-#[cfg(feature = "ares")]
 pub(crate) use world_orders::VehicleCaptureOutcome;
 pub use world_orders::{EntryBaseAction, EntryClickAction};
+mod fog_objects;
 mod projectile_collision;
 mod shroud_refresh;
-mod fog_objects;
 mod substrate;
 mod techno_ai;
 mod track_cell_recalc;
 mod trigger_camera;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod trigger_camera_tests;
 mod trigger_explosion;
 mod trigger_strikes;
 pub(crate) use shroud_refresh::ParanoidMaps;
+pub(crate) use techno_ai::AresPrismForwarding;
 pub(crate) use techno_ai::ObjectAiCtx;
 pub(crate) use techno_ai::PassiveScan;
 pub(crate) use techno_ai::PatrolPost;
@@ -154,94 +175,100 @@ pub use techno_ai::{BuildingDelayedFire, DelayedFire};
 pub(crate) use techno_ai::{can_fire_at, weapon_at_index};
 mod command_schedule;
 mod planning;
-pub use planning::{PlanningBadgeKind, PlanningDrawSegment, PlanningPressRefusal};
+pub use planning::{
+    PlanningAppendMessage, PlanningBadgeKind, PlanningDrawGraph, PlanningDrawNode,
+    PlanningDrawSegment, PlanningPressRefusal, PlanningSelectionCheck,
+};
 mod selection_voice;
 pub(crate) mod techno_ai_cloak;
 pub(crate) mod unit_post;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod wall_autofill_oracle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod wall_restore_tests;
 mod world_commands;
 mod world_hash;
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod custom_foundation_tests;
 mod world_orders;
 mod world_spawn;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod aegis_distributed_fire_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod aircraft_deployment_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod area_rocker_tests;
-#[cfg(test)]
-mod finite_ammo_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod brute_smash_debris_tests;
-#[cfg(test)]
-mod building_fatal_lifecycle_tests;
-#[cfg(test)]
-mod building_power_roster_tests;
-#[cfg(test)]
-mod crash_tests;
-#[cfg(test)]
-mod damage_consequence_tests;
-#[cfg(test)]
-mod drone_rocking_tests;
-#[cfg(test)]
-mod engineer_building_repair_tests;
-#[cfg(test)]
-mod engineer_power_consumer_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod building_discovery_services_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
+mod building_fatal_lifecycle_tests;
+#[cfg(all(test, tests_sim_world_a_b))]
+mod building_power_roster_tests;
+#[cfg(all(test, tests_sim_world_c_o))]
+mod crash_tests;
+#[cfg(all(test, tests_sim_world_c_o))]
+mod damage_consequence_tests;
+#[cfg(all(test, tests_sim_world_c_o))]
+mod drone_rocking_tests;
+#[cfg(all(test, tests_sim_world_c_o))]
+mod engineer_building_repair_tests;
+#[cfg(all(test, tests_sim_world_c_o))]
+mod engineer_power_consumer_tests;
+#[cfg(all(test, tests_sim_world_c_o))]
+mod finite_ammo_tests;
+#[cfg(all(test, tests_sim_world_c_o))]
 mod fly_height_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod gap_generator_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod gap_supercharge_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod gsi_04_18_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod house_ai_activation_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod jumpjet_infantry_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod lifecycle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod mastermind_overload_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod projectile_degenerates_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod projectile_trailer_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod squid_grapple_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod suicide_fire_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub use lifecycle_tests::common_raw_terrain_cell as common_raw_test_terrain_cell;
-#[cfg(test)]
-mod team_script_vm_tests;
-#[cfg(test)]
-mod voxel_water_expiry_tests;
-#[cfg(test)]
-pub(in crate::sim) mod voxel_meteor_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod overlay_explodes_tests;
+#[cfg(all(test, tests_sim_world_t_z))]
+mod team_script_vm_tests;
+#[cfg(all(test, any(tests_sim_world_t_z, tests_sim_trigger)))]
+pub(in crate::sim) mod voxel_meteor_tests;
+#[cfg(all(test, tests_sim_world_t_z))]
+mod voxel_water_expiry_tests;
 
 pub(crate) use crash::CrashLatch;
 pub(crate) use display_registry::entity_layer;
 pub use lifecycle::LifecycleOutput;
+pub(crate) use lifecycle::object_get_coords_cell;
 pub use lifecycle::{
     BuildingLight, ConcealOutcome, ObjectLifecycle, PlacementEvidence, RemovalFacts, RevealOutcome,
     RevealPosition, RevealRequest, TechnoDiscoveryHistory, TerminalLifetime, UninitContext,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use lifecycle::{LifecycleTestEvent, RevealFailure};
-pub(crate) use lifecycle::object_get_coords_cell;
-pub(crate) use load_object_lifecycle::{LoadObjectLifecycle, OverlayConstructionReceipt};
+pub(crate) use load_object_lifecycle::LoadObjectLifecycle;
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) use load_object_lifecycle::LoadOverlayHandle;
+pub use load_object_lifecycle::LoadOverlayLifecycleError;
 pub(crate) use logic_vector::{LogicMembership, LogicVector};
 pub(crate) use object_entry::{EntryFacts, FootEntryReceiver};
 #[cfg(any(test, feature = "test-support"))]
@@ -308,7 +335,6 @@ use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::smudge_grid::SmudgeGrid;
 use crate::sim::team_script_vm::TeamScriptVm;
 use crate::sim::terrain_object::TerrainObjectStore;
-use crate::sim::tiberium::TiberiumPlacementObjectContext;
 use crate::sim::trigger_runtime::{TriggerEffect, TriggerRuntime};
 use crate::sim::vision::{self, FogState};
 use crate::util::fixed_math::SimFixed;
@@ -336,13 +362,22 @@ pub struct TickResult {
     /// A structure was destroyed (combat, sell, crush); the frame finalizer
     /// rebuilds navigation to unblock the footprint.
     pub destroyed_structure: bool,
-    /// An entity's owner changed (garrison reconciliation, engineer capture) — sprite
-    /// atlas needs rebuild for the new house color.
+    /// An entity's owner changed (garrison reconciliation, engineer capture).
+    /// The atlases learn of it from [`Simulation::take_looks`].
     pub ownership_changed: bool,
     /// Bridge state changed this tick. Mutation owners publish navigation at
     /// their synchronous reader boundary; the frame finalizer also rebuilds
     /// the projection before committing the frame for subsequent ticks.
     pub bridge_state_changed: bool,
+}
+
+/// What [`Simulation::take_looks`] reports.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChangedLooks {
+    /// Entities stored since, or given a new owner, type or disguise.
+    pub entities: crate::sim::Touched,
+    /// Anims stored since, or given a new colour remap or type.
+    pub anims: crate::sim::Touched,
 }
 
 /// The master spine retains its admitted command batch for the live recorder.
@@ -365,7 +400,7 @@ impl MasterFrameOutput {
 
 /// Saved continuation after the CRC modal. This is control state, not a
 /// second command queue: DoList retains the original bytes and processed bits.
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct NetworkFailureContinuation {
     failure: crate::sim::command_queue::ChecksumMismatch,
     tick_ms: u32,
@@ -374,7 +409,7 @@ struct NetworkFailureContinuation {
 
 // Explicit variants keep the continuation describable by the binary snapshot
 // schema. Its layout fingerprint rejects snapshots with the earlier shape.
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 enum FrameContinuation {
     Checksum(NetworkFailureContinuation),
     Interrupted(NetworkInterruptionContinuation),
@@ -382,28 +417,28 @@ enum FrameContinuation {
     Outcome(HouseOutcomeContinuation),
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct HouseOutcomeContinuation {
     cursor: house_defeat::HouseOutcomeCursor,
     tick_ms: u32,
     frame: FrameCompletion,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct NetworkInterruptionContinuation {
     interruption: NetworkInterruption,
     tick_ms: u32,
     frame: FrameCompletion,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct NetworkWaitContinuation {
     context: NetworkQueueContext,
     tick_ms: u32,
     frame: FrameCompletion,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct FrameCompletion {
     commands: Vec<CommandEnvelope>,
     execute_tick: u64,
@@ -538,6 +573,31 @@ impl AllianceEva {
     }
 }
 
+/// The lines Ares 3.0 `10013E40` gives a captured tech building in place of
+/// `0x0044840B..0x0044848F`: the old owner's player hears the type's
+/// `LostEvaEvent` (default `EVA_TechBuildingLost`; `None` is silent) and
+/// reads `Message.Lost`, the new owner's player hears `CaptureEvaEvent=`
+/// and reads `Message.Capture` (`None`: an empty label prints nothing).
+/// A game without Ares carries the default.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AresTechCaptureLines {
+    pub lost_eva_event: Option<InternedId>,
+    pub message_lost: Option<InternedId>,
+    pub message_capture: Option<InternedId>,
+}
+
+/// What Ares FootClass_Destroyed (10049080, hook 0x4D98C0) and
+/// BuildingClass_Destroyed_UnitLost (10013F10, hook 0x44D760) add to
+/// [`SimSoundEvent::UnitLost`]. A game without Ares carries none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AresUnitLostLine {
+    /// The victim type's `EVA.Lost`, spoken whether or not the event's
+    /// `radar` is admitted.
+    pub eva: InternedId,
+    /// A Foot creates the radar event; a building creates none.
+    pub radar_event: bool,
+}
+
 /// A sound event produced during simulation (combat, death, production).
 /// Pure data — no audio library dependency. Drained by the app layer each frame.
 #[derive(Debug, Clone)]
@@ -558,6 +618,10 @@ pub enum SimSoundEvent {
     /// Techno destructor6F4607 destroys its voice handle before its owned
     /// Anims. The app discards both pending and playing voice identities.
     UnitVoiceDestroyed { owner: u64 },
+    /// A deploy conversion copied the voice handle, pending and playing slots
+    /// (`+0x4DC..+0x4F4`) to the object replacing `from` and emptied `from`'s:
+    /// UnitClass::Deploy739971, BuildingClass::Mission_Selling44A0D4.
+    UnitVoiceMoved { from: u64, to: u64 },
     /// Voc7509E0 on the object's handle (Building+6A0 for Construction).
     /// The existing app/audio handle owner performs looping updates and release.
     ObjectSoundStarted {
@@ -647,23 +711,22 @@ pub enum SimSoundEvent {
         /// (`0x00739E81..0x00739EB3`).
         world: crate::sim::anim_class::AnimWorldCoord,
     },
-    /// A transport placed an ejected passenger — `UnitClass::Mission_Unload @
-    /// 0x0073D630` plays the transport type's `LeaveTransportSound=`
-    /// (`+0x568`) through `VocClass::PlayAtCoord @ 0x00750E20` at the
-    /// TRANSPORT's own Location after the passenger's Unlimbo
-    /// (`0x0073DC35`..`0x0073DC67`), once per placed passenger.
-    LeaveTransport {
-        sound_id: InternedId,
-        world: crate::sim::anim_class::AnimWorldCoord,
-    },
     /// A building finished construction — play EVA "Construction complete".
-    BuildingComplete { owner: InternedId },
+    /// `type_id` is the factory's already-resolved completed product; the app
+    /// names it in the optional accessibility text line. Transient event only:
+    /// drained each frame, never a gameplay hash or persisted identity input.
+    BuildingComplete {
+        owner: InternedId,
+        type_id: InternedId,
+    },
     /// `HouseClass::Place_Production 0x004FB5C6..0x004FB644`: a unit left the
     /// factory of a human-controlled house. `EVA_UnitReady` plays for the
-    /// local owner once its client admits `radar` (type 6).
+    /// local owner once its client admits `radar` (type 6). `type_id` is the
+    /// held product the factory completed, carried for the optional text line.
     UnitComplete {
         owner: InternedId,
         radar: RadarEventRequest,
+        type_id: InternedId,
     },
     /// One accepted HouseClass win/loss transition. The app resolves the
     /// local owner's faction-specific STANDARD EVA; this edge is transient so
@@ -673,7 +736,8 @@ pub enum SimSoundEvent {
         kind: crate::sim::house_state::HouseOutcomeKind,
     },
     /// Global `[AudioVisual] SellSound=` for a successful wall-sale event.
-    /// The EventClass receiver can differ from the wall owner.
+    /// The EventClass receiver can differ from the wall owner. A unit's sale
+    /// (`FootClass::On_Sold @ 0x004D9F70`) plays the same cue for its owner.
     WallSold { receiver: InternedId },
     /// A deploy command failed target placement validation.
     /// App layer gates this to the local human player and plays
@@ -686,8 +750,12 @@ pub enum SimSoundEvent {
     /// The PLACE event's Unlimbo succeeded (`HouseClass @ 0x004FB0E0`,
     /// `0x004FB236`; a wall's Unlimbo also returns 1 at `0x00440865`):
     /// `[AudioVisual] BuildingSlam=` centred at full volume when the house is
-    /// the local player's (`0x004FB2CC..0x004FB314`).
-    BuildingPlaced { owner: InternedId },
+    /// the local player's (`0x004FB2CC..0x004FB314`). `building_type` is the
+    /// placed building's type, whose Ares `SlamSound` replaces the cue.
+    BuildingPlaced {
+        owner: InternedId,
+        building_type: InternedId,
+    },
     /// A chrono teleport happened — play the resolved warp sound at this position.
     /// Sim emits two of these per warp: one at the departure Location with the
     /// unit's `ChronoOutSound=` (`0x0071960A..0x0071962C`, Chronosphere state
@@ -762,12 +830,21 @@ pub enum SimSoundEvent {
     /// skirmish that is `owner == the local player`, which the app resolves.
     /// `sound_id` is `None` when the rules key is absent or empty (native's
     /// invalid Voc index is silence).
+    /// `type_id` is the promoted object's already-resolved type reference; the
+    /// app names it in the optional accessibility text line. Transient event
+    /// only: drained each frame, never a gameplay hash or persisted identity.
     UnitPromoted {
         owner: InternedId,
         sound_id: Option<InternedId>,
+        type_id: InternedId,
         /// The object's Location (`0x006FA092..0x006FA0BC`,
-        /// `0x006FA0FF..0x006FA12A`).
+        /// `0x006FA0FF..0x006FA12A`); with Ares, its Transporter's when it
+        /// rides in one (UpdateVeterancy10046D2F..10046D40).
         world: crate::sim::anim_class::AnimWorldCoord,
+        /// Ares `EVA.VeteranPromoted`/`EVA.ElitePromoted`
+        /// (VoxClass::PlayIndex at10046D54); `None` is the silent -1 index.
+        /// Read only when Ares plays; the stock event carries `None`.
+        eva: Option<InternedId>,
     },
     /// A building / harvester admitted a damage or first Temporal-head warning.
     /// For the local owner the app admits `radar` (type 3 base / type 4 miner) on its client
@@ -792,10 +869,15 @@ pub enum SimSoundEvent {
     /// `TechnoClass::Death_Announcement @ 0x004D98C0` fired for a unit of
     /// `owner` (a human house) that is not `Spawned=`. The app plays
     /// `EVA_UnitLost` for the local owner once its client admits `radar`
-    /// (`CreateRadarEvent(7, cell)`, 8-cell dedupe).
+    /// (`CreateRadarEvent(7, cell)`, 8-cell dedupe). `type_id` is the dead
+    /// techno's own interned type, resolved at the death site; transient.
     UnitLost {
         owner: InternedId,
         radar: RadarEventRequest,
+        type_id: InternedId,
+        /// The Ares announcement, when Ares plays: the app then speaks its
+        /// line instead, whatever `radar` answers. `None` is the stock event.
+        ares: Option<AresUnitLostLine>,
     },
     /// A `PlayEVA` line native speaks only for the player's house: the
     /// `HouseClass::Update` advice (`EVA_InsufficientFunds` `0x004F8BA0`,
@@ -811,8 +893,13 @@ pub enum SimSoundEvent {
     /// `+0x6DD`): `TechnoClass+0x41A` (owner is the local player) and no
     /// `UndeploysInto=` (`Type+0x408`) — an undeploying building stays
     /// silent. Each removed upgrade uses the same event at
-    /// `0x0044AB22..0x0044AB36`. App plays `EVA_StructureSold`.
-    StructureSold { owner: InternedId },
+    /// `0x0044AB22..0x0044AB36`. App plays `EVA_StructureSold`. `type_id`
+    /// names the building that was sold (or whose upgrade was removed); the
+    /// emit site already resolved it. Transient accessibility fact only.
+    StructureSold {
+        owner: InternedId,
+        type_id: InternedId,
+    },
     /// A sale order's click (`BuildingClass::Sell_Back @ 0x00447110`:
     /// `VocClass::PlayAtPos` of `[AudioVisual] GenericClick=`) for the
     /// owner's player (`HouseClass::IsHumanPlayer @ 0x0050B6F0`; the app
@@ -822,18 +909,26 @@ pub enum SimSoundEvent {
     /// switched on while `Health != Type.Strength` (`0x00447059`) and the
     /// owner is the local player (`0x004470A4 CALL 0x0050B6F0`). App plays
     /// `EVA_Repairing` for the local owner. Depot MissionRepair44C507 emits
-    /// the same request when its first paid service step starts.
-    Repairing { owner: InternedId },
-    /// Depot MissionRepair44BDB2 reaches CreateRadarEvent8 after a service
-    /// request completes. The app resolves the local-owner+41A gate and
-    /// existing client radar admission before playing EVA_UnitRepaired.
+    /// the same request when its first paid service step starts. `type_id` is
+    /// the building being repaired (ToggleRepair) or the depot that began the
+    /// service (MissionRepair); both are already resolved at the emit site.
+    /// Transient accessibility fact only.
+    Repairing {
+        owner: InternedId,
+        type_id: InternedId,
+    },
+    /// MissionRepair reaches CreateRadarEvent8 after a service completes.
+    /// Hospital44B93F already admits House50B6F0; depot44BD96 leaves the
+    /// local-owner+41A gate to the app. Both use its existing radar admission
+    /// before EVA_UnitRepaired.
     UnitRepaired {
         owner: InternedId,
+        owner_admitted: bool,
         radar: RadarEventRequest,
     },
     /// `BuildingClass::ChangeOwner @ 0x00448260` announce block
     /// (`0x004483C0..0x0044848F`) for an engineer capture
-    /// (`InfantryClass::PerCellProcess 0x00519A27 PUSH 1` = announce). Native
+    /// (`InfantryClass::PerCellProcess 0x00519F79 PUSH 1` = announce). Native
     /// gate: the OLD or the NEW owner is the local player (`0x004483C6` /
     /// `0x004483D1 CALL 0x0050B6F0`), the new owner's type not
     /// `MultiplayPassive` (`0x004483E1`). `tech_building` is `NeedsEngineer=`
@@ -851,6 +946,10 @@ pub enum SimSoundEvent {
         tech_building: bool,
         radar: Option<RadarEventRequest>,
         capture_eva_event: Option<InternedId>,
+        /// Ares 3.0 `BuildingClass_ChangeOwnership_Tech @ 10013E40` (hook
+        /// `0x0044840B`) replaces the tech building's block with these when
+        /// Ares plays; otherwise the default.
+        ares_tech: AresTechCaptureLines,
     },
     /// `BuildingClass::Infiltrate @ 0x004571E0`'s announcements
     /// (`sim::spy_infiltration`). When the building's owner or the spy's
@@ -989,13 +1088,19 @@ pub enum SimSoundEvent {
     /// Owner is the building owner at AddGarrisonOccupant time; civilian
     /// ownership transfer is reported separately from building reconciliation.
     /// App layer plays EVA_StructureGarrisoned if owner is local human.
-    StructureGarrisoned { owner: InternedId },
+    /// `type_id` is the occupied building, already resolved at the emit site.
+    StructureGarrisoned {
+        owner: InternedId,
+        type_id: InternedId,
+    },
     /// CheckAutoSellOrCivilian458200 abandoned an empty map garrison.
     /// House50B6F0 already admitted the old owner. The sound precedes radar
     /// admission; EVA plays only when CreateRadarEvent accepts the request.
     StructureAbandoned {
         owner: InternedId,
         radar: crate::sim::radar::RadarEventRequest,
+        /// The abandoned building, already resolved at the emit site.
+        type_id: InternedId,
     },
     /// First-occupant SFX from rulesmd [AudioVisual] BuildingGarrisonedSound.
     /// Positional cue gated on owner == local human, at the occupant's
@@ -1041,14 +1146,55 @@ pub enum SimSoundEvent {
     /// Ares SPECIAL_PLACE10038ECA..10038EE0: automatic selection for a
     /// manual event failed. Only the owning client prints Message.CannotFire;
     /// its existing message-list transport owns the insert sound.
-    #[cfg(feature = "ares")]
     AresSuperWeaponRefused {
         owner: InternedId,
         sw_type: InternedId,
     },
     /// Common Ares Launch10033201..10033242: Ready queue cleanup after FX.
-    #[cfg(feature = "ares")]
+    /// With `message`, every client also prints the type's Message.Launch
+    /// (10033153), which a handler's NoMessage Flag skips. `sw_type` is the
+    /// type whose SWTypeExt the Launch read (a PostClick Super's source); a
+    /// handler whose Flags hold both NoMessage and NoCleanup sends none.
     AresSuperWeaponFinished {
+        owner: InternedId,
+        sw_type: InternedId,
+        message: bool,
+    },
+    /// Common Ares Launch10032FC3: every client plays `sw_type`'s
+    /// `EVA_Activated` (the PostClick source's for a PostClick Super),
+    /// unless the handler's Flags hold NoEVA.
+    AresSuperWeaponActivatedEva { sw_type: InternedId },
+    /// A new type's AbortFire refused a click (SW_PsychicDominator
+    /// 10070780): the owner's client prints the type's `Message.Abort`.
+    AresSuperWeaponAborted {
+        owner: InternedId,
+        sw_type: InternedId,
+    },
+    /// A type-13 radar event only the clients whose player `owner` counts as
+    /// an ally see (SW_NuclearMissile::Activate 10072FF0: "allies can see
+    /// the target location before the enemy does").
+    AresAlliedRadarEvent {
+        owner: InternedId,
+        radar: RadarEventRequest,
+    },
+    /// Ares SuperClass_Update_DrainMoney100358A0 refused a draining Super's
+    /// money for a ControlledByHuman House: every client plays
+    /// EVA.InsufficientFunds and prints the label in the player's colour.
+    AresSuperWeaponDrainRefused {
+        owner: InternedId,
+        sw_type: InternedId,
+    },
+    /// A new type's deferred activation (UnitDelivery's state machine
+    /// Update10075DE0, the Ares Lightning Storm's start 10036B00): every
+    /// client prints Message.Activate.
+    AresSuperWeaponActivated {
+        owner: InternedId,
+        sw_type: InternedId,
+    },
+    /// An Ares Lightning Storm's countdown reached a multiple of 225 under
+    /// `Lightning.PrintText` (hook 53A6CF, 10037330): every client prints
+    /// the type's Message.Launch, with no EVA line.
+    AresLightningStormApproaching {
         owner: InternedId,
         sw_type: InternedId,
     },
@@ -1251,7 +1397,12 @@ where
 }
 
 /// The game simulation - owns all authoritative game state.
-#[derive(serde::Serialize, serde::Deserialize)]
+/// `Clone` serves exactly one copy, through [`Simulation::presentation_copy`]:
+/// the world without its objects that drawing reads beside the presentation
+/// frame's records while a tick runs on the simulation thread
+/// (docs/sim-thread.md). No authority is copied: gameplay owns the one live
+/// world.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Simulation {
     /// String interner for owner/type_ref — zero-cost ID clones instead of heap Strings.
     pub(crate) interner: crate::sim::intern::StringInterner,
@@ -1290,10 +1441,8 @@ pub struct Simulation {
     #[serde(skip)]
     pub(crate) debug_tools: crate::sim::cheats::DebugToolsState,
     /// Opt-in wall-clock observations. Never part of saves, hashes, or gameplay.
-    #[cfg(feature = "telemetry")]
     #[serde(skip)]
     frame_profiling: bool,
-    #[cfg(feature = "telemetry")]
     #[serde(skip)]
     frame_profile: crate::sim::frame_profile::FrameProfile,
     /// Native A8E7AC is a synchronous, wrapping placement/destruction scope,
@@ -1312,6 +1461,11 @@ pub struct Simulation {
     #[cfg(feature = "phobos")]
     #[serde(skip, default)]
     pub(crate) reflected_warhead: Option<crate::sim::intern::InternedId>,
+    /// Ares CanMakeStuffUp's RulesClass writes (100677B0, hook 0x687C16),
+    /// drawn once at scenario start; saved and hashed. See
+    /// `sim::ares_make_stuff_up`.
+    #[serde(default)]
+    pub(crate) ares_made_up_rules: Option<crate::sim::ares_make_stuff_up::AresMadeUpRules>,
     /// Scenario RNG — gamemd `Scenario->Random` (Scen+0x218). Drives in-object-tick
     /// sim draws: scatter, sub-cell placement, smudge/destruction, particles,
     /// wall/overlay damage, bridge collapse/destruction presentation, ore growth/spread, TIBTRE,
@@ -1378,6 +1532,8 @@ pub struct Simulation {
     pub(crate) lifecycle_outputs: FrameChannel<LifecycleOutput>,
     /// Derived presentation interest for the next admitted frame. The app
     /// copies only pending voice owners; this is never a second voice latch.
+    /// A deploy conversion renames its old object's entry to the new one
+    /// (`move_unit_voice`), following the audio owner's own move.
     /// `advance_app_frame` clears it on success and error, and restore starts
     /// empty. Neither snapshots nor world hashes include this transient set.
     #[serde(skip)]
@@ -1387,9 +1543,9 @@ pub struct Simulation {
     /// gameplay state; saves occur at frame boundaries.
     #[serde(skip)]
     mission_spawned_entities: bool,
-    /// Presentation invalidation from the shared ownership chokepoint. Drained
-    /// into frame outputs, including changes outside the live object pass.
-    /// The restored match rebuilds its atlases; this is not saved or hashed.
+    /// The shared ownership chokepoint's report, drained into the tick's
+    /// `ownership_changed`, including changes outside the live object pass.
+    /// Not saved or hashed.
     #[serde(skip)]
     ownership_changed_since_output: bool,
     /// Ordered occupied-cell identities finalized at the authoritative frame
@@ -1490,6 +1646,10 @@ pub struct Simulation {
     /// passes (`vision::RevealViewers`); never serialized or hashed.
     #[serde(skip)]
     pub(crate) reveal_viewers: crate::sim::vision::RevealViewers,
+    /// The Civilian-side House, remembered through the object pass
+    /// (`house_defeat::CivilianSideHouse`); never serialized or hashed.
+    #[serde(skip)]
+    civilian_house_memo: house_defeat::CivilianSideHouse,
     /// Which listeners each pointer expiry reaches (`expiry_listeners`).
     /// Derived from the listener stores; never serialized or hashed.
     #[serde(skip)]
@@ -1497,9 +1657,17 @@ pub struct Simulation {
     /// Batched path searches (`movement::path_batch`); `None`
     /// searches in native order. Its registrations wait across a save.
     pub(crate) path_batch: Option<crate::sim::movement::path_batch::PathBatch>,
+    /// Idle objects sleep (`idle_sleep`). A runtime setting: never saved or
+    /// hashed, and no result depends on it.
+    #[serde(skip)]
+    idle_sleep: idle_sleep::IdleSleep,
     /// Batched target scans (`techno_ai::scan_batch`); `None` scans in
     /// native order. A save carries only the setting.
     pub(crate) scan_batch: Option<techno_ai::ScanBatch>,
+    /// Whether an effect anim that changes nothing but its picture runs as a
+    /// presentation anim (`anim_class::EffectAnims`); a new world makes every
+    /// anim in native order. A save carries the setting.
+    pub(crate) effect_anims: crate::sim::anim_class::EffectAnims,
     /// Retained native navigation base plane/raw movement rows plus the live
     /// derived hierarchy. ZoneGrid saves only its own retained base state;
     /// LoadContent67E8CD rebuilds hierarchy after bound Cell/object restoration.
@@ -1618,6 +1786,18 @@ pub struct Simulation {
     /// Pending UnitDelivery effects; simulation-owned, saved and hashed.
     #[serde(default)]
     pub(crate) unit_deliveries: crate::sim::superweapon::unit_delivery::UnitDeliveryState,
+    /// Ares ChronoWarpStateMachines moving chronoshifted buildings; owned by
+    /// `superweapon::chronosphere`, saved and hashed.
+    #[serde(default)]
+    pub(crate) ares_chrono_warps: crate::sim::superweapon::AresChronoWarps,
+    /// The Houses whose Ares firestorm is up (HouseClass+0x1FA); owned by
+    /// `sim::ares_firestorm`, saved and hashed.
+    #[serde(default)]
+    pub(crate) ares_firestorm: crate::sim::ares_firestorm::FirestormHouses,
+    /// Every House's Ares tunnel networks (HouseExt+0x64); owned by
+    /// `sim::ares_tunnel`, saved and hashed.
+    #[serde(default)]
+    pub(crate) ares_tunnels: crate::sim::ares_tunnel::AresTunnels,
     /// IonBlastClass's vector (`0x00AA0118`), owned by `ion_blast`. Native
     /// saves no blast; Rust retains pending damaging effects for match restore.
     #[serde(
@@ -1626,6 +1806,10 @@ pub struct Simulation {
         deserialize_with = "ion_blast::load"
     )]
     ion_blasts: Vec<ion_blast::IonBlast>,
+    /// AlphaShapeClass's vector (`0x0088A0F0`), owned by `alpha_shape`.
+    /// Saved, never hashed.
+    #[serde(default)]
+    alpha_shapes: alpha_shape::AlphaShapes,
     /// Per-cell terrain speed modifier config (slope climb/descend).
     /// Built from [General] rules at map load.
     #[serde(skip)]
@@ -1957,13 +2141,16 @@ pub(crate) fn repair_zone_after_recalc(
             bridge_records,
         );
     } else {
-        *zone_grid = Some(ZoneGrid::build_with_native_map_context(
-            path_grid,
-            terrain,
-            bridge_records,
-            bridge_geometry,
-            playfield_bounds,
-        ));
+        *zone_grid = Some(
+            ZoneGrid::build_with_native_map_context(
+                path_grid,
+                terrain,
+                bridge_records,
+                bridge_geometry,
+                playfield_bounds,
+            )
+            .into(),
+        );
     }
 }
 
@@ -2028,11 +2215,11 @@ fn dispatch_smudge_inline(
     spread_enabled: bool,
     dirty_cells: &mut crate::sim::dirty_cells::DirtyCells,
     construction: &mut crate::sim::smudge_grid::SmudgeConstruction<'_>,
-) {
+) -> Result<(), crate::rules::overlay_types::TiberiumImageError> {
     let (Some(smudge_grid), Some(overlay_grid), Some(terrain)) =
         (smudge_grid, overlay_grid, terrain)
     else {
-        return;
+        return Ok(());
     };
     let mut tiberium = crate::sim::combat::smudge_dispatch::SmudgeTiberiumContext {
         overlay_grid,
@@ -2059,7 +2246,7 @@ fn dispatch_smudge_inline(
         &mut tiberium,
         scenario_rng,
         Some(construction),
-    );
+    )
 }
 
 /// Existing process RNG owner lent to a detached saved-world candidate.
@@ -2244,6 +2431,7 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> damage_consequences::DamageCommitReceipt {
+        let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::FIRING);
         #[cfg(test)]
         if let crate::sim::combat::world_fire::FireVisit::Building { id, shot } = &visit
             && crate::sim::combat::receiver_fixture::substitute_building_fire(
@@ -2307,10 +2495,28 @@ impl Simulation {
         receipt
     }
 
+    /// The commit of a visit that fires nothing: no consequences, but it
+    /// still delivers the overlay grid's pending navigation receipts and the
+    /// smudge grid's dirty cells, as [`Self::commit_fire_visit`] does.
+    pub(crate) fn commit_no_fire(
+        &mut self,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> damage_consequences::DamageCommitReceipt {
+        damage_consequences::DamageConsequences::live_fire(
+            Default::default(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .commit(self, rules, overlay_registry, frame_effects)
+    }
+
     /// Commit a completed Bullet's detonation while its current Logic slot and
     /// physical object are still present. The caller retires the Bullet only
     /// after this transaction returns.
-    fn commit_logic_projectile_detonations(
+    pub(crate) fn commit_logic_projectile_detonations(
         &mut self,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
@@ -2350,14 +2556,25 @@ impl Simulation {
         .bridge_state_changed
     }
 
+    /// `weapon_index` is FireAt's own argument; `overlay_registry` reaches
+    /// the constructor's immediate update.
     pub(crate) fn commit_fired_wave(
         &mut self,
         rules: &RuleSet,
         event: &SimFireEvent,
         wave_type: u8,
+        weapon_index: i32,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) {
         if let Some(wave) = self.prepare_fired_wave(rules, event, wave_type) {
-            self.admit_fired_wave(event.attacker_id, wave, rules);
+            // Ares CreateWave (Ares.dll 10055160) stores the BYTE weapon index
+            // in the owner's TechnoExt before the constructor runs.
+            if rules.ares()
+                && let Some(owner) = self.substrate.entities.get_mut(event.attacker_id)
+            {
+                owner.record_ares_wave_weapon_slot(weapon_index as u8);
+            }
+            self.admit_fired_wave(event.attacker_id, wave, rules, overlay_registry);
         }
     }
 
@@ -2369,7 +2586,9 @@ impl Simulation {
         event: &SimFireEvent,
         wave_type: u8,
     ) -> Option<crate::sim::wave::Wave> {
-        debug_assert!(matches!(wave_type, 0 | 3));
+        // Only Ares (TechnoClass_Fire_OtherWaves 10056E60) creates the TS
+        // laser types 1 and 2.
+        debug_assert!(matches!(wave_type, 0 | 3) || (rules.ares() && wave_type < 3));
         let target = match event.target {
             // FireAt aims at the target's vt+0xA4 (`0x006FE1EE`), including
             // a Building's TargetCoordOffset. Wave AI later reads +58 instead.
@@ -2382,17 +2601,32 @@ impl Simulation {
             }
             crate::sim::combat::TargetKind::Cell(rx, ry) => self.wave_cell_target_position(rx, ry),
         };
-        // Sonic 0x006FF465 and Magnetic 0x006FF63C pass the constructor
-        // &[ESP+0x88], this target coordinate (0x006FE204), first and
-        // &[ESP+0x44], the launch source (`event.fire_coord`: GetFLH or a
-        // Dropping projectile's GetCoords), second.
-        let wave = crate::sim::wave::Wave::new_owned(
-            wave_type,
-            event.attacker_id,
-            event.target,
-            target,
-            event.fire_coord,
-        );
+        let wave = if rules.ares() {
+            // Ares TechnoClass_Fire_SonicWave/OtherWaves (Ares.dll 10056EF0/
+            // 10056E60, hooks 0x6FF449/0x6FF5F5) build both through CreateWave
+            // 10055160, which passes &[ESP+0x44] first and &[ESP+0x88] second,
+            // and registers the firing weapon in WaveExt.
+            crate::sim::wave::Wave::new_owned(
+                wave_type,
+                event.attacker_id,
+                event.target,
+                event.fire_coord,
+                target,
+            )
+            .with_ares_weapon(event.weapon_id)
+        } else {
+            // Sonic 0x006FF465 and Magnetic 0x006FF63C pass the constructor
+            // &[ESP+0x88], this target coordinate (0x006FE204), first and
+            // &[ESP+0x44], the launch source (`event.fire_coord`: GetFLH or a
+            // Dropping projectile's GetCoords), second.
+            crate::sim::wave::Wave::new_owned(
+                wave_type,
+                event.attacker_id,
+                event.target,
+                target,
+                event.fire_coord,
+            )
+        };
         Some(wave)
     }
 
@@ -2403,6 +2637,7 @@ impl Simulation {
         attacker_id: u64,
         mut wave: crate::sim::wave::Wave,
         rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) {
         let stable_id = self.substrate.allocate_stable_id();
         if !wave.constructor_distance_is_live() {
@@ -2422,7 +2657,7 @@ impl Simulation {
         self.next_native_runtime_id();
         // Constructor75E950 runs an immediate Update_Wave762AF0, including
         // current target+58 and GetFLH(0), before the first Logic AI visit.
-        let context = self.wave_update_context(&wave, rules);
+        let context = self.wave_update_context(&wave, rules, overlay_registry);
         let terminal = wave.initialize(context, self.resolved_terrain.as_ref());
         self.admit_wave(stable_id, wave);
         self.active_wave_links.insert(attacker_id, stable_id);
@@ -2539,13 +2774,16 @@ impl Simulation {
                 let Some(object_type) = self.interner.object_type(firer.type_ref(), rules) else {
                     break;
                 };
-                let Some(weapon_name) = crate::sim::combat::combat_weapon::primary_for_tier(
-                    object_type,
-                    firer.veterancy.rank(),
-                ) else {
-                    break;
+                // Ares WaveClass_DamageCell (Ares.dll 10056FA0, hook
+                // 0x75F38F) skips GetWeapon(0) for the wave's own weapon.
+                let weapon_name = match request.ares_weapon {
+                    Some(weapon) => Some(self.interner.resolve(weapon)),
+                    None => crate::sim::combat::combat_weapon::primary_for_tier(
+                        object_type,
+                        firer.veterancy.rank(),
+                    ),
                 };
-                let Some(weapon) = rules.weapon(weapon_name) else {
+                let Some(weapon) = weapon_name.and_then(|name| rules.weapon(name)) else {
                     break;
                 };
                 let raw_ambient_damage = weapon.ambient_damage;
@@ -2665,7 +2903,7 @@ impl Simulation {
                             );
                             crate::sim::combat::combat_aoe::AreaDamageReceiver::Terrain(
                                 crate::sim::combat::TerrainDamageEvent {
-                    damage_writeback: None,
+                                    damage_writeback: None,
                                     stable_id,
                                     rx,
                                     ry,
@@ -2703,15 +2941,27 @@ impl Simulation {
                         .and_then(|index| order.get(index + 1).copied());
                 }
 
-                // ChainReaction's Wave-tail callee is a bare RET. Wall damage
-                // follows receivers and reloads raw AmbientDamage, ignoring
-                // the shared mutable occupant value.
+                // ChainReaction's Wave-tail callee (75F44A..75F45F) is a bare
+                // RET; Ares 3.0 fills it with CellChainReact (10050DD0). Wall
+                // damage follows receivers and reloads raw AmbientDamage,
+                // ignoring the shared mutable occupant value.
+                if rules.ares() && self.overlay_chain_reacts((rx, ry), overlay_registry) {
+                    self.ares_cell_chain_react((rx, ry), rules, overlay_registry, frame_effects);
+                }
                 if let (Some(grid), Some(registry)) = (self.overlay_grid.as_mut(), overlay_registry)
                     && let Some(overlay_id) = grid.cell(rx, ry).overlay_id
                     && let Some(flags) = registry.flags(overlay_id)
                 {
                     let _chain_reaction_no_op = flags.chain_reaction;
-                    if flags.wall {
+                    // Ares 3.0 WaveClass_DamageCell_Wall (1005D7A0, hook
+                    // 0x75F46E): only a weapon whose Warhead is `Wall=yes`
+                    // damages the wall.
+                    if flags.wall
+                        && (!rules.ares()
+                            || rules
+                                .warhead(warhead_name)
+                                .is_some_and(|warhead| warhead.wall))
+                    {
                         let _wall = {
                             let mut host = SimulationWallRuntimeHost {
                                 dirty_cells: &mut self.dirty_cells,
@@ -2787,14 +3037,19 @@ impl Simulation {
             let chance_draw = self.scenario_rng.next_range_u32_inclusive(0, 99) as i32;
             if chance_draw < rules.combat_damage.collapse_chance
                 && let Some(mutation) = self.resolved_terrain.as_mut().and_then(|terrain| {
-                    terrain.collapse_destroyable_cliff_terrain(rx, ry, |cell_x, cell_y| {
-                        if let Some(grid) = self.overlay_grid.as_mut() {
-                            let _ = grid.clear_overlay(cell_x, cell_y);
-                        }
-                        if let Some(grid) = self.smudge_grid.as_mut() {
-                            let _ = grid.clear_cell_slot(cell_x, cell_y);
-                        }
-                    })
+                    terrain.collapse_destroyable_cliff_terrain(
+                        rx,
+                        ry,
+                        overlay_registry.and_then(|registry| registry.cliff_back_rock()),
+                        |cell_x, cell_y| {
+                            if let Some(grid) = self.overlay_grid.as_mut() {
+                                let _ = grid.clear_overlay(cell_x, cell_y);
+                            }
+                            if let Some(grid) = self.smudge_grid.as_mut() {
+                                let _ = grid.clear_cell_slot(cell_x, cell_y);
+                            }
+                        },
+                    )
                 })
             {
                 // Cliff stamps change Cell+11B without refreshing
@@ -2819,7 +3074,11 @@ impl Simulation {
                 for &coord in &mutation.original_footprint {
                     // Map5814D4/581BE6:70D4A0 then radar, per old footprint cell.
                     let _receipt = self.stop_all_targeting_cell(
-                        coord.0, coord.1, rules, overlay_registry, frame_effects,
+                        coord.0,
+                        coord.1,
+                        rules,
+                        overlay_registry,
+                        frame_effects,
                     );
                     #[cfg(any(test, feature = "test-support"))]
                     effects.cell_target_detaches.extend(_receipt.cell_detaches);
@@ -2837,11 +3096,11 @@ impl Simulation {
                     .map(|name| self.interner.intern(name));
                 for &(cell_x, cell_y) in &mutation.animation_cells {
                     for _ in 0..2 {
-                        let type_index =
-                            self.scenario_rng.next_range_u32_inclusive(0, 2) as usize;
+                        let type_index = self.scenario_rng.next_range_u32_inclusive(0, 2) as usize;
+                        // 0x0058173A..0x005817C1, 0x00581E40..0x00581EC7: the
+                        // first draw offsets Y, the second X.
+                        let jitter_y = self.scenario_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
                         let jitter_x =
-                            self.scenario_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
-                        let jitter_y =
                             self.scenario_rng.next_range_u32_inclusive(0, 24) as i32 - 12;
                         let level = self
                             .resolved_terrain
@@ -2860,15 +3119,14 @@ impl Simulation {
                                 .wrapping_add(jitter_y),
                             z: i32::from(level).wrapping_mul(104),
                         };
-                        let mut descriptor =
-                            crate::sim::components::AnimClassSpawnDescriptor::new(
-                                anim_types[type_index],
-                                cell_x as u16,
-                                cell_y as u16,
-                                SimFixed::from_num(128 + jitter_x),
-                                SimFixed::from_num(128 + jitter_y),
-                                level as u8,
-                            );
+                        let mut descriptor = crate::sim::components::AnimClassSpawnDescriptor::new(
+                            anim_types[type_index],
+                            cell_x as u16,
+                            cell_y as u16,
+                            SimFixed::from_num(128 + jitter_x),
+                            SimFixed::from_num(128 + jitter_y),
+                            level as u8,
+                        );
                         descriptor.delay = delay;
                         descriptor.loop_count = 1;
                         descriptor.draw_flags = 0x600;
@@ -3104,24 +3362,22 @@ impl Simulation {
         // entering their radar/EVA block. Keep all-owner producer facts for
         // replay, but only the reached local Unit call consumes this prefix.
         // HouseNotify can also warn a local ally of a nonlocal building.
-        let building_warning = self
-            .interner
-            .object_type(event.victim_type, rules)
-            .is_some_and(|object| {
-                object.category == crate::rules::object_type::ObjectCategory::Building
-            });
+        let building_warning = matches!(
+            event.line,
+            crate::sim::combat::UnderAttackLine::House { .. }
+        );
         if building_warning || self.session.current_house() == Some(event.owner) {
             effects.flush_sound(self, rules);
         }
     }
 
     /// `HouseClass::NotifyUnderAttack @ 0x004F93E0` for a building warning,
-    /// plus the `UnitClass::ReceiveDamage 0x00738530` harvester ping.
+    /// plus the ore-miner pings ([`crate::sim::combat::UnderAttackLine`]).
     ///
     /// The victim's own line: the radar diamond (type 4 miner / type 3 base,
     /// `0x004F94E4`/`0x004F9544`) is requested for the victim house; the app
     /// keeps the local-player filter and admits it there. The ally line (`0x004F955D..0x004F95B3`,
-    /// building path only): every *other* human house that the victim house
+    /// a House line reached on every client): every *other* human house that the victim house
     /// lists in its own ally bitfield (`House+0x5788`, read at `0x004F9450`
     /// through `IsAlliedWith`'s one-way rule) hears
     /// `EVA_OurAllyIsUnderAttack` behind `CreateRadarEvent(0x10, cell)`,
@@ -3141,24 +3397,31 @@ impl Simulation {
             let Some(object) = interner.object_type(event.victim_type, rules) else {
                 continue;
             };
-            let structure = object.category == crate::rules::object_type::ObjectCategory::Building;
             // House4F9491..4F94A3: a deployed miner needs both predicates.
-            // Non-building producers have already admitted Harvester= units.
+            // OreMiner producers have already admitted their own victims.
             // Native corpus: tools/spatial_oracle/temporal_house_notice.json.
-            let miner = !structure || (object.undeploys_into.is_some() && object.resource_gatherer);
+            let (miner, allies) = match event.line {
+                crate::sim::combat::UnderAttackLine::OreMiner => (true, false),
+                crate::sim::combat::UnderAttackLine::House { allies } => (
+                    object.undeploys_into.is_some() && object.resource_gatherer,
+                    allies,
+                ),
+            };
             let event_type = if miner {
                 RadarEventType::HarvesterUnderAttack
             } else {
                 RadarEventType::BaseUnderAttack
             };
-            sound_events.emit(SimSoundEvent::UnderAttack {
-                rx: event.rx,
-                ry: event.ry,
-                owner: event.owner,
-                miner,
-                radar: RadarEventRequest::new(event_type, event.rx, event.ry),
-            });
-            if !structure {
+            if event.own_alert {
+                sound_events.emit(SimSoundEvent::UnderAttack {
+                    rx: event.rx,
+                    ry: event.ry,
+                    owner: event.owner,
+                    miner,
+                    radar: RadarEventRequest::new(event_type, event.rx, event.ry),
+                });
+            }
+            if !allies {
                 continue;
             }
             let victim_passive = houses
@@ -3204,9 +3467,17 @@ impl Simulation {
             if !self.owner_is_human(event.owner) {
                 continue;
             }
+            // Only the Ares event interns its line. A game without Ares must
+            // not intern one here: a new ID changes later hashes.
+            let ares = event.ares.as_ref().map(|ares| AresUnitLostLine {
+                eva: self.interner.intern(&ares.eva),
+                radar_event: ares.radar_event,
+            });
             self.sound_events.emit(SimSoundEvent::UnitLost {
                 owner: event.owner,
                 radar: RadarEventRequest::new(RadarEventType::UnitLost, event.rx, event.ry),
+                type_id: event.type_id,
+                ares,
             });
         }
     }
@@ -3291,7 +3562,9 @@ impl Simulation {
             return Err("replay startup must precede the first ordinary frame".into());
         }
         if !self.session.started() {
-            return Err("replay startup requires the completed loader's started publication".into());
+            return Err(
+                "replay startup requires the completed loader's started publication".into(),
+            );
         }
         if session.seed() != self.session.seed() || session.map_name() != self.session.map_name() {
             return Err("replay startup seed/map differs from its constructed world".into());
@@ -3434,6 +3707,13 @@ impl Simulation {
 
     pub fn houses(&self) -> &crate::sim::houses::Houses {
         &self.houses
+    }
+
+    /// Trigger-runtime read access for external observers. Every mutation
+    /// stays with the trigger owners; see [`TriggerRuntime`]'s view
+    /// accessors.
+    pub fn trigger_runtime(&self) -> &TriggerRuntime {
+        &self.trigger_runtime
     }
 
     pub fn zone_grid(&self) -> Option<&ZoneGrid> {
@@ -3716,7 +3996,12 @@ impl Simulation {
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn bomb_defuse_for_test(&mut self, carrier: u64) {
-        Self::bomb_defuse(&mut self.substrate, &mut self.bombs, carrier);
+        Self::bomb_defuse(
+            &mut self.substrate,
+            &mut self.bombs,
+            &mut self.sound_events,
+            carrier,
+        );
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -3727,19 +4012,14 @@ impl Simulation {
             &self.houses,
             &self.resolved_terrain,
             &mut self.bombs,
+            &mut self.sound_events,
             rules,
         );
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub fn allocate_building_light_for_test(&mut self, id: u64, rules: &RuleSet) {
-        Self::allocate_building_light(
-            &self.interner,
-            &self.substrate,
-            &mut self.lighting_sources,
-            id,
-            rules,
-        );
+    pub fn light_building_for_test(&mut self, id: u64, rules: &RuleSet) {
+        self.light_building(id, rules);
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -3756,17 +4036,7 @@ impl Simulation {
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn bomb_attach_for_test(&mut self, planter: u64, target: Option<u64>, rules: &RuleSet) {
-        Self::bomb_attach(
-            &self.interner,
-            &self.session,
-            &mut self.substrate,
-            &mut self.sound_events,
-            &self.resolved_terrain,
-            &mut self.bombs,
-            planter,
-            target,
-            rules,
-        );
+        self.bomb_attach(planter, target, None, rules);
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -3801,16 +4071,8 @@ impl Simulation {
         &mut self,
         id: u64,
         layer: display_layers::DisplayLayer,
-        rules: Option<&RuleSet>,
     ) {
-        Self::submit_object_display(
-            &self.interner,
-            &self.terrain_objects,
-            &mut self.substrate,
-            id,
-            layer,
-            rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
-        );
+        Self::submit_object_display(&mut self.substrate, id, layer);
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -4214,11 +4476,19 @@ impl Simulation {
     }
 
     /// Bind a successful fresh or saved scenario to the retained process Main
-    /// cell, moving its staged cursor into that same identity.
+    /// cell: its staged cursor moves into the process cell, and the
+    /// simulation continues from that cursor in a cell of its own.
     /// App orchestration must first cancel the outgoing playback callbacks.
+    ///
+    /// Residual (sim-scale deviation, docs/sim-thread.md): gamemd's one Main
+    /// RNG serves the logic's sounds and the interface alike; here the
+    /// simulation thread and the app each draw their own copy from the
+    /// install on. Main is outside saves and the state hash, so only which
+    /// random voice or variation plays can differ from gamemd.
     pub fn install_fresh_process_main(&mut self, process: &MainRng) {
         let staged = std::mem::replace(&mut self.main_rng, process.shared_owner());
         process.install_from(staged);
+        self.main_rng = process.detached_copy();
     }
 
     /// Install the process MapGen cursor prepared by the bootstrap owner.
@@ -4278,7 +4548,14 @@ impl Simulation {
     /// build the pre-resolved rule handles beside them. Call once at sim init
     /// AFTER `intern_rule_type_ids`, and again after load once the RuleSet is
     /// available. Idempotent: the warhead names are already interned on every
-    /// re-resolution path, so serialized interner state cannot grow or reorder.
+    /// re-resolution path, so serialized interner state cannot grow or reorder
+    /// (a save made before MoveFlash's name was interned here gains it at the
+    /// end on load).
+    ///
+    /// MoveFlash (Rules+0xBB4) enters the interner here, after the rules
+    /// types, as it does in every game of a match: a LAN or online flash only
+    /// looks its name up (`spawn_move_flash`), since a name only the clicking
+    /// game added would renumber that game's later names.
     ///
     /// [`StringInterner::bind_types`]: crate::sim::intern::StringInterner::bind_types
     pub fn resolve_type_handles(&mut self, rules: &RuleSet) {
@@ -4287,6 +4564,9 @@ impl Simulation {
             rules,
             &mut self.interner,
         ));
+        if !rules.general.move_flash.name.is_empty() {
+            self.interner.intern(&rules.general.move_flash.name);
+        }
     }
 
     /// Intern every rules type id (infantry, vehicle, aircraft, building,
@@ -4398,9 +4678,12 @@ impl Simulation {
         let mut out = Self {
             movement_pass_cache: Default::default(),
             reveal_viewers: Default::default(),
+            civilian_house_memo: Default::default(),
             expiry_listeners: Default::default(),
             path_batch: None,
+            idle_sleep: Default::default(),
             scan_batch: None,
+            effect_anims: Default::default(),
             interner: crate::sim::intern::StringInterner::new(),
             type_tech_levels: TypeTechLevels::default(),
             rule_handles: None,
@@ -4411,14 +4694,13 @@ impl Simulation {
             session,
             #[cfg(feature = "debug-tools")]
             debug_tools: Default::default(),
-            #[cfg(feature = "telemetry")]
             frame_profiling: false,
-            #[cfg(feature = "telemetry")]
             frame_profile: Default::default(),
             object_placement_scope_depth: 0,
             buildup_bypass: false,
             #[cfg(feature = "phobos")]
             reflected_warhead: None,
+            ares_made_up_rules: None,
             scenario_rng: SimRng::new(seed),
             main_rng: MainRng::new(seed),
             mapgen_rng: SimRng::new(0),
@@ -4495,7 +4777,11 @@ impl Simulation {
             lightning_storm: Default::default(),
             psychic_dominator: Default::default(),
             unit_deliveries: Default::default(),
+            ares_chrono_warps: Default::default(),
+            ares_firestorm: Default::default(),
+            ares_tunnels: Default::default(),
             ion_blasts: Vec::new(),
+            alpha_shapes: Default::default(),
             terrain_speed_config: terrain_speed::TerrainSpeedConfig::default(),
             input_delay_ticks: u64::from(crate::util::config::default_input_delay_ticks()),
             quit_requested: false,
@@ -4553,8 +4839,10 @@ impl Simulation {
     // and MoveSound. Local selection calls the domain operation; it must not
     // create a seeded copy that loses loading or live-consumer continuation.
 
-    /// Process Main886B88, shared by native command voices, Voc and Theme.
-    /// Draws remain outside Scenario/hash/save state; no copied audio cursor.
+    /// This simulation's Main886B88 cell, which the sounds the tick plays
+    /// draw from (the app draws its own: `install_fresh_process_main`).
+    /// Draws remain outside Scenario/hash/save state.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn presentation_main_draws(&self) -> crate::sim::rng::MainRngDraws {
         self.main_rng.draws()
     }
@@ -4573,6 +4861,110 @@ impl Simulation {
     /// The entity store. Read access for systems above sim/.
     pub fn entities(&self) -> &EntityStore {
         &self.substrate.entities
+    }
+
+    /// The objects that may draw differently since the last take, leaving
+    /// none: for the presentation's atlas check, which then checks only
+    /// those. The simulation never reads these logs.
+    pub fn take_looks(&mut self) -> ChangedLooks {
+        ChangedLooks {
+            entities: self.substrate.entities.take_looks(),
+            anims: self.substrate.anims.take_looks(),
+        }
+    }
+
+    /// The copy of the world drawing reads while this one ticks elsewhere
+    /// (docs/sim-thread.md). It shares no storage with this world:
+    ///
+    /// - it holds no objects (its entity store is [`EntityStore::detached`];
+    ///   the presentation frame holds their draw records), and none of the
+    ///   state only gameplay reads (the zone and path grids, the team script
+    ///   VM, the movement pass's kept products, the reveal pass's answers,
+    ///   the Houses' spatial threat grids);
+    /// - its fog is only what `viewer`, the local player, sees
+    ///   ([`FogState::presentation_copy`]);
+    /// - its terrain, overlays, smudges, terrain objects, interner and
+    ///   occupation grids are `reuse`'s, the last copy, brought up to this
+    ///   world by copying only what changed since (`util::synced`); without
+    ///   `reuse` they are copied whole;
+    /// - its Dummy cell and its Main RNG are its own.
+    pub fn presentation_copy(
+        &mut self,
+        viewer: Option<InternedId>,
+        reuse: Option<Simulation>,
+    ) -> Simulation {
+        // What the copy leaves out.
+        let mut fog = std::mem::take(&mut self.fog);
+        let entities = std::mem::replace(&mut self.substrate.entities, EntityStore::detached());
+        let zone_grid = self.zone_grid.take();
+        let path_grid = self.path_grid.take();
+        let team_script_vm = std::mem::take(&mut self.team_script_vm);
+        let movement_pass_cache = std::mem::take(&mut self.movement_pass_cache);
+        let reveal_viewers = std::mem::take(&mut self.reveal_viewers);
+        // Each House's spatial threat grid (a large map's is 66,564 dwords,
+        // thirty Houses about 8 MB) is AI state only gameplay reads.
+        let spatial_threats: Vec<_> = self
+            .houses
+            .values_mut()
+            .map(HouseState::take_spatial_threat)
+            .collect();
+        #[cfg(any(test, feature = "test-support"))]
+        let test_recorders = (
+            std::mem::take(&mut self.lifecycle_test_events),
+            std::mem::take(&mut self.frame_step_trace),
+            std::mem::take(&mut self.house_ai_activation_order_test_trace),
+        );
+        // What it syncs. The previous copy's other parts are freed on the
+        // pool, and the syncs run there beside the clone of the rest.
+        let mut synced = SyncedWorld::take(self);
+        let (mut theirs, old_fog) = reuse.map_or_else(Default::default, |mut old| {
+            let theirs = SyncedWorld::take(&mut old);
+            let old_fog = std::mem::take(&mut old.fog);
+            crate::sim::parallel::drop_on_pool(old);
+            (theirs, old_fog)
+        });
+        let mut copy = None;
+        let mut fog_copy = None;
+        let this = &*self;
+        let fog_ref = &mut fog;
+        // The three parts share only reads, so they run at once: the syncs
+        // and the viewer's fog on the pool, the clone of the rest here.
+        crate::sim::parallel::alongside(
+            || synced.sync_into(&mut theirs),
+            || {
+                crate::sim::parallel::alongside(
+                    || fog_copy = Some(fog_ref.presentation_copy(viewer, old_fog)),
+                    || copy = Some(this.clone()),
+                )
+            },
+        );
+        for (house, grid) in self.houses.values_mut().zip(spatial_threats) {
+            house.restore_spatial_threat(grid);
+        }
+        let mut copy = copy.expect("cloned beside the syncs");
+        let fog_copy = fog_copy.expect("fog copied beside the clone");
+        synced.put(self);
+        theirs.put(&mut copy);
+        copy.fog = fog_copy;
+        copy.house_alliances = self.house_alliances.detached();
+        copy.main_rng = self.main_rng.detached_copy();
+        copy.shared_cell_dummy = copy.shared_cell_dummy.fork_query_identity();
+        self.fog = fog;
+        self.substrate.entities = entities;
+        self.zone_grid = zone_grid;
+        self.path_grid = path_grid;
+        self.team_script_vm = team_script_vm;
+        self.movement_pass_cache = movement_pass_cache;
+        self.reveal_viewers = reveal_viewers;
+        #[cfg(any(test, feature = "test-support"))]
+        {
+            (
+                self.lifecycle_test_events,
+                self.frame_step_trace,
+                self.house_ai_activation_order_test_trace,
+            ) = test_recorders;
+        }
+        copy
     }
 
     /// The live terrain objects and their indexes. Read access for systems
@@ -4658,7 +5050,7 @@ impl Simulation {
             &mut self.native_unique_ids,
             priority,
         );
-        dispatch_smudge_inline(
+        let result = dispatch_smudge_inline(
             &request,
             rules,
             overlay_registry,
@@ -4682,15 +5074,15 @@ impl Simulation {
             self.uninit_with_context(id, lifecycle::UninitContext::new(rules, overlay_registry));
         }
         Self::flush_smudge_dirty(&mut self.smudge_grid, &mut self.dirty_cells);
+        if let Err(error) = result {
+            // Safe refusal of this optional mark on native-invalid input;
+            // preserve its earlier constructor/scorch effects and stop it.
+            log::error!("Smudge placement stopped: {error}");
+        }
     }
 
     /// Execute59 at6DE313 uses +90 as a waypoint, not the +44 tail or an
-    /// amount. Map57B790..57B860 tests121 offsets with sqrtApprox/ftol and
-    /// always reduces the unchanged centre pointer, never the candidate.
-    /// Seven original executions (Steam gamemd, real and Dummy,
-    /// signed extremes) each observed109 ordered calls480A80(receiver,1).
-    /// Packed subtraction leaves offsets independent of the centre, so reuse
-    /// that constant count without adding another floating distance kernel.
+    /// amount, and reduces around it ([`Self::reduce_tiberium_in_radius`]).
     pub(crate) fn trigger_reduce_tiberium_at_waypoint(
         terrain_objects: &TerrainObjectStore,
         ore_growth_config: &OreGrowthConfig,
@@ -4711,8 +5103,51 @@ impl Simulation {
         if resolved_terrain.is_none() || overlay_grid.is_none() {
             return false;
         }
-        // Keep every call, including after depletion. The shared owner
-        // performs each native lookup and owns RNG/queues/radar/cleanup.
+        if let Err(error) = Self::reduce_tiberium_in_radius(
+            terrain_objects,
+            ore_growth_config,
+            ore_growth_state,
+            session,
+            scenario_rng,
+            substrate,
+            resolved_terrain,
+            overlay_grid,
+            dirty_cells,
+            (cell.0 as u16, cell.1 as u16),
+            rules,
+            Some(overlay_registry),
+        ) {
+            log::error!("Tiberium trigger action failed: {error}");
+            return false;
+        }
+        true
+    }
+
+    /// `MapClass::Reduce_Tiberium_In_Radius @ 0x0057B790`, called by trigger
+    /// action 59 and team script action 28. Map57B790..57B860 tests121
+    /// offsets with sqrtApprox/ftol and always reduces the unchanged centre
+    /// pointer, never the candidate. Seven original executions (Steam
+    /// gamemd, real and Dummy, signed extremes) each observed109 ordered
+    /// calls480A80(receiver,1). Packed subtraction leaves offsets
+    /// independent of the centre, so reuse that constant count without
+    /// adding another floating distance kernel. Every call is kept, even
+    /// after depletion; the shared owner performs each native lookup and
+    /// owns RNG/queues/radar/cleanup. A malformed native Image stops the
+    /// remaining calls: prior reductions stay, no later RNG is replayed.
+    pub(crate) fn reduce_tiberium_in_radius(
+        terrain_objects: &TerrainObjectStore,
+        ore_growth_config: &OreGrowthConfig,
+        ore_growth_state: &mut OreGrowthState,
+        session: &ScenarioSession,
+        scenario_rng: &mut SimRng,
+        substrate: &ObjectSubstrate,
+        resolved_terrain: &mut Option<ResolvedTerrainGrid>,
+        overlay_grid: &mut Option<OverlayGrid>,
+        dirty_cells: &mut DirtyCells,
+        cell: (u16, u16),
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    ) -> Result<(), crate::rules::overlay_types::TiberiumImageError> {
         for _ in 0..109 {
             Self::reduce_tiberium_at_with_native_context(
                 terrain_objects,
@@ -4724,13 +5159,13 @@ impl Simulation {
                 resolved_terrain,
                 overlay_grid,
                 dirty_cells,
-                (cell.0 as u16, cell.1 as u16),
+                cell,
                 1,
                 rules,
-                Some(overlay_registry),
-            );
+                overlay_registry,
+            )?;
         }
-        true
+        Ok(())
     }
 
     pub(crate) fn reduce_tiberium_at_with_native_context<A: Into<i32>>(
@@ -4747,7 +5182,10 @@ impl Simulation {
         amount: A,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    ) -> crate::sim::tiberium::ReduceTiberiumOutcome {
+    ) -> Result<
+        crate::sim::tiberium::ReduceTiberiumOutcome,
+        crate::rules::overlay_types::TiberiumImageError,
+    > {
         let mut ctx = crate::sim::tiberium::ReduceTiberiumContext {
             overlay_grid: world_overlay_grid.as_mut(),
             ore_growth_state: &mut *world_ore_growth_state,
@@ -4897,6 +5335,7 @@ impl Simulation {
             interval_frames,
             ambient_step,
         ) {
+            self.trigger_runtime.mark_ambient_light_changed();
             //55B4C6 refreshes Cell scalars without calling palette53AD00.
             self.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::Preserve);
         }
@@ -4906,79 +5345,51 @@ impl Simulation {
         &mut self,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    ) {
-        // Native TiberiumClass drivers run before the main live-object vector,
-        // growth first and spread second.
+        effects: FrameEffects<'_>,
+    ) -> Result<(), FrameAdvanceError> {
         let native_growth_ready = !rules.tiberium_types.is_empty()
             && self.ore_growth_state.native_tiberium_state().classes.len()
                 == rules.tiberium_types.len()
-            && self.overlay_grid.is_some()
-            && overlay_registry.is_some();
-        if native_growth_ready {
-            let live_objects = TiberiumPlacementObjectContext::new(
-                &self.substrate.entities,
-                &self.substrate.occupancy,
-                &self.substrate.raw_cell_occupation,
-                rules,
-                &self.interner,
-                self.terrain_objects.cell_index(),
-            );
-            if let (Some(grid), Some(registry)) = (self.overlay_grid.as_mut(), overlay_registry) {
-                let dirty_start = grid.pending_dirty_cells().len();
-                self.ore_growth_state.tick_native_growth_driver(
-                    grid,
-                    registry,
-                    &rules.tiberium_types,
-                    self.resolved_terrain.as_ref(),
-                    self.terrain_objects.spawning_cells(),
-                    Some(live_objects),
-                    &mut self.scenario_rng,
-                    self.session.binary_frame(),
-                    self.ore_growth_config.grows(),
-                    self.ore_growth_config.spreads(),
-                    self.ore_growth_config.tiberium_grows_flag(),
-                    Some(&mut self.dirty_cells),
-                );
-                let spread = self.ore_growth_state.tick_native_spread_driver(
-                    grid,
-                    registry,
-                    &rules.tiberium_types,
-                    self.resolved_terrain.as_ref(),
-                    self.terrain_objects.spawning_cells(),
-                    Some(live_objects),
-                    &mut self.scenario_rng,
-                    self.session.binary_frame(),
-                    self.ore_growth_config.grows(),
-                    self.ore_growth_config.spreads(),
-                    Some(&mut self.dirty_cells),
-                );
-                // Original Place487190 -> Overlay Mark5FC570 -> Recalc47D2B0
-                // publishes LandType before Logic55B4DC returns to live-object
-                // AI. Within the ore loops, a stamped cell is excluded by its
-                // overlay identity before admission reads its land; growth and
-                // source gates use density/slope. Their Recalcs can therefore
-                // publish as this batch without changing admission or RNG order.
-                // Native cell results: tools/spatial_oracle/ore_queue.json.
-                let marked = grid.pending_dirty_cells()[dirty_start..].to_vec();
-                self.publish_tiberium_cells(rules, registry, &marked);
-                // No identity allocator runs between these ordinary ore
-                // constructors. Their stock CellAnim branch is absent. Apply
-                // their ordered registry/ID effects before live-object AI;
-                // Scenario IDs and retirement order are preserved independently
-                // of the intervening Scenario RNG and queue mutations.
-                Self::publish_overlay_constructions(
-                    &mut self.native_unique_ids,
-                    &mut self.load_objects,
-                    &mut self.substrate,
-                    spread.into_overlay_constructions(),
-                );
-            }
+            && self.overlay_grid.is_some();
+        if native_growth_ready && let Some(registry) = overlay_registry {
+            let dirty_start = self
+                .overlay_grid
+                .as_ref()
+                .unwrap()
+                .pending_dirty_cells()
+                .len();
+            self.tick_native_growth_driver(rules, registry, effects)
+                .map_err(|error| {
+                    FrameAdvanceError::new(
+                        self.session.tick(),
+                        self.session.binary_frame(),
+                        0,
+                        error.to_string(),
+                    )
+                })?;
+            self.tick_native_spread_driver(rules, registry, effects)
+                .map_err(|error| {
+                    FrameAdvanceError::new(
+                        self.session.tick(),
+                        self.session.binary_frame(),
+                        0,
+                        error.to_string(),
+                    )
+                })?;
+            // Preserve the existing ordinary-ore Recalc batch. Structural and
+            // CellAnim Mark paths have already completed synchronously.
+            let marked =
+                self.overlay_grid.as_ref().unwrap().pending_dirty_cells()[dirty_start..].to_vec();
+            self.publish_tiberium_cells(rules, registry, &marked);
         }
+        Ok(())
     }
 
     /// Overlay Mark5FC570 ->Recalc47D2B0 completes before its Logic caller
     /// returns. Both the global ore rung and a Terrain AI slot must publish
     /// the path view before the next object; retain render dirty receipts.
+    /// The Recalc's neighbour reads stayed inside each Mark
+    /// (`OverlayRecalc::DeferOrdinary`), so the batch makes none.
     pub(crate) fn publish_tiberium_cells(
         &mut self,
         rules: &RuleSet,
@@ -4990,30 +5401,11 @@ impl Simulation {
         {
             for &cell in cells {
                 if grid.cell(cell.0, cell.1).overlay_id.is_some() {
-                    grid.recalculate_runtime_cell(terrain, registry, cell);
+                    grid.recalculate_deferred_cell(terrain, registry, cell);
                 }
             }
         }
         self.finish_terrain_navigation_changes(rules, &[]);
-    }
-
-    pub(crate) fn publish_overlay_constructions(
-        native_unique_ids: &mut Option<NativeUniqueIdCursor>,
-        load_objects: &mut LoadObjectLifecycle,
-        substrate: &mut ObjectSubstrate,
-        receipts: impl IntoIterator<Item = OverlayConstructionReceipt>,
-    ) {
-        for receipt in receipts {
-            let stable_id = substrate.allocate_stable_id();
-            let handle = load_objects
-                .construct_overlay(stable_id, receipt.cell(), || {
-                    NativeUniqueIdCursor::assign_runtime(native_unique_ids)
-                })
-                .expect("runtime Overlay constructor must join its owned registries");
-            load_objects
-                .finish_cell_construction(handle, receipt, &mut substrate.pending_delete)
-                .expect("runtime Overlay constructor must finish its owned lifecycle");
-        }
     }
 
     /// `MapClass::In_Bounds @ 0x00568300` — the active diamond test against
@@ -5341,7 +5733,7 @@ impl Simulation {
         let firers_palette = projectile
             .payload()
             .projectile_type()
-            .and_then(|id| rules.projectile(interner.resolve(id)))
+            .and_then(|id| interner.projectile_type(id, rules))
             .is_some_and(|kind| kind.firers_palette);
         let house = firers_palette
             .then(|| substrate.entities.get(source_id))
@@ -5376,7 +5768,10 @@ impl Simulation {
     /// spawn captured ([`ProjectileStore::fire_inviso`]); its OnBridge stays
     /// clear, as only FireAt copies one.
     ///
-    /// RESIDUAL: a child has no WeaponType. The constructor zeroes `+0x130`
+    /// RESIDUAL (without Ares; when Ares plays it gives the child its
+    /// shrapnel weapon, [`Self::ares_shrapnel_flak_placement`]): a child has
+    /// no WeaponType.
+    /// The constructor zeroes `+0x130`
     /// (`0x00466401`) and only SetWeaponType (`0x0046B260`, called from
     /// `0x0044CAFF`, `0x006CDB7E`, `0x006E34E6`, `0x006FE573` and
     /// `0x0070D764`) writes it, so a `FlakScatter=` child would fault reading
@@ -5396,7 +5791,7 @@ impl Simulation {
             let inviso = projectile
                 .payload
                 .projectile_type()
-                .and_then(|id| rules.projectile(self.interner.resolve(id)))
+                .and_then(|id| self.interner.projectile_type(id, rules))
                 .is_some_and(|kind| kind.inviso);
             let placement = projectile.initial_target_position;
             self.admit_projectile(stable_id, projectile);
@@ -5415,6 +5810,18 @@ impl Simulation {
                     .push((stable_id, inviso, projectile));
             }
             if inviso {
+                let placement = if rules.ares() {
+                    let placement = self.ares_shrapnel_flak_placement(stable_id, placement, rules);
+                    // Ares 1001A940 (hook 0x4688BD): a firestorm wall on the
+                    // way burns the child before the obstacle walk.
+                    if self.ares_inviso_firestorm(stable_id, placement, rules) {
+                        continue;
+                    }
+                    let placement = self.ares_inviso_obstacle(stable_id, placement, rules);
+                    placement
+                } else {
+                    placement
+                };
                 self.projectiles.fire_inviso(stable_id, placement, false);
             }
         }
@@ -5445,6 +5852,13 @@ impl Simulation {
                 self.classify_object(id)
                     .is_some_and(|kind| self.logic_membership_flag(id, kind)),
                 "logic order id {id} is missing or not membership-flagged",
+            );
+            debug_assert!(
+                self.substrate
+                    .logic
+                    .kind_of(id)
+                    .is_none_or(|kind| self.object_store_holds(kind, id)),
+                "logic order id {id} notes a kind whose store does not hold it",
             );
         }
         let mut flagged = 0;
@@ -5547,7 +5961,17 @@ impl Simulation {
                     entity.stable_id()
                 );
             }
-            if !entity.lifecycle.cell_marked() || entity.passenger_role.is_inside_transport() {
+            if !entity.lifecycle.cell_marked()
+                || entity.passenger_role.is_inside_transport()
+                // A Jumpjet's hold and cruise (states 2 and 3) move it with
+                // no Mark pair (0x0054D0FF..0x0054D134), so one flown onto a
+                // cliff answers Ground with no list entry, in gamemd too.
+                || entity
+                    .locomotor
+                    .as_ref()
+                    .and_then(|locomotor| locomotor.jumpjet_runtime())
+                    .is_some_and(|jumpjet| matches!(jumpjet.phase(), 2 | 3))
+            {
                 continue;
             }
             // A marked Foot sits where its Mark put it: the Mark owner's own
@@ -5720,6 +6144,7 @@ impl Simulation {
         origin: glam::IVec3,
         admit_inline: bool,
         packets: &mut Vec<crate::sim::voxel_anim::VoxelDebrisSpawn>,
+        rules: &RuleSet,
     ) -> Result<(), crate::util::native_x87::NativeX87Error> {
         let stable_id = self.substrate.allocate_stable_id();
         let native_unique_id = self.next_native_runtime_id();
@@ -5732,9 +6157,17 @@ impl Simulation {
             origin,
             &mut self.scenario_rng,
         )?;
-        let spawn = crate::sim::voxel_anim::VoxelDebrisSpawn { object };
+        let attached_system = voxel_type
+            .attached_system
+            .as_deref()
+            .and_then(|name| rules.ps_type_id_by_name(name))
+            .map(|system_type| (system_type, origin));
+        let spawn = crate::sim::voxel_anim::VoxelDebrisSpawn {
+            object,
+            attached_system,
+        };
         if admit_inline {
-            self.admit_death_debris(std::iter::once(spawn));
+            self.admit_death_debris(std::iter::once(spawn), rules);
         } else {
             packets.push(spawn);
         }
@@ -5746,11 +6179,34 @@ impl Simulation {
     pub(crate) fn admit_death_debris(
         &mut self,
         spawns: impl IntoIterator<Item = crate::sim::voxel_anim::VoxelDebrisSpawn>,
+        rules: &RuleSet,
     ) {
         for spawn in spawns {
             let stable_id = spawn.object.stable_id();
             self.substrate.voxel_anims.insert(spawn.object);
             self.reveal_voxel_anim(stable_id);
+            // The constructor's tail (`0x00749864..0x007498BD`) builds the
+            // type's AttachedSystem at the input location, aimed at the cell
+            // there (Map565730), owned by the anim, with zero target coords
+            // (`0x00B1D188`) and no House, and keeps the result at +0x108.
+            // RESIDUAL: off the map, Map565730 gives the shared dummy cell to
+            // aim at; VERA passes no target, so the target coords stay zero.
+            if let Some((system_type, origin)) = spawn.attached_system {
+                let target = Self::map_coord_cell(&self.resolved_terrain, origin.x, origin.y)
+                    .map(|(x, y)| crate::sim::combat::TargetKind::Cell(x, y));
+                let system = self.spawn_particle_system(
+                    system_type,
+                    origin,
+                    target,
+                    Some(stable_id),
+                    glam::IVec3::ZERO,
+                    None,
+                    rules,
+                );
+                if let Some(piece) = self.substrate.voxel_anims.get_mut(stable_id) {
+                    piece.bind_attached_system(system);
+                }
+            }
         }
     }
 
@@ -5901,6 +6357,11 @@ impl Simulation {
                     .add_building_drain(drain);
             }
         }
+        // With Ares: the building's store joins the House's (`0x00502B83`,
+        // `sim::ares_tiberium_storage`).
+        if rules.ares() {
+            self.ares_storage_added_to_game(stable_id, rules);
+        }
     }
 
     /// `HouseClass::Removed_From_Game @ 0x005025F0` for an object on its
@@ -5934,6 +6395,11 @@ impl Simulation {
             let factors = house.cost_factors();
             house.tracking_mut().removed_from_game(entity, &factors);
         }
+        // With Ares: the building's store leaves the House's
+        // (`0x00502801..0x00502821`, `sim::ares_tiberium_storage`).
+        if rules.ares() && structure {
+            self.ares_storage_removed_from_game(stable_id, owner);
+        }
         if structure {
             Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false);
         }
@@ -5960,11 +6426,17 @@ impl Simulation {
         power_states: &mut PowerStates,
         id: u64,
     ) {
-        let owner = substrate.entities.get_mut(id).and_then(|entity| {
-            entity
-                .sample_building_health_for_power()
-                .then_some(entity.owner())
-        });
+        let owner = substrate
+            .entities
+            .get_mut_if(
+                id,
+                crate::sim::game_entity::GameEntity::building_health_sample_changes,
+            )
+            .and_then(|entity| {
+                entity
+                    .sample_building_health_for_power()
+                    .then_some(entity.owner())
+            });
         if let Some(owner) = owner {
             Self::invalidate_house_power(houses, power_states, owner, true);
         }
@@ -6282,14 +6754,43 @@ impl Simulation {
         // `BuildingClass::ChangeOwner` first (`0x00448277..0x0044828E`): a
         // building changing hands loses its bomb unless it is
         // `CanBeOccupied=`.
-        if category == EntityCategory::Structure
+        // Ares hook448277 (100163B0) first kicks out a Hospital's or
+        // Armory's first passenger (BuildingExt::KickOutHospitalArmory
+        // 10012920), with the old owner still in place.
+        if rules.ares() && category == EntityCategory::Structure {
+            self.ares_kick_out_hospital_armory(stable_id, rules, registry, effects);
+        }
+        // It then takes the building out of its Prism network unless it is
+        // a `ToAllies` supporter whose network stays allied, and then
+        // forgets its radar jammers.
+        if rules.ares()
+            && category == EntityCategory::Structure
+            && self.ares_prism_change_owner(stable_id, new_owner, rules)
+        {
+            self.clear_registered_jammers(stable_id);
+        }
+        // Ares BuildingClass_ChangeOwner_PrismForwardAndLeaveBomb (100163B0)
+        // always resumes at 0x448293, past the defuse: a captured building
+        // keeps its bomb.
+        if !rules.ares()
+            && category == EntityCategory::Structure
             && let Some(entity) = self.substrate.entities.get(stable_id)
             && !self
                 .interner
                 .object_type(entity.type_ref(), rules)
                 .is_some_and(|object| object.can_be_occupied)
         {
-            Self::bomb_defuse(&mut self.substrate, &mut self.bombs, stable_id);
+            Self::bomb_defuse(
+                &mut self.substrate,
+                &mut self.bombs,
+                &mut self.sound_events,
+                stable_id,
+            );
+        }
+        // Ares ChangeOwnership_SensorArrayA10016CA0 (hook448B70) removes an
+        // active sensor array for the old owner before the gap removal.
+        if rules.ares() && category == EntityCategory::Structure {
+            self.ares_sensor_array_dispatch(stable_id, false, rules, registry);
         }
         if category == EntityCategory::Structure {
             //448260: gap removal precedes ordinary sight release and owner
@@ -6330,6 +6831,15 @@ impl Simulation {
             new_owner,
             rules,
         );
+        // Ares 3.0 10015A20 and 10015A60 (hooks 0x00448312, 0x00448D95,
+        // before and after the owner swap): the new owner's spy bit goes
+        // (`sim::spy_infiltration::DisplayProductionTo`); nothing re-adds it
+        // between the two.
+        if rules.ares()
+            && let Some(building) = self.substrate.entities.get_mut(stable_id)
+        {
+            building.ares.display_production_to.remove(new_owner);
+        }
         // Building4484AF precedes the delegated Techno owner transfer.
         self.enable_building_after_owner_change(stable_id, rules);
         // `0x00448559..0x004486C8`: the objects docked at a building go along
@@ -6352,6 +6862,11 @@ impl Simulation {
         }
         if category == EntityCategory::Structure {
             self.houses.leave_house_base_lists(stable_id, old_owner);
+            // Ares BuildingClass_ChangeOwnership_Remove_Academy (hook
+            // 0x00448AB2 -> 10023690) follows the House+68 removal.
+            if rules.ares() {
+                self.update_ares_academy_membership(stable_id, false, rules);
+            }
         }
         // TechnoClass::ChangeOwner (`0x007014B9..0x007014CF`): the local
         // player's selected object is deselected first (vt+0x150, every
@@ -6359,10 +6874,13 @@ impl Simulation {
         if self.session.current_house() == Some(old_owner) {
             self.object_deselect(stable_id);
         }
-        // Ares7014D5 ->10049FB0/10049FD7 displays the old owner's queued
-        // sum before target/destination callbacks and the actual owner store.
-        #[cfg(feature = "ares")]
-        self.flush_bounty_display(stable_id, rules, effects, true);
+        // Ares7014D5 ->10049FB0 unjams the object's radar jammer, then
+        //10049FD7 displays the old owner's queued sum before
+        // target/destination callbacks and the actual owner store.
+        if rules.ares() {
+            self.unjam_all(stable_id);
+            self.flush_bounty_display(stable_id, rules, effects, true);
+        }
         // Original7014DB/7014E9 dispatch the class target and destination
         // setters, then70151A clears Archive and70156E queues Guard. All run
         // on the OLD house, before SpawnManager and the701735 owner swap.
@@ -6472,7 +6990,7 @@ impl Simulation {
         // Ares3.0 ChangeOwner7015EB ->1004E7F0 follows the two tracking
         // calls and precedes both the capture stats and owner pointer store.
         // Buildings retain their own existing44936E/449379 recheck tail.
-        if crate::rules::ARES_ENABLED
+        if rules.ares()
             && category != EntityCategory::Structure
             && self
                 .substrate
@@ -6488,13 +7006,14 @@ impl Simulation {
             self.houses.request_house_tech_tree_recheck(old_owner);
             self.houses.request_house_tech_tree_recheck(new_owner);
         }
+        let old_house = self.houses.index_of(old_owner);
         if let Some(entity) = self.substrate.entities.get(stable_id)
             && let Some(house) = self.houses.get_mut(&new_owner)
         {
             //701607..70164D: DontScore suppresses this captured-object
             //count, not the preceding old-House price addition.
             if !entity.tracking_facts.dont_score() {
-                house.stats_mut().record_kill(category);
+                house.stats_mut().record_kill(category, old_house);
             }
         }
         //701674 Mark(UP),70D4A0 detach and701691 Mark(DOWN) all precede
@@ -6516,7 +7035,7 @@ impl Simulation {
         }
         //Techno701701..719 removes from the old owner using the retained
         //Cell. The same Cell survives the owner write for701774..780.
-        let spatial_threat_cell = self.spatial_threat_before_owner_change(stable_id);
+        let spatial_threat_cell = self.spatial_threat_before_owner_change(stable_id, rules);
         // Techno70172F: `ReReveal(0, 0, 0, 0)` before the owner store takes
         // the sight off every map the old owner's reveal wrote. A building
         // released it at 448BD9 and an object in limbo at its Limbo, so for
@@ -6540,8 +7059,8 @@ impl Simulation {
         if category == EntityCategory::Structure
             && let Some(entity) = self.substrate.entities.get_mut(stable_id)
         {
-            entity.has_been_captured.mark();
-            entity.repairing.stop_on_capture();
+            entity.building.has_been_captured.mark();
+            entity.building.repairing.stop_on_capture();
         }
         // `0x00448C6E..0x00448C94`, after the owner swap: the old house
         // records the building it lost (House+54E0), and the new house
@@ -6628,6 +7147,11 @@ impl Simulation {
         }
         if category == EntityCategory::Structure {
             self.join_house_base_lists(stable_id, old_owner, new_owner, rules);
+            // Ares BuildingClass_ChangeOwnership_Add_Academy (hook 0x004491D5
+            // -> 10023650) follows the new House+68 append.
+            if rules.ares() {
+                self.update_ares_academy_membership(stable_id, true, rules);
+            }
         }
         // `TechnoClass::ChangeOwner` closes with the mission half (the
         // `+0x484` call at 0x00701849 reads the NEW owner's
@@ -6657,6 +7181,11 @@ impl Simulation {
             );
         }
         if category == EntityCategory::Structure {
+            // Ares ChangeOwnership_SensorArrayB10016CD0 (hook448C3E) adds the
+            // array for the new owner before448C69's primary factory.
+            if rules.ares() {
+                self.ares_sensor_array_dispatch(stable_id, true, rules, registry);
+            }
             crate::sim::production::initialize_factory_primary(self, rules, stable_id);
             //448CEF: Grand_Opening(1) also runs on an already placed
             //building; its6E4 gate prevents repeating first-opening slots.
@@ -7027,6 +7556,8 @@ impl Simulation {
             self.terrain_objects
                 .project_cell_occupation(&mut resolved_terrain, cell);
         }
+        // VERA terrain deformation follows the saved rules, as on a new map.
+        resolved_terrain.set_terrain_deformation(rules.combat_damage.terrain_deformation);
         self.resolved_terrain = Some(resolved_terrain);
         self.terrain_speed_config = terrain_speed_config;
         self.resolve_rule_animation_lists(rules);
@@ -7083,6 +7614,7 @@ impl Simulation {
         }
         for id in self.substrate.logic.snapshot() {
             if let Some(kind) = self.classify_object(id).filter(|kind| kind.joins_logic()) {
+                self.substrate.logic.note_kind(id, kind);
                 Self::set_logic_membership_flag(
                     &mut self.terrain_objects,
                     &mut self.substrate,
@@ -7500,6 +8032,11 @@ impl Simulation {
             if !coarse_candidate {
                 continue;
             }
+            // Ares SpySat_Update_CheckEligible10024620 (hook508F91) skips a
+            // jammed or EMPed uplink to the next one.
+            if rules.ares() && (entity.ares.radar_jam.is_jammed() || entity.emp_remaining() > 0) {
+                continue;
+            }
             // The first coarse candidate decides the house. Warp-out is a
             // blocking result, not a reason to continue to a later uplink.
             return !entity.is_warped_out();
@@ -7650,29 +8187,37 @@ impl Simulation {
     /// (`Type+0x16F0 != -1`) reports itself. Only the owner-independent half
     /// lives here; the listener gates (local player, `IsAlliedWith(PlayerPtr)`,
     /// `[0xA8B538]`, `GameMode`, `AuxBuilding` ownership) are the app's.
+    /// Ares's hook there (4468F4, Ares.dll 100349D0) announces the first Super
+    /// of the type its owner can use (BuildingTypeExt 1000D610), including
+    /// `SuperWeapon2=` and `SuperWeapons=`.
     pub(crate) fn announce_super_weapon_building_complete(
-        interner: &mut StringInterner,
-        substrate: &ObjectSubstrate,
-        sound_events: &mut FrameChannel<SimSoundEvent>,
+        &mut self,
         stable_id: u64,
         rules: &RuleSet,
     ) {
-        let Some((owner, type_ref)) = substrate
+        let Some(building) = self
+            .substrate
             .entities
             .get(stable_id)
             .filter(|e| e.category() == EntityCategory::Structure && !e.death.is_dying())
-            .map(|e| (e.owner(), e.type_ref()))
         else {
             return;
         };
-        let Some(section) = interner
-            .object_type(type_ref, rules)
-            .and_then(|obj| obj.super_weapon.clone())
-        else {
+        let owner = building.owner();
+        let sw_type = if rules.ares() {
+            crate::sim::superweapon::first_available_building_super(self, rules, building)
+                .map(|instance| instance.type_id())
+        } else {
+            self.interner
+                .object_type(building.type_ref(), rules)
+                .and_then(|obj| obj.super_weapon.clone())
+                .map(|section| self.interner.intern(&section))
+        };
+        let Some(sw_type) = sw_type else {
             return;
         };
-        let sw_type = interner.intern(&section);
-        sound_events.emit(SimSoundEvent::SuperWeaponDetected { owner, sw_type });
+        self.sound_events
+            .emit(SimSoundEvent::SuperWeaponDetected { owner, sw_type });
     }
 
     /// The Selling mission's visit in the building's own LogicVector slot
@@ -7745,7 +8290,20 @@ impl Simulation {
     /// three gates. All three build `AnimClass(Wake, Location, 0, 1, 0x600,
     /// 0, 0)` at the unit's exact `Location` (`+0x9C`), not the cell centre,
     /// so each wake stays where the hull was and the trail forms behind it as
-    /// the unit advances.
+    /// the unit advances. The Location keeps its Z: the Anim's Unlimbo
+    /// (`0x005F4EC0`) stores it through `AnimTypeClass` vt+0x6C (`0x0041CF80`,
+    /// unchanged) and `SetLocation` (`0x005F6940`), so a Hover's wake starts
+    /// at its hovering hull, not on the water below.
+    ///
+    /// RESIDUAL: this one pass builds every wake after movement, where Drive
+    /// (`0x004B078C..0x004B0823`), Hover (`0x00514A21..0x00514AC3`) and Ship
+    /// (`0x0069FE97..0x0069FEEB`) build theirs inside each unit's Process. A
+    /// wake draws no random number, so three things differ, none visible:
+    /// its creation order (its AbstractClass ID) relative to objects made
+    /// later in the same frame; the gate (alive, moving now, cell, bridge)
+    /// is read after the whole LogicVector, not in the unit's own Process;
+    /// and its first AI comes a frame late, since a native wake made
+    /// mid-walk joins that frame's walk.
     pub(crate) fn spawn_wakes_for_frame(&mut self, rules: &RuleSet) {
         if !self.session.binary_frame().is_multiple_of(10)
             && !self.session.binary_frame().is_multiple_of(8)
@@ -7756,7 +8314,7 @@ impl Simulation {
         let terrain = self.resolved_terrain.as_ref();
         let rules_context =
             crate::sim::movement::SpeedRules::new(rules, &self.interner, &self.houses);
-        let wake_positions: Vec<(u16, u16, SimFixed, SimFixed, u8)> = self
+        let wake_positions: Vec<crate::sim::anim_class::AnimWorldCoord> = self
             .substrate
             .entities
             .keys_sorted()
@@ -7778,14 +8336,13 @@ impl Simulation {
         // its art `YSortAdjust=-288`, so it sorts under the hull instead of
         // over it.
         let wake_name = self.interner.intern(&rules.general.wake.name);
-        for (rx, ry, sub_x, sub_y, z) in wake_positions {
+        for world in wake_positions {
+            let (rx, ry, sub_x, sub_y, level) = world.to_cell_sub_z();
             let descriptor = AnimClassSpawnDescriptor {
                 loop_count: 1,
                 draw_flags: WAKE_DRAW_FLAGS,
-                ..AnimClassSpawnDescriptor::new(wake_name, rx, ry, sub_x, sub_y, z)
+                ..AnimClassSpawnDescriptor::new(wake_name, rx, ry, sub_x, sub_y, level)
             };
-            let world =
-                crate::sim::anim_class::AnimWorldCoord::from_cell_sub_z(rx, ry, sub_x, sub_y, z);
             if let Err(error) = self.spawn_anim_at_world(rules, descriptor, world) {
                 log::debug!(
                     "wake [{}] did not construct: {error}",
@@ -7816,10 +8373,22 @@ impl Simulation {
         self.state_hash_interval = Some(frames);
     }
 
+    /// Whether the next frame's tick falls on the interval
+    /// [`Self::hash_state_every`] last set, so that frame hashes the state.
+    /// A frame that ends the match hashes too, which is not known beforehand.
+    pub fn next_frame_hashes_state(&self) -> bool {
+        self.state_hash_interval.is_some_and(|frames| {
+            self.session
+                .tick()
+                .saturating_add(1)
+                .is_multiple_of(frames.get())
+        })
+    }
+
     /// Start or stop diagnostic wall-clock measurement. A transition starts a
     /// fresh sample window; repeated requests preserve the accumulated profile.
     /// New and deserialized simulations start disabled with an empty profile.
-    #[cfg(feature = "telemetry")]
+    /// The telemetry build and the in-game performance panel turn it on.
     pub fn set_frame_profiling(&mut self, enabled: bool) {
         if self.frame_profiling != enabled {
             self.frame_profile.reset();
@@ -7827,7 +8396,6 @@ impl Simulation {
         }
     }
 
-    #[cfg(feature = "telemetry")]
     pub fn frame_profile(&self) -> &crate::sim::frame_profile::FrameProfile {
         &self.frame_profile
     }
@@ -7853,6 +8421,18 @@ impl Simulation {
                 .emit(SimSoundEvent::UnitVoiceVisit { owner });
         }
     }
+
+    /// A deploy conversion's voice hand-off (UnitClass::Deploy
+    /// `0x00739971..0x007399B2`, BuildingClass::Mission_Selling
+    /// `0x0044A0D4..0x0044A115`). The audio owner moves the handle and latch;
+    /// a pending line's visit interest follows it to the new object.
+    pub(crate) fn move_unit_voice(&mut self, from: u64, to: u64) {
+        if self.unit_voice_visit_interest.remove(&from) {
+            self.unit_voice_visit_interest.insert(to);
+        }
+        self.sound_events
+            .emit(SimSoundEvent::UnitVoiceMoved { from, to });
+    }
 }
 
 impl crate::sim::houses::Houses {
@@ -7873,109 +8453,136 @@ impl ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_world_t_z, tests_net, tests_sim_t_z)))]
 #[path = "world_tests.rs"]
 pub(crate) mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "smudge_integration_tests.rs"]
 mod smudge_integration_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "harvest_attack_return_oracle_tests.rs"]
 mod harvest_attack_return_oracle_tests;
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(
+        tests_sim_world_c_o,
+        tests_sim_world_a_b,
+        tests_sim_world_p_s,
+        tests_sim_world_t_z
+    )
+))]
 #[path = "harvest_field_oracle_tests.rs"]
 mod harvest_field_oracle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "refinery_dock_continuation_tests.rs"]
 mod refinery_dock_continuation_tests;
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(
+        tests_sim_world_p_s,
+        tests_sim_world_a_b,
+        tests_sim_world_c_o,
+        tests_sim_world_t_z
+    )
+))]
 #[path = "refinery_dock_oracle_tests.rs"]
 mod refinery_dock_oracle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "refinery_dock_retail_tests.rs"]
 mod refinery_dock_retail_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "harvest_field_cycle_tests.rs"]
 mod harvest_field_cycle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_world_p_s, tests_sim_world_a_b)))]
 #[path = "slave_manager_oracle_tests.rs"]
 mod slave_manager_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "slave_manager_cycle_tests.rs"]
 mod slave_manager_cycle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod slave_manager_reentrancy_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "building_sale_oracle_tests.rs"]
 mod building_sale_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod ai_captured_building_sale_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "building_repair_oracle_tests.rs"]
 mod building_repair_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "refinery_dock_cycle_tests.rs"]
 mod refinery_dock_cycle_tests;
 
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(
+        tests_sim_world_c_o,
+        tests_sim_world_a_b,
+        tests_sim_world_p_s,
+        tests_sim_world_t_z
+    )
+))]
 #[path = "cmin_dock_oracle_tests.rs"]
 mod cmin_dock_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "cmin_dock_cycle_tests.rs"]
 mod cmin_dock_cycle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "passenger_escape_oracle_tests.rs"]
 mod passenger_escape_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "vehicle_passenger_escape_oracle_tests.rs"]
 mod vehicle_passenger_escape_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod bunker_entry_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "world_orders_bridge_repair_tests.rs"]
 mod world_orders_bridge_repair_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "rng_routing_tests.rs"]
 mod rng_routing_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "slice6_retask_tests.rs"]
 mod slice6_retask_tests;
 
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(tests_sim_world_c_o, tests_sim_world_a_b, tests_sim_world_p_s)
+))]
 #[path = "global_parity_harness_tests.rs"]
 mod global_parity_harness_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "production_shadow_tests.rs"]
 mod production_shadow_tests;
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod factory_infantry_output_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod factory_jumpjet_output_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "radar_dirty_ack_tests.rs"]
 mod radar_dirty_ack_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "bridge_parity_harness_tests.rs"]
 mod bridge_parity_harness_tests;
 
@@ -7989,15 +8596,15 @@ const WAKE_DRAW_FLAGS: u32 = 0x600;
 /// frame and not for an `Underwater=` type (`underwater`, TechnoType+0xD69 at
 /// `0x0069FE6E`). Each asks its own `Is_Moving_Now` first, then wants the
 /// owner off a bridge (`+0x8C`) on a cell whose `CellClass+0xEC` mirror is
-/// Water. The wake is anchored at the exact leptons. A Jumpjet or Fly flier
-/// over water leaves none.
+/// Water. The wake is anchored at the unit's Location, a Hover's altitude
+/// included. A Jumpjet or Fly flier over water leaves none.
 pub(crate) fn wake_anchor_for(
     entity: &crate::sim::game_entity::GameEntity,
     rules: crate::sim::movement::SpeedRules<'_>,
     underwater: bool,
     terrain: Option<&ResolvedTerrainGrid>,
     binary_frame: u32,
-) -> Option<(u16, u16, SimFixed, SimFixed, u8)> {
+) -> Option<crate::sim::anim_class::AnimWorldCoord> {
     // Foot4DA81A bypasses the locomotor (and its movement-wake producer)
     // while sinking. Unit AI owns that hull's separate jittered wake.
     if entity.sinking.is_active() {
@@ -8025,30 +8632,123 @@ pub(crate) fn wake_anchor_for(
     if cell.land_type != crate::rules::terrain_rules::LandType::Water.as_index() {
         return None;
     }
-    Some((
-        entity.position.rx(),
-        entity.position.ry(),
-        entity.position.sub_x(),
-        entity.position.sub_y(),
-        entity.position.z(),
-    ))
+    Some(crate::sim::movement::ground_pose::object_location(entity, terrain).into())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "tibtre_oracle_tests.rs"]
 mod tibtre_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "ore_spread_oracle_tests.rs"]
 mod ore_spread_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod drop_as_bomb_integration_tests;
 
 mod airstrike_aircraft;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod radiation_overlap_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod building_occupant_storage_tests;
+
+/// The parts of the world its presentation copy takes only where they changed
+/// ([`Simulation::presentation_copy`]).
+#[derive(Default)]
+struct SyncedWorld {
+    terrain: Option<ResolvedTerrainGrid>,
+    overlays: Option<crate::sim::overlay_grid::OverlayGrid>,
+    smudges: Option<crate::sim::smudge_grid::SmudgeGrid>,
+    terrain_objects: crate::sim::terrain_object::TerrainObjectStore,
+    interner: crate::sim::intern::StringInterner,
+    occupancy: OccupancyGrid,
+    raw_cell_occupation: crate::sim::occupancy::RawCellOccupationGrid,
+    hidden_occupation: crate::sim::occupancy::HiddenOccupationGrid,
+    air_slots: crate::sim::occupancy::AirSlotGrid,
+}
+
+impl SyncedWorld {
+    fn take(sim: &mut Simulation) -> Self {
+        Self {
+            terrain: sim.resolved_terrain.take(),
+            overlays: sim.overlay_grid.take(),
+            smudges: sim.smudge_grid.take(),
+            terrain_objects: std::mem::take(&mut sim.terrain_objects),
+            interner: std::mem::take(&mut sim.interner),
+            occupancy: std::mem::take(&mut sim.substrate.occupancy),
+            raw_cell_occupation: std::mem::take(&mut sim.substrate.raw_cell_occupation),
+            hidden_occupation: std::mem::take(&mut sim.substrate.hidden_occupation),
+            air_slots: std::mem::take(&mut sim.substrate.air_slots),
+        }
+    }
+
+    fn put(self, sim: &mut Simulation) {
+        sim.resolved_terrain = self.terrain;
+        sim.overlay_grid = self.overlays;
+        sim.smudge_grid = self.smudges;
+        sim.terrain_objects = self.terrain_objects;
+        sim.interner = self.interner;
+        sim.substrate.occupancy = self.occupancy;
+        sim.substrate.raw_cell_occupation = self.raw_cell_occupation;
+        sim.substrate.hidden_occupation = self.hidden_occupation;
+        sim.substrate.air_slots = self.air_slots;
+    }
+
+    /// Bring `mirror` up to these parts; an absent part leaves none.
+    fn sync_into(&mut self, mirror: &mut Self) {
+        fn sync_option<T: Clone>(
+            own: &mut Option<T>,
+            copy: &mut Option<T>,
+            sync: impl FnOnce(&mut T, &mut T),
+        ) {
+            match own {
+                // A first copy starts whole; the sync then marks it as the
+                // one later syncs bring up to date.
+                Some(own) => sync(own, copy.get_or_insert_with(|| own.clone())),
+                None => *copy = None,
+            }
+        }
+        // The parts share nothing, so they sync side by side.
+        let Self {
+            terrain,
+            overlays,
+            smudges,
+            terrain_objects,
+            interner,
+            occupancy,
+            raw_cell_occupation,
+            hidden_occupation,
+            air_slots,
+        } = self;
+        use crate::sim::parallel::alongside;
+        alongside(
+            || sync_option(terrain, &mut mirror.terrain, ResolvedTerrainGrid::sync_into),
+            || {
+                alongside(
+                    || occupancy.sync_into(&mut mirror.occupancy),
+                    || {
+                        alongside(
+                            || {
+                                raw_cell_occupation.sync_into(&mut mirror.raw_cell_occupation);
+                                hidden_occupation.sync_into(&mut mirror.hidden_occupation);
+                                air_slots.sync_into(&mut mirror.air_slots);
+                            },
+                            || {
+                                sync_option(overlays, &mut mirror.overlays, |own, copy| {
+                                    own.sync_into(copy)
+                                });
+                                sync_option(smudges, &mut mirror.smudges, |own, copy| {
+                                    own.sync_into(copy)
+                                });
+                                terrain_objects.sync_into(&mut mirror.terrain_objects);
+                                interner.sync_into(&mut mirror.interner);
+                            },
+                        )
+                    },
+                )
+            },
+        );
+    }
+}

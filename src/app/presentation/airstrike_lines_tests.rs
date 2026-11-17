@@ -43,29 +43,29 @@ fn draws(row: &Value) -> Vec<SurfaceDraw> {
         };
         let a: [i32; 2] = point(&value[0]);
         let b: [i32; 2] = point(&value[1]);
-        let rgb = crate::render::native_surface_format::RGB565
-            .unpack_rgb8(value[2].as_u64().unwrap() as u16);
-        let rgba = crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION
-            .quantize_rgba8([rgb[0], rgb[1], rgb[2], 255]);
-        let mut sprites = vec![crate::render::batch::SpriteInstance {
-            position: [
-                (a[0].min(b[0]) + view.camera[0]) as f32,
-                (a[1].min(b[1]) + view.camera[1]) as f32,
+        let mut strokes: Vec<_> = crate::render::surface_line::SurfaceStroke::rect(
+            [
+                a[0].min(b[0]),
+                a[1].min(b[1]),
+                (a[0] - b[0]).abs() + 1,
+                (a[1] - b[1]).abs() + 1,
             ],
-            size: [
-                ((a[0] - b[0]).abs() + 1) as f32,
-                ((a[1] - b[1]).abs() + 1) as f32,
-            ],
-            tint: [rgba[0], rgba[1], rgba[2]].map(|v| f32::from(v) / 255.),
-            alpha: 1.,
-            ..Default::default()
-        }];
+            value[2].as_u64().unwrap() as u16,
+            crate::render::surface_line::StoreGate::All,
+            view.camera,
+        )
+        .into_iter()
+        .collect();
         let mut calls = Vec::new();
-        drain_opaque(&mut calls, &mut sprites, view.camera);
+        drain_opaque(&mut calls, &mut strokes, view.camera, [0; 2]);
         calls
             .into_iter()
             .map(|call| match call {
-                TacticalLineCall::Opaque { rect, word } => SurfaceDraw::OpaqueRect { rect, word },
+                TacticalLineCall::Opaque {
+                    rect,
+                    word,
+                    a_offset: None,
+                } => SurfaceDraw::OpaqueRect { rect, word },
                 _ => unreachable!(),
             })
             .collect::<Vec<_>>()
@@ -173,6 +173,7 @@ fn composite_preserves_opaque_beam_order_and_advances_only_the_shared_main_draws
         TacticalLineCall::Opaque {
             rect: [25, 25, 3, 1],
             word: 0xFFFF,
+            a_offset: None,
         },
         TacticalLineCall::Designation {
             id: 7,
@@ -182,6 +183,7 @@ fn composite_preserves_opaque_beam_order_and_advances_only_the_shared_main_draws
         TacticalLineCall::Opaque {
             rect: [25, 25, 3, 1],
             word: 0xFFFF,
+            a_offset: None,
         },
     ];
     let view = viewport(&native()["cases"][0]["input"]);
@@ -294,6 +296,16 @@ fn production_airstrike_beam_matches_original_pixels_and_preserves_depth() {
                 },
                 color.size(),
             );
+            terrain.bind_surface_line_a_fixture(
+                &gpu.device,
+                &gpu.queue,
+                size,
+                |[x, y]| match input["alpha"].as_str().unwrap() {
+                    "clear" => 127,
+                    "black" => 0,
+                    _ => [0, 1, 63, 127, 255][((x / 9 + y / 7) % 5) as usize],
+                },
+            );
             terrain.begin_surface_lines();
             let prepared = terrain.prepare_surface_lines(
                 &gpu.device,
@@ -305,15 +317,10 @@ fn production_airstrike_beam_matches_original_pixels_and_preserves_depth() {
                 &[],
                 viewport(input),
                 |_| false,
-                |[x, y]| match input["alpha"].as_str().unwrap() {
-                    "clear" => 127,
-                    "black" => 0,
-                    _ => [0, 1, 63, 127, 255][((x / 9 + y / 7) % 5) as usize],
-                },
             );
             let mut encoder = gpu.device.create_command_encoder(&Default::default());
             clear(&mut encoder, &cv, &dv, old_z, wgpu::LoadOp::Load);
-            terrain.draw_surface_lines(&mut encoder, &cv, prepared);
+            terrain.draw_surface_lines(&mut encoder, &cv, &[prepared]);
             let reads = [
                 gpu.read(&mut encoder, &color),
                 gpu.read(&mut encoder, &depth),

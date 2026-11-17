@@ -219,7 +219,7 @@ fn words(world: &Simulation, id: u64) -> [u32; 4] {
         .map_or([0; 4], |state| state.native_bits())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod tests {
     use super::*;
     use crate::sim::components::DriveCoord;

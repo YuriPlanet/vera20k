@@ -56,6 +56,8 @@ fn probe(registry: &EvaRegistry) -> VoxNode {
 
 #[test]
 fn ares_binding_and_filename_match_native_controls() {
+    // The EVA registry and the Rules are both read the Ares way.
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let registry = registry();
     let rules = rules("VoiceB", registry.clone());
     let corpus = crate::test_fixture::json("tools/spatial_oracle/ares_eva.json");
@@ -83,6 +85,8 @@ fn ares_binding_and_filename_match_native_controls() {
 
 #[test]
 fn queued_identity_uses_the_later_bound_voice_and_reset_preserves_it() {
+    // The EVA registry and the Rules are both read the Ares way.
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let registry = registry();
     let first = rules("VoiceA", registry.clone());
     let second = rules("VoiceB", registry.clone());

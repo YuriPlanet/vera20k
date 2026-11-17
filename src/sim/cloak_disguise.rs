@@ -14,17 +14,32 @@ use crate::sim::timer::CdTimer;
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct StealthAbility {
     granted: bool,
-    #[cfg(feature = "ares")]
-    #[serde(default)]
-    attached: bool,
+}
+
+/// Whether the constructor seeds `Techno+0x3D2` from the type's `Cloakable=`
+/// (`type_seed` of [`StealthAbility::active`]): the Unit and Infantry
+/// constructors copy it (`0x007355B4`, `0x00517D86`); Building and Aircraft
+/// Init do not. Ares 3.0 copies it there too: BuildingClass_Init_Cloakable
+/// (1005C4F0, hook 0x442CE0) and AircraftClass_Init_Cloakable (1005C2D0,
+/// hook 0x413FA3), when Ares plays (`ares`, [`RuleSet::ares`]).
+///
+/// [`RuleSet::ares`]: crate::rules::ruleset::RuleSet::ares
+pub(crate) fn type_seeds_stealth(
+    category: crate::map::entities::EntityCategory,
+    object: &crate::rules::object_type::ObjectType,
+    ares: bool,
+) -> bool {
+    use crate::map::entities::EntityCategory;
+    object.cloakable
+        && (matches!(category, EntityCategory::Unit | EntityCategory::Infantry) || ares)
 }
 
 impl StealthAbility {
+    /// The permanent capability: the type's seed or a crate's grant. An Ares
+    /// attached-effect cloak is held in the object's Ares part, so ask
+    /// [`GameEntity::cloak_ability_active`](crate::sim::game_entity::GameEntity::cloak_ability_active)
+    /// where the object is at hand.
     pub(crate) fn active(self, type_seed: bool) -> bool {
-        #[cfg(feature = "ares")]
-        if self.attached {
-            return true;
-        }
         type_seed || self.granted
     }
 
@@ -34,16 +49,6 @@ impl StealthAbility {
 
     pub(crate) fn granted(self) -> bool {
         self.granted
-    }
-    #[cfg(feature = "ares")]
-    pub(crate) fn attached(self) -> bool {
-        self.attached
-    }
-    /// RecalculateStats1004617D/1004613B ORs descriptor+38 into the
-    /// raw capability, without replacing permanent crate Ext+98.
-    #[cfg(feature = "ares")]
-    pub(crate) fn set_attached(&mut self, value: bool) {
-        self.attached = value;
     }
 }
 
@@ -154,6 +159,12 @@ pub struct VisualCharacterQuery {
 }
 
 impl VisualCharacterQuery {
+    /// The call's first argument: the sensor queries pass true, the screen's
+    /// draw false.
+    pub(crate) const fn forced(&self) -> bool {
+        self.force_sensor
+    }
+
     /// Screen `(0, NULL)` call; alliances must be true in both directions.
     pub const fn screen(
         graphical_client: bool,
@@ -293,6 +304,11 @@ pub(crate) fn building_stage_visual_character(
 }
 
 impl CloakTickFacts {
+    /// The object's progress stages (Ares per-type Cloakable.Stages).
+    pub(crate) fn cloaking_stages(&self) -> i32 {
+        self.cloaking_stages
+    }
+
     /// Capture live owner inputs once at the native AI visit.
     pub fn new(
         current_frame: i32,
@@ -449,10 +465,10 @@ impl CloakRuntime {
     /// The constructor's cloak state for an object with the Cloak ability
     /// (the constructor copy at `0x007355B6`/`0x00517D88`), fully cloaked
     /// when Unlimbo establishes state 2 ([`Self::establish_unlimbo_fully_cloaked`]).
-    pub(crate) fn install(slot: &mut Option<Self>, current_frame: i32, fully_cloaked: bool) {
+    pub(crate) fn install(slot: &mut Option<Box<Self>>, current_frame: i32, fully_cloaked: bool) {
         // UnitClass::Unlimbo @00737BD7..00737BEB only writes state 2;
         // it neither clears the retained ability nor restarts cloak timers.
-        let cloak = slot.get_or_insert_with(|| Self::new(current_frame));
+        let cloak = slot.get_or_insert_with(|| Box::new(Self::new(current_frame)));
         if fully_cloaked {
             cloak.establish_unlimbo_fully_cloaked();
         }
@@ -460,9 +476,9 @@ impl CloakRuntime {
 
     /// The cloak AI's install for an object that has the Cloak ability but no
     /// runtime yet (one that gained `Cloak` by rank after construction).
-    pub(crate) fn install_if_absent(slot: &mut Option<Self>, current_frame: i32) {
+    pub(crate) fn install_if_absent(slot: &mut Option<Box<Self>>, current_frame: i32) {
         if slot.is_none() {
-            *slot = Some(Self::new(current_frame));
+            *slot = Some(Box::new(Self::new(current_frame)));
         }
     }
 
@@ -823,7 +839,9 @@ impl Default for DisguiseRuntime {
 impl crate::sim::game_entity::GameEntity {
     /// The disguise runtime, created at `frame` when the object has none yet.
     /// Native keeps the disguise fields inline; sparse Rust storage creates
-    /// them on the first disguise write, stamped with that frame.
+    /// them on the first disguise write, stamped with that frame. A stored
+    /// object's writer that puts a disguise on also calls
+    /// `EntityStore::note_look`, which the atlas check reads.
     pub(crate) fn disguise_mut(&mut self, frame: u32) -> &mut DisguiseRuntime {
         self.disguise
             .get_or_insert_with(|| DisguiseRuntime::new(frame))
@@ -1076,6 +1094,8 @@ impl crate::sim::world::Simulation {
             }
         };
         let frame = self.session.binary_frame();
+        // A worn type and house are a new look for the atlas check.
+        self.substrate.entities.note_look(firer);
         let disguise = self
             .substrate
             .entities
@@ -1217,6 +1237,7 @@ impl crate::sim::world::Simulation {
                 let disguise_type = self
                     .interner
                     .intern(&rules.general.default_mirage_disguises[picked]);
+                self.substrate.entities.note_look(id);
                 self.substrate
                     .entities
                     .get_mut(id)
@@ -1233,15 +1254,15 @@ impl crate::sim::world::Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "cloak_sound_tests.rs"]
 mod sound_tests;
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_c_g, tests_sim_world_techno)))]
 #[path = "mirage_disguise_tests.rs"]
 pub(in crate::sim) mod mirage_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
 

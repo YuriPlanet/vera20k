@@ -5,7 +5,7 @@
 //! The expected trajectory/draw values come only from the executed native corpus.
 
 use super::super::foot_depth::floor_probe;
-use super::{geometry, projection_admitted};
+use super::{TacticalAdmission, geometry, projection_admitted};
 use crate::map::resolved_terrain::test_flat_ground_grid;
 use crate::sim::projectile::{
     ProjectileCollisionPhase, ProjectileCollisionPolicy, ProjectileCoord, ProjectilePayload,
@@ -271,7 +271,7 @@ fn original_cannon_launch_motion_and_live_bridge_draw_form_one_production_chain(
         let state_before = sim.state_hash();
         let dummy_before = terrain.shared_cell_dummy().snapshot();
         let (ground, structural) =
-            floor_probe(terrain, projectile.position().x, projectile.position().y);
+            floor_probe(terrain, projectile.position().x, projectile.position().y).unwrap();
         assert_eq!(
             structural,
             flags & 0x100 != 0,
@@ -289,7 +289,13 @@ fn original_cannon_launch_motion_and_live_bridge_draw_form_one_production_chain(
             input["camera"][1].as_i64().unwrap() as f32 + 15.0,
         ];
         assert_eq!(
-            projection_admitted(actual.body.point, camera, [800.0, 600.0]),
+            projection_admitted(
+                actual.body.point,
+                TacticalAdmission {
+                    corner: camera,
+                    size: [800.0, 600.0],
+                }
+            ),
             row["projection_visible"] == 1
         );
         let draws = row["draws"].as_array().unwrap();
@@ -318,7 +324,7 @@ fn original_cannon_launch_motion_and_live_bridge_draw_form_one_production_chain(
                 "tick {tick} draw Z-adjust"
             );
             assert_eq!(
-                u64::from(projectile_shp_frame(projectile, kind)),
+                u64::from(projectile_shp_frame(projectile, kind, 0, rules.ares_form())),
                 draw["frame"].as_u64().unwrap()
             );
         }
@@ -404,7 +410,12 @@ fn original_ifv_dragon_frame_getter_matches_retained_flights_and_all_directions(
             bits(&row["velocity"]["bits"]).map(NativeF64Bits::from_bits),
         ));
         let before = sim.state_hash();
-        let frame = projectile_shp_frame(sim.projectiles().get(id).unwrap(), kind);
+        let frame = projectile_shp_frame(
+            sim.projectiles().get(id).unwrap(),
+            kind,
+            0,
+            rules.ares_form(),
+        );
         assert_eq!(
             u64::from(frame),
             row["native_frame"].as_u64().unwrap(),

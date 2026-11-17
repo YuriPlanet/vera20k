@@ -125,6 +125,7 @@ fn building_aim_directions_match_the_original() {
         let current = building.body_facing.current(frame);
         let (flh, fire) = building_fire_facings(
             &sim,
+            &rules,
             &FireSource::of_entity(building),
             obj,
             firer_art(&rules, obj),

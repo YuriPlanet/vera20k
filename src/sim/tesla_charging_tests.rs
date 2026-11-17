@@ -108,6 +108,7 @@ impl Fixture {
             .entities
             .get(self.coil)
             .unwrap()
+            .building
             .tesla_charge
     }
 
@@ -141,7 +142,8 @@ impl Fixture {
             source,
             &self.rules,
             ObjectAiCtx::default(),
-        );
+        )
+        .unwrap();
     }
 }
 
@@ -231,7 +233,9 @@ fn impact_refreshes_order_without_damage_or_rearm_and_class_refusals_claim_it() 
     // The complete detonation still runs its existing animation tail. Only
     // ElectricAssault's list refresh itself must leave RNG untouched.
     let rng = f.sim.scenario_rng.logical_state();
-    f.sim.substrate.electric_assault_detonation(a, Some(f.coil));
+    f.sim
+        .substrate
+        .electric_assault_detonation(a, Some(f.coil), f.rules.ares());
     assert_eq!(f.sim.scenario_rng.logical_state(), rng);
     assert_eq!(f.sim.substrate.entities.get(a).unwrap().rearm_timer, rearm);
 
@@ -242,7 +246,13 @@ fn impact_refreshes_order_without_damage_or_rearm_and_class_refusals_claim_it() 
     let tank_health = f.sim.substrate.entities.get(tank).unwrap().health.current();
     f.hit(tank, f.coil); // wrong firer class
     f.hit(a, tank); // wrong target class, still no ordinary area damage
-    assert_eq!(f.charge().chargers(), &[b, c, a]);
+    // Ares BulletClass_Fire_Overpower (1005C650, hook 0x4693B0) admits a
+    // Unit firer too.
+    if f.rules.ares() {
+        assert_eq!(f.charge().chargers(), &[b, c, a, tank]);
+    } else {
+        assert_eq!(f.charge().chargers(), &[b, c, a]);
+    }
     assert_eq!(
         f.sim.substrate.entities.get(tank).unwrap().health.current(),
         tank_health
@@ -259,6 +269,7 @@ fn impact_refreshes_order_without_damage_or_rearm_and_class_refusals_claim_it() 
             .entities
             .get(hostile_plant)
             .unwrap()
+            .building
             .tesla_charge
             .chargers(),
         &[a]
@@ -286,6 +297,7 @@ fn operational_power_and_overpowered_weapon_use_different_thresholds() {
             .entities
             .get_mut(f.coil)
             .unwrap()
+            .building
             .tesla_charge = BuildingCharge::default();
         f.set_power(output, drain);
         for i in 0..count {
@@ -435,7 +447,13 @@ fn snapshot_preserves_order_intent_and_stale_latch_then_rejects_invalid_referenc
     let mut loaded = GameSnapshot::load(&bytes).unwrap().sim;
     loaded.restore_after_snapshot_load().unwrap();
     assert_eq!(
-        loaded.substrate.entities.get(f.coil).unwrap().tesla_charge,
+        loaded
+            .substrate
+            .entities
+            .get(f.coil)
+            .unwrap()
+            .building
+            .tesla_charge,
         *f.charge()
     );
     assert!(
@@ -460,6 +478,7 @@ fn snapshot_preserves_order_intent_and_stale_latch_then_rejects_invalid_referenc
             .entities
             .get(f.coil)
             .unwrap()
+            .building
             .tesla_charge
             .is_default()
     );
@@ -474,6 +493,7 @@ fn snapshot_preserves_order_intent_and_stale_latch_then_rejects_invalid_referenc
             .entities
             .get_mut(f.coil)
             .unwrap()
+            .building
             .tesla_charge
             .chargers = invalid;
         let bytes = GameSnapshot::save(&f.sim, 0, 0, "Tesla-invalid", 0);
@@ -495,6 +515,7 @@ fn hash_distinguishes_charger_order_weapon_latch_and_foot_intent() {
         .entities
         .get_mut(f.coil)
         .unwrap()
+        .building
         .tesla_charge
         .chargers = f.troopers.to_vec();
     let list = f.sim.state_hash();
@@ -504,6 +525,7 @@ fn hash_distinguishes_charger_order_weapon_latch_and_foot_intent() {
         .entities
         .get_mut(f.coil)
         .unwrap()
+        .building
         .tesla_charge
         .chargers
         .reverse();
@@ -514,6 +536,7 @@ fn hash_distinguishes_charger_order_weapon_latch_and_foot_intent() {
         .entities
         .get_mut(f.coil)
         .unwrap()
+        .building
         .tesla_charge
         .overpowered = true;
     let latch = f.sim.state_hash();
@@ -802,6 +825,7 @@ fn freezing_a_retail_charger_clears_its_intent_before_release() {
         &mut f.sim.houses,
         &mut f.sim.power_states,
         cleg,
+        f.rules.ares_form(),
     );
     assert!(!f.sim.substrate.entities.get(source).unwrap().ai_frozen());
     f.dispatch(source, MissionType::Attack);

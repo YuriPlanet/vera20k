@@ -26,7 +26,7 @@ use winit::event::MouseButton;
 /// case, so a Cooperative launch must name its map as MISSIONMD spells it
 /// (`[C1A01MD.MAP]`); that spelling is unverified until Cooperative launches.
 fn scenario_file_name(state: &AppState) -> Option<String> {
-    let runtime = state.match_state.sim_runtime.as_ref()?;
+    let runtime = state.match_state.sim_runtime.runtime()?;
     Some(runtime.simulation.session().map_name().to_owned())
 }
 

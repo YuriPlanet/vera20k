@@ -18,16 +18,15 @@ fn xyz(value: &Value) -> IVec3 {
 }
 
 fn particle_state(particle: &super::Particle) -> Value {
-    let railgun = particle.railgun().unwrap();
     json!({
         "native_id": particle.native_unique_id(),
         "location": particle.coords().to_array(),
         "direction_bits": particle.direction().map(|axis| axis.bits()),
         "speed_bits": particle.velocity().bits(),
-        "position_bits": railgun.position.map(|axis| axis.bits()),
-        "color": railgun.start_rgb,
-        "color_index": railgun.color_index,
-        "color_accumulator_bits": railgun.color_accumulator.bits(),
+        "position_bits": particle.float_position().map(|axis| axis.bits()),
+        "color": particle.start_rgb(),
+        "color_index": particle.color_index(),
+        "color_accumulator_bits": particle.color_accumulator().bits(),
         "remaining": particle.lifetime_remaining(),
     })
 }

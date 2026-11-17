@@ -1,6 +1,7 @@
 //! Successful saved-world adoption and its route-specific presentation state.
 
 use crate::app::AppState;
+use crate::app::match_runtime::sim_host::SimWrite;
 
 /// Apply the validated world/resources and the already-prepared asset bundle.
 /// Recoverable preparation has finished before any outgoing state is cleared.
@@ -26,7 +27,7 @@ pub(crate) fn commit_prepared_load(
     // reconstructs each voice handle/latch. Do this only after preparation
     // succeeded; the new FootLoad state starts silent until its next AI visit.
     // Ordinary Vox.Save7533B0 emits tags only, no nodes or selected voice;
-    // incoming announcements start empty. Saved static Voc is a separate path.
+    // incoming announcements start empty. Saved static Voc returns below.
     if let Some(sfx) = state.audio.sfx_player.as_mut() {
         sfx.stop_all();
     }
@@ -55,7 +56,7 @@ pub(crate) fn commit_prepared_load(
             &state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .expect("prepared saved game installs a runtime")
                 .simulation,
             committed.map.source(),
@@ -71,7 +72,7 @@ pub(crate) fn commit_prepared_load(
     let game_mode = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .expect("prepared saved game installs a runtime")
         .simulation
         .session()
@@ -91,7 +92,7 @@ pub(crate) fn commit_prepared_load(
     let pause_effects = state
         .match_state
         .sim_runtime
-        .as_mut()
+        .write_sim(SimWrite::Lifecycle)
         .map_or_else(Vec::new, |rt| {
             crate::app::radar_movie::release_saved_scenario_hold(
                 &mut rt.simulation,
@@ -104,7 +105,7 @@ pub(crate) fn commit_prepared_load(
     let runtime = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .expect("prepared saved game installs a runtime");
     let theater_name = runtime.simulation.session().theater().to_owned();
     let theater_ext = crate::app::loading::init_helpers::theater_ext_for(&theater_name).to_owned();
@@ -129,6 +130,18 @@ pub(crate) fn commit_prepared_load(
         map,
         committed.presentation,
     );
+    // MouseLoad5BE092 restores the radar as saved, TacticalMapAvailable
+    // included, so the rebuilt radar starts from the loaded House's radar.
+    state.match_state.match_presentation.has_radar =
+        crate::app::presentation::building_anim::local_has_radar(state);
+    state.match_state.match_presentation.loaded_radar_housing = committed.radar_housing;
+    // Load_Game's Set_View_Dimensions (`0x0067E7F9`): Init `0x005D3A60`
+    // deletes every row and an open edit, and SetWidth `0x005D4AD0` leaves
+    // the list tactical_w − 8 wide.
+    let tactical_w = crate::app::input::camera::tactical_viewport_size(state).0 as i32;
+    let message_list = &mut state.match_state.match_presentation.message_list;
+    *message_list = crate::ui::messages::MessageList::scenario();
+    message_list.set_width(tactical_w);
     state
         .match_state
         .match_presentation
@@ -143,6 +156,29 @@ pub(crate) fn commit_prepared_load(
     let mut power = committed.power_bar_anim;
     power.reanchor_after_load(power_ms);
     state.match_state.match_presentation.power_bar_anim = power;
+    // The loaded world's next frame is its first Sidebar Action visit: the
+    // jump to the saved tick is not a run of missed visits.
+    if let Some(tick) = state
+        .match_state
+        .sim_runtime
+        .presentation()
+        .map(|rt| rt.simulation.session().tick())
+    {
+        state
+            .match_state
+            .match_presentation
+            .sidebar_gadget_state
+            .last_sim_tick = tick;
+    }
+
+    // VocClass::LoadStaticSounds (`0x00751710`) restarts the saved loopable
+    // coordinate sounds after its clear, which `stop_all` above performed.
+    if let (Some(sfx), Some(catalog)) = (
+        state.audio.sfx_player.as_mut(),
+        state.process_assets.audio_catalog(),
+    ) {
+        sfx.restore_static_sounds(committed.map.static_sounds(), catalog.sounds());
+    }
 
     crate::app::audio_runtime::bind_match_theme_context(state);
     let music_now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
@@ -175,8 +211,11 @@ pub(crate) fn commit_prepared_load(
         .match_presentation
         .lighting
         .restore_anim_intensities(committed.details.anim_intensities);
-    // MouseLoad5BDF70->no-init5BE9B0 preserves the saved entry lists; their
-    // display keys refresh below against incoming rules/CSF without reordering.
+    // MouseLoad5BDF70->no-init5BE9B0 preserves the saved entry lists and the
+    // open tab; their display keys refresh below against incoming rules/CSF
+    // without reordering.
+    state.match_state.match_presentation.active_sidebar_tab =
+        crate::app::sidebar_projection::loaded_active_tab(committed.details.sidebar_order.as_ref());
     #[cfg(feature = "phobos")]
     let sw_sidebar_expanded = committed
         .details
@@ -204,7 +243,7 @@ pub(crate) fn commit_prepared_load(
         state
             .match_state
             .sim_runtime
-            .as_mut()
+            .write_sim(SimWrite::Lifecycle)
             .expect("prepared saved game installs a runtime")
             .simulation
             .prepare_fog_view_for(&owner);

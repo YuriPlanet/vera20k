@@ -190,7 +190,8 @@ pub(crate) struct TacticalCaptureSettings {
     pub(crate) output_width: u32,
     pub(crate) output_height: u32,
     pub(crate) surface_formats: Vec<String>,
-    /// Always true: the window always presents in step with the display. The
+    /// Always true: a capture presents in step with the display whatever the
+    /// Options page's VSync box says (`App::sync_present_mode`). The
     /// sealed profiles keep the key.
     pub(crate) vsync: bool,
     /// Always false: a capture never zooms. The sealed profiles keep the key.
@@ -618,6 +619,10 @@ impl TacticalOptions {
             harvester_truce: self.harvester_truce,
             ally_change_allowed: self.ally_change_allowed,
             bans: Default::default(),
+            teams: None,
+            auto_balance: false,
+            queue: Vec::new(),
+            host_rules: Default::default(),
         }
     }
 }
@@ -750,7 +755,7 @@ fn validate_options(options: &TacticalOptions) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use std::path::PathBuf;
@@ -821,12 +826,12 @@ mod tests {
                 ),
                 (632.0, 158.0, 227.0, 527.0, 6)
             );
-            // Soviet and Yuri take the NOD position table, so the aperture
-            // sits at the native NOD delta from the GDI one: +3, +1.
+            // The NOD position table moves the top buttons, not the radar
+            // aperture (MapAreaX 16 in both Init_For_House arms).
             let aperture = radar_minimap_rect_with_spec(800.0, spec);
             assert_eq!(
                 (aperture.x, aperture.y, aperture.w, aperture.h),
-                (651.0, 50.0, 140.0, 108.0)
+                (648.0, 49.0, 140.0, 108.0)
             );
             profile.capture.app_ui_scale = 0.5;
             assert!(

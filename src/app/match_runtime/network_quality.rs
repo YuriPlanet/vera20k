@@ -7,7 +7,11 @@
 //! `finish`), and the closed report stays for the external launch result
 //! until the next install.
 
-use crate::net::live_commands::{DeliveryCounters, NetworkRecoveryStatus};
+use std::collections::BTreeMap;
+
+use crate::net::live_commands::{
+    ClientLinkStats, DeliveryCounters, LinkState, NetworkRecoveryStatus,
+};
 use crate::util::time::{Duration, Instant};
 
 use super::super::AppState;
@@ -80,6 +84,46 @@ pub(crate) struct DeliveryReport {
     /// The playout reserve the pacer learned from late receipts, at most.
     pub(crate) max_jitter_reserve_ms: f64,
     pub(crate) underruns: u64,
+    /// How late the waited-for frames arrived after their deadlines, summed
+    /// and at most. A wait that ends in a recovery is counted, not timed.
+    pub(crate) underrun_wait_ms: f64,
+    pub(crate) max_underrun_wait_ms: f64,
+    /// The relay hop as the relay client measured it; null without one.
+    pub(crate) link: Option<LinkReport>,
+}
+
+/// One match's relay hop from the adaptive transport's own measurements
+/// (`services/relay/adaptive-transport/spec.md` §10.1).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub(crate) struct LinkReport {
+    /// Median smoothed round trip to the relay.
+    pub(crate) rtt_ms_p50: Option<u32>,
+    /// Highest smoothed uplink loss.
+    pub(crate) max_up_loss_permille: u16,
+    /// Time the uplink spent lossy and congested (spec §5.2).
+    pub(crate) up_lossy_seconds: f64,
+    pub(crate) up_congested_seconds: f64,
+    /// Resend timeouts of unacknowledged local batches (spec §4.5).
+    pub(crate) rto_timeouts: u64,
+    /// Stream gaps the relay's repeats or resends closed before any Pull.
+    pub(crate) gaps_repaired_by_push: u64,
+    /// Highest smoothed arrival jitter of the relay's new turns (spec §4.8).
+    pub(crate) max_arrival_jitter_ms: f64,
+}
+
+impl From<&ClientLinkStats> for LinkReport {
+    fn from(link: &ClientLinkStats) -> Self {
+        let seconds = |state: LinkState| link.uplink_state_ms[state.index()] as f64 / 1000.0;
+        Self {
+            rtt_ms_p50: link.srtt_p50_ms,
+            max_up_loss_permille: link.up_loss_permille_max,
+            up_lossy_seconds: seconds(LinkState::Lossy),
+            up_congested_seconds: seconds(LinkState::Congested),
+            rto_timeouts: link.rto_timeouts,
+            gaps_repaired_by_push: link.gaps_repaired_by_push,
+            max_arrival_jitter_ms: link.jitter_max_us as f64 / 1000.0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -93,6 +137,8 @@ pub(crate) struct RoundTripReport {
 pub(crate) struct PerformanceReport {
     pub(crate) tick_ms_p50: Option<f32>,
     pub(crate) tick_ms_p99: Option<f32>,
+    /// Presents per second while the picture keeps moving; a standing
+    /// picture ends an interval (`NetworkQualityStats::picture_stood`).
     pub(crate) fps_p50: Option<f32>,
     /// The slowest twentieth of presented frames.
     pub(crate) fps_p5: Option<f32>,
@@ -111,6 +157,12 @@ pub(crate) struct PacingReport {
 pub(crate) struct OutcomeReport {
     pub(crate) desync_frame: Option<u32>,
     pub(crate) reconnects: u32,
+    pub(crate) started: bool,
+    pub(crate) failure: Option<&'static str>,
+    /// Each part of the start this game offered the relay, as long as the
+    /// match has not started: two games' reports of one match differ in the
+    /// part that differs.
+    pub(crate) start_hash: Option<BTreeMap<&'static str, String>>,
 }
 
 /// Live values for the telemetry dashboard.
@@ -137,6 +189,8 @@ pub(crate) struct NetworkQualityStats {
     max_backlog_frames: u32,
     max_reserve_micros: u32,
     underruns: u64,
+    underrun_wait_micros: u64,
+    max_underrun_wait_micros: u64,
     played: Duration,
     unfocused: Duration,
     slowed: Duration,
@@ -145,6 +199,7 @@ pub(crate) struct NetworkQualityStats {
     slowdowns: u32,
     slowed_by: Vec<i8>,
     delivery: DeliveryCounters,
+    start_parts: Vec<(&'static str, u64)>,
     tick_ms: MsHistogram,
     frame_ms: MsHistogram,
     last_present: Option<Instant>,
@@ -160,10 +215,22 @@ impl NetworkQualityStats {
         };
     }
 
+    /// The parts of the start a relay-sequenced match is about to offer.
+    pub(crate) fn record_start_parts(&mut self, parts: Vec<(&'static str, u64)>) {
+        self.start_parts = parts;
+    }
+
     pub(crate) fn record_tick(&mut self, tick_ms: f32) {
         if self.active {
             self.tick_ms.record(tick_ms);
         }
+    }
+
+    /// The presented picture stood through a pass (`redraw_gate`): the next
+    /// present follows a picture that needed no draw, not a slow one, so it
+    /// starts a new interval.
+    pub(crate) fn picture_stood(&mut self) {
+        self.last_present = None;
     }
 
     /// One presented battlefield picture.
@@ -212,8 +279,8 @@ impl NetworkQualityStats {
                 skipped_draws: self.live.skipped_draws,
             },
             network: DeliveryReport {
-                gaps: delivery.gaps,
-                repair_pulls: delivery.repair_pulls,
+                gaps: delivery.link.map_or(0, |link| link.gaps),
+                repair_pulls: delivery.link.map_or(0, |link| link.repair_pulls),
                 command_round_trip_ms: (delivery.round_trips > 0).then(|| RoundTripReport {
                     mean: delivery.round_trip_total_ms / delivery.round_trips,
                     max: delivery.round_trip_max_ms,
@@ -221,6 +288,9 @@ impl NetworkQualityStats {
                 }),
                 max_jitter_reserve_ms: f64::from(self.max_reserve_micros) / 1000.0,
                 underruns: self.underruns,
+                underrun_wait_ms: self.underrun_wait_micros as f64 / 1000.0,
+                max_underrun_wait_ms: self.max_underrun_wait_micros as f64 / 1000.0,
+                link: delivery.link.as_ref().map(LinkReport::from),
             },
             performance: PerformanceReport {
                 tick_ms_p50: self.tick_ms.quantile(0.5),
@@ -237,6 +307,14 @@ impl NetworkQualityStats {
             outcome: OutcomeReport {
                 desync_frame: delivery.desync_frame,
                 reconnects: self.reconnects,
+                started: delivery.started,
+                failure: delivery.failure,
+                start_hash: (!delivery.started && !self.start_parts.is_empty()).then(|| {
+                    self.start_parts
+                        .iter()
+                        .map(|&(part, digest)| (part, format!("{digest:016x}")))
+                        .collect()
+                }),
             },
         }
     }
@@ -251,7 +329,7 @@ pub(crate) fn observe_pass(state: &mut AppState) {
         .live_network
         .as_ref()
         .filter(|live| in_game && live.uses_sequenced_lockstep())
-        .zip(state.match_state.sim_runtime.as_ref())
+        .zip(state.match_state.sim_runtime.runtime())
         .map(|(live, runtime)| {
             let frame = runtime.simulation.session().binary_frame();
             let reconnecting = live.recovery_status(
@@ -299,6 +377,8 @@ pub(crate) fn observe_pass(state: &mut AppState) {
     if let Some(pacing) = pacing {
         stats.max_reserve_micros = stats.max_reserve_micros.max(pacing.reserve_micros);
         stats.underruns = pacing.underruns;
+        stats.underrun_wait_micros = pacing.underrun_wait_micros;
+        stats.max_underrun_wait_micros = pacing.max_underrun_wait_micros;
     }
     stats.max_backlog_frames = stats.max_backlog_frames.max(backlog);
     stats.delivery = delivery;
@@ -327,7 +407,7 @@ pub(crate) fn close(state: &mut AppState) -> Option<NetworkQualityReport> {
     Some(report)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
 
@@ -347,6 +427,27 @@ mod tests {
         assert_eq!(MsHistogram::default().quantile(0.5), None);
     }
 
+    /// A present after a standing picture starts a new interval, so the
+    /// frame rate reads how fast a moving picture draws, not how long one
+    /// stood.
+    #[test]
+    fn a_standing_picture_starts_a_new_present_interval() {
+        let mut stats = NetworkQualityStats {
+            active: true,
+            ..NetworkQualityStats::default()
+        };
+        let start = Instant::now();
+        let at = |ms| start + Duration::from_millis(ms);
+        stats.record_present(start);
+        stats.record_present(at(16));
+        stats.picture_stood();
+        stats.record_present(at(500));
+        stats.record_present(at(516));
+        let performance = stats.summarize().performance;
+        assert_eq!(performance.fps_p5, Some(61.5));
+        assert_eq!(performance.fps_p50, Some(61.5));
+    }
+
     /// The lobby reads `finish`'s report by these names
     /// (docs/lobby-protocol.md) and drops one it cannot read.
     #[test]
@@ -358,12 +459,58 @@ mod tests {
                 "played_seconds": 0.0,
                 "catch_up": {"episodes": 0, "seconds": 0.0, "max_backlog_frames": 0, "skipped_draws": 0},
                 "network": {"gaps": 0, "repair_pulls": 0, "command_round_trip_ms": null,
-                    "max_jitter_reserve_ms": 0.0, "underruns": 0},
+                    "max_jitter_reserve_ms": 0.0, "underruns": 0, "underrun_wait_ms": 0.0,
+                    "max_underrun_wait_ms": 0.0, "link": null},
                 "performance": {"tick_ms_p50": null, "tick_ms_p99": null, "fps_p50": null,
                     "fps_p5": null, "unfocused_seconds": 0.0},
                 "pacing": {"slowdowns": 0, "slowed_by": [], "slowed_seconds": 0.0},
-                "outcome": {"desync_frame": null, "reconnects": 0},
+                "outcome": {"desync_frame": null, "reconnects": 0, "started": false, "failure": null,
+                    "start_hash": null},
             })
+        );
+    }
+
+    /// Only a match the relay never started reports its start part by part.
+    #[test]
+    fn a_match_that_started_leaves_out_its_start_hash() {
+        let mut stats = NetworkQualityStats::default();
+        stats.record_start_parts(vec![("setup_seed", 7), ("world", u64::MAX)]);
+        let start_hash = |stats: &NetworkQualityStats| {
+            serde_json::to_value(stats.summarize()).unwrap()["outcome"]["start_hash"].clone()
+        };
+        assert_eq!(
+            start_hash(&stats),
+            serde_json::json!({"setup_seed": "0000000000000007", "world": "ffffffffffffffff"})
+        );
+        stats.delivery.started = true;
+        assert_eq!(start_hash(&stats), serde_json::Value::Null);
+    }
+
+    /// The relay hop's report reads the uplink's time by state, and the gap
+    /// and Pull counts come from the same measurements.
+    #[test]
+    fn the_link_report_reads_the_relay_clients_measurements() {
+        let mut stats = NetworkQualityStats::default();
+        stats.delivery.link = Some(ClientLinkStats {
+            uplink_state_ms: [60_000, 2_500, 500, 1_000],
+            srtt_p50_ms: Some(42),
+            up_loss_permille_max: 31,
+            rto_timeouts: 2,
+            gaps: 5,
+            gaps_repaired_by_push: 4,
+            repair_pulls: 1,
+            jitter_max_us: 12_345,
+            ..ClientLinkStats::default()
+        });
+        let report = serde_json::to_value(stats.summarize()).unwrap();
+        let network = &report["network"];
+        assert_eq!(network["gaps"], 5);
+        assert_eq!(network["repair_pulls"], 1);
+        assert_eq!(
+            network["link"],
+            serde_json::json!({"rtt_ms_p50": 42, "max_up_loss_permille": 31,
+                "up_lossy_seconds": 2.5, "up_congested_seconds": 0.5, "rto_timeouts": 2,
+                "gaps_repaired_by_push": 4, "max_arrival_jitter_ms": 12.345})
         );
     }
 }

@@ -115,12 +115,6 @@ pub enum BgKind {
     RightPanelShell,
     /// PUDLGBGN.SHP modal panel + DIALOGN.PAL (roadmap; Slice 5).
     ModalShp,
-    /// In-game Options dialog (0xBBB/0xF5): composited as an OVERLAY over the
-    /// frozen battlefield — the template carries no opaque full-screen panel art
-    /// and its statics are text-only (verified: every static in the 0xBBB
-    /// template is a `GUI:*` caption/label, no image control). The exact backdrop/
-    /// frame composition is resolved with the owner-draw paint sub-step (5a-ii).
-    InGameOptions,
 }
 
 /// Reposition policy (contract C7 include-set gating). Include-set dialogs
@@ -131,11 +125,6 @@ pub enum BgKind {
 pub enum RepositionPolicy {
     IncludeSetReanchor,
     ModalCentered,
-    /// In-game Options dialog. 5a-i resolves it to the raw DLU->pixel client
-    /// rect (baseline, see `layout::layout_pass`); the native child-resize helper
-    /// family (centered offsets for ordinary controls + right-edge button
-    /// anchoring from the runtime SIDEBTTN canvas) is layered on in 5a-ii.
-    InGameOptions,
 }
 
 /// One control inside a shell dialog template.

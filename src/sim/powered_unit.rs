@@ -58,7 +58,8 @@
 //! - The three EVA sites also require the game to be active (`0x00A8E9A0`)
 //!   and no scenario initialization under way (`0x00A8E7AC`,
 //!   `0x0050E088..0x0050E0C4`); the walks push the line without them.
-//!   Inaudible: retail `evamd.ini` has no entries for either line.
+//!   Retail `evamd.ini` has both lines, but no retail campaign gives such a
+//!   house a center (`app::match_runtime::sound_dispatch`).
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
@@ -143,7 +144,7 @@ impl Simulation {
         else {
             return;
         };
-        if building.building_powered_center.is_counted() == operational {
+        if building.building.building_powered_center.is_counted() == operational {
             return;
         }
         let owner = building.owner();
@@ -151,6 +152,7 @@ impl Simulation {
             .entities
             .get_mut(id)
             .expect("same building")
+            .building
             .building_powered_center
             .counted = operational;
         if operational {
@@ -173,7 +175,7 @@ impl Simulation {
             return;
         };
         if building.category() != EntityCategory::Structure
-            || !building.building_powered_center.is_counted()
+            || !building.building.building_powered_center.is_counted()
         {
             return;
         }
@@ -185,6 +187,7 @@ impl Simulation {
             .entities
             .get_mut(id)
             .expect("same building")
+            .building
             .building_powered_center
             .counted = false;
         self.house_lost_powered_center(owner, unit_type, rules, effects);
@@ -289,12 +292,19 @@ impl Simulation {
     /// Deselect (vt+0x150), a Foot's ILocomotion Power_Off, its type's
     /// `DeactivateSound=` where it stands unless it was already offline
     /// (`0x0070FD0E..0x0070FD5D`), and the latch (`0x0070FD62`).
+    ///
+    /// Ares replaces the body (`1004CDC0`, hook `0x70FC90`, resuming at the
+    /// return `0x70FD6E`): the same steps, but no sound while the
+    /// IKnowWhatImDoing mutex (`0xA8E7AC`, the object placement scope) is
+    /// raised, and on the transition the light goes and a Building refreshes
+    /// its factory queues (`10013250`).
     pub(crate) fn techno_deactivate(
         &mut self,
         id: u64,
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
+        let ares = rules.ares_form();
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
@@ -309,7 +319,6 @@ impl Simulation {
             return;
         }
         let foot = entity.category().is_foot();
-        #[cfg(feature = "ares")]
         let was_offline = entity.deactivated.is_offline();
         self.reset_orders_to_guard(id, rules, effects);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
@@ -323,29 +332,39 @@ impl Simulation {
                 id,
             );
         }
+        let quiet = self.ares_activation_sound_mutex(rules);
         Self::latch_deactivated(
             &self.interner,
             &mut self.substrate,
             &mut self.sound_events,
             id,
             true,
+            quiet,
             rules,
         );
-        #[cfg(feature = "ares")]
-        if !was_offline {
+        if ares && !was_offline {
             // Ares Deactivate1004CE21..1004CE72 removes the owned light
             // only on the transition. The parent and its cargo survive.
             self.destroy_spotlight_for_parent(
                 id,
                 crate::sim::world::UninitContext::with_rules(rules).with_effects(effects),
             );
+            // Then a Building's factory queues (`10013250`): an offline
+            // factory no longer serves its production.
+            self.ares_update_factory_queues(id, rules, effects);
         }
+    }
+
+    /// Ares Activate `1004CCB0` and Deactivate `1004CDC0` play the type's
+    /// sound only while IKnowWhatImDoing (`0xA8E7AC`) is clear; stock
+    /// `0x0070FBE0`/`0x0070FC90` have no such test.
+    fn ares_activation_sound_mutex(&self, rules: &RuleSet) -> bool {
+        rules.ares() && self.object_placement_scope_active()
     }
 
     /// Ares TechnoUpdate1004B439..1004B526, ordinary Foot branch. Operator
     /// membership is derived by its existing owner; transitions use the same
     /// Deactivate/Reactivate owners as power and EMP recovery.
-    #[cfg(feature = "ares")]
     pub(crate) fn update_ares_operator_operability(
         &mut self,
         id: u64,
@@ -409,17 +428,54 @@ impl Simulation {
         }
     }
 
+    /// Ares TechnoClass_Update1004B320's Deactivated Unit block, after the
+    /// operator update: a Unit with a NavCom, held by no Magnetron (+2B0),
+    /// whose locomotor still moves (ILocomotion+10) drops the destination
+    /// (vt+0x480(0, 1)) and stops its driver (vt+0x500).
+    pub(crate) fn stop_ares_deactivated_unit_driving(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if !entity.deactivated.is_offline()
+            || entity.category() != EntityCategory::Unit
+            || entity.navigation.nav_com().is_none()
+            || entity.lift.source().is_some()
+            || crate::sim::movement::motion_query::is_moving(entity) != Some(true)
+        {
+            return;
+        }
+        if let Err(cause) = self.assign_destination_represented(id, None, rules, registry, effects)
+        {
+            log::warn!("Deactivated unit {id} destination: {cause}");
+        }
+        if let Err(cause) = self.foot_stop_driver(id, rules, registry, effects) {
+            log::warn!("Deactivated unit {id} driver: {cause}");
+        }
+    }
+
     /// `TechnoClass::Reactivate @ 0x0070FBE0`: ResetOrdersToGuard
     /// (vt+0x3D0), a Foot's ILocomotion Power_On (the base `0x0055A8F0` in
     /// every family), its type's `ActivateSound=` where it stands if it was
     /// offline (`0x0070FC18..0x0070FC68`), and the latch cleared
     /// (`0x0070FC6D`, `0x0070FC7A`).
+    ///
+    /// Ares replaces the body (`1004CCB0`, hook `0x70FBE0`, resuming at the
+    /// return `0x70FC85`): its vetoes below, then the same steps, no sound
+    /// under the IKnowWhatImDoing mutex, and on the transition the light
+    /// and a Building's factory queue refresh (`10013250`).
     pub(crate) fn techno_reactivate(
         &mut self,
         id: u64,
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
+        let ares = rules.ares_form();
         let Some(foot) = self
             .substrate
             .entities
@@ -431,50 +487,22 @@ impl Simulation {
         // Installed Ares Activate1004CCB0 replaces70FBE0 and vetoes before
         // ResetOrders/Power_On/sound. Keep this admission in the shared owner:
         // House50E010's power-center recovery also calls this function.
-        #[cfg(feature = "ares")]
-        {
+        if ares {
             let entity = self.substrate.entities.get(id).expect("same receiver");
-            // Selected live Drive/Walk path: Techno70EFD0 tests signed>0.
-            // Unit746C90's separate DeathFrame override remains outside this chain.
-            if entity.emp_remaining() > 0 {
+            // vt+0x37C: Techno70EFD0 tests signed +504 > 0, Unit746C90 also
+            // a running DeathFrames= counter.
+            if entity.is_under_emp() {
                 return;
             }
-            if self
-                .object_type(entity.type_ref(), rules)
-                .is_some_and(|object| object.powered_unit)
-            {
-                //100454F0 scans the existing House+6C building order, not its
-                // aggregate center count: matching PowersUnit, counted+662,
-                // and no EMP on that center. No second building registry.
-                let powered = self.houses.get(&entity.owner()).is_some_and(|house| {
-                    house.base_projection().buildings().iter().any(|building| {
-                        self.substrate
-                            .entities
-                            .get(*building)
-                            .is_some_and(|center| {
-                                center.building_powered_center.is_counted()
-                                    && center.emp_remaining() <= 0
-                                    && self
-                                        .object_type(center.type_ref(), rules)
-                                        .and_then(|object| object.powers_unit.as_deref())
-                                        .is_some_and(|name| {
-                                            self.interner
-                                                .resolve(entity.type_ref())
-                                                .eq_ignore_ascii_case(name)
-                                        })
-                            })
-                    })
-                });
-                if !powered {
-                    return;
-                }
+            //100454F0: a PoweredUnit= center or the PoweredBy source.
+            if !self.ares_is_powered(id, rules) {
+                return;
             }
             // Activate1004CCE2..1004CCF4 applies this after power admission.
             if !self.ares_is_operated(id, rules) {
                 return;
             }
         }
-        #[cfg(feature = "ares")]
         let was_offline = self
             .substrate
             .entities
@@ -490,24 +518,28 @@ impl Simulation {
         {
             locomotor.power_on();
         }
+        let quiet = self.ares_activation_sound_mutex(rules);
         Self::latch_deactivated(
             &self.interner,
             &mut self.substrate,
             &mut self.sound_events,
             id,
             false,
+            quiet,
             rules,
         );
-        #[cfg(feature = "ares")]
-        if was_offline {
+        if ares && was_offline {
             // Ares Activate1004CD1E..1004CD85 recreates the light after
             // clearing Deactivated, through the same construction owner.
             self.construct_spotlight(id, rules);
+            // Then a Building's factory queues (`10013250`): a factory back
+            // online resumes a system hold.
+            self.ares_update_factory_queues(id, rules, effects);
         }
     }
 
     /// The two bodies' tails: the type's sound for a change of state, at the
-    /// object's Location, then the latch.
+    /// object's Location, unless `quiet` (the Ares mutex), then the latch.
     /// `TechnoClass::Deactivate @ 0x0070FC90` (`0x0070FD0E..0x0070FD62`) and
     /// `TechnoClass::Reactivate @ 0x0070FBE0` (`0x0070FC18..0x0070FC7A`).
     fn latch_deactivated(
@@ -516,12 +548,14 @@ impl Simulation {
         sound_events: &mut FrameChannel<SimSoundEvent>,
         id: u64,
         deactivated: bool,
+        quiet: bool,
         rules: &RuleSet,
     ) {
         let Some(entity) = substrate.entities.get(id) else {
             return;
         };
         if entity.deactivated.is_offline() != deactivated
+            && !quiet
             && let Some(object) = interner.object_type(entity.type_ref(), rules)
             && let Some(sound) = if deactivated {
                 object.deactivate_sound.clone()
@@ -592,6 +626,12 @@ impl Simulation {
         if phase % 30 != 0 {
             return;
         }
+        // Ares UnitClass_Update_Deactivated1004CFD0 (hook736135) skips the
+        // draws and the sparks while IsPowered100454F0 holds: EMP and
+        // Operator victims do not sparkle.
+        if rules.ares_form() && self.ares_is_powered(id, rules) {
+            return;
+        }
         let dy = self.scenario_rng.next_range_i32_inclusive(-100, 100);
         let dx = self.scenario_rng.next_range_i32_inclusive(-100, 100);
         let Some(system) = rules
@@ -618,6 +658,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "powered_unit_tests.rs"]
 mod tests;

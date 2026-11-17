@@ -6,9 +6,21 @@ use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::projectile::ProjectileCoord;
 
 fn scene() -> Option<(Simulation, RuleSet)> {
+    // Ares 3.0 1002C8E0 (hook 0x48A2D9) keeps an Explodes overlay below
+    // [General] OverlayExplodeThreshold (0); -1 keeps the stock outcomes.
+    scene_with(if crate::rules::ares_switch::ares_way() {
+        "[General]\nOverlayExplodeThreshold=-1\n"
+    } else {
+        ""
+    })
+}
+
+fn scene_with(patch: &str) -> Option<(Simulation, RuleSet)> {
     let battle = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
         "XMP03T4.MAP",
-        &IniFile::from_str("[TROCK05]\nExplodes=yes\n[Animations]\n999=FIRE3\n"),
+        &IniFile::from_str(&format!(
+            "[TROCK05]\nExplodes=yes\n[Animations]\n999=FIRE3\n{patch}"
+        )),
     )?;
     let mut rules = battle.rules;
     let (_, mut assets) = crate::rules::retail_ini_fixture::retail_assets()?;
@@ -237,6 +249,11 @@ fn retail_barrel_death_checks_cardinal_overlay_before_arming_its_death_fuse() {
         )
         .unwrap();
     let overlay = rock(&mut sim, &rules, neighbor);
+    // Coord49F550 keeps the barrel's height above ground on the raised
+    // neighbor: Z 0 - ground 0 + ground at level 2 (208).
+    let terrain = sim.resolved_terrain.as_mut().unwrap();
+    let index = terrain.index(neighbor.0, neighbor.1).unwrap();
+    terrain.cells_mut_for_test()[index].level = 2;
     assert!(rules.object("CAMISC02").unwrap().explodes);
     assert!(
         rules
@@ -272,7 +289,7 @@ fn retail_barrel_death_checks_cardinal_overlay_before_arming_its_death_fuse() {
         crate::sim::anim_class::AnimWorldCoord {
             x: 13 * 256 + 128,
             y: 12 * 256 + 128,
-            z: 0
+            z: 208
         }
     );
     assert_eq!(fire.draw_flags(), 0x600);
@@ -321,7 +338,7 @@ fn retail_voxel_contact_cap_survives_snapshot_and_piece_retirement() {
         sim.resolved_terrain(),
     );
     let position = glam::IVec3::new(coord.x, coord.y, coord.z);
-    sim.emit_debris_voxel(type_id, kind, None, position, true, &mut Vec::new())
+    sim.emit_debris_voxel(type_id, kind, None, position, true, &mut Vec::new(), &rules)
         .unwrap();
     let piece = sim.voxel_anims().ids()[0];
     let warhead = sim.interner.intern("TankOGas");
@@ -380,4 +397,42 @@ fn retail_voxel_contact_cap_survives_snapshot_and_piece_retirement() {
     );
     assert_eq!(restored.voxel_type_damage(type_id, &rules), 20);
     assert_ne!(restored.state_hash(), expected_hash);
+}
+
+/// Ares 3.0 1002C8E0 (hook 0x48A2D9): an Explodes overlay blows up only from
+/// `damage >= [General] OverlayExplodeThreshold`.
+#[test]
+fn ares_overlay_explode_threshold_gates_the_explodes_tail() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let Some((mut sim, rules)) = scene_with("[General]\nOverlayExplodeThreshold=50\n") else {
+        return;
+    };
+    let cell = (12, 12);
+    rock(&mut sim, &rules, cell);
+    let house = sim.interner.intern("Americans");
+    let warhead_ref = sim.interner.intern("SA");
+    let warhead = rules.warhead("SA").unwrap();
+    let impact = ProjectileCoord::new(12 * 256 + 128, 12 * 256 + 128, 0);
+    for (damage, survives) in [(49, true), (50, false)] {
+        world_receiver::apply_area_damage(
+            &mut sim,
+            &rules,
+            Some(rules.overlay_registry()),
+            impact,
+            damage,
+            warhead,
+            true,
+            (0, Some(house), warhead_ref),
+            FrameEffects::default(),
+        );
+        assert_eq!(
+            sim.overlay_grid()
+                .unwrap()
+                .cell(cell.0, cell.1)
+                .overlay_id
+                .is_some(),
+            survives,
+            "damage {damage}"
+        );
+    }
 }

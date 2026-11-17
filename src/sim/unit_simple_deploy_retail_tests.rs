@@ -101,8 +101,11 @@ fn scene(extra_clear: bool) -> Option<(Simulation, RuleSet, u64)> {
         .terrain_rules
         .semantics_for_land_type(LandType::Rock.as_index())
         .unwrap();
-    assert_eq!(rock.speed_costs.hover, Some(0));
-    assert!(clear.speed_costs.hover.unwrap() > 0);
+    assert_eq!(
+        rock.speed_costs.hover,
+        Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO)
+    );
+    assert!(!clear.speed_costs.hover.unwrap().is_zero());
     let mut sim = Simulation::with_seed(0x739d62);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);

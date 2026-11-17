@@ -8,6 +8,6 @@ fn fs_packed(input: VertexOutput) -> PackedSource {
     let index = textureLoad(source_indices, texel, 0).r;
     if index == 0u { discard; }
     let color = source_color(texel, index, input.source_palette);
-    let rgb = vec3u(round(srgb_encode(color.rgb) * 255.0));
+    let rgb = vec3u(round(color.rgb * 255.0));
     return PackedSource(native_rgb565_word(rgb) | 0x10000u, 0.0);
 }

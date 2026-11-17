@@ -8,6 +8,10 @@
 //! scenario) is the `vera20k-core` crate (`src/core_lib.rs`). Its modules are
 //! re-exported here, so `crate::sim::...` and `vera20k::sim::...` keep naming
 //! them.
+// A focused test build leaves out the other test groups, and with them the
+// callers of test-only helpers outside the group (tools/README.md, "Test groups").
+#![cfg_attr(test_focus, allow(dead_code, unused_imports))]
+
 #[cfg(all(target_arch = "wasm32", target_os = "unknown", not(feature = "wasm")))]
 compile_error!("browser builds require --features wasm");
 
@@ -16,13 +20,8 @@ pub use vera20k_core::{
 };
 
 // Cargo unifies dependency features across a workspace. Refuse a client built
-// without its Ares consumers when another package enables the core capability.
-const _: () = assert!(
-    cfg!(feature = "ares") == rules::ARES_ENABLED,
-    "enable Ares through the vera20k package's ares feature"
-);
-// The same boundary for Phobos: the capability is independent of Ares and is
-// likewise enabled through the client package.
+// without its Phobos consumers when another package enables the core
+// capability; the capability is enabled through the client package.
 const _: () = assert!(
     cfg!(feature = "phobos") == rules::PHOBOS_ENABLED,
     "enable Phobos through the vera20k package's phobos feature"
@@ -66,8 +65,14 @@ pub mod audio;
 // The app orchestrator. Public for testing but not intended for direct use.
 pub mod app;
 
+// Process start-up shared by the desktop binary and the Android cdylib, which
+// has no `main` of its own. The browser starts in `web` instead, and its build
+// has neither the system dialogs nor the spawn-launch result this module uses.
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+pub mod entry;
+
 // Source-level dependency guards for the domain-boundaries ledger.
-#[cfg(test)]
+#[cfg(all(test, tests_root))]
 mod architecture_guards;
 
 // Fixture files that library tests read from the checkout.

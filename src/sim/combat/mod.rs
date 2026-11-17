@@ -25,10 +25,9 @@
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
 pub mod aim_coord;
-mod attack_target;
 mod airburst;
-#[cfg(feature = "phobos")]
-mod phobos_airburst;
+mod ares_warhead_effects;
+mod attack_target;
 pub(crate) mod base_defense_response;
 pub mod burst;
 pub(crate) mod cell_spread;
@@ -37,7 +36,7 @@ pub(crate) mod combat_targeting;
 pub mod combat_weapon;
 #[cfg(feature = "phobos")]
 pub(crate) mod crit;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_a_c, feature = "phobos"))]
 mod crit_tests;
 pub(crate) mod damage;
 pub(crate) mod destruction_effects;
@@ -55,6 +54,8 @@ pub mod laser;
 pub mod line_of_fire;
 mod object_health;
 pub(crate) mod parasite;
+#[cfg(feature = "phobos")]
+mod phobos_airburst;
 mod projectile_delivery;
 pub mod radiation_beam;
 pub(crate) mod railgun;
@@ -74,87 +75,94 @@ pub mod veterancy;
 pub mod world_fire;
 pub(crate) mod world_receiver;
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 pub(crate) mod receiver_fixture;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod aegis_launch_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_a_c, feature = "phobos"))]
 mod airstrike_target_tests;
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod ares_armor_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
+mod ares_cliff_tests;
+#[cfg(all(test, tests_sim_combat_a_c))]
+mod ares_warhead_combat_tests;
+#[cfg(all(test, tests_sim_combat_a_c))]
+mod ares_warhead_effects_tests;
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod bridge_cluster_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod bridge_launch_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod bridge_live_chain_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod combat_cloak_damage_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod combat_cloak_fire_tests;
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_combat_a_c, tests_sim_combat_d_z)))]
 mod combat_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod combat_turret_facing_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod electric_bolt_tests;
-#[cfg(test)]
-mod fireat_launch_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod fire_particles_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod fireat_launch_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod garrison_oracle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod homing_shipyard_tests;
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(all(test, not(feature = "phobos")))]
+#[cfg(all(test, tests_sim_combat_d_z, not(feature = "phobos")))]
 mod ifv_fireat_tests;
 /// Ordinary launch-height, resolved impact presentation and damage-effect
 /// wiring. Bridge Cell+58 launch and +48/+58 impact comparisons use the native
 /// oracle cases in `bridge_launch_tests` and `world::projectile_collision`.
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_combat_d_z, tests_sim_combat_a_c)))]
 mod impact_height_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod laser_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod mirage_disguise_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod open_topped_fire_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod prone_damage_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod radiation_beam_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod railgun_tests;
-#[cfg(test)]
-mod shrapnel_chain_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod screen_shake_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod shrapnel_chain_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod unit_damage_response_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod walk_attack_tests;
 
 pub use attack_target::{TarCom, TargetKind};
-pub(crate) use attack_target::{object_distance_to, resolve_target_coords, target_present};
+pub use attack_target::object_distance_to;
+pub(crate) use attack_target::{resolve_target_coords, target_present};
 pub(crate) use combat_targeting::build_attacker_snapshot;
 pub(crate) use detonation_anim::projectile_impact_cell;
 pub(crate) use effects::DeathEffects;
 pub use effects::{
-    CombatLightRequest, ExplosionEffect, ScreenShakeUpdate, SmudgeSpawnRequest,
-    TiberiumReductionRequest, UnderAttackEvent, UnitLostEvent,
+    AresUnitLost, CombatLightRequest, ExplosionEffect, ScreenShakeUpdate, SmudgeSpawnRequest,
+    TiberiumReductionRequest, UnderAttackEvent, UnderAttackLine, UnitLostEvent,
 };
 pub use in_range::can_fire_at_target;
 pub use in_range::{MaplessTarget, can_fire_at_target_in_query, mapless_in_range};
 pub use object_health::{Health, health_category};
-pub(crate) use projectile_delivery::{FiredBullet, admit_fired_bullet};
-pub use receiver_call::{DamageWriteback, TerrainDamageEvent};
+pub(crate) use projectile_delivery::{FiredBullet, admit_fired_bullet, admit_techno_fired_bullet};
 pub(crate) use receiver_call::{
     BaseDefenseResponseCallSite, EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags,
     receiver_divisors, wave_post_object_damage,
 };
+pub use receiver_call::{DamageWriteback, TerrainDamageEvent};
 pub(crate) use receiver_health::BerserkState;
 pub(crate) use record_kill::{KillCallback, KillRecord, KillSource};
 pub use techno_death::FatalLifecycleStage;
@@ -402,7 +410,11 @@ pub(crate) fn health_in_threshold(health: i32, strength: i32, above: f64, below:
         return true;
     }
     let ratio = f64::from(health) / f64::from(strength);
-    (if ratio > 0.0 { ratio > above } else { ratio >= above }) && ratio <= below
+    (if ratio > 0.0 {
+        ratio > above
+    } else {
+        ratio >= above
+    }) && ratio <= below
 }
 
 /// `EnumFunctions::CanTargetHouse` (`EnumFunctions.cpp:5..16`): `All` always

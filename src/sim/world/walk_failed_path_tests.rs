@@ -97,7 +97,7 @@ fn far_failure_stops_walk_clears_target_and_queues_guard_for_a_human_house() {
     for _ in 0..30 {
         sim.advance_tick(&[], Some(&rules), None, Some(&registry), 67);
         frames += 1;
-        let mission = sim.substrate.entities.get(id).unwrap().mission;
+        let mission = sim.substrate.entities.get(id).unwrap().mission.clone();
         if mission.queued() == guard || mission.current() == guard {
             break;
         }
@@ -231,8 +231,8 @@ fn receiver_records_an_impassable_current_cell() {
             .cell_mut_for_test(10, 10)
             .unwrap();
         cell.land_type = 2;
-        cell.speed_costs.foot = Some(0);
-        cell.base_speed_costs.foot = Some(0);
+        cell.speed_costs.foot = Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+        cell.base_speed_costs.foot = Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
     }
     order_walk(&mut sim, &rules, id, (11, 10));
     let before = sim.state_hash();

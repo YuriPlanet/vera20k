@@ -96,7 +96,7 @@ fn native_trigger_reveal_cell_put_discovers_unshrouded_campaign_resident() {
         let scenario = sim.scenario_rng.native_state_hex();
         let main = sim.main_rng.native_state_hex();
         let mapgen = sim.mapgen_rng.native_state_hex();
-        sim.discover_cell_put_object(id, (10, 10), super::UninitContext::default());
+        sim.discover_by_player(id, Some((10, 10)), super::UninitContext::default());
         let history = sim.substrate.entities.get(id).unwrap().discovery;
         assert_eq!(
             history.discovered_by_current_house(),
@@ -160,7 +160,7 @@ fn constructor_complete_foot_destructors_match_native_team_gate_and_rng() {
             "[TeamTypes]\n0=TT\n[TT]\nHouse=Americans\nScript=S\nTaskForce=F\nWaypoint=E\nMax=-1\n[ScriptTypes]\n0=S\n[S]\n0=3,4\n[TaskForces]\n0=F\n[F]\n0=1,{typ}\n"
         ));
         let registry = TeamAiIniRegistry::from_sources(&definitions, &IniFile::from_str(""), true);
-        sim.install_team_ai_registry(&registry, &rules).unwrap();
+        sim.install_team_ai_registry(&registry, &rules);
         let team_type = sim.interner.get("TT").unwrap();
         let team = sim
             .with_object_placement_scope(|sim| sim.create_team(team_type, Some(owner), &rules))
@@ -658,6 +658,14 @@ fn uninit_clears_aircraft_bridge_occupation() {
 #[test]
 fn gsi_04_11_structure_mark_clears_full_smudge_footprints_and_refinery_hole() {
     let mut sim = Simulation::with_seed(1);
+    let rules =
+        crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+            "[SmudgeTypes]\n0=EMPTY\n1=TWO\n2=ONE\n3=DISTANT\n[TWO]\nWidth=2\nHeight=2\n",
+        ))
+        .unwrap();
+    sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_flat_ground_grid(
+        16,
+    ));
     let stable_id = 41;
     insert_reservation_building(
         &mut sim,
@@ -676,7 +684,6 @@ fn gsi_04_11_structure_mark_clears_full_smudge_footprints_and_refinery_hole() {
             ry,
             crate::sim::smudge_grid::SmudgeCell {
                 type_id: Some(1),
-                footprint_origin: Some((4, 5)),
                 frame_offset,
             },
         );
@@ -686,7 +693,6 @@ fn gsi_04_11_structure_mark_clears_full_smudge_footprints_and_refinery_hole() {
         6,
         crate::sim::smudge_grid::SmudgeCell {
             type_id: Some(2),
-            footprint_origin: Some((7, 6)),
             frame_offset: 0,
         },
     );
@@ -695,7 +701,6 @@ fn gsi_04_11_structure_mark_clears_full_smudge_footprints_and_refinery_hole() {
         9,
         crate::sim::smudge_grid::SmudgeCell {
             type_id: Some(3),
-            footprint_origin: Some((9, 9)),
             frame_offset: 0,
         },
     );
@@ -703,7 +708,11 @@ fn gsi_04_11_structure_mark_clears_full_smudge_footprints_and_refinery_hole() {
     sim.smudge_grid = Some(grid);
 
     assert!(matches!(
-        sim.try_reveal_entity(stable_id, request(5, 5, PlacementEvidence::MarkSucceeded)),
+        sim.try_reveal_entity_with_context(
+            stable_id,
+            request(5, 5, PlacementEvidence::MarkSucceeded),
+            super::UninitContext::with_rules(&rules),
+        ),
         RevealOutcome::Revealed { .. }
     ));
 
@@ -717,8 +726,107 @@ fn gsi_04_11_structure_mark_clears_full_smudge_footprints_and_refinery_hole() {
     );
     let expected = vec![(4, 5), (5, 5), (4, 6), (5, 6), (7, 6)];
     assert_eq!(sim.dirty_cells.tactical_for_test(), expected);
-    assert_eq!(sim.dirty_cells.radar(), expected);
-    assert_eq!(sim.dirty_cells.radar_generation(), 5);
+    assert!(sim.dirty_cells.radar().is_empty());
+    assert_eq!(sim.dirty_cells.radar_generation(), 0);
+    assert_eq!(grid.cell(5, 5).frame_offset, 1);
+    assert_eq!(grid.cell(5, 6).frame_offset, 3);
+}
+
+/// SmudgePlace6B6080 truncates data to a byte; BuildingMark43F81B decodes
+/// that saved byte with current Width, even when it names a later origin.
+#[test]
+fn wrapped_smudge_data_survives_load_and_controls_building_clear() {
+    use crate::map::map_file::MapSmudgeEntry;
+    use crate::rules::native_processing::{ProcessedRulesLayers, RulesLayerKind, RulesLayerStack};
+    use crate::sim::overlay_grid::OverlayGrid;
+    use crate::sim::smudge_grid::SmudgeGrid;
+
+    let Some((root, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let mut layers = RulesLayerStack::new(root);
+    layers.push(
+        RulesLayerKind::GameMode,
+        crate::rules::ini_parser::IniFile::from_str("[CRATER11]\nWidth=257\nHeight=3\n"),
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        crate::rules::ini_parser::IniFile::from_str("[CRATER11]\nHeight=2\n"),
+    );
+    let processed = layers.process_with_fixed_art(&art).unwrap();
+    let saved_rules = save_codec::serialize(&processed).unwrap();
+    let rules = crate::rules::ruleset::RuleSet::from_processed_rules(&processed).unwrap();
+    let terrain = crate::map::resolved_terrain::test_grid(
+        300,
+        20,
+        crate::map::resolved_terrain::test_smudge_cell,
+    );
+    let overlay = OverlayGrid::new(300, 20);
+    let mut grid = SmudgeGrid::from_map_entries(
+        &[
+            MapSmudgeEntry {
+                type_name: "CRATER11".into(),
+                rx: 1,
+                ry: 10,
+            },
+            MapSmudgeEntry {
+                type_name: "CRATER01".into(),
+                rx: 258,
+                ry: 11,
+            },
+        ],
+        &rules.smudge_types,
+        &terrain,
+        &overlay,
+        300,
+        20,
+    );
+    let wide = rules.smudge_types.find_by_name("CRATER11").unwrap();
+    assert_eq!(grid.cell(257, 10).type_id, Some(wide));
+    assert_eq!(grid.cell(257, 10).frame_offset, 0);
+    assert_eq!(grid.cell(256, 10).frame_offset, 255);
+    let _ = grid.drain_dirty();
+    let mut live = Simulation::with_seed(17);
+    live.install_resolved_terrain_for_new_map(terrain.clone());
+    live.overlay_grid = Some(overlay);
+    live.smudge_grid = Some(grid);
+    let bytes = GameSnapshot::save(&live, 0, rules.simulation_config_hash(), "wide-smudge", 0);
+    let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+    let saved_rules: ProcessedRulesLayers = save_codec::deserialize(&saved_rules).unwrap();
+    let rules = crate::rules::ruleset::RuleSet::from_processed_rules(&saved_rules).unwrap();
+    let definition = rules.smudge_types.get(wide).unwrap();
+    assert_eq!((definition.width, definition.height), (257, 2));
+    restored.restore_after_snapshot_load().unwrap();
+    restored.rebuild_caches_after_load(terrain, Default::default(), &rules);
+    restored
+        .restore_map_authority_after_snapshot_load(&rules, &rules.overlay_registry(), None)
+        .unwrap();
+
+    // A one-cell Building lands on the later data0. Its decoded rectangle
+    // clears an unrelated mark ahead, while the original data0 remains.
+    insert_reservation_building(&mut restored, 41, "Americans", 257, 10, &"1x1".into(), 0);
+    let rng = restored.scenario_rng.native_state_hex();
+    assert!(matches!(
+        restored.try_reveal_entity_with_context(
+            41,
+            request(257, 10, PlacementEvidence::MarkSucceeded),
+            super::UninitContext::with_rules(&rules),
+        ),
+        RevealOutcome::Revealed { .. }
+    ));
+    let grid = restored.smudge_grid.as_ref().unwrap();
+    assert_eq!(grid.cell(1, 10).type_id, Some(wide));
+    assert_eq!(grid.cell(256, 10).frame_offset, 255);
+    assert!(grid.cell(257, 10).type_id.is_none());
+    assert!(grid.cell(258, 11).type_id.is_none());
+    assert!(restored.dirty_cells.radar().is_empty());
+    assert!(
+        restored
+            .dirty_cells
+            .tactical_for_test()
+            .contains(&(258, 11))
+    );
+    assert_eq!(restored.scenario_rng.native_state_hex(), rng);
 }
 
 fn gsi_04_16_edge_gate_rules() -> crate::rules::ruleset::RuleSet {
@@ -1081,13 +1189,14 @@ fn drive_ship_slope_production_spawn_unlimbo_snaps_without_manual_rocking_state(
             .unwrap();
         terrain_cell.slope_type = slope;
         terrain_cell.speed_costs = SpeedCostProfile {
-            foot: Some(100),
-            track: Some(100),
-            wheel: Some(100),
-            float: Some(100),
-            amphibious: Some(100),
-            float_beach: Some(100),
-            hover: Some(100),
+            foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            float_beach: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
         };
         terrain_cell.base_speed_costs = terrain_cell.speed_costs;
         let mut expected_rng = sim.scenario_rng.clone();
@@ -1141,13 +1250,14 @@ fn zero_speed_foot_drive_ship_payloads_survive_all_world_spawn_paths() {
             .unwrap();
         terrain_cell.slope_type = slope;
         terrain_cell.speed_costs = SpeedCostProfile {
-            foot: Some(100),
-            track: Some(100),
-            wheel: Some(100),
-            float: Some(100),
-            amphibious: Some(100),
-            float_beach: Some(100),
-            hover: Some(100),
+            foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            float_beach: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
         };
         terrain_cell.base_speed_costs = terrain_cell.speed_costs;
     }
@@ -1441,9 +1551,13 @@ fn gsi_04_12_common_raw_occupation_structural_deck_unit_tracks_live_collapse_fla
 
     let _ = sim.object_conceal(2);
 
+    // Ares 3.0 1004C3E0 (hook 0x00744216) clears the recorded ground too
+    // (`Simulation::track_raw_mark_at`). Reveal and Conceal ran on the empty
+    // rules.
+    let ares = crate::rules::ruleset::RuleSet::empty_for_test().ares_form();
     assert_eq!(
         sim.substrate.raw_cell_occupation.ground_bits(3, 4),
-        0x20,
+        if ares { 0 } else { 0x20 },
         "height-only clear still targets deck after the collapsed mark used ground"
     );
     assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(3, 4), 0);
@@ -1507,9 +1621,14 @@ fn gsi_04_12_common_raw_occupation_high_nonstructural_unit_keeps_native_stale_gr
 
     let _ = sim.object_conceal(1);
 
+    // Ares 3.0 UnitClass_UnmarkOccupationBits 1004C3E0 (hook 0x00744216)
+    // also clears the ground plane UnitClass_MarkOccupationBits recorded
+    // (`Simulation::track_raw_mark_at`). Reveal and Conceal ran on the empty
+    // rules.
+    let ares = crate::rules::ruleset::RuleSet::empty_for_test().ares_form();
     assert_eq!(
         sim.substrate.raw_cell_occupation.ground_bits(3, 4),
-        0x20,
+        if ares { 0 } else { 0x20 },
         "height-only clear targets deck even though nonstructural mark used ground"
     );
     assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(3, 4), 0);
@@ -1632,6 +1751,9 @@ fn teleport_and_grounded_jumpjet_limbo_clear_the_infantrymans_sub_cell() {
 fn hover_limbo_releases_actual_head_claim_and_repeated_limbo_preserves_a_new_resident() {
     use crate::sim::components::DriveCoord;
 
+    // The fixture's entry points run on the empty rules; the direct raw
+    // receivers take the same answer.
+    let ares = crate::rules::ruleset::RuleSet::empty_for_test().ares_form();
     for (head, cell, deck) in [
         (Some(DriveCoord::cell(3, 3, 0)), (3, 3), false),
         (Some(DriveCoord::cell(3, 3, 416)), (3, 3), true),
@@ -1651,6 +1773,7 @@ fn hover_limbo_releases_actual_head_claim_and_repeated_limbo_preserves_a_new_res
             1,
             current,
             false,
+            ares,
         );
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         entity.set_foot_occupation_enabled(false);
@@ -1668,6 +1791,7 @@ fn hover_limbo_releases_actual_head_claim_and_repeated_limbo_preserves_a_new_res
             1,
             head.unwrap_or(current),
             true,
+            ares,
         );
         let bits = |sim: &Simulation| {
             if deck {
@@ -1704,6 +1828,7 @@ fn hover_limbo_releases_actual_head_claim_and_repeated_limbo_preserves_a_new_res
             2,
             head.unwrap_or(current),
             true,
+            ares,
         );
         let _ = sim.techno_limbo(1);
         assert_eq!(
@@ -2719,7 +2844,7 @@ fn particle_logic_membership_uses_the_object_local_guard_and_rebuilds_it() {
     let mut sim = Simulation::new();
     insert_particle_system(&mut sim, 7);
 
-    assert!(sim.reveal_particle_system(7, crate::rules::ruleset::RuleSet::empty_for_test()));
+    assert!(sim.reveal_particle_system(7));
     assert!(
         sim.substrate
             .particle_systems
@@ -2729,7 +2854,7 @@ fn particle_logic_membership_uses_the_object_local_guard_and_rebuilds_it() {
     );
     assert_eq!(sim.live_object_order_snapshot(), vec![7]);
 
-    assert!(sim.reveal_particle_system(7, crate::rules::ruleset::RuleSet::empty_for_test()));
+    assert!(sim.reveal_particle_system(7));
     assert_eq!(sim.live_object_order_snapshot(), vec![7]);
 
     sim.substrate
@@ -2780,6 +2905,58 @@ fn open_topped_direct_registration_keeps_hidden_passenger_live() {
 
     assert!(sim.register_open_topped_passenger(1));
     assert_eq!(sim.live_object_order_snapshot(), vec![2, 1]);
+}
+
+/// A rider killed inside an open-topped transport is already in limbo, so
+/// UnInit's Limbo returns at its entry guard and leaves it in Logic. Its
+/// destructor takes it out (`ObjectClass::~ObjectClass`, `0x005F3D65..0x005F3D75`);
+/// a slot left behind stops the next multiplayer frame's checksum.
+#[test]
+fn destructor_takes_a_dead_open_topped_rider_out_of_logic() {
+    let mut sim = Simulation::new();
+    insert_entity(&mut sim, 1, EntityCategory::Infantry);
+    insert_entity(&mut sim, 2, EntityCategory::Unit);
+    let _ = sim.reveal(1);
+    let _ = sim.reveal(2);
+    assert_eq!(sim.techno_limbo(1), super::ConcealOutcome::Concealed);
+    sim.substrate.entities.get_mut(1).unwrap().passenger_role =
+        PassengerRole::inside_for_test(2, true);
+    assert!(sim.register_open_topped_passenger(1));
+
+    sim.uninit(1);
+    assert_eq!(sim.live_object_order_snapshot(), vec![2, 1]);
+    sim.process_pending_delete();
+
+    assert!(!sim.substrate.entities.contains(1));
+    assert_eq!(sim.live_object_order_snapshot(), vec![2]);
+    assert!(sim.compute_retail_multiplayer_checksum().is_ok());
+}
+
+/// The Logic walk can reach a rider that died earlier in the frame: it is past
+/// UnInit (`+0x90` clear) but still in the vector until its destructor. Native
+/// `FootClass::AI` returns at the IsAlive test (`0x004DA53E`); the visit must
+/// not UnInit it again.
+#[test]
+fn logic_visit_of_a_dead_open_topped_rider_does_not_uninit_it_again() {
+    let mut sim = Simulation::new();
+    insert_entity(&mut sim, 1, EntityCategory::Infantry);
+    insert_entity(&mut sim, 2, EntityCategory::Unit);
+    let _ = sim.reveal(1);
+    let _ = sim.reveal(2);
+    assert_eq!(sim.techno_limbo(1), super::ConcealOutcome::Concealed);
+    sim.substrate.entities.get_mut(1).unwrap().passenger_role =
+        PassengerRole::inside_for_test(2, true);
+    assert!(sim.register_open_topped_passenger(1));
+    sim.uninit(1);
+
+    let _ = sim.object_ai_visit_one(1, None, ObjectAiCtx::default());
+
+    let uninits = sim
+        .lifecycle_test_events
+        .iter()
+        .filter(|event| **event == LifecycleTestEvent::UninitAliveCleared { stable_id: 1 })
+        .count();
+    assert_eq!(uninits, 1);
 }
 
 #[test]
@@ -2836,7 +3013,6 @@ fn lifecycle_authority_conceal_without_dirty_eligibility_still_clears_drawn_stat
         sim.lifecycle_outputs.as_slice(),
         vec![
             LifecycleOutput::ObjectPointerExpired { stable_id: 1 },
-            LifecycleOutput::DisplayRemove { stable_id: 1 },
             LifecycleOutput::DetachAttachedAnims { stable_id: 1 },
             LifecycleOutput::ClearDrawnState { stable_id: 1 },
             LifecycleOutput::ClearRedraw { stable_id: 1 },
@@ -2862,7 +3038,6 @@ fn lifecycle_authority_conceal_dirty_eligibility_emits_dirty_before_drawn_clear(
         sim.lifecycle_outputs.as_slice(),
         vec![
             LifecycleOutput::ObjectPointerExpired { stable_id: 1 },
-            LifecycleOutput::DisplayRemove { stable_id: 1 },
             LifecycleOutput::DetachAttachedAnims { stable_id: 1 },
             LifecycleOutput::DirtyTacticalRect { stable_id: 1 },
             LifecycleOutput::ClearDrawnState { stable_id: 1 },
@@ -4055,9 +4230,6 @@ fn infantry_target_expiry_clears_firing_action_before_target() {
     let art = IniFile::from_str(crate::rules::retail_ini_fixture::GI_ART_EXCERPT);
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     // Original 51B20E drops the firing latch before its unforced Ready
     // request. FireUp (4) admits it; Die2 (12) refuses and retains its stage.
     // The corresponding class-target receipts pin this ordering without RNG.
@@ -4305,7 +4477,7 @@ fn completed_empty_smoke_limbo_clears_every_matching_techno_before_late_drain() 
     }
     for id in [4, 5] {
         insert_particle_system(&mut sim, id);
-        assert!(sim.reveal_particle_system(id, crate::rules::ruleset::RuleSet::empty_for_test()));
+        assert!(sim.reveal_particle_system(id));
     }
     sim.substrate
         .particle_systems
@@ -4458,6 +4630,8 @@ fn completed_empty_smoke_limbo_clears_every_matching_techno_before_late_drain() 
     );
 }
 
+// Ares simulates this Smoke system itself (hooks 0x62DF05, 0x62FD60) and
+// builds no ParticleClass children.
 #[test]
 fn particle_system_physical_disposal_removes_retained_child_air_entries() {
     let rules =
@@ -4674,6 +4848,12 @@ fn gsi_05_03_duplicate_uninit_repeats_direct_expiry_and_queue_but_finalizes_once
             LifecycleTestEvent::PendingDeleteDrainStarted,
             LifecycleTestEvent::DeferredDeleteSelected {
                 ticket: super::DeferredDeleteTicket::Object(1),
+            },
+            // The Unit destructor's own Limbo (`0x0073584F`), already in limbo.
+            LifecycleTestEvent::ConcealAlreadyLimboReturn {
+                stable_id: 1,
+                object_alive: false,
+                resolvable: true,
             },
             LifecycleTestEvent::UninitRemovalListenerVisited {
                 expired_id: 1,
@@ -5303,36 +5483,6 @@ fn lifecycle_authority_animated_death_stays_represented_until_uninit() {
 }
 
 #[test]
-fn lifecycle_authority_duplicate_queue_finalizes_once() {
-    let mut sim = Simulation::new();
-    insert_entity(&mut sim, 1, EntityCategory::Unit);
-    sim.uninit(1);
-    sim.uninit(1);
-    assert_eq!(sim.substrate.pending_delete.object_ids(), vec![1, 1]);
-    sim.lifecycle_test_events.clear();
-
-    sim.process_pending_delete();
-    assert_eq!(
-        sim.lifecycle_test_events,
-        vec![
-            LifecycleTestEvent::PendingDeleteDrainStarted,
-            LifecycleTestEvent::DeferredDeleteSelected {
-                ticket: super::DeferredDeleteTicket::Object(1),
-            },
-            LifecycleTestEvent::UninitRemovalListenerVisited {
-                expired_id: 1,
-                listener_id: 1,
-                target_alive: false,
-                target_in_limbo: true,
-            },
-            LifecycleTestEvent::FinalizedCommon { stable_id: 1 },
-        ]
-    );
-    assert!(!sim.substrate.entities.contains(1));
-    assert!(sim.substrate.pending_delete.is_empty());
-}
-
-#[test]
 fn lifecycle_authority_entity_and_anim_share_ordered_drain() {
     let mut sim = Simulation::new();
     insert_anim(&mut sim, 2, true);
@@ -5353,6 +5503,12 @@ fn lifecycle_authority_entity_and_anim_share_ordered_drain() {
             LifecycleTestEvent::FinalizedCommon { stable_id: 2 },
             LifecycleTestEvent::DeferredDeleteSelected {
                 ticket: super::DeferredDeleteTicket::Object(1),
+            },
+            // The Unit destructor's own Limbo (`0x0073584F`), already in limbo.
+            LifecycleTestEvent::ConcealAlreadyLimboReturn {
+                stable_id: 1,
+                object_alive: false,
+                resolvable: true,
             },
             LifecycleTestEvent::UninitRemovalListenerVisited {
                 expired_id: 1,
@@ -5383,6 +5539,12 @@ fn lifecycle_authority_late_tail_commits_frame_before_drain() {
             LifecycleTestEvent::PendingDeleteDrainStarted,
             LifecycleTestEvent::DeferredDeleteSelected {
                 ticket: super::DeferredDeleteTicket::Object(1),
+            },
+            // The Unit destructor's own Limbo (`0x0073584F`), already in limbo.
+            LifecycleTestEvent::ConcealAlreadyLimboReturn {
+                stable_id: 1,
+                object_alive: false,
+                resolvable: true,
             },
             LifecycleTestEvent::UninitRemovalListenerVisited {
                 expired_id: 1,
@@ -5737,8 +5899,8 @@ fn homing_ground_impact_reaches_damage_and_cleanup_through_runtime_frame() {
             );
         }
         let mut runtime = SimRuntime::from_simulation(sim);
-        runtime.resources.rules = RuleSet::from_ini(&ini).unwrap();
-        runtime.resources.overlay_registry =
+        runtime.resources_mut().rules = RuleSet::from_ini(&ini).unwrap();
+        runtime.resources_mut().overlay_registry =
             crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, Some(&art));
 
         let _ = runtime
@@ -7180,7 +7342,7 @@ fn wave_pointer_expiry_target_survives_dying_then_uninit_starts_decay_tail() {
     sim.admit_wave(wave_id, wave);
     sim.active_wave_links.insert(owner_id, wave_id);
 
-    let represented = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules);
+    let represented = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules, None);
     assert_eq!(
         represented.target_position,
         Some(ProjectileCoord::new(4 * 256 + 128, 128, 0)),
@@ -7203,7 +7365,7 @@ fn wave_pointer_expiry_target_survives_dying_then_uninit_starts_decay_tail() {
         "UnInit synchronously expires +0xAC"
     );
     assert_eq!(sim.active_wave_links.get(&owner_id), Some(&wave_id));
-    let expired = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules);
+    let expired = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules, None);
     assert_eq!(expired.target_position, None);
     let _ = sim
         .waves
@@ -7257,11 +7419,13 @@ fn wave_pointer_expiry_owner_allows_dying_damage_then_uninit_nulls_later_calls()
         firer_id: owner_id,
         recorded_cells: vec![WaveRecordedCell::real(4, 5)],
         wave_z: 0,
+        ares_weapon: None,
     };
     assert!(
         sim.wave_update_context(
             sim.waves.get(wave_id).unwrap(),
-            crate::rules::ruleset::RuleSet::empty_for_test()
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            None
         )
         .owner_position
         .is_some(),
@@ -8021,7 +8185,11 @@ fn wave_tail_consumes_wall_roll_before_mandatory_cliff_chance_roll() {
 
     sim.scenario_rng = crate::sim::rng::SimRng::new(0x57_41_4c_4c);
     let mut expected = sim.scenario_rng.clone();
-    let _wall_roll = expected.next_range_u32_inclusive(0, 100);
+    // Ares WaveClass_DamageCell_Wall (1005D7A0, hook 0x75F46E) leaves the
+    // wall to a `Wall=yes` warhead; WH is not one, so no wall roll.
+    if !rules.ares() {
+        let _wall_roll = expected.next_range_u32_inclusive(0, 100);
+    }
     let _cliff_chance_roll = expected.next_range_u32_inclusive(0, 99);
 
     assert!(sim.object_ai_visit_one(
@@ -8059,7 +8227,7 @@ fn assert_direct_fatal_death_weapon_starts_crater(bridge: bool) {
     let ini = IniFile::from_str(
         "[CombatDamage]\nC4Warhead=KILLWH\n[InfantryTypes]\n[VehicleTypes]\n0=VICTIM\n1=FIRER\n\
          [AircraftTypes]\n[BuildingTypes]\n[OverlayTypes]\n\
-         [Warheads]\n0=KILLWH\n1=CRATERWH\n[SmudgeTypes]\n0=CR1\n\
+         [Warheads]\n0=KILLWH\n1=CRATERWH\n[SmudgeTypes]\n0=CR1\n[Animations]\n0=CRATERANIM\n\
          [VICTIM]\nStrength=1\nArmor=light\nExplodes=yes\nDeathWeapon=DeathBoom\n\
          [FIRER]\nStrength=100\nArmor=light\nPrimary=SONIC\n\
          [SONIC]\nDamage=1\nAmbientDamage=10\nWarhead=KILLWH\nIsSonic=yes\n\
@@ -8294,7 +8462,6 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
             0,
             crate::sim::smudge_grid::SmudgeCell {
                 type_id: Some(9),
-                footprint_origin: Some((0, 0)),
                 frame_offset,
             },
         );
@@ -8325,9 +8492,9 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
         for rx in 0..5i32 {
             for _ in 0..2 {
                 let type_index = expected_rng.next_range_u32_inclusive(0, 2) as usize;
-                let jitter_x = expected_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
-                let jitter_y = expected_rng.next_range_u32_inclusive(0, 24) as i32 - 12;
-                let delay = expected_rng.next_range_u32_inclusive(0, 2) as u16;
+                let jitter_y = expected_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
+                let jitter_x = expected_rng.next_range_u32_inclusive(0, 24) as i32 - 12;
+                let delay = expected_rng.next_range_u32_inclusive(0, 2) as i32;
                 let rate = expected_rng.next_range_u32_inclusive(1, 3) as u16;
                 expected_spawns.push((
                     type_index,
@@ -9385,7 +9552,7 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
 }
 
 #[test]
-fn pre_logic_save_observes_input_and_ground_order_before_first_tick() {
+fn pre_logic_save_observes_input_and_unsorted_ground_before_first_tick() {
     use super::{FrameEffects, TickLane, display_layers::DisplayLayer};
     use crate::sim::command::{Command, CommandEnvelope};
 
@@ -9434,9 +9601,11 @@ fn pre_logic_save_observes_input_and_ground_order_before_first_tick() {
     let loaded = GameSnapshot::load(&saved.into_inner().expect("reached pre-Logic save")).unwrap();
     assert_eq!(loaded.sim.session().tick(), 0);
     assert_eq!(loaded.sim.session().game_options().game_speed, 2);
+    // The simulation no longer sorts Ground before Logic
+    // (`DisplayLayers::submit`): the moved members keep their places.
     assert_eq!(
         loaded.sim.substrate.display.members(DisplayLayer::GROUND),
-        [2, 3, 4, 1]
+        [1, 2, 3, 4]
     );
     assert_eq!(runtime.simulation.session().tick(), 1);
 }
@@ -9460,8 +9629,9 @@ fn display_lifecycle_is_independent_of_logic_and_survives_production_save() {
         sim.substrate.display.members(DisplayLayer::GROUND),
         [1, 2, 3, 4]
     );
-    // Coordinates change without resubmitting. MainTick's single adjacent
-    // pass has a different result from either Logic order or a full sort.
+    // Coordinates change without resubmitting: the simulation's Ground
+    // keeps its members where they are, and only the draw order follows
+    // the keys (`Simulation::ground_draw_order`).
     for id in 1..=4 {
         sim.substrate
             .entities
@@ -9470,47 +9640,31 @@ fn display_lifecycle_is_independent_of_logic_and_survives_production_save() {
             .position
             .set_rx_for_test(7 - id as u16);
     }
-    let before_sort = sim.state_hash();
-    Simulation::sort_display_ground(
-        &sim.interner,
-        &sim.terrain_objects,
-        &mut sim.substrate,
-        crate::rules::ruleset::RuleSet::empty_for_test(),
-    );
-    assert_ne!(sim.state_hash(), before_sort);
     assert_eq!(
         sim.substrate.display.members(DisplayLayer::GROUND),
-        [2, 3, 4, 1]
+        [1, 2, 3, 4]
     );
+    assert_eq!(sim.ground_draw_order(None), [4, 3, 2, 1]);
     let bytes = GameSnapshot::save(&sim, 0, 0, "display-order", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
     restored.restore_after_snapshot_load().unwrap();
     assert_eq!(
         restored.substrate.display.members(DisplayLayer::GROUND),
-        [2, 3, 4, 1]
-    );
-    Simulation::sort_display_ground(
-        &restored.interner,
-        &restored.terrain_objects,
-        &mut restored.substrate,
-        crate::rules::ruleset::RuleSet::empty_for_test(),
-    );
-    assert_eq!(
-        restored.substrate.display.members(DisplayLayer::GROUND),
-        [3, 4, 2, 1]
+        [1, 2, 3, 4]
     );
     let hash = restored.state_hash();
+    // A removal swaps the last member into the hole.
     restored.object_conceal(2);
     assert_eq!(
         restored.substrate.display.members(DisplayLayer::GROUND),
-        [3, 4, 1]
+        [1, 4, 3]
     );
     assert_eq!(restored.substrate.logic.as_slice(), [1, 3, 4]);
     assert_ne!(hash, restored.state_hash());
     restored
         .substrate
         .display
-        .submit(999, Some(DisplayLayer::TOP), &|_| 0);
+        .submit(999, Some(DisplayLayer::TOP));
     assert!(matches!(
         restored.restore_after_snapshot_load(),
         Err(SnapshotRestoreError::MissingDisplayIdentity { object_id: 999 })
@@ -9639,7 +9793,6 @@ fn mixed_display_lifecycle_matches_original_sequences_and_save_restore() {
                 "submit" => match actors[id as usize - 1]["kind"].as_str().unwrap() {
                     "unit" | "building" => Simulation::submit_entity_display(
                         &sim.interner,
-                        &sim.terrain_objects,
                         &mut sim.substrate,
                         &sim.resolved_terrain,
                         id,
@@ -9647,7 +9800,7 @@ fn mixed_display_lifecycle_matches_original_sequences_and_save_restore() {
                         None,
                     ),
                     "particle" => {
-                        sim.reveal_particle_system(id, &rules);
+                        sim.reveal_particle_system(id);
                     }
                     "terrain" => {
                         sim.register_terrain_object(id, &rules);
@@ -9669,12 +9822,8 @@ fn mixed_display_lifecycle_matches_original_sequences_and_save_restore() {
                 "remove" => {
                     sim.substrate.display.remove(id);
                 }
-                "sort" => Simulation::sort_display_ground(
-                    &sim.interner,
-                    &sim.terrain_objects,
-                    &mut sim.substrate,
-                    &rules,
-                ),
+                // The simulation keeps Ground unordered (`DisplayLayers::submit`).
+                "sort" => {}
                 "coordinates" => {
                     let xyz: [i32; 3] =
                         std::array::from_fn(|i| step["xyz"][i].as_i64().unwrap() as i32);
@@ -9698,38 +9847,26 @@ fn mixed_display_lifecycle_matches_original_sequences_and_save_restore() {
                 _ => unreachable!(),
             }
             for layer in 0..5 {
-                let expected: Vec<u64> = expected[layer]
+                let mut expected: Vec<u64> = expected[layer]
                     .as_array()
                     .unwrap()
                     .iter()
                     .map(|i| i.as_u64().unwrap() + 1)
                     .collect();
-                assert_eq!(
-                    sim.substrate
-                        .display
-                        .members(DisplayLayer::from_index(layer as u8).unwrap()),
-                    expected,
-                    "{name}: {step}"
-                );
+                let layer = DisplayLayer::from_index(layer as u8).unwrap();
+                let mut members = sim.substrate.display.members(layer).to_vec();
+                // Ground is a set: compare its membership.
+                if layer == DisplayLayer::GROUND {
+                    expected.sort_unstable();
+                    members.sort_unstable();
+                }
+                assert_eq!(members, expected, "{name}: {step}");
             }
         }
         let bytes = GameSnapshot::save(&sim, 0, 0, "mixed-display", 0);
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
         restored.restore_after_snapshot_load().unwrap();
         assert_eq!(restored.state_hash(), sim.state_hash(), "{name}");
-        Simulation::sort_display_ground(
-            &sim.interner,
-            &sim.terrain_objects,
-            &mut sim.substrate,
-            &rules,
-        );
-        Simulation::sort_display_ground(
-            &restored.interner,
-            &restored.terrain_objects,
-            &mut restored.substrate,
-            &rules,
-        );
-        assert_eq!(restored.state_hash(), sim.state_hash(), "{name}: next sort");
         for id in 1..=actors.len() as u64 {
             if restored.substrate.entities.contains(id) {
                 // Corpus entities were submitted directly, independently of
@@ -9754,9 +9891,7 @@ fn jumpjet_process_compares_live_layer_queries_not_cached_registration() {
     sim.try_reveal_entity(id, common_raw_request(3, 3, 0, 128, 128));
     // Explicit stale display cache witness. Native compares its two +74
     // queries and leaves this history alone while the Process answer is stable.
-    sim.substrate
-        .display
-        .submit(id, Some(DisplayLayer::TOP), &|_| 0);
+    sim.substrate.display.submit(id, Some(DisplayLayer::TOP));
     sim.tick_air_movement_with_cell_lists_one(
         id,
         crate::rules::ruleset::RuleSet::empty_for_test(),
@@ -9780,7 +9915,6 @@ fn jumpjet_process_compares_live_layer_queries_not_cached_registration() {
         .set_exact_z_leptons_for_test(Some(600));
     Simulation::complete_jumpjet_display_process(
         &sim.interner,
-        &sim.terrain_objects,
         &mut sim.substrate,
         &sim.resolved_terrain,
         id,
@@ -9797,7 +9931,6 @@ fn jumpjet_process_compares_live_layer_queries_not_cached_registration() {
     entity.position.set_exact_z_leptons_for_test(Some(0));
     Simulation::complete_jumpjet_display_process(
         &sim.interner,
-        &sim.terrain_objects,
         &mut sim.substrate,
         &sim.resolved_terrain,
         id,
@@ -9809,8 +9942,8 @@ fn jumpjet_process_compares_live_layer_queries_not_cached_registration() {
 
 /// Fly's phase tail (4CD4DE) resubmits Display after callbacks that may have
 /// UnInit an owner (landing retry's C4 receiver). Mark5F5850 refuses the
-/// Limbo owner; store removal expires the Display registration so the next
-/// Ground sort cannot meet a removed identity.
+/// Limbo owner; store removal expires the Display registration so no later
+/// Ground walk meets a removed identity.
 #[test]
 fn display_registration_expires_with_a_resubmitted_uninit_owner() {
     use super::display_layers::DisplayLayer;
@@ -9822,7 +9955,6 @@ fn display_registration_expires_with_a_resubmitted_uninit_owner() {
     assert!(sim.substrate.entities.get(id).unwrap().lifecycle.in_limbo());
     Simulation::submit_entity_display(
         &sim.interner,
-        &sim.terrain_objects,
         &mut sim.substrate,
         &sim.resolved_terrain,
         id,
@@ -9836,12 +9968,7 @@ fn display_registration_expires_with_a_resubmitted_uninit_owner() {
     sim.process_pending_delete();
     assert!(!sim.substrate.entities.contains(id));
     assert_eq!(sim.substrate.display.layer_of(id), None);
-    Simulation::sort_display_ground(
-        &sim.interner,
-        &sim.terrain_objects,
-        &mut sim.substrate,
-        crate::rules::ruleset::RuleSet::empty_for_test(),
-    );
+    assert_eq!(sim.ground_draw_order(None), Vec::<u64>::new());
 }
 
 /// `TechnoClass::Unlimbo` snaps the barrel elevation level (`0x006F6DC3`) and
@@ -9880,8 +10007,8 @@ fn unlimbo_levels_then_aims_the_barrel_elevation() {
             .unwrap()
             .cell_mut_for_test(4, 4)
             .unwrap();
-        cell.speed_costs.track = Some(100);
-        cell.speed_costs.wheel = Some(100);
+        cell.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
+        cell.speed_costs.wheel = Some(crate::util::native_x87::NativeF32Bits::ONE);
         cell.base_speed_costs = cell.speed_costs;
         let id = sim
             .spawn_object(type_id, "Americans", 4, 4, 0, &rules)
@@ -9983,4 +10110,108 @@ fn a_missile_is_tracked_in_the_cell_its_flight_step_reached() {
     let cell = (missile.position.rx(), missile.position.ry());
     assert_eq!(cell, (13, 12), "the flight step left the launch cell");
     assert_eq!(missile.air_spatial_bucket(), Some(bucket(&sim, cell)));
+}
+
+/// `UnitClass::~UnitClass @ 0x00735780` Limbos the Unit itself
+/// (`FootClass::Limbo`, `0x0073584F`), so one destroyed while placed leaves
+/// its cell.
+#[test]
+fn unit_destructor_limbos_a_unit_still_on_the_map() {
+    let mut sim = Simulation::new();
+    insert_entity(&mut sim, 1, EntityCategory::Unit);
+    let _ = sim.try_reveal_entity(1, common_raw_request(3, 4, 0, 128, 128));
+    assert!(sim.substrate.occupancy.contains_entity(3, 4, 1));
+
+    sim.finalize_and_remove_common(1, super::UninitContext::default(), 1);
+
+    assert!(!sim.substrate.entities.contains(1));
+    assert!(!sim.substrate.occupancy.contains_entity(3, 4, 1));
+    assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(3, 4), 0);
+}
+
+/// `AircraftClass::~AircraftClass @ 0x00414080` kills its passengers
+/// (`KillPassengers(NULL)`, `0x004140E6`): none outlives a carrier destroyed
+/// without UnInit.
+#[test]
+fn aircraft_destructor_kills_its_passengers() {
+    let mut sim = Simulation::new();
+    insert_entity(&mut sim, 1, EntityCategory::Aircraft);
+    insert_entity(&mut sim, 2, EntityCategory::Infantry);
+    let mut cargo = PassengerCargo::new(5, 1.0);
+    cargo.board_forced_chain(&[(2, 1.0)]);
+    sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
+    sim.substrate.entities.get_mut(2).unwrap().passenger_role =
+        PassengerRole::inside_for_test(1, false);
+
+    sim.finalize_and_remove_common(1, super::UninitContext::default(), 1);
+
+    assert!(!sim.substrate.entities.contains(1));
+    assert!(
+        !sim.substrate
+            .entities
+            .get(2)
+            .unwrap()
+            .lifecycle
+            .object_alive()
+    );
+    assert_eq!(sim.substrate.pending_delete.object_ids(), vec![2]);
+}
+
+/// `TechnoClass::PointerExpired @ 0x007077C0` removes the expiring object from
+/// the listener's cargo only when its `removed` argument is set
+/// (`0x007077D8..0x007077E9`). A rider that cloaks sends Detach_All(false) and
+/// stays aboard.
+#[test]
+fn detach_all_false_keeps_a_rider_in_its_transports_cargo() {
+    let mut sim = Simulation::new();
+    insert_entity(&mut sim, 1, EntityCategory::Unit);
+    insert_entity(&mut sim, 2, EntityCategory::Infantry);
+    let _ = sim.reveal(1);
+    let mut cargo = PassengerCargo::new(5, 1.0);
+    cargo.board_forced_chain(&[(2, 1.0)]);
+    sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
+    sim.substrate.entities.get_mut(2).unwrap().passenger_role =
+        PassengerRole::inside_for_test(1, true);
+
+    sim.detach_all(2, false, super::UninitContext::default());
+
+    let transport = sim.substrate.entities.get(1).unwrap();
+    assert_eq!(transport.passenger_role.cargo().unwrap().passengers(), &[2]);
+}
+
+/// The Restore inside the expiry broadcast (`TechnoClass::PointerExpired`
+/// `0x00707A51`) cannot fail natively. VERA's preflight can refuse it, here
+/// for an archived NavCom that names no object; the broadcast must carry on
+/// and still clear the expiring target.
+#[test]
+fn target_expiry_carries_on_when_the_suspended_mission_cannot_be_restored() {
+    let rules = receiver_authority_rules();
+    let mut sim = Simulation::with_seed(0x1234);
+    insert_entity(&mut sim, 1, EntityCategory::Unit);
+    insert_entity(&mut sim, 2, EntityCategory::Unit);
+    let _ = sim.try_reveal_entity(2, request(9, 11, PlacementEvidence::MarkSucceeded));
+
+    let listener = sim.substrate.entities.get_mut(1).unwrap();
+    listener
+        .attack_target
+        .set_for_test(Some(TargetKind::Entity(2)));
+    listener
+        .navigation
+        .set_suspended_nav_com_for_test(Some(NavTargetRef::Object { id: 99 }));
+    listener.mission.apply_test_fixture(MissionTestFixture {
+        current: MissionId::from_known(MissionType::Attack),
+        suspended: MissionId::from_known(MissionType::Guard),
+        queued: MissionId::NONE,
+        movement_bypass_latch: 0,
+        handler_state: 0,
+        mission_start_frame: 100,
+        ai_counter: 0,
+        dispatch_timer: MissionDispatchTimer::at_frame(100),
+    });
+
+    sim.uninit_with_rules(2, &rules);
+
+    let listener = sim.substrate.entities.get(1).unwrap();
+    assert_eq!(listener.attack_target.target(), None);
+    assert!(!sim.substrate.entities.get(2).unwrap().is_object_alive());
 }

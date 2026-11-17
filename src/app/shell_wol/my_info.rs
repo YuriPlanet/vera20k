@@ -54,9 +54,10 @@ fn country_rows(state: &AppState) -> Vec<MyInfoRow> {
 }
 
 /// `0x4E43C0` releases every colour, so `0x4E45A0` lists
-/// `GUI:RandomAsSymbols` (-2) and all eight swatches.
+/// `GUI:RandomAsSymbols` (-2) and every swatch: gamemd's eight, then VERA's
+/// extra lobby colours.
 fn color_rows(state: &AppState) -> Vec<MyInfoRow> {
-    crate::ui::skirmish_shell::available_color_choices(None, [])
+    crate::ui::skirmish_shell::available_color_choices(state.lobby_colors(), None, [])
         .into_iter()
         .map(|item| match item {
             SkirmishComboItem::Color(index) => MyInfoRow {
@@ -404,6 +405,10 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
 
 /// The drop list's scrollbar repeats.
 pub(super) fn poll_scroll_repeat(state: &mut AppState) -> Option<Instant> {
+    // Every pass polls: build the layout only while the page is open.
+    if !page_open(state) {
+        return None;
+    }
     let layout = layout(state);
     let (x, y) = state.match_state.input.cursor_px();
     let page = page_mut(state)?;

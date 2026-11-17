@@ -23,6 +23,7 @@ fn cell_anim() -> (
          [Clear]\nFoot=100%\nTrack=100%\nWheel=100%\nFloat=100%\n\
          Hover=100%\nAmphibious=100%\nFloatBeach=100%\n",
     );
+    let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&ini);
     let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
     let mut rules = RuleSet::from_ini(&ini).unwrap();
     let mut art = ArtRegistry::from_ini(&IniFile::from_str(
@@ -57,7 +58,15 @@ fn cell_anim() -> (
     sim.install_resolved_terrain_for_new_map(terrain.clone());
     sim.install_overlay_grid_for_load(crate::sim::overlay_grid::OverlayGrid::new(40, 40));
     assert_eq!(
-        crate::sim::crates::place_scenario_start_crates(&mut sim, &rules, &registry, 1).visible,
+        crate::sim::crates::place_scenario_start_crates(
+            &mut sim,
+            &rules,
+            &registry,
+            1,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap()
+        .visible,
         1
     );
     let events = sim.lighting_sources().pending().to_vec();
@@ -86,8 +95,6 @@ fn overlay_sample_flushes_prior_sources_and_survives_later_relight() {
     let source = LightingEvent::Building {
         id: 900,
         source: Some(PointLight {
-            rx: cell.0,
-            ry: cell.1,
             center_x: i32::from(cell.0) * 256 + 128,
             center_y: i32::from(cell.1) * 256 + 128,
             radius_leptons: 512,

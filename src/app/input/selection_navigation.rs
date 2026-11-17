@@ -8,7 +8,7 @@ use crate::assets::csf_file::{CsfArg, format_csf};
 use crate::map::entities::EntityCategory;
 use crate::sim::combat::health_category;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "selection_navigation_tests.rs"]
 mod object_tests;
 
@@ -20,6 +20,10 @@ pub(super) enum ObjectDirection {
 
 /// Display4AA2B0/4AA380 walk retained Ground/Air/Top vectors, reversing
 /// both the layer and member order for Previous. No navigation cache or sort.
+/// Sim-scale deviation: the simulation keeps Ground unordered
+/// (`DisplayLayers::submit`), so the walk visits Ground in that set's order
+/// (submission order until a removal swaps a member) rather than gamemd's
+/// roughly GetYSort-sorted vector.
 fn next_object(
     sim: &crate::sim::world::Simulation,
     rules: Option<&crate::rules::ruleset::RuleSet>,
@@ -84,7 +88,7 @@ pub(super) fn execute_object_navigation(state: &mut AppState, direction: ObjectD
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)
     else {
         return;
@@ -107,7 +111,6 @@ pub(super) fn execute_object_navigation(state: &mut AppState, direction: ObjectD
             select: vec![id],
             ..Default::default()
         },
-        true,
         super::SelectionVoicePolicy::EveryAdded,
     );
     crate::app::input::camera::center_view_on_selection(state);
@@ -124,23 +127,8 @@ struct CombatantSelection {
 /// House4FC1B0..4FC205 sets it only for PlayerPtr; session52DA94 and
 /// cooperative setup5C38A8..5C3ABE clear it. The House defeat owner supplies
 /// this state; input keeps no competing defeat flag.
-fn selection_navigation_allowed(sim: &crate::sim::world::Simulation) -> bool {
+pub(super) fn selection_navigation_allowed(sim: &crate::sim::world::Simulation) -> bool {
     !sim.local_player_defeated()
-}
-
-/// Shared owner arm of the P732580 and Health/Y7335F0 source predicates.
-/// Campaign reads only House+1ED; otherwise use the existing50B6F0 port.
-fn navigation_owner_controlled(
-    sim: &crate::sim::world::Simulation,
-    owner: crate::sim::intern::InternedId,
-) -> bool {
-    if sim.session().game_mode_nonzero() {
-        sim.house_is_human_player(owner)
-    } else {
-        sim.houses()
-            .get(&owner)
-            .is_some_and(|house| house.player_control())
-    }
 }
 
 /// P732280's local/alive collection precedes its combatant/dynamic screen
@@ -159,7 +147,7 @@ fn combatant_selection(
         clear: replace,
         ..Default::default()
     };
-    let player_owned = |owner| navigation_owner_controlled(sim, owner);
+    let player_owned = |owner| sim.house_controls_selection(owner);
     // Tactical6DA770 drops a lone non-player-controlled selection before
     // testing the shared mode. Deselect clears Follow but retains that mode.
     let dropped = selected.first().copied().filter(|id| {
@@ -224,7 +212,7 @@ pub(super) fn execute_combatant_selection(state: &mut AppState) {
     if state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_none_or(|rt| !selection_navigation_allowed(&rt.simulation))
     {
         return;
@@ -238,7 +226,7 @@ pub(super) fn execute_combatant_selection(state: &mut AppState) {
         let Some(sim) = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
         else {
             return;
@@ -265,14 +253,13 @@ pub(super) fn execute_combatant_selection(state: &mut AppState) {
     super::apply_selection_mutation(
         state,
         result.mutation,
-        false,
         super::SelectionVoicePolicy::EveryAdded,
     );
     let selected = super::selected_stable_ids_in_order(
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.rules(),
         &state.match_state.input.selection_order,
@@ -374,6 +361,8 @@ pub(crate) fn reset_for_world_replacement(input: &mut crate::app::input::state::
     input.category_navigation.candidates.clear();
     input.selection_order.clear();
     input.selection_order_pending = false;
+    // The committed ledger named the outgoing world's objects.
+    input.selection_committed = None;
 }
 
 fn category_key(kind: CategoryNavigationKind, category: u8) -> &'static str {
@@ -446,7 +435,7 @@ fn category_selection(
                 sim.entities().get(*id).is_some_and(|entity| {
                     entity.lifecycle.object_alive()
                         && entity.category() != EntityCategory::Structure
-                        && navigation_owner_controlled(sim, entity.owner())
+                        && sim.house_controls_selection(entity.owner())
                 })
             })
             .collect()
@@ -477,7 +466,7 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
     if state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_none_or(|rt| !selection_navigation_allowed(&rt.simulation))
     {
         return;
@@ -486,7 +475,7 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|runtime| &runtime.simulation),
         state.rules(),
         &state.match_state.input.selection_order,
@@ -504,7 +493,7 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
         Vec::new()
     };
     let result = {
-        let runtime = state.match_state.sim_runtime.as_ref().unwrap();
+        let runtime = state.match_state.sim_runtime.runtime().unwrap();
         let rules = &runtime.resources.rules;
         let input = &mut state.match_state.input;
         category_selection(
@@ -524,7 +513,6 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
     super::apply_selection_mutation(
         state,
         result.mutation,
-        false,
         super::SelectionVoicePolicy::EveryAdded,
     );
     // The native direct Select calls do not start the mouse action-line timer.
@@ -533,13 +521,13 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.rules(),
         &state.match_state.input.selection_order,
         state.match_state.input.selection_order_pending,
     );
-    let sim = &state.match_state.sim_runtime.as_ref().unwrap().simulation;
+    let sim = &state.match_state.sim_runtime.runtime().unwrap().simulation;
     let rules = state.rules().unwrap();
     let mixed = selected.iter().any(|id| {
         entity_navigation_category(sim, rules, *id, kind)
@@ -619,7 +607,7 @@ fn navigation_feedback(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
 
@@ -834,14 +822,18 @@ mod tests {
                         )
                     })
                     .unwrap();
-                let display = frame
+                // Conceal detaches the attached anims once Display let go.
+                let detach = frame
                     .lifecycle_outputs
                     .iter()
                     .position(|output| {
-                        matches!(output, LifecycleOutput::DisplayRemove { stable_id: 20 })
+                        matches!(
+                            output,
+                            LifecycleOutput::DetachAttachedAnims { stable_id: 20 }
+                        )
                     })
                     .unwrap();
-                assert!(expiry < display);
+                assert!(expiry < detach);
             }
             // Consume actual lifecycle producer facts through the same owner
             // sim_tick calls, without constructing a windowed AppState. This

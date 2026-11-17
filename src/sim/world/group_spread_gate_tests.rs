@@ -87,6 +87,136 @@ fn spread_heights_and_band_match_the_original_slices() {
     }
 }
 
+/// A raw Cell token can project to coordinates no Cell token expresses: here
+/// a negative remainder and a wrapped quotient, which the packed Map lookup
+/// still resolves to the real cell (19, 17). The run keeps its records, and
+/// the game goes on with them.
+#[test]
+fn a_run_on_coordinates_no_cell_token_expresses_keeps_its_records() {
+    use crate::sim::command::CommandEnvelope;
+    let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+        "[VehicleTypes]\n0=PLANNER\n[PLANNER]\nStrength=100\nSpeed=8\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+    );
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
+    sim.session.set_current_house_for_test(Some(owner));
+    let records: Vec<_> = [(15, 15), (16, 15)]
+        .into_iter()
+        .map(|(x, y)| {
+            let entity_id = sim
+                .spawn_object_with_overlay_registry(
+                    "PLANNER",
+                    "Americans",
+                    x,
+                    y,
+                    0,
+                    &rules,
+                    &registry,
+                )
+                .unwrap();
+            let mut record = sim
+                .encode_megamission_record(
+                    owner,
+                    &Command::Move {
+                        entity_id,
+                        target_rx: 19,
+                        target_ry: 17,
+                    },
+                )
+                .unwrap();
+            record.payload_mut()[12..16].copy_from_slice(&(-65_518_493_i32).to_le_bytes());
+            CommandEnvelope::synchronized(record, 0)
+        })
+        .collect();
+    let mut run: Vec<_> = records
+        .iter()
+        .cloned()
+        .map(super::QueuedCommand::from_envelope)
+        .collect();
+    let before = run.clone();
+    sim.adjust_staged_megamission_destinations(&mut run, &rules, Some(&registry), None);
+    assert_eq!(run, before);
+
+    sim.apply_due_commands(&records, &rules, 0, Some(&registry), Default::default());
+    let grid = sim.path_grid.clone();
+    for _ in 0..32 {
+        sim.advance_tick(&[], Some(&rules), grid.as_deref(), Some(&registry), 67);
+    }
+}
+
+/// `0x0064D27A` takes a member's probe ray from vt+0x4C, its head while it
+/// moves, against the anchor's source cell. The third member stands at
+/// (15, 16) heading to (16, 16): its ray is diagonal, not straight down.
+#[test]
+fn a_moving_member_takes_its_probe_ray_from_its_head() {
+    use crate::sim::command::CommandEnvelope;
+    use crate::sim::components::DriveCoord;
+    use crate::sim::movement::track_process::TrackFamily;
+    let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+        "[VehicleTypes]\n0=PLANNER\n[PLANNER]\nStrength=100\nSpeed=8\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+    );
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
+    sim.session.set_current_house_for_test(Some(owner));
+    let actors: Vec<_> = [(15, 15), (16, 15), (15, 16)]
+        .into_iter()
+        .map(|(x, y)| {
+            sim.spawn_object_with_overlay_registry(
+                "PLANNER",
+                "Americans",
+                x,
+                y,
+                0,
+                &rules,
+                &registry,
+            )
+            .unwrap()
+        })
+        .collect();
+    let mut commands: Vec<_> = actors
+        .iter()
+        .map(|actor| {
+            CommandEnvelope::new(
+                owner,
+                1,
+                Command::Move {
+                    entity_id: *actor,
+                    target_rx: 19,
+                    target_ry: 17,
+                },
+            )
+        })
+        .collect();
+    let loco = sim
+        .substrate
+        .entities
+        .get_mut(actors[2])
+        .unwrap()
+        .locomotor
+        .as_mut()
+        .unwrap();
+    assert!(loco.ensure_installed_track_state());
+    assert!(loco.store_track_head(TrackFamily::Drive, Some(DriveCoord::cell(16, 16, 0))));
+    sim.adjust_staged_megamission_destinations(&mut commands, &rules, Some(&registry), None);
+    let destination = |command: &CommandEnvelope| match command.payload {
+        Command::Move {
+            target_rx,
+            target_ry,
+            ..
+        } => (target_rx, target_ry),
+        _ => unreachable!(),
+    };
+    assert_eq!(destination(&commands[1]), (20, 17));
+    // Straight down from its Location the first probe would be (19, 18).
+    assert_eq!(destination(&commands[2]), (20, 18));
+}
+
 #[test]
 fn planning_flags_use_the_production_group_destination_distributor() {
     use crate::sim::command::{CommandEnvelope, MegaMissionRecord};
@@ -129,7 +259,7 @@ fn planning_flags_use_the_production_group_destination_distributor() {
         })
         .collect();
     let mut ordinary = commands.clone();
-    sim.adjust_staged_megamission_destinations(&mut ordinary, &rules, Some(&registry));
+    sim.adjust_staged_megamission_destinations(&mut ordinary, &rules, Some(&registry), None);
     assert!(
         ordinary
             .iter()
@@ -153,7 +283,7 @@ fn planning_flags_use_the_production_group_destination_distributor() {
     let destination = i32::from_le_bytes(record.payload()[12..16].try_into().unwrap());
     record.payload_mut()[12..16].copy_from_slice(&(destination + 65536 * 1000).to_le_bytes());
     let before = distinct.clone();
-    sim.adjust_staged_megamission_destinations(&mut distinct, &rules, Some(&registry));
+    sim.adjust_staged_megamission_destinations(&mut distinct, &rules, Some(&registry), None);
     assert_eq!(
         distinct, before,
         "raw destination identity, not projected geometry, owns the run"
@@ -169,7 +299,7 @@ fn planning_flags_use_the_production_group_destination_distributor() {
                 CommandEnvelope::new(owner, 1, Command::PlanningRecord { record })
             })
             .collect();
-        sim.adjust_staged_megamission_destinations(&mut planned, &rules, Some(&registry));
+        sim.adjust_staged_megamission_destinations(&mut planned, &rules, Some(&registry), None);
         for (actual, expected) in planned.iter().zip(&ordinary) {
             let Command::PlanningRecord { record } = &actual.payload else {
                 unreachable!()
@@ -215,7 +345,7 @@ fn planning_flags_use_the_production_group_destination_distributor() {
         Some(&registry),
         crate::sim::world::FrameEffects::empty(),
     );
-    let graph = sim.planning_draw_graph(owner, &actors, None, None);
+    let graph = sim.planning_draw_graph(owner, None, None);
     assert_eq!(graph.nodes.len(), 1, "one click is one shared waypoint");
     assert_eq!(graph.nodes[0].members, actors);
     assert_eq!(
@@ -243,7 +373,7 @@ fn planning_flags_use_the_production_group_destination_distributor() {
             .collect();
         sim.apply_due_commands(&batch, &rules, 0, Some(&registry), Default::default());
     }
-    let graph = sim.planning_draw_graph(owner, &actors, None, None);
+    let graph = sim.planning_draw_graph(owner, None, None);
     assert_eq!(graph.nodes.len(), 3);
     assert_eq!(graph.nodes[1].incoming.len(), 1);
     assert_eq!(graph.nodes[2].incoming.len(), 1);

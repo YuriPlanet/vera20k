@@ -29,7 +29,7 @@ pub(crate) fn resident_seed(state: &AppState) -> u32 {
     state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map_or(state.frontend.startup_rng_seed, |runtime| {
             runtime.simulation.session().seed() as u32
         })
@@ -168,7 +168,8 @@ pub(crate) fn send_first_choices(state: &mut AppState) {
 /// the first open observer row when no Open player row is left
 /// (`0x5E9510`); with neither (`0x5E9560`) the joiner is kicked
 /// (`0x7A6BC7`). VERA's room first frees the last AI's seat when every seat
-/// is taken, so it stays open until its host's Max players.
+/// is taken, so it stays open until its host's Max players, and one with
+/// Teams set lets the newcomer watch first (`MatchSession::network_join_row`).
 /// RESIDUAL: the host's node takes the mode's default country (mode
 /// vt+0x28) natively; it is unset here.
 pub(crate) fn user_joined(state: &mut AppState, name: String) -> anyhow::Result<()> {
@@ -182,18 +183,21 @@ pub(crate) fn user_joined(state: &mut AppState, name: String) -> anyhow::Result<
         state.match_state.session.free_network_seat_for_newcomer()?;
     }
     let session = &state.match_state.session;
-    let row = if !session.host() {
-        Some(None)
-    } else if session.network_room_full() {
-        // VERA's room is at its host's Max players.
-        None
+    let place = if !session.host() {
+        Some((None, false))
+    } else if session.network_several_observers() {
+        // VERA's room, to its host's Max players.
+        session
+            .network_join_row(false)
+            .map(|(row, observer)| (Some(row), observer))
     } else if session.network_no_open_player_row() {
-        session.network_free_row(true).map(Some)
+        session.network_free_row(true).map(|row| (Some(row), true))
     } else {
-        session.network_free_row(false).map(Some)
+        session
+            .network_free_row(false)
+            .map(|row| (Some(row), false))
     };
-    let observer = session.host() && session.network_no_open_player_row();
-    let Some(row) = row.filter(|_| !pending) else {
+    let Some((row, observer)) = place.filter(|_| !pending) else {
         let sound = state
             .rules()
             .and_then(|rules| rules.general.player_joined_sound())
@@ -229,6 +233,12 @@ pub(crate) fn user_joined(state: &mut AppState, name: String) -> anyhow::Result<
 /// complete launch roster, so it carries both native payloads without a
 /// duplicate relay update.
 pub(crate) fn user_left(state: &mut AppState, name: &str, operator: bool) -> anyhow::Result<()> {
+    // VERA's room tells who left, unless the host left (the room closes
+    // with its own line).
+    departed(state, name, operator, !operator)
+}
+
+fn departed(state: &mut AppState, name: &str, operator: bool, tell: bool) -> anyhow::Result<()> {
     play_player_left(state);
     if state
         .frontend
@@ -247,6 +257,9 @@ pub(crate) fn user_left(state: &mut AppState, name: &str, operator: bool) -> any
         return Ok(());
     };
     service::service_event(state, service::NetworkSetupEvent::ParticipantLeft { index })?;
+    if tell {
+        service::tell_room(state, super::dialog(state), "VERA:PlayerLeftRoom", name);
+    }
     clear_guest_acceptance(state)?;
     let host = state.match_state.session.host();
     if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
@@ -287,10 +300,10 @@ pub(crate) fn player_choices(
     )
 }
 
-/// The VERA lobby's `balance` event, its answer to the host's `/balance` (no
-/// native counterpart): a team for each named player. It has `player_choices`'
-/// gates, and acts only in a mode that lets players ally outside a clan room,
-/// where the team combos show.
+/// The VERA lobby's `balance` event, its answer to the host's `/balance` or
+/// Balance automatically (no native counterpart): a team for each named
+/// player. It has `player_choices`' gates, and acts only in a mode that lets
+/// players ally outside a clan room, where the team combos show.
 pub(crate) fn balance_teams(state: &mut AppState, teams: &[(String, u8)]) -> anyhow::Result<()> {
     if crate::app::shell_wol::in_match(state)
         || start_pending(state)
@@ -306,7 +319,11 @@ pub(crate) fn balance_teams(state: &mut AppState, teams: &[(String, u8)]) -> any
     if !launch.mode.allies_allowed || session.network_room().clan {
         return Ok(());
     }
-    let moves = team_moves(launch, teams);
+    // Without Teams, the Team list's A to D (`team_choices`).
+    let count = session
+        .network_teams()
+        .unwrap_or(crate::skirmish_launch::NATIVE_TEAMS);
+    let moves = team_moves(launch, teams, count);
     if moves.is_empty() {
         return Ok(());
     }
@@ -314,14 +331,18 @@ pub(crate) fn balance_teams(state: &mut AppState, teams: &[(String, u8)]) -> any
 }
 
 /// The participants `teams` move to another team: playing humans with a row,
-/// on a team the combos list (0..3, `team_choices`).
-fn team_moves(launch: &SkirmishLaunchSession, teams: &[(String, u8)]) -> Vec<(usize, u8)> {
+/// on one of the room's `count` teams.
+fn team_moves(
+    launch: &SkirmishLaunchSession,
+    teams: &[(String, u8)],
+    count: u8,
+) -> Vec<(usize, u8)> {
     teams
         .iter()
         .filter_map(|(name, team)| {
             let index = participant_in(launch, name)?;
             let human = &launch.humans[index];
-            (*team <= 3
+            (*team < count
                 && !human.is_observer()
                 && human.raw_slot_index.is_some()
                 && human.slot.team != LaunchTeam::Team(*team))
@@ -563,9 +584,11 @@ fn participant_in(launch: &SkirmishLaunchSession, name: &str) -> Option<usize> {
 
 /// The kick sink `0x7AB670` for another user in this game channel: its
 /// `TXT_USER_KICKED` line in C2/C9 unless `0x5E9510` finds no Open player
-/// row (`0x7AB860..0x7AB8AD`), then its leave.
+/// row (`0x7AB860..0x7AB8AD`), then its leave. VERA's room tells the leave
+/// only where that line was skipped.
 pub(crate) fn user_kicked(state: &mut AppState, name: &str, line: String) -> anyhow::Result<()> {
-    if !state.match_state.session.network_no_open_player_row() {
+    let full = state.match_state.session.network_no_open_player_row();
+    if !full {
         crate::app::shell_lan::append_chat(
             state,
             LanChatLine {
@@ -574,7 +597,7 @@ pub(crate) fn user_kicked(state: &mut AppState, name: &str, line: String) -> any
             },
         );
     }
-    user_left(state, name, false)
+    departed(state, name, false, full)
 }
 
 /// The kick sink for this user: `TXT_CHANNEL_FULL` when the session is
@@ -935,7 +958,7 @@ pub(crate) fn verify_poll_scroll(state: &mut AppState) -> Option<Instant> {
 pub(super) fn chat(state: &mut AppState, text: Vec<u16>) {
     // 5EDD00's TrimRight("\n\r") result is what WOL sends.
     let text = wol_chat::trim_line_end(&text).to_vec();
-    if text.is_empty() || crate::app::shell_wol::translation::command(state, &text) {
+    if text.is_empty() {
         return;
     }
     let commands = wol_chat::WolChatCommands {
@@ -1052,7 +1075,7 @@ pub(super) fn ping(state: &mut AppState, name: String, ping: i32) -> anyhow::Res
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 
@@ -1086,7 +1109,10 @@ mod tests {
             ("Nobody", 1),
         ];
         let teams: Vec<_> = teams.map(|(name, team)| (name.to_owned(), team)).into();
-        assert_eq!(team_moves(&launch, &teams), [(0, 1)]);
-        assert_eq!(team_moves(&launch, &[("Guest".into(), 4)]), []);
+        assert_eq!(team_moves(&launch, &teams, 4), [(0, 1)]);
+        assert_eq!(team_moves(&launch, &[("Guest".into(), 4)], 4), []);
+        // A room with Teams set takes its own teams only.
+        assert_eq!(team_moves(&launch, &[("Guest".into(), 2)], 3), [(1, 2)]);
+        assert_eq!(team_moves(&launch, &[("Guest".into(), 2)], 2), []);
     }
 }

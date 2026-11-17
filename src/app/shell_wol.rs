@@ -23,11 +23,14 @@ mod live_service;
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 pub(crate) use live_service::lobby_base_url;
 pub(crate) mod lobby;
+mod lobby_phrases;
 mod login;
+pub(crate) mod login_info;
 pub(crate) mod my_info;
 pub(crate) mod options;
 pub(crate) mod page;
 pub(crate) mod persona;
+pub(crate) mod player_card;
 pub(crate) mod quick_match;
 mod service;
 mod test_service;
@@ -46,9 +49,9 @@ pub(crate) use live_service::{
 pub(crate) use live_service::{
     local_choices_agreed, online_cleanup_pending, online_exit_ready, online_match_id,
 };
-pub(crate) use login::{combo_popup, login_layout, open_login_art};
+pub(crate) use login::{account_form_layout, combo_popup, login_layout, open_login_art};
 pub(crate) use service::{
-    NET_STATUS_LOST, WolApiStatus, WolHighScoreRecord, WolLadderRecord, WolLoginAccepted,
+    NET_STATUS_LOST, WolApiStatus, WolHighScoreRecord, WolLadderRecord, WolLoginAccepted, WolMatch,
     WolProvider, WolServer, WolServerList, WolServiceEvent, WolServiceRequest, request,
     service_event,
 };
@@ -67,6 +70,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<crate::util::time::Instant> {
         my_info::poll_scroll_repeat(state),
         buddy::poll(state),
         page::poll_scroll_repeat(state),
+        player_card::poll_scroll_repeat(state),
         lobby::poll(state),
         quick_match::poll(state),
         live_service::poll(state),
@@ -234,6 +238,13 @@ pub(crate) struct WolVisit {
     /// joined through the match so its players return to it afterwards
     /// (`finish` asks the lobby for it back).
     pub(crate) back_to_room: bool,
+    /// VERA: why the last online match ended, until the chat the player
+    /// lands in exists.
+    problem_line: Option<String>,
+    /// VERA: whether the online lobby lets players watch matches, as its
+    /// list of them last answered (docs/lobby-protocol.md "Watching"); `None`
+    /// before the first answer.
+    lobby_watches: Option<bool>,
     /// VERA: BC6's Continue after a co-op mission: the stage the kept
     /// room's host takes when the room comes back. The runner's post-match
     /// entry drops it unless it waits for that room.
@@ -303,6 +314,8 @@ impl WolVisit {
             last_pager: None,
             in_game: false,
             back_to_room: false,
+            problem_line: None,
+            lobby_watches: None,
             cooperative_resume: None,
             connected: false,
             disconnected: false,
@@ -439,6 +452,17 @@ pub(crate) fn in_match(state: &AppState) -> bool {
         .is_some_and(|visit| visit.in_game)
 }
 
+/// VERA: whether the online lobby lets players watch matches, as its list of
+/// them last answered (docs/lobby-protocol.md "Watching"); `None` before the
+/// first answer.
+pub(crate) fn lobby_watches(state: &AppState) -> Option<bool> {
+    state
+        .frontend
+        .wol
+        .as_ref()
+        .and_then(|visit| visit.lobby_watches)
+}
+
 /// A WOL box (`0x005E2CD0` style 0) with a CSF body.
 pub(crate) fn message_box(state: &AppState, key: &str) -> crate::ui::wol_shell::WolMessageBox {
     service::message_box(state, key, false)
@@ -469,6 +493,15 @@ fn logout(visit: &mut WolVisit) {
     visit.connected = false;
     visit.requests.push(service::WolServiceRequest::Logout);
     visit.page_received = None;
+}
+
+/// VERA: show `text` in the chat this online visit next lands in.
+pub(crate) fn hold_problem_line(state: &mut AppState, text: String) {
+    if let Some(visit) = state.frontend.wol.as_mut()
+        && visit.provider == WolProvider::Online
+    {
+        visit.problem_line = Some(text);
+    }
 }
 
 /// The runner handed over to a WOL match (`[0xB77DC1]` set).
@@ -913,6 +946,48 @@ impl App {
             // No `Community` URL in the registry: nothing happens.
             Some(WolWelcomeAction::Community) | None => {}
         }
+    }
+
+    /// VERA's Esc menu (`app::shell_menu`): the boxes, popups and player card
+    /// over a page keep Esc.
+    pub(super) fn wol_leaves_escape(state: &AppState) -> bool {
+        if Self::wol_quick_match_verify(state) || page::open(state) {
+            return false;
+        }
+        let Some(visit) = state.frontend.wol.as_ref() else {
+            return false;
+        };
+        !visit.waiting()
+            && match &visit.page {
+                WolPage::Login(login) => login.account.is_none(),
+                WolPage::Lobby => visit.lobby().is_some_and(|lobby| {
+                    lobby.interactive() && lobby.ui.popup.is_none() && lobby.ui.card.is_none()
+                }),
+                WolPage::Buddy(dialog) => dialog.ui.add.is_none(),
+                _ => true,
+            }
+    }
+
+    /// Esc closes the login page's open name list or the Options page's open
+    /// translation list.
+    pub(super) fn close_wol_open_list(state: &mut AppState) -> bool {
+        if options::close_list(state) {
+            return true;
+        }
+        let Some(login) = state
+            .frontend
+            .wol
+            .as_mut()
+            .and_then(|visit| match &mut visit.page {
+                WolPage::Login(login) => Some(login),
+                _ => None,
+            })
+        else {
+            return false;
+        };
+        let open = login.popup.control.is_some();
+        login.popup.close();
+        open
     }
 
     /// Keys while a WOL page shows. `0x10E` ignores IDOK/IDCANCEL

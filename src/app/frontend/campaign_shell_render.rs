@@ -292,7 +292,7 @@ pub(crate) fn render_campaign_page(
         labels.push(PaintLabel {
             text: resolve_csf(state, spec.csf_key),
             rect: owner_draw_button_label_rect(button.rect, pressed == Some(button.id)),
-            align: ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0),
+            align: ShellAlign::BUTTON_CAPTION,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: None,
         });
@@ -301,7 +301,7 @@ pub(crate) fn render_campaign_page(
         labels.push(PaintLabel {
             text: resolve_csf(state, CAMPAIGN_PAGE.title_key),
             rect: layout.page.title,
-            align: ShellAlign::H_CENTER,
+            align: ShellAlign::PANEL_TITLE,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: Some(shell_reveal_path_a(window)),
         });
@@ -333,6 +333,7 @@ pub(crate) fn render_campaign_page(
             text: &text,
             cursor: software_cursor(state, CURSOR_DEPTH),
             effects: None,
+            smooth_art: false,
         },
     );
     Ok(true)

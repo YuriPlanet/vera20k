@@ -30,10 +30,10 @@ impl Simulation {
     /// Foot's cell click constructs MoveFlash before it issues the unit order
     /// (4D7EB5..4D8065), outside EventClass. In LAN/WOL the native flash joins
     /// a local unsynced list (4D7F28..4D8062). Keep that local action off the
-    /// packet FIFO while using the existing ingress and animation owners.
-    /// `spawn_move_flash` still declines network animation construction until
-    /// that local visual owner exists. Offline flashes retain their established
-    /// tail timing, including animation identities and any constructor RNG.
+    /// packet FIFO while using the existing ingress and animation owners:
+    /// `spawn_move_flash` makes the network flash a local anim. Offline
+    /// flashes retain their established tail timing, including animation
+    /// identities and any constructor RNG.
     fn command_uses_frame_ingress(command: &Command, is_network: bool) -> bool {
         command.uses_frame_ingress() || is_network && matches!(command, Command::MoveFlash { .. })
     }
@@ -56,14 +56,14 @@ impl Simulation {
         self.issue_local_command(CommandEnvelope::synchronized(record, self.session.tick()))
     }
 
-    /// Submit a freshly produced local command. Native events share the
-    /// process-wide OutList cap; local selection/Options use their ingress.
+    /// Submit a freshly produced local command. Native events share the local
+    /// command bound; local selection/Options use their ingress.
     /// The result describes queue admission, not whether input was handled.
     pub fn issue_local_command(&mut self, command: CommandEnvelope) -> bool {
         self.issue_local_commands([command])
     }
 
-    /// A multiplayer input batch is accepted whole or left for the UI to retry.
+    /// An input batch is accepted whole or left for the UI to retry.
     /// The existing local FIFO remains its only owner; it is never spread over
     /// arbitrary execution frames merely to fit a packet or native stage.
     pub fn issue_local_commands(
@@ -108,10 +108,9 @@ impl Simulation {
             });
             source.map_or(0, |house| self.local_command_slots_for(house, control))
         } else {
-            crate::sim::command_queue::OUT_LIST_CAPACITY
-                .saturating_sub(self.local_commands.native_len())
+            self.available_local_command_slots()
         };
-        if network && (!valid || native > limit) {
+        if !valid || native > limit {
             return false;
         }
         for (entry, ingress) in prepared {
@@ -123,7 +122,7 @@ impl Simulation {
                     if network {
                         crate::sim::command_queue::NETWORK_SOURCE_COMMAND_CAPACITY
                     } else {
-                        crate::sim::command_queue::OUT_LIST_CAPACITY
+                        crate::sim::command_queue::SINGLE_PLAYER_COMMAND_CAPACITY
                     },
                 )
             };
@@ -207,8 +206,10 @@ impl Simulation {
 
     fn local_command_slots(&self, include_control_reserve: bool) -> usize {
         if !self.session.game_mode().is_network() {
-            return crate::sim::command_queue::OUT_LIST_CAPACITY
-                .saturating_sub(self.local_commands.native_len());
+            return crate::sim::command_queue::SINGLE_PLAYER_COMMAND_CAPACITY
+                .saturating_sub(self.local_commands.native_len())
+                .saturating_sub(self.pending_commands.native_len())
+                .saturating_sub(self.dispatch_reserved_slots.total);
         }
         let Some(house) = self.local_command_source() else {
             return 0;
@@ -279,7 +280,9 @@ impl Simulation {
             if self.session.game_mode().is_network() {
                 crate::sim::command_queue::NETWORK_COMMAND_CAPACITY
             } else {
-                crate::sim::command_queue::DO_LIST_CAPACITY
+                // Room stays for the queued input, so its transfer is never refused.
+                crate::sim::command_queue::SINGLE_PLAYER_DOLIST_CAPACITY
+                    .saturating_sub(self.local_commands.native_len())
             },
             if self.session.game_mode().is_network() {
                 crate::sim::command_queue::NETWORK_SOURCE_DOLIST_CAPACITY
@@ -404,22 +407,50 @@ impl Simulation {
     /// next ingress without retaining a second membership list.
     /// Native731060 stores parameter-1; digit0 registers parameter10.
     pub fn projected_control_groups(&self) -> [Vec<u64>; 10] {
-        let mut objects: Vec<_> = self
-            .substrate
-            .entities
-            .iter_sorted()
-            .map(|(_, entity)| (entity, entity.control_group()))
-            .collect();
-        for command in self.queued_commands() {
-            if let Command::AssignControlGroup { group, entity_ids } = command.payload {
-                let selected = entity_ids.into_iter().collect();
-                for (entity, current) in &mut objects {
-                    *current = self.assigned_control_group(entity, *current, group, &selected);
+        self.project_control_groups(
+            self.substrate
+                .entities
+                .iter_sorted()
+                .map(|(_, entity)| entity),
+        )
+    }
+
+    /// [`Self::projected_control_groups`] of the stored objects among `ids`
+    /// alone, for a reader that only ever asks about those: each object's
+    /// group follows from its own state and the queue, not from the others.
+    pub fn projected_control_groups_of(
+        &self,
+        ids: impl IntoIterator<Item = u64>,
+    ) -> [Vec<u64>; 10] {
+        self.project_control_groups(
+            ids.into_iter()
+                .filter_map(|id| self.substrate.entities.get(id)),
+        )
+    }
+
+    fn project_control_groups<'a>(
+        &'a self,
+        entities: impl Iterator<Item = &'a crate::sim::game_entity::GameEntity>,
+    ) -> [Vec<u64>; 10] {
+        // The queued assignments, in queue order; usually none. Each object's
+        // group follows from its own stored group and these alone.
+        let assignments: Vec<(i32, std::collections::HashSet<u64>)> = self
+            .queued_commands()
+            .filter_map(|command| match command.payload {
+                Command::AssignControlGroup { group, entity_ids } => {
+                    Some((group, entity_ids.into_iter().collect()))
                 }
-            }
-        }
+                _ => None,
+            })
+            .collect();
         let mut slots = std::array::from_fn(|_| Vec::new());
-        for (entity, group) in objects {
+        for entity in entities {
+            let group =
+                assignments
+                    .iter()
+                    .fold(entity.control_group(), |current, (group, selected)| {
+                        self.assigned_control_group(entity, current, *group, selected)
+                    });
             if (0..10).contains(&group) {
                 slots[((group + 1) % 10) as usize].push(entity.stable_id());
             }
@@ -485,7 +516,7 @@ impl Simulation {
     pub fn projected_in_game_options_speed(&self) -> Option<u8> {
         let mut projected = u8::try_from(self.session.game_options().game_speed)
             .ok()
-            .filter(|speed| *speed <= crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED);
+            .filter(|speed| crate::sim::game_options::is_selectable_game_speed(*speed));
         let execute_tick = self.session.tick().saturating_add(1);
         let queued: Vec<_> = self
             .queued_command_entries()
@@ -511,7 +542,7 @@ impl Simulation {
                         | (true, Command::LiveGameSpeed { speed }) => speed,
                         _ => continue,
                     };
-                    if *speed <= crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED {
+                    if crate::sim::game_options::is_selectable_game_speed(*speed) {
                         projected = Some(*speed);
                     }
                 }
@@ -520,9 +551,20 @@ impl Simulation {
         projected
     }
 
+    /// Whether an executed EXIT command's terminal edge waits to be taken.
+    pub fn executed_exit_owner_pending(&self) -> bool {
+        self.executed_exit_owner.is_some()
+    }
+
     /// Consume the terminal edge raised by one executed EXIT command.
     pub fn take_executed_exit_owner(&mut self) -> Option<InternedId> {
         self.executed_exit_owner.take()
+    }
+
+    /// Whether [`Self::take_departed_senders`] would hand any over, read
+    /// without taking the world for writing.
+    pub fn has_departed_senders(&self) -> bool {
+        !self.departed_senders.is_empty()
     }
 
     /// Drain the remote EXIT senders the executor recorded.
@@ -920,17 +962,27 @@ impl Simulation {
     /// non-megamission scan, immediately before staged command execution.
     /// The group spread `0x0064CDA0` per run (`0x0064CB0A..0x0064CB60`): each Foot
     /// member's coordinates (Location) and source cell.
+    ///
+    /// VERA-only: in a LAN or WOL game a member whose order the network
+    /// ownership rule will refuse (`Simulation::network_actor_foreign`) is
+    /// left out, and a run left with fewer than two orders keeps its clicked
+    /// cells, as if `sender` had not ordered that member. Retail's member loop
+    /// (`0x0064CE59..0x0064CEDF`) tests only Foot and tube (`+0x684`), never
+    /// the owner, and `Execute_DoList` spreads every run of two or more
+    /// (`0x0064CBA4..0x0064CBDB`). Fixtures that skip the rule pass `None`.
     pub(super) fn adjust_staged_megamission_destinations(
         &self,
         commands: &mut [impl FormationCommand],
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        sender: Option<InternedId>,
     ) {
         let (Some(terrain), Some(zones)) =
             (self.resolved_terrain.as_ref(), self.zone_grid.as_ref())
         else {
             return;
         };
+        let sender = sender.map(|owner| self.interner.resolve(owner));
         let mut run_start = 0;
         while run_start < commands.len() {
             let Some(key) = Self::formation_key(&commands[run_start]) else {
@@ -941,7 +993,8 @@ impl Simulation {
             while run_end < commands.len() && Self::formation_key(&commands[run_end]) == Some(key) {
                 run_end += 1;
             }
-            if run_end - run_start > 1 {
+            let mut orders = run_end - run_start;
+            if orders > 1 {
                 let clicked_target = (key.1 as i16, key.2 as i16);
                 //64CDE9 resolves the Cell;64CDF6 returns for the shared
                 // dummy before member collection or destination rewrites.
@@ -959,6 +1012,10 @@ impl Simulation {
                     let Some(entity) = self.substrate.entities.get(entity_id) else {
                         continue;
                     };
+                    if sender.is_some_and(|owner| self.network_actor_foreign(owner, entity_id)) {
+                        orders -= 1;
+                        continue;
+                    }
                     if !matches!(
                         entity.category(),
                         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
@@ -968,15 +1025,30 @@ impl Simulation {
                     }
                     let location =
                         crate::sim::movement::ground_pose::object_location(entity, Some(terrain));
+                    //64D27A reads the probe ray's origin through vt+0x4C. An
+                    // error names a state native has no outcome for (a Tube
+                    // member is filtered above, a Foot always has a
+                    // locomotor), where the Location is the Head_To fallback.
+                    let navigation = self
+                        .foot_navigation_coordinate(entity_id)
+                        .unwrap_or(location);
                     members.push(group_destination::GroupDestinationMember {
                         command_index,
                         entity_id,
                         coord: [location.x, location.y, location.z],
                         source_cell: (entity.position.rx() as i16, entity.position.ry() as i16),
+                        navigation_cell: (
+                            crate::util::lepton::lepton_to_cell(navigation.x),
+                            crate::util::lepton::lepton_to_cell(navigation.y),
+                        ),
                     });
                 }
+                if orders < 2 {
+                    run_start = run_end;
+                    continue;
+                }
                 let mut member_target: Option<GroupMemberTarget> = None;
-                let assignments = group_destination::distribute_group_destinations(
+                let mut assignments = group_destination::distribute_group_destinations(
                     clicked_target,
                     &members,
                     |member, candidate| {
@@ -998,6 +1070,7 @@ impl Simulation {
                         )
                     },
                 );
+                self.keep_jumpjets_off_promised_cells(&members, &mut assignments, rules, registry);
                 for assignment in assignments {
                     let Some(command) = commands.get_mut(run_start + assignment.command_index)
                     else {
@@ -1007,6 +1080,82 @@ impl Simulation {
                 }
             }
             run_start = run_end;
+        }
+    }
+
+    /// VERA `[JumpjetControls] LandNearby=` (off by default, no native
+    /// counterpart), after the spread `0x0064CDA0` has run unchanged: a
+    /// Jumpjet member whose cell another airborne Jumpjet is bound for, or an
+    /// earlier Jumpjet of this run was given, takes the nearest cell within
+    /// the key's range that neither holds and that it may enter outright. With
+    /// no such cell it keeps the spread's.
+    fn keep_jumpjets_off_promised_cells(
+        &self,
+        members: &[group_destination::GroupDestinationMember],
+        assignments: &mut [group_destination::GroupDestinationAssignment],
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    ) {
+        let range = rules.general.jumpjet_land_nearby;
+        if range <= 0 {
+            return;
+        }
+        let mut given = std::collections::BTreeSet::new();
+        for assignment in assignments {
+            let Some(id) = members
+                .iter()
+                .find(|member| member.command_index == assignment.command_index)
+                .map(|member| member.entity_id)
+            else {
+                continue;
+            };
+            let jumpjet = self.substrate.entities.get(id).is_some_and(|entity| {
+                entity.locomotor.as_ref().is_some_and(|locomotor| {
+                    locomotor.active_kind() == crate::rules::locomotor_type::LocomotorKind::Jumpjet
+                })
+            });
+            if !jumpjet {
+                continue;
+            }
+            let promised = |cell: (i16, i16), given: &std::collections::BTreeSet<(i16, i16)>| {
+                given.contains(&cell) || self.airborne_jumpjet_bound_for(cell, id).is_some()
+            };
+            let from = assignment.destination;
+            if promised(from, &given) {
+                let mut cells: Vec<(i32, i32, i32)> = Vec::new();
+                for dy in -range..=range {
+                    for dx in -range..=range {
+                        let distance = dx * dx + dy * dy;
+                        if distance != 0 && distance <= range * range {
+                            cells.push((distance, dy, dx));
+                        }
+                    }
+                }
+                cells.sort_unstable();
+                let free = cells.into_iter().find_map(|(_, dy, dx)| {
+                    let x = i16::try_from(i32::from(from.0) + dx)
+                        .ok()
+                        .filter(|x| *x >= 0)?;
+                    let y = i16::try_from(i32::from(from.1) + dy)
+                        .ok()
+                        .filter(|y| *y >= 0)?;
+                    let clear = self
+                        .mover_can_enter(
+                            id,
+                            (x, y),
+                            InfantryEntryArgs::REPAIR,
+                            crate::sim::movement::infantry_entry::EntryQueryMode::CheckLocomotor,
+                            rules,
+                            registry,
+                        )
+                        .is_ok_and(|code| code == 0);
+                    (clear && !promised((x, y), &given)).then_some((x, y))
+                });
+                if let Some(cell) = free {
+                    assignment.destination = cell;
+                }
+            }
+            given.insert(assignment.destination);
         }
     }
 
@@ -1125,16 +1274,19 @@ impl Simulation {
         // One scan per command sender, in sender order. A sender is its
         // House's index, as in gamemd's House scan, unless players share
         // Houses (VERA): each of them then gets its own scan of that House.
+        // A watcher sends nothing, so no sender is its current player.
         let local_source = self.session.local_shared_house_source();
+        let watcher = self.session.watcher();
         let mut houses: Vec<_> = self
             .session
             .network_sources(self.houses.order().len())
             .filter_map(|(source, house)| {
                 let owner = *self.houses.order().get(house)?;
-                let current_player = match local_source {
-                    Some(local) => local == source,
-                    None => self.session.current_house() == Some(owner),
-                };
+                let current_player = !watcher
+                    && match local_source {
+                        Some(local) => local == source,
+                        None => self.session.current_house() == Some(owner),
+                    };
                 Some(
                     CommandDispatchHouse::new(owner, source, true)
                         .with_current_player(current_player),
@@ -1159,7 +1311,7 @@ impl Simulation {
         {
             CommandDispatchMode::Network
         } else {
-            CommandDispatchMode::Offline
+            CommandDispatchMode::SinglePlayer
         };
         let mut host = WorldCommandHost {
             sim: self,
@@ -1191,17 +1343,23 @@ pub(super) trait FormationCommand {
     fn set_formation_destination(&mut self, destination: (i16, i16));
 }
 
+/// The destination rewrite of the group spread `0x0064CDA0`.
 fn write_formation_destination(
     record: &mut crate::sim::command::CommandRecord,
     destination: (i16, i16),
 ) {
-    let token = crate::sim::command::MegaMissionTarget::Cell {
+    // VERA untrusted-command security deviation: the getter `0x006E6E20` can
+    // project a raw token to coordinates no Cell token expresses. The record
+    // keeps its own token, as a run of one does, so the order cannot end the
+    // game on every machine.
+    let Ok((token, _)) = crate::sim::command::MegaMissionTarget::Cell {
         x: destination.0,
         y: destination.1,
     }
-    .token()
-    .expect("Cell target token");
-    record.payload_mut()[12..16].copy_from_slice(&token.0.to_le_bytes());
+    .token() else {
+        return;
+    };
+    record.payload_mut()[12..16].copy_from_slice(&token.to_le_bytes());
 }
 
 impl FormationCommand for Command {
@@ -1302,9 +1460,13 @@ impl DoListHost<QueuedCommand> for WorldCommandHost<'_, '_, '_> {
             .compare_frame_info(record, self.sim.session.binary_frame() as i32)
     }
 
-    fn adjust_megamissions(&mut self, _house: CommandDispatchHouse, entries: &mut [QueuedCommand]) {
-        self.sim
-            .adjust_staged_megamission_destinations(entries, self.rules, self.overlay_registry);
+    fn adjust_megamissions(&mut self, house: CommandDispatchHouse, entries: &mut [QueuedCommand]) {
+        self.sim.adjust_staged_megamission_destinations(
+            entries,
+            self.rules,
+            self.overlay_registry,
+            Some(house.owner),
+        );
     }
 
     fn execute(
@@ -1384,18 +1546,18 @@ fn within_spread_band(target_height: i32, candidate_height: i32) -> bool {
     (candidate_height - target_height).abs() <= 2
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "group_spread_gate_tests.rs"]
 mod group_spread_gate_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "command_admission_tests.rs"]
 mod command_admission_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "move_flash_ingress_tests.rs"]
 mod move_flash_ingress_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "control_group_ingress_tests.rs"]
 mod control_group_ingress_tests;

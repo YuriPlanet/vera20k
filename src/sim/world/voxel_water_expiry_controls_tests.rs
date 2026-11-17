@@ -25,6 +25,7 @@ fn piece_with_prior(runtime: &mut SimRuntime, z: i32, duration: i32) -> u64 {
         glam::IVec3::new(19972, 28836, 0),
         true,
         &mut Vec::new(),
+        rules,
     )
     .unwrap();
     let ids = sim.voxel_anims().ids();
@@ -74,7 +75,8 @@ fn tire_water_expiry_requires_strictly_below_the_deck_plane() {
         let id = piece_with_prior(&mut runtime, floor + height, 1);
         let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
         let rng_before = sim.scenario_rng.native_state_hex();
-        sim.visit_voxel_anim(id, &resources.rules, super::FrameEffects::default());
+        sim.visit_voxel_anim(id, &resources.rules, super::FrameEffects::default())
+            .unwrap();
         let piece = sim
             .voxel_anims()
             .get(id)
@@ -142,7 +144,8 @@ fn tire_out_of_domain_update_deletes_without_water_expiry_effects() {
     let rng_before = sim.scenario_rng.native_state_hex();
     let native_id_before = sim.native_identity_cursor();
     let stable_id_before = sim.next_stable_object_id();
-    sim.visit_voxel_anim(id, &resources.rules, super::FrameEffects::default());
+    sim.visit_voxel_anim(id, &resources.rules, super::FrameEffects::default())
+        .unwrap();
     assert!(
         !sim.voxel_anims()
             .get(id)

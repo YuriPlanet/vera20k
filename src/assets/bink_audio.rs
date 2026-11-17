@@ -1,7 +1,7 @@
 // Ported from FFmpeg's libavcodec/binkaudio.c.
 // Copyright (c) 2007-2011 Peter Ross (pross@xvid.org)
 // Copyright (c) 2009 Daniel Verkamp (daniel@drv.nu)
-// Licensed LGPL-2.1-or-later. See LICENSES/LGPL-2.1-or-later.txt in the repo root.
+// Licensed GPL-3.0-or-later. See LICENSE-GPL in the repo root.
 
 //! Bink Audio decoder (DCT and RDFT variants).
 //!
@@ -21,7 +21,7 @@ use crate::assets::error::AssetError;
 const MAX_CHANNELS: usize = 2;
 const MAX_BANDS: usize = 26;
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 #[path = "bink_audio_tests.rs"]
 mod oracle_tests;
 
@@ -599,7 +599,7 @@ fn inverse_dct_ii(input: &[f32], output: &mut [f32], fft: &Fft) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod tests {
     use super::*;
 

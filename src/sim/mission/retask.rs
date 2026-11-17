@@ -82,9 +82,9 @@ impl Simulation {
     /// class override): the class setter `vt+0x480(0, 1)` (`0x0070F859`),
     /// class `vt+0x3C8(0)` (`0x0070F865`), ArchiveTarget (`+0x218`)
     /// cleared (`0x0070F871`), then `Assign_Mission(Guard)` (`0x0070F87B`).
-    /// Callers: the capture reset (`0x00471EA5`)
-    /// and the slave manager (the deploy hand-off `0x006B0D10` and the
-    /// release `0x006B0BC5`).
+    /// Callers include the capture reset (`0x00471EA5`), the slave manager
+    /// (the deploy hand-off `0x006B0D10` and the release `0x006B0BC5`) and
+    /// SetInOpenTransport (`0x00710484`, [`Self::enter_open_topped`]).
     pub(crate) fn reset_orders_to_guard(
         &mut self,
         id: u64,
@@ -158,11 +158,11 @@ impl Simulation {
     /// after a Stop where retail resumes its archived move on the next Restore.
     ///
     /// A Harvest order also uses this funnel, retaining its unload-latch reset
-    /// after radio Break. EjectBunker and dormant aircraft passenger Unload
-    /// still bypass the prefix. These
-    /// pre-existing command routes can Restore a cancelled archive; their
-    /// complete DTO/mission migration is separate from ordinary Unit depot
-    /// servicing.
+    /// after radio Break. Event9 DEPLOY orders (including the VERA-only
+    /// bunker-eject record, #3675) and dormant aircraft passenger Unload
+    /// still bypass the prefix. These pre-existing command routes can Restore
+    /// a cancelled archive; their complete DTO/mission migration is separate
+    /// from ordinary Unit depot servicing.
     ///
     /// Without the clear on the sites that DO need it, a unit Overridden by a
     /// blocked step or by the retaliation at 0x00702B41, then retasked, then
@@ -213,11 +213,11 @@ impl Simulation {
     ///
     /// The flag is the type's `Harvester=` (`+0xE0E`, `0x004C766B`): every
     /// VERA miner but the Slave Miner, whose Miner component is only an
-    /// order marker (`sim::slave_manager`).
+    /// order marker (`sim::slave_manager`). The Stop arm calls this only for
+    /// a Unit (`0x004C7655..0x004C765F`).
     pub fn commit_stop_miner_guard(&mut self, id: u64, rules: &crate::rules::ruleset::RuleSet) {
         let is_stoppable_miner = self.substrate.entities.get(id).is_some_and(|entity| {
-            entity.category() == crate::map::entities::EntityCategory::Unit
-                && entity.is_harvester()
+            entity.is_harvester()
                 && matches!(
                     entity.mission.current().known(),
                     Some(MissionType::Harvest) | Some(MissionType::Return)

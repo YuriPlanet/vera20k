@@ -15,23 +15,24 @@
 //! `ai_best_rally_target`, `ai_ground_rally_point`, `ai_genetic_mutator` and
 //! `ai_psydom` execute the original code; `ai_fire_tests.rs` replays them.
 //!
+//! The second preferred defensive cell (`+0x54F8`) keeps its constructor
+//! value, as in gamemd: its setter House50DA40 has no call, jump or stored
+//! pointer, and the only other writers are the constructor (`0x004F5A9D`) and
+//! TAction141's clear (`0x0050DA6B`). The ForceShield arm (`0x00509A4B`) and
+//! Ares's IsTargetConstraintsEligible10032110 therefore see an unset cell.
+//! TAction35's type54EC and TAction135/136's cell54F0 are retained by
+//! HouseState and consumed here; a nonzero cell54F0 bypasses the
+//! MultiMissile/Storm/GroundRally pickers and suppresses Genetic/Dominator.
+//! TAction140/141 set/clear the separate timed defensive alert54F4/54FC
+//! through that same HouseState owner.
+//!
 //! RESIDUALS:
-//! - The second preferred defensive cell (`+0x54F8`) keeps its constructor
-//!   value: House50DA40's writer is not ported and an active caller is not
-//!   established. TAction35's type54EC and TAction135/136's cell54F0 are retained
-//!   by HouseState and consumed here; its nonzero value bypasses the
-//!   MultiMissile/Storm/GroundRally pickers and suppresses Genetic/Dominator.
-//!   TAction140/141 now set/clear the separate timed defensive alert54F4/54FC
-//!   through that same HouseState owner. Native141 also clears54F8, whose
-//!   current constructor-zero restriction remains part of this residual.
-//!   Ares's IsTargetConstraintsEligible10032110 reads it as well, so its
-//!   defensive-cell constraints see an unset cell.
 //! - A difficulty past a short `AIIonCannon*Value=` list reads 0
 //!   ([`HouseState::difficulty_value`]); native reads past the vector (a null
 //!   one for the three keys retail comments out, which no retail building
 //!   reaches).
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "ai_fire_tests.rs"]
 mod tests;
 
@@ -89,7 +90,9 @@ pub(crate) enum AiFireArm {
 }
 
 impl AiFireArm {
-    const fn of(kind: SuperWeaponKind) -> Self {
+    /// `ares` is [`RuleSet::ares`]: when Ares plays, UnitDelivery takes the
+    /// GroundRallyPoint arm; otherwise it has no arm.
+    const fn of(kind: SuperWeaponKind, ares: bool) -> Self {
         match kind {
             SuperWeaponKind::MultiMissile => Self::MultiMissile,
             SuperWeaponKind::LightningStorm => Self::LightningStorm,
@@ -97,20 +100,28 @@ impl AiFireArm {
             | SuperWeaponKind::AmerParaDrop
             | SuperWeaponKind::SpyPlane
             | SuperWeaponKind::PsychicReveal => Self::GroundRallyPoint,
-            #[cfg(feature = "ares")]
-            SuperWeaponKind::UnitDelivery => Self::GroundRallyPoint,
-            #[cfg(not(feature = "ares"))]
-            SuperWeaponKind::UnitDelivery | SuperWeaponKind::GenericWarhead => Self::None,
+            SuperWeaponKind::UnitDelivery => {
+                if ares {
+                    Self::GroundRallyPoint
+                } else {
+                    Self::None
+                }
+            }
             SuperWeaponKind::PsychicDominator => Self::PsychicDominator,
             SuperWeaponKind::GeneticConverter => Self::GeneticMutator,
             SuperWeaponKind::ForceShield => Self::ForceShield,
-            #[cfg(feature = "ares")]
             SuperWeaponKind::GenericWarhead => Self::None,
             SuperWeaponKind::IronCurtain
             | SuperWeaponKind::ChronoSphere
             | SuperWeaponKind::ChronoWarp
             | SuperWeaponKind::NoEffect
-            | SuperWeaponKind::HunterSeeker => Self::None,
+            | SuperWeaponKind::HunterSeeker
+            | SuperWeaponKind::Protect
+            | SuperWeaponKind::Battery
+            | SuperWeaponKind::SonarPulse
+            | SuperWeaponKind::EMPulse
+            | SuperWeaponKind::Firestorm
+            | SuperWeaponKind::DropPod => Self::None,
         }
     }
 }
@@ -159,12 +170,12 @@ pub(crate) fn try_fire(
 ) {
     #[cfg(any(test, feature = "test-support"))]
     observe(AiFireEvent::TryFire);
+    let ares = rules.ares_form();
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
     let human = house.is_controlled_by_human(sim.session.game_mode_nonzero());
-    #[cfg(not(feature = "ares"))]
-    if human {
+    if !ares && human {
         return;
     }
     for name in &rules.super_weapon_order {
@@ -174,8 +185,8 @@ pub(crate) fn try_fire(
         let Some(sw_type_id) = sim.interner.get(name) else {
             continue;
         };
-        #[cfg(feature = "ares")]
-        if human
+        if ares
+            && human
             && rules
                 .super_weapon_target_policy(name)
                 .is_none_or(|policy| !policy.auto_fire())
@@ -186,26 +197,26 @@ pub(crate) fn try_fire(
             continue;
         }
         // Reject extension-gated types before target search can consume RNG.
-        #[cfg(any(feature = "ares", feature = "phobos"))]
-        if !super::super_weapon_available(sim, rules, owner, &sw.id) {
+        if (ares || cfg!(feature = "phobos"))
+            && !super::super_weapon_available(sim, rules, owner, &sw.id)
+        {
             continue;
         }
-        #[cfg(feature = "ares")]
-        if sw.kind == SuperWeaponKind::UnitDelivery
+        if ares
+            && sw.kind == SuperWeaponKind::UnitDelivery
             && !super::unit_delivery::configured(sim, rules, owner, sw)
         {
             continue;
         }
         // Do not spend targeting RNG or attempt an unaffordable paid launch.
         // The Fire_SW transaction checks the current wallet again.
-        #[cfg(feature = "ares")]
-        if !super::money::configuration_supported(sw)
-            || !super::money::can_afford(&sim.houses, owner, sw)
+        if ares
+            && (!super::money::configuration_supported(sw)
+                || !super::money::can_afford(&sim.houses, owner, sw))
         {
             continue;
         }
-        #[cfg(feature = "ares")]
-        if rules.super_weapon_target_policy(name).is_some() {
+        if ares && rules.super_weapon_target_policy(name).is_some() {
             // House AI hook10038E10 also excludes drain state2.
             if sim.super_weapons[&owner][&sw_type_id].charge_drain_state() != 2 {
                 fire_extension_automatic(
@@ -220,7 +231,7 @@ pub(crate) fn try_fire(
             }
             continue;
         }
-        let arm = AiFireArm::of(sw.kind);
+        let arm = AiFireArm::of(sw.kind, ares);
         #[cfg(any(test, feature = "test-support"))]
         if matches!(
             arm,
@@ -259,7 +270,6 @@ pub(crate) fn try_fire(
 /// of a SPECIAL_PLACE launch, through the one [`TargetConstraints`] owner.
 ///
 /// [`TargetConstraints`]: crate::rules::superweapon_targeting::TargetConstraints
-#[cfg(feature = "ares")]
 fn extension_constraints(
     sim: &Simulation,
     owner: InternedId,
@@ -289,37 +299,38 @@ fn extension_constraints(
 }
 
 /// Sidebar select hook10034DA0: base CanFire, which `SW.AutoFire` without
-/// `SW.ManualFire` skips, precedes the wallet, which precedes the UseAI
-/// constraint warning; that AutoFire-only type is then refused silently.
-/// The constraint result is the view's `constraints_blocked`. The
-/// AutoFire-only refusal applies to the two extension types whose automatic
-/// launch VERA ports.
-#[cfg(feature = "ares")]
+/// `SW.ManualFire` skips, refuses with `EVA.Impatient`; then the wallet,
+/// then the UseAI constraint warning; an AutoFire-only or a draining
+/// `SW.Unstoppable` type is then refused silently. The constraint result is
+/// the view's `constraints_blocked`. The AutoFire-only refusal applies to the
+/// extension types whose automatic launch VERA ports.
 pub(super) fn manual_cameo_refusal(
     rules: &RuleSet,
     sw: &crate::rules::superweapon_type::SuperWeaponType,
     native_can_fire: bool,
     can_afford: bool,
     constraints_blocked: bool,
+    unstoppable: bool,
 ) -> Option<super::AresCameoRefusal> {
     use super::AresCameoRefusal as R;
     let manual_disabled = rules
         .super_weapon_target_policy(&sw.id)
         .is_some_and(|policy| policy.auto_fire() && !policy.manual_fire());
     if !native_can_fire && !manual_disabled {
-        None
+        Some(R::NotReady)
     } else if !can_afford {
         Some(R::InsufficientFunds)
     } else if constraints_blocked {
         Some(R::CannotFire)
+    } else if manual_disabled {
+        Some(R::ManualFireDisabled)
     } else {
-        manual_disabled.then_some(R::ManualFireDisabled)
+        unstoppable.then_some(R::Unstoppable)
     }
 }
 
 /// Shared automatic launch100382D0 for House AI and SPECIAL_PLACE. Target
 /// selection owns any RNG; Fire_SW remains the one charge/effect transaction.
-#[cfg(feature = "ares")]
 pub(super) fn fire_extension_automatic(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -364,7 +375,6 @@ pub(super) fn fire_extension_automatic(
     true
 }
 
-#[cfg(feature = "ares")]
 fn extension_target(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -381,7 +391,7 @@ fn extension_target(
     if policy.preference() == P::Offensive && house.preferred_super_weapon_target() != (0, 0) {
         return Some(house.preferred_super_weapon_target());
     }
-    // Defensive preference reads +54F8, currently the constructor-zero residual.
+    // Defensive preference reads +54F8, which gamemd never sets (0x0050DA40).
     let kind = house.preferred_super_weapon_target_kind();
     match policy.mode() {
         M::None | M::IronCurtain => None,
@@ -415,6 +425,32 @@ fn extension_target(
                 .is_ok()
                 .then_some(cell)
         }
+        // PickTarget10038640's case 0x13 (Ares `Mode::DropPod`): a Scenario
+        // RandomRanged(1, 4) zone, House501AC0's random cell in it, and the
+        // nearby Foot cell there (FNPC 0x56DC20: no zone, Normal, 1x1,
+        // bridges allowed, no target). The empty cell or a refused CanFireAt
+        // (vt+4, not manual) is no target.
+        M::DropPod => {
+            let zone = sim.scenario_rng.next_range_i32_inclusive(1, 4);
+            let seed = sim.house_random_cell_in_zone(owner, zone)?;
+            let cell = sim
+                .nearby_passable_cell(
+                    seed,
+                    NearbyArgs::plain(
+                        PassabilityArgs {
+                            speed_type: SpeedType::Foot,
+                            required_zone_id: None,
+                            movement_zone: MovementZone::Normal,
+                            bridge_aware_zone: false,
+                        },
+                        NearbyFootprint::SINGLE,
+                    ),
+                )
+                .filter(|&cell| cell != (0, 0))?;
+            super::targeting::check_with_data(sim, rules, owner, sw, cell, true, &data)
+                .is_ok()
+                .then_some(cell)
+        }
         // These distinct3.0 selectors are still pending native ports. Do not
         // silently replace a parsed mode with Offensive or another behavior.
         M::Stealth
@@ -422,14 +458,12 @@ fn extension_target(
         | M::Base
         | M::MultiMissile
         | M::EnemyBase
-        | M::DropPod
         | M::LightningRandom => None,
     }
 }
 
 /// GetPotentialAITargets100328D0 chooses native registries from the effective
 /// automatic target mask. All arrays retain construction/removal order.
-#[cfg(feature = "ares")]
 fn potential_targets(
     sim: &Simulation,
     mask: crate::rules::superweapon_targeting::TargetMask,
@@ -566,13 +600,12 @@ fn find_best_rally_target(
         .values()
         .map(|entity| rally_entry(sim, rules, house, Some(enemy), entity))
         .collect();
-    pick_best_rally_target(&entries, &mut sim.scenario_rng)
+    pick_best_rally_target(&entries, &mut sim.scenario_rng, rules.ares_form())
 }
 
 /// Ares Hooks.Targeting.cpp: OffensiveTargetSelector/ PickIonCannonTarget.
 /// Shares native eligibility and values, but ignores cloaked objects and
 /// scripted target preferences. Only a final tie selection draws Scenario RNG.
-#[cfg(feature = "ares")]
 fn offensive_target(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -618,7 +651,6 @@ fn offensive_target(
 /// density kernel with retail, but use forward potential registries, exclude
 /// cloak2, and require CanFireAt before changing the maximum. Ares iterates
 /// exactly37/9 cells, unlike the retail inclusive38/10 loops.
-#[cfg(feature = "ares")]
 fn ares_spread_target(
     sim: &Simulation,
     rules: &RuleSet,
@@ -818,11 +850,18 @@ fn rally_value(
 /// house) a Scenario draw `RandomRanged(0, best + 10)`; candidates worth more
 /// than the best so far replace the picks, as much join them. The final
 /// Scenario draw `RandomRanged(0, picks - 1)` chooses; none is the empty cell.
-fn pick_best_rally_target(entries: &[RallyEntry], rng: &mut SimRng) -> (i16, i16) {
+/// `ares` is [`RuleSet::ares`].
+fn pick_best_rally_target(entries: &[RallyEntry], rng: &mut SimRng, ares: bool) -> (i16, i16) {
     let mut best = 0i32;
     let mut picks: Vec<(i16, i16)> = Vec::new();
     for entry in entries {
         let mut value = if entry.in_playfield { entry.value } else { 0 };
+        // Ares 3.0 HouseClass_PickOffensiveSWTarget 10034C50 (hook
+        // 0x0050CFAA, size 0, resuming at 0x0050CFC9) replaces the cloaked
+        // entry's draw: its value becomes 0 and it is no candidate.
+        if ares && entry.cloaked {
+            continue;
+        }
         if entry.cloaked {
             value = rng.next_range_i32_inclusive(0, best.wrapping_add(10));
         }

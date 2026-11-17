@@ -9,11 +9,10 @@ use crate::ui::shell::geom::{LOWER_STRIP_H, ShellScale};
 use crate::ui::shell::list::ListMetrics;
 use crate::ui::shell::modal::BodyOkLayout;
 use crate::ui::skirmish_shell::{
-    ChooseMapModalButton, ChooseMapModalLayout, DropdownMetrics, PLAYERS_RANGE,
-    RandomMapSetupControl, RandomMapSetupLayout, RandomMapSetupModalState, RectPx,
-    SETUP_COMBO_ROWS, SavedSeedBrowserState, SavedSeedControl, SavedSeedLayout,
-    SkirmishShellLayout, SkirmishShellState, combo_face_rect, random_map_setup_dropdown_rect,
-    setup_combo_items,
+    ChooseMapModalButton, ChooseMapModalLayout, DropdownMetrics, RandomMapSetupControl,
+    RandomMapSetupLayout, RandomMapSetupModalState, RectPx, SETUP_COMBO_ROWS,
+    SavedSeedBrowserState, SavedSeedControl, SavedSeedLayout, SkirmishShellLayout,
+    SkirmishShellState, combo_face_rect, random_map_setup_dropdown_rect,
 };
 
 use super::chrome::{
@@ -58,7 +57,9 @@ pub(crate) fn render_saved_game_loading(
     use super::in_game_shell::{
         InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
     };
-    use crate::ui::shell::modal::{body_ok_layout, build_saved_game_loading_descriptor, control};
+    use crate::ui::shell::modal::{
+        body_ok_layout, body_ok_layout_in, build_saved_game_loading_descriptor, control,
+    };
 
     // An in-match load paints over the match frame at its source size and
     // zooms with it; a menu load paints over the menu at the window's size.
@@ -88,9 +89,15 @@ pub(crate) fn render_saved_game_loading(
         .expect("loading shell chrome");
     // 559D60 shows F0 before 69BB40 clears Session+30D8. An active load thus
     // starts with its current side; a menu load starts with the neutral assets.
-    let side = (state.frontend.screen == crate::ui::game_screen::GameScreen::InGame)
-        .then(|| crate::app::presentation::sidebar_render::current_sidebar_theme(state));
-    let layout = body_ok_layout(frame.0 as i32, frame.1 as i32);
+    let in_match = state.frontend.screen == crate::ui::game_screen::GameScreen::InGame;
+    let side =
+        in_match.then(|| crate::app::presentation::sidebar_render::current_sidebar_theme(state));
+    let (width, height) = (frame.0 as i32, frame.1 as i32);
+    let layout = if in_match {
+        body_ok_layout_in(RectPx::new(0, 0, width, height))
+    } else {
+        body_ok_layout(width, height)
+    };
     let descriptor = build_saved_game_loading_descriptor();
     let body = descriptor
         .controls
@@ -109,6 +116,10 @@ pub(crate) fn render_saved_game_loading(
         align: super::text::validation_modal_body_text_align(),
         path_a_reveal: None,
     }];
+    // A zoomed match's text is drawn in the window (`window_ui`).
+    let raster = crate::app::presentation::window_ui::shell_raster(state, false)
+        .unwrap_or(crate::render::bit_font::TextRaster::NATIVE);
+    let frame_raster = state.renderer.bit_font.set_raster(raster);
     let modal = shell_paint::paint_modal_shp(
         &state.renderer.bit_font,
         atlas.mode_two_dialog_background(side),
@@ -119,7 +130,7 @@ pub(crate) fn render_saved_game_loading(
         ShellScale::RETAIL,
         VALIDATION_MODAL_SPRITE_DEPTHS,
     );
-    super::in_game_shell::render_shell_frame(
+    let painted = super::in_game_shell::render_shell_frame(
         state,
         encoder,
         destination,
@@ -132,7 +143,9 @@ pub(crate) fn render_saved_game_loading(
         art,
         ShellFrameOverlay::default(),
         ShellFrameCursor::Hidden,
-    )
+    );
+    state.renderer.bit_font.set_raster(frame_raster);
+    painted
 }
 
 /// Native owner-draw listboxes preserve a composed backing surface. On the
@@ -183,11 +196,17 @@ pub(super) fn shell_content_fallback_rect(layout: &SkirmishShellLayout) -> RectP
     )
 }
 
+/// VERA: how bright Choose Map draws its background art, so list text
+/// reads over it. gamemd draws it at full brightness, as the saved-seed
+/// browser on the same art still does.
+pub(super) const CHOOSE_MAP_BACKGROUND_BRIGHTNESS: f32 = 0.8;
+
 pub(super) fn push_choose_map_background_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
     shell_layout: &SkirmishShellLayout,
     modal_layout: &ChooseMapModalLayout,
+    brightness: f32,
 ) -> BackdropInteriorPaint {
     let background = choose_map_background_entry(atlas, modal_layout);
     let interior = backdrop_interior(background.is_some());
@@ -203,6 +222,9 @@ pub(super) fn push_choose_map_background_instances(
             modal_layout.scale,
             SHELL_PARENT_BACKGROUND_DEPTH,
         );
+        if let Some(art) = out.last_mut() {
+            art.tint = [brightness; 3];
+        }
     } else {
         let fallback = shell_content_fallback_rect(shell_layout);
         push_solid_rect(
@@ -226,9 +248,11 @@ pub(super) fn push_choose_map_background_instances(
 pub(super) fn push_choose_map_modal_control_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
+    font: &crate::render::bit_font::BitFont,
     layout: &ChooseMapModalLayout,
     interior: BackdropInteriorPaint,
     shell: &SkirmishShellState,
+    search_display: &str,
     steady: bool,
 ) {
     let Some(modal) = shell.choose_map_modal.as_ref() else {
@@ -255,6 +279,29 @@ pub(super) fn push_choose_map_modal_control_instances(
         interior.paints_solid_fill(),
         layout.scale,
     );
+    // VERA: the search box wears the list's frame, with a caret after its
+    // text. It has no focus to lose, so the caret does not blink.
+    if interior.paints_solid_fill() {
+        push_solid_rect(
+            out,
+            atlas,
+            layout.map_search,
+            SHELL_MODAL_PANEL_RGB,
+            SHELL_DROPDOWN_DEPTH - 0.00010,
+        );
+    }
+    super::list::paint_list_frame(out, atlas, layout.map_search);
+    if let Some(caret) =
+        super::text::map_search_caret_rect(font, search_display, layout.map_search, layout.scale)
+    {
+        push_solid_rect(
+            out,
+            atlas,
+            caret,
+            SHELL_LABEL_TEXT_RGB,
+            SHELL_DROPDOWN_DEPTH - 0.00012,
+        );
+    }
     // While a slide runs the column replaces the buttons and the preview
     // static is validate-only (`0x00606800`).
     if !steady {
@@ -271,6 +318,7 @@ pub(super) fn push_choose_map_modal_control_instances(
             layout.create_random_map_button,
             ChooseMapModalButton::CreateRandomMap0x583,
         ),
+        (layout.favorite_button, ChooseMapModalButton::Favorite),
     ] {
         push_right_panel_button_shp(
             out,
@@ -329,9 +377,9 @@ pub(super) fn push_download_progress_bar(
     }
 }
 
-/// Use Map's two-button box. gamemd's eject-AI question draws gamemd's art;
-/// VERA's map-library download boxes draw Red Alert 2's, like its other
-/// online-service boxes.
+/// Use Map's two-button box. gamemd's eject-AI question and VERA's random-map
+/// failure draw gamemd's art; VERA's map-library download boxes draw Red
+/// Alert 2's, like its other online-service boxes.
 pub(super) fn push_choose_map_prompt_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
@@ -365,7 +413,8 @@ pub(super) fn push_choose_map_prompt_instances(
         },
     ];
     let background = match prompt.kind {
-        crate::ui::skirmish_shell::ChooseMapPromptKind::EjectAi => None,
+        crate::ui::skirmish_shell::ChooseMapPromptKind::EjectAi
+        | crate::ui::skirmish_shell::ChooseMapPromptKind::RandomMapFailed => None,
         _ => atlas.ra2_dialog_background,
     }
     .or_else(|| atlas.mode_two_dialog_background(None));
@@ -454,7 +503,44 @@ pub(super) fn push_random_map_setup_modal_control_instances(
     let chrome = atlas.control_chrome();
     // Rows 0..4 are combos; row 5 is the players trackbar. A collapsed combo
     // occupies only its face, not the dropdown extent the resource reserves.
-    for (row, control) in SETUP_COMBO_ROWS.iter().enumerate() {
+    // VERA: the Advanced view replaces the option rows with its sliders.
+    // VERA: an Extras row's face is a framed plate over the slider's window.
+    for row in (0..modal.extras_rows().len()).filter(|&row| modal.extras_row(row).is_some()) {
+        let face = layout.advanced_control_rects[row];
+        push_solid_rect(
+            out,
+            atlas,
+            face,
+            SHELL_MODAL_PANEL_RGB,
+            SHELL_DROPDOWN_DEPTH - 0.00009,
+        );
+        push_ownerdraw_two_pixel_bevel_frame(out, atlas, face, SHELL_DROPDOWN_DEPTH - 0.000095);
+    }
+    if modal.advanced && modal.extras_page.is_none() {
+        for field in crate::ui::skirmish_shell::AdvancedField::ALL {
+            let rect = layout.advanced_control_rects[field.row()];
+            paint_control(
+                out,
+                &chrome,
+                ControlPaint::Trackbar {
+                    rect,
+                    thumb_left: crate::ui::skirmish_shell::ADVANCED_RANGE.thumb_left_in(
+                        modal.advanced_value(field),
+                        rect,
+                        layout.scale,
+                    ),
+                    plaque: true,
+                    disabled: !modal.is_enabled(RandomMapSetupControl::Advanced(field)),
+                },
+                layout.scale,
+            );
+        }
+    }
+    for (row, control) in SETUP_COMBO_ROWS
+        .iter()
+        .enumerate()
+        .filter(|_| !modal.advanced)
+    {
         let rect = layout.control_rects[row];
         let face = combo_face_rect(rect, layout.scale);
         // Native owner-draw controls preserve their composed background. The
@@ -482,21 +568,38 @@ pub(super) fn push_random_map_setup_modal_control_instances(
         );
     }
     let players = layout.control_rects[PLAYERS_ROW];
-    paint_control(
-        out,
-        &chrome,
-        ControlPaint::Trackbar {
-            rect: players,
-            thumb_left: PLAYERS_RANGE.thumb_left_in(
-                modal.options.num_players,
-                players,
-                layout.scale,
-            ),
-            plaque: true,
-            disabled: false,
-        },
-        layout.scale,
-    );
+    if !modal.advanced {
+        paint_control(
+            out,
+            &chrome,
+            ControlPaint::Trackbar {
+                rect: players,
+                thumb_left: crate::ui::skirmish_shell::PLAYERS_RANGE.thumb_left_in(
+                    modal.options.num_players,
+                    players,
+                    layout.scale,
+                ),
+                plaque: true,
+                disabled: false,
+            },
+            layout.scale,
+        );
+    }
+
+    // Ares' Urban Areas box (control 5000 of Ares' dialog 261), drawn as the
+    // shell's own checkbox when Ares.dll is loaded; the Advanced view's
+    // seventh slider takes its place.
+    if modal.ares && !modal.advanced {
+        paint_control(
+            out,
+            &chrome,
+            ControlPaint::Checkbox {
+                checked: modal.options.urban_areas,
+                rect: layout.urban_areas,
+            },
+            layout.scale,
+        );
+    }
 
     // Surprise Me and Generate are owner-draw type 3 for this dialog, so they
     // take the MNBTTN modal button art rather than the generic PCX slices --
@@ -548,6 +651,10 @@ pub(super) fn push_random_map_setup_modal_control_instances(
         (layout.save, RandomMapSetupControl::Save0x6c3),
         (layout.delete, RandomMapSetupControl::Delete0x6c4),
         (layout.cancel, RandomMapSetupControl::Cancel0x5c0),
+        (layout.advanced, RandomMapSetupControl::AdvancedToggle),
+        (layout.export, RandomMapSetupControl::ExportMap),
+        (layout.fair_starts, RandomMapSetupControl::FairStartsToggle),
+        (layout.preset, RandomMapSetupControl::PresetCycle),
     ]
     .into_iter()
     .filter(|_| steady)
@@ -587,7 +694,7 @@ pub(super) fn push_random_map_setup_modal_control_instances(
     // An open list paints last so it covers the rows beneath it.
     if let Some(combo) = modal.open_combo {
         let row = combo.row();
-        let items = setup_combo_items(combo);
+        let items = modal.combo_items(combo);
         let list = random_map_setup_dropdown_rect(layout, row, items.len());
         let row_h = DropdownMetrics::scaled(layout.scale).row_h;
         push_solid_rect(

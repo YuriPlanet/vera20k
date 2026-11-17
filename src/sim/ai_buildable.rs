@@ -64,7 +64,9 @@ pub(crate) fn first_owner_compatible_harvester(
 /// `0x00505330..0x0050534E`) holds the house's country bit
 /// (`1 << HouseTypeClass::FindIndexByName`, `0x00505316`). The crate pickup
 /// asks it for `BaseUnit=` (`Rules+0xB20`) and `HarvesterUnit=`
-/// (`Rules+0xB3C`); null when no entry is ownable.
+/// (`Rules+0xB3C`), the multiplayer base-unit spawn for `BaseUnit=`
+/// (`0x005D7059`); null when no entry is ownable. The AI's harvester and
+/// base-unit checks inline the same loop (e.g. `0x004F6540`, `0x004FEA60`).
 pub(crate) fn first_owner_compatible<'a>(
     rules: &'a RuleSet,
     type_ids: &[String],
@@ -125,6 +127,10 @@ pub fn candidate_allowed(
 }
 
 /// Resolve the first passing BuildingType pointer from one authored AI list.
+/// Ares 3.0 HouseClass_FirstBuildableFromArray 100238E0 (hook `0x005051E0`)
+/// replaces the body with HouseExt::FindBuildable: CanExpectToBuild with
+/// the parent country's Owner bit and the shell-disabled test, the same
+/// [`candidate_allowed`] gates.
 pub(crate) fn first_buildable_from_array<'a>(
     rules: &'a RuleSet,
     type_ids: &[String],
@@ -132,6 +138,8 @@ pub(crate) fn first_buildable_from_array<'a>(
     side_index: i32,
     super_weapons: bool,
 ) -> Option<&'a ObjectType> {
+    // VERA-only: native scans a country outside [Countries] with bit 31/30
+    // and almost always finds nothing.
     rules.country_index(country_name)?;
     let country = CountryBuildMasks::for_country(rules, country_name);
     type_ids.iter().find_map(|type_id| {
@@ -140,6 +148,6 @@ pub(crate) fn first_buildable_from_array<'a>(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ai_buildable_parent_tests.rs"]
 mod parent_tests;

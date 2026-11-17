@@ -12,7 +12,9 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_rules::LandType;
 use crate::sim::cell_kernel::{CellCoordinate, cell_center};
-use crate::sim::cell_rect::{PlayfieldBounds, cell_is_in_playfield_height_aware_in_query};
+use crate::sim::cell_rect::{
+    BurrowingContents, PlayfieldBounds, cell_is_in_playfield_height_aware_in_query,
+};
 use crate::sim::combat::TargetKind;
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::find_nearby_cell::{
@@ -117,9 +119,12 @@ impl Simulation {
     /// (Ctrl's forced shot, and [`Self::cell_attack_rung_admits`]); a tube
     /// entrance (Unit `0x007406CF`, Infantry `0x0051F9AC`); a JumpJet
     /// soldier over a tube's neighbourhood, which answers 0
-    /// (`0x0051F860..0x0051F8A6`); the fogged-object scans, among them the
-    /// harvest rungs' fogged overlay (`0x0074052A..0x0074056C`); and
+    /// (`0x0051F860..0x0051F8A6`); the fogged-object scans; and
     /// DirectRocker (`+0x2A8`, `0x00700617`), which nothing in retail sets.
+    /// The harvest rungs' FogOfWar scan (`0x0074052A..0x0074056C`) needs a fog
+    /// record of WhatAmI 0x14 (Overlay), which only FoggedObjectClass's overlay
+    /// constructor (`0x004D0980`) makes, and nothing calls it. The rungs then
+    /// read the live Cell, as here.
     pub fn cell_move_action(
         &self,
         viewer: InternedId,
@@ -134,6 +139,13 @@ impl Simulation {
             .entities
             .get(id)
             .ok_or("What_Action receiver disappeared")?;
+        // Ares hooks at the head of each class What_Action over a Cell (Unit
+        // `0x007404B9`, Infantry `0x0051F808`, Aircraft `0x00417F83`, Building
+        // `0x00447548`; Ares.dll `1004CF30`, `1004CC10`, `1004CAE0`,
+        // `1004CB50`): a Deactivated (`+0x1C8`) object answers 0.
+        if rules.ares() && entity.deactivated.is_offline() {
+            return Ok(MoveAction::None);
+        }
         if entity.category() == EntityCategory::Structure {
             return self.building_cell_move_action(viewer, id, cell, query, rules, registry);
         }
@@ -175,14 +187,14 @@ impl Simulation {
                 )
             })?
         };
-        let shrouded = action != MoveAction::None
-            && clicked_cell_shrouded(&self.fog, &cells, viewer, clicked)?;
-        if shrouded {
-            action = if object.move_to_shroud && in_playfield {
-                MoveAction::Move
-            } else {
-                MoveAction::NoMove
-            };
+        let shroud_action = if action == MoveAction::None {
+            None
+        } else {
+            foot_cell_shroud_rung(&self.fog, &cells, viewer, object, clicked, in_playfield)?
+        };
+        let shrouded = shroud_action.is_some();
+        if let Some(shroud_action) = shroud_action {
+            action = shroud_action;
         }
         match entity.category() {
             // Unit asks IsShrouded again at the same Cell centre; the harvest
@@ -478,9 +490,10 @@ impl Simulation {
     /// The planning rung before it (`0x00700840`) never answers in YR; see
     /// [`Self::cell_move_action`]. Residuals: the fogged-object scan
     /// behind the scenario's FogOfWar flag
-    /// (`0x00700761..0x0070080F`: a fogged overlay replaces the live one and
-    /// a fogged enemy building admits the rung) and the veinhole monster
-    /// (`0x00700990`, no VERA owner) are not modelled.
+    /// (`0x00700761..0x0070080F`: a fogged enemy building admits the rung)
+    /// and the veinhole monster (`0x00700990`, no VERA owner) are not
+    /// modelled. The scan's fogged-overlay arm never fires: no overlay fog
+    /// record exists (`0x004D0980` has no caller).
     pub fn cell_attack_rung_admits(
         &self,
         id: u64,
@@ -510,10 +523,7 @@ impl Simulation {
         ) else {
             return false;
         };
-        let warhead = weapon
-            .warhead
-            .as_deref()
-            .and_then(|name| rules.warhead(name));
+        let warhead = rules.weapon_warhead(weapon);
         let overlay_cell = self
             .overlay_grid
             .as_ref()
@@ -656,6 +666,41 @@ impl Simulation {
             viewer,
             (cell.0 as i16, cell.1 as i16),
         )
+    }
+
+    /// Foot What_Action's shroud rung over a Cell
+    /// (`FootClass::What_Action_OnCell @ 0x004DDDE0`) for Techno's nonzero
+    /// answer: over a Cell centre, raised to a bridge deck, that `viewer`'s
+    /// map shrouds (`IsShrouded 0x00586360`), a Foot answers Move for a
+    /// `MoveToShroud=` type in the playfield, else NoMove
+    /// (`0x004DDE64..0x004DDEBE`). The Move rungs' answer goes through it
+    /// ([`Self::cell_move_action`]); the input layer asks it of the Cell
+    /// attack rungs' Attack. None keeps the answer: a Building has no Foot
+    /// wrapper (`0x00447540`).
+    pub fn foot_cell_shroud_action(
+        &self,
+        viewer: InternedId,
+        id: u64,
+        cell: (u16, u16),
+        rules: &RuleSet,
+    ) -> Option<MoveAction> {
+        let entity = self.substrate.entities.get(id)?;
+        if entity.category() == EntityCategory::Structure {
+            return None;
+        }
+        let object = self.interner.object_type(entity.type_ref(), rules)?;
+        let terrain = self.resolved_terrain.as_ref()?;
+        let cells = NativeCellQuery::isolated(terrain);
+        let clicked = (cell.0 as i16, cell.1 as i16);
+        let in_playfield = cell_is_in_playfield_height_aware_in_query(
+            (i32::from(clicked.0), i32::from(clicked.1)),
+            self.playfield_bounds,
+            Some(terrain),
+            Some(&cells),
+        );
+        foot_cell_shroud_rung(&self.fog, &cells, viewer, object, clicked, in_playfield)
+            .ok()
+            .flatten()
     }
 
     /// The Cell a Foot's Move click resolves, before event encoding. The
@@ -982,16 +1027,14 @@ impl Simulation {
     /// - NoMove where the object's coordinate (vt+0x48) is shrouded, for a
     ///   type without MoveToShroud (`0x004D77BD..0x004D77EA`);
     /// - a receiver the player cannot order (vt+0xA0, `0x004D77FB..0x004D7807`);
-    /// - an Aircraft whose object coordinate, raised to its ground, is
-    ///   shrouded (`0x004D7809..0x004D7896`).
+    /// - an Aircraft, or a Subterannean mover while
+    ///   `AllowShroudedSubteranneanMoves=no`, whose object coordinate raised
+    ///   to its ground is shrouded (`0x004D7809..0x004D7896`).
     ///
     /// Otherwise [`resolve_foot_object_click`] picks the object or a Cell.
     ///
     /// Not modelled: DirectRocker (`+0x2A8`, `0x004D74FA..0x004D7514`), which
-    /// nothing in retail sets; for a Subterranean (Type+D2C) mover, the
-    /// shroud return gated on `AllowShroudedSubteranneanMoves` (Rules+0x17EF,
-    /// `0x004D785F..0x004D7877`) and FNPC's height flag
-    /// (`0x004D7A31..0x004D7A5A`), since no retail type is Subterranean.
+    /// nothing in retail sets.
     pub fn object_move_click(
         &self,
         viewer: InternedId,
@@ -1051,7 +1094,11 @@ impl Simulation {
             z: coords.z.max(query_ground(&map.cells, coords)?),
             ..coords
         };
-        if entity.category() == EntityCategory::Aircraft
+        // Foot4D785F..4D7896: row6 with the Rules gate off joins Aircraft's
+        // raised-coordinate shroud rejection, before navigation queries.
+        if ((object.movement_zone == MovementZone::Subterranean
+            && !rules.general.allow_shrouded_subterannean_moves())
+            || entity.category() == EntityCategory::Aircraft)
             && crate::sim::vision::coordinate_is_shrouded(&map.cells, raised, &open)?
         {
             return Ok(None);
@@ -1100,6 +1147,10 @@ impl Simulation {
             zones,
             raw: &self.substrate.raw_cell_occupation,
             overlays: self.overlay_grid.as_ref(),
+            burrowing_contents: Some(BurrowingContents {
+                occupancy: &self.substrate.occupancy,
+                terrain_objects: self.terrain_objects.cell_index(),
+            }),
             bounds,
             size,
             frame: self.session.binary_frame(),
@@ -1163,6 +1214,17 @@ impl ClickMover {
             true,
         )
     }
+
+    /// Foot4DE3DB..4DE3F9 /4D7A3B..4D7A5A: the independent FNPC
+    /// burrow gate asks GetHeight only for Type+D2C, and requires it below0.
+    fn requires_burrowable(&self, cells: &NativeCellQuery<'_>) -> bool {
+        self.movement_zone == MovementZone::Subterranean
+            && crate::sim::movement::air_movement::object_height_in_query(
+                self.current,
+                self.on_bridge,
+                Some(cells),
+            ) < 0
+    }
 }
 
 /// The map queries both Foot click receivers make.
@@ -1172,6 +1234,8 @@ struct ClickMap<'a> {
     raw: &'a RawCellOccupationGrid,
     /// The live overlays whose `Wall=` FNPC's passability test reads.
     overlays: Option<&'a crate::sim::overlay_grid::OverlayGrid>,
+    /// Input runs while GameActive is set; synthetic inactive queries omit it.
+    burrowing_contents: Option<BurrowingContents<'a>>,
     bounds: PlayfieldBounds,
     size: (i32, i32),
     frame: u32,
@@ -1246,6 +1310,7 @@ impl ClickMap<'_> {
         speed_type: SpeedType,
         movement_zone: MovementZone,
         zone_source: Option<(NativeCellIdentity, bool)>,
+        require_burrowable: bool,
     ) -> Result<Option<(u16, u16)>, String> {
         let bridge = self.bridge(target);
         let required_zone = zone_source
@@ -1277,6 +1342,8 @@ impl ClickMap<'_> {
                 footprint: NearbyFootprint::SINGLE,
                 allow_bridge_cells: true,
                 check_height: true,
+                require_burrowable,
+                burrowing_contents: self.burrowing_contents,
                 check_occupancy: false,
                 radius_cap: map_owned_radius_cap(self.size.0, self.size.1),
                 target_cell: None,
@@ -1317,6 +1384,26 @@ fn clicked_cell_shrouded(
         viewer,
         clicked_coordinate(cells, clicked)?,
     ))
+}
+
+/// [`Simulation::foot_cell_shroud_action`]'s rung for a Foot of type `object`.
+fn foot_cell_shroud_rung(
+    fog: &crate::sim::vision::FogState,
+    cells: &NativeCellQuery<'_>,
+    viewer: InternedId,
+    object: &crate::rules::object_type::ObjectType,
+    clicked: (i16, i16),
+    in_playfield: bool,
+) -> Result<Option<MoveAction>, String> {
+    Ok(
+        clicked_cell_shrouded(fog, cells, viewer, clicked)?.then_some(
+            if object.move_to_shroud && in_playfield {
+                MoveAction::Move
+            } else {
+                MoveAction::NoMove
+            },
+        ),
+    )
 }
 
 /// UnitClass What_Action's harvest rungs (`0x007405F5..0x007406C3`), by the
@@ -1367,9 +1454,8 @@ fn grounded_coordinate(cells: &NativeCellQuery<'_>, x: i32, y: i32) -> Result<Dr
 /// tools/spatial_oracle/walk_move_admission (Infantry and Unit/Drive
 /// receivers, original input action supplied).
 ///
-/// FNPC's tenth argument (`0x004DE3DB..0x004DE3F9`: 1 for a Type+D2C mover
-/// at or above the ground, else 0) is not passed: no retail type is
-/// Subterranean.
+/// FNPC's independent burrow argument (`0x004DE3DB..0x004DE3F9`) is set
+/// only for the special NoMove arm when Type+D2C and GetHeight below0.
 fn resolve_foot_cell_click(
     map: &ClickMap<'_>,
     click: &FootCellClick,
@@ -1409,6 +1495,7 @@ fn resolve_foot_cell_click(
         click.mover.speed_type,
         movement_zone,
         (!unrestricted).then_some((source, source_bridge)),
+        unrestricted && click.mover.requires_burrowable(cells),
     )
 }
 
@@ -1469,19 +1556,20 @@ fn resolve_foot_object_click(
     centre.z = query_ground(cells, centre)?;
     let shrouded = crate::sim::vision::coordinate_is_shrouded(cells, centre, &open)?;
     let own_zone = Some((source, source_bridge));
-    let nearby = |zone_source| {
+    let nearby = |zone_source, require_burrowable| {
         map.nearby(
             click.target,
             click.mover.speed_type,
             movement_zone,
             zone_source,
+            require_burrowable,
         )
     };
     if special && click.no_move {
-        return nearby(None);
+        return nearby(None, click.mover.requires_burrowable(cells));
     }
     if !in_playfield {
-        return nearby(own_zone);
+        return nearby(own_zone, false);
     }
     if special {
         return Ok(None);
@@ -1491,7 +1579,7 @@ fn resolve_foot_object_click(
         || (click.force_move_key && click.infantry)
         || !map.reaches(source, source_bridge, click.target, movement_zone)?
     {
-        return nearby(own_zone);
+        return nearby(own_zone, false);
     }
     Ok(None)
 }

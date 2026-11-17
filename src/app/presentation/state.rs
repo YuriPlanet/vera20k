@@ -22,10 +22,10 @@ use crate::render::sidebar_chrome::SidebarChromeSet;
 use crate::render::sprite_atlas::SpriteAtlas;
 use crate::render::tile_atlas::TileAtlas;
 use crate::render::unit_atlas::UnitAtlas;
+use crate::rules::house_colors::{RELATION_ALLY, RELATION_ENEMY, RELATION_SELF};
 use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarTab};
 
 pub(crate) struct MatchPresentationState {
-    pub(crate) interpolation: super::interpolation::RenderInterpolation,
     /// Native Techno+3CA waterline cache, captured by drawing and retained in
     /// the snapshot presentation supplement rather than simulation authority.
     pub(crate) sinking_waterlines: std::cell::RefCell<crate::render::sinking::SinkingWaterlines>,
@@ -38,9 +38,16 @@ pub(crate) struct MatchPresentationState {
     pub(crate) unit_atlas: Option<UnitAtlas>,
     /// Palette + per-house RGB ramp GPU resources for the voxel sprite shader.
     pub(crate) palette_set: Option<crate::render::palette_textures::PaletteSet>,
+    /// PALETTE.PAL as `surface_palette` parsed it; a world install empties it.
+    pub(crate) surface_palette: std::cell::OnceCell<crate::assets::pal_file::Palette>,
     pub(crate) sprite_atlas: Option<SpriteAtlas>,
     /// The unit and sprite atlas growths rasterizing on workers.
     pub(crate) atlas_growth: crate::render::entity_atlas_growth::EntityAtlasGrowth,
+    /// The changed looks the tick's tail checks the atlases against.
+    pub(crate) atlas_check: crate::render::entity_atlas_growth::EntityAtlasCheck,
+    /// An atlas refresh asked beside a lent tick, which the tick's tail runs
+    /// (`sim_tick::refresh_entity_atlases`).
+    pub(crate) atlas_refresh_owed: bool,
     pub(crate) overlay_atlas: Option<OverlayAtlas>,
     pub(crate) bridge_atlas: Option<BridgeAtlas>,
     pub(crate) sidebar_cameo_atlas: Option<SidebarCameoAtlas>,
@@ -50,6 +57,11 @@ pub(crate) struct MatchPresentationState {
     /// process InitGame GRFXTXT art.
     pub(crate) outcome_banner_side_art:
         Option<crate::app::presentation::outcome_banner::OutcomeBannerArt>,
+    /// This match's Ares `Text.*` superweapon status labels (hook 6CC2B0),
+    /// resolved once with the incoming world: its Rules and the process
+    /// string table stay fixed for the match. `None` unless Ares plays in
+    /// the game (`RuleSet::ares`).
+    pub(crate) ares_status_texts: Option<crate::app::presentation::sidebar_build::AresStatusTexts>,
     /// The local country's own win/lose card from `[EndGameScreens]`, drawn in
     /// the same tactical slot as the retail banner. `None` keeps the native
     /// art; the player's Custom End Game Banner switch is read at draw time.
@@ -67,10 +79,29 @@ pub(crate) struct MatchPresentationState {
     /// Owner name → house color index mapping for atlas key lookups.
     pub(crate) house_color_map: HouseColorMap,
     pub(crate) house_roster: HouseRoster,
+    /// VERA "relation colours" toggle: when on, `relation_color_map` overrides
+    /// each owner's player colour with its relation to the local house (self
+    /// = blue, ally = green, enemy = red; passive houses keep their colour).
+    /// Presentation only — never simulation input, so it cannot affect
+    /// determinism, networking, or replays.
+    pub(crate) relation_colors: bool,
+    /// VERA's Super Weapon Building Timers: draw each provider building's
+    /// Super countdown above it. Started from `[VERA]
+    /// SuperweaponBuildingTimers=` when a scenario loads and flipped in a
+    /// match by its hotkey command. Presentation only — every consumer is a
+    /// draw, so it cannot affect determinism, networking, or replays.
+    pub(crate) superweapon_building_timers: bool,
+    /// Owner name → effective house-colour index under the relation-colours
+    /// toggle ([`relation_house_colors`]). `None` while the toggle is off or
+    /// there is no local house, so colour sites use `house_color_map`.
+    pub(crate) relation_color_map: Option<HouseColorMap>,
+    /// Bumped every time `relation_color_map` changes, so cached renderers
+    /// (e.g. the minimap) can detect a relation-colours change and repaint even
+    /// when the simulation is paused and nothing else would trigger a redraw.
+    pub(crate) relation_color_generation: u64,
     pub(crate) lighting: super::lighting::MatchLighting,
     pub(crate) line_trails: super::line_trails::LineTrails,
     pub(crate) lasers: super::lasers::Lasers,
-    #[cfg(feature = "ares")]
     pub(crate) flying_credits: std::cell::RefCell<super::flying_credits::FlyingCredits>,
     pub(crate) talk_bubble: super::talk_bubble::TalkBubble,
     pub(crate) electric_bolts: super::electric_bolts::ElectricBolts,
@@ -87,6 +118,8 @@ pub(crate) struct MatchPresentationState {
     pub(crate) superweapon_range_pulse: crate::app::presentation::radial_indicators::RangePulse,
     /// Native process-lived FPS counter and detail hysteresis, never sim state.
     pub(crate) detail: std::cell::RefCell<super::detail::DetailState>,
+    /// The water and ore sparkles' per-cell PixelFX and clock.
+    pub(crate) pixel_fx: std::cell::RefCell<crate::render::pixel_fx_sparkles::PixelFxCells>,
     /// The client's AnimClass `+0x19D` for Supers' ChronoPlacement anims
     /// (`match_runtime::super_selection`): hidden anims, by id.
     pub(crate) hidden_super_anims: std::collections::BTreeSet<crate::sim::anim_class::AnimId>,
@@ -124,6 +157,9 @@ pub(crate) struct MatchPresentationState {
     pub(crate) radar_content_insets: Option<[u32; 4]>,
     /// Whether the local player currently has operational radar (power-gated).
     pub(crate) has_radar: bool,
+    /// A loaded game's radar housing, held until the radar is built for it.
+    pub(crate) loaded_radar_housing:
+        Option<crate::sim::snapshot::saved_local_view::SavedRadarHousing>,
     /// Selection overlay renderer — highlights and drag rectangle.
     pub(crate) selection_overlay: Option<SelectionOverlay>,
     /// Phobos `[Phobos] DigitalDisplay.Enable` from the imported client
@@ -173,10 +209,13 @@ pub(crate) struct MatchPresentationState {
     // -- Reusable per-frame scratch buffers (avoid allocation each frame) --
     /// Cell body instance scratch vec — cleared and refilled each frame.
     pub(crate) cached_cell_body_instances: Vec<crate::render::batch::SpriteInstance>,
+    /// The ground tile list of the last draw, handed back so the next draw
+    /// fills the same allocation.
+    pub(crate) cached_terrain_instances: Vec<crate::render::batch::SpriteInstance>,
     /// Animated power bar — segment-by-segment transition matching original PowerClass.
     pub(crate) power_bar_anim: crate::ui::sidebar::PowerBarAnimState,
     /// Persistent flash + mode state for in-game sidebar gadgets. Ticked from
-    /// `sidebar_gadgets::update_sidebar_gadget_state` once per sim tick;
+    /// `sidebar_gadgets::update_sidebar_gadget_state` on every pass;
     /// read each frame by the sidebar view builder to pick SHP frame indices.
     pub(crate) sidebar_gadget_state: crate::ui::sidebar::gadget_flash::SidebarGadgetState,
     /// In-game gadget substrate (study §6.1): retained sidebar button list +
@@ -187,8 +226,23 @@ pub(crate) struct MatchPresentationState {
     pub(crate) sidebar_projection: crate::app::sidebar_projection::SidebarProjectionState,
     /// Active tab for the custom in-game sidebar.
     pub(crate) active_sidebar_tab: SidebarTab,
-    /// Native side-specific geometry in physical render pixels.
+    /// The side's sidebar geometry in sidebar pixels: the original's, with
+    /// the numbers the side's `veraui.ini` layout changes.
     pub(crate) sidebar_layout_spec: SidebarChromeLayoutSpec,
+    /// The layouts this match uses: the mod's `veraui.ini` with the player's
+    /// own laid over it (`presentation::player_layout`).
+    pub(crate) match_layouts: crate::ui::match_layout::MatchLayoutFile,
+    /// The mod's file as the loader parsed it.
+    pub(crate) mod_layout_ini: Option<crate::rules::ini_parser::IniFile>,
+    /// The player's own file's text, as read and as the edit mode changes it.
+    pub(crate) player_layout_text: Vec<u8>,
+    /// The layout edit mode, while it is on (`input::layout_edit`).
+    pub(crate) layout_edit: Option<crate::app::input::layout_edit::LayoutEditState>,
+    /// The buttons and texts the local side's layout adds.
+    pub(crate) added_parts: std::sync::Arc<[crate::ui::added_parts::AddedPart]>,
+    /// The row each grid of build pictures the layout adds is scrolled to,
+    /// by the grid's place in `added_parts`.
+    pub(crate) added_grid_scroll: Vec<usize>,
     /// Shared tooltip service (study S1) — the model is clock-injected; only
     /// `input::tooltips` reads the wall clock.
     pub(crate) tooltips: crate::ui::tooltips::TooltipService,
@@ -206,7 +260,7 @@ pub(crate) struct MatchPresentationState {
     pub(crate) beacons: crate::app::match_runtime::beacons::BeaconManager,
     /// In-scenario modal state — the port of gamemd's in-scenario state
     /// variable. Owns the in-game menu, the abort-mission confirmation and the
-    /// parent/child relationship with the `0xBBB` Options dialog.
+    /// menu's child dialogs (Sound, Keyboard, Surrender, Diplomacy).
     pub(crate) in_game_menu: crate::ui::pause_menu::InGameMenuState,
     /// `[0x822CFC]`, State_Machine's admission latch: `Main_Game` sets it at
     /// each scenario start (`0x0048CE7E`) and a confirmed Abort clears it
@@ -219,8 +273,11 @@ pub(crate) struct MatchPresentationState {
     pub(crate) pause_menu_template: crate::ui::shell::pause_menu::PauseMenuTemplate,
     /// FF's trackbars (WOL in-game menu), recreated on every state-1 entry.
     pub(crate) internet_pause: crate::app::input::pause_menu::InternetPauseControls,
-    /// VERA's Display group (Zoom, Full Screen) in every in-game menu.
-    pub(crate) display_pause: crate::app::input::pause_menu::DisplayPauseControls,
+    /// VERA's Options pages on the in-game menu, while it is open.
+    pub(crate) options_page: Option<crate::app::input::pause_menu::InGameOptionsPage>,
+    /// The page the menu showed when it left for one of its dialogs, which it
+    /// returns to. `None` from play: Escape opens on Game Controls.
+    pub(crate) options_page_category: Option<crate::ui::main_menu_dialogs::options::Category>,
     /// What B6 init (4F1840) made of control712 when the dialog last opened;
     /// its stored results stay for that dialog's lifetime.
     pub(crate) abort_secondary: crate::ui::shell::abort::AbortSecondary,
@@ -238,14 +295,122 @@ pub(crate) struct MatchPresentationState {
     pub(crate) restate_text: String,
     pub(crate) saved_game_browser:
         Option<crate::ui::skirmish_shell::SavedSeedBrowserState<std::path::PathBuf>>,
-    /// Client-side in-game Options (0xBBB) state: the six [Options] values plus
-    /// transient interaction flags. `game_speed` mirrors the launched sim and
-    /// queues an authoritative transition on close; `sim_speed_tps` is its local
-    /// presentation readout. App/ui-level.
+    /// What BBB's init (4E1FE0) reads when the menu opens: the [Options]
+    /// values, the speed context and whether the Game Speed row shows.
+    /// `game_speed` mirrors the launched sim; a moved Game Speed on the menu's
+    /// Game Controls page queues an authoritative transition on close.
     pub(crate) in_game_options: crate::ui::shell::in_game_options_state::InGameOptionsState,
-    /// Laid-out 0xBBB anchor cached by the overlay render pass each frame it draws,
-    /// so the paused mouse handler hit-tests the exact rects that were rendered
-    /// (the sidebar-anchored button Y is render-derived; see KD-6). None until the
-    /// overlay first renders.
-    pub(crate) in_game_options_anchor: Option<crate::ui::shell::layout::InGameOptionsAnchor>,
+}
+
+impl MatchPresentationState {
+    /// PALETTE.PAL in gamemd's converted form, for every per-frame reader:
+    /// action lines, lasers, bolts and the selected building's brackets. A
+    /// missing archive is not remembered, so a later draw can still find it.
+    pub(crate) fn surface_palette(
+        &self,
+        assets: Option<&crate::assets::asset_manager::AssetManager>,
+    ) -> Option<&crate::assets::pal_file::Palette> {
+        if let Some(palette) = self.surface_palette.get() {
+            return Some(palette);
+        }
+        let bytes = assets?.get_ref("palette.pal")?;
+        let palette = crate::assets::pal_file::Palette::from_bytes(bytes).ok()?;
+        Some(self.surface_palette.get_or_init(|| palette))
+    }
+
+    /// The house colours drawing reads: the relation colours while that
+    /// toggle has a map, else each owner's player colour.
+    pub(crate) fn effective_house_color_map(&self) -> &HouseColorMap {
+        self.relation_color_map
+            .as_ref()
+            .unwrap_or(&self.house_color_map)
+    }
+
+    /// Bring the relation colours up to date with `sim`, as `local_owner`
+    /// sees it: when the toggle flips and after each committed frame, so an
+    /// alliance made or broken recolours that house. The generation moves
+    /// only when a colour changes.
+    pub(crate) fn rebuild_relation_color_map(
+        &mut self,
+        sim: &crate::sim::world::Simulation,
+        local_owner: Option<&str>,
+    ) {
+        let map = if self.relation_colors {
+            relation_house_colors(sim, &self.house_color_map, local_owner)
+        } else {
+            None
+        };
+        if map != self.relation_color_map {
+            self.relation_color_map = map;
+            self.relation_color_generation = self.relation_color_generation.wrapping_add(1);
+        }
+    }
+}
+
+/// Each owner's colour under the relation-colours toggle, as `local_owner`
+/// sees the houses: its own blue, its allies green, everyone else red.
+/// Passive houses (civilians, tech buildings) and owners the world does not
+/// know keep their own colour. `None` without a local house: an observer's
+/// houses keep their player colours.
+pub(crate) fn relation_house_colors(
+    sim: &crate::sim::world::Simulation,
+    house_colors: &HouseColorMap,
+    local_owner: Option<&str>,
+) -> Option<HouseColorMap> {
+    let local = local_owner?;
+    let allied = crate::map::houses::ally_test(sim.house_alliances().as_map(), local);
+    Some(
+        house_colors
+            .iter()
+            .map(|(owner, &color)| {
+                let passive = sim.interner().get(owner.as_str()).is_none_or(|id| {
+                    sim.houses()
+                        .get(&id)
+                        .is_some_and(|house| house.multiplay_passive())
+                }) || owner.eq_ignore_ascii_case("Neutral");
+                let color = if passive {
+                    color
+                } else if owner.eq_ignore_ascii_case(local) {
+                    RELATION_SELF
+                } else if allied(owner.as_str()) {
+                    RELATION_ALLY
+                } else {
+                    RELATION_ENEMY
+                };
+                (owner.clone(), color)
+            })
+            .collect(),
+    )
+}
+
+#[cfg(all(test, tests_app_presentation))]
+mod relation_colour_tests {
+    use super::*;
+    use crate::rules::house_colors::HouseColorIndex;
+    use crate::sim::house_state::HouseState;
+    use crate::sim::world::Simulation;
+
+    /// Passive houses keep their own colour, and an observer, with no house
+    /// of its own, sees every player colour unchanged.
+    #[test]
+    fn relation_colours_spare_passive_houses_and_observers() {
+        let mut sim = Simulation::with_seed(1);
+        let mut colors = HouseColorMap::new();
+        for (index, name) in ["Player", "Friend", "Foe", "Civ"].into_iter().enumerate() {
+            let id = sim.intern(name);
+            let mut house = HouseState::new(id, index as i32, None, true, 0, 10);
+            house.set_multiplay_passive_for_test(name == "Civ");
+            sim.register_house(house);
+            colors.insert(name.to_owned(), HouseColorIndex(index as u8 + 3));
+        }
+        sim.house_alliances_mut_for_test()
+            .insert("PLAYER".into(), ["FRIEND".into()].into());
+
+        let seen = relation_house_colors(&sim, &colors, Some("Player")).unwrap();
+        assert_eq!(seen["Player"], RELATION_SELF);
+        assert_eq!(seen["Friend"], RELATION_ALLY);
+        assert_eq!(seen["Foe"], RELATION_ENEMY);
+        assert_eq!(seen["Civ"], colors["Civ"]);
+        assert_eq!(relation_house_colors(&sim, &colors, None), None);
+    }
 }

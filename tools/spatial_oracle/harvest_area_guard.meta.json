@@ -68,5 +68,5 @@
     "harvester_read": "0x0074769F"
   },
   "replay_command": "python -m tools.spatial_oracle.harvest_attack_return --area-guard",
-  "payload_sha256": "8388f864725c92bc63112fefd4510855292d516e39a94fd471fdeae9f5c36887"
+  "payload_sha256": "f540bd0b814b0d84f1392a1fabd468f7f6668d7c8de61a9f417198d44dfb5095"
 }

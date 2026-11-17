@@ -47,11 +47,16 @@ fn an_mcv_offers_no_deploy_where_its_yard_cannot_stand() {
 }
 
 /// An Amphibious Transport (`[LCRF] SpeedType=Hover`) whose first passenger
-/// is a GI refuses its unload on a Beach (Foot 0%), not on Clear ground or
-/// on Water.
+/// is a GI refuses below1% on Beach, but admits Clear just above1% and the
+/// explicit Water exception. The old integer-percent gate admitted0.5%.
 #[test]
 fn a_loaded_transport_on_a_beach_offers_no_deploy() {
-    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &crate::rules::ini_parser::IniFile::from_str(
+            "[Clear]\nFoot=1.00001%\n[Beach]\nFoot=0.5%\n",
+        ),
+    ) else {
         return;
     };
     let rules = &retail.rules;
@@ -140,11 +145,11 @@ fn a_driving_mcv_reads_its_lift_as_the_deploy_performs_it() {
         let read = !sim.unit_self_deploy_site_refused(mcv, rules, None);
         let effects = crate::sim::world::FrameEffects::default;
         assert!(sim.foot_mark_remove(mcv, rules, None, effects()));
-        sim.locomotor_mark_all_occupation_bits(mcv, false);
+        sim.locomotor_mark_all_occupation_bits(mcv, false, rules.ares_form());
         let lifted = crate::sim::build_site::can_place_building_at(
             &sim, rules, None, yard, origin, None, None, None,
         );
-        sim.locomotor_mark_all_occupation_bits(mcv, true);
+        sim.locomotor_mark_all_occupation_bits(mcv, true, rules.ares_form());
         assert!(sim.foot_mark_put(mcv, rules, None, effects()));
         assert_eq!(read, lifted, "frame {frame}");
         assert!(lifted, "frame {frame}: the arena admits the yard");

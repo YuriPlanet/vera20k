@@ -6,12 +6,12 @@
 use crate::app::AppState;
 use crate::app::frontend::main_menu_shell_render::shell_reveal_path_a;
 use crate::app::loading::init::MapMenuEntry;
+use crate::i18n::{tr, tr_count, tr_fill};
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
 use crate::render::shell_paint::{self, PaintLabel};
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw, TextRect};
 use crate::skirmish_launch::{LaunchCountry, LaunchStartPosition};
-use crate::skirmish_modes::mode_by_id;
 use crate::ui::shell::geom::ShellScale;
 use crate::ui::shell::list::ListMetrics;
 use crate::ui::shell::modal::BodyOkLayout;
@@ -25,7 +25,7 @@ use crate::ui::skirmish_shell::{
     SkirmishShellState, SkirmishTrackbarId, checkbox_text_rect, combo_dropdown_content_rect,
     combo_dropdown_rect, combo_dropdown_visible_row_count, combo_enabled, combo_items,
     combo_text_rect, player_name_edit_text_rect, player_row_visible,
-    random_map_setup_dropdown_rect, setup_combo_items, trackbar_visual_value,
+    random_map_setup_dropdown_rect,
 };
 
 use super::controls::trackbar_rect_for_id;
@@ -35,13 +35,11 @@ use super::{
     SHELL_DROPDOWN_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB,
 };
 
+/// A label in the language in use. VERA's own (`VERA:`) come from its
+/// language files, which need no string table; the game's come from the
+/// loaded table, and `fallback` stands in while none is loaded.
 pub(super) fn localized_label(state: &AppState, key: &str, fallback: &str) -> String {
-    state
-        .process_assets
-        .csf
-        .as_ref()
-        .map(|csf| csf.text(key).into_owned())
-        .unwrap_or_else(|| fallback.to_string())
+    crate::i18n::label(state.process_assets.csf.as_ref(), key, fallback)
 }
 
 pub(super) fn checkbox_label(id: SkirmishCheckboxId) -> (&'static str, &'static str) {
@@ -65,8 +63,23 @@ fn team_label_spec(team: i32) -> (&'static str, &'static str) {
 }
 
 pub(super) fn team_label(state: &AppState, team: i32) -> String {
-    let (key, fallback) = team_label_spec(team);
-    localized_label(state, key, fallback)
+    room_team_label(team).unwrap_or_else(|| {
+        let (key, fallback) = team_label_spec(team);
+        localized_label(state, key, fallback)
+    })
+}
+
+/// A VERA room's teams past gamemd's A to D, as the lobby names them: the
+/// alphabet's next letters.
+fn room_team_label(team: i32) -> Option<String> {
+    let team = u32::try_from(team)
+        .ok()
+        .filter(|team| *team >= u32::from(crate::skirmish_launch::NATIVE_TEAMS))?;
+    Some(
+        char::from_u32(u32::from(b'A') + team)
+            .filter(char::is_ascii_uppercase)
+            .map_or_else(|| (team + 1).to_string(), String::from),
+    )
 }
 
 pub(crate) fn combo_item_label(state: &AppState, item: SkirmishComboItem) -> String {
@@ -132,7 +145,9 @@ pub(super) fn country_label(state: &AppState, country: LaunchCountry) -> String 
 
 pub(super) fn trackbar_display_value(shell: &SkirmishShellState, id: SkirmishTrackbarId) -> String {
     match id {
-        SkirmishTrackbarId::GameSpeed0x529 => trackbar_visual_value(shell, id).to_string(),
+        SkirmishTrackbarId::GameSpeed0x529 => {
+            crate::ui::shell::game_speed::SpeedContext::Offline.value_text(shell.game_speed)
+        }
         SkirmishTrackbarId::Credits0x511 => shell.credits().to_string(),
         SkirmishTrackbarId::UnitCount0x50c => shell.unit_count.to_string(),
     }
@@ -182,7 +197,7 @@ pub(super) fn push_button_label_draw(
         label,
         text_rect,
         button_label_color_for_disabled(disabled),
-        ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+        ShellAlign::BUTTON_CAPTION,
         depth,
         scale.factor(),
     );
@@ -345,60 +360,21 @@ pub(super) fn truncate_owner_draw_label<'a>(
     label: &'a str,
     fit_width: u32,
 ) -> std::borrow::Cow<'a, str> {
-    let mut utf16: Vec<u16> = label.encode_utf16().collect();
-    if owner_draw_utf16_text_width(font, &utf16) <= fit_width {
-        return std::borrow::Cow::Borrowed(label);
-    }
-
-    while !utf16.is_empty() && owner_draw_utf16_text_width(font, &utf16) > fit_width {
-        utf16.pop();
-    }
-    std::borrow::Cow::Owned(String::from_utf16_lossy(&utf16))
+    font.truncate_to_width(label, fit_width)
 }
 
-fn owner_draw_utf16_text_width(font: &BitFont, units: &[u16]) -> u32 {
-    const TAB: u16 = b'\t' as u16;
-    const CR: u16 = b'\r' as u16;
-    const LF: u16 = b'\n' as u16;
-    const SPACE: u16 = b' ' as u16;
-
-    let mut x: u32 = 0;
-    let mut count: u32 = 0;
-    for unit in units.iter().copied() {
-        match unit {
-            0 => break,
-            TAB => {
-                let advanced = x + font.tab_width;
-                x = advanced - ((advanced.saturating_sub(font.tab_origin)) % font.tab_width);
-                continue;
-            }
-            CR | LF => continue,
-            SPACE => {
-                x += font.space_width;
-                count += 1;
-            }
-            other => {
-                let w = font
-                    .glyphs
-                    .get(&other)
-                    .map(|g| g.pixel_width as u32)
-                    .or_else(|| font.missing_glyph.as_ref().map(|g| g.pixel_width as u32));
-                if let Some(w) = w {
-                    x += w;
-                    count += 1;
-                }
-            }
-        }
-    }
-    x + count * font.char_spacing
-}
-
-pub(super) fn truncate_combo_dropdown_label<'a>(
+/// An owner-drawn label in `fit_width`: squeezed until it fits
+/// ([`BitFont::fit_line`]) and cut only as far as the tightest squeeze still
+/// leaves over. `draw` gets the text while the font draws at that squeeze.
+pub(super) fn fit_owner_draw_label<R>(
     font: &BitFont,
-    label: &'a str,
+    label: &str,
     fit_width: u32,
-) -> std::borrow::Cow<'a, str> {
-    truncate_owner_draw_label(font, label, fit_width)
+    draw: impl FnOnce(&str) -> R,
+) -> R {
+    font.fitted(font.fit_line(label, fit_width), |font| {
+        draw(&truncate_owner_draw_label(font, label, fit_width))
+    })
 }
 
 pub(super) fn push_label_draw(
@@ -438,7 +414,7 @@ fn rects_intersect(a: RectPx, b: RectPx) -> bool {
         && a.y + a.h > b.y
 }
 
-fn text_covered_by_overlay(rect: RectPx, overlays: &[RectPx]) -> bool {
+pub(super) fn text_covered_by_overlay(rect: RectPx, overlays: &[RectPx]) -> bool {
     overlays
         .iter()
         .any(|overlay| rects_intersect(rect, *overlay))
@@ -464,17 +440,18 @@ fn push_combo_face_label_draw_with_color(
 ) {
     let text_rect = combo_face_text_draw_rect(rect, scale);
     let fit_width = combo_face_text_fit_width(rect, scale);
-    let label = truncate_owner_draw_label(&state.renderer.bit_font, label, fit_width);
-    push_text_draw(
-        out,
-        state,
-        label.as_ref(),
-        rect_to_text_rect(text_rect),
-        color,
-        ShellAlign::V_CENTER,
-        SHELL_CONTROL_TEXT_DEPTH,
-        scale.factor(),
-    );
+    fit_owner_draw_label(&state.renderer.bit_font, label, fit_width, |label| {
+        push_text_draw(
+            out,
+            state,
+            label,
+            rect_to_text_rect(text_rect),
+            color,
+            ShellAlign::V_CENTER,
+            SHELL_CONTROL_TEXT_DEPTH,
+            scale.factor(),
+        );
+    });
 }
 
 /// The texts `0x102` holds for its heading, game type and map name statics
@@ -483,16 +460,17 @@ fn push_combo_face_label_draw_with_color(
 pub(crate) fn skirmish_right_panel_label_strings(state: &AppState) -> (String, String, String) {
     let shell = &state.frontend.skirmish_shell_state;
     let title = localized_label(state, "GUI:SkirmishGame", "Skirmish Game");
-    let game_type = state
-        .frontend
-        .skirmish_modes
-        .iter()
-        .find(|mode| mode.id == shell.selected_mode_id)
+    let game_type = shell
+        .selected_mode
+        .resolve(&state.frontend.skirmish_modes)
         .map(|mode| localized_label(state, &mode.ui_name_key, &mode.ui_name_key))
         .unwrap_or_else(|| localized_label(state, "GUI:Battle", "Battle"));
+    // VERA: with no map files the list is empty and no map is selected. The
+    // online setup dialogs' map name static `0x5A8` has the template caption
+    // `GUI:None` (`tools/storage_oracle/wol_shell.json`), which the LAN and
+    // online setup also show with no map.
     let map_label = skirmish_selected_map_name(state)
-        .unwrap_or("None")
-        .to_string();
+        .map_or_else(|| localized_label(state, "GUI:None", "None"), str::to_owned);
     (title, game_type, map_label)
 }
 
@@ -525,12 +503,13 @@ pub(super) fn static_label(
     }
 }
 
-/// A status line's label, top-left in its window; nothing while it is
-/// hidden or blank.
+/// A status line's label, top-left in its window and running on along the
+/// bar (`status_text_rect`); nothing while it is hidden or blank.
 pub(super) fn status_line_label(
     shown: Option<StaticPaint<'_>>,
-    rect: RectPx,
+    window: RectPx,
 ) -> Option<PaintLabel<'static>> {
+    let rect = crate::ui::shell::layout::status_text_rect(window);
     shown
         .filter(|shown| !shown.text.is_empty())
         .map(|shown| static_label(shown, rect, ShellAlign::NONE))
@@ -572,7 +551,7 @@ pub(super) fn dialog_statics_labels(
     let shown = statics.paint(crate::util::time::Instant::now(), sliding);
     shown
         .heading
-        .map(|shown| static_label(shown, title, ShellAlign::H_CENTER))
+        .map(|shown| static_label(shown, title, ShellAlign::PANEL_TITLE))
         .into_iter()
         .chain(status_line_label(shown.status_line, status_line))
         .collect()
@@ -737,7 +716,7 @@ pub(super) fn build_shell_text_draws(
         scale,
     );
 
-    for (slot, row, opponent) in shell.paged_opponents() {
+    for (slot, row, opponent) in shell.paged_opponents(layout.shown_rows) {
         if !player_row_visible(shell, maps, row) {
             continue;
         }
@@ -821,18 +800,19 @@ pub(super) fn build_dropdown_text_draws(
             }
             let rect = combo_dropdown_text_rect_for_current_renderer(content, idx, layout.scale);
             let fit_width = combo_dropdown_text_fit_width(content, layout.scale);
-            let label = truncate_combo_dropdown_label(&state.renderer.bit_font, &label, fit_width);
-            push_text_draw(
-                &mut shell_draws,
-                state,
-                label.as_ref(),
-                rect,
-                SHELL_LABEL_TEXT_RGB,
-                ShellAlign::V_CENTER,
-                SHELL_DROPDOWN_TEXT_DEPTH,
-                // The rows stretch, so their captions grow with them.
-                layout.scale.factor(),
-            );
+            fit_owner_draw_label(&state.renderer.bit_font, &label, fit_width, |label| {
+                push_text_draw(
+                    &mut shell_draws,
+                    state,
+                    label,
+                    rect,
+                    SHELL_LABEL_TEXT_RGB,
+                    ShellAlign::V_CENTER,
+                    SHELL_DROPDOWN_TEXT_DEPTH,
+                    // The rows stretch, so their captions grow with them.
+                    layout.scale.factor(),
+                );
+            });
         }
     }
     shell_draws
@@ -846,42 +826,37 @@ fn push_right_panel_text_draws(
     shell: &SkirmishShellState,
 ) {
     let start = localized_label(state, "GUI:StartGame", "Start Game");
-    let choose = localized_label(state, "GUI:ChooseMap", "Choose Map");
-    let save = localized_label(state, "VERA:SaveSetup", "Save Setup");
-    let load = localized_label(state, "VERA:LoadSetup", "Load Setup");
+    // VERA captions the map button "Choose Map", as its room does
+    // (`SetupDialog::button_label`): retail's "Customize Battle" reads as the
+    // settings Game Options keeps.
+    let choose = tr("VERA:ChooseMap");
+    let game_options = localized_label(
+        state,
+        crate::ui::skirmish_shell::game_options::GAME_OPTIONS_LABEL,
+        "Game Options",
+    );
     let back = localized_label(state, "GUI:Back", "Back");
-    let load_disabled = !crate::app::App::skirmish_setup_saved(state);
 
-    for (label, rect, button, disabled) in [
+    for (label, rect, button) in [
         (
             start.as_str(),
             layout.start_button,
             OwnerDrawButton::StartGame0x617,
-            false,
+        ),
+        (
+            game_options.as_str(),
+            layout.game_options_button,
+            OwnerDrawButton::GameOptions,
         ),
         (
             choose.as_str(),
             layout.choose_map_button,
             OwnerDrawButton::ChooseMap0x5aa,
-            false,
-        ),
-        (
-            save.as_str(),
-            layout.save_setup_button,
-            OwnerDrawButton::SaveSetup,
-            false,
-        ),
-        (
-            load.as_str(),
-            layout.load_setup_button,
-            OwnerDrawButton::LoadSetup,
-            load_disabled,
         ),
         (
             back.as_str(),
             layout.back_button,
             OwnerDrawButton::Back0x5c0,
-            false,
         ),
     ] {
         push_button_label_draw(
@@ -890,7 +865,7 @@ fn push_right_panel_text_draws(
             label,
             rect,
             shell.pressed_owner_draw_button == Some(button),
-            disabled,
+            false,
             0.00041,
             layout.scale,
         );
@@ -927,6 +902,73 @@ pub(super) fn push_random_map_setup_modal_text_draws(
 
     // Row order: map type, time, theater, size, resources, players. The 0x405
     // label reads "Environment" even though the control writes the map type.
+    // VERA: the Advanced view labels its sliders and shows each value in the
+    // slider's plaque, as the Players slider does.
+    // VERA: the Extras view labels its rows and shows each row's value or
+    // tool in the row's face.
+    for (row, entry) in modal.extras_rows().into_iter().enumerate() {
+        use crate::ui::skirmish_shell::ExtrasValue;
+        if modal.extras_row(row).is_none() {
+            continue;
+        }
+        let (key, fallback) = entry.label();
+        push_text_draw(
+            out,
+            state,
+            &localized_label(state, key, fallback),
+            rect_to_text_rect(layout.advanced_label_rects[row]),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
+            scale.factor(),
+        );
+        let value = match modal.extras_value(entry) {
+            ExtrasValue::Label(key, fallback) => localized_label(state, key, fallback),
+            ExtrasValue::Number(number) => number.to_string(),
+            ExtrasValue::Page(page, pages) => format!("{page} / {pages}"),
+        };
+        push_text_draw(
+            out,
+            state,
+            &value,
+            rect_to_text_rect(layout.advanced_control_rects[row]),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
+            scale.factor(),
+        );
+    }
+    if modal.advanced && modal.extras_page.is_none() {
+        for field in crate::ui::skirmish_shell::AdvancedField::ALL {
+            let (key, fallback) = field.label();
+            let color = if modal.is_enabled(RandomMapSetupControl::Advanced(field)) {
+                SHELL_LABEL_TEXT_RGB
+            } else {
+                crate::render::shell_paint::SHELL_TEXT_RGB_DISABLED
+            };
+            push_text_draw(
+                out,
+                state,
+                &localized_label(state, key, fallback),
+                rect_to_text_rect(layout.advanced_label_rects[field.row()]),
+                color,
+                ShellAlign::V_CENTER,
+                SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
+                scale.factor(),
+            );
+            let value_rect = value_text_rect(layout.advanced_control_rects[field.row()], scale);
+            push_text_draw(
+                out,
+                state,
+                &modal.advanced_value(field).to_string(),
+                rect_to_text_rect(value_rect),
+                color,
+                ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+                SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
+                scale.factor(),
+            );
+        }
+    }
     for (row, (key, fallback)) in [
         ("GUI:Environment", "Environment"),
         ("GUI:TimeOfDay", "Time of Day"),
@@ -937,12 +979,28 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     ]
     .into_iter()
     .enumerate()
+    .filter(|_| !modal.advanced)
     {
         push_text_draw(
             out,
             state,
             &localized_label(state, key, fallback),
             rect_to_text_rect(layout.label_rects[row]),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
+            scale.factor(),
+        );
+    }
+
+    // Ares' Urban Areas box takes its caption beside the icon, like the
+    // `0x102` checkboxes, in the basic view only, when Ares.dll is loaded.
+    if modal.ares && !modal.advanced {
+        push_text_draw(
+            out,
+            state,
+            &localized_label(state, "GUI:UrbanAreas", "Urban Areas"),
+            rect_to_text_rect(checkbox_text_rect(layout.urban_areas, scale)),
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::V_CENTER,
             SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
@@ -1007,17 +1065,89 @@ pub(super) fn push_random_map_setup_modal_text_draws(
             layout.cancel,
             RandomMapSetupControl::Cancel0x5c0,
         ),
+        // The toggle names the view its press shows next.
+        if modal.extras_page.is_some() {
+            (
+                "VERA:RandomMapBasic",
+                "Basic",
+                layout.advanced,
+                RandomMapSetupControl::AdvancedToggle,
+            )
+        } else if modal.advanced {
+            (
+                "VERA:RandomMapExtras",
+                "Extras",
+                layout.advanced,
+                RandomMapSetupControl::AdvancedToggle,
+            )
+        } else {
+            (
+                "VERA:RandomMapAdvanced",
+                "Advanced",
+                layout.advanced,
+                RandomMapSetupControl::AdvancedToggle,
+            )
+        },
+        if modal.exported {
+            (
+                "VERA:RandomMapExported",
+                "Map Exported",
+                layout.export,
+                RandomMapSetupControl::ExportMap,
+            )
+        } else {
+            (
+                "VERA:RandomMapExport",
+                "Export Map",
+                layout.export,
+                RandomMapSetupControl::ExportMap,
+            )
+        },
+        if modal.options.fair_starts {
+            (
+                "VERA:RandomMapFairStartsOn",
+                "Fair Starts: On",
+                layout.fair_starts,
+                RandomMapSetupControl::FairStartsToggle,
+            )
+        } else {
+            (
+                "VERA:RandomMapFairStartsOff",
+                "Fair Starts: Off",
+                layout.fair_starts,
+                RandomMapSetupControl::FairStartsToggle,
+            )
+        },
+        {
+            let (key, fallback) = modal.preset.map_or(
+                ("VERA:RandomMapPresets", "Presets"),
+                crate::ui::skirmish_shell::RandomMapPreset::label,
+            );
+            (
+                key,
+                fallback,
+                layout.preset,
+                RandomMapSetupControl::PresetCycle,
+            )
+        },
     ]
     .into_iter()
     .filter(|_| !sliding)
     {
+        let mut caption = localized_label(state, key, fallback);
+        // One of the player's own presets is named by its number.
+        if control == RandomMapSetupControl::PresetCycle
+            && let Some(crate::ui::skirmish_shell::RandomMapPreset::Mine(slot)) = modal.preset
+        {
+            caption = caption.replace("{number}", &(u32::from(slot) + 1).to_string());
+        }
         push_text_draw(
             out,
             state,
-            &localized_label(state, key, fallback),
+            &caption,
             button_text_rect(rect, modal.pressed_control == Some(control), scale),
             button_label_color_for_disabled(!modal.is_enabled(control)),
-            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            ShellAlign::BUTTON_CAPTION,
             SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
             scale.factor(),
         );
@@ -1028,7 +1158,7 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     let open_list: Vec<RectPx> = modal
         .open_combo
         .map(|combo| {
-            random_map_setup_dropdown_rect(layout, combo.row(), setup_combo_items(combo).len())
+            random_map_setup_dropdown_rect(layout, combo.row(), modal.combo_items(combo).len())
         })
         .into_iter()
         .collect();
@@ -1036,8 +1166,12 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     // Selected entry on each closed combo face. A value with no entry -- map
     // type 0, which the list omits -- leaves the face blank, as the original's
     // match-the-entry selection does.
-    for (row, combo) in SETUP_COMBO_ROWS.iter().enumerate() {
-        let items = setup_combo_items(*combo);
+    for (row, combo) in SETUP_COMBO_ROWS
+        .iter()
+        .enumerate()
+        .filter(|_| !modal.advanced)
+    {
+        let items = modal.combo_items(*combo);
         let Some(selected) = modal.selected_item_index(*combo) else {
             continue;
         };
@@ -1060,7 +1194,7 @@ pub(super) fn push_random_map_setup_modal_text_draws(
 
     // The players trackbar carries its value in the plaque at its right end.
     let value_rect = value_text_rect(layout.control_rects[PLAYERS_ROW], scale);
-    if !text_covered_by_overlay(value_rect, &open_list) {
+    if !modal.advanced && !text_covered_by_overlay(value_rect, &open_list) {
         push_text_draw(
             out,
             state,
@@ -1084,12 +1218,68 @@ pub(super) fn push_random_map_setup_modal_text_draws(
             SHELL_DROPDOWN_TEXT_DEPTH - 0.0001,
             scale.factor(),
         );
+    } else if let Some(path) = modal.exported_to.as_ref().filter(|_| modal.exported) {
+        // VERA: where Export Map wrote the file, which is not the game folder.
+        let text = localized_label(state, "VERA:RandomMapExportedTo", "Saved to {path}")
+            .replace("{path}", path);
+        push_text_draw(
+            out,
+            state,
+            &text,
+            rect_to_text_rect(layout.progress_text),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.0001,
+            scale.factor(),
+        );
+    } else if let Some((key, fallback)) = modal.extras_note {
+        // VERA: what the last Extras tool did, where the progress text goes.
+        push_text_draw(
+            out,
+            state,
+            &localized_label(state, key, fallback),
+            rect_to_text_rect(layout.progress_text),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.0001,
+            scale.factor(),
+        );
+    } else if let Some(report) = modal.fairness.filter(|_| modal.generated) {
+        // VERA: how evenly the map on show treats its starts.
+        let readout = report.readout();
+        let text = localized_label(
+            state,
+            "VERA:RandomMapFairness",
+            "Fairness: ore {ore}%, 2nd field {expansion}%, room {room}%, spacing {spacing}%",
+        )
+        .replace("{ore}", &readout.ore.to_string())
+        .replace("{expansion}", &readout.expansion.to_string())
+        .replace("{room}", &readout.room.to_string())
+        .replace("{spacing}", &readout.spacing.to_string());
+        // The water near the starts joins the line with Sea Access on.
+        let text = match readout.sea.filter(|_| report.sea_wanted) {
+            Some(sea) => {
+                text + &localized_label(state, "VERA:RandomMapFairnessSea", ", sea {sea}%")
+                    .replace("{sea}", &sea.to_string())
+            }
+            None => text,
+        };
+        push_text_draw(
+            out,
+            state,
+            &text,
+            rect_to_text_rect(layout.progress_text),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.0001,
+            scale.factor(),
+        );
     }
 
     // Matches the sprite pass: the open list is drawn over everything else.
     if let Some(combo) = modal.open_combo {
         let row = combo.row();
-        let items = setup_combo_items(combo);
+        let items = modal.combo_items(combo);
         let list = random_map_setup_dropdown_rect(layout, row, items.len());
         let metrics = DropdownMetrics::scaled(scale);
         let inset = (COMBO_TEXT_LEFT_INSET as f32 * scale.factor()).round() as i32;
@@ -1117,7 +1307,7 @@ pub(super) fn push_random_map_setup_modal_text_draws(
 /// VERA: Choose Map's credit for a map's `[Basic]` `Author`, when it names one.
 fn map_author_line(author: Option<&str>) -> Option<String> {
     let author = author?.trim();
-    (!author.is_empty()).then(|| format!("By {author}"))
+    (!author.is_empty()).then(|| tr_fill("VERA:MapAuthor", &[("author", &author)]))
 }
 
 /// Text of Choose Map `0x6B` besides its heading and status line, which the
@@ -1173,15 +1363,18 @@ pub(super) fn push_choose_map_modal_text_draws(
                 ChooseMapModalButton::Cancel0x5c0,
             ),
             (
-                // VERA: under Online Maps this button stars the map.
-                match modal.favorite_button(state.frontend.scenario_catalog.records()) {
-                    Some(true) => "Remove Favorite".to_owned(),
-                    Some(false) => "Add Favorite".to_owned(),
-                    None if modal.online_maps_selected() => "Add Favorite".to_owned(),
-                    None => localized_label(state, "GUI:CreateRandomMap", "Create Random Map"),
-                },
+                localized_label(state, "GUI:CreateRandomMap", "Create Random Map"),
                 layout.create_random_map_button,
                 ChooseMapModalButton::CreateRandomMap0x583,
+            ),
+            (
+                // VERA: stars the highlighted map, or takes its star away.
+                match modal.favorite_button(state.frontend.scenario_catalog.records()) {
+                    Some(true) => tr("VERA:RemoveFavorite"),
+                    _ => tr("VERA:AddFavorite"),
+                },
+                layout.favorite_button,
+                ChooseMapModalButton::Favorite,
             ),
         ] {
             let disabled = !modal.button_enabled(button);
@@ -1216,17 +1409,19 @@ pub(super) fn push_choose_map_modal_text_draws(
         }
     }
     let geometry = modal.mode_geometry(layout);
-    for (visible, mode_id) in modal
+    for (visible, chosen) in modal
         .mode_rows()
         .iter()
         .skip(modal.mode_top_index)
         .take(geometry.visible_rows)
         .enumerate()
     {
-        let label = if *mode_id == crate::ui::skirmish_shell::ONLINE_MAPS_ROW {
-            "Online Maps".to_owned()
+        let label = if chosen.id == crate::ui::skirmish_shell::ONLINE_MAPS_ROW {
+            tr("VERA:OnlineMaps")
+        } else if chosen.id == crate::ui::skirmish_shell::FAVORITES_ROW {
+            tr("VERA:Favorites")
         } else {
-            let Some(mode) = mode_by_id(&state.frontend.skirmish_modes, *mode_id) else {
+            let Some(mode) = chosen.resolve(&state.frontend.skirmish_modes) else {
                 continue;
             };
             localized_label(state, &mode.ui_name_key, &mode.ui_name_key)
@@ -1265,8 +1460,9 @@ pub(super) fn push_choose_map_modal_text_draws(
                 .records()
                 .get(*record_idx)
                 .map(|record| {
-                    // Starred online maps carry a star.
-                    if modal.is_favorite(record) {
+                    // Starred maps carry a star, except under Favorites,
+                    // where every map is one.
+                    if !modal.favorites_selected() && modal.is_favorite(record) {
                         format!("* {}", record.display_name)
                     } else {
                         record.display_name.clone()
@@ -1293,13 +1489,27 @@ pub(super) fn push_choose_map_modal_text_draws(
             scale.factor(),
         );
     }
-    // VERA: an empty Online Maps list says why, wrapped down the list.
-    if modal.online_maps_selected() && modal.filtered_record_indices.is_empty() {
+    // VERA: an empty Online Maps or Favorites list says why, wrapped down
+    // the list.
+    let empty = if !modal.filtered_record_indices.is_empty() {
+        None
+    } else if modal.online_maps_selected() {
+        Some(crate::app::map_library::empty_online_maps_text(state))
+    } else if modal.favorites_selected() && modal.search.is_empty() {
+        Some(tr(if modal.favorites.is_empty() {
+            "VERA:NoFavorites"
+        } else {
+            "VERA:NoFavoritesHere"
+        }))
+    } else {
+        None
+    };
+    if let Some(empty) = empty {
         let row = geometry.row(0);
         push_text_draw(
             out,
             state,
-            crate::app::map_library::empty_online_maps_text(state),
+            &empty,
             rect_to_text_rect(RectPx::new(
                 row.x + list_text_inset(scale),
                 row.y,
@@ -1312,33 +1522,89 @@ pub(super) fn push_choose_map_modal_text_draws(
             scale.factor(),
         );
     }
-    // VERA: the search line under the map list; typing anywhere fills it.
-    let search = if modal.search.is_empty() {
-        "Search: type a map name".to_owned()
+    // VERA: the search box over the map list; typing anywhere fills it. An
+    // empty box says so in the label colour: the disabled red does not read
+    // over the chooser's background.
+    let field = scale.derive_rect(layout.map_search, |rect| {
+        RectPx::new(
+            rect.x + LIST_TEXT_INSET,
+            rect.y,
+            rect.w - LIST_TEXT_INSET,
+            rect.h,
+        )
+    });
+    let display_search = map_search_display(state, &modal.search);
+    let hint;
+    let (search, rgb) = if display_search.is_empty() {
+        hint = tr("VERA:MapSearchHint");
+        (&*hint, SHELL_LABEL_TEXT_RGB)
     } else {
-        format!("Search: {}_", modal.search)
+        let box_w = scale.base_rect(layout.map_search).w;
+        let (tail, _) = map_search_tail(&state.renderer.bit_font, &display_search, box_w);
+        (tail, SHELL_LABEL_TEXT_RGB)
     };
-    let list = layout.map_list;
-    let px = |value: f32| (value * scale.factor()).round() as i32;
     push_text_draw(
         out,
         state,
-        &search,
-        rect_to_text_rect(RectPx::new(
-            list.x,
-            list.y + list.h + px(10.0),
-            list.w,
-            px(20.0),
-        )),
-        if modal.search.is_empty() {
-            SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
-        } else {
-            SHELL_LABEL_TEXT_RGB
-        },
+        search,
+        rect_to_text_rect(field),
+        rgb,
         ShellAlign::V_CENTER,
         SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
         scale.factor(),
     );
+}
+
+/// The search caret's width, in 800x600 numbers like a NewEdit's.
+pub(super) const MAP_SEARCH_CARET_W: i32 = 2;
+
+/// The committed query plus the currently composed IME text, for display
+/// only; filtering still uses the committed query.
+pub(super) fn map_search_display(state: &AppState, search: &str) -> String {
+    let composition = state
+        .platform
+        .ime
+        .composition(crate::app::input::ime::ImeTarget::ChooseMapSearch)
+        .map(|(text, _)| String::from_utf16_lossy(text))
+        .unwrap_or_default();
+    format!("{search}{composition}")
+}
+
+/// The end of `search` that fits a `box_w` wide search box with the caret
+/// after it, and that text's width: a long search scrolls its start out of
+/// the box. All in 800x600 numbers.
+pub(super) fn map_search_tail<'a>(font: &BitFont, search: &'a str, box_w: i32) -> (&'a str, i32) {
+    let room = box_w - 2 * LIST_TEXT_INSET - MAP_SEARCH_CARET_W;
+    let mut tail = search;
+    loop {
+        let width = font.text_width(tail) as i32;
+        let mut chars = tail.chars();
+        if width <= room || chars.next().is_none() {
+            return (tail, width);
+        }
+        tail = chars.as_str();
+    }
+}
+
+/// Where the search caret goes: after the text, inside the box. `None`
+/// while the box is empty and shows its hint.
+pub(super) fn map_search_caret_rect(
+    font: &BitFont,
+    search: &str,
+    map_search: RectPx,
+    scale: ShellScale,
+) -> Option<RectPx> {
+    if search.is_empty() {
+        return None;
+    }
+    let base = scale.base_rect(map_search);
+    let (_, width) = map_search_tail(font, search, base.w);
+    Some(scale.scale_rect(RectPx::new(
+        base.x + LIST_TEXT_INSET + width,
+        base.y + 2,
+        MAP_SEARCH_CARET_W,
+        base.h - 4,
+    )))
 }
 
 pub(super) fn push_validation_modal_text_draws(
@@ -1657,8 +1923,8 @@ pub(super) fn push_choose_map_prompt_text(
     ));
 }
 
-/// The body and first button of Use Map's box. The download texts are
-/// VERA's own; the retail string table has none.
+/// The body and first button of Use Map's box. The download and random-map
+/// failure texts are VERA's own; the retail string table has none.
 fn choose_map_prompt_labels(
     state: &AppState,
     prompt: &crate::ui::skirmish_shell::ChooseMapPrompt,
@@ -1672,38 +1938,44 @@ fn choose_map_prompt_labels(
         let map = state.frontend.map_library.online_map(record)?;
         Some((map.name.as_str(), record.player_capacity, map.byte_length))
     });
+    // The map's name fills in last, so a `{...}` in it stays as written.
     let body = match (prompt.kind, online) {
         // A downloaded map's row is the saved file's, no longer the library's.
-        (ChooseMapPromptKind::Downloaded, _) => format!(
-            "{} was downloaded and saved in VERA20k's Maps folder.",
-            record.map_or("The map", |record| record.display_name.as_str())
-        ),
-        (ChooseMapPromptKind::Download, Some((name, players, bytes))) => format!(
-            "Download {name} ({players} players, {} KB)? It is saved in VERA20k's Maps folder.",
-            bytes.div_ceil(1024)
+        (ChooseMapPromptKind::Downloaded, _) => match record {
+            Some(record) => tr_fill("VERA:MapDownloaded", &[("name", &record.display_name)]),
+            None => tr("VERA:MapDownloadedUnnamed"),
+        },
+        (ChooseMapPromptKind::Download, Some((name, players, bytes))) => tr_count(
+            "VERA:DownloadMap",
+            players,
+            &[("size", &bytes.div_ceil(1024)), ("name", &name)],
         ),
         (ChooseMapPromptKind::Downloading, Some((name, ..))) => {
             match crate::app::map_library::download_progress(state) {
-                Some((received, length)) => format!(
-                    "Downloading {name}... {}%",
-                    received.min(length) * 100 / length.max(1)
+                Some((received, length)) => tr_fill(
+                    "VERA:DownloadingMapPercent",
+                    &[
+                        ("percent", &(received.min(length) * 100 / length.max(1))),
+                        ("name", &name),
+                    ],
                 ),
-                None => format!("Downloading {name}..."),
+                None => tr_fill("VERA:DownloadingMap", &[("name", &name)]),
             }
         }
         (ChooseMapPromptKind::DownloadFailed, Some((name, ..))) => {
-            format!("{name} could not be downloaded. Check your internet connection and try again.")
+            tr_fill("VERA:MapDownloadFailed", &[("name", &name)])
         }
         (ChooseMapPromptKind::SaveFailed, Some((name, ..))) => {
-            format!("{name} was downloaded but could not be saved in VERA20k's Maps folder.")
+            tr_fill("VERA:MapSaveFailed", &[("name", &name)])
         }
+        (ChooseMapPromptKind::RandomMapFailed, _) => tr("VERA:RandomMapSaveFailed"),
         _ => localized_label(state, "GUI:EjectAIPlayers", "GUI:EjectAIPlayers"),
     };
     let ok = match prompt.kind {
-        ChooseMapPromptKind::EjectAi | ChooseMapPromptKind::Downloaded => {
-            localized_label(state, "GUI:Ok", "OK")
-        }
-        _ => "Download".to_owned(),
+        ChooseMapPromptKind::EjectAi
+        | ChooseMapPromptKind::Downloaded
+        | ChooseMapPromptKind::RandomMapFailed => localized_label(state, "GUI:Ok", "OK"),
+        _ => tr("VERA:Download"),
     };
     (body, ok)
 }
@@ -1759,7 +2031,7 @@ pub(super) fn push_saved_browser_prompt_text<I>(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use crate::ui::skirmish_shell::COMBO_DROPDOWN_ROW_H;
@@ -1784,7 +2056,7 @@ mod tests {
                 let list = random_map_setup_dropdown_rect(
                     &layout,
                     combo.row(),
-                    setup_combo_items(combo).len(),
+                    crate::ui::skirmish_shell::setup_combo_items(combo, false).len(),
                 );
                 for text in &texts {
                     let inside = text.x >= list.x
@@ -1827,6 +2099,14 @@ mod tests {
         assert_eq!(team_label_spec(1), ("LETTER_B", "B"));
         assert_eq!(team_label_spec(2), ("LETTER_C", "C"));
         assert_eq!(team_label_spec(3), ("LETTER_D", "D"));
+    }
+
+    #[test]
+    fn room_teams_past_d_take_the_lobby_letters() {
+        assert_eq!(room_team_label(-2), None);
+        assert_eq!(room_team_label(3), None);
+        assert_eq!(room_team_label(4).as_deref(), Some("E"));
+        assert_eq!(room_team_label(14).as_deref(), Some("O"));
     }
 
     #[test]
@@ -1875,9 +2155,22 @@ mod tests {
             20
         );
 
-        let label = truncate_combo_dropdown_label(&font, "ab cd", 20);
-        assert_eq!(label.as_ref(), "ab ");
-        assert!(font.text_width(label.as_ref()) <= 20);
+        let label = fit_owner_draw_label(&font, "ab cd", 20, str::to_owned);
+        assert_eq!(label, "ab ");
+        assert!(font.text_width(&label) <= 20);
+    }
+
+    /// VERA's own: a combo caption too wide for its face is squeezed whole,
+    /// and loses its end only where the tightest squeeze is still too wide.
+    #[test]
+    fn an_owner_drawn_label_is_squeezed_before_it_is_cut() {
+        let font = crate::render::bit_font::tests::make_vector_test_font();
+        let label = "[Ŕåñðöɱ ~~~]";
+        let natural = font.text_width(label);
+        let squeezed = fit_owner_draw_label(&font, label, natural * 9 / 10, str::to_owned);
+        assert_eq!(squeezed, label);
+        let cut = fit_owner_draw_label(&font, label, natural / 3, str::to_owned);
+        assert!(label.starts_with(&cut) && cut.len() < label.len(), "{cut}");
     }
 
     #[test]
@@ -1896,6 +2189,25 @@ mod tests {
 
         assert_eq!(label.as_ref(), "ab");
         assert!(font.text_width(label.as_ref()) <= 14);
+    }
+
+    /// A search longer than its box keeps its end and the caret inside the
+    /// box; an empty box shows its hint and no caret.
+    #[test]
+    fn a_long_map_search_scrolls_to_keep_its_end_and_caret_in_the_box() {
+        let font = crate::render::bit_font::tests::make_test_font(&[(b'a' as u16, 6)], 4);
+        let field = RectPx::new(338, 119, 196, 17);
+        let long = "a".repeat(40);
+        // 196 less two 2 px insets and the 2 px caret leaves 190: 27 of the
+        // font's 7 px advances.
+        assert_eq!(map_search_tail(&font, &long, field.w), (&long[13..], 189));
+        let caret = map_search_caret_rect(&font, &long, field, ShellScale::RETAIL).unwrap();
+        assert_eq!(caret, RectPx::new(529, 121, 2, 13));
+        assert!(caret.x + caret.w <= field.x + field.w - LIST_TEXT_INSET);
+        assert_eq!(
+            map_search_caret_rect(&font, "", field, ShellScale::RETAIL),
+            None
+        );
     }
 
     /// A map name wider than its row (a file name with no description) used to
@@ -1954,11 +2266,11 @@ mod tests {
     fn owner_draw_label_truncates_non_bmp_by_utf16_code_unit() {
         let font = crate::render::bit_font::tests::make_test_font(&[(b'a' as u16, 6)], 4);
 
-        let label = truncate_combo_dropdown_label(&font, "a😀", 13);
+        let label = fit_owner_draw_label(&font, "a😀", 13, str::to_owned);
 
-        assert_eq!(label.as_ref(), "a\u{fffd}");
-        assert_ne!(label.as_ref(), "a");
-        assert!(font.text_width(label.as_ref()) <= 13);
+        assert_eq!(label, "a\u{fffd}");
+        assert_ne!(label, "a");
+        assert!(font.text_width(&label) <= 13);
     }
 
     #[test]

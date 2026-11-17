@@ -207,7 +207,8 @@ fn failed_harvest_departure_still_assigns_the_zero_cell() {
             overlay_registry: Some(overlay_registry_with_land()),
             ..Default::default()
         },
-    );
+    )
+    .unwrap();
     let unit = sim.substrate.entities.get(miner).unwrap();
     assert_eq!(unit.navigation.nav_com(), Some(NavTargetRef::cell(0, 0)));
     assert_eq!(unit.mission.current().known(), Some(MissionType::Harvest));

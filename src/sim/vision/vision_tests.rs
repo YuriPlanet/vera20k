@@ -2129,6 +2129,54 @@ fn source_release_and_zero_sight_gate_preserve_original_cached_metadata() {
     assert_eq!(cache_hash(&restored), cache_hash(&world.fog));
 }
 
+/// `retain_source_sight` publishes a client's +0x250/+0x254/+0x260 cache only
+/// while its +0x250 is clear: a second publish leaves the cache as it was.
+#[test]
+fn a_latched_source_cache_is_published_once() {
+    let viewer = intern::test_intern("Americans");
+    let admission = |radius| SightAdmission {
+        latched: true,
+        owner: viewer,
+        origin: (2, 2, 0),
+        radius,
+        cells: Vec::new(),
+    };
+    let mut fog = FogState::new(8, 8);
+    assert!(fog.retain_source_sight(1, viewer, viewer, &admission(3)));
+    assert!(!fog.retain_source_sight(1, viewer, viewer, &admission(5)));
+    assert_eq!(
+        fog.source_sight(1, viewer).map(|source| source.radius),
+        Some(3)
+    );
+}
+
+/// A release reaches every map that retained the source, not only the
+/// client maps: a computer House's map, retained through a single-viewer
+/// update, has its +0x250 cleared with the client's.
+#[test]
+fn a_release_clears_a_retained_map_that_is_no_client() {
+    let mut store = EntityStore::new();
+    spawn_with_vision(&mut store, 1, "Americans", 10, 10, 4);
+    spawn_with_vision(&mut store, 2, "Soviet", 20, 20, 4);
+    let americans = intern::test_intern("Americans");
+    let soviet = intern::test_intern("Soviet");
+    let mut world = crate::sim::world::Simulation::default();
+    world.fog = FogState::new(32, 32);
+    world.substrate.entities = store;
+    world.interner = ti();
+    seat_fixture_clients(&mut world, &HouseAllianceMap::new(), &[soviet]);
+    assert_eq!(*world.fog_viewers(), [americans]);
+    let config = default_config();
+    let context = crate::sim::world::UninitContext::default();
+    world.update_object_sight_in_view(1, 0, None, &config, None, context);
+    world.update_object_sight_in_view(1, 0, Some(soviet), &config, None, context);
+    assert!(world.fog.source_sight_is_latched(1, soviet));
+    world.release_object_sight_with_context(1, context);
+    for viewer in [americans, soviet] {
+        assert!(!world.fog.source_sight_is_latched(1, viewer), "{viewer:?}");
+    }
+}
+
 /// RevealArea's house gate (`0x00567AB0..0x00567B12`) writes only a
 /// client's PlayerPtr map, so a human player's sight opens its own map and a
 /// computer house's sight opens none of its own.
@@ -2152,4 +2200,29 @@ fn a_computer_houses_sight_opens_no_map_of_its_own() {
     assert!(world.fog.is_cell_revealed(americans, 10, 10));
     assert!(!world.fog.is_cell_revealed(americans, 20, 20));
     assert!(!world.fog.by_owner().contains_key(&soviet));
+}
+
+/// A plane synced into its presentation copy matches a clone of it, from
+/// the first, whole sync through later ones that copy only the chunks the
+/// writes between them touched, far apart on the map.
+#[test]
+fn a_synced_plane_copy_matches_a_clone_after_scattered_writes() {
+    let mut live = OwnerVisibility::new(300, 300);
+    let mut mirror = OwnerVisibility::default();
+    let assert_matches = |live: &OwnerVisibility, mirror: &OwnerVisibility| {
+        let clone = live.clone();
+        assert!(mirror.cells == clone.cells);
+        assert!(mirror.ground_flags == clone.ground_flags);
+        assert!(mirror.shroud_knowledge == clone.shroud_knowledge);
+        assert!(mirror.map_cell_edge_cache == clone.map_cell_edge_cache);
+    };
+    live.sync_presentation_into(&mut mirror);
+    assert_matches(&live, &mirror);
+    for cells in [[(0, 0), (150, 150)], [(299, 299), (3, 290)]] {
+        for (rx, ry) in cells {
+            live.mark_visible(rx, ry);
+        }
+        live.sync_presentation_into(&mut mirror);
+        assert_matches(&live, &mirror);
+    }
 }

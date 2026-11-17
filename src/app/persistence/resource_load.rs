@@ -50,6 +50,7 @@ struct PreparedSavedResources {
     local_view: PreparedSavedLocalView,
     power_bar_anim: PowerBarAnimState,
     radar_events: crate::render::radar::ClientRadarEvents,
+    radar_housing: Option<crate::sim::snapshot::saved_local_view::SavedRadarHousing>,
     credits_counter: Option<i32>,
     lighting: crate::map::lighting::SavedCellLighting,
     scheme_normal_rgb: [i32; 3],
@@ -65,6 +66,7 @@ pub(crate) struct CommittedSavedGame {
     pub(crate) local_view: PreparedSavedLocalView,
     pub(crate) power_bar_anim: PowerBarAnimState,
     pub(crate) radar_events: crate::render::radar::ClientRadarEvents,
+    pub(crate) radar_housing: Option<crate::sim::snapshot::saved_local_view::SavedRadarHousing>,
     pub(crate) credits_counter: Option<i32>,
     pub(crate) details: CommittedLoadPresentation,
     pub(crate) elapsed_clock: crate::app::match_runtime::frame_pacer::ScenarioElapsedClock,
@@ -114,6 +116,7 @@ impl PreparedSavedGame {
             crate::sim::snapshot::saved_local_view::SavedLocalViewError::MissingPowerBar,
         )?)?;
         let credits_counter = saved_view.take_credits_counter();
+        let radar_housing = saved_view.take_radar_housing();
         let radar_events = crate::render::radar::ClientRadarEvents::from_saved(
             saved_view
                 .take_radar_events()
@@ -152,7 +155,6 @@ impl PreparedSavedGame {
         );
         init_helpers::bind_rules_asset_closure(
             &mut rules,
-            view.rules_owner.fixed_art(),
             &overlay_registry,
             saved.scheduler_anim_roots(),
             &[],
@@ -193,7 +195,6 @@ impl PreparedSavedGame {
         );
         init_helpers::bind_rules_asset_closure(
             &mut rules,
-            view.rules_owner.fixed_art(),
             &overlay_registry,
             saved.scheduler_anim_roots(),
             &[],
@@ -243,7 +244,7 @@ impl PreparedSavedGame {
             SnapshotProcessState::Cold(view.frontend_main),
             SnapshotProcessState::Live,
         );
-        let mut world = PreparedLoad::prepare_snapshot(
+        let world = PreparedLoad::prepare_snapshot(
             snapshot,
             process,
             rules,
@@ -272,10 +273,9 @@ impl PreparedSavedGame {
             )?;
         let local_view = PreparedSavedLocalView::new(saved_view, &world.simulation, rules)?;
         crate::app::presentation::lighting::validate_saved_lighting(&lighting, &world.simulation)?;
-        // Load685120 ->53AB50 calls the canonical selector after restoring
-        // incoming effects. Its one Cell refresh is staged below; outgoing
-        // process palette/cache state stays immutable during preparation.
-        world.simulation.reinitialize_lighting_after_user_load();
+        // Shared user-load preparation reselected the incoming effects'
+        // lighting before refreshing Anim conversions. The one Cell refresh
+        // is staged below; outgoing process palettes remain unchanged.
         let scheme_normal_rgb = view
             .lighting
             .normal_scheme_for_user_load(view.current_simulation, &theater_name);
@@ -287,6 +287,7 @@ impl PreparedSavedGame {
             local_view,
             power_bar_anim,
             radar_events,
+            radar_housing,
             credits_counter,
             lighting,
             scheme_normal_rgb,
@@ -332,6 +333,7 @@ impl PreparedSavedGame {
             &theater.iso_palette,
             theater.extension,
             &terrain_grid,
+            rules.combat_damage.terrain_deformation,
             gpu,
             batch,
         );
@@ -401,7 +403,7 @@ impl PreparedSavedGame {
         self,
         process: &mut ProcessAssets,
         process_main: &MainRng,
-        runtime: &mut Option<SimRuntime>,
+        runtime: &mut crate::app::match_runtime::sim_host::SimHost,
     ) -> CommittedSavedGame {
         let PreparedSavedResources {
             world,
@@ -411,6 +413,7 @@ impl PreparedSavedGame {
             local_view,
             power_bar_anim,
             radar_events,
+            radar_housing,
             credits_counter,
             tile_cache,
             elapsed_clock,
@@ -433,10 +436,10 @@ impl PreparedSavedGame {
             .expect("prepared saved terrain");
         template.bind_shared_cell_dummy(dummy);
         template.bind_tile_variant_selector(selector);
-        *runtime = Some(SimRuntime {
+        runtime.install(Some(SimRuntime {
             simulation,
-            resources,
-        });
+            resources: resources.into(),
+        }));
         CommittedSavedGame {
             map,
             presentation: self.presentation,
@@ -444,6 +447,7 @@ impl PreparedSavedGame {
             local_view,
             power_bar_anim,
             radar_events,
+            radar_housing,
             credits_counter,
             details,
             elapsed_clock,
@@ -451,6 +455,6 @@ impl PreparedSavedGame {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 #[path = "resource_load_tests.rs"]
 mod tests;

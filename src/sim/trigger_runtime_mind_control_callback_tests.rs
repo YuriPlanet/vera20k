@@ -223,10 +223,11 @@ fn mind_control_cell_and_null_targets_do_not_raise_nearby_object_tags() {
 
 #[test]
 fn mind_control_sound_keeps_pre_capture_house_and_original_raw_location() {
-    let extra = format!(
-        "{MIND_CONTROL_TAG_RULES}\n[AudioVisual]\nYuriMindControlSound=CallbackCaptureSound\n"
-    );
-    let (mut sim, rules, overlay, houses) = event_ingress_fixture_with_rules(&extra);
+    let (mut sim, mut rules, overlay, houses) =
+        event_ingress_fixture_with_rules(MIND_CONTROL_TAG_RULES);
+    // This callback fixture has no SOUNDMD catalog. Supply its resolved cue;
+    // the process-owner and retail tests exercise the actual Voc binding.
+    rules.mind_control.mind_control_sound = Some("CallbackCaptureSound".into());
     let source = sim
         .spawn_object_at_height("TAGYURI", "House0", 17, 15, 0, 0, &rules)
         .unwrap();

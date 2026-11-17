@@ -48,6 +48,10 @@ impl MindScene {
         assert!(rules.ps_type_id_by_name(spark).is_some());
 
         let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, 0x471a50, 64);
+        // A loaded match always has an overlay grid, and a Spark particle's
+        // collision query reads it: without one the overload's sparks are
+        // refused and retired before they can be counted.
+        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
         // The arena's open LocalSize retains native Size width20 independently
         // of its rectangular terrain. Supply Size height64 for this larger
         // scene: Bullet In_Bounds568300 must admit the cardinal encounter and

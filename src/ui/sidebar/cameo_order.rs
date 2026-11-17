@@ -6,11 +6,33 @@
 
 use crate::sim::StageClass;
 use crate::sim::intern::InternedId;
-use std::collections::HashMap;
+use crate::util::lookup_hash::{LookupMap, LookupSet};
+use std::collections::{BTreeMap, HashMap};
 
 pub(crate) use crate::sim::snapshot::SavedCameoId as CameoId;
 
 use super::SidebarTab;
+
+/// Entries a strip holds before `SidebarClass::AddCameo` 6A6300 rejects another:
+/// it refuses a strip that already has more than 75, and `StripClass::InsertEntry`
+/// 6A8710 writes into a 75-record array. Ares 3.0 keeps its own growable vector
+/// per tab and drops both limits (`SidebarClass_AddCameo_SkipSizeCheck`
+/// Ares.dll 1002C160, hook 0x6A63B7; `StripClass_AddCameo_ReplaceItAll`
+/// Ares.dll 1002C2D0, hook 0x6A8710; every `TabCameos` loop runs to the vector's
+/// count), so when Ares plays in the game (`RuleSet::ares`, `ares`) a cameo is
+/// never rejected for its strip's size.
+pub(crate) fn strip_rejects_entry(len: usize, ares: bool) -> bool {
+    if ares { false } else { len > 75 }
+}
+
+/// The records a native strip holds (`StripClass` +0x58, stride 0x34).
+pub(crate) const STRIP_RECORDS: usize = 75;
+
+/// Leading strip entries `SidebarClass::FlashCameo` 6AC5F0 scans: its 75
+/// records, or (Ares.dll 1002C1D0, hook 0x6AC6D9) the whole tab vector.
+fn flash_scan_limit(ares: bool) -> usize {
+    if ares { usize::MAX } else { STRIP_RECORDS }
+}
 
 /// The request retained by a cameo before its queued event reaches the Factory.
 /// Native Select6AB80D writes status1; Right6AB0C9 changes it to status2.
@@ -22,7 +44,7 @@ pub(crate) enum CameoRequestState {
     Held,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct CameoRequest {
     state: CameoRequestState,
     progress: StageClass,
@@ -177,16 +199,50 @@ impl CameoKey {
 /// `Default` is the SidebarClass constructor 6A4E60 and StripClass
 /// constructor 6A80A0 / Init_Clear 6A81B0 state: no entries, TopRow 0, nothing
 /// queued. Their Stage and Unknown_40 drive nothing (Unknown_40 is only -1).
-#[derive(Debug, Clone, Default)]
+/// How many cameos a strip row holds: the original's two (GetVisibleSlotCount
+/// `0x006AC430` counts 2 * rows) unless the player's layout says otherwise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct StripColumns(usize);
+
+impl StripColumns {
+    pub(crate) fn new(columns: usize) -> Self {
+        Self(columns.max(1))
+    }
+}
+
+impl Default for StripColumns {
+    fn default() -> Self {
+        Self(2)
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct CameoStrips {
     strips: [Vec<Cameo>; 4],
     scroll_rows: [usize; 4],
+    /// The row width the scroll rules below count in. From the layout on
+    /// every refresh, not saved.
+    columns: StripColumns,
     /// StripClass PendingScroll: rows the scroll arrows queued, negative up.
     /// Presentation only, and not saved: a load starts with none queued.
     pending_scroll: [i32; 4],
+    /// The observer strip's House count (`Sidebar+0x5510`) while the local
+    /// player is an observer: the scroll rules then count Houses, two rows
+    /// each, and every strip's TopRow is a House index. From the sidebar's
+    /// inputs on every refresh, not saved.
+    observer_entries: Option<usize>,
     /// Strip entry +88 survives key refresh and Mouse save/no-init. Entries
     /// removed by Recalculate discard their deadline with their identity.
     flash_deadlines: HashMap<CameoId, i32>,
+    /// The deadlines (+88) of empty records, by record index, every one at or
+    /// past its strip's count. Only [`Self::flash_type_index`] writes one:
+    /// FlashCameo 6AC5F0 compares TypeIndex alone, and an empty record keeps
+    /// TypeIndex 0 (Init_Clear 6A81B0, Recalculate's tail clear 6AA9EA..
+    /// 6AAA25). InsertEntry 6A8710 overwrites the record at the old count,
+    /// shifting or writing the new entry there with +88 zeroed (6A87DA); a
+    /// removal moves only the records below the count down, so the empty
+    /// ones keep their index.
+    empty_flash_deadlines: [BTreeMap<usize, i32>; 4],
     redraw_until: i32,
     frame: i32,
     /// Select6AB80D/6AB0C9 and StripAI6A8F7C own presentation requests and
@@ -273,6 +329,24 @@ impl CameoReconcile {
             Some(std::array::from_fn(|index| strips.strips[index].is_empty()));
         self
     }
+}
+
+/// MSVC `std::lower_bound` over a strip: the first entry for which
+/// `before(entry)` is false, found by the same halving walk Ares.dll runs
+/// (1002C2D0 and 1002C660). It is not a plain `partition_point`, because
+/// `SortsBefore` is true on an equal key and so is not a strict ordering.
+fn cameo_lower_bound(strip: &[Cameo], mut before: impl FnMut(&Cameo) -> bool) -> usize {
+    let (mut first, mut count) = (0, strip.len());
+    while count > 0 {
+        let half = count / 2;
+        if before(&strip[first + half]) {
+            first += half + 1;
+            count -= half + 1;
+        } else {
+            count = half;
+        }
+    }
+    first
 }
 
 impl CameoStrips {
@@ -404,6 +478,12 @@ impl CameoStrips {
     /// TAction115 -> Sidebar6AC5F0 matches the first retained numeric type
     /// index, deliberately without comparing RTTI (Unit/Aircraft can collide).
     /// Original-executed controls: tools/sidebar_oracle/trigger_cameos.json.
+    /// Its scan runs over all 75 records (6AC6F2..6AC6FD), so a type at index
+    /// 0 that no entry matches lights the first empty record, at the strip's
+    /// count, and StripDraw darkens that slot (6A99BE -> 6A9B4B).
+    /// Ares 3.0 `SidebarClass_FlashCameo` (Ares.dll 1002C1D0, hook 0x6AC6D9)
+    /// runs the same match over the whole tab vector, not the first 75
+    /// ([`flash_scan_limit`]), and that vector has no empty records.
     pub(crate) fn flash_type_index(
         &mut self,
         tab: SidebarTab,
@@ -411,14 +491,18 @@ impl CameoStrips {
         duration: i32,
         frame: i32,
         mut index_of: impl FnMut(CameoId) -> Option<i32>,
+        ares: bool,
     ) {
         let deadline = frame.wrapping_add(duration);
-        if let Some(entry) = self.strips[tab.tab_index()]
+        let strip = &self.strips[tab.tab_index()];
+        if let Some(entry) = strip
             .iter()
-            .take(75)
+            .take(flash_scan_limit(ares))
             .find(|entry| index_of(entry.id) == Some(type_index))
         {
             self.flash_deadlines.insert(entry.id, deadline);
+        } else if !ares && type_index == 0 && strip.len() < flash_scan_limit(ares) {
+            self.empty_flash_deadlines[tab.tab_index()].insert(strip.len(), deadline);
         }
         self.redraw_until = deadline.wrapping_add(1);
     }
@@ -426,32 +510,71 @@ impl CameoStrips {
     /// StripDraw6A9B59..6A9B76 uses signed deadline/frame and signed IDIV,
     /// not an unsigned clock or an elapsed-time approximation.
     pub(crate) fn flash_darkened(&self, id: CameoId) -> bool {
-        self.flash_deadlines.get(&id).copied().unwrap_or(0) > self.frame && self.frame % 16 > 8
+        self.deadline_darkens(self.flash_deadlines.get(&id).copied().unwrap_or(0))
     }
 
+    /// Whether StripDraw's empty-slot path (6A99BE -> 6A9B4B) darkens record
+    /// `slot` of `tab`, at or past the strip's count.
+    pub(crate) fn empty_slot_flash_darkened(&self, tab: SidebarTab, slot: usize) -> bool {
+        self.deadline_darkens(
+            self.empty_flash_deadlines[tab.tab_index()]
+                .get(&slot)
+                .copied()
+                .unwrap_or(0),
+        )
+    }
+
+    fn deadline_darkens(&self, deadline: i32) -> bool {
+        deadline > self.frame && self.frame % 16 > 8
+    }
+
+    /// Each strip's record deadlines in record order: one per entry, then the
+    /// empty records up to the last one that holds a deadline (Mouse Save
+    /// 5BE6D0 writes all 75 records).
     pub(crate) fn saved_flash(&self) -> ([Vec<i32>; 4], i32) {
         (
             std::array::from_fn(|index| {
-                self.strips[index]
+                let mut deadlines: Vec<i32> = self.strips[index]
                     .iter()
                     .map(|entry| self.flash_deadlines.get(&entry.id).copied().unwrap_or(0))
-                    .collect()
+                    .collect();
+                for (&slot, &deadline) in &self.empty_flash_deadlines[index] {
+                    deadlines.resize(slot, 0);
+                    deadlines.push(deadline);
+                }
+                deadlines
             }),
             self.redraw_until,
         )
     }
 
-    /// Called after the saved-order owner validates counts and identities.
+    /// Called after the saved-order owner validates counts and identities;
+    /// deadlines past a strip's entries are its empty records'.
     pub(crate) fn restore_flash(&mut self, deadlines: [Vec<i32>; 4], redraw_until: i32) {
         self.flash_deadlines.clear();
-        for (strip, deadlines) in self.strips.iter().zip(deadlines) {
-            for (entry, deadline) in strip.iter().zip(deadlines) {
-                self.flash_deadlines.insert(entry.id, deadline);
+        for ((strip, empty), deadlines) in self
+            .strips
+            .iter()
+            .zip(&mut self.empty_flash_deadlines)
+            .zip(deadlines)
+        {
+            empty.clear();
+            for (slot, deadline) in deadlines.into_iter().enumerate() {
+                match strip.get(slot) {
+                    Some(entry) => {
+                        self.flash_deadlines.insert(entry.id, deadline);
+                    }
+                    None if deadline != 0 => {
+                        empty.insert(slot, deadline);
+                    }
+                    None => {}
+                }
             }
         }
         self.redraw_until = redraw_until;
     }
 
+    #[cfg(test)]
     pub(crate) fn scroll_rows(&self) -> [usize; 4] {
         self.scroll_rows
     }
@@ -470,7 +593,9 @@ impl CameoStrips {
     /// Sidebar Action `0x006A7780`, R-DN (`0xC9`) / R-UP (`0xC8`) branch,
     /// queues one page (the visible row count) and plays ScoldSound on false;
     /// SidebarClass::Scroll `0x006A6A00` (SidebarUp/SidebarDown, the wheel)
-    /// queues one row. The observer branches have no VERA strip.
+    /// queues one row. For the observer both queue one House while one is
+    /// left below the screen's `rows / 2` (Action `0x006A7BA2..0x006A7C42`
+    /// and `0x006A7CD9..0x006A7D0F`, Scroll `0x006A6AA6..0x006A6AC4`).
     pub(crate) fn queue_scroll(
         &mut self,
         tab: SidebarTab,
@@ -480,8 +605,13 @@ impl CameoStrips {
     ) -> bool {
         let index = tab.tab_index();
         let top = self.scroll_rows[index];
-        let rows = rows as i32;
-        if down && (top + visible_rows) * 2 < self.strips[index].len() {
+        let (shown, per_row, len) = self.scroll_span(index, visible_rows);
+        let rows = if self.observer_entries.is_some() {
+            1
+        } else {
+            rows as i32
+        };
+        if down && (top + shown) * per_row < len {
             self.pending_scroll[index] += rows;
         } else if !down && top != 0 {
             self.pending_scroll[index] -= rows;
@@ -496,18 +626,19 @@ impl CameoStrips {
     /// row: the step `0x32` (`0x006A5287`) equals the 50-pixel row stride,
     /// so the partial offset begins and ends inside the same visit and Draw
     /// never shows it. A strip that fits on screen, or has no row left in
-    /// the queued direction, drops its queue.
+    /// the queued direction, drops its queue. The observer's moves one House
+    /// a visit, against the House count (`0x006A8BA7..0x006A8C25`).
     pub(crate) fn step_pending_scroll(&mut self, visible_rows: usize) {
-        for ((strip, top), pending) in self
-            .strips
-            .iter()
-            .zip(&mut self.scroll_rows)
-            .zip(&mut self.pending_scroll)
-        {
+        for index in 0..self.strips.len() {
+            let (shown, per_row, len) = self.scroll_span(index, visible_rows);
+            let (top, pending) = (
+                &mut self.scroll_rows[index],
+                &mut self.pending_scroll[index],
+            );
             if *pending == 0 {
                 continue;
             }
-            if visible_rows * 2 >= strip.len() {
+            if shown * per_row >= len {
                 *pending = 0;
             } else if *pending < 0 {
                 if *top == 0 {
@@ -516,13 +647,34 @@ impl CameoStrips {
                     *pending += 1;
                     *top -= 1;
                 }
-            } else if (*top + visible_rows) * 2 < strip.len() {
+            } else if (*top + shown) * per_row < len {
                 *pending -= 1;
                 *top += 1;
             } else {
                 *pending = 0;
             }
         }
+    }
+
+    /// What the scroll rules count on strip `index`: the rows a screen
+    /// shows, the entries a row holds and the entries the strip has. The
+    /// observer's screen shows `rows / 2` Houses, one a row of its own.
+    fn scroll_span(&self, index: usize, visible_rows: usize) -> (usize, usize, usize) {
+        match self.observer_entries {
+            Some(houses) => (visible_rows / 2, 1, houses),
+            None => (visible_rows, self.columns.0, self.strips[index].len()),
+        }
+    }
+
+    /// Take the observer strip's House count, or `None` for a player.
+    pub(crate) fn set_observer_entries(&mut self, houses: Option<usize>) {
+        self.observer_entries = houses;
+    }
+
+    /// Take the layout's row width for the scroll rules. A top row past the
+    /// end under a new width is clamped where the view is built.
+    pub(crate) fn set_columns(&mut self, columns: StripColumns) {
+        self.columns = columns;
     }
 
     pub(crate) fn has_pending_scroll(&self) -> bool {
@@ -539,7 +691,7 @@ impl CameoStrips {
 
     /// Refresh the pointed-to type/House values without moving entries.
     pub(crate) fn refresh_keys(&mut self, candidates: &[Cameo]) {
-        let current: HashMap<_, _> = candidates.iter().map(|item| (item.id, item)).collect();
+        let current: LookupMap<_, _> = candidates.iter().map(|item| (item.id, item)).collect();
         for entry in self.strips.iter_mut().flatten() {
             if let Some(item) = current.get(&entry.id) {
                 entry.clone_from(item);
@@ -547,21 +699,37 @@ impl CameoStrips {
         }
     }
 
-    /// AddCameo rejects a duplicate identity and count above 75. Equal keys
+    /// AddCameo rejects a duplicate identity and count above 75
+    /// ([`strip_rejects_entry`]; Ares lifts it). Equal keys
     /// enter before the existing item. Returns whether insertion succeeded.
     /// Native allocates only 75 records, so its accepted 76th entry can
     /// overwrite adjacent storage. Vec preserves that admission boundary
-    /// safely; it does not reproduce the overwrite.
-    pub(crate) fn insert(&mut self, candidate: &Cameo) -> bool {
+    /// safely; it does not reproduce the overwrite. `ares`: whether Ares
+    /// plays in the game (`RuleSet::ares`).
+    pub(crate) fn insert(&mut self, candidate: &Cameo, ares: bool) -> bool {
         let strip = &mut self.strips[candidate.tab.tab_index()];
-        if strip.len() > 75 || strip.iter().any(|entry| entry.id == candidate.id) {
+        if strip_rejects_entry(strip.len(), ares)
+            || strip.iter().any(|entry| entry.id == candidate.id)
+        {
             return false;
         }
-        let at = strip
-            .iter()
-            .position(|entry| candidate.key.inserts_before(&entry.key))
-            .unwrap_or(strip.len());
+        // Ares 3.0 `StripClass_AddCameo_ReplaceItAll` (Ares.dll 1002C2D0, hook
+        // 0x6A8710) inserts at `std::lower_bound` with `CameoDataStruct::operator<`
+        // (SortsBefore 0x6A8420, true on an equal name): an equal key enters
+        // after the existing item, not before it.
+        let at = if ares {
+            cameo_lower_bound(strip.as_slice(), |entry| {
+                entry.key.inserts_before(&candidate.key)
+            })
+        } else {
+            strip
+                .iter()
+                .position(|entry| candidate.key.inserts_before(&entry.key))
+                .unwrap_or(strip.len())
+        };
+        let old_count = strip.len();
         strip.insert(at, candidate.clone());
+        self.empty_flash_deadlines[candidate.tab.tab_index()].remove(&old_count);
         true
     }
 
@@ -570,11 +738,30 @@ impl CameoStrips {
     /// toward zero, including the odd-count upper bound. This deliberately
     /// preserves the native adjustment even when only a later item disappears.
     /// Original-executed controls: tools/sidebar_oracle/cameo_order.json.
-    pub(crate) fn retain(&mut self, visible_rows: usize, mut keep: impl FnMut(CameoId) -> bool) {
-        let visible_slots = visible_rows * 2;
+    ///
+    /// When Ares plays in the game (`RuleSet::ares`, `ares`), Ares 3.0
+    /// `StripClass_RecheckCameos` (Ares.dll 1002C660, hook 0x6AA600) replaces
+    /// the TopRow rule: the cameo
+    /// that topped the strip is looked up again in the survivors with
+    /// `std::lower_bound` (SortsBefore 0x6A8420) and the row is
+    /// `min(position / 2, max(count - slots, 0) / 2)`; an unchanged count
+    /// leaves the row alone.
+    pub(crate) fn retain(
+        &mut self,
+        visible_rows: usize,
+        mut keep: impl FnMut(CameoId) -> bool,
+        ares: bool,
+    ) {
+        let columns = self.columns.0;
+        let visible_slots = visible_rows * columns;
         for (strip, row) in self.strips.iter_mut().zip(&mut self.scroll_rows) {
             let old_count = strip.len();
-            let start = *row * 2;
+            let top = if ares {
+                strip.get(*row * columns).map(|entry| entry.key.clone())
+            } else {
+                None
+            };
+            let start = *row * columns;
             let mut old_index = 0;
             let mut new_index = 0;
             let mut first_visible = None;
@@ -593,11 +780,26 @@ impl CameoStrips {
                 retained
             });
             if strip.len() != old_count {
-                *row = first_visible.map_or(0, |(snapshot_index, retained_index)| {
-                    let shifted = *row as i64 - (snapshot_index as i64 - retained_index as i64) / 2;
-                    let last = (strip.len() as i64 - visible_slots as i64) / 2;
-                    shifted.min(last).max(0) as usize
-                });
+                if ares {
+                    let last = strip.len().saturating_sub(visible_slots) / columns;
+                    *row = match &top {
+                        Some(top) => {
+                            cameo_lower_bound(strip.as_slice(), |entry| {
+                                entry.key.inserts_before(top)
+                            }) / columns
+                        }
+                        None => *row,
+                    }
+                    .min(last);
+                } else {
+                    *row = first_visible.map_or(0, |(snapshot_index, retained_index)| {
+                        let columns = columns as i64;
+                        let shifted =
+                            *row as i64 - (snapshot_index as i64 - retained_index as i64) / columns;
+                        let last = (strip.len() as i64 - visible_slots as i64) / columns;
+                        shifted.min(last).max(0) as usize
+                    });
+                }
             }
         }
         self.flash_deadlines
@@ -617,12 +819,14 @@ impl CameoStrips {
     /// run first, `retain` prunes (Recalculate 6AA600), and only then do newly
     /// granted supers enter — so a super granted into a sidebar the prune had
     /// just emptied still counts as an insertion into an empty sidebar.
+    /// `ares`: whether Ares plays in the game (`RuleSet::ares`).
     pub(crate) fn reconcile(
         &mut self,
         candidates: &[Cameo],
         visible_rows: usize,
         recalculate_builds: bool,
         additions: &[InternedId],
+        ares: bool,
     ) -> CameoReconcile {
         self.refresh_keys(candidates);
         let mut build_entered = [false; 4];
@@ -638,7 +842,7 @@ impl CameoStrips {
                 })
                 .flatten()
         }) {
-            let accepted = self.insert(candidate);
+            let accepted = self.insert(candidate, ares);
             build_entered[candidate.tab.tab_index()] |= accepted;
             build_inserted |= accepted;
             if empty_before_builds && accepted && active_tab_destination.is_none() {
@@ -649,16 +853,20 @@ impl CameoStrips {
             }
         }
         let counted: [usize; 4] = std::array::from_fn(|index| self.strips[index].len());
-        let available: std::collections::HashSet<_> = candidates
+        let available: LookupSet<_> = candidates
             .iter()
             .filter(|item| item.available)
             .map(|item| item.id)
             .collect();
         // Super grant/revoke already has its own current projection. Preserve
         // that route; an ordinary presentation refresh may not prune builds.
-        self.retain(visible_rows, |id| {
-            (!recalculate_builds && matches!(id, CameoId::Object(_))) || available.contains(&id)
-        });
+        self.retain(
+            visible_rows,
+            |id| {
+                (!recalculate_builds && matches!(id, CameoId::Object(_))) || available.contains(&id)
+            },
+            ares,
+        );
         let emptied =
             std::array::from_fn(|index| counted[index] > 0 && self.strips[index].is_empty());
         if emptied.iter().any(|was_emptied| *was_emptied)
@@ -675,7 +883,7 @@ impl CameoStrips {
             .iter()
             .filter(|item| item.available && matches!(item.id, CameoId::SuperWeapon(_)))
         {
-            let accepted = self.insert(candidate);
+            let accepted = self.insert(candidate, ares);
             super_entered[candidate.tab.tab_index()] |= accepted;
             if empty_before_supers && accepted && !super_inserted {
                 // Supers are added after Recalculate. If that pass left no
@@ -729,19 +937,15 @@ impl CameoStrips {
         for (id, category, name, cost) in options
             .iter()
             .filter(|item| item.visible_in_sidebar())
-            .map(|item| {
+            .map(|item| (item.type_id, item.queue_category, "", item.cost))
+            .chain(ready.iter().map(|item| {
                 (
                     item.type_id,
                     item.queue_category,
-                    &item.display_name,
-                    item.cost,
+                    item.display_name.as_str(),
+                    0,
                 )
-            })
-            .chain(
-                ready
-                    .iter()
-                    .map(|item| (item.type_id, item.queue_category, &item.display_name, 0)),
-            )
+            }))
         {
             let strip = &mut result.strips[SidebarTab::for_category(category).tab_index()];
             if !strip.iter().any(|entry| entry.id == CameoId::Object(id)) {
@@ -755,7 +959,7 @@ impl CameoStrips {
                         naval: false,
                         tech_level: 0,
                         cost,
-                        name: name.clone(),
+                        name: name.to_owned(),
                     },
                 });
             }

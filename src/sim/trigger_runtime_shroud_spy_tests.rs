@@ -170,7 +170,7 @@ fn network_spy_house_event_has_no_current_player_fallback() {
     let disguise = sim.substrate.entities.get_mut(actor).unwrap();
     disguise.disguise.as_mut().unwrap().acquire(0, None, None);
     sim.session.set_current_house_for_test(Some(houses[1]));
-    let mut occurs = |sim: &mut Simulation| {
+    let occurs = |sim: &mut Simulation| {
         let input = TagEventInput {
             kind: 53,
             actor: Some(actor),
@@ -462,6 +462,31 @@ fn forced_defaults_and_makeup_kit_copy_use_the_same_retained_type_owner() {
     assert_eq!(disguise.house(), Some(houses[1]));
 }
 
+/// A disguise put on is a new look for the presentation's atlas check
+/// (`Simulation::take_looks`); a write that changes no look, and a removal,
+/// are none.
+#[test]
+fn a_disguise_put_on_is_a_new_look_and_a_hit_or_a_death_is_not() {
+    use crate::sim::Touched;
+    let (mut sim, rules, _, _) = fixture();
+    let actor = sim
+        .spawn_object("SPY", "House0", 15, 15, 0, &rules)
+        .unwrap();
+    let target = sim.spawn_object("E2", "House1", 16, 15, 0, &rules).unwrap();
+    let bystander = sim.spawn_object("E1", "House0", 17, 15, 0, &rules).unwrap();
+    sim.take_looks();
+    sim.substrate
+        .entities
+        .get_mut(target)
+        .unwrap()
+        .health
+        .set(50);
+    sim.despawn_entity(bystander);
+    assert_eq!(sim.take_looks().entities, Touched::Ids(Vec::new()));
+    sim.disguise_as(actor, Some(target), true, &rules);
+    assert_eq!(sim.take_looks().entities, Touched::Ids(vec![actor]));
+}
+
 #[test]
 fn non_agent_arrival_does_not_raise_the_spy_cell_event() {
     let (mut sim, rules, registry, houses) = fixture();
@@ -663,12 +688,9 @@ fn grow_action_uses_current_map_then_known_objects_without_resetting_house_flags
     // Supply the AIR registration boundary. This check is about the map's
     // display cursor, not an emulated aircraft/locomotor transition.
     crate::sim::world::Simulation::submit_object_display(
-        &sim.interner,
-        &sim.terrain_objects,
         &mut sim.substrate,
         air,
         crate::sim::world::display_layers::DisplayLayer::AIR,
-        &rules,
     );
     sim.substrate
         .entities

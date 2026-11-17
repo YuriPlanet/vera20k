@@ -20,7 +20,12 @@ pub(crate) fn render_network_failure(
         vera_body(state).unwrap_or_else(|| localized_label(state, body.0, body.1)),
         localized_label(state, button.0, button.1),
     );
-    let modal = crate::ui::shell::modal::body_ok_layout(width as i32, height as i32);
+    let modal = crate::ui::shell::modal::body_ok_layout_in(crate::ui::shell::geom::RectPx::new(
+        0,
+        0,
+        width as i32,
+        height as i32,
+    ));
     let pressed = state.frontend.shell_controller.top_id() == Some(DIALOG)
         && state.frontend.shell_controller.pressed() == Some(crate::ui::shell::modal::control::OK);
     let mut art = Vec::new();

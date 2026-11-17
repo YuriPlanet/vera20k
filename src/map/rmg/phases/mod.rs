@@ -31,9 +31,10 @@ pub mod starts;
 pub mod tech_buildings;
 pub mod tiberium;
 pub mod trees;
+pub mod urban_areas;
 pub mod water;
 pub mod water_finalize;
 pub mod zones;
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 mod cliff_native_tests;

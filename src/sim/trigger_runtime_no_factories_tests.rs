@@ -354,9 +354,6 @@ fn no_factories_retail_sov02_delay_reaches_existing_sale_and_hunt_after_restore(
         .into_parts();
     crate::map::theater::load_theater(&mut assets, &map.header.theater);
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&fixed_art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&fixed_art),
-    );
     rules.bind_building_buildup_assets(&assets, &map.header.theater);
     assert!(rules.has_buildup("GAPILL"));
     assert_eq!(rules.object("GAPILE").unwrap().factory_rtti(), 16);

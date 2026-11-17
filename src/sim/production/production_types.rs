@@ -260,7 +260,6 @@ impl ProductionCategory {
 #[derive(Debug, Clone, PartialEq)]
 pub struct BuildOption {
     pub type_id: InternedId,
-    pub display_name: String,
     /// The type's Cost_Of for the owner (TechnoType virtual `+0x84`).
     pub cost: i32,
     pub object_category: ObjectCategory,

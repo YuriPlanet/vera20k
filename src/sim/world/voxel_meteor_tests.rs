@@ -19,7 +19,8 @@ pub(in crate::sim) fn fly_to_expiry(sim: &mut Simulation, rules: &RuleSet, id: u
         .bounce()
         .position_leptons();
     for _ in 0..1000 {
-        sim.visit_voxel_anim(id, rules, FrameEffects::default());
+        sim.visit_voxel_anim(id, rules, FrameEffects::default())
+            .unwrap();
         sim.process_pending_delete_with(
             rules,
             Some(rules.overlay_registry()),
@@ -103,6 +104,7 @@ fn retail_meteor02_rings_its_impact_cell_with_ore_and_pebble_seeds_its_own() {
         IVec3::new(64 * 256 + 128, 64 * 256 + 128, 0),
         true,
         &mut Vec::new(),
+        &rules,
     )
     .unwrap();
     let id = sim.voxel_anims().ids()[0];

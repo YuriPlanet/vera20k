@@ -150,7 +150,7 @@ fn step_until_planted(
             .substrate
             .entities
             .get(building)
-            .is_some_and(|building| building.pending_c4_detonation.pending().is_some())
+            .is_some_and(|building| building.building.pending_c4_detonation.pending().is_some())
         {
             return frame;
         }
@@ -205,6 +205,37 @@ fn expected_draws(sim: &Simulation, scatters: bool) -> (i32, crate::sim::rng::Si
 /// Target when its type is `CanC4=`, for either house: it heads for the
 /// building, queues Sabotage and returns 1. A building it may not plant on,
 /// or an infantryman without C4, falls through to the Foot body.
+/// Infantry Per_Cell_Process's last check (`0x0051A92A..0x0051A9E8`): a
+/// stationary infantryman arriving on Water dies of `C4Warhead=`; a type with
+/// `C4=` (the Seal and Tanya, who swim) does not.
+#[test]
+fn a_stationary_arrival_on_water_kills_all_but_c4_infantry() {
+    let rules = rules();
+    for (kind, survives) in [("E1", false), ("TANY", true)] {
+        let (mut sim, _) = arena(&rules);
+        let id = spawn(&mut sim, &rules, kind, "Americans", 8, 8);
+        sim.resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cell_mut_for_test(8, 8)
+            .unwrap()
+            .land_type = crate::rules::terrain_rules::LandType::Water as u8;
+        sim.per_cell_process(
+            id,
+            crate::sim::movement::PerCellReason::Arrival,
+            &rules,
+            None,
+            FrameEffects::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            sim.substrate.entities.get(id).unwrap().health.current() > 0,
+            survives,
+            "{kind}"
+        );
+    }
+}
+
 #[test]
 fn mission_attacks_c4_arm_sends_a_demolition_man_to_sabotage() {
     let rules = rules();
@@ -321,6 +352,7 @@ fn a_tanya_ordered_to_sabotage_walks_in_and_plants_the_charge() {
         .entities
         .get(building)
         .unwrap()
+        .building
         .pending_c4_detonation
         .pending()
         .unwrap();
@@ -408,7 +440,8 @@ fn a_retail_area_guard_tanya_with_a_building_target_plants_c4() {
         FrameEffects::default(),
     )
     .unwrap();
-    crate::sim::world::dispatch_foot_mission(&mut sim, tanya, &rules, ObjectAiCtx::default());
+    crate::sim::world::dispatch_foot_mission(&mut sim, tanya, &rules, ObjectAiCtx::default())
+        .unwrap();
     assert_eq!(
         sim.substrate.entities.get(tanya).unwrap().mission.queued(),
         SABOTAGE
@@ -421,6 +454,7 @@ fn a_retail_area_guard_tanya_with_a_building_target_plants_c4() {
         .entities
         .get(building)
         .unwrap()
+        .building
         .pending_c4_detonation
         .pending()
         .unwrap();
@@ -530,6 +564,7 @@ fn forced_retail_tanya_orders_reach_allied_and_own_detonations() {
             .entities
             .get(building)
             .unwrap()
+            .building
             .pending_c4_detonation
             .pending()
             .unwrap();
@@ -621,6 +656,7 @@ fn a_second_planter_leaves_the_first_charge_alone() {
         .entities
         .get(building)
         .unwrap()
+        .building
         .pending_c4_detonation;
     sim.session
         .set_binary_frame_for_test(sim.session.binary_frame() + 5);
@@ -640,7 +676,7 @@ fn a_second_planter_leaves_the_first_charge_alone() {
     );
 
     let target = sim.substrate.entities.get(building).unwrap();
-    assert_eq!(target.pending_c4_detonation, charge);
+    assert_eq!(target.building.pending_c4_detonation, charge);
     assert_eq!(target.flashing.frames(), 0, "no second flash");
     let planter = sim.substrate.entities.get(second).unwrap();
     assert_eq!(
@@ -691,7 +727,7 @@ fn a_sold_or_curtained_building_takes_no_charge() {
 
         let target = sim.substrate.entities.get(building).unwrap();
         assert!(
-            target.pending_c4_detonation.pending().is_none(),
+            target.building.pending_c4_detonation.pending().is_none(),
             "curtained {curtained}"
         );
         assert_eq!(target.flashing.frames(), 0, "curtained {curtained}");
@@ -753,6 +789,7 @@ fn the_arm_plants_only_from_a_sabotage_c4_arrival_at_its_navcom() {
                 .entities
                 .get(building)
                 .unwrap()
+                .building
                 .pending_c4_detonation
                 .pending()
                 .is_none(),
@@ -832,7 +869,8 @@ fn a_computer_tanya_reaching_her_navcom_cell_on_sabotage_sets_off_c4_there() {
         FrameEffects::default(),
     )
     .unwrap();
-    crate::sim::world::dispatch_foot_mission(&mut sim, tanya, &rules, ObjectAiCtx::default());
+    crate::sim::world::dispatch_foot_mission(&mut sim, tanya, &rules, ObjectAiCtx::default())
+        .unwrap();
     let queued = sim.substrate.entities.get(tanya).unwrap();
     assert_eq!(queued.mission.queued(), SABOTAGE);
     assert_eq!(
@@ -865,7 +903,7 @@ fn a_computer_tanya_reaching_her_navcom_cell_on_sabotage_sets_off_c4_there() {
     );
     let target = sim.substrate.entities.get(building).unwrap();
     assert_eq!(target.health.current(), building_health);
-    assert!(target.pending_c4_detonation.pending().is_none());
+    assert!(target.building.pending_c4_detonation.pending().is_none());
     let tanya = sim.substrate.entities.get(tanya).unwrap();
     assert!(tanya.is_alive() && !tanya.death.is_dying());
     let Some(NavTargetRef::Cell { rx, ry }) = tanya.navigation.nav_com() else {
@@ -915,4 +953,47 @@ fn the_sourceless_blasts_kill_a_c4_infantryman_standing_in_its_cell() {
     let tanya = sim.substrate.entities.get(tanya).unwrap();
     assert_eq!(tanya.health.current(), 0);
     assert!(tanya.lifecycle.object_alive());
+}
+
+/// Ares 10025730 (hook 0x51A4D2): a veteran whose rank holds the C4 ability
+/// plants on a Sabotage arrival though its type is not `C4=`; a rookie of
+/// the same type does not.
+#[test]
+fn ares_a_veteran_c4_ability_plants_the_charge() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let art = IniFile::from_str(ART);
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(&RULES.replace(
+            "[E1]\nStrength=125\n",
+            "[E1]\nStrength=125\nVeteranAbilities=C4\n",
+        )),
+        &art,
+    )
+    .unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&art));
+    for (rank, planted) in [(0, false), (100, true)] {
+        let (mut sim, _) = arena(&rules);
+        let building = spawn(&mut sim, &rules, "GAPILE", "Russians", 16, 10);
+        let actor = spawn(&mut sim, &rules, "E1", "Americans", 15, 10);
+        sim.substrate
+            .entities
+            .get_mut(actor)
+            .unwrap()
+            .veterancy
+            .set_rank_for_test(rank);
+        stand_in(&mut sim, actor, building);
+        let arrival = sim
+            .infantry_per_cell_c4(actor, &rules, None, FrameEffects::default())
+            .unwrap();
+        assert_eq!(arrival.returns, planted, "rank {rank}");
+        let charge = sim
+            .substrate
+            .entities
+            .get(building)
+            .unwrap()
+            .building
+            .pending_c4_detonation
+            .pending();
+        assert_eq!(charge.is_some(), planted, "rank {rank}");
+    }
 }

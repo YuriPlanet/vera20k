@@ -347,7 +347,7 @@ fn mission_attack_matches_the_original() {
         entity.body_facing.snap(away, FRAME);
         let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(FRAME as i32);
         cloak.set_state_for_test(2);
-        entity.cloak = Some(cloak);
+        entity.cloak = Some(Box::new(cloak));
 
         let (returns, fire_calls) = with_building_fire_stub(None, || {
             with_draws(&mut sim, row, |sim| {
@@ -398,7 +398,7 @@ fn mission_attack_matches_the_original() {
         );
         let delayed = &row["delayed_fire"];
         assert_eq!(
-            entity.pending_building_fire.pending(),
+            entity.building.pending_building_fire.pending(),
             (delayed[0] == 1).then(|| PendingBuildingFire::new(
                 delayed[2].as_i64().unwrap() as i32,
                 DelayedFire::Weapon(WeaponSlot::Primary)
@@ -504,7 +504,13 @@ fn enter_idle_mode_matches_the_unlimbo_rows() {
         let building = sim
             .spawn_object_limbo_at_height("DEF", "Americans", 7, 7, 0, 0, &rules)
             .unwrap();
-        let before = sim.substrate.entities.get(building).unwrap().mission;
+        let before = sim
+            .substrate
+            .entities
+            .get(building)
+            .unwrap()
+            .mission
+            .clone();
         assert_eq!(before.current(), MissionId::NONE, "{name}");
         assert_eq!(before.queued(), MissionId::NONE, "{name}");
         let initial = input["args"][0] != 0;
@@ -1693,7 +1699,7 @@ fn retail_dustbowl_tesla_coil_charges_before_each_shot() {
     };
     let armed = |scenario: &crate::headless_scenario::HeadlessScenario| {
         let entity = scenario.sim().substrate.entities.get(coil).unwrap();
-        entity.pending_building_fire.pending().is_some()
+        entity.building.pending_building_fire.pending().is_some()
     };
     // The coil's drain reaches its House at Added_To_Game (`0x00502B48` ->
     // `0x0044E880` -> `0x005018C0`), the plant's output only at the House's
@@ -1762,6 +1768,8 @@ fn retail_dustbowl_tesla_coil_charges_before_each_shot() {
 ///   `PrismSupportDelay=45` on its rearm timer.
 #[test]
 #[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
+// The stock PrismType support; an Ares game replaces it
+// (`techno_ai::ares_prism_forwarding`).
 fn retail_dustbowl_prism_towers_forward_their_charge() {
     use crate::sim::world::DelayedFire;
     let (mut scenario, master, mcv, (x, y)) =
@@ -1822,6 +1830,7 @@ fn retail_dustbowl_prism_towers_forward_their_charge() {
             .entities
             .get(id)
             .unwrap()
+            .building
             .pending_building_fire
             .pending()
             .map(|pending| pending.fire)
@@ -1871,7 +1880,7 @@ fn retail_dustbowl_prism_towers_forward_their_charge() {
                         crate::sim::timer::CdTimer::started(binary_frame, 45),
                         "the downtime starts on the beam's frame"
                     );
-                    assert_eq!(entity.prism_support_count.count(), 0);
+                    assert_eq!(entity.building.prism_support_count.count(), 0);
                     beams.push((frame, id));
                 }
                 _ => {}
@@ -1901,7 +1910,7 @@ fn retail_dustbowl_prism_towers_forward_their_charge() {
             shot = Some((frame, health - after));
             let entity = scenario.sim().substrate.entities.get(master).unwrap();
             assert_eq!(
-                entity.prism_support_count.count(),
+                entity.building.prism_support_count.count(),
                 0,
                 "the bonus restarts the count"
             );
@@ -2025,4 +2034,31 @@ fn retail_dustbowl_ore_cell_spawn_admission_matches_native_gates() {
         .is_some(),
         "overlay-free Rough ground admits a building"
     );
+}
+
+/// Grand_Opening `0x00446662..0x004466CB` builds the rules `TurretAnim` in
+/// slot 9 and aims it; UpdateAnimation's tail (`0x00451234..0x0045128C`) aims
+/// it again every frame. The aim writes the `0x007F4890` frame of the heading
+/// and a zero frame step.
+#[test]
+fn turret_building_opens_slot_9_and_holds_the_frame_of_its_heading() {
+    let (mut sim, rules, id) =
+        crate::sim::building_art::slot_test_fixture_with("Turret=yes\nTurretAnim=N\n");
+    sim.grand_opening(id, false, true, &rules, None, Default::default());
+    let turret = sim.entities().get(id).unwrap().building_art.anim_slots()[9].unwrap();
+    let held = |sim: &Simulation| {
+        let runtime = sim.anim(turret).unwrap().runtime();
+        (runtime.current_frame, runtime.frame_step)
+    };
+    // North is bucket 0, east bucket 8: table entries 28 and 20.
+    assert_eq!(held(&sim), (28, 0));
+    let frame = sim.session.binary_frame();
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .body_facing
+        .snap(0x4000, frame);
+    update_animation(&mut sim, id, &rules);
+    assert_eq!(held(&sim), (20, 0));
 }

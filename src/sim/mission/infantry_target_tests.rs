@@ -101,9 +101,6 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
                     )
                     .unwrap();
                     rules.install_art_data(crate::rules::retail_ini_fixture::art_registry(&art));
-                    rules.bind_animation_sequences(
-                        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-                    );
                     Some(rules)
                 })?;
             Some((raw, rules.with_fresh_serial()))

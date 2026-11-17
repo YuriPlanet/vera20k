@@ -51,13 +51,14 @@ fn cell(value: &Value) -> (u16, u16) {
 
 fn world(rules: &RuleSet) -> Simulation {
     let costs = SpeedCostProfile {
-        foot: Some(100),
-        track: Some(100),
-        wheel: Some(100),
-        float: Some(100),
-        amphibious: Some(100),
-        float_beach: Some(100),
-        hover: Some(100),
+        foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        float_beach: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
     };
     let mut terrain = ResolvedTerrainGrid::from_cells(
         32,
@@ -98,7 +99,7 @@ fn world(rules: &RuleSet) -> Simulation {
     sim.session.publish_started();
     sim.overlay_grid = Some(OverlayGrid::new(32, 32));
     sim.bridge_state = Some(bridges);
-    sim.zone_grid = Some(zones);
+    sim.zone_grid = Some(zones.into());
     sim.path_grid = Some(Arc::new(path));
     sim.install_resolved_terrain_for_new_map(terrain);
     let owner = sim.interner.intern("Americans");

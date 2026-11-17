@@ -9,7 +9,7 @@
 //! charge delay+2F8 and unmodeled manager helper fields are outside this state
 //! projection; their native writes remain in the corpus.
 
-use super::super::{receive_gunner, remove_gunner};
+use super::super::receive_gunner;
 use super::{arena, entity};
 use crate::rules::object_type::Ability;
 use crate::rules::ruleset::RuleSet;
@@ -491,28 +491,10 @@ fn native_temporal_gunner_callbacks_match_retained_histories() {
                             actors.transport,
                             actors.passenger,
                         ),
-                        "remove" => remove_gunner(
-                            &sim.interner,
-                            &sim.session,
-                            &mut sim.scenario_rng,
-                            &mut sim.substrate,
-                            &mut sim.houses,
-                            &mut sim.power_states,
-                            rules,
-                            actors.transport,
-                            Some(actors.passenger),
-                        ),
-                        "remove_null" => remove_gunner(
-                            &sim.interner,
-                            &sim.session,
-                            &mut sim.scenario_rng,
-                            &mut sim.substrate,
-                            &mut sim.houses,
-                            &mut sim.power_states,
-                            rules,
-                            actors.transport,
-                            None,
-                        ),
+                        "remove" => {
+                            sim.remove_gunner(rules, actors.transport, Some(actors.passenger))
+                        }
+                        "remove_null" => sim.remove_gunner(rules, actors.transport, None),
                         other => panic!("unknown native operation {other}"),
                     });
                     let native_draws = operation["raw_draws"].as_array().unwrap();

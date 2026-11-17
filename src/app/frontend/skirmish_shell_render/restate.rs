@@ -63,7 +63,7 @@ pub(crate) fn render_restate_shell(
         &mut texts,
         &localized_label(state, TITLE_LABEL.0, TITLE_LABEL.1),
         layout.title,
-        ShellAlign::H_CENTER,
+        ShellAlign::PANEL_TITLE,
     );
     let briefing = state.match_state.match_presentation.restate_text.clone();
     text(&mut texts, &briefing, layout.content, ShellAlign::NONE);

@@ -29,11 +29,11 @@ fn consequence_rules() -> RuleSet {
     ))
     .unwrap();
     let mut art = ArtRegistry::from_ini(&IniFile::from_str(
-        "[DEATHFX]\nReport=DeathReport\nEnd=80\n\
-         [DESTROYFX]\nReport=DestroyReport\nEnd=80\n",
+        "[DEATHFX]\nEnd=80\n[DESTROYFX]\nEnd=80\n",
     ));
-    for name in ["DEATHFX", "DESTROYFX"] {
+    for (name, report) in [("DEATHFX", "DeathReport"), ("DESTROYFX", "DestroyReport")] {
         art.bind_anim_frame_count_for_test(name, 80);
+        art.set_anim_sounds_for_test(name, Some(report), None);
     }
     rules.replace_art_registry_for_test(art);
     rules
@@ -119,8 +119,9 @@ fn advance_lethal_shot(sim: &mut Simulation, rules: &RuleSet, attacker: u64, vic
     panic!("the command must produce a lethal shot");
 }
 
-// Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
-// this stock golden only holds without the capability.
+// Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, and
+// Ares simulates the SparkSys itself (hooks 0x62DF05, 0x62FD60) with its own
+// draws, so this stock golden holds only in a stock game without Phobos.
 #[cfg(not(feature = "phobos"))]
 #[test]
 fn ordinary_lethal_fire_commits_debris_animations_and_sparks_once() {
@@ -176,7 +177,10 @@ fn ordinary_lethal_fire_commits_debris_animations_and_sparks_once() {
         delivery_sounds(&sim),
         ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
-    assert_eq!(sim.particle_systems().len(), 1);
+    // No second spark system. This world has no terrain, so the first one's
+    // particles are refused their collision query and retire with their
+    // system (`tick_spark_system_with_query`) instead of holding it open.
+    assert_eq!(sim.particle_systems().len(), 0);
 }
 
 #[test]

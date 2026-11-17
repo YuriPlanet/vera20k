@@ -91,6 +91,6 @@ impl AirstrikeTargets {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "airstrike_targets_tests.rs"]
 mod tests;
