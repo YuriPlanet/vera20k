@@ -2105,6 +2105,9 @@ fn a_press_on_a_cameo_the_strip_has_not_inserted_writes_no_request() {
     assert!(
         projection.cameo_request(e1).is_none(),
         "an entry the strip does not hold takes no request"
+    );
+}
+
 /// `StripClass::Draw` asks the House's primary Factory for the type's kind
 /// (Fetch_Factory 0x00500510 with BuildCat 0, 0x006A9C52..0x006A9C67) whether
 /// it holds the entry's type before drawing a count of one
