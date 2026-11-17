@@ -109,6 +109,11 @@ pub fn is_moving_now(entity: &GameEntity, rules: super::SpeedRules<'_>, binary_f
         LocomotorKind::Rocket => locomotor
             .rocket_runtime()
             .is_some_and(super::rocket_movement::RocketRuntime::is_moving_now),
+        // Is_Moving_Now 0x728A60 answers `State == 1` (`PreDigIn`) only, so a
+        // tunnel does not report moving-now while sunk or travelling.
+        LocomotorKind::Tunnel => locomotor
+            .tunnel_runtime()
+            .is_some_and(super::tunnel_locomotion::TunnelRuntime::is_moving_now),
         _ => super::ready_producer::ready_state_for(entity, rules, binary_frame)
             .is_some_and(super::locomotor_ready::LocomotorReadyState::is_moving_now),
     }

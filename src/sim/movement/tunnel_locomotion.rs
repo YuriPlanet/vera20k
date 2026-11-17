@@ -124,6 +124,11 @@ impl TunnelRuntime {
         matches!(self.state, TunnelState::PreDigOut | TunnelState::DiggingOut)
     }
 
+    /// `Is_Moving_Now 0x728A60`: only `PreDigIn` answers true.
+    pub(crate) fn is_moving_now(&self) -> bool {
+        self.state == TunnelState::PreDigIn
+    }
+
     /// `Can_Fire 0x72A1C0`: the base answer first, then a non-idle state
     /// refuses with 7.
     pub(crate) fn refuses_fire(&self) -> bool {

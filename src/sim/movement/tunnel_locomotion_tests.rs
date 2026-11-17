@@ -192,6 +192,28 @@ fn a_raised_cell_sinks_and_surfaces_relative_to_its_own_height() {
     );
 }
 
+/// `Is_Moving_Now 0x728A60` is `State == 1` only: a sunk or travelling tunnel
+/// is not "moving now", so the readiness gate cannot hold a tunnel order on it.
+#[test]
+fn only_pre_dig_in_answers_is_moving_now() {
+    let mut runtime = TunnelRuntime::constructed();
+    assert!(!runtime.is_moving_now(), "Idle");
+    runtime.move_to(false);
+    assert_eq!(runtime.state(), TunnelState::PreDigIn);
+    assert!(runtime.is_moving_now(), "PreDigIn is the one true state");
+    for state in [
+        TunnelState::DiggingIn,
+        TunnelState::DugIn,
+        TunnelState::Digging,
+        TunnelState::PreDigOut,
+        TunnelState::DiggingOut,
+        TunnelState::DugOut,
+    ] {
+        runtime.state = state;
+        assert!(!runtime.is_moving_now(), "{state:?}");
+    }
+}
+
 /// `Stop_Moving 0x728C00` state 4 -> `0x728C1E`: a travelling unit surfaces
 /// where it stands instead of staying underground.
 #[test]
