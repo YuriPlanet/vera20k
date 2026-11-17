@@ -14,6 +14,7 @@ use vera20k::asset_tools::{
     verb_find, verb_info, verb_ini, verb_ini_expand, verb_ls, verb_palette, verb_parse_check,
     verb_scan, verb_sound,
 };
+use vera20k::assets::asset_manager::ArchiveFamily;
 
 const EXIT_FAILED: i32 = 1;
 const EXIT_USAGE: i32 = 2;
@@ -63,7 +64,12 @@ fn run(cli: Cli) -> Result<(), ErrorReport> {
     ) {
         root::open_ini_manager(&ra2_dir, cli.all_mixes, cli.ini_roots.as_ref(), cli.ares)
     } else {
-        root::open_manager(&ra2_dir, cli.all_mixes, cli.ares)
+        // Archive verbs never read the host [ini]; an explicit --ini-profile
+        // mounts the archive names the game mounts for that profile.
+        let family = cli.ini_roots.as_ref().map_or(ArchiveFamily::Yr, |config| {
+            ArchiveFamily::for_ini_profile(config.profile)
+        });
+        root::open_manager(&ra2_dir, cli.all_mixes, cli.ares, family)
     };
     let mut manager = manager.map_err(|error| ErrorReport {
         error,
@@ -86,7 +92,7 @@ fn run(cli: Cli) -> Result<(), ErrorReport> {
                 to_json(&serde_json::json!({
                     "ini_roots": manager.ini_roots(), "sources": sources,
                     "scope": if cli.all_mixes { "tooling_all_mixes" } else { "game_archive_stack" },
-                    "limits": "Root selection only; this is not MO gameplay acceptance or arbitrary game MIX mounting."
+                    "limits": "Root selection, plus MO's startup archive names under mo; this is not MO gameplay acceptance or arbitrary game MIX mounting."
                 }))
             );
         }

@@ -1640,19 +1640,26 @@ impl MapLoadInitial {
     /// the one process owner for this inactive attempt. Authored loading does
     /// not reset or advance MapGen before installation (ReadScenario684620 ->
     /// Full_Init/Fill); failures can discard this snapshot without losing it.
-    /// The same inactive transfer retains current SpecialFlags and local values;
-    /// ClearScene clears global variables, but leaves ReadLocal's prior values.
+    /// The same inactive transfer retains current SpecialFlags and offline local
+    /// values. ClearScene6851F0 clears globals, but ReadLocal689B20 retains
+    /// unassigned locals. VERA starts fresh LAN/WOL worlds from map assignments
+    /// only: peers (including replays/rejoins) cannot share prior-match locals.
     pub(super) fn retain_process_state(
         &mut self,
         retention: &mut crate::app::shell_random_map::RandomMapGenerationRetention,
         mut resident: Option<&mut crate::sim::world::Simulation>,
+        session_mode: crate::sim::scenario_session::ScenarioGameMode,
     ) {
         self.retained_campaign_special_flags = resident
             .as_deref()
             .map(crate::sim::world::Simulation::retained_campaign_special_flags);
-        self.retained_local_variables = resident
-            .as_deref()
-            .map(crate::sim::world::Simulation::retain_local_variables_for_fresh_load);
+        self.retained_local_variables = if session_mode.is_network() {
+            None
+        } else {
+            resident
+                .as_deref()
+                .map(crate::sim::world::Simulation::retain_local_variables_for_fresh_load)
+        };
         if let Some(generated) = self.mapgen_rng_continuation.take() {
             retention.publish_mapgen_continuation(resident.as_deref_mut(), generated);
             self.mapgen_rng_continuation =
@@ -1768,6 +1775,86 @@ fn construction_trace_after_fill(
 mod fresh_transport_tests {
     use super::*;
 
+    fn map_with_locals(variables: &str) -> MapFile {
+        let mut map =
+            crate::map::rmg::emit::empty_map_file(&crate::map::rmg::RmgOptions::default(), 16, 16);
+        map.local_variables = crate::map::variable_names::parse_local_variables(
+            &IniFile::from_str(&format!("[VariableNames]\n{variables}")),
+        );
+        map
+    }
+
+    fn load_after_local_history(
+        mode: crate::sim::scenario_session::ScenarioGameMode,
+        variables: &str,
+        map: MapFile,
+        source: LoadedMapSource,
+    ) -> Simulation {
+        let mut resident = Simulation::new();
+        resident.initialize_trigger_definitions(
+            &map_with_locals(variables),
+            &Default::default(),
+            None,
+            None,
+            None,
+        );
+        let before = resident.state_hash();
+        let mut initial = MapLoadInitial::from_test_map_source(map, source);
+        initial.retain_process_state(&mut Default::default(), Some(&mut resident), mode);
+        assert_eq!(resident.state_hash(), before, "preparation is read-only");
+        let mut staged = Simulation::new();
+        if let Some(prior) = initial.retained_local_variables {
+            staged.inherit_local_variables_for_fresh_load(prior);
+        }
+        staged.initialize_trigger_definitions(
+            &initial.map_data,
+            &Default::default(),
+            None,
+            None,
+            None,
+        );
+        staged
+    }
+
+    #[test]
+    fn online_generated_start_agrees_after_different_local_histories() {
+        let load = |prior| {
+            load_after_local_history(
+                crate::sim::scenario_session::ScenarioGameMode::Wol,
+                prior,
+                map_with_locals(""),
+                LoadedMapSource::Generated {
+                    seed_name: "RandMap.Sed".into(),
+                    seed_source: None,
+                },
+            )
+        };
+        assert_eq!(load("7=Previous,1\n").state_hash(), load("").state_hash());
+    }
+
+    #[test]
+    fn lan_authored_start_uses_the_maps_local_assignments_only() {
+        let load = |prior| {
+            load_after_local_history(
+                crate::sim::scenario_session::ScenarioGameMode::Lan,
+                prior,
+                map_with_locals("7=Unassigned\n8=Cleared,0\n9=Set,1\n"),
+                LoadedMapSource::Loose {
+                    cache_lease: Default::default(),
+                    path: PathBuf::from("LOCAL.MAP"),
+                    payload_len: 1,
+                    source_sha256: crate::util::sha256::sha256_hex(b"local assignments"),
+                },
+            )
+        };
+        let after_history = load("7=Previous,1\n8=Previous,1\n");
+        let cold = load("");
+        assert_eq!(after_history.state_hash(), cold.state_hash());
+        assert!(!after_history.trigger_runtime().local_variable_is_set(7));
+        assert!(!after_history.trigger_runtime().local_variable_is_set(8));
+        assert!(after_history.trigger_runtime().local_variable_is_set(9));
+    }
+
     #[test]
     fn retained_start_metadata_uses_the_declared_map_capacity() {
         let mut source = String::from(
@@ -1790,64 +1877,22 @@ mod fresh_transport_tests {
 
     #[test]
     fn fresh_load_retains_local_values_without_mutating_the_outgoing_world() {
-        let map = |variables: &str| {
-            let mut map = crate::map::rmg::emit::empty_map_file(
-                &crate::map::rmg::RmgOptions::default(),
-                16,
-                16,
+        use crate::sim::scenario_session::ScenarioGameMode;
+        for mode in [ScenarioGameMode::Campaign, ScenarioGameMode::Skirmish] {
+            let staged = load_after_local_history(
+                mode,
+                "7=Prior,1\n8=ClearLater,1\n",
+                map_with_locals("7=Renamed\n8=Explicit,0\n"),
+                LoadedMapSource::Loose {
+                    cache_lease: Default::default(),
+                    path: PathBuf::from("LOCAL.MAP"),
+                    payload_len: 1,
+                    source_sha256: crate::util::sha256::sha256_hex(b"local retention control"),
+                },
             );
-            map.local_variables = crate::map::variable_names::parse_local_variables(
-                &IniFile::from_str(&format!("[VariableNames]\n{variables}")),
-            );
-            map
-        };
-        let mut resident = Simulation::new();
-        resident.initialize_trigger_definitions(
-            &map("7=Prior,1\n8=ClearLater,1\n"),
-            &Default::default(),
-            None,
-            None,
-            None,
-        );
-        let resident_hash = resident.state_hash();
-        let mut initial = MapLoadInitial::from_test_map_source(
-            map("7=Renamed\n8=Explicit,0\n"),
-            LoadedMapSource::Loose {
-                cache_lease: Default::default(),
-                path: PathBuf::from("LOCAL.MAP"),
-                payload_len: 1,
-                source_sha256: crate::util::sha256::sha256_hex(b"local retention control"),
-            },
-        );
-        initial.retain_process_state(&mut Default::default(), Some(&mut resident));
-        // A failed attempt may discard this initial state; the resident is
-        // unchanged until a successful load installs the replacement.
-        assert_eq!(resident.state_hash(), resident_hash);
-        let mut staged = Simulation::new();
-        staged.inherit_local_variables_for_fresh_load(
-            initial.retained_local_variables.take().unwrap(),
-        );
-        staged.initialize_trigger_definitions(
-            &initial.map_data,
-            &Default::default(),
-            None,
-            None,
-            None,
-        );
-        let mut cold = Simulation::new();
-        cold.initialize_trigger_definitions(
-            &initial.map_data,
-            &Default::default(),
-            None,
-            None,
-            None,
-        );
-        assert_ne!(
-            staged.state_hash(),
-            cold.state_hash(),
-            "retained local state is installed"
-        );
-        assert_eq!(resident.state_hash(), resident_hash);
+            assert!(staged.trigger_runtime().local_variable_is_set(7));
+            assert!(!staged.trigger_runtime().local_variable_is_set(8));
+        }
     }
 
     #[test]

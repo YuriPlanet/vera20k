@@ -31,6 +31,13 @@ Games with two or more human players number their objects from one agreed start,
 a player whose game already ran the random-map dialog or an earlier match numbers
 them as one just opened does; nothing new is exchanged, and older builds are
 refused by the build check.
+Fresh LAN and online matches also initialize local trigger variables from the
+incoming map only. Unassigned values cannot carry over from a player's previous
+match, including on generated maps with no local assignments. Network replay and
+rejoin reconstruction use the same fresh state; loading a save keeps its saved
+variables. Offline skirmish and campaign loads retain the original game's local
+variable carryover. This changes no packets: mixed builds are refused by the
+existing build check, and a rollback restores the earlier carryover behavior.
 Whether Ares plays in a match is decided from that same data: the rules, mode
 and map, whether the selected mod loads `ares.mix`, and the player's
 [Ares setting](ares.md#the-ares-setting), which the rules agreement covers. With
@@ -267,6 +274,15 @@ so it refuses a match played with one as a rules mismatch.
 Replay version 4 regenerates shared planning events through the simulation at
 their original frame phases. Earlier JSON logs remain readable for inspection;
 playback requires the current version to avoid executing old internal events twice.
+
+Fresh LAN and online games also seed the bridge-repair MapGen RNG from the
+agreed match seed, instead of retaining each player's earlier random-map or
+bridge-repair history. Its cursor participates in network state checks, so a
+difference is detected before another repair writes different bridge overlays.
+Rejoining and watching rebuild this same start before replaying the relay's
+history. Offline games keep the native process-cursor retention. This adds no
+packet fields; older builds are refused by the existing build check, and a
+rollback restores that build's earlier retention and checksums.
 
 | Responsibility | Authoritative owner |
 |---|---|
