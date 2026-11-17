@@ -324,7 +324,8 @@ preserve the timeline and batch IDs.
 `federation`, present only in a federated match, is the same base64url roster
 in every grant: `VO1F`, room UUID16, relay count (2–6), then per relay IPv4,
 LE port and LE source mask, then per relay nonce16, wrapped32 and tag32. The
-masks partition the signed sources. `wrapped` is the match link key XORed with
+masks partition the signed sources; a relay refuses Ready as an agreement
+mismatch when they do not. `wrapped` is the match link key XORed with
 HMAC-SHA256(relay ticket key, `VERA20k relay federation wrap v1\0` ‖ room ‖
 nonce); `tag` is HMAC-SHA256(relay ticket key, `VERA20k relay federation roster
 v1\0` ‖ the table through the masks ‖ index byte ‖ nonce ‖ wrapped). The client

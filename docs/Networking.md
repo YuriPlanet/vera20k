@@ -203,6 +203,10 @@ later player's Ready: the others wait until that player leaves, which cancels
 the start, or for up to 3 minutes, then start without it (a match on several
 relays is cancelled instead).
 Deploying the relay change is separate from publishing a new game build.
+Relays of one match must also speak one relay-to-relay link version: a relay
+that hears another version cancels the startup at once, and one too old to know
+this cancels at its loading limit, so players get the cancelled-start message
+instead of a frozen match. Game and lobby traffic do not change.
 At each deadline, missing input is empty; a command joins the next unsealed
 frame. The sender also waits for that commit.
 Frames use the existing Event codec and simulation queues, with a fresh compression
