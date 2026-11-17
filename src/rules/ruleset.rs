@@ -12299,6 +12299,9 @@ impl RuleSet {
                 obj.phobos_turret_barrel = entry
                     .map(|entry| entry.phobos_turret_barrel.clone())
                     .unwrap_or_default();
+                // `Ext/UnitType/Body.cpp:93` reads this key from the same
+                // ImageFile ART section, after the rules reads.
+                obj.phobos_fire_up = entry.map_or(-1, |entry| entry.phobos_fire_up);
             }
             // Infantry Crawls and discharge frames come from the per-pass
             // ART reads (`InfantryArt`), not this final-image projection.

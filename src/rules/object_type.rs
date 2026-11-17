@@ -1157,6 +1157,14 @@ pub struct ObjectType {
     /// (`Ext/UnitType/Body.cpp:100-134`, art section).
     #[cfg(feature = "phobos")]
     pub phobos_turret_barrel: crate::rules::phobos_turret_barrel::PhobosTurretBarrel,
+    /// Phobos `UnitTypeExt::FireUp=` (`Ext/UnitType/Body.cpp:93`,
+    /// `Valueable<int>`, -1): the body firing-sequence frame an SHP
+    /// non-turreted Unit waits for before launching
+    /// (`UnitClass_UpdateFiring_FireUp @ 0x736F61`). Read from the ART section
+    /// named by this type's `ImageFile`, projected by
+    /// `RuleSet::project_art_data`; -1 keeps stock behavior.
+    #[cfg(feature = "phobos")]
+    pub phobos_fire_up: i32,
     /// Phobos `SuppressKillWeapons` / `.Types`
     /// (`Ext/TechnoType/Body.cpp:1125-1126`).
     #[cfg(feature = "phobos")]
@@ -6216,6 +6224,10 @@ impl ObjectType {
             // until `RuleSet::project_art_data` supplies the art block.
             #[cfg(feature = "phobos")]
             phobos_turret_barrel: Default::default(),
+            // `Body.cpp:93` reads the UnitType ART `FireUp` after the rules
+            // reads; its -1 constructor value stands until that projection.
+            #[cfg(feature = "phobos")]
+            phobos_fire_up: -1,
             #[cfg(feature = "phobos")]
             phobos_kill_weapon_suppress:
                 crate::rules::phobos_kill_weapon::PhobosKillWeaponSuppress::from_section(section),

@@ -106,8 +106,11 @@ pub fn is_moving_now(entity: &GameEntity, rules: super::SpeedRules<'_>, binary_f
 
 /// `Is_Really_Moving_Now` (ILocomotion+0xA8) of the active locomotor: Walk
 /// answers its class byte +0x36 (`0x0075CB20`); every other locomotor's slot
-/// is the base `0x004B4C50`, which asks [`is_moving_now`]. Its one native
-/// caller is the Infantry locomotion action tail (`0x00521161`).
+/// is the base `0x004B4C50`, which asks [`is_moving_now`]. Its native callers
+/// are the Infantry locomotion action tail (`0x00521161`) and the Phobos
+/// `UnitClass_UpdateFiring_FireUp` hook (`0x736F61`,
+/// `Ext/Unit/Hooks.Firing.cpp:23-31`), which drops a unit's `FireUp` firing
+/// sequence while the hull still moves.
 pub(crate) fn is_really_moving_now(
     entity: &GameEntity,
     rules: super::SpeedRules<'_>,

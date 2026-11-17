@@ -9,7 +9,8 @@ Burst.FireWithinSequence=false      ; boolean, default no
 ```
 
 The first shot stays on the type's stock firing frame (`FireUp=` and friends
-on the infantry art). Each later shot waits for the cumulative `Burst.Delays`
+on the infantry art, or the unit art `FireUp=` when the unit is an SHP,
+non-turreted body). Each later shot waits for the cumulative `Burst.Delays`
 of the shots before it: `Burst.Delays=2,0` fires the second shot two frames
 after the first and the third three frames after the first (a listed zero is
 clamped to one frame after index 0, because the sequence advances once per
@@ -34,7 +35,10 @@ with `fireUp + cumulativeDelay`. On a match it also sets
 sequence's frame count. The unit hook at `0x736F61`
 (`src/Ext/Unit/Hooks.Firing.cpp:7-109`) does the same for a turretless
 `Voxel=no` unit, but only when `UnitTypeExt::FireUp` (art `FireUp=`, default
--1) is authored.
+-1) is authored. The two owners differ in where the frame comes from: the
+infantry hook reads the live firing action's frame count, the unit hook reads
+the ART `FiringFrames=` through the SHP sequence and keeps the frame on
+`UnitClass+6C0`.
 
 `ForceFullRearmDelay` is consumed at `0x6FD054` in GetROF
 (`src/Ext/Techno/Hooks.Firing.cpp:1132-1145`): the mid-burst branch is skipped
@@ -59,6 +63,29 @@ a burst gap. The shot's burst step clears the flag and restarts the index at 0
   branch while the flag is set. The stock kernel and the Ares/native control
   queries stay identical when the feature is off.
 
+The unit arm of `0x736F61` has its own owners. No retail unit art authors
+`FireUp=`, so the arm is dormant in retail data and reached only by
+Phobos-authored art:
+
+- `rules/art_data.rs` - the ART `FireUp=` read
+  (`Ext/UnitType/Body.cpp:93`, `Valueable<int>`, `Body.h:66/127`, default -1).
+  It is not the infantry `FireUp=` discharge frame, which
+  `read_infantry_discharge_frames` owns.
+- `rules/object_type.rs` + `rules/ruleset.rs` - `project_art_data` copies the
+  key from the type's `ImageFile` ART section into `phobos_fire_up`, the way
+  it already copies `TurretBarrel`.
+- `sim/animation.rs` - `UnitFiringCounter` (`UnitClass+6C0`) is the
+  `CurrentFiringFrame` owner; `seed_sequence_frame` is native's `== -1`
+  initialisation.
+- `sim/combat/world_fire.rs` - `phobos_unit_fire_up_skips` runs in
+  `FireVisit::UnitTarget` after the hull facing update and before
+  `resolve_attacker_fire`, which is where `0x736F61` sits relative to
+  `Fire_At_Target`; a held frame leaves `fire_error` at its `NoTarget` default,
+  so the `0x737063` tail keeps the stock gattling path. The raw
+  `FireVisit::Direct` (`FireAt`) path stays ungated.
+  `FireUp.ResetInRetarget` and its target-setter reset already live in
+  `sim::mission`.
+
 ## Tests
 `sim::combat::phobos_burst_sequence_tests` drives the infantry firing update
 through production code. `listed_delays_move_the_admission_frames_without_draws`
@@ -68,17 +95,37 @@ frame the drawn values produce; `overrun_arms_the_full_rearm_and_restarts_the_bu
 covers the past-the-sequence arm (index restarts at 0, rearm is the full ROF);
 `a_frame_inside_the_sequence_keeps_the_mid_burst_delay` is its control;
 `the_key_off_keeps_the_stock_stage` shows the key changes nothing without the
-option; `a_unit_with_the_key_stays_stock` pins the dormant unit arm.
+option; `a_unit_without_the_art_key_stays_stock` pins the -1 unit default.
+
+`sim::combat::phobos_unit_fire_up_tests` drives the unit arm through
+`FireVisit::UnitTarget`. `fire_up_holds_an_shp_unit_until_the_authored_frame`
+pins the `-1` seed, a held frame and the authored frame;
+`moving_clears_the_fire_up_sequence_unless_opportunity_fire` covers
+`Is_Really_Moving_Now` with the key off and on;
+`burst_overrun_forces_a_full_rearm` covers the projected overrun and shows the
+shot takes the full ROF; `the_key_off_keeps_the_stock_unit_cadence` is its
+control.
 
 ## Residuals
 
-- The unit half of the hooks needs `UnitTypeExt::FireUp=` / 
-  `FireUp.ResetInRetarget` (Phobos art keys, `Ext/UnitType/Body.cpp:93-94`,
-  defaults -1/true) plus its reset lifecycle (target change, SetDestination,
-  moving cancel). VERA does not read those keys, so a Unit's
-  `Burst.FireWithinSequence` stays inert exactly as it does without `FireUp=`.
-  Trigger: a unit whose art sets `FireUp=`. Effect: no in-sequence burst;
-  no overrun rearm. It needs the separate FireUp chain.
+- The unit arm's `ForceFullRearmDelay` overrun needs `CurrentFiringFrame < -1`.
+  VERA's `UnitFiringCounter::advance` stops at -1, and every frame a live
+  counter decodes is at most `frames / 2`, so `fireUp + projected` stays inside
+  `frames` and the overrun never arms on its own. Trigger: an authored
+  `FireUp=` plus `Burst.FireWithinSequence=`. Effect: no full rearm from that
+  arm; the shot still fires on its sequence frame. The arm is ported for the
+  native state a counter below the floor can carry, and the test drives it
+  with that prior.
+- A unit with `FireUp=` above 0 whose ART leaves `FiringFrames=` unset fires
+  stock in VERA but holds every frame in native. Native skips its `frames >= 0`
+  seed arm, so `CurrentFiringFrame` stays -1 and `(frames - (-1)) / 2` reads 0
+  for `frames <= 0` — always below the authored frame. VERA returns before the
+  gate when `unit_shp_read_state` answers no record, because a non-positive
+  `FiringFrames` has no frame owner yet. Trigger: such a unit; retail authors
+  no unit `FireUp=` at all (none of the 101 `FireUp=` art sections in
+  `ARTMD.INI` belongs to a `[VehicleTypes]` entry), so this stays dormant.
+  Effect: VERA launches on frame 0 where native would never launch. `FireUp=0`
+  is not affected: native's frame 0 matches.
 - `Burst.NoDelay` together with this key: VERA's `Burst.NoDelay` loop re-enters
   admission, which re-runs the sequence frame test and its draws; native's
   `Burst.NoDelay` hook calls `Fire` directly and fires the remaining shots

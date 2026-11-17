@@ -131,6 +131,17 @@ pub struct ArtEntry {
     /// target is already within the selected weapon's range.
     #[cfg(feature = "phobos")]
     pub phobos_fire_up_reset_in_retarget: bool,
+    /// Phobos `UnitTypeExt::FireUp=` (`Ext/UnitType/Body.cpp:93`,
+    /// `Valueable<int>` declared at `Ext/UnitType/Body.h:66`, constructed -1
+    /// at `Body.h:127`; read from this ART section after the rules reads): the
+    /// body firing-sequence frame an SHP non-turreted Unit waits for before
+    /// launching (`UnitClass_UpdateFiring_FireUp @ 0x736F61`,
+    /// `Ext/Unit/Hooks.Firing.cpp:23-101`). -1 keeps stock behavior.
+    ///
+    /// This is not the InfantryType ART `FireUp=` discharge frame of
+    /// [`read_infantry_discharge_frames`].
+    #[cfg(feature = "phobos")]
+    pub phobos_fire_up: i32,
     /// All21 native records exist even when their selected names are empty.
     pub building_anim_power: [BuildingAnimPowerFlags; 21],
     /// Signed GateStages (BuildingType+16F8): constructor45E1F0 defaults to9;
@@ -1678,6 +1689,10 @@ impl ArtRegistry {
                         ),
                     #[cfg(feature = "phobos")]
                     phobos_fire_up_reset_in_retarget: section.read_bool("FireUp.ResetInRetarget", true),
+                    // `Body.cpp:93` reads `FireUp` from the same ART section,
+                    // one line before the reset key; the keys are independent.
+                    #[cfg(feature = "phobos")]
+                    phobos_fire_up: section.read_int("FireUp", -1),
                     building_anim_power: {
                         let mut records = [BuildingAnimPowerFlags::default(); 21];
                         read_building_anim_power(section, &mut records);

@@ -341,6 +341,17 @@ impl UnitFiringCounter {
         self.value = -1;
     }
 
+    /// Phobos `UnitClass_UpdateFiring_FireUp @ 0x736F61`
+    /// (`src/Ext/Unit/Hooks.Firing.cpp:51-55`): a `CurrentFiringFrame` of -1
+    /// restarts the sequence at frame 0 by taking the caller's
+    /// `2 * FiringFrames - 1`. The same native arm's `fireUp < 0` synchronised
+    /// alternative stays with the unrepresented `FiringSyncFrame` reader
+    /// ([`commit_unit_firing_counter`]).
+    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
+    pub(crate) fn seed_sequence_frame(&mut self, frames: i32) {
+        self.value = frames;
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     /// Install an original comparison or persistence fixture's raw counter.
     pub fn set_for_test(&mut self, value: i32) {

@@ -4091,19 +4091,16 @@ pub(crate) fn visit_fire(
                         hull_destination: None,
                         turret_destination_is_idle_return: false,
                     });
-                    let mut reach = resolve_attacker_fire(
-                        world,
-                        rules,
-                        overlay_registry,
-                        &snap,
-                        fog_enabled,
-                        world.session.binary_frame(),
-                        world.active_wave_id(id).is_some(),
-                        emit,
-                        run.effects(),
-                    );
-                    if reach.burst_repeat {
-                        fire_remaining_burst_this_frame(
+                    // Phobos `UnitClass_UpdateFiring_FireUp @ 0x736F61`
+                    // (`SkipFiring = 0x737063`) runs after this facing work and
+                    // before `Fire_At_Target`: a held frame launches nothing.
+                    // The raw `FireVisit::Direct` path stays ungated.
+                    #[cfg(feature = "phobos")]
+                    let fire_up_skips = phobos_unit_fire_up_skips(world, rules, &snap, fog_enabled);
+                    #[cfg(not(feature = "phobos"))]
+                    let fire_up_skips = false;
+                    if !fire_up_skips {
+                        let mut reach = resolve_attacker_fire(
                             world,
                             rules,
                             overlay_registry,
@@ -4111,32 +4108,45 @@ pub(crate) fn visit_fire(
                             fog_enabled,
                             world.session.binary_frame(),
                             world.active_wave_id(id).is_some(),
-                            &mut reach,
                             emit,
                             run.effects(),
                         );
-                    }
-                    fire_error = reach.code;
-                    #[cfg(feature = "phobos")]
-                    if let Some(turn) = omni_turn
-                        && let Some(code) = fire_error
-                        && matches!(
-                            code,
-                            fire_error::FireError::Ok | fire_error::FireError::Rearm
-                        )
-                        && (code != fire_error::FireError::Rearm || turn.rearm_allowed)
-                        && turn.should_turn
-                    {
-                        if turn.jumpjet {
-                            let frame = world.session.binary_frame();
-                            if let Some(entity) = world.substrate.entities.get_mut(id)
-                                && let Some(loco) = entity.locomotor.as_mut()
-                                && let Some(runtime) = loco.jumpjet_runtime_mut()
-                            {
-                                runtime.set_desired_facing(turn.direction, frame);
+                        if reach.burst_repeat {
+                            fire_remaining_burst_this_frame(
+                                world,
+                                rules,
+                                overlay_registry,
+                                &snap,
+                                fog_enabled,
+                                world.session.binary_frame(),
+                                world.active_wave_id(id).is_some(),
+                                &mut reach,
+                                emit,
+                                run.effects(),
+                            );
+                        }
+                        fire_error = reach.code;
+                        #[cfg(feature = "phobos")]
+                        if let Some(turn) = omni_turn
+                            && let Some(code) = fire_error
+                            && matches!(
+                                code,
+                                fire_error::FireError::Ok | fire_error::FireError::Rearm
+                            )
+                            && (code != fire_error::FireError::Rearm || turn.rearm_allowed)
+                            && turn.should_turn
+                        {
+                            if turn.jumpjet {
+                                let frame = world.session.binary_frame();
+                                if let Some(entity) = world.substrate.entities.get_mut(id)
+                                    && let Some(loco) = entity.locomotor.as_mut()
+                                    && let Some(runtime) = loco.jumpjet_runtime_mut()
+                                {
+                                    runtime.set_desired_facing(turn.direction, frame);
+                                }
+                            } else if let Some(update) = emit.unit_facing.last_mut() {
+                                update.hull_destination = Some(turn.direction);
                             }
-                        } else if let Some(update) = emit.unit_facing.last_mut() {
-                            update.hull_destination = Some(turn.direction);
                         }
                     }
                 }
@@ -4936,6 +4946,132 @@ fn phobos_infantry_sequence_frames(
         .map_or(0, |record| record.frames_per_facing)
 }
 
+/// Phobos `UnitClass_UpdateFiring_FireUp @ 0x736F61`
+/// (`src/Ext/Unit/Hooks.Firing.cpp:7-102`, `SkipFiring = 0x737063`): an SHP,
+/// non-turreted Unit holds its launch until its body firing animation reaches
+/// the ART `FireUp=` frame, so `true` means native's `SkipFiring` — no bullet
+/// this frame. The caller keeps the frame's own facing update and reaches this
+/// before `UnitClass::Fire_At_Target`, which is where `0x736F61` sits.
+///
+/// The hold is expressed on the `UnitFiringCounter` owner
+/// ([`crate::sim::animation::UnitFiringCounter`]): `frames` is native's
+/// `2 * FiringFrames - 1`, and a `-1` counter is seeded to it first, exactly
+/// as the hook's `CurrentFiringFrame == -1` arm does, so a held frame keeps the
+/// seed. `DelayedFire`'s pause ordering is not repeated here: the shared
+/// `FireAt` path asks
+/// [`phobos_delayed_fire_suppresses_this_frame`] itself.
+#[cfg(feature = "phobos")]
+fn phobos_unit_fire_up_skips(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    snap: &AttackerSnapshot,
+    fog_enabled: bool,
+) -> bool {
+    // `if (pType->Turret || pType->Voxel || pThis->InLimbo) return 0;`
+    // `Voxel=` is the ART key, `Turret=` the rules key.
+    let (Some(entity), Some(obj)) = (
+        world.substrate.entities.get(snap.stable_id),
+        world
+            .interner
+            .object_type_in_category(snap.type_id, snap.category.into(), rules),
+    ) else {
+        return false;
+    };
+    if obj.has_turret
+        || super::fire_coord::firer_art(rules, obj).is_some_and(|art| art.voxel)
+        || entity.in_limbo()
+    {
+        return false;
+    }
+    // `Valueable<int>` composed as -1: the key is off.
+    let fire_up = obj.phobos_fire_up;
+    if fire_up < 0 {
+        return false;
+    }
+    let firing_frames = rules
+        .unit_shp_read_state(world.interner.resolve(snap.type_id))
+        .map_or(0, |layout| layout.firing_frames());
+    if firing_frames <= 0 {
+        return false;
+    }
+
+    // `fireUp >= 0 && !OpportunityFire && Locomotor->Is_Really_Moving_Now()`:
+    // a unit that is really moving drops its sequence and fires nothing.
+    // `Is_Really_Moving_Now` is ILocomotion+0xA8, not the +0x80 query.
+    let frames = 2 * i32::from(firing_frames) - 1;
+    let counter = entity.unit_firing_counter.get();
+    let burst_index = entity.weapon_burst.index();
+    let facts = combat_weapon::attacker_facts(entity, obj);
+    let speed = crate::sim::movement::SpeedRules::new(rules, &world.interner, &world.houses);
+    let moving = !obj.opportunity_fire
+        && crate::sim::movement::motion_query::is_really_moving_now(
+            entity,
+            speed,
+            world.session.binary_frame(),
+        );
+    if moving {
+        if counter != -1
+            && let Some(firer) = world.substrate.entities.get_mut(snap.stable_id)
+        {
+            firer.unit_firing_counter.reset();
+        }
+        return true;
+    }
+
+    // `pThis->GetWeapon(weaponIndex)`'s Burst, asked through the same ladder
+    // the launch itself uses. A selection that answers nothing leaves the
+    // frame to `resolve_attacker_fire`'s own handling.
+    let selected = combat_weapon::select_weapon_against(
+        rules,
+        entity,
+        obj,
+        &facts,
+        Some(&snap.target),
+        world,
+        &world.interner,
+        world.resolved_terrain.as_ref(),
+        fog_enabled.then_some(&world.house_alliances),
+    )
+    .and_then(|(_, selected)| selected);
+
+    // `frames >= 0` seeds a `-1` counter before the equality test, so a frame
+    // this hook holds keeps the sequence at its first frame. It runs before
+    // the launch's own admission, as the native arm does.
+    let seeded = counter == -1;
+    let current = if seeded { frames } else { counter };
+    if seeded && let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
+        firer.unit_firing_counter.seed_sequence_frame(frames);
+    }
+
+    let Some(selected) = selected else {
+        return false;
+    };
+    // `Burst.FireWithinSequence` moves the expected frame to
+    // `fireUp + cumulativeDelay`; each unset `Burst.Delays` entry draws
+    // `RandomRanged(3, 5)` in index order before the equality test.
+    let (cumulative, projected) = if selected.weapon.phobos_burst_fire_within_sequence {
+        phobos_burst_sequence_delays(selected.weapon, burst_index, &mut world.scenario_rng)
+    } else {
+        (0, 0)
+    };
+
+    // `(frames - CurrentFiringFrame) / 2`, signed division truncating toward
+    // zero as native's IDIV does.
+    let frame = frames.wrapping_sub(current) / 2;
+    if frame != fire_up.wrapping_add(cumulative) {
+        return true;
+    }
+    // The next shot would fall past the sequence: this shot arms the full
+    // rearm, and `complete_shot` restarts the burst index.
+    if selected.weapon.phobos_burst_fire_within_sequence
+        && fire_up.wrapping_add(projected) > frames
+        && let Some(firer) = world.substrate.entities.get_mut(snap.stable_id)
+    {
+        firer.weapon_burst.set_force_full_rearm();
+    }
+    false
+}
+
 /// `TechnoClass::EstimateDamage @ 0x006FDB80` for `attacker_id` shooting
 /// `target_id` with `weapon` (see [`damage::estimate`]): the target house's
 /// category multiplier for the attacker's type, the attacker's
@@ -5041,6 +5177,10 @@ mod world_fire_bunker_tests;
 #[cfg(all(test, feature = "phobos"))]
 #[path = "phobos_turret_recoil_tests.rs"]
 mod phobos_turret_recoil_tests;
+
+#[cfg(all(test, feature = "phobos"))]
+#[path = "phobos_unit_fire_up_tests.rs"]
+mod phobos_unit_fire_up_tests;
 
 /// Ares 3.0 InfantryClass_UpdateFiringState_Heal (1004E420, hook 0x520731):
 /// a healing infantryman keeps a damaged vehicle as its target, where the
