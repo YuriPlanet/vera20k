@@ -259,7 +259,13 @@ impl crate::sim::world::Simulation {
                 super::ground_pose::object_get_coords(entity, self.resolved_terrain.as_ref()),
             )
         };
-        let name = if distance_leptons < rules.general.chrono_range_minimum {
+        // `TeleportLocomotionClass_ILocomotion_Process_WarpInAnim @ 0x719742`
+        // (`Ext/TechnoType/Hooks.Teleport.cpp:88-95`): the arriving type's
+        // nullable `ChronoRangeMinimum` overrides the `[General]` fallback.
+        let chrono_range_minimum = settings
+            .chrono_range_minimum
+            .unwrap_or(rules.general.chrono_range_minimum);
+        let name = if distance_leptons < chrono_range_minimum {
             settings
                 .warp_in_min_range_weapon
                 .as_deref()

@@ -3,27 +3,34 @@
 A Teleport locomotor's warp-in animation step can detonate a weapon at the
 arrived object. Phobos adds the arm to
 `TeleportLocomotionClass_ILocomotion_Process_WarpInAnim @ 0x719742`
-(`Ext/TechnoType/Hooks.Teleport.cpp:74-98`); the keys are read in
-`Ext/TechnoType/Body.cpp:870-873` and defaulted in `Ext/TechnoType/Body.h:534-537`.
+(`Ext/TechnoType/Hooks.Teleport.cpp:74-98`); the weapon keys are read in
+`Ext/TechnoType/Body.cpp:870-873`, the type threshold at `Body.cpp:865`; the
+weapon defaults are `Ext/TechnoType/Body.h:534-537`, the threshold's unset
+default is `Body.h:530`.
 
 ```ini
 [TECHNO]                             ; TechnoType
 WarpInWeapon=                        ; WeaponType name, default none
 WarpInMinRangeWeapon=                ; WeaponType name, default none
 WarpInWeapon.UseDistanceAsDamage=false ; boolean, default no
+ChronoRangeMinimum=                  ; nullable int, type override
 ```
 
-Both weapon keys are `Valueable<WeaponTypeClass*>` with `Read<true>`: the named
-weapon is constructed and read on the same rules pass, even if no
+The two weapon keys are `Valueable<WeaponTypeClass*>` with `Read<true>`: the
+named weapon is constructed and read on the same rules pass, even if no
 `[WeaponTypes]` registry lists it. A blank value or `none` names no weapon.
+`ChronoRangeMinimum` is the TechnoType's nullable override read at
+`Ext/TechnoType/Body.cpp:865`.
 
 ## Behavior
 
 After the arrival warp-in animation constructs and after the owner has landed:
 
-1. `FootExt::LastWarpDistance` (leptons) is compared with
-   `ChronoRangeMinimum`. Below it, `WarpInMinRangeWeapon` is used, falling back
-   to `WarpInWeapon` while unset; at or above it only `WarpInWeapon` applies.
+1. `FootExt::LastWarpDistance` (leptons) is compared with the arriving
+   TechnoType's `ChronoRangeMinimum` (`Body.cpp:865`), falling back to
+   `[General] ChronoRangeMinimum` while the type key is unset. Below it,
+   `WarpInMinRangeWeapon` is used, falling back to `WarpInWeapon` while unset;
+   at or above it only `WarpInWeapon` applies.
 2. The chosen weapon detonates once at the object's `GetCoords`, with the
    object as both target and owner (`WeaponTypeExt::DetonateAt(weapon,
    pLinked, pLinked, damage)`). The area damage sees the object as its own
@@ -57,10 +64,6 @@ after the arrival `WarpOut` animation (`sim::world::object_turn`).
   kernel), while native stores a double `Math::sqrt`. The two can differ by a
   lepton at rounding boundaries, which changes `distance / 256` only when the
   value sits on a cell boundary.
-- Phobos also reads a per-type `ChronoRangeMinimum=` override
-  (`Ext/TechnoType/Body.cpp:865`). VERA has no type-level key, so the
-  `[General] ChronoRangeMinimum` value decides the min-range split for every
-  type.
 - The distance is recorded when the warp arms rather than at the departure
   warp step. The ordinary adapter does not move the owner between those two
   points, so the value is the same; a path that changed the owner's coordinates
