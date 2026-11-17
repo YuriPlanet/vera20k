@@ -247,7 +247,7 @@ fn retail_smkpuff_effect_builder_matches_original_translucency() {
                 }
                 detail.throttle_tail(0);
                 let detail = RefCell::new(detail);
-                let order = NativeDisplayOrder::from_display(sim.display_layers());
+                let order = NativeDisplayOrder::from_world(&sim, None);
                 let mut parents = Vec::new();
                 build_display_effect_instances(
                     &DisplayEffectInputs {

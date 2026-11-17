@@ -334,7 +334,6 @@ impl Simulation {
             self.mark_entity_put(id, context);
             Self::submit_entity_display(
                 &self.interner,
-                &self.terrain_objects,
                 &mut self.substrate,
                 &self.resolved_terrain,
                 id,

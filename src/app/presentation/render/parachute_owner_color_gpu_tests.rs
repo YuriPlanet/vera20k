@@ -248,7 +248,7 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
         local_owner: None,
         observe_particles: false,
     };
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let mut parents = Vec::new();
     build_display_effect_instances(&input, &mut parents, &order, Default::default());
 

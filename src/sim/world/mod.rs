@@ -106,7 +106,6 @@ mod fly_landing;
 mod fly_orders;
 mod fly_process;
 mod frame_error;
-mod ground_keys;
 mod lifecycle;
 mod master_frame;
 #[cfg(any(test, feature = "test-support"))]
@@ -4072,16 +4071,8 @@ impl Simulation {
         &mut self,
         id: u64,
         layer: display_layers::DisplayLayer,
-        rules: Option<&RuleSet>,
     ) {
-        Self::submit_object_display(
-            &self.interner,
-            &self.terrain_objects,
-            &mut self.substrate,
-            id,
-            layer,
-            rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
-        );
+        Self::submit_object_display(&mut self.substrate, id, layer);
     }
 
     #[cfg(any(test, feature = "test-support"))]

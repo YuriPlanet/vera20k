@@ -139,7 +139,7 @@ fn emit(
         &Default::default(),
     );
     let record = frame.object(plant).unwrap();
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let light = CellLightGrid::new();
     let cell = (building.position.rx(), building.position.ry());
     let coord = sim.anim_absolute_coord(id).unwrap();

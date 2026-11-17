@@ -235,7 +235,10 @@ pub(super) fn build_world_instances(
             match state.match_state.sim_runtime.frame() {
                 Some(frame) => frame.display_order(world),
                 None => {
-                    own_order = super::draw_plan_lowering::NativeDisplayOrder::from_world(world);
+                    own_order = super::draw_plan_lowering::NativeDisplayOrder::from_world(
+                        world,
+                        Some(&rt.resources.rules),
+                    );
                     &own_order
                 }
             }

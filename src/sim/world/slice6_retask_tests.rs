@@ -442,7 +442,8 @@ fn slice6_baseline_hash(ares: bool) -> u64 {
     if ares {
         0x949A_7C55_B2F8_4F0B
     } else {
-        0xCBF9_C392_848C_13BA
+        // The Ground display set's order changed (`DisplayLayers::submit`).
+        0x3A0E_D950_8413_8E77
     }
 }
 

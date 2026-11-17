@@ -1196,10 +1196,7 @@ impl Simulation {
             };
         }
         if self.substrate.particle_systems.contains_key(stable_id) {
-            let registered = self.reveal_particle_system(
-                stable_id,
-                crate::rules::ruleset::RuleSet::empty_for_test(),
-            );
+            let registered = self.reveal_particle_system(stable_id);
             return RevealOutcome::Revealed {
                 logic_registered: registered,
             };
@@ -1218,7 +1215,7 @@ impl Simulation {
     }
 
     /// [`Self::reveal`] for an entity, with the rules context the type-reading
-    /// Unlimbo writers need (Aircraft Techno+3D4 retention, Ground sort keys).
+    /// Unlimbo writers need (Aircraft Techno+3D4 retention).
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn reveal_entity_with_rules(
         &mut self,
@@ -1828,7 +1825,6 @@ impl Simulation {
         if still_placed {
             Self::submit_entity_display(
                 &self.interner,
-                &self.terrain_objects,
                 &mut self.substrate,
                 &self.resolved_terrain,
                 stable_id,
@@ -3009,7 +3005,6 @@ impl Simulation {
         entity.position.put_z(world_z);
         Self::submit_entity_display(
             &self.interner,
-            &self.terrain_objects,
             &mut self.substrate,
             &self.resolved_terrain,
             stable_id,
@@ -3129,7 +3124,6 @@ impl Simulation {
         if let Some(before) = jumpjet_layer_before {
             Self::complete_jumpjet_display_process(
                 &self.interner,
-                &self.terrain_objects,
                 &mut self.substrate,
                 &self.resolved_terrain,
                 stable_id,
@@ -3268,7 +3262,6 @@ impl Simulation {
         // cell lists never regain it.
         Self::submit_entity_display(
             &self.interner,
-            &self.terrain_objects,
             &mut self.substrate,
             &self.resolved_terrain,
             id,
@@ -3645,27 +3638,19 @@ impl Simulation {
         piece.lifecycle_mut().in_limbo = false;
         piece.lifecycle_mut().admit_mark_down();
         // VoxelAnim VT7F6318+78 ->74A960: always Air.
-        Self::submit_overhead_display(&mut self.substrate, stable_id, DisplayLayer::AIR);
+        Self::submit_object_display(&mut self.substrate, stable_id, DisplayLayer::AIR);
         self.register_logic_object(stable_id)
     }
 
-    pub(crate) fn reveal_particle_system(&mut self, stable_id: u64, rules: &RuleSet) -> bool {
+    pub(crate) fn reveal_particle_system(&mut self, stable_id: u64) -> bool {
         if !self.substrate.particle_systems.contains_key(stable_id) {
             return false;
         }
-        // ParticleSystem VT7EFB9C+78 ->62FE80: always Ground. Rules resolve
-        // the existing Building peers' GetYSort adjustments during insertion.
+        // ParticleSystem VT7EFB9C+78 ->62FE80: always Ground.
         // RESIDUAL: ObjectUnlimbo refuses the empty coordinate
         // (`0x005F4ECD..0x005F4EEF`), so gamemd leaves a system built at
         // 0,0,0 in Limbo; VERA reveals it. No producer builds one there.
-        Self::submit_object_display(
-            &self.interner,
-            &self.terrain_objects,
-            &mut self.substrate,
-            stable_id,
-            DisplayLayer::GROUND,
-            rules,
-        );
+        Self::submit_object_display(&mut self.substrate, stable_id, DisplayLayer::GROUND);
         self.register_logic_object(stable_id)
     }
 
@@ -3678,7 +3663,7 @@ impl Simulation {
     /// AIR (3), so Display4A9720 reaches the existing append owner5519B0.
     /// A particle is owned by its system and never joins global Logic.
     pub(crate) fn reveal_particle(substrate: &mut ObjectSubstrate, stable_id: u64) {
-        Self::submit_overhead_display(substrate, stable_id, DisplayLayer::AIR);
+        Self::submit_object_display(substrate, stable_id, DisplayLayer::AIR);
     }
 
     /// Spark62ED2C (and the other System AI cleanup callers) invokes the
@@ -3717,14 +3702,7 @@ impl Simulation {
             });
         // Terrain ctor71BC76 reveals at the retained type-adjusted coordinate;
         // Object5F4260 selects Ground even on elevated cells.
-        Self::submit_object_display(
-            &self.interner,
-            &self.terrain_objects,
-            &mut self.substrate,
-            stable_id,
-            DisplayLayer::GROUND,
-            rules,
-        );
+        Self::submit_object_display(&mut self.substrate, stable_id, DisplayLayer::GROUND);
         // ObjectUnlimbo5F4FE2 submits Display before the independent Logic
         // admission5F4FEF..5F5040; ordinary trees still complete Unlimbo.
         if joins_logic {
@@ -3763,7 +3741,7 @@ impl Simulation {
         } else {
             DisplayLayer::AIR
         };
-        Self::submit_overhead_display(&mut self.substrate, stable_id, layer);
+        Self::submit_object_display(&mut self.substrate, stable_id, layer);
         self.register_logic_object(stable_id)
     }
 
@@ -3772,7 +3750,7 @@ impl Simulation {
             return false;
         }
         // Wave VT7F6BF4+78 ->75F890: always Air; Submit at75F952.
-        Self::submit_overhead_display(&mut self.substrate, stable_id, DisplayLayer::AIR);
+        Self::submit_object_display(&mut self.substrate, stable_id, DisplayLayer::AIR);
         self.register_logic_object(stable_id)
     }
 

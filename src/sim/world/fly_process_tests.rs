@@ -377,7 +377,6 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
     sim.add_entity_occupancy(AIRCRAFT);
     Simulation::submit_entity_display(
         &sim.interner,
-        &sim.terrain_objects,
         &mut sim.substrate,
         &sim.resolved_terrain,
         AIRCRAFT,

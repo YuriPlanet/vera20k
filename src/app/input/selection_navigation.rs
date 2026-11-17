@@ -20,6 +20,10 @@ pub(super) enum ObjectDirection {
 
 /// Display4AA2B0/4AA380 walk retained Ground/Air/Top vectors, reversing
 /// both the layer and member order for Previous. No navigation cache or sort.
+/// Sim-scale deviation: the simulation keeps Ground unordered
+/// (`DisplayLayers::submit`), so the walk visits Ground in that set's order
+/// (submission order until a removal swaps a member) rather than gamemd's
+/// roughly GetYSort-sorted vector.
 fn next_object(
     sim: &crate::sim::world::Simulation,
     rules: Option<&crate::rules::ruleset::RuleSet>,

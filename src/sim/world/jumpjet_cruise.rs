@@ -627,7 +627,6 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         self.mark(true);
         Simulation::submit_entity_display(
             &self.sim.interner,
-            &self.sim.terrain_objects,
             &mut self.sim.substrate,
             &self.sim.resolved_terrain,
             self.stable_id,

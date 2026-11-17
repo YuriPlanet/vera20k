@@ -271,7 +271,7 @@ fn force_slot_translucency(sim: &mut Simulation, anim: u64) {
 #[test]
 fn high_terrain_building_slots_keep_their_offsets_and_depth() {
     let (mut sim, rules, building, atlas) = fixture("NATBNK", false);
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let flat = emit(&sim, &rules, building, &atlas, &order);
     assert!(!flat.is_empty());
     let entity = sim.entities_mut_for_test().get_mut(building).unwrap();
@@ -343,7 +343,7 @@ fn indexed_slot_translucency_preserves_selector_remap_and_replay() {
         if forced {
             force_slot_translucency(&mut sim, anim);
         }
-        let order = NativeDisplayOrder::from_display(sim.display_layers());
+        let order = NativeDisplayOrder::from_world(&sim, None);
         let palette = PaletteLight::color_scheme([900, 1000, 800], 1000);
         assert_eq!(palette.rows(), 53);
         let inherited = DrawState {
@@ -407,7 +407,7 @@ fn slot_translucency_preserves_unresolved_inherited_materials() {
         let (mut sim, rules, building, anim, atlas) = material_fixture("ORDINARY", "");
         force_slot_translucency(&mut sim, anim);
         let palette = PaletteLight::color_scheme([1000; 3], 1000);
-        let order = NativeDisplayOrder::from_display(sim.display_layers());
+        let order = NativeDisplayOrder::from_world(&sim, None);
         let planned =
             emit_with_material(&sim, &rules, building, &atlas, &order, palette, inherited);
         // In particular inherited cloak25 must not be replaced or ORed with
@@ -430,7 +430,7 @@ fn bouncing_slot_anims_take_the_ordinary_material_after_their_ground_shadow() {
             remap_row: 7,
             ..DrawState::default()
         };
-        let order = NativeDisplayOrder::from_display(sim.display_layers());
+        let order = NativeDisplayOrder::from_world(&sim, None);
         let mut planned =
             emit_with_material(&sim, &rules, building, &atlas, &order, palette, inherited);
         assert_eq!(planned.len(), 1, "{name}");
@@ -465,7 +465,7 @@ fn metadata_free_slot_keeps_alpha_and_compatibility_replay() {
     // indexed metadata. Zero rows must not acquire a packed replay path.
     let palette = PaletteLight::default().with_brightness(1000);
     assert_eq!(palette.rows(), 0);
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let planned = emit_with_material(&sim, &rules, building, &atlas, &order, palette, inherited);
     assert_slot_replay(planned, anim, 0.5, inherited, palette);
 }
@@ -496,7 +496,7 @@ fn rgba_slot_with_palette_metadata_keeps_compatibility_replay() {
     };
     let palette = PaletteLight::color_scheme([1000; 3], 1000);
     assert_eq!(palette.rows(), 53);
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let planned = emit_with_material(&sim, &rules, building, &atlas, &order, palette, inherited);
     assert_eq!(planned.len(), 1);
     assert_eq!(planned[0].parent.id, anim);
@@ -690,7 +690,7 @@ fn bunker_slot_emitter_interleaves_front_and_back_around_the_unit() {
                 &rules,
                 building,
                 &atlas,
-                &NativeDisplayOrder::from_display(sim.display_layers())
+                &NativeDisplayOrder::from_world(&sim, None)
             )
             .is_empty()
         );
@@ -705,7 +705,7 @@ fn bunker_slot_emitter_interleaves_front_and_back_around_the_unit() {
             &rules,
             building,
             &atlas,
-            &NativeDisplayOrder::from_display(sim.display_layers()),
+            &NativeDisplayOrder::from_world(&sim, None),
         );
         assert_eq!(
             visible

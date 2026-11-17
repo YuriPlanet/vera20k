@@ -195,7 +195,6 @@ mod tests {
                 sim.substrate.display.submit(
                     id,
                     Some(crate::sim::world::display_layers::DisplayLayer::GROUND),
-                    &|_| 0,
                 );
                 let expected =
                     !already_upgraded && (rules.ares() || category != EntityCategory::Aircraft);
@@ -326,7 +325,6 @@ mod tests {
                 sim.substrate.display.submit(
                     id,
                     Some(crate::sim::world::display_layers::DisplayLayer::GROUND),
-                    &|_| 0,
                 );
             }
             let center = DriveCoord {

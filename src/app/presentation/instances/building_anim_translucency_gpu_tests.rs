@@ -649,7 +649,7 @@ impl SlotScene {
         let mut output = Vec::new();
         emit_building_anims(
             &mut output,
-            &NativeDisplayOrder::from_display(sim.display_layers()),
+            &NativeDisplayOrder::from_world(&sim, None),
             atlas,
             rules.art(),
             Some(rules),

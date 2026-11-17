@@ -573,7 +573,7 @@ mod tests {
         let rules = crate::rules::ruleset::RuleSet::empty_for_test();
         let mut sim = Simulation::new();
         let id = 7;
-        sim.submit_object_display_for_test(id, DisplayLayer::AIR, Some(rules));
+        sim.submit_object_display_for_test(id, DisplayLayer::AIR);
         let coord = [2560, 2560, 0];
         let light = BuildingSpotlight {
             coord,
@@ -585,7 +585,7 @@ mod tests {
             beam_amount: 0,
         };
         let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord[0], coord[1], coord[2]);
-        let order = NativeDisplayOrder::from_display(sim.display_layers());
+        let order = NativeDisplayOrder::from_world(&sim, None);
         // `across` is the spotlight's offset from the battlefield's corner.
         let drawn = |across: f32| {
             let mut frame =

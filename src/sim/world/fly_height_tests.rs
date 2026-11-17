@@ -913,7 +913,6 @@ fn fly_takeoff_phase_matches_native_display_reordering_and_gates() {
         other.locomotor = loco;
         Simulation::submit_entity_display(
             &sim.interner,
-            &sim.terrain_objects,
             &mut sim.substrate,
             &sim.resolved_terrain,
             1,
@@ -922,7 +921,6 @@ fn fly_takeoff_phase_matches_native_display_reordering_and_gates() {
         );
         Simulation::submit_entity_display(
             &sim.interner,
-            &sim.terrain_objects,
             &mut sim.substrate,
             &sim.resolved_terrain,
             peer,
@@ -995,7 +993,6 @@ fn fly_nonlandable_phase_matches_native_without_display_resubmission() {
         other.locomotor = loco;
         Simulation::submit_entity_display(
             &sim.interner,
-            &sim.terrain_objects,
             &mut sim.substrate,
             &sim.resolved_terrain,
             1,
@@ -1004,7 +1001,6 @@ fn fly_nonlandable_phase_matches_native_without_display_resubmission() {
         );
         Simulation::submit_entity_display(
             &sim.interner,
-            &sim.terrain_objects,
             &mut sim.substrate,
             &sim.resolved_terrain,
             peer,
@@ -1068,7 +1064,6 @@ fn fly_nonlandable_production_tick_replaces_landing_target_and_restores() {
     let (mut sim, rules) = takeoff_fixture(&row);
     Simulation::submit_entity_display(
         &sim.interner,
-        &sim.terrain_objects,
         &mut sim.substrate,
         &sim.resolved_terrain,
         1,

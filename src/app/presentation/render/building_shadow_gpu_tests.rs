@@ -353,7 +353,7 @@ fn assert_retail_embedded_shadow(expected_type: &str, expected_frame_count: u16)
         candidate
     );
 
-    let parent = NativeDisplayOrder::from_display(sim.display_layers())
+    let parent = NativeDisplayOrder::from_world(&sim, None)
         .object_draw(entity.stable_id(), SpriteEncoding::Plain)
         .expect("spawned building has production Display registration");
     let layer = usize::from(parent.layer.0);

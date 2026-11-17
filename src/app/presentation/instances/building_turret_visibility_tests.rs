@@ -140,7 +140,7 @@ impl Patriot {
             house_colors: &colors,
             building_zshape: false,
         };
-        let order = NativeDisplayOrder::from_display(self.runtime.simulation.display_layers());
+        let order = NativeDisplayOrder::from_world(&self.runtime.simulation, None);
         let mut planned = Vec::new();
         build_shp_instances_from_inputs(&input, &mut planned, &order);
         planned

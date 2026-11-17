@@ -442,7 +442,7 @@ fn wave_pixels_reach_retained_display_and_shared_gpu_with_immutable_z_and_a() {
                 // Opposite storage/ID order cannot replace native Air append order.
                 let ids = (1..=waves.len() as u64).rev().collect::<Vec<_>>();
                 for &id in &ids {
-                    assert!(display.submit(id, Some(DisplayLayer::AIR), &|_| 0));
+                    assert!(display.submit(id, Some(DisplayLayer::AIR)));
                 }
                 let order = NativeDisplayOrder::from_display(&display);
                 let mut parents = waves

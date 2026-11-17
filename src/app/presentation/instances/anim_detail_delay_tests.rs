@@ -48,7 +48,7 @@ fn render(
             observe_particles: false,
         },
         &mut parents,
-        &NativeDisplayOrder::from_display(sim.display_layers()),
+        &NativeDisplayOrder::from_world(&sim, None),
         Default::default(),
     );
     assert_eq!((sim.state_hash(), sim.rng_state()), before);

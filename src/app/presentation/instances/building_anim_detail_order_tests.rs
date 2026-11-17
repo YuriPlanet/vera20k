@@ -84,7 +84,7 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
     let rank = |id| ground.iter().position(|&value| value == id).unwrap();
     assert!(rank(system) < rank(free) && rank(free) < rank(slot));
 
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let center = crate::util::lepton::absolute_leptons_to_screen(at.x, at.y, at.z);
     let camera = [center.0 - 80., center.1 - 60.];
     let size = [640, 480];

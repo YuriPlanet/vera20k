@@ -1180,6 +1180,9 @@ pub(crate) struct PresentationFrame {
     display_order: crate::util::sync::OnceLock<
         crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
     >,
+    /// The rules the world was captured under, which the Ground draw order
+    /// reads (`Simulation::ground_draw_order`).
+    resources: CapturedRules,
     /// Every anim's absolute coordinate (`Simulation::anim_absolute_coord`),
     /// which an attached anim takes from its owner object.
     anim_coords: crate::util::lookup_hash::LookupMap<u64, crate::sim::anim_class::AnimWorldCoord>,
@@ -1191,6 +1194,16 @@ pub(crate) struct PresentationFrame {
     pub(crate) scene: crate::app::presentation::frame_scene::SceneFrame,
     /// Whether the current house has psychic detection sites.
     pub(crate) psychic_detection: bool,
+}
+
+/// The resources a frame was captured under; none for a default frame.
+#[derive(Clone, Default)]
+struct CapturedRules(Option<std::sync::Arc<crate::sim::runtime::SimResources>>);
+
+impl std::fmt::Debug for CapturedRules {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("CapturedRules")
+    }
 }
 
 impl PresentationFrame {
@@ -1272,6 +1285,7 @@ impl PresentationFrame {
             line_sources,
             display_members: Default::default(),
             display_order: Default::default(),
+            resources: CapturedRules(Some(runtime.resources.clone())),
             anim_coords,
             parachute_animations,
             scene,
@@ -1320,6 +1334,7 @@ impl PresentationFrame {
         self.display_order.get_or_init(|| {
             crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder::from_world(
                 sim,
+                self.resources.0.as_ref().map(|resources| &resources.rules),
             )
         })
     }

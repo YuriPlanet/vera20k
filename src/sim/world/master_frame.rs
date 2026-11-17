@@ -306,14 +306,10 @@ impl Simulation {
                 if request.lane == TickLane::Ordinary {
                     frame.commands = self.admit_frame_commands(request.ingress, rules, effects);
                 }
-                // MainTick55DBC8 precedes Logic55DC9E (including trigger polling).
-                Self::sort_display_ground(
-                    &self.interner,
-                    &self.terrain_objects,
-                    &mut self.substrate,
-                    rules,
-                );
-                // MainTick55DBCD saves the post-input, post-sort world before Logic.
+                // MainTick55DBC8 sorts Ground here, before Logic55DC9E. The
+                // simulation keeps Ground unordered (`DisplayLayers::submit`);
+                // the picture sorts it (`Simulation::ground_draw_order`).
+                // MainTick55DBCD saves the post-input world before Logic.
                 effects.before_logic(self);
                 self.lifecycle_outputs.emit(LifecycleOutput::LogicVisit);
             }
