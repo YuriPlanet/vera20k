@@ -806,10 +806,8 @@ mod tests {
     /// resample.
     #[test]
     fn a_shrunk_cameo_cell_is_drawn_at_the_size_the_frame_shows_it() {
-        let mut spec = crate::ui::sidebar::SidebarChromeLayoutSpec::stock();
-        spec.apply_player_columns(3);
         for columns in [3, 4, 5] {
-            spec.apply_player_columns(2);
+            let mut spec = crate::ui::sidebar::SidebarChromeLayoutSpec::stock();
             spec.apply_player_columns(columns);
             let frame = SidebarFrame::new(1920, 1080, 150).in_window(100, false);
             let shown = spec.cameo_width * frame.scale();
