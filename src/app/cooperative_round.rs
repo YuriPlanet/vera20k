@@ -231,16 +231,7 @@ pub(crate) fn open_result(state: &mut AppState, victory: bool) {
         log::warn!("co-op round countries: {error:#}");
     }
     // 0x0072D300 (Scenario+0x34B8's palette) and 0x0060CF00's SCRBK.
-    state.frontend.campaign_score_art = state.process_assets.manager().and_then(|assets| {
-        crate::render::main_menu_shell_chrome::build_campaign_score_art(
-            &state.renderer.gpu,
-            &state.renderer.batch_renderer,
-            assets,
-            model.side,
-            crate::app::frontend::shell_layout::art_key_screen_width(state),
-            state.process_assets.side_score_art(model.side),
-        )
-    });
+    App::prepare_campaign_score_art(state, model.side);
     state.frontend.score_page = None;
     state.frontend.score_art = None;
     state.frontend.campaign_score_page = None;
