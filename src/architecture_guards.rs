@@ -417,6 +417,10 @@ fn engine_per_client_reads_have_pinned_callers() {
                 // sees a Super's timer line; only the timer drawing asks.
                 ("sim/superweapon/ares_presentation.rs", 1),
                 ("sim/superweapon/lightning_storm.rs", 1),
+                // building_super_charges: whose providers draw the countdown
+                // labels, and which lines an enemy's building may show; only
+                // the label capture (HudFacts) asks, which feeds drawing.
+                ("sim/superweapon/mod.rs", 1),
                 ("sim/superweapon/psychic_reveal.rs", 1),
                 ("sim/team_script_vm/actions.rs", 1),
                 ("sim/team_script_vm/reinforcements.rs", 2),

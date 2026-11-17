@@ -18,7 +18,7 @@ fn rules() -> RuleSet {
         [NUKES]\nStrength=1000\nNukeSilo=yes\nSuperWeapon=NukeSpecial\nSuperWeaponPerBuilding=yes\n\
         [SuperWeaponTypes]\n0=RevealSpecial\n1=NukeSpecial\n\
         [RevealSpecial]\nType=PsychicReveal\nRechargeTime=1\nIsPowered=no\n\
-        [NukeSpecial]\nType=MultiMissile\nRechargeTime=1\nIsPowered=no\n",
+        [NukeSpecial]\nType=MultiMissile\nRechargeTime=1\nIsPowered=no\nShowTimer=yes\n",
     );
     let art = IniFile::from_str(
         "[SILO]\nFoundation=1x1\n[LAB]\nFoundation=1x1\n[NUKES]\nFoundation=1x1\n\
@@ -264,9 +264,8 @@ fn each_building_reports_the_lines_it_draws() {
     super_of_mut(&mut sim, REVEAL).set_building_charge_left_for_test(first, 30, 0);
     super_of_mut(&mut sim, REVEAL).set_building_charge_left_for_test(second, 7, 0);
     let reveal = sim.interner.get(REVEAL).unwrap();
-    let lines = |sim: &Simulation, id| {
-        crate::sim::superweapon::building_super_charges(sim, &rules, id)
-    };
+    let lines =
+        |sim: &Simulation, id| crate::sim::superweapon::building_super_charges(sim, &rules, id);
     assert_eq!(
         lines(&sim, first),
         [SuperChargeLine {
@@ -428,4 +427,69 @@ fn a_silo_reports_its_line_on_every_tick() {
         assert!(lines[0].left >= 0, "frame {frame}: {}", lines[0].left);
         assert!(lines[0].own, "frame {frame}: a silo charges its own shot");
     }
+}
+
+/// An enemy's providers draw only the Supers its timer list draws anyway: a
+/// grant with no timer place (`SW.ShowTimer=no`) keeps no right-hand line,
+/// and one above the building would leak a capability the player cannot
+/// otherwise read. The player's own and its allies' providers draw
+/// everything, and a view with no local House (an observer) reads all.
+#[test]
+fn an_enemy_draws_only_the_lines_its_timer_list_draws() {
+    let rules = rules();
+    let mut sim = world(&rules);
+    // New houses start at war, so this one is the local player's enemy.
+    let enemy = sim.interner.intern("SOVIETS");
+    sim.houses
+        .register(HouseState::new(enemy, 1, None, false, 2000, 10));
+    construct_house_supers(&mut sim, &rules, enemy, false);
+    // The nuke made the timer list at its grant; the fixture's reveal type
+    // leaves `ShowTimer=` unset, so its grant keeps no timer place.
+    let nuke = sim.interner.get("NukeSpecial").unwrap();
+    sim.super_weapons
+        .map_mut_for_test()
+        .get_mut(&enemy)
+        .unwrap()
+        .get_mut(&nuke)
+        .unwrap()
+        .timer_place = Some(1);
+    let player = sim.interner.get(OWNER).unwrap();
+    sim.session.set_current_house_for_test(Some(player));
+    let lines = |sim: &Simulation, id: u64| {
+        crate::sim::superweapon::building_super_charges(sim, &rules, id)
+    };
+
+    let enemy_silo = sim
+        .spawn_object_at_height("SILO", "SOVIETS", 14, 10, 0, 0, &rules)
+        .unwrap();
+    sim.recheck_house_tech_tree(enemy, &rules);
+    assert!(lines(&sim, enemy_silo).is_empty());
+
+    let enemy_nukes = sim
+        .spawn_object_at_height("NUKES", "SOVIETS", 16, 10, 0, 0, &rules)
+        .unwrap();
+    sim.recheck_house_tech_tree(enemy, &rules);
+    let nuke_lines = lines(&sim, enemy_nukes);
+    assert_eq!(nuke_lines.len(), 1, "{nuke_lines:?}");
+    assert_eq!(nuke_lines[0].super_id, nuke);
+
+    // The player's own providers draw everything: even a reveal whose grant
+    // keeps no timer place has its line above the building.
+    let own_silo = build(&mut sim, &rules, "SILO", 10);
+    assert_eq!(lines(&sim, own_silo).len(), 1);
+
+    // An ally the player names one draws everything, too.
+    let friend = sim.interner.intern("ALLIES");
+    sim.houses
+        .register(HouseState::new(friend, 2, None, false, 2000, 10));
+    construct_house_supers(&mut sim, &rules, friend, false);
+    sim.house_alliances_mut_for_test()
+        .entry(crate::map::houses::normalize_house_name("Americans"))
+        .or_default()
+        .insert(crate::map::houses::normalize_house_name("ALLIES"));
+    let friend_silo = sim
+        .spawn_object_at_height("SILO", "ALLIES", 18, 10, 0, 0, &rules)
+        .unwrap();
+    sim.recheck_house_tech_tree(friend, &rules);
+    assert_eq!(lines(&sim, friend_silo).len(), 1);
 }

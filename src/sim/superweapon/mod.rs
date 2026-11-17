@@ -2364,6 +2364,13 @@ pub struct SuperChargeLine {
 /// not granted keeps its timer, so a line never blinks out while the House's
 /// grants are recomputed.
 ///
+/// A House the local player is not allied with draws only the Supers its
+/// timer list draws anyway (`timer_place`, granted when `SW.ShowTimer=` is
+/// on): a radar's paratroopers or a battle lab's Force Shield on an enemy
+/// base is a capability the right-hand list never reads out, and a line above
+/// the building would leak it. The player's own and its allies' providers
+/// draw everything, and a view with no local House (an observer) reads all.
+///
 /// Unlike [`provided_supers`] this asks no availability question: the label
 /// reports the timers the House holds, and `aux_building_present`'s search
 /// would cost a scan per building.
@@ -2382,6 +2389,14 @@ pub fn building_super_charges(
         return Vec::new();
     };
     let frame = sim.session.binary_frame() as i32;
+    let draws_all = match sim.session.current_house() {
+        None => true,
+        Some(house) => crate::map::houses::is_allied_with(
+            sim.house_alliances().as_map(),
+            sim.interner.resolve(house),
+            sim.interner.resolve(building.owner()),
+        ),
+    };
     type_super_weapons(object)
         .filter_map(|name| {
             let id = sim.interner.get(name)?;
@@ -2390,6 +2405,9 @@ pub fn building_super_charges(
             // instance that had one still has a countdown to draw; one that
             // was never granted has a zero duration.
             if !instance.is_active() && instance.charge_duration() <= 0 {
+                return None;
+            }
+            if !draws_all && instance.timer_place.is_none() {
                 return None;
             }
             // A building with a charge of its own has one in the instance's

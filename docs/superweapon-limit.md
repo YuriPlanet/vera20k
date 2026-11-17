@@ -34,7 +34,11 @@ they all point at the same timer. A building that gives several superweapons sta
 superweapon, in its type's own order (`SuperWeapon=`, `SuperWeapon2=`, then Ares' `SuperWeapons=`).
 
 Every House is drawn, enemies included: an enemy silo counting down is what says an attack is
-coming, and each line takes its building's own tint, so whose it is stays visible. One under the
+coming, and each line takes its building's own tint, so whose it is stays visible. An enemy draws
+only the superweapons its timer list draws anyway — a grant with `SW.ShowTimer=no` (a radar's
+paradrop, a Battle Lab's Force Shield) keeps no right-hand line, and a line above the building
+would leak a capability the player cannot otherwise read — while the player's own and its allies'
+providers draw everything. One under the
 shroud draws none — a timer there would give away a silo scouting has not found. The labels are drawn
 for every structure the frame retains, whether or not the building's body was planned that frame, and
 the countdowns are captured with the frame rather than read from the simulation while drawing, so a
