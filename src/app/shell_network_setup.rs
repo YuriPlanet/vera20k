@@ -19,7 +19,7 @@ pub(crate) use service::{
     prepare_lan_guest_handoff, refuse_local_acceptance, service_event, set_network_map_progress,
 };
 mod teams;
-pub(crate) use teams::lobby_refused_option;
+pub(crate) use teams::{lobby_refused_option, starts_needed};
 pub(crate) mod view;
 mod wol;
 pub(crate) use actions::{
@@ -565,15 +565,9 @@ impl NetworkSetupProtocol {
         }
     }
 
-    /// The lobby refused the room's options and may be from before watching,
-    /// as `lobby_watches` has no answer from its list of matches to watch
-    /// yet: the room stops sending its Watching, so nobody watches its games,
-    /// and publishes its options again. A lobby that lists matches refused
-    /// something else, and one that lists none is never sent Watching.
-    /// Returns whether it stopped; once stopped it stays stopped, so the next
-    /// refusal moves on.
-    pub(crate) fn stop_watching(&mut self, lobby_watches: Option<bool>) -> bool {
-        if lobby_watches.is_some() || self.published_watching(None).is_none() {
+    /// A lobby confirmed to lack the match list cannot share Watching.
+    pub(crate) fn stop_legacy_watching(&mut self) -> bool {
+        if self.watching == RoomWatching::Off {
             return false;
         }
         self.watching = RoomWatching::Off;
@@ -1508,13 +1502,13 @@ mod tests {
         assert_eq!(room.published_watching(None), Some("live"));
         room.watching = RoomWatching::Delayed;
         assert_eq!(room.published_watching(None), Some("delayed"));
-        assert!(room.stop_watching(None));
+        assert!(room.stop_legacy_watching());
         assert_eq!(
             room.take_service_requests(),
             [NetworkSetupRequest::PublishOptions]
         );
         assert_eq!(room.published_watching(None), None);
-        assert!(!room.stop_watching(None));
+        assert!(!room.stop_legacy_watching());
         assert!(room.take_service_requests().is_empty());
     }
 
@@ -1535,8 +1529,6 @@ mod tests {
         room.watching = RoomWatching::Live;
         assert_eq!(room.published_watching(Some(false)), None);
         assert_eq!(room.published_watching(Some(true)), Some("live"));
-        assert!(!room.stop_watching(Some(true)));
-        assert!(!room.stop_watching(Some(false)));
         assert!(room.take_service_requests().is_empty());
         assert_eq!(room.published_watching(Some(true)), Some("live"));
     }
