@@ -776,7 +776,6 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         .reset(state.platform.frame_pacer.total_render_deferrals());
     state.match_state.input.queued_order_mode = render::OrderMode::Move;
     state.match_state.match_audio.reset_for_new_match();
-    // A watcher's whole map comes with its live session (`install_watch_view`).
     state.match_state.sandbox_full_visibility = result.scenario.sandbox_full_visibility;
 
     // `Start_Scenario @ 0x00683AB0` after `Read_Scenario`: `[Basic] Theme`
@@ -844,7 +843,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             }
             let installed = crate::app::lan_service::install_gameplay(state);
             if installed.is_ok() {
-                install_watch_view(state);
+                install_watcher(state);
             }
             installed.map_err(|error| error.to_string())
         }
@@ -912,18 +911,16 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
 
 /// VERA watching (docs/Networking.md "Watching"): the live session that
 /// `install_gameplay` made says whether this game watches its match. Its world
-/// is then a watcher's, which sends nothing, also in its followed player's
-/// seat, and Tab may change its view; and it sees the whole map. Only the
-/// picture changes: every House keeps its own fog in the shared world. Both
-/// hold before the world's first frame.
-fn install_watch_view(state: &mut AppState) {
+/// is then a watcher's before its first frame: it sends nothing, also in the
+/// seat of the player it follows, whose sight it starts with, and Tab may
+/// change its view (`match_runtime::watching`).
+fn install_watcher(state: &mut AppState) {
     if !crate::app::match_runtime::watching::active(state) {
         return;
     }
     if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
         runtime.simulation.install_watcher();
     }
-    state.match_state.sandbox_full_visibility = true;
 }
 
 /// Build overlay classification data for the minimap from map overlay entries.

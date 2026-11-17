@@ -486,9 +486,10 @@ keeps its sounds off. It keeps every frame it has read rather than a returning p
 the end. It checks its world against the checksums all players reported
 alike and stops with the usual message when they differ.
 
-A watcher stands in one player's seat: that player's sidebar, credits and sounds, with
-the whole map shown. Only the picture changes: every House keeps its own fog in the
-shared world. It sends nothing in that seat either (`Simulation::install_watcher`): the
+A watcher stands in one player's seat: that player's sight, sidebar, credits and
+sounds. Every House keeps its own fog in the shared world, so the watcher's map and
+radar show that House's, as the player sees them. It sends nothing in that seat either
+(`Simulation::install_watcher`): the
 followed player's records are another game's to it, so their Options opens nothing and
 their leaving ends the watch no more than it ends the other players' match. Tab follows
 the next player still in the match, in House order, also while a frame waits on the
@@ -497,11 +498,12 @@ view and result, so following rebuilds just the objects' owner and discovery byt
 the history every player's game keeps (`Simulation::follow_house`). After the last
 player, Tab shows the observer's sidebar as an observer in the room sees it: each
 player's name, kills, units and money, and the time played on the credits counter
-(`Simulation::observe`). Only the sidebar changes: the world keeps the last player's
-House, so the sounds, radar and end of the match stay that player's. The next Tab
-follows the first player again. A watcher gives no
-orders: its input is the camera, zoom, Tab
-and Escape, and it has no chat. Escape leaves at once; the returned transport's relay
+(`Simulation::observe`), with the whole map on the battlefield and the radar. The world
+keeps the last player's House, so the sounds, whether the radar is up and the end of
+the match stay that player's. The next Tab follows the first player again, with their
+sight. A watcher gives no orders: its input is the camera (the arrow keys, the screen's
+edges, a right drag over the battlefield and a press on the radar), zoom, Tab and
+Escape, and it has no chat. Escape leaves at once; the returned transport's relay
 Leave ends the watcher's session. A match that ends with a result ends for the watcher
 as for the player it follows, with the score page, then the online lobby. One that every
 player leaves without a result returns it to the lobby with a line saying the match
@@ -642,12 +644,16 @@ takes `--online-account <watcher>` and `--online-host <host name>`, both require
 refuses every other online option: the host's match sets the rest. From the settled
 online lobby it waits, with only the lobby's own 30-second list poll, until the watch
 list shows a running match whose players include the host, then selects that row and
-presses Join. The grant, the map and the relay's stream must bring it into the match.
-It records whether the game was catching up and the frame where it reached the delayed
-present, then requires 300 more frames without a stop: a desync's "Scenarios do not
-match." or a lost relay's message fails it. It presses Tab until it is back on the
-player it started with, which must pass another player and the observer's sidebar,
-then Escape, which must return it to the online lobby, and leaves for the Main Menu.
+presses Join. The grant, the map and the relay's stream must bring it into the match
+as a watcher with its followed player's sight, not the whole map. It records whether
+the game was catching up and the frame where it reached the delayed present, then
+requires 300 more frames without a stop: a desync's "Scenarios do not match." or a lost
+relay's message fails it. It presses Tab until it is back on the player it started
+with, which must pass another player and the observer's sidebar; only the observer's
+sidebar may show the whole map. A right drag from the battlefield's middle must then
+move the view within 10 seconds (it turns left halfway, for a view already at the
+map's right edge), then Escape must return it to the online lobby, and it leaves for
+the Main Menu.
 Run it beside `online-live-host` and `online-live-guest` for two other
 accounts. Their `--online-frames` must keep their first match going well past the
 watcher's start: the list poll takes up to 30 seconds, the watcher sees the match two
@@ -656,4 +662,5 @@ joins more than two minutes into the match. The host's room must let everyone wa
 as the Create Game Watching choice's default does; Quick Match games
 (`--online-quick-match` on both) can always be watched. The manifest's `lan.watch`
 records the match, the grant's delay, whether catch-up was seen and the frame it ended,
-the frames played after it, the views Tab went through, and the exit route.
+the frames played after it, the views Tab went through, how far the right drag moved
+the view, and the exit route.
