@@ -1127,11 +1127,17 @@ enum BodyDraw {
 /// `Ext/TechnoType/Hooks.MatrixOp.cpp:729-773`). Only the airborne
 /// `JumpjetTilt` arm rotates the shadow; the grounded crash-rocking
 /// `Jumpjet` pose and the `FlyNormal`/`Rocket` poses keep the stock shadow
-/// policy. Reuses the body's already-resolved pose rather than recomputing
-/// speed, acceleration or facing in the shadow path.
+/// policy. Native leaves the shadow matrix and its cache key untouched until
+/// either angle reaches 0.005 (`:733`, `:768`), so a smaller pose keeps the
+/// stock stencil too. Reuses the body's already-resolved pose rather than
+/// recomputing speed, acceleration or facing in the shadow path.
 fn shadow_tilt_for_body(body: &BodyDraw) -> Option<PoseTilt> {
     match body {
-        BodyDraw::Pose(PoseTilt::JumpjetTilt(angles)) => Some(PoseTilt::JumpjetTilt(*angles)),
+        BodyDraw::Pose(PoseTilt::JumpjetTilt(angles))
+            if crate::render::vxl_raster::shadow::tilt_is_active(*angles) =>
+        {
+            Some(PoseTilt::JumpjetTilt(*angles))
+        }
         _ => None,
     }
 }
@@ -2228,14 +2234,19 @@ fn emit_lifted_unit_shadow(
                         | crate::rules::locomotor_type::SpeedType::Wheel
                 )
         });
-    let image = match (keyed_by_mask, pose.mask) {
-        (true, UnitShadowMask::Fresh) => None,
-        (true, _) => Some(key.clone()),
-        (false, _) => Some(UnitSpriteKey {
-            frame: 0,
-            ..key.clone()
-        }),
-    };
+    // `Hooks.MatrixOp.cpp:736`, `:770`: an active tilt invalidates native's
+    // shadow cache key, so the draw records no cached image (`0x00707280`).
+    let image = shadow_tilt
+        .is_none()
+        .then(|| match (keyed_by_mask, pose.mask) {
+            (true, UnitShadowMask::Fresh) => None,
+            (true, _) => Some(key.clone()),
+            (false, _) => Some(UnitSpriteKey {
+                frame: 0,
+                ..key.clone()
+            }),
+        });
+    let image = image.flatten();
     draw_voxel_shadow(
         state,
         atlas,
@@ -2255,10 +2266,12 @@ fn emit_lifted_unit_shadow(
     else {
         return;
     };
-    let (entry, source) = if pose.mask == UnitShadowMask::None {
-        (entry, UnitTextureSource::Stable(entry.page))
+    // The body pieces the stencil masks: none on high flight, whose template
+    // native draws unmasked (`Hooks.MatrixOp.cpp:726-800`).
+    let parts: Vec<_> = if pose.mask == UnitShadowMask::None {
+        Vec::new()
     } else {
-        let parts: Vec<_> = pieces
+        pieces
             .iter()
             .filter_map(|piece| {
                 let (page, posed) = match piece.target {
@@ -2285,7 +2298,27 @@ fn emit_lifted_unit_shadow(
                     tilt: shadow_tilt,
                 })
             })
-            .collect();
+            .collect()
+    };
+    let (entry, source) = if let Some(tilt) = shadow_tilt {
+        // The shadow matrix carries the body's tilt (`Hooks.MatrixOp.cpp:768-773`),
+        // so this frame's stencil is a fresh raster of the same sections:
+        // masked by the visible body pieces on positive low flight, and drawn
+        // unmasked on high flight. `Shadow_Point` stays its own anchor.
+        let Some(assets) = state.process_assets.manager() else {
+            return;
+        };
+        let mask = (pose.mask != UnitShadowMask::None).then_some(pose.mask_offset);
+        let mut cache = state.renderer.vxl_pose_frame_cache.borrow_mut();
+        let Some(entry) =
+            cache.render_tilted_unit_shadow(assets, state.rules(), atlas, &key, tilt, mask, &parts)
+        else {
+            return;
+        };
+        (entry, UnitTextureSource::Pose(entry.page))
+    } else if pose.mask == UnitShadowMask::None {
+        (entry, UnitTextureSource::Stable(entry.page))
+    } else {
         let flushes = state
             .match_state
             .match_presentation
