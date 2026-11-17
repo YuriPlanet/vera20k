@@ -118,7 +118,11 @@ reuses `world_fire::phobos_skip_weapon_picking`, `crit::cell_eligible` /
 owner serves the gattling pair through `phobos_gattling_weapon_index`, whose
 `phobos_weapon_valid_against` is the `isWeaponValid` lambda;
 `multi_weapon_can_fire` reuses `phobos_airburst::weapon_picking_allows_with`
-for the target-eligibility and warhead-versus gates.
+for the target-eligibility and warhead-versus gates, and reads the fired-at
+cell's overlay through `resolved_terrain.overlay_passability`, whose
+`wall`/`armor_is_wood` bits are the `Wall=`/`Armor=` bindings
+`recalc_overlay_passability` already carries, for the `Wall=`/`Wood=` gate
+(`Ext/Techno/WeaponHelpers.cpp:486-495`).
 `sim::world::selection_voice::attack_voice_request` owns the Phobos voice arm.
 The regression tests are
 `phobos_stock_weapon_pick_honours_can_target_and_the_fallback_keys` (pick
@@ -144,9 +148,6 @@ SelectMultiWeapon arm).
 - `SkipWeaponPicking` needs no separate key here: VERA applies the picking
   gates unconditionally and every gate passes when Phobos derives the flag as
   true.
-- The force-fire cell overlay Wall/`Armor=Wood` gate is not ported: the overlay
-  registry lives outside `Simulation`, so the selection owner cannot read the
-  cell's wall flags without new plumbing.
 - Airborne target cell gate: native `MultiWeaponCanFire` leaves `pTargetCell`
   null for an airborne target and therefore skips `IsCellEligible`; VERA's
   shared weapon-picking owner (`sim::combat::phobos_airburst::

@@ -1078,14 +1078,19 @@ fn land_speed_cost_profiles(
     LandType::ALL.map(|land| land_row(rules, land).speed_costs)
 }
 
-/// The two `OverlayTypeClass` fields `CellClass::CheckCellPassability @
-/// 0x004834A0` reads through `CellClass+0x44`: `Wall=` (`+0x2A8`,
-/// `0x00483598`) and `Crushable=` (`+0x22D`, `0x004835BB`), as
-/// [`OverlayTypeRegistry::from_ini`] parses them.
+/// The `OverlayTypeClass` fields `CellClass::CheckCellPassability @
+/// 0x004834A0` reads through `CellClass+0x44` — `Wall=` (`+0x2A8`,
+/// `0x00483598`) and `Crushable=` (`+0x22D`, `0x004835BB`) — plus the
+/// `Armor=` (`+0x2A0`) reading `TechnoExt::MultiWeaponCanFire` takes
+/// (`Ext/Techno/WeaponHelpers.cpp:486-495`): a `Wall=` overlay only admits a
+/// `Wall=` warhead, or `Wood=` when its armour is wood. All three come from
+/// [`OverlayTypeRegistry::from_ini`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct OverlayPassability {
     pub wall: bool,
     pub crushable: bool,
+    /// `Armor=Wood` (`ArmorType::Wood`, index 6 in the retail armour order).
+    pub armor_is_wood: bool,
 }
 
 fn overlay_passability_flags(registry: Option<&OverlayTypeRegistry>) -> Vec<OverlayPassability> {
@@ -1098,6 +1103,7 @@ fn overlay_passability_flags(registry: Option<&OverlayTypeRegistry>) -> Vec<Over
         .map(|flags| OverlayPassability {
             wall: flags.wall,
             crushable: flags.crushable,
+            armor_is_wood: flags.armor_is_wood,
         })
         .collect()
 }
