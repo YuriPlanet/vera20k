@@ -152,6 +152,9 @@ pub(crate) struct LocalFramePacer {
     /// Recent battlefield draw time, from the draw's start to its present,
     /// smoothed over a few draws.
     draw_cost: Option<Duration>,
+    /// The same without the draw's wait for a free picture: what a draw
+    /// costs this thread.
+    draw_work: Option<Duration>,
     frames_since_present: u32,
     render_deferred: bool,
     total_render_deferrals: u64,
@@ -630,6 +633,7 @@ impl LocalFramePacer {
             last_frame_start_ms: None,
             last_presented: None,
             draw_cost: None,
+            draw_work: None,
             frames_since_present: 0,
             render_deferred: false,
             total_render_deferrals: 0,
@@ -843,6 +847,7 @@ impl LocalFramePacer {
         self.reset_for_immediate_frame();
         self.online = None;
         self.draw_cost = None;
+        self.draw_work = None;
         self.debug_speed = 1;
         self.inline_frame_cost = None;
         self.lent_frame_cost = None;
@@ -909,21 +914,30 @@ impl LocalFramePacer {
     /// Reset only after a successful presentation. A shell/loading surface
     /// cannot make the first battlefield presentation eligible for deferral.
     /// `battlefield_draw` is when a battlefield draw started; its time to
-    /// this present feeds the smoothed draw cost (a quarter of each sample).
-    pub(crate) fn record_presented(&mut self, now: Instant, battlefield_draw: Option<Instant>) {
+    /// this present feeds the smoothed draw cost (a quarter of each sample),
+    /// and that time less `screen_wait`, the draw's wait for a free picture
+    /// (`GpuContext::acquire_frame`), the smoothed draw work.
+    pub(crate) fn record_presented(
+        &mut self,
+        now: Instant,
+        battlefield_draw: Option<Instant>,
+        screen_wait: Duration,
+    ) {
         self.last_presented = battlefield_draw.map(|_| now);
         if let Some(started) = battlefield_draw {
             let cost = now.saturating_duration_since(started);
+            let work = cost.saturating_sub(screen_wait);
             self.draw_cost = Some(self.draw_cost.map_or(cost, |old| (old * 3 + cost) / 4));
+            self.draw_work = Some(self.draw_work.map_or(work, |old| (old * 3 + work) / 4));
         }
         self.frames_since_present = 0;
         self.render_deferred = false;
     }
 
-    /// The recent battlefield draw time ([`Self::record_presented`]), zero
+    /// The recent battlefield draw work ([`Self::record_presented`]), zero
     /// before the first one.
-    pub(crate) fn draw_cost(&self) -> Duration {
-        self.draw_cost.unwrap_or_default()
+    pub(crate) fn draw_work(&self) -> Duration {
+        self.draw_work.unwrap_or_default()
     }
 
     /// Read the same interval used by `should_admit`, for diagnostics.
@@ -1421,7 +1435,7 @@ mod tests {
             !pacer.defer_online_render(now, 8, true, Some((10, 100))),
             "first surface must present"
         );
-        pacer.record_presented(now, Some(now));
+        pacer.record_presented(now, Some(now), Duration::ZERO);
         assert!(pacer.defer_online_render(now, 32, true, Some((42, 400))));
         assert!(pacer.render_deferred());
         pacer.clear_render_continuation();
@@ -1441,7 +1455,7 @@ mod tests {
             !pacer.defer_online_render(now, 1, true, Some((139, 400))),
             "a failed acquisition cannot reset the budget"
         );
-        pacer.record_presented(now, Some(now));
+        pacer.record_presented(now, Some(now), Duration::ZERO);
         assert!(pacer.defer_online_render(now, 1, true, Some((44, 100))));
         assert!(!pacer.defer_online_render(
             now + std::time::Duration::from_millis(50),
@@ -1449,12 +1463,12 @@ mod tests {
             true,
             Some((45, 100))
         ));
-        pacer.record_presented(now, None);
+        pacer.record_presented(now, None, Duration::ZERO);
         assert!(
             !pacer.defer_online_render(now, 1, true, Some((45, 100))),
             "a loading surface does not replace the first battlefield present"
         );
-        pacer.record_presented(now, Some(now));
+        pacer.record_presented(now, Some(now), Duration::ZERO);
         for _ in 0..8 {
             assert!(
                 pacer.defer_online_render(now, 1, true, Some((45, 100))),
@@ -1484,16 +1498,30 @@ mod tests {
         let ms = Duration::from_millis;
         let mut pacer = LocalFramePacer::new();
         let mut now = Instant::now();
-        // Draws of 5 ms, then 85 ms twice: smoothed 5, 25 and 40 ms.
+        // Draws of 5 ms, then 85 ms twice: smoothed 5, 25 and 40 ms. The
+        // wait for the screen counts, as it is part of the time to present.
         for (draw, standing) in [(5, 50), (85, 100), (85, 160)] {
             let presented = now + ms(draw);
-            pacer.record_presented(presented, Some(now));
+            pacer.record_presented(presented, Some(now), ms(draw));
             let before = presented + ms(standing - 1);
             assert!(pacer.defer_online_render(before, 1, true, Some((10, 20))));
             let at = presented + ms(standing);
             assert!(!pacer.defer_online_render(at, 1, true, Some((10, 20))));
             now = at;
         }
+    }
+
+    /// With VSync the main thread waits for a free picture inside the draw,
+    /// for most of a refresh once two are queued. That wait is not the
+    /// draw's work, which a scrolling view weighs against half a refresh.
+    #[test]
+    fn the_wait_for_the_screen_is_not_draw_work() {
+        let ms = Duration::from_millis;
+        let mut pacer = LocalFramePacer::new();
+        let started = Instant::now();
+        pacer.record_presented(started + ms(7), Some(started), ms(6));
+        assert_eq!(pacer.draw_work(), ms(1));
+        assert_eq!(pacer.draw_cost, Some(ms(7)));
     }
 
     #[test]
@@ -1507,7 +1535,7 @@ mod tests {
             (1, true, Some((21, 20))),
         ] {
             let mut pacer = LocalFramePacer::new();
-            pacer.record_presented(now, Some(now));
+            pacer.record_presented(now, Some(now), Duration::ZERO);
             assert!(!pacer.defer_online_render(now, completed, last_completed, next));
         }
     }
