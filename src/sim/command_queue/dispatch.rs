@@ -76,7 +76,8 @@ pub struct CommandDispatchClock {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandDispatchMode {
-    /// Native staging, as the native-byte lockstep adapter runs offline.
+    /// The original offline scan with its 256-event MegaMission stage. Only
+    /// tests use it; the simulation dispatches as SinglePlayer or Network.
     Offline,
     /// The simulation outside multiplayer, under the single-player bound.
     SinglePlayer,
