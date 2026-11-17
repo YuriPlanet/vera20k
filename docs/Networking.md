@@ -105,14 +105,16 @@ hashes, and the search goes on after the stage timeout; the host only times out.
 adds nothing to what game, lobby and relay exchange.
 
 When an online start fails, each player's game says whose side failed and logs why.
-A start whose 30-second relay admission runs out tells a player whose own relay handshake
-finished that another player's game could not reach the game server, and a player whose
-handshake never finished that their own game could not, and that a firewall may block
-UDP; one that runs out in the latency check after it says a player's game could not
-finish checking its connection. The lobby's `start_rejected` reasons (a player left,
-cancelled, could not reach the relay or could not finish the latency check) show as
-their own lines ([lobby protocol](lobby-protocol.md)); any other reason keeps the general
-line. Nothing new travels: released games keep their earlier lines, as does a rollback.
+A start whose 30-second relay admission runs out tells a player whose `relay_ready` the
+lobby took that another player's game could not reach the game server, a player whose
+relay answered but whose `relay_ready` the lobby never took that the lobby is busy or not
+responding, and a player whose relay never answered that their own game could not reach
+it and that a firewall may block UDP; one that runs out in the latency check after it says
+a player's game could not finish checking its connection. The lobby's `start_rejected`
+reasons (a player left, cancelled, could not reach the relay or could not finish the
+latency check) show as their own lines ([lobby protocol](lobby-protocol.md)); any other
+reason keeps the general line. Nothing new travels: released games keep their earlier
+lines, as does a rollback.
 
 In network games, the trigger actions that only play audio (19, 20, 21, 98 and 99)
 keep the map's sound, EVA or theme name, or its numeric sound slot, until the local

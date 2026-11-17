@@ -260,9 +260,8 @@ operator translated them.
 the four messages the lobby sends: `A player left before the game started.`,
 `A player cancelled the game start.`, `A player could not connect to the gameplay relay.`
 and `A player could not complete the peer latency check.`, and show each in the player's
-language; for the relay message a game whose own relay admission finished says another
-player's game could not reach the server, and one whose admission did not says its own
-could not. Any other message, including a reworded one, shows the general line that the
+language; for the relay message a game whose `relay_ready` the service took says another
+player's game could not reach the server, and any other says its own could not. Any other message, including a reworded one, shows the general line that the
 match could not start, so a change to these messages needs the game's
 `LiveService::start_rejected_line` changed with it.
 
