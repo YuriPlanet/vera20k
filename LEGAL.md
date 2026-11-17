@@ -5,9 +5,8 @@
 VERA20K is copyrighted software. You may copy, change and share its code only under the
 [GPLv3](LICENSE-GPL) and the [additional terms](#additional-terms) below.
 
-- If you share a changed version without its full source code, pass it off as VERA20K, or share
-  VERA20K on terms other than these, you infringe our copyright, and your license ends
-  automatically.
+- Distributing code in violation of the GPLv3 can terminate your rights under the license.
+  Section 8 explains when those rights are reinstated.
 - Willful copyright infringement on a commercial scale is a crime in most countries.
 - Forks and paid builds may not use the VERA20K name; see [The VERA20K name](#the-vera20k-name).
 - We report infringing copies to stores and hosts to get them taken down.
@@ -32,6 +31,17 @@ whoever runs the servers.
 Voluntary donations and payments for contributions made publicly available to the project
 are welcome. For code licensed under the [GPLv3](LICENSE-GPL), the noncommercial policy
 above is a project request. The GPLv3 permits commercial use and sale under its terms.
+
+If you use VERA20K code commercially, we may decline requests for technical support or
+promotion through official project channels. If you charge for access to our lobby or relays,
+or sell a build or service that connects to them, without our written permission, we may block
+that access under our [online play rules](#online-play).
+
+If you distribute our copyrighted code in violation of the GPLv3, we may demand that you fix
+the violation or stop distributing the infringing version. One example is selling a build
+without making its corresponding source available as section 6 requires. We may ask the
+store or host to remove the infringing copy. Where the law allows, we may ask a court to
+stop the infringement and award damages.
 
 ## The VERA20K name
 
