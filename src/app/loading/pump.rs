@@ -1108,10 +1108,15 @@ impl LoadingJob {
 fn ordinary_country_loading_index(
     startup: &LoadingStartup,
 ) -> Option<crate::rules::ruleset::CountryIdx> {
-    if matches!(
-        startup,
-        LoadingStartup::Network(_) | LoadingStartup::Campaign(_) | LoadingStartup::Generic { .. }
-    ) || crate::map::rmg::is_seed_selection(startup.selected_map_file())
+    // A replay of a network game has the same cold Rules boundary as a live
+    // match. An ordinary Country prefix would transfer the old world's writes
+    // into that rebuilt registry after the initial map load.
+    if startup.session_mode().is_network()
+        || matches!(
+            startup,
+            LoadingStartup::Campaign(_) | LoadingStartup::Generic { .. }
+        )
+        || crate::map::rmg::is_seed_selection(startup.selected_map_file())
     {
         return None;
     }
@@ -1913,12 +1918,14 @@ fn pump_loading_after_present(
             state.process_assets.native_rules_mut_with_tile_cache();
         let native_rules_owner =
             native_rules_owner.expect("native Rules availability checked before split borrow");
-        // The outgoing scene no longer advances. Return its live Type and
-        // ambient Rules writes before Full_Init's optional prefix Process.
+        // The outgoing scene no longer advances. Offline loads return its
+        // live Type and ambient Rules writes before Full_Init's prefix Process.
+        // Network loads already installed a cold registry for the new match.
         // Type reset deletes Types but retains the ambient scalar defaults.
         // Only Rules read the Ares way bind a prefix, which already returned them.
         let should_retire_outgoing = prepared_rules_prefix.is_none();
         if !initial.has_generated_rules()
+            && !startup.session_mode().is_network()
             && should_retire_outgoing
             && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle)
         {

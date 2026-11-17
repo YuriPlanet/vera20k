@@ -153,3 +153,34 @@ fn the_planting_weapons_key_offers_detonate() {
     scene.click_detonate();
     assert!(!scene.tank_alive());
 }
+
+/// Online only the bomb's House sets it off, wherever its carrier belongs:
+/// the network gate refuses another House's DETONATE before `0x004C7823`
+/// runs, even when that House owns the carrier.
+#[test]
+fn online_only_the_bombs_house_detonates_it() {
+    let Some(mut scene) = own_bombed_tank("") else {
+        return;
+    };
+    scene
+        .sim
+        .session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Wol);
+    let russians = scene.sim.interner.get("Russians").unwrap();
+    scene.sim.change_owner(scene.tank, russians);
+    let detonate = Command::SynchronizedRecord {
+        record: scene.sim.encode_detonate_record(scene.tank).unwrap(),
+    };
+    assert!(
+        !scene
+            .sim
+            .apply_command("Russians", &detonate, Some(&scene.rules))
+    );
+    assert!(scene.armed());
+    assert!(
+        scene
+            .sim
+            .apply_command("Americans", &detonate, Some(&scene.rules))
+    );
+    assert!(!scene.armed());
+}

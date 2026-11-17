@@ -9,6 +9,7 @@
 //! [`NetworkSendRequest`]; `lan_service::cooperative` moves both.
 
 use super::{MatchSession, NetworkPhase, NetworkReturnContext, NetworkSendRequest, NetworkSession};
+use crate::net::lan_messages::cooperative::ROWS;
 use crate::skirmish_launch::{
     LaunchStartPosition, SkirmishAiSlot, SkirmishLaunchSession, SkirmishLocalSlot,
 };
@@ -22,8 +23,8 @@ use std::sync::Arc;
 pub(crate) struct CooperativeRoundState {
     /// `0x89E000[8]`, by raw slot: empty slots start ready
     /// (`0x0046EF06..0x0046EF4A`), and every un-ready pass clears human
-    /// slots only.
-    ready: [bool; 8],
+    /// slots only. Start admission keeps every human row below [`ROWS`].
+    ready: [bool; ROWS],
     /// `0x89E05C`.
     local_ready: bool,
     /// `0x89E058`, the master's ack count.
@@ -165,7 +166,7 @@ impl MatchSession {
         }
         launch.rebuild_house_roster();
         // 0x0046EF06: empty slots ready, every bound human slot not.
-        let mut ready = [true; 8];
+        let mut ready = [true; ROWS];
         for (index, human) in launch.humans.iter().enumerate() {
             if let Some(row) = human.raw_slot_index
                 && connected.contains(&index)
@@ -862,6 +863,25 @@ mod tests {
             last.continue_cooperative_round(1).unwrap(),
             CooperativeRoundStep::Exit(false)
         );
+    }
+
+    #[test]
+    fn a_cooperative_start_refuses_a_human_past_the_rounds_rows() {
+        let freeze = |row| {
+            let mut launch = super::super::tests::network_fixture();
+            launch.mode.class = crate::skirmish_modes::MpModeClass::Cooperative;
+            launch.local_player_index = 0;
+            launch.humans[1].raw_slot_index = Some(row);
+            let mut session = MatchSession::default();
+            session.enter_network(NetworkReturnContext::LanLobby);
+            session.accept_network_setup(launch, true, None, false)?;
+            session.set_network_start_seed(SEED)?;
+            session.prepare_network_timing(2, || 0)?;
+            session.freeze_network_start(SEED).map(|_| session)
+        };
+        let mut session = freeze(7).unwrap();
+        session.enter_cooperative_round(None, true, 2).unwrap();
+        assert!(freeze(8).is_err());
     }
 
     #[test]

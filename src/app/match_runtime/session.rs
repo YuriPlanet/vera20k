@@ -1796,6 +1796,14 @@ impl MatchSession {
             "host options cannot replace admitted participant identity or source order"
         );
         validate_network_option_rows(&incoming)?;
+        // SpeedNormalize (`0x005FB2E0`) indexes its table's eight columns
+        // with the stored speed; the setup offers 0..=6 and VERA's 8.
+        anyhow::ensure!(
+            u8::try_from(incoming.options.game_speed)
+                .is_ok_and(crate::sim::game_options::is_selectable_game_speed),
+            "host game speed {} is not a selectable speed",
+            incoming.options.game_speed
+        );
         incoming.opponents.sort_by_key(|ai| ai.raw_slot_index);
         incoming.rebuild_house_roster();
         // A Teams count this build does not offer leaves Teams Off.
@@ -3890,9 +3898,19 @@ fn validate_network_rows(launch: &SkirmishLaunchSession) -> anyhow::Result<()> {
 
 /// A start's admission, shared by the first start and a co-op
 /// continuation: a consistent House roster, resolved assignments and an
-/// exact map.
+/// exact map. A Cooperative human sits in one of BC6's eight raw slots
+/// (`0x89E000[8]`), which the round after the mission indexes by row.
 fn admit_network_start_roster(launch: &SkirmishLaunchSession) -> anyhow::Result<()> {
     validate_network_rows(launch)?;
+    anyhow::ensure!(
+        !launch.mode.class.uses_cooperative_setup()
+            || launch
+                .humans
+                .iter()
+                .filter_map(|human| human.raw_slot_index)
+                .all(|row| usize::from(row) < crate::net::lan_messages::cooperative::ROWS),
+        "a Cooperative human sits past the round's eight rows"
+    );
     anyhow::ensure!(
         launch.house_roster_is_consistent(),
         "network House constructor cache disagrees with the participant roster"
@@ -5494,6 +5512,35 @@ mod tests {
         session.set_network_player_ready(1, false).unwrap();
         assert!(session.network_player_ready(0));
         assert!(!session.network_player_ready(1));
+    }
+
+    #[test]
+    fn host_options_with_a_speed_the_setup_never_offers_are_refused() {
+        let mut session = MatchSession::default();
+        session.enter_network(super::NetworkReturnContext::LanLobby);
+        session
+            .accept_network_setup(network_fixture(), false, Some(7), false)
+            .unwrap();
+        let accepted = session.clone();
+        let vacancies = [super::NetworkVacancy::Open; 8];
+        let with_speed = |speed| {
+            let mut incoming = accepted.network_setup().unwrap().clone();
+            incoming.options.game_speed = speed;
+            incoming
+        };
+        for speed in [-1, 7, 9] {
+            assert!(
+                session
+                    .accept_network_host_setup(with_speed(speed), vacancies, 4, Some(7), false)
+                    .is_err(),
+                "speed {speed}"
+            );
+            assert_eq!(session, accepted);
+        }
+        session
+            .accept_network_host_setup(with_speed(8), vacancies, 4, Some(7), false)
+            .unwrap();
+        assert_eq!(session.network_setup().unwrap().options.game_speed, 8);
     }
 
     #[test]

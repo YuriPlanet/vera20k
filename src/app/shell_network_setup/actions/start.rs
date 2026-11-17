@@ -23,12 +23,7 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         "setup is locked"
     );
     // C2 ignores Start while its StartGame request is pending (00B77DEC).
-    if state
-        .frontend
-        .network_setup_protocol
-        .as_ref()
-        .is_some_and(|protocol| protocol.start_in_progress())
-    {
+    if super::super::start_phase(state).in_progress() {
         return Ok(());
     }
     super::super::remember_setup(state);
@@ -276,11 +271,8 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         );
     }
     let Some(max_ahead_frames) = max_ahead_frames else {
-        // C2 0x790BB9: API+0x48 StartGame with every channel user, then
-        // 00B77E28/00B77DEC until OnGameStart answers.
-        queue(state, NetworkSetupRequest::StartGame { users });
         if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
-            protocol.wol_start_pending = true;
+            protocol.submit_start(users);
         }
         return Ok(());
     };

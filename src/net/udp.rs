@@ -48,7 +48,7 @@ pub mod test_support {
 
 use super::global::{
     GLOBAL_HEADER_LEN, GlobalChannel, GlobalConfig, GlobalDestination, GlobalMessage,
-    GlobalReceiveError,
+    GlobalReceiveError, with_port_override,
 };
 use super::lan_messages::{SessionScope, ingame::LoadingProgressMessage};
 use super::reliable::{LanConnections, ReceiveError, ReceivedMessage, udp_checksum};
@@ -650,11 +650,8 @@ impl LanUdpTransport {
     /// The UDP owner retains only this transport capability, never simulation.
     pub fn set_ordering_certificate(&mut self, certificate: Vec<u8>) -> io::Result<()> {
         let mut io = self.lock();
-        let route = io
-            .relay
-            .as_mut()
-            .filter(|route| route.retiring.is_none())
-            .ok_or_else(|| io::Error::other("no relay route"))?;
+        let route =
+            active_relay(&mut io.relay).ok_or_else(|| io::Error::other("no relay route"))?;
         let parsed = vera20k_relay_protocol::OrderingCertificate::parse(&certificate)
             .map_err(relay_io_error)?;
         // A watcher has no source of its own (relay README "Watchers").
@@ -672,11 +669,8 @@ impl LanUdpTransport {
     /// this route. Set it before the pump answers the first challenge.
     pub fn set_federation_roster(&mut self, roster: &[u8]) -> io::Result<()> {
         let mut io = self.lock();
-        let route = io
-            .relay
-            .as_mut()
-            .filter(|route| route.retiring.is_none())
-            .ok_or_else(|| io::Error::other("no relay route"))?;
+        let route =
+            active_relay(&mut io.relay).ok_or_else(|| io::Error::other("no relay route"))?;
         route.session.set_federation(roster).map_err(relay_io_error)
     }
 
@@ -720,11 +714,7 @@ impl LanUdpTransport {
 
     /// Runs `apply` on the current relay session, if any.
     fn with_session<T>(&mut self, apply: impl FnOnce(&mut ClientSession) -> T) -> Option<T> {
-        self.lock()
-            .relay
-            .as_mut()
-            .filter(|route| route.retiring.is_none())
-            .map(|route| apply(&mut route.session))
+        active_relay(&mut self.lock().relay).map(|route| apply(&mut route.session))
     }
 
     /// See `ClientSession::seal_ordering_batch`.
@@ -737,11 +727,8 @@ impl LanUdpTransport {
     /// See `ClientSession::queue_ordering_checksums`.
     pub fn queue_ordering_checksums(&mut self, samples: &[(u32, u32)]) -> io::Result<()> {
         let mut io = self.lock();
-        let route = io
-            .relay
-            .as_mut()
-            .filter(|route| route.retiring.is_none())
-            .ok_or_else(|| io::Error::other("no relay route"))?;
+        let route =
+            active_relay(&mut io.relay).ok_or_else(|| io::Error::other("no relay route"))?;
         let now_ms = route.now_ms();
         route
             .session
@@ -770,7 +757,7 @@ impl LanUdpTransport {
         turn_ms: u32,
     ) {
         let mut io = self.lock();
-        let Some(route) = io.relay.as_mut().filter(|route| route.retiring.is_none()) else {
+        let Some(route) = active_relay(&mut io.relay) else {
             return;
         };
         let now_ms = route.now_ms();
@@ -783,7 +770,7 @@ impl LanUdpTransport {
     pub(super) fn poll_uplink(&mut self) -> io::Result<bool> {
         let mut io = self.lock();
         let io = &mut *io;
-        let Some(route) = io.relay.as_mut().filter(|route| route.retiring.is_none()) else {
+        let Some(route) = active_relay(&mut io.relay) else {
             return Ok(false);
         };
         let now_ms = route.now_ms();
@@ -798,7 +785,7 @@ impl LanUdpTransport {
     pub(super) fn poll_repair_pull(&mut self) -> io::Result<bool> {
         let mut io = self.lock();
         let io = &mut *io;
-        let Some(route) = io.relay.as_mut().filter(|route| route.retiring.is_none()) else {
+        let Some(route) = active_relay(&mut io.relay) else {
             return Ok(false);
         };
         let now_ms = route.now_ms();
@@ -854,11 +841,8 @@ impl LanUdpTransport {
     ) -> io::Result<()> {
         let mut io = self.lock();
         let io = &mut *io;
-        let route = io
-            .relay
-            .as_mut()
-            .filter(|route| route.retiring.is_none())
-            .ok_or_else(|| io::Error::other("no relay route"))?;
+        let route =
+            active_relay(&mut io.relay).ok_or_else(|| io::Error::other("no relay route"))?;
         let now_ms = route.now_ms();
         encode(route, now_ms).map_err(relay_io_error)?;
         io.primary
@@ -1057,6 +1041,12 @@ impl RelayRoute {
                 .push_back(ReceivedOrderEvent { event, received_at });
         }
     }
+}
+
+/// The route that takes new ordering traffic: a retiring route only resends
+/// its Leave until the relay acknowledges it.
+fn active_relay(relay: &mut Option<RelayRoute>) -> Option<&mut RelayRoute> {
+    relay.as_mut().filter(|route| route.retiring.is_none())
 }
 
 struct RelayRetirement {
@@ -1812,6 +1802,14 @@ fn drain_socket(
                 report.malformed_datagrams += 1;
                 continue;
             }
+            Err(error) if cfg!(windows) && error.raw_os_error() == Some(10054) => {
+                // WSAECONNRESET: Winsock reports the ICMP port-unreachable an
+                // earlier sendto drew on this later recvfrom. No datagram was
+                // read and the socket stays usable; the ones behind it follow.
+                // learn.microsoft.com/windows/win32/api/winsock/nf-winsock-recvfrom
+                record_io_error(report, channel, UdpIoOperation::Receive, error);
+                continue;
+            }
             Err(error) => {
                 record_io_error(report, channel, UdpIoOperation::Receive, error);
                 break;
@@ -1877,10 +1875,13 @@ fn drain_socket(
                         }
                         continue;
                     }
+                    // The session yields a candidate only CHALLENGE and the
+                    // READY that promotes it; anything else is dropped.
                     ServerEvent::Payload { .. }
                     | ServerEvent::Ordering(_)
                     | ServerEvent::OrderingPack(_) => {
-                        unreachable!("candidate is promoted on READY")
+                        report.malformed_datagrams += 1;
+                        continue;
                     }
                 }
             }
@@ -1899,11 +1900,11 @@ fn drain_socket(
                 }
                 Ok(ServerEvent::Payload { source, bytes }) => {
                     route.last_response = Some(now_ticks);
-                    (
-                        bytes,
-                        relay_peer_endpoint(source).expect("authenticated source range"),
-                        None,
-                    )
+                    let Ok(source) = relay_peer_endpoint(source) else {
+                        report.malformed_datagrams += 1;
+                        continue;
+                    };
+                    (bytes, source, None)
                 }
                 Ok(ServerEvent::Ready) => {
                     route.last_response = Some(now_ticks);
@@ -1996,12 +1997,8 @@ fn drain_socket(
             //7B4038..408C stores a zero-port endpoint and the recvfrom port
             //separately;5418FB passes that override to53FCB0.
             let endpoint = SocketAddrV4::new(*source.ip(), 0);
-            if let Err(error) = global.receive(
-                endpoint,
-                source.port(),
-                frame,
-                now_ticks,
-                &mut |destination, ack| {
+            if let Err(error) =
+                global.receive(endpoint, source.port(), frame, &mut |destination, ack| {
                     send_global_frame(
                         ack_socket,
                         relay,
@@ -2013,8 +2010,8 @@ fn drain_socket(
                         ack,
                         report,
                     );
-                },
-            ) {
+                })
+            {
                 report.rejected_global += 1;
                 report.last_global_rejection = Some(error);
             }
@@ -2049,22 +2046,17 @@ fn send_global_frame(
 ) {
     match destination {
         GlobalDestination::Direct {
-            mut endpoint,
+            endpoint,
             port_override,
         } => {
-            if port_override != 0 {
-                endpoint.set_port(port_override);
-            }
+            let endpoint = with_port_override(endpoint, port_override);
             send_frame(
                 socket, relay, lan_scope, channel, queue, endpoint, frame, report,
             );
         }
         GlobalDestination::Broadcast { port_override } => {
             for &target in targets {
-                let mut endpoint = target;
-                if port_override != 0 {
-                    endpoint.set_port(port_override);
-                }
+                let endpoint = with_port_override(target, port_override);
                 send_frame(
                     socket, relay, lan_scope, channel, queue, endpoint, frame, report,
                 );
@@ -2283,7 +2275,7 @@ mod close_tests {
         );
         let mut decoded = GlobalChannel::new(GlobalConfig::default(), timing);
         decoded
-            .receive(binds.primary, 0, frame, 32, &mut |_, _| {
+            .receive(binds.primary, 0, frame, &mut |_, _| {
                 panic!("unreliable Departure must not request an ACK")
             })
             .unwrap();

@@ -1720,7 +1720,7 @@ impl Simulation {
         let decoded_native;
         let mut auxiliary = MegaMissionTarget::Null;
         let planned = matches!(cmd, Command::PlanningRecord { record }
-            if record.opcode() == 4 && record.payload()[22] == 2);
+            if super::planning::planning_dispatch_record(record));
         let native_mission = match cmd {
             Command::PlanningRecord { record } if planned => Some(record),
             Command::SynchronizedRecord { record }
@@ -3330,12 +3330,13 @@ impl Simulation {
     ///
     /// `EventClass::Execute @ 0x004C6CB0` trusts the sender for most object
     /// orders (MEGAMISSION, IDLE, Deploy, Repair, Primary, On/Off-line,
-    /// Archive, wall sale @ 0x004FCE80, PlanMgr connect @ 0x00639800 and
-    /// append @ 0x00638120), so a modified client could retask, deploy, sell
-    /// or power down an opponent's objects. Ordinary input orders
-    /// `IsHumanPlayer @ 0x0050B6F0` actors, the sending House in every
-    /// network mode. Offline modes keep the native receivers unchanged
-    /// (campaign PlayerControl houses).
+    /// Archive, DETONATE @ 0x004C7823, wall sale @ 0x004FCE80, PlanMgr
+    /// connect @ 0x00639800 and append @ 0x00638120), so a modified client
+    /// could retask, deploy, sell, power down or blow up an opponent's
+    /// objects. Ordinary input orders `IsHumanPlayer @ 0x0050B6F0` actors,
+    /// the sending House in every network mode; DETONATE is offered only to
+    /// the bomb's House, whose house byte it carries. Offline modes keep the
+    /// native receivers unchanged (campaign PlayerControl houses).
     ///
     /// Intended retail differences, all refused alike on every client:
     /// * retail input quirks that order a selected enemy object — the Guard
@@ -3347,7 +3348,10 @@ impl Simulation {
     ///   acknowledge stays ahead of this gate, so that actor's latch clears.
     ///   The group spread (`0x0064CDA0`) leaves that actor out as well, so
     ///   the sender's other units spread as if it had not been ordered, where
-    ///   retail spreads it with them.
+    ///   retail spreads it with them;
+    /// * a DETONATE whose carrier by execution holds another House's bomb, or
+    ///   no bomb and belongs to another House, is dropped, where retail clears
+    ///   the carrier's planning tokens and sets off whatever bomb it holds.
     ///
     /// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
     fn network_command_actor_foreign(
@@ -3372,6 +3376,17 @@ impl Simulation {
             | Command::ArchiveObject { entity_id, .. } => foreign(*entity_id),
             Command::SetRally { producer_ids, .. } => producer_ids.iter().any(|&id| foreign(id)),
             Command::SynchronizedRecord { record } => {
+                // The carrier is usually another House's object, so the
+                // bomb's House answers; once the bomb is gone, the carrier's.
+                if let Some(event) = crate::sim::command::DetonateRecord::decode(record) {
+                    let carrier = u64::try_from(event.entity_id)
+                        .ok()
+                        .and_then(|id| self.substrate.entities.get(id));
+                    return carrier.is_some_and(|entity| {
+                        let owner = entity.bomb.as_ref().map_or(entity.owner(), |b| b.house());
+                        !command_owner.eq_ignore_ascii_case(self.interner.resolve(owner))
+                    });
+                }
                 let actor = ArchiveRecord::decode(record)
                     .and_then(|event| u64::try_from(event.entity_id).ok());
                 // The Ares trench event's source building
@@ -3997,6 +4012,39 @@ mod tests {
         // Offline receivers stay native: MEGAMISSION has no sender gate.
         let mut sim = world(ScenarioGameMode::Skirmish);
         assert!(sim.apply_command("British", &move_order, Some(&rules)));
+    }
+
+    /// DETONATE `0x004C7823` clears its carrier's planning tokens
+    /// (`0x004C7831`) before it looks for a bomb. Online, a carrier with no
+    /// bomb answers to its owner: another House's DETONATE leaves its plan,
+    /// the owner's own still clears it.
+    #[test]
+    fn network_detonate_on_a_bombless_carrier_answers_to_its_owner() {
+        use crate::sim::house_state::HouseState;
+        use crate::sim::scenario_session::ScenarioGameMode;
+        let rules = amcv_move_rules();
+        let mut sim = Simulation::new();
+        for (index, name) in [(0, "Americans"), (1, "British")] {
+            let owner = sim.intern(name);
+            sim.houses
+                .register(HouseState::new(owner, index, None, true, 0, 10));
+        }
+        sim.session.set_game_mode(ScenarioGameMode::Wol);
+        spawn_rule_backed_unit(&mut sim, 42, "AMCV", &rules);
+        sim.start_empty_planning_path_for_test(42);
+        let mut record = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).unwrap();
+        crate::sim::command::DetonateRecord {
+            house_id: 1,
+            frame: 0,
+            entity_id: 42,
+        }
+        .write_into(&mut record);
+        let detonate = Command::SynchronizedRecord { record };
+
+        assert!(!sim.apply_command("British", &detonate, Some(&rules)));
+        assert!(sim.has_planning_path_for_test(42));
+        assert!(!sim.apply_command("Americans", &detonate, Some(&rules)));
+        assert!(!sim.has_planning_path_for_test(42));
     }
 
     /// `TechnoClass::Select @ 0x006FBFA0` raises event 33 (`0x006FBFE4`) for

@@ -165,7 +165,9 @@ bounded to 2048 bytes. A lobby from before those maps refuses a record past 37 n
 or 512 bytes with 400 `invalid_options`;
 `staging_digest` is its lowercase SHA-256, or the empty string for authored maps.
 `launch` is the existing serde representation of `SkirmishLaunchSession` (including
-its human rows, AI rows and launch options). `launch.options.teams`, a VERA room's
+its human rows, AI rows and launch options). `launch.options.game_speed` is a setup
+speed, 0 to 6 or VERA's 8; a guest's game refuses host options with any other speed
+and shows its invalid-update line. `launch.options.teams`, a VERA room's
 Teams count, is an optional integer from 2 to 15 that the game leaves out while Teams
 is Off. A lobby from before it refuses options that carry
 it with 400 `invalid_options`; the host's game then turns Teams Off, says so in the
@@ -254,11 +256,15 @@ Lines the lobby writes itself, from the notice sender (`VERA20k`) and the matchb
 which `text` is the English joined by spaces (for a matchbot line, the text after its
 first word, `Info`). A client shows each sentence as its
 language file's `VERA:Lobby<key>` with `{name}` filled from `values`, and shows `text`
-when it lacks one of the keys or values. A value is a string, a number, a phrase, an
+when it lacks one of the keys, a sentence names a value its phrase lacks, or a phrase or
+join fills past 2048 UTF-8 bytes, the chat limit. A value is a string, a number, a phrase, an
 `{and:[value]}` list read "a, b and c", or a `{unit:[value]}` list read "a, b, c"; the
 language file gives both joins. A phrase whose values hold `count` takes the plural form
 its language gives that number. The keys and their English are the `VERA:Lobby` entries of
 `src/i18n/vera20k.en.ini`, and a key the lobby adds needs its English line there.
+A key keeps its values and meaning once a release has shipped it, and a change takes a
+new key: games before 0.3.6 show a value their sentence names and the phrase lacks as
+its `{name}`, while every game shows `text` for a key it lacks.
 Operator notices carry no `phrases`: they come in the session's language when the
 operator translated them.
 
@@ -331,7 +337,10 @@ guest's client accepts the final displayed settings by itself once it has the
 verified map; players never ready up by hand. Only after the matching options
 revision and every fresh acknowledgement arrive does the retained Start request
 reach the server. A local optimistic choice cannot be accepted before its host
-options echo. Later edits cancel the staged request; rejected or timed-out starts
+options echo. While the request is staged, the host's client holds its own
+edits, kicks a newcomer and ignores `balance`; a guest's changed choices, the
+host's kick of a guest and any departure change the options, which cancels the
+staged request, as the host leaving does. Rejected or timed-out starts
 release the normal setup screen for retry without rerunning assignment while a
 request is pending. The service continues enforcing the same full agreement.
 
