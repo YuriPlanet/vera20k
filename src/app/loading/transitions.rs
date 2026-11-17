@@ -587,6 +587,8 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         sfx.stop_all();
     }
     if incoming.is_some() {
+        // A match starts: a launcher has long set any pin to one processor.
+        crate::app::process_affinity::undo_single_core_pin();
         // The inactive load has inherited this process cursor. Only a world
         // actually installed here retires cold MapGen transport; failed and
         // cancelled attempts retain it in RandomMapGenerationRetention.
