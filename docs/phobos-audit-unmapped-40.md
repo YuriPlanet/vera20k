@@ -169,7 +169,9 @@ is fully ported at `rules/phobos_spawns_crate.rs:29` and
   unported: the `What_Action` cursor gate `0x70023B` (owner `src/app/input`,
   outside this package) and the gattling hook `0x6F3432`, whose whole
   `isWeaponValid` block is missing, so its AU row alone would skip AA, the
-  shield and the Verses-0 test.
+  shield and the Verses-0 test. VERA resolves the Tunnel locomotor CLSID as
+  dormant (`rules/locomotor_type.rs:456-478`), so no VERA unit caches the
+  layer the gate reads; stock rules never name that CLSID, a mod's rules can.
 
 ## Re-scan 2026-11-17: the extraction list is stale
 

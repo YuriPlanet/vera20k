@@ -67,7 +67,19 @@ The auto-target side reads the object's `GetHeight` (vt+0x1C8,
 - The shield arm at `0x6F36DB:151` is unreachable here: VERA has no
   `Shield::CanBeTargeted` owner at all, so the enclosing `if (pShield)` block
   has no equivalent state.
-- No Tunnel locomotor is ported and no retail type uses one, so the
-  Underground layer is dormant in play: the gate and the arm are exercised by
-  fixtures that set the cached layer, not by retail data.
+- The Tunnel locomotor is unported: `rules/locomotor_type.rs` keeps the
+  Tiberian Sun Tunnel/Mech/DropPod classes out of the installed table, so a
+  unit whose `Locomotor=` names that CLSID never caches
+  `MovementLayer::Underground` in VERA and the gate and arm are dormant there.
+  Stock `ini/rulesmd.ini` never names the CLSID (the dormancy golden at
+  `rules/locomotor_type.rs:471`), but a mod's rules may — the installed mod's
+  `rulesmd.ini` does, on units such as `ZDWZ`, `SAPC2`, `ZDDTRUCK` and
+  `TANKCHONGT`. Trigger in that ruleset: those units should burrow and only
+  `AU=yes` weapons should shoot them. Frequency: only where a type names the
+  dormant CLSID. Risk: without the locomotor the engine falls back to the
+  type's INI seed and those units never go underground, so `AU` has nothing to
+  admit — a locomotion-subsystem gap, not this key's.
+- The fixture path: the tests set the cached layer by hand
+  (`LocomotorState::set_layer_for_test`), which is the only way to reach the
+  arm until that locomotor lands.
 - Retail/visual parity is untested here (no retail `ini/` in this checkout).

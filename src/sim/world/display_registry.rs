@@ -27,10 +27,12 @@ use crate::sim::world::ObjectSubstrate;
 /// which is the layer Phobos reads from `pTargetTechno->InWhichLayer()` in
 /// `Ext/Techno/Hooks.Firing.cpp:151`, `:188`, `:223` and `:549`.
 ///
-/// VERA does not port the Tunnel locomotor, so no retail type reaches this
-/// branch; it exists so the layer answer (and its AU consumers) is wired for
-/// the fixtures that set the cached layer, and for that locomotor when it
-/// lands.
+/// VERA resolves that CLSID as dormant — `rules/locomotor_type.rs` leaves the
+/// Tiberian Sun Tunnel, Mech and DropPod classes out of the installed table —
+/// so no VERA unit ever caches this layer. Stock `ini/rulesmd.ini` never names
+/// the CLSID (that is the dormancy golden); a mod's rules may. The branch is
+/// what the layer answer becomes once the Tunnel locomotor exists, and what
+/// fixtures set meanwhile.
 pub(crate) fn entity_is_underground(entity: &GameEntity) -> bool {
     entity
         .locomotor
