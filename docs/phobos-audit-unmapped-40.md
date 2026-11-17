@@ -159,3 +159,39 @@ is fully ported at `rules/phobos_spawns_crate.rs:29` and
   `HouseState` `CdTimer` are all in the base. This pass adds the three
   requested boundary rows (unset schedule, cadence 40 with the skip control,
   `0`/`-1`) and moves the row to `implemented`.
+
+## Re-scan 2026-11-17: the extraction list is stale
+
+A pass over the 17 rows still listed under Key-missed found a live reader in
+`src/rules` for every one of them, and a consumer outside `src/rules` for all
+but row 4:
+
+| # | Reader | Consumer |
+|---|--------|----------|
+| 1 | `object_type.rs:6487` | `sim/lifecycle.rs:2410`, `sim/navigation.rs:70` |
+| 4 | `projectile_type.rs:582` (`au`) | none found — read only |
+| 7 | `phobos_weapon_extras.rs:137` | `sim/combat/greatest_threat.rs:2904` |
+| 10 | `object_type.rs:6479`, `phobos_globals.rs:2535` | `sim/world/shroud_refresh.rs:2082` |
+| 13 | `object_type.rs:7295` | `sim/spawn_manager.rs:542` |
+| 14 | `object_type.rs:6484` | `app/input/dispatch.rs:4305` |
+| 21 | `object_type.rs:6476`, `phobos_globals.rs:3204` | `sim/combat/burst.rs:174` |
+| 24 | `phobos_globals.rs:3449` | `sim/combat/fire_error.rs:1178-1183` (berzerk arm) |
+| 29 | `warhead_type.rs:549` (`ammo`) | `sim/combat/crit.rs:390-403` (`apply_warhead_delta`) |
+| 30 | `warhead_type.rs:1166` | `sim/combat/crit.rs:261` |
+| 31 | `warhead_type.rs:534` | `sim/combat/crit.rs:152-193` (package 90) |
+| 32 | `warhead_type.rs:1168` | `sim/house_state.rs:2488` |
+| 33 | `warhead_type.rs:1153` | `sim/combat/crit.rs:140` |
+| 35 | `warhead_type.rs:1162` | `sim/combat/crit.rs:263`, `:486` |
+| 36 | `warhead_type.rs:1209` | `sim/world/infantry_death.rs:565` |
+| 38 | `warhead_type.rs:1170` | `sim/combat/world_receiver.rs:3010`, `:3203` |
+| 40 | `phobos_globals.rs:2837`, `weapon_type.rs:1040` | `sim/combat/in_range.rs:209` |
+
+So the list's own statuses are wrong: rows 1, 5, 7, 10, 13, 14, 21, 24, 25,
+27, 29, 30, 31, 32, 33, 35, 36, 37, 38 and 40 all have a reader and a caller
+in the base. Only row 4 (`[Projectile] AU`) is read without a consumer, and
+that is the one row this table can still call missing.
+
+What the re-scan does not establish is depth: a reader plus a caller says the
+key reaches gameplay, not that every native arm and boundary matches. The per-
+feature documents remain the place to check that, and the table rows keep their
+current statuses until a row-by-row behavioural pass moves them.
