@@ -164,11 +164,11 @@ fn a_digging_tunnel_neither_fires_nor_casts_a_shadow() {
     );
 }
 
-/// A unit that starts one level up sinks 256 below **that** height and comes
-/// back to it, not to zero: `ProcessDugIn` compares against the cell's ground
-/// (`0x578080`), which `PreDigOut` re-reads every frame.
+/// A unit that starts one level up sinks to the same `0xFFFFFF00` plane every
+/// tunnel uses (`ProcessDugIn` reads no ground) and comes back to its own
+/// cell's ground, which `ProcessPreDigOut 0x7298F0` re-reads every frame.
 #[test]
-fn a_raised_cell_sinks_and_surfaces_relative_to_its_own_height() {
+fn a_raised_cell_sinks_to_the_underground_plane_and_surfaces_at_its_own_height() {
     let mut runtime = TunnelRuntime::constructed();
     let mut position = Position::new(
         5,
@@ -212,22 +212,20 @@ fn a_raised_cell_sinks_and_surfaces_relative_to_its_own_height() {
 
     assert_eq!(runtime.state(), TunnelState::Idle);
     assert_eq!(
-        lowest,
-        from.z + UNDERGROUND_Z,
-        "the sink stopped at the wrong floor"
+        lowest, UNDERGROUND_Z,
+        "the sink stopped off the shared 0xFFFFFF00 plane"
     );
     assert_eq!(
         position_world(&position).z,
-        from.z,
+        256,
         "the unit did not return to its own ground height"
     );
 }
 
-/// `ProcessDugIn` (`0x728F86`) and `ProcessPreDigOut 0x7298F0` call
-/// `MapClass::0x578080(&coord)` on every frame, so the surfacing target is the
-/// cell the object finished its travel over: a tunnel that goes under a ramp
-/// and comes up a level higher ends on that cell's ground, not on the height it
-/// dug in from.
+/// `ProcessPreDigOut 0x7298F0` calls `MapClass::0x578080(&coord)` on every
+/// frame (`0x72991D`), so the surfacing target is the cell the object finished
+/// its travel over: a tunnel that goes under a ramp and comes up a level higher
+/// ends on that cell's ground, not on the height it dug in from.
 #[test]
 fn surfacing_reads_the_destination_cells_ground() {
     let mut runtime = TunnelRuntime::constructed();
@@ -264,7 +262,7 @@ fn surfacing_reads_the_destination_cells_ground() {
     }
 
     assert_eq!(runtime.state(), TunnelState::Idle);
-    assert_eq!(lowest, UNDERGROUND_Z, "the flat entry sets the sink floor");
+    assert_eq!(lowest, UNDERGROUND_Z, "the shared sink plane");
     assert_eq!(
         position_world(&position).z,
         256,
@@ -273,8 +271,8 @@ fn surfacing_reads_the_destination_cells_ground() {
 }
 
 /// The mirror case: a tunnel dug in on a raised cell and surfacing over flat
-/// ground ends at zero. The sink floor still comes from the entry cell's
-/// ground; only the surfacing target moves with the destination.
+/// ground ends at zero. The sink runs to the shared `0xFFFFFF00` plane; only the
+/// surfacing target follows the destination cell.
 #[test]
 fn surfacing_over_a_flat_cell_ends_at_ground_level() {
     let mut runtime = TunnelRuntime::constructed();

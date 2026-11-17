@@ -301,10 +301,11 @@ impl Simulation {
 
     /// TunnelLocomotionClass::Process `0x728E30` for one object. The dig timer
     /// divides by the type's `Speed=` (`GetType()->+0x71c`, read in
-    /// `ProcessPreDigIn 0x7291F0`). `ProcessDugIn` (`0x728F86`) and
-    /// `ProcessPreDigOut 0x7298F0` read the ground under the object's current
-    /// coordinate with `MapClass::0x578080` every frame, so the tunnel is handed
-    /// the same canonical cell query the other movers build.
+    /// `ProcessPreDigIn 0x7291F0`). `ProcessPreDigOut 0x7298F0` reads the ground
+    /// under the object's current coordinate with `MapClass::0x578080` every
+    /// frame (`0x72991D`), so the tunnel is handed the same canonical cell query
+    /// the other movers build. `ProcessDugIn` needs none: it sinks to the
+    /// absolute `0xFFFFFF00` plane.
     fn process_tunnel_locomotor(
         &mut self,
         id: u64,
