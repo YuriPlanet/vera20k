@@ -476,6 +476,107 @@ fn unacknowledged_relay_leave_releases_the_route_after_bounded_attempts() {
         .unwrap();
 }
 
+/// `ordered_relay` once a second source's Ready has started its match and the
+/// game has sent its first UPLINK at bucket 20, so the I/O worker owes the
+/// relay a heartbeat 250 ms later (spec §6.6). The relay socket reads nothing.
+fn started_relay() -> (UdpSocket, LanUdpTransport) {
+    use vera20k_relay_protocol::{
+        ClientSession, MAX_DATAGRAM, SecretKey, ServerEvent, Ticket, derive_packet_key,
+    };
+
+    let (socket, mut server, mut wire, _, _) = ordered_relay();
+    let key = SecretKey::new([42; 32]);
+    let ticket = Ticket {
+        room: [11; 16],
+        source: 1,
+        expires: 1200,
+        nonce: [2; 16],
+        player: [2; 16],
+        generation: 1,
+    }
+    .sign(&key)
+    .unwrap();
+    let packet_key = *derive_packet_key(&key, &ticket).expose_for_https();
+    let mut other = ClientSession::new(&ticket, packet_key, [17; 32]).unwrap();
+    let other_address = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 9);
+    let certificate = wire.ordering_certificate().unwrap();
+    let mut bytes = Vec::new();
+    other.probe_at(0, &mut bytes).unwrap();
+    let challenge = server.process_at(other_address, &bytes, 1000, 0).unwrap();
+    let ServerEvent::Challenge(cookie) = other.receive_at(&challenge[0].bytes, 0).unwrap() else {
+        panic!("challenge");
+    };
+    other.confirm_at(cookie, 0, &mut bytes).unwrap();
+    for reply in server.process_at(other_address, &bytes, 1000, 0).unwrap() {
+        other.receive_at(&reply.bytes, 0).unwrap();
+    }
+    other
+        .configure_ordering_at(&certificate, [7; 32], 0, &mut bytes)
+        .unwrap();
+    server.process_at(other_address, &bytes, 1000, 0).unwrap();
+    // The start is due 200 ms after both were ready; the STATUS answering
+    // the next Ready reports it.
+    wire.service(19);
+    relay_datagrams(&socket);
+    wire.configure_ordering([7; 32]).unwrap();
+    let mut datagram = [0; MAX_DATAGRAM + 1];
+    let (length, SocketAddr::V4(source)) = socket.recv_from(&mut datagram).unwrap() else {
+        panic!("IPv4");
+    };
+    for output in server
+        .process_at(source, &datagram[..length], 1000, 304)
+        .unwrap()
+    {
+        if output.endpoint == source {
+            socket.send_to(&output.bytes, output.endpoint).unwrap();
+        }
+    }
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !wire.poll_uplink().unwrap() {
+        wire.service(20);
+        assert!(Instant::now() < deadline, "the match did not start");
+        std::thread::yield_now();
+    }
+    relay_datagrams(&socket);
+    (socket, wire)
+}
+
+/// What reached the relay, waiting 100 ms for the last of it.
+fn relay_datagrams(socket: &UdpSocket) -> usize {
+    let mut datagram = [0; vera20k_relay_protocol::MAX_DATAGRAM + 1];
+    socket
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap();
+    let count = std::iter::from_fn(|| socket.recv_from(&mut datagram).ok()).count();
+    socket
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    count
+}
+
+#[test]
+fn io_worker_answers_for_a_long_frame_but_not_a_stalled_or_crashed_game() {
+    let (socket, mut wire) = started_relay();
+    // The game thread last serviced at bucket 20. A one-second frame later
+    // the worker heartbeats (the 2-second keepalive is not due).
+    wire.lock().background_pass(80, false);
+    assert_eq!(relay_datagrams(&socket), 1, "the UPLINK heartbeat");
+    // A bucket past 60 seconds the game counts as gone: the keepalive the
+    // unanswered route now owes goes unsent too.
+    let stalled = 21 + GAME_STALL_TICKS as u32;
+    wire.lock().background_pass(stalled, false);
+    assert_eq!(relay_datagrams(&socket), 0);
+    // The game services again (its own pass probes): the worker's next
+    // keepalive, a second later, goes out.
+    wire.service(stalled);
+    relay_datagrams(&socket);
+    wire.lock().background_pass(stalled + 62, false);
+    assert_eq!(relay_datagrams(&socket), 1, "heard again");
+    // A crash silences the next one.
+    wire.lock().background_pass(stalled + 124, true);
+    assert_eq!(relay_datagrams(&socket), 0);
+}
+
 #[test]
 fn raw_send_errors_preserve_owned_bytes_destination_and_fifo_order() {
     let mut queue = UdpSendQueue::default();

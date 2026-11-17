@@ -90,6 +90,24 @@ const RELAY_LEAVE_ATTEMPTS: u16 = 235;
 // released, in 16 ms service buckets: the relay counts from this game's last
 // packet and the game from the relay's last answer.
 const RELAY_ABSENT_TICKS: i32 = ((ABSENT_MS + 15_000) / 16) as i32;
+// VERA: the I/O worker answers for a game thread held up by a long frame or
+// a loading step, but not for one that is gone. Once the game thread has not
+// called `service` for 60 seconds, in 16 ms worker buckets, the worker leaves
+// a live relay route alone, so the relay hears the silence a closed game
+// leaves ("not responding" after 10 more seconds, removal after `ABSENT_MS`).
+// Ordinary frames and loading steps service far more often; a frozen loader
+// is still dropped by the relay no sooner than 60 seconds after this.
+const GAME_STALL_TICKS: i32 = (60_000 / 16) as i32;
+// Set once a panic ends the game (`stop_io_after_crash`).
+static GAME_CRASHED: AtomicBool = AtomicBool::new(false);
+
+/// The game is ending with a panic: from now on no I/O worker sends or
+/// receives for it. The crash box can stay up for as long as nobody clicks
+/// it; until then the relay and LAN peers hear the silence of a closed game.
+/// No Leave goes out, so the launcher can still resume the match.
+pub fn stop_io_after_crash() {
+    GAME_CRASHED.store(true, Ordering::Release);
+}
 
 /// One admitted route progresses from the existing global loading channel to
 /// private gameplay. Loading peers may finish on different service passes.
@@ -352,11 +370,15 @@ struct UdpIo {
     // App play runs the IO pump: the relay session then times datagrams to
     // the millisecond. Manual-clock consumers time them by `service`.
     precise_relay_clock: bool,
+    // The game thread's last `service`, on the worker's clock when it runs
+    // one (`GAME_STALL_TICKS`).
+    game_serviced: u32,
 }
 
 struct IoPump {
     stop: Arc<AtomicBool>,
     worker: JoinHandle<()>,
+    wall_bucket: fn() -> u32,
 }
 
 /// A short read of the existing I/O owner. Do not hold this guard across a
@@ -447,6 +469,7 @@ impl LanUdpTransport {
             let mut io = self.lock();
             io.pending_report = UdpServiceReport::default();
             io.use_precise_relay_clock();
+            io.game_serviced = wall_bucket();
         }
         let io = Arc::clone(&self.io);
         let stop = Arc::new(AtomicBool::new(false));
@@ -462,15 +485,18 @@ impl LanUdpTransport {
                         }
                         // Sampling before lock acquisition could time packets
                         // with a stale frame-start sample after contention.
-                        let report = io.service(wall_bucket(), IO_PUMP_RECEIVE_BUDGET);
-                        io.pending_report.accumulate(report);
+                        io.background_pass(wall_bucket(), GAME_CRASHED.load(Ordering::Acquire));
                     }
                     // Scheduling request only; spurious/late wakes still
                     // recheck stop and resample the clock on the next pass.
                     thread::park_timeout(IO_PUMP_INTERVAL);
                 }
             })?;
-        self.pump = Some(IoPump { stop, worker });
+        self.pump = Some(IoPump {
+            stop,
+            worker,
+            wall_bucket,
+        });
         Ok(())
     }
 
@@ -931,13 +957,19 @@ impl LanUdpTransport {
     /// In worker mode, the caller's now may predate lengthy Logic/render work.
     /// Never apply it to I/O state. Wake the sole physical service owner and
     /// consume its aggregate once; manual-clock consumers retain exact service.
+    /// Each call also tells the worker the game thread is still there.
     pub fn service(&mut self, now_ticks: u32) -> UdpServiceReport {
-        if self.pump.is_some() {
-            self.wake();
-            std::mem::take(&mut self.lock().pending_report)
-        } else {
-            self.lock().service(now_ticks, usize::MAX)
+        let wall_bucket = self.pump.as_ref().map(|pump| pump.wall_bucket);
+        let mut io = self.lock();
+        // Sampled under the lock, as the worker samples its own.
+        io.game_serviced = wall_bucket.map_or(now_ticks, |bucket| bucket());
+        if wall_bucket.is_none() {
+            return io.service(now_ticks, usize::MAX);
         }
+        let report = std::mem::take(&mut io.pending_report);
+        drop(io);
+        self.wake();
+        report
     }
 
     pub fn pop_received(&mut self) -> Option<ReceivedMessage> {
@@ -1115,6 +1147,7 @@ impl UdpIo {
             lan_scope: None,
             pending_report: UdpServiceReport::default(),
             precise_relay_clock: false,
+            game_serviced: 0,
         })
     }
 
@@ -1463,6 +1496,28 @@ impl UdpIo {
         }
     }
 
+    /// One pass of the I/O worker (`start_io_pump`) at its own `now_ticks`.
+    /// After a crash it does nothing; while the game thread has not serviced
+    /// a live relay route for `GAME_STALL_TICKS` it leaves that route alone,
+    /// keepalive and UPLINK heartbeat included, until the game services again.
+    /// A route being retired keeps its Leave retries, and a LAN transport
+    /// keeps its worker: a hidden lobby or room is serviced only from here.
+    fn background_pass(&mut self, now_ticks: u32, crashed: bool) {
+        // Signed, as `absent`: a game sample a bucket newer is no stall. A
+        // hang across the 2^28-bucket wrap (49.7 days of uptime) goes unseen
+        // until the game services again.
+        let stalled = self
+            .relay
+            .as_ref()
+            .is_some_and(|route| route.retiring.is_none())
+            && now_ticks.wrapping_sub(self.game_serviced) as i32 > GAME_STALL_TICKS;
+        if crashed || stalled {
+            return;
+        }
+        let report = self.service(now_ticks, IO_PUMP_RECEIVE_BUDGET);
+        self.pending_report.accumulate(report);
+    }
+
     ///541820 drains received datagrams before servicing private connections.
     /// Ordinary private/global ACKs use primary UDP7B3C5B even when received on
     /// the alternate socket.48C2CB/53FEC3 select alternate only for manager+4C,
@@ -1573,6 +1628,7 @@ impl UdpIo {
                 }
                 // The IO thread's UPLINK heartbeat while the game thread is
                 // held up (spec §6.6); the session knows when one is due.
+                // A game gone for good sends none (`background_pass`).
                 let now_ms = route.now_ms();
                 if route.renewing.is_none()
                     && route.session.heartbeat_uplink(now_ms, &mut route.encoded)
