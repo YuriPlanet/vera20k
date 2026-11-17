@@ -715,6 +715,14 @@ impl App {
         (frame > 0).then_some((frame, frontier))
     }
 
+    /// The installed online transport still needs its RTT, load and Ready
+    /// serviced before the hidden in-game loop can take over.
+    pub(super) fn online_start_runs_while_hidden(state: &AppState) -> bool {
+        state.platform.window_hidden
+            && state.match_state.live_network.is_none()
+            && crate::app::lan_service::has_online_relay_route(state)
+    }
+
     /// Does a hidden window still have a running match to service? True while
     /// in-game and the configured focus freeze is not holding the world; a
     /// tactical capture never reaches the hidden service loop.
