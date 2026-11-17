@@ -115,6 +115,10 @@ enum PoseTiltKey {
     Shadow {
         body_offset: [i32; 2],
         parts: Vec<ShadowPartKey>,
+        /// The Phobos `JumpjetTilt` roll/pitch the shadow inherits, bit-keyed;
+        /// `None` keeps the stock stable stencil. A tilted shadow must not
+        /// reuse an untilted frame-local slot.
+        tilt: Option<[u32; 2]>,
     },
 }
 
@@ -272,6 +276,12 @@ impl VxlPoseFrameCache {
         body_offset: [i32; 2],
         parts: &[crate::render::unit_atlas::UnitShadowPart],
     ) -> Option<UnitSpriteEntry> {
+        let shadow_tilt = parts.iter().find_map(|part| part.tilt);
+        let tilt_key = match shadow_tilt {
+            Some(PoseTilt::JumpjetTilt(angles)) => Some(angles.map(f32::to_bits)),
+            Some(_) => unreachable!("the shadow only inherits the JumpjetTilt arm"),
+            None => None,
+        };
         let pose_key = PoseTiltKey::Shadow {
             body_offset,
             parts: parts
@@ -286,6 +296,7 @@ impl VxlPoseFrameCache {
                     )
                 })
                 .collect(),
+            tilt: tilt_key,
         };
         let pose_key = (pose_key, false);
         if let Some(entry) = self

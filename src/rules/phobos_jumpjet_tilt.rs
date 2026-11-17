@@ -27,11 +27,20 @@
 //!
 //! ## Residuals
 //!
-//! The shadow arm of the same feature (`UnitClass_DrawAsVXL_Shadow` hook
-//! `0x73C47A`, `Ext/TechnoType/Hooks.MatrixOp.cpp:729-773`) is not ported:
-//! VERA's lifted-Unit shadow pose carries no rocking rotation yet, so a
-//! JumpjetTilt body casts another pose's shadow. Visual only; the body draw
-//! and the simulation are unaffected.
+//! The shadow arm (`UnitClass_DrawAsVXL_Shadow` hook `0x73C47A`,
+//! `Ext/TechnoType/Hooks.MatrixOp.cpp:729-773`) now reuses the body's
+//! already-resolved `JumpjetTilt` pose: the lifted shadow pose/part/pose-key
+//! carry the same roll/pitch, and the shadow matrix arm reuses the crash
+//! rotation product. The shadow keeps its own `Shadow_Point` anchor; the other
+//! locomotor poses (`Jumpjet` crash rocking, `FlyNormal`, `Rocket`) keep the
+//! stock shadow policy.
+//!
+//! Still visual-only: the frame-local shadow template is still sampled from
+//! the baked untilted stencil — no runtime caller yet hands the shadow render
+//! params the tilted `body_tilt`, so the Fresh/Retained template is not
+//! reprojected frame-by-frame through the tilt matrix, and the high-flight
+//! unmasked entry is not tilted. The body draw and the simulation are
+//! unaffected.
 //!
 //! ## Keys
 //!

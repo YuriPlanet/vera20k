@@ -151,6 +151,248 @@ fn phobos_jumpjet_tilt_poses_only_an_airborne_enabled_unit() {
     assert_eq!(live_pose(&sim), Some(PoseTilt::Jumpjet([0.4, 0.3])));
 }
 
+/// Phobos `UnitClass_DrawAsVXL_Shadow` (hook `0x73C47A`,
+/// `Ext/TechnoType/Hooks.MatrixOp.cpp:729-773`): an airborne, moving
+/// `JumpjetTilt=` jumpjet's shadow inherits the body's roll/pitch pose. The
+/// shadow anchor stays its own `Shadow_Point`; the tilt does not enter the
+/// baked atlas stencil key.
+#[cfg(feature = "phobos")]
+#[test]
+fn jumpjet_tilt_shadow_uses_the_body_tilt_pose() {
+    use crate::render::foot_depth::DepthCell;
+    use crate::render::unit_atlas::PoseTilt;
+    use crate::render::unit_shadow::{UnitShadowContext, UnitShadowPose};
+
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[AudioVisual]\nJumpjetTilt=yes\n\
+         [VehicleTypes]\n0=TILT\n\
+         [TILT]\nStrength=100\nLocomotor={92612C46-F71F-11D1-AC9F-006008055BB5}\n",
+    ))
+    .expect("jumpjet tilt rules");
+    let mut sim = Simulation::new();
+    let tilted = sim
+        .spawn_object_limbo_at_height("TILT", "Americans", 10, 10, 0, 100, &rules)
+        .unwrap_or_else(|| panic!("build TILT"));
+    let object = rules.object("TILT").expect("the spawned type");
+    sim.entities_mut_for_test()
+        .get_mut(tilted)
+        .unwrap()
+        .locomotor =
+        Some(crate::sim::movement::locomotor::LocomotorState::from_object_type(object, 0));
+    let locomotor = sim
+        .entities_mut_for_test()
+        .get_mut(tilted)
+        .unwrap()
+        .locomotor
+        .as_mut()
+        .unwrap();
+    let mut saved = serde_json::to_value(&*locomotor).unwrap();
+    let runtime = &mut saved["runtime_payload"]["Jumpjet"];
+    runtime["phase"] = serde_json::json!(1);
+    let flight = &mut runtime["flight"];
+    flight["current_speed_bits"] = serde_json::json!(32.0_f64.to_bits());
+    flight["facing"]["current"] = serde_json::json!(0x4000_u16);
+    flight["facing"]["prev"] = serde_json::json!(0_u16);
+    flight["facing"]["start_frame"] = serde_json::json!(0_u32);
+    flight["facing"]["duration_frames"] = serde_json::json!(10_u16);
+    flight["facing"]["rot_per_frame"] = serde_json::json!(0x0400_u16);
+    *locomotor = serde_json::from_value(saved).unwrap();
+
+    let entity = sim.entities().get(tilted).unwrap();
+    let body_tilt = body_pose_with_angles(
+        entity,
+        EntityDrawBand::Top,
+        object.tilt_crash_jumpjet,
+        BodyPoseContext {
+            angles: [0.0; 2],
+            pitch: 0.0,
+            object_type: Some(object),
+            bank_direction: None,
+            jumpjet_tilt: object
+                .phobos_jumpjet_tilt
+                .resolve(&rules.phobos_jumpjet_tilt),
+            binary_frame: sim.session().binary_frame(),
+        },
+    )
+    .expect("airborne enabled jumpjet poses");
+    // The shadow reuses the body's already-resolved pose; the gate derives it
+    // from the same `BodyDraw` the body draw settled on.
+    let shadow_tilt = shadow_tilt_for_body(&BodyDraw::Pose(body_tilt));
+    assert_eq!(shadow_tilt, Some(body_tilt));
+    assert!(
+        matches!(shadow_tilt, Some(PoseTilt::JumpjetTilt([sideways, forwards]))
+            if sideways.to_bits() == 0x3e49_0fdb && forwards.to_bits() == 0x3ec9_0fdb),
+        "{shadow_tilt:?}"
+    );
+
+    let shadow_pose = |sim: &Simulation| {
+        let entity = sim.entities().get(tilted).unwrap();
+        let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+        crate::render::unit_shadow::pose(
+            UnitShadowContext {
+                xyz: [
+                    xy[0],
+                    xy[1],
+                    crate::sim::movement::ground_pose::object_world_z_leptons(entity, None),
+                ],
+                on_bridge: entity.on_bridge(),
+                marked: entity.lifecycle.cell_marked(),
+                primary_facing: entity.body_facing_current(sim.session().binary_frame()),
+            },
+            |_| DepthCell::default(),
+        )
+        .unwrap()
+    };
+    let stock = shadow_pose(&sim);
+    let mut shadow: UnitShadowPose = shadow_pose(&sim);
+    shadow.inherit_tilt(shadow_tilt);
+    assert_eq!(
+        shadow.anchor, stock.anchor,
+        "the shadow keeps its own ground anchor"
+    );
+    assert_eq!(shadow.tilt, Some(body_tilt));
+    // The baked atlas stencil key keeps the stock facing/slope/frame identity;
+    // the tilt lives on the pose/matrix, not the cached key.
+    assert_eq!(shadow.key("TILT"), stock.key("TILT"));
+}
+
+/// A grounded, stopped, disabled or non-`JumpjetTilt` body keeps the stock
+/// shadow: no tilt on the shadow pose, and the existing Stable/slope keying.
+#[cfg(feature = "phobos")]
+#[test]
+fn jumpjet_tilt_shadow_stays_stock_when_the_body_does_not_tilt() {
+    use crate::render::foot_depth::DepthCell;
+    use crate::render::unit_atlas::PoseTilt;
+    use crate::render::unit_shadow::UnitShadowContext;
+
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[AudioVisual]\nJumpjetTilt=yes\n\
+         [VehicleTypes]\n0=TILT\n1=NOTILT\n\
+         [TILT]\nStrength=100\nLocomotor={92612C46-F71F-11D1-AC9F-006008055BB5}\n\
+         [NOTILT]\nStrength=100\nJumpjetTilt=no\n\
+         Locomotor={92612C46-F71F-11D1-AC9F-006008055BB5}\n",
+    ))
+    .expect("jumpjet tilt rules");
+    let mut sim = Simulation::new();
+    let spawn = |sim: &mut Simulation, type_id: &str| {
+        sim.spawn_object_limbo_at_height(type_id, "Americans", 10, 10, 0, 100, &rules)
+            .unwrap_or_else(|| panic!("build {type_id}"))
+    };
+    let tilted = spawn(&mut sim, "TILT");
+    let disabled = spawn(&mut sim, "NOTILT");
+    for (id, name) in [(tilted, "TILT"), (disabled, "NOTILT")] {
+        let object = rules.object(name).expect("the spawned type");
+        sim.entities_mut_for_test().get_mut(id).unwrap().locomotor =
+            Some(crate::sim::movement::locomotor::LocomotorState::from_object_type(object, 0));
+    }
+    let set_runtime = |sim: &mut Simulation, id: u64, phase: i32, current_speed: f64| {
+        let locomotor = sim
+            .entities_mut_for_test()
+            .get_mut(id)
+            .unwrap()
+            .locomotor
+            .as_mut()
+            .unwrap();
+        let mut saved = serde_json::to_value(&*locomotor).unwrap();
+        let runtime = &mut saved["runtime_payload"]["Jumpjet"];
+        runtime["phase"] = serde_json::json!(phase);
+        let flight = &mut runtime["flight"];
+        flight["current_speed_bits"] = serde_json::json!(current_speed.to_bits());
+        flight["facing"]["current"] = serde_json::json!(0x4000_u16);
+        flight["facing"]["prev"] = serde_json::json!(0_u16);
+        flight["facing"]["start_frame"] = serde_json::json!(0_u32);
+        flight["facing"]["duration_frames"] = serde_json::json!(10_u16);
+        flight["facing"]["rot_per_frame"] = serde_json::json!(0x0400_u16);
+        *locomotor = serde_json::from_value(saved).unwrap();
+    };
+    let body_pose = |sim: &Simulation, id: u64| {
+        let entity = sim.entities().get(id).unwrap();
+        let object = rules
+            .object(sim.interner().resolve(entity.type_ref()))
+            .expect("the spawned type");
+        body_pose_with_angles(
+            entity,
+            EntityDrawBand::Top,
+            object.tilt_crash_jumpjet,
+            BodyPoseContext {
+                angles: [0.0; 2],
+                pitch: 0.0,
+                object_type: Some(object),
+                bank_direction: None,
+                jumpjet_tilt: object
+                    .phobos_jumpjet_tilt
+                    .resolve(&rules.phobos_jumpjet_tilt),
+                binary_frame: sim.session().binary_frame(),
+            },
+        )
+    };
+
+    // Grounded, stopped and the disabled type resolve no body pose.
+    set_runtime(&mut sim, tilted, 0, 32.0);
+    assert_eq!(
+        body_pose(&sim, tilted),
+        None,
+        "grounded draws the plain matrix"
+    );
+    set_runtime(&mut sim, tilted, 1, 0.0);
+    assert_eq!(
+        body_pose(&sim, tilted),
+        None,
+        "CurrentSpeed must exceed zero"
+    );
+    set_runtime(&mut sim, disabled, 1, 32.0);
+    assert_eq!(
+        body_pose(&sim, disabled),
+        None,
+        "JumpjetTilt=no keeps the stock draw"
+    );
+
+    // The gate maps every other locomotor pose and the composite/turret body
+    // to the stock shadow; only `JumpjetTilt` passes through.
+    assert_eq!(shadow_tilt_for_body(&BodyDraw::Composite), None);
+    assert_eq!(
+        shadow_tilt_for_body(&BodyDraw::Turret {
+            turret: 0,
+            barrel_elevation: 0
+        }),
+        None
+    );
+    assert_eq!(
+        shadow_tilt_for_body(&BodyDraw::Pose(PoseTilt::Jumpjet([0.4, 0.3]))),
+        None
+    );
+    assert_eq!(
+        shadow_tilt_for_body(&BodyDraw::Pose(PoseTilt::FlyNormal {
+            pitch: 0.1,
+            roll: 0.2
+        })),
+        None
+    );
+    assert_eq!(
+        shadow_tilt_for_body(&BodyDraw::Pose(PoseTilt::Rocket(0.3))),
+        None
+    );
+
+    let entity = sim.entities().get(disabled).unwrap();
+    let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+    let shadow = crate::render::unit_shadow::pose(
+        UnitShadowContext {
+            xyz: [
+                xy[0],
+                xy[1],
+                crate::sim::movement::ground_pose::object_world_z_leptons(entity, None),
+            ],
+            on_bridge: entity.on_bridge(),
+            marked: entity.lifecycle.cell_marked(),
+            primary_facing: entity.body_facing_current(sim.session().binary_frame()),
+        },
+        |_| DepthCell::default(),
+    )
+    .unwrap();
+    assert_eq!(shadow.tilt, None);
+    assert_eq!(shadow.key("NOTILT").slope_type, shadow.slope);
+}
+
 #[test]
 fn normal_fly_pose_uses_strict_pitch_speed_gate_and_secondary_turn_sign() {
     use crate::rules::retail_ini_fixture::retail_battle_rules;

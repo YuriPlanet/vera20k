@@ -24,7 +24,8 @@ use crate::render::native_z::{
 use crate::render::sprite_atlas::{HARVEST_OVERLAY_IMAGE, ShpPaletteContext, ShpSpriteKey};
 use crate::render::tactical_draw_plan::RenderZPolicy;
 use crate::render::unit_atlas::{
-    UnitSpriteEntry, UnitSpriteKey, VxlLayer, canonical_turret_facing, canonical_unit_facing,
+    PoseTilt, UnitSpriteEntry, UnitSpriteKey, VxlLayer, canonical_turret_facing,
+    canonical_unit_facing,
 };
 use crate::rules::house_colors::{self, HouseColorIndex};
 use crate::rules::voxel_frame_catalog::{
@@ -610,6 +611,9 @@ pub(crate) fn unit_visitor<'a>(
             } else if matches!(body, BodyDraw::Pose(_)) {
                 body = BodyDraw::Composite;
             }
+            // The shadow inherits this same resolved pose; see
+            // [`shadow_tilt_for_body`]. The shadow keeps its own ground anchor.
+            let shadow_tilt = shadow_tilt_for_body(&body);
             let no_shadow = state
                 .rules()
                 .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules))
@@ -932,6 +936,7 @@ pub(crate) fn unit_visitor<'a>(
                             no_shadow,
                             slope_state,
                             band,
+                            shadow_tilt,
                             [(entry, texture_source, [0.0, 0.0])],
                         );
                     if !native_shadow {
@@ -1023,6 +1028,7 @@ pub(crate) fn unit_visitor<'a>(
                 entity,
                 type_str,
                 [center_x, center_y],
+                shadow_tilt,
                 no_shadow,
                 draw_state,
                 band,
@@ -1114,6 +1120,20 @@ enum BodyDraw {
     Turret { turret: u16, barrel_elevation: u16 },
     /// One composite atlas sprite.
     Composite,
+}
+
+/// The Phobos `JumpjetTilt` pose the shadow matrix inherits from this frame's
+/// body draw (`UnitClass_DrawAsVXL_Shadow` hook `0x73C47A`,
+/// `Ext/TechnoType/Hooks.MatrixOp.cpp:729-773`). Only the airborne
+/// `JumpjetTilt` arm rotates the shadow; the grounded crash-rocking
+/// `Jumpjet` pose and the `FlyNormal`/`Rocket` poses keep the stock shadow
+/// policy. Reuses the body's already-resolved pose rather than recomputing
+/// speed, acceleration or facing in the shadow path.
+fn shadow_tilt_for_body(body: &BodyDraw) -> Option<PoseTilt> {
+    match body {
+        BodyDraw::Pose(PoseTilt::JumpjetTilt(angles)) => Some(PoseTilt::JumpjetTilt(*angles)),
+        _ => None,
+    }
 }
 
 /// Unit DrawVoxelBody73B4DA..73B50E and `AircraftClass::Draw_It`
@@ -1862,6 +1882,7 @@ fn prepare_unit_shadow(
     no_shadow: bool,
     slope: UnitRenderSlopeState,
     band: EntityDrawBand,
+    shadow_tilt: Option<PoseTilt>,
     parts: impl IntoIterator<Item = (UnitSpriteEntry, UnitTextureSource, [f32; 2])>,
 ) -> bool {
     if !native_shadow_caller_eligible(entity, no_shadow, slope, band) {
@@ -1876,7 +1897,8 @@ fn prepare_unit_shadow(
                     128 + entry.offset_x as i32 + offset[0] as i32,
                     128 + entry.offset_y as i32 + offset[1] as i32,
                 ],
-                posed: !matches!(source, UnitTextureSource::Stable(_)),
+                posed: !matches!(source, UnitTextureSource::Stable(_)) || shadow_tilt.is_some(),
+                tilt: shadow_tilt,
             },
         )
         .collect();
@@ -2132,9 +2154,10 @@ fn lifted_unit_shadow_pose(
     entity: &crate::sim::game_entity::GameEntity,
     terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
     binary_frame: u32,
+    shadow_tilt: Option<PoseTilt>,
 ) -> Option<crate::render::unit_shadow::UnitShadowPose> {
     let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
-    crate::render::unit_shadow::pose(
+    let mut pose = crate::render::unit_shadow::pose(
         crate::render::unit_shadow::UnitShadowContext {
             xyz: [
                 xy[0],
@@ -2146,7 +2169,11 @@ fn lifted_unit_shadow_pose(
             primary_facing: entity.body_facing_current(binary_frame),
         },
         |coord| super::foot_depth::depth_cell(terrain, None, None, coord),
-    )
+    )?;
+    // The anchor above is the shadow's own `Shadow_Point`; only the stencil
+    // matrix/key gains the body tilt.
+    pose.inherit_tilt(shadow_tilt);
+    Some(pose)
 }
 
 /// The original Unit suffix follows stable, split-gun and posed bodies alike.
@@ -2159,6 +2186,7 @@ fn emit_lifted_unit_shadow(
     entity: &crate::sim::game_entity::GameEntity,
     type_id: &str,
     body_anchor: [f32; 2],
+    shadow_tilt: Option<PoseTilt>,
     no_shadow: bool,
     draw_state: DrawState,
     band: EntityDrawBand,
@@ -2178,7 +2206,8 @@ fn emit_lifted_unit_shadow(
     let Some(terrain) = view.resolved_terrain() else {
         return;
     };
-    let Some(mut pose) = lifted_unit_shadow_pose(entity, terrain, view.session().binary_frame())
+    let Some(mut pose) =
+        lifted_unit_shadow_pose(entity, terrain, view.session().binary_frame(), shadow_tilt)
     else {
         return;
     };
@@ -2253,6 +2282,7 @@ fn emit_lifted_unit_shadow(
                         128 + (sprite.position[1] - body_anchor[1]) as i32,
                     ],
                     posed,
+                    tilt: shadow_tilt,
                 })
             })
             .collect();
@@ -2803,6 +2833,7 @@ fn emit_turret_unit_sprites(
             no_shadow,
             slope_state,
             band,
+            None,
             body_entry_opt
                 .into_iter()
                 .map(|(entry, source)| (entry, source, [0.0, 0.0]))

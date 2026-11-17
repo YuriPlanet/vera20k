@@ -187,6 +187,7 @@ fn jumpjet_native_masks_keep_ground_flight_and_frame_payloads_separate() {
         entry: *atlas.get(&body_key).unwrap(),
         point: [0, 0],
         posed: false,
+        tilt: None,
     }];
     let mut poses = VxlPoseFrameCache::default();
     // The body page fills first: shadow upload must select its own later page.
@@ -250,6 +251,7 @@ fn jumpjet_native_masks_keep_ground_flight_and_frame_payloads_separate() {
         entry: opaque,
         point: [0, 0],
         posed: true,
+        tilt: None,
     }];
     let masked = poses
         .render_unit_shadow(&atlas, &key, [0, 15], &posed)
