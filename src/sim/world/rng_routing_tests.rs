@@ -239,7 +239,7 @@ fn network_start_discards_local_mapgen_history() {
 }
 
 #[test]
-fn network_bridge_rng_is_checked_before_its_next_overlay_write() {
+fn network_state_hash_includes_the_mapgen_cursor() {
     let mut sim = Simulation::with_seed(42);
     sim.install_session_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
     let before = sim.state_hash();

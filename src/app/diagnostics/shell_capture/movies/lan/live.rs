@@ -611,8 +611,8 @@ impl LiveLanCapture {
     }
 
     /// In setup the guest picks Observer in its Side list: VERA's room
-    /// moves it to the open spectator row. Then it picks a side, and the
-    /// room seats it again.
+    /// moves it to the open spectator row. Then it picks a side, or in a room
+    /// with teams presses a team's Join, and the room seats it again.
     fn switch_sides(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         if self.target != LanTarget::LiveGuest {
             return Ok(());
@@ -649,6 +649,29 @@ impl LiveLanCapture {
             .find(|value| (*value == -3) != local.is_observer())
             .filter(|_| view.enabled(control));
         let Some(value) = value else {
+            // A spectator's Side list in a room with teams offers only
+            // Observer; it plays again through a team header's Join.
+            let join = view.headers.iter().position(|header| {
+                header.as_ref().is_some_and(|header| {
+                    matches!(
+                        header.group,
+                        crate::ui::multiplayer_setup::SetupGroup::Team(_)
+                            | crate::ui::multiplayer_setup::SetupGroup::Players
+                    ) && header.join.is_some()
+                        && header.join_enabled
+                })
+            });
+            if local.is_observer()
+                && let Some(page_row) = join
+            {
+                let control = crate::ui::multiplayer_setup::team_join(page_row);
+                setup::apply_action(state, SetupAction::Join { control });
+                self.sides += 1;
+                self.event(
+                    frame,
+                    &format!("guest watches from row {row}; presses Join"),
+                );
+            }
             return Ok(());
         };
         setup::apply_action(state, SetupAction::Select { control, value });
@@ -1279,8 +1302,12 @@ impl LiveLanCapture {
         if let Some(ai) = self.ai.as_mut() {
             ai.observe(state)?;
         }
+        // While a tick holds the world on the simulation thread, `runtime()`
+        // is the presentation copy, which holds no objects
+        // (`Simulation::presentation_copy`): look again once it is home.
         if self.battle.is_none()
             && let Some(actor) = self.actor
+            && !state.match_state.sim_runtime.is_lent()
         {
             let entity = simulation
                 .entities()
@@ -1813,7 +1840,7 @@ fn terminal_simulation_receipt(state: &AppState) -> Result<Value> {
     Ok(
         json!({"tick":tick,"native_frame":sim.session().binary_frame(),
         "hash":hash,"recorded_hashes":hashes,"score_finalized":true,
-        "state_hash_owners":sim.state_hash_owners()}),
+        "state_hash_owners":sim.state_hash_owners().to_vec()}),
     )
 }
 
