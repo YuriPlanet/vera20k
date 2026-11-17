@@ -92,7 +92,7 @@ fn run(cli: Cli) -> Result<(), ErrorReport> {
                 to_json(&serde_json::json!({
                     "ini_roots": manager.ini_roots(), "sources": sources,
                     "scope": if cli.all_mixes { "tooling_all_mixes" } else { "game_archive_stack" },
-                    "limits": "Root selection only; this is not MO gameplay acceptance or arbitrary game MIX mounting."
+                    "limits": "Root selection, plus MO's startup archive names under mo; this is not MO gameplay acceptance or arbitrary game MIX mounting."
                 }))
             );
         }

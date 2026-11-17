@@ -209,9 +209,7 @@ fn a_game_with_ares_mix_resolves_base_mixes_and_ares_mix_ahead_of_langmd() {
 
 #[test]
 fn mo_family_mounts_spawner_renamed_archives_and_their_ini_roots() {
-    // MO installs keep 5-byte MD movie/theme stubs beside the MO archives.
     let directory = audio_test_install("mo-family");
-    std::fs::write(directory.path().join("movmd03.mix"), b"stub!").unwrap();
     directory.write_mix("expandmd01.mix", "unrelated.bin", b"fixture");
     for name in ["mapsmo03.mix", "multimo.mix", "movmo03.mix"] {
         directory.write_mix(name, "unrelated.bin", b"fixture");

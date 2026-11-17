@@ -71,21 +71,6 @@ reads, so players whose theater INIs differ are refused before a match, and
 Quick Match names a theater INI that changes the retail one
 ([Networking](Networking.md)).
 
-### Archive names
-
-Mental Omega's spawner renames gamemd's startup archive names before the game
-opens them (`assets::asset_manager::ArchiveFamily`). An explicit
-`profile = "mo"` mounts those names: `expandmo99.mix` down to `expandmo00.mix`
-in place of the `expandmd` slots, then `mapsmo##.mix`, `multimo.mix`,
-`thememo.mix` and `movmo##.mix` (`MAPSMO*.MIX` and `MOVMO*.MIX` in CD mode).
-The master, cache, local, language, audio, conquer and cameo archives keep their
-YR names. `yr`, `auto` and `custom` keep the YR names: Auto probes the roots
-only after the archives are mounted, so it cannot choose the archives it
-probes, and an MO folder needs an explicit `mo`. Archive verbs of the `asset`
-tool take `--ini-profile mo` for the same names and do not read the host
-`[ini]`. The headless `headless_scenario::load_with_launch_and_ini` still
-mounts the YR names.
-
 Custom mode requires all three logical Rules/Art/AI basenames. Paths and
 wildcards are rejected; these names are resolved through the existing VFS, not
 arbitrary host file access. Overrides cannot be mixed with a preset. Explicit
@@ -109,6 +94,21 @@ configuration, not new gameplay state or a save-layout field.
 Process-source diagnostics retain the selected logical Rules/Art filenames with
 their frozen content hashes, rather than labelling MO/custom snapshots as
 `RULESMD.INI` / `ARTMD.INI`. They do not reopen sources after scenario rebuilds.
+
+### Archive names
+
+Mental Omega's spawner renames gamemd's startup archive names before the game
+opens them (`assets::asset_manager::ArchiveFamily`). An explicit
+`profile = "mo"` mounts those names: `expandmo99.mix` down to `expandmo00.mix`
+in place of the `expandmd` slots, then `mapsmo##.mix`, `multimo.mix`,
+`thememo.mix` and `movmo##.mix` (`MAPSMO*.MIX` and `MOVMO*.MIX` in CD mode).
+The master, cache, local, language, audio, conquer and cameo archives keep their
+YR names. `yr`, `auto` and `custom` keep the YR names: Auto probes the roots
+only after the archives are mounted, so it cannot choose the archives it
+probes, and an MO folder needs an explicit `mo`. Archive verbs of the `asset`
+tool take `--ini-profile mo` for the same names and do not read the host
+`[ini]`. The headless `headless_scenario::load_with_launch_and_ini` still
+mounts the YR names.
 
 ## Inspection
 

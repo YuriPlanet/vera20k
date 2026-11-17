@@ -445,15 +445,15 @@ const KNOWN_NESTED_MIX_NAMES: &[&str] = &[
 pub const MASTER_ARCHIVES: [&str; 2] = ["ra2md.mix", "ra2.mix"];
 
 /// Which startup archive names a launch mounts. Mental Omega's spawner
-/// `cncnet5mo.dll` overwrites gamemd's archive-name literals before startup
-/// (its `.patch` table), so they take their `MO` spelling: `EXPANDMD%02d.MIX`
-/// `0x82668C`, read by Init_Base_Mix_Files `0x005301A0`, and, read by
-/// Init_Mix_Files `0x00530460`, `MAPSMD%02d.MIX` `0x81C2EC`, `MAPSMD*.MIX`
-/// `0x82679C`, `MULTIMD.MIX` `0x81C284`, `THEMEMD.MIX` `0x81C24C` and the
-/// MOVMD names at `0x81C210`, `0x8266A0`, `0x8266B8`, `0x8266C4`, `0x8266D8`,
-/// `0x8266F0` and `0x826748`. The MOVIES names between them (`0x8266FC`,
-/// `0x826714`, `0x82672C`, `0x826738`) stay, as do the master, cache, local,
-/// audio, conquer and cameo archives.
+/// `cncnet5mo.dll` is reported to overwrite gamemd's archive-name literals
+/// before startup (its `.patch` table, not read here), so they take their `MO`
+/// spelling: `EXPANDMD%02d.MIX` `0x82668C`, read by Init_Base_Mix_Files
+/// `0x005301A0`, and, read by Init_Mix_Files `0x00530460`, `MAPSMD%02d.MIX`
+/// `0x81C2EC`, `MAPSMD*.MIX` `0x82679C`, `MULTIMD.MIX` `0x81C284`,
+/// `THEMEMD.MIX` `0x81C24C` and the MOVMD names at `0x81C210`, `0x8266A0`,
+/// `0x8266B8`, `0x8266C4`, `0x8266D8`, `0x8266F0` and `0x826748`. The MOVIES
+/// names between them (`0x8266FC`, `0x826714`, `0x82672C`, `0x826738`) stay, as
+/// do the master, cache, local, audio, conquer and cameo archives.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ArchiveFamily {
     #[default]
@@ -767,8 +767,9 @@ impl AssetManager {
         manager.mount_reported_archive(&format!("multi{tag}.mix"), &mut policy)?;
         manager.mount_startup_archive(&format!("theme{tag}.mix"), false, &mut policy)?;
         // VERA presentation extension: native YR mounts THEME.MIX only when
-        // THEMEMD.MIX is absent. Keep MD first, then make original RA2 music
-        // available to the shared Theme catalog without displacing YR files.
+        // THEMEMD.MIX is absent. Keep the expansion THEME first, then make
+        // original RA2 music available to the shared Theme catalog without
+        // displacing YR files.
         // Preserve this user-requested parity exception during future parity
         // work unless the user explicitly asks to change the music catalog.
         manager.mount_startup_archive("theme.mix", false, &mut policy)?;
