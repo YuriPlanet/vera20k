@@ -1927,6 +1927,34 @@ impl ProcessedRulesLayers {
             })
     }
 
+    /// Ares insignia state after every reached TechnoType ReadINI pass.
+    pub(crate) fn techno_ares_insignia_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            ObjectCategory,
+            &str,
+            &crate::rules::insignia_type::AresInsignia,
+        ),
+    > {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .iter()
+            .filter_map(|(family, members)| {
+                family.object_category().map(|category| (category, members))
+            })
+            .flat_map(|(category, members)| {
+                members.iter().map(move |member| {
+                    (
+                        category,
+                        member.native_stored_id.as_str(),
+                        &member.ares_insignia,
+                    )
+                })
+            })
+    }
+
     /// Phobos insignia state after every reached TechnoType ReadINI pass.
     #[cfg(feature = "phobos")]
     pub(crate) fn techno_insignia_states(
@@ -4118,6 +4146,8 @@ pub(crate) struct AresGeneralRules {
     infantry_electrocuted: Option<String>,
     /// +0x28 `CanMakeStuffUp` (false): `sim::ares_make_stuff_up`.
     can_make_stuff_up: bool,
+    /// +0x48 `EnemyInsignia` (true; constructor 0x1002A3DF).
+    enemy_insignia: bool,
     /// +0x49 `EnemyWrench` (true).
     enemy_wrench: bool,
     /// +0x4C `TeamRetaliate` (false): a computer team takes its attacker
@@ -4147,6 +4177,7 @@ impl Default for AresGeneralRules {
         Self {
             infantry_electrocuted: None,
             can_make_stuff_up: false,
+            enemy_insignia: true,
             enemy_wrench: true,
             team_retaliate: false,
             hunter_seeker: [0; 5],
@@ -4166,6 +4197,8 @@ impl AresGeneralRules {
         if let Some(general) = pass.section("General") {
             self.can_make_stuff_up =
                 general.read_ares_bool("CanMakeStuffUp", self.can_make_stuff_up);
+            // 0x1002ABF5.
+            self.enemy_insignia = general.read_ares_bool("EnemyInsignia", self.enemy_insignia);
             self.team_retaliate = general.read_ares_bool("TeamRetaliate", self.team_retaliate);
             self.message_silos_needed =
                 general.read_ares_csf_label("Message.SilosNeeded", &self.message_silos_needed);
@@ -4240,6 +4273,13 @@ impl AresGeneralRules {
     /// Ares.dll 10049FE0, hook 0x6F526C).
     pub(crate) fn enemy_wrench(&self) -> bool {
         self.enemy_wrench
+    }
+
+    /// `EnemyInsignia`: a player not allied with an object's owner sees its
+    /// rank insignia unless the type's `Insignia.ShowEnemy` says otherwise
+    /// (TechnoClass_DrawVeterancy, Ares.dll 1004E0C0, hook 0x70A990).
+    pub(crate) fn enemy_insignia(&self) -> bool {
+        self.enemy_insignia
     }
 
     /// `DiskLaserAnimEnabled`: a disk laser's hit plays the warhead's damage
@@ -5688,6 +5728,10 @@ struct ProcessedType {
     #[cfg(feature = "phobos")]
     #[serde(default)]
     phobos_insignia: crate::rules::insignia_type::PhobosInsignia,
+    /// Ares `TechnoTypeExt`'s insignia keys, read on every reached pass of
+    /// the same live TechnoType like Phobos's block above.
+    #[serde(default)]
+    ares_insignia: crate::rules::insignia_type::AresInsignia,
     /// Ares `SW.Warhead=`, read only for Type=GenericWarhead.
     generic_super_weapon_warhead: Option<String>,
     unit_delivery: Option<UnitDeliveryRules>,
@@ -6289,6 +6333,7 @@ impl ProcessedType {
             ore_gathering: crate::rules::object_type::PhobosOreGathering::default(),
             #[cfg(feature = "phobos")]
             phobos_insignia: Default::default(),
+            ares_insignia: Default::default(),
             generic_super_weapon_warhead: None,
             particle_warhead: None,
             voxel_anim_references: VoxelAnimTypeReferences::default(),
@@ -8864,6 +8909,14 @@ impl RulesPassProcessor {
                         .phobos_insignia
                         .apply_pass(&raw, catalog.as_ref(), weapon_count, gunner);
                     self.phobos_insignia_types = catalog;
+                }
+                // Ares TechnoTypeExt reads its insignia keys on the same pass
+                // (Ares.dll 0x1003E355..0x1003E380, 0x1003E6D5).
+                if ares_way {
+                    let _ares = crate::rules::ares_switch::ares_reads();
+                    self.families.get_mut(&family).unwrap()[index]
+                        .ares_insignia
+                        .apply_pass(&raw);
                 }
                 if family == RulesTypeFamily::Infantry {
                     let member = &mut self.families.get_mut(&family).unwrap()[index];
