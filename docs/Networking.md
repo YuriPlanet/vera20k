@@ -635,7 +635,8 @@ modern online ordering above is an intentional adaptation.
   lines as `name: text` and their own lobby lines twice. The packet is unchanged.
 - Setup Back retains transport history within a lobby visit. A fresh post-match
   visit resets queues, sequence history, observations and lobby timing while
-  retaining the portable socket bindings.
+  retaining the portable socket bindings. A returning guest waits for the
+  admitted host's discovery ID. Same-named games keep their own advertisements.
 
 ## Reproducible validation tools
 
