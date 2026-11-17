@@ -9,7 +9,8 @@ use crate::skirmish_modes::ModeStartEffect;
 use super::super::chat_notice as message;
 
 pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
-    let wol = super::super::dialog(state).wol();
+    let dialog = super::super::dialog(state);
+    let wol = dialog.wol();
     anyhow::ensure!(
         state.match_state.session.host(),
         "only the host starts a network game"
@@ -88,17 +89,8 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .session
         .network_setup_capacity()
         .unwrap_or(0);
-    // A room sharing bases seats a team's players on one start where the
-    // map runs out (`teams::team_starts`), so its map needs one for each
-    // team with players; otherwise one for each person and AI.
     let shares = state.match_state.session.network_shares_bases();
-    let needed = |ai: i32| {
-        if shares {
-            super::super::teams::bases_needed(&launch)
-        } else {
-            humans + ai
-        }
-    };
+    let needed = super::super::teams::starts_needed(&launch, shares, dialog.flavor);
     if wol {
         // C2 0x79071E..0x7908D5: allies, readiness, then capacity. VERA's
         // explicit AI rows share the map with human players, even though
@@ -110,7 +102,7 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         if !all_ready(state) {
             return Ok(());
         }
-        if capacity < needed(launch.opponents.len() as i32) {
+        if capacity < needed {
             message(
                 state,
                 "TXT_SCENARIO_TOO_SMALL",
@@ -147,7 +139,7 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
             }
         }
     } else {
-        let capacity_ok = capacity >= needed(launch.ai_player_count);
+        let capacity_ok = capacity >= needed;
         if !capacity_ok {
             message(
                 state,

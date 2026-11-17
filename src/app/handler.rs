@@ -2295,6 +2295,19 @@ impl ApplicationHandler for App {
                 } else {
                     ControlFlow::WaitUntil(Self::match_service_wake(state, Instant::now()))
                 });
+            } else if Self::online_start_runs_while_hidden(state) {
+                // The relay is installed before its RTT barrier. Its IO
+                // worker cannot advance the lobby, map or Ready on our behalf.
+                crate::app::lan_service::poll(
+                    state,
+                    crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+                );
+                Self::drive_shell_exit(state);
+                crate::app::loading::pump::advance_hidden_network_loading(state);
+                event_loop.set_control_flow(ControlFlow::WaitUntil(Self::match_service_wake(
+                    state,
+                    Instant::now(),
+                )));
             } else if state.platform.frame_pacer.render_deferred() {
                 event_loop.set_control_flow(ControlFlow::Poll);
                 state.platform.window.request_redraw();

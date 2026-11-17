@@ -331,11 +331,12 @@ crash box shows, or once the game thread has not serviced the connection for
 60 seconds. The others then read "<name> is not responding." 10 seconds later
 and the ten-minute limit below starts, as for a closed game. A frozen game that
 recovers is heard again; no Leave goes out, so the launcher can still resume
-the match. A crash also silences a LAN match's sockets. From admission until
-the match starts, the game services the connection only while its window draws,
-so a window kept minimised or covered that long can fall silent too (a Quick
-Match found while the player is in another window); the relay then drops that
-player 60 seconds later, if that comes before the 3-minute limit.
+the match. A crash also silences a LAN match's sockets. A healthy game
+whose window is minimised or covered after relay admission continues its
+connection checks, loads its map and enters the match without a redraw.
+The game thread services that work and the crash/stall limits stay in effect.
+An older game can still fall silent in that window and be dropped before it
+starts.
 The relay and the packets are unchanged. Released games keep sending for a
 crashed or frozen game, so in a mixed room an older game is still never named.
 After ten minutes of silence the relay removes the player
@@ -438,7 +439,11 @@ ignores the field and is refused at the build check. Online, an older guest cann
 read the host's options while Teams is set and says the update was invalid, in a room
 that cannot start, since its players' versions differ. A lobby from before Teams
 refuses the field; the host's game then turns Teams Off, says so and sends its options
-again without it. A room has 2 to 15 teams, named A to O.
+again without it. A lobby that lists matches to watch already supports Teams, the queue
+and the room rules. A refusal from it leaves the settings in place. The host checks the
+map has enough starts for the playing teams, people and AI before publishing, so they
+can change the map or the seats while keeping their room settings. A room has 2 to 15
+teams, named A to O.
 
 In a VERA room whose mode has teams and Teams set, people play only on a team. A newcomer
 comes in watching while a spectator seat is open and takes a seat with a team header's
@@ -664,9 +669,12 @@ the code.
 
 The lobby's grant carries the match's start, its options and a watch ticket. The
 watcher's game downloads the map as a guest does, checks that its version and rules
-digest are the players', and joins the relay as a watcher (`live_service::begin_watch`,
+digest are the players', and joins the relay as a watcher (`live_service::prepare_watch`,
 `poll_watch`): a read-only session that pulls the match's stream from its first frame,
-held back by the delay, and sends nothing into it, not even a checksum
+held back by the delay. Receiving the grant ends the lobby request's wait. The map
+download and relay connection each keep their own deadline. If the setup cannot
+start, the game releases the watch grant with
+`unwatch` and shows the failure in the lobby. A watcher only reads the stream
 (relay README, "Watchers"). It loads the world as a returning player does, with no
 progress reports and nobody waiting for it, and then plays the stream's frames. Until
 it reaches the match's delayed present it runs them at speed, in passes of up to 50 ms

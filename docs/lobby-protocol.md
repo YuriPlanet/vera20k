@@ -205,13 +205,16 @@ drops the room's rules, says so and sends its options again, before it stops que
 then turns Teams Off if the lobby still refuses. `watching`, the room's Watching, is `off`,
 `delayed` or `live` ([Watching](#watching)). A lobby from before it refuses it in the same
 way; the host's game then turns Watching off, says so and sends its options again, before
-any of the others. `map_metadata` is
+any of the others. Only a fresh 404 on the watch list for the latest, still unchanged room
+publication can retire an unsupported setting. A lobby that lists matches already understands those fields, so its refusal
+keeps the room settings. `map_metadata` is
 `{display_name,player_capacity,official,byte_length,digest,source_sha256,effective_digest}`. The legacy
 INI `digest` remains distinct from lowercase SHA-256 over the physical map bytes;
 online `map_digest` agreements compare `source_sha256`. `effective_digest` and
 `effective_map_digest` compare the parsed gameplay map after its applicable include
 expansion, so identical root bytes cannot conceal different local dependencies. `vacancies` is an array
-of `open`, `closed`, `observer` or `waiting`. A receiver resolves its own
+of `open`, `closed`, `observer` or `waiting`. A network map's display name keeps legacy
+Windows punctuation and fits the lobby's 256 UTF-8 bytes without control characters. A receiver resolves its own
 `launch.local_player_index` from the authenticated player; it never uses the host's.
 `slot` uses `SkirmishLocalSlot` serde. Options are authored only by the room owner;
 the service increments `revision` and clears guest readiness on a material change.
@@ -221,7 +224,8 @@ Starting requires at least two playing participants, counting the actual
 watch, and with two or more AI everyone in the room may watch. The map's
 `player_capacity` must cover every playing human and AI row, or with Teams set
 (`launch.options.teams`), where a team's players share its bases, one start for each
-team that has players or AI and one for each playing participant on no team. A lobby
+team that has players or AI and one for each playing participant on no team. Before
+publishing, the host checks this limit and tells the room the map is too small. A lobby
 from before this refuses options past the map's capacity with `invalid_options`, and a
 start with both observers and AI with 409 `not_ready`; one from before AI-only games
 refuses a start where every human watches with 409 `not_ready`. `start.users` contains

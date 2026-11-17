@@ -806,8 +806,11 @@ pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()>
                 .expect("setup owns protocol");
             protocol.wol_verify = None;
             if protocol.external {
-                // No game channel or dialog: the launcher's room stays
-                // until the match's finish.
+                // A watch stays in the lobby. Its service owns the grant and
+                // must receive a refused start so it can release the place.
+                if !state.frontend.external_launch {
+                    return super::actions::try_commit_start(state, seed);
+                }
                 super::commit_start(state, seed);
                 return Ok(());
             }
