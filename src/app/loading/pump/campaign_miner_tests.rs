@@ -89,6 +89,7 @@ fn load_campaign(
             assets,
             process.native_rules_mut_with_tile_cache().0,
             None,
+            None,
             &mut SilentProgress,
         )
         .unwrap();
