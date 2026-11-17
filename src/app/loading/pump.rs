@@ -255,6 +255,7 @@ impl<'a> LoadingPhaseProgress<'a> {
     fn select(
         native: Option<&'a mut NativeLoadingScreenState>,
         mismatch: bool,
+        show_progress: bool,
         network: Option<crate::app::lan_service::LoadingNetworkService<'a>>,
         rendering: impl FnOnce(
             &'a mut NativeLoadingScreenState,
@@ -269,7 +270,7 @@ impl<'a> LoadingPhaseProgress<'a> {
             };
         };
         let runtime_color_scheme_count = native.runtime_color_scheme_count;
-        let sink = if native.atlas.is_some() {
+        let sink = if show_progress && native.atlas.is_some() {
             SelectedProgressSink::Rendering(rendering(native, network))
         } else {
             SelectedProgressSink::Gated(GatedProgressSink {
@@ -1711,8 +1712,9 @@ fn loading_failure_policy(state: &AppState) -> LoadingFailurePolicy {
     )
 }
 
-fn pump_loading_after_present(
+fn pump_loading(
     state: &mut AppState,
+    show_progress: bool,
     mut observer: Option<
         &mut crate::app::diagnostics::shell_capture::loading_host_loss::LoadingObserver<'_>,
     >,
@@ -1755,10 +1757,10 @@ fn pump_loading_after_present(
         session
     };
     if matches!(session.stage, LoadingStage::ConstructingScenario(_)) {
-        return pump_map_construction(state, session, observer);
+        return pump_map_construction(state, session, show_progress, observer);
     }
     if matches!(session.stage, LoadingStage::PreparingPresentation { .. }) {
-        return pump_presentation(state, session, observer);
+        return pump_presentation(state, session, show_progress, observer);
     }
     if matches!(session.stage, LoadingStage::ReadyToInstall { .. }) {
         return finish_network_load(state, session, observer);
@@ -1888,6 +1890,7 @@ fn pump_loading_after_present(
                 .prepares_scenario_before_first_frame()
         {
             advance_and_present_native_progress(
+                show_progress,
                 &state.renderer.gpu,
                 &state.renderer.shell_surface_presenter,
                 &state.renderer.depth_view,
@@ -1948,6 +1951,7 @@ fn pump_loading_after_present(
             let mut progress = LoadingPhaseProgress::select(
                 native.as_mut(),
                 native_theater_cache_mismatch,
+                show_progress,
                 network,
                 |native, network| {
                     RenderingProgressSink::new(
@@ -2025,6 +2029,7 @@ fn pump_loading_after_present(
                 if result.pending_atlases.is_none() {
                     publish_load_complete(
                         state,
+                        show_progress,
                         &mut native,
                         &mut result,
                         observer.as_deref_mut(),
@@ -2112,6 +2117,7 @@ fn pump_loading_after_present(
 fn pump_map_construction(
     state: &mut AppState,
     mut session: LoadingSession,
+    show_progress: bool,
     observer: Option<
         &mut crate::app::diagnostics::shell_capture::loading_host_loss::LoadingObserver<'_>,
     >,
@@ -2151,6 +2157,7 @@ fn pump_map_construction(
         let mut progress = LoadingPhaseProgress::select(
             session.native.as_mut(),
             constructing.load.theater_cache_mismatch(),
+            show_progress,
             network,
             |native, network| {
                 RenderingProgressSink::new(
@@ -2196,9 +2203,13 @@ fn pump_map_construction(
                 retire_rules_prefix(constructing.rules_prefix.take(), &mut state.process_assets);
             }
             if result.pending_atlases.is_none() {
-                if let Err(error) =
-                    publish_load_complete(state, &mut session.native, &mut result, observer)
-                {
+                if let Err(error) = publish_load_complete(
+                    state,
+                    show_progress,
+                    &mut session.native,
+                    &mut result,
+                    observer,
+                ) {
                     session.retire(&mut state.process_assets);
                     return Ok(LoadingPump::Failed(error));
                 }
@@ -2232,6 +2243,7 @@ fn pump_map_construction(
 
 fn publish_load_complete(
     state: &mut AppState,
+    show_progress: bool,
     native: &mut Option<NativeLoadingScreenState>,
     result: &mut MapLoadResult,
     mut observer: Option<
@@ -2263,6 +2275,7 @@ fn publish_load_complete(
             )?;
         }
         advance_and_present_native_progress(
+            show_progress,
             &state.renderer.gpu,
             &state.renderer.shell_surface_presenter,
             &state.renderer.depth_view,
@@ -2286,6 +2299,7 @@ fn publish_load_complete(
 fn pump_presentation(
     state: &mut AppState,
     mut session: LoadingSession,
+    show_progress: bool,
     observer: Option<
         &mut crate::app::diagnostics::shell_capture::loading_host_loss::LoadingObserver<'_>,
     >,
@@ -2311,7 +2325,9 @@ fn pump_presentation(
             result.pending_atlases = None;
         }
     }
-    if let Err(error) = publish_load_complete(state, &mut session.native, result, observer) {
+    if let Err(error) =
+        publish_load_complete(state, show_progress, &mut session.native, result, observer)
+    {
         session.retire(&mut state.process_assets);
         return Ok(LoadingPump::Failed(error));
     }
@@ -3315,7 +3331,7 @@ fn encode_loading_screen(
 /// owns acknowledgement, continuation and terminal disposition as one step.
 pub(crate) fn after_loading_frame_presented(
     state: &mut AppState,
-    mut observer: Option<
+    observer: Option<
         crate::app::diagnostics::shell_capture::loading_host_loss::LoadingObserver<'_>,
     >,
 ) -> anyhow::Result<()> {
@@ -3331,9 +3347,37 @@ pub(crate) fn after_loading_frame_presented(
         return Ok(());
     }
     loading_screen_presented(state);
+    advance_loading(state, true, observer)
+}
+
+/// An admitted online loader still reads its map and serves peer progress
+/// while the window is covered. Only a presented frame consumes its visual
+/// first-frame state, so uncovering a slow load paints it normally.
+pub(crate) fn advance_hidden_network_loading(state: &mut AppState) {
+    if !network_loading_active(state) {
+        return;
+    }
+    if let Err(error) =
+        ensure_native_loading_atlas(state).and_then(|()| advance_loading(state, false, None))
+    {
+        fail_loading(state, LoadingFailurePolicy::RetryNetworkShell, error);
+    }
+}
+
+fn advance_loading(
+    state: &mut AppState,
+    show_progress: bool,
+    mut observer: Option<
+        crate::app::diagnostics::shell_capture::loading_host_loss::LoadingObserver<'_>,
+    >,
+) -> anyhow::Result<()> {
     let policy = loading_failure_policy(state);
-    match pump_loading_after_present(state, observer.as_mut())? {
-        LoadingPump::Pending => state.platform.window.request_redraw(),
+    match pump_loading(state, show_progress, observer.as_mut())? {
+        LoadingPump::Pending => {
+            if show_progress {
+                state.platform.window.request_redraw();
+            }
+        }
         LoadingPump::Finished {
             mut result,
             timed_out,
@@ -3351,7 +3395,7 @@ pub(crate) fn after_loading_frame_presented(
             if let Some(observer) = observer.as_mut() {
                 observer.before_install()?;
             }
-            log::debug!(target: "vera20k::loading_attempt", "install_begin");
+            log::debug!(target: "vera20k::loading_attempt", "install_begin show_progress={show_progress}");
             super::transitions::finish_fresh_scenario_read(state, *result);
             if let Some(observer) = observer.as_ref() {
                 observer.installed(state)?;
@@ -3538,6 +3582,9 @@ pub(crate) fn present_saved_game_loading(state: &mut AppState) -> anyhow::Result
 /// the first game frame (`0x00683E07..0x00683E1C`, again at
 /// `0x0052EAA1..0x0052EAEB`); the tactical install runs under it.
 pub(crate) fn present_game_mode_blank(state: &AppState) {
+    if crate::app::App::online_start_runs_while_hidden(state) {
+        return;
+    }
     if let Err(err) = render::present_blank(
         &state.renderer.gpu,
         &state.renderer.shell_surface_presenter,
@@ -3632,6 +3679,7 @@ fn loading_scale(state: &AppState) -> ShellScale {
 }
 
 fn advance_and_present_native_progress<'a>(
+    show_progress: bool,
     gpu: &'a GpuContext,
     presenter: &'a ShellSurfacePresenter,
     depth_view: &'a wgpu::TextureView,
@@ -3644,8 +3692,12 @@ fn advance_and_present_native_progress<'a>(
     scale: ShellScale,
     network: Option<crate::app::lan_service::LoadingNetworkService<'a>>,
 ) -> anyhow::Result<()> {
-    let mut selected =
-        LoadingPhaseProgress::select(Some(native), false, network, |native, network| {
+    let mut selected = LoadingPhaseProgress::select(
+        Some(native),
+        false,
+        show_progress,
+        network,
+        |native, network| {
             RenderingProgressSink::new(
                 native,
                 network,
@@ -3658,7 +3710,8 @@ fn advance_and_present_native_progress<'a>(
                 render_size,
                 scale,
             )
-        });
+        },
+    );
     selected.sink.milestone(raw_percent)
 }
 

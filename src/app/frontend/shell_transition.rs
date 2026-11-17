@@ -489,7 +489,12 @@ pub(crate) fn begin_shell_exit(state: &mut AppState, then: ShellExitThen) -> She
 impl ShellExit {
     /// Advance one 30 ms tick when due; true once every tick has been shown
     /// (`0x006071E0` draws ticks `0..bound`, then the teardown continues).
-    fn advance(&mut self, now: Instant) -> bool {
+    fn advance(&mut self, now: Instant, hidden_online_start: bool) -> bool {
+        if hidden_online_start {
+            // The background admission loop only commits an agreed network
+            // start. Other dialog transitions wait for their ordinary paint.
+            return matches!(self.then, ShellExitThen::NetworkStart { .. });
+        }
         self.wave.advance(now);
         self.wave.is_complete()
     }
@@ -505,7 +510,13 @@ pub(crate) fn advance_shell_exit(state: &mut AppState, now: Instant) -> Option<S
         state.frontend.shell_exit = None;
         return None;
     }
-    if !state.frontend.shell_exit.as_mut()?.advance(now) {
+    let hidden_online_start = crate::app::App::online_start_runs_while_hidden(state);
+    if !state
+        .frontend
+        .shell_exit
+        .as_mut()?
+        .advance(now, hidden_online_start)
+    {
         return None;
     }
     if kind == ShellSlideKind::Campaign {
@@ -1498,6 +1509,31 @@ mod tests {
     }
 
     #[test]
+    fn a_covered_room_can_commit_its_network_start_without_a_presented_slide() {
+        let now = Instant::now();
+        let dialog = crate::ui::multiplayer_setup::SetupDialog {
+            host: false,
+            flavor: crate::ui::multiplayer_setup::SetupFlavor::Wol,
+            modern: true,
+        };
+        let mut exit = ShellExit {
+            wave: ShellFrameWave::new_slide_out(
+                ShellSlideKind::NetworkSetup(dialog).column(9, None),
+                now,
+            ),
+            then: ShellExitThen::NetworkStart {
+                dialog,
+                agreed_seed: 12,
+            },
+            completed_at: None,
+        };
+        assert!(!exit.advance(now, false));
+        assert!(exit.advance(now, true));
+        exit.then = ShellExitThen::NetworkSetupBack(dialog);
+        assert!(!exit.advance(now, true));
+    }
+
+    #[test]
     fn a_teardown_slide_shows_every_tick_before_its_result() {
         // Movie list 0x129 at 800x600: 9 tile rows, 9 + 9 = 18 ticks of 30 ms.
         let t0 = Instant::now();
@@ -1508,13 +1544,13 @@ mod tests {
         };
         for tick in 1..=17u64 {
             assert!(
-                !exit.advance(t0 + Duration::from_millis(30 * tick)),
+                !exit.advance(t0 + Duration::from_millis(30 * tick), false),
                 "tick {tick}"
             );
         }
         // Every tile row, the buttons and the empty ones, closed on the last tick.
         assert!(exit.wave.button_draws().iter().all(|draw| draw.frame == 10));
-        assert!(exit.advance(t0 + Duration::from_millis(30 * 18)));
+        assert!(exit.advance(t0 + Duration::from_millis(30 * 18), false));
         assert_eq!(exit.then, ShellExitThen::MovieListBack);
     }
 
