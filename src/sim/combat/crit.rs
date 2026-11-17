@@ -20,11 +20,13 @@
 //!   makes per detonation, shifting the scenario stream; the members' own
 //!   effects are not ported. `Convert.*` and `ReturnWarhead` are ported and
 //!   count in the gate below.
-//! - `Detonate`'s other earlier per-house arms (`CreateGap`, `Reveal`,
-//!   `SpawnsCrate.Types`' `RandomDouble`) and `InterceptBullets` are not
-//!   ported; a warhead with `SpawnsCrate.Types` misses one draw before this
-//!   prefix. `TransactMoney` ([`apply_transact_money`]) and `LaunchSW`
-//!   (`superweapon::launch_sw`) are ported here.
+//! - `Detonate`'s `InterceptBullets` arm is not ported, so a warhead that
+//!   sets it misses that arm. The other earlier per-house arms run here:
+//!   `CreateGap` (`Simulation::apply_warhead_create_gap`), `Reveal`
+//!   (`Detonate.cpp:82-100`, including its `Detonate.cpp:88` gate) and
+//!   `SpawnsCrate.Types`' `RandomDouble`; `TransactMoney`
+//!   (`apply_transact_money`) and `LaunchSW` (`superweapon::launch_sw`)
+//!   are also ported.
 //! - `CanAffectTarget`'s `AffectsAbovePercent`/`AffectsBelowPercent`,
 //!   `AffectsVeterancy` and `AffectsInvokerOnly` gates are unread and pass.
 //! - The pass's `getCellSpreadItemsExt` walk carries the warhead's
@@ -149,15 +151,16 @@ pub(crate) fn detonate(
     }
     // `WarheadTypeExt::Detonate`'s Reveal block (`Detonate.cpp:82-100`): a
     // positive radius reveals for the firing house on the client maps its
-    // RevealArea gate admits; a negative value reveals the whole map for that
-    // house. It runs before TransactMoney.
+    // RevealArea gate admits, but only behind `Detonate.cpp:88`'s gate on the
+    // current player; a negative value reveals the whole map for that house.
+    // It runs before TransactMoney.
     #[cfg(feature = "phobos")]
     if warhead.reveal != 0
         && let Some(owner) = house
     {
         if warhead.reveal < 0 {
             world.reveal_map_for_owner(owner, rules);
-        } else {
+        } else if world.warhead_reveal_admits_current_player(owner) {
             let config = world.sight_reveal_config(rules);
             let viewers = crate::sim::vision::direct_reveal_viewers(
                 world.house_alliances.as_map(),

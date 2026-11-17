@@ -285,6 +285,33 @@ impl Simulation {
         }
     }
 
+    /// Phobos `WarheadTypeExt::Detonate`'s positive `Reveal` gate
+    /// (`Ext/WarheadType/Detonate.cpp:88`), asked exactly as native asks it —
+    /// of `PlayerPtr`, before `MapClass::RevealArea2`: the warhead's house
+    /// must be the current player (`IsControlledByCurrentPlayer`) or name
+    /// that player an ally (`HouseClass::IsAlliedWith @ 0x004F9A50`, which
+    /// reads the asking house's own ally bits), and the current player must
+    /// not be `Defeated`. Native also tests `!PlayerPtr->Visionary`; VERA
+    /// keeps no `Visionary` byte, so that term cannot veto. Without a
+    /// current House there is no `PlayerPtr` to admit the reveal.
+    pub(crate) fn warhead_reveal_admits_current_player(
+        &self,
+        owner: crate::sim::intern::InternedId,
+    ) -> bool {
+        let Some(player) = self.session.current_house() else {
+            return false;
+        };
+        let allied = crate::map::houses::ally_test(
+            &self.house_alliances.as_map(),
+            self.interner.resolve(owner),
+        );
+        (player == owner || allied(self.interner.resolve(player)))
+            && !self
+                .houses
+                .get(&player)
+                .is_some_and(|house| house.is_defeated())
+    }
+
     /// Phobos `WarheadTypeExt::Detonate`'s CreateGap arm
     /// (`Ext/WarheadType/Detonate.cpp:51-80`): a positive `cells` radius
     /// conceals that area for every client map whose player is not the owner
