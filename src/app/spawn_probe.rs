@@ -53,7 +53,8 @@ pub(crate) struct ProbeReport {
     /// Start waypoints the map authors (`[SpawnLocations]` 0..N-1); null
     /// without `map`.
     pub max_start_waypoints: Option<i32>,
-    /// The campaign catalog (`BATTLEMD.INI [Battles]`), in list order.
+    /// The campaign catalog (`[Battles]` of the BATTLEMD file the INI roots
+    /// name), in list order.
     pub campaigns: Vec<ProbeCampaign>,
 }
 
@@ -63,8 +64,8 @@ pub(crate) struct ProbeCampaign {
     pub id: String,
     /// The first mission's file name: spawn.ini `Scenario` with `IsSinglePlayer`.
     pub scenario: String,
-    /// That mission's `MISSIONMD.INI UIName` through the game's string
-    /// table; empty when the mission has no name.
+    /// That mission's `UIName` in the MISSIONMD file the INI roots name,
+    /// through the game's string table; empty when the mission has no name.
     pub name: String,
     /// `Description=` through the string table, or as written when it names
     /// no label; empty when absent.
@@ -72,8 +73,9 @@ pub(crate) struct ProbeCampaign {
     /// `DebugOnly=yes`: the retail campaign menu does not offer it.
     pub debug_only: bool,
     /// The missions a won campaign passes through, as victory continues it:
-    /// `scenario`, then the `MAPSELMD.INI` choice after each mission, until a
-    /// mission is `OneTimeOnly`/`EndOfGame` or names no next stage.
+    /// `scenario`, then the choice in the MAPSELMD file the INI roots name
+    /// after each mission, until a mission is `OneTimeOnly`/`EndOfGame` or
+    /// names no next stage.
     pub missions: Vec<ProbeMission>,
 }
 
@@ -338,8 +340,8 @@ fn country_catalog<'a>(
 }
 
 /// The process campaign registry with each entry's presentation fields: the
-/// same `BATTLEMD.INI` selection, `MISSIONMD.INI` and `ra2md.csf` the
-/// campaign startup and loading screen use.
+/// same selection of the BATTLEMD/MISSIONMD/MAPSELMD file the INI roots name,
+/// and `ra2md.csf`, that the campaign startup and loading screen use.
 fn campaign_catalog(
     root: &Path,
     process: &ProcessAssets,
@@ -351,9 +353,10 @@ fn campaign_catalog(
     };
     let assets = process.manager().context("retail sources missing")?;
     let select = |name| crate::rules::retail_sources::select_ini(assets, name).ok();
-    let battles = select("BATTLEMD.INI");
-    let missions = select("MISSIONMD.INI");
-    let mapsel = select("MAPSELMD.INI");
+    let roots = assets.ini_roots();
+    let battles = select(roots.battle());
+    let missions = select(roots.mission());
+    let mapsel = select(roots.mapsel());
     Ok(registry
         .iter()
         .map(|campaign| {

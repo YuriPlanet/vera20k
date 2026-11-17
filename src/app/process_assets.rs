@@ -417,8 +417,9 @@ impl ProcessAssets {
     }
 
     /// Init_Game52C605/ClearScene685609 use fresh local INI objects while keeping the
-    /// campaign array. This selected retail route reads BATTLEMD.INI through
-    /// the same archive/loose-file resolver as the other process sources.
+    /// campaign array. This selected retail route reads the BATTLEMD file the
+    /// INI roots name through the same archive/loose-file resolver as the
+    /// other process sources.
     pub(crate) fn reload_campaigns(&mut self, assets: &AssetManager) {
         self.apply_campaign_source(crate::rules::retail_sources::select_ini(
             assets,
