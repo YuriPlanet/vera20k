@@ -38,6 +38,12 @@ rejoin reconstruction use the same fresh state; loading a save keeps its saved
 variables. Offline skirmish and campaign loads retain the original game's local
 variable carryover. This changes no packets: mixed builds are refused by the
 existing build check, and a rollback restores the earlier carryover behavior.
+Each new LAN or online match also rebuilds mutable Rules from the frozen startup
+sources and the room's current options. This includes the country/color choices
+shown before loading and the Rules used for random-map agreement and generation.
+A previous map's scalars or extra Types cannot become defaults for the next room.
+Offline loads keep the original retaining reset. No packet changes are required;
+mixed builds use the existing refusal, and a rollback restores the earlier retention.
 Whether Ares plays in a match is decided from that same data: the rules, mode
 and map, whether the selected mod loads `ares.mix`, and the player's
 [Ares setting](ares.md#the-ares-setting), which the rules agreement covers. With
@@ -642,6 +648,25 @@ directory, and the bind/peer endpoints exchanged. The output manifest's
 `lan.rounds[n].runtime.native_checksums` records per-frame checksums for each
 round. The live targets drive real Move/Stop input, results, a rematch in the
 host's reopened room and Main Menu return across two games.
+For a process-state comparison, give both peers `--lan-isolation-seed 73`
+and the host `--lan-map XMP03T4.MAP`. This fixes the seed, countries, colors and
+start positions across both rounds and skips the separate observer-seat exercise. Compare
+the accepted launch, startup receipt and committed frame checksums; any input
+timing differences still need to be reconciled before attributing a difference
+to retained state.
+The host can add `--lan-prior-map <history-map>` to play a different first map.
+The second round still uses `--lan-map`. Each round records `setup_catalog`
+before loading and `gameplay_rules` afterward, so the comparison can confirm
+that the history changed the first world and that its choices were then cleared.
+
+`sim-bench --state-isolation-report <new.json> --map XMP03T4.MAP --seed 73
+--client-timing --isolation-mode wol --isolation-humans 1 --computers 1`
+provides the complementary headless comparison. Run it in separate processes,
+first without a history, then with one or more `--prior-map <map>` arguments.
+Equal `target` values cover the Rules owner, world construction and every
+recorded simulation frame for that fixture. This does not cover app input or
+the network transport.
+
 The `lan-live-timeout-host` and `lan-live-quit-host` targets pair with
 `lan-live-failure-guest` on the same endpoints. That guest plays the shared 300-frame
 prefix and then exits without leaving, so the host meets a real peer disappearance

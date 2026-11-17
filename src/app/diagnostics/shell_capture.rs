@@ -1328,6 +1328,11 @@ pub(crate) struct LiveLanConfig {
     pub transport: LiveLanTransport,
     /// Host-only logical catalog name; RandMap.Sed drives the normal generator.
     pub map: Option<String>,
+    /// Diagnostic only: repeat one accepted seed across fresh/rematch worlds.
+    /// Also fixes roster choices and omits the unrelated spectator exercise.
+    pub isolation_seed: Option<u32>,
+    /// Host-only history fixture for round one; round two uses `map`.
+    pub prior_map: Option<String>,
     /// Optional real pre-GO process-loss checkpoint. It never changes a timer.
     pub setup_crash: Option<LanSetupCrash>,
     pub profile_check: bool,
@@ -1449,6 +1454,8 @@ where
     let mut lan_bind = None;
     let mut lan_peer = None;
     let mut lan_map = None;
+    let mut lan_isolation_seed = None;
+    let mut lan_prior_map = None;
     let mut lan_setup_crash = None;
     let mut online_account = None;
     let mut online_host = None;
@@ -1549,6 +1556,19 @@ where
                 &mut lan_map,
                 next_utf8(&mut args, "value after --lan-map")?,
                 "--lan-map",
+            )?,
+            "--lan-isolation-seed" => set_once(
+                &mut lan_isolation_seed,
+                parse_u32(
+                    next_utf8(&mut args, "value after --lan-isolation-seed")?,
+                    "--lan-isolation-seed",
+                )?,
+                "--lan-isolation-seed",
+            )?,
+            "--lan-prior-map" => set_once(
+                &mut lan_prior_map,
+                next_utf8(&mut args, "value after --lan-prior-map")?,
+                "--lan-prior-map",
             )?,
             "--lan-setup-crash" => {
                 let victim = match next_utf8(&mut args, "value after --lan-setup-crash")?.as_str() {
@@ -2142,6 +2162,27 @@ where
             crate::map::source::validate_network_map_name(file)?;
         }
         ensure!(
+            lan_isolation_seed.is_none()
+                || matches!(
+                    checkpoint,
+                    ShellCaptureCheckpoint::Lan(
+                        movies::LanTarget::LiveHost | movies::LanTarget::LiveGuest
+                    )
+                ) && lan_setup_crash.is_none(),
+            "--lan-isolation-seed requires a normal live LAN host or guest"
+        );
+        if let Some(file) = lan_prior_map.as_deref() {
+            ensure!(
+                lan_isolation_seed.is_some()
+                    && matches!(
+                        checkpoint,
+                        ShellCaptureCheckpoint::Lan(movies::LanTarget::LiveHost)
+                    ),
+                "--lan-prior-map requires a live LAN host with --lan-isolation-seed"
+            );
+            crate::map::source::validate_network_map_name(file)?;
+        }
+        ensure!(
             lan_setup_crash.is_none()
                 || matches!(
                     checkpoint,
@@ -2179,6 +2220,8 @@ where
         Some(LiveLanConfig {
             transport,
             map: lan_map,
+            isolation_seed: lan_isolation_seed,
+            prior_map: lan_prior_map,
             setup_crash: lan_setup_crash,
             profile_check,
             failure_prefix_output,
@@ -2189,6 +2232,8 @@ where
                 && lan_bind.is_none()
                 && lan_peer.is_none()
                 && lan_map.is_none()
+                && lan_isolation_seed.is_none()
+                && lan_prior_map.is_none()
                 && lan_setup_crash.is_none(),
             "LAN socket options require a live LAN checkpoint"
         );
@@ -3585,6 +3630,8 @@ mod tests {
                     peer: "127.0.0.1:31010".parse().unwrap(),
                 },
                 map: None,
+                isolation_seed: None,
+                prior_map: None,
                 setup_crash: None,
                 profile_check: false,
                 failure_prefix_output: None,
@@ -3592,6 +3639,19 @@ mod tests {
         );
         values[1] = "lan-live-guest".into();
         assert!(parse_launch_args(values.clone()).is_ok());
+        let mut isolation = values.clone();
+        isolation.extend(args(&["--lan-isolation-seed", "73"]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(isolation.clone()).unwrap()
+        else {
+            panic!("capture");
+        };
+        assert_eq!(request.live_lan.unwrap().isolation_seed, Some(73));
+        isolation.extend(args(&["--lan-prior-map", "history.map"]));
+        assert!(parse_launch_args(isolation.clone()).is_err());
+        isolation[1] = "lan-live-host".into();
+        assert!(parse_launch_args(isolation.clone()).is_ok());
+        isolation[1] = "lan-battle-guest".into();
+        assert!(parse_launch_args(isolation).is_err());
         values[1] = "lan-battle-host".into();
         assert!(parse_launch_args(values.clone()).is_ok());
         values[1] = "lan-battle-guest".into();
