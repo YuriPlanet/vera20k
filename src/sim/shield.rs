@@ -1059,6 +1059,24 @@ fn can_be_penetrated(
     }
 }
 
+/// Phobos `ShieldClass::CanBeTargeted` (`New/Entity/ShieldClass.cpp:368..377`),
+/// read by the weapon-selection arms at `0x6F36DB+0x151` and `0x6F3432+0x231`:
+/// a penetrating warhead or an empty shield admits everything, otherwise the
+/// warhead's Verses against the shield's own armor must not be exactly zero.
+pub(crate) fn can_be_targeted(
+    rules: &RuleSet,
+    state: &ShieldState,
+    ty: &ShieldType,
+    target_type: &crate::rules::object_type::ObjectType,
+    warhead: &crate::rules::warhead_type::WarheadType,
+) -> bool {
+    if can_be_penetrated(rules, state, ty, warhead) || state.hp() == 0 {
+        return true;
+    }
+    let armor = shield_armor(ty, Some(target_type));
+    f64::from_bits(warhead.interaction(armor).multiplier().bits()) != 0.0
+}
+
 /// `GeneralUtils::GetWarheadVersusArmor(WH, Techno, Type)`'s armor for a live
 /// target: [`restart_armor`] when it carries a shield, else its type's armor.
 pub(crate) fn warhead_versus_armor(

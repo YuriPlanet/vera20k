@@ -124,11 +124,12 @@ SelectMultiWeapon arm).
 - `NoSecondaryWeaponFallback` is ported in both owners: `SelectMultiWeapon`
   (`0x6F3428`) and the stock `PickWeaponIndex` pick (`0x6F36DB`).
 - The shield arm following the `0x6F36DB` pick (`Ext/Techno/Hooks.Firing.cpp:
-  140-162`) is not ported: an active target shield whose primary cannot
-  target the shield would answer the secondary. Trigger: a shielded Techno
-  target and a pick that returns `-1`; risk: a type keeps firing a primary
-  the shield refuses. VERA's shield targeting gate is separate; no retail
-  content reaches this arm.
+  140-162`) is ported in `phobos_shield_weapon_index` on the same owner:
+  when the pick answers `-1` and the target Techno's shield is active, a
+  secondary the fallback/AA/underground/no-ammo gates admit takes the shot
+  once `ShieldClass::CanBeTargeted` refuses the primary
+  (`sim::shield::can_be_targeted`), and an unusable secondary answers the
+  primary. Retail rules author no `ShieldType`, so only mod data reaches it.
 - `SkipWeaponPicking` needs no separate key here: VERA applies the picking
   gates unconditionally and every gate passes when Phobos derives the flag as
   true.

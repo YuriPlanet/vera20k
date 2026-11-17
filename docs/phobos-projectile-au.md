@@ -64,9 +64,11 @@ The auto-target side reads the object's `GetHeight` (vt+0x1C8,
   AA, `CanBeTargeted`, Verses-0 and AU rows are all missing. Porting only the
   AU row would answer the stage index while skipping the other three gates, so
   that belongs to a gattling-eligibility chain.
-- The shield arm at `0x6F36DB:151` is unreachable here: VERA has no
-  `Shield::CanBeTargeted` owner at all, so the enclosing `if (pShield)` block
-  has no equivalent state.
+- The shield arm at `0x6F36DB:151` is now ported
+  (`phobos_shield_weapon_index` + `sim::shield::can_be_targeted`): its
+  underground-secondary row is one of the four gates that admit the
+  secondary. The same hook's gattling counterpart (`0x6F3432:231`) still
+  shares the unported gattling block above.
 - The Tunnel locomotor is unported: `rules/locomotor_type.rs` keeps the
   Tiberian Sun Tunnel/Mech/DropPod classes out of the installed table, so a
   unit whose `Locomotor=` names that CLSID never caches

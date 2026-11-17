@@ -186,10 +186,12 @@ stays open:
   `SyncInvulnerability`.
 - Ares EMP does not yet offline a shield (`IsUnderEMP` in native); only the
   building power and warp paths gate it.
-- The shield-armour substitution in targeting/threat (`CanBeTargeted`,
-  `TechnoClass_ReplaceArmorWithShields` at `0x70CF39`/`0x6F7D31`/`0x6FCB64`/
-  `0x708AEB`) is not ported; acquisitions and threat still read the techno's
-  own armour.
+- The shield-armour substitution in targeting/threat (`TechnoClass_ReplaceArmorWithShields`
+  at `0x70CF39`/`0x6F7D31`/`0x6FCB64`/`0x708AEB`) is not ported; acquisitions
+  and threat still read the techno's own armour. `ShieldClass::CanBeTargeted`
+  itself is ported (`sim::shield::can_be_targeted`,
+  `src/New/Entity/ShieldClass.cpp:368..377`) and consumed by the weapon
+  selection arms; only the acquisition/threat side stays open.
 
 The warhead-side `Shield.*` keys live in
 [Warhead shield modifiers](phobos-shield-warhead.md).

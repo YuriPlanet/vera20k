@@ -170,6 +170,8 @@ mod phobos_open_transport_tests;
 #[cfg(all(test, feature = "phobos"))]
 mod phobos_shrapnel_trigger_tests;
 #[cfg(all(test, feature = "phobos"))]
+mod phobos_shield_weapon_tests;
+#[cfg(all(test, feature = "phobos"))]
 mod phobos_spawns_crate_tests;
 #[cfg(all(test, feature = "phobos"))]
 mod phobos_unlimbo_detonate_tests;

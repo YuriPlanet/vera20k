@@ -932,6 +932,7 @@ pub(crate) fn what_weapon_should_i_use<'r>(
         None,
         || None,
         || None,
+        || None,
     )
 }
 
@@ -950,6 +951,10 @@ pub(crate) fn what_weapon_should_i_use_with_force<'r>(
     // Phobos `PickWeaponIndex` at `0x6F36DB`, lazy for the same reason: the
     // arms A–P that return before Q never ask it.
     pick: impl FnOnce() -> Option<i32>,
+    // The shield arm of the same `0x6F36DB` hook (`Hooks.Firing.cpp:140..162`),
+    // asked only when `pick` answered `-1`, before the stock `0x6F36E3` Verses
+    // arm. Lazy: no answer means the ladder continues.
+    shield: impl FnOnce() -> Option<i32>,
 ) -> i32 {
     match attacker.kind {
         TechnoKind::Infantry if obj.deploy_fire => {
@@ -964,7 +969,7 @@ pub(crate) fn what_weapon_should_i_use_with_force<'r>(
         _ => {}
     }
     techno_what_weapon_should_i_use(
-        rules, obj, attacker, target, get_weapon, forced, multi, pick,
+        rules, obj, attacker, target, get_weapon, forced, multi, pick, shield,
     )
 }
 
@@ -1013,6 +1018,7 @@ fn techno_what_weapon_should_i_use<'r>(
     forced: Option<i32>,
     multi: impl FnOnce() -> Option<i32>,
     pick: impl FnOnce() -> Option<i32>,
+    shield: impl FnOnce() -> Option<i32>,
 ) -> i32 {
     // A @ 0x006F333B: turreted non-gattling types fire the gunner slot,
     // unconditionally (`-1` collapses to 0). Phobos
@@ -1168,8 +1174,13 @@ fn techno_what_weapon_should_i_use<'r>(
     // (`Ext/Techno/Hooks.Firing.cpp:121-165`) asks
     // `TechnoExt::PickWeaponIndex(pThis, pTargetTechno, pTarget, 0, 1,
     // allowFallback, allowAAFallback)` and returns Primary/Secondary when it
-    // answers, skipping the stock Verses arm at `0x6F36E3`.
+    // answers, skipping the stock Verses arm at `0x6F36E3`. The same hook then
+    // asks the target's active shield (`WeaponHelpers` answered `-1`) before
+    // that arm; see [`phobos_shield_weapon_index`].
     if let Some(index) = pick() {
+        return index;
+    }
+    if let Some(index) = shield() {
         return index;
     }
     let Some(TargetFacts::Techno {
@@ -1564,6 +1575,23 @@ pub(crate) fn select_weapon_index_against_in_query(
     };
     #[cfg(not(feature = "phobos"))]
     let pick = || -> Option<i32> { None };
+    // The shield arm that follows the pick in the same `0x6F36DB` hook; lazy,
+    // so only a pick that answered `-1` reaches it.
+    #[cfg(feature = "phobos")]
+    let shield = || {
+        phobos_shield_weapon_index(
+            rules,
+            attacker_entity,
+            attacker_obj,
+            attacker,
+            target,
+            target_facts.as_ref(),
+            world,
+            interner,
+        )
+    };
+    #[cfg(not(feature = "phobos"))]
+    let shield = || -> Option<i32> { None };
     Some(what_weapon_should_i_use_with_force(
         rules,
         attacker_obj,
@@ -1582,6 +1610,7 @@ pub(crate) fn select_weapon_index_against_in_query(
         forced,
         multi,
         pick,
+        shield,
     ))
 }
 
@@ -1935,6 +1964,91 @@ fn phobos_pick_weapon_index(
         return Some(1);
     }
     None
+}
+
+/// The shield arm of the same `0x6F36DB` hook (`Ext/Techno/Hooks.Firing.cpp:140-162`),
+/// reached only when `TechnoExt::PickWeaponIndex` answered `-1` for a Techno
+/// target whose shield is active. `Some(0)`/`Some(1)` are the native hook's
+/// `Primary`/`Secondary` returns; `None` keeps the stock `0x6F36E3` Verses arm.
+#[cfg(feature = "phobos")]
+#[allow(clippy::too_many_arguments)]
+fn phobos_shield_weapon_index(
+    rules: &RuleSet,
+    attacker_entity: &GameEntity,
+    attacker_obj: &ObjectType,
+    attacker: &AttackerFacts,
+    target: Option<&TargetKind>,
+    target_facts: Option<&TargetFacts<'_>>,
+    world: &Simulation,
+    interner: &StringInterner,
+) -> Option<i32> {
+    // `if (!pTargetTechno) return Primary;` — the stock ladder already answers
+    // 0 for every non-Techno target, so this arm leaves it there.
+    let target_id = match target {
+        Some(TargetKind::Entity(id)) => *id,
+        _ => return None,
+    };
+    let Some(TargetFacts::Techno {
+        obj: target_obj,
+        flight,
+        ..
+    }) = target_facts
+    else {
+        return None;
+    };
+    let target_entity = world.substrate.entities.get(target_id)?;
+    let Some(state) = target_entity.shield() else {
+        return None;
+    };
+    // `if (pShield->IsActive())`: an idle or broken shield keeps the ladder.
+    if !state.is_active() {
+        return None;
+    }
+    let Some(ty) = rules.shield_type(state.type_name()) else {
+        return None;
+    };
+    let secondary = get_weapon(
+        attacker_entity,
+        attacker_obj,
+        1,
+        &world.substrate.entities,
+        rules,
+        interner,
+    );
+    let settings = &attacker_obj.phobos_multi_weapon;
+    let allow_fallback = !settings.no_secondary_weapon_fallback;
+    let allow_aa_fallback = allow_fallback || settings.no_secondary_weapon_fallback_allow_aa;
+    // Native admits the shield arm on a null secondary only through
+    // `CanFireNoAmmoWeapon`, which needs a weapon type; a missing slot leaves
+    // `pSecondary` null and answers `Primary`.
+    let secondary_usable = secondary.is_some_and(|secondary| {
+        allow_fallback
+            || (allow_aa_fallback && flight.high() && projectile_aa(rules, secondary))
+            || (flight.underground() && projectile_au(rules, secondary))
+            || can_fire_no_ammo_weapon(attacker_obj, attacker.ammo, 1)
+    });
+    if !secondary_usable {
+        return Some(0);
+    }
+    // `!pShield->CanBeTargeted(GetWeapon(0)->WeaponType)`: a null weapon makes
+    // the check answer `false`, so the missing slots fall through to Secondary.
+    let primary = get_weapon(
+        attacker_entity,
+        attacker_obj,
+        0,
+        &world.substrate.entities,
+        rules,
+        interner,
+    );
+    let warhead = primary.and_then(|primary| rules.weapon_warhead(primary));
+    match warhead {
+        Some(warhead)
+            if crate::sim::shield::can_be_targeted(rules, state, ty, target_obj, warhead) =>
+        {
+            None
+        }
+        _ => Some(1),
+    }
 }
 
 /// Phobos `TechnoTypeExt::SelectMultiWeapon` (`Ext/TechnoType/Body.cpp:175-291`),
