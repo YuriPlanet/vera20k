@@ -3386,7 +3386,7 @@ fn apply_network_loading_disconnects(
     let Some(sim) = result.scenario.simulation.as_mut() else {
         // No House array to consult: the connections still drop.
         for &index in indices {
-            session.disconnect_network_participant(index, 1);
+            session.disconnect_network_participant(index);
         }
         return Vec::new();
     };
