@@ -45,9 +45,10 @@ grant, so that gateway must list it. Deploy a TLS reverse proxy at that origin a
 forward `/game/*` with WebSocket Upgrade and `/v1/*` to this process. Set
 `VERA_CLIENT_IP_HEADER` to the header that proxy writes with the browser's address
 (for example `cf-connecting-ip`, or `x-forwarded-for`, whose last entry is used);
-never set it when clients can reach the gateway directly. Behind a proxy on
-another host it is required: without it every player counts as the proxy's
-network for the limits below. Preserve the browser Origin header; allow at least
+never set it when clients can reach the gateway directly. It is required behind
+any proxy that does not connect over loopback, such as one on another host or in
+a container: without it every player counts as the proxy's network for the
+limits below. Preserve the browser Origin header; allow at least
 70 seconds before an idle WebSocket timeout. The Node server binds
 `127.0.0.1:8788` by default (`HOST` and `PORT` can override it). It serves no static
 game files. The static site and gateway may be hosted separately.
@@ -83,11 +84,12 @@ clients.
 Transport limits are defined together in `server.mjs`: 256 WebSockets, 128 pending
 HTTP exchanges, 64 KiB request and 1 MiB response bodies, 2048-byte messages,
 256 queued UDP packets / 256 KiB, and 1 MiB pending WS output. One network (an
-IPv4 address, or the IPv6 /48 around one, as the lobby counts its shares) holds at
-most a tenth of the WebSockets and HTTP exchanges: 25 and 12; past them an upgrade
-gets 403 and a request 503. With `VERA_CLIENT_IP_HEADER` set, a request without
-that header is refused (403); without it, a loopback peer (a proxy on this host,
-or local tests) is not counted. Each connection may pass up to 2048 combined
+IPv4 address, or the IPv6 /48 around one, as the lobby counts its shares) holds
+about a tenth of each: 24 WebSockets, which is 12 players since each opens two,
+and 12 HTTP exchanges; past them an upgrade gets 403 and a request 503. With
+`VERA_CLIENT_IP_HEADER` set, a request without that header is refused (403);
+without it, a loopback peer (a proxy connecting over loopback, or local tests) is
+not counted. Each connection may pass up to 2048 combined
 incoming/outgoing datagrams per second from a 16384/second aggregate shared
 max-min fairly: each one-second window reserves for
 every connection what it attempted in the previous window, up to an equal share,

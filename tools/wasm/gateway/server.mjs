@@ -11,9 +11,9 @@ import { clientAddress, createSignaling, groupKey, iceServersFromEnv } from './s
 
 export const LIMITS = Object.freeze({
   datagram: 2048, connections: 256, httpRequests: 128,
-  // One network's share of connections and httpRequests: a tenth, as the
-  // lobby shares its budgets.
-  networkConnections: 25, networkRequests: 12,
+  // One network's share of connections and httpRequests: about a tenth, as
+  // the lobby shares its budgets, in whole players of two game sockets each.
+  networkConnections: 24, networkRequests: 12,
   requestBytes: 64 * 1024, responseBytes: 1024 * 1024,
   udpQueuePackets: 256, udpQueueBytes: 256 * 1024, wsQueueBytes: 1024 * 1024,
   packetsPerSecond: 2048, totalPacketsPerSecond: 16384,

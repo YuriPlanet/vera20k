@@ -195,11 +195,17 @@ test('each socket reaches the listed relay its grant names; others are refused',
 });
 
 test('one network holds at most a tenth of the game sockets and of the lobby exchanges', { timeout: 10000 }, async t => {
-  const { base, relay, held, connect, socket } = await fixture(t, { clientIpHeader: 'x-forwarded-for' });
+  const { base, relay, held, connect, socket, serverSockets } = await fixture(t, { clientIpHeader: 'x-forwarded-for' });
   const from = address => ({ 'x-forwarded-for': address });
   // Every IPv6 /64 of one /48 counts toward that /48's share.
-  for (let i = 0; i < LIMITS.networkConnections; i++) await socket('primary', from(`2001:db8:1:${i}::1`));
+  const own = [];
+  for (let i = 0; i < LIMITS.networkConnections; i++) own.push(await socket('primary', from(`2001:db8:1:${i}::1`)));
   await refused(connect(`/game/primary/${relay}`, from('2001:db8:1:ffff::1')));
+  // A closed socket gives its place back.
+  const released = once(serverSockets[0], 'close');
+  own[0].close();
+  await released;
+  await socket('primary', from('2001:db8:1:ffff::1'));
   await socket('primary', from('2001:db8:2::1'));
   // A request the configured proxy did not name is refused.
   await refused(connect(`/game/primary/${relay}`));
