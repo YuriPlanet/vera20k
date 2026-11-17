@@ -22,9 +22,11 @@
 //! This module owns catalog reads and the effective-value projection. The
 //! retained `NativeRulesRegistryState` owns the catalog's lifetime and the
 //! reached passes; `sim::radiation` owns site and damage consumption. The
-//! per-type `RadSiteWarhead.Detonate(.Full)`, `RadHasOwner` and `RadHasInvoker`
-//! keys are read and retained here but not consumed: warhead detonation from
-//! a radiation site and radiation damage attribution are separate chains.
+//! per-type `RadSiteWarhead.Detonate(.Full)` keys are consumed by the foot
+//! damage path and `RadHasOwner`/`RadHasInvoker` by the site copy
+//! (`sim/radiation.rs`); `RadBuildingDamageMaxCount` is read and projected but
+//! enforced by nobody, matching native: `Ext/RadSite/Hooks.cpp:124` declares
+//! the per-site counter the hook gates on at `:147`, and no code increments it.
 
 #[cfg(feature = "phobos")]
 use crate::rules::ini_parser::IniFile;

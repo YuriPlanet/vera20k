@@ -90,9 +90,20 @@ type, clamps each type's summed level at its `RadLevelMax` and applies its
 `RadApplicationDelay.Building`; its default `0` means "skip", so stock rules
 leave buildings immune even with the capability and a mod opts in by setting a
 delay. Immune buildings, warp-out and temporal states skip the branch, and the
-type's warhead verses still decide the damage. Phobos' hook tests a per-site
-`RadBuildingDamageMaxCount` counter it never increments, so that key has no
-observable effect there and none here.
+type's warhead verses still decide the damage.
+
+`RadBuildingDamageMaxCount` (global default `-1`, per-type override) is read
+and projected into the effective type, but it caps nothing, and that is native
+behaviour: the same hook declares its per-site `damageCounts` map at
+`Ext/RadSite/Hooks.cpp:124` and reads it once at `:147`
+(`maxDamageCount > 0 && damageCounts[site] >= maxDamageCount`), while nothing in
+the hook or the rest of Phobos increments it. The map's `operator[]` seeds `0`,
+so the gate reduces to `0 >= n` and never fires; the hook's `// Too OP, be aware`
+note above it matches. VERA therefore reads the key and leaves building damage
+unchanged. `sim/combat/combat_tests.rs`
+`dormant_building_damage_max_count_leaves_damage_unchanged` pins that: a
+positive cap on both layers must not move a building's health. A cap belongs
+here only together with a new native body that increments the counter.
 
 `RadSiteWarhead.Detonate` turns a site's Foot damage into a warhead detonation at
 the target instead of a direct `ReceiveDamage` call, so the warhead's own

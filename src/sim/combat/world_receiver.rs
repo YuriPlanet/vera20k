@@ -354,9 +354,15 @@ fn scale_rad_level(level: i32, factor: f64) -> i32 {
 /// (Phobos labels it "Too OP"), so a build without the capability keeps
 /// buildings immune.
 ///
-/// `RadBuildingDamageMaxCount` is read and retained: Phobos' hook tests a
-/// per-site counter it never increments, so the key has no observable effect
-/// there and none here.
+/// `RadBuildingDamageMaxCount` is read and retained, and no cap is applied,
+/// because the native gate is dead: `Ext/RadSite/Hooks.cpp:124` declares the
+/// per-site `damageCounts` map this hook reads at `:147`, and nothing in the
+/// hook — or anywhere else in Phobos — increments it, so
+/// `maxDamageCount > 0 && damageCounts[site] >= maxDamageCount` is `0 >= n`
+/// and never true. Applying a cap here would invent behaviour Phobos does not
+/// have. `dormant_building_damage_max_count_leaves_damage_unchanged`
+/// (`sim/combat/combat_tests.rs`) holds that line: it fails if someone wires a
+/// real cap without a new native body that increments the counter.
 #[cfg(feature = "phobos")]
 pub(crate) fn apply_building_radiation(
     world: &mut Simulation,
