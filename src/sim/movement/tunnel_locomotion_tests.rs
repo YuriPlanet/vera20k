@@ -5,6 +5,12 @@ use super::*;
 use crate::sim::movement::ground_pose::Position;
 use crate::util::fixed_math::SimFixed;
 
+/// The flat cell every test but the two raised-cell ones stands on: the
+/// `0x578080` query answers zero leptons everywhere.
+fn flat_ground(_: DriveCoord) -> Option<i32> {
+    Some(0)
+}
+
 fn test_position() -> Position {
     Position::new(
         5,
@@ -42,7 +48,14 @@ fn the_dig_cycle_owns_the_underground_layer_and_the_z_floor() {
     let mut frame = 0u32;
     for _ in 0..2000 {
         frame += 1;
-        runtime.process(&mut position, &mut facing, destination, speed, frame);
+        runtime.process(
+            &mut position,
+            &mut facing,
+            destination,
+            speed,
+            frame,
+            &flat_ground,
+        );
         let z = position_world(&position).z;
         assert!(
             z >= UNDERGROUND_Z,
@@ -112,7 +125,14 @@ fn a_digging_tunnel_neither_fires_nor_casts_a_shadow() {
     let mut frame = 0u32;
     for _ in 0..2000 {
         frame += 1;
-        runtime.process(&mut position, &mut facing, destination, 5, frame);
+        runtime.process(
+            &mut position,
+            &mut facing,
+            destination,
+            5,
+            frame,
+            &flat_ground,
+        );
         if runtime.state() != TunnelState::Idle {
             assert!(
                 runtime.refuses_fire(),
@@ -144,11 +164,11 @@ fn a_digging_tunnel_neither_fires_nor_casts_a_shadow() {
     );
 }
 
-/// A unit that starts one level up sinks 256 below **that** height and comes
-/// back to it, not to zero: `ProcessDugIn` compares against the cell's ground
-/// (`0x578080`), which `PreDigOut` re-reads every frame.
+/// A unit that starts one level up sinks to the same `0xFFFFFF00` plane every
+/// tunnel uses (`ProcessDugIn` reads no ground) and comes back to its own
+/// cell's ground, which `ProcessPreDigOut 0x7298F0` re-reads every frame.
 #[test]
-fn a_raised_cell_sinks_and_surfaces_relative_to_its_own_height() {
+fn a_raised_cell_sinks_to_the_underground_plane_and_surfaces_at_its_own_height() {
     let mut runtime = TunnelRuntime::constructed();
     let mut position = Position::new(
         5,
@@ -160,6 +180,10 @@ fn a_raised_cell_sinks_and_surfaces_relative_to_its_own_height() {
     );
     let mut facing = crate::sim::movement::FacingClass::new(0, 0);
     let from = position_world(&position);
+    // The whole run stays on this raised cell, so every frame's ground query
+    // answers the level the position holds: the premise is unchanged, only the
+    // input is explicit now that the runtime no longer samples it once.
+    let ground_of = |_: DriveCoord| Some(256);
     let destination = Some(DriveCoord {
         x: from.x,
         y: from.y - 300,
@@ -171,7 +195,14 @@ fn a_raised_cell_sinks_and_surfaces_relative_to_its_own_height() {
     let mut frame = 0u32;
     for _ in 0..2000 {
         frame += 1;
-        runtime.process(&mut position, &mut facing, destination, 5, frame);
+        runtime.process(
+            &mut position,
+            &mut facing,
+            destination,
+            5,
+            frame,
+            &ground_of,
+        );
         let z = position_world(&position).z;
         lowest = lowest.min(z);
         if runtime.state() == TunnelState::Idle {
@@ -181,14 +212,111 @@ fn a_raised_cell_sinks_and_surfaces_relative_to_its_own_height() {
 
     assert_eq!(runtime.state(), TunnelState::Idle);
     assert_eq!(
-        lowest,
-        from.z + UNDERGROUND_Z,
-        "the sink stopped at the wrong floor"
+        lowest, UNDERGROUND_Z,
+        "the sink stopped off the shared 0xFFFFFF00 plane"
     );
     assert_eq!(
         position_world(&position).z,
-        from.z,
+        256,
         "the unit did not return to its own ground height"
+    );
+}
+
+/// `ProcessPreDigOut 0x7298F0` calls `MapClass::0x578080(&coord)` on every
+/// frame (`0x72991D`), so the surfacing target is the cell the object finished
+/// its travel over: a tunnel that goes under a ramp and comes up a level higher
+/// ends on that cell's ground, not on the height it dug in from.
+#[test]
+fn surfacing_reads_the_destination_cells_ground() {
+    let mut runtime = TunnelRuntime::constructed();
+    let mut position = test_position();
+    let mut facing = crate::sim::movement::FacingClass::new(0, 0);
+    let from = position_world(&position);
+    // Cell 5 (the entry) is flat; cell 4, where the destination lies, is one
+    // level up.
+    let ground_of =
+        |coord: DriveCoord| -> Option<i32> { Some(if coord.y >= 5 * 256 { 0 } else { 256 }) };
+    let destination = Some(DriveCoord {
+        x: from.x,
+        y: from.y - 300,
+        z: UNDERGROUND_Z,
+    });
+
+    runtime.move_to(false);
+    let mut lowest = from.z;
+    let mut frame = 0u32;
+    for _ in 0..2000 {
+        frame += 1;
+        runtime.process(
+            &mut position,
+            &mut facing,
+            destination,
+            5,
+            frame,
+            &ground_of,
+        );
+        lowest = lowest.min(position_world(&position).z);
+        if runtime.state() == TunnelState::Idle {
+            break;
+        }
+    }
+
+    assert_eq!(runtime.state(), TunnelState::Idle);
+    assert_eq!(lowest, UNDERGROUND_Z, "the shared sink plane");
+    assert_eq!(
+        position_world(&position).z,
+        256,
+        "the unit surfaced at the entry height instead of its destination cell's"
+    );
+}
+
+/// The mirror case: a tunnel dug in on a raised cell and surfacing over flat
+/// ground ends at zero. The sink runs to the shared `0xFFFFFF00` plane; only the
+/// surfacing target follows the destination cell.
+#[test]
+fn surfacing_over_a_flat_cell_ends_at_ground_level() {
+    let mut runtime = TunnelRuntime::constructed();
+    let mut position = Position::new(
+        5,
+        5,
+        1,
+        Some(256),
+        SimFixed::from_num(128),
+        SimFixed::from_num(128),
+    );
+    let mut facing = crate::sim::movement::FacingClass::new(0, 0);
+    let from = position_world(&position);
+    // Cell 5 (the entry) is raised; cell 4, where the destination lies, is flat.
+    let ground_of =
+        |coord: DriveCoord| -> Option<i32> { Some(if coord.y >= 5 * 256 { 256 } else { 0 }) };
+    let destination = Some(DriveCoord {
+        x: from.x,
+        y: from.y - 300,
+        z: UNDERGROUND_Z,
+    });
+
+    runtime.move_to(false);
+    let mut frame = 0u32;
+    for _ in 0..2000 {
+        frame += 1;
+        runtime.process(
+            &mut position,
+            &mut facing,
+            destination,
+            5,
+            frame,
+            &ground_of,
+        );
+        if runtime.state() == TunnelState::Idle {
+            break;
+        }
+    }
+
+    assert_eq!(runtime.state(), TunnelState::Idle);
+    assert_eq!(
+        position_world(&position).z,
+        0,
+        "the unit kept the entry cell's height instead of surfacing at ground level"
     );
 }
 
@@ -232,7 +360,14 @@ fn stopping_while_underground_surfaces_in_place() {
     let mut frame = 0u32;
     while runtime.state() != TunnelState::Digging && frame < 500 {
         frame += 1;
-        runtime.process(&mut position, &mut facing, destination, 5, frame);
+        runtime.process(
+            &mut position,
+            &mut facing,
+            destination,
+            5,
+            frame,
+            &flat_ground,
+        );
     }
     assert_eq!(runtime.state(), TunnelState::Digging);
     let sunk = position_world(&position);
@@ -241,7 +376,14 @@ fn stopping_while_underground_surfaces_in_place() {
     // starts on the frame after it.
     for _ in 0..2 {
         frame += 1;
-        runtime.process(&mut position, &mut facing, destination, 5, frame);
+        runtime.process(
+            &mut position,
+            &mut facing,
+            destination,
+            5,
+            frame,
+            &flat_ground,
+        );
     }
     let underground = position_world(&position);
     let travelled = underground.y - sunk.y;
@@ -254,7 +396,14 @@ fn stopping_while_underground_surfaces_in_place() {
     runtime.state = TunnelState::PreDigOut;
     for _ in 0..500 {
         frame += 1;
-        runtime.process(&mut position, &mut facing, destination, 5, frame);
+        runtime.process(
+            &mut position,
+            &mut facing,
+            destination,
+            5,
+            frame,
+            &flat_ground,
+        );
         if runtime.state() == TunnelState::Idle {
             break;
         }
@@ -282,7 +431,7 @@ fn stopping_an_armed_dig_returns_to_idle() {
     runtime.move_to(false);
     // One frame arms the dig timer and enters DiggingIn; the hull is still on
     // the surface, so an abort here must not have moved Z.
-    runtime.process(&mut position, &mut facing, destination, 5, 1);
+    runtime.process(&mut position, &mut facing, destination, 5, 1, &flat_ground);
     assert_eq!(runtime.state(), TunnelState::DiggingIn);
     assert_eq!(
         position_world(&position).z,
