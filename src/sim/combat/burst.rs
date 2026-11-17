@@ -239,6 +239,8 @@ mod tests {
                 radial_index: index,
                 #[cfg(feature = "phobos")]
                 force_full_rearm: false,
+                #[cfg(feature = "phobos")]
+                last_rearm_was_full_delay: false,
             };
             assert_eq!(
                 state.take_radial_index(row["radial_segments"].as_i64().unwrap() as i32),

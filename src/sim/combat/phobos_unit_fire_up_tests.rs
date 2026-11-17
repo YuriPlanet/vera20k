@@ -25,7 +25,9 @@ const FRAMES: i32 = 9;
 /// An SHP, non-turreted `FIRER` unit aimed east at a rival `DUMMY` two cells
 /// east, with ART `FiringFrames=5` and ART `FireUp=fire_up` (`-1` is the key's
 /// constructor default). `firer_extra` appends `[FIRER]` keys, `weapon_extra`
-/// appends `[GUN]` keys. `ROF.RandomDelay=0` keeps the rearm draw-free.
+/// appends `[GUN]` keys. A test that needs a draw-free rearm pins the
+/// weapon-level `ROF.RandomDelay=0` there: `[CombatDamage]` never reaches this
+/// fixture's processed ruleset, so a global pin would fall back to `{0, 2}`.
 fn arena(firer_extra: &str, weapon_extra: &str, fire_up: i32) -> (Simulation, RuleSet, u64) {
     arena_with_art(
         firer_extra,
@@ -48,8 +50,7 @@ fn arena_with_art(firer_extra: &str, weapon_extra: &str, art: &str) -> (Simulati
          [GUN]\nDamage=10\nROF=40\nRange=9.5\nSpeed=100\nProjectile=INVIS\nWarhead=HIT\n\
          {weapon_extra}\
          [INVIS]\nInviso=yes\nAG=yes\n\
-         [HIT]\nCellSpread=0\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
-         [CombatDamage]\nROF.RandomDelay=0\n"
+         [HIT]\nCellSpread=0\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
     ));
     // The Unit ART reader owns `FiringFrames`, so the processed pass has to see
     // the fixed art; `install_art_data` then projects `FireUp=` and `Voxel=`.
@@ -238,8 +239,22 @@ fn moving_clears_the_fire_up_sequence_unless_opportunity_fire() {
 fn burst_overrun_forces_a_full_rearm() {
     let (mut sim, rules, firer) = arena(
         "",
-        "Burst=2\nBurst.Delays=4,3\nBurst.FireWithinSequence=yes\n",
+        "Burst=2\nBurst.Delays=4,3\nBurst.FireWithinSequence=yes\nROF.RandomDelay=0\n",
         3,
+    );
+    assert_eq!(rules.weapon("GUN").expect("gun").rof, 40, "fixture ROF");
+    assert_eq!(
+        rules
+            .weapon("GUN")
+            .expect("gun")
+            .rof_random_delay
+            .expect("the weapon pins its jitter"),
+        crate::rules::ini_value::PartialIntPair {
+            low: 0,
+            high: 0,
+            values: 1,
+        },
+        "`ROF.RandomDelay=0` on the weapon keeps `GetROF` draw-free"
     );
     sim.entities_mut_for_test()
         .get_mut(firer)
@@ -253,10 +268,17 @@ fn burst_overrun_forces_a_full_rearm() {
         1,
         "`(9 + 5) / 2` is frame 7, `FireUp(3) + cumulative(4)`"
     );
+    // The full arm answers `GetROF` = `ROF * house ROF` + the `ROF.RandomDelay`
+    // jitter; the weapon's own `0` pin makes that exactly the ROF. The mid-burst
+    // arm would answer the authored `Burst.Delays` item (4 at index 1) instead.
     assert_eq!(
         rearm(&sim, firer),
         40,
-        "the overrun takes the full ROF, not the index's three-frame delay"
+        "the overrun takes the full ROF, not the index's `Burst.Delays` item"
+    );
+    assert!(
+        rearm_flag(&sim, firer),
+        "and the arm is the ordinary full one, not the burst gap"
     );
 }
 
@@ -329,14 +351,18 @@ fn omni_fire_turns_on_a_held_frame() {
         0,
         "the unset `FiringFrames=` holds the shot"
     );
-    assert_eq!(
-        sim.entities()
-            .get(firer)
-            .expect("firer")
-            .body_facing
-            .destination(),
-        EAST,
-        "`0x736E6E` turned the hull before `0x736F61` held the shot"
+    // Native's chop conversion answers one word under the exact east heading
+    // for a purely east delta (`facing16_from_angle` truncates toward zero), so
+    // the destination is `EAST` or `EAST - 1`, not the next heading north.
+    let destination = sim
+        .entities()
+        .get(firer)
+        .expect("firer")
+        .body_facing
+        .destination();
+    assert!(
+        (EAST - 1..=EAST).contains(&destination),
+        "`0x736E6E` turned the hull before `0x736F61` held the shot: {destination}"
     );
 }
 

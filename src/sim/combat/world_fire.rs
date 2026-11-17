@@ -4338,6 +4338,8 @@ pub(crate) fn visit_fire(
                         hull_destination: None,
                         turret_destination_is_idle_return: false,
                     });
+                    #[cfg(feature = "phobos")]
+                    let facing_update_index = emit.unit_facing.len() - 1;
                     // Phobos `UnitClass_UpdateFiring_FireUp @ 0x736F61`
                     // (`SkipFiring = 0x737063`) runs after this facing work and
                     // before `Fire_At_Target`: a held frame launches nothing.
@@ -4413,7 +4415,9 @@ pub(crate) fn visit_fire(
                                 {
                                     runtime.set_desired_facing(turn.direction, frame);
                                 }
-                            } else if let Some(update) = emit.unit_facing.last_mut() {
+                            } else if let Some(update) =
+                                emit.unit_facing.get_mut(facing_update_index)
+                            {
                                 update.hull_destination = Some(turn.direction);
                             }
                         }
