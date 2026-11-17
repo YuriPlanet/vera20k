@@ -1076,6 +1076,9 @@ pub(super) struct OrderingRoom {
     local: u32,
     // A federated Leave before the start asks the coordinator to cancel.
     cancel_requested: bool,
+    // A federated Ready proved a different initial world. Keep the reason
+    // in the cancelled room so retries receive the existing precise error.
+    agreement_mismatch: bool,
     next_seq: u64,
     history: VecDeque<Stored>,
     history_bytes: usize,
@@ -1136,6 +1139,7 @@ impl OrderingRoom {
             sealed: 0,
             local,
             cancel_requested: false,
+            agreement_mismatch: false,
             next_seq: 1,
             history: VecDeque::new(),
             history_bytes: 0,
@@ -1689,10 +1693,11 @@ impl OrderingRoom {
         self.finished_at = Some(now_ms);
     }
 
-    /// The coordinator's cancel before the start ends this startup here too.
+    /// A coordinator cancellation or proved mismatch ends this startup.
     fn cancel(&mut self, now_ms: u64) {
         self.active = 0;
-        self.ready = 0;
+        // Retain the authenticated Ready/agreement proof for other relays.
+        // Cancellation still wins over starting, even on older relays.
         self.finished_at = Some(now_ms);
     }
 
@@ -2272,6 +2277,9 @@ impl OrderingRoom {
             return Ok(error(OrderError::StorageUnavailable, self.next_seq));
         }
         self.authenticate_reader(ticket)?;
+        if self.agreement_mismatch {
+            return Ok(error(OrderError::AgreementMismatch, 0));
+        }
         let Some(&kind) = payload.first() else {
             return Err(RelayError::Malformed);
         };
@@ -6069,7 +6077,8 @@ impl RelayServer {
             });
             if ordering.storage_failed {
                 error(OrderError::StorageUnavailable, ordering.next_seq)
-            } else if ordering.certificate.room != certificate.room
+            } else if ordering.agreement_mismatch
+                || ordering.certificate.room != certificate.room
                 || ordering.certificate.sources_mask != certificate.sources_mask
                 || ordering.certificate.tick_hz != certificate.tick_hz
                 || ordering.agreement != agreement
@@ -6178,6 +6187,15 @@ impl RelayServer {
             return self.ordering_reply(ticket, replies, now, now_ms, crate::link::SEND_OTHER);
         }
         ordering.authenticate_reader(ticket)?;
+        if ordering.agreement_mismatch {
+            return self.ordering_reply(
+                ticket,
+                error(OrderError::AgreementMismatch, 0),
+                now,
+                now_ms,
+                crate::link::SEND_OTHER,
+            );
+        }
         let peer = room
             .peers
             .iter_mut()
