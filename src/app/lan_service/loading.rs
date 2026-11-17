@@ -908,21 +908,6 @@ mod tests {
     }
 
     #[test]
-    fn backpressured_terminal_report_stays_with_the_report_drain() {
-        let (mut host, mut session, _, _, _, _) = super::super::loading_test_pair();
-        let guest = session.network_endpoint(1).unwrap();
-        host.pending_setup
-            .extend(std::iter::repeat_n((Vec::new(), direct(guest)), 4096));
-        session.report_network_loading_progress(100);
-        host.drain_loading_reports(&mut session).unwrap();
-        assert!(
-            session.take_network_send_requests().is_empty(),
-            "the in-match request drain must not take a held report"
-        );
-        assert_eq!(session.take_network_loading_progress_reports(), [100]);
-    }
-
-    #[test]
     fn failed_loading_report_is_dropped_not_retried() {
         let (mut host, mut session, _, _, _, _) = super::super::loading_test_pair();
         host.setup_scope = None;

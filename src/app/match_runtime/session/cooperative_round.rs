@@ -190,6 +190,7 @@ impl MatchSession {
             round,
         };
         network.send_requests.clear();
+        network.loading_reports.clear();
         Ok(())
     }
 
@@ -871,5 +872,15 @@ mod tests {
             session.continue_cooperative_round(0).unwrap(),
             CooperativeRoundStep::Exit(false)
         );
+    }
+
+    /// A report left from the last load must not count this side as loaded
+    /// in the next mission's load.
+    #[test]
+    fn the_round_entry_drops_a_report_left_from_the_last_load() {
+        let (mut session, _) = frozen(1);
+        session.report_network_loading_progress(100);
+        session.enter_cooperative_round(None, true, 2).unwrap();
+        assert!(session.take_network_loading_progress_reports().is_empty());
     }
 }
