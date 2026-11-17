@@ -26,7 +26,6 @@ use crate::ui::shell::descriptor::{AnchorRule, DialogId};
 use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale};
 use crate::ui::shell::layout::{anchor_rect, status_line_rect};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
-use crate::ui::skirmish_shell::SavedSeedDescriptionEdit;
 
 pub(crate) const DIALOG: DialogId = DialogId(0x0113);
 
@@ -578,12 +577,10 @@ impl WolLobbyState {
     pub(crate) fn new(observer: bool, modern: bool) -> Self {
         Self {
             modern,
-            chat: LanChatState {
-                edit: SavedSeedDescriptionEdit {
-                    focused: true,
-                    ..Default::default()
-                },
-                ..Default::default()
+            chat: {
+                let mut chat = LanChatState::default();
+                chat.edit.focused = true;
+                chat
             },
             lobby_rows: Vec::new(),
             game_rows: Vec::new(),

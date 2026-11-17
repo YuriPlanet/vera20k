@@ -465,8 +465,7 @@ fn append_chat_to(
             .list
             .geometry_for_text(rect, chat.lines.len(), scale, text)
             .visible_rows;
-        // Smaller text fits more of it in the log's width.
-        let width = (scale.base_rect(rect).w as f32 / text) as i32;
+        let width = crate::ui::lan_shell::chat_wrap_width(rect, scale, text);
         chat.append_message(line, width, visible, |units| {
             state
                 .renderer
