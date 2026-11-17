@@ -178,6 +178,7 @@ fn wheel_zoom_health_pixels(type_name: &str, category: EntityCategory) {
                 &color,
                 [0, 0, size[0], size[1]],
                 wgpu::Color::BLACK,
+                false,
             );
             let cameras = batch.create_frame_world_cameras(&gpu.device, zoom, Some(&a));
             {

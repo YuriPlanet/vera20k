@@ -142,6 +142,7 @@ fn production_world_zoom_resolves_before_screen_fixed_ui() {
         composition.composition_texture(),
         tactical,
         wgpu::Color::BLACK,
+        false,
     );
     {
         let mut pass = load_pass(&mut encoder, zoom.color_view(), zoom.frame_depth_view());

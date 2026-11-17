@@ -47,7 +47,7 @@ mod placement_gpu_tests;
 mod status_gpu_tests;
 #[cfg(all(test, tests_app_presentation_render))]
 mod target_laser_gpu_tests;
-pub(crate) use draw_passes::draw_software_cursor;
+pub(crate) use draw_passes::{draw_software_cursor, draw_world_window_copy};
 #[cfg(test)]
 pub(crate) use draw_passes::{draw_bridge_shadows, draw_pooled_cell_bodies};
 pub(crate) mod draw_plan_lowering;

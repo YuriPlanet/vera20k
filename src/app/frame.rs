@@ -1492,6 +1492,7 @@ impl App {
                         .as_ref()
                         .unwrap()
                         .draw(&mut encoder, &view);
+                    render::draw_world_window_copy(state, &mut encoder, &view);
                     crate::app::presentation::sidebar_surface::draw_window_copy(
                         state,
                         &mut encoder,

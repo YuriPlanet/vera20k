@@ -1158,6 +1158,7 @@ pub(super) fn dispatch_draw_passes(
             &state.renderer.batch_renderer,
             pool,
             drag_tex,
+            world_zoom_window(state).is_some(),
         );
         zoom.color_view()
     } else {
@@ -1586,6 +1587,9 @@ fn draw_pooled_passthrough_overlay<'a>(
 }
 
 /// Wheel zoom's boundary between world pixels and the screen-fixed band box.
+/// `for_window` keeps the world for `draw_world_window_copy`, before the band
+/// box goes over it.
+#[allow(clippy::too_many_arguments)]
 fn composite_world_with_drag_rect(
     device: &wgpu::Device,
     encoder: &mut wgpu::CommandEncoder,
@@ -1595,8 +1599,16 @@ fn composite_world_with_drag_rect(
     batch: &BatchRenderer,
     pool: &InstanceBufferPool,
     drag: Option<&BatchTexture>,
+    for_window: bool,
 ) {
-    zoom.composite(device, encoder, world, tactical, super::CLEAR_COLOR);
+    zoom.composite(
+        device,
+        encoder,
+        world,
+        tactical,
+        super::CLEAR_COLOR,
+        for_window,
+    );
     // Draw on the final pixel grid: a 1px border must not become a subpixel
     // span on the world attachment and disappear before the filtered copy.
     if drag.is_some() && pool.get("drag").is_some_and(|(_, count)| count != 0) {
@@ -1604,6 +1616,44 @@ fn composite_world_with_drag_rect(
         pass.set_scissor_rect(tactical[0], tactical[1], tactical[2], tactical[3]);
         draw_pooled_ui_passthrough(&mut pass, batch, pool, drag, "drag");
     }
+}
+
+/// The Options zoom a wheel-zoomed match frame goes through, when it scales
+/// the frame: the world then also goes straight into the window
+/// (`draw_world_window_copy`). At 100% (the Original shape's bars) the frame's
+/// world is already the window's.
+fn world_zoom_window(state: &AppState) -> Option<crate::render::upscale_pass::ZoomGeometry> {
+    state.renderer.world_zoom_pass.as_ref()?;
+    state.tactical_zoom().filter(|zoom| zoom.percent > 100)
+}
+
+/// The wheel-zoomed world, resampled once from world pixels into the window
+/// after the Options zoom scaled the frame there (`app::frame`), instead of
+/// only through the frame. VERA-only: stock YR has no world zoom. Whatever the
+/// frame drew over the battlefield keeps showing at the frame's pixels
+/// (`WorldZoomPass::draw_window_copy`); the battlefield's window-pixel text and
+/// the cursor go over this (`window_ui`).
+pub(crate) fn draw_world_window_copy(
+    state: &AppState,
+    encoder: &mut wgpu::CommandEncoder,
+    view: &wgpu::TextureView,
+) {
+    let (Some(zoom), Some(world)) = (
+        world_zoom_window(state),
+        state.renderer.world_zoom_pass.as_ref(),
+    ) else {
+        return;
+    };
+    let gpu = &state.renderer.gpu;
+    world.draw_window_copy(
+        &gpu.device,
+        &gpu.queue,
+        encoder,
+        view,
+        state.renderer.combat_light_renderer.composition_texture(),
+        zoom,
+        crate::app::input::camera::tactical_viewport_px(state),
+    );
 }
 
 /// VERA's ground marks: world-surface stores at neutral A, before wheel zoom.
