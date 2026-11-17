@@ -114,6 +114,22 @@ names vera20k.org (`web_link::DOWNLOAD_PAGE`), but a release signed by a new key
 still points to the GitHub releases. Nothing exchanged changes: a released game
 shows only the text with its link, and a rollback does the same.
 
+When an online start fails, each player's game says whose side failed and logs why.
+A start whose 30-second relay admission runs out tells a player whose `relay_ready` the
+lobby took that another player's game could not reach the game server, a player whose
+relay answered but whose `relay_ready` the lobby never took that the lobby is busy or not
+responding, and a player whose relay never answered that their own game could not reach
+it and that a firewall may block UDP; one that runs out in the latency check after it says
+a player's game could not finish checking its connection. The lobby's `start_rejected`
+reasons (a player left, cancelled, could not reach the relay or could not finish the
+latency check) show as their own lines ([lobby protocol](lobby-protocol.md)); any other
+reason keeps the general line. A start that times out connecting also names, in
+`start_rejected`'s optional `phrases`, the players whose games never sent `relay_ready`,
+so every player reads the same names after their line. A failed start leaves the room and
+its chat, so the game keeps its line for the chat the player lands in next. Released games
+read only `message` and show their earlier line, and a lobby rolled back to before this
+sends no names, so current games show their own line alone. Nothing else new travels.
+
 In network games, the trigger actions that only play audio (19, 20, 21, 98 and 99)
 keep the map's sound, EVA or theme name, or its numeric sound slot, until the local
 audio owner resolves it; offline games still resolve it when the map loads. A player

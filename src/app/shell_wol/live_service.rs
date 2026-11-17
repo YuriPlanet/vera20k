@@ -592,6 +592,9 @@ struct PendingStart {
     transport: Option<LanUdpTransport>,
     deadline: Instant,
     relay_acknowledged: bool,
+    /// The lobby took this game's `relay_ready`: from then on the start
+    /// waits on the other players' games.
+    relay_reported: bool,
     probes_started: bool,
     latencies_reported: bool,
     /// A returning player: the match started without this process, so its
@@ -1003,12 +1006,11 @@ impl LiveService {
 
     fn report_completed(&mut self, id: u64) {
         if let Some(pending) = self.pending.as_mut()
-            && pending
+            && let Some(report) = pending
                 .report
-                .as_ref()
-                .is_some_and(|report| report.command.request_id == id)
+                .take_if(|report| report.command.request_id == id)
         {
-            pending.report = None;
+            pending.relay_reported |= report.operation == "relay_ready";
         }
     }
 
@@ -1052,6 +1054,42 @@ impl LiveService {
 
     fn admission_blocked(&self) -> bool {
         self.finishing.is_some() || self.leaving.is_some() || self.logging_out.is_some()
+    }
+
+    /// The line for a pending start whose barrier ran out by `now`. Until
+    /// `start_confirmed` the barrier is relay admission; after it, the peer
+    /// latency check. A game whose own relay answered while the lobby never
+    /// took its `relay_ready` waited on the lobby.
+    fn expired_admission(&self, now: Instant) -> Option<&'static str> {
+        let pending = self
+            .pending
+            .as_ref()
+            .filter(|pending| now >= pending.deadline)?;
+        Some(if pending.probes_started {
+            "VERA:StartLatencyCheckFailed"
+        } else if pending.relay_acknowledged && !pending.relay_reported {
+            "VERA:StartLobbyBusy"
+        } else {
+            relay_failure_line(pending)
+        })
+    }
+
+    /// The line for a `start_rejected` reason. The lobby sends its reasons in
+    /// English only (vera20k-services `lobby/service.js`: `leave`, `finish`
+    /// and the `reap` sweep, through `abortPending`); one this game does not
+    /// know, or a relay failure with no start of this game's pending, keeps
+    /// the general line.
+    fn start_rejected_line(&self, reason: &str) -> &'static str {
+        match reason {
+            "A player left before the game started." => "VERA:StartPlayerLeft",
+            "A player cancelled the game start." => "VERA:StartPlayerCancelled",
+            "A player could not complete the peer latency check." => "VERA:StartLatencyCheckFailed",
+            "A player could not connect to the gameplay relay." => self
+                .pending
+                .as_ref()
+                .map_or("VERA:StartRefusedConnection", relay_failure_line),
+            _ => "VERA:StartRefusedConnection",
+        }
     }
 
     fn poll_cleanup(&mut self, now: Instant) {
@@ -1287,7 +1325,8 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                     continue;
                 }
                 let starts = matches!(request, NetworkSetupRequest::StartGame { .. });
-                if request_setup(state, &mut service, request).is_err() {
+                if let Err(error) = request_setup(state, &mut service, request) {
+                    log::warn!("Online setup request failed: {error:#}");
                     let text = tr("VERA:OnlineRequestMismatch");
                     if starts {
                         service.start_preparation = None;
@@ -1307,16 +1346,24 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
             restore_accepted_options(state, &service);
             notice(state, &tr("VERA:ChoicesNotAcknowledged"));
         }
-        if poll_start_preparation(state, &mut service).is_err() {
+        if let Err(error) = poll_start_preparation(state, &mut service) {
+            log::warn!("Online start preparation failed: {error:#}");
             service.start_preparation = None;
             fail_start(state, &tr("VERA:SettingsNotAgreed"));
         }
-        if poll_relay(state, &mut service).is_err() {
+        let admission = match service.expired_admission(Instant::now()) {
+            Some(line) => Err((line, anyhow!("the start's admission barrier timed out"))),
+            None => poll_relay(state, &mut service)
+                .map_err(|error| ("VERA:RelayConnectionFailed", error)),
+        };
+        if let Err((line, error)) = admission {
             if service.watching.is_some() {
+                log::warn!("Could not watch the match: {error:#}");
                 fail_watch(state, &mut service, "VERA:RelayConnectionFailed");
             } else {
+                log::warn!("Online relay admission failed ({line}): {error:#}");
                 cancel_pending(state, &mut service);
-                fail_start(state, &tr("VERA:RelayConnectionFailed"));
+                fail_start(state, &tr(line));
             }
         }
         if !service.spawned && service.pending.is_none() && service.match_id.is_none() {
@@ -1410,19 +1457,42 @@ fn fail_start(state: &mut AppState, text: &str) {
         crate::app::App::fail_external_launch(state, text);
         return;
     }
-    notice(state, text);
-    if crate::app::shell_network_setup::verify(state).is_some() {
+    let verifying = crate::app::shell_network_setup::verify(state).is_some();
+    if !verifying && let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+        // A rejected HTTP Start has not handed the setup to the lobby runner.
+        // Keep the ordinary host/join screen and release its pending input.
+        protocol.set_online_start_phase(crate::app::shell_network_setup::OnlineStartPhase::Idle);
+        notice(state, text);
+        return;
+    }
+    // VERA: the abort leaves the room, and the setup's chat with it
+    // (`start_aborted`), so the reason waits for the chat the player lands in.
+    crate::app::shell_wol::hold_problem_line(state, text.to_owned());
+    if verifying {
         let _ = crate::app::shell_network_setup::service_event(
             state,
             NetworkSetupEvent::Negotiated { result: 1 },
         );
-    } else if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
-        // A rejected HTTP Start has not handed the setup to the lobby runner.
-        // Keep the ordinary host/join screen and release its pending input.
-        protocol.set_online_start_phase(crate::app::shell_network_setup::OnlineStartPhase::Idle);
-        state.platform.window.request_redraw();
     } else {
         crate::app::shell_wol::start_aborted(state);
+    }
+}
+
+/// The lobby's `start_rejected` `phrases` in the language in use: who held
+/// the start up. Phrases this game cannot read are left out.
+fn lobby_names(payload: &Value) -> Option<String> {
+    let phrases: Vec<super::lobby_phrases::Phrase> =
+        serde_json::from_value(payload.get("phrases")?.clone()).ok()?;
+    super::lobby_phrases::localized(&phrases).filter(|names| !names.is_empty())
+}
+
+/// Whose game failed relay admission: once the lobby took this game's
+/// `relay_ready`, another player's game is the one the start waited on.
+fn relay_failure_line(pending: &PendingStart) -> &'static str {
+    if pending.relay_reported {
+        "VERA:StartRelayNotReachedByOther"
+    } else {
+        "VERA:StartRelayNotReached"
     }
 }
 
@@ -3382,8 +3452,27 @@ fn apply_event(
             enter_timed_start(state, service, timing.match_id, &timing.pings)?;
         }
         "start_rejected" => {
+            let reason = payload["message"].as_str().unwrap_or_default();
+            let names = lobby_names(&payload);
+            log::warn!(
+                "The lobby refused the online start: {reason} {}",
+                names.as_deref().unwrap_or_default()
+            );
+            if service.pending.is_none()
+                && crate::app::shell_network_setup::verify(state).is_none()
+                && state.frontend.network_setup_protocol.is_none()
+            {
+                // This game already failed the start and left the room: only
+                // the lobby's names are new.
+                if let Some(names) = names {
+                    crate::app::shell_wol::add_problem_line(state, names);
+                }
+                return Ok(());
+            }
+            let line = tr(service.start_rejected_line(reason));
+            let text = names.map_or_else(|| line.clone(), |names| format!("{line} {names}"));
             cancel_pending(state, service);
-            fail_start(state, &tr("VERA:StartRefusedConnection"));
+            fail_start(state, &text);
         }
         "error" => notice(state, &tr("VERA:OnlineServiceRefused")),
         _ => {}
@@ -3747,6 +3836,7 @@ fn admit_relay_start(
         transport: Some(transport),
         deadline: Instant::now() + service.relay_timeout,
         relay_acknowledged: false,
+        relay_reported: false,
         probes_started: false,
         latencies_reported: false,
         resume_pings: start.resume_pings,
@@ -3896,13 +3986,11 @@ fn poll_spawned_exit(state: &mut AppState, service: &mut LiveService) {
 
 fn poll_relay(state: &mut AppState, service: &mut LiveService) -> Result<()> {
     let mut commands = Vec::new();
+    // The caller fails the start first once its deadline passes
+    // (`LiveService::expired_admission`).
     let Some(pending) = service.pending.as_mut() else {
         return Ok(());
     };
-    ensure!(
-        Instant::now() < pending.deadline,
-        "relay admission timed out"
-    );
     if let Some(transport) = pending.transport.as_mut() {
         let now = crate::app::match_runtime::frame_pacer::frame_bucket(
             crate::app::match_runtime::frame_pacer::wall_clock_ms(),
@@ -4539,17 +4627,7 @@ mod completion_tests {
         // One 429 or 503 to relay_ready used to fail the start at its deadline.
         let (mut service, input, _output) = control_service(None);
         let now = Instant::now();
-        service.pending = Some(PendingStart {
-            match_id: "m".into(),
-            host_name: "Host".into(),
-            transport: None,
-            deadline: now + RELAY_TIMEOUT,
-            relay_acknowledged: true,
-            probes_started: false,
-            latencies_reported: false,
-            resume_pings: None,
-            report: None,
-        });
+        service.pending = Some(start_waiting_until(now + RELAY_TIMEOUT, true));
         let sent = || match input.try_recv() {
             Ok(http::Request::Command {
                 id,
@@ -4576,6 +4654,108 @@ mod completion_tests {
         assert!(!service.report_failed(latency.0, rejected, now));
         service.poll_report(now + RELAY_TIMEOUT);
         assert_eq!(sent(), None);
+    }
+
+    fn start_waiting_until(deadline: Instant, relay_acknowledged: bool) -> PendingStart {
+        PendingStart {
+            match_id: "m".into(),
+            host_name: "Host".into(),
+            transport: None,
+            deadline,
+            relay_acknowledged,
+            relay_reported: false,
+            probes_started: false,
+            latencies_reported: false,
+            resume_pings: None,
+            report: None,
+        }
+    }
+
+    /// A start that runs out says whose game it waited on: one whose own
+    /// relay answered used to read that it could not connect.
+    #[test]
+    fn an_expired_start_says_whose_game_could_not_reach_the_relay() {
+        let (mut service, input, _output) = control_service(None);
+        let now = Instant::now();
+        let expired = now + RELAY_TIMEOUT;
+        service.pending = Some(start_waiting_until(expired, false));
+        assert_eq!(service.expired_admission(now), None);
+        assert_eq!(
+            service.expired_admission(expired),
+            Some("VERA:StartRelayNotReached")
+        );
+        service.pending = Some(start_waiting_until(expired, true));
+        service.send_report("relay_ready", json!({"match_id":"m"}), now);
+        assert_eq!(
+            service.expired_admission(expired),
+            Some("VERA:StartLobbyBusy"),
+            "the lobby never took its relay_ready"
+        );
+        let Ok(http::Request::Command { id, .. }) = input.try_recv() else {
+            panic!("relay_ready");
+        };
+        service.report_completed(id);
+        assert_eq!(
+            service.expired_admission(expired),
+            Some("VERA:StartRelayNotReachedByOther")
+        );
+        service.pending.as_mut().unwrap().probes_started = true;
+        assert_eq!(
+            service.expired_admission(expired),
+            Some("VERA:StartLatencyCheckFailed")
+        );
+    }
+
+    /// The lobby's reasons for refusing a start show as their own lines; one
+    /// this game does not know keeps the general line.
+    #[test]
+    fn a_refused_start_shows_the_lobbys_reason() {
+        let (mut service, _input, _output) = control_service(None);
+        let relay = "A player could not connect to the gameplay relay.";
+        assert_eq!(
+            service.start_rejected_line("A player left before the game started."),
+            "VERA:StartPlayerLeft"
+        );
+        assert_eq!(
+            service.start_rejected_line(relay),
+            "VERA:StartRefusedConnection",
+            "no start pending here"
+        );
+        service.pending = Some(start_waiting_until(Instant::now(), true));
+        assert_eq!(
+            service.start_rejected_line(relay),
+            "VERA:StartRelayNotReached",
+            "the lobby never took its relay_ready"
+        );
+        service.pending.as_mut().unwrap().relay_reported = true;
+        assert_eq!(
+            service.start_rejected_line(relay),
+            "VERA:StartRelayNotReachedByOther"
+        );
+        assert_eq!(
+            service.start_rejected_line("A newer reason."),
+            "VERA:StartRefusedConnection"
+        );
+        // The names a timed-out start's `start_rejected` carries, as
+        // `service.js` sends them; a released lobby sends none.
+        let names = serde_json::json!({"message": relay, "phrases": [{"key": "StartNotConnected",
+            "values": {"names": {"and": ["Alex", "Sam"]}, "count": 2}}]});
+        assert_eq!(
+            lobby_names(&names).as_deref(),
+            Some(
+                "Alex and Sam did not connect to the game server in time, so the game did not start."
+            )
+        );
+        assert_eq!(lobby_names(&serde_json::json!({"message": relay})), None);
+        for key in [
+            "VERA:StartRelayNotReached",
+            "VERA:StartRelayNotReachedByOther",
+            "VERA:StartLatencyCheckFailed",
+            "VERA:StartPlayerLeft",
+            "VERA:StartPlayerCancelled",
+        ] {
+            assert!(crate::i18n::find(key).is_some(), "{key}");
+        }
     }
 
     #[test]

@@ -503,6 +503,19 @@ pub(crate) fn hold_problem_line(state: &mut AppState, text: String) {
     }
 }
 
+/// VERA: add `text` to the line waiting for the chat this online visit next
+/// lands in, or let it wait alone.
+pub(crate) fn add_problem_line(state: &mut AppState, text: String) {
+    if let Some(visit) = state.frontend.wol.as_mut()
+        && visit.provider == WolProvider::Online
+    {
+        visit.problem_line = Some(match visit.problem_line.take() {
+            Some(held) => format!("{held} {text}"),
+            None => text,
+        });
+    }
+}
+
 /// The runner handed over to a WOL match (`[0xB77DC1]` set).
 pub(crate) fn match_started(state: &mut AppState) {
     quick_match::match_starts(state);

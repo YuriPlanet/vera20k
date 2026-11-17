@@ -234,7 +234,7 @@ Event kinds and payloads:
 | `watch_started` | `{match_id,revision,version,rules_digest,staging_digest,seed,tournament,quick_coop,users:[{name,flags,source_index}],options:<HostOptions>,pings:[integer],delay_seconds,playing_since,ranked?,relay:<WatchGrant>}` |
 | `watch_renewed` | `{match_id,relay:<WatchGrant>}` |
 | `map_available` | `{digest,byte_length,resource?}` |
-| `start_rejected` | `{message}` |
+| `start_rejected` | `{message,phrases?}` |
 | `locales` | `{locales:[{name,locale}]}` |
 | `buddies` | `{names:[name]}` |
 | `located` | `{channel:<Channel or null>}` |
@@ -258,6 +258,24 @@ its language gives that number. The keys and their English are the `VERA:Lobby` 
 `src/i18n/vera20k.en.ini`, and a key the lobby adds needs its English line there.
 Operator notices carry no `phrases`: they come in the session's language when the
 operator translated them.
+
+`start_rejected`'s `message` is English. Current games match
+the four messages the lobby sends: `A player left before the game started.`,
+`A player cancelled the game start.`, `A player could not connect to the gameplay relay.`
+and `A player could not complete the peer latency check.`, and show each in the player's
+language; for the relay message a game whose `relay_ready` the service took says another
+player's game could not reach the server, and any other says its own could not. Any
+other message, including a reworded one, shows the general line that the match could
+not start, so a change to these messages needs the game's
+`LiveService::start_rejected_line` changed with it.
+
+A start that times out connecting also says who held it up: every game's
+`start_rejected` then carries `phrases`, one `StartNotConnected` holding
+`{names:{and:[name]},count}`, the players whose games never sent `relay_ready`, so every
+game names the same players after its own line. A game that already gave up on the start
+adds the names to the line it keeps for its next chat. One that times out in the latency
+check names no one: a game sends `latency_ready` only once it timed every peer, so one
+broken link stops every report. Released games read only `message`.
 
 RelayGrant is `{address,ticket,packet_key,payload_key,source_index,ordering_certificate,federation?}`. Address is `IPv4:port`
 of the user's relay in the match. The service chooses it at start and every later grant for that match names it;
