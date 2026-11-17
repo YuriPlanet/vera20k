@@ -236,12 +236,24 @@ pub struct AnimTranslucencyInput {
     /// AnimType `End` (`+0x2C0`), which the `Translucent=` ladder divides
     /// (`0x004230AC`); see `AnimTypeRuntimeConfig::loaded_end`.
     pub end_frame: i32,
+    /// Stock `Translucency=` integer level. A build without Phobos has no
+    /// `Animatable`, so the key stays the plain value the draw arm maps.
+    #[cfg(not(feature = "phobos"))]
     pub explicit_translucency: i32,
-    /// Phobos `Translucency.Cloaked=`'s level, applied instead of
-    /// `explicit_translucency` while `owner_cloaked` is set.
-    pub cloaked_translucency: Option<i32>,
-    /// The anim's entity owner is Cloaking or Cloaked (the Phobos gate).
-    pub owner_cloaked: bool,
+    /// Phobos `Translucency.Get(currentFrame / End)` for this frame
+    /// (`Ext/Anim/Hooks.cpp:601-605`, hook `0x423183`). `None` is native
+    /// `BlitterFlags::None`, which keeps the stock ladder.
+    #[cfg(feature = "phobos")]
+    pub translucency_level: Option<u8>,
+    /// Phobos `Translucency.Cloaked.Get(...)` for this frame (`:588-599`),
+    /// consulted only while [`Self::cloaked_translucency_answers`].
+    #[cfg(feature = "phobos")]
+    pub translucency_cloaked_level: Option<u8>,
+    /// The cloaked track has values and the owner is Cloaking or Cloaked, so
+    /// the plain track is not consulted even when the cloaked answer is
+    /// `None` — native's `hasValue` (`:588-605`).
+    #[cfg(feature = "phobos")]
+    pub cloaked_translucency_answers: bool,
     pub instance_ramp: i32,
 }
 
@@ -249,6 +261,56 @@ pub struct AnimTranslucencyInput {
 pub struct AnimTranslucencyResult {
     pub draw: bool,
     pub flags: u32,
+}
+
+impl AnimTranslucencyInput {
+    /// The draw's translucency input for one frame, from the resolved anim-type
+    /// config the draw already holds.
+    ///
+    /// `AnimClass_DrawIt_Translucency` (`0x423183`, `Ext/Anim/Hooks.cpp:583-605`)
+    /// queries each track at `currentFrame / End`, `End` being the animation
+    /// type's frame count
+    /// ([`AnimTypeRuntimeConfig::loaded_end`](crate::rules::art_data::AnimTypeRuntimeConfig::loaded_end)).
+    /// `End == 0` divides by zero exactly as native does: frame 0 yields
+    /// `0/0` (`NaN`, which matches no keyframe, so the stock ladder runs) and
+    /// any later frame yields infinity, which reads the last keyframe.
+    pub fn new(
+        config: Option<&crate::rules::art_data::AnimTypeRuntimeConfig>,
+        base_flags: u32,
+        current_frame: i32,
+        shp_frame_count: i32,
+        game_detail_level: i32,
+        draw_runtime: AnimDrawRuntime,
+        owner_cloaked: bool,
+    ) -> Self {
+        let end_frame = config.map_or(shp_frame_count, |value| value.loaded_end(shp_frame_count));
+        #[cfg(feature = "phobos")]
+        let percentage = f64::from(current_frame) / f64::from(end_frame);
+        // Without Phobos there is no cloaked track to gate.
+        #[cfg(not(feature = "phobos"))]
+        let _ = owner_cloaked;
+        Self {
+            base_flags,
+            forced_translucent: draw_runtime.forced_translucent,
+            double_thick: config.is_some_and(|value| value.double_thick),
+            translucency_detail_level: config.map_or(0, |value| value.translucency_detail_level),
+            game_detail_level,
+            translucent_ramp: config.is_some_and(|value| value.translucent),
+            current_frame,
+            end_frame,
+            #[cfg(not(feature = "phobos"))]
+            explicit_translucency: config.map_or(0, |value| value.translucency),
+            #[cfg(feature = "phobos")]
+            translucency_level: config.and_then(|value| value.phobos_translucency.get(percentage)),
+            #[cfg(feature = "phobos")]
+            translucency_cloaked_level: config
+                .and_then(|value| value.phobos_translucency_cloaked.get(percentage)),
+            #[cfg(feature = "phobos")]
+            cloaked_translucency_answers: owner_cloaked
+                && config.is_some_and(|value| value.phobos_translucency_cloaked.has_values()),
+            instance_ramp: i32::from(draw_runtime.translucency_ramp),
+        }
+    }
 }
 
 fn translucency_flag(level: i32) -> u32 {
@@ -287,22 +349,31 @@ pub fn anim_translucency_selection(input: AnimTranslucencyInput) -> AnimTransluc
         };
         return AnimTranslucencyResult { draw: true, flags };
     }
-    if input.explicit_translucency > 0
-        || (input.owner_cloaked && input.cloaked_translucency.is_some_and(|level| level > 0))
+    // Phobos `0x423183`: the airborne `Translucency` track replaces the stock
+    // level. A cloaked Techno owner answers from `Translucency.Cloaked` and
+    // never consults the plain track, even when that answer is `None`
+    // (`hasValue`, `:588-605`). A `None` answer keeps the stock ladder below.
+    #[cfg(feature = "phobos")]
     {
-        // Phobos `0x423183`: a cloaked Techno owner's anim uses
-        // `Translucency.Cloaked` over `Translucency`; a zero level keeps the
-        // stock ramp ladder below.
-        let level = if input.owner_cloaked {
-            input
-                .cloaked_translucency
-                .unwrap_or(input.explicit_translucency)
+        let level = if input.cloaked_translucency_answers {
+            input.translucency_cloaked_level
         } else {
-            input.explicit_translucency
+            input.translucency_level
         };
+        if let Some(level) = level {
+            return AnimTranslucencyResult {
+                draw: input.instance_ramp < 15,
+                flags: flags | translucency_flag(i32::from(level)),
+            };
+        }
+    }
+    // A build without Phobos has no `Animatable`: the authored integer is the
+    // level, and any other value keeps the stock ladder.
+    #[cfg(not(feature = "phobos"))]
+    if input.explicit_translucency > 0 {
         return AnimTranslucencyResult {
             draw: input.instance_ramp < 15,
-            flags: flags | translucency_flag(level),
+            flags: flags | translucency_flag(input.explicit_translucency),
         };
     }
     // `0x004231C1..0x004231EE`: a ramp of 1-5 draws at 25%, 6-15 at 50%,
@@ -6096,6 +6167,19 @@ fn advance_anim_boundary(anim: &mut AnimObject, config: &AnimTypeRuntimeConfig) 
 mod long_tail_contract_tests {
     use super::*;
 
+    /// The answer a single-entry `Translucency` fallback track gives for an
+    /// authored integer (`Utilities/Constructs.h:481-501`): only the three
+    /// translucent stages survive, everything else is `BlitterFlags::None`.
+    #[cfg(feature = "phobos")]
+    fn plain_level(value: i32) -> Option<u8> {
+        match value {
+            25 => Some(25),
+            50 => Some(50),
+            75 => Some(75),
+            _ => None,
+        }
+    }
+
     /// `0x0042319A..0x004231BC`: only an exact `Translucency=` 25, 50 or 75
     /// selects a stage; any other value draws without one.
     /// `0x0042306B`: the `+0x119` arm ORs 75% for a `DoubleThick=` type,
@@ -6111,9 +6195,14 @@ mod long_tail_contract_tests {
             translucent_ramp: false,
             current_frame: 0,
             end_frame: 10,
+            #[cfg(not(feature = "phobos"))]
             explicit_translucency,
-            cloaked_translucency: None,
-            owner_cloaked: false,
+            #[cfg(feature = "phobos")]
+            translucency_level: plain_level(explicit_translucency),
+            #[cfg(feature = "phobos")]
+            translucency_cloaked_level: None,
+            #[cfg(feature = "phobos")]
+            cloaked_translucency_answers: false,
             instance_ramp,
         };
         for (double_thick, explicit, ramp, expected) in [
@@ -6148,9 +6237,14 @@ mod long_tail_contract_tests {
                 translucent_ramp: false,
                 current_frame: 0,
                 end_frame: 10,
+                #[cfg(not(feature = "phobos"))]
                 explicit_translucency: 0,
-                cloaked_translucency: None,
-                owner_cloaked: false,
+                #[cfg(feature = "phobos")]
+                translucency_level: None,
+                #[cfg(feature = "phobos")]
+                translucency_cloaked_level: None,
+                #[cfg(feature = "phobos")]
+                cloaked_translucency_answers: false,
                 instance_ramp,
             });
             assert_eq!(
@@ -6183,9 +6277,14 @@ mod long_tail_contract_tests {
                     translucent_ramp: false,
                     current_frame: 0,
                     end_frame: 10,
+                    #[cfg(not(feature = "phobos"))]
                     explicit_translucency,
-                    cloaked_translucency: None,
-                    owner_cloaked: false,
+                    #[cfg(feature = "phobos")]
+                    translucency_level: plain_level(explicit_translucency),
+                    #[cfg(feature = "phobos")]
+                    translucency_cloaked_level: None,
+                    #[cfg(feature = "phobos")]
+                    cloaked_translucency_answers: false,
                     instance_ramp: 0,
                 }),
                 AnimTranslucencyResult { draw: true, flags },
@@ -6277,37 +6376,38 @@ mod tests {
                 .art()
                 .anim_runtime_config(ANIM)
                 .unwrap()
-                .phobos_translucency_cloaked,
-            Some(25)
+                .phobos_translucency_cloaked
+                .keyframes(),
+            &[
+                crate::rules::phobos_translucency_track::TranslucencyKeyframe {
+                    percentage: 0.0,
+                    level: 25,
+                }
+            ]
         );
-        assert_eq!(
-            rules
+        assert!(
+            !rules
                 .art()
                 .anim_runtime_config(PLAIN)
                 .unwrap()
-                .phobos_translucency_cloaked,
-            None
+                .phobos_translucency_cloaked
+                .has_values(),
+            "an absent Translucency.Cloaked leaves the cloaked track empty"
         );
         let select = |sim: &Simulation, anim: u64| {
             let config = rules
                 .art()
-                .anim_runtime_config(sim.interner().resolve(sim.anim(anim).unwrap().type_id()))
-                .unwrap();
+                .anim_runtime_config(sim.interner().resolve(sim.anim(anim).unwrap().type_id()));
             crate::sim::anim_class::anim_translucency_selection(
-                crate::sim::anim_class::AnimTranslucencyInput {
-                    base_flags: 0,
-                    forced_translucent: false,
-                    double_thick: false,
-                    translucency_detail_level: config.translucency_detail_level,
-                    game_detail_level: 2,
-                    translucent_ramp: config.translucent,
-                    current_frame: 0,
-                    end_frame: config.loaded_end(8),
-                    explicit_translucency: config.translucency,
-                    cloaked_translucency: config.phobos_translucency_cloaked,
-                    owner_cloaked: sim.anim_owner_is_cloaked(anim),
-                    instance_ramp: 0,
-                },
+                crate::sim::anim_class::AnimTranslucencyInput::new(
+                    config,
+                    0,
+                    0,
+                    8,
+                    2,
+                    crate::sim::anim_class::AnimDrawRuntime::default(),
+                    sim.anim_owner_is_cloaked(anim),
+                ),
             )
             .flags
         };
@@ -6330,6 +6430,54 @@ mod tests {
         assert_eq!(select(&sim, tinted), 2, "Cloaked uses the cloaked 25%");
         cloak(&mut sim, 0);
         assert_eq!(select(&sim, tinted), 4, "uncloaked returns to Translucency");
+    }
+
+    /// Phobos keyframeable `Translucency=` (`Ext/AnimType/Body.cpp:113`,
+    /// `Animatable<TranslucencyLevel>`; `AnimClass_DrawIt_Translucency`
+    /// `0x423183`, `Ext/Anim/Hooks.cpp:583-605`): the track answers at
+    /// `currentFrame / End`, interpolation truncates, and a `None` answer
+    /// keeps the stock instance ramp. A cloaked owner answers from
+    /// `Translucency.Cloaked` and never from the plain track.
+    #[test]
+    #[cfg(feature = "phobos")]
+    fn translucency_keyframes_answer_per_frame_and_keep_the_stock_fallback() {
+        const TRACK: &str = "TINTTRACK";
+        let mut art = ArtRegistry::from_ini(&IniFile::from_str(&format!(
+            "[{TRACK}]\nEnd=8\n\
+             Translucency.Keyframe0.Percentage=0\n\
+             Translucency.Keyframe0.Value=0\n\
+             Translucency.Keyframe1.Percentage=1\n\
+             Translucency.Keyframe1.Value=50\n\
+             Translucency.Interpolation=linear\n\
+             Translucency.Cloaked=75\n"
+        )));
+        art.bind_anim_frame_count_for_test(TRACK, 8);
+        let config = art.anim_runtime_config(TRACK).unwrap();
+        let select = |frame: i32, owner_cloaked: bool| {
+            anim_translucency_selection(AnimTranslucencyInput::new(
+                Some(config),
+                0,
+                frame,
+                8,
+                2,
+                AnimDrawRuntime::default(),
+                owner_cloaked,
+            ))
+        };
+        for (frame, owner_cloaked, flags) in [
+            (0, false, 0),
+            (2, false, 0),
+            (4, false, 2),
+            (8, false, 4),
+            (4, true, 6),
+        ] {
+            let result = select(frame, owner_cloaked);
+            assert!(
+                result.draw,
+                "frame {frame} cloak {owner_cloaked} keeps drawing"
+            );
+            assert_eq!(result.flags, flags, "frame {frame} cloak {owner_cloaked}");
+        }
     }
 
     /// Phobos `Layer.UseObjectLayer=` (`Ext/AnimType/Body.cpp:92`,

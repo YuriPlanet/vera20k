@@ -774,26 +774,17 @@ pub(super) fn anim_instance_flags(
     draw_runtime: crate::sim::anim_class::AnimDrawRuntime,
     owner_cloaked: bool,
 ) -> Option<u32> {
-    let result = crate::sim::anim_class::anim_translucency_selection(
-        crate::sim::anim_class::AnimTranslucencyInput {
-            base_flags,
-            forced_translucent: draw_runtime.forced_translucent,
-            double_thick: config.is_some_and(|value| value.double_thick),
-            translucency_detail_level: config.map_or(0, |value| value.translucency_detail_level),
-            // Draw-time detail is presentation state and does not enter simulation.
-            game_detail_level,
-            translucent_ramp: config.is_some_and(|value| value.translucent),
-            current_frame,
-            end_frame: config.map_or(shp_frame_count, |value| value.loaded_end(shp_frame_count)),
-            explicit_translucency: config.map_or(0, |value| value.translucency),
-            #[cfg(feature = "phobos")]
-            cloaked_translucency: config.and_then(|value| value.phobos_translucency_cloaked),
-            #[cfg(not(feature = "phobos"))]
-            cloaked_translucency: None,
-            owner_cloaked,
-            instance_ramp: i32::from(draw_runtime.translucency_ramp),
-        },
+    // Draw-time detail is presentation state and does not enter simulation.
+    let input = crate::sim::anim_class::AnimTranslucencyInput::new(
+        config,
+        base_flags,
+        current_frame,
+        shp_frame_count,
+        game_detail_level,
+        draw_runtime,
+        owner_cloaked,
     );
+    let result = crate::sim::anim_class::anim_translucency_selection(input);
     result.draw.then_some(result.flags)
 }
 
