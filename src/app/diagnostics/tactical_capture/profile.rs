@@ -586,6 +586,7 @@ impl TacticalCaptureProfile {
                     start_position: LaunchStartPosition::Position(slot.start_position),
                     team: launch_team(slot.team),
                     difficulty: AiDifficulty::Easy,
+                    driver_policy: None,
                 })
                 .collect(),
             pre_fill_house_roster:

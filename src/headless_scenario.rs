@@ -76,6 +76,7 @@ pub fn battle_session(
                 start_position: LaunchStartPosition::Auto,
                 team: LaunchTeam::None,
                 difficulty,
+                driver_policy: None,
             })
             .collect(),
         pre_fill_house_roster: PreFillHouseRoster::from_compact_skirmish(opponents.len()),
@@ -115,6 +116,7 @@ impl HeadlessScenario {
             controllers: Vec::new(),
             handle: None,
             difficulty: crate::sim::house_state::HouseDifficulty::Normal,
+            driver_policy: None,
             commander: None,
         };
         let runtime = &mut self.runtime;

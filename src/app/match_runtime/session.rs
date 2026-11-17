@@ -1313,6 +1313,7 @@ impl MatchSession {
                 start_position: defaults.start_position,
                 team: defaults.team,
                 difficulty,
+                driver_policy: None,
             });
             launch.opponents.sort_by_key(|ai| ai.raw_slot_index);
         } else {
@@ -4989,6 +4990,7 @@ mod tests {
                 start_position: crate::skirmish_launch::LaunchStartPosition::Auto,
                 team: crate::skirmish_launch::LaunchTeam::None,
                 difficulty: crate::skirmish_launch::AiDifficulty::Easy,
+                driver_policy: None,
             });
         launch.ai_player_count = 1;
         launch.rebuild_house_roster();
@@ -5115,6 +5117,7 @@ mod tests {
                 start_position: Position(1),
                 team: crate::skirmish_launch::LaunchTeam::None,
                 difficulty: crate::skirmish_launch::AiDifficulty::Hard,
+                driver_policy: None,
             });
         let inactive = [super::NetworkAiOptions {
             difficulty: -1,

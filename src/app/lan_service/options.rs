@@ -765,6 +765,7 @@ fn parse_options(
             start_position: choices.start_position,
             team: choices.team,
             difficulty: decoded_difficulty(difficulty)?,
+            driver_policy: None,
         });
     }
     ensure!(fields.next().is_none(), "extra LAN AI fields");

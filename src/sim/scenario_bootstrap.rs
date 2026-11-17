@@ -1180,6 +1180,10 @@ pub struct NormalizedSkirmishSlot {
     /// A human node's handle, CreateHouses' source for House+0x1602A.
     pub handle: Option<String>,
     pub(crate) difficulty: HouseDifficulty,
+    /// A computer slot carrying a driver policy becomes a command-driven
+    /// house with the policy treatment applied where the slot becomes its
+    /// house; `None` is a native computer.
+    pub driver_policy: Option<crate::sim::driver::DriverPolicy>,
     /// The commander this house must get, if any.
     ///
     /// Reserved seam: no UI offers it yet, so every launch path passes `None`
@@ -1909,6 +1913,7 @@ pub fn normalized_launch_slots(session: &SkirmishLaunchSession) -> Vec<Normalize
             controllers: vec![controller],
             handle: Some(human.name.clone()),
             difficulty: HouseDifficulty::Normal,
+            driver_policy: None,
             commander: None,
         });
     }
@@ -1933,6 +1938,7 @@ pub fn normalized_launch_slots(session: &SkirmishLaunchSession) -> Vec<Normalize
             handle: None,
             difficulty: HouseDifficulty::from_native(opponent.difficulty.as_i32())
                 .expect("native AI difficulty"),
+            driver_policy: None,
             commander: None,
         });
     }
@@ -2122,6 +2128,15 @@ pub fn populate_launch_houses(
                 );
             }
         }
+        // A driver-policy opponent slot's house is command-driven and
+        // carries the policy treatment instead of the native AI ownership
+        // the launch would otherwise give it. The native Hard opening grant
+        // here replaces this pass's `apply_skirmish_ai_opening_credits` for
+        // the house, which skips command-driven houses.
+        if let Some(policy) = slot.driver_policy {
+            house.make_command_driven(policy);
+            apply_driver_policy_to_house(&mut house, rules, &policy);
+        }
         sim.houses.register(house);
     }
 }
@@ -2142,7 +2157,7 @@ const NATIVE_AI_CM_PERCENT_MULTIPLIER_BITS: u64 = 0x3F84_7AE1_47AE_147B;
 /// differs (e.g. `3 * 0.01 * 100` chops to 2, not 3). `Math__ftol` returns the
 /// low dword of `FISTP qword`, so the i64 result is narrowed with `as i32`; an
 /// out-of-range operand stores the x87 integer indefinite (low dword 0).
-pub(crate) fn native_ai_opening_grant(coefficient: i32, money: i32) -> i32 {
+pub fn native_ai_opening_grant(coefficient: i32, money: i32) -> i32 {
     let percent = X87Chop53::load_f64(NativeF64Bits::from_bits(
         NATIVE_AI_CM_PERCENT_MULTIPLIER_BITS,
     ))
@@ -2150,6 +2165,43 @@ pub(crate) fn native_ai_opening_grant(coefficient: i32, money: i32) -> i32 {
     let scaled = X87Chop53::mul(X87Chop53::load_i32(coefficient), percent);
     let product = X87Chop53::mul(scaled, X87Chop53::load_i32(money));
     X87Chop53::ftol_i32_low_masked(product)
+}
+
+/// Apply a driver policy's opening treatment to `house`.
+///
+/// The kernel reads the [`crate::sim::driver::DriverPolicy`] fields: a set
+/// `native_hard_grant` takes the native Hard AI's opening grant through
+/// [`native_ai_opening_grant`] — the same kernel the launch grants computer
+/// houses with (`apply_skirmish_ai_opening_credits`), with the retail
+/// `[General] MultiplayerAICM` HARD row regardless of the house's own
+/// native difficulty — and a set `build_time_scale` scales the house's
+/// production build times (`HouseState::set_native_build_time_scale`). The
+/// per-tick knobs (`credit_drip`, `wallet_floor`) are launch-loop grants
+/// applied by [`crate::sim::driver::DriverPolicy::apply_credit_support`],
+/// not house state. The all-off policy takes nothing, so a pure decision
+/// layer can claim exactly what it achieves.
+///
+/// The one owner of the policy opening kernel; downstream harnesses and
+/// the launch's house construction ([`populate_launch_houses`]) both come
+/// through here.
+pub fn apply_driver_policy_to_house(
+    state: &mut HouseState,
+    rules: &RuleSet,
+    policy: &crate::sim::driver::DriverPolicy,
+) {
+    if policy.native_hard_grant {
+        let coefficient = rules
+            .general
+            .multiplayer_ai_cm
+            .get(HouseDifficulty::Hard.table_index())
+            .copied()
+            .unwrap_or(0);
+        let grant = native_ai_opening_grant(coefficient, state.economy().available_money());
+        state.economy_mut().add_credits(grant);
+    }
+    if let Some(scale) = policy.build_time_scale {
+        state.set_native_build_time_scale(scale);
+    }
 }
 
 /// Apply the generated skirmish AI opening-credit grant at the Post_Map_Init handoff.
@@ -2168,9 +2220,13 @@ pub(crate) fn native_ai_opening_grant(coefficient: i32, money: i32) -> i32 {
 /// the leftover starting-unit budget credited by `seed_starting_extra_units`
 /// (pure integer arithmetic on the native side: `CDQ/SAR/IDIV` budget thirds
 /// and integer cost subtraction, no x87 involvement).
+///
+/// A command-driven house skips too: its opening grant comes from the
+/// driver-policy treatment ([`apply_driver_policy_to_house`]) instead of
+/// the native loop.
 pub fn apply_skirmish_ai_opening_credits(houses: &mut crate::sim::houses::Houses, rules: &RuleSet) {
     for house in houses.values_mut() {
-        if house.is_human() || house.multiplay_passive() {
+        if house.is_human() || house.multiplay_passive() || house.command_driven() {
             continue;
         }
         let coefficient = rules
@@ -4341,6 +4397,7 @@ mod tests {
                 start_position: LaunchStartPosition::Auto,
                 team: LaunchTeam::None,
                 difficulty: crate::skirmish_launch::AiDifficulty::Normal,
+                driver_policy: None,
             });
         session.rebuild_house_roster();
         let descriptor = MatchLaunchDescriptor::from_resolved(session).unwrap();
@@ -4465,6 +4522,7 @@ mod tests {
                 start_position: LaunchStartPosition::Auto,
                 team: LaunchTeam::None,
                 difficulty: crate::skirmish_launch::AiDifficulty::Normal,
+                driver_policy: None,
             })
             .collect();
         session.ai_player_count = 2;
@@ -5763,6 +5821,7 @@ mod tests {
                         start_position: LaunchStartPosition::Auto,
                         team: LaunchTeam::None,
                         difficulty: crate::skirmish_launch::AiDifficulty::Easy,
+                        driver_policy: None,
                     });
                 launch.session.ai_player_count = 1;
                 launch.session.rebuild_house_roster();
@@ -6196,6 +6255,7 @@ mod tests {
             }],
             handle: None,
             difficulty: HouseDifficulty::Normal,
+            driver_policy: None,
             commander: None,
         }];
         let mut expected = SimRng::new(seed);
@@ -6398,6 +6458,7 @@ mod tests {
                 start_position: LaunchStartPosition::Position(index + 1),
                 team: LaunchTeam::None,
                 difficulty: AiDifficulty::Easy,
+                driver_policy: None,
             })
             .collect();
         session.ai_player_count = session.opponents.len() as i32;
@@ -7516,6 +7577,7 @@ mod tests {
                     start_position,
                     team: LaunchTeam::None,
                     difficulty: crate::skirmish_launch::AiDifficulty::Easy,
+                    driver_policy: None,
                 },
             )
             .collect();

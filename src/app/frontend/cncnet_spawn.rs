@@ -701,6 +701,7 @@ fn skirmish(
                 2 => AiDifficulty::Easy,
                 _ => unreachable!("active AI difficulty was validated"),
             },
+            driver_policy: None,
         });
     }
     ensure!(

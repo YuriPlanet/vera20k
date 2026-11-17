@@ -45,6 +45,7 @@ fn generated_houses(rules: &RuleSet, native: &Value) -> Simulation {
                 controllers: Vec::new(),
                 handle: None,
                 difficulty: HouseDifficulty::Normal,
+                driver_policy: None,
                 commander: None,
             }
         })

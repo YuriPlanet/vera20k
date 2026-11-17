@@ -572,6 +572,11 @@ pub struct HouseState {
     left_game: bool,
     #[serde(default)]
     native_construction: Option<NativeHouseConstruction>,
+    /// A driver-policy knob: a per-house scale on production build times,
+    /// read through [`Self::native_build_time_scale`]. `None` is the
+    /// native behavior. Nothing native writes this; it is not a gamemd port.
+    #[serde(default)]
+    native_build_time_scale: Option<NativeF32Bits>,
     #[serde(default)]
     scenario_parameters: HouseScenarioParameters,
     /// House+16C's retained initial Techno records. ReadScenario684C1B calls
@@ -648,11 +653,21 @@ pub struct HouseState {
     #[serde(default)]
     multiplay_passive: bool,
     /// This house's decisions are owned by an external command-layer
-    /// controller, so the native AI rungs stand down for it. Not a gamemd
+    /// controller, so the native AI rungs stand down for it, and a
+    /// command-driven launch supplies its own opening credits. Not a gamemd
     /// port: native `HouseClass` has no such byte, and it stays out of the
     /// retail-state concerns entirely.
     #[serde(default)]
     command_driven: bool,
+    /// The driver policy this house launched with, stored as a
+    /// [`DriverPolicy`](crate::sim::driver::DriverPolicy) so a command
+    /// layer can carry knob combinations beyond a bare flag; a later
+    /// driver rebuild (fresh launch and saved-game restore alike) reads
+    /// the policy back. `None` for every native house and saves written
+    /// before the policy existed. Like the flag above it stays out of
+    /// every native-state concern.
+    #[serde(default)]
+    driver_policy: Option<crate::sim::driver::DriverPolicy>,
     /// The HouseType's `Cost*Mult=`, projected from the rules at creation.
     /// Like `multiplay_passive` it is the type's, so it is left out of the
     /// state hash.
@@ -1201,15 +1216,31 @@ impl HouseState {
     }
 
     /// Hand this house's decisions to an external command-layer controller:
-    /// the native AI rungs stand down for it (no in-tree caller sets this).
-    pub fn make_command_driven(&mut self) {
+    /// the native AI rungs stand down for it (no in-tree caller sets this)
+    /// and the launch's policy treatment supplies its opening credits. The
+    /// policy rides along so a later driver rebuild recovers it; anything
+    /// convertible into a
+    /// [`DriverPolicy`](crate::sim::driver::DriverPolicy) is accepted.
+    /// Not a gamemd port.
+    pub fn make_command_driven(&mut self, treatment: impl Into<crate::sim::driver::DriverPolicy>) {
         self.command_driven = true;
+        self.driver_policy = Some(treatment.into());
     }
 
     /// The external-driver-ownership flag (see the field's docs): the native
     /// AI rungs read this to stand down for a command-layer-driven house.
     pub const fn command_driven(&self) -> bool {
         self.command_driven
+    }
+
+    /// The stored driver policy itself (see the field's docs); the launch's
+    /// per-tick credit support applies it. `None` for native houses and
+    /// saves written before the policy existed.
+    pub const fn driver_policy(&self) -> Option<&crate::sim::driver::DriverPolicy> {
+        match &self.driver_policy {
+            Some(policy) => Some(policy),
+            None => None,
+        }
     }
 
     /// Player control (`+0x1ED`): Create_Houses (`688109..10F`) grants it to
@@ -1571,6 +1602,18 @@ impl HouseState {
 
     pub const fn difficulty(&self) -> HouseDifficulty {
         self.difficulty
+    }
+
+    /// The stored build-time scale, if a driver policy set one (see the
+    /// field's docs).
+    pub const fn native_build_time_scale(&self) -> Option<NativeF32Bits> {
+        self.native_build_time_scale
+    }
+
+    /// Set the build-time scale; the launch's policy kernel is its only
+    /// writer.
+    pub fn set_native_build_time_scale(&mut self, scale: NativeF32Bits) {
+        self.native_build_time_scale = Some(scale);
     }
 
     /// The commander personality driving this house, if `[AIPersonalities]`
@@ -2755,8 +2798,13 @@ impl HouseState {
 
     /// `Execute_DoList 0x0064C4FB..0x0064C50D` admits a registered House
     /// when either IsHuman or PlayerControl is set, in every session mode.
+    /// A command-driven house rides the same DoList with the external
+    /// driver as its only command source — native never queues player
+    /// events for a computer house, so admitting them changes no
+    /// native-reachable state, and refusing them would leave every driver
+    /// order admitted but never dispatched.
     pub const fn event_dispatch_eligible(&self) -> bool {
-        self.is_human || self.player_control
+        self.is_human || self.player_control || self.command_driven
     }
 
     /// Native mode-aware House-control predicate shared by successful Building
@@ -2857,8 +2905,11 @@ impl HouseState {
     /// accepts any nonzero AutoBaseBuilding or signed `CurrentIQ >=
     /// Rules+0x143C`, then writes AutoBaseBuilding, Production, and
     /// AutocreateAllowed in that order without touching AITriggersActive.
+    /// A command-driven house returns before the transition: its
+    /// activation latches stay down so the native AI never takes it over.
     pub(crate) fn update_ai_activation(&mut self, game_mode_nonzero: bool, iq_production: i32) {
-        if self.is_controlled_by_human(game_mode_nonzero)
+        if self.command_driven
+            || self.is_controlled_by_human(game_mode_nonzero)
             || (!self.ai_activation.auto_base_building && self.current_iq < iq_production)
         {
             return;
@@ -2997,6 +3048,7 @@ impl HouseState {
             ui_name: HouseUiName::TypeName,
             left_game: false,
             native_construction: None,
+            native_build_time_scale: None,
             scenario_parameters: HouseScenarioParameters::default(),
             initial_techno_records: Vec::new(),
             side_index: side_index.into(),
@@ -3009,6 +3061,7 @@ impl HouseState {
             personality: None,
             multiplay_passive: false,
             command_driven: false,
+            driver_policy: None,
             country_cost_mults: CountryCostMults::default(),
             country_speed_mults: CountrySpeedMults::default(),
             is_defeated: false,
