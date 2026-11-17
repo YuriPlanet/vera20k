@@ -235,13 +235,14 @@ pub(super) fn project_preview_start_positions(
         return Vec::new();
     }
 
-    // VERA authored maps can expose thirty admitted starts. The projection
-    // remains the same for native maps. Reject a malformed header as a whole
-    // rather than dropping one point and renumbering every later start label.
+    // VERA authored maps can expose SKIRMISH_MAX_SLOT_COUNT admitted starts.
+    // The projection remains the same for native maps. Reject a malformed
+    // header as a whole rather than dropping one point and renumbering every
+    // later start label.
     bounds
         .start_points
         .iter()
-        .take(crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT)
+        .take(crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT)
         .map(|point| {
             let x_per_mille = ((i64::from(point.x) - i64::from(bounds.origin_x)) * 1000)
                 / i64::from(bounds.width);

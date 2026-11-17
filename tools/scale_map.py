@@ -21,6 +21,12 @@ waypoints on a grid across the diamond, an ore field beside each start, and
 clumps of trees between the starts. Above eight starts it also
 writes `[Basic] MaxPlayers=N`, so the lobby seats a player at each. A fixed seed places the ore and trees, so
 the same arguments always write the same map.
+
+`--ore-fields N` rings each start with N fields instead of one, spread evenly
+round it, and `--ore-radius R` sets a field's radius in cells; both leave a
+field where the committed maps have it when left alone. A crowded map wants
+more: 169 starts on `--size 500` hold 94 ore cells each with one field and 458
+with `--ore-fields 3 --ore-radius 7`.
 """
 
 import argparse
@@ -84,20 +90,42 @@ def grid_starts(size: int, count: int) -> tuple[list[tuple[int, int]], float]:
     return starts, min(u_pitch, v_pitch) / math.sqrt(2)
 
 
-def match_layout(size: int, starts: list[tuple[int, int]], pitch: float):
-    """Ore cells {(rx, ry): (overlay, density)} and tree cells {(rx, ry): name}."""
+def match_layout(
+    size: int,
+    starts: list[tuple[int, int]],
+    pitch: float,
+    *,
+    ore_fields: int = 1,
+    ore_radius: float | None = None,
+):
+    """Ore cells {(rx, ry): (overlay, density)} and tree cells {(rx, ry): name}.
+
+    `ore_fields` fields ring each start, the first a third of the pitch south
+    of it on screen (+v) as the committed maps have it; extra fields sit at
+    equal angles round the same distance. `ore_radius` overrides the field's
+    own radius, which is a tenth of the pitch by default.
+    """
     rng = random.Random(0x5CA1E)
     ore = {}
-    # Each field lies a third of the pitch south of its start on screen (+v),
-    # clear of the base sim-bench builds around the start.
-    offset, radius = pitch / 3, max(2.0, pitch / 10)
+    # Each field lies a third of the pitch from its start, clear of the base
+    # sim-bench builds around the start.
+    offset, radius = pitch / 3, ore_radius if ore_radius is not None else max(2.0, pitch / 10)
     for rx, ry in starts:
-        centre = (rx + offset / math.sqrt(2), ry + offset / math.sqrt(2))
+        centres = []
+        if ore_fields == 1:
+            # The committed maps' single field: due south, offset/√2 per axis.
+            centres.append((rx + offset / math.sqrt(2), ry + offset / math.sqrt(2)))
+        else:
+            for field in range(ore_fields):
+                angle = math.pi / 2 + 2 * math.pi * field / ore_fields
+                dv, du = offset * math.sin(angle), offset * math.cos(angle)
+                centres.append((rx + (dv + du) / 2, ry + (dv - du) / 2))
         reach = math.ceil(radius)
-        for y in range(int(centre[1]) - reach, int(centre[1]) + reach + 2):
-            for x in range(int(centre[0]) - reach, int(centre[0]) + reach + 2):
-                if in_diamond(size, x, y) and math.dist((x, y), centre) <= radius:
-                    ore[(x, y)] = (rng.choice(ORE_OVERLAYS), rng.choice(ORE_DENSITIES))
+        for centre in centres:
+            for y in range(int(centre[1]) - reach, int(centre[1]) + reach + 2):
+                for x in range(int(centre[0]) - reach, int(centre[0]) + reach + 2):
+                    if in_diamond(size, x, y) and math.dist((x, y), centre) <= radius:
+                        ore[(x, y)] = (rng.choice(ORE_OVERLAYS), rng.choice(ORE_DENSITIES))
     trees = {}
     # Clumps on a coarse lattice, kept off the bases and armies around each
     # start and off the ore and the cells beside it.
@@ -120,7 +148,14 @@ def match_layout(size: int, starts: list[tuple[int, int]], pitch: float):
     return ore, trees
 
 
-def build_map(size: int, starts: int | None = None, *, cell_array_width: int | None = None) -> str:
+def build_map(
+    size: int,
+    starts: int | None = None,
+    *,
+    cell_array_width: int | None = None,
+    ore_fields: int = 1,
+    ore_radius: float | None = None,
+) -> str:
     if cell_array_width is None:
         cell_array_width = 512 if size <= 256 else 1024
     # [Terrain] and [Waypoints] keys are y*1000+x, so x must stay below 1000.
@@ -145,7 +180,7 @@ def build_map(size: int, starts: int | None = None, *, cell_array_width: int | N
         if pitch < MIN_PITCH:
             raise ValueError(f'{starts} starts on size {size} are {pitch:.1f} cells apart; '
                              f'a match base needs {MIN_PITCH}')
-        ore, trees = match_layout(size, start_cells, pitch)
+        ore, trees = match_layout(size, start_cells, pitch, ore_fields=ore_fields, ore_radius=ore_radius)
         for (x, y), (kind, density) in ore.items():
             overlay[y * cell_array_width + x] = kind
             overlay_data[y * cell_array_width + x] = density
@@ -202,11 +237,25 @@ def main() -> None:
     parser.add_argument('--starts', type=int, help='Grid starts with ore and trees, for the match scenario')
     parser.add_argument('--cell-array-width', type=int, choices=(512, 1024), default=None,
                         help='overlay encoding width (default: select from map Size)')
+    parser.add_argument('--ore-fields', type=int, default=1,
+                        help='ore fields ringing each start (default 1, as the committed maps)')
+    parser.add_argument('--ore-radius', type=float, default=None,
+                        help='ore field radius in cells (default: a tenth of the start pitch)')
     args = parser.parse_args()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     # Explicit LF: the map is committed and regenerated byte-identically, so
     # the writer must not follow the host platform's newline translation.
-    args.output.write_text(build_map(args.size, args.starts, cell_array_width=args.cell_array_width), encoding='ascii', newline='\n')
+    args.output.write_text(
+        build_map(
+            args.size,
+            args.starts,
+            cell_array_width=args.cell_array_width,
+            ore_fields=args.ore_fields,
+            ore_radius=args.ore_radius,
+        ),
+        encoding='ascii',
+        newline='\n',
+    )
 
 
 if __name__ == '__main__':

@@ -127,7 +127,7 @@ use vera20k_core::sim::movement::PathBatchStats;
 use vera20k_core::sim::runtime::SimRuntime;
 use vera20k_core::sim::scenario_bootstrap::MatchLaunchDescriptor;
 use vera20k_core::sim::scenario_session::ScenarioGameMode;
-use vera20k_core::skirmish_launch::{NETWORK_PLAYER_SLOT_COUNT, SkirmishLaunchSession};
+use vera20k_core::skirmish_launch::{SKIRMISH_MAX_SLOT_COUNT, SkirmishLaunchSession};
 
 use sim_bench_match::MatchScenario;
 
@@ -302,11 +302,11 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
     Ok(args)
 }
 
-/// `--computers`, by default the most the skirmish lobby admits on the map:
-/// it refuses more players than the map's capacity (`MapCapacityExceeded`,
+/// `--computers`, by default the most the offline Skirmish shell admits on the
+/// map: it refuses more players than the map's capacity (`MapCapacityExceeded`,
 /// `TXT_SCENARIO_TOO_SMALL`). More would seat houses the map has no start
-/// for. A map's `[Basic] MaxPlayers` (9 to 30) raises it past the eight
-/// retail starts, up to 29 computer houses beside the local one.
+/// for. A map's `[Basic] MaxPlayers` (9 to 120) raises it past the eight
+/// retail starts, up to 119 computer houses beside the local one.
 fn seated_computers(args: &Args) -> Result<usize, String> {
     let assets =
         AssetManager::new(&args.ra2_dir, MediaArchiveMode::STOCK_DIGITAL).map_err(|error| {
@@ -589,9 +589,9 @@ fn watched_session(
     computers: usize,
     watchers: usize,
 ) -> Result<SkirmishLaunchSession, String> {
-    if watchers + computers > NETWORK_PLAYER_SLOT_COUNT || computers < 2 {
+    if watchers + computers > SKIRMISH_MAX_SLOT_COUNT || computers < 2 {
         return Err(format!(
-            "--watchers needs two computer houses or more and at most {NETWORK_PLAYER_SLOT_COUNT} rows in all"
+            "--watchers needs two computer houses or more and at most {SKIRMISH_MAX_SLOT_COUNT} rows in all"
         ));
     }
     let mut session = battle_session(map, &sim_bench_match::COMPUTER_ROSTER[..computers]);
@@ -842,7 +842,7 @@ fn main() -> Result<(), String> {
             eprintln!(
                 "usage: sim-bench [--ra2-dir <retail path>] [--map Death.mmx] \
                  [--scenario march|match|skirmish] [--seed S] [--units 20000] [--houses N] \
-                 [--computers N (match, skirmish; default the map's most, at most 29)] \
+                 [--computers N (match, skirmish; default the map's most, at most 119)] \
                  [--ticks 300 (match: 1800, skirmish: 9000)] \
                  [--types E1,E2,MTNK,HTNK] [--order-spread 30] [--return-at T] (march) \
                  [--hash-every N] [--frame-hash-every 15] [--csv <path>] [--serial-paths] [--serial-scans] \

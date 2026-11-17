@@ -214,8 +214,8 @@ pub enum AcceptOutcome {
 }
 
 /// The Players slider's range in steps of 1. The original runs 2..8
-/// (`TBM_SETRANGE` at `0x0059722C`; no `0x4AB`); VERA's runs to thirty in
-/// every dialog.
+/// (`TBM_SETRANGE` at `0x0059722C`; no `0x4AB`); VERA's runs to the offline
+/// Skirmish row count in every dialog.
 pub const PLAYERS_RANGE: TrackbarRange = TrackbarRange::new(2, crate::map::rmg::MAX_PLAYERS, 1);
 
 /// VERA extension: a ready-made option set the Presets button applies in one

@@ -983,6 +983,22 @@ fn launch_session_packs_selected_map_and_enabled_slots() {
     assert_eq!(session.options.mcv_redeploy, shell.mcv_redeploy);
 }
 
+/// A map declaring one hundred twenty starts fills every offline Skirmish row: one
+/// human plus the one hundred nineteen computer rows, then Neutral and Special.
+#[test]
+fn a_one_hundred_twenty_start_map_packs_every_offline_row() {
+    let mut shell = SkirmishShellState::default();
+    shell.player_name_edit.text = "Commander".to_string();
+    for opponent in &mut shell.opponents {
+        opponent.row_type = SkirmishAiRowType::Easy;
+    }
+    let maps = [test_map_entry_with_starts("wide.map", 120)];
+    let modes = stock_skirmish_modes();
+    let session = launch_session(&shell, &maps, &modes, false).expect("session");
+    assert_eq!(session.opponents.len(), 119);
+    assert_eq!(session.pre_fill_house_roster.created_house_count(), 122);
+}
+
 /// SkirmishDialog's packing forces Fog of War off, Bridge Destruction on,
 /// Harvester Truce off and MultiEngineer off (`0x006AD88F..0x006AD8A4`),
 /// whatever `[MultiplayerDialogSettings]` set.

@@ -32,7 +32,7 @@ pub fn skirmish_player_capacity(ini: &IniFile) -> i32 {
     // Explicit VERA extension. MaxPlayers alone never turns unrelated mission
     // waypoints into starts: every declared starting slot must be authored.
     let declared = ini.section_or_empty("Basic").read_int("MaxPlayers", 0);
-    if (9..=crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32).contains(&declared)
+    if (9..=crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT as i32).contains(&declared)
         && ini.section("Waypoints").is_some_and(|section| {
             (0..declared).all(|index| !matches!(section.read_int(&index.to_string(), 0), 0 | -1))
         })
@@ -127,7 +127,9 @@ pub fn multiplayer_start_waypoints(waypoints: &HashMap<u32, Waypoint>) -> Vec<Wa
 }
 
 /// Project only the starts admitted by the map metadata owner. Extended maps
-/// explicitly declare 9–30 players; ordinary maps keep their eight-slot range.
+/// explicitly declare 9 to
+/// [`crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT`] players; ordinary maps
+/// keep their eight-slot range.
 pub fn multiplayer_start_waypoints_for_capacity(
     waypoints: &HashMap<u32, Waypoint>,
     capacity: i32,
@@ -143,9 +145,10 @@ pub fn multiplayer_start_waypoints_for_capacity(
 }
 
 /// Authored start slots considered by both Gather and the retained Scenario
-/// table. Ordinary maps retain the native eight-slot range.
+/// table. Ordinary maps retain the native eight-slot range; VERA's offline
+/// Skirmish admits up to [`crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT`].
 pub fn multiplayer_start_slot_limit(capacity: i32) -> u32 {
-    capacity.clamp(8, crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32) as u32
+    capacity.clamp(8, crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT as i32) as u32
 }
 
 /// Return the first multiplayer/skirmish start waypoint if present.
@@ -171,5 +174,20 @@ mod extended_capacity_tests {
         assert_eq!(skirmish_player_capacity(&ordinary), 8);
         let incomplete = IniFile::from_str(&text.replace("29=100129\n", ""));
         assert_eq!(skirmish_player_capacity(&incomplete), 8);
+    }
+
+    #[test]
+    fn one_hundred_twenty_starts_fill_the_offline_skirmish_rows() {
+        let starts: String = (0..120)
+            .map(|index| format!("{index}={}\n", 100_100 + index))
+            .collect();
+        let text = format!("[Basic]\nMaxPlayers=120\n[Waypoints]\n{starts}");
+        let ini = IniFile::from_str(&text);
+        let entry = crate::map::scenario_menu::read_map_menu_entry_from_ini(&ini, "wide.map");
+        assert_eq!(entry.player_capacity, 120);
+        assert_eq!(entry.multiplayer_start_waypoints.last().unwrap().index, 119);
+        // One past the offline row count is no extension.
+        let past = IniFile::from_str(&text.replace("MaxPlayers=120", "MaxPlayers=121"));
+        assert_eq!(skirmish_player_capacity(&past), 8);
     }
 }

@@ -74,3 +74,20 @@ fn native_house_playfield_clamp_matches_all_72_original_rows() {
         );
     }
 }
+
+#[test]
+fn reservation_bits_reach_the_one_hundred_twentieth_house_without_wrapping() {
+    let mut grid = CellReservationGrid::new();
+    grid.reserve(None, 10, 20, 119);
+    grid.reserve(None, 10, 20, 31);
+    assert_eq!(
+        grid.raw_mask(None, 10, 20),
+        (1u128 << 119) | (1u128 << 31),
+        "each House keeps its own bit past the native 32-House word"
+    );
+    assert!(grid.has_reservation(None, 10, 20, 119));
+    // The native 32-bit word wraps bit 119 onto bit 23; the widened one must not.
+    assert!(!grid.has_reservation(None, 10, 20, 23));
+    grid.clear(None, 10, 20, 119);
+    assert_eq!(grid.raw_mask(None, 10, 20), 1u128 << 31);
+}

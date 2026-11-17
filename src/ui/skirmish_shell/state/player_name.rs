@@ -3,7 +3,7 @@
 use crate::map::scenario_menu::MapMenuEntry;
 use crate::sim::game_options::GameOptions;
 use crate::skirmish_launch::{
-    LaunchCountry, LaunchStartPosition, NETWORK_PLAYER_SLOT_COUNT, SKIRMISH_PLAYER_SLOT_COUNT,
+    LaunchCountry, LaunchStartPosition, SKIRMISH_MAX_SLOT_COUNT, SKIRMISH_PLAYER_SLOT_COUNT,
     SkirmishLaunchOptions,
 };
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
@@ -606,10 +606,10 @@ pub fn selected_player_rows(state: &SkirmishShellState, maps: &[MapMenuEntry]) -
         })
 }
 
-/// A map's player capacity as rows: VERA seats up to thirty players, as its
-/// rooms do; a retail map declares eight or fewer.
+/// A map's player capacity as rows: offline Skirmish seats up to
+/// [`SKIRMISH_MAX_SLOT_COUNT`] players; a retail map declares eight or fewer.
 fn admitted_player_rows(capacity: i32) -> usize {
-    capacity.clamp(0, NETWORK_PLAYER_SLOT_COUNT as i32) as usize
+    capacity.clamp(0, SKIRMISH_MAX_SLOT_COUNT as i32) as usize
 }
 
 /// The last [`SkirmishShellState::first_opponent`] for `rows` admitted player

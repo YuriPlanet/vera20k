@@ -451,7 +451,9 @@ fn bridge_harness_final_hash(ares: bool) -> u64 {
     if ares {
         0xA06F_A011_54C1_FA40
     } else {
-        0x0D31_C373_DA29_2EB6
+        // CellReservationGrid widened u32 -> u128 to address all 120 players
+        // plus Neutral/Special; the overlay mask bytes in the replay hash move.
+        0x93A3_AA46_C3BE_BE8C
     }
 }
 
