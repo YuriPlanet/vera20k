@@ -1579,8 +1579,11 @@ pub(crate) fn begin_direct_spawn(
 }
 
 /// The direct spawn host starts the ordinary LAN GO once every guest is up.
+/// A failed launch never does: the participant that ended it is retired, so
+/// the rest may all have answered.
 fn poll_direct_start(state: &mut AppState) {
     if !state.match_state.session.host()
+        || state.frontend.external_launch_error.is_some()
         || !super::shell_network_setup::external(state)
         || !state
             .frontend
