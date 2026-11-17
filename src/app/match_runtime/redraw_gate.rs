@@ -50,24 +50,26 @@ use crate::util::time::{Duration, Instant};
 /// a second, which a 60 Hz screen never reaches.
 const PICTURE_INTERVAL: Duration = FRAME_BUCKET;
 
-/// How far a whole number of refreshes may pass [`PICTURE_INTERVAL`] and
-/// still count as fitting it: one refresh at 60 Hz, two at 120 Hz and four at
-/// 240 Hz take 16.7 ms.
-const REFRESH_FIT_SLACK: Duration = Duration::from_millis(1);
-
-/// [`PICTURE_INTERVAL`] in step with a screen that refreshes `millihertz`
-/// thousandths of a time a second: the most whole refreshes that fit in it,
-/// at least one, so no screen gets fewer pictures than the plain interval
-/// gives. With VSync a picture shows at a refresh, so 62 draws a second land
-/// unevenly on a 120 or 144 Hz screen (two refreshes, then one or three);
-/// every second refresh is even.
+/// The battlefield's limit with VSync on a screen that refreshes `millihertz`
+/// thousandths of a time a second: [`PICTURE_INTERVAL`], or every refresh
+/// while the view scrolls.
 ///
-/// `scrolling_draw` is the recent draw time while the view scrolls
+/// A view that does not scroll keeps the plain interval on every screen. A
+/// battlefield that changes once per game frame draws once per game frame
+/// under either limit (see the module notes); the limit sets how often a
+/// picture that keeps changing between game frames draws: a network match's
+/// battlefield with effects or lines, or an owner that has not settled. A
+/// limit fitted to whole refreshes drew those on every second refresh of a
+/// 144 Hz screen, 72 times a second instead of about 62, more work for a slow
+/// PC.
+///
+/// `scrolling_draw` is the recent draw work while the view scrolls
 /// (`input::camera::scrolling`), the one time every refresh has something new
 /// to show: the view moves by the time passed, while the rest of the
 /// battlefield changes once per game frame and the window system draws the
-/// cursor. A scrolling view then draws every refresh, as long as a draw takes
-/// no more than half of one, which leaves the other half to the match.
+/// cursor. A scrolling view then draws every refresh, as long as a draw's
+/// work (`LocalFramePacer::draw_work`, without its wait for a free picture)
+/// takes no more than half of one, which leaves the other half to the match.
 ///
 /// A picture every refresh gets a limit a little under one, so the screen
 /// sets the pace: a limit of exactly one refresh would skip a refresh
@@ -78,17 +80,10 @@ fn screen_picture_interval(millihertz: Option<u32>, scrolling_draw: Option<Durat
         return PICTURE_INTERVAL;
     };
     let refresh_ns = 1_000_000_000_000 / u64::from(millihertz);
-    let fit_ns = (PICTURE_INTERVAL + REFRESH_FIT_SLACK).as_nanos() as u64;
-    let every_refresh = scrolling_draw.is_some_and(|draw| draw.as_nanos() as u64 <= refresh_ns / 2);
-    let refreshes = if every_refresh {
-        1
-    } else {
-        (fit_ns / refresh_ns).max(1)
-    };
-    if refreshes == 1 {
+    if scrolling_draw.is_some_and(|draw| draw.as_nanos() as u64 <= refresh_ns / 2) {
         Duration::from_nanos(refresh_ns - refresh_ns / 16)
     } else {
-        Duration::from_nanos(refreshes * refresh_ns)
+        PICTURE_INTERVAL
     }
 }
 
@@ -253,7 +248,7 @@ pub(crate) fn draw_limits(state: &AppState, status_step: bool) -> DrawLimits {
                 .current_monitor()
                 .and_then(|monitor| monitor.refresh_rate_millihertz()),
             crate::app::input::camera::scrolling(&state.match_state.input)
-                .then(|| state.platform.frame_pacer.draw_cost()),
+                .then(|| state.platform.frame_pacer.draw_work()),
         )
     } else {
         PICTURE_INTERVAL
@@ -587,13 +582,6 @@ impl RedrawGate {
         hold
     }
 
-    /// A requested draw found the screen busy (`GpuContext::screen_busy`):
-    /// remember it, so the picture draws once the screen is free even when
-    /// it looks unchanged to a probe.
-    pub(crate) fn hold_busy_draw(&mut self) {
-        self.redraw_held = true;
-    }
-
     /// After a probe's service: what happens to `current`, the picture it
     /// would draw.
     pub(crate) fn probe_verdict(&self, current: Option<StillFrame>, now: Instant) -> ProbeVerdict {
@@ -695,25 +683,6 @@ mod tests {
         gate.note_input();
         assert_eq!(gate.next_pass(t), NextPass::Draw);
         assert_eq!(gate.probe_verdict(Some(shown), t), ProbeVerdict::Draw);
-    }
-
-    /// A requested draw that found the screen busy still draws afterwards,
-    /// though the picture looks unchanged to a probe.
-    #[test]
-    fn a_draw_that_found_the_screen_busy_draws_once_it_is_free() {
-        let t = Instant::now();
-        let after_limit = t + LIMITS.picture;
-        let shown = menu(120, false, [0, 0]);
-        let mut gate = RedrawGate::default();
-        gate.record_presented(Some(shown), t, LIMITS);
-        assert_eq!(gate.next_pass(after_limit), NextPass::Probe);
-        gate.hold_busy_draw();
-        assert_eq!(gate.next_pass(after_limit), NextPass::Draw);
-        gate.record_presented(Some(shown), after_limit, LIMITS);
-        assert_eq!(
-            gate.next_pass(after_limit + LIMITS.picture),
-            NextPass::Probe
-        );
     }
 
     #[test]
@@ -927,31 +896,20 @@ mod tests {
         );
     }
 
-    /// With VSync the battlefield's limit is a whole number of refreshes, so
-    /// its pictures land evenly on the screen; menus keep their own limit.
+    /// With VSync a battlefield that does not scroll keeps the plain limit on
+    /// a fast screen too: a picture that keeps changing between game frames
+    /// draws about 62 times a second, not on every second refresh of a 144 Hz
+    /// screen. Menus keep their own.
     #[test]
-    fn the_picture_limit_follows_the_screen_in_whole_refreshes() {
-        let refresh = |millihertz: u32| 1_000_000_000_000 / u64::from(millihertz);
-        let refreshes =
-            |millihertz: u32, count: u64| Duration::from_nanos(count * refresh(millihertz));
-        // A picture every refresh: a little under one, so the screen paces it.
-        let under_one =
-            |millihertz: u32| Duration::from_nanos(refresh(millihertz) - refresh(millihertz) / 16);
+    fn a_still_battlefield_keeps_the_plain_limit_on_a_fast_screen() {
         let still = |millihertz| screen_picture_interval(millihertz, None);
-        assert_eq!(still(Some(60_000)), under_one(60_000));
-        assert_eq!(still(Some(120_000)), refreshes(120_000, 2));
-        assert_eq!(still(Some(144_000)), refreshes(144_000, 2));
-        assert_eq!(still(Some(240_000)), refreshes(240_000, 4));
-        // Two refreshes of a 100 Hz screen would be fewer pictures than the
-        // plain interval gives, and a slow screen gets every refresh too.
-        assert_eq!(still(Some(100_000)), under_one(100_000));
-        assert_eq!(still(Some(50_000)), under_one(50_000));
+        assert_eq!(still(Some(144_000)), PICTURE_INTERVAL);
+        assert_eq!(still(Some(60_000)), PICTURE_INTERVAL);
         assert_eq!(still(None), PICTURE_INTERVAL);
-        assert_eq!(still(Some(0)), PICTURE_INTERVAL);
 
         let screen = still(Some(144_000));
         let limits = |page| page_limits(page, false, true, Some(48.0), screen).picture;
-        assert_eq!(limits(ScreenPage::Battlefield), screen);
+        assert_eq!(limits(ScreenPage::Battlefield), PICTURE_INTERVAL);
         assert_eq!(limits(ScreenPage::MainMenu), MENU_INTERVAL);
     }
 
