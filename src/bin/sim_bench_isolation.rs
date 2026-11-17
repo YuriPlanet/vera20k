@@ -130,7 +130,7 @@ fn load(
 
 fn snapshot(scene: &HeadlessScenario) -> Value {
     let sim = scene.sim();
-    json!({"hash":sim.state_hash(),"owners":sim.state_hash_owners(),
+    json!({"hash":sim.state_hash(),"owners":sim.state_hash_owners().as_slice(),
         "rules_hash":scene.runtime.resources.rules.simulation_config_hash(),
         "tiberium_types":scene.runtime.resources.rules.tiberium_types.len(),
         "native_prefix":sim.native_identity_prefix_checkpoint(),
