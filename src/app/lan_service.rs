@@ -2000,7 +2000,6 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                     &mut matched.session,
                     &mut runtime.simulation,
                     live,
-                    &mut matched.network_wait,
                     incoming.source,
                 )
             } else {
@@ -2037,14 +2036,14 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
             return Ok(());
         }
         if let Some(runtime) = state.match_state.sim_runtime.runtime()
-            && let Some(event) = super::match_runtime::network_match::decode_kick_proposal(
+            && let Some((voter, target)) = super::match_runtime::network_match::decode_kick_proposal(
                 &state.match_state.session,
                 &runtime.simulation,
                 incoming.source,
                 &incoming.payload,
             )
         {
-            super::match_runtime::network_match::service_event(state, event)?;
+            state.match_state.network_wait.queue_vote(voter, target);
         }
         return Ok(());
     }

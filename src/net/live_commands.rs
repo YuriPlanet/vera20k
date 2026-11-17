@@ -58,11 +58,37 @@ pub enum NetworkRecoveryStatus {
     CatchingUp { frames: u32 },
 }
 
+/// One GameMode's row of Wait_For_Players' timing table at 837340 (16 bytes
+/// a GameMode: LAN is row 3, WOL row 4), in 6C8C40 wall-clock buckets. The
+/// initial wait (647919..647954) passes +0, +4 and +C; the ordinary one
+/// (64800E..648067) passes 180, max(3 * response time, +8) and +C.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WaitTiming {
+    /// +0: the initial wait's probe interval.
+    pub initial_probe: i32,
+    /// +4: the initial wait's dialog delay.
+    pub initial_dialog: i32,
+    /// +8: the ordinary wait's dialog-delay floor.
+    pub dialog_floor: i32,
+    /// +C: the timeout.
+    pub timeout: i32,
+}
+
 impl LiveCommandMode {
-    fn initial_probe_interval(self) -> i32 {
+    pub const fn wait_timing(self) -> WaitTiming {
         match self {
-            Self::Lan => 60,
-            Self::Wol => 120,
+            Self::Lan => WaitTiming {
+                initial_probe: 60,
+                initial_dialog: 900,
+                dialog_floor: 420,
+                timeout: 2400,
+            },
+            Self::Wol => WaitTiming {
+                initial_probe: 120,
+                initial_dialog: 1800,
+                dialog_floor: 720,
+                timeout: 7200,
+            },
         }
     }
 }
@@ -904,7 +930,7 @@ impl LiveCommandSession {
                     response_time_at_entry,
                     last_probe,
                 } => {
-                    if probe_due(last_probe, now, self.mode.initial_probe_interval()) {
+                    if probe_due(last_probe, now, self.mode.wait_timing().initial_probe) {
                         self.current.as_mut().unwrap().phase = FramePhase::InitialBarrier {
                             entered_at,
                             response_time_at_entry,
