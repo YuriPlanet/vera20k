@@ -49,16 +49,34 @@ VERA ports the destruction hook as
 called from `Simulation::record_the_kill` before the kill bookkeeping — the
 `0x702E4E` position. It reproduces the ring scan over `place_crate`.
 
-## Residual
+## The per-instance override
 
-**The per-instance override is unported.** `TechnoExt::DropCrate` /
-`DropCrateType` (`Ext/Techno/Body.Internal.cpp:285-295`) are written only by
-the Phobos trigger action `SetDropCrate=600`
-(`Ext/TAction/Body.cpp:690-720`), which VERA does not implement. Trigger: a
-map fires that action on a tagged techno. Effect: the type's `DropCrate=`
-decides instead of the action's parameter, and an action setting `0`
-("disable") is ignored. Frequency: mod-authored maps. Risk: a crate drops that
-the map meant to suppress or retype.
+`TechnoExt::DropCrate` / `DropCrateType` (`Ext/Techno/Body.Internal.cpp:285-295`)
+are written only by the Phobos trigger action `SetDropCrate=600`
+(`Ext/TAction/Body.cpp:690-720`):
+
+```cpp
+for (const auto pTechno : TechnoClass::Array) {
+    // the tag's FirstTrigger chain must list a trigger whose Type->ID
+    // matches the firing trigger's Type->ID (_stricmp)
+    pExt->DropCrate = pThis->Value;
+    if (pExt->DropCrate == 1)
+        pExt->DropCrateType = static_cast<Powerup>(pThis->Param3);
+}
+```
+
+`GetDropCrateIndex` then answers `-1` unless the instance value is `1` and the
+stored slot is `>= 0`; `0` disables the type key while any other value also
+answers `-1`. VERA keeps the two ints on `GameEntity` (`phobos_drop_crate`,
+`phobos_drop_crate_type`, both `-1` by default), writes them from the action
+600 arm of the live-trigger dispatch (`src/sim/trigger_runtime.rs`, with
+`TriggerRuntime::object_tag` / `tag_carries_trigger_type` for the two scans)
+and reads them in `Simulation::phobos_set_drop_crate`'s counterpart,
+`drop_crate_on_destruction`.
+
+Remaining difference: Phobos serializes the two ints with `TechnoExt`;
+VERA serializes them per entity through serde defaults, so an old save keeps
+`-1` (unset) for a techno whose override was unknown to it.
 
 The `HouseClass::RegisterDestruction` (`0x70337D`) teleport call site has no
 separate VERA entry; a Chronoshift that destroys its target reaches the same
@@ -71,3 +89,8 @@ separate VERA entry; a Chronoshift that destroys its target reaches the same
 - `src/sim/phobos_drop_crate_tests.rs` — through the production destruction
   transaction: `drop_crate_places_its_powerup_on_the_death_cell` and
   `an_unset_drop_crate_places_nothing`.
+- `src/sim/trigger_runtime_drop_crate_tests.rs` — action 600 through
+  `apply_live_trigger_action`: `action_600_retypes_the_crate_of_a_tagged_techno`
+  (then killed through `record_the_kill`, so the action's slot reaches
+  `place_crate`), `action_600_with_zero_suppresses_the_type_key` and
+  `action_600_leaves_an_untagged_techno_on_its_type_key`.

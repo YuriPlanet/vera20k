@@ -1234,6 +1234,25 @@ impl TriggerRuntime {
     fn trigger(&self, index: usize) -> Option<&LiveTrigger> {
         self.triggers.get(index)?.as_ref()
     }
+    /// `pTechno->AttachedTag`: the live Tag an object carries, if any.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn object_tag(&self, object: u64) -> Option<usize> {
+        self.attachments
+            .get(&TagAttachment::Object(object))
+            .copied()
+    }
+    /// The Tag's `FirstTrigger` chain, compared by `Type->ID` the way TAction
+    /// 600 does (`_stricmp`, `Ext/TAction/Body.cpp:698-712`).
+    #[cfg(feature = "phobos")]
+    pub(crate) fn tag_carries_trigger_type(&self, tag: usize, type_id: &str) -> bool {
+        self.tag(tag).is_some_and(|live| {
+            live.triggers.iter().any(|&live| {
+                self.trigger(live)
+                    .and_then(|trigger| self.definitions.trigger_types.get(trigger.type_index))
+                    .is_some_and(|typ| typ.id.eq_ignore_ascii_case(type_id))
+            })
+        })
+    }
     fn evaluate_event(
         &self,
         condition: &EventCondition,
@@ -4012,7 +4031,7 @@ impl Simulation {
         found
     }
 
-    ///Tag6E5380: identity membership of a live Trigger in the Tag's chain.
+    /// `Tag6E5380`: identity membership of a live Trigger in the Tag's chain.
     fn tag_contains_live_trigger(&self, attachment: TagAttachment, live: usize) -> bool {
         self.trigger_runtime
             .attachments
@@ -4360,6 +4379,33 @@ impl Simulation {
                 if let Some(id) = value {
                     self.session.banner_delete(id);
                 }
+            }
+            #[cfg(feature = "phobos")]
+            600 => {
+                // Phobos `TActionExt::SetDropCrate` (`Ext/TAction/Body.cpp:690-720`):
+                // Value is the override flag (`0` disables, `1` names Param3's
+                // `[Powerups]` slot) and lands on every techno whose tag chain
+                // lists a trigger typed like the firing one.
+                let Some(live) = context.live_index else {
+                    return true;
+                };
+                let Some(firing_type) = self
+                    .trigger_runtime
+                    .trigger(live)
+                    .map(|trigger| trigger.type_index)
+                else {
+                    return true;
+                };
+                let Some(firing_id) = self
+                    .trigger_runtime
+                    .definitions
+                    .trigger_types
+                    .get(firing_type)
+                    .map(|typ| typ.id.clone())
+                else {
+                    return true;
+                };
+                self.phobos_set_drop_crate(&firing_id, value.unwrap_or(0), param3);
             }
             #[cfg(feature = "phobos")]
             501 => {
@@ -6588,6 +6634,10 @@ mod talk_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_cargo_tests.rs"]
 mod cargo_tests;
+
+#[cfg(all(test, feature = "phobos"))]
+#[path = "trigger_runtime_drop_crate_tests.rs"]
+mod drop_crate_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_restore_tests.rs"]
