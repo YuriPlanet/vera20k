@@ -77,7 +77,13 @@ mod tests {
         )]);
         dir.write("custom.mix", &mix);
         assert!(
-            crate::asset_tools::root::open_manager(dir.path(), false, Default::default()).is_err()
+            crate::asset_tools::root::open_manager(
+                dir.path(),
+                false,
+                Default::default(),
+                crate::assets::asset_manager::ArchiveFamily::Yr,
+            )
+            .is_err()
         );
         let normal = crate::asset_tools::root::open_ini_probe_manager(dir.path(), false).unwrap();
         assert!(run(&normal, "root.ini", true, 64, false, true).is_err());
