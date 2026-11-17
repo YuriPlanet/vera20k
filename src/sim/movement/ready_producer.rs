@@ -84,6 +84,10 @@ pub(crate) fn ready_state_for(
         // aircraft readiness decides from its mission plus two flags. Their
         // `Is_Moving_Now` bodies answer through `motion_query::is_moving_now`.
         LocomotorKind::Fly | LocomotorKind::Rocket => None,
+        // Is_Moving_Now 0x728A60 answers `State == 1` only; the readiness gate
+        // has no Tunnel inputs. RESIDUAL: a Tunnel unit in PreDigIn is not
+        // reported as moving-now here.
+        LocomotorKind::Tunnel => None,
     }
 }
 

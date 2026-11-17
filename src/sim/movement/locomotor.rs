@@ -208,7 +208,8 @@ impl LocomotorState {
             | LocomotorKind::Walk
             | LocomotorKind::Hover
             | LocomotorKind::Ship
-            | LocomotorKind::Teleport => MovementLayer::Ground,
+            | LocomotorKind::Teleport
+            | LocomotorKind::Tunnel => MovementLayer::Ground,
             LocomotorKind::Fly | LocomotorKind::Jumpjet | LocomotorKind::Rocket => {
                 MovementLayer::Air
             }
@@ -745,6 +746,22 @@ impl LocomotorState {
         &self.runtime_payload
     }
 
+    pub(crate) fn tunnel_runtime(&self) -> Option<&super::tunnel_locomotion::TunnelRuntime> {
+        match (self.kind, &self.runtime_payload) {
+            (LocomotorKind::Tunnel, LocomotorRuntimePayload::Tunnel(runtime)) => Some(runtime),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn tunnel_runtime_mut(
+        &mut self,
+    ) -> Option<&mut super::tunnel_locomotion::TunnelRuntime> {
+        match (self.kind, &mut self.runtime_payload) {
+            (LocomotorKind::Tunnel, LocomotorRuntimePayload::Tunnel(runtime)) => Some(runtime),
+            _ => None,
+        }
+    }
+
     /// Class-local state of this locomotor object, for fixtures.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn runtime_payload_mut(&mut self) -> &mut LocomotorRuntimePayload {
@@ -778,8 +795,14 @@ impl LocomotorState {
     }
 
     /// The Foot's layer, cached on the active object.
+    ///
+    /// A Tunnel object answers its class's `In_Which_Layer` (`0x72A1A0`) from
+    /// `State` instead: only `Digging` is underground.
     pub(crate) fn layer(&self) -> MovementLayer {
-        self.layer
+        match self.runtime_payload {
+            LocomotorRuntimePayload::Tunnel(ref runtime) => runtime.layer(),
+            _ => self.layer,
+        }
     }
 
     /// A fixture's layer.

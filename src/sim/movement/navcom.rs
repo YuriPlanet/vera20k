@@ -1016,6 +1016,7 @@ impl crate::sim::world::Simulation {
                 }
             }
             LocomotorKind::Rocket => {}
+            LocomotorKind::Tunnel => super::tunnel_locomotion::stop_moving(entity),
         }
         Ok(())
     }
