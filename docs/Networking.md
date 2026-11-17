@@ -31,6 +31,13 @@ Games with two or more human players number their objects from one agreed start,
 a player whose game already ran the random-map dialog or an earlier match numbers
 them as one just opened does; nothing new is exchanged, and older builds are
 refused by the build check.
+Fresh LAN and online matches also initialize local trigger variables from the
+incoming map only. Unassigned values cannot carry over from a player's previous
+match, including on generated maps with no local assignments. Network replay and
+rejoin reconstruction use the same fresh state; loading a save keeps its saved
+variables. Offline skirmish and campaign loads retain the original game's local
+variable carryover. This changes no packets: mixed builds are refused by the
+existing build check, and a rollback restores the earlier carryover behavior.
 Whether Ares plays in a match is decided from that same data: the rules, mode
 and map, whether the selected mod loads `ares.mix`, and the player's
 [Ares setting](ares.md#the-ares-setting), which the rules agreement covers. With
