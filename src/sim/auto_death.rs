@@ -682,21 +682,21 @@ impl Simulation {
                 .remove_limbo_delivered_tracking(category, type_ref);
         }
         // `:739-743`: an absorbed passenger's `ExtraPower=` leaves with it, so
-        // the building's owner reassesses power (House `+0x5778`).
-        if absorbed
-            && let Some(transport) = transport
-            && let Some(transport_owner) = self
-                .substrate
-                .entities
-                .get(transport)
-                .map(crate::sim::game_entity::GameEntity::owner)
-        {
-            Self::invalidate_house_power(
-                &self.houses,
-                &mut self.power_states,
-                transport_owner,
-                false,
-            );
+        // the absorber's owner reassesses power (House `+0x5778`). An absorbed
+        // Infantry carries no Cargo link (the absorber pulls it out of the
+        // hold and counts it through house tracking), so the relation answers
+        // only the object's own house in that case; a regular occupant dirties
+        // its transport's owner.
+        if absorbed {
+            let power_owner = transport
+                .and_then(|transport| {
+                    self.substrate
+                        .entities
+                        .get(transport)
+                        .map(crate::sim::game_entity::GameEntity::owner)
+                })
+                .unwrap_or(owner);
+            Self::invalidate_house_power(&self.houses, &mut self.power_states, power_owner, false);
         }
         // `:745-746`: `RegisterKill(pThis->Owner)` then `UnInit`. The owner is
         // the source house, not an attacking Techno. UnInit drops the object
