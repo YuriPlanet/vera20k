@@ -1644,9 +1644,9 @@ fn play_hash_interval(network: bool) -> std::num::NonZeroU64 {
     }
 }
 
-/// The GameSpeed and network FPS (with lag delay) the local pacer times
-/// Main_Tick by; sequenced online play paces with its own clock instead.
-pub(crate) fn local_pacing_inputs(state: &AppState) -> (u8, Option<(u16, u32)>) {
+/// Game speed and network FPS for the local frame timer.
+/// Relay-sequenced play uses the online pacer.
+pub(crate) fn local_pacing_inputs(state: &AppState) -> (u8, Option<u16>) {
     let game_speed = state
         .match_state
         .sim_runtime
@@ -1891,12 +1891,6 @@ fn advance_one_simulation_frame(
     let local_owner_name = crate::app::input::commands::preferred_local_owner_name(state);
     let sound_listener = crate::app::presentation::building_anim::sound_listener(state);
     let session_mode = state.match_state.session_mode();
-    let logic_frame_rate = state
-        .match_state
-        .match_presentation
-        .detail
-        .borrow()
-        .frame_rate();
     let other_local_pause = state.match_state.local_paused();
     let rules_owner = state.process_assets.native_rules();
     let initial_save = if !resuming && tick_lane == TickLane::Ordinary {
@@ -2162,10 +2156,9 @@ fn advance_one_simulation_frame(
             &mut state.match_state.input.planning,
             &mut state.match_state.input.selection_state,
         )
-        .with_network_session(&mut state.match_state.session)
+        .with_latency_fudge(state.match_state.session.latency_fudge())
         .with_frame_checksums(frame_checksums)
         .with_live_network(state.match_state.live_network.as_mut())
-        .with_logic_frame_rate(logic_frame_rate)
         .with_scenario_pause(
             &mut state.match_state.match_presentation.scenario_pause,
             &elapsed_clock,
@@ -2411,6 +2404,9 @@ fn finish_simulation_frame(
     let mut hud_messages = Vec::new();
     // Carried out of the sim borrow so the census can read `state` freely below.
     let mut census_tick: Option<u64> = None;
+    // Read before the world is borrowed for writing below.
+    #[cfg(feature = "telemetry-dashboard")]
+    let telemetry_budget_ms = super::network_match::game_frame_ms(state);
     {
         if let Some((rt, _)) = state.match_state.sim_runtime.tick_parts() {
             state
@@ -2486,33 +2482,10 @@ fn finish_simulation_frame(
                     // five seconds since the previous point rather than the whole
                     // match.
                     if crate::app::match_runtime::telemetry::ReportHistory::due(tick) {
-                        let speed = crate::sim::game_options::clamp_game_speed(
-                            rt.simulation.session().game_options().game_speed,
-                        );
-                        let mut timing = state.match_state.telemetry_timing.summarize(
-                            state.platform.frame_pacer.budget_ms(
-                                speed,
-                                rt.simulation
-                                    .session()
-                                    .network_command_timing()
-                                    .map(|timing| {
-                                        (
-                                            timing.frames_per_second(),
-                                            state.match_state.live_network.as_ref().map_or(
-                                                0,
-                                                |live| {
-                                                    live.pacing_delay_millis(
-                                                        rt.simulation
-                                                            .session()
-                                                            .network_max_ahead_frames()
-                                                            .unwrap_or(0),
-                                                    )
-                                                },
-                                            ),
-                                        )
-                                    }),
-                            ),
-                        );
+                        let mut timing = state
+                            .match_state
+                            .telemetry_timing
+                            .summarize(telemetry_budget_ms);
                         timing.fps = state.diag.frame_timer.fps();
                         timing.tick_hz = state
                             .match_state
