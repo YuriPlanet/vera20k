@@ -1730,7 +1730,10 @@ impl App {
             std::mem::take(&mut state.match_state.input.retail_screenshot_requested);
         let screenshot_central_rect = shake_central_rect(state, &output.texture);
         // Text drawn in the window (`window_ui`) is not in the frame the
-        // screenshot retains: this frame's goes over its copy.
+        // screenshot retains, and neither is the wheel-zoomed battlefield's
+        // window copy: this frame's go over its copy, the battlefield only
+        // when this frame drew it (not under an in-game menu). A zoomed frame
+        // is always copied, being smaller than the window.
         let window_text = state.renderer.window_ui.drew_text();
         let previous_composition = state
             .renderer
@@ -1748,12 +1751,20 @@ impl App {
         if let Some(copy) = previous_composition
             .as_ref()
             .and_then(|previous| previous.copy())
-            .filter(|_| window_text)
         {
-            state
-                .renderer
-                .window_ui
-                .draw_screenshot_text(state, &mut encoder, copy);
+            if game_render_output.is_some() {
+                render::draw_world_window_copy(
+                    state,
+                    &mut encoder,
+                    &copy.create_view(&Default::default()),
+                );
+            }
+            if window_text {
+                state
+                    .renderer
+                    .window_ui
+                    .draw_screenshot_text(state, &mut encoder, copy);
+            }
         }
         let pending_retail_screenshot = previous_composition
             .map(|previous| {
