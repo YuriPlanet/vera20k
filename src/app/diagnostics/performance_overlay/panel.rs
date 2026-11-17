@@ -2,7 +2,7 @@
 //! close once a second, so the rows hold still long enough to read;
 //! `PerformanceOverlay` lays the rows out and draws them.
 
-use crate::app::diagnostics::core_load::CoreLoadSampler;
+use crate::app::diagnostics::core_load::{self, CoreLoadSampler};
 use crate::app::diagnostics::state::RenderTimingMeter;
 use crate::app::diagnostics::thread_load::{ThreadLoadSampler, ThreadLoads};
 use crate::app::match_runtime::frame_pacer::LoopCounts;
@@ -107,7 +107,7 @@ pub(super) struct Shown {
     pub(super) areas: Vec<(&'static str, f32)>,
     pub(super) core_loads: Option<Vec<f32>>,
     /// The cores the process may use and the system's
-    /// (`process_affinity::allowed_cores`).
+    /// (`core_load::allowed_cores`).
     pub(super) allowed_cores: Option<(u32, u32)>,
     pub(super) threads: Option<ThreadLoads>,
     pub(super) loop_rates: Option<LoopRates>,
@@ -167,7 +167,7 @@ impl PanelStats {
             units: sample.map(|sample| sample.units),
             areas: wall.map_or_else(Vec::new, |wall| most_cpu(wall, sim_spans.as_ref(), &render)),
             core_loads: self.cores.sample(),
-            allowed_cores: crate::app::process_affinity::allowed_cores(),
+            allowed_cores: core_load::allowed_cores(),
             threads: self.threads.sample(now),
             loop_rates: wall
                 .zip(loop_counts)
