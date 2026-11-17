@@ -179,8 +179,14 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
    `[CombatDamage] Warhead.PreventScatter`（回归测试
    `world_receiver::prevent_scatter_tests`）。
 2. **AIChronoSphereSW/AIChronoWarpSW**（`6fb756008`）：
-   - `ValueableIdx` 名字→索引在**跨 INI 层**的差异：native 坏名字保留旧层索引，
-     VERA 单次合并读取下解析为未找到；频率：仅坏数据。
+   - `ValueableIdx` 名字→索引的**跨 INI 层**差异已解决：
+     `PhobosGlobals::resolve_ai_chrono_super_names` 按
+     `Utilities/TemplateDef.h:1815-1827` 逐 pass 重放（空值/坏名字保留上个索引，
+     `none` 存 -1，命中 `[SuperWeaponTypes]` 才换名），数据来自
+     `IniSection::projected_values` 的逐层历史（回归测试
+     `phobos_globals_tests::a_later_pass_with_an_unknown_ai_chrono_name_keeps_the_resolved_index`）。
+     残余：`FindIndex` 在 native 里对着**读取该 pass** 的类型数组，这里用每层
+     `[SuperWeaponTypes]` 的并集；只有「前一层命名了后一层才引入的类型」才不同。
    - 动作 56/57 未选中 super 时不发火（与 stock 一致）。
    - `Fire_SW` 用 `Type=` 当 Supers 索引：retail 列表恰好同序；自定义乱序时以
      “所选 Super 的 Type= 值”发射（oracle golden 即此行为）。

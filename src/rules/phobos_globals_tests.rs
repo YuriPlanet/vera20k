@@ -230,6 +230,48 @@ fn the_ai_chronoshift_supers_default_and_read_from_general() {
     );
 }
 
+/// `ValueableIdx::Read` (`Utilities/TemplateDef.h:1815-1827`) keeps the
+/// `SuperWeaponTypeClass` index a pass resolved: a later pass naming a type
+/// `FindIndex` cannot find is an `INIParseFailed`, so the earlier index stays
+/// live. `INI_EX::ReadString` returning zero and `none`/`<none>` are the two
+/// ways the field does change.
+#[cfg(feature = "phobos")]
+#[test]
+fn a_later_pass_with_an_unknown_ai_chrono_name_keeps_the_resolved_index() {
+    fn layered(extra: &str) -> crate::rules::ruleset::RuleSet {
+        let mut layers = crate::rules::native_processing::RulesLayerStack::new(IniFile::from_str(
+            "[General]\nAIChronoSphereSW=SPHERE_A\nAIChronoWarpSW=WARP_A\n\
+             [SuperWeaponTypes]\n0=PARA\n1=SPHERE_A\n2=WARP_A\n\
+             [PARA]\nType=ParaDrop\n\
+             [SPHERE_A]\nType=ChronoSphere\n\
+             [WARP_A]\nType=ChronoWarp\n",
+        ));
+        layers.push(
+            crate::rules::native_processing::RulesLayerKind::Scenario,
+            IniFile::from_str(extra),
+        );
+        crate::rules::ruleset::RuleSet::from_rules_layers(&layers).expect("layered rules")
+    }
+
+    // The root's names are real; the scenario's are not, so neither index moves.
+    let unknown = layered("[General]\nAIChronoSphereSW=NOSUCH\nAIChronoWarpSW=7\n");
+    assert_eq!(unknown.phobos_globals.ai_chrono_sphere_sw, "SPHERE_A");
+    assert_eq!(unknown.phobos_globals.ai_chrono_warp_sw, "WARP_A");
+
+    // A blank value is a failed `ReadString` and also keeps the index.
+    let blank = layered("[General]\nAIChronoSphereSW=\n");
+    assert_eq!(blank.phobos_globals.ai_chrono_sphere_sw, "SPHERE_A");
+
+    // `none` stores the unset index (-1), which clears the name.
+    let cleared = layered("[General]\nAIChronoSphereSW=none\n");
+    assert_eq!(cleared.phobos_globals.ai_chrono_sphere_sw, "");
+    assert_eq!(cleared.phobos_globals.ai_chrono_warp_sw, "WARP_A");
+
+    // A scenario name that does exist replaces the root's.
+    let retargeted = layered("[General]\nAIChronoSphereSW=PARA\n");
+    assert_eq!(retargeted.phobos_globals.ai_chrono_sphere_sw, "PARA");
+}
+
 /// `[General] AnimCraterDestroyTiberium=` (`Ext/Rules/Body.cpp:418`,
 /// constructor `Ext/Rules/Body.h:844`) defaults yes and is the fallback for an
 /// AnimType's unset art `Crater.DestroyTiberium=` (`Ext/AnimType/Body.cpp:126`).
