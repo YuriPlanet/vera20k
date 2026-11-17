@@ -64,8 +64,8 @@ pub(in super::super) struct Terminal {
 }
 
 impl Terminal {
-    pub(in super::super) fn awaiting_spool(&self, now: u64) -> bool {
-        !self.saved && now <= self.receipt.expires_at()
+    pub(in super::super) fn into_unsaved(self) -> Option<FederationOutcome> {
+        (!self.saved).then_some(self.receipt)
     }
 }
 
@@ -164,7 +164,9 @@ impl RelayServer {
             .values()
             .filter_map(|room| room.ordering.as_ref()?.terminal.as_ref())
             .filter(|terminal| !terminal.saved)
-            .map(|terminal| terminal.receipt.clone())
+            .map(|terminal| &terminal.receipt)
+            .chain(self.retired_outcomes.values())
+            .cloned()
             .collect()
     }
 
@@ -176,6 +178,8 @@ impl RelayServer {
             .and_then(|ordering| ordering.terminal.as_mut())
         {
             terminal.saved = true;
+        } else {
+            self.retired_outcomes.remove(&room);
         }
     }
 }
@@ -184,7 +188,7 @@ impl RelayServer {
 mod tests {
     use super::*;
     use crate::sequenced::tests::{
-        certificate, client, connect, endpoint, events, pull, renew, unix,
+        TestDirectory, certificate, client, connect, endpoint, events, pull, renew, unix,
     };
 
     // A real three-way handshake and the production Ready, frame and link
@@ -198,6 +202,10 @@ mod tests {
 
     impl Match {
         fn new() -> Self {
+            Self::build(None)
+        }
+
+        fn build(journals: Option<&[TestDirectory; 3]>) -> Self {
             let room = [5; 16];
             let keys = std::array::from_fn::<_, 3, _>(|i| SecretKey::new([11 + i as u8; 32]));
             let addresses = std::array::from_fn(|i| {
@@ -221,7 +229,12 @@ mod tests {
                 wrap[48..].copy_from_slice(&tag);
             }
             let mut game = Self {
-                servers: std::array::from_fn(|i| RelayServer::new(keys[i].clone(), 4)),
+                servers: std::array::from_fn(|i| match journals {
+                    Some(dirs) => {
+                        RelayServer::with_journal(keys[i].clone(), 4, &dirs[i].0).unwrap()
+                    }
+                    None => RelayServer::new(keys[i].clone(), 4),
+                }),
                 clients: std::array::from_fn(|i| client(&keys[i], i as u8)),
                 addresses,
                 now: 0,
@@ -356,6 +369,27 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_player_can_go_silent_while_its_federation_keeps_playing() {
+        let mut game = Match::new();
+        for _ in 0..7 {
+            game.step(100_000, None);
+            for index in [0, 2] {
+                let (server, player) = (&mut game.servers[index], &mut game.clients[index]);
+                renew(server, player, game.now);
+                let cursor = server.rooms[&[5; 16]].ordering.as_ref().unwrap().next_seq;
+                pull(server, player, cursor, game.now);
+            }
+        }
+        game.step(100, None);
+        for server in &game.servers {
+            let ordering = server.rooms[&[5; 16]].ordering.as_ref().unwrap();
+            assert_eq!(ordering.active, 0b101, "only the silent player departs");
+            assert!(ordering.finished_at.is_none());
+            assert!(server.pending_federation_outcomes().is_empty());
+        }
+    }
+
     /// Real lobby-issued marked roster, signed with public fixture keys 0b,
     /// 0c, 0d (each repeated 32 times). The lobby verifies the same VFO1 bytes.
     #[test]
@@ -390,7 +424,8 @@ mod tests {
 
     #[test]
     fn orderly_departures_generate_a_single_normal_receipt_per_relay() {
-        let mut game = Match::new();
+        let dirs = std::array::from_fn(|_| TestDirectory::new());
+        let mut game = Match::build(Some(&dirs));
         for (server, player) in game.servers.iter_mut().zip(&mut game.clients) {
             let mut bytes = Vec::new();
             player.leave_ordering_at(game.now, &mut bytes).unwrap();
@@ -417,6 +452,20 @@ mod tests {
                 receipts[0].as_bytes(),
                 server.pending_federation_outcomes()[0].as_bytes()
             );
+            // A failed/full disk writer holds only this small receipt after
+            // the normal terminal replay grace. The real journal is released.
+            let expired = game.now + MAX_TICKET_LIFETIME * 1000;
+            server.advance_clock(expired, unix(expired));
+            assert_eq!(server.room_count(), 0);
+            assert!(
+                server
+                    .journal_directory
+                    .as_ref()
+                    .unwrap()
+                    .reserved(&receipts[0].room())
+                    .is_none()
+            );
+            assert_eq!(server.pending_federation_outcomes()[0].as_bytes(), bytes);
             server.federation_outcome_saved(receipts[0].room());
             assert!(server.pending_federation_outcomes().is_empty());
         }

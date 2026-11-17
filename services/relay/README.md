@@ -384,7 +384,11 @@ detecting relay freezes its ordered stream and signs a failure receipt. Once
 durably saved, it repeats the failure bit to every other relay. If its disk
 cannot take the receipt, it stops reporting a healthy started match to peers.
 Players get ordinary server unavailability after five seconds of backpressure.
-An unsaved verdict cannot award or void a ladder result. Any member that
+An unsaved verdict cannot award or void a ladder result. Ordinary terminal room
+and journal retirement still runs. If the outbox cannot take an ended room's
+receipt, the relay retains only those 94 bytes for retry, up to its room count
+in detached receipts. At capacity the relay increments `outcome_handoff_drops`
+and frees the game's resources; the lobby leaves incomplete evidence unrated. Any member that
 hears it also ends the match; this needs no living coordinator. Players and
 watchers receive `Inactive` with expected cursor 1. Released games show a game
 server failure; updated games say the match ended without a winner. A normal

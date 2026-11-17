@@ -853,6 +853,9 @@ pub struct OrderingCounts {
     pub pull_replies: u64,
     /// Matches this relay ended with a DESYNC record.
     pub desyncs: u64,
+    /// Ended games whose receipt could not be saved or retained under the
+    /// bounded handoff budget. The lobby cannot rate one lacking evidence.
+    pub outcome_handoff_drops: u64,
     /// Startups this relay cancelled because a Ready, on it or on another
     /// relay of the match, proved a different initial world.
     pub start_mismatches: u64,
@@ -931,6 +934,9 @@ pub struct RelayServer {
     ordering_estimate: usize,
     // An operational reporter owns durable delivery of marked VO1F outcomes.
     federation_outcomes_enabled: bool,
+    // A retired room needs only its unacknowledged receipt until the writer
+    // can save it. At most one cohort of max_rooms, outside gameplay quotas.
+    retired_outcomes: HashMap<[u8; 16], FederationOutcome>,
     // Every live or leaving hop by its session (spec §6.2).
     sessions: HashMap<u32, SessionSlot>,
     // Released sessions until they may be assigned again (spec §6.2).
@@ -969,6 +975,7 @@ impl RelayServer {
             ordering_counts: OrderingCounts::default(),
             ordering_estimate: 0,
             federation_outcomes_enabled: false,
+            retired_outcomes: HashMap::new(),
             sessions: HashMap::new(),
             retired_sessions: HashMap::new(),
             mac_counts: MacFailureCounts::default(),
@@ -1259,6 +1266,8 @@ impl RelayServer {
         self.admissions
             .retain(|_, admission| admission.retain_until > now);
         self.ended_orderings.retain(|_, expires| *expires > now);
+        self.retired_outcomes
+            .retain(|_, receipt| now <= receipt.expires_at());
         self.unadmitted_handshakes.clear();
         self.ingress.allocate(
             now,

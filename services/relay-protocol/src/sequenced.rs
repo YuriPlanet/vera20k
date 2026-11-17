@@ -1271,13 +1271,6 @@ impl OrderingRoom {
     }
 
     fn cleanup_due(&self, now_ms: u64, now: u64, peers: bool) -> bool {
-        if self
-            .terminal
-            .as_ref()
-            .is_some_and(|terminal| terminal.awaiting_spool(now))
-        {
-            return false;
-        }
         if self.storage_failed {
             // A storage failure freezes the match for good. Its room goes
             // once no live ticket is left to tell, or once a silent player
@@ -6091,6 +6084,17 @@ impl RelayServer {
             // verified to expire within MAX_MATCH_SECONDS of now or earlier.
             self.ended_orderings
                 .insert(id, now.saturating_add(MAX_MATCH_SECONDS));
+            if let Some(receipt) = ordering
+                .terminal
+                .take()
+                .and_then(federation::Terminal::into_unsaved)
+            {
+                if self.retired_outcomes.len() < self.max_rooms && now <= receipt.expires_at() {
+                    self.retired_outcomes.insert(id, receipt);
+                } else {
+                    self.ordering_counts.outcome_handoff_drops += 1;
+                }
+            }
             room.ordering = None;
             if room.peers.is_empty() {
                 self.rooms.remove(&id);

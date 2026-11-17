@@ -554,6 +554,7 @@ is `{mean,max,samples}` or null, `tick_ms_p50`, `tick_ms_p99`, `fps_p50`, `fps_p
 `started` says the relay's clock for the match started. `failure` is null, or names the
 error that ended the match on this game: `agreement_mismatch`, `start_cancelled`, `modified_retry`,
 `invalid_cursor`, `refused`, `history_expired`, `invalid_timeline`, `desync`, `unavailable`,
+`federation_lost` (a marked game ended after its relays lost contact),
 `absent` (no answer from the relay for ten minutes), `queue_full`, `newer_client_required` or
 `local_error`. `start_hash` is null once the
 relay's clock started; before that it maps each part of the start this game offered the
