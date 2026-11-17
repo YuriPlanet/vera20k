@@ -61,7 +61,8 @@ requests a minute per address (an IPv4 address or IPv6 /64), and one answer serv
 every reader for 10 seconds.
 
 `POST /v1/commands` accepts `{request_id,after,operation,payload}`. A request ID is unique
-within a session and retries are idempotent. Responses and
+within a session and retries are idempotent: a retry sends the same payload, and a request ID
+reused with another payload is refused with 409 `request_conflict`. Responses and
 `GET /v1/events?after=<cursor>` return `{events:[{sequence,kind,payload}],cursor}`.
 Sequences increase within a session. An event appears once logically even when
 responses are repeated. `GET /v1/channels?kind=0|41` returns `{kind,channels}`. The
@@ -797,10 +798,12 @@ left) or `disconnected` (the game lost its connection). A player who leaves afte
 decided their House reports that result: `lost` once it was defeated, `won` once it won. When the game saw the match
 decided, `winners` names the players still in it whose Houses won. A lobby from before
 team ladders refuses `winners`; the game then finishes again without it. `ended_ago` is how
-many whole seconds before this `finish` the game decided its `result`, which the score screen
-holds back, so the lobby times a player's leaving by their game, not by when they closed the
-score screen; a lobby from before it refuses the field, and the game then finishes again
-without it.
+many whole seconds before it first sends this `finish` the game decided its `result`, which the
+score screen holds back, so the lobby times a player's leaving by their game, not by when they
+closed the score screen; a retry repeats it. A lobby from before it refuses the field, and the
+game then finishes again without it. A desktop game closed during its match or on the score
+screen finishes the match as it closes, with `quit` unless it had already decided the player's
+result.
 
 `ladder` with up to 64 names answers with the running season's records of those that
 played a rated game in it (`season` is `null` and `records` empty when no season runs),

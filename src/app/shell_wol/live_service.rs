@@ -404,34 +404,31 @@ impl std::fmt::Debug for LiveService {
     }
 }
 
-/// The match identity remains authoritative until this idempotent command is
-/// acknowledged. Only retry timing/request correlation is stored here.
+/// One idempotent command, sent again under its request ID until it is
+/// acknowledged. Every retry carries the payload first sent: the lobby
+/// replays a committed request ID and refuses one reused with another payload
+/// (docs/lobby-protocol.md `POST /v1/commands`).
 struct RetryingCommand {
     request_id: u64,
+    operation: &'static str,
+    payload: Value,
     next_attempt: Instant,
     failures: u8,
 }
 
 impl RetryingCommand {
-    fn new(request_id: u64, now: Instant) -> Self {
-        Self {
-            request_id,
-            next_attempt: now + RELAY_TIMEOUT,
-            failures: 0,
-        }
-    }
-
     fn failed(&mut self, now: Instant) {
         self.failures = self.failures.saturating_add(1);
         self.next_attempt = now + Duration::from_secs((1u64 << self.failures.min(5)).min(30));
     }
 
-    fn take_due(&mut self, now: Instant) -> Option<u64> {
+    /// The command to send again, once its retry is due.
+    fn take_due(&mut self, now: Instant) -> Option<(u64, &'static str, Value)> {
         if now < self.next_attempt {
             return None;
         }
         self.next_attempt = now + RELAY_TIMEOUT;
-        Some(self.request_id)
+        Some((self.request_id, self.operation, self.payload.clone()))
     }
 }
 
@@ -597,17 +594,9 @@ struct PendingStart {
     /// A returning player: the match started without this process, so its
     /// barriers are over and these are the timing it agreed.
     resume_pings: Option<Vec<i32>>,
-    /// The unanswered `relay_ready` or `latency_ready`.
-    report: Option<PendingReport>,
-}
-
-/// One admission report, resent under its request ID within the start window
-/// when the lobby answers 429, 5xx or nothing; the lobby replays a committed
-/// request ID (docs/lobby-protocol.md `POST /v1/commands`).
-struct PendingReport {
-    command: RetryingCommand,
-    operation: &'static str,
-    payload: Value,
+    /// The unanswered `relay_ready` or `latency_ready`, resent within the
+    /// start window when the lobby answers 429, 5xx or nothing.
+    report: Option<RetryingCommand>,
 }
 
 impl LiveService {
@@ -739,6 +728,22 @@ impl LiveService {
         });
     }
 
+    /// Send a command its owner retries until it is acknowledged.
+    fn retrying_command(
+        &mut self,
+        operation: &'static str,
+        payload: Value,
+        now: Instant,
+    ) -> RetryingCommand {
+        RetryingCommand {
+            request_id: self.command_with_id(operation, payload.clone()),
+            operation,
+            payload,
+            next_attempt: now + RELAY_TIMEOUT,
+            failures: 0,
+        }
+    }
+
     /// The `ladder` command for the ladder (`0x007A3100`) or high-score
     /// (`0x007A3B30`) table. Its one event answers both, so the shell's
     /// high-score request for the names it just asked the ladder about
@@ -766,6 +771,8 @@ impl LiveService {
         self.begin_finish(now);
     }
 
+    /// Send the match's `finish`, its payload built once from what the match
+    /// reported: every retry sends it as it was.
     fn begin_finish(&mut self, now: Instant) {
         let Some(match_id) = self.match_id.clone() else {
             return;
@@ -775,16 +782,26 @@ impl LiveService {
         }
         self.next_renewal_attempt = None;
         self.relay_renewal_due = None;
-        self.finishing = Some(RetryingCommand::new(self.next_request, now));
         let payload = self.finish_payload(&match_id, now);
-        self.command("finish", payload);
+        self.back_to_room = false;
+        self.network_quality = None;
+        self.finish_result = None;
+        self.finish_winners = None;
+        self.finish_decided = None;
+        self.finishing = Some(self.retrying_command("finish", payload, now));
+    }
+
+    /// A lobby match this game plays, loads or shows the score of, whose
+    /// `finish` has not begun. A launcher's match reports in its own result
+    /// (`spawn_result.json`).
+    fn match_unfinished(&self) -> bool {
+        !self.spawned && self.match_id.is_some() && self.finishing.is_none()
     }
 
     /// Keep the network report of the lobby match whose transport just
-    /// returned, for its `finish`. A launcher's match reports in its own
-    /// result (`spawn_result.json`), and a finish already sent stays as it was.
+    /// returned, for its `finish`; a finish already sent stays as it was.
     fn keep_network_report(&mut self, report: Value) {
-        if !self.spawned && self.match_id.is_some() && self.finishing.is_none() {
+        if self.match_unfinished() {
             self.network_quality = Some(report);
         }
     }
@@ -827,10 +844,6 @@ impl LiveService {
         {
             self.finishing = None;
             self.match_id = None;
-            self.network_quality = None;
-            self.finish_result = None;
-            self.finish_winners = None;
-            self.finish_decided = None;
             self.left_for_match = false;
         }
     }
@@ -850,25 +863,24 @@ impl LiveService {
             return false;
         };
         finish.failed(now);
-        let rejected = matches!(failure, http::CommandFailure::Rejected(_));
+        if !matches!(failure, http::CommandFailure::Rejected(_)) {
+            return false;
+        }
         // A lobby from before leaving was timed by the game refuses
-        // `ended_ago`, one from before team ladders `winners`, and one from
-        // before match reports `network_quality`: the finish goes again
-        // without the newest, and then as before.
-        if rejected && self.finish_decided.take().is_some() {
+        // `ended_ago`, one from before team ladders `winners`, one from
+        // before match reports `network_quality` and one from before rooms
+        // came back `back_to_room`: the finish goes again without the newest,
+        // and then as before. A refused finish committed nothing, so its
+        // request ID can carry the smaller payload.
+        let Some(payload) = finish.payload.as_object_mut() else {
             return false;
+        };
+        for field in ["ended_ago", "winners", "network_quality"] {
+            if payload.remove(field).is_some() {
+                return false;
+            }
         }
-        if rejected && self.finish_winners.take().is_some() {
-            return false;
-        }
-        if rejected && self.network_quality.take().is_some() {
-            return false;
-        }
-        let refused = self.back_to_room && rejected;
-        if refused {
-            self.back_to_room = false;
-        }
-        refused
+        payload.remove("back_to_room").is_some()
     }
 
     /// A room leave the shell asked for; one during a started match is noted
@@ -886,8 +898,7 @@ impl LiveService {
 
     fn begin_leave(&mut self, now: Instant) {
         if self.leaving.is_none() {
-            self.leaving = Some(RetryingCommand::new(self.next_request, now));
-            self.command("leave", json!({}));
+            self.leaving = Some(self.retrying_command("leave", json!({}), now));
         }
     }
 
@@ -909,8 +920,7 @@ impl LiveService {
 
     fn begin_logout(&mut self, now: Instant) {
         if self.logging_out.is_none() {
-            self.logging_out = Some(RetryingCommand::new(self.next_request, now));
-            self.command("logout", json!({}));
+            self.logging_out = Some(self.retrying_command("logout", json!({}), now));
         }
     }
 
@@ -991,13 +1001,9 @@ impl LiveService {
     }
 
     fn send_report(&mut self, operation: &'static str, payload: Value, now: Instant) {
-        let id = self.command_with_id(operation, payload.clone());
+        let report = self.retrying_command(operation, payload, now);
         if let Some(pending) = self.pending.as_mut() {
-            pending.report = Some(PendingReport {
-                command: RetryingCommand::new(id, now),
-                operation,
-                payload,
-            });
+            pending.report = Some(report);
         }
     }
 
@@ -1006,7 +1012,7 @@ impl LiveService {
             && pending
                 .report
                 .as_ref()
-                .is_some_and(|report| report.command.request_id == id)
+                .is_some_and(|report| report.request_id == id)
         {
             pending.report = None;
         }
@@ -1021,12 +1027,12 @@ impl LiveService {
         let Some(report) = pending
             .report
             .as_mut()
-            .filter(|report| report.command.request_id == id)
+            .filter(|report| report.request_id == id)
         else {
             return false;
         };
         if failure == http::CommandFailure::Retryable {
-            report.command.failed(now);
+            report.failed(now);
             return true;
         }
         pending.report = None;
@@ -1038,13 +1044,7 @@ impl LiveService {
             .pending
             .as_mut()
             .and_then(|pending| pending.report.as_mut())
-            .and_then(|report| {
-                Some((
-                    report.command.take_due(now)?,
-                    report.operation,
-                    report.payload.clone(),
-                ))
-            })
+            .and_then(|report| report.take_due(now))
         {
             self.send_command(id, operation, payload);
         }
@@ -1055,25 +1055,21 @@ impl LiveService {
     }
 
     fn poll_cleanup(&mut self, now: Instant) {
-        if let Some(id) = self
+        let finish = self
             .finishing
             .as_mut()
-            .and_then(|finish| finish.take_due(now))
-            && let Some(match_id) = self.match_id.as_ref()
-        {
-            self.send_command(id, "finish", self.finish_payload(match_id, now));
-        }
-        if let Some(id) = self.leaving.as_mut().and_then(|leave| leave.take_due(now)) {
-            self.send_command(id, "leave", json!({}));
-        }
-        if self.finishing.is_none()
-            && self.leaving.is_none()
-            && let Some(id) = self
-                .logging_out
+            .and_then(|finish| finish.take_due(now));
+        let leave = self.leaving.as_mut().and_then(|leave| leave.take_due(now));
+        // The logout waits for the finish and the leave.
+        let logout = if self.finishing.is_none() && self.leaving.is_none() {
+            self.logging_out
                 .as_mut()
                 .and_then(|logout| logout.take_due(now))
-        {
-            self.send_command(id, "logout", json!({}));
+        } else {
+            None
+        };
+        for (id, operation, payload) in [finish, leave, logout].into_iter().flatten() {
+            self.send_command(id, operation, payload);
         }
     }
 }
@@ -1493,6 +1489,15 @@ impl super::WolVisit {
             self.requests.insert(0, WolServiceRequest::MatchReturned);
         }
     }
+
+    /// The game closes before the shell return finished this visit's lobby
+    /// match: the match finishes with `report`, the result the game recorded
+    /// for the player who left, and asks for no room back.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    fn match_left_for_exit(&mut self, report: MatchReport, now: Instant) {
+        self.back_to_room = false;
+        self.match_returned(report, now);
+    }
 }
 
 pub(super) fn leave_visit(state: &mut AppState) {
@@ -1511,17 +1516,31 @@ pub(super) fn leave_visit(state: &mut AppState) {
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 /// The game is closing: hand the online visit to the ordinary cleanup owner
 /// (finish, leave, logout and the relay departure), as Back does, and end
-/// the visit so nothing but that cleanup runs until exit.
+/// the visit so nothing but that cleanup runs until exit. A lobby match the
+/// shell return has not finished first finishes with the player's result:
+/// `quit`, as Abort Mission records it, unless the game already decided one.
 pub(crate) fn retire_visit_for_exit(state: &mut AppState) {
-    if state
+    let Some(visit) = state
         .frontend
         .wol
         .as_ref()
-        .is_some_and(|visit| visit.provider == WolProvider::Online)
+        .filter(|visit| visit.provider == WolProvider::Online)
+    else {
+        return;
+    };
+    if visit
+        .live_service
+        .as_ref()
+        .is_some_and(LiveService::match_unfinished)
     {
-        leave_visit(state);
-        state.frontend.wol = None;
+        crate::app::App::record_match_result(state, crate::app::cncnet::ExternalMatchResult::Quit);
+        let report = match_report(state);
+        if let Some(visit) = state.frontend.wol.as_mut() {
+            visit.match_left_for_exit(report, Instant::now());
+        }
     }
+    leave_visit(state);
+    state.frontend.wol = None;
 }
 
 /// Answer a request that needs no lobby; false for any other.
@@ -4342,30 +4361,31 @@ mod completion_tests {
         lobby.finish_result = Some("won");
         lobby.finish_winners = Some(vec!["Tanya".into(), "Boris".into()]);
         lobby.finish_decided = Instant::now().checked_sub(Duration::from_secs(90));
+        let first = finish_payload_sent(&mut lobby, &input);
         assert_eq!(
-            finish_payload_sent(&mut lobby, &input),
+            first,
             json!({"match_id":"lobby-match","result":"won","winners":["Tanya","Boris"],"ended_ago":90})
         );
-        // A lobby from before `ended_ago` refuses it, and one from before team
-        // ladders `winners`: the finish goes again without the newest.
-        let mut retried = |at: u64| {
-            assert!(!lobby.finish_failed(
-                5,
-                http::CommandFailure::Rejected(0x8000_4005),
-                Instant::now()
-            ));
+        let mut retried = |failure, at: u64| {
+            assert!(!lobby.finish_failed(5, failure, Instant::now()));
             lobby.poll_cleanup(Instant::now() + Duration::from_secs(at));
             let http::Request::Command { payload, .. } = input.try_recv().unwrap() else {
                 panic!("finish retry");
             };
             payload
         };
+        // The lobby replays a committed request ID only with the payload it
+        // committed: a finish whose answer was lost goes again as first sent.
+        assert_eq!(retried(http::CommandFailure::Retryable, 3), first);
+        // A lobby from before `ended_ago` refuses it, and one from before team
+        // ladders `winners`: the finish goes again without the newest.
+        let rejected = http::CommandFailure::Rejected(0x8000_4005);
         assert_eq!(
-            retried(3),
+            retried(rejected, 5),
             json!({"match_id":"lobby-match","result":"won","winners":["Tanya","Boris"]})
         );
         assert_eq!(
-            retried(10),
+            retried(rejected, 10),
             json!({"match_id":"lobby-match","result":"won"})
         );
 
@@ -5062,6 +5082,32 @@ mod completion_tests {
         assert!(service.finish_failed(id, http::CommandFailure::Rejected(0x8000_4005), now));
         service.poll_cleanup(now + Duration::from_secs(2));
         assert_eq!(sent(&input).1, json!({"match_id":"room-match"}));
+    }
+
+    #[test]
+    fn closing_the_game_finishes_its_match_with_the_recorded_result() {
+        // The game closes during a match from a kept room, before the shell
+        // return finished it: the finish carries the result the game
+        // recorded for the player who left, and asks for no room.
+        let (service, input, _output) = control_service(Some("closed-match"));
+        let mut visit = super::super::WolVisit::open(false);
+        visit.provider = WolProvider::Online;
+        visit.back_to_room = true;
+        visit.live_service = Some(service);
+        let now = Instant::now();
+        visit.match_left_for_exit((Some("quit"), None, Some(now)), now);
+        let Ok(http::Request::Command {
+            operation: "finish",
+            payload,
+            ..
+        }) = input.try_recv()
+        else {
+            panic!("finish command");
+        };
+        assert_eq!(
+            payload,
+            json!({"match_id":"closed-match","result":"quit","ended_ago":0})
+        );
     }
 
     #[test]
