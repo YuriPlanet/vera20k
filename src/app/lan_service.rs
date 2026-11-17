@@ -510,8 +510,11 @@ impl LanService {
             .find(|record| endpoint_id(record.endpoint) == id)
     }
 
-    /// The lobby's game ID is the sender endpoint. Keep same-named games
-    /// separate while the usual `0x005DB720` expiry retires stale entries.
+    /// The lobby's game ID is the sender endpoint. VERA: gamemd's receive
+    /// (`0x005E018D..0x005E0233`) finds the row by name and moves its address
+    /// only when the game turns open, so same-named hosts share one row; here
+    /// each sender keeps its own row, and a rematch guest rejoins its original
+    /// host. The usual `0x005DB720` expiry retires stale entries.
     fn record_advertised_game(
         &mut self,
         endpoint: SocketAddrV4,
