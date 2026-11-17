@@ -272,13 +272,30 @@ impl RandomMapPreset {
     /// A ready-made preset's players, landform (`map_type`), size, resources,
     /// theater and Advanced values: water, hills, buildings, vegetation, ore
     /// fields, plateau size, accessibility. None for one of the player's own.
-    const fn values(self) -> Option<(i32, i32, i32, i32, Option<i32>, [i32; 7])> {
+    const fn values(self) -> Option<(i32, i32, i32, i32, Option<i32>, [i32; 13])> {
+        // The trailing six zeros are VERA's Advanced additions: the ready-made
+        // presets predate those sliders and leave them at their default.
         Some(match self {
-            Self::Duel => (2, 3, 1, 1, None, [10, 25, 0, 40, 60, 50, 80]),
-            Self::Brawl => (30, 3, 7, 2, None, [5, 20, 0, 30, 70, 50, 90]),
-            Self::CityWar => (4, 3, 2, 1, Some(2), [5, 10, 100, 20, 50, 60, 90]),
-            Self::Islands => (4, 0, 2, 2, Some(0), [60, 20, 0, 50, 60, 50, 50]),
-            Self::Teams => (8, 2, 4, 2, None, [35, 25, 0, 40, 60, 50, 70]),
+            Self::Duel => (
+                2, 3, 1, 1, None,
+                [10, 25, 0, 40, 60, 50, 80, 0, 0, 0, 0, 0, 0],
+            ),
+            Self::Brawl => (
+                30, 3, 7, 2, None,
+                [5, 20, 0, 30, 70, 50, 90, 0, 0, 0, 0, 0, 0],
+            ),
+            Self::CityWar => (
+                4, 3, 2, 1, Some(2),
+                [5, 10, 100, 20, 50, 60, 90, 0, 0, 0, 0, 0, 0],
+            ),
+            Self::Islands => (
+                4, 0, 2, 2, Some(0),
+                [60, 20, 0, 50, 60, 50, 50, 0, 0, 0, 0, 0, 0],
+            ),
+            Self::Teams => (
+                8, 2, 4, 2, None,
+                [35, 25, 0, 40, 60, 50, 70, 0, 0, 0, 0, 0, 0],
+            ),
             Self::Mine(_) => return None,
         })
     }
@@ -320,9 +337,14 @@ pub struct RandomMapSetupModalState {
     /// [`AdvancedField::row`]. `None` until a slider moves; Surprise Me clears
     /// them. While set they replace the map-type-derived values that every
     /// Generate re-rolls, after the re-roll's draws.
-    pub advanced_values: Option<[i32; 7]>,
+    pub advanced_values: Option<[i32; 13]>,
     /// An Advanced slider holding the mouse since a press on it.
     pub advanced_hold: Option<TrackbarHold<AdvancedField>>,
+    /// VERA extension: the Advanced scrollbar's thumb or track is held.
+    pub advanced_scroll_hold: bool,
+    /// VERA extension: which page of the Advanced sliders is on show. The
+    /// dialog has seven rows; VERA's three sliders are scrolled into view.
+    pub advanced_page: usize,
     /// VERA extension: the generated map on show was written as a map file;
     /// Export Map rests until the next Generate.
     pub exported: bool,
@@ -372,6 +394,12 @@ fn advanced_field_mut(options: &mut RmgOptions, field: AdvancedField) -> &mut i3
         AdvancedField::OreFields => &mut options.tiberium_layout,
         AdvancedField::PlateauSize => &mut options.region_size,
         AdvancedField::Accessibility => &mut options.accessibility,
+        AdvancedField::TechBuildings => &mut options.tech_building_amount,
+        AdvancedField::Derelicts => &mut options.derelict_amount,
+        AdvancedField::Damage => &mut options.damage_amount,
+        AdvancedField::Civilians => &mut options.civilian_amount,
+        AdvancedField::Animals => &mut options.animal_amount,
+        AdvancedField::Wild => &mut options.wild_amount,
     }
 }
 
@@ -384,6 +412,12 @@ fn advanced_field(options: &RmgOptions, field: AdvancedField) -> i32 {
         AdvancedField::OreFields => options.tiberium_layout,
         AdvancedField::PlateauSize => options.region_size,
         AdvancedField::Accessibility => options.accessibility,
+        AdvancedField::TechBuildings => options.tech_building_amount,
+        AdvancedField::Derelicts => options.derelict_amount,
+        AdvancedField::Damage => options.damage_amount,
+        AdvancedField::Civilians => options.civilian_amount,
+        AdvancedField::Animals => options.animal_amount,
+        AdvancedField::Wild => options.wild_amount,
     }
 }
 
@@ -417,6 +451,8 @@ impl RandomMapSetupModalState {
             advanced: false,
             advanced_values: None,
             advanced_hold: None,
+            advanced_scroll_hold: false,
+            advanced_page: 0,
             exported: false,
             preset: None,
             extras_page: None,
@@ -711,6 +747,7 @@ impl RandomMapSetupModalState {
         self.options.normalize();
         self.advanced_values = None;
         self.advanced_hold = None;
+        self.advanced_scroll_hold = false;
         self.preset = None;
     }
 
@@ -786,18 +823,52 @@ impl RandomMapSetupModalState {
     }
 
     /// Step the option rows to their next view: the original controls, the
-    /// Advanced sliders, then the Extras, whose first page shows. Any open
-    /// list or held slider lets go.
+    /// Advanced sliders (scrolled with their own scrollbar), then the Extras,
+    /// whose first page shows. Any open list or held slider lets go.
     pub fn toggle_advanced(&mut self) {
-        (self.advanced, self.extras_page) = match (self.advanced, self.extras_page) {
-            (false, _) => (true, None),
-            (true, None) => (true, Some(0)),
-            (true, Some(_)) => (false, None),
-        };
+        match (self.advanced, self.extras_page) {
+            (false, _) => {
+                self.advanced = true;
+                self.extras_page = None;
+                self.advanced_page = 0;
+            }
+            (true, None) => {
+                self.extras_page = Some(0);
+                self.advanced_page = 0;
+            }
+            (true, Some(_)) => {
+                self.advanced = false;
+                self.extras_page = None;
+                self.advanced_page = 0;
+            }
+        }
         self.extras_note = None;
         self.open_combo = None;
         self.players_hold = None;
         self.advanced_hold = None;
+        self.advanced_scroll_hold = false;
+    }
+
+    /// Scroll the Advanced sliders by arrow-button steps, clamped to the
+    /// seven-row window. Returns whether the visible rows changed.
+    pub fn scroll_advanced(&mut self, delta: i32) -> bool {
+        let next = (i32::try_from(self.advanced_page).unwrap_or(i32::MAX) + delta)
+            .clamp(0, AdvancedField::PAGE_COUNT as i32 - 1) as usize;
+        if next == self.advanced_page {
+            return false;
+        }
+        self.advanced_page = next;
+        true
+    }
+
+    /// Set the scroll offset from a track press or a thumb drag.
+    pub fn set_advanced_scroll(&mut self, page: usize) -> bool {
+        let page = page.min(AdvancedField::PAGE_COUNT - 1);
+        if page == self.advanced_page {
+            return false;
+        }
+        self.advanced_page = page;
+        true
     }
 
     /// The value an Advanced slider shows: the player's, else the option's.
@@ -867,6 +938,7 @@ impl RandomMapSetupModalState {
         self.open_combo = None;
         self.players_hold = None;
         self.advanced_hold = None;
+        self.advanced_scroll_hold = false;
     }
 
     /// Release a failed worker without presenting an old/partial map as a
@@ -1079,7 +1151,8 @@ mod tests {
         assert!(offline.advanced);
     }
 
-    /// VERA's Extras view: the toggle steps Basic, Advanced, Extras; a
+    /// VERA's Extras view: the toggle steps Basic, Advanced p1, Advanced p2,
+    /// Extras; a
     /// variant row steps its value as an option edit and asks for its map at
     /// once; a share code brings another dialog's options, seed included.
     #[test]
@@ -1089,6 +1162,11 @@ mod tests {
         let mut dialog = opened();
         assert!(dialog.extras_rows().is_empty(), "no rows outside the view");
         dialog.toggle_advanced();
+        assert_eq!(
+            (dialog.advanced, dialog.extras_page, dialog.advanced_page),
+            (true, None, 0),
+            "first toggle opens Advanced"
+        );
         dialog.toggle_advanced();
         assert_eq!((dialog.advanced, dialog.extras_page), (true, Some(0)));
         let rows = dialog.extras_rows();
@@ -1130,6 +1208,27 @@ mod tests {
 
         dialog.toggle_advanced();
         assert_eq!((dialog.advanced, dialog.extras_page), (false, None));
+    }
+
+    /// VERA: the Advanced scrollbar moves the seven-row window over all
+    /// thirteen sliders, stops at both ends, and lets go when the view changes.
+    #[test]
+    fn the_advanced_scrollbar_steps_and_clamps_the_visible_rows() {
+        let mut dialog = opened();
+        dialog.toggle_advanced();
+        assert!(!dialog.scroll_advanced(-1));
+        assert_eq!(dialog.advanced_page, 0);
+        assert!(dialog.scroll_advanced(1));
+        assert_eq!(dialog.advanced_page, 1);
+        assert!(!dialog.scroll_advanced(1), "the last page clamps");
+        assert!(dialog.set_advanced_scroll(0));
+        assert_eq!(dialog.advanced_page, 0);
+        assert!(dialog.set_advanced_scroll(99));
+        assert_eq!(dialog.advanced_page, AdvancedField::PAGE_COUNT - 1);
+        assert!(!dialog.set_advanced_scroll(99), "no change at the last page");
+        dialog.advanced_scroll_hold = true;
+        dialog.toggle_advanced();
+        assert_eq!((dialog.advanced_page, dialog.advanced_scroll_hold), (0, false));
     }
 
     /// A row past the view's last.

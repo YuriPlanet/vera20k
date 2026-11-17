@@ -6,8 +6,11 @@
 //! yields an empty catalog, and the placement phase then places nothing.
 
 use crate::map::rmg::phases::tech_buildings::TechType;
+use crate::map::rmg::phases::urban_areas::SpawnFoots;
 use crate::rules::foundation::{FOUNDATION_TABLE, read_foundation};
 use crate::rules::ini_parser::IniFile;
+use crate::rules::object_type::ObjectCategory;
+use crate::rules::ruleset::RuleSet;
 
 /// Build the catalog from the BuildingType IDs of `[AI]
 /// NeutralTechBuildings=` and a merged art INI.
@@ -269,6 +272,104 @@ pub fn resolve_vera_urban(
         trees: street_trees(theater_name),
         farms: named(&extras.farms),
         landmarks: named(&extras.landmarks),
+        derelicts: named(&extras.derelicts),
+        civilians: spawn_civilians(rules),
+        animals: spawn_animals(rules),
+        wild: spawn_wild(rules),
+    }
+}
+
+/// Civilian infantry and vehicles for the extra-Civilians slider.
+///
+/// The rules' own tags decide membership, so a mod gets its own civilians for
+/// free: an infantry with `Civilian=yes`, or a vehicle of `TechLevel=-1` that
+/// may not start in multiplayer (the buses, taxis and trucks a town already
+/// places). Every type must actually be defined. Order follows the registry,
+/// so the catalog is stable across runs and machines.
+fn spawn_civilians(rules: &RuleSet) -> SpawnFoots {
+    SpawnFoots {
+        infantry: rules
+            .infantry_ids
+            .iter()
+            .filter(|id| {
+                rules.object(id).is_some_and(|object| {
+                    // COW is Civilian=yes but also `Name=Animal Cow`; leave it
+                    // to the Animals slider so the three sliders are disjoint.
+                    object.civilian
+                        && !object
+                            .name
+                            .as_deref()
+                            .is_some_and(|name| name.starts_with("Animal "))
+                })
+            })
+            .cloned()
+            .collect(),
+        vehicles: rules
+            .vehicle_ids
+            .iter()
+            .filter(|id| {
+                rules.object(id).is_some_and(|object| {
+                    object.tech_level < 0
+                        && !object.allowed_to_start_in_multiplayer
+                        // `Category=Transport` is the civilian fleet; Support
+                        // (miners, tugs) and AirPower (the Hind) are props or
+                        // machinery, not town traffic.
+                        && object.techno_category
+                            == crate::rules::ini_value::TechnoTypeCategory::TransportVehicle
+                        // The dinosaurs are `TechLevel=-1` vehicles too; they
+                        // belong to the Animals slider alone.
+                        && !object
+                            .name
+                            .as_deref()
+                            .is_some_and(|name| name.starts_with("Animal "))
+                })
+            })
+            .cloned()
+            .collect(),
+    }
+}
+
+/// Animals for the Animals slider: `Name=Animal …` in the rules, across both
+/// foot registries so the dinosaurs (vehicles) are included alongside the cow
+/// and the bears (infantry).
+fn spawn_animals(rules: &RuleSet) -> SpawnFoots {
+    let animal = |id: &String| {
+        rules
+            .object(id)
+            .and_then(|object| object.name.as_deref())
+            .is_some_and(|name| name.starts_with("Animal "))
+    };
+    SpawnFoots {
+        infantry: rules.infantry_ids.iter().filter(|id| animal(id)).cloned().collect(),
+        vehicles: rules.vehicle_ids.iter().filter(|id| animal(id)).cloned().collect(),
+    }
+}
+
+/// Player-buildable infantry and vehicles for the Neutral Defenders slider:
+/// `TechLevel>=0`, owned by at least one country and allowed in multiplayer,
+/// which is exactly the set a human can build (E1, GI, tanks, …). They stand
+/// on Neutral so no player house gains them. Unbuildable campaign-only types
+/// are excluded by the same tags.
+fn spawn_wild(rules: &RuleSet) -> SpawnFoots {
+    // Armed only: an unarmed buildable unit (MCV, miner) would stand there
+    // doing nothing, which is not what "neutral defenders" means. Civilians
+    // and animals belong to their own sliders, so leave them out here.
+    let buildable = |id: &String| {
+        rules.object(id).is_some_and(|object| {
+            object.tech_level >= 0
+                && object.allowed_to_start_in_multiplayer
+                && !object.owner.is_empty()
+                && !object.civilian
+                && object.weapon_list.iter().any(|weapon| weapon.is_some())
+                && !object
+                    .name
+                    .as_deref()
+                    .is_some_and(|name| name.starts_with("Animal "))
+        })
+    };
+    SpawnFoots {
+        infantry: rules.infantry_ids.iter().filter(|id| buildable(id)).cloned().collect(),
+        vehicles: rules.vehicle_ids.iter().filter(|id| buildable(id)).cloned().collect(),
     }
 }
 

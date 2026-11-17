@@ -26,7 +26,7 @@ use super::fairness::FairCtx;
 use super::grid::RmgGrid;
 use super::phases::tech_buildings::TechType;
 use super::phases::tiberium::{DENSITY_LEVELS, GEM_BASE};
-use super::phases::urban_areas::{UrbanCatalog, UrbanObject, UrbanStructure};
+use super::phases::urban_areas::{SpawnFoots, UrbanCatalog, UrbanObject, UrbanStructure};
 use super::rng::RmgRng;
 use crate::map::construction_trace::RmgConstructionPhase;
 use crate::map::entities::EntityCategory;
@@ -36,6 +36,12 @@ const LANDMARK_SALT: u16 = 0x1A4D;
 const GEM_SALT: u16 = 0x6E35;
 const FARM_SALT: u16 = 0xFA43;
 const FENCE_SALT: u16 = 0xFE9C;
+const DERELICT_SALT: u16 = 0x5B17;
+/// Independent streams for the three Neutral foot stages, so a player moving
+/// one slider never shifts the others' picks or any native stage's draws.
+const CIVILIAN_SALT: u16 = 0x3A71;
+const ANIMAL_SALT: u16 = 0x6C2D;
+const WILD_SALT: u16 = 0x51BE;
 
 /// Half the side of the square round a start that Base Room clears of trees:
 /// the square Fair Starts counts as a start's building room.
@@ -70,6 +76,18 @@ pub struct EmbellishArgs<'a> {
     pub centre_gems: u8,
     pub countryside: u8,
     pub fences: u8,
+    /// VERA extension: the Advanced Derelicts slider, 0 = none; stands neutral
+    /// unpowered combat buildings over open ground.
+    pub derelict_amount: i32,
+    /// VERA extension: the Advanced Civilians slider, 0 = none; extra
+    /// civilian infantry and vehicles on Neutral over open ground.
+    pub civilian_amount: i32,
+    /// VERA extension: the Advanced Animals slider, 0 = none; `Name=Animal …`
+    /// foots on Neutral over open ground.
+    pub animal_amount: i32,
+    /// VERA extension: the Advanced Neutral Defenders slider, 0 = none;
+    /// player-buildable units left on Neutral over open ground.
+    pub wild_amount: i32,
     pub seed: u16,
     /// The neutral tech building Fair Tech stands, by name (`FairTech=`).
     pub fair_tech_type: &'a str,
@@ -92,6 +110,10 @@ impl EmbellishArgs<'_> {
         ]
         .iter()
         .any(|&value| value != 0)
+        || self.derelict_amount != 0
+        || self.civilian_amount != 0
+        || self.animal_amount != 0
+        || self.wild_amount != 0
     }
 }
 
@@ -170,6 +192,42 @@ pub fn run(
     }
     if args.countryside != 0 {
         countryside(ctx, args, starts, &play, catalog, out);
+    }
+    if args.derelict_amount > 0 {
+        derelicts(ctx, args, starts, &play, catalog, out);
+    }
+    if args.civilian_amount > 0 {
+        spawn_foots(
+            ctx,
+            starts,
+            &play,
+            &catalog.civilians,
+            args.civilian_amount,
+            args.seed ^ CIVILIAN_SALT,
+            out,
+        );
+    }
+    if args.animal_amount > 0 {
+        spawn_foots(
+            ctx,
+            starts,
+            &play,
+            &catalog.animals,
+            args.animal_amount,
+            args.seed ^ ANIMAL_SALT,
+            out,
+        );
+    }
+    if args.wild_amount > 0 {
+        spawn_foots(
+            ctx,
+            starts,
+            &play,
+            &catalog.wild,
+            args.wild_amount,
+            args.seed ^ WILD_SALT,
+            out,
+        );
     }
     if args.fences != 0 {
         town_fences(ctx, args, &play);
@@ -285,7 +343,24 @@ fn place_building(
         category: EntityCategory::Structure,
         cell: (anchor.0 as i16, anchor.1 as i16),
         facing: 0,
+        derelict: false,
     });
+}
+
+/// Stand a derelict combat building: same placement and trace as
+/// [`place_building`], but flagged so the build post-pass powers it down and
+/// damages it.
+fn place_derelict(
+    ctx: &mut FairCtx<'_>,
+    out: &mut EmbellishOutput<'_>,
+    name: &str,
+    footprint: &[(i16, i16)],
+    anchor: (i32, i32),
+) {
+    place_building(ctx, out, name, footprint, anchor);
+    if let Some(object) = out.objects.last_mut() {
+        object.derelict = true;
+    }
 }
 
 /// Base Room: the trees in the square round each start go, the ore trees
@@ -625,6 +700,142 @@ fn countryside(
                 }
             }
         }
+    }
+}
+
+/// VERA extension: the Advanced Derelicts slider. Stands neutral, unpowered
+/// combat buildings — radar, lab, refinery, war factory, barracks, power,
+/// yard — over open ground away from the starts, from its own RNG stream so
+/// no other stage's draws move. The build post-pass powers them down and
+/// damages them; here they only take their cells and construction trace.
+const DERELICT_SPACING: i32 = 12;
+const DERELICT_MAX: i32 = 60;
+
+fn derelicts(
+    ctx: &mut FairCtx<'_>,
+    args: &EmbellishArgs<'_>,
+    starts: &[(i32, i32)],
+    play: &[(i32, i32)],
+    catalog: &UrbanCatalog,
+    out: &mut EmbellishOutput<'_>,
+) {
+    let kinds: Vec<(&UrbanStructure, &Vec<(i16, i16)>)> = catalog
+        .derelicts
+        .iter()
+        .filter_map(|entry| entry.footprint.as_ref().map(|f| (entry, f)))
+        .collect();
+    if kinds.is_empty() {
+        return;
+    }
+    // 0..100 -> a capped share of the map's open cells; small maps get fewer.
+    let wanted = ((args.derelict_amount.clamp(0, 100) * DERELICT_MAX / 100)
+        .min(play.len() as i32 / 900))
+    .max(1);
+    let open: Vec<(i32, i32)> = play
+        .iter()
+        .copied()
+        .filter(|&cell| {
+            free_ground(ctx, cell.0, cell.1) && clear_of_starts(starts, cell, START_CLEARANCE)
+        })
+        .collect();
+    if open.is_empty() {
+        return;
+    }
+    let mut rng = RmgRng::new(args.seed ^ DERELICT_SALT);
+    let mut placed: Vec<(i32, i32)> = Vec::new();
+    for _ in 0..wanted * 120 {
+        if placed.len() as i32 >= wanted {
+            break;
+        }
+        let anchor = open[rng.uniform(0, open.len() as i32 - 1) as usize];
+        let (kind, footprint) = kinds[rng.uniform(0, kinds.len() as i32 - 1) as usize];
+        if !clear_of_starts(&placed, anchor, DERELICT_SPACING)
+            || !site_fits(ctx, anchor, footprint, 1, Also::Nothing)
+        {
+            continue;
+        }
+        place_derelict(ctx, out, &kind.name, footprint, anchor);
+        placed.push(anchor);
+    }
+}
+
+/// VERA extension: the three spawn sliders. Scatters foot-sized units over
+/// clear open ground away from the starts, each from its own RNG stream. The
+/// types come from the rules (a mod's own units are picked up automatically)
+/// and are emitted on Neutral through [`UrbanObject`], the same path the
+/// urban pass' civilians and the tech buildings use. Infantry and vehicles
+/// keep their registry category; no other stage's draw moves.
+const SPAWN_SPACING: i32 = 3;
+const SPAWN_MAX: i32 = 60;
+
+fn spawn_foots(
+    ctx: &mut FairCtx<'_>,
+    starts: &[(i32, i32)],
+    play: &[(i32, i32)],
+    kinds: &SpawnFoots,
+    amount: i32,
+    seed: u16,
+    out: &mut EmbellishOutput<'_>,
+) {
+    if kinds.is_empty() {
+        return;
+    }
+    // 0..100 -> a capped share of the map's open cells; small maps get fewer.
+    let wanted = ((amount.clamp(0, 100) * SPAWN_MAX / 100).min(play.len() as i32 / 120)).max(1);
+    let open: Vec<(i32, i32)> = play
+        .iter()
+        .copied()
+        .filter(|&cell| {
+            free_ground(ctx, cell.0, cell.1) && clear_of_starts(starts, cell, START_CLEARANCE)
+        })
+        .collect();
+    if open.is_empty() {
+        return;
+    }
+    let mut rng = RmgRng::new(seed);
+    let mut placed: Vec<(i32, i32)> = Vec::new();
+    for _ in 0..wanted * 60 {
+        if placed.len() as i32 >= wanted {
+            break;
+        }
+        let cell = open[rng.uniform(0, open.len() as i32 - 1) as usize];
+        if !clear_of_starts(&placed, cell, SPAWN_SPACING) {
+            continue;
+        }
+        // Draw the type from one combined index so the odds follow the two
+        // registries' sizes; the category is whichever registry won.
+        let infantry = kinds.infantry.len();
+        let total = infantry + kinds.vehicles.len();
+        if total == 0 {
+            return;
+        }
+        let pick = rng.uniform(0, total as i32 - 1) as usize;
+        let (name, category) = if pick < infantry {
+            (&kinds.infantry[pick], EntityCategory::Infantry)
+        } else {
+            (&kinds.vehicles[pick - infantry], EntityCategory::Unit)
+        };
+        // A foot does not claim its cell for placement (towns put several on
+        // one tile), but marking it keeps two spawns off the same spot here.
+        ctx.grid
+            .cell_native_mut(cell.0, cell.1)
+            .occupied = true;
+        let event = out
+            .trace
+            .push_discarded(RmgConstructionPhase::UrbanAreas, name.clone());
+        out.trace.mark_emitted(
+            event,
+            out.entity_base + out.objects.len(),
+            (cell.0 as u16, cell.1 as u16),
+        );
+        out.objects.push(UrbanObject {
+            name: name.clone(),
+            category,
+            cell: (cell.0 as i16, cell.1 as i16),
+            facing: ((rng.uniform(0, 7) << 5) & 0xFF) as u8,
+            derelict: false,
+        });
+        placed.push(cell);
     }
 }
 

@@ -52,6 +52,9 @@ pub struct TechArgs {
     pub stride: i32,
     /// Low byte of `[General] CliffBackImpassability=`.
     pub cliff_back_impassability: u8,
+    /// VERA extension: the Advanced Tech Buildings slider. 0 keeps the
+    /// original's own random count; above 0 steers the number of placements.
+    pub tech_amount: i32,
 }
 
 /// One recorded placement, emitted later as a neutral `[Structures]` entry.
@@ -94,6 +97,10 @@ pub(crate) fn run_traced(
         return placements;
     }
 
+    if args.tech_amount > 0 {
+        return run_steered(ctx, args, trace, entity_index_base);
+    }
+
     if args.map_type == 2 {
         let passes = ctx.rng.uniform(0, 2);
         for _ in 0..passes {
@@ -108,6 +115,46 @@ pub(crate) fn run_traced(
     } else {
         let count = ctx.rng.uniform(0, 4);
         for _ in 0..count {
+            place_whole_map(ctx, args, &mut placements, trace, entity_index_base);
+        }
+    }
+    placements
+}
+
+/// VERA extension: the Advanced Tech Buildings slider. The 0..100 value maps
+/// to a target of 0..40 buildings; no RNG is drawn to decide the count, so a
+/// slider setting gives a stable number on a given map. Map type 2 fills its
+/// quota-bearing regions one pass at a time until the target is reached; the
+/// other map types draw whole-map anchors directly. The count is a ceiling:
+/// a crowded map may place fewer, exactly as the original's attempts can.
+const TECH_AMOUNT_MAX: i32 = 40;
+
+fn run_steered(
+    ctx: &mut TechCtx<'_>,
+    args: &TechArgs,
+    trace: &mut RmgConstructionTrace,
+    entity_index_base: usize,
+) -> Vec<TechPlacement> {
+    let mut placements = Vec::new();
+    let target = (args.tech_amount.clamp(0, 100) * TECH_AMOUNT_MAX / 100).max(1) as usize;
+    if args.map_type == 2 {
+        let quota_regions: Vec<usize> = (0..ctx.regions.list.len())
+            .filter(|&index| ctx.regions.list[index].start_quota > 0)
+            .collect();
+        if quota_regions.is_empty() {
+            return placements;
+        }
+        // One quota building per region per pass, stopping at the target.
+        'passes: loop {
+            for &index in &quota_regions {
+                place_from_region(ctx, args, index, &mut placements, trace, entity_index_base);
+                if placements.len() >= target {
+                    break 'passes;
+                }
+            }
+        }
+    } else {
+        for _ in 0..target {
             place_whole_map(ctx, args, &mut placements, trace, entity_index_base);
         }
     }
@@ -132,6 +179,26 @@ pub fn run_start_flips_traced(
     if args.map_type != 0 {
         return placements;
     }
+    // VERA: the slider steers a fixed number of open regions; no coin flips.
+    // Kept ahead of the original path so a 0 slider keeps its exact draws.
+    if args.tech_amount > 0 {
+        let open_regions: Vec<usize> = region_order
+            .iter()
+            .copied()
+            .filter(|&index| ctx.regions.list[index].start_quota == 0)
+            .collect();
+        let target = ((args.tech_amount.clamp(0, 100) * TECH_AMOUNT_MAX / 100).max(1) as usize)
+            .min(open_regions.len());
+        for &index in open_regions.iter().take(target) {
+            if ctx.types.is_empty() {
+                break;
+            }
+            place_from_region(ctx, args, index, &mut placements, trace, entity_index_base);
+        }
+        return placements;
+    }
+    // Original path: every quota-free region draws its coin even when the
+    // resolved type list is empty (the draw still advances the RNG stream).
     for &index in region_order {
         if ctx.regions.list[index].start_quota != 0 {
             continue;
@@ -415,6 +482,7 @@ mod tests {
                 local_rect: [2, 5, gen_w, gen_h],
                 stride,
                 cliff_back_impassability: 2,
+                tech_amount: 0,
             },
         }
     }
@@ -555,6 +623,7 @@ mod tests {
             local_rect: [2, 5, int(&input["gen"][0]), int(&input["gen"][1])],
             stride: 33,
             cliff_back_impassability: 2,
+                tech_amount: 0,
         };
         (grid, scratch, types, regions, args)
     }

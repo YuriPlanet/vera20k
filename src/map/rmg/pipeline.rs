@@ -139,6 +139,9 @@ pub struct PipelineInputs<'a> {
     /// Ares.dll is loaded for this generation: the game is read the Ares way
     /// (`GenerationObjects::ares`). The low-bridge decks follow it.
     pub ares: bool,
+    /// VERA extension: the Advanced Tech Buildings slider (0 = original's
+    /// own random count); above 0 it steers the neutral tech-building count.
+    pub tech_building_amount: i32,
 }
 
 /// Watches the grid between stages, for callers that draw the map as it builds.
@@ -380,6 +383,7 @@ pub fn run_pipeline(
                 local_rect,
                 stride: stride as i32,
                 cliff_back_impassability: inputs.cliff_back_impassability,
+                tech_amount: inputs.tech_building_amount,
             };
             let mut ctx = TechCtx {
                 grid: &mut *grid,
@@ -429,6 +433,7 @@ pub fn run_pipeline(
             local_rect,
             stride: stride as i32,
             cliff_back_impassability: inputs.cliff_back_impassability,
+            tech_amount: inputs.tech_building_amount,
         };
         let mut ctx = TechCtx {
             grid: &mut *grid,
@@ -892,6 +897,7 @@ mod tests {
             local_rect: [2, 5, 70, 70],
             stride: STRIDE as i32,
             cliff_back_impassability: 2,
+            tech_amount: 0,
         };
         let tech_placements = {
             let mut ctx = TechCtx {
