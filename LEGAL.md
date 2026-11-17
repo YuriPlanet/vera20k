@@ -5,24 +5,33 @@
 VERA20K is copyrighted software. You may copy, change and share its code only under the
 [GPLv3](LICENSE-GPL) and the [additional terms](#additional-terms) below.
 
-- If you distribute an engine binary, whether free or paid, you must provide its corresponding
-  source in one of the ways allowed by section 6 of the GPLv3. Section 8 governs termination
-  and reinstatement after a license violation.
+- If you share a changed version without its full source code, pass it off as VERA20K, or share
+  VERA20K on terms other than these, you infringe our copyright, and your license ends
+  automatically.
 - Willful copyright infringement on a commercial scale is a crime in most countries.
-- Our [commercial use rules](#commercial-use) cover the VERA20K name, official servers and
-  project art.
+- Forks and paid builds may not use the VERA20K name; see [The VERA20K name](#the-vera20k-name).
 - We report infringing copies to stores and hosts to get them taken down.
 - We may block anyone who breaks this notice from our lobby and relays; see
   [Online play](#online-play).
 - Official builds come only from the [releases page](https://github.com/YuriPlanet/vera20k/releases)
   and [vera20k.org](https://vera20k.org/). Anything else is unofficial and may contain malware.
 
-## Commercial use
+## Commercial use of the code
 
-Official builds and online play are free. We ask everyone who distributes a fork to keep
-downloads and play free too. The [GPLv3](LICENSE-GPL) permits commercial use of the engine,
-including selling copies that comply with the license. The rules below explain when you need
-permission to use our name, our servers or our art to make money.
+**Do not use VERA20K code to make money or gain a commercial advantage.** We ask this of
+everyone who uses any part of the code, from a single function to the whole engine. It applies
+whether you copy, modify, translate or compile the code, whatever you call your product and
+whoever runs the servers.
+
+- Do not sell or rent a build, fork, library or plugin that contains the code.
+- Do not put the code into a paid product, a commercial service or an internal tool used to
+  run a business. This includes code used on your servers that customers never download.
+- Do not earn money from a product or service built with the code through ads, sponsorships,
+  subscriptions, in-app purchases or paid access, even if the download itself is free.
+
+Voluntary donations and payments for contributions made publicly available to the project
+are welcome. For code licensed under the [GPLv3](LICENSE-GPL), the noncommercial policy
+above is a project request. The GPLv3 permits commercial use and sale under its terms.
 
 ## The VERA20K name
 
@@ -39,8 +48,7 @@ Unless we agree in writing, you may not:
 
 - call a changed version, fork or repack VERA20K, or give it a name, logo or icon that could be
   mistaken for VERA20K's;
-- use the VERA20K name or logo as the brand for anything that earns money, including paid
-  downloads, bundles, subscriptions, merchandise and ad-funded launchers;
+- sell anything under the VERA20K name;
 - run a store listing, website, domain, social media account or game server that looks official;
 - suggest that we made, endorse or support your version.
 
@@ -63,12 +71,8 @@ added:
 We run VERA20K's official lobby and relay servers. The GPLv3 gives you the code, not access to
 our servers. You may use them for free to play VERA20K, under these rules:
 
-- Without our written permission, you may not make money from a build, service or event that
-  uses our official lobby or relays. This covers selling the build, charging for matches or
-  tournament entry, and selling memberships, priority access or in-game perks.
-- The same rule covers running an ad-funded or sponsored client, lobby or event on our servers,
-  even if players can join for free. A required “donation” counts as a fee. Voluntary donations
-  that buy no access, perks or advertising may support free play and public development.
+- Don't sell access to them, or a build or service that connects to them, without our written
+  permission.
 - Don't cheat, and don't attack or overload the servers.
 - We may block any client, account or address that breaks these rules or this notice.
 
@@ -80,9 +84,7 @@ folder. Unless a file there says otherwise, it is licensed under
 
 - You may share and change it in non-commercial projects if you credit the artist and VERA20K
   and share your changes under the same license.
-- Commercial use requires separate permission from the art's rights holder. For example,
-  you may not sell a map pack containing this art, put the art on merchandise for sale or use
-  it in an advertisement under the CC BY-NC-SA license.
+- You may not use it commercially, for example by selling it or anything that includes it.
 - It gives you no right to the VERA20K name or logo as trademarks.
 
 Art you contribute to that folder is licensed on the same terms. There is no such art yet: the
