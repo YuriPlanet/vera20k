@@ -63,10 +63,32 @@ a burst gap. The shot's burst step clears the flag and restarts the index at 0
   `RandomRanged(3, 5)` draws.
 - `sim/combat/burst.rs` - `WeaponBurst` carries the `ForceFullRearmDelay`
   equivalent: the flag is set by admission, read by GetROF, and cleared by
-  `complete_shot`, which also restarts the index at 0.
+  `complete_shot`, which also restarts the index at 0. It also carries its
+  neighbour `last_rearm_was_full_delay` (`TechnoExt::LastRearmWasFullDelay`),
+  recorded by `record_rearm_arm` from the arm GetROF answered and read by the
+  charge-turret AttachEffect below.
 - `sim/combat/rof.rs` - `get_rof`'s `0x6FD054` bypass leaves the mid-burst
-  branch while the flag is set. The stock kernel and the Ares/native control
-  queries stay identical when the feature is off.
+  branch while the flag is set. `get_rof_with_arm` returns the duration with
+  the `RearmArm` that answered it (`Untouched` above `0x6FD054`, `BurstGap`
+  for the mid-burst return at `0x6FD099`, `Full` for `0x6FD09E..0x6FD0B5`),
+  which is the flag write native performs at `Hooks.Firing.cpp:1124` /
+  `:1139`. The stock kernel and the Ares/native control queries stay identical
+  when the feature is off.
+- `sim/game_entity/gunner.rs` - `phobos_scale_charge_turret_delay` is the
+  `AttachEffectClass.cpp:209-210` reader: while no `ChargeTurretTimer` has
+  started and the recorded arm was the full one, an `ROFMultiplier` scales the
+  saved `ChargeTurretDelay` denominator. `sim/attach_effect.rs` calls it from
+  the per-effect `ROFMultiplier.ApplyOnCurrentTimer` block (`:204-211`).
+- `sim/combat/world_fire.rs` - `phobos_delayed_fire_step` is the one
+  `HandleDelayedFireWithPauseSequence` body (`Ext/Techno/Body.cpp:699-750`);
+  `phobos_delayed_fire_pause_sequence` is the class-site call
+  (`UnitClass_UpdateFiring_FireUp @ 0x736F61`,
+  `Ext/Unit/Hooks.Firing.cpp:89-90`; `InfantryClass_FiringAI @ 0x5209AF`,
+  `Ext/Infantry/Hooks.Firing.cpp:118-119`), which runs before the
+  `frame == firingFrame` test and hands it the same cumulative frame.
+  `phobos_delayed_fire_suppresses_this_frame` keeps the `FireAt` copy
+  (`0x6FDDC0`) for the classes that hook yields; a `pause_handled` answer
+  tells that copy the class update already stepped the timer in this frame.
 
 The unit arm of `0x736F61` has its own owners. No retail unit art authors
 `FireUp=`, so the arm is dormant in retail data and reached only by
@@ -81,15 +103,22 @@ Phobos-authored art:
   it already copies `TurretBarrel`.
 - `sim/animation.rs` - `UnitFiringCounter` (`UnitClass+6C0`) is the
   `CurrentFiringFrame` owner; `seed_sequence_frame` is native's `== -1`
-  initialisation.
+  initialisation, which only runs while `frames >= 0`.
 - `sim/combat/world_fire.rs` - `phobos_unit_fire_up_skips` runs in
   `FireVisit::UnitTarget` after the hull facing update and before
   `resolve_attacker_fire`, which is where `0x736F61` sits relative to
-  `Fire_At_Target`; a held frame leaves `fire_error` at its `NoTarget` default,
-  so the `0x737063` tail keeps the stock gattling path. The raw
-  `FireVisit::Direct` (`FireAt`) path stays ungated.
-  `FireUp.ResetInRetarget` and its target-setter reset already live in
-  `sim::mission`.
+  `Fire_At_Target`. A record without `FiringFrames=` leaves `frames` at -1, so
+  the gate never seeds and `(frames - (-1)) / 2` reads 0 on every update: an
+  authored `FireUp=` above 0 holds that unit for good, `FireUp=0` still
+  launches on frame 0. A held frame keeps `fire_error` empty, so the `0x737063`
+  tail keeps the stock gattling path. The raw `FireVisit::Direct` (`FireAt`)
+  path stays ungated. `FireUp.ResetInRetarget` and its target-setter reset
+  already live in `sim::mission`.
+- `sim/combat/world_fire.rs` - `phobos_omni_fire_turn` still evaluates
+  `0x736E6E` before the gate, and the hull/jumpjet facing write now sits
+  outside the held-frame branch: a held frame asks `GetFireError` through
+  `phobos_held_frame_fire_error` (read-only, the same subject `Fire_At_Target`
+  would use) so `0x736E6E`'s `err` filter answers as in native.
 
 ## Tests
 `sim::combat::phobos_burst_sequence_tests` drives the infantry firing update
@@ -109,7 +138,19 @@ pins the `-1` seed, a held frame and the authored frame;
 `Is_Really_Moving_Now` with the key off and on;
 `burst_overrun_forces_a_full_rearm` covers the projected overrun and shows the
 shot takes the full ROF; `the_key_off_keeps_the_stock_unit_cadence` is its
-control.
+control; `an_unset_firing_frames_holds_a_fire_up_shot` pins the unseeded
+record (`FireUp=4` holds on every update, `FireUp=0` launches on frame 0);
+`omni_fire_turns_on_a_held_frame` shows `0x736E6E` still turns the hull while
+that record holds the shot; `the_full_rearm_flag_marks_only_a_full_arm` walks
+one mid-burst, one forced-full and one completed-burst shot and reads
+`WeaponBurst::last_rearm_was_full_delay` after each.
+
+`sim::combat::phobos_delayed_fire_tests` covers the `0x6FDDC0` gate and the
+class-site `HandleDelayedFireWithPauseSequence` step:
+`delayed_fire_pause_resets_before_the_frame_test` arms both
+`DelayedFire.PauseFiringSequence=` and an SHP `FireUp=`, and shows the timer
+starting on the held sequence frame and its completed arm resetting before the
+frame test can skip the shot.
 
 `sim::combat::burst_no_delay_tests` covers the crossing with `Burst.NoDelay`:
 `burst_no_delay_fires_all_shots_without_redrawing_the_sequence` fires a `Burst=3`
@@ -123,44 +164,40 @@ are written to fail while the repeat re-admits.
 
 ## Residuals
 
-- The unit arm's `ForceFullRearmDelay` overrun needs `CurrentFiringFrame < -1`.
-  VERA's `UnitFiringCounter::advance` stops at -1, and every frame a live
-  counter decodes is at most `frames / 2`, so `fireUp + projected` stays inside
+- The unit arm's `ForceFullRearmDelay` overrun needs a counter below the
+  sequence floor on a record that authors `FiringFrames=`. VERA's
+  `UnitFiringCounter::advance` stops at -1, and every frame a live counter
+  decodes is at most `frames / 2`, so `fireUp + projected` stays inside
   `frames` and the overrun never arms on its own. Trigger: an authored
   `FireUp=` plus `Burst.FireWithinSequence=`. Effect: no full rearm from that
   arm; the shot still fires on its sequence frame. The arm is ported for the
   native state a counter below the floor can carry, and the test drives it
-  with that prior.
-- A unit with `FireUp=` above 0 whose ART leaves `FiringFrames=` unset fires
-  stock in VERA but holds every frame in native. Native skips its `frames >= 0`
-  seed arm, so `CurrentFiringFrame` stays -1 and `(frames - (-1)) / 2` reads 0
-  for `frames <= 0` — always below the authored frame. VERA returns before the
-  gate when `unit_shp_read_state` answers no record, because a non-positive
-  `FiringFrames` has no frame owner yet. Trigger: such a unit; retail authors
-  no unit `FireUp=` at all (none of the 101 `FireUp=` art sections in
-  `ARTMD.INI` belongs to a `[VehicleTypes]` entry), so this stays dormant.
-  Effect: VERA launches on frame 0 where native would never launch. `FireUp=0`
-  is not affected: native's frame 0 matches.
-- `OmniFire.TurnToTarget` while a `FireUp=` frame holds the shot: native's
-  `UnitClass_UpdateFiring_OmniFireTurnToTarget @ 0x736E6E` runs before
-  `UnitClass_UpdateFiring_FireUp @ 0x736F61`, so the hull or jumpjet facing
-  turns even when the sequence holds the shot. VERA evaluates the turn before
-  the gate but applies it only on the non-held path. Trigger: a unit authoring
-  both an SHP `FireUp=` and `OmniFire.TurnToTarget=yes`; retail authors no unit
-  `FireUp=`, so this stays dormant. Effect: VERA keeps the previous facing on
-  held frames.
-- `LastRearmWasFullDelay` (the other Phobos rearm flag, read by charge-turret
-  AttachEffect) is not kept by VERA; `sim::attach_effect` records that residual
-  with the charge timer.
-- `DelayedFire.PauseFiringSequence` ordering: native calls
-  `HandleDelayedFireWithPauseSequence` inside the `0x5209AF` hook before the
-  `frame == firingFrame` test and hands it this cumulative frame. VERA's
-  DelayedFire suppression lives in `admit_attacker_fire` after the stage test,
-  so with both keys armed the timer's completed-arm reset can happen one
-  matching frame later than native. Trigger: a weapon authoring both
-  `DelayedFire.PauseFiringSequence=yes` and `Burst.FireWithinSequence=yes`;
-  effect: a delayed burst shot may skip or repeat one pause step. Retail sets
-  neither key.
+  with that prior. An unset `FiringFrames=` record is the exception: `frames`
+  is -1, so a `FireUp=0` shot reaches `fireUp + projected > frames` on every
+  update and arms the full rearm, as native does.
+- The batch attach path `AttachEffects::Attach`
+  (`New/Entity/AttachEffectClass.cpp:831-837`) applies the same two
+  `ROFMultiplier` scalings when the effect is attached with
+  `ROFModifier != 1.0`. VERA scales `RearmTimer` there but has no per-effect
+  `CountDownTimer` start, so it does not re-scale `ChargeTurretDelay`; only the
+  per-effect `AI()` initialisation path
+  (`AttachEffectClass.cpp:204-211`) is ported. Trigger: attaching an
+  `ROFMultiplier` effect with `AttachEffect.Animation`/`Cumulative` batch
+  stacking to a charge-turret type whose `ChargeTurretTimer` has not started.
+  Effect: the charge denominator keeps its pre-attach value for that attach.
+  Retail sets no charge-turret type with an `ROFMultiplier` AttachEffect, so
+  this stays dormant.
+- The `fireUp < 0` Unit arm of `0x736F61` (`Ext/Unit/Hooks.Firing.cpp:103-106`)
+  calls `HandleDelayedFireWithPauseSequence` with `(0, -1)`, so the equality
+  never holds and no pause is written there; VERA keeps that case on the
+  `FireAt` copy (`0x6FDDC0`), whose boundary freezes the sequence at
+  `at_firing_frame`. The timer starts on the same first attempt in both. Trigger:
+  a turretless non-Voxel SHP unit with a `DelayedFire.PauseFiringSequence=`
+  weapon and no ART `FireUp=`. Effect: VERA freezes `UnitClass+6C0` where
+  native lets the stage advance; the shot still discharges on the completing
+  frame. `sim::combat::phobos_delayed_fire_tests`'
+  `a_delay_holds_the_shot_freezes_the_frame_then_fires_and_removes_the_anim`
+  pins that existing timing.
 - The completed burst's rearm takes one Scenario jitter draw:
   `TechnoClass_RearmDelay_ROF` (`0x6FD0B5`, six replaced bytes covering the
   stock random call, `SkipGameCode=0x6FD0BB`) *replaces* that draw with

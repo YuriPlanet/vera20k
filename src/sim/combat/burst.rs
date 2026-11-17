@@ -32,11 +32,19 @@ pub struct WeaponBurst {
     /// overrun arm sets it (`Ext/Infantry/Hooks.Firing.cpp:129`) so the current
     /// shot arms the full rearm (`0x6FD054` skips the mid-burst branch) and the
     /// shot's burst step clears it and resets the index (`0x6FF660` logic).
-    /// The matching `LastRearmWasFullDelay` reader stays with the charge-turret
-    /// residual in `sim::attach_effect`.
     #[cfg(feature = "phobos")]
     #[serde(default)]
     force_full_rearm: bool,
+    /// Phobos `TechnoExt::LastRearmWasFullDelay` (`Ext/Techno/Body.h:48`,
+    /// constructor false at `Body.h:109`, saved at `Body.cpp:1172`): the
+    /// arm GetROF answered, written by the same `0x6FD054` hook that reads
+    /// `force_full_rearm` — false on entry, true only on the ordinary
+    /// full-rearm arm — and by `0x6FD0B5` on that arm. Above `0x6FD054` the
+    /// early returns keep it. The charge-turret AttachEffect reader is
+    /// [`crate::sim::game_entity::GameEntity::phobos_scale_charge_turret_delay`].
+    #[cfg(feature = "phobos")]
+    #[serde(default)]
+    last_rearm_was_full_delay: bool,
 }
 
 impl Hash for WeaponBurst {
@@ -51,6 +59,10 @@ impl Hash for WeaponBurst {
         #[cfg(feature = "phobos")]
         if self.force_full_rearm {
             b"force-full-rearm".hash(state);
+        }
+        #[cfg(feature = "phobos")]
+        if self.last_rearm_was_full_delay {
+            b"last-rearm-was-full-delay".hash(state);
         }
     }
 }
@@ -128,6 +140,27 @@ impl WeaponBurst {
     #[cfg(feature = "phobos")]
     pub(crate) fn set_force_full_rearm(&mut self) {
         self.force_full_rearm = true;
+    }
+
+    /// Phobos `TechnoExt::LastRearmWasFullDelay`: the arm the last GetROF
+    /// answered. Its writer is [`Self::record_rearm_arm`].
+    #[cfg(feature = "phobos")]
+    pub(crate) const fn last_rearm_was_full_delay(self) -> bool {
+        self.last_rearm_was_full_delay
+    }
+
+    /// Store the flag write of the GetROF arm that answered
+    /// (`Ext/Techno/Hooks.Firing.cpp:1124`, `:1139`). An arm above `0x6FD054`
+    /// writes nothing, so [`RearmArm::Untouched`] keeps the previous value.
+    /// The flag itself is Phobos state (`TechnoExt`), so a build without that
+    /// feature records nothing.
+    pub(crate) fn record_rearm_arm(&mut self, arm: crate::sim::combat::rof::RearmArm) {
+        #[cfg(feature = "phobos")]
+        if let Some(full) = arm.last_rearm_was_full_delay() {
+            self.last_rearm_was_full_delay = full;
+        }
+        #[cfg(not(feature = "phobos"))]
+        let _ = arm;
     }
 }
 

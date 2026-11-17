@@ -1758,7 +1758,7 @@ fn rearm_transferred_gunner(
         ));
     let snapshot = crate::sim::combat::build_attacker_snapshot(actor, target, None);
     let live = actor.live_particles();
-    let rof = crate::sim::combat::world_fire::snapshot_get_rof(
+    let (rof, rearm_arm) = crate::sim::combat::world_fire::snapshot_get_rof(
         scenario_rng,
         &*substrate,
         houses,
@@ -1772,6 +1772,9 @@ fn rearm_transferred_gunner(
     );
     let frame = session.binary_frame() as i32;
     if let Some(actor) = substrate.entities.get_mut(receiver) {
+        // GetROF writes `TechnoExt::LastRearmWasFullDelay` itself
+        // (`0x6FD054`/`0x6FD0B5`), before the caller starts the timer.
+        actor.weapon_burst.record_rearm_arm(rearm_arm);
         actor.rearm_timer.start(frame, rof);
     }
 }

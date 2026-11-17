@@ -80,6 +80,8 @@ fn live_shot_for<'r>(
         // Aircraft release is its own admitted shot; the class pause hooks
         // never apply to Aircraft (`Hooks.Firing.cpp:658-662`).
         at_firing_frame: true,
+        // The raw FireAt paths run no class firing update.
+        pause_handled: false,
     });
     Some((burst, shot))
 }

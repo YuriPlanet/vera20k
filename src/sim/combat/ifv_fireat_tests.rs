@@ -169,6 +169,8 @@ fn empty_fv_two_shot_fireat_matches_native_muzzles_ids_rearm_and_rng() {
             ),
             is_garrison: false,
             at_firing_frame: true,
+            // The raw FireAt paths run no class firing update.
+            pause_handled: false,
         };
         world_fire::emit_admitted_fire(
             &mut world,

@@ -1,8 +1,10 @@
 //! Phobos `DelayedFire.*` (`src/Ext/WeaponType/Body.cpp:189-199`) through the
 //! production `FireVisit::UnitTarget` path: the `0x6FDDC0` gate inside
-//! `TechnoClass::Fire_At` (`emit_admitted_fire`), the saved timer on
-//! `GameEntity`, the `0x736480` firing-frame freeze and the `0x6FABC4` Stage
-//! skip, and `TechnoClass_SetTarget_After`-style anim removal.
+//! `TechnoClass::Fire_At` (`emit_admitted_fire`), the `0x736F61` / `0x5209AF`
+//! class-site step that runs `HandleDelayedFireWithPauseSequence` before their
+//! frame test, the saved timer on `GameEntity`, the `0x736480` firing-frame
+//! freeze and the `0x6FABC4` Stage skip, and `TechnoClass_SetTarget_After`-style
+//! anim removal.
 use super::world_fire;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
@@ -20,6 +22,17 @@ fn arena(weapon_extra: &str) -> (Simulation, RuleSet, u64, u64) {
 
 /// [`arena`] with extra `[FIRER]` keys, for the type-level pause gate.
 fn arena_with_firer(weapon_extra: &str, firer_extra: &str) -> (Simulation, RuleSet, u64, u64) {
+    arena_with_art(weapon_extra, firer_extra, None)
+}
+
+/// [`arena_with_firer`] with a fixed ART record, for the keys the Unit ART
+/// reader owns (`FiringFrames=`, `FireUp=`): the `0x736F61` gate only engages
+/// when the processed pass sees them.
+fn arena_with_art(
+    weapon_extra: &str,
+    firer_extra: &str,
+    art: Option<&str>,
+) -> (Simulation, RuleSet, u64, u64) {
     let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
         "[Warheads]\n0=HIT\n[BuildingTypes]\n0=DUMMY\n\
          [VehicleTypes]\n0=FIRER\n\
@@ -31,10 +44,23 @@ fn arena_with_firer(weapon_extra: &str, firer_extra: &str) -> (Simulation, RuleS
          [HIT]\nCellSpread=0\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
          [Animations]\n0=DFANIM\n"
     ));
-    let mut rules = RuleSet::from_ini(&ini).expect("rules read");
-    // The app loader's AnimType read receipt: constructor-only AnimList types
-    // still create AnimClass objects (`combat_tests::initialize_fixture_anim_types`).
-    rules.install_art_data(crate::rules::art_data::ArtRegistry::empty());
+    let mut rules = match art {
+        Some(art) => {
+            let art = crate::rules::ini_parser::IniFile::from_str(art);
+            let mut rules =
+                RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("rules read");
+            rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+            rules
+        }
+        None => {
+            let mut rules = RuleSet::from_ini(&ini).expect("rules read");
+            // The app loader's AnimType read receipt: constructor-only AnimList
+            // types still create AnimClass objects
+            // (`combat_tests::initialize_fixture_anim_types`).
+            rules.install_art_data(crate::rules::art_data::ArtRegistry::empty());
+            rules
+        }
+    };
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -380,4 +406,52 @@ fn an_expired_wind_up_anim_clears_the_tracked_pointer() {
     );
     assert_eq!(start_frame(&sim, firer), -1, "reset clears the timer");
     assert!(sim.substrate.pending_delete.contains_object(&spawned[0]));
+}
+
+/// `UnitClass_UpdateFiring_FireUp @ 0x736F61` calls
+/// `HandleDelayedFireWithPauseSequence` with this frame's `frame` and
+/// `firingFrame` **before** its `frame != firingFrame` test
+/// (`Ext/Unit/Hooks.Firing.cpp:89-95`; the shared body is
+/// `Ext/Techno/Body.cpp:699-750`). With `FiringFrames=3` the seeded counter
+/// decodes to sequence frame 0, one short of `FireUp=1`, so:
+/// - the first held update already starts the timer (native's `!HasStarted()`
+///   arm at `Body.cpp:718-736`), and
+/// - the completed arm resets it before that frame's test can skip the shot
+///   (`Body.cpp:742-743` runs ahead of `Hooks.Firing.cpp:92-95`).
+#[test]
+fn delayed_fire_pause_resets_before_the_frame_test() {
+    let (mut sim, rules, firer, _) = arena_with_art(
+        "DelayedFire.Duration=4\nDelayedFire.PauseFiringSequence=yes\n",
+        "",
+        Some("[FIRER]\nFiringFrames=3\nFireUp=1\n"),
+    );
+    // `2 * 3 - 1 = 5` is the seed a first update takes: `(5 - 5) / 2` is frame 0.
+    sim.entities_mut_for_test()
+        .get_mut(firer)
+        .unwrap()
+        .unit_firing_counter
+        .set_for_test(5);
+
+    assert_eq!(
+        visit(&mut sim, &rules, firer),
+        0,
+        "the held frame launches nothing"
+    );
+    assert_eq!(
+        start_frame(&sim, firer),
+        100,
+        "the delayed step ran before the frame test and started the timer"
+    );
+
+    sim.session.set_binary_frame_for_test(104);
+    assert_eq!(
+        visit(&mut sim, &rules, firer),
+        0,
+        "the sequence still stands one frame short of `FireUp=1`"
+    );
+    assert_eq!(
+        start_frame(&sim, firer),
+        -1,
+        "the completed arm reset the timer before the frame test"
+    );
 }

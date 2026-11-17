@@ -175,6 +175,38 @@ pub(crate) struct RofQuery<'a> {
     pub bunker_rof_multiplier: f32,
 }
 
+/// Which `TechnoClass::GetROF @ 0x006FCFA0` arm answered: the caller stores
+/// the Phobos flags that arm writes.
+///
+/// `TechnoClass_RearmDelay_ForceFullDelay @ 0x6FD054`
+/// (`Ext/Techno/Hooks.Firing.cpp:1132-1145`) clears
+/// `TechnoExt::LastRearmWasFullDelay` before it tests the forced flag, and
+/// `TechnoClass_RearmDelay_ROF @ 0x6FD0B5` (same file `:1113-1127`) sets it on
+/// the ordinary arm. The returns above `0x6FD054` — the building-ammo and
+/// empty-slot answers and the direct sonic/particle/railgun one — never reach
+/// either write, so they leave the flag as they found it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RearmArm {
+    /// Above `0x6FD054`: the early returns that write no flag.
+    Untouched,
+    /// The mid-burst return at `0x6FD099`: a burst gap, not the whole reload.
+    BurstGap,
+    /// The ordinary full-rearm arm `0x6FD09E..0x6FD0B5`.
+    Full,
+}
+
+impl RearmArm {
+    /// The flag write this arm performs, `None` for an untouched flag.
+    #[cfg(feature = "phobos")]
+    pub(crate) const fn last_rearm_was_full_delay(self) -> Option<bool> {
+        match self {
+            Self::Untouched => None,
+            Self::BurstGap => Some(false),
+            Self::Full => Some(true),
+        }
+    }
+}
+
 /// `TechnoClass::GetROF @ 0x006FCFA0`, arm by arm:
 /// - a building with more than one Ammo returns 1 (`0x006FCFA9..0x006FCFBE`),
 ///   and so does an empty weapon slot (`0x006FCFD4`), with no draw;
@@ -193,22 +225,22 @@ pub(crate) struct RofQuery<'a> {
 ///
 /// Every draw is Scenario `RandomRanged`; all x87 steps run under the
 /// process control word (53-bit, chop).
-pub(crate) fn get_rof(query: &RofQuery<'_>, rng: &mut SimRng) -> i32 {
+pub(crate) fn get_rof_with_arm(query: &RofQuery<'_>, rng: &mut SimRng) -> (i32, RearmArm) {
     let stock_building_shortcut = query.building_ammo.is_some_and(|ammo| ammo > 1);
     #[cfg(feature = "ares")]
     let stock_building_shortcut = stock_building_shortcut && query.attached_rof.is_none();
     if stock_building_shortcut {
-        return 1;
+        return (1, RearmArm::Untouched);
     }
     let Some(weapon) = query.weapon else {
-        return 1;
+        return (1, RearmArm::Untouched);
     };
     if weapon.is_sonic
         || (weapon.use_spark_particles && query.live.spark)
         || (weapon.use_fire_particles && query.live.fire)
         || (weapon.is_railgun && query.live.railgun)
     {
-        return weapon.rof;
+        return (weapon.rof, RearmArm::Untouched);
     }
     let mid_burst = query.burst_index < weapon.burst;
     // Phobos `TechnoClass_RearmDelay_ForceFullDelay` (`0x6FD054`, 6 bytes
@@ -225,17 +257,20 @@ pub(crate) fn get_rof(query: &RofQuery<'_>, rng: &mut SimRng) -> i32 {
         // Index 0 answers 0 with no draw even when the weapon authors no key.
         #[cfg(feature = "phobos")]
         if let Some(delay) = weapon.phobos_burst_delay(query.burst_index) {
-            return delay;
+            return (delay, RearmArm::BurstGap);
         }
         if let Some(delays) = query.unit_burst_delays
             && (1..=4).contains(&query.burst_index)
         {
             let delay = delays[(query.burst_index - 1) as usize];
             if delay != -1 {
-                return delay;
+                return (delay, RearmArm::BurstGap);
             }
         }
-        return rng.next_range_u32_inclusive(3, 5) as i32;
+        return (
+            rng.next_range_u32_inclusive(3, 5) as i32,
+            RearmArm::BurstGap,
+        );
     }
     // Phobos `TechnoClass_RearmDelay_ROF` (`0x006FD0B5`) replaces the stock
     // random arm with `GetRangedRandomOrSingleValue(ROF.RandomDelay)` (EAX
@@ -294,7 +329,15 @@ pub(crate) fn get_rof(query: &RofQuery<'_>, rng: &mut SimRng) -> i32 {
             rof = X::ftol_i32_low_masked(X::div(X::load_i32(rof), multiplier));
         }
     }
-    rof
+    (rof, RearmArm::Full)
+}
+
+/// The duration [`get_rof_with_arm`] answers, for callers that do not store
+/// the rearm flags ([`RearmArm`]). Production callers take the tuple; the
+/// kernel tests below read the duration alone.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn get_rof(query: &RofQuery<'_>, rng: &mut SimRng) -> i32 {
+    get_rof_with_arm(query, rng).0
 }
 
 #[cfg(test)]

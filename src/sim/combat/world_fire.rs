@@ -114,6 +114,11 @@ pub(super) fn resolve_attacker_fire<'r>(
     has_active_wave: bool,
     out: &mut CombatEmit,
     effects: FrameEffects<'_>,
+    // The class firing update already ran the pause-class DelayedFire step
+    // before its frame test, so `FireAt`'s own copy must not repeat it
+    // (`Ext/Unit/Hooks.Firing.cpp:89-90` before `:92-95`; the `FireAt` hook
+    // yields those classes at `Ext/Techno/Hooks.Firing.cpp:658-662`).
+    pause_handled: bool,
 ) -> (FireReach, Option<AdmittedFire<'r>>) {
     let mut reach = FireReach::default();
     let Some(shot) = admit_attacker_fire(
@@ -128,6 +133,7 @@ pub(super) fn resolve_attacker_fire<'r>(
         out,
         effects,
         false,
+        pause_handled,
     ) else {
         return (reach, None);
     };
@@ -171,11 +177,15 @@ pub(super) fn resolve_attacker_fire<'r>(
 }
 
 /// One evaluated `UnitClass_UpdateFiring_OmniFireTurnToTarget @ 0x736E6E`
-/// (`Ext/Unit/Hooks.Jumpjet.cpp:51-95`): the desired hull heading, whether
-/// the REARM arm may apply, and whether the heading actually differs.
+/// (`Ext/Unit/Hooks.Jumpjet.cpp:51-95`): the desired hull heading, the weapon
+/// index the hook read, whether the REARM arm may apply, and whether the
+/// heading actually differs.
 #[cfg(feature = "phobos")]
 struct OmniTurn {
     direction: u16,
+    /// `weaponIndex`, so a held frame can ask the same `GetFireError` query
+    /// the skipped fire routine would have asked.
+    weapon_index: i32,
     rearm_allowed: bool,
     should_turn: bool,
     /// Native sets the jumpjet `LocomotionFacing`; every other locomotor sets
@@ -240,6 +250,7 @@ fn phobos_omni_fire_turn(
     let direction = crate::sim::movement::turret::facing_toward_target(entity, target, world)?;
     Some(OmniTurn {
         direction,
+        weapon_index: index,
         rearm_allowed: object
             .phobos_no_turret_track_target
             .unwrap_or(rules.phobos_globals.no_turret_track_target),
@@ -250,6 +261,41 @@ fn phobos_omni_fire_turn(
             .and_then(|loco| loco.jumpjet_runtime())
             .is_some(),
     })
+}
+
+/// The `GetFireError` answer `UnitClass::Fire_At_Target @ 0x00736E3A` computed
+/// before it turned the hull: `UnitClass_UpdateFiring_OmniFireTurnToTarget @
+/// 0x736E6E` reads that code from `EBP` (`Ext/Unit/Hooks.Jumpjet.cpp:52-55`)
+/// and runs ahead of `UnitClass_UpdateFiring_FireUp @ 0x736F61`, so a held
+/// frame still turns. The query is read-only: no launch, no
+/// `open_topped_decloak_carrier` (`0x6FCD1D` inside `Fire_At`, which the skip
+/// never reaches).
+#[cfg(feature = "phobos")]
+fn phobos_held_frame_fire_error(
+    world: &Simulation,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    snap: &AttackerSnapshot,
+    weapon_index: i32,
+    fog_enabled: bool,
+) -> Option<fire_error::FireError> {
+    let firer = world.substrate.entities.get(snap.stable_id)?;
+    let obj = world
+        .interner
+        .object_type_in_category(snap.type_id, snap.category.into(), rules)?;
+    Some(
+        fire_error_world::FireSubject {
+            world,
+            rules,
+            overlay_registry,
+            fog: fog_enabled.then(|| world.fog.fire_view(&world.house_alliances)),
+            firer,
+            obj,
+            target: Some(snap.target),
+            weapon_index,
+        }
+        .fire_error(true),
+    )
 }
 
 /// The firer's `CurrentBurstIndex` (`TechnoClass+0x3B8`), or `None` once it is
@@ -337,6 +383,11 @@ fn fire_remaining_burst_this_frame(
                 out,
                 effects,
                 true,
+                // The hook calls `TechnoClass::Fire` directly. `FireAt`'s own
+                // delayed block yields the same classes the first shot's
+                // (already handled) frame did (`Hooks.Firing.cpp:658-662`),
+                // so the repeat reuses that answer instead of stepping again.
+                admitted.pause_handled,
             ) else {
                 // A refused repeat ends the run; the value the failed attempt
                 // zeroed is restored from the last successful shot below.
@@ -528,6 +579,11 @@ fn create_phobos_delayed_fire_anim(
 /// frame's launch). The timer is a frame-based `CDTimerClass` (native decrements
 /// each game frame; VERA compares the absolute binary frame), and the weapon
 /// index / pause flag / anim pointer mirror `TechnoExt` `Body.h:60-63,120-123`.
+///
+/// `at_firing_frame && pause_applies` is the legacy boundary this copy writes:
+/// native's `FireAt` copy never sets `DelayedFireSequencePaused`; the class
+/// firing updates' copy ([`phobos_delayed_fire_pause_sequence`]) does, at the
+/// `frame == firingFrame` equality it is handed.
 #[cfg(feature = "phobos")]
 fn phobos_delayed_fire_suppresses_this_frame(
     world: &mut Simulation,
@@ -537,6 +593,58 @@ fn phobos_delayed_fire_suppresses_this_frame(
     weapon: &crate::rules::weapon_type::WeaponType,
     at_firing_frame: bool,
     pause_applies: bool,
+) -> bool {
+    phobos_delayed_fire_step(
+        world,
+        rules,
+        snap,
+        weapon_index,
+        weapon,
+        Some(at_firing_frame && pause_applies),
+    )
+}
+
+/// `TechnoExt::HandleDelayedFireWithPauseSequence`
+/// (`src/Ext/Techno/Body.cpp:699-750`) as the class firing updates call it:
+/// `UnitClass_UpdateFiring_FireUp @ 0x736F61`
+/// (`Ext/Unit/Hooks.Firing.cpp:89-90` and its `fireUp < 0` arm at `:103`) and
+/// `InfantryClass_FiringAI @ 0x5209AF`
+/// (`Ext/Infantry/Hooks.Firing.cpp:118-119`) run it **before** their
+/// `frame == firingFrame` test and hand it that same cumulative frame, so the
+/// timer starts on the first attempt frame and its completed arm resets in
+/// time for that frame's test.
+#[cfg(feature = "phobos")]
+fn phobos_delayed_fire_pause_sequence(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    snap: &AttackerSnapshot,
+    weapon_index: i32,
+    weapon: &crate::rules::weapon_type::WeaponType,
+    frame: i32,
+    firing_frame: i32,
+) -> bool {
+    phobos_delayed_fire_step(
+        world,
+        rules,
+        snap,
+        weapon_index,
+        weapon,
+        Some(frame == firing_frame),
+    )
+}
+
+/// The shared timer step both copies perform. `pause_boundary` is
+/// `Some(paused_now)`: the class copy passes `frame == firingFrame`
+/// (`Body.cpp:715-716`), the `FireAt` copy its legacy boundary, and `None`
+/// would write no pause flag at all.
+#[cfg(feature = "phobos")]
+fn phobos_delayed_fire_step(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    snap: &AttackerSnapshot,
+    weapon_index: i32,
+    weapon: &crate::rules::weapon_type::WeaponType,
+    pause_boundary: Option<bool>,
 ) -> bool {
     let id = snap.stable_id;
     let frame = world.session.binary_frame() as i32;
@@ -568,12 +676,9 @@ fn phobos_delayed_fire_suppresses_this_frame(
 
     // `PauseFiringSequence && (Infantry || (Unit && !HasTurret() && !Voxel))`
     // yields to the class pause-sequence hooks `0x5209AF` / `0x736F61`
-    // (`Hooks.Firing.cpp:658-662`, `Ext/Techno/Body.cpp:699-750`). The freeze
-    // starts only when the sequence reaches `firingFrame` (`Body.cpp:711-716`):
-    // `at_firing_frame` carries that boundary for the admitted shot, so a
-    // turreted or Voxel Unit keeps its stock Stage/counter cadence while its
-    // shot is still delayed.
-    let pause_sequence = at_firing_frame && pause_applies;
+    // (`Hooks.Firing.cpp:658-662`, `Ext/Techno/Body.cpp:699-750`). The copy
+    // that wrote the boundary passes it here: the class hooks' `frame ==
+    // firingFrame` equality, or `FireAt`'s legacy `at_firing_frame` term.
 
     // `Burst <= 1 || !OnlyOnInitialBurst || CurrentBurstIndex == 0`
     // (`Hooks.Firing.cpp:664`). `weapon_burst.index()` is `Techno+0x3B8`.
@@ -586,6 +691,14 @@ fn phobos_delayed_fire_suppresses_this_frame(
         weapon.burst <= 1 || !weapon.phobos_delayed_fire_only_on_initial_burst || burst_index == 0;
     if !gate_open {
         return false;
+    }
+
+    // `if (frame == firingFrame) DelayedFireSequencePaused = true;`
+    // (`Body.cpp:715-716`), written before the HasStarted test below.
+    if pause_boundary == Some(true)
+        && let Some(firer) = world.substrate.entities.get_mut(id)
+    {
+        firer.set_phobos_delayed_fire_sequence_paused(true);
     }
 
     let (start_frame, duration_frames) =
@@ -605,19 +718,29 @@ fn phobos_delayed_fire_suppresses_this_frame(
             return true;
         }
         // `timer.Completed()` → `ResetDelayedFireTimer`, fall through and fire
-        // this frame (`Hooks.Firing.cpp:688-691`).
+        // this frame (`Hooks.Firing.cpp:688-691`, `Body.cpp:742-743`).
         reset_phobos_delayed_fire_timer(world, rules, id);
-        return false;
+    } else {
+        // `!timer.HasStarted()` (`Hooks.Firing.cpp:669-687`,
+        // `Body.cpp:718-735`): record the index, start the timer, create the
+        // anim, suppress this frame.
+        let frames = phobos_delayed_fire_frames(duration, world);
+        let pause_sequence = pause_boundary == Some(true);
+        if let Some(firer) = world.substrate.entities.get_mut(id) {
+            firer.start_phobos_delayed_fire(frame, frames, weapon_index, pause_sequence);
+        }
+        create_phobos_delayed_fire_anim(world, rules, snap, weapon, weapon_index, in_transport);
+        return true;
     }
 
-    // `!timer.HasStarted()` (`Hooks.Firing.cpp:669-687`, `Body.cpp:718-735`):
-    // record the index, start the timer, create the anim, suppress this frame.
-    let frames = phobos_delayed_fire_frames(duration, world);
-    if let Some(firer) = world.substrate.entities.get_mut(id) {
-        firer.start_phobos_delayed_fire(frame, frames, weapon_index, pause_sequence);
+    // `DelayedFireSequencePaused = false;` (`Body.cpp:746`): the completed arm
+    // releases the freeze before the caller's `frame == firingFrame` test.
+    if pause_boundary.is_some()
+        && let Some(firer) = world.substrate.entities.get_mut(id)
+    {
+        firer.set_phobos_delayed_fire_sequence_paused(false);
     }
-    create_phobos_delayed_fire_anim(world, rules, snap, weapon, weapon_index, in_transport);
-    true
+    false
 }
 
 fn admit_attacker_fire<'r>(
@@ -635,7 +758,12 @@ fn admit_attacker_fire<'r>(
     // update is not re-entered, so the infantry firing-frame gate
     // (`0x5209AF`) and its draws are skipped while `GetFireError` still runs.
     repeat: bool,
+    // The class firing update already stepped this frame's pause-class
+    // DelayedFire timer (see [`resolve_attacker_fire`]).
+    pause_handled: bool,
 ) -> Option<AdmittedFire<'r>> {
+    #[cfg(not(feature = "phobos"))]
+    let _ = pause_handled;
     let sound_enabled = sound_enabled(world);
     let delayed_building_slot = match snap.building_shot {
         Some(super::BuildingShot::Delayed { slot, .. }) => Some(slot),
@@ -795,6 +923,11 @@ fn admit_attacker_fire<'r>(
     // Infantry without the latch begins its action below, so the boundary
     // belongs to its later stage, not to this Fire_At.
     let at_firing_frame = !infantry_fire || firing_at_entry;
+    // The class firing updates' pause-class DelayedFire step
+    // (`Body.cpp:699-750`) already ran before this `FireAt` in the same
+    // frame.
+    #[cfg(feature = "phobos")]
+    let mut pause_handled = false;
     if firing_at_entry {
         let entity = world.substrate.entities.get(snap.stable_id)?;
         let prone = entity
@@ -827,9 +960,36 @@ fn admit_attacker_fire<'r>(
         };
         #[cfg(not(feature = "phobos"))]
         let firing_frame = fire_up;
+        // Phobos `HandleDelayedFireWithPauseSequence` runs inside the same
+        // `0x5209AF` hook before its equality test
+        // (`Ext/Infantry/Hooks.Firing.cpp:118-119`), with the retained stage
+        // as `frame` and `fireUp + cumulativeDelay` as `firingFrame`. The
+        // timer therefore starts and completes on the attempt frame, not on
+        // the matching one.
+        let stage = entity.native_stage().value();
+        #[cfg(feature = "phobos")]
+        {
+            pause_handled = match selected.as_ref() {
+                Some(selected) if selected.weapon.phobos_delayed_fire_pause_firing_sequence => {
+                    if phobos_delayed_fire_pause_sequence(
+                        world,
+                        rules,
+                        snap,
+                        weapon_index,
+                        selected.weapon,
+                        stage,
+                        firing_frame,
+                    ) {
+                        return None;
+                    }
+                    true
+                }
+                _ => false,
+            };
+        }
         //5206DE skips the first GetFireError.5209AF asks the second only
         // at exact equality, including signed/out-of-range retained stages.
-        if entity.native_stage().value() != firing_frame {
+        if stage != firing_frame {
             return None;
         }
         // Overrun: the next shot would fall past the sequence, so this shot
@@ -1120,7 +1280,28 @@ fn admit_attacker_fire<'r>(
         };
         #[cfg(not(feature = "phobos"))]
         let firing_frame = fire_up;
-        if actor.native_stage().value() != firing_frame {
+        // The same class-hook ordering on the path that just started the
+        // action: the pause-class timer step runs before the stage test, with
+        // this frame's stage and cumulative frame.
+        let stage = actor.native_stage().value();
+        #[cfg(feature = "phobos")]
+        if let Some(selected) = selected.as_ref()
+            && selected.weapon.phobos_delayed_fire_pause_firing_sequence
+        {
+            pause_handled = true;
+            if phobos_delayed_fire_pause_sequence(
+                world,
+                rules,
+                snap,
+                weapon_index,
+                selected.weapon,
+                stage,
+                firing_frame,
+            ) {
+                return None;
+            }
+        }
+        if stage != firing_frame {
             return None;
         }
         #[cfg(feature = "phobos")]
@@ -1222,6 +1403,7 @@ fn admit_attacker_fire<'r>(
         target_type_ref,
         is_garrison,
         at_firing_frame,
+        pause_handled,
     })
 }
 
@@ -1405,6 +1587,10 @@ pub(super) struct AdmittedFire<'a> {
     /// firing-sequence latch starts its action after this hook and is not at
     /// that boundary yet.
     pub(super) at_firing_frame: bool,
+    /// This frame's class firing update already stepped the pause-class
+    /// `DelayedFire` timer (`phobos_delayed_fire_pause_sequence`), so `FireAt`'s
+    /// own copy must not repeat that step.
+    pub(super) pause_handled: bool,
 }
 
 /// Object `id`'s GetCoords (`vt+0x48`,
@@ -1907,7 +2093,7 @@ fn fireat_get_rof(
     obj: &ObjectType,
     rof_weapon: Option<&WeaponType>,
     next_index: i32,
-) -> i32 {
+) -> (i32, super::rof::RearmArm) {
     let live = substrate
         .entities
         .get(snap.stable_id)
@@ -1931,7 +2117,9 @@ fn fireat_get_rof(
 /// `rof_weapon` at `burst_index` with the `live` particle systems it holds:
 /// FireAt's shot ([`fireat_get_rof`]) and the C4 plant's `GetROF(1)`
 /// (`sim::c4_plant`), also the receiving gunner's GetROF7/0
-/// (`sim::passenger`).
+/// (`sim::passenger`). The second answer is the arm that answered, which every
+/// caller stores as `TechnoExt::LastRearmWasFullDelay` (`0x6FD054`,
+/// `Ext/Techno/Hooks.Firing.cpp:1132-1145`).
 pub(crate) fn snapshot_get_rof(
     scenario_rng: &mut SimRng,
     substrate: &ObjectSubstrate,
@@ -1943,9 +2131,9 @@ pub(crate) fn snapshot_get_rof(
     rof_weapon: Option<&WeaponType>,
     live: super::rof::LiveParticles,
     burst_index: i32,
-) -> i32 {
+) -> (i32, super::rof::RearmArm) {
     let firer = substrate.entities.get(snap.stable_id);
-    super::rof::get_rof(
+    super::rof::get_rof_with_arm(
         &super::rof::RofQuery {
             // GetROF6FCFA9: a Building with more than one round returns1
             // before weapon queries and the ordinary ROF variation draw.
@@ -2093,9 +2281,12 @@ pub(super) fn emit_admitted_fire(
         target_type_ref,
         is_garrison,
         at_firing_frame,
+        pause_handled,
     } = shot;
     let snap = &snap;
     let weapon = selected.weapon;
+    #[cfg(not(feature = "phobos"))]
+    let _ = pause_handled;
     // Phobos `TechnoClass_FireAt_UpdateWeaponType @ 0x6FDD7D`
     // (`Ext/Techno/Hooks.Firing.cpp:588-607`), ahead of FireAt's own InLimbo
     // refusal below: a `LimboLaunch=` weapon whose warhead is
@@ -2187,7 +2378,11 @@ pub(super) fn emit_admitted_fire(
     // Phobos TechnoClass_FireAt_BeforeTruelyFire (0x6FDDC0): the delayed-fire
     // gate runs after FireAt's InLimbo refusal and before its DiscardOn
     // counters and launch. A suppressed frame starts nothing and fires
-    // nothing; the completed timer's fall-through fires normally.
+    // nothing; the completed timer's fall-through fires normally. The class
+    // firing updates' own `HandleDelayedFireWithPauseSequence` call already
+    // stepped the pause-class timer before their frame test, and this hook
+    // yields exactly those classes (`Hooks.Firing.cpp:658-662`), so
+    // `pause_handled` turns this copy off for the frame it covered.
     #[cfg(feature = "phobos")]
     let pause_applies = weapon.phobos_delayed_fire_pause_firing_sequence
         && match snap.category {
@@ -2201,15 +2396,17 @@ pub(super) fn emit_admitted_fire(
             _ => false,
         };
     #[cfg(feature = "phobos")]
-    if phobos_delayed_fire_suppresses_this_frame(
-        world,
-        rules,
-        snap,
-        selected.index,
-        weapon,
-        at_firing_frame,
-        pause_applies,
-    ) {
+    if !pause_handled
+        && phobos_delayed_fire_suppresses_this_frame(
+            world,
+            rules,
+            snap,
+            selected.index,
+            weapon,
+            at_firing_frame,
+            pause_applies,
+        )
+    {
         return None;
     }
     // Phobos TechnoClass_FireAt_BeforeTruelyFire (0x6FDDC0): an admitted shot
@@ -2514,7 +2711,7 @@ pub(super) fn emit_admitted_fire(
                     &world.interner,
                 )
             });
-        let rof = fireat_get_rof(
+        let (rof, rearm_arm) = fireat_get_rof(
             &mut world.scenario_rng,
             &world.substrate,
             &world.houses,
@@ -2526,6 +2723,7 @@ pub(super) fn emit_admitted_fire(
             burst.next_index(),
         );
         if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id) {
+            entity.weapon_burst.record_rearm_arm(rearm_arm);
             entity.rearm_after_fire(binary_frame as i32, rof);
             // Phobos `SetChargeTurretDelay`'s other FireAt rearm site
             // (`0x6FE4A4`, `0x6FE492` increments before GetROF).
@@ -3175,7 +3373,7 @@ pub(super) fn emit_admitted_fire(
 
     let next_index = burst.next_index();
     // `CALL [EDX+0x318]` at `0x006FF289`.
-    let rof = fireat_get_rof(
+    let (rof, rearm_arm) = fireat_get_rof(
         &mut world.scenario_rng,
         &world.substrate,
         &world.houses,
@@ -3208,6 +3406,7 @@ pub(super) fn emit_admitted_fire(
         );
         #[cfg(not(feature = "ares"))]
         let rearm = fireat_rearm_frames(rof, entity.berserk.is_active());
+        entity.weapon_burst.record_rearm_arm(rearm_arm);
         entity.rearm_after_fire(binary_frame as i32, rearm);
         // Phobos `SetChargeTurretDelay` hooks this rearm site (`0x6FF29E`);
         // the just-fired shot's list item (`CurrentBurstIndex - 1`, `0x6FF27C`
@@ -4103,7 +4302,8 @@ pub(crate) fn visit_fire(
             });
             if let Some(snapshot) = snapshot {
                 // A building has neither `Burst.NoDelay` hook, so the admitted
-                // shot is never repeated in this visit.
+                // shot is never repeated in this visit, and no class firing
+                // update stepped `DelayedFire` ahead of it.
                 let _ = resolve_attacker_fire(
                     world,
                     rules,
@@ -4114,6 +4314,7 @@ pub(crate) fn visit_fire(
                     world.active_wave_id(id).is_some(),
                     emit,
                     run.effects(),
+                    false,
                 );
             }
         }
@@ -4142,9 +4343,11 @@ pub(crate) fn visit_fire(
                     // before `Fire_At_Target`: a held frame launches nothing.
                     // The raw `FireVisit::Direct` path stays ungated.
                     #[cfg(feature = "phobos")]
-                    let fire_up_skips = phobos_unit_fire_up_skips(world, rules, &snap, fog_enabled);
+                    let gate = phobos_unit_fire_up_skips(world, rules, &snap, fog_enabled);
+                    #[cfg(feature = "phobos")]
+                    let (fire_up_skips, pause_handled) = (gate.skip, gate.pause_handled);
                     #[cfg(not(feature = "phobos"))]
-                    let fire_up_skips = false;
+                    let (fire_up_skips, pause_handled) = (false, false);
                     if !fire_up_skips {
                         let (reach, repeat_shot) = resolve_attacker_fire(
                             world,
@@ -4156,6 +4359,7 @@ pub(crate) fn visit_fire(
                             world.active_wave_id(id).is_some(),
                             emit,
                             run.effects(),
+                            pause_handled,
                         );
                         // `UnitClass_UpdateFiring_BurstNoDelay @ 0x736F67` fires
                         // the rest of the burst inside this same update.
@@ -4172,9 +4376,28 @@ pub(crate) fn visit_fire(
                             );
                         }
                         fire_error = reach.code;
-                        #[cfg(feature = "phobos")]
-                        if let Some(turn) = omni_turn
-                            && let Some(code) = fire_error
+                    }
+                    // Phobos `UnitClass_UpdateFiring_OmniFireTurnToTarget @
+                    // 0x736E6E` (`Ext/Unit/Hooks.Jumpjet.cpp:50-96`) runs before
+                    // `UnitClass_UpdateFiring_FireUp @ 0x736F61` and tests the
+                    // `GetFireError` answer the fire routine already computed,
+                    // so the hull turns on a held frame too. A held frame
+                    // skipped the launch — ask that same query here.
+                    #[cfg(feature = "phobos")]
+                    if let Some(turn) = omni_turn {
+                        let held_code = if gate.skip {
+                            phobos_held_frame_fire_error(
+                                world,
+                                rules,
+                                overlay_registry,
+                                &snap,
+                                turn.weapon_index,
+                                fog_enabled,
+                            )
+                        } else {
+                            None
+                        };
+                        if let Some(code) = fire_error.or(held_code)
                             && matches!(
                                 code,
                                 fire_error::FireError::Ok | fire_error::FireError::Rearm
@@ -4214,6 +4437,9 @@ pub(crate) fn visit_fire(
                     world.active_wave_id(id).is_some(),
                     emit,
                     run.effects(),
+                    // The `0x5209AF` class-site step runs inside the admission
+                    // below, on both infantry paths.
+                    false,
                 );
                 // `InfantryClass_UpdateFiring_BurstNoDelay @ 0x5209EE` fires the
                 // rest of the burst inside this same update, past the
@@ -4279,6 +4505,9 @@ pub(crate) fn visit_fire(
                     target_type_ref: type_ref,
                     is_garrison: false,
                     at_firing_frame: true,
+                    // A raw `FireVisit::Direct` caller runs no class firing
+                    // update, so `FireAt` owns this frame's delayed step.
+                    pause_handled: false,
                 })
             });
             if let Some(shot) = shot {
@@ -4994,26 +5223,52 @@ fn phobos_infantry_sequence_frames(
 }
 
 /// Phobos `UnitClass_UpdateFiring_FireUp @ 0x736F61`
-/// (`src/Ext/Unit/Hooks.Firing.cpp:7-102`, `SkipFiring = 0x737063`): an SHP,
+/// (`src/Ext/Unit/Hooks.Firing.cpp:7-109`, `SkipFiring = 0x737063`): an SHP,
 /// non-turreted Unit holds its launch until its body firing animation reaches
-/// the ART `FireUp=` frame, so `true` means native's `SkipFiring` — no bullet
-/// this frame. The caller keeps the frame's own facing update and reaches this
-/// before `UnitClass::Fire_At_Target`, which is where `0x736F61` sits.
+/// the ART `FireUp=` frame, so [`FireUpGate::skip`] means native's `SkipFiring`
+/// — no bullet this frame. The caller keeps the frame's own facing update and
+/// reaches this before `UnitClass::Fire_At_Target`, which is where `0x736F61`
+/// sits.
 ///
 /// The hold is expressed on the `UnitFiringCounter` owner
 /// ([`crate::sim::animation::UnitFiringCounter`]): `frames` is native's
 /// `2 * FiringFrames - 1`, and a `-1` counter is seeded to it first, exactly
-/// as the hook's `CurrentFiringFrame == -1` arm does, so a held frame keeps the
-/// seed. `DelayedFire`'s pause ordering is not repeated here: the shared
-/// `FireAt` path asks
-/// [`phobos_delayed_fire_suppresses_this_frame`] itself.
+/// as the hook's `frames >= 0 && CurrentFiringFrame == -1` arm does, so a held
+/// frame keeps the seed. A type that authors no `FiringFrames=` leaves
+/// `frames = -1`, native never seeds, the counter stays `-1` and
+/// `(frames - (-1)) / 2` reads 0 on every frame — an `FireUp=` above 0 holds
+/// that unit for good.
+///
+/// The pause-class `DelayedFire` step runs here, before the
+/// `frame != firingFrame` test, at `:89-90`.
+#[cfg(feature = "phobos")]
+#[derive(Debug, Clone, Copy)]
+struct FireUpGate {
+    /// Native's `SkipFiring` answer for this frame.
+    skip: bool,
+    /// This visit already stepped the pause-class `DelayedFire` timer, so
+    /// `FireAt`'s own copy (`0x6FDDC0`) must not repeat it.
+    pause_handled: bool,
+}
+
+#[cfg(feature = "phobos")]
+impl FireUpGate {
+    /// Fail-open answers: let the launch run, leave `FireAt` its own step.
+    const fn no_skip() -> Self {
+        Self {
+            skip: false,
+            pause_handled: false,
+        }
+    }
+}
+
 #[cfg(feature = "phobos")]
 fn phobos_unit_fire_up_skips(
     world: &mut Simulation,
     rules: &RuleSet,
     snap: &AttackerSnapshot,
     fog_enabled: bool,
-) -> bool {
+) -> FireUpGate {
     // `if (pType->Turret || pType->Voxel || pThis->InLimbo) return 0;`
     // `Voxel=` is the ART key, `Turret=` the rules key.
     let (Some(entity), Some(obj)) = (
@@ -5022,30 +5277,31 @@ fn phobos_unit_fire_up_skips(
             .interner
             .object_type_in_category(snap.type_id, snap.category.into(), rules),
     ) else {
-        return false;
+        return FireUpGate::no_skip();
     };
     if obj.has_turret
         || super::fire_coord::firer_art(rules, obj).is_some_and(|art| art.voxel)
         || entity.in_limbo()
     {
-        return false;
+        return FireUpGate::no_skip();
     }
     // `Valueable<int>` composed as -1: the key is off.
     let fire_up = obj.phobos_fire_up;
     if fire_up < 0 {
-        return false;
+        return FireUpGate::no_skip();
     }
+    // `2 * FiringFrames - 1` (`Ext/Unit/Hooks.Firing.cpp:33-34`). The ART byte
+    // is signed and defaults to 0, so an unauthored key leaves `frames = -1`
+    // and the seed arm below stays closed.
     let firing_frames = rules
         .unit_shp_read_state(world.interner.resolve(snap.type_id))
         .map_or(0, |layout| layout.firing_frames());
-    if firing_frames <= 0 {
-        return false;
-    }
+    let frames = 2 * i32::from(firing_frames) - 1;
 
     // `fireUp >= 0 && !OpportunityFire && Locomotor->Is_Really_Moving_Now()`:
-    // a unit that is really moving drops its sequence and fires nothing.
+    // a unit that is really moving drops its sequence and fires nothing — the
+    // arm at `:25-31` returns before the delayed step below.
     // `Is_Really_Moving_Now` is ILocomotion+0xA8, not the +0x80 query.
-    let frames = 2 * i32::from(firing_frames) - 1;
     let counter = entity.unit_firing_counter.get();
     let burst_index = entity.weapon_burst.index();
     let facts = combat_weapon::attacker_facts(entity, obj);
@@ -5062,13 +5318,16 @@ fn phobos_unit_fire_up_skips(
         {
             firer.unit_firing_counter.reset();
         }
-        return true;
+        return FireUpGate {
+            skip: true,
+            pause_handled: false,
+        };
     }
 
     // `pThis->GetWeapon(weaponIndex)`'s Burst, asked through the same ladder
     // the launch itself uses. A selection that answers nothing leaves the
     // frame to `resolve_attacker_fire`'s own handling.
-    let selected = combat_weapon::select_weapon_against(
+    let (weapon_index, selected) = combat_weapon::select_weapon_against(
         rules,
         entity,
         obj,
@@ -5079,19 +5338,19 @@ fn phobos_unit_fire_up_skips(
         world.resolved_terrain.as_ref(),
         fog_enabled.then_some(&world.house_alliances),
     )
-    .and_then(|(_, selected)| selected);
+    .unwrap_or((0, None));
 
     // `frames >= 0` seeds a `-1` counter before the equality test, so a frame
     // this hook holds keeps the sequence at its first frame. It runs before
     // the launch's own admission, as the native arm does.
-    let seeded = counter == -1;
+    let seeded = frames >= 0 && counter == -1;
     let current = if seeded { frames } else { counter };
     if seeded && let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
         firer.unit_firing_counter.seed_sequence_frame(frames);
     }
 
     let Some(selected) = selected else {
-        return false;
+        return FireUpGate::no_skip();
     };
     // `Burst.FireWithinSequence` moves the expected frame to
     // `fireUp + cumulativeDelay`; each unset `Burst.Delays` entry draws
@@ -5105,8 +5364,36 @@ fn phobos_unit_fire_up_skips(
     // `(frames - CurrentFiringFrame) / 2`, signed division truncating toward
     // zero as native's IDIV does.
     let frame = frames.wrapping_sub(current) / 2;
-    if frame != fire_up.wrapping_add(cumulative) {
-        return true;
+    let firing_frame = fire_up.wrapping_add(cumulative);
+
+    // `HandleDelayedFireWithPauseSequence(pThis, pWeapon, weaponIndex, frame,
+    // firingFrame)` (`Ext/Unit/Hooks.Firing.cpp:89-90`) runs before the
+    // equality test, so the pause lapses on the frame the sequence matches —
+    // not one matching frame later, and it starts the timer on the first
+    // held one.
+    let pause_class = selected.weapon.phobos_delayed_fire_pause_firing_sequence;
+    if pause_class
+        && phobos_delayed_fire_pause_sequence(
+            world,
+            rules,
+            snap,
+            weapon_index,
+            selected.weapon,
+            frame,
+            firing_frame,
+        )
+    {
+        return FireUpGate {
+            skip: true,
+            pause_handled: true,
+        };
+    }
+    let pause_handled = pause_class;
+    if frame != firing_frame {
+        return FireUpGate {
+            skip: true,
+            pause_handled,
+        };
     }
     // The next shot would fall past the sequence: this shot arms the full
     // rearm, and `complete_shot` restarts the burst index.
@@ -5116,7 +5403,10 @@ fn phobos_unit_fire_up_skips(
     {
         firer.weapon_burst.set_force_full_rearm();
     }
-    false
+    FireUpGate {
+        skip: false,
+        pause_handled,
+    }
 }
 
 /// `TechnoClass::EstimateDamage @ 0x006FDB80` for `attacker_id` shooting

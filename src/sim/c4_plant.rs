@@ -670,7 +670,7 @@ impl Simulation {
         );
         let burst_index = planter.weapon_burst.index();
         let live = planter.live_particles();
-        let rof = crate::sim::combat::world_fire::snapshot_get_rof(
+        let (rof, rearm_arm) = crate::sim::combat::world_fire::snapshot_get_rof(
             scenario_rng,
             &*substrate,
             houses,
@@ -684,6 +684,9 @@ impl Simulation {
         );
         let frame = session.binary_frame() as i32;
         if let Some(planter) = substrate.entities.get_mut(id) {
+            // GetROF writes `TechnoExt::LastRearmWasFullDelay` itself
+            // (`0x6FD054`/`0x6FD0B5`), before the caller starts the timer.
+            planter.weapon_burst.record_rearm_arm(rearm_arm);
             planter.rearm_timer.start(frame, rof);
         }
     }
