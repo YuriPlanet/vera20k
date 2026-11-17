@@ -40,6 +40,8 @@ pub(crate) const PAGE_BUTTON: u16 = 0x5C2;
 /// The online page's Quick Match: the welcome's control.
 pub(crate) const QUICK_MATCH: u16 = crate::ui::wol_shell::QUICK_MATCH;
 pub(crate) const BACK: u16 = 0x686;
+/// VERA: Back to Room, while this player visits the lobby from a game room.
+pub(crate) const BACK_TO_ROOM: u16 = 0x7E30;
 pub(crate) const REFRESH: u16 = 0x55D;
 pub(crate) const EMOTE: u16 = 0x3ED;
 pub(crate) const LOBBIES: u16 = 0x53D;
@@ -122,11 +124,25 @@ const ONLINE_PAGE: MenuPageSpec = MenuPageSpec {
     ..PAGE
 };
 
+/// The online page while this player visits the lobby from a game room
+/// (docs/lobby-protocol.md "Visiting the lobby"): Join Game, which leaves
+/// that room, Options and Back to Room. Its Back goes back to the room too,
+/// so it says nothing of the online menu.
+const ONLINE_VISIT_PAGE: MenuPageSpec = MenuPageSpec {
+    stacked: &[
+        button(JOIN, 111, "GUI:JoinGame", "STT:LobbyButtonJoin"),
+        button(OPTIONS, 138, "GUI:WOLOptions", "STT:WOLLobbyOptions"),
+        button(BACK_TO_ROOM, 166, "VERA:BackToRoom", ""),
+    ],
+    back: button(BACK, 332, "GUI:Back", ""),
+    ..ONLINE_PAGE
+};
+
 /// Record `+0xD5`: the retail page's top panel holds the lobby list. The
 /// online page shows no list, so it keeps the family's warning monitor
 /// there, as the other online pages do.
 pub(crate) fn keeps_top_panel(page: &MenuPageSpec) -> bool {
-    *page != ONLINE_PAGE
+    *page != ONLINE_PAGE && *page != ONLINE_VISIT_PAGE
 }
 
 /// The game list's header buttons and the player list's, with captions.
@@ -539,6 +555,8 @@ pub(crate) enum WolLobbyAction {
     Page,
     /// The online page's Quick Match: the Quick Match runner `0x0079FC40`.
     QuickMatch,
+    /// VERA: a lobby visitor back to their game room.
+    BackToRoom,
     /// Buddy List, Clan, Tournament and News run dialogs or web pages that
     /// are later chains.
     Unported(u16),
@@ -549,6 +567,9 @@ pub(crate) enum WolLobbyAction {
 #[derive(Debug, Clone)]
 pub(crate) struct WolLobbyState {
     modern: bool,
+    /// VERA: this player visits the lobby from a game room
+    /// ([`Self::set_visiting`]).
+    visiting: bool,
     pub(crate) chat: LanChatState,
     pub(crate) lobby_rows: Vec<WolLobbyRow>,
     pub(crate) game_rows: Vec<WolGameRow>,
@@ -577,6 +598,7 @@ impl WolLobbyState {
     pub(crate) fn new(observer: bool, modern: bool) -> Self {
         Self {
             modern,
+            visiting: false,
             chat: {
                 let mut chat = LanChatState::default();
                 chat.edit.focused = true;
@@ -607,7 +629,17 @@ impl WolLobbyState {
     }
 
     pub(crate) fn page_spec(&self) -> &'static MenuPageSpec {
-        if self.modern { &ONLINE_PAGE } else { &PAGE }
+        match (self.modern, self.visiting) {
+            (true, true) => &ONLINE_VISIT_PAGE,
+            (true, false) => &ONLINE_PAGE,
+            (false, _) => &PAGE,
+        }
+    }
+
+    /// This player visits the lobby from a game room: the page offers Back
+    /// to Room.
+    pub(crate) fn set_visiting(&mut self, visiting: bool) {
+        self.visiting = visiting;
     }
 
     pub(crate) fn is_modern(&self) -> bool {
@@ -860,6 +892,7 @@ impl WolLobbyState {
         Some(match control {
             CREATE => WolLobbyAction::Create,
             JOIN => WolLobbyAction::Join,
+            BACK_TO_ROOM => WolLobbyAction::BackToRoom,
             BACK => WolLobbyAction::Back,
             REFRESH => WolLobbyAction::Refresh,
             SORT_ALPHA | SORT_PING | SORT_RESLOCK | SORT_PASSWORD | SORT_GAMETYPE => {

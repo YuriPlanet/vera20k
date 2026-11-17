@@ -13,6 +13,56 @@ use crate::sim::world::Simulation;
 const PICKUP: (u16, u16) = (3, 5);
 const DROP: (u16, u16) = (13, 5);
 
+#[test]
+fn a_previous_worlds_ferry_cannot_board_units_in_a_fresh_world() {
+    let scene = || {
+        let retail = crate::rules::retail_ini_fixture::retail_battle_rules()
+            .expect("retail rules are required for the ferry isolation regression");
+        let (mut sim, rules, gi) = Simulation::walk_cell_input_test_scene_with(retail.rules, false);
+        let owner = sim.interner().get("Local").unwrap();
+        let transport = sim.spawn_object("LCRF", "Local", 4, 8, 0, &rules).unwrap();
+        sim.resolve_type_handles(&rules);
+        (sim, rules, owner, transport, gi)
+    };
+    let (old_sim, old_rules, old_owner, old_transport, _) = scene();
+    let mut input = crate::app::input::state::MatchInputState::new(Default::default());
+    input.ferry.add(
+        route_for(
+            &old_sim,
+            &old_rules,
+            None,
+            old_owner,
+            old_transport,
+            (13, 2),
+            0,
+        )
+        .unwrap(),
+    );
+
+    input.reset_targeting_for_new_world();
+    let (fresh, rules, owner, transport, gi) = scene();
+    assert_eq!(transport, old_transport, "the new world reuses object ids");
+    assert!(
+        input.ferry.check(&fresh, &rules, None, owner, 0).is_empty(),
+        "a prior match's ferry must not issue commands in the new world"
+    );
+
+    // A route explicitly requested in this world still boards the nearby GI.
+    input
+        .ferry
+        .add(route_for(&fresh, &rules, None, owner, transport, (13, 2), 0).unwrap());
+    assert!(
+        input
+            .ferry
+            .check(&fresh, &rules, None, owner, 0)
+            .iter()
+            .any(|order| matches!(order,
+        Command::MegaMission { entity_id, mission: MissionType::Enter,
+            destination: Some(TargetKind::Entity(carrier)), .. }
+        if *entity_id == gi && *carrier == transport))
+    );
+}
+
 fn facts(cell: (u16, u16), idle: bool, passengers: u32) -> TransportFacts {
     TransportFacts {
         cell,
