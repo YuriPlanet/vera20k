@@ -3,9 +3,10 @@
 I adapted configurable root-file selection from my ra2-mono
 `GameConfig.cs` / `GameIniLoader.cs` into VERA's existing source owners.
 This selects one Rules, fixed Art and standalone AI root as a unit, plus
-optional SOUNDMD and EVAMD roots and the theater INI suffix. It does not
-replace the parser, ordered Rules processing, AI registry/map passes, archive
-mounting or simulation authority.
+optional SOUNDMD and EVAMD roots and the theater INI suffix. An explicit `mo`
+profile also mounts Mental Omega's startup archive names
+([Archive names](#archive-names)). It does not replace the parser, ordered
+Rules processing, AI registry/map passes or simulation authority.
 
 ## Configuration
 
@@ -70,6 +71,21 @@ reads, so players whose theater INIs differ are refused before a match, and
 Quick Match names a theater INI that changes the retail one
 ([Networking](Networking.md)).
 
+### Archive names
+
+Mental Omega's spawner renames gamemd's startup archive names before the game
+opens them (`assets::asset_manager::ArchiveFamily`). An explicit
+`profile = "mo"` mounts those names: `expandmo99.mix` down to `expandmo00.mix`
+in place of the `expandmd` slots, then `mapsmo##.mix`, `multimo.mix`,
+`thememo.mix` and `movmo##.mix` (`MAPSMO*.MIX` and `MOVMO*.MIX` in CD mode).
+The master, cache, local, language, audio, conquer and cameo archives keep their
+YR names. `yr`, `auto` and `custom` keep the YR names: Auto probes the roots
+only after the archives are mounted, so it cannot choose the archives it
+probes, and an MO folder needs an explicit `mo`. Archive verbs of the `asset`
+tool take `--ini-profile mo` for the same names and do not read the host
+`[ini]`. The headless `headless_scenario::load_with_launch_and_ini` still
+mounts the YR names.
+
 Custom mode requires all three logical Rules/Art/AI basenames. Paths and
 wildcards are rejected; these names are resolved through the existing VFS, not
 arbitrary host file access. Overrides cannot be mixed with a preset. Explicit
@@ -106,7 +122,10 @@ asset ini-get TEST Voxel --domain art --reader bool --default false --ra2-dir <g
 INI commands use `[ini]` from the normal host config unless an explicit
 `--ini-profile` request replaces the entire INI configuration. CLI custom mode
 must supply its own complete triplet, not inherit missing fields from a config.
-Other asset commands retain the retail setup and reject profile flags.
+Other asset commands never read `[ini]` and reject `--rules-ini`, `--art-ini`
+and `--ai-ini`; they take `--ini-profile` only to choose the archive names, so
+`--ini-profile mo` mounts MO's ([Archive names](#archive-names)). `ini-expand`
+and `corpus-baseline` reject it.
 `ini-roots` reports the concrete choice and physical source identities through
 the production selector. `ini-get` and `ini-type` report the same choice and read
 the chosen Rules/fixed Art sources. Source hashes identify the bytes consumed,
@@ -120,11 +139,12 @@ remain YR and never reread an unrelated cwd configuration.
 
 ## Scope and source
 
-This is root selection only. Theme, mode/campaign catalogs, UI (UIMD),
-localization, arbitrary MOD archives and Ares/Phobos gameplay tags are not
-retargeted. A directory missing required retail archives still cannot enter the
-normal game bootstrap. Selecting the MO triplet does not certify that every MO
-definition, asset or gameplay mechanism is supported.
+This is root selection plus MO's startup archive names. The Theme catalog
+(`THEMEMD.INI`), mode/campaign catalogs, UI (UIMD), localization, other MOD
+archive names and Ares/Phobos gameplay tags are not retargeted; `THEMEMD.MIX`
+is, to `THEMEMO.MIX` under `mo`. A directory missing required retail archives
+still cannot enter the normal game bootstrap. Selecting the MO triplet does not
+certify that every MO definition, asset or gameplay mechanism is supported.
 
 [Include and inheritance](ini-directives.md) expand at the selected source
 boundary only in a game read the Ares way ([Ares](ares.md)) or a `phobos` build. Root selection itself

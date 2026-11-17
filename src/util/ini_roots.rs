@@ -3,7 +3,8 @@
 //!
 //! Adapted from my ra2-mono GameConfig/GameIniLoader file selection. VERA
 //! keeps one root per family and its existing native layer processing; this
-//! does not import mono's multi-file AI merging or change archive mounting.
+//! does not import mono's multi-file AI merging. The archive names a profile
+//! mounts are `assets::asset_manager::ArchiveFamily`'s.
 //!
 //! SOUNDMD and EVAMD are unlayered presentation readers, not part of the
 //! rules/art/AI triplet: their overrides are optional for every profile and a

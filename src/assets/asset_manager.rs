@@ -446,11 +446,14 @@ pub const MASTER_ARCHIVES: [&str; 2] = ["ra2md.mix", "ra2.mix"];
 
 /// Which startup archive names a launch mounts. Mental Omega's spawner
 /// `cncnet5mo.dll` overwrites gamemd's archive-name literals before startup
-/// (its `.patch` table): `EXPANDMD%02d.MIX` `0x82668C`, `MAPSMD%02d.MIX`
-/// `0x81C2EC`, `MAPSMD*.MIX` `0x82679C`, `MULTIMD.MIX` `0x81C284`,
-/// `THEMEMD.MIX` `0x81C24C` and the MOVMD names at `0x81C210` and
-/// `0x8266A0..0x826748` take their `MO` spelling. Master, cache, local,
-/// audio, conquer and cameo archives keep their YR names.
+/// (its `.patch` table), so they take their `MO` spelling: `EXPANDMD%02d.MIX`
+/// `0x82668C`, read by Init_Base_Mix_Files `0x005301A0`, and, read by
+/// Init_Mix_Files `0x00530460`, `MAPSMD%02d.MIX` `0x81C2EC`, `MAPSMD*.MIX`
+/// `0x82679C`, `MULTIMD.MIX` `0x81C284`, `THEMEMD.MIX` `0x81C24C` and the
+/// MOVMD names at `0x81C210`, `0x8266A0`, `0x8266B8`, `0x8266C4`, `0x8266D8`,
+/// `0x8266F0` and `0x826748`. The MOVIES names between them (`0x8266FC`,
+/// `0x826714`, `0x82672C`, `0x826738`) stay, as do the master, cache, local,
+/// audio, conquer and cameo archives.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ArchiveFamily {
     #[default]
