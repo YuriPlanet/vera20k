@@ -957,34 +957,12 @@ fn land_type_at(sim: &Simulation, rx: u16, ry: u16) -> Option<i32> {
         .map(|cell| i32::from(cell.land_type))
 }
 
-/// Whether `transport` sits on Water (`LandType 2`, `0x0073796B`).
+/// Whether the transport's cell is Water (`LandType 2`, `0x0073796B`).
 fn transport_on_water(sim: &Simulation, transport: &crate::sim::game_entity::GameEntity) -> bool {
     land_type_at(sim, transport.position.rx(), transport.position.ry())
         == Some(i32::from(
             crate::rules::terrain_rules::LandType::Water.as_index(),
         ))
-}
-
-/// Phobos `AmphibiousEnter=` (`Ext/TechnoType/Body.cpp:1107`,
-/// `Nullable<bool>`), else `[General] AmphibiousEnter`
-/// (`Ext/Rules/Body.cpp:197`).
-#[cfg(feature = "phobos")]
-fn transport_amphibious_enter(
-    rules: &RuleSet,
-    transport_type: &crate::rules::object_type::ObjectType,
-) -> bool {
-    transport_type
-        .phobos_amphibious_enter
-        .unwrap_or(rules.phobos_globals.amphibious_enter)
-}
-
-/// Without the `phobos` feature the key is not read.
-#[cfg(not(feature = "phobos"))]
-fn transport_amphibious_enter(
-    _rules: &RuleSet,
-    _transport_type: &crate::rules::object_type::ObjectType,
-) -> bool {
-    false
 }
 
 /// DOCKING, `UnitClass::Receive_Radio` case 0x0E (`0x007377D8..0x00737A95`),
@@ -1083,7 +1061,7 @@ fn unit_docking(
         // (`Ext/Techno/Hooks.Transport.cpp:252`, hook `0x73796B`) admits
         // boarding over water when the transport type's key, else
         // `[General]`, is set.
-        let amphibious_enter = transport_amphibious_enter(rules, transport_type);
+        let amphibious_enter = transport_type.amphibious_enter(rules);
         if transport_zone != sender_zone
             || (!amphibious_enter && transport_on_water(sim, transport))
         {
@@ -1218,7 +1196,7 @@ pub(crate) fn unit_can_enter_radio(
     // Phobos `AmphibiousEnter` in `CanEnterNow` (rewrite of `0x73758A`,
     // `Ext/Techno/Hooks.Transport.cpp:231-253`): a transport on water refuses
     // the boarding query unless the type key, else `[General]`, admits it.
-    if !transport_amphibious_enter(rules, transport_type) && transport_on_water(sim, transport) {
+    if !transport_type.amphibious_enter(rules) && transport_on_water(sim, transport) {
         return RadioResponse::None;
     }
     // GetCell+1BC -> ground CellClass::Look_up_building_in_cell47C520.
@@ -3463,11 +3441,13 @@ mod tests {
     }
 
     /// Phobos `AmphibiousEnter` (`Ext/Techno/Hooks.Transport.cpp:231-253`,
-    /// hooks `0x73758A`/`0x73796B`): a transport on water refuses the boarding
-    /// query unless the type key, else `[General]`, is set.
+    /// `:613-628`; the `CanEnterNow` rewrite of `0x73758A` and hook
+    /// `0x73796B`): a transport on water answers the boarding query, and the
+    /// click/cursor admission that asks it, only when the type key, else
+    /// `[General]`, is set.
     #[cfg(feature = "phobos")]
     #[test]
-    fn amphibious_enter_admits_boarding_a_transport_on_water() {
+    fn an_amphibious_enter_transport_takes_a_passenger_on_water() {
         use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
         use crate::rules::ini_parser::IniFile;
         use crate::sim::passenger::{PassengerCargo, PassengerRole};
@@ -3533,11 +3513,18 @@ mod tests {
             super::can_load_query(&sim, 1, 2, &rules),
             RadioResponse::None
         );
+        // The boarding admission the click and cursor ask asks the same query.
+        assert!(!crate::sim::passenger::can_enter_transport(
+            &sim, &rules, 2, 1
+        ));
         let (sim, rules) = build("AmphibiousEnter=yes\n");
         assert_eq!(
             super::can_load_query(&sim, 1, 2, &rules),
             RadioResponse::Roger
         );
+        assert!(crate::sim::passenger::can_enter_transport(
+            &sim, &rules, 2, 1
+        ));
     }
 
     /// The aircraft receiver's transport arms need `Carryall=` (`+0xDFC`) or

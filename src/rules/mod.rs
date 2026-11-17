@@ -134,6 +134,9 @@ pub mod phobos_airburst;
 pub mod phobos_aircraft_edge;
 #[cfg(feature = "phobos")]
 pub mod phobos_ammo_deploy;
+#[cfg(all(test, feature = "phobos"))]
+#[path = "phobos_amphibious_tests.rs"]
+mod phobos_amphibious_tests;
 #[cfg(feature = "phobos")]
 pub mod phobos_anim_draw_offset;
 #[cfg(feature = "phobos")]

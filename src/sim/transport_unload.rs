@@ -60,32 +60,15 @@ const fn opposite_octant(octant: usize) -> usize {
     (octant + 4) & 7
 }
 
-/// Phobos `AmphibiousUnload=` (`Ext/TechnoType/Body.cpp:1108`,
-/// `Nullable<bool>` field `Body.h:343`): the transport type's key, else
-/// `[General] AmphibiousUnload` (`Ext/Rules/Body.cpp:198`).
-#[cfg(feature = "phobos")]
-fn transport_amphibious_unload(sim: &Simulation, rules: &RuleSet, transport: &GameEntity) -> bool {
-    sim.object_type(transport.type_ref(), rules)
-        .and_then(|object| object.phobos_amphibious_unload)
-        .unwrap_or(rules.phobos_globals.amphibious_unload)
-}
-
-/// Without the `phobos` feature the key is not read.
-#[cfg(not(feature = "phobos"))]
-fn transport_amphibious_unload(
-    _sim: &Simulation,
-    _rules: &RuleSet,
-    _transport: &GameEntity,
-) -> bool {
-    false
-}
-
 /// Phobos `CanUnloadNow` (`Ext/Techno/Hooks.Transport.cpp:369-376`): the
 /// transport's cell must not be Water, unless `AmphibiousUnload=` replaces
 /// the test with the head passenger's land row. Shared by state 0's arrival
 /// check and `NoQueueUpToUnload`'s one-frame loop.
 fn transport_can_unload_now(sim: &Simulation, rules: &RuleSet, entity: &GameEntity) -> bool {
-    let amphibious_unload = transport_amphibious_unload(sim, rules, entity);
+    // `ObjectType::amphibious_unload` owns the type-else-`[General]` precedence.
+    let amphibious_unload = sim
+        .object_type(entity.type_ref(), rules)
+        .is_some_and(|object| object.amphibious_unload(rules));
     let transport_land = sim
         .resolved_terrain
         .as_ref()
@@ -389,7 +372,10 @@ fn pick_exit_octant(
     // Phobos `AmphibiousUnload` (hook `0x740C9C`,
     // `Ext/Techno/Hooks.Transport.cpp:700-714`): the exit scan's hard-coded
     // Foot speed becomes the head passenger's own SpeedType.
-    let speed_type = if transport_amphibious_unload(sim, rules, entity) {
+    let speed_type = if sim
+        .object_type(entity.type_ref(), rules)
+        .is_some_and(|object| object.amphibious_unload(rules))
+    {
         first_passenger_type(sim, rules, entity).map_or(SpeedType::Foot, |object| object.speed_type)
     } else {
         SpeedType::Foot
@@ -529,11 +515,14 @@ fn eject_head_passenger(
             // Phobos `AmphibiousUnload` (hook `0x73DAD8`,
             // `Ext/Techno/Hooks.Transport.cpp:716-728`): the placement search's
             // hard-coded MovementZone Normal becomes the head passenger's.
-            let amphibious_unload = sim
-                .substrate
-                .entities
-                .get(transport_id)
-                .is_some_and(|transport| transport_amphibious_unload(sim, rules, transport));
+            let amphibious_unload =
+                sim.substrate
+                    .entities
+                    .get(transport_id)
+                    .is_some_and(|transport| {
+                        sim.object_type(transport.type_ref(), rules)
+                            .is_some_and(|object| object.amphibious_unload(rules))
+                    });
             let (base, facing16, transport_z, height) = {
                 let transport = sim
                     .substrate
@@ -1252,7 +1241,9 @@ pub(crate) fn unit_mission_unload(
             // `AmphibiousUnload` (`Ext/Techno/Hooks.Transport.cpp:382-388`,
             // hook `0x73D769`) replaces the water test with the head
             // passenger's own land row when the key is set.
-            let amphibious_unload = transport_amphibious_unload(sim, rules, entity);
+            let amphibious_unload = sim
+                .object_type(entity.type_ref(), rules)
+                .is_some_and(|object| object.amphibious_unload(rules));
             let can_unload_here = transport_can_unload_now(sim, rules, entity);
             if entity.navigation.nav_com().is_none() && !can_unload_here {
                 // `PUSH 0x2` at `0x0073D790`: the search runs for speed-type

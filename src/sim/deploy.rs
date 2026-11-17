@@ -439,12 +439,8 @@ impl Simulation {
                     // Phobos `AmphibiousUnload` (hook `0x70107A`,
                     // `Ext/Techno/Hooks.Transport.cpp:646-657`): on water the
                     // water refusal yields to the type key or `[General]`.
-                    #[cfg(feature = "phobos")]
-                    let amphibious_unload = object
-                        .phobos_amphibious_unload
-                        .unwrap_or(rules.phobos_globals.amphibious_unload);
-                    #[cfg(not(feature = "phobos"))]
-                    let amphibious_unload = false;
+                    // `ObjectType::amphibious_unload` owns that precedence.
+                    let amphibious_unload = object.amphibious_unload(rules);
                     if near_deck
                         || (!amphibious_unload
                             && self
