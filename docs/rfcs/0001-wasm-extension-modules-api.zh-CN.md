@@ -648,6 +648,7 @@ bytes: u32,               // 投递区的字节数
 | --- | --- | --- | --- | --- | --- |
 | `ProductionAllowed` | `house`，`id` 类型 | 每帧每个所属方和每个绑定类型一次，在固定步骤；侧边栏和 AI 读缓存结果 | 类型 | 1 允许，0 不允许 | v1? |
 | `ProductionQueued` | `house`，`id` 类型，`subject` 0 | 玩家或 AI 把类型加入生产队列时 | 类型 | 1 允许，0 拒绝：拒绝的条目不入队，不花钱 | v1? |
+| `Defeat` | `house` | 引擎的判负检查即将判定该所属方失败时；`EndFor` 和原版的胜负动作不经过它 | 全局 | 1 判负，0 否决：本次不判负，下次检查再问 | v1? |
 | `CommandAllowed` | `subject`，`value` 指令（`Command`），`other` 目标对象，`cell` 目标格子 | 模拟执行绑定对象的每条玩家或 AI 指令时；光标预览不引发 | 对象 | 1 允许，0 拒绝 | v1? |
 | `Launch` | `projectile`，`subject` 发射者，`other` 目标，`cell` 目标格子 | 绑定类型的每个抛射体射出时一次 | 对象+武器 | `PathSpec` 的字节数（32 + 24 × 点数）；结果区为一个 `PathSpec` | later |
 | `ProjectileFrame` | `projectile`，`value` 已飞行帧数 | 每帧在引擎推进抛射体之前，每个绑定抛射体类型一批，含该类型全部抛射体 | 抛射体类型 | 不用；结果区为一个 `ProjectileStep`；`handled` 为 0 时按原生推进 | later |
@@ -1043,6 +1044,8 @@ INI，在 `on_rules` 中用 `rules_set` 写入，经原生读取器；这些节�
 | `DisguiseType`、`DisguiseOwner` | ref | R | own | v1 | 模拟读真实状态；无伪装为 0 |
 | `Cloaked` | bool | R | own | v1? | |
 | `Moving` | bool | R | own | v1 | |
+| `Facing` | int 0..255 | R | own | v1 | 车体朝向，刻度同地图单位的朝向和脚本动作 `ForceFacing` |
+| `TurretFacing` | int 0..255 | R | own | v1 | 炮塔朝向，刻度同 `Facing`；没有炮塔为 `Unsupported` |
 | `Armor` | id（`Armor`） | R | own | v1 | |
 | `Online` | bool | W | own | v1 | 建筑；同原版动作 61、62 |
 | `Selected` | bool | R | 客户端专用 | v1（阶段 2） | 本地选择；模拟中为 `Unsupported` |
@@ -1253,7 +1256,10 @@ Ares 和 Phobos 的键尚未分类。
 | `MissionTimerRunning` | bool | R | all | v1 |
 | `AmbientLight` | int | R | all | v1 |
 | `IonStormActive` | bool | R | all | v1? |
+| `GameSpeed` | int | W（仅模拟） | all | v1? |
 | 全局数值键 | 见 7.7 | `W(白名单)` | all | v1? |
+
+`GameSpeed` 取值同游戏选项中的游戏速度档位；写入在下一帧生效，所有玩家同时变速。
 
 ### 7.9 触发器、标签、小队和超级武器
 
@@ -1342,6 +1348,7 @@ Ares 和 Phobos 的键尚未分类。
 | 引用 | 属性 | 值 | 读写 | 层级 |
 | --- | --- | --- | --- | --- |
 | 镜头 | `Cell` | ref（格子） | W：写入即跳转，同 `JumpCamera` | v1? |
+| 镜头 | `X`、`Y` | lepton | W：镜头中心，写入即跳转，钳制在地图内 | v1? |
 | 本地设置 | `Viewer` | ref（所属方） | R：本机所属方，观战者为 0 | v1 |
 | 本地设置 | `IsSpectator` | bool | R | v1 |
 | 本地设置 | 其他本地设置 | — | 待定问题 14 | later |
