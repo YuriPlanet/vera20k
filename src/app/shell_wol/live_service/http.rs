@@ -16,8 +16,8 @@ use std::sync::{
 };
 
 use super::wire::EventBatch;
-use crate::ui::chat_translation::{ChatLanguage, ChatReply};
 use super::wire::{ChannelList, Envelope, Match, MatchList, Session};
+use crate::ui::chat_translation::{ChatLanguage, ChatReply};
 use serde_json::Value;
 use serde_json::json;
 
@@ -82,6 +82,9 @@ pub(super) enum Request {
     /// The shell gave up on an unanswering lobby outside a match: stop
     /// polling and log this bearer out at the next sign-in.
     Abandon,
+    /// The match the live service now holds (`LiveService::hold_match`), or
+    /// none.
+    HoldMatch(Option<String>),
     /// An external launch's bearer for its match API (docs/spawn.md), in
     /// place of `/v1/sessions`. Polling starts with the first event.
     AdoptSession {
@@ -628,6 +631,10 @@ struct Client {
     browser: u32,
     token: Option<String>,
     cursor: u64,
+    /// The match `/v1/match/resume` recovers after a lost event history and
+    /// a held bearer's logout finishes first: the live service's, as
+    /// `Request::HoldMatch` last named it, or a returning launcher's from
+    /// `AdoptSession` until the service holds it.
     active_match: Option<String>,
     /// The bearer came from an external launcher, not `/v1/sessions`.
     spawned: bool,
@@ -712,12 +719,6 @@ impl Client {
         // Each event stays on the same FIFO until the UI may pump messages;
         // emitting one batch would force the consumer to duplicate its tail.
         for event in batch.events {
-            if event.kind == "timing_confirmed"
-                && let Some(id) = event.payload["match_id"].as_str()
-                && super::relay_uuid(id).is_ok()
-            {
-                self.active_match = Some(id.to_owned());
-            }
             output
                 .send(Response::Event(event))
                 .map_err(|_| RequestFailure::Status(0))?;
@@ -903,8 +904,9 @@ macro_rules! serial_driver {
         impl Client {
     /// Log out a bearer this worker still holds (given up in an outage, or
     /// whose logout the shell stopped retrying), which still holds its name.
-    /// The lobby refuses to log out a session in a match, so a match the
-    /// shell already left is finished first. False while the lobby is away.
+    /// The lobby refuses to log out a session in a match, so the match the
+    /// live service held with it is finished first. False while the lobby
+    /// is away.
     $($asynchronous)? fn release_held_session(&mut self) -> bool {
         if self.token.is_none() {
             return true;
@@ -912,7 +914,6 @@ macro_rules! serial_driver {
         if let Some(match_id) = self.active_match.clone() {
             let body = json!({"request_id":"held-finish","after":self.cursor,"operation":"finish","payload":{"match_id":match_id}});
             let _ = platform_await!(self.request("/v1/commands", Some(&body)));
-            self.active_match = None;
         }
         let body = json!({"request_id":"held-logout","after":self.cursor,"operation":"logout","payload":{}});
         match platform_await!(self.request("/v1/commands", Some(&body))) {
@@ -947,7 +948,6 @@ macro_rules! serial_driver {
             ) {
                 return true;
             }
-            self.active_match = None;
         }
         if matches!(
             error,
@@ -1217,7 +1217,6 @@ macro_rules! serial_driver {
                     continue;
                 }
                 client.cursor = 0;
-                client.active_match = None;
                 let result = platform_await!(client
                     .request("/v1/sessions", Some(&session_body(&nickname, &credential))))
                     .and_then(|value| decode_session(value, &nickname));
@@ -1263,6 +1262,7 @@ macro_rules! serial_driver {
                 }
             }
             Some(Request::Abandon) => client.abandoned = client.token.is_some(),
+            Some(Request::HoldMatch(match_id)) => client.active_match = match_id,
             Some(Request::AdoptSession { token, resume }) => {
                 if client.token.is_none() {
                     client.adopt_session(token, resume);
@@ -1348,9 +1348,6 @@ macro_rules! serial_driver {
                 }
                 match result {
                     Ok(()) => {
-                        if matches!(operation, "finish" | "leave" | "logout") {
-                            client.active_match = None;
-                        }
                         let _ = output.send(Response::CommandCompleted { id, operation });
                     }
                     Err(error)
@@ -1636,6 +1633,140 @@ mod tests {
         assert!(client.release_held_session());
         assert!(client.token.is_none());
         lobby.join().unwrap();
+    }
+
+    /// Quick Match leaves its room as its match starts. The match the live
+    /// service holds still recovers a lost event history afterwards, and a
+    /// held bearer's logout still finishes it first.
+    #[test]
+    fn a_quick_match_leave_keeps_the_match_to_resume_and_to_finish() {
+        use std::io::{BufRead, Write};
+        const MATCH: &str = "11111111-1111-1111-1111-111111111111";
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let lobby = std::thread::spawn(move || {
+            let (mut seen, mut left, mut reads_after_leave, mut sessions) =
+                (Vec::new(), false, 0, 0);
+            for stream in listener.incoming() {
+                let mut reader = std::io::BufReader::new(stream.unwrap());
+                let (mut path, mut length, mut line) = (String::new(), 0, String::new());
+                while reader.read_line(&mut line).unwrap_or(0) > 2 {
+                    let lower = line.to_ascii_lowercase();
+                    if let Some(value) = lower.strip_prefix("content-length:") {
+                        length = value.trim().parse().unwrap();
+                    } else if path.is_empty() {
+                        path = line.split(' ').nth(1).unwrap().to_owned();
+                    }
+                    line.clear();
+                }
+                let mut body = vec![0; length];
+                std::io::Read::read_exact(&mut reader, &mut body).unwrap();
+                let body: Value = serde_json::from_slice(&body).unwrap_or_default();
+                let batch = json!({"cursor":1,"events":[]});
+                let (status, reply) = match path.as_str() {
+                    "/v1/sessions" => {
+                        sessions += 1;
+                        (200, session_response())
+                    }
+                    "/v1/events?after=0" => (
+                        200,
+                        json!({"cursor":1,"events":[{"sequence":1,"kind":"timing_confirmed",
+                            "payload":{"match_id":MATCH}}]}),
+                    ),
+                    "/v1/commands" => {
+                        left |= body["operation"] == "leave";
+                        (200, batch)
+                    }
+                    // The leave's own drain, then a poll after the lobby
+                    // lost this session's history.
+                    "/v1/events?after=1" if left => {
+                        reads_after_leave += 1;
+                        if reads_after_leave > 1 {
+                            (409, json!({"error":{"code":"history_expired"}}))
+                        } else {
+                            (200, batch)
+                        }
+                    }
+                    "/v1/events?after=1" => (200, batch),
+                    _ if path == format!("/v1/match/resume?match_id={MATCH}") => (
+                        200,
+                        json!({"match_id":MATCH,"cursor":30,"relay":{
+                            "address":"127.0.0.1:5000","ticket":"test","packet_key":"test",
+                            "payload_key":"test","source_index":1,"ordering_certificate":"test"}}),
+                    ),
+                    _ => (404, json!({})),
+                };
+                let reply = reply.to_string();
+                let _ = write!(
+                    reader.into_inner(),
+                    "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                    reply.len()
+                );
+                seen.push((path, body));
+                if sessions == 2 {
+                    return seen;
+                }
+            }
+            unreachable!()
+        });
+        let (requests, input) = std::sync::mpsc::channel();
+        let (output, responses) = std::sync::mpsc::channel();
+        let stopping = Arc::new(AtomicBool::new(false));
+        let worker = {
+            let stopping = Arc::clone(&stopping);
+            std::thread::spawn(move || run(base, input, output, stopping))
+        };
+        let next = || responses.recv_timeout(Duration::from_secs(10)).unwrap();
+        let sign_in = |attempt| Request::OpenSession {
+            attempt,
+            nickname: "Player_01234567890123456".into(),
+            credential: Credential::Guest,
+        };
+        requests.send(sign_in(1)).unwrap();
+        assert!(matches!(next(), Response::Authenticated { attempt: 1, .. }));
+        assert!(matches!(next(), Response::Event(event) if event.kind == "timing_confirmed"));
+        // The service holds the match; Negotiated 0 leaves the room.
+        requests
+            .send(Request::HoldMatch(Some(MATCH.into())))
+            .unwrap();
+        let leave = Request::Command {
+            id: 5,
+            operation: "leave",
+            payload: json!({}),
+        };
+        requests.send(leave).unwrap();
+        assert!(matches!(
+            next(),
+            Response::CommandCompleted {
+                id: 5,
+                operation: "leave"
+            }
+        ));
+        let Response::Event(renewed) = next() else {
+            panic!("the lost history ended the session instead of resuming its match");
+        };
+        assert_eq!(renewed.kind, "relay_renewed");
+        assert_eq!(renewed.payload["match_id"], MATCH);
+        // Given up in an outage, the bearer is logged out at the next sign-in.
+        requests.send(Request::Abandon).unwrap();
+        requests.send(sign_in(2)).unwrap();
+        assert!(matches!(next(), Response::Authenticated { attempt: 2, .. }));
+        stopping.store(true, Ordering::Release);
+        drop(requests);
+        worker.join().unwrap();
+        let seen = lobby.join().unwrap();
+        let held: Vec<_> = seen
+            .iter()
+            .filter_map(|(_, body)| body["request_id"].as_str().zip(Some(&body["payload"])))
+            .filter(|(id, _)| id.starts_with("held-"))
+            .collect();
+        assert_eq!(
+            held,
+            [
+                ("held-finish", &json!({"match_id":MATCH})),
+                ("held-logout", &json!({}))
+            ]
+        );
     }
 
     /// From about a minute of failed polls on, each failed poll asks the
@@ -2064,12 +2195,10 @@ mod tests {
     }
 
     #[test]
-    fn a_spawned_match_polls_slowly_and_never_streams_once_timing_is_confirmed() {
+    fn a_spawned_match_polls_slowly_and_never_streams_once_its_match_is_held() {
         let (output, _input) = std::sync::mpsc::channel();
-        let timing = || {
-            json!({"cursor":1,"events":[{"sequence":1,"kind":"timing_confirmed",
-                "payload":{"match_id":"11111111-1111-1111-1111-111111111111"}}]})
-        };
+        // The live service holds the match `timing_confirmed` started.
+        let held = Some("11111111-1111-1111-1111-111111111111".to_owned());
         let client = || Client {
             stopping: Arc::new(AtomicBool::new(false)),
             agent: ureq::Agent::new_with_defaults(),
@@ -2102,7 +2231,7 @@ mod tests {
             spawned.poll_finished(Ok(()), &mut failures, &output),
             Duration::from_secs(1)
         );
-        spawned.batch(timing(), &output).unwrap();
+        spawned.active_match = held.clone();
         assert_eq!(
             spawned.poll_finished(Ok(()), &mut failures, &output),
             Duration::from_secs(60)
@@ -2112,7 +2241,7 @@ mod tests {
         let mut lobby = client();
         lobby.token = Some("synthetic-test-session".to_owned());
         assert_eq!(lobby.stream_bearer(), Some("synthetic-test-session"));
-        lobby.batch(timing(), &output).unwrap();
+        lobby.active_match = held;
         assert_eq!(
             lobby.poll_finished(Ok(()), &mut failures, &output),
             Duration::from_secs(1)
@@ -2128,20 +2257,11 @@ mod tests {
             agent: ureq::Agent::new_with_defaults(),
             base: String::new(),
             token: Some("synthetic-test-session".to_owned()),
-            cursor: 19,
-            active_match: None,
+            cursor: 20,
+            active_match: Some(id.to_owned()),
             spawned: false,
             abandoned: false,
         };
-        client
-            .batch(
-                json!({"cursor":20,"events":[{"sequence":20,"kind":"timing_confirmed",
-            "payload":{"match_id":id}}]}),
-                &output,
-            )
-            .unwrap();
-        assert_eq!(client.active_match.as_deref(), Some(id));
-        input.recv().unwrap();
         // Grant cryptographic binding is tested at the app's existing decoder;
         // this worker test bounds shell cursor recovery and identity lifetime.
         let response = json!({"match_id":id,"cursor":30,"relay":{
