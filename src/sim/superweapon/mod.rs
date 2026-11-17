@@ -2440,6 +2440,35 @@ pub(crate) fn type_super_weapons(
     primary.chain(object.additional_super_weapons().iter().map(String::as_str))
 }
 
+/// BuildingExt::HasSuperWeapon (Ares 3.0 `0x10011E60`): whether `building`'s
+/// type, or with `with_upgrades` any filled upgrade slot (`+0x5EC..0x5F4`),
+/// lists the Super `sw_id` ([`type_super_weapons`]), whatever its owner may
+/// use.
+pub(crate) fn building_has_super_weapon(
+    sim: &Simulation,
+    rules: &RuleSet,
+    building: &crate::sim::game_entity::GameEntity,
+    sw_id: &str,
+    with_upgrades: bool,
+) -> bool {
+    use crate::rules::object_type::ObjectCategory;
+    let upgrades = building
+        .building_upgrades()
+        .types()
+        .iter()
+        .flatten()
+        .filter(|_| with_upgrades)
+        .filter_map(|&id| {
+            sim.interner
+                .object_type_in_category(id, ObjectCategory::Building, rules)
+        });
+    sim.object_type(building.type_ref(), rules)
+        .into_iter()
+        .chain(upgrades)
+        .flat_map(type_super_weapons)
+        .any(|name| name.eq_ignore_ascii_case(sw_id))
+}
+
 /// BuildingTypeExt::GetSuperWeapon1000D610: primary, secondary and additional
 /// definitions, first available instance; no granted/charge admission and no
 /// second Super store. The House constructor owns every retained instance.

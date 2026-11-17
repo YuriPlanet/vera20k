@@ -313,3 +313,80 @@ fn ares_drop_pod_reads_its_handler_keys() {
         crate::rules::superweapon_targeting::AiTargetingMode::DropPod
     );
 }
+
+/// Mental Omega's Iron Guard shape: an auto-firing, self-targeting EMPulse
+/// whose cannon's warhead curtains its House's nearby units.
+const IRON_GUARD: &str = "\
+[VehicleTypes]
+0=TANK
+[TANK]
+Strength=300
+[BuildingTypes]
+0=GUARD
+[GUARD]
+Strength=700
+EMPulseCannon=yes
+Primary=GuardWeapon
+SuperWeapon=GuardSpecial
+[SuperWeaponTypes]
+0=GuardSpecial
+[GuardSpecial]
+Type=EMPulse
+IsPowered=no
+RechargeTime=1
+SW.AutoFire=yes
+SW.ManualFire=no
+SW.AITargeting=Self
+EMPulse.TargetSelf=yes
+[WeaponTypes]
+0=GuardWeapon
+[GuardWeapon]
+Damage=-1
+Warhead=GuardWH
+[Warheads]
+0=GuardWH
+[GuardWH]
+CellSpread=3
+IronCurtain.Duration=125
+";
+
+/// `SW.AITargeting=Self` picks the providing building's own cell
+/// (PickTarget 100389C9), so the human House's automatic launch fires the
+/// Iron Guard and its warhead curtains the tank beside it.
+#[test]
+fn ares_self_targeting_auto_fire_curtains_the_tank_beside_its_building() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let ini = crate::sim::arena_fixture::clear_ground_ini(IRON_GUARD);
+    let art = IniFile::from_str("[GUARD]\nFoundation=1x1\n");
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let owner = sim.interner.intern("Americans");
+    sim.spawn_object_at_height("GUARD", "Americans", 12, 15, 0, 0, &rules)
+        .unwrap();
+    let tank = sim
+        .spawn_object_at_height("TANK", "Americans", 14, 15, 0, 0, &rules)
+        .unwrap();
+    let sw = sim.interner.intern("GuardSpecial");
+    let mut instance = SuperWeaponInstance::new(sw, owner, 0);
+    instance.is_active = true;
+    instance.is_ready = true;
+    sim.super_weapons
+        .map_mut_for_test()
+        .entry(owner)
+        .or_default()
+        .insert(sw, instance);
+    crate::sim::house_strategy::update_strategy(
+        &mut sim,
+        &rules,
+        owner,
+        None,
+        FrameEffects::default(),
+    );
+    let tank = sim.substrate.entities.get(tank).unwrap();
+    assert!(crate::sim::superweapon::invulnerability::is_invulnerable(
+        tank.invulnerability.as_ref(),
+        sim.session.binary_frame(),
+    ));
+}
