@@ -319,9 +319,12 @@ seal, which every relay emits after that frame's end. Every relay also tells
 every other when it last heard its players (link kind 4, Silence below). Link packets go to the roster
 address on the relay's existing UDP port and are authenticated by their MAC,
 whatever address they arrive from. The digit in `VF1L` is the link version,
-bumped whenever the FRAME layout, a FRAME entry or a coordinator control batch
-changes, since one FRAME a relay cannot read stalls the merged stream; a new
-link kind an older relay may drop, as kind 4, needs none. The 32-byte link
+bumped whenever the layout or meaning of an existing link kind changes (the
+FRAME header and its entries, a coordinator control batch, DATA, pace,
+checksum or silence reports), since a relay refuses a packet it cannot read:
+one refused FRAME stalls the merged stream, and refused reports leave desyncs
+and slow players unnoticed. Only a new kind whose loss changes no result
+needs none, as kind 4 did: an older relay only leaves that silence untold. The 32-byte link
 header and the MAC domain stay the same in every version, so a relay that
 authenticates a link packet of another version cancels that startup at once.
 A relay too old to know this drops the packet and cancels at its 3-minute

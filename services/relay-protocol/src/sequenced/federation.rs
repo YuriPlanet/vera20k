@@ -21,11 +21,14 @@ const ROSTER_WRAP: usize = 80;
 const WRAP_DOMAIN: &[u8] = b"VERA20k relay federation wrap v1\0";
 const ROSTER_DOMAIN: &[u8] = b"VERA20k relay federation roster v1\0";
 // The link version is the magic's digit, `VF<version>L`. Bump it whenever the
-// FRAME layout, a FRAME entry or a coordinator control batch changes: a relay
-// refuses a FRAME it cannot read whole, and the merged stream then stalls. A
-// new link kind an older relay may drop, as SILENCE_KIND, needs no bump. The
-// 32-byte link header and LINK_DOMAIN stay the same in every version, so a
-// relay authenticates another version's packet and refuses the startup.
+// layout or meaning of an existing link kind changes: the FRAME header and its
+// entries, a coordinator control batch, DATA, PACE, CHECKSUM or SILENCE. A
+// relay refuses a packet it cannot read: one refused FRAME stalls the merged
+// stream, and refused reports leave desyncs and slow players unnoticed. Only a
+// new kind whose loss changes no result needs no bump; SILENCE_KIND was one,
+// as an older relay only leaves that silence untold. The 32-byte link header
+// and LINK_DOMAIN stay the same in every version, so a relay authenticates
+// another version's packet and refuses the startup.
 const LINK_DOMAIN: &[u8] = b"VERA20k relay federation link v1\0";
 const LINK_MAGIC: &[u8; 4] = b"VF1L";
 const LINK_HEADER: usize = 32;
@@ -1876,37 +1879,41 @@ mod tests {
 
     #[test]
     fn a_follower_hearing_another_link_version_cancels_the_startup() {
-        let mut game = Match::new(false);
-        // The coordinator's first packet, as a relay one link version on.
-        let clock = game.clock(0);
-        let mut bytes = game.relays[0]
-            .drain_federation(clock, unix(clock))
-            .remove(0)
-            .bytes;
-        bytes[2] += 1;
-        let signed = bytes.len() - MAC_LEN;
-        let federation = game.relays[0].rooms[&[5; 16]].federation.as_ref().unwrap();
-        let tag = federation
-            .link
-            .mac(LINK_DOMAIN, &bytes[..signed])
-            .finalize();
-        bytes[signed..].copy_from_slice(&tag.into_bytes());
-        let clock = game.clock(1);
-        assert_eq!(
-            game.relays[1]
-                .process_at(game.addresses[0], &bytes, unix(clock), clock)
-                .map(|_| ()),
-            Err(RelayError::Malformed)
-        );
-        for _ in 0..400 {
-            game.step();
-        }
-        for relay in 0..2 {
-            let ordering = game.ordering(relay);
-            assert!(
-                ordering.starts_at.is_none() && ordering.finished_at.is_some(),
-                "relay {relay}"
+        // The follower's player has sent Ready, or not yet.
+        for ready in [[true; 2], [true, false]] {
+            let mut game = Match::build(false, ready);
+            // The coordinator's first packet, as a relay one link version on.
+            let clock = game.clock(0);
+            let mut bytes = game.relays[0]
+                .drain_federation(clock, unix(clock))
+                .remove(0)
+                .bytes;
+            bytes[2] += 1;
+            let signed = bytes.len() - MAC_LEN;
+            let federation = game.relays[0].rooms[&[5; 16]].federation.as_ref().unwrap();
+            let tag = federation
+                .link
+                .mac(LINK_DOMAIN, &bytes[..signed])
+                .finalize();
+            bytes[signed..].copy_from_slice(&tag.into_bytes());
+            let clock = game.clock(1);
+            assert_eq!(
+                game.relays[1]
+                    .process_at(game.addresses[0], &bytes, unix(clock), clock)
+                    .map(|_| ()),
+                Err(RelayError::Malformed)
             );
+            assert!(ready[1] || game.relays[1].rooms[&[5; 16]].ordering_cancelled);
+            for _ in 0..400 {
+                game.step();
+            }
+            for relay in (0..2).filter(|&relay| ready[relay]) {
+                let ordering = game.ordering(relay);
+                assert!(
+                    ordering.starts_at.is_none() && ordering.finished_at.is_some(),
+                    "relay {relay}, ready {ready:?}"
+                );
+            }
         }
     }
 
