@@ -842,9 +842,30 @@ pub(super) fn defense_building<'r>(
     {
         return Some(*found);
     }
-    candidates
-        .into_iter()
-        .max_by_key(|(ty, _)| (obs.cost_of(rules, ty), ty.id.clone()))
+    // The ground ring is chosen by what it can **shoot**, not by what it costs.
+    //
+    // It used to be `max_by_key(cost)`, which buys the dearest tower every
+    // time. On the Allied side that is `[NASAM]`, the anti-air launcher, whose
+    // missile is `AG=no`: a base that filled its whole ring with it had no
+    // answer to anything on the ground. Measured on the 1v29 (team 3): every
+    // single `Defense` answer was `NASAM`, and the loss ledger is 31 riflemen
+    // killed by `HTNK` and 20 objects by `NABNKR` — armour the launcher cannot
+    // touch — while the enemy lost one tower's worth of nothing.
+    //
+    // A tower that reaches both is best; then one that reaches the ground,
+    // which is what a push is made of; then range, which is how much of the
+    // base it covers without moving. Cost only breaks a tie, so a cheaper tower
+    // that does the same job is preferred.
+    candidates.into_iter().max_by_key(|(ty, _)| {
+        let armed = armament(rules, ty);
+        (
+            armed.anti_ground && armed.anti_air,
+            armed.anti_ground,
+            armed.range,
+            std::cmp::Reverse(obs.cost_of(rules, ty)),
+            ty.id.clone(),
+        )
+    })
 }
 
 /// How many defences the house has, and how many of them can shoot at aircraft.
@@ -1440,6 +1461,39 @@ mod tests {
             .expect("the aircraft plant is what the tree asks for next");
         assert_eq!(chosen.item, plan::Item::Aircraft, "the tech stage");
         assert_eq!(chosen.ty.id, "AMRADR", "the Americans' aircraft plant");
+    }
+
+    /// The ring is chosen by what a tower can shoot, not by what it costs.
+    ///
+    /// Measured defect, 1v29 (team 3): every `Defense` answer was `NASAM`, the
+    /// anti-air launcher, because the pick was `max_by_key(cost)` and the
+    /// launcher is the dearer of the two cheap Allied towers. Its missile is
+    /// `AG=no`, so the ring could not touch the ground, and the loss ledger is
+    /// 31 riflemen killed by `HTNK` and 20 objects by `NABNKR`. `[GAPILL]` is
+    /// the Allied tower that shoots ground.
+    #[test]
+    fn a_ground_tower_is_preferred_to_a_dearer_anti_air_one() {
+        let Some((mut sim, rules)) = arena(0xDEF1) else {
+            return;
+        };
+        let owner = sim.interner.intern("Americans");
+        // The yard and a barracks: `[GAPILL] Prerequisite=BARRACKS,GACNST` and
+        // `[NASAM]` the same list, so both are buildable and the choice is the
+        // pick's own.
+        sim.spawn_object("GACNST", "Americans", 12, 12, 255, &rules)
+            .expect("a construction yard");
+        sim.spawn_object("GAPILE", "Americans", 20, 20, 255, &rules)
+            .expect("a barracks");
+        let census = ledger(&rules, &sim, owner);
+        let obs = Observation::new(&sim, owner);
+        let (ty, _) = defense_building(&rules, &obs, &census).expect("a tower the house can build");
+        let armed = armament(&rules, ty);
+        assert!(
+            armed.anti_ground,
+            "the ring has to answer armour; {} only reaches the air \
+             (anti_air={}, range={})",
+            ty.id, armed.anti_air, armed.range
+        );
     }
 
     /// A structure the yard has finished and not yet put down is a structure the

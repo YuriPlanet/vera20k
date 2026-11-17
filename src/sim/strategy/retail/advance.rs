@@ -139,36 +139,33 @@ const MOP_UP_OBJECTS: usize = 8;
 /// with nine fighters and an enemy holding two buildings sat at `too-small` for
 /// the rest of a nine-hour match while the buildings stood.
 ///
-/// The comparison is the enemy's own mobile mass, the same `threat` vector
-/// [`outnumbered`] reads, so "nothing left to fight with" means one thing in
-/// this file.
+/// The count is the enemy mobile mass **this house can see near its own base**,
+/// not the sum over the whole map. On a 1v29 that sum never falls below eight
+/// while twenty-nine houses are alive, so the bypass never fired and the floor
+/// it exists to relieve held the army home for the entire match. What the
+/// bypass is for is the local stalemate a player reads off the screen: the
+/// ground around the base is clear, so the army is not being kept to defend
+/// anything, and what remains is a march.
+///
+/// `home` is the house's base cell; the read is [`THREAT_RADIUS`] around it,
+/// the same ring [`base_under_threat`] calls "the enemy is at the gate".
 fn mop_up(census: &Census) -> bool {
-    let theirs: usize = census.threat.iter().map(|count| *count as usize).sum();
-    theirs < MOP_UP_OBJECTS
+    let Some(home) = census.base_cell else {
+        // No base to defend: nothing is holding the army where it stands.
+        return true;
+    };
+    census.enemies_near(home, THREAT_RADIUS) < MOP_UP_OBJECTS
 }
 
-/// Whether the fist is too small for what it can see, in a multi-house match.
-///
-/// Only 1vN asks this. In a duel the enemy's visible mass is the whole enemy, and
-/// the gates above already answer it; with several houses, each of them is only
-/// part of what will arrive, and the absolute `ARMY_TO_ATTACK` floor was written
-/// for one opponent.
-///
-/// The comparison is the fist against the enemy's visible mobile mass — the same
-/// `threat` vector the composition reads, summed — and the bar is two thirds: a
-/// push that is not at least that goes out as a raid, not as the army. Below
-/// [`MOP_UP_OBJECTS`] the caller is mopping up and this does not apply.
-fn outnumbered(census: &Census, fighters: usize) -> bool {
-    if census.enemy_houses <= 1 {
-        return false;
-    }
-    let theirs: usize = census.threat.iter().map(|count| *count as usize).sum();
-    theirs > 0 && fighters * 3 < theirs * 2
-}
 
-/// The 1vN bar is about what is visible, not about a fixed count.
+/// The clean-up bypass reads the ground around the base, not the whole map.
+///
+/// The whole-map sum is what made it dead on a 1v29: twenty-nine houses keep
+/// more than [`MOP_UP_OBJECTS`] bodies on the field for the entire match, so the
+/// bypass never fired and the `ARMY_TO_ATTACK` floor it exists to relieve held
+/// the army home until the base fell.
 #[test]
-fn a_small_fist_does_not_push_into_several_houses() {
+fn the_clean_up_bypass_reads_the_base_ring_not_the_whole_map() {
     let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules()
         .expect("the repository's own rules");
     let mut sim = crate::sim::world::Simulation::new();
@@ -182,25 +179,38 @@ fn a_small_fist_does_not_push_into_several_houses() {
         &Observation::new(&sim, owner),
     );
 
-    // A duel: the gate has nothing to say, whatever the arithmetic.
-    census.enemy_houses = 1;
-    census.threat = [10, 10, 0, 0, 0, 0, 0];
-    assert!(!outnumbered(&census, 12), "a duel is not 1vN");
+    // No base at all: nothing is being held at home.
+    census.base_cell = None;
+    assert!(mop_up(&census), "a house with no base has nothing to defend");
 
-    // Three houses and forty enemy bodies: twelve is a raid, not an army.
-    census.enemy_houses = 3;
+    // A base with an empty ring, while the map elsewhere is full of enemies:
+    // the sum is large, the ring is clear, and the army is free to march.
+    let home = (20, 20);
+    census.base_cell = Some(home);
+    census.threat = [200, 80, 0, 0, 0, 0, 0];
+    census.enemies = Vec::new();
     assert!(
-        outnumbered(&census, 12),
-        "twelve against forty is walking into several houses' guns"
+        mop_up(&census),
+        "a full map elsewhere does not hold the army at a clear base"
     );
-    // The same houses and thirty of ours: the bar is two thirds, and that
-    // clears it.
-    assert!(!outnumbered(&census, 30), "thirty against forty is a push");
-    // And with nothing visible the comparison is undefined, not a refusal.
-    census.threat = [0; 7];
+
+    // The same ring with a field army standing in it is not a clean-up job. The
+    // bypass is for "a handful left", so the raid has to be more than a handful:
+    // one straggler at the gate is exactly what it is meant to wave through.
+    census.enemies = (0..MOP_UP_OBJECTS)
+        .map(|index| {
+            let offset = u16::try_from(index).unwrap_or(0);
+            crate::sim::control::observation::EnemyEntity {
+                entity_id: u64::try_from(index).unwrap_or(0),
+                type_id: crate::sim::intern::InternedId::default(),
+                cell: (home.0.wrapping_add(offset), home.1),
+            }
+        })
+        .collect();
     assert!(
-        !outnumbered(&census, 4),
-        "no visible enemy is not outnumbering"
+        !mop_up(&census),
+        "a field army at the gate keeps the army home: nearby={}",
+        census.enemies_near(home, THREAT_RADIUS)
     );
 }
 
@@ -262,11 +272,36 @@ pub(super) fn advance(
     // Which gate holds the army home, for the census line: seven gates that
     // all answer "not this frame" are indistinguishable in a log that only
     // counts what the house has.
+    // Whether a raid is on the base right now: the ring [`base_under_threat`]
+    // reads, counted rather than weighed.
+    let raided = brain
+        .census
+        .base_cell
+        .is_some_and(|home| brain.census.enemies_near(home, THREAT_RADIUS) > 0);
     let gate = if fighters.len() < super::squads::ARMY_TO_ATTACK && !mop_up(&brain.census) {
         "too-small"
-    } else if !super::build::can_replace_units(rules, obs, &brain.census) {
+    } else if !super::build::can_replace_units(rules, obs, &brain.census) && raided {
+        // A house that cannot replace its army does not spend it — *while it
+        // still has a base to lose*. The two halves of that sentence are the
+        // whole gate.
+        //
+        // Without the second half it is a death spiral: the enemy takes the war
+        // factory, the gate turns true, the army that could have taken the
+        // factory back is held in the yard, and the house waits to die with its
+        // hands down. Measured on the 1v29 (team 3), `push=cannot-replace` held
+        // for five of the last samples while 130 of ours died and the enemy lost
+        // four objects.
+        //
+        // With a raid on the base there is still something to defend, so the
+        // army stays; with the ring clear the army is the only thing the house
+        // has left and the only way back is forward.
         "cannot-replace"
-    } else if !super::build::base_defended(rules, obs, &brain.census) {
+    } else if !super::build::base_defended(rules, obs, &brain.census) && raided {
+        // A tower is held `want: 2` and the attack gate used to wait for one
+        // unconditionally, so a base that had not finished its first tower
+        // never attacked at all. It is the same "waiting to die" spiral, one
+        // building earlier. With the ring clear the army goes; the tower is the
+        // plan's business, not the push's.
         "base-defended"
     } else if base_under_threat(&brain.census)
         && !super::build::base_defended(rules, obs, &brain.census)
@@ -276,14 +311,6 @@ pub(super) fn advance(
         // "an enemy inside the ring" is true for most of the match, and an army
         // that reads it as "never leave" guards its yard for forty minutes.
         "threat"
-    } else if outnumbered(&brain.census, fighters.len()) {
-        // 1vN. The absolute floor is an opening number, and a fist that clears it
-        // is still walking into several houses' worth of guns: measured in a
-        // 1v7, the push traded its army for a fraction of theirs and then had
-        // nothing to hold the base with. The bar rises with what is actually
-        // visible, so a bigger enemy needs a bigger fist, and mopping up (few
-        // objects left) is the branch that bypasses it.
-        "outnumbered"
     } else {
         "push"
     };
@@ -736,12 +763,38 @@ mod tests {
             &rules,
             &Observation::new(&sim, owner),
         );
-        // Two enemy objects left: a clean-up job, not a fight.
-        census.threat = [2, 0, 0, 0, 0, 0, 0];
-        census.enemy_houses = 3;
+        // Two enemy objects left standing at the base: a clean-up job, not a
+        // fight. The read is the ring, so the two are placed in it.
+        let home = (20, 20);
+        census.base_cell = Some(home);
+        census.enemies = vec![
+            crate::sim::control::observation::EnemyEntity {
+                entity_id: 1,
+                type_id: crate::sim::intern::InternedId::default(),
+                cell: (home.0 + 1, home.1 + 1),
+            },
+            crate::sim::control::observation::EnemyEntity {
+                entity_id: 2,
+                type_id: crate::sim::intern::InternedId::default(),
+                cell: (home.0 + 2, home.1 + 2),
+            },
+        ];
         assert!(mop_up(&census), "two objects left is a clean-up job");
-        // And a field army is not, whatever the fist's size.
-        census.threat = [20, 10, 0, 0, 0, 0, 0];
+        // And a field army standing on the base is not, whatever the fist's
+        // size.
+        census.enemies = (0..30)
+            .map(|index| {
+                let offset = i16::try_from(index).unwrap_or(0);
+                crate::sim::control::observation::EnemyEntity {
+                    entity_id: 100 + u64::try_from(index).unwrap_or(0),
+                    type_id: crate::sim::intern::InternedId::default(),
+                    cell: (
+                        home.0.wrapping_add(offset.unsigned_abs()),
+                        home.1.wrapping_add(offset.unsigned_abs()),
+                    ),
+                }
+            })
+            .collect();
         assert!(!mop_up(&census), "thirty objects is a fight");
         let _ = &rules;
     }

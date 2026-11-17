@@ -20,6 +20,19 @@ use crate::sim::projectile::ProjectileTarget;
 use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
 use crate::util::lepton::LEPTONS_PER_LEVEL;
 
+/// How many lifecycle events the test-only channel keeps.
+///
+/// Every reader of [`Simulation::lifecycle_test_events_for_test`] asserts on
+/// the events a single call produced, so a short window is enough. It exists at
+/// all because the channel is unbounded on a long run: a harness binary built
+/// with `test-support` carried one event per birth and death for the whole
+/// match, and the 1v29 run aborted at tick 24540 on an 80 GiB allocation.
+///
+/// Four thousand is far more than any one call emits and far less than a
+/// forty-thousand-frame match.
+#[cfg(any(test, feature = "test-support"))]
+const LIFECYCLE_TEST_EVENT_WINDOW: usize = 4_000;
+
 use super::display_layers::DisplayLayer;
 use super::expiry_listeners::{ExpiryListeners, ListenerStores};
 use super::substrate::{DeferredDeleteTicket, ObjectKind};
@@ -1040,6 +1053,17 @@ pub enum LifecycleTestEvent {
 impl Simulation {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn trace_lifecycle_for_test(&mut self, event: LifecycleTestEvent) {
+        // A test channel is a window, not a log. Every caller reads the last
+        // few events after the frame it cared about, and none of them reads
+        // forty thousand. Left unbounded this vector is the whole match: a
+        // 1v29 harness build (`--features retail-fixture`, which compiles
+        // `test-support` in) reached an 80 GiB allocation inside
+        // `commit_frame_tail` and aborted at tick 24540, so the run could not
+        // finish rather than the policy being wrong.
+        if self.lifecycle_test_events.len() >= LIFECYCLE_TEST_EVENT_WINDOW {
+            self.lifecycle_test_events
+                .drain(..self.lifecycle_test_events.len() - LIFECYCLE_TEST_EVENT_WINDOW + 1);
+        }
         self.lifecycle_test_events.push(event);
     }
 

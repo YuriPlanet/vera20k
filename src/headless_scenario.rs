@@ -71,6 +71,31 @@ pub fn battle_session_with_options(
     local_country: LaunchCountry,
     options: crate::skirmish_launch::SkirmishLaunchOptions,
 ) -> SkirmishLaunchSession {
+    battle_session_with_seats(
+        selected_map_file,
+        opponents,
+        local_country,
+        options,
+        crate::skirmish_launch::LaunchTeam::None,
+    )
+}
+
+/// The same session with the computer houses' `LaunchTeam` named.
+///
+/// A retail Skirmish setup stores a team per seat, and `launch_alliance_map`
+/// (`sim::scenario_bootstrap`) allies every seat on the same team. A setup whose
+/// twenty-nine computers all carry team 3 is therefore one human against a
+/// twenty-nine-member alliance, which is a different battle from the same seats
+/// with no team at all (`LaunchTeam::None`), where every house is at war with
+/// every other. The team is the scenario, not a cosmetic seat column, so a
+/// harness that cannot state it cannot reproduce a saved setup.
+pub fn battle_session_with_seats(
+    selected_map_file: &str,
+    opponents: &[(LaunchCountry, AiDifficulty)],
+    local_country: LaunchCountry,
+    options: crate::skirmish_launch::SkirmishLaunchOptions,
+    ai_team: crate::skirmish_launch::LaunchTeam,
+) -> SkirmishLaunchSession {
     use crate::skirmish_launch::{
         BATTLE_MODE_ID, LaunchStartPosition, LaunchTeam, PreFillHouseRoster, SkirmishAiSlot,
         SkirmishLaunchMode, SkirmishLaunchOptions, SkirmishLocalSlot,
@@ -104,7 +129,7 @@ pub fn battle_session_with_options(
                 color_index: slot as u8 + 1,
                 color_random: false,
                 start_position: LaunchStartPosition::Auto,
-                team: LaunchTeam::None,
+                team: ai_team,
                 difficulty,
             })
             .collect(),

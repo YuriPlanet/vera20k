@@ -88,6 +88,23 @@ struct Args {
     /// headless run at the default index therefore has to say so, or the numbers
     /// describe a game nobody plays.
     speed: u8,
+    /// The `LaunchTeam` every computer house is seated on, as a retail
+    /// `SkirmishSetups.ini` slot stores it. `None` (the flag's absence) seats
+    /// them on no team, which is a free-for-all; a team number makes
+    /// `launch_alliance_map` ally them with each other, so the local house faces
+    /// one alliance of that size instead of that many separate houses.
+    ai_team: Option<u8>,
+    /// `ShortGame=`: a house is out once it holds no buildings, without waiting
+    /// for its last units. A saved setup stores it per map.
+    short_game: Option<bool>,
+    /// `SuperWeaponsAllowed=`. Off keeps every superweapon from being built.
+    super_weapons: Option<bool>,
+    /// `BuildOffAlly=`: a structure may be placed beside an ally's building.
+    build_off_ally: Option<bool>,
+    /// `MCVRepacks=`: a deployed yard may be packed back into a maker.
+    mcv_redeploy: Option<bool>,
+    /// `CratesAppear=`.
+    crates: Option<bool>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -111,6 +128,12 @@ fn parse_args() -> Result<Args, String> {
     let mut dump_teams = 0_u64;
     let mut brain = "retail".to_string();
     let mut speed: u8 = 1;
+    let mut ai_team: Option<u8> = None;
+    let mut short_game: Option<bool> = None;
+    let mut super_weapons: Option<bool> = None;
+    let mut build_off_ally: Option<bool> = None;
+    let mut mcv_redeploy: Option<bool> = None;
+    let mut crates: Option<bool> = None;
 
     let mut args = std::env::args_os().skip(1);
     while let Some(arg) = args.next() {
@@ -177,6 +200,21 @@ fn parse_args() -> Result<Args, String> {
                     .parse()
                     .map_err(|_| "dump-teams is a u64".to_string())?
             }
+            // The retail setup's own columns and options. Each takes `yes`/`no`
+            // (or a team number), so a saved `SkirmishSetups.ini` section reads
+            // straight across into the flags.
+            "--team" => {
+                ai_team = Some(
+                    value()?
+                        .parse()
+                        .map_err(|_| "team is a number 0..=3".to_string())?,
+                )
+            }
+            "--short-game" => short_game = Some(parse_yes_no(&value()?)?),
+            "--super-weapons" => super_weapons = Some(parse_yes_no(&value()?)?),
+            "--build-off-ally" => build_off_ally = Some(parse_yes_no(&value()?)?),
+            "--mcv-redeploy" => mcv_redeploy = Some(parse_yes_no(&value()?)?),
+            "--crates" => crates = Some(parse_yes_no(&value()?)?),
             "--help" | "-h" => return Err(String::new()),
             other => return Err(format!("unknown flag {other}")),
         }
@@ -200,6 +238,12 @@ fn parse_args() -> Result<Args, String> {
         dump_teams,
         brain,
         speed,
+        ai_team,
+        short_game,
+        super_weapons,
+        build_off_ally,
+        mcv_redeploy,
+        crates,
     })
 }
 
@@ -228,6 +272,17 @@ fn parse_difficulty(name: &str) -> Result<AiDifficulty, String> {
     }
 }
 
+/// A retail setup's `yes`/`no`, which is how `SkirmishSetups.ini` stores every
+/// box: `1`/`0` and `true`/`false` are accepted because the same value reaches
+/// these flags from a script as from the file.
+fn parse_yes_no(value: &str) -> Result<bool, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "yes" | "true" | "1" | "on" => Ok(true),
+        "no" | "false" | "0" | "off" => Ok(false),
+        other => Err(format!("expected yes or no, got {other}")),
+    }
+}
+
 const USAGE: &str = "\
 autoplay-match: a headless skirmish with auto play on the local house
 
@@ -251,6 +306,18 @@ autoplay-match: a headless skirmish with auto play on the local house
   --dump <n>         print the brain's orders for the first n frames
   --dump-teams <n>   print the native team pipeline (teams, scripts, cursors,
                      members) for the first n frames, a census every 600
+
+The retail setup's own columns and boxes, so a saved `SkirmishSetups.ini`
+section reads straight across into the flags:
+
+  --team <n>         seat every computer on team n. Absent: no team, which is a
+                     free-for-all. A team number makes the computers allies of
+                     each other, so the local house faces one alliance
+  --short-game <yn>  a house is out once it holds no buildings
+  --super-weapons <yn>
+  --build-off-ally <yn>
+  --mcv-redeploy <yn>
+  --crates <yn>
 ";
 
 /// One line of telemetry, so a run can be read without a debugger.
@@ -602,10 +669,50 @@ fn main() -> Result<(), String> {
     if let Some(tech) = args.tech {
         options.tech_level = tech;
     }
+    // The saved setup's own boxes. Each is left at the rules' default when the
+    // flag is absent, so a run that does not name them describes the stock
+    // opening, and a run that does is the setup a player actually saved.
+    if let Some(short_game) = args.short_game {
+        options.short_game = short_game;
+    }
+    if let Some(super_weapons) = args.super_weapons {
+        options.super_weapons = super_weapons;
+    }
+    if let Some(build_off_ally) = args.build_off_ally {
+        options.build_off_ally = build_off_ally;
+    }
+    if let Some(mcv_redeploy) = args.mcv_redeploy {
+        options.mcv_redeploy = mcv_redeploy;
+    }
+    if let Some(crates) = args.crates {
+        options.crates = crates;
+    }
     let start_units = options.unit_count;
     let start_tech = options.tech_level;
-    let session =
-        headless_scenario::battle_session_with_options(&args.map, &seats, args.country, options);
+    // Read before the session takes `options` by value: the start line reports
+    // the boxes the match actually plays, not the flags that were passed.
+    let played = (
+        options.short_game,
+        options.super_weapons,
+        options.build_off_ally,
+        options.mcv_redeploy,
+        options.crates,
+    );
+    // The team every computer is seated on: the same column a saved setup
+    // stores per slot, and what decides whether the computers are one alliance
+    // or a free-for-all.
+    let ai_team = args
+        .ai_team
+        .map_or(vera20k_core::skirmish_launch::LaunchTeam::None, |team| {
+            vera20k_core::skirmish_launch::LaunchTeam::Team(team)
+        });
+    let session = headless_scenario::battle_session_with_seats(
+        &args.map,
+        &seats,
+        args.country,
+        options,
+        ai_team,
+    );
     let mut scenario =
         headless_scenario::load_session(&args.ra2_dir, &args.map, args.seed, session)?;
     let sim = &scenario.runtime.simulation;
@@ -653,7 +760,9 @@ fn main() -> Result<(), String> {
             .map(|(name, count)| format!("{name}:{count}"))
             .collect();
         log::info!(
-            "start: map={} country={:?} credits={} unit_count={} tech={} own={} enemies={} roster=[{}]",
+            "start: map={} country={:?} credits={} unit_count={} tech={} own={} enemies={} \
+             ai_team={:?} short_game={} super_weapons={} build_off_ally={} mcv_redeploy={} \
+             crates={} roster=[{}]",
             args.map,
             args.country,
             obs.credits(),
@@ -661,6 +770,12 @@ fn main() -> Result<(), String> {
             start_tech,
             roster.values().sum::<usize>(),
             enemies.len(),
+            ai_team,
+            played.0,
+            played.1,
+            played.2,
+            played.3,
+            played.4,
             units.join(",")
         );
     }

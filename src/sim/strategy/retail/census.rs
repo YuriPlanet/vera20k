@@ -890,6 +890,26 @@ impl Census {
             .fold(0i32, |total, unit| total.saturating_add(unit.points))
     }
 
+    /// How many enemy objects stand within [`advance::THREAT_RADIUS`] of `cell`,
+    /// counted, not weighed.
+    ///
+    /// A count is the right reading for "is anything still coming to this base",
+    /// and [`Self::enemy_points`] is the right one for "can the army take that
+    /// ground": a dog and a heavy tank are one object each at the gate and are
+    /// not the same fight. Kept here rather than in `advance` so the ledger's
+    /// enemy list has one reader for "near".
+    pub(super) fn enemies_near(&self, cell: (u16, u16), radius: i32) -> usize {
+        let reach = i64::from(radius).saturating_mul(i64::from(radius));
+        self.enemies
+            .iter()
+            .filter(|enemy| {
+                let dx = i64::from(enemy.cell.0) - i64::from(cell.0);
+                let dy = i64::from(enemy.cell.1) - i64::from(cell.1);
+                dx * dx + dy * dy <= reach
+            })
+            .count()
+    }
+
     /// What the enemy has within `radius` cells of `cell`, in hit points: the
     /// force that will meet an army walking there.
     ///
