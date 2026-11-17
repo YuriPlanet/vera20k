@@ -2,10 +2,12 @@
 //!
 //! A window close or Quit leaves the online lobby, the relay and any LAN room
 //! or match through the same owners Back and Quit use, then exits once they
-//! finish or after `GOODBYE_WAIT`. Without this the others learn of the exit
-//! only from timeouts: the relay's 10-minute silence limit, the lobby's
-//! session expiry or the LAN lease. VERA product behavior; gamemd closes its
-//! WOL and LAN sessions on exit through its own teardown.
+//! finish or after `GOODBYE_WAIT`. An online match still running or on its
+//! score screen finishes with the player's result, as the shell return's
+//! does. Without this the others learn of the exit only from timeouts: the
+//! relay's 10-minute silence limit, the lobby's session expiry or the LAN
+//! lease. VERA product behavior; gamemd closes its WOL and LAN sessions on
+//! exit through its own teardown.
 
 use std::time::Duration;
 
