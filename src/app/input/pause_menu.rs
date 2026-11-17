@@ -303,6 +303,8 @@ pub(crate) struct MultiplayerPauseControl {
     /// [`crate::i18n`] labels, resolved where they are drawn.
     pub(crate) caption: &'static str,
     pub(crate) enabled: bool,
+    /// The pause's notice, a message row while it lasts
+    /// (`messages::show_status_notices`).
     pub(crate) status: Option<&'static str>,
 }
 

@@ -1,17 +1,16 @@
 //! Final-window Performance Stats panel, hidden at every launch until
-//! Ctrl+Alt+F or the Options page's Performance Stats box shows it, and the
-//! replay/recovery status line below it.
+//! Ctrl+Alt+F or the Options page's Performance Stats box shows it.
 //!
 //! The panel reads like the game's message line: rows of text on black
 //! boxes, at the top left of the battlefield at the match zoom, or of the
-//! window elsewhere. While it shows, the status line and the match's message
-//! list start below it. Its rows are in [`panel`]: rates and units, the
+//! window elsewhere. While it shows, the match's message list starts below
+//! it. Its rows are in [`panel`]: rates and units, the
 //! engine areas that took the most of the last second, the load on each core
 //! and the GPU's share of each frame ([`crate::render::gpu_timer`], which
-//! times the GPU only while the panel shows). The rows and the status line
-//! are localized text ([`crate::i18n`]), so both draw with the process font, which draws
+//! times the GPU only while the panel shows). The rows are localized text
+//! ([`crate::i18n`]), so they draw with the process font, which draws
 //! GAME.FNT's style without GAME.FNT until it loads ([`BitFont::without_fnt`]).
-//! Both are independent of tactical cameras,
+//! The panel is independent of tactical cameras,
 //! optional dev overlays, and shell/offscreen composition.
 
 mod panel;
@@ -29,8 +28,6 @@ use super::state::FrameTimer;
 use crate::app::match_runtime::sim_host::SimHost;
 use panel::{DOT, GREEN, HOT, PanelStats, Part, TRACK, WARM};
 
-/// The status line's top when the panel is hidden.
-const STATUS_TOP: f32 = 8.0;
 /// The gap between the panel and the battlefield's or window's top and left
 /// edges, and below it to the match's messages, in font pixels.
 const EDGE: f32 = 4.0;
@@ -61,8 +58,6 @@ struct OverlayFrame {
     logged_first_frame: bool,
     simulation_rate: SimulationRate,
     stats: PanelStats,
-    /// Where the status line starts: below the panel while it shows.
-    status_top: f32,
     /// In a match, how far down the battlefield the panel reaches: see
     /// [`PerformanceOverlay::message_top`]. 0 elsewhere.
     message_top: i32,
@@ -214,7 +209,6 @@ impl PerformanceOverlay {
                 logged_first_frame: false,
                 simulation_rate: SimulationRate::default(),
                 stats: PanelStats::default(),
-                status_top: STATUS_TOP,
                 message_top: 0,
             }),
         }
@@ -319,7 +313,6 @@ impl PerformanceOverlay {
         gpu.timer.set_active(self.visible);
         if !self.visible {
             frame.stats = PanelStats::default();
-            frame.status_top = STATUS_TOP;
             frame.message_top = 0;
             return;
         }
@@ -345,7 +338,6 @@ impl PerformanceOverlay {
         let mut instances = Vec::new();
         let mut glyphs = Vec::new();
         let bottom = layout_rows(font, &mut rows, placement, &mut instances, &mut glyphs);
-        frame.status_top = bottom + 4.0;
         frame.message_top = if over_battlefield {
             placement.battlefield_rows(bottom)
         } else {
@@ -375,59 +367,6 @@ impl PerformanceOverlay {
                 (&self.white, 0, solid),
                 (font.atlas(), solid, total - solid),
             ],
-        );
-    }
-
-    /// Persistent replay/recovery facts share the final-window camera. `font`
-    /// is the process font, which covers localized text.
-    /// This call neither samples nor changes the performance panel's visibility.
-    pub(crate) fn encode_status(
-        &self,
-        gpu: &GpuContext,
-        batch: &BatchRenderer,
-        encoder: &mut wgpu::CommandEncoder,
-        destination: &wgpu::Texture,
-        font: &BitFont,
-        text: &str,
-    ) {
-        let mut frame = self.frame.lock().expect("window status overlay frame lock");
-        let top = if self.visible {
-            frame.status_top
-        } else {
-            STATUS_TOP
-        };
-        let mut instances = Vec::with_capacity(text.len() * 5);
-        let layout = font.wrap_layout(text, destination.width().saturating_sub(16));
-        let line_height = font.cell_height() + 4.0;
-        for (line_index, line) in layout.lines.iter().enumerate() {
-            for (dx, dy, tint) in [
-                (-1.0, 0.0, [0.0; 3]),
-                (1.0, 0.0, [0.0; 3]),
-                (0.0, -1.0, [0.0; 3]),
-                (0.0, 1.0, [0.0; 3]),
-                (0.0, 0.0, [1.0, 1.0, 0.25]),
-            ] {
-                instances.extend(font.build_text(
-                    &text[line.start_byte..line.end_byte],
-                    8.0 + dx,
-                    top + line_index as f32 * line_height + dy,
-                    1.0,
-                    0.0,
-                    tint,
-                    [0.0; 2],
-                ));
-            }
-        }
-        let count = instances.len() as u32;
-        self.draw(
-            gpu,
-            batch,
-            encoder,
-            destination,
-            &mut frame,
-            "window_status",
-            &instances,
-            &[(font.atlas(), 0, count)],
         );
     }
 

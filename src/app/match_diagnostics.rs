@@ -352,6 +352,15 @@ impl MatchDiagnosticsState {
         matches!(&self.replay_playback, Some(ReplayPlaybackState::Playing(playback)) if playback.can_advance())
     }
 
+    /// The replay plays on: installed, not failed and not at its end.
+    pub(crate) fn playback_playing(&self) -> bool {
+        matches!(
+            &self.replay_playback,
+            Some(ReplayPlaybackState::Playing(playback))
+                if !playback.is_finished() && playback.failure().is_none()
+        )
+    }
+
     pub(crate) fn playback_status(&self) -> Option<String> {
         Some(match self.replay_playback.as_ref()? {
             ReplayPlaybackState::Loading(_) => crate::i18n::tr("VERA:LoadingReplay"),

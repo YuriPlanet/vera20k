@@ -179,7 +179,9 @@ while simulation ticks are stopped. Both markers use the normal ordered
 history and replay recovery, and each names the player who asked: once a
 client's world reaches one, the other players and watchers read "<name> paused
 the game." or "<name> resumed the game." A rejoining game shows only those its
-world reaches after catching up. Connections, chat and ticket renewal keep
+world reaches after catching up. Each game also keeps a message row while its
+own request waits for the relay and while the match is paused for all players.
+Connections, chat and ticket renewal keep
 running; accepted gameplay inputs wait for their assigned frames after resume.
 Opening Options alone remains local. After a resume nobody can pause again for
 30 seconds. Confirming Leave resumes as needed until the queued EXIT executes.
@@ -225,10 +227,13 @@ slowest player (ProcessNetwork `0x00647BF4..0x00647E6D`).
 The relay keeps a bounded RAM cache and the full match journal on disk. The
 journal is not encrypted: it holds plain commands and relies on file permissions. Temporary connection loss keeps the player's identity, units, input cursor
 and world in the match; the client renews its ticket and reads missed frames when
-connectivity returns. The UI shows Reconnecting or Catching up while healthy
-clients continue. Once the relay has heard nothing from a player of a started
-match for 10 seconds, the other players read "<name> is not responding.", and
-"<name> is back." when it hears them again; watchers read neither. The relay
+connectivity returns. The game shows Reconnecting or Catching up as a message
+row while healthy clients continue. Such a row, and the shared pause's, stays
+in the message list while its state lasts; it comes and goes only once the
+state has held for a second, so a short dip adds no row. Once the relay has
+heard nothing from a player of a started match for 10 seconds, the other
+players read "<name> is not responding.", and "<name> is back." when it hears
+them again; watchers read neither. The relay
 names silent players in each player's status (relay README "Silence"). A
 released game ignores the names. An older relay names nobody, so a game on it
 shows no such line; in a match spread over several relays, players homed on an
