@@ -8,7 +8,8 @@ use crate::map::source::{LoadedTransferAsset, TransferResource};
 use crate::util::time::{Duration, Instant};
 use anyhow::{Result, anyhow, ensure};
 use std::path::PathBuf;
-const CHUNK: usize = 32768;
+/// The bytes of one lobby map chunk but the last (docs/lobby-protocol.md).
+pub(super) const CHUNK: usize = 32768;
 
 #[derive(PartialEq, Eq)]
 struct Key {

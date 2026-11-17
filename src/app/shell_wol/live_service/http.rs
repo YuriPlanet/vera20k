@@ -16,8 +16,8 @@ use std::sync::{
 };
 
 use super::wire::EventBatch;
-use crate::ui::chat_translation::{ChatLanguage, ChatReply};
 use super::wire::{ChannelList, Envelope, Match, MatchList, Session};
+use crate::ui::chat_translation::{ChatLanguage, ChatReply};
 use serde_json::Value;
 use serde_json::json;
 
@@ -1143,13 +1143,14 @@ macro_rules! serial_driver {
                         serde_json::from_value::<Chunk>(value)
                             .ok()
                             .and_then(|chunk| {
-                                if chunk.data.len() > 43700 {
+                                // Unpadded base64 of at most one chunk.
+                                if chunk.data.len() > (4 * super::maps::CHUNK).div_ceil(3) {
                                     return None;
                                 }
                                 let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
                                     .decode(&chunk.data)
                                     .ok()?;
-                                (bytes.len() <= 32768).then_some(Response::MapChunk {
+                                (bytes.len() <= super::maps::CHUNK).then_some(Response::MapChunk {
                                     transfer,
                                     digest: chunk.digest,
                                     total: chunk.byte_length,
