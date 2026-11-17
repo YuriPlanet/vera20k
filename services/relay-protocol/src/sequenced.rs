@@ -22,6 +22,8 @@ const CERTIFICATE_V2_MAGIC: &[u8; 4] = b"VO2C";
 const CERTIFICATE_V2_DOMAIN: &[u8] = b"VERA20k relay ordering certificate v2\0";
 // VO2C flags byte: the host turned relay pacing off.
 const CERTIFICATE_PACING_OFF: u8 = 1;
+// VO2C flags byte: the relay orders this one-source match.
+const CERTIFICATE_ORDERED_ALONE: u8 = 2;
 const MAX_MATCH_SECONDS: u64 = 24 * 60 * 60;
 const START_DELAY_MS: u64 = 200;
 const MAX_HISTORY_ENTRIES: usize = 4096;
@@ -141,6 +143,10 @@ pub struct OrderingCertificate {
     pub tick_hz: u16,
     pub expires: u64,
     pub pacing: CertificatePacing,
+    /// `VO2C` only: the relay orders this match although it has one source,
+    /// a person who watches AI play, so that others can watch it too
+    /// (docs/Networking.md, Watching). See [`Self::relay_orders`].
+    pub ordered_alone: bool,
 }
 
 /// Either certificate length, for a READY payload's split.
@@ -150,16 +156,21 @@ pub fn is_ordering_certificate_len(length: usize) -> bool {
 
 impl OrderingCertificate {
     pub fn parse(bytes: &[u8]) -> Result<Self, RelayError> {
-        let pacing = match (bytes.len(), bytes.get(..4)) {
+        let (pacing, ordered_alone) = match (bytes.len(), bytes.get(..4)) {
             (ORDERING_CERTIFICATE_LEN, Some(magic)) if magic == CERTIFICATE_MAGIC => {
-                CertificatePacing::Legacy
+                (CertificatePacing::Legacy, false)
             }
             (ORDERING_CERTIFICATE_V2_LEN, Some(magic)) if magic == CERTIFICATE_V2_MAGIC => {
-                match bytes[34] {
-                    0 => CertificatePacing::On,
-                    CERTIFICATE_PACING_OFF => CertificatePacing::Off,
-                    _ => return Err(RelayError::Malformed),
+                let flags = bytes[34];
+                if flags & !(CERTIFICATE_PACING_OFF | CERTIFICATE_ORDERED_ALONE) != 0 {
+                    return Err(RelayError::Malformed);
                 }
+                let pacing = if flags & CERTIFICATE_PACING_OFF != 0 {
+                    CertificatePacing::Off
+                } else {
+                    CertificatePacing::On
+                };
+                (pacing, flags & CERTIFICATE_ORDERED_ALONE != 0)
             }
             _ => return Err(RelayError::Malformed),
         };
@@ -169,6 +180,7 @@ impl OrderingCertificate {
             tick_hz: u16::from_le_bytes(bytes[24..26].try_into().unwrap()),
             expires: u64::from_le_bytes(bytes[26..34].try_into().unwrap()),
             pacing,
+            ordered_alone,
         };
         value.validate()?;
         Ok(value)
@@ -186,21 +198,37 @@ impl OrderingCertificate {
             || self.sources_mask == 0
             || self.sources_mask >> MAX_PEERS != 0
             || !FRAME_RATES.contains(&self.tick_hz)
+            || (self.ordered_alone && self.pacing == CertificatePacing::Legacy)
         {
             return Err(RelayError::Malformed);
         }
         Ok(())
     }
 
+    /// Whether the relay orders this match: two or more sources, or one the
+    /// lobby marked [`Self::ordered_alone`]. Every other one-source match runs
+    /// its commands locally (the client's original-singleton policy), so the
+    /// relay refuses its Ready: a lone client holds a room and journal only
+    /// where the lobby marked its match.
+    pub fn relay_orders(&self) -> bool {
+        self.sources_mask.count_ones() > 1 || self.ordered_alone
+    }
+
     /// The HTTPS lobby signs this public manifest separately from hop tickets.
     /// Layout: VO1C, room16, LE mask32, LE Hz16, LE expiry64, domain HMAC32;
-    /// VO2C adds a flags byte (bit 0: pacing off) before its own domain's HMAC.
+    /// VO2C adds a flags byte (bit 0: pacing off, bit 1: ordered alone) before
+    /// its own domain's HMAC.
     pub fn sign(self, key: &SecretKey) -> Result<Vec<u8>, RelayError> {
         self.validate()?;
+        let alone = if self.ordered_alone {
+            CERTIFICATE_ORDERED_ALONE
+        } else {
+            0
+        };
         let (magic, flags) = match self.pacing {
             CertificatePacing::Legacy => (CERTIFICATE_MAGIC, None),
-            CertificatePacing::On => (CERTIFICATE_V2_MAGIC, Some(0)),
-            CertificatePacing::Off => (CERTIFICATE_V2_MAGIC, Some(CERTIFICATE_PACING_OFF)),
+            CertificatePacing::On => (CERTIFICATE_V2_MAGIC, Some(alone)),
+            CertificatePacing::Off => (CERTIFICATE_V2_MAGIC, Some(CERTIFICATE_PACING_OFF | alone)),
         };
         let mut bytes = Vec::with_capacity(ORDERING_CERTIFICATE_V2_LEN);
         bytes.extend_from_slice(magic);
@@ -516,11 +544,12 @@ impl ClientSession {
         }
         let certificate = certificate.to_vec();
         if let Some(current) = &mut self.ordering {
+            // A renewal changes only the expiry.
             let old = OrderingCertificate::parse(&current.certificate)?;
-            if old.room != parsed.room
-                || old.sources_mask != parsed.sources_mask
-                || old.tick_hz != parsed.tick_hz
-                || old.pacing != parsed.pacing
+            if (OrderingCertificate {
+                expires: parsed.expires,
+                ..old
+            }) != parsed
                 || current.agreement != agreement
             {
                 return Err(RelayError::Authentication);
@@ -1076,9 +1105,11 @@ pub(super) struct OrderingRoom {
     local: u32,
     // A federated Leave before the start asks the coordinator to cancel.
     cancel_requested: bool,
-    // A federated Ready proved a different initial world. Keep the reason
-    // in the cancelled room so retries receive the existing precise error.
+    // A Ready proved a different initial world. Keep the reason in the
+    // cancelled room so retries receive the existing precise error.
     agreement_mismatch: bool,
+    // That refusal, until the server counts it for its journal report.
+    mismatch_uncounted: bool,
     next_seq: u64,
     history: VecDeque<Stored>,
     history_bytes: usize,
@@ -1140,6 +1171,7 @@ impl OrderingRoom {
             local,
             cancel_requested: false,
             agreement_mismatch: false,
+            mismatch_uncounted: false,
             next_seq: 1,
             history: VecDeque::new(),
             history_bytes: 0,
@@ -1157,11 +1189,12 @@ impl OrderingRoom {
         }
     }
 
-    /// Move the rate changes and desyncs not yet counted into the journal
-    /// report's counts.
+    /// Move the rate changes, desyncs and refused start not yet counted into
+    /// the journal report's counts.
     pub(super) fn count_changes(&mut self, counts: &mut crate::OrderingCounts) {
         self.pace.count_changes(counts);
         counts.desyncs += u64::from(std::mem::take(&mut self.desyncs));
+        counts.start_mismatches += u64::from(std::mem::take(&mut self.mismatch_uncounted));
     }
 
     /// Any authenticated packet keeps a source's place; a newer admission of
@@ -1612,8 +1645,9 @@ impl OrderingRoom {
                 self.finished_at = Some(now_ms);
                 return;
             }
-            // Only the coordinator ends a federated startup. Its start may
-            // already be on the way; this Leave then departs at frame 1.
+            // Only the coordinator ends a federated startup for an ordinary
+            // reason. Its start may already be on the way; this Leave then
+            // departs at frame 1.
             self.cancel_requested = true;
         }
         self.retire(source, false, now_ms);
@@ -1699,6 +1733,17 @@ impl OrderingRoom {
         // Retain the authenticated Ready/agreement proof for other relays.
         // Cancellation still wins over starting, even on older relays.
         self.finished_at = Some(now_ms);
+    }
+
+    /// A Ready, here or on another relay, proved a different initial world:
+    /// cancel the startup and answer every later Ready, and a ready source's
+    /// Pull and UPLINK, with `AgreementMismatch`. A federated relay's
+    /// cancelled startup asks the coordinator to cancel it everywhere. Only a
+    /// startup this ends is counted, not one already cancelled otherwise.
+    fn refuse_start(&mut self, now_ms: u64) {
+        self.agreement_mismatch = true;
+        self.mismatch_uncounted = self.finished_at.is_none();
+        self.cancel(now_ms);
     }
 
     /// The latest pace reports of active sources homed here, encoded for
@@ -2454,6 +2499,7 @@ mod tests {
             tick_hz: 45,
             expires,
             pacing: Default::default(),
+            ordered_alone: false,
         }
         .sign(key)
         .unwrap()
@@ -2627,6 +2673,7 @@ mod tests {
             tick_hz: 90,
             expires: 1400,
             pacing: CertificatePacing::On,
+            ordered_alone: false,
         };
         let signed = certificate.sign(&key).unwrap();
         assert_eq!(OrderingCertificate::parse(&signed).unwrap(), certificate);
@@ -3066,6 +3113,7 @@ mod tests {
             tick_hz: 45,
             expires: 2000,
             pacing,
+            ordered_alone: false,
         };
         let hex = |bytes: &[u8]| bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
         let on = cert(CertificatePacing::On).sign(&key).unwrap();
@@ -3092,9 +3140,36 @@ mod tests {
                 .pacing,
             CertificatePacing::Legacy
         );
+        // The relay orders a one-source match the lobby marked; only VO2C
+        // carries the mark.
+        let alone = OrderingCertificate {
+            sources_mask: 1,
+            ordered_alone: true,
+            ..cert(CertificatePacing::On)
+        };
+        assert_eq!(
+            hex(&alone.sign(&key).unwrap()),
+            "564f324305050505050505050505050505050505010000002d00d0070000000000000276df2bf6da6804b5e845d57954af1692120f0b35b4fd4e2a605cc07151a73a81"
+        );
+        assert!(alone.relay_orders());
+        assert!(
+            !OrderingCertificate {
+                ordered_alone: false,
+                ..alone
+            }
+            .relay_orders()
+        );
+        assert!(
+            OrderingCertificate {
+                pacing: CertificatePacing::Legacy,
+                ..alone
+            }
+            .sign(&key)
+            .is_err()
+        );
         // A VO1C body relabelled VO2C does not verify, and unknown flags fail.
         let mut relabelled = on.clone();
-        relabelled[34] = 2;
+        relabelled[34] = 4;
         assert!(matches!(
             OrderingCertificate::parse(&relabelled),
             Err(RelayError::Malformed)
@@ -3334,6 +3409,32 @@ mod tests {
             Err(RelayError::Authentication)
         ));
         assert!(server.rooms[&[5; 16]].ordering.is_none());
+    }
+
+    /// One person watching AI play, whose match the lobby marked so that
+    /// others can watch it, orders through the relay alone and starts.
+    #[test]
+    fn a_marked_one_source_match_starts_alone() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 2);
+        let mut solo = client(&key, 0);
+        connect(&mut server, &mut solo, 0);
+        let alone = OrderingCertificate {
+            room: [5; 16],
+            sources_mask: 1,
+            tick_hz: 45,
+            expires: 1400,
+            pacing: CertificatePacing::On,
+            ordered_alone: true,
+        }
+        .sign(&key)
+        .unwrap();
+        configure(&mut server, &mut solo, &alone, 0);
+        let start = ordering(&server)
+            .starts_at
+            .expect("its only source is ready");
+        server.advance_clock(start + 67, unix(start + 67));
+        assert_eq!(ordering(&server).head, 3, "the first turn is sealed");
     }
 
     #[test]
@@ -4240,6 +4341,7 @@ mod tests {
                 tick_hz: 45,
                 expires: 2000,
                 pacing: Default::default(),
+                ordered_alone: false,
             }
             .sign(&key)
             .unwrap();
@@ -4919,6 +5021,7 @@ mod tests {
             tick_hz: 10,
             expires: 2000,
             pacing: Default::default(),
+            ordered_alone: false,
         }
         .sign(&key)
         .unwrap();
@@ -5013,6 +5116,7 @@ mod tests {
                 tick_hz: 45,
                 expires: 1400,
                 pacing: Default::default(),
+                ordered_alone: false,
             }
             .sign(&key)
             .unwrap();
@@ -5427,6 +5531,47 @@ mod tests {
             })
             .collect();
         assert_eq!(departed, [1, 2]);
+    }
+
+    #[test]
+    fn a_loading_players_different_ready_refuses_the_start_for_everyone() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 2);
+        let mut players: Vec<_> = (0..2).map(|source| client(&key, source)).collect();
+        for player in &mut players {
+            connect(&mut server, player, 0);
+        }
+        let cert = certificate(&key, 0b11, 2000);
+        configure(&mut server, &mut players[0], &cert, 1000);
+        let ready = |player: &mut ClientSession, agreement| {
+            let mut bytes = Vec::new();
+            player
+                .configure_ordering(&cert, agreement, &mut bytes)
+                .unwrap();
+            bytes
+        };
+        let refused = |events: Vec<OrderEvent>| {
+            matches!(
+                events.as_slice(),
+                [OrderEvent::Error {
+                    code: OrderError::AgreementMismatch,
+                    ..
+                }]
+            )
+        };
+        // Games resend Ready until the start.
+        let other = ready(&mut players[1], [8; 32]);
+        assert!(refused(events(&mut server, &mut players[1], &other, 2000)));
+        // The first Ready's player no longer waits, and both retries agree.
+        let first = ready(&mut players[0], [7; 32]);
+        assert!(refused(events(&mut server, &mut players[0], &first, 3000)));
+        let other = ready(&mut players[1], [8; 32]);
+        assert!(refused(events(&mut server, &mut players[1], &other, 3000)));
+        // Nobody starts alone once the refused player goes silent.
+        let late = 3000 + LOADING_LIMIT_MS;
+        server.advance_clock(late, unix(late));
+        assert!(ordering(&server).starts_at.is_none());
+        assert_eq!(server.take_ordering_counts().start_mismatches, 1);
     }
 
     #[test]
@@ -5991,13 +6136,12 @@ impl RelayServer {
             }
             let certificate =
                 OrderingCertificate::verify(&payload[1..1 + certificate_len], &self.key, now)?;
-            // A one-source match runs its commands locally (the client's
-            // original-singleton policy) and never orders through the relay.
-            // The lobby still signs its certificate for released clients, so
-            // refuse it here: a lone client cannot hold a room and journal.
+            // The lobby signs every one-source match's certificate for
+            // released clients, which run it locally: order one only when the
+            // lobby marked it (a person watching AI play, for watchers).
             if certificate.room != message.ticket.room
                 || certificate.sources_mask & (1 << message.ticket.source) == 0
-                || certificate.sources_mask.count_ones() < 2
+                || !certificate.relay_orders()
             {
                 return Err(RelayError::Authentication);
             }
@@ -6083,6 +6227,16 @@ impl RelayServer {
                 || ordering.certificate.tick_hz != certificate.tick_hz
                 || ordering.agreement != agreement
             {
+                // VERA: a loading player's Ready proves a world the first
+                // Ready players cannot start with. Cancel the start for
+                // everyone now, as its Leave could, instead of letting its
+                // keepalives hold the others until the loading limit drops it
+                // and they start without it. A ready source's agreement
+                // stands, so no federated start can be on its way.
+                let bit = 1 << message.ticket.source;
+                if ordering.starts_at.is_none() && ordering.active & !ordering.ready & bit != 0 {
+                    ordering.refuse_start(now_ms);
+                }
                 error(OrderError::AgreementMismatch, 0)
             } else if ordering.active & (1 << message.ticket.source) == 0 {
                 error(OrderError::Inactive, 0)

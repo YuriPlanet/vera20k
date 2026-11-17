@@ -2072,6 +2072,7 @@ mod tests {
             tick_hz: 30,
             expires: u64::MAX / 2,
             pacing: Default::default(),
+            ordered_alone: false,
         }
         .sign(&key)
         .unwrap();

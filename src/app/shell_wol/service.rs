@@ -80,6 +80,9 @@ pub(crate) enum WolApiStatus {
 pub(crate) struct WolLoginAccepted {
     /// The message of the day the login sink stores in `[0xB73AE0]`.
     pub(crate) motd: String,
+    /// VERA: the lobby lets a room's players visit the public lobby
+    /// (docs/lobby-protocol.md "Visiting the lobby").
+    pub(crate) lobby_visits: bool,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -139,6 +142,16 @@ pub(crate) enum WolServiceRequest {
     JoinChannel { channel: WolChannel, key: String },
     /// API+0x24: leave the current channel.
     LeaveChannel,
+    /// VERA: a game room's member also joins the public lobby to look round
+    /// it, staying in the room (docs/lobby-protocol.md "Visiting the lobby").
+    VisitLobby,
+    /// VERA: the visitor leaves the public lobby for their room.
+    EndVisit,
+    /// VERA: the lobby page's chat while visiting, to the visited lobby.
+    VisitChat { line: WolChatLine, to: Vec<String> },
+    /// VERA: the lobby page's action line while visiting, to the visited
+    /// lobby.
+    VisitEmote { text: Vec<u16>, to: Vec<String> },
     /// VERA HTTPS cleanup intent when the visit returns while its live service
     /// is borrowed by a callback. The same service owns the match/finish ID.
     MatchReturned,
@@ -301,6 +314,29 @@ pub(crate) enum WolServiceEvent {
     /// VERA: the match ended and the lobby gave back the game room this
     /// player stayed in (`room_reopened`), owner first.
     RoomReopened(super::lobby::WolJoined),
+    /// VERA: the host left and the lobby made `name` the game room's host,
+    /// this user or another, with the room renamed for them where it was
+    /// named as games name rooms (`host_changed`, docs/lobby-protocol.md
+    /// "Host handover").
+    HostChanged {
+        name: String,
+        channel: Option<WolChannel>,
+    },
+    /// VERA: this player visits the public lobby from their game room
+    /// (`joined` marked `visit`).
+    VisitJoined(super::lobby::WolJoined),
+    /// VERA: another user joined the visited lobby.
+    VisitUserJoined(WolMember),
+    /// VERA: another user left the visited lobby.
+    VisitUserLeft(String),
+    /// VERA: a chat line in the visited lobby.
+    VisitMessage {
+        from: WolMember,
+        text: Vec<u16>,
+        private: bool,
+        action: bool,
+        sent_at: Option<u64>,
+    },
     /// OnJoin for another user of the current channel.
     UserJoined(WolMember),
     /// OnPart of another user (by name).
@@ -676,6 +712,7 @@ impl WolVisit {
             (Awaiting::Servers { .. }, WolServiceEvent::Interrupted) => WolStep::Leave(-1),
             (Awaiting::Connect { .. }, WolServiceEvent::Login(Ok(accepted))) => {
                 self.motd = Some(accepted.motd);
+                self.lobby_visits = accepted.lobby_visits;
                 self.authenticated = true;
                 // The connect clears [0xB77DC0] (0x007867E6) and the login
                 // sink [0xB77DC2] (0x007A559D).
@@ -970,6 +1007,29 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                     ansi,
                     options,
                     sent_at,
+                    visit: false,
+                },
+            );
+            return;
+        }
+        WolServiceEvent::VisitMessage {
+            from,
+            text,
+            private,
+            action,
+            sent_at,
+        } => {
+            super::lobby::message_received(
+                state,
+                super::lobby::ReceivedMessage {
+                    from,
+                    text,
+                    private,
+                    action,
+                    ansi: false,
+                    options: None,
+                    sent_at,
+                    visit: true,
                 },
             );
             return;
@@ -1040,6 +1100,10 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
         event @ (WolServiceEvent::Channels { .. }
         | WolServiceEvent::Joined(_)
         | WolServiceEvent::RoomReopened(_)
+        | WolServiceEvent::HostChanged { .. }
+        | WolServiceEvent::VisitJoined(_)
+        | WolServiceEvent::VisitUserJoined(_)
+        | WolServiceEvent::VisitUserLeft(_)
         | WolServiceEvent::UserJoined(_)
         | WolServiceEvent::UserLeft(_)
         | WolServiceEvent::ChannelLeft
@@ -1778,7 +1842,8 @@ mod tests {
         };
         assert_eq!(
             visit.reduce(WolServiceEvent::Login(Ok(WolLoginAccepted {
-                motd: "Welcome".into()
+                motd: "Welcome".into(),
+                lobby_visits: false,
             }))),
             WolStep::Accepted
         );

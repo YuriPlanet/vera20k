@@ -136,9 +136,11 @@ pub(crate) const HOST_LEFT_LABEL: &str = "VERA:HostLeftRoomClosed";
 
 pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> anyhow::Result<()> {
     // The route stays NetworkSetup until the match returns, but GO's handoff
-    // drops the setup protocol: later setup packets have no receiver.
+    // drops the setup protocol: later setup packets have no receiver. VERA:
+    // a lobby visitor's room goes on hidden behind the lobby page.
     anyhow::ensure!(
         (state.frontend.shell_route.network_setup()
+            || crate::app::shell_wol::lobby::visiting(state)
             || super::quick_match(state)
             || super::external(state))
             && state.frontend.network_setup_protocol.is_some(),
@@ -629,7 +631,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             if !ready {
                 let text =
                     App::csf_label(state, "GUI:HostGameStartJoiner", "GUI:HostGameStartJoiner");
-                crate::app::shell_lan::append_chat(
+                crate::app::shell_lan::append_room_chat(
                     state,
                     LanChatLine {
                         text: text.encode_utf16().collect(),
@@ -913,14 +915,17 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                     .multiplayer_shell_runtime
                     .clear_network_cooperative_partners();
             }
-            // Native leaves without a word; VERA says why the room closed.
-            if !state.frontend.native_shell_ui {
-                crate::app::shell_lan::report_error(state, HOST_LEFT_LABEL);
-            }
-            App::leave_shell_dialog(
-                state,
-                shell_transition::ShellExitThen::NetworkSetupBack(dialog),
-            );
+            // LAN Type 10 (0x005E10F2..0x005E1114) keeps its silent native exit.
+            let exit = if state.frontend.native_shell_ui {
+                shell_transition::ShellExitThen::NetworkSetupBack(dialog)
+            } else {
+                // VERA's notice belongs to the lobby opened after setup is retired.
+                shell_transition::ShellExitThen::NetworkSetupBackWithNotice {
+                    dialog,
+                    label: HOST_LEFT_LABEL,
+                }
+            };
+            App::leave_shell_dialog(state, exit);
         }
         NetworkSetupEvent::Kicked => {
             crate::app::shell_lan::report_error(state, "TXT_REQUEST_DENIED");
@@ -929,7 +934,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 shell_transition::ShellExitThen::NetworkSetupBack(dialog),
             );
         }
-        NetworkSetupEvent::Chat(line) => crate::app::shell_lan::append_chat(state, line),
+        NetworkSetupEvent::Chat(line) => crate::app::shell_lan::append_room_chat(state, line),
         NetworkSetupEvent::GameStarted { users, pings } => {
             super::wol::game_started(state, users, pings)?;
         }
@@ -1094,7 +1099,7 @@ fn tell_moved(state: &mut AppState, mode_changed: bool) {
         .network_setup_protocol
         .as_ref()
         .and_then(|protocol| protocol.wol_host.clone())
-        .or_else(|| crate::app::lan_service::admitted_host_name(state))
+        .or_else(|| crate::app::lan_service::admitted_host_room(state).map(|(name, _)| name))
         .or_else(|| {
             launch
                 .humans
@@ -1135,7 +1140,7 @@ fn tell_moved(state: &mut AppState, mode_changed: bool) {
         }
         (None, _) => return,
     };
-    crate::app::shell_lan::append_chat(
+    crate::app::shell_lan::append_room_chat(
         state,
         LanChatLine {
             text: text.encode_utf16().collect(),
@@ -1152,7 +1157,7 @@ pub(super) fn tell_room(state: &mut AppState, dialog: SetupDialog, key: &str, na
         return;
     }
     let text = crate::i18n::tr_fill(key, &[("name", &name)]);
-    crate::app::shell_lan::append_chat(
+    crate::app::shell_lan::append_room_chat(
         state,
         LanChatLine {
             text: text.encode_utf16().collect(),
@@ -1593,7 +1598,7 @@ fn apply_local_map_admission(
             &App::csf_label(state, key, key),
             &[crate::assets::csf_file::CsfArg::Str(map_name)],
         );
-        crate::app::shell_lan::append_chat(
+        crate::app::shell_lan::append_room_chat(
             state,
             LanChatLine {
                 text: text.encode_utf16().collect(),
@@ -1892,7 +1897,7 @@ fn point_out_briefing(state: &mut AppState) {
     {
         return;
     }
-    crate::app::shell_lan::append_chat(
+    crate::app::shell_lan::append_room_chat(
         state,
         LanChatLine {
             text: crate::i18n::tr(BRIEFING_HINT).encode_utf16().collect(),

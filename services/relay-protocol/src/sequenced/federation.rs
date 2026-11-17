@@ -453,7 +453,9 @@ impl Federation {
     /// roster ready, leaving its slowest link time to hear. The others place
     /// the same start on their own clocks and keep slewing toward it. Ordinary
     /// cancellation goes through the coordinator, on any relay's request;
-    /// a proved agreement mismatch refuses the start on each relay itself.
+    /// an agreement mismatch between relays refuses the start on each relay
+    /// itself. One between two players of one relay refuses it there, and
+    /// that cancelled startup asks the coordinator to cancel everywhere.
     /// Each relay requests cancellation once its loading limit is reached.
     pub(super) fn coordinate(&mut self, ordering: &mut OrderingRoom, now_ms: u64) {
         // VERA's initial-world agreement has no native counterpart. Reject
@@ -464,8 +466,7 @@ impl Federation {
             && self.agreement_mismatch(&ordering.agreement)
             && !ordering.agreement_mismatch
         {
-            ordering.agreement_mismatch = true;
-            ordering.cancel(now_ms);
+            ordering.refuse_start(now_ms);
         }
         if ordering.finished_at.is_some() {
             return;

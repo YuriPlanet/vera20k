@@ -51,7 +51,7 @@ impl TrafficCounts {
 
     fn report(&self, seconds: u64, rooms: usize, ordering: OrderingCounts, mac: MacFailureCounts) {
         eprintln!(
-            "VERA20k relay interval_s={seconds} rooms={rooms} slowdowns={} raises={} catching_up_s={} received={} forwarded={} send_errors={} malformed={} authentication={} expired={} replay={} unregistered={} full={} rate_limited={} counter_exhausted={} entropy_unavailable={} pushed={} pushed_bytes={} pull_replies={} desyncs={} push_packets={:?} push_bytes={:?} piggybacked_records={} down_lost={} retransmitted_records={} readers_avg={:?} offline_unsent={} mac_failures={} unknown_sessions={} session_alerts={}",
+            "VERA20k relay interval_s={seconds} rooms={rooms} slowdowns={} raises={} catching_up_s={} received={} forwarded={} send_errors={} malformed={} authentication={} expired={} replay={} unregistered={} full={} rate_limited={} counter_exhausted={} entropy_unavailable={} pushed={} pushed_bytes={} pull_replies={} desyncs={} start_mismatches={} push_packets={:?} push_bytes={:?} piggybacked_records={} down_lost={} retransmitted_records={} readers_avg={:?} offline_unsent={} mac_failures={} unknown_sessions={} session_alerts={}",
             ordering.slowdowns,
             ordering.raises,
             ordering.catching_up_s,
@@ -71,6 +71,7 @@ impl TrafficCounts {
             self.pushed_bytes,
             ordering.pull_replies,
             ordering.desyncs,
+            ordering.start_mismatches,
             ordering.push_packets,
             ordering.push_bytes,
             ordering.piggybacked_records,

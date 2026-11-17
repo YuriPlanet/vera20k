@@ -589,7 +589,7 @@ fn participant_in(launch: &SkirmishLaunchSession, name: &str) -> Option<usize> {
 pub(crate) fn user_kicked(state: &mut AppState, name: &str, line: String) -> anyhow::Result<()> {
     let full = state.match_state.session.network_no_open_player_row();
     if !full {
-        crate::app::shell_lan::append_chat(
+        crate::app::shell_lan::append_room_chat(
             state,
             LanChatLine {
                 text: line.encode_utf16().collect(),
@@ -993,7 +993,7 @@ pub(super) fn chat(state: &mut AppState, text: Vec<u16>) {
     crate::app::shell_wol::chat_sent(state, &line);
     queue(state, NetworkSetupRequest::WolChat(line));
     if let Some((text, color)) = echo {
-        crate::app::shell_lan::append_chat(state, LanChatLine { text, color });
+        crate::app::shell_lan::append_room_chat(state, LanChatLine { text, color });
     }
 }
 
@@ -1011,7 +1011,7 @@ pub(super) fn emote(state: &mut AppState) {
         return;
     }
     let nickname = local_nickname(state);
-    crate::app::shell_lan::append_chat(
+    crate::app::shell_lan::append_room_chat(
         state,
         LanChatLine {
             text: wol_chat::emote_echo(&nickname, &text),

@@ -81,7 +81,7 @@ fn reason(state: &AppState) -> Option<String> {
     match interruption(state)? {
         NetworkInterruption::NewerClientRequired => Some(crate::i18n::tr_fill(
             "VERA:MatchNeedsNewerVera",
-            &[("url", &crate::app::shell_wol::RELEASES_URL)],
+            &[("url", &crate::app::web_link::DOWNLOAD_PAGE)],
         )),
         NetworkInterruption::ConnectionFailed if online(state) => {
             Some(crate::i18n::tr("VERA:GameServerConnectionFailed"))

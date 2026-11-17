@@ -770,17 +770,7 @@ impl App {
 
         state.frontend.score_page = None;
         state.frontend.score_art = None;
-        let side = model.side;
-        state.frontend.campaign_score_art = state.process_assets.manager().and_then(|assets| {
-            crate::render::main_menu_shell_chrome::build_campaign_score_art(
-                &state.renderer.gpu,
-                &state.renderer.batch_renderer,
-                assets,
-                side,
-                crate::app::frontend::shell_layout::art_key_screen_width(state),
-                state.process_assets.side_score_art(side),
-            )
-        });
+        Self::prepare_campaign_score_art(state, model.side);
         if state.frontend.campaign_score_art.is_none() {
             log::warn!(
                 "Could not prepare Campaign StandaloneScore background; Continue remains available"
@@ -817,6 +807,21 @@ impl App {
         }
     }
 
+    /// `ScoreArt__Load` (`0x0072D300`): prepare the active side's campaign
+    /// score art for the standalone and Cooperative result pages.
+    pub(super) fn prepare_campaign_score_art(state: &mut AppState, side: i32) {
+        state.frontend.campaign_score_art = state.process_assets.manager().and_then(|assets| {
+            crate::render::main_menu_shell_chrome::build_campaign_score_art(
+                &state.renderer.gpu,
+                &state.renderer.batch_renderer,
+                assets,
+                side,
+                crate::app::frontend::shell_layout::art_key_screen_width(state),
+                state.process_assets.side_score_art(side),
+            )
+        });
+    }
+
     /// Cooperative `+0xA4`'s campaign end (`0x00471420`): the side's score
     /// art again (`0x0072D300`, `ScoreArt__Load`), the empty backdrop, then
     /// dialog `0xBC7` with the texts its init writes. No theme changes.
@@ -825,16 +830,7 @@ impl App {
         model: crate::ui::campaign_score_shell::CampaignEndModel,
     ) {
         use crate::ui::campaign_score_shell::{CAMPAIGN_END_DIALOG, CampaignScorePage};
-        state.frontend.campaign_score_art = state.process_assets.manager().and_then(|assets| {
-            crate::render::main_menu_shell_chrome::build_campaign_score_art(
-                &state.renderer.gpu,
-                &state.renderer.batch_renderer,
-                assets,
-                model.side,
-                crate::app::frontend::shell_layout::art_key_screen_width(state),
-                state.process_assets.side_score_art(model.side),
-            )
-        });
+        Self::prepare_campaign_score_art(state, model.side);
         if state.frontend.campaign_score_art.is_none() {
             log::warn!("Could not prepare the campaign-end score art; Continue remains available");
         }
@@ -2018,6 +2014,10 @@ impl App {
             }
             ShellExitThen::NetworkSetupBack(_) => {
                 crate::app::shell_network_setup::commit_back(state)
+            }
+            ShellExitThen::NetworkSetupBackWithNotice { label, .. } => {
+                crate::app::shell_network_setup::commit_back(state);
+                crate::app::shell_lan::report_error(state, label);
             }
             ShellExitThen::NetworkSetupChooseMap(_) => {
                 crate::app::shell_network_setup::open_choose_map(state)

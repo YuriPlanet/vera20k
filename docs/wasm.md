@@ -173,8 +173,11 @@ deferred network-loading waits. Desktop builds, including those enabling
 single-player package still returns an explicit unsupported error at network
 entry points. Browser LAN discovery and direct UDP connections are not supported.
 
-Random map generation and synchronous GPU screenshot/capture are also unavailable
-in this single-threaded preview. Existing installed maps remain the target.
+The Generate Map dialog, which generates on a thread of its own, and synchronous
+GPU screenshot/capture are also unavailable in the browser. A page makes a random
+map's file with `generate_map(input)` instead ([random maps](spawn.md#random-maps)):
+on the threaded package with its pool started it runs on a pool worker, otherwise
+on the page's thread.
 Shifted punctuation shortcuts on non-US keyboard layouts
 are not fully mapped. Chat edits take input-method text through a hidden textarea
 that the engine adds to the page while one is active (`src/web/ime.rs`), so a host
@@ -267,8 +270,8 @@ retained once for existing result consumers.
 Once `engine-exited` has returned, the same page may call `start_spawn` again:
 import the next launch's files with `import_spawn_file`, call `prepare_audio` and
 pass a new canvas. The imported retail files stay, so `import_file` is refused
-and changing the game folder needs a new page; `restore_user_file` and `probe`
-work between launches, and each launch rereads the settings. The output
+and changing the game folder needs a new page; `restore_user_file`, `probe` and
+`generate_map` work between launches, and each launch rereads the settings. The output
 `AudioContext` also stays, so a later launch needs no new user gesture. A launch's
 files under `/spawn` are removed when it exits. `can_start_spawn()` says whether
 another launch can start. It stays false while a game runs, after `start_game`

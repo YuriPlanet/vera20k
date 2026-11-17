@@ -26,6 +26,7 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                 | SetupAction::TeamStarts
                 | SetupAction::TeamColors
                 | SetupAction::Balance
+                | SetupAction::Lobby
         )
     {
         return;
@@ -117,6 +118,10 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
             }
             Ok(())
         }
+        SetupAction::Lobby => {
+            crate::app::shell_wol::lobby::visit_lobby(state);
+            Ok(())
+        }
         SetupAction::MapOffer { download } => {
             let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
                 return;
@@ -147,7 +152,7 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                 .unwrap_or_default()
                 .to_owned();
             let display = format!("[{name}] {}", String::from_utf16_lossy(&text));
-            crate::app::shell_lan::append_chat(
+            crate::app::shell_lan::append_room_chat(
                 state,
                 crate::ui::lan_shell::LanChatLine {
                     text: display.encode_utf16().collect(),
@@ -748,8 +753,8 @@ pub(crate) fn commit_start(state: &mut AppState, agreed_seed: u32) {
     state.frontend.lan_rematch = match (dialog.wol() || !dialog.modern, dialog.host) {
         (true, _) => None,
         (false, true) => Some(crate::app::shell_lan::LanRematch::Host),
-        (false, false) => crate::app::lan_service::admitted_host_name(state)
-            .map(|host| crate::app::shell_lan::LanRematch::Guest { host }),
+        (false, false) => crate::app::lan_service::admitted_host_room(state)
+            .map(|(host, game_id)| crate::app::shell_lan::LanRematch::Guest { host, game_id }),
     };
     match state.match_state.session.freeze_network_start(agreed_seed) {
         Ok(startup) => {

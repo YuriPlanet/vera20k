@@ -64,6 +64,25 @@ pub(crate) fn update_geometry(state: &mut AppState) {
     let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
         return;
     };
+    // VERA's room's chat column changes width with the window: its rows
+    // wrap again to fit it.
+    let visible = layout
+        .chat_list(&ui.chat.list, ui.chat.lines.len())
+        .visible_rows;
+    ui.chat.rewrap(
+        crate::ui::lan_shell::chat_wrap_width(
+            layout.chat_log,
+            layout.page.scale,
+            layout.chat_text_scale(),
+        ),
+        visible,
+        |units| {
+            state
+                .renderer
+                .bit_font
+                .text_width(&String::from_utf16_lossy(units)) as i32
+        },
+    );
     ui.chat.list.reconcile_geometry_for_text(
         layout.chat_log,
         ui.chat.lines.len(),
@@ -525,6 +544,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                 TEAM_STARTS => Some(SetupAction::TeamStarts),
                 TEAM_COLORS => Some(SetupAction::TeamColors),
                 BALANCE => Some(SetupAction::Balance),
+                LOBBY => Some(SetupAction::Lobby),
                 MAP_OFFER_DOWNLOAD => Some(SetupAction::MapOffer { download: true }),
                 MAP_OFFER_LEAVE => Some(SetupAction::MapOffer { download: false }),
                 control if team_join_row(control).is_some() => Some(SetupAction::Join { control }),

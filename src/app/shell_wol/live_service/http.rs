@@ -267,6 +267,8 @@ pub(super) enum Response {
         /// A password sign-in with `remember`: what signs this computer in
         /// next time.
         sign_in_token: Option<String>,
+        /// The lobby offers `visit_lobby`.
+        lobby_visits: bool,
     },
     LoginFailed {
         attempt: u64,
@@ -364,6 +366,8 @@ enum RequestFailure {
     AlreadyFinished,
     /// 400 `invalid_options` ([`CommandFailure::InvalidOptions`]).
     InvalidOptions,
+    /// 409 `stale_revision` ([`CommandFailure::StaleRevision`]).
+    StaleRevision,
     /// 426 `upgrade_required` (docs/lobby-protocol.md), with the lobby's
     /// message when it is one short line of plain text.
     UpgradeRequired(Option<String>),
@@ -464,6 +468,10 @@ pub(super) enum CommandFailure {
     /// 400 `invalid_options`: the lobby cannot take the room's options, as
     /// one from before a field they carry (`launch.options.teams`) does.
     InvalidOptions,
+    /// 409 `stale_revision`: the room has moved on from the settings a
+    /// `ready`, `map_status` or `start` was for (they changed, or a player
+    /// came or went), or has none yet.
+    StaleRevision,
 }
 
 impl CommandFailure {
@@ -516,6 +524,7 @@ impl RequestFailure {
                 code: crate::app::shell_wol::lobby::WATCHERS_FULL,
             },
             Some("invalid_options") if status == 400 => Self::InvalidOptions,
+            Some("stale_revision") if status == 409 => Self::StaleRevision,
             Some("maintenance") if status == 503 => {
                 Self::Maintenance(plain_message(value.as_ref()))
             }
@@ -591,6 +600,7 @@ impl RequestFailure {
             }
             Self::ChannelRejected { code, .. } => CommandFailure::Rejected(*code),
             Self::InvalidOptions => CommandFailure::InvalidOptions,
+            Self::StaleRevision => CommandFailure::StaleRevision,
             _ if matches!(self.status(), 0 | 429 | 500..=599) => CommandFailure::Retryable,
             _ => CommandFailure::Rejected(0x8000_4005),
         }
@@ -599,7 +609,7 @@ impl RequestFailure {
     fn status(&self) -> u16 {
         match self {
             Self::Status(status) | Self::ChannelRejected { status, .. } => *status,
-            Self::LostCursor | Self::AlreadyFinished => 409,
+            Self::LostCursor | Self::AlreadyFinished | Self::StaleRevision => 409,
             Self::InvalidOptions => 400,
             Self::UpgradeRequired(_) => 426,
             Self::Maintenance(_) | Self::Full(_) => 503,
@@ -747,13 +757,17 @@ impl Client {
         let response = if let Some(body) = body {
             let mut request = self.agent.post(&url).header("User-Agent", USER_AGENT);
             if path == "/v1/sessions" {
-                // Its relay CONFIRM carries a federation roster, and it plays
-                // Quick Match; see docs/lobby-protocol.md.
-                // The operator's welcome, notice and maintenance message
-                // come in the player's language when the operator wrote it.
+                // Its relay CONFIRM carries a federation roster, it plays
+                // Quick Match, it takes over a room its host left, and it
+                // watches a match where only AI play and plays one the lobby
+                // has the relay order alone; see docs/lobby-protocol.md. The
+                // operator's welcome, notice and maintenance message come in
+                // the player's language when the operator wrote it.
                 request = request
                     .header("Vera-Relay-Federation", "1")
                     .header("Vera-Quick-Match", "1")
+                    .header("Vera-Host-Handover", "1")
+                    .header("Vera-Watch-AI", "1")
                     .header("Vera-Language", crate::i18n::selected_language());
             }
             if let Some(token) = &self.token {
@@ -1217,6 +1231,7 @@ macro_rules! serial_driver {
                                 player_id: session.player_id,
                                 nickname: session.nickname,
                                 motd: session.motd,
+                                lobby_visits: session.features.iter().any(|feature| feature == "visit_lobby"),
                                 sign_in_token: session
                                     .sign_in_token
                                     .filter(|_| matches!(credential, Credential::Password { remember: true, .. })),
@@ -1571,6 +1586,13 @@ mod tests {
         assert_eq!(
             left.command_failure("options"),
             CommandFailure::Rejected(0x8000_4005)
+        );
+        // Settings that moved on while a status for the older ones was on
+        // its way: the room says nothing and answers the newer ones.
+        let stale = RequestFailure::response(409, br#"{"error":{"code":"stale_revision"}}"#);
+        assert_eq!(
+            stale.command_failure("map_status"),
+            CommandFailure::StaleRevision
         );
     }
 
