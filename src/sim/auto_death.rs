@@ -13,9 +13,12 @@
 //! The `Vanish`/`Sell` behaviors dispatch from the same triggers through
 //! [`Simulation::self_death`] (`KillSelf` `:771-807`).
 //!
-//! Still open: `KillSelf`'s limbo arm (`:721-766`) and the scenario-level
-//! `AutoDeathObjects` collection. A type that authors only those keeps that
-//! chain's gap entry.
+//! A limboed object is reached by the scenario-level `AutoDeathObjects`
+//! collection instead of the live object walk (`Ext/Scenario/Body.cpp:101-134`,
+//! `293-301`): Ares' initial-payload admissions register it once
+//! (`Misc/Hooks.Ares.cpp:31-57`) and the collection sweeps it every frame, with
+//! `AllowLimboed` as the only way out. `KillSelf`'s limbo arm (`:721-766`) then
+//! registers the kill, uninits, and settles the transport it was riding.
 //!
 //! Never depends on render/ui/audio/net (sim invariant #1).
 
@@ -49,6 +52,8 @@ impl Simulation {
         // later, under a borrow that ends before any mutation.
         let (
             behavior,
+            allow_limboed,
+            in_limbo,
             after_delay,
             on_ammo_depletion,
             power_state,
@@ -62,14 +67,13 @@ impl Simulation {
             let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
                 return false;
             };
-            // `:147-153` asks `AllowLimboed` here; that key and `KillSelf`'s
-            // limbo arm are unported, so a limboed object never dies in VERA.
-            if entity.lifecycle.in_limbo() {
-                return false;
-            }
             let settings = &object.phobos_auto_death;
             (
                 settings.behavior,
+                settings
+                    .allow_limboed
+                    .unwrap_or(rules.phobos_globals.auto_death_allow_limboed),
+                entity.lifecycle.in_limbo(),
                 settings.after_delay,
                 settings.on_ammo_depletion,
                 settings.player_power_state,
@@ -78,12 +82,19 @@ impl Simulation {
                 entity.should_be_dead(),
             )
         };
+        // `:142-143`: the type key is tested before the limbo gate.
         let Some(behavior) = behavior else {
             return false;
         };
+        // `:147-153`: a limboed object is reached by the scenario-level
+        // `AutoDeathObjects` sweep, and survives the visit unless this type (or
+        // the `[CombatDamage]` global, which constructs `yes`) allows it.
+        if in_limbo && !allow_limboed {
+            return false;
+        }
         // `:159-163`: a flag another hook set kills the object on this visit.
         if should_be_dead {
-            return self.self_death(id, behavior, rules, registry, effects);
+            return self.self_death(id, behavior, in_limbo, rules, registry, effects);
         }
         // `:165-170`: a type with an `Ammo=` capacity dies at zero or below.
         if on_ammo_depletion {
@@ -99,7 +110,7 @@ impl Simulation {
                 )
             };
             if capacity > 0 && current <= 0 {
-                return self.self_death(id, behavior, rules, registry, effects);
+                return self.self_death(id, behavior, in_limbo, rules, registry, effects);
             }
         }
         // `:172-184`: the timed arm. Phobos tests `HasStarted()` before
@@ -107,7 +118,7 @@ impl Simulation {
         // reads as already completed.
         if after_delay > 0 {
             if self.auto_death_clock_expires(id, after_delay) {
-                return self.self_death(id, behavior, rules, registry, effects);
+                return self.self_death(id, behavior, in_limbo, rules, registry, effects);
             }
         }
         // `:210-221`: the low-power predicate. Phobos writes
@@ -132,7 +143,7 @@ impl Simulation {
             let dies = (power_state == AutoDeathPowerStatus::Full && !low_power)
                 || (power_state == AutoDeathPowerStatus::Low && low_power && !first_frame);
             if dies {
-                return self.self_death(id, behavior, rules, registry, effects);
+                return self.self_death(id, behavior, in_limbo, rules, registry, effects);
             }
         }
         // `:223-234`: `-1` on either bound means that bound is open.
@@ -146,7 +157,7 @@ impl Simulation {
                 .map_or(0, |house| house.economy().available_money());
             let (max, min) = (money_max, money_min);
             if (max == -1 || money <= max) && (min == -1 || money >= min) {
-                return self.self_death(id, behavior, rules, registry, effects);
+                return self.self_death(id, behavior, in_limbo, rules, registry, effects);
             }
         }
         let Some(owner) = self.substrate.entities.get(id).map(|entity| entity.owner()) else {
@@ -192,7 +203,7 @@ impl Simulation {
             }
         };
         if kill {
-            return self.self_death(id, behavior, rules, registry, effects);
+            return self.self_death(id, behavior, in_limbo, rules, registry, effects);
         }
         false
     }
@@ -427,24 +438,88 @@ impl Simulation {
         timer.expired(frame)
     }
 
-    /// `TechnoExt::KillSelf`'s non-limbo dispatch
-    /// (`Ext/Techno/Body.Update.cpp:769-824`) on the type's
-    /// `AutoDeath.Behavior`. Every trigger calls it and reports the visit as
-    /// handled, exactly as `CheckDeathConditions` returns true after any
-    /// `KillSelf`.
+    /// `TechnoExt::KillSelf`'s dispatch (`Ext/Techno/Body.Update.cpp:719-823`)
+    /// on the type's `AutoDeath.Behavior`. Every trigger calls it and reports
+    /// the visit as handled, exactly as `CheckDeathConditions` returns true
+    /// after any `KillSelf`. A limboed caller ignores the behavior: native
+    /// tests `isInLimbo` first and returns from that arm (`:721-766`), so
+    /// `kill`, `vanish` and `sell` all take the same limbo path there.
     fn self_death(
         &mut self,
         id: u64,
         behavior: AutoDeathBehavior,
+        in_limbo: bool,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
+        if in_limbo {
+            return self.kill_self_in_limbo(id, rules, registry, effects);
+        }
         match behavior {
             AutoDeathBehavior::Kill => self.kill_self(id, rules, registry, effects),
             AutoDeathBehavior::Vanish => self.vanish_self(id, rules, registry, effects),
             AutoDeathBehavior::Sell => self.sell_self(id, rules, registry, effects),
         }
+    }
+
+    /// `ScenarioExt::ExtData::RegisterAutoDeath` (`Ext/Scenario/Body.cpp:123-134`):
+    /// add the Techno to `AutoDeathObjects` when its type sets
+    /// `AutoDeath.Behavior=` and it is not already listed, in first-registration
+    /// order. Native reaches this only from the three Ares initial-payload
+    /// admissions (`Misc/Hooks.Ares.cpp:31-57`); ordinary boarding, a Chrono
+    /// limbo and a sell/repair limbo never register.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn register_auto_death(&mut self, id: u64, rules: &RuleSet) {
+        let keyed = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
+            .is_some_and(|object| object.phobos_auto_death.behavior.is_some());
+        if keyed && !self.auto_death_objects.contains(&id) {
+            self.auto_death_objects.push(id);
+        }
+    }
+
+    /// `ScenarioExt::ExtData::UpdateAutoDeathObjectsInLimbo`
+    /// (`Ext/Scenario/Body.cpp:101-110`, `DEFINE_HOOK(0x55B4E1,
+    /// LogicClass_Update_BeforeAll, 0x5)` at `:293-301`): visit each registered
+    /// Techno that is not in the live Logic vector but is still alive, with
+    /// `isInLimbo = true`. The collection is copied first because a visit may
+    /// uninit the object; dead or erased entries are dropped at the end, which
+    /// native reaches through the same erase that removes it from the vector.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn update_auto_death_objects_in_limbo(
+        &mut self,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        if self.auto_death_objects.is_empty() {
+            return;
+        }
+        let pending = std::mem::take(&mut self.auto_death_objects);
+        for &id in &pending {
+            // `!IsInLogic && IsAlive`: `Object+0x98` is the object's own
+            // membership byte, which `ObjectClass::Conceal`
+            // (`sim::world::lifecycle`) clears, and the visit itself may kill
+            // the object.
+            let visitable = self.substrate.entities.get(id).is_some_and(|entity| {
+                entity.lifecycle.object_alive() && !entity.in_logic_vector.is_member()
+            });
+            if visitable {
+                self.check_auto_death(id, rules, registry, effects);
+            }
+        }
+        let mut survivors = pending;
+        survivors.retain(|id| {
+            self.substrate
+                .entities
+                .get(*id)
+                .is_some_and(|entity| entity.lifecycle.object_alive())
+        });
+        std::mem::swap(&mut self.auto_death_objects, &mut survivors);
     }
 
     /// `TechnoExt::KillSelf`'s `Vanish` arm (`:771-790`): a random
@@ -563,8 +638,126 @@ impl Simulation {
         self.receive_own_health_c4(id, rules, registry, effects, false);
         true
     }
+
+    /// `TechnoExt::KillSelf`'s limbo arm (`Ext/Techno/Body.Update.cpp:721-766`),
+    /// in native order. A limboed object plays nothing, is never stunned, limboed
+    /// again or sold: the arm registers the kill under its own house, uninits,
+    /// and settles the transport it was riding. Reached from
+    /// [`Self::update_auto_death_objects_in_limbo`] and from any ordinary visit
+    /// that `AutoDeath.AllowLimboed` lets through.
+    fn kill_self_in_limbo(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        let context = UninitContext::new(rules, registry).with_effects(effects);
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return true;
+        };
+        let owner = entity.owner();
+        let category = entity.category();
+        let transport = entity.passenger_role.transporter();
+        // `Absorbed` is Techno `+0x439` (`set_infantry_absorber_entry`).
+        let absorbed = entity.house_tracking_latches().is_absorbed();
+        let type_ref = entity.type_ref();
+        let counts_tracking = entity.tracking_facts.counts_toward_limbo_tracking();
+        // `:723-728`: a parasite leaves its victim first, so the delete cannot
+        // strand the host linked to a gone rider. `ExitUnit 0x0062A4A0`.
+        if category != crate::map::entities::EntityCategory::Structure {
+            self.parasite_exit_unit(id, rules, effects);
+        }
+        // `:730-737`: a limboed Building is not truly in limbo, so its
+        // `AddToLimboTracking` entry leaves here — the same
+        // `RemoveFromLimboTracking` owner `sim::superweapon::limbo` uses for a
+        // delivered building. A `!Insignificant && !DontScore` type never
+        // entered the count in the first place.
+        if category == crate::map::entities::EntityCategory::Structure
+            && counts_tracking
+            && let Some(house) = self.houses.get_mut(&owner)
+        {
+            house
+                .tracking_mut()
+                .remove_limbo_delivered_tracking(category, type_ref);
+        }
+        // `:739-743`: an absorbed passenger's `ExtraPower=` leaves with it, so
+        // the building's owner reassesses power (House `+0x5778`).
+        if absorbed
+            && let Some(transport) = transport
+            && let Some(transport_owner) = self
+                .substrate
+                .entities
+                .get(transport)
+                .map(crate::sim::game_entity::GameEntity::owner)
+        {
+            Self::invalidate_house_power(
+                &self.houses,
+                &mut self.power_states,
+                transport_owner,
+                false,
+            );
+        }
+        // `:745-746`: `RegisterKill(pThis->Owner)` then `UnInit`. The owner is
+        // the source house, not an attacking Techno. UnInit drops the object
+        // from its transport's cargo (`ObjectClass::Detach_All`) and kills its
+        // own passengers, so the gunner step below reads the remaining cargo.
+        self.record_the_kill(
+            id,
+            KillSource::House(Some(owner)),
+            KillCallback::Terminal,
+            context,
+        );
+        self.uninit_with_context(id, context);
+        // `:749-763`: a `Gunner=` transport empties its gunner slot and hands it
+        // to the last remaining passenger — native walks the cargo list to its
+        // tail, unlike `Detonate.cpp`'s head. Both calls are the existing
+        // owners (`UnitClass` `+0x4D4`/`+0x4D8`), which keep their own
+        // Unit-only and `Gunner=` guards.
+        let Some(transport) = transport else {
+            return true;
+        };
+        let gunner_transport = self
+            .substrate
+            .entities
+            .get(transport)
+            .is_some_and(|entity| {
+                entity.category() != crate::map::entities::EntityCategory::Structure
+                    && self
+                        .interner
+                        .object_type(entity.type_ref(), rules)
+                        .is_some_and(|object| object.gunner)
+            });
+        if !gunner_transport {
+            return true;
+        }
+        self.remove_gunner(rules, transport, None);
+        let last = self
+            .substrate
+            .entities
+            .get(transport)
+            .and_then(|entity| entity.passenger_role.cargo())
+            .and_then(|cargo| cargo.passengers().last().copied());
+        if let Some(pax_id) = last {
+            crate::sim::passenger::receive_gunner(
+                &self.interner,
+                &self.session,
+                &mut self.scenario_rng,
+                &mut self.substrate,
+                &self.houses,
+                rules,
+                transport,
+                pax_id,
+            );
+        }
+        true
+    }
 }
 
 #[cfg(all(test, feature = "phobos"))]
 #[path = "auto_death_tests.rs"]
 mod tests;
+
+#[cfg(all(test, feature = "phobos"))]
+#[path = "auto_death_limbo_tests.rs"]
+mod limbo_tests;

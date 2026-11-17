@@ -382,7 +382,10 @@ impl InfantryTrackingLatches {
         self.counted_infantry_total
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    /// Techno `+0x439`, the native `Absorbed` byte: `Add_Tracking` skips its
+    /// total arm while it is set, and `InfantryAbsorb` entry/exit sets and
+    /// clears it.
+    #[cfg(any(test, feature = "test-support", feature = "phobos"))]
     pub(crate) fn is_absorbed(&self) -> bool {
         self.skip_infantry_total_on_add
     }

@@ -675,6 +675,14 @@ impl Simulation {
         // length delimiter distinguishes queue boundaries before the ordered
         // IDs are folded (duplicates are intentionally preserved here).
         self.substrate.pending_delete.hash_state(hasher);
+        // Phobos `ScenarioExt::AutoDeathObjects`: registered limboed AutoDeath
+        // objects, in registration order. Native saves the collection with the
+        // scenario; an empty one keeps earlier matches' hashes.
+        #[cfg(feature = "phobos")]
+        if !self.auto_death_objects.is_empty() {
+            b"phobos-auto-death-objects-v1".hash(hasher);
+            self.auto_death_objects.hash(hasher);
+        }
         self.load_objects.hash_state(hasher);
         // Path searches waiting for the next frame's batch.
         if let Some(batch) = &self.path_batch {
