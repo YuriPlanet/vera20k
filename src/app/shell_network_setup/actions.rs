@@ -748,8 +748,8 @@ pub(crate) fn commit_start(state: &mut AppState, agreed_seed: u32) {
     state.frontend.lan_rematch = match (dialog.wol() || !dialog.modern, dialog.host) {
         (true, _) => None,
         (false, true) => Some(crate::app::shell_lan::LanRematch::Host),
-        (false, false) => crate::app::lan_service::admitted_host_name(state)
-            .map(|host| crate::app::shell_lan::LanRematch::Guest { host }),
+        (false, false) => crate::app::lan_service::admitted_host_room(state)
+            .map(|(host, game_id)| crate::app::shell_lan::LanRematch::Guest { host, game_id }),
     };
     match state.match_state.session.freeze_network_start(agreed_seed) {
         Ok(startup) => {

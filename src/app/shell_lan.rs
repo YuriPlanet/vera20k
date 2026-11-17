@@ -30,12 +30,13 @@ const REJOIN_WINDOW: Duration = Duration::from_secs(120);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum LanRematch {
     Host,
-    Guest { host: String },
+    Guest { host: String, game_id: u64 },
 }
 
-/// A returning guest's host and how long it is watched for.
+/// The returning guest's original room, its display name and the wait deadline.
 struct Rejoin {
     host: String,
+    game_id: u64,
     until: Instant,
 }
 const RESERVED_LABELS: [&str; 7] = [
@@ -150,7 +151,7 @@ impl LanShellRuntime {
             .lobby
             .games
             .iter()
-            .find(|game| game.open && game.name.eq_ignore_ascii_case(&rejoin.host))
+            .find(|game| game.open && game.id == rejoin.game_id)
             .map(|game| game.id)
         else {
             return None;
@@ -263,11 +264,12 @@ impl App {
                     .lan_create_observer();
                 Self::commit_lan_create(state, observe);
             }
-            Some(LanRematch::Guest { host }) => {
+            Some(LanRematch::Guest { host, game_id }) => {
                 let text = crate::i18n::tr_fill("VERA:LanWaitingForHost", &[("host", &host)]);
                 if let Some(runtime) = state.frontend.lan.as_mut() {
                     runtime.rejoin = Some(Rejoin {
                         host,
+                        game_id,
                         until: Instant::now() + REJOIN_WINDOW,
                     });
                 }
@@ -1298,6 +1300,7 @@ mod tests {
         runtime.take_service_requests();
         runtime.rejoin = Some(Rejoin {
             host: "Host".into(),
+            game_id: 7,
             until: now + REJOIN_WINDOW,
         });
         let game = |id, name: &str, open| LanGameRow {
@@ -1307,10 +1310,12 @@ mod tests {
         };
         runtime
             .lobby
-            .replace_games(vec![game(8, "Other", true), game(7, "host", false)]);
+            .replace_games(vec![game(8, "Host", true), game(7, "host", false)]);
         assert_eq!(runtime.rejoin_host(false, now), None);
         assert_eq!(runtime.pending_game(), None);
-        runtime.lobby.replace_games(vec![game(7, "host", true)]);
+        runtime
+            .lobby
+            .replace_games(vec![game(8, "Host", true), game(7, "host", true)]);
         runtime.rejoin_host(true, now);
         assert_eq!(runtime.pending_game(), Some(7));
         assert!(matches!(
@@ -1325,6 +1330,7 @@ mod tests {
         let mut late = LanShellRuntime::new("Guest", false);
         late.rejoin = Some(Rejoin {
             host: "Host".into(),
+            game_id: 7,
             until: now,
         });
         late.lobby.replace_games(vec![game(7, "Host", true)]);
