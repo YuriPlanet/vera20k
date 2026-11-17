@@ -89,6 +89,13 @@ const RELAY_LEAVE_TICKS: u32 = (LEAVE_INTERVAL_MS / 16) as u32;
 const RELAY_PING_TICKS: u32 = (HOP_PING_INTERVAL_MS / 16) as u32;
 const RELAY_HANDSHAKE_TICKS: u32 = (HOP_HANDSHAKE_INTERVAL_MS / 16) as u32;
 const RELAY_READINESS_TICKS: u32 = (HOP_READINESS_TIMEOUT_MS / 16) as u32;
+// Whole buckets, so these ticks and the netsim's 16 ms bucket clock agree.
+const _: () = assert!(
+    LEAVE_INTERVAL_MS % 16 == 0
+        && HOP_PING_INTERVAL_MS % 16 == 0
+        && HOP_HANDSHAKE_INTERVAL_MS % 16 == 0
+        && HOP_READINESS_TIMEOUT_MS % 16 == 0
+);
 // The relay retires a started player it has not heard for `ABSENT_MS`
 // (`retire_absent`, services/relay-protocol/src/sequenced.rs), and drops a
 // lapsed ticket unanswered, so nothing tells a game that its place is gone.

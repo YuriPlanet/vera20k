@@ -1662,8 +1662,23 @@ fn j09_a_ping_ends_the_readers_offline_state() {
         .min_by_key(|r| r.arrived_us())
         .expect("a datagram after the outage");
     assert_eq!(first.kind(), "PING", "the scenario's first datagram back");
-    // As the relay's next pass, on a later whole millisecond, records it.
-    let pass = (first.arrived_us().unwrap() / 1000 + 1) * 1000;
+    // As the relay's next pass, on a later whole millisecond, records it,
+    // with no other datagram of the client before it.
+    let arrived = first.arrived_us().unwrap();
+    let pass = (arrived / 1000 + 1) * 1000;
+    let before_pass = trace
+        .of(1, Direction::Up)
+        .filter(|r| {
+            r.arrived_us()
+                .is_some_and(|at| (arrived..=pass).contains(&at))
+        })
+        .count();
+    assert_eq!(
+        before_pass,
+        1,
+        "only the PING reaches the relay by {} ms",
+        ms(pass)
+    );
     let reader = trace.reader_stats_at(1, pass).expect("reader stats");
     assert_ne!(reader.downlink, LinkState::Offline, "at {} ms", ms(pass));
 }
