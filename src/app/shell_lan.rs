@@ -195,7 +195,12 @@ impl App {
     /// The retained preference owner supplies the edit; admission stays empty.
     pub(crate) fn open_lan_lobby(state: &mut AppState) {
         crate::app::shell_main_menu::clear_typed_codes_for_network_session(state);
-        Self::prepare_multiplayer_settings(state);
+        if !Self::prepare_multiplayer_settings(
+            state,
+            crate::app::match_runtime::session::SessionMode::Lan,
+        ) {
+            return;
+        }
         if !Self::ensure_skirmish_shell_chrome(state) {
             return;
         }
@@ -402,10 +407,31 @@ pub(crate) fn append_chat_sent_at(state: &mut AppState, line: LanChatLine, sent_
     append_chat_to(state, setup, !setup && route.wol_lobby(), line, sent_at);
 }
 
+/// [`append_chat`] for a line of the game room's: VERA keeps a lobby
+/// visitor's room going hidden (docs/lobby-protocol.md "Visiting the lobby"),
+/// and the line goes to its transcript, not to the lobby page on screen.
+pub(crate) fn append_room_chat(state: &mut AppState, line: LanChatLine) {
+    append_room_chat_sent_at(state, line, None);
+}
+
+/// [`append_room_chat`] for a line the WOL service sent at `sent_at`.
+pub(crate) fn append_room_chat_sent_at(
+    state: &mut AppState,
+    line: LanChatLine,
+    sent_at: Option<u64>,
+) {
+    if crate::app::shell_wol::lobby::visiting(state) {
+        append_chat_to(state, true, false, line, sent_at);
+    } else {
+        append_chat_sent_at(state, line, sent_at);
+    }
+}
+
 /// The WOL lobby `0x113`'s transcript even while C2/C9 cover it: native
 /// keeps it in the shell stack, hidden, and its sinks still write to it.
-pub(crate) fn append_wol_lobby_chat(state: &mut AppState, line: LanChatLine) {
-    append_chat_to(state, false, true, line, None);
+/// `sent_at` as for [`append_chat_sent_at`].
+pub(crate) fn append_wol_lobby_chat(state: &mut AppState, line: LanChatLine, sent_at: Option<u64>) {
+    append_chat_to(state, false, true, line, sent_at);
 }
 
 fn append_chat_to(

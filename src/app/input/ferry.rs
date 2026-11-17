@@ -24,7 +24,7 @@
 //!
 //! A route is local input state: it is not saved, the computer does not use
 //! it, and it ends when its transport is lost, is stopped (the Stop key),
-//! gets a new ferry order or is found away from its route.
+//! gets a new ferry order, is found away from its route, or another match starts.
 
 use crate::app::AppState;
 use crate::app::input::commands::{

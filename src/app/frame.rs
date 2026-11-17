@@ -332,37 +332,18 @@ impl App {
             };
             if !live.has_terminal_network_error() {
                 let frame = session.binary_frame();
-                let frontier = live.committed_frontier();
-                let may_continue = if let Some(timing) = live.sequenced_timing().filter(|_| {
-                    !state.match_state.paused()
-                        && !state.focus_freeze_active()
-                        && !session.scenario_paused()
-                        && !state.match_state.match_diagnostics.is_replay_playback()
-                }) {
-                    let recovering = live
-                        .recovery_status(
-                            crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
-                            frame,
-                        )
-                        .is_some();
-                    state
-                        .platform
-                        .frame_pacer
-                        .online_frame_decision(
-                            Instant::now(),
-                            frame,
-                            frontier,
-                            timing,
-                            runtime.simulation.pending_network_wait(),
-                            recovering,
-                        )
-                        .admits()
-                } else {
-                    crate::app::match_runtime::frame_pacer::LocalFramePacer::admits_canonical_frame(
-                        frame, frontier,
-                    )
-                };
-                if !may_continue {
+                let inputs = crate::app::match_runtime::sim_tick::online_pacing_inputs(
+                    state,
+                    frame,
+                    crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+                );
+                if !state.platform.frame_pacer.admits_online_frame(
+                    Instant::now(),
+                    frame,
+                    live.committed_frontier(),
+                    inputs,
+                    runtime.simulation.pending_network_wait(),
+                ) {
                     break;
                 }
             }
@@ -714,24 +695,24 @@ impl App {
             return None;
         }
         let frame = sim.session().binary_frame();
-        if let Some(timing) = live.sequenced_timing() {
-            let recovering = live
-                .recovery_status(
-                    crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
-                    frame,
-                )
-                .is_some();
-            if !state.platform.frame_pacer.online_frame_due(
+        let frontier = live.committed_frontier();
+        if let Some((timing, recovering)) =
+            crate::app::match_runtime::sim_tick::online_pacing_inputs(
+                state,
+                frame,
+                crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+            )
+            && !state.platform.frame_pacer.online_frame_due(
                 Instant::now(),
                 frame,
-                live.committed_frontier(),
+                frontier,
                 timing,
                 recovering,
-            ) {
-                return None;
-            }
+            )
+        {
+            return None;
         }
-        (frame > 0).then_some((frame, live.committed_frontier()))
+        (frame > 0).then_some((frame, frontier))
     }
 
     /// Does a hidden window still have a running match to service? True while

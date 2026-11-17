@@ -287,10 +287,7 @@ impl PlanningState {
         for record in &self.pending_publication {
             let mut ordinary = record.clone();
             ordinary.payload_mut()[22] = 0;
-            if record.opcode() != 4
-                || record.payload()[22] != 2
-                || MegaMissionRecord::decode(&ordinary).is_none()
-            {
+            if !planning_dispatch_record(record) || MegaMissionRecord::decode(&ordinary).is_none() {
                 return Err("invalid pending planning order");
             }
         }
@@ -2014,6 +2011,13 @@ impl Simulation {
             );
         }
     }
+}
+
+/// A plan's dispatch: the node's MEGAMISSION copy with planning flag 2 that
+/// starting an actor's path (`0x006385C0`) stages and PlanMgr (`0x00637550`)
+/// adds straight to the client's own DoList. No client sends one.
+pub(super) fn planning_dispatch_record(record: &CommandRecord) -> bool {
+    record.opcode() == crate::sim::command::MEGAMISSION_OPCODE && record.payload()[22] == 2
 }
 
 fn valid_planning_record(record: &CommandRecord, actor: u64, flag: u8) -> bool {

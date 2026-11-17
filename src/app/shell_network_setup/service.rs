@@ -136,9 +136,11 @@ pub(crate) const HOST_LEFT_LABEL: &str = "VERA:HostLeftRoomClosed";
 
 pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> anyhow::Result<()> {
     // The route stays NetworkSetup until the match returns, but GO's handoff
-    // drops the setup protocol: later setup packets have no receiver.
+    // drops the setup protocol: later setup packets have no receiver. VERA:
+    // a lobby visitor's room goes on hidden behind the lobby page.
     anyhow::ensure!(
         (state.frontend.shell_route.network_setup()
+            || crate::app::shell_wol::lobby::visiting(state)
             || super::quick_match(state)
             || super::external(state))
             && state.frontend.network_setup_protocol.is_some(),
@@ -432,7 +434,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             // 0x5E3E73..0x5E3E90: a WOL parse drops every option text while
             // the game runs ([0xB77DC1]) or a StartGame is pending ([0xB77E28]).
             if dialog.wol()
-                && (crate::app::shell_wol::in_match(state) || super::wol::start_pending(state))
+                && (crate::app::shell_wol::in_match(state) || super::start_phase(state).submitted())
             {
                 return Ok(());
             }
@@ -629,7 +631,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             if !ready {
                 let text =
                     App::csf_label(state, "GUI:HostGameStartJoiner", "GUI:HostGameStartJoiner");
-                crate::app::shell_lan::append_chat(
+                crate::app::shell_lan::append_room_chat(
                     state,
                     LanChatLine {
                         text: text.encode_utf16().collect(),
@@ -766,7 +768,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             // not answered on top of it. WOL's pump takes it only while no
             // start is pending and shows 0x468 first, leaving 0x71F as it is
             // (0x00796710).
-            let wol_pending = dialog.wol() && super::wol::start_pending(state);
+            let wol_pending = dialog.wol() && super::start_phase(state).submitted();
             let protocol = state
                 .frontend
                 .network_setup_protocol
@@ -803,7 +805,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             // The 'C' arm (0x005E43CE) follows the parse's WOL drop of every
             // option text (0x005E3E73..0x005E3E90), as HostSetup does.
             if dialog.wol()
-                && (crate::app::shell_wol::in_match(state) || super::wol::start_pending(state))
+                && (crate::app::shell_wol::in_match(state) || super::start_phase(state).submitted())
             {
                 return Ok(());
             }
@@ -814,7 +816,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             // of 37 tokens commits nothing. A WOL parse drops it while the
             // game runs or a start is pending (0x005E3E73..0x005E3E90).
             if dialog.wol()
-                && (crate::app::shell_wol::in_match(state) || super::wol::start_pending(state))
+                && (crate::app::shell_wol::in_match(state) || super::start_phase(state).submitted())
             {
                 return Ok(());
             }
@@ -932,7 +934,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 shell_transition::ShellExitThen::NetworkSetupBack(dialog),
             );
         }
-        NetworkSetupEvent::Chat(line) => crate::app::shell_lan::append_chat(state, line),
+        NetworkSetupEvent::Chat(line) => crate::app::shell_lan::append_room_chat(state, line),
         NetworkSetupEvent::GameStarted { users, pings } => {
             super::wol::game_started(state, users, pings)?;
         }
@@ -1138,7 +1140,7 @@ fn tell_moved(state: &mut AppState, mode_changed: bool) {
         }
         (None, _) => return,
     };
-    crate::app::shell_lan::append_chat(
+    crate::app::shell_lan::append_room_chat(
         state,
         LanChatLine {
             text: text.encode_utf16().collect(),
@@ -1155,7 +1157,7 @@ pub(super) fn tell_room(state: &mut AppState, dialog: SetupDialog, key: &str, na
         return;
     }
     let text = crate::i18n::tr_fill(key, &[("name", &name)]);
-    crate::app::shell_lan::append_chat(
+    crate::app::shell_lan::append_room_chat(
         state,
         LanChatLine {
             text: text.encode_utf16().collect(),
@@ -1596,7 +1598,7 @@ fn apply_local_map_admission(
             &App::csf_label(state, key, key),
             &[crate::assets::csf_file::CsfArg::Str(map_name)],
         );
-        crate::app::shell_lan::append_chat(
+        crate::app::shell_lan::append_room_chat(
             state,
             LanChatLine {
                 text: text.encode_utf16().collect(),
@@ -1826,7 +1828,7 @@ fn auto_accept(state: &mut AppState) {
 /// player leaves or starts watching, or the host adds a seat or takes an AI
 /// out.
 fn seat_queue(state: &mut AppState) {
-    if super::wol::start_pending(state)
+    if super::start_phase(state).in_progress()
         || state
             .frontend
             .network_setup_protocol
@@ -1895,7 +1897,7 @@ fn point_out_briefing(state: &mut AppState) {
     {
         return;
     }
-    crate::app::shell_lan::append_chat(
+    crate::app::shell_lan::append_room_chat(
         state,
         LanChatLine {
             text: crate::i18n::tr(BRIEFING_HINT).encode_utf16().collect(),
