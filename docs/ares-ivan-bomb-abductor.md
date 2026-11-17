@@ -68,7 +68,8 @@ its target (0x71AAAC). It checks the type, the warhead's CanAffectHouse, the
 Iron Curtain, health and the hold (CanHoldPassenger 100448E0), stops and
 frees the target from its team, captor, captives, warp chain, spawns and
 slaves, plays the anim, may change its owner, takes it off the map and adds
-it to the hold.
+it to the hold. An allied abductee of an open-topped abductor boards as a rider,
+its orders reset to Guard (SetInOpenTransport 0x710470).
 
 ## Where VERA20K owns it
 
