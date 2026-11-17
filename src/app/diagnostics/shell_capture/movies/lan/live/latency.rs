@@ -837,9 +837,9 @@ impl LatencyCapture {
                 let frame = u32::try_from(self.executions[index].observed.record.frame_stamp()).ok()?;
                 self.command_delivery.values().rev().find(|trace| {
                     trace.assigned.is_some_and(|(assigned, _)| assigned == frame)
-                        && trace.sent_at.is_some_and(|sent| sent >= action.issue.instant)
+                        && trace.sent_at >= action.issue.instant
                 })
-            }).map(|trace| json!({"batch_id":trace.batch_id,"sent_ms":trace.sent_at.map(since_issue),
+            }).map(|trace| json!({"batch_id":trace.batch_id,"sent_ms":since_issue(trace.sent_at),
                 "assigned_frame":trace.assigned.map(|(frame,_)|frame),"assigned_ms":trace.assigned.map(|(_,at)|since_issue(at)),
                 "frame_received_ms":trace.frame_received_at.map(since_issue)}));
             let gpu = action.response.as_ref().and_then(|response| response.gpu_completed_at().map(|at| (at,response.frame)));
