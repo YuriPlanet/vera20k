@@ -172,9 +172,64 @@ pub fn build_sidebar_chrome_instances_for_layout(
                 // SIDE2's loaded canvas height. SIDE3 and ADDON follow the
                 // last actual tile.
                 let cx = layout.strip_x;
-                for row in 0..layout.side2_tile_count {
-                    let y = layout.cameo_grid_top + row as f32 * atlas.side2.pixel_size[1];
-                    push_chrome(&mut inst, atlas.side2, cx, y, d, camera_offset);
+                if spec.columns() <= 2 {
+                    for row in 0..layout.side2_tile_count {
+                        let y = layout.cameo_grid_top + row as f32 * atlas.side2.pixel_size[1];
+                        push_chrome(&mut inst, atlas.side2, cx, y, d, camera_offset);
+                    }
+                } else {
+                    // VERA's columns: SIDE2 paints the original's two button
+                    // frames, so a row of three to five repeats one of them
+                    // per cell, scaled with the cameo it holds, instead of
+                    // stretching the painted pair out of shape. The panel's
+                    // own edges keep their width, so the border runs unbroken
+                    // down the strip.
+                    let art = atlas.side2.pixel_size;
+                    let row_h = spec.cameo_row_height.max(1.0);
+                    let inset = spec.cameo_inset_x;
+                    let pitch = spec.cameo_column_pitch.max(1.0);
+                    let cell = spec
+                        .cameo_cell_source_width
+                        .min((art[0] - inset).max(1.0))
+                        .max(1.0);
+                    let rail = (art[0] - inset - 2.0 * cell).max(0.0);
+                    let cell_art = atlas.side2.columns(inset, cell);
+                    let left_edge = atlas.side2.columns(0.0, inset);
+                    let right_edge = atlas.side2.columns(art[0] - rail, rail);
+                    for row in 0..layout.side2_tile_count {
+                        let y = layout.cameo_grid_top + row as f32 * row_h;
+                        for col in 0..spec.columns() {
+                            push_chrome_sized(
+                                &mut inst,
+                                cell_art,
+                                cx + inset + col as f32 * pitch,
+                                y,
+                                [pitch, row_h],
+                                d,
+                                camera_offset,
+                            );
+                        }
+                        push_chrome_sized(
+                            &mut inst,
+                            left_edge,
+                            cx,
+                            y,
+                            [inset, row_h],
+                            d,
+                            camera_offset,
+                        );
+                        if rail > 0.0 {
+                            push_chrome_sized(
+                                &mut inst,
+                                right_edge,
+                                cx + art[0] - rail,
+                                y,
+                                [rail, row_h],
+                                d,
+                                camera_offset,
+                            );
+                        }
+                    }
                 }
                 push_chrome(&mut inst, atlas.side3, cx, layout.side3_y, d, camera_offset);
                 if let Some(addon) = atlas.unknown_top_housing {
@@ -310,7 +365,6 @@ fn push_chrome_sized(
 // ---------------------------------------------------------------------------
 // Cameo icon instances
 // ---------------------------------------------------------------------------
-
 /// Horizontal padding around the ready text (each side, in native pixels).
 pub(crate) const READY_PAD_X: f32 = 2.0;
 /// Vertical padding around the ready text (each side, in native pixels).

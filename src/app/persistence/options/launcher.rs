@@ -10,7 +10,8 @@ use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::ui::main_menu_dialogs::options::{
     ColorVisionMode, DisplayTarget, HealthBarMode, LauncherCue, LauncherOptionsEvent,
     LauncherOptionsLabels, LauncherOptionsPacked, LauncherOptionsValues, LauncherParentResult,
-    OptionsDialogState, SidebarSize, Zoom, admitted_initial_position, admitted_volume_position,
+    OptionsDialogState, SidebarColumns, SidebarSize, Zoom, admitted_initial_position,
+    admitted_volume_position,
 };
 
 /// Project the retained signed profile into the fresh native-shaped controls.
@@ -58,6 +59,7 @@ pub(crate) fn launcher_values_from_profile(
         detailed_eva_text: profile.detailed_eva_text,
         compact_super_timers: profile.compact_super_timers,
         sidebar: profile.sidebar,
+        sidebar_columns: profile.sidebar_columns,
         health_bars: profile.health_bars,
         color_vision: profile.color_vision,
         // The slider's position is the stored level less the retail strength,
@@ -108,6 +110,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn play_cue(&mut self, cue: LauncherCue);
     fn store_zoom(&mut self, zoom: Zoom);
     fn store_sidebar(&mut self, size: SidebarSize);
+    /// The `[VERA] SidebarColumns=` list's pick; presentation only.
+    fn store_sidebar_columns(&mut self, columns: SidebarColumns);
     /// The `[VERA] HealthBars=` list's pick; presentation only.
     fn store_health_bars(&mut self, mode: HealthBarMode);
     /// The `[VERA] ColorVisionMode=` list's pick; presentation only, read by
@@ -178,6 +182,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::Cue(cue) => operations.play_cue(cue),
         LauncherOptionsEvent::ZoomSelected(zoom) => operations.store_zoom(zoom),
         LauncherOptionsEvent::SidebarSelected(size) => operations.store_sidebar(size),
+        LauncherOptionsEvent::SidebarColumnsSelected(columns) => {
+            operations.store_sidebar_columns(columns)
+        }
         LauncherOptionsEvent::HealthBarModeSelected(mode) => operations.store_health_bars(mode),
         LauncherOptionsEvent::ColorVisionModeSelected(mode) => operations.store_color_vision(mode),
         LauncherOptionsEvent::DisplaySelected(display) => operations.set_display(display),

@@ -181,6 +181,15 @@ pub(crate) fn sidebar_layout_spec(state: &AppState) -> crate::ui::sidebar::Sideb
     if let Some(layout) = side_layout(state).filter(|_| !map_picture) {
         layout.apply_to_sidebar(&mut spec);
     }
+    // VERA's own: the player's cameo columns, laid inside the width the
+    // layout leaves. After the layout, so the player's choice draws; a
+    // capture keeps the original's two so its pictures stay reproducible.
+    let columns = if state.platform.capture_client_size.is_some() {
+        2
+    } else {
+        state.persistence.options_profile.sidebar_columns.count()
+    };
+    spec.apply_player_columns(columns);
     spec
 }
 

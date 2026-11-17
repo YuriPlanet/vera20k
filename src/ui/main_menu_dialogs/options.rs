@@ -60,6 +60,9 @@ pub(crate) const ZOOM_LABEL: &str = "VERA:Zoom";
 pub(crate) const ZOOM_HELP: &str = "VERA:ZoomHelp";
 pub(crate) const SIDEBAR_LABEL: &str = "VERA:Sidebar";
 pub(crate) const SIDEBAR_HELP: &str = "VERA:SidebarHelp";
+/// VERA's cameo column count, 2 to 5, laid inside the sidebar's own width.
+pub(crate) const SIDEBAR_COLUMNS_LABEL: &str = "VERA:SidebarColumns";
+pub(crate) const SIDEBAR_COLUMNS_HELP: &str = "VERA:SidebarColumnsHelp";
 pub(crate) const FULL_SCREEN_LABEL: &str = "VERA:FullScreen";
 pub(crate) const FULL_SCREEN_HELP: &str = "VERA:FullScreenHelp";
 pub(crate) const ORIGINAL_SHAPE_LABEL: &str = "VERA:OriginalShape";
@@ -347,6 +350,68 @@ impl SidebarSize {
     }
 }
 
+/// VERA's `[VERA] SidebarColumns=`: how many build pictures a sidebar row
+/// holds.
+///
+/// 2 is gamemd's own (GetVisibleSlotCount `0x006AC430` counts `2 * rows`).
+/// 3 to 5 share the span the original's two columns take between smaller
+/// cells, so the sidebar keeps its width and only its inside changes.
+/// Presentation only: it never reaches simulation state or the rules online
+/// players compare.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum SidebarColumns {
+    #[default]
+    Two,
+    Three,
+    Four,
+    Five,
+}
+
+impl SidebarColumns {
+    /// The list's rows, top to bottom; the first is the default.
+    const ALL: [Self; 4] = [Self::Two, Self::Three, Self::Four, Self::Five];
+
+    /// The row's text.
+    pub(crate) fn label(self) -> String {
+        crate::i18n::tr(match self {
+            Self::Two => "VERA:SidebarColumnsTwo",
+            Self::Three => "VERA:SidebarColumnsThree",
+            Self::Four => "VERA:SidebarColumnsFour",
+            Self::Five => "VERA:SidebarColumnsFive",
+        })
+    }
+
+    /// The list's rows, top to bottom.
+    pub(crate) fn choices() -> Vec<Self> {
+        Self::ALL.to_vec()
+    }
+
+    /// The columns the grid lays.
+    pub(crate) const fn count(self) -> usize {
+        match self {
+            Self::Two => 2,
+            Self::Three => 3,
+            Self::Four => 4,
+            Self::Five => 5,
+        }
+    }
+
+    /// The `[VERA] SidebarColumns` value.
+    pub(crate) const fn ini_value(self) -> i32 {
+        self.count() as i32
+    }
+
+    /// A value this build does not know reads as the original's two.
+    pub(crate) const fn from_ini_value(value: i32) -> Self {
+        match value {
+            3 => Self::Three,
+            4 => Self::Four,
+            5 => Self::Five,
+            _ => Self::Two,
+        }
+    }
+}
+
 /// VERA's `[VERA] HealthBars=` health-strip policy: which objects draw a
 /// health strip.
 ///
@@ -561,6 +626,8 @@ impl DisplayTarget {
 pub(crate) enum LauncherComboId {
     Zoom,
     Sidebar,
+    /// The `[VERA] SidebarColumns=` list: 2 to 5 cameos a row.
+    SidebarColumns,
     Display,
     /// The `[VERA] HealthBars=` list.
     HealthBars,
@@ -822,6 +889,8 @@ pub(crate) enum LauncherOptionsEvent {
     Cue(LauncherCue),
     ZoomSelected(Zoom),
     SidebarSelected(SidebarSize),
+    /// The Sidebar Columns list's pick, applied at once like Sidebar.
+    SidebarColumnsSelected(SidebarColumns),
     /// The Health Bars list's pick, applied at once like Sidebar.
     HealthBarModeSelected(HealthBarMode),
     /// The Colour Vision list's pick, applied to the very next frame.
@@ -936,6 +1005,8 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) compact_super_timers: bool,
     /// The Sidebar list's choice; like Zoom, it applies at once.
     pub(crate) sidebar: SidebarSize,
+    /// The Sidebar Columns list's choice; it applies at once too.
+    pub(crate) sidebar_columns: SidebarColumns,
     /// The Health Bars list's choice; like Sidebar, it applies at once.
     pub(crate) health_bars: HealthBarMode,
     /// The Colour Vision list's choice; reads every frame, so it applies at
@@ -987,6 +1058,7 @@ impl Default for LauncherOptionsValues {
             detailed_eva_text: false,
             compact_super_timers: false,
             sidebar: SidebarSize::Normal,
+            sidebar_columns: SidebarColumns::Two,
             health_bars: HealthBarMode::Vanilla,
             color_vision: ColorVisionMode::Off,
             house_color_position: 0,
@@ -1612,6 +1684,14 @@ impl OptionsDialogState {
             .push(LauncherOptionsEvent::SidebarSelected(size));
     }
 
+    /// The Sidebar Columns list publishes its pick at once too.
+    pub(crate) fn select_sidebar_columns(&mut self, columns: SidebarColumns) {
+        self.values.sidebar_columns = columns;
+        self.open_combo = None;
+        self.pending_events
+            .push(LauncherOptionsEvent::SidebarColumnsSelected(columns));
+    }
+
     /// The Health Bars list publishes its pick at once too.
     pub(crate) fn select_health_bars(&mut self, mode: HealthBarMode) {
         self.values.health_bars = mode;
@@ -1778,6 +1858,7 @@ impl Category {
             Self::Interface if !HAS_HD_MAP_PREVIEWS => &[
                 Setting::List(List::Language),
                 Setting::List(List::Sidebar),
+                Setting::List(List::SidebarColumns),
                 Setting::List(List::HealthBars),
                 Setting::Checkbox(Check::Tooltips),
                 Setting::Checkbox(Check::CompactSuperTimers),
@@ -1790,6 +1871,7 @@ impl Category {
             Self::Interface => &[
                 Setting::List(List::Language),
                 Setting::List(List::Sidebar),
+                Setting::List(List::SidebarColumns),
                 Setting::List(List::HealthBars),
                 Setting::Checkbox(Check::Tooltips),
                 Setting::Checkbox(Check::CompactSuperTimers),
@@ -1865,6 +1947,7 @@ impl Category {
                 Setting::List(List::Zoom),
                 Setting::List(List::Display),
                 Setting::List(List::Sidebar),
+                Setting::List(List::SidebarColumns),
                 Setting::List(List::ColorVision),
                 Setting::List(List::Language),
                 Setting::Checkbox(Check::FullScreen),
@@ -1878,6 +1961,7 @@ impl Category {
                 Setting::List(List::Zoom),
                 Setting::List(List::Display),
                 Setting::List(List::Sidebar),
+                Setting::List(List::SidebarColumns),
                 Setting::List(List::ColorVision),
                 Setting::List(List::Language),
                 Setting::Checkbox(Check::FullScreen),
@@ -2490,6 +2574,7 @@ mod tests {
         let every: Vec<Setting> = [
             List::Zoom,
             List::Sidebar,
+            List::SidebarColumns,
             List::Display,
             List::HealthBars,
             List::ColorVision,
