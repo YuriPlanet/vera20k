@@ -5138,3 +5138,70 @@ fn a_removed_player_the_relay_stops_hearing_is_not_named() {
     assert!(live.remove_peer(1));
     assert!(silent(&mut live, 0b10).is_empty());
 }
+
+/// A relay that lost a running match's configuration (NotConfigured) stops its
+/// clock until it is configured again, but the match did start: a player lost
+/// meanwhile leaves a running match, not a start.
+#[test]
+fn a_running_match_its_relay_lost_is_not_startup_pending() {
+    use vera20k_relay_protocol::{OrderError, OrderEvent, OrderStatus};
+
+    let (_, _, _, boundaries, _, _) = sequenced_pair();
+    let mut live = boundaries[0].live.borrow_mut();
+    assert!(live.startup_pending());
+    live.transport
+        .push_ordering_received_for_test(OrderEvent::Status(OrderStatus {
+            head_frame: 0,
+            oldest_seq: 1,
+            next_seq: 1,
+            active_sources: 3,
+            tick_hz: 30,
+            start_delay_ms: 0,
+            started: true,
+            feedback: Default::default(),
+            watch_sample: None,
+            silent_sources: 0,
+        }));
+    live.service_transport(1);
+    assert!(!live.startup_pending());
+    live.transport
+        .push_ordering_received_for_test(OrderEvent::Error {
+            code: OrderError::NotConfigured,
+            expected: 0,
+        });
+    live.service_transport(2);
+    assert!(live.awaiting_initial_barrier(), "the relay's clock stopped");
+    assert!(!live.startup_pending());
+}
+
+/// The session that ends a match keeps it ended: poll reports the error once,
+/// and the session still reads as failed after it.
+#[test]
+fn a_reported_relay_failure_stays_with_its_session() {
+    use vera20k_relay_protocol::{OrderError, OrderEvent};
+
+    let (mut worlds, _, _, boundaries, _, _) = sequenced_pair();
+    let mut live = boundaries[0].live.borrow_mut();
+    live.transport
+        .push_ordering_received_for_test(OrderEvent::Error {
+            code: OrderError::HistoryGap,
+            expected: 0,
+        });
+    let mut queues = worlds[0].network_command_queues();
+    let context = NetworkQueueContext {
+        frame: 0,
+        checksum: 0,
+    };
+    let reported = live.poll(&mut queues, context, 10, 1, 16, 0, 30);
+    assert!(matches!(
+        reported,
+        Err(LiveCommandError::Sequenced(SequencedError::HistoryExpired))
+    ));
+    assert!(live.sequenced.as_ref().unwrap().failed());
+    let again = live.poll(&mut queues, context, 10, 2, 32, 0, 30);
+    assert!(matches!(again, Err(LiveCommandError::Failed)));
+    assert_eq!(
+        live.delivery_counters().unwrap().failure,
+        Some("history_expired")
+    );
+}
