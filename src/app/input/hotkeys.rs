@@ -22,17 +22,19 @@ const VK_DELETE: u16 = 0x2e;
 /// VERA's own commands that come with a key: Performance Stats Ctrl+Alt+F,
 /// Thread Stats Ctrl+Alt+G, Lock
 /// Cursor to Window Ctrl+Alt+L, Full Screen Alt+Enter, String Keys Ctrl+Alt+K,
-/// Edit Layout Ctrl+Alt+E, Formation Line F, Formation Lock O, Ferry J and
+/// Edit Layout Ctrl+Alt+E, Super Weapon Building Timers Ctrl+Alt+T, Formation
+/// Line F, Formation Lock O, Ferry J and
 /// Rotate Primary I.
 /// Retail `KEYBOARDMD.INI` binds none of these keys but F, which is its
 /// Follow; [`HotkeyBindings::move_follow_off_formation_key`] moves that.
-const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 11] = [
+const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 12] = [
     (HotkeyCommand::PerformanceStats, CTRL_BIT | ALT_BIT | 0x46),
     (HotkeyCommand::ThreadStats, CTRL_BIT | ALT_BIT | 0x47),
     (HotkeyCommand::LockCursor, CTRL_BIT | ALT_BIT | 0x4c),
     (HotkeyCommand::FullScreen, ALT_BIT | 0x0d),
     (HotkeyCommand::StringKeys, CTRL_BIT | ALT_BIT | 0x4b),
     (HotkeyCommand::LayoutEdit, CTRL_BIT | ALT_BIT | 0x45),
+    (HotkeyCommand::SuperweaponTimers, CTRL_BIT | ALT_BIT | 0x54),
     (HotkeyCommand::FormationLine, FORMATION_LINE_KEY),
     (HotkeyCommand::FormationLock, 0x4f),
     (HotkeyCommand::Ferry, 0x4a),
@@ -117,6 +119,11 @@ pub(crate) enum HotkeyCommand {
     /// drags the interface's parts (`input::layout_edit`). It comes with a
     /// default key like the four above but works in a match only.
     LayoutEdit,
+    /// In a match: show or hide the Super Weapon Building Timers, every
+    /// provider building's own Super countdown above it
+    /// (`presentation::ui_overlays`). In the `vera20k` keyboard category with
+    /// the Ctrl+Alt+T default.
+    SuperweaponTimers,
     /// Held while a left drag draws a formation line, or with Shift a
     /// block (`input::formation_line`). In the `vera20k` keyboard category
     /// with the F default.
@@ -990,9 +997,9 @@ mod tests {
             writeln!(ini, "{}={key}", row["ini_name"].as_str().unwrap()).unwrap();
         }
         let loaded = HotkeyBindings::reload_from_ini_bytes(Some(ini.as_bytes()));
-        // The 87 retail rows, plus VERA's seven default keys above 0x256 and
+        // The 87 retail rows, plus VERA's eight default keys above 0x256 and
         // the two Formation keys, Ferry's J and Rotate Primary's I below 0x200.
-        assert_eq!(loaded.by_key.len(), 98);
+        assert_eq!(loaded.by_key.len(), 99);
         for (index, metadata) in catalog::retail_commands().iter().enumerate() {
             assert_eq!(
                 loaded.command_at(0x200 + index as u16),
@@ -1000,7 +1007,7 @@ mod tests {
             );
         }
         let saved = loaded.to_ini_string();
-        ini.push_str("FullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nThreadStats=1607\nStringKeys=1611\nLockCursor=1612\n");
+        ini.push_str("FullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nThreadStats=1607\nStringKeys=1611\nLockCursor=1612\nSuperweaponTimers=1620\n");
         let ini = ini.replacen(
             "[Hotkey]\n",
             "[Hotkey]\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\n",
@@ -1133,9 +1140,9 @@ mod tests {
         assert_eq!(startup.first_key(HotkeyCommand::Delete), Some(46));
         let serialized = startup.to_ini_string();
         #[cfg(feature = "verax")]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nThreadStats=1607\nStringKeys=1611\nLockCursor=1612\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nThreadStats=1607\nStringKeys=1611\nLockCursor=1612\nSuperweaponTimers=1620\n";
         #[cfg(not(feature = "verax"))]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\nStopObject=83\nFullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nThreadStats=1607\nStringKeys=1611\nLockCursor=1612\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\nStopObject=83\nFullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nThreadStats=1607\nStringKeys=1611\nLockCursor=1612\nSuperweaponTimers=1620\n";
         assert_eq!(serialized, expected);
         let mut reloaded = HotkeyBindings::reload_from_ini_bytes(Some(serialized.as_bytes()));
         assert_eq!(reloaded.command_at(46), None);

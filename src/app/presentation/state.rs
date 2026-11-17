@@ -85,6 +85,12 @@ pub(crate) struct MatchPresentationState {
     /// Presentation only — never simulation input, so it cannot affect
     /// determinism, networking, or replays.
     pub(crate) relation_colors: bool,
+    /// VERA's Super Weapon Building Timers: draw each provider building's
+    /// Super countdown above it. Started from `[VERA]
+    /// SuperweaponBuildingTimers=` when a scenario loads and flipped in a
+    /// match by its hotkey command. Presentation only — every consumer is a
+    /// draw, so it cannot affect determinism, networking, or replays.
+    pub(crate) superweapon_building_timers: bool,
     /// Owner name → effective house-colour index under the relation-colours
     /// toggle ([`relation_house_colors`]). `None` while the toggle is off or
     /// there is no local house, so colour sites use `house_color_map`.

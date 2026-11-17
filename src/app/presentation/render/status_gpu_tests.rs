@@ -1044,6 +1044,8 @@ fn native_building_status_labels(fixture: &'static str) {
                 1.0,
                 clip.map(|value| value as i32),
                 rules,
+                // The native comparison draws gamemd's labels only.
+                false,
             );
             assert_eq!(
                 labels.runs.len(),

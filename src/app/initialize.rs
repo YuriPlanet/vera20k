@@ -1168,6 +1168,7 @@ impl App {
                     house_color_map: HashMap::new(),
                     house_roster: HouseRoster::default(),
                     relation_colors: false,
+                    superweapon_building_timers: false,
                     relation_color_map: None,
                     relation_color_generation: 0,
                     lighting: Default::default(),
