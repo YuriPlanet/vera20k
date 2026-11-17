@@ -3144,6 +3144,79 @@ fn base_normal_false_structures_do_not_extend_build_area() {
     assert!(placed, "the yard's own area admits the same building");
 }
 
+/// Two same-house providers around the previewed cell `(12,10)`: a GAPOWR the
+/// rows vary and a yard far away that only supplies the house's producer.
+/// `provider_in_construction` writes the GAPOWR's live mission.
+#[cfg(feature = "phobos")]
+fn buildup_provider_sim(rules: &RuleSet, provider_in_construction: bool) -> Simulation {
+    let mut sim = placement_sim();
+    spawn_structure(&mut sim, rules, 1, "Americans", "GAPOWR", 10, 10);
+    spawn_structure(&mut sim, rules, 2, "Americans", "GACNST", 50, 50);
+    for provider in [1, 2] {
+        sim.remove_entity_occupancy(provider);
+        stamp_type_foundation(&mut sim, rules, provider);
+        assert!(sim.mark_entity_put(
+            provider,
+            crate::sim::world::UninitContext::with_rules(rules)
+        ));
+    }
+    ready_building(&mut sim, rules, "Americans", "GAPOWR");
+    if provider_in_construction {
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .expect("the spawned provider")
+            .mission
+            .set_current_for_test(
+                crate::sim::mission::MissionId::from_known(MissionType::Construction),
+                0,
+            );
+    }
+    sim
+}
+
+/// Phobos `NoBuildAreaOnBuildup=` (`Ext/BuildingType/Body.cpp:233`, hook
+/// `0x4A8FD7` in `Ext/BuildingType/Hooks.cpp:245`): a provider still in its
+/// construction mission extends no build area, and the flag is what matters —
+/// the mission alone does not skip an unkeyed provider.
+#[cfg(feature = "phobos")]
+#[test]
+fn no_build_area_on_buildup_provider_is_ignored_only_while_building() {
+    let rules = super::tests::placement_radius_rules_with("NoBuildAreaOnBuildup=yes\n");
+
+    let mut building_sim = buildup_provider_sim(&rules, true);
+    let preview = preview_at(&building_sim, &rules, "Americans", "GAPOWR", (12, 10), None);
+    assert_eq!(preview.reason, Some(BuildingPlacementError::OutOfBuildArea));
+    let placed = place_building(
+        &mut building_sim,
+        &rules,
+        "Americans",
+        "GAPOWR",
+        (12, 10),
+        None,
+    );
+    assert!(!placed);
+
+    // The same keyed provider, idle, extends the area. A fresh Simulation
+    // keeps the row above's mission write from leaking into this one.
+    let mut idle_sim = buildup_provider_sim(&rules, false);
+    let placed = place_building(&mut idle_sim, &rules, "Americans", "GAPOWR", (12, 10), None);
+    assert!(placed, "an idle provider still extends the area");
+
+    // Without the key a provider in Construction still extends the area.
+    let stock = placement_radius_rules();
+    let mut unkeyed_sim = buildup_provider_sim(&stock, true);
+    let placed = place_building(
+        &mut unkeyed_sim,
+        &stock,
+        "Americans",
+        "GAPOWR",
+        (12, 10),
+        None,
+    );
+    assert!(placed, "the mission alone does not skip a provider");
+}
+
 /// BuildOffAlly lends an allied structure's build area only while the game
 /// option is on and the structure is `EligibileForAllyBuilding=`.
 #[test]

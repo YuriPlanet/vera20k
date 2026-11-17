@@ -13,6 +13,7 @@ fn adjacent_defaults_keep_every_provider() {
     assert!(set.allowed.is_empty() && set.disallowed.is_empty());
     assert!(!set.prohibit);
     assert_eq!(set.prohibit_distance, 0);
+    assert!(!set.no_build_area_on_buildup);
     assert!(set.permits_provider("ANY"));
     assert!(!set.disallows("ANY"));
 }
@@ -22,12 +23,14 @@ fn adjacent_reads_lists_prohibit_and_distance() {
     let set = read(
         "[PLACER]\nAdjacent.Allowed=GAPOWR,GAREFN\nAdjacent.Disallowed=GAPOWR\n\
          Adjacent.Disallowed.Prohibit=yes\n\
-         Adjacent.Disallowed.ProhibitDistance=4\n",
+         Adjacent.Disallowed.ProhibitDistance=4\n\
+         NoBuildAreaOnBuildup=yes\n",
     );
     assert_eq!(set.allowed, ["GAPOWR", "GAREFN"]);
     assert_eq!(set.disallowed, ["GAPOWR"]);
     assert!(set.prohibit);
     assert_eq!(set.prohibit_distance, 4);
+    assert!(set.no_build_area_on_buildup);
     assert!(set.permits_provider("GAREFN"));
     assert!(!set.permits_provider("GAPILE"));
     assert!(set.disallows("gapowr"));
