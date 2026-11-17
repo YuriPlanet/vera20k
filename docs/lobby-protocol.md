@@ -701,7 +701,8 @@ value, `quick_coop:true` for a Quick Co-op room (a paired room with tournament 0
 game, and a WatchGrant. It fails with 409 `unknown_match` when the caller may not watch that match,
 409 `match_active` while the caller plays one, and 409 `watchers_full` when the match has
 its 10 watchers. `match_active` also refuses `create`, `join` and `logout` while the caller
-plays, and a room's commands once its game started; games say why only for `watch`.
+plays, and a room's commands once its game started. Of the room and match commands, games say
+why only for `watch`; account deletion refuses with it too and shows its message ([Accounts](#accounts)).
 Watching the same match again, as after the game restarted, keeps the watcher's place. An account is always the same watcher of a match on a relay, its
 identity there an HMAC of the match and the player under the relay's ticket key, so a
 newer watch ticket replaces the relay session it had rather than taking another place.
@@ -806,6 +807,8 @@ password. Every request below is a `POST` with a JSON body; a refusal's
   owner; anyone may then take the name. Records of its ranked games stay 90 days for
   disputes, and no profile names it. A wrong password counts as at `/v1/sessions` (403
   `wrong_password`, the lock), and a name without an account returns 404 `no_account`.
+  It refuses with 409 `match_active` while its player is in a match or a ranked game of
+  theirs has not ended for every player.
 
 At `/v1/sessions` an account's name needs its `password` or a `sign_in_token`, never
 both: with neither it returns 403 `name_claimed`, with a wrong one 403 `wrong_password`,
