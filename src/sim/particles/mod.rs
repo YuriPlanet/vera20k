@@ -50,7 +50,7 @@ mod native_fixture;
 #[cfg(all(test, tests_sim_p_s))]
 mod native_identity_tests;
 // Ares simulates this Railgun system itself (hooks 0x62DF05, 0x62FD60).
-#[cfg(all(test, tests_sim_p_s, not(feature = "ares")))]
+#[cfg(all(test, tests_sim_p_s))]
 mod railgun_native_tests;
 #[cfg(all(test, tests_sim_p_s))]
 mod virus_tests;

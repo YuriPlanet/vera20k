@@ -4,8 +4,8 @@
 //! two arms, chosen once per load by whether the INI already holds a section
 //! (`0x00525A8E`):
 //! - the fresh arm builds each section object and links it once the section
-//!   ends (`0x005261F7`): [`load_fresh`], which is `IniFile::from_str` in an
-//!   Ares build;
+//!   ends (`0x005261F7`): [`load_fresh`], which is `IniFile::from_str` in a
+//!   game read the Ares way;
 //! - the merge arm (`0x00525BFA`) writes every entry through
 //!   `INIClass::PutString` (`0x00528660`). `ReadCCFile` takes it for each
 //!   Ares `[#include]` or Phobos `$Include` file, which loads into the INI that

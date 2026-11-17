@@ -3388,7 +3388,6 @@ fn sonic_wave_test_rules(range: u8) -> RuleSet {
     .expect("Sonic Wave fixture")
 }
 
-#[cfg(not(feature = "ares"))]
 fn sonic_tail_order_test_rules() -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n0=DLPH\n1=LATER\n2=TARGET\n\n\
@@ -3996,7 +3995,6 @@ fn guard_infantry_acquire_return_fire_and_finish_a_duel() {
 }
 
 // Ares WaveClass_Update damages before the update; see the ares_wave tests.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn sonic_fire_registers_immediately_but_later_techno_fires_before_wave_tail_ai() {
     let rules = sonic_tail_order_test_rules();
@@ -4149,7 +4147,6 @@ fn sonic_fire_registers_immediately_but_later_techno_fires_before_wave_tail_ai()
 }
 
 // Ares WaveClass_Update damages before the update; see the ares_wave tests.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn sonic_cell_fire_wave_damage_selects_level_two_bridge_plane() {
     // Range6 cannot reach this six-cell horizontal separation plus the
@@ -8258,10 +8255,6 @@ fn repro_second_vehicle_ordered_onto_an_occupied_cell() {
 /// readers (the blocker plane, the kept Ground keys and the expiry listener
 /// index) re-read every object named, so when each walk borrowed every
 /// entity, a 20k-object world was re-read almost whole every frame.
-// A build that still carries Ares behind its feature sleeps nothing
-// (`Simulation::extension_steps_unsorted`), so this runs once that
-// feature is gone.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn idle_objects_stay_out_of_the_touch_logs() {
     use crate::sim::entity_store::TouchReader;
@@ -9742,7 +9735,6 @@ fn a_captured_war_factory_takes_its_contact_along() {
 /// VoxelAnim ctor `0x00749864..0x007498BD` builds the type's AttachedSystem
 /// at the input location, owned by the anim; Smoke `0x0062ED49..0x0062EDB5`
 /// then follows that non-Building Object owner plus the constructor's offset.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn voxel_anim_builds_its_attached_system_and_smoke_follows_the_anim() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -9792,7 +9784,6 @@ fn voxel_anim_builds_its_attached_system_and_smoke_follows_the_anim() {
 
 /// A live DEBRIS VoxelAnim whose type names a Smoke `AttachedSystem=`, built
 /// through the constructor: the world, its rules, the anim and its system.
-#[cfg(not(feature = "ares"))]
 fn voxel_anim_with_attached_smoke() -> (Simulation, RuleSet, u64, u64) {
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[Particles]\n0=Smk\n[ParticleSystems]\n0=Sys\n[VoxelAnims]\n0=DEBRIS\n\
@@ -9825,7 +9816,6 @@ fn voxel_anim_with_attached_smoke() -> (Simulation, RuleSet, u64, u64) {
 /// The anim's expiry (`0x00749A11`) takes the generic arm of
 /// `DispatchPointerExpiredCleanup @ 0x007258D0` (`0x00725925`), so its
 /// system's PointerExpired (`0x0062FE90`) drops the owner and stops spawning.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn a_dying_voxel_anim_ends_its_attached_system() {
     let (mut sim, rules, id, system) = voxel_anim_with_attached_smoke();
@@ -9837,7 +9827,6 @@ fn a_dying_voxel_anim_ends_its_attached_system() {
 
 /// A save holding a live anim's AttachedSystem loads: the system's owner is
 /// in the VoxelAnim store, which Smoke's owner lookup resolves.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn a_voxel_anims_attached_system_survives_a_save() {
     let (sim, _rules, id, system) = voxel_anim_with_attached_smoke();

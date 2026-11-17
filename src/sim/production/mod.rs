@@ -122,7 +122,7 @@ mod industrial_plant_retail_tests;
 
 // Ares 3.0 10014390 (hook 0x446E9F) gives a non-harvester FreeUnit
 // Area_Guard instead (`production_placement_tests`).
-#[cfg(all(test, tests_sim_production, not(feature = "ares")))]
+#[cfg(all(test, tests_sim_production))]
 mod free_unit_harvest_retail_tests;
 
 #[cfg(all(test, tests_sim_production))]

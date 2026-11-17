@@ -25,7 +25,7 @@ global, while an empty, `none` or invalid value leaves it to `[General]`.
   shield takes a positive hit after its `ReceivedDamage` clamps and the warhead
   allows it, before the native receiver body runs. A hit the shield fully
   absorbs still surfaces the owner; a heal never does.
-- With `ares,phobos`, Ares's aftermath at `0x00702819` skips the native uncloak
+- When Ares plays in a `phobos` build, Ares's aftermath at `0x00702819` skips the native uncloak
   for a hit that leaves the object unaffected, so a fully absorbed hit
   surfaces the owner only through the shield.
 

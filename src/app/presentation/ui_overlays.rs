@@ -48,10 +48,8 @@ struct StructureHud {
     /// Its stamped foundation, `type_facts.foundation().dimensions_leptons()`.
     foundation_leptons: [i32; 2],
     /// `GameEntity::ares_toggled_off`.
-    #[cfg(feature = "ares")]
     toggled_off: bool,
     /// `GameEntity::shows_production_to` the local player.
-    #[cfg(feature = "ares")]
     shows_production_to_observer: bool,
 }
 
@@ -92,26 +90,22 @@ struct HudBomb {
     seen_by_observer: bool,
     /// `Simulation::bomb_clock_frame`; stock GetClockFrame reads no frame
     /// count.
-    #[cfg(not(feature = "ares"))]
     clock_frame: Option<i32>,
     /// `Simulation::bomb_clock`, which the Ares frame asks with its image's
     /// frame count.
-    #[cfg(feature = "ares")]
     clock: Option<crate::sim::bomb::BombClock>,
     /// `Simulation::bomb_images`.
-    #[cfg(feature = "ares")]
     images: Vec<String>,
 }
 
 impl HudBomb {
     /// `Simulation::bomb_clock_frame` at `binary_frame`, the captured one,
-    /// over an image of `frames` frames.
-    fn clock_frame(&self, binary_frame: i32, frames: usize) -> Option<i32> {
-        #[cfg(feature = "ares")]
-        return self.clock?.frame(binary_frame, frames);
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = (binary_frame, frames);
+    /// over an image of `frames` frames. `ares_form` is the game's
+    /// `RuleSet::ares_form`, which `Simulation::bomb_clock_frame` reads.
+    fn clock_frame(&self, binary_frame: i32, frames: usize, ares_form: bool) -> Option<i32> {
+        if ares_form {
+            self.clock?.frame(binary_frame, frames)
+        } else {
             self.clock_frame
         }
     }
@@ -145,9 +139,7 @@ impl HudFacts {
                 )
             }),
             foundation_leptons: entity.type_facts.foundation().dimensions_leptons(),
-            #[cfg(feature = "ares")]
             toggled_off: entity.ares_toggled_off(),
-            #[cfg(feature = "ares")]
             shows_production_to_observer: at
                 .observer_id
                 .is_some_and(|viewer| entity.shows_production_to(viewer)),
@@ -164,11 +156,8 @@ impl HudFacts {
                 seen_by_observer: at
                     .observer_id
                     .is_some_and(|viewer| sim.bomb_seen_by(id, viewer)),
-                #[cfg(not(feature = "ares"))]
                 clock_frame: sim.bomb_clock_frame(id, rules, 0),
-                #[cfg(feature = "ares")]
                 clock: sim.bomb_clock(id, rules),
-                #[cfg(feature = "ares")]
                 images: sim.bomb_images(id, rules).to_vec(),
             }),
             #[cfg(feature = "phobos")]
@@ -255,13 +244,11 @@ impl HudFacts {
         self.more().map_or(&[], |more| &more.super_charges)
     }
 
-    #[cfg(feature = "ares")]
     fn toggled_off(&self) -> bool {
         self.structure
             .is_some_and(|structure| structure.toggled_off)
     }
 
-    #[cfg(feature = "ares")]
     fn shows_production_to_observer(&self) -> bool {
         self.structure
             .is_some_and(|structure| structure.shows_production_to_observer)
@@ -373,14 +360,16 @@ fn health_strip_widened(
 /// or discovery+41B. Hover already passed ProcessClickCoords' projected query.
 /// Reuse the body admission owner for lifecycle/cloak instead of adding another
 /// fog interpretation here. Native dispatch controls: health_hover.json.
+/// `ares` is the game's `RuleSet::ares` ([`health_strip_visibility`]).
 pub(crate) fn health_bar_drawable(
     sim: &crate::sim::world::Simulation,
     entity: &ObjectRecord,
     hovered_id: Option<u64>,
     local_owner: Option<&str>,
+    ares: bool,
 ) -> bool {
     let player = local_owner.and_then(|owner| sim.interner().get(owner));
-    health_bar_drawable_for(sim, entity, hovered_id, player)
+    health_bar_drawable_for(sim, entity, hovered_id, player, ares)
 }
 
 /// [`health_bar_drawable`] for the local player's interned id `player`.
@@ -389,8 +378,9 @@ fn health_bar_drawable_for(
     entity: &ObjectRecord,
     hovered_id: Option<u64>,
     player: Option<crate::sim::intern::InternedId>,
+    ares: bool,
 ) -> bool {
-    let (_, draw_pips) = health_strip_visibility(sim, entity, hovered_id, player, false);
+    let (_, draw_pips) = health_strip_visibility(sim, entity, hovered_id, player, false, ares);
     draw_pips && admitted_techno_observer(sim, entity, player).is_some()
 }
 
@@ -398,28 +388,34 @@ fn health_bar_drawable_for(
 /// unselected object disguised to the player with no house behind it draws no
 /// bar (`0x006F5E37..0x006F5E87`: +C8, then +D0(1) NULL), as for an enemy
 /// Mirage worn as terrain. `widened` ([`health_strip_widened`]) counts as
-/// hovered, so VERA's modes cannot give that Mirage away either.
+/// hovered, so VERA's modes cannot give that Mirage away either. `ares` is
+/// the game's `RuleSet::ares`.
 fn health_strip_visibility(
     sim: &crate::sim::world::Simulation,
     entity: &ObjectRecord,
     hovered_id: Option<u64>,
     player: Option<crate::sim::intern::InternedId>,
     widened: bool,
+    ares: bool,
 ) -> (bool, bool) {
     let selected = entity.selection.is_selected();
     // Ares TechnoClass_DrawExtras_Submerged10048350 (hook6F5388) also
     // treats an object below the surface (IsSurfaced5F6C10: GetHeight >
-    // -20) whose cell the player senses as selected here.
-    #[cfg(feature = "ares")]
-    let selected = selected
-        || (entity.category() != crate::map::entities::EntityCategory::Aircraft
-            && entity.place.flight_height <= -20
-            && player.is_some_and(|player| {
-                sim.fog()
-                    .has_sensor_for_house(player, entity.position.rx(), entity.position.ry())
-            }));
-    #[cfg(not(feature = "ares"))]
-    let _ = sim;
+    // -20) whose cell the player senses as selected here, when Ares plays.
+    let selected = if ares {
+        selected
+            || (entity.category() != crate::map::entities::EntityCategory::Aircraft
+                && entity.place.flight_height <= -20
+                && player.is_some_and(|player| {
+                    sim.fog().has_sensor_for_house(
+                        player,
+                        entity.position.rx(),
+                        entity.position.ry(),
+                    )
+                }))
+    } else {
+        selected
+    };
     // `player` is the frame's local player, whom `seen` answers for.
     let hovered = (widened || hovered_id == Some(entity.stable_id()))
         && (selected || !(player.is_some() && entity.seen.disguise_hides_house));
@@ -529,7 +525,13 @@ fn entity_status_pips_drawable(
     let Some(current_house_id) = current_house_id else {
         return false;
     };
-    if !health_bar_drawable_for(sim, entity, hovered_entity_id, Some(current_house_id)) {
+    if !health_bar_drawable_for(
+        sim,
+        entity,
+        hovered_entity_id,
+        Some(current_house_id),
+        rules.is_some_and(RuleSet::ares),
+    ) {
         return false;
     }
     let building_type = (entity.category() == EntityCategory::Structure)
@@ -928,6 +930,7 @@ pub(crate) fn build_building_status_render_instances(
 ) -> BuildingStatusTextInstances {
     let mut labels = BuildingStatusTextInstances::default();
     let current_house = sim.interner().resolve(current_house_id);
+    let ares_form = rules.ares_form();
     // `current_house_id` is the frame's local player, whom its records answer
     // for, and whose view decides the allies' labels' colour. The sweep is
     // BuildingClass::Array (every retained building, in stable-id order), not
@@ -974,7 +977,7 @@ pub(crate) fn build_building_status_render_instances(
         // also hovered.
         let label = (entity.selection.is_selected()
             && body_opportunities.contains(&entity.stable_id()))
-        .then(|| building_status_text(entity, object, allied, primary))
+        .then(|| building_status_text(entity, object, allied, primary, ares_form))
         .flatten();
         if label.is_none() && lines.is_empty() {
             continue;
@@ -1064,10 +1067,9 @@ pub(crate) fn build_building_status_render_instances(
                     ],
                 ))
             }
-            #[cfg(feature = "ares")]
+            // Fake and Money arise only when `ares_form` holds (above).
             BuildingStatusText::Fake => csf.text("TXT_FAKE"),
             // Ares 10015F10: the owner's Available_Money (IHouse +0x18).
-            #[cfg(feature = "ares")]
             BuildingStatusText::Money => Cow::Owned(format_csf(
                 &csf.text("TXT_MONEY_FORMAT_1"),
                 &[CsfArg::Int(i64::from(
@@ -1127,46 +1129,44 @@ fn rect_overlaps(a: [i32; 4], b: [i32; 4]) -> bool {
 /// `entity_status_pips_drawable`). 70AA88..70AAA4 admits the positive type
 /// Power arm only when the primary latch is clear; 70ABEA then tests that
 /// latch for PRIMARY.
+/// Ares 3.0 10015AB0 (hook 0x0043E7B0) also admits a building whose
+/// `SpyEffect.RevealProduction` spy bit the current house holds
+/// (`sim::spy_infiltration::DisplayProductionTo`); its DrawExtraInfo
+/// 10015F10 (hook 0x0070AA60) puts the Power arm first, shows a
+/// `Storage=` building's money to a house not allied to its owner,
+/// and PRIMARY only to an allied one. A `Fake=` type's TXT_FAKE
+/// (10015F10's first test, `TypeExt+0x5F`) replaces all three.
+/// These follow `ares_form`, as the spy bit and `Fake=` do.
+/// RESIDUAL: Ares' observer arms are not ported; an observer sees
+/// what the house it watches sees.
 fn building_status_text(
-    #[cfg_attr(not(feature = "ares"), allow(unused_variables))] entity: &ObjectRecord,
+    entity: &ObjectRecord,
     object: &crate::rules::object_type::ObjectType,
     allied: bool,
     primary: bool,
+    ares_form: bool,
 ) -> Option<BuildingStatusText> {
-    #[cfg(not(feature = "ares"))]
-    {
-        match (allied, primary, object.power > 0) {
+    if !ares_form {
+        return match (allied, primary, object.power > 0) {
             (false, _, _) | (true, false, false) => None,
             (true, true, _) => Some(BuildingStatusText::Primary),
             (true, false, true) => Some(BuildingStatusText::Power),
-        }
+        };
     }
-    // Ares 3.0 10015AB0 (hook 0x0043E7B0) also admits a building whose
-    // `SpyEffect.RevealProduction` spy bit the current house holds
-    // (`sim::spy_infiltration::DisplayProductionTo`); its DrawExtraInfo
-    // 10015F10 (hook 0x0070AA60) puts the Power arm first, shows a
-    // `Storage=` building's money to a house not allied to its owner,
-    // and PRIMARY only to an allied one. A `Fake=` type's TXT_FAKE
-    // (10015F10's first test, `TypeExt+0x5F`) replaces all three.
-    // RESIDUAL: Ares' observer arms are not ported; an observer sees
-    // what the house it watches sees.
-    #[cfg(feature = "ares")]
-    {
-        let revealed = object.spy_reveals_production() && entity.hud.shows_production_to_observer();
-        if !(allied || revealed) {
-            return None;
-        }
-        if object.ares_fake() {
-            Some(BuildingStatusText::Fake)
-        } else if object.power > 0 {
-            Some(BuildingStatusText::Power)
-        } else if object.storage > 0 && !allied {
-            Some(BuildingStatusText::Money)
-        } else if primary && allied {
-            Some(BuildingStatusText::Primary)
-        } else {
-            None
-        }
+    let revealed = object.spy_reveals_production() && entity.hud.shows_production_to_observer();
+    if !(allied || revealed) {
+        return None;
+    }
+    if object.ares_fake() {
+        Some(BuildingStatusText::Fake)
+    } else if object.power > 0 {
+        Some(BuildingStatusText::Power)
+    } else if object.storage > 0 && !allied {
+        Some(BuildingStatusText::Money)
+    } else if primary && allied {
+        Some(BuildingStatusText::Primary)
+    } else {
+        None
     }
 }
 
@@ -1176,10 +1176,8 @@ enum BuildingStatusText {
     Primary,
     Power,
     /// Ares' money arm (`TXT_MONEY_FORMAT_1`).
-    #[cfg(feature = "ares")]
     Money,
     /// Ares' `Fake=` arm (`TXT_FAKE`).
-    #[cfg(feature = "ares")]
     Fake,
 }
 
@@ -1306,7 +1304,6 @@ pub(crate) fn self_heal_pip(
 /// (`TechnoClass::DrawExtras 0x006F52D8..0x006F532B`): a cycle of
 /// `SpeedNormalize(14) / 4` frames (at least 2) spread over frames 0..=6,
 /// both signed IDIVs.
-#[cfg_attr(feature = "ares", allow(dead_code))]
 fn repair_wrench_frame(frame: i32, options: &crate::sim::game_options::GameOptions) -> i32 {
     let cycle = (options.speed_normalize(14) / 4).max(2);
     frame % cycle * 6 / (cycle - 1)
@@ -1346,8 +1343,8 @@ pub(crate) struct TechnoExtras {
     ///6F5253..5345: WRENCH/MOUSEPAL N1 prefix, before rank and Building lines.
     pub wrench: Option<SpriteInstance>,
     /// Ares 10049FE0 (hook 0x6F526C): the POWEROFF/MOUSEPAL marker drawn
-    /// after the wrench, with the same material.
-    #[cfg(feature = "ares")]
+    /// after the wrench, with the same material; `None` unless the Rules
+    /// were read the Ares way.
     pub power_off: Option<SpriteInstance>,
     pub rank: Option<SpriteInstance>,
     pub background: Option<SpriteInstance>,
@@ -1699,29 +1696,32 @@ fn phobos_insignia_draw<'a>(
 /// a building warping out (+0x270, +0x271) and shows it to a player not
 /// allied with the owner only while the building is uncloaked and
 /// `[General] EnemyWrench=` holds; an observer (no viewer) sees it. The
-/// hook's power-off marker is [`power_off_marker_admitted`].
+/// hook's power-off marker is [`power_off_marker_admitted`]. The hook runs
+/// when the Rules were read the Ares way (`RuleSet::ares_form`), which
+/// `EnemyWrench=` and the power toggle's marker state need.
 fn repair_wrench_admitted(
     sim: &crate::sim::world::Simulation,
     entity: &ObjectRecord,
     rules: Option<&RuleSet>,
     local_owner: Option<&str>,
 ) -> bool {
+    let ares_form = rules.is_some_and(RuleSet::ares_form);
     let repairing = entity.category() == EntityCategory::Structure && entity.repairing.is_on();
-    #[cfg(feature = "ares")]
-    let repairing = repairing
-        && !entity.is_warped_out()
-        && !entity.is_warping_in()
-        && (local_owner
-            .and_then(|name| sim.interner().get(name))
-            .is_none_or(|viewer| {
-                sim.house_alliances()
-                    .is_allied(sim.interner(), viewer, entity.owner())
-            })
-            || (entity.cloak.as_ref().is_none_or(|cloak| cloak.state() == 0)
-                && rules.is_none_or(RuleSet::ares_enemy_wrench)));
-    #[cfg(not(feature = "ares"))]
-    let _ = (sim, rules, local_owner);
-    repairing
+    if ares_form {
+        repairing
+            && !entity.is_warped_out()
+            && !entity.is_warping_in()
+            && (local_owner
+                .and_then(|name| sim.interner().get(name))
+                .is_none_or(|viewer| {
+                    sim.house_alliances()
+                        .is_allied(sim.interner(), viewer, entity.owner())
+                })
+                || (entity.cloak.as_ref().is_none_or(|cloak| cloak.state() == 0)
+                    && rules.is_none_or(RuleSet::ares_enemy_wrench)))
+    } else {
+        repairing
+    }
 }
 
 /// Ares TechnoClass_DrawExtras_PowerOff (10049FE0, hook 0x6F526C): the
@@ -1729,7 +1729,6 @@ fn repair_wrench_admitted(
 /// off (BuildingExt `TogglePower_HasPower` +0x51, written by GoOffline
 /// `0x452393` and GoOnline `0x452287`), shown when its owner is the player's
 /// (HouseClass::IsHumanPlayer `0x50B6F0`) or the player is an observer.
-#[cfg(feature = "ares")]
 fn power_off_marker_admitted(sim: &crate::sim::world::Simulation, entity: &ObjectRecord) -> bool {
     let session = sim.session();
     entity.category() == EntityCategory::Structure
@@ -1743,7 +1742,6 @@ fn power_off_marker_admitted(sim: &crate::sim::world::Simulation, entity: &Objec
 /// The Ares hook's frame for both markers (10049FE0): the shape's own frame
 /// count spread over a cycle of `SpeedNormalize(14) / 4` frames (at least
 /// 2), where the stock wrench spreads frames 0..=6 over the cycle less one.
-#[cfg(feature = "ares")]
 fn ares_status_marker_frame(
     frame: i32,
     options: &crate::sim::game_options::GameOptions,
@@ -1786,6 +1784,12 @@ pub(crate) fn techno_extras_for_parent(
     if entity.sinking.is_active() || entity.passenger_role.is_inside_transport() {
         return strip;
     }
+    // The bomb clock, the 10049FE0 markers and the firestorm wall's bar
+    // follow `RuleSet::ares_form`, as `Simulation::bomb_clock_frame`, the
+    // power toggle and BuildingTypeExt do; the submerged strip follows
+    // `RuleSet::ares`.
+    let ares_form = rules.is_some_and(RuleSet::ares_form);
+    let ares = rules.is_some_and(RuleSet::ares);
     let local_owner_id = local_owner.and_then(|name| sim.interner().get(name));
     //6F519B..524E clock and6F5253..5345 wrench precede observer/selection
     // admission. Both use the existing per-parent MOUSEPAL N1 material; the
@@ -1797,14 +1801,19 @@ pub(crate) fn techno_extras_for_parent(
     });
     let repairing = repair_wrench_admitted(sim, entity, rules, local_owner);
     // Ares 10049FE0 replaces the wrench block (hook 0x6F526C, resuming at
-    // 0x6F5347): each marker needs its loaded SHP, and the power-off marker
-    // joins the wrench behind the same shroud test.
-    #[cfg(feature = "ares")]
-    let repairing = repairing && overlay.repair_wrench().is_some();
-    #[cfg(feature = "ares")]
-    let power_off = overlay.power_off().is_some() && power_off_marker_admitted(sim, entity);
-    #[cfg(not(feature = "ares"))]
-    let power_off = false;
+    // 0x6F5347) when the Rules were read the Ares way: each marker needs its
+    // loaded SHP, and the power-off marker joins the wrench behind the same
+    // shroud test.
+    let repairing = if ares_form {
+        repairing && overlay.repair_wrench().is_some()
+    } else {
+        repairing
+    };
+    let power_off = if ares_form {
+        overlay.power_off().is_some() && power_off_marker_admitted(sim, entity)
+    } else {
+        false
+    };
     if (bomb_visible || repairing || power_off)
         && (viewport.ignore_visibility
             || local_owner_id
@@ -1856,15 +1865,19 @@ pub(crate) fn techno_extras_for_parent(
         // Ares hook 0x6F523C (10056CC0) draws the bomb weapon's
         // `IvanBomb.Image` in place of BOMBCURS.SHP, and hook 0x438A00
         // (100568C0) counts the frame over that image.
-        #[cfg(feature = "ares")]
-        let images = bomb.map_or(&[][..], |bomb| &bomb.images[..]);
-        #[cfg(not(feature = "ares"))]
-        let images: &[String] = &[];
+        let images: &[String] = if ares_form {
+            bomb.map_or(&[][..], |bomb| &bomb.images[..])
+        } else {
+            &[]
+        };
         if bomb_visible
             && rules.is_some()
             && let (Some(bomb), Some(shape)) = (bomb, overlay.bomb_image(images))
-            && let Some(frame) =
-                bomb.clock_frame(sim.session().binary_frame() as i32, shape.frame_count())
+            && let Some(frame) = bomb.clock_frame(
+                sim.session().binary_frame() as i32,
+                shape.frame_count(),
+                ares_form,
+            )
             && let Ok(frame) = usize::try_from(frame)
         {
             strip.bomb_clock = prefix(shape, frame, 0.0);
@@ -1872,10 +1885,11 @@ pub(crate) fn techno_extras_for_parent(
         let binary_frame = sim.session().binary_frame() as i32;
         let options = sim.session().game_options();
         if repairing && let Some(shape) = overlay.repair_wrench() {
-            #[cfg(feature = "ares")]
-            let frame = ares_status_marker_frame(binary_frame, options, shape.frame_count());
-            #[cfg(not(feature = "ares"))]
-            let frame = repair_wrench_frame(binary_frame, options);
+            let frame = if ares_form {
+                ares_status_marker_frame(binary_frame, options, shape.frame_count())
+            } else {
+                repair_wrench_frame(binary_frame, options)
+            };
             // With a power-off marker shown, 10049FE0 moves the wrench 7
             // pixels up and left.
             let shift = if power_off { -7.0 } else { 0.0 };
@@ -1885,8 +1899,8 @@ pub(crate) fn techno_extras_for_parent(
         }
         // 10049FE0 draws the marker after the wrench, 18 pixels down and
         // right of the point when the wrench shows.
-        #[cfg(feature = "ares")]
-        if power_off
+        if ares_form
+            && power_off
             && let Some(shape) = overlay.power_off()
             && let Ok(frame) = usize::try_from(ares_status_marker_frame(
                 binary_frame,
@@ -1988,7 +2002,7 @@ pub(crate) fn techno_extras_for_parent(
         viewport.ignore_visibility,
     );
     let (draw_background, draw_health) =
-        health_strip_visibility(sim, entity, hovered_id, observer_id, widened);
+        health_strip_visibility(sim, entity, hovered_id, observer_id, widened, ares);
     if !draw_health {
         return strip;
     }
@@ -2008,8 +2022,7 @@ pub(crate) fn techno_extras_for_parent(
         };
         // Ares TechnoClass_DrawHealthBar_FirestormWall (100150D0, hook
         // 0x6F64CB): a `Firestorm.Wall` section draws no bar (0x6F6832).
-        #[cfg(feature = "ares")]
-        if object.ares_firestorm_wall() {
+        if ares_form && object.ares_firestorm_wall() {
             return strip;
         }
         let geometry = BuildingBarGeometry::new(rules, object);
@@ -2336,8 +2349,8 @@ pub(crate) fn scale_pip_draws<'a>(
     rules: &RuleSet,
 ) -> &'a [ScalePipDraw] {
     // Ares6F6A58 ->1004A260 skips mobile scale pips to6F6AB6. The health
-    // strip itself still draws; it has a separate admission path.
-    #[cfg(feature = "ares")]
+    // strip itself still draws; it has a separate admission path. Runs in
+    // every game: only Ares code (when `RuleSet::ares`) kills a driver.
     if entity.driver_killed() {
         return &[];
     }
@@ -2751,9 +2764,9 @@ mod tests {
     /// Ares TechnoClass_DrawExtras_PowerOff (10049FE0, hook 0x6F526C): the
     /// owner sees its repairing building's wrench, an enemy only with
     /// `EnemyWrench=yes` (the default).
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_enemy_wrench_gates_the_enemys_repair_wrench() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::ruleset::RuleSet;
         let shown = |general: &str| {
             let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&format!(
@@ -2782,9 +2795,9 @@ mod tests {
     /// player sees the power-off marker over its own building after the
     /// power toggle switches it off, not over the computer's switched-off
     /// one, and no longer once its building is back on.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_power_off_marker_follows_the_players_toggle() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::ruleset::RuleSet;
         use crate::sim::command::Command;
         let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
@@ -2949,6 +2962,7 @@ mod tests {
                 frame_of(&sim).object(1).unwrap(),
                 None,
                 Some("Viewer"),
+                false,
             ),
             "enemy health strip has independent admission"
         );
@@ -3066,6 +3080,7 @@ mod tests {
                         frame_of(&sim).object(1).unwrap(),
                         hovered,
                         Some("Player"),
+                        false,
                     ),
                     expected,
                     "{} {category:?}",
@@ -3084,6 +3099,7 @@ mod tests {
                         frame_of(&sim).object(1).unwrap(),
                         hovered,
                         Some("Player"),
+                        false,
                     ));
                 }
                 compared += 1;
@@ -3144,6 +3160,7 @@ mod tests {
                 frame_of(&sim).object(1).unwrap(),
                 Some(1),
                 Some("Player"),
+                false,
             )
         };
         assert!(!drawable(EntityCategory::Unit, false, false));
@@ -3154,9 +3171,9 @@ mod tests {
 
     /// Ares TechnoClass_DrawExtras_Submerged10048350 (hook6F5388): a
     /// subterranean enemy the player senses shows its strip unselected.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_a_sensed_subterranean_object_draws_its_strip() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::sim::{combat::Health, game_entity::GameEntity, world::Simulation};
         let draws = |depth: i32, sensed: bool| {
             let mut sim = Simulation::new();
@@ -3186,7 +3203,8 @@ mod tests {
                 .set_current_house_for_test(Some(player));
             let frame = frame_of(&sim);
             let entity = frame.object(1).unwrap();
-            health_strip_visibility(&sim, entity, None, Some(player), false).1
+            // The fixture builds no Rules; this is the Ares arm.
+            health_strip_visibility(&sim, entity, None, Some(player), false, true).1
         };
         assert!(draws(-20, true));
         assert!(!draws(-19, true), "IsSurfaced holds above -20");
@@ -3238,7 +3256,7 @@ mod tests {
         let frame = frame_of(&sim);
         let entity = frame.object(1).unwrap();
         let widened = health_strip_widened(&sim, entity, Always, true, Some(viewer), false);
-        health_strip_visibility(&sim, entity, None, Some(viewer), widened).1
+        health_strip_visibility(&sim, entity, None, Some(viewer), widened, false).1
     }
 
     #[test]
@@ -3303,7 +3321,15 @@ mod tests {
             let entity = frame.object(1).unwrap();
             let full = entity.health.is_full(100);
             let widened = health_strip_widened(&sim, entity, mode, full, Some(player), false);
-            health_strip_visibility(&sim, entity, hovered.then_some(1), Some(player), widened).1
+            health_strip_visibility(
+                &sim,
+                entity,
+                hovered.then_some(1),
+                Some(player),
+                widened,
+                false,
+            )
+            .1
         };
         // (mode, disguised, explored, hovered); every tank is at full health.
         assert!(draws(Always, false, true, false));
@@ -3370,8 +3396,15 @@ mod tests {
             record,
             Some(hover.stable_id),
             Some(&viewer_name),
+            rules.ares(),
         ));
-        assert!(!health_bar_drawable(sim, record, None, Some(&viewer_name),));
+        assert!(!health_bar_drawable(
+            sim,
+            record,
+            None,
+            Some(&viewer_name),
+            rules.ares(),
+        ));
     }
 
     /// The clause the old damage gate broke: an unselected, unhovered object

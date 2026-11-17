@@ -692,7 +692,7 @@ pub(crate) fn install_external_setup(
             .ok_or_else(|| anyhow::anyhow!("retail assets are unavailable"))?;
         crate::map::source::load_network_map_ini(root, &path, assets)?
     };
-    let effective = crate::map::source::effective_network_map_digest(&loaded.ini, false);
+    let effective = crate::map::source::effective_network_map_digest(&loaded.ini, false, false);
     launch.selected_map_file = Some(logical);
     accept_external_session(&mut state.match_state.session, launch, context)?;
     state
@@ -1228,10 +1228,11 @@ pub(crate) fn local_map_metadata(
         .process_assets
         .manager()
         .ok_or_else(|| anyhow::anyhow!("network map requires the active retail sources"))?;
+    let ares = state.process_assets.reads_ares_way();
     state
         .frontend
         .scenario_catalog
-        .network_map_metadata(file, &config.paths.ra2_dir, assets)
+        .network_map_metadata(file, &config.paths.ra2_dir, assets, ares)
 }
 
 /// Setup Back returns to a newly constructed BB (LAN) or the WOL lobby

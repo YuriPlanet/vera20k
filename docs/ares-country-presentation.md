@@ -1,7 +1,8 @@
 # Ares country presentation
 
-Build with `--features ares`. This covers the Ares 3.0 country keys that the
-shell, loading screen and taunt stream consume. The ten stock Country IDs
+Every build uses these when the game is read the Ares way ([Ares](ares.md)), as
+a selected mod that ships `ares.mix` makes it. This covers the Ares 3.0 country
+keys that the shell, loading screen and taunt stream consume. The ten stock Country IDs
 (`Americans` … `YuriCountry`) keep their stock presentation wherever they sit
 in `[Countries]`; any other ID takes the installed DLL's unknown-country
 defaults.

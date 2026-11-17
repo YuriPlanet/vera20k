@@ -619,49 +619,52 @@ mod tests {
     }
 
     /// A selected mod that mounts `ares.mix` (Load_Bootstrap_AresMIX, hook
-    /// `0x0053029E`) selects its INIs with Ares' syntax in every build. No mod
-    /// ignores the installed archive and keeps gamemd's syntax in builds
-    /// without the remaining `ares` feature.
+    /// `0x0053029E`) selects its INIs with Ares' syntax. No mod ignores the
+    /// installed archive and keeps gamemd's syntax, unless the thread already
+    /// reads the Ares way.
     #[test]
     fn a_game_with_ares_mix_selects_its_rules_with_ares_syntax() {
         use crate::assets::asset_manager::MediaArchiveMode;
-        let directory =
-            crate::assets::asset_manager::test_support::audio_test_install("ares-mix-rules-syntax");
-        std::fs::write(
-            directory.path().join("rulesmd.ini"),
-            b"[BuildingTypes]\n+=GAPOWR\n",
-        )
-        .unwrap();
-        std::fs::write(
-            directory.path().join("artmd.ini"),
-            b"[GAPOWR]\nFoundation=2x2\n",
-        )
-        .unwrap();
-        let mod_dir = TestDirectory::new("ares-rules-mod");
-        let keys = |selected_mod: bool| {
-            let assets = AssetManager::with_mod(
-                directory.path(),
-                selected_mod.then_some(mod_dir.path()),
-                MediaArchiveMode::STOCK_DIGITAL,
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            let directory = crate::assets::asset_manager::test_support::audio_test_install(
+                "ares-mix-rules-syntax",
+            );
+            std::fs::write(
+                directory.path().join("rulesmd.ini"),
+                b"[BuildingTypes]\n+=GAPOWR\n",
             )
             .unwrap();
-            let sources = RetailRulesSources::select(&assets).unwrap();
-            let keys: Vec<String> = sources
-                .rulesmd
-                .ini
-                .section_or_empty("BuildingTypes")
-                .keys()
-                .map(str::to_owned)
-                .collect();
-            (assets.ships_ares(), sources.ships_ares, keys)
-        };
-        // A build with the `ares` feature reads every game the Ares way.
-        let feature = cfg!(feature = "ares");
-        let stock_key = if feature { "var_0" } else { "+" };
-        assert_eq!(keys(false), (false, feature, vec![stock_key.to_owned()]));
-        directory.write_mix("ares.mix", "ares.txt", b"ares");
-        assert_eq!(keys(false), (false, feature, vec![stock_key.to_owned()]));
-        assert_eq!(keys(true), (true, true, vec!["var_0".to_owned()]));
+            std::fs::write(
+                directory.path().join("artmd.ini"),
+                b"[GAPOWR]\nFoundation=2x2\n",
+            )
+            .unwrap();
+            let mod_dir = TestDirectory::new("ares-rules-mod");
+            let keys = |selected_mod: bool| {
+                let assets = AssetManager::with_mod(
+                    directory.path(),
+                    selected_mod.then_some(mod_dir.path()),
+                    MediaArchiveMode::STOCK_DIGITAL,
+                )
+                .unwrap();
+                let sources = RetailRulesSources::select(&assets).unwrap();
+                let keys: Vec<String> = sources
+                    .rulesmd
+                    .ini
+                    .section_or_empty("BuildingTypes")
+                    .keys()
+                    .map(str::to_owned)
+                    .collect();
+                (assets.ships_ares(), sources.ships_ares, keys)
+            };
+            // A thread read the Ares way reads every game the Ares way.
+            let stock_key = if ares_way { "var_0" } else { "+" };
+            assert_eq!(keys(false), (false, ares_way, vec![stock_key.to_owned()]));
+            directory.write_mix("ares.mix", "ares.txt", b"ares");
+            assert_eq!(keys(false), (false, ares_way, vec![stock_key.to_owned()]));
+            assert_eq!(keys(true), (true, true, vec!["var_0".to_owned()]));
+        }
     }
 
     #[test]

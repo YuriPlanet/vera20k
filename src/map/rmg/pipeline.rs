@@ -136,6 +136,9 @@ pub struct PipelineInputs<'a> {
     /// The urban pass (Ares hook 0x598FB8, or VERA's opted-in Urban
     /// Presence), present when it runs; it reads `urban_presence` too.
     pub urban_areas: Option<&'a urban_areas::UrbanInputs<'a>>,
+    /// Ares.dll is loaded for this generation: the game is read the Ares way
+    /// (`GenerationObjects::ares`). The low-bridge decks follow it.
+    pub ares: bool,
 }
 
 /// Watches the grid between stages, for callers that draw the map as it builds.
@@ -292,6 +295,7 @@ pub fn run_pipeline(
             blocks: inputs.blocks,
             rng: &mut *rng,
             playfield: &playfield,
+            ares: inputs.ares,
         };
         carve_driver::connect_regions(
             &mut ctx,
@@ -722,8 +726,8 @@ pub fn run_pipeline(
 }
 
 // A stock oracle: Ares' bridge end hooks (0x58FBDD..0x5900F7) skip the end
-// coins and shift every later draw.
-#[cfg(all(test, tests_map, not(feature = "ares")))]
+// coins and shift every later draw, so it runs without Ares.dll.
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::rmg::options::RmgOptions;
@@ -859,6 +863,7 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
+                ares: false,
             };
             assert!(carve_driver::carve_connectors_for_region(
                 &mut ctx,

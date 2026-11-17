@@ -275,7 +275,7 @@ pub(crate) fn super_weapon_detected_allowed(
 /// The lines the capture block speaks on the local machine
 /// (`BuildingClass::ChangeOwner 0x004483FB..0x0044848F`), in native order:
 /// a `NeedsEngineer=` building says `tech_lost_event` (`EVA_TechBuildingLost`,
-/// in Ares builds the type's `LostEvaEvent`, hook `0x0044840B`) when the OLD
+/// when Ares plays the type's `LostEvaEvent`, hook `0x0044840B`) when the OLD
 /// owner is local (`0x00448415`) and then queues the type's
 /// `CaptureEvaEvent=` when the NEW owner is local (`0x0044842F..0x00448459`);
 /// any other building says `EVA_BuildingCaptured` once the radar event was
@@ -1023,9 +1023,9 @@ mod tests {
 
     /// Ares `InfiltratedBy @ 10012000`: each applied arm speaks its lines in
     /// order, all behind the radar event.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_infiltration_lines_follow_each_applied_arm() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::sim::spy_infiltration::{AresInfiltrationArms, InfiltrationEffect};
         let effect = InfiltrationEffect::Ares(AresInfiltrationArms {
             radar_reset: Some(false),
@@ -1054,9 +1054,9 @@ mod tests {
 
     /// The StolenTech arm (`10012000`) plays the owner's
     /// `EVA_TechnologyStolen` and the spy's two lines, after the outage's.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_stolen_tech_lines_follow_the_power_outage() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::sim::spy_infiltration::{AresInfiltrationArms, InfiltrationEffect};
         let effect = InfiltrationEffect::Ares(AresInfiltrationArms {
             power_outage: true,

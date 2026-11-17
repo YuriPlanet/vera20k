@@ -2004,9 +2004,6 @@ impl ApplicationHandler for App {
                         event_loop.set_control_flow(ControlFlow::Poll);
                         state.platform.window.request_redraw();
                     }
-                    Ok(FrameRenderOutcome::ScreenBusy) => {
-                        state.platform.redraw_gate.hold_busy_draw();
-                    }
                     Ok(_) => {}
                     Err(err) => {
                         log::error!("Render: {:#}", err);
@@ -2283,7 +2280,7 @@ impl ApplicationHandler for App {
                 event_loop.set_control_flow(if deferred {
                     ControlFlow::Poll
                 } else {
-                    ControlFlow::WaitUntil(Instant::now() + std::time::Duration::from_millis(8))
+                    ControlFlow::WaitUntil(Self::match_service_wake(state, Instant::now()))
                 });
             } else if state.platform.frame_pacer.render_deferred() {
                 event_loop.set_control_flow(ControlFlow::Poll);
@@ -2315,9 +2312,10 @@ impl ApplicationHandler for App {
                     {
                         return;
                     }
-                    event_loop.set_control_flow(ControlFlow::WaitUntil(
-                        Instant::now() + crate::app::match_runtime::frame_pacer::SERVICE_WAKE,
-                    ));
+                    event_loop.set_control_flow(ControlFlow::WaitUntil(Self::match_service_wake(
+                        state,
+                        Instant::now(),
+                    )));
                 } else {
                     // Nothing on screen to keep fresh: draw no frames until a
                     // window event (including the un-occlude edge). The shell's
@@ -2327,30 +2325,6 @@ impl ApplicationHandler for App {
                     event_loop.set_control_flow(
                         shell_scroll_wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil),
                     );
-                }
-            } else if state.renderer.gpu.screen_busy() {
-                // The game never waits for the screen: while the hand-off
-                // thread waits for the next picture, the match is serviced,
-                // one frame a turn so the draw is never more than a frame
-                // late, and the thread's wake brings the draw. A completed
-                // frame means more may be due (GameSpeed 0 always is), so go
-                // again at once; otherwise the service wake is a fallback.
-                let pass = Self::service_match_runtime(state, event_loop, true, false, false);
-                if pass.quit_requested {
-                    return;
-                }
-                state
-                    .platform
-                    .frame_pacer
-                    .count_frames_without_present(pass.completed_frames);
-                if pass.completed_frames > 0 {
-                    event_loop.set_control_flow(ControlFlow::Poll);
-                } else {
-                    let fallback =
-                        Instant::now() + crate::app::match_runtime::frame_pacer::SERVICE_WAKE;
-                    event_loop.set_control_flow(ControlFlow::WaitUntil(
-                        shell_scroll_wake.map_or(fallback, |service| service.min(fallback)),
-                    ));
                 }
             } else if state.platform.redraw_gate.next_pass(Instant::now())
                 == crate::app::match_runtime::redraw_gate::NextPass::Probe
@@ -2383,7 +2357,10 @@ impl ApplicationHandler for App {
                             );
                             state.platform.window.request_redraw();
                         } else {
-                            let wake = state.platform.redraw_gate.probe_wake(now);
+                            // The next frame's due time wakes the loop too,
+                            // so its tick and picture come on time.
+                            let frame_due = Self::next_local_frame_due(state, now);
+                            let wake = state.platform.redraw_gate.probe_wake(now, frame_due);
                             event_loop.set_control_flow(ControlFlow::WaitUntil(
                                 shell_scroll_wake.map_or(wake, |service| service.min(wake)),
                             ));

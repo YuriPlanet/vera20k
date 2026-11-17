@@ -47,7 +47,8 @@ of its bay on a Drive, as it does a Chrono Miner.
 
 ## Ares dig effects
 
-Build with `--features ares` to let a TechnoType choose its dig effects:
+When a game plays Ares ([Ares](ares.md)), every build lets a TechnoType choose its
+dig effects:
 
 ```ini
 [DIGGER]

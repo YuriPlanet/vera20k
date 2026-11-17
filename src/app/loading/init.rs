@@ -2458,7 +2458,7 @@ pub(crate) fn load_csf(
     asset_manager: &AssetManager,
 ) -> anyhow::Result<crate::assets::csf_file::CsfFile> {
     let (mut csf, supplements) =
-        crate::assets::csf_file::CsfFile::load_active(asset_manager.ares_form(), |name| {
+        crate::assets::csf_file::CsfFile::load_active(asset_manager.ships_ares(), |name| {
             asset_manager.get_ref(name)
         })
         .map_err(
@@ -2555,12 +2555,18 @@ pub(crate) fn load_map_initial_with_assets(
         .map(str::to_string)
         .or(quickplay_seed);
     if let Some(seed_name) = seed_selection.as_deref() {
+        // Ares.dll is loaded when the game is read the Ares way: the process
+        // Rules owner's answer, the one the shell's dialog takes
+        // (`NativeRulesProcessOwner::reads_ares_way`).
+        let ares = native_rules
+            .as_deref()
+            .is_some_and(|owner| owner.reads_ares_way());
         let mut settings = crate::map::rmg::RmgSettings::load(asset_manager);
         let mut options = crate::map::rmg::RmgOptions::default();
         // A seed without VERA's UrbanAreas= key regenerates with the urban
-        // switch the process's first RMGMD.INI read gives (Ares.dll 1006ABF0).
-        #[cfg(feature = "ares")]
-        {
+        // switch the process's first RMGMD.INI read gives (Ares.dll 1006ABF0),
+        // when Ares.dll is loaded.
+        if ares {
             options.urban_areas = settings.generate_urban_areas;
         }
         // A received seed's name is already its cached path.
@@ -2572,7 +2578,7 @@ pub(crate) fn load_map_initial_with_assets(
                     crate::map::source::GeneratedSeedSource::from_consumed_bytes(seed_path, &bytes),
                 );
                 match crate::rules::ini_parser::IniFile::from_bytes(&bytes) {
-                    Ok(ini) => options.apply_sed(&ini),
+                    Ok(ini) => options.apply_sed(&ini, ares),
                     Err(err) => {
                         log::warn!(
                             "random map: {seed_name} is not valid INI ({err}); using defaults"
@@ -2665,33 +2671,35 @@ pub(crate) fn load_map_initial_with_assets(
                 |file| asset_manager.contains(file),
             );
         }
-        #[cfg(not(feature = "ares"))]
-        let _ = launch_seed;
-        #[cfg(not(feature = "ares"))]
-        let objects = crate::map::rmg::build::GenerationObjects::tech(&tech_types);
-        // Ares' foot picks draw Main (Ares.dll 1006AAD0). The launch load
-        // seeds Main with the match seed (ScenarioBootstrapRng::new) before
-        // it regenerates the seed. RESIDUAL: that owner is built after this
-        // generation and does not continue past these draws.
-        #[cfg(feature = "ares")]
-        let urban_catalog = crate::map::rmg::tech_catalog::resolve_ares_urban(
-            &settings,
-            processed,
-            owner.fixed_art(),
-        );
-        #[cfg(feature = "ares")]
-        let launch_main = std::cell::RefCell::new(crate::sim::rng::SimRng::new(u64::from(
-            launch_seed.unwrap_or_default(),
-        )));
-        #[cfg(feature = "ares")]
-        let main_draw = || launch_main.borrow_mut().next_u32();
-        #[cfg(feature = "ares")]
-        let objects = crate::map::rmg::build::GenerationObjects {
-            tech_types: &tech_types,
-            urban_areas: Some(crate::map::rmg::phases::urban_areas::UrbanInputs {
-                catalog: &urban_catalog,
-                main_draw: &main_draw,
-            }),
+        // Ares' foot picks draw Main (Ares.dll 1006AAD0) when Ares.dll is
+        // loaded. The launch load seeds Main with the match seed
+        // (ScenarioBootstrapRng::new) before it regenerates the seed.
+        // RESIDUAL: that owner is built after this generation and does not
+        // continue past these draws. The catalog and the stream outlive the
+        // generation objects that borrow them.
+        let urban_catalog;
+        let launch_main;
+        let main_draw;
+        let objects = if ares {
+            urban_catalog = crate::map::rmg::tech_catalog::resolve_ares_urban(
+                &settings,
+                processed,
+                owner.fixed_art(),
+            );
+            launch_main = std::cell::RefCell::new(crate::sim::rng::SimRng::new(u64::from(
+                launch_seed.unwrap_or_default(),
+            )));
+            main_draw = || launch_main.borrow_mut().next_u32();
+            crate::map::rmg::build::GenerationObjects {
+                tech_types: &tech_types,
+                urban_areas: Some(crate::map::rmg::phases::urban_areas::UrbanInputs {
+                    catalog: &urban_catalog,
+                    main_draw: &main_draw,
+                }),
+                ares,
+            }
+        } else {
+            crate::map::rmg::build::GenerationObjects::tech(&tech_types, ares)
         };
         let mut generated =
             crate::map::rmg::build::generate_map(&options, &settings, &resolved, &blocks, &objects);
@@ -4279,7 +4287,7 @@ mod full_init_rules_gate_tests {
             seed: 4242,
             ..Default::default()
         };
-        directory.write("early.sed", &options.to_sed_bytes());
+        directory.write("early.sed", &options.to_sed_bytes(false));
         let seed_path = directory.path().join("early.sed");
         let root =
             IniFile::from_str("[Countries]\n0=C]\n[Animations]\n0=BASE\n[Clear]\nWheel=25%\n");
@@ -4694,7 +4702,7 @@ mod random_map_retail_tests {
         let dir = std::env::temp_dir().join(format!("vera20k-rmg-retail-{tag}"));
         crate::util::file_system::create_dir_all(&dir).expect("scratch dir");
         let name = format!("{tag}.sed");
-        crate::util::file_system::write(dir.join(&name), options.to_sed_bytes())
+        crate::util::file_system::write(dir.join(&name), options.to_sed_bytes(false))
             .expect("write .SED");
         (dir, name)
     }
@@ -4863,7 +4871,7 @@ mod network_seed_source_tests {
     #[test]
     fn network_seed_cache_preserves_logical_name_and_consumed_identity() {
         let options = crate::map::rmg::RmgOptions::default();
-        let bytes = options.to_sed_bytes();
+        let bytes = options.to_sed_bytes(false);
         let source = crate::map::source::GeneratedSeedSource::from_consumed_bytes(
             std::env::temp_dir().join("seed-cache.sed"),
             &bytes,

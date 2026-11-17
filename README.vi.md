@@ -104,7 +104,7 @@ Theo mặc định, VERA20K chơi giống trò chơi gốc. Các tính năng m�
 như Ares, sẽ tắt cho đến khi được bật bằng một trong các cách sau:
 
 - **Tùy chọn người chơi của VERA**, trong **Options**, được lưu dưới `[VERA]` trong `VERA.INI`.
-- **Tùy chọn build**, chẳng hạn `--features ares` cho các [phần mở rộng Ares](docs/ares.md) được hỗ trợ.
+- **Tùy chọn build**, chẳng hạn `--features phobos` cho các [phần mở rộng Phobos](docs/phobos.md) được hỗ trợ.
 - **Khóa INI**, do mod hoặc bản đồ đặt.
 
 Âm thanh, đồ họa và điều khiển được lưu trong `VERA.INI`. Luật chơi đến từ thiết lập phòng chờ,

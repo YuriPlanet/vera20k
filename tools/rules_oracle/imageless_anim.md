@@ -34,5 +34,5 @@ animation against an empty image catalog, then checks particles and AI cleanup.
 The latter is Rust integration, not native particle-world parity. These two
 checks and `retail_meteor_profiles_keep_missing_stock_images_explicit` passed
 in the integrated R25 Ares-enabled run. That batch exited 101 on seven other
-fixture checks; this is named-test success, not whole-batch success. Feature-OFF
-and optimized production map loading remain pending.
+fixture checks; this is named-test success, not whole-batch success. Optimized
+production map loading remains pending.

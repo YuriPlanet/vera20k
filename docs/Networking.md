@@ -35,7 +35,7 @@ Whether Ares plays in a match is decided from that same data: the rules, mode
 and map, whether the selected mod loads `ares.mix`, and the player's
 [Ares setting](ares.md#the-ares-setting), which the rules agreement covers. With
 **No mod** selected and the setting on Auto, the installation's `ares.mix` is ignored and
-ordinary builds keep the original archive order and INI readers. A selected mod
+the game keeps the original archive order and INI readers. A selected mod
 can load its own `ares.mix` or use the installation's copy; that game's INIs and
 rules are read the Ares way. Without it Ares plays only
 from Ares keys in the rules, mode or map, read the stock way ([Ares](ares.md)).
@@ -44,6 +44,9 @@ from the same files read without it; a game without it adds nothing.
 Players on one build reach the same answer. Older builds, including those that
 load an installed `ares.mix` with No mod selected, are refused by the existing
 build check. A rollback restores that build's earlier selection and INI reading.
+Ares needs no build feature: the build check's version keeps a 0 where the retired `ares`
+feature's flag was, and the rules digest still hashes `false` in its place, as a released
+game's do; nothing exchanged changes.
 Whether Phobos plays is decided from the same rules, mode and map
 ([the Phobos switch](phobos.md#the-phobos-switch)) and adds nothing to the
 digest, so players on one build reach the same answer; older builds are refused
@@ -385,7 +388,13 @@ and Export Map. A map for more than eight players stages one `W` slot for each s
 LAN in the extended options and online as `random_map` ([lobby protocol](lobby-protocol.md)).
 The generated rules digest covers VERA's town catalogue and `[Extras]`, which each game
 resolves from its own files, so players whose games would build different towns are
-refused at Start as on any rules difference. A preview larger than the 512 KiB preview
+refused at Start as on any rules difference. In a game read the Ares way (Ares.dll
+loaded: the mod ships `ares.mix`, or the Ares setting is On) the seed's effective digest
+also covers its `UrbanAreas=` key and the generated rules digest Ares' `[Urban]` lists;
+the rules agreement already covers which way each game
+reads, so nothing new is exchanged. A guest reading the other way accepts the host's
+seed bytes and is refused by that agreement, whose text names the Ares setting. A
+preview larger than the 512 KiB preview
 transfer, as Enormous and Colossal maps make, is written at half size until it fits.
 A LAN guest of another build is refused at the build check. Online, an older guest
 cannot read options carrying such a map and says the update was invalid, in a room that

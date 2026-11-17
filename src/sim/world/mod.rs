@@ -39,19 +39,13 @@ pub(crate) mod entry_test_fixture;
 mod frame_channel;
 mod frame_effects;
 mod idle_sleep;
-// A build that still carries Ares behind its feature sleeps nothing
-// (`Simulation::extension_steps_unsorted`), so these run once that
-// feature is gone.
-#[cfg(all(test, tests_sim_world_c_o, not(feature = "ares")))]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod idle_sleep_tests;
 mod network_commands;
 mod object_entry;
 mod queued_command;
 mod quiet_units;
-// A build that still carries Ares behind its feature sleeps nothing
-// (`Simulation::extension_steps_unsorted`), so these run once that
-// feature is gone.
-#[cfg(all(test, tests_sim_world_p_s, not(feature = "ares")))]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod quiet_units_tests;
 mod sinking;
 mod terrain_deformation;

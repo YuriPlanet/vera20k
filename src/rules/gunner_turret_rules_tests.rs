@@ -50,8 +50,8 @@ fn assert_object(object: &ObjectType, native: &Value, context: &str) {
     );
 }
 
-// Ares replaces the FV reader and its negative-index charge-byte writes.
-#[cfg(not(feature = "ares"))]
+// Read the stock way: Ares replaces the FV reader and its negative-index
+// charge-byte writes.
 #[test]
 fn native_gunner_reader_controls_match() {
     let native = corpus();
@@ -83,8 +83,8 @@ fn native_gunner_reader_controls_match() {
     }
 }
 
-// Ares replaces the FV reader and its negative-index charge-byte writes.
-#[cfg(not(feature = "ares"))]
+// Read the stock way: Ares replaces the FV reader and its negative-index
+// charge-byte writes.
 #[test]
 fn native_layer_history_survives_process_registry_handoff() {
     let native = corpus();
@@ -113,8 +113,8 @@ fn native_layer_history_survives_process_registry_handoff() {
     }
 }
 
-// Ares replaces the FV reader and its negative-index charge-byte writes.
-#[cfg(not(feature = "ares"))]
+// Read the stock way: Ares replaces the FV reader and its negative-index
+// charge-byte writes.
 #[test]
 fn production_root_langrule_mode_map_order_matches_native_reader_history() {
     let native = corpus();
@@ -147,8 +147,8 @@ fn production_root_langrule_mode_map_order_matches_native_reader_history() {
     }
 }
 
-// Ares replaces the FV reader and its negative-index charge-byte writes.
-#[cfg(not(feature = "ares"))]
+// Read the stock way: Ares replaces the FV reader and its negative-index
+// charge-byte writes.
 #[test]
 fn identical_current_sources_hash_retained_gunner_configuration() {
     let native = corpus();

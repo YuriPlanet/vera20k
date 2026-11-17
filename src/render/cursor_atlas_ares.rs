@@ -239,7 +239,7 @@ pub(crate) fn build_ares_software_cursor(
             );
         }
     }
-    // The arrow must load, as the stock build requires.
+    // The arrow must load, as the stock cursors require.
     sequences.get(&CursorId::Ares {
         index: 0,
         mini: false,

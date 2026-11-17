@@ -22,10 +22,10 @@
 //!   leaves `[#include]` inert.
 //!
 //! VERA reads the current document before its included files; a later read
-//! overwrites earlier values. An Ares build loads each file into the root INI
-//! as `ReadCCFile` does, through `LoadFromStraw`'s merge arm and Ares's parser
-//! hooks (`IniFile::merge_load`). Other builds compose with `IniFile::merge`,
-//! where a reused key keeps its place instead of moving last.
+//! overwrites earlier values. A game read the Ares way loads each file into the
+//! root INI as `ReadCCFile` does, through `LoadFromStraw`'s merge arm and Ares's
+//! parser hooks (`IniFile::merge_load`). Other games compose with
+//! `IniFile::merge`, where a reused key keeps its place instead of moving last.
 //!
 //! RESIDUAL: Phobos re-walks the shared `$Include` section after each file,
 //! skipping saved names, and iterates its `EntryIndex`, gamemd's CRC lookup

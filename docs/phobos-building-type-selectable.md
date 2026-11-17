@@ -1,7 +1,8 @@
 # Optional Phobos type select for buildings
 
-Build with `--features ares,phobos` to let type select pick buildings that the
-retail ID match refuses.
+Build with `--features phobos` to let type select pick buildings that the
+retail ID match refuses, in a game read the Ares way ([Ares](ares.md)), as a
+selected mod that ships `ares.mix` makes it.
 
 ```ini
 [General]                       ; rulesmd.ini
@@ -28,8 +29,8 @@ Phobos's `BuildingClass_Is1x1AndUndeployable_BuildingMassSelectable` hook at
 `[General] BuildingTypeSelectable` is set, so CanBeSelectedNow admits every
 building that passes its TechnoClass checks. The hook returns at once when
 Ares is not loaded (`AresHelper::CanUseAres`), because both patch the same
-region, so VERA compiles the switch only with both the `ares` and `phobos`
-capabilities.
+region, so VERA reads the switch only in a `phobos` build and a game read the
+Ares way, where Ares.dll would be loaded.
 
 The working method in vanilla - hold the second T press and click the building -
 never runs the ID match, which is why it already reached buildings; the tap and

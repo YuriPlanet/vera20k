@@ -9,8 +9,8 @@
 //!
 //! This boundary admits one local human in any row of the MPModesMD.ini the
 //! game loaded, network launches in the stock YR modes, and stock YR
-//! campaigns. Ares builds also carry allocated custom Country identities
-//! into Battle startup. External campaigns pass an explicit Scenario independently
+//! campaigns. A game read the Ares way also carries allocated custom Country
+//! identities into Battle startup. External campaigns pass an explicit Scenario independently
 //! of record0. Multiplayer files (`PlayerCount>1` or `[Relay]`, docs/spawn.md)
 //! normalize into a canonical source-ordered session plus a relay or direct
 //! transport.
@@ -343,6 +343,43 @@ impl SpawnRequest {
         Ok(request)
     }
 
+    /// Refuse a Country or campaign Side the opened game does not read. The
+    /// launch file is read before its game opens, so [`Self::parse`] admits
+    /// the Ares widths; `ares` is whether the game is read the Ares way
+    /// (`ProcessAssets::reads_ares_way`).
+    pub(crate) fn check_country_limits(&self, ares: bool) -> Result<()> {
+        let session = match &self.game {
+            SpawnGame::Skirmish(session) => &**session,
+            SpawnGame::Network(network) => &network.session,
+            SpawnGame::Campaign(campaign) => {
+                let max = max_campaign_side(ares);
+                ensure!(
+                    i32::from(campaign.side) <= max,
+                    "[Settings] Side={} must be in 0..={max}: only an Ares game reads more; \
+                     select a mod that ships ares.mix, or set Ares to On",
+                    campaign.side
+                );
+                return Ok(());
+            }
+        };
+        let max = max_spawn_country_index(ares);
+        let countries = session
+            .humans
+            .iter()
+            .filter(|human| !human.is_observer())
+            .map(|human| human.slot.country)
+            .chain(session.opponents.iter().map(|opponent| opponent.country));
+        for country in countries {
+            ensure!(
+                i32::from(country.raw_index()) <= max,
+                "Country {} must be in 0..={max}: only an Ares game reads more; \
+                 select a mod that ships ares.mix, or set Ares to On",
+                country.raw_index()
+            );
+        }
+        Ok(())
+    }
+
     fn parse_with_modes(text: &str, offline_row: ModeRow<'_>) -> Result<Self> {
         let ini = IniFile::from_str(text.trim_start_matches('\u{feff}'));
         let settings = ini
@@ -423,17 +460,9 @@ impl SpawnRequest {
                 scenario,
                 scenario_directory: None,
                 campaign_id: integer(settings, "CampaignID", -1)?,
-                side: ranged(
-                    settings,
-                    "Side",
-                    0,
-                    0,
-                    if crate::rules::ARES_BUILD {
-                        i32::from(u8::MAX)
-                    } else {
-                        1
-                    },
-                )? as u8,
+                // The widest Side any game reads: the opened game's own limit
+                // applies at start (`SpawnRequest::check_country_limits`).
+                side: ranged(settings, "Side", 0, 0, max_campaign_side(true))? as u8,
                 difficulty,
                 build_off_ally: boolean(settings, "BuildOffAlly", false)?,
             })
@@ -815,18 +844,21 @@ fn skirmish(
     Ok(session)
 }
 
-/// The largest `Side=` Country index this build reads (`--probe` lists them).
-pub(crate) const fn max_spawn_country_index() -> i32 {
+/// The largest `Side=` Country index a game reads (`--probe` lists them);
+/// `ares` is whether it is read the Ares way (`RuleSet::ares_form`).
+pub(crate) const fn max_spawn_country_index(ares: bool) -> i32 {
     // The client resolves Random and writes the actual Country array index,
     // not a Side or display-list index. Stock menu4E3A91 caps it at9; Ares's
     // replacement4E3A6A ->1001E2C0 retains Country+B8 without that cap.
     // The shared launch owner validates allocation again after scenario Rules
     // reset; this early reader only admits its canonical identity width.
-    if crate::rules::ARES_BUILD {
-        u16::MAX as i32
-    } else {
-        9
-    }
+    if ares { u16::MAX as i32 } else { 9 }
+}
+
+/// The largest campaign `Side=` a game reads: stock's two campaign sides, or
+/// a byte when it is read the Ares way.
+const fn max_campaign_side(ares: bool) -> i32 {
+    if ares { u8::MAX as i32 } else { 1 }
 }
 
 /// The largest `Color=` value this build reads (see [`color`]): YR's eight
@@ -840,7 +872,8 @@ pub(crate) const fn max_spawn_color_index() -> i32 {
 }
 
 fn country(section: &IniSection, key: &str) -> Result<LaunchCountry> {
-    let index = ranged(section, key, -1, 0, max_spawn_country_index())?;
+    // The widest any game reads; see `SpawnRequest::check_country_limits`.
+    let index = ranged(section, key, -1, 0, max_spawn_country_index(true))?;
     Ok(LaunchCountry::from_country_index(index as u32))
 }
 

@@ -583,7 +583,7 @@ fn tail(
 }
 
 /// `new AnimClass(V3TAKOFF, &Location, 2, 1, 0x600, -10, 0)`, the takeoff
-/// puff of states 1, 2 and 6; Ares builds name the type's anim and puff
+/// puff of states 1, 2 and 6; an Ares game names the type's anim and puffs
 /// nothing for a null one.
 fn takeoff_puff(ext: &RocketTypeExt<'_>, host: &mut impl RocketHost) {
     if let Some(anim) = ext.takeoff_anim {
@@ -1028,7 +1028,7 @@ mod tests {
         }
     }
 
-    /// Ares builds name the owner type's puffs and space the trailer by its
+    /// An Ares game names the owner type's puffs and spaces the trailer by its
     /// `Missile.TrailerSeparation` (hooks 0x66238A..0x662D85), and a custom
     /// missile's `Missile.Weapon` replaces Detonate's explosion, light and
     /// area damage (0x663218). The first corpus flight, with that type.

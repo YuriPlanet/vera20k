@@ -1826,11 +1826,11 @@ impl Simulation {
     pub fn validate_ares_state_for_load(&self, ares: bool) -> Result<(), SnapshotRestoreError> {
         for (_, entity) in self.substrate.entities.iter_sorted() {
             entity
-                .validate_ares_build_compatibility(ares)
+                .validate_ares_compatibility(ares)
                 .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
         }
         self.unit_deliveries
-            .validate_ares_build_compatibility(ares)
+            .validate_ares_compatibility(ares)
             .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
         self.validate_paid_super_weapon_selections_for_load(ares)
             .map_err(SnapshotRestoreError::InvalidPaidSuperWeaponSelection)?;
@@ -3634,8 +3634,9 @@ mod tests {
         let bytes = GameSnapshot::save_validated(&Simulation::new(), 0, 0, "synthetic", 0);
         let mut header = GameSnapshot::read_header(&bytes).unwrap();
         // Flip every capability bit: the result is a foreign mode for any build.
+        // No build records the Ares bit any more, so it flips to set.
         header.compatibility = RulesCompatibility::from_capabilities(
-            !crate::rules::ARES_BUILD,
+            true,
             !crate::rules::PHOBOS_ENABLED,
             !crate::rules::NPATCH_ENABLED,
             !crate::rules::VERAX_ENABLED,

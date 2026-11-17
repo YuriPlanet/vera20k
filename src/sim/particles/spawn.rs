@@ -1207,7 +1207,6 @@ mod tests {
 
     // A Smoke system holding a Smoke (or behaviour-less) type is simulated by
     // Ares, whose SpawnParticle hook (0x62E380) builds no ParticleClass.
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn explicit_particle_birth_has_no_ai_particle_cap_gate() {
         let rules = build_rules("Smoke", 3);
@@ -1275,7 +1274,6 @@ mod tests {
 
     // A Smoke system holding a Smoke (or behaviour-less) type is simulated by
     // Ares, whose SpawnParticle hook (0x62E380) builds no ParticleClass.
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn spawn_particle_constructs_empty_named_type_when_holds_what_unset() {
         // ParticleSystemTypeReadINI64430F binds the empty-named ParticleType.

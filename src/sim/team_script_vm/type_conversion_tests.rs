@@ -350,9 +350,8 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
     );
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
-fn default_build_keeps_script68_inert_without_type_or_count_writes() {
+fn a_stock_game_keeps_script68_inert_without_type_or_count_writes() {
     let (mut sim, rules, team, members) = scene();
     sim.team_step_script(team, &rules, None, FrameEffects::empty());
     assert_eq!(

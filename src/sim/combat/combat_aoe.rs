@@ -2757,7 +2757,6 @@ mod tests {
 
     /// Stock table only: Ares walks the CellSpreadEnumerator instead
     /// (`cell_spread::area_damage_cells`, hooks `0x4895B8`..`0x4899BE`).
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn gsi_04_07_damage_band11_repeated_cell_dispatches_receiver_twice() {
         let ini = IniFile::from_str(
@@ -3518,7 +3517,6 @@ mod tests {
     // Stock house admission only. Ares replaces the ally gate with
     // WarheadExt 10051B70 on the live attacker's owner (receiver_call.rs, with
     // its own tests), where a same-owner target follows AffectsAllies.
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn gsi_04_07_damage_receiver_pipeline_source_admission_and_house_snapshot() {
         fn run(

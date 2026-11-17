@@ -387,7 +387,7 @@ impl ProcessAssets {
                 "sound_count": definitions.sounds().len(),
                 "eva_count": definitions.eva().len(),
             });
-            let source_receipt = if assets.ares_form() {
+            let source_receipt = if assets.ships_ares() {
                 let mut receipt = source_receipt;
                 receipt["additional_indexes"] =
                     serde_json::json!(index.as_ref().map(|loaded| &loaded.additional_sources));
@@ -494,6 +494,15 @@ impl ProcessAssets {
         self.native_rules.as_ref()
     }
 
+    /// Whether this game is read the Ares way, as Ares.dll loaded reads it
+    /// (`NativeRulesProcessOwner::reads_ares_way`): the shell's answer for its
+    /// Ares hooks, the random map generator's and the random countries'.
+    pub(crate) fn reads_ares_way(&self) -> bool {
+        self.native_rules
+            .as_ref()
+            .is_some_and(|rules| rules.reads_ares_way())
+    }
+
     pub(crate) fn native_ini_hashes(
         &self,
     ) -> Option<crate::rules::native_ini_hash::NativeIniHashes> {
@@ -555,10 +564,8 @@ impl ProcessAssets {
         // setting is On. Such a game adds the byte, so the same files read
         // with and without Ares never agree; with no mod selected and the
         // setting on Auto the installed archive is ignored and adds nothing.
-        // Until the `ares` feature is deleted a build with it writes the byte
-        // for every game, as it always has.
-        if cfg!(feature = "ares") || assets.ships_ares() {
-            bytes.push(u8::from(assets.ships_ares()));
+        if assets.ships_ares() {
+            bytes.push(1);
         }
         // VERA: the player's Ares setting. Off keeps Ares keys from turning
         // Ares on, so such a game never agrees with one set to Auto; Auto
@@ -725,7 +732,6 @@ impl ProcessAssets {
             .flat_map(|rules| rules.multiplayer_countries())
     }
 
-    #[cfg(feature = "ares")]
     pub(crate) fn country_random_rows(&self) -> Vec<(&str, Option<&str>, bool, i32, i32)> {
         self.native_rules
             .as_ref()
@@ -766,19 +772,13 @@ impl ProcessAssets {
 
     /// `Game_GetFlagSurface @ 0x1001DCE0` country insignia by HouseType index,
     /// for lobby/diplomacy rows that resolve before a match Rules projection
-    /// exists.
+    /// exists. `None` unless Ares.dll is loaded (the game is read the Ares
+    /// way).
     pub(crate) fn country_flag_surface(&self, index: u16) -> Option<String> {
-        #[cfg(feature = "ares")]
-        {
-            return self
-                .native_rules
-                .as_ref()
-                .and_then(|rules| rules.country_flag_surface(index))
-                .map(str::to_owned);
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = index;
+        let rules = self.native_rules.as_ref()?;
+        if rules.reads_ares_way() {
+            rules.country_flag_surface(index).map(str::to_owned)
+        } else {
             None
         }
     }

@@ -1549,28 +1549,33 @@ pub(crate) fn build_weapon_wave_instances(
         state.match_state.input.camera_y,
     ]
     .map(|value| value.floor() as i32);
-    #[cfg(feature = "ares")]
-    let Some(frame) = state.match_state.sim_runtime.frame() else {
-        return;
+    let rules = &state
+        .match_state
+        .sim_runtime
+        .presentation()
+        .expect("the wave owner's runtime")
+        .resources
+        .rules;
+    // Ares' wave hooks draw when Ares plays, the answer under which the sim
+    // registers a wave's weapon (`Wave::with_ares_weapon`).
+    let ares = rules.ares();
+    let ares_frame = if ares {
+        let Some(frame) = state.match_state.sim_runtime.frame() else {
+            return;
+        };
+        Some(frame)
+    } else {
+        None
     };
-    #[cfg(feature = "ares")]
-    let blend = {
-        let rules = &state
-            .match_state
-            .sim_runtime
-            .presentation()
-            .expect("the wave owner's runtime")
-            .resources
-            .rules;
-        let colors = &state.match_state.match_presentation.house_color_map;
-        move |wave: &crate::sim::wave::Wave| {
+    let colors = &state.match_state.match_presentation.house_color_map;
+    let blend = move |wave: &crate::sim::wave::Wave| match ares_frame {
+        Some(frame) => {
             crate::app::presentation::fire_effects::ares_wave_blend(sim, frame, rules, colors, wave)
         }
+        None => crate::render::wave_geometry::WaveBlend::Native,
     };
-    #[cfg(not(feature = "ares"))]
-    let blend = |_: &crate::sim::wave::Wave| crate::render::wave_geometry::WaveBlend::Native;
     for (id, draw) in crate::app::presentation::fire_effects::build_weapon_wave_draws(
-        sim, observer, camera, blend,
+        sim, observer, camera, ares, blend,
     ) {
         use crate::app::presentation::render::draw_plan_lowering::{
             ObjectBodyDraw, PlannedObjectInstance,

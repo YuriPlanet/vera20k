@@ -103,8 +103,9 @@ VERA20K plays like the original game by default. New features, including extensi
 mods such as Ares, stay off until they are turned on with one of:
 
 - **A VERA player option**, in **Options**, saved under `[VERA]` in `VERA.INI`.
-- **A build option**, such as `--features ares` for the supported [Ares extensions](docs/ares.md).
-- **An INI key**, set by a mod or a map.
+- **A build option**, such as `--features phobos` for the supported [Phobos extensions](docs/phobos.md).
+- **An INI key**, set by a mod or a map. Ares keys, or a mod that ships `ares.mix`, turn on
+  the supported [Ares extensions](docs/ares.md).
 
 Sound, graphics and controls are saved in `VERA.INI`. Gameplay rules come from lobby
 settings, mods or maps.

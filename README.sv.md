@@ -103,7 +103,7 @@ VERA20K fungerar som standard precis som originalspelet. Varje ny funktion, äve
 moddar som Ares, måste vara avstängd tills den slås på med något av följande:
 
 - **En spelarinställning i VERA**, under **Options**, som sparas i avsnittet `[VERA]` i `VERA.INI`.
-- **Ett byggalternativ**, till exempel `--features ares` för de [Ares-tillägg](docs/ares.md) som stöds.
+- **Ett byggalternativ**, till exempel `--features phobos` för de [Phobos-tillägg](docs/phobos.md) som stöds.
 - **En INI-nyckel**, som sätts av en mod eller en karta.
 
 Inställningar för ljud, grafik och kontroller sparas i `VERA.INI`. Spelreglerna kommer från

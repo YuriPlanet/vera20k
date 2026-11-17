@@ -511,9 +511,8 @@ pub fn foundation_cell_offsets(value: &str) -> Vec<(i16, i16)> {
 mod tests {
     use super::*;
 
-    #[cfg(not(feature = "ares"))]
     #[test]
-    fn stock_build_has_no_custom_foundation_extension() {
+    fn stock_way_has_no_custom_foundation_extension() {
         use crate::rules::ini_parser::IniFile;
         use crate::rules::native_processing::RulesLayerStack;
         let rules = IniFile::from_str("[BuildingTypes]\n0=TEST\n[TEST]\nImage=ART\n");

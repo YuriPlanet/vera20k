@@ -158,12 +158,6 @@ pub mod phobos_sw_sidebar;
 pub mod phobos_warhead_anim;
 pub mod phobos_radiation;
 pub mod phobos_shields;
-/// Whether this binary compiles the supported Ares extensions. Whether Ares
-/// plays in a game is the per-game switch [`ruleset::RuleSet::ares`], decided
-/// from the game's data by [`ares_switch`]; this gates only what still forks
-/// at build time: Rules loading before that answer exists, launch and network
-/// identity, and the `cfg(feature = "ares")` sites not yet converted.
-pub const ARES_BUILD: bool = cfg!(feature = "ares");
 /// Whether this binary compiles all the supported Phobos extensions. Whether
 /// Phobos plays in a game is the per-game switch [`ruleset::RuleSet::phobos`],
 /// decided from the game's data by [`phobos_switch`], which a build with this
@@ -293,7 +287,7 @@ pub mod voxel_asset_catalog;
 mod voxel_model_plan;
 pub mod voxel_frame_catalog;
 pub mod warhead_type;
-#[cfg(all(test, tests_rules_o_z, not(feature = "ares")))]
+#[cfg(all(test, tests_rules_o_z))]
 mod warhead_verses_tests;
 pub mod weapon_type;
 

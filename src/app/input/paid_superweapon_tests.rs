@@ -126,7 +126,6 @@ fn paid_superweapon_input_free_pair_keeps_native_command_shape() {
     assert!(paid_super_weapon_cursor_cancellation(&sim, &rules, owner, None).is_none());
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
 fn disabled_ares_money_keeps_two_stage_clicks_on_stock_commands() {
     let (rules, mut sim, owner, source, destination) = fixture(true);

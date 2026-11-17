@@ -530,7 +530,6 @@ fn a_captured_building_remembers_it() {
 /// Scatter's first draw, in that order.
 // Stock Building GetCrew44EB10 always draws for the Engineer; Ares1004C650
 // draws only with a positive Engineer chance.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn phase_b_interleaves_each_cells_roll_with_its_mark() {
     let rules = rules();
@@ -716,7 +715,6 @@ fn a_building_owing_no_survivor_draws_and_marks_nothing() {
 /// enemy planter; an allied planter only changes the odds.
 // Stock Building GetCrew44EB10 always draws for the Engineer; Ares1004C650
 // draws only with a positive Engineer chance.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn survivors_of_a_c4_charged_building_attack_an_enemy_planter() {
     let rules = rules();
@@ -1081,7 +1079,6 @@ fn hijacked_vehicle_returns_its_captor_without_an_escape_roll() {
 /// The vehicle's transferable Tag waits for the escaped infantry's death,
 /// rather than firing Unit744720's destruction prefix on the vehicle.
 // Stock Unit tail; Ares's SpawnSurvivors100464C0 attaches no Tag to the hijacker.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn hijacked_vehicle_preserves_its_transferable_tag_until_captor_death() {
     let rules = rules();
@@ -1243,7 +1240,6 @@ const ORDINARY: ReceiverCallFlags = ReceiverCallFlags {
 /// fixture's registered infantry types keeps this test about the binding.
 // Ares GetCrew1004C780 reads HouseType SideIndex (+BC), which this fixture's
 // undeclared countries leave at -1, and returns the Technician.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn renamed_general_crew_types_spawn_through_the_building_death_receiver() {
     let renamed = RULES
@@ -1368,7 +1364,6 @@ fn cargo_len(sim: &Simulation, transport: u64) -> usize {
 /// onto its cell in cargo order, uncredited; a computer's Hunt and a human's
 /// stay put.
 // Stock Unit tail (737F97..73838A); Ares replaces it with SpawnSurvivors100464C0.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn a_killing_hit_lets_the_passengers_out() {
     let rules = rules();
@@ -1873,7 +1868,6 @@ fn a_select_started_by_a_partners_tag_event_does_not_expand() {
 /// keys bind, and a power plant and an MCV killed through the production
 /// receiver leave stock crew with native health ranges.
 // The MCV crew takes the stock Unit tail; Ares's EjectSurvivor needs a map cell.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_rules_crew_the_power_plant_and_the_mcv() {
     let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
@@ -2302,7 +2296,7 @@ fn a_selected_mcvs_crewman_speaks_his_select_voice() {
         let mut sim = sim_on_arena(seed, &rules);
         let owner = sim.interner.intern("AlliedHuman");
         // Ares GetCrew1004C7F0 reads the actual Country's side, not only
-        // House.side_index. Keep this a valid retail Allied house in both builds.
+        // House.side_index. Keep this a valid retail Allied house either way.
         let country = sim.interner.intern("Americans");
         sim.houses
             .get_mut(&owner)

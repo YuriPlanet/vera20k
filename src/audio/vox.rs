@@ -97,18 +97,15 @@ impl VoxQueue {
     /// Native stock and Ares histories: spatial_oracle/eva_selection.json
     /// and ares_eva.json. Missing Side retains the Ares cache; negative
     /// Scenario.Side clears it. Reading EVA.Tag never calls this binding.
+    /// Ares' binding reads the SideExt only Rules read the Ares way hold.
     pub fn set_side(&mut self, side: i32, rules: &crate::rules::ruleset::RuleSet) {
-        #[cfg(feature = "ares")]
-        {
+        if rules.ares_form() {
             if side < 0 {
                 self.selected_voice = -1;
             } else if let Some(voice) = rules.side_eva_voice_index(side) {
                 self.selected_voice = voice;
             }
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = rules;
+        } else {
             self.selected_voice = if side == -1 { 0 } else { side };
         }
     }
@@ -476,9 +473,10 @@ impl VoxQueue {
 #[path = "vox_opening_tests.rs"]
 mod opening_tests;
 
-// Original SetSide/GetFilename hooks are replaced in an Ares build. Its
-// own executed selection controls are covered by ares_eva tests.
-#[cfg(all(test, tests_audio, not(feature = "ares")))]
+// Original SetSide/GetFilename, read the stock way: Ares replaces those
+// hooks, and its own executed selection controls are covered by ares_eva
+// tests.
+#[cfg(all(test, tests_audio))]
 #[path = "eva_selection_tests.rs"]
 mod selection_tests;
 
@@ -881,6 +879,6 @@ mod tests {
     }
 }
 
-#[cfg(all(test, tests_audio, feature = "ares"))]
+#[cfg(all(test, tests_audio))]
 #[path = "ares_eva_tests.rs"]
 mod ares_eva_tests;

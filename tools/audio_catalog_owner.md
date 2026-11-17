@@ -1,8 +1,9 @@
 # Process audio catalog ownership
 
 `ProcessAssets` selects immutable `AudioDefinitions` and one sample lookup
-owner when it first acquires retail assets. Stock builds select one BAG pair;
-`--features ares` admits the optional ordered multi-BAG catalog described in
+owner when it first acquires retail assets. A game without `ares.mix` selects one
+BAG pair; a game that ships `ares.mix` (`AssetManager::ships_ares`) admits the
+ordered multi-BAG catalog described in
 [the bounded Ares evidence](rules_oracle/ares_audio_bags.md).
 `NativeRulesProcessOwner` binds sound
 references through the exact same `Arc<SoundRegistry>` as app playback. Native

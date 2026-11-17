@@ -373,6 +373,7 @@ impl App {
                 .unwrap_or_default()
         );
         let mut request = request.admit_loaded_modes(&state.frontend.skirmish_modes)?;
+        request.check_country_limits(state.process_assets.reads_ares_way())?;
         if let SpawnGame::Network(network) = &mut request.game {
             // VERA: a launcher's room has no host to share rules: each
             // player plays their own, which its ExpectedRulesDigest compares.

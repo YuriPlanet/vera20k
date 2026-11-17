@@ -127,7 +127,7 @@ normal game bootstrap. Selecting the MO triplet does not certify that every MO
 definition, asset or gameplay mechanism is supported.
 
 [Include and inheritance](ini-directives.md) expand at the selected source
-boundary only in gameplay builds with `--features ares`. Root selection itself
+boundary only in a game read the Ares way ([Ares](ares.md)) or a `phobos` build. Root selection itself
 needs no extension feature. The read-only `ini-expand --source-only` probe works
 in every build and does not require a configured Rules/Art/AI triplet.
 

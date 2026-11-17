@@ -49,7 +49,6 @@ pub(crate) enum DeferredEffect {
     /// `Strip6A8F42`: the production strip's request for this type cleared.
     ProductionRequestCleared(InternedId),
     /// Ares bounty text reached its native call.
-    #[cfg(feature = "ares")]
     Bounty(crate::sim::bounty::BountyText),
     /// `Queue_AI_Multiplayer` stored this frame's checksum (history
     /// `0x00B04474[Frame & 0xFF]`).
@@ -163,7 +162,7 @@ impl DeferredClientEffects {
                     .match_presentation
                     .sidebar_projection
                     .clear_production_request(type_id),
-                #[cfg(feature = "ares")]
+                // Recorded only when the sim emits Ares bounty text, so this runs in every game.
                 DeferredEffect::Bounty(text) => {
                     if let Some(rt) = state.match_state.sim_runtime.runtime() {
                         state

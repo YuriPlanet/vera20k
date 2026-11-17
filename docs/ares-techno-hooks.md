@@ -1,7 +1,7 @@
 # Optional Ares TechnoClass hooks: healers, deploy facing, gaps and more
 
-Build with `--features ares`. Default builds keep every stock path named
-below. This page covers the hooks of `Ext/Techno/Hooks.cpp`,
+Every build takes these hooks when the game plays Ares ([Ares](ares.md));
+other games keep every stock path named below. This page covers the hooks of `Ext/Techno/Hooks.cpp`,
 `Hooks.Deactivated.cpp`, `Hooks.Gap.cpp`, `Hooks.Mechanical.cpp`,
 `Hooks.Spotlights.cpp` and `Ext/TechnoType/Hooks.Weapons.cpp`; the table at
 the end gives each one's disposition. Hooks that `ares-techno-types.md`,
@@ -123,10 +123,10 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
 
 ## RulesExt general keys
 
-With `--features ares`, the RulesExt `[General]` and `[AudioVisual]` keys
+In a game that plays Ares, the RulesExt `[General]` and `[AudioVisual]` keys
 below are read by `AresGeneralRules` (`rules/native_processing.rs`) in
 LoadBeforeTypeData (`1002AB60`) or LoadAfterTypeData (`1002A800`), with the
-constructor's (`1002A360`) defaults. Default builds read none of them.
+constructor's (`1002A360`) defaults. A game without Ares uses none of them.
 
 ```ini
 [General]

@@ -457,6 +457,8 @@ fn kirov_voxel_pose_upload_and_retained_replay_survive_a_changed_second_frame() 
             let object = crate::app::presentation::instances::projectile_draw_instance_for_frame(
                 sim.projectiles().get(id).unwrap(),
                 sim.session().binary_frame(),
+                // A voxel bullet takes no SHP frame.
+                false,
                 kind,
                 "BlimpBombP",
                 HouseColorIndex(8),

@@ -960,16 +960,15 @@ fn type_selection_matches(
     rules: Option<&RuleSet>,
     interner: Option<&crate::sim::intern::StringInterner>,
 ) -> bool {
-    #[cfg(feature = "ares")]
-    if let (Some(rules), Some(interner)) = (rules, interner) {
+    if let (Some(rules), Some(interner)) = (rules, interner)
+        && rules.ares()
+    {
         return rules
             .type_selection_key(left.1.into(), interner.resolve(left.0))
             .eq_ignore_ascii_case(
                 rules.type_selection_key(right.1.into(), interner.resolve(right.0)),
             );
     }
-    #[cfg(not(feature = "ares"))]
-    let _ = (rules, interner);
     left.0 == right.0
 }
 
@@ -1684,6 +1683,7 @@ mod tests {
             frame(&sim).object(second).unwrap(),
             health_hover_target(pick(&sim, second)),
             Some("Player"),
+            rules.ares(),
         ));
         sim.entities_mut_for_test()
             .get_mut(first)
@@ -1696,6 +1696,7 @@ mod tests {
                 frame(&sim).object(first).unwrap(),
                 health_hover_target(pick(&sim, first)),
                 Some("Player"),
+                rules.ares(),
             ),
             "the lock removes hover, not selected health bars"
         );

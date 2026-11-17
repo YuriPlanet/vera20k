@@ -1,9 +1,10 @@
 # INI file directives
 
 VERA expands includes in its existing INI source-selection path. Ares
-`[#include]` is compiled in with `--features ares`; Phobos `[$Include]` is
-compiled in with `--features phobos`. The default build treats both as ordinary,
-unused INI content. These are extension directives, not native YR syntax. Files
+`[#include]` runs in every build in a game read the Ares way ([Ares](ares.md)),
+as a selected mod that ships `ares.mix` makes it; Phobos `[$Include]` is
+compiled in with `--features phobos`. Other games and builds treat them as
+ordinary, unused INI content. These are extension directives, not native YR syntax. Files
 without directives keep their native parsed representation, duplicate-section
 behavior, content hash and saved encoding. The raw `IniFile` byte parser and
 deserializer never load other files.
@@ -26,8 +27,8 @@ Strength=250
 
 - With `--features phobos`, a document's `[$Include]` runs and takes over from
   its `[#include]`, as Phobos `-Include` does by restoring the vanilla bytes at
-  the Ares hooks (gamemd `0x474200`/`0x474314`). With `--features ares`, a
-  document without `[$Include]` expands its `[#include]`, in a combined build
+  the Ares hooks (gamemd `0x474200`/`0x474314`). In a game read the Ares way, a
+  document without `[$Include]` expands its `[#include]`, in a `phobos` build
   too: VERA has no `-Include` launch switch, while natively one launch runs one
   dialect.
 - Include lists are read in stored entry order, as Ares walks them with
@@ -47,8 +48,8 @@ Strength=250
   read returns; Phobos keeps `SavedIncludes`. A missing listed file is skipped
   by Ares and fatal under Phobos (`Debug::FatalErrorAndExit`).
 - Natively each included file loads into the INI that lists it, through
-  `LoadFromStraw`'s merge arm. An Ares build does the same, with Ares's parser
-  hooks ([Ares INI syntax](ares-ini-syntax.md)); other builds compose with
+  `LoadFromStraw`'s merge arm. A game read the Ares way does the same, with Ares's
+  parser hooks ([Ares INI syntax](ares-ini-syntax.md)); other games compose with
   `IniFile::merge`.
 - An included file's `[#include]` list joins the root's. Ares walks that one
   list with an index every nesting level shares (`CCINIClass_ReadCCFile2`
@@ -104,10 +105,10 @@ expansion apply only to selected mods.
 
 ## Production integration
 
-With `ares` or `phobos` enabled, `rules::retail_sources::select_ini` expands
-directives before transferring the selected physical snapshots to the existing
-ordered Rules owner. `DirectiveOptions::production` enables the compiled
-dialects, and a document's `[$Include]` takes over from its `[#include]` when the
+In a game read the Ares way or a `phobos` build, `rules::retail_sources::select_ini`
+expands directives before transferring the selected physical snapshots to the existing
+ordered Rules owner. `DirectiveOptions::production` enables Ares' dialect in a game
+read the Ares way and Phobos' in a `phobos` build, and a document's `[$Include]` takes over from its `[#include]` when the
 Phobos capability is present. That shared entry serves Rules, fixed Art, AI,
 mode/campaign definitions, sound and EVA. The theme catalog uses the same entry
 while retaining its separate YR/RA2 playlist handling. Asset-backed map gameplay

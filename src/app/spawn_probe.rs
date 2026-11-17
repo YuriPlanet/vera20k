@@ -94,7 +94,6 @@ pub(crate) struct BuildIdentity {
     pub package_version: String,
     /// Hash of the multiplayer sources and enabled Cargo features.
     pub network_build: String,
-    pub ares: bool,
     pub phobos: bool,
     pub npatch: bool,
     /// Informational; not part of `version`.
@@ -166,7 +165,11 @@ pub(crate) fn spawn_map_identity(
             file,
             byte_length,
             source_sha256: source_sha256.to_owned(),
-            effective_digest: crate::map::source::effective_network_map_digest(&loaded.ini, false),
+            effective_digest: crate::map::source::effective_network_map_digest(
+                &loaded.ini,
+                false,
+                false,
+            ),
         },
         start_waypoints: crate::map::waypoints::skirmish_player_capacity(&loaded.ini),
     })
@@ -176,7 +179,6 @@ pub(crate) fn build_identity() -> BuildIdentity {
     BuildIdentity {
         package_version: env!("CARGO_PKG_VERSION").to_owned(),
         network_build: env!("VERA20K_NETWORK_BUILD").to_owned(),
-        ares: crate::rules::ARES_BUILD,
         phobos: crate::rules::PHOBOS_ENABLED,
         npatch: crate::rules::NPATCH_ENABLED,
         verax: crate::rules::VERAX_ENABLED,
@@ -249,6 +251,7 @@ pub(crate) fn probe(
         process.multiplayer_countries().map(|(id, _)| id),
         startup_rules.as_ref(),
         &csf,
+        process.reads_ares_way(),
     );
     let schemes = probe_color_schemes(startup_rules.as_ref(), projection.as_ref());
     let color_mode = startup_rules
@@ -294,11 +297,13 @@ pub(crate) fn probe(
 /// Each registered Country up to the largest index `Side=` admits, with the
 /// label, side and menu eligibility the skirmish shell's catalog gives it.
 /// `countries` is the process registry's order, which is the index `Side=`
-/// addresses; `rules` holds that registry's projected Country bodies.
+/// addresses; `rules` holds that registry's projected Country bodies, and
+/// `ares` is whether the game is read the Ares way.
 fn country_catalog<'a>(
     countries: impl Iterator<Item = &'a str>,
     rules: Option<&crate::rules::ruleset::RuleSet>,
     csf: &CsfFile,
+    ares: bool,
 ) -> Vec<ProbeCountry> {
     use crate::ui::skirmish_shell::{SkirmishComboItem, SkirmishCountryChoice};
     let offered: Vec<u16> = rules
@@ -312,7 +317,7 @@ fn country_catalog<'a>(
             _ => None,
         })
         .collect();
-    let max_country = max_spawn_country_index();
+    let max_country = max_spawn_country_index(ares);
     countries
         .enumerate()
         .take_while(|(index, _)| *index <= max_country as usize)
@@ -635,7 +640,11 @@ mod tests {
         };
         let report = run_desktop(Some(&root), None, None, None).unwrap();
         let stock = &report.countries[..10];
-        assert!(stock.iter().all(|country| country.selectable && !country.label.is_empty()));
+        assert!(
+            stock
+                .iter()
+                .all(|country| country.selectable && !country.label.is_empty())
+        );
         assert_eq!(
             stock.iter().map(|country| country.side).collect::<Vec<_>>(),
             [0, 0, 0, 0, 0, 1, 1, 1, 1, 2].map(Some)
@@ -664,7 +673,7 @@ mod tests {
                     .unwrap()
             })
             .collect();
-        let rows: Vec<_> = country_catalog(ids.into_iter(), Some(&rules), &csf)
+        let rows: Vec<_> = country_catalog(ids.into_iter(), Some(&rules), &csf, false)
             .into_iter()
             .map(|row| (row.index, row.name, row.label, row.side, row.selectable))
             .collect();

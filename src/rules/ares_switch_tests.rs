@@ -9,8 +9,9 @@ use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPr
 use crate::rules::retail_ini_fixture::{retail_assets, retail_rules_owner};
 use crate::rules::ruleset::RuleSet;
 
-/// The retail install as it is. The retail fixtures ship `ares.mix` in a
-/// build with the `ares` feature; the retail archives do not.
+/// The retail install as it is. The retail fixtures ship `ares.mix` on a
+/// thread read the Ares way (`ares_switch::game_ships_ares`); the retail
+/// archives do not.
 fn installed(assets: &AssetManager) -> NativeRulesProcessOwner {
     assert!(!assets.ships_ares());
     retail_rules_owner(assets).with_ares_mix(false)
@@ -166,7 +167,7 @@ fn the_ares_setting_off_keeps_a_maps_ares_key_off() {
 }
 
 /// `ares.mix` mounted at startup (Load_Bootstrap_AresMIX, hook 0x0053029E)
-/// turns Ares on for retail rules in every test build, and the switch is
+/// turns Ares on for retail rules, and the switch is
 /// part of the game's configuration, so a replay or a peer with the other
 /// answer is refused.
 #[test]

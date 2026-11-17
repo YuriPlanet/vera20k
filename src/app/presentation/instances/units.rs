@@ -3139,6 +3139,8 @@ mod tests {
             };
             rules_by_iron_index.insert(index, battle.rules);
         }
+        // The patch adds no Ares key, so the three fixtures share one answer.
+        let ares = rules_by_iron_index[&0].ares();
         let mut compared = 0;
         for row in rows {
             if int(&row["pixel_format"]) != 2 {
@@ -3148,7 +3150,7 @@ mod tests {
             // halving with the DeactivateDim factors, which
             // `unit_light_tests::ares_deactivate_dims_replace_the_stock_unit_halving`
             // checks; these rows record the stock halving.
-            if cfg!(feature = "ares") && row["deactivated"].as_bool().unwrap() {
+            if ares && row["deactivated"].as_bool().unwrap() {
                 continue;
             }
             let mut unit = GameEntity::test_default(1, "HTNK", "Russians", 10, 10);
@@ -3199,7 +3201,7 @@ mod tests {
             );
             compared += 1;
         }
-        assert_eq!(compared, if cfg!(feature = "ares") { 49 } else { 51 });
+        assert_eq!(compared, if ares { 49 } else { 51 });
     }
 
     /// Retail `[AudioVisual] IronCurtainColor=0;4` reads 0 through ReadInt

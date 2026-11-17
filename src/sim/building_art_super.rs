@@ -239,7 +239,7 @@ impl Simulation {
     }
 }
 
-#[cfg(all(test, tests_sim_a_b, not(feature = "ares")))]
+#[cfg(all(test, tests_sim_a_b))]
 mod tests {
     //! Native comparisons (`tools/superweapon_oracle.py` sections
     //! `super_anim` and `opening_super_anim`; `--check` regenerates them).

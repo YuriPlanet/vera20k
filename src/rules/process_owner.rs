@@ -602,11 +602,11 @@ impl NativeRulesProcessOwner {
     }
 
     /// Whether this process reads its Rules the Ares way: its game ships
-    /// `ares.mix` (`ares_switch::reading_mode`). Every registry it makes or
+    /// `ares.mix` (`AssetManager::ships_ares`). Every registry it makes or
     /// restores reads that way, so the loading screen and theme take their
     /// Ares form by it before a RuleSet exists.
     pub fn reads_ares_way(&self) -> bool {
-        crate::rules::ares_switch::reading_mode(self.sources.ships_ares)
+        self.sources.ships_ares
     }
 
     /// Ares loading hooks read the actual retained Country before Full_Init

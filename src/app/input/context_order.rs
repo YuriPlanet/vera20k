@@ -4090,8 +4090,8 @@ fn self_action(
         });
     }
     // Ares 3.0 100173A0 (hook 0x44731C): a tunnel entrance with its
-    // owner's network loaded offers the unload action.
-    #[cfg(feature = "ares")]
+    // owner's network loaded offers the unload action. Only the Ares-form sim
+    // fills a network, so this runs in every game.
     if sim.ares_tunnel_offers_unload(target.stable_id, rules) {
         return Some(Command::UnloadPassengers {
             transport_id: target.stable_id,

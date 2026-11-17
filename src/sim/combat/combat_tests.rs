@@ -3070,36 +3070,39 @@ fn gsi_04_07_a_human_unit_does_not_charge_an_unseen_shooter() {
 /// heal test would allow.
 #[test]
 fn gsi_04_07_retaliation_verses_and_healer_gates() {
-    // Ares3.0 parser100523E0 and retaliation hook100543E0 replace the stock
-    // threshold: tools/rules_oracle/ares_armor.json `parse_1%` has Retaliate=false.
-    assert_eq!(
-        retaliates(RetaliationCase {
-            verses: "1%",
-            ..Default::default()
-        }),
-        !crate::rules::ARES_BUILD,
-    );
-    assert!(!retaliates(RetaliationCase {
-        verses: "0.005",
-        ..Default::default()
-    }));
-    assert!(!retaliates(RetaliationCase {
-        verses: "0%",
-        ..Default::default()
-    }));
-    assert!(!retaliates(RetaliationCase {
-        damage: 0,
-        ..Default::default()
-    }));
-    for source_health in [200, 100] {
-        assert!(
-            !retaliates(RetaliationCase {
-                damage: -5,
-                source_health,
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        // Ares3.0 parser100523E0 and retaliation hook100543E0 replace the stock
+        // threshold: tools/rules_oracle/ares_armor.json `parse_1%` has Retaliate=false.
+        assert_eq!(
+            retaliates(RetaliationCase {
+                verses: "1%",
                 ..Default::default()
             }),
-            "{source_health}"
+            !ares_way,
         );
+        assert!(!retaliates(RetaliationCase {
+            verses: "0.005",
+            ..Default::default()
+        }));
+        assert!(!retaliates(RetaliationCase {
+            verses: "0%",
+            ..Default::default()
+        }));
+        assert!(!retaliates(RetaliationCase {
+            damage: 0,
+            ..Default::default()
+        }));
+        for source_health in [200, 100] {
+            assert!(
+                !retaliates(RetaliationCase {
+                    damage: -5,
+                    source_health,
+                    ..Default::default()
+                }),
+                "{source_health}"
+            );
+        }
     }
 }
 
@@ -11984,7 +11987,7 @@ fn phobos_radiation_color_ignores_the_theater() {
 /// RadSiteClass_Radiate_UnhardcodeSnow (10056DB0, hook 0x65B5FB) jumps past
 /// this substitution; `radiation::ares_radiation_keeps_rad_color_on_snow`
 /// covers a game where Ares plays.
-#[cfg(not(any(feature = "phobos", feature = "ares")))]
+#[cfg(not(feature = "phobos"))]
 #[test]
 fn retail_snow_theater_substitutes_red_and_blue() {
     let rules = radiation_rules();

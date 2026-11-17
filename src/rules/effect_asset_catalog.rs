@@ -998,134 +998,128 @@ mod tests {
         use crate::sim::{
             anim_class::AnimWorldCoord, components::AnimClassSpawnDescriptor, world::Simulation,
         };
-        let native = crate::test_fixture::json("tools/rules_oracle/ares_emp.json");
-        for row in native["registered_animation_readers"].as_array().unwrap() {
-            let mut source = String::from("[Warheads]\n0=EMP\n[Animations]\n");
-            for (index, name) in row["fixture"]["registered"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .enumerate()
-            {
-                source.push_str(&format!("{index}={}\n", name.as_str().unwrap()));
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            let native = crate::test_fixture::json("tools/rules_oracle/ares_emp.json");
+            for row in native["registered_animation_readers"].as_array().unwrap() {
+                let mut source = String::from("[Warheads]\n0=EMP\n[Animations]\n");
+                for (index, name) in row["fixture"]["registered"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .enumerate()
+                {
+                    source.push_str(&format!("{index}={}\n", name.as_str().unwrap()));
+                }
+                source.push_str(&format!(
+                    "[EMP]\nEMP.Sparkles={}\n",
+                    row["fixture"]["raw"].as_str().unwrap()
+                ));
+                let rules = RuleSet::from_ini(&IniFile::from_str(&source)).unwrap();
+                let expected = if ares_way {
+                    row["result"]["reference"].as_str()
+                } else {
+                    None
+                };
+                assert_eq!(
+                    rules
+                        .warhead("EMP")
+                        .unwrap()
+                        .ares_rules()
+                        .and_then(|emp| emp.sparkles()),
+                    expected,
+                    "{row}"
+                );
             }
-            source.push_str(&format!(
-                "[EMP]\nEMP.Sparkles={}\n",
-                row["fixture"]["raw"].as_str().unwrap()
-            ));
-            let rules = RuleSet::from_ini(&IniFile::from_str(&source)).unwrap();
-            let expected = if crate::rules::ARES_BUILD {
-                row["result"]["reference"].as_str()
-            } else {
-                None
-            };
-            assert_eq!(
-                rules
-                    .warhead("EMP")
-                    .unwrap()
-                    .ares_rules()
-                    .and_then(|emp| emp.sparkles()),
-                expected,
-                "{row}"
+            let root = TestRoot::new();
+            let names = ["WH_SPARK", "TYPE_SPARK", "GLOBAL_SPARK", "AE_VISUAL"];
+            for name in names {
+                std::fs::write(
+                    root.path().join(format!("{name}.SHP")),
+                    shp_with_undecodable_pixels(6),
+                )
+                .expect("write header-valid synthetic sparkle SHP");
+            }
+            let assets = AssetManager::from_loose_root_for_test(root.path());
+            // GeneralRules retains the original InfDeath5 animation at registry
+            // index1 even without Ares. Reserve that slot so this fixture isolates
+            // EMP roots rather than also binding TYPE_SPARK through electrocution.
+            let ini = IniFile::from_str(
+                "[VehicleTypes]\n0=CONTROL\n[Warheads]\n0=EMP\n[Animations]\n0=WH_SPARK\n1=ELECTRO\n2=TYPE_SPARK\n3=GLOBAL_SPARK\n4=AE_VISUAL\n[General]\nEMPulseSparkles=GLOBAL_SPARK\n[CONTROL]\nStrength=100\nEMP.Sparkles=TYPE_SPARK\n[EMP]\nEMP.Duration=2\nEMP.Sparkles=WH_SPARK\nAttachEffect.Duration=5\nAttachEffect.Animation=ae_visual\n",
             );
-        }
-        let root = TestRoot::new();
-        let names = ["WH_SPARK", "TYPE_SPARK", "GLOBAL_SPARK", "AE_VISUAL"];
-        for name in names {
-            std::fs::write(
-                root.path().join(format!("{name}.SHP")),
-                shp_with_undecodable_pixels(6),
-            )
-            .expect("write header-valid synthetic sparkle SHP");
-        }
-        let assets = AssetManager::from_loose_root_for_test(root.path());
-        // GeneralRules retains the original InfDeath5 animation at registry
-        // index1 even without Ares. Reserve that slot so this fixture isolates
-        // EMP roots rather than also binding TYPE_SPARK through electrocution.
-        let ini = IniFile::from_str(
-            "[VehicleTypes]\n0=CONTROL\n[Warheads]\n0=EMP\n[Animations]\n0=WH_SPARK\n1=ELECTRO\n2=TYPE_SPARK\n3=GLOBAL_SPARK\n4=AE_VISUAL\n[General]\nEMPulseSparkles=GLOBAL_SPARK\n[CONTROL]\nStrength=100\nEMP.Sparkles=TYPE_SPARK\n[EMP]\nEMP.Duration=2\nEMP.Sparkles=WH_SPARK\nAttachEffect.Duration=5\nAttachEffect.Animation=ae_visual\n",
-        );
-        let art = IniFile::from_str(
-            "[WH_SPARK]\nLoopCount=-1\n[TYPE_SPARK]\nLoopCount=-1\n[GLOBAL_SPARK]\nLoopCount=-1\n[AE_VISUAL]\nLoopCount=-1\n",
-        );
-        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art)
-            .expect("production retained Rules/ART reads");
-        rules.install_art_data(ArtRegistry::from_ini(&art));
-        // The diagnostic's ART-name check alone cannot admit construction:
-        // all configs exist here but still lack physical SHP frame bounds.
-        for name in names {
-            assert_eq!(
-                rules
-                    .art()
-                    .anim_runtime_config(name)
-                    .unwrap()
-                    .raw_shp_frame_count,
-                None
+            let art = IniFile::from_str(
+                "[WH_SPARK]\nLoopCount=-1\n[TYPE_SPARK]\nLoopCount=-1\n[GLOBAL_SPARK]\nLoopCount=-1\n[AE_VISUAL]\nLoopCount=-1\n",
             );
-        }
-        let roots = anim_class_roots(&rules);
-        for name in names {
-            assert_eq!(
-                roots.iter().any(|root| root == name),
-                crate::rules::ARES_BUILD,
-                "{name}"
-            );
-        }
-        // Same tolerant binder used by the app loader; no test-only frame
-        // setter. Missing unrelated default roots remain tolerant.
-        rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
-        let mut sim = Simulation::with_seed(17);
-        for name in names {
-            let expected = crate::rules::ARES_BUILD.then_some(6);
-            assert_eq!(
-                rules
-                    .art()
-                    .anim_runtime_config(name)
-                    .unwrap()
-                    .raw_shp_frame_count,
-                expected,
-                "{name}"
-            );
-            assert_eq!(
-                rules.art().scheduler_anim_types().contains(name),
-                crate::rules::ARES_BUILD
-            );
-            let type_name = sim.intern(name);
-            let world = AnimWorldCoord {
-                x: 128,
-                y: 128,
-                z: 0,
-            };
-            let (rx, ry, sub_x, sub_y, z) = world.to_cell_sub_z();
-            let spawned = sim.spawn_anim_at_world(
-                &rules,
-                AnimClassSpawnDescriptor {
-                    draw_flags: 0x600,
-                    ..AnimClassSpawnDescriptor::new(type_name, rx, ry, sub_x, sub_y, z)
-                },
-                world,
-            );
-            assert_eq!(
-                spawned.is_ok(),
-                crate::rules::ARES_BUILD,
-                "{name}: {spawned:?}"
-            );
+            let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art)
+                .expect("production retained Rules/ART reads");
+            rules.install_art_data(ArtRegistry::from_ini(&art));
+            // The diagnostic's ART-name check alone cannot admit construction:
+            // all configs exist here but still lack physical SHP frame bounds.
+            for name in names {
+                assert_eq!(
+                    rules
+                        .art()
+                        .anim_runtime_config(name)
+                        .unwrap()
+                        .raw_shp_frame_count,
+                    None
+                );
+            }
+            let roots = anim_class_roots(&rules);
+            for name in names {
+                assert_eq!(roots.iter().any(|root| root == name), ares_way, "{name}");
+            }
+            // Same tolerant binder used by the app loader; no test-only frame
+            // setter. Missing unrelated default roots remain tolerant.
+            rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
+            let mut sim = Simulation::with_seed(17);
+            for name in names {
+                let expected = ares_way.then_some(6);
+                assert_eq!(
+                    rules
+                        .art()
+                        .anim_runtime_config(name)
+                        .unwrap()
+                        .raw_shp_frame_count,
+                    expected,
+                    "{name}"
+                );
+                assert_eq!(rules.art().scheduler_anim_types().contains(name), ares_way);
+                let type_name = sim.intern(name);
+                let world = AnimWorldCoord {
+                    x: 128,
+                    y: 128,
+                    z: 0,
+                };
+                let (rx, ry, sub_x, sub_y, z) = world.to_cell_sub_z();
+                let spawned = sim.spawn_anim_at_world(
+                    &rules,
+                    AnimClassSpawnDescriptor {
+                        draw_flags: 0x600,
+                        ..AnimClassSpawnDescriptor::new(type_name, rx, ry, sub_x, sub_y, z)
+                    },
+                    world,
+                );
+                assert_eq!(spawned.is_ok(), ares_way, "{name}: {spawned:?}");
+            }
         }
     }
 
     #[test]
     fn self_attached_damage_animation_binds_and_reaches_the_helpers_death_weapon() {
-        let root = TestRoot::new();
-        std::fs::write(
-            root.path().join("PULSE.SHP"),
-            shp_with_undecodable_pixels(6),
-        )
-        .unwrap();
-        let assets = AssetManager::from_loose_root_for_test(root.path());
-        // Keep PULSE out of the stock InfDeath registry slots, so its only
-        // producer is the unit's own AttachEffect rather than a Warhead.
-        let ini = crate::sim::arena_fixture::clear_ground_ini(
-            "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=HELPER\n1=VICTIM\n\
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            let root = TestRoot::new();
+            std::fs::write(
+                root.path().join("PULSE.SHP"),
+                shp_with_undecodable_pixels(6),
+            )
+            .unwrap();
+            let assets = AssetManager::from_loose_root_for_test(root.path());
+            // Keep PULSE out of the stock InfDeath registry slots, so its only
+            // producer is the unit's own AttachEffect rather than a Warhead.
+            let ini = crate::sim::arena_fixture::clear_ground_ini(
+                "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=HELPER\n1=VICTIM\n\
              [HELPER]\nStrength=1\nArmor=target\nExplodes=yes\nDeathWeapon=BURST\n\
              AttachEffect.Duration=-1\nAttachEffect.Animation=PULSE\n\
              [VICTIM]\nStrength=1000\nArmor=heavy\n[ArmorTypes]\ntarget=0%\n\
@@ -1135,42 +1129,43 @@ mod tests {
              [BLAST]\nCellSpread=1\nPercentAtMax=1\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
              [WeaponTypes]\n0=BURST\n[BURST]\nDamage=100\nRange=1\nProjectile=INVISO\nWarhead=BLAST\n\
              [Projectiles]\n0=INVISO\n[INVISO]\nInviso=yes\n",
-        );
-        let art = IniFile::from_str("[PULSE]\nRate=900\nLoopCount=-1\nDamage=10\n");
-        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-        rules.install_art_data(ArtRegistry::from_ini(&art));
-        let roots = anim_class_roots(&rules);
-        rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
-        assert_eq!(
-            rules
-                .art()
-                .anim_runtime_config("PULSE")
-                .unwrap()
-                .raw_shp_frame_count,
-            crate::rules::ARES_BUILD.then_some(6),
-        );
-        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
-        sim.intern_rule_type_ids(&rules);
-        sim.resolve_type_handles(&rules);
-        let helper = sim
-            .spawn_object("HELPER", "Americans", 20, 20, 0, &rules)
-            .unwrap();
-        let victim = sim
-            .spawn_object("VICTIM", "Russians", 21, 20, 0, &rules)
-            .unwrap();
-        for _ in 0..8 {
-            sim.advance_tick(&[], Some(&rules), None, Some(rules.overlay_registry()), 22);
+            );
+            let art = IniFile::from_str("[PULSE]\nRate=900\nLoopCount=-1\nDamage=10\n");
+            let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+            rules.install_art_data(ArtRegistry::from_ini(&art));
+            let roots = anim_class_roots(&rules);
+            rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
+            assert_eq!(
+                rules
+                    .art()
+                    .anim_runtime_config("PULSE")
+                    .unwrap()
+                    .raw_shp_frame_count,
+                ares_way.then_some(6),
+            );
+            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+            sim.intern_rule_type_ids(&rules);
+            sim.resolve_type_handles(&rules);
+            let helper = sim
+                .spawn_object("HELPER", "Americans", 20, 20, 0, &rules)
+                .unwrap();
+            let victim = sim
+                .spawn_object("VICTIM", "Russians", 21, 20, 0, &rules)
+                .unwrap();
+            for _ in 0..8 {
+                sim.advance_tick(&[], Some(&rules), None, Some(rules.overlay_registry()), 22);
+            }
+            let alive = sim
+                .entities()
+                .get(helper)
+                .is_some_and(|entity| entity.is_object_alive());
+            assert_eq!(alive, !ares_way);
+            assert_eq!(
+                sim.entities().get(victim).unwrap().health.current() < 1000,
+                ares_way,
+                "the self animation must reach the real death-weapon receiver",
+            );
         }
-        let alive = sim
-            .entities()
-            .get(helper)
-            .is_some_and(|entity| entity.is_object_alive());
-        assert_eq!(alive, !crate::rules::ARES_BUILD);
-        assert_eq!(
-            sim.entities().get(victim).unwrap().health.current() < 1000,
-            crate::rules::ARES_BUILD,
-            "the self animation must reach the real death-weapon receiver",
-        );
     }
 
     fn catalog_hash(catalog: &EffectAssetCatalog) -> u64 {

@@ -48,10 +48,6 @@ pub(super) enum FrameRenderOutcome {
     /// A probe drew nothing: the presented picture still stands, or the draw
     /// limits hold the next one.
     Unchanged,
-    /// The match was serviced, but the hand-off thread is still taking the
-    /// window's next picture: a draw would wait for the screen. Its wake
-    /// brings the draw (`GpuContext::screen_busy`).
-    ScreenBusy,
 }
 
 /// What one pass of `render_frame` may do once the match is serviced.
@@ -152,6 +148,47 @@ impl App {
         for (window, event) in std::mem::take(&mut self.held_window_events) {
             winit::application::ApplicationHandler::window_event(self, event_loop, window, event);
         }
+    }
+
+    /// When the local timer has the match's next frame due, for the frame
+    /// loop's wake (`LocalFramePacer::until_next_frame`): now or earlier once
+    /// it is due. `None` off the battlefield, at GameSpeed 0, before the
+    /// first frame, and in sequenced online play, whose frames the relay's
+    /// clock admits.
+    pub(super) fn next_local_frame_due(state: &AppState, now: Instant) -> Option<Instant> {
+        if state.frontend.screen != GameScreen::InGame
+            || state
+                .match_state
+                .live_network
+                .as_ref()
+                .is_some_and(|live| live.uses_sequenced_lockstep())
+        {
+            return None;
+        }
+        let (game_speed, network_fps) = sim_tick::local_pacing_inputs(state);
+        state
+            .platform
+            .frame_pacer
+            .until_next_frame(
+                crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+                game_speed,
+                network_fps,
+            )
+            .map(|left| now + left)
+    }
+
+    /// When a loop that services the match without drawing should wake:
+    /// after [`SERVICE_WAKE`], or sooner for a frame the local timer has due
+    /// before then ([`Self::next_local_frame_due`]). One already due moves
+    /// nothing: the pass that just ran did not admit it, and waking for it
+    /// again would spin.
+    ///
+    /// [`SERVICE_WAKE`]: crate::app::match_runtime::frame_pacer::SERVICE_WAKE
+    pub(super) fn match_service_wake(state: &AppState, now: Instant) -> Instant {
+        let service = now + crate::app::match_runtime::frame_pacer::SERVICE_WAKE;
+        Self::next_local_frame_due(state, now)
+            .filter(|due| *due > now)
+            .map_or(service, |due| due.min(service))
     }
 
     /// Service the match runtime for one pass: the outcome voice wait, the
@@ -880,10 +917,11 @@ impl App {
                 Some(splash),
             )?;
             if presented {
-                state
-                    .platform
-                    .frame_pacer
-                    .record_presented(Instant::now(), None);
+                state.platform.frame_pacer.record_presented(
+                    Instant::now(),
+                    None,
+                    crate::util::time::Duration::ZERO,
+                );
                 state
                     .frontend
                     .startup_splash
@@ -1015,12 +1053,6 @@ impl App {
         ) {
             return Ok(FrameRenderOutcome::Deferred);
         }
-        // The game never waits for the screen: with VSync on, the wait for a
-        // free picture is the hand-off thread's, and the ticks that come due
-        // meanwhile run in the passes its wake and the simulation's bring.
-        if state.renderer.gpu.screen_busy() {
-            return Ok(FrameRenderOutcome::ScreenBusy);
-        }
         let draw_started = Instant::now();
         state.diag.frame_timer.sample(draw_started);
 
@@ -1056,6 +1088,9 @@ impl App {
             crate::app::frontend::shell_transition::MainMenuFirstPaintPoll::Acquire => {}
         }
 
+        // With VSync the acquire waits for a free picture, for most of a
+        // refresh once two are queued: the draw's wait, not its work.
+        let acquire_started = Instant::now();
         let Some(output) = state
             .renderer
             .gpu
@@ -1065,6 +1100,7 @@ impl App {
             Self::follow_window_size(state);
             return Ok(FrameRenderOutcome::Unavailable);
         };
+        let screen_wait = Instant::now().saturating_duration_since(acquire_started);
         let view: wgpu::TextureView = output.texture.create_view(&Default::default());
         let mut encoder: wgpu::CommandEncoder =
             state
@@ -1778,10 +1814,11 @@ impl App {
                 .record_render_phases(phases);
         }
         let battlefield = state.frontend.screen == GameScreen::InGame;
-        state
-            .platform
-            .frame_pacer
-            .record_presented(presented_at, battlefield.then_some(draw_started));
+        state.platform.frame_pacer.record_presented(
+            presented_at,
+            battlefield.then_some(draw_started),
+            screen_wait,
+        );
         if battlefield {
             state
                 .match_state

@@ -398,8 +398,8 @@ fn the_armed_superweapon_index_answers_first() {
     assert_eq!(action(&none, Some(3), GROUND, None), None);
     // Installed Ares asks the redirected Chronosphere first (hook 0x653B3A):
     // its Chronosphere cursor has no radar frames, so `0x653CA6` leaves no
-    // action, selection or not. A build with the `ares` feature reads every
-    // game the Ares way (`ares_switch::reading_mode`).
+    // action, selection or not. That holds in a game read the Ares way
+    // (`RuleSet::ares_form`).
     assert_eq!(
         action(&some, Some(3), GROUND, None),
         (!rules.ares_form()).then_some(RadarAction::Move)
@@ -532,14 +532,11 @@ fn special_place_names_the_first_type_of_the_release_action() {
     };
     let nuke = PlaceAction::Stock(RadarSuperWeapon::Nuke.action_name());
     let paradrop = PlaceAction::Stock(RadarSuperWeapon::ParaDrop.action_name());
-    // A build with the `ares` feature reads every game the Ares way
-    // (`ares_switch::reading_mode`).
     let stock = read("");
-    if !stock.ares_form() {
-        assert_eq!(special_place_type(&stock, "Storm", nuke), Some("Bomb"));
-        assert_eq!(special_place_type(&stock, "Bomb2", nuke), Some("Bomb"));
-        assert_eq!(special_place_type(&stock, "Storm", paradrop), None);
-    }
+    assert!(!stock.ares_form());
+    assert_eq!(special_place_type(&stock, "Storm", nuke), Some("Bomb"));
+    assert_eq!(special_place_type(&stock, "Bomb2", nuke), Some("Bomb"));
+    assert_eq!(special_place_type(&stock, "Storm", paradrop), None);
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let ares = read("SW.Deferment=1\n");
     assert!(ares.ares_form());

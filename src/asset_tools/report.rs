@@ -441,7 +441,6 @@ pub struct SoundReport {
     /// Independent consumed IDX/BAG identities, absent when no pair opened.
     pub sources: Option<crate::assets::asset_manager::AudioIndexSources>,
     /// Further admitted Ares BAG pairs in append order. Stock JSON is unchanged.
-    #[cfg(feature = "ares")]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub additional_sources: Vec<crate::assets::asset_manager::AudioIndexSources>,
     pub bag: String,

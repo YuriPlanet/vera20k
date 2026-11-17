@@ -1,9 +1,10 @@
 # Optional Ares random-map generator extensions
 
-Build with `--features ares`. Ares 3.0 (`Misc/RMG.cpp`) widens the random-map
-dialog, adds urban areas to generated maps and fixes three generator bugs.
-Default builds read none of the keys below and keep the stock dialog and
-generator.
+Ares 3.0 (`Misc/RMG.cpp`) widens the random-map dialog, adds urban areas to
+generated maps and fixes three generator bugs. Every build does this when
+Ares.dll would be loaded: the game is read the Ares way, as a selected mod that
+ships `ares.mix` or the [Ares setting](ares.md#the-ares-setting) On makes it.
+Other games ignore the keys below and keep the stock dialog and generator.
 
 ```ini
 ; RMGMD.INI, read on the process's first RMGMD.INI read only
@@ -32,7 +33,8 @@ keys, so the defaults above apply.
   2000 cells, lays east-west roads, then north-south roads with crossings and
   medians, places neutral `[Urban] Structures` on paved ground, one to five
   neutral `[Urban]` infantry or vehicles, and paved plazas.
-- Fixes, unconditional in an Ares build:
+- Fixes, in every game read the Ares way except the last, which every game
+  takes:
   - A low-bridge deck longer than it is wide is placed without
     `ValidateLowBridgeDeckArea`.
   - Bridge and urban road ends always take the road-end piece; the coin that
