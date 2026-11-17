@@ -589,7 +589,6 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // Close the outgoing diagnostic timeline before replacing its runtime.
     crate::app::match_runtime::sim_tick::close_replay_segment_for_new_timeline(state);
     let incoming = result.scenario.simulation.zip(result.scenario.rules);
-    let watcher = crate::app::match_runtime::watching::active(state);
     if let Some(sfx) = state.audio.sfx_player.as_mut() {
         // Every committed replacement retires outgoing sources, including a
         // generic fallback with no incoming world. Cancellation precedes both
@@ -623,10 +622,6 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         .sim_runtime
         .install(incoming.map(|(mut simulation, rules)| {
             simulation.install_fresh_process_main(&state.frontend.frontend_main_rng);
-            // A watcher's world sends nothing, also in its followed player's seat.
-            if watcher {
-                simulation.install_watcher();
-            }
             simulation.publish_scenario_started();
             simulation.batch_path_searches();
             simulation.batch_target_scans();
@@ -781,10 +776,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         .reset(state.platform.frame_pacer.total_render_deferrals());
     state.match_state.input.queued_order_mode = render::OrderMode::Move;
     state.match_state.match_audio.reset_for_new_match();
-    // A watcher sees the whole map. Only the picture changes: every House
-    // keeps its own fog in the shared world.
-    state.match_state.sandbox_full_visibility = result.scenario.sandbox_full_visibility
-        || crate::app::match_runtime::watching::active(state);
+    state.match_state.sandbox_full_visibility = result.scenario.sandbox_full_visibility;
 
     // `Start_Scenario @ 0x00683AB0` after `Read_Scenario`: `[Basic] Theme`
     // resolves through `From_Name` (`0x004758F0`); -1 -> `Stop(fade=1)` of the
@@ -849,7 +841,11 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                     .simulation
                     .restore_campaign_carry_over(record, &runtime.resources.rules);
             }
-            crate::app::lan_service::install_gameplay(state).map_err(|error| error.to_string())
+            let installed = crate::app::lan_service::install_gameplay(state);
+            if installed.is_ok() {
+                install_watcher(state);
+            }
+            installed.map_err(|error| error.to_string())
         }
         crate::app::match_bootstrap::LoadingStartup::Replay { .. } => {
             state.match_state.startup.clear();
@@ -911,6 +907,20 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         }
     }
     crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+}
+
+/// VERA watching (docs/Networking.md "Watching"): the live session that
+/// `install_gameplay` made says whether this game watches its match. Its world
+/// is then a watcher's before its first frame: it sends nothing, also in the
+/// seat of the player it follows, whose sight it starts with, and Tab may
+/// change its view (`match_runtime::watching`).
+fn install_watcher(state: &mut AppState) {
+    if !crate::app::match_runtime::watching::active(state) {
+        return;
+    }
+    if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
+        runtime.simulation.install_watcher();
+    }
 }
 
 /// Build overlay classification data for the minimap from map overlay entries.

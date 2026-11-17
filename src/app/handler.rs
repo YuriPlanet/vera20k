@@ -758,7 +758,8 @@ impl ApplicationHandler for App {
         // Playback has presentation-only input. Exit is local and never
         // schedules EventClass EXIT or changes the recorded simulation. A
         // watcher's is presentation-only too: it gives no orders, Tab follows
-        // the next player and Escape leaves the match.
+        // the next player, Escape leaves the match and its mouse moves the
+        // view.
         let replay = state.match_state.match_diagnostics.is_replay_playback();
         let watching = !replay
             && state.frontend.screen == GameScreen::InGame
@@ -803,6 +804,18 @@ impl ApplicationHandler for App {
                 }
                 WindowEvent::CursorMoved { position, .. } => {
                     state.set_cursor_from_window(position.x as f32, position.y as f32);
+                    return;
+                }
+                WindowEvent::MouseInput {
+                    state: button_state,
+                    button,
+                    ..
+                } if watching => {
+                    crate::app::match_runtime::watching::mouse(
+                        state,
+                        *button,
+                        button_state.is_pressed(),
+                    );
                     return;
                 }
                 WindowEvent::MouseWheel { delta, .. } => {
