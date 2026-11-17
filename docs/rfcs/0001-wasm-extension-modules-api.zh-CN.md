@@ -28,7 +28,7 @@
 | 3 | 路径点引用 | 路径点编号；接收格子的函数解析为其格子，不存在时为 `NotFound` | 从不 |
 | 4 | 全局规则引用 | 0：场景和全局规则（7.8） | 从不 |
 | 5 | 客户端节点句柄 | 本机节点序号，与创建序号分开 | 节点被删除或对局界面关闭 |
-| 6 | 客户端全局引用 | 1 镜头，2 本地设置（7.10） | 从不 |
+| 6 | 客户端全局引用 | 1 镜头，2 本地设置，3 光标（7.10） | 从不 |
 
 - 句柄见 [RFC 5](0001-wasm-extension-modules.zh-CN.md#5-执行模型)；对 0 或已不存在的引用的调用见[错误模型](0001-wasm-extension-modules.zh-CN.md#3-加载与校验)。
 - SDK：TypeScript 中每种引用（`Techno`、`House`、`Projectile`、`Trigger`、`Node`……）是 `i64` 别名，`NO_HANDLE` 为 0；Rust 中是 newtype。
@@ -240,9 +240,9 @@ struct ActionParams {     // 72 字节
 struct ClientEventRecord { // 32 字节
     kind: i32,             // 0   客户端事件种类（4.6）
     source: i32,           // 4   Notify：发送模块的来源，0 mod，1 地图；否则为 0
-    node: i64,             // 8   Click、Hover：节点；否则为 0
+    node: i64,             // 8   Click、Hover、Dismiss：节点；否则为 0
     id: i32,               // 16  Hotkey：热键 ID；Notify：通知 ID；否则为 -1
-    value: i32,            // 20  Hover：1 进入，0 离开
+    value: i32,            // 20  Hover：1 进入，0 离开；Click：List 的行号，其他为 −1
     data: i32,             // 24  Notify：数据，位于投递区
     data_len: i32,         // 28
 }
@@ -653,9 +653,10 @@ bytes: u32,               // 投递区的字节数
 
 | 种类 | 字段 | 何时 | 条件 |
 | --- | --- | --- | --- |
-| `Click` | `node` | 节点被点击 | 节点 `Clickable` 为 1 |
+| `Click` | `node`，`value` `List` 的行号（从 0 开始），其他节点为 −1 | 节点被点击；点击不再传给地图 | 节点 `Clickable` 为 1 |
 | `Hover` | `node`，`value` 1 进入 / 0 离开 | 光标进入或离开节点 | 节点 `Hoverable` 为 1 |
-| `Hotkey` | `id` 热键 ID | 注册的热键被按下 | 用本地动作 `RegisterHotkey` 注册（5.4） |
+| `Hotkey` | `id` 热键 ID | 注册的热键被按下 | 用本地动作 `RegisterHotkey` 注册（5.4）；按键也绑定了游戏热键时只执行游戏热键 |
+| `Dismiss` | `node` | 在节点外按下鼠标或按 Esc | 节点 `Dismissable` 为 1 且可见 |
 | `SelectionChanged` | — | 本地选择变化；用带 `Selected=1` 子句的 `client_find` 读取 | 总是 |
 | `Notify` | `source`，`id` 通知 ID，`data`、`data_len` | 发给本机的通知到达（[RFC 10](0001-wasm-extension-modules.zh-CN.md#10-客户端模块)） | 总是 |
 
@@ -901,7 +902,7 @@ Ares 动作（未启用 Ares 时为 `Unsupported`）：
 | `Select` | — | `extra` 对象句柄数组，`value` 1 为追加 | 本地选择；只接受本玩家能选的对象 |
 | `FlashObject` | 对象 | `value` 帧数 | 对象在本机闪烁 |
 | `ShowMessage` | — | `text` CSF 条目名或文字，`value` 颜色 | 显示一行消息 |
-| `RegisterHotkey` | — | `text` 热键名，`extra` 默认按键（文字，如 `Ctrl+Alt+K`：修饰键加 `+` 加键名） | 注册热键；ID 用 `client_lookup(Hotkey, name)` 取 |
+| `RegisterHotkey` | — | `text` 热键名，`extra` 默认按键（文字，如 `Ctrl+Alt+K`：修饰键加 `+` 加键名） | 注册热键；ID 用 `client_lookup(Hotkey, name)` 取；默认按键已绑定游戏热键时注册成功但不绑定按键，状态为 `Refused`；游戏热键始终优先 |
 
 ## 6. AI 小队
 
@@ -1299,6 +1300,7 @@ Ares 和 Phobos 的键尚未分类。
 | `Hold` | enum `Hold` | 全部 | |
 | `Gap` | int | `Row`、`Column` | 各部分间距（像素） |
 | `Visible` | bool | 全部 | |
+| `Dismissable` | bool | 全部 | 为 1 且可见时，在节点外按下鼠标或按 Esc 产生 `Dismiss`；这次按下不传给地图 |
 | `Clickable` | bool | 全部 | 为 1 时产生 `Click`；INI 的 `Button` 默认为 1，其他为 0 |
 | `Hoverable` | bool | 全部 | 为 1 时产生 `Hover` |
 | `Items` | string | `List` | 每行一个条目（CSF 条目名或文字），`\n` 分隔 |
@@ -1333,6 +1335,8 @@ Ares 和 Phobos 的键尚未分类。
 | 本地设置 | `Viewer` | ref（所属方） | R：本机所属方，观战者为 0 | v1 |
 | 本地设置 | `IsSpectator` | bool | R | v1 |
 | 本地设置 | 其他本地设置 | — | 待定问题 14 | later |
+| 光标 | `X`、`Y` | int | R：屏幕像素，与节点 `X`、`Y` 同一坐标系 | v1（阶段 2） |
+| 光标 | `Cell` | ref（格子） | R：光标下的格子；不在地图上时为 0 | v1（阶段 2） |
 
 ## 8. 名字种类、搜索范围与其他枚举
 
