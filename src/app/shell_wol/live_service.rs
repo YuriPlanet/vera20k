@@ -1227,7 +1227,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                     .expect("checked visit")
                     .live_service = Some(service)
             }
-            Err(_) => {
+            Err(error) => {
                 // Only answer once the user enters the online flow.
                 let requests = state
                     .frontend
@@ -1239,6 +1239,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                     .iter()
                     .any(|request| matches!(request, WolServiceRequest::EnsureApi))
                 {
+                    log::warn!("Online play could not start its lobby service: {error:#}");
                     service_event(state, WolServiceEvent::Api(WolApiStatus::Missing));
                 }
                 return Some(Instant::now() + Duration::from_secs(1));
@@ -2470,11 +2471,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             sign_in_token,
             lobby_visits,
         } if attempt == service.auth_attempt => {
-            if validate_online_identity(&player_id, &nickname).is_err() {
-                state.frontend.wol_account.password.clear();
-                service_event(state, WolServiceEvent::Login(Err(0x8000_4005)));
-                return;
-            }
+            // `http::decode_session` admitted this identity.
             if let Some(token) = sign_in_token {
                 remember_sign_in(settings_dir(state), service, &nickname, token);
             }
@@ -3072,7 +3069,7 @@ fn apply_event(
             service.relay_granted(crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32);
         }
         // The public lobby this player visits from a game room, whose state
-        // stays as it is.
+        // stays as it is (docs/lobby-protocol.md "Visiting the lobby").
         "joined" if payload["visit"].as_bool() == Some(true) => {
             let joined: wire::Joined = decode(payload)?;
             let members = joined

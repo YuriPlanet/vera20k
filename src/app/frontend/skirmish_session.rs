@@ -61,7 +61,7 @@ fn stock_handle_bytes() -> Vec<u8> {
 }
 
 /// VERA HTTPS account names also become persona INI section names. Keep their
-/// admission shared by the HTTP response, login continuation and handle owner.
+/// admission shared by the HTTP response and the handle owner.
 pub(crate) fn validate_online_handle(name: &str) -> anyhow::Result<()> {
     anyhow::ensure!(
         crate::ui::wol_account::valid_name(name),
