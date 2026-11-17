@@ -36,8 +36,10 @@ Failed requests return `{error:{code,message,phrases?}}`; messages must not echo
 credentials. A refusal a game shows its player (sign-in, accounts, versions, a full
 or busy lobby) also carries its message as `phrases`, as a lobby line does (`chat`).
 Clients show a 426 `message` (plain text, at most 160 characters) to the player with
-the releases link, so it should name the version players need; older clients show a
-fixed line.
+the download page's link (vera20k.org; older releases link GitHub's), so it should name
+the version players need; older clients show a fixed line. A 426 also makes a released
+game check for updates again and offer a newer release at its next idle main menu,
+even one the player skipped.
 While the operator has closed sign-ins for maintenance, `POST /v1/sessions` returns 503
 `maintenance` with the operator's one-line `message` (at most 160 characters), which
 clients show in place of their "could not connect" text; other 503s mean the lobby is
@@ -219,6 +221,7 @@ Event kinds and payloads:
 | `room_reopened` | `{channel:<Channel>,members:[Member]}` |
 | `member_joined` | `{member:<Member>}` |
 | `member_left` | `{name}` |
+| `host_changed` | `{member:<Member>, channel:<Channel>}` |
 | `options` | `{revision,options:<HostOptions>}` |
 | `choices` | `{from,row,slot,observer}` |
 | `ready` | `{from,ready,revision}` |
@@ -465,11 +468,24 @@ stays joined through the match, and its `finish` sets `back_to_room: true`. When
 the last player finishes, the players still in the room who asked for it get it
 back: `room_reopened` (owner first) and then `options` with the host's settings
 and every readiness cleared. Players who finished without asking are dropped from
-it silently. If the owner is not among them, or a newer room took its name, the
+it silently. If the owner is not among them, the room comes back to the next host
+(below), its flags naming them; without one, or once a newer room took its name, the
 room closes for them with `error` `host_left` and `channel_left`; an expired match
 closes it with `channel_left`. Each rematch is a fresh match with fresh relay
-credentials. A channel owner leaving before
-start closes the room and emits a failure/leave event to the guests. Membership,
+credentials.
+
+Host handover: when a game room's owner leaves before start (Leave, sign-out or an
+expired session), the player who has been in the room longest becomes its owner,
+provided every game still in it signed in with the header `Vera-Host-Handover: 1`, which
+games send on `POST /v1/sessions` once they take over a room. The lobby sends
+`host_changed` with the new owner's member and the room's channel, then `member_left`
+for the old one, and clears every readiness; a room named as games name rooms
+(`<name>'s_game`) becomes `<new>'s_game` unless another open room has that name. From
+then on the room is listed to the new owner's version, and it stays ranked or unranked
+as it was created. The room's options, map upload and advertisement stay until the new
+owner's game publishes its own. A Quick Match room, or one with a game that did not send
+the header, closes with `error` `host_left` and `channel_left` as before. A lobby from
+before handover closes every such room that way. Membership,
 authorization, readiness, sequence history and idle expiration are server-owned.
 Idle lobby visits expire after 120 seconds. An unfinished v4 playing membership
 survives that idle interval while another unfinished player of the match is online
@@ -576,13 +592,25 @@ A session whose version is older than `version` in
 10 minutes, receives one such chat line per newer release, naming both versions,
 since a match starts only between equal versions (`ready`, `start`). It arrives
 as a notice does: at once in the public channel or a game room that has not started,
-otherwise on the next public-channel join.
+otherwise on the next public-channel join. Its phrase key `NewRelease` makes a game
+check for updates again, as a 426 does.
 A session that still joins a game room from another version, through a buddy's game or
 its name, makes every member hear a `chat` line from the notice sender naming both
 versions.
 The same line, with both full `version` agreement strings, goes to the room once when
 a member's `ready` or `map_status` names another build of the host's version, since
 such a room cannot start.
+A member on the host's build whose `rules_digest` differs from the host's makes the room
+hear one line naming them (`LobbyRulesMismatch`, which has only `name`). Rules are judged
+once every member has sent `ready` or `map_status` and everyone on the host's build has
+reported `map_status` 1, as `start` compares them: before it, a generated map's game
+names the rules without the map's. When every other player on the host's build shares
+one `rules_digest`, two or more of them, and the host's differs from it, the line names
+the host instead (`LobbyHostRulesMismatch`, also only `name`); otherwise each player
+whose rules differ is named, so with one other player, that player. A player is named
+again only after they stopped being named (their rules matched, or the line moved
+between the host and the others) or after they left the room and joined it again.
+Games without a key show its English `text`.
 
 Each `join` of the public channel gives the joining session one `chat` line from the
 notice sender after its `joined`. The line says how many players are online: in the

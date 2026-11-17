@@ -104,6 +104,16 @@ status page says the games differ (`VERA:MatchStartMismatch`), the log records b
 hashes, and the search goes on after the stage timeout; the host only times out. This
 adds nothing to what game, lobby and relay exchange.
 
+The lobby lists only rooms of the player's own version, and the matchbot pairs only
+equal versions, so a game the lobby calls old asks its player to update. A 426 at
+sign-in, the first 426 to a signed-in request (`Outdated`) and the lobby's
+new-release line (phrase `NewRelease`) make the desktop updater check again, and a
+newer release is offered at the next idle main menu, even a version the player
+skipped (`app::updater::lobby_outdated`). Every text that points to a download
+names vera20k.org (`web_link::DOWNLOAD_PAGE`), but a release signed by a new key
+still points to the GitHub releases. Nothing exchanged changes: a released game
+shows only the text with its link, and a rollback does the same.
+
 When an online start fails, each player's game says whose side failed and logs why.
 A start whose 30-second relay admission runs out tells a player whose `relay_ready` the
 lobby took that another player's game could not reach the game server, a player whose
@@ -427,6 +437,22 @@ start for each AI. The lobby places its relay by the people watching and does no
 it to watch, as a watcher's game follows a player. Nothing new travels. A lobby from
 before this refuses to start it, and the host's game says the match could not start; an
 older game keeps its rule that someone plays, and a rollback does again.
+
+A VERA room whose host leaves stays open when every game left in it said at sign-in that
+it can take over (`Vera-Host-Handover: 1`, sent by every game built with this): the
+lobby makes the player who has been in it longest its host and sends `host_changed`
+before the old host's `member_left` (docs/lobby-protocol.md "Host handover"). The new
+host's game opens the room again from its own room settings, as Create Game does, and
+seats everyone still there, raising its Room size and opening the Spectators where its
+own settings would leave someone out; the others' games enter it again as after a join.
+A room named as games name rooms (`<name>'s_game`) takes the new host's name unless
+another open room has it; the room is listed to the new host's version and stays ranked
+or unranked as it was created. The chat stays, and it says who left and who hosts now. A
+room that comes back after its match without its host goes to its next player the same
+way, through `room_reopened`. A room with an older game in it, or a Quick Match room,
+closes as before, so an older game never meets `host_changed`; a game that does not know
+it would ignore it and leave the room once its host left. A rollback closes every such
+room again.
 
 Games 0.3.3 and 0.3.4 had a host setting, Balance automatically, that travels online as
 `launch.options.auto_balance` and had the lobby balance the room 5 seconds after who
