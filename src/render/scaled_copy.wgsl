@@ -1,4 +1,5 @@
-// A scaled copy of a surface: the match zoom and the sidebar's size.
+// A scaled copy of a surface: the match zoom, the wheel zoom and the
+// sidebar's size.
 //
 // Source pixel (0, 0) lands at `origin`, and each source pixel covers
 // `scale` x `scale` target pixels. A whole scale copies blocks. Between whole
@@ -90,14 +91,52 @@ fn drawn_over(at: vec2i) -> bool {
     return textureLoad(t_mask, clamp(at, vec2i(0), last), 0) < 1.0;
 }
 
+// The frame pixels the window pixel centred on `position` covers, from `lo`
+// to `hi`: at most two per axis.
+struct Covered {
+    lo: vec2i,
+    hi: vec2i,
+};
+
+fn covered(position: vec2f) -> Covered {
+    return Covered(
+        vec2i(floor((position - vec2f(0.5) - mask.origin) / mask.scale)),
+        vec2i(ceil((position + vec2f(0.5) - mask.origin) / mask.scale)) - 1,
+    );
+}
+
 @fragment
 fn fs_masked(@builtin(position) position: vec4f) -> @location(0) vec4f {
-    // The frame pixels this window pixel covers: at most two per axis.
-    let lo = vec2i(floor((position.xy - vec2f(0.5) - mask.origin) / mask.scale));
-    let hi = vec2i(ceil((position.xy + vec2f(0.5) - mask.origin) / mask.scale)) - 1;
-    for (var y = lo.y; y <= hi.y; y += 1) {
-        for (var x = lo.x; x <= hi.x; x += 1) {
+    let frame = covered(position.xy);
+    for (var y = frame.lo.y; y <= frame.hi.y; y += 1) {
+        for (var x = frame.lo.x; x <= frame.hi.x; x += 1) {
             if drawn_over(vec2i(x, y)) {
+                discard;
+            }
+        }
+    }
+    return scaled(position.xy);
+}
+
+// The wheel-zoomed world's window copy (`WindowMask::Changed`): the same copy,
+// kept off every window pixel over a frame pixel that changed after the world
+// went into the frame. Whatever the frame drew over the battlefield since
+// (health bars, labels, the band box, the in-game menus, the Chrono effect)
+// keeps showing at the frame's pixels, however it was drawn.
+@group(0) @binding(4) var t_frame: texture_2d<f32>;
+@group(0) @binding(5) var t_world_frame: texture_2d<f32>;
+
+fn changed(at: vec2i) -> bool {
+    let texel = clamp(at, vec2i(0), vec2i(textureDimensions(t_frame)) - 1);
+    return any(textureLoad(t_frame, texel, 0) != textureLoad(t_world_frame, texel, 0));
+}
+
+@fragment
+fn fs_unchanged(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let frame = covered(position.xy);
+    for (var y = frame.lo.y; y <= frame.hi.y; y += 1) {
+        for (var x = frame.lo.x; x <= frame.hi.x; x += 1) {
+            if changed(vec2i(x, y)) {
                 discard;
             }
         }

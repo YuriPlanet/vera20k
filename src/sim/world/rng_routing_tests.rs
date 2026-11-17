@@ -175,7 +175,7 @@ fn scenario_accessors_route_to_the_scenario_stream() {
 
 // --- Test 6: authoritative hash boundary (design §7.6) ---
 #[test]
-fn only_the_scenario_stream_reaches_the_state_hash() {
+fn offline_only_the_scenario_stream_reaches_the_state_hash() {
     let sim = Simulation::with_seed(99);
     let before = sim.state_hash();
     sim.main_rng.next_u32();
@@ -213,6 +213,47 @@ fn only_the_scenario_stream_reaches_the_state_hash() {
         sim.state_hash(),
         before_hash,
         "advancing the scenario stream must change the world hash"
+    );
+}
+
+#[test]
+fn network_start_discards_local_mapgen_history() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    for mode in [ScenarioGameMode::Lan, ScenarioGameMode::Wol] {
+        let mut cold = Simulation::with_seed(42);
+        let mut warm = Simulation::with_seed(42);
+        warm.install_mapgen_continuation(SimRng::new(71).mapgen_continuation());
+        warm.mapgen_rng.next_high_two_bits();
+        cold.install_session_mode(mode);
+        warm.install_session_mode(mode);
+        assert_eq!(warm.rng_state(), cold.rng_state());
+        assert_eq!(warm.state_hash(), cold.state_hash());
+
+        // A repeated mode publication must not rewind a match already running.
+        warm.mapgen_rng.next_high_two_bits();
+        let continued = warm.rng_state().mapgen;
+        warm.install_session_mode(mode);
+        assert_eq!(warm.rng_state().mapgen, continued);
+    }
+}
+
+#[test]
+fn network_bridge_rng_is_checked_before_its_next_overlay_write() {
+    let mut sim = Simulation::with_seed(42);
+    sim.install_session_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
+    let before = sim.state_hash();
+    sim.main_rng.next_u32();
+    assert_eq!(
+        sim.state_hash(),
+        before,
+        "local audio stays outside lockstep"
+    );
+    sim.mapgen_rng.next_high_two_bits();
+    assert_ne!(
+        sim.state_hash(),
+        before,
+        "bridge repair's cursor is shared state"
     );
 }
 

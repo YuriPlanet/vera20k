@@ -1495,8 +1495,10 @@ pub struct Simulation {
     /// fixed-map construction uses `Random__Seed(0)`, matching the verified
     /// native fresh-process state; launch `.SED` generation installs its exact
     /// post-RMG continuation. Bridge repair consumes this stream; destruction
-    /// remains Scenario-owned. This cursor is not saved or checksummed; Rust
-    /// retains it across in-scenario restore and fresh Scenario handoff.
+    /// remains Scenario-owned. Offline this cursor is not saved or checksummed;
+    /// Rust retains it across in-scenario restore and fresh Scenario handoff.
+    /// Network starts seed it from the agreed match seed and hash it, since
+    /// bridge repair writes its chosen variant into authoritative overlays.
     /// Original Init_Random_Number_System52FC20 leaves this entire object
     /// unchanged; only random-map generation reseeds it at598996.
     #[serde(skip, default = "deserialized_process_rng_placeholder")]
@@ -3902,6 +3904,14 @@ impl Simulation {
     /// The loader's GameMode install, at startup or from an admitted save
     /// ([`ScenarioSession::set_game_mode`]).
     pub fn install_session_mode(&mut self, mode: crate::sim::scenario_session::ScenarioGameMode) {
+        if mode.is_network() && !self.session.game_mode().is_network() {
+            // VERA network adaptation: Init_Random_Number_System52FC20 seeds
+            // Scenario/Main, leaving process MapGen alone. MapGen598030 also
+            // supplies bridge repair's overlay variants, so a shared match
+            // must not inherit each client's unrelated RMG/repair history.
+            // Rejoin/watch use this same fresh start before replaying history.
+            self.mapgen_rng = SimRng::new(self.session.seed());
+        }
         self.session.set_game_mode(mode);
     }
 
