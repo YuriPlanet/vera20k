@@ -58,6 +58,18 @@ The check runs from `TechnoExt::OnEarlyUpdate` (`:26`), called at
 `ApplyInterceptor`. On the first visit it starts `AutoDeathTimer` with
 `AfterDelay`; once the `CDTimerClass` completes it calls `KillSelf`.
 
+`if (this->CheckDeathConditions()) return;` (`:26`) is an early exit for
+`ApplyInterceptor` (`:29-30`, ported at `sim/world/techno_ai/interceptor.rs`):
+the visit that killed its object never reaches the interceptor scan, and
+`sim/world/techno_ai.rs` calls `apply_interceptor` only when
+`check_auto_death` reports no self-kill. Every arm returning `true`
+(`:162`, `:169`, `:182`, `:219`, `:232`, `:243`, `:254`) has just called
+`KillSelf` on the line above, so the skipped scan only covers an object that is already gone
+(`Kill`/`Vanish`) or one whose `Selling` mission `ApplyInterceptor`'s own
+`Selling`/`Construction` guard (`:60-61`) refuses anyway. The limbo sweep below
+never runs `ApplyInterceptor` at all, matching native, which only calls
+`CheckDeathConditions(true)` from `UpdateAutoDeathObjectsInLimbo`.
+
 Phobos tests `HasStarted()` before `Completed()`, which matters: an unstarted
 `CDTimerClass` reads as already completed. VERA keeps that order by comparing
 `start_frame()` with `PAUSED_START_FRAME`.
@@ -72,7 +84,15 @@ the object dies through the ordinary damage and death path.
 The `Vanish` arm (`:771-790`) first plays a random
 `AutoDeath.VanishAnimation` at `pThis->GetCoords()` with the object's house as
 the animation owner (the list is `ValueableVector<AnimTypeClass*>`, so an
-unresolvable name never entered it and the pick covers only loaded types), then
+unresolvable name never entered it and the pick covers only loaded types). The
+call at `:773` is
+`AnimExt::CreateRandomAnim(pVanishAnimation, pThis->GetCoords(), pThis,
+nullptr, true)` — five arguments, so `invoker` is true while `ownedObject`
+keeps its `Ext/Anim/Body.h:122` default `false`. The animation therefore
+records the dying object as its `Invoker`/`InvokerHouse` and its house as
+owner house, and receives **no** owner object: `AnimClass::SetOwnerObject @
+0x00424B50` is called only under `if (ownedObject)` (`Ext/Anim/Body.cpp`,
+`:420-421`). The arm then
 unloads a bunker the building holds (`BuildingClass::UnloadBunker @
 0x004593A0`, the sell/death release that does not reposition the unit or queue
 a Move), kills its passengers with the object as
@@ -163,11 +183,6 @@ clock has a zero maximum, which the renderer skips.
 - `FootExt::IsOwnerChangeFromRevertOnExit` is unported — the AttachEffect
   discard chain also reads it as `false` — so `IgnoreRevertOnExit` cannot fire
   and the owner-change transporter gate has no revert term.
-- The vanish animation's `invoker=true` attaches the dying object as the
-  anim's invoker through the shared spawn owner; native also sets it as the
-  owner object, which VERA still leaves empty (`ownedObject` stays at its
-  `false` default). Trigger: a reader of the vanish anim's owner object.
-  Frequency: authored mods. Risk: low.
 - Ares `SpawnSurvivors` before the fatal hit (`Ext/Techno/Body.Update.cpp:810-816`)
   is not ported. The hit ignores defenses, and VERA's death path then refuses its
   own survivor release and marks the transport handled, so an `AutoDeath`-killed
@@ -175,5 +190,3 @@ clock has a zero maximum, which the renderer skips.
   Reproducing Phobos' pre-call needs VERA's survivor owner taught the
   pre-damage context (it currently assumes the unit is already lifted), which is
   its own chain.
-- Native's early `return` from `OnEarlyUpdate` only skips the unported
-  `ApplyInterceptor`; VERA continues the visit either way.

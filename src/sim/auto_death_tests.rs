@@ -617,6 +617,49 @@ fn vanish_plays_its_animation_and_erases_the_object() {
     );
 }
 
+/// `AnimExt::CreateRandomAnim(pVanishAnimation, pThis->GetCoords(), pThis,
+/// nullptr, true)` (`Ext/Techno/Body.Update.cpp:773`) passes five arguments:
+/// `invoker` is true and `ownedObject` keeps its `Ext/Anim/Body.h:122` default
+/// `false`. The vanish animation therefore names the dying object as its Phobos
+/// `Invoker` (with that object's house as `InvokerHouse`) and its house as
+/// owner house, while `AnimClass::SetOwnerObject @ 0x00424B50` is never called
+/// (`Ext/Anim/Body.cpp:420-421`). Giving it an owner object would be invented
+/// behavior: the animation would then follow, and die with, an object native
+/// leaves it detached from.
+#[cfg(feature = "phobos")]
+#[test]
+fn the_vanish_animation_gets_the_dying_object_as_invoker_and_no_owner_object() {
+    let (mut sim, mut rules) = arena();
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::empty());
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let tank = sim
+        .spawn_object("TANKVANISH", "Americans", 10, 10, 0, &rules)
+        .expect("TANKVANISH spawns");
+    let owner = sim.entities().get(tank).unwrap().owner();
+    tick(&mut sim, &rules, 2);
+    let anims: Vec<_> = sim.anims().collect();
+    assert_eq!(anims.len(), 1, "one vanish animation");
+    let anim = anims[0].1;
+    assert_eq!(sim.interner.resolve(anim.type_id()), "VA");
+    assert_eq!(
+        anim.invoker(),
+        Some(tank),
+        "the dying object is the animation's invoker"
+    );
+    assert_eq!(
+        anim.invoker_house(),
+        Some(owner),
+        "and its house rides along as InvokerHouse"
+    );
+    assert_eq!(anim.owner_house(), Some(owner), "its house owns the anim");
+    assert_eq!(
+        anim.owner_entity(),
+        None,
+        "native passes no ownedObject, so the anim has no owner object"
+    );
+}
+
 /// `TechnoExt::KillSelf`'s `Sell` arm (`:792-807`): a building whose Buildup
 /// SHP is bound (`+0x6E9`) takes the Selling mission instead of dying; a
 /// building without one falls through to the `Kill` arm.
