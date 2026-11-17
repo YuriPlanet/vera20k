@@ -265,6 +265,15 @@ Replay version 4 regenerates shared planning events through the simulation at
 their original frame phases. Earlier JSON logs remain readable for inspection;
 playback requires the current version to avoid executing old internal events twice.
 
+Fresh LAN and online games also seed the bridge-repair MapGen RNG from the
+agreed match seed, instead of retaining each player's earlier random-map or
+bridge-repair history. Its cursor participates in network state checks, so a
+difference is detected before another repair writes different bridge overlays.
+Rejoining and watching rebuild this same start before replaying the relay's
+history. Offline games keep the native process-cursor retention. This adds no
+packet fields; older builds are refused by the existing build check, and a
+rollback restores that build's earlier retention and checksums.
+
 | Responsibility | Authoritative owner |
 |---|---|
 | Pending and scheduled simulation commands, native event dispatch | `sim::command_queue`, `sim::world::network_commands` |
