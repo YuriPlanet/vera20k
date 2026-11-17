@@ -895,12 +895,8 @@ impl Simulation {
         // `Ext/Techno/Hooks.Transport.cpp:632-644`): the low-cost land refusal
         // yields to the transport type's key, else `[General]`. Water already
         // passed through, which the native hook keeps.
-        #[cfg(feature = "phobos")]
-        let amphibious_unload = object
-            .phobos_amphibious_unload
-            .unwrap_or(rules.phobos_globals.amphibious_unload);
-        #[cfg(not(feature = "phobos"))]
-        let amphibious_unload = false;
+        // `ObjectType::amphibious_unload` owns that precedence.
+        let amphibious_unload = object.amphibious_unload(rules);
         let stranded = !amphibious_unload
             && terrain
                 .zip(self.object_type(first.type_ref(), rules))

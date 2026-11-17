@@ -44,20 +44,44 @@ AmphibiousUnload=yes
 
 ## Where VERA20K owns it
 
-- `rules::phobos_globals::PhobosGlobals::amphibious_enter` / `_unload`.
-- `rules::object_type::ObjectType::phobos_amphibious_enter` / `_unload`.
-- `sim::radio::receive`: `transport_amphibious_enter`, `transport_on_water`;
-  the DOCKING water branch and the CAN_LOAD boarding gate.
-- `sim::transport_unload`: `transport_amphibious_unload`,
-  `first_passenger_type`; the PICK_EXIT water branch, the land-search seed, the
-  failed-search CannotUnload arm (`0x73D7B7`) and the leave-position/exit-octant
-  SpeedType and MovementZone.
-- `sim::movement::track_turn::track_movement_gates`: the Drive/Ship
-  `Process_CheckUnload` pair (`0x4B08EF`, `0x69FFB6`).
-- `sim::deploy::Simulation::can_deploy_slash_unload` and
-  `sim::world::Simulation::unit_self_deploy_site_refused`.
+- `rules::phobos_globals::PhobosGlobals::amphibious_enter` / `_unload`: the
+  `[General]` reads (`Ext/Rules/Body.cpp:195-196`), both `false` by default.
+- `rules::object_type::ObjectType::amphibious_enter` / `_unload`: the single
+  resolution owner, `type.unwrap_or(global)`, with a `false` answer when the
+  `phobos` feature is off. Every consumer calls it, so the precedence is
+  defined once.
+- Enter (`0x73758A`, `0x73796B`): `sim::radio::receive::unit_docking`'s
+  DOCKING water branch and `unit_can_enter_radio`'s CAN_LOAD gate; the
+  click/cursor admission is `sim::passenger::can_enter_transport`.
+- Unload predicate (`0x4835D5`/`0x74004B`, `0x73D769`):
+  `sim::transport_unload::transport_can_unload_now`, shared by state 0 and the
+  `NoQueueUpToUnload` one-frame loop.
+- Unload positions: `pick_exit_octant` (`0x740C9C`), `eject_head_passenger`'s
+  leave-position search (`0x73DAD8`), and `unit_mission_unload` state 0's
+  find-unload-position seed (`0x73D7AB`, passenger `SpeedType`/`MovementZone`
+  in place of `Wheel`/`Normal`).
+- Cursor gates: `sim::deploy::Simulation::can_deploy_slash_unload`
+  (`0x70107A`) and `sim::world::Simulation::unit_self_deploy_site_refused`
+  (`0x7400B5`).
+- Loco `Mission::Unload` guards `0x4B08EF`/`0x69FFB6`:
+  `sim::movement::track_turn::track_movement_gates` — a keyless stock-bug fix,
+  not gated on either key.
+
+## Tests
+
+`rules::phobos_amphibious_tests::the_override_falls_back_to_the_global`,
+`sim::radio::receive::tests::an_amphibious_enter_transport_takes_a_passenger_on_water`,
+`sim::transport_unload::tests::an_amphibious_unload_puts_the_passenger_out_on_water`,
+`sim::transport_unload::tests::the_mouse_over_and_deploy_slash_gates_agree_with_the_predicate`,
+`sim::deploy_tests::amphibious_unload_admits_a_human_transport_on_water`,
+`sim::transport_unload::tests::amphibious_unload_with_no_land_cell_takes_the_cannot_unload_tail`.
 
 ## Residuals
 
 - `0x7400B5`'s water arm already passes in VERA; only the keyed land arm is
-  changed, so the observable result is the same.
+  changed, so the observable result is the same. Its `1%` land-cost test reads
+  the rules `[Clear]`-family row (`rules/terrain_rules.rs`), and the key off
+  keeps stock's refusal.
+- The `MovementZone` half of `0x73D7AB`/`0x73DAD8` is carried into
+  `PassabilityArgs`, but a search with no required zone answers the same
+  either way, so only the `SpeedType` half is observable at a boundary cell.

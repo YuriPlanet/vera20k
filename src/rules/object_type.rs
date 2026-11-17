@@ -4709,6 +4709,46 @@ impl ObjectType {
         None
     }
 
+    /// Phobos `AmphibiousEnter=` (`Ext/TechnoType/Body.cpp:1043`) else
+    /// `[General] AmphibiousEnter=` (`Ext/Rules/Body.cpp:195`): a transport
+    /// sitting on Water may take passengers (`Ext/Techno/Hooks.Transport.cpp:
+    /// 252`, `:613-628`; native `CanEnterNow`, rewrite of `0x73758A`, and
+    /// hook `0x73796B`). The type key wins when set: the single place this
+    /// precedence is defined.
+    #[cfg(feature = "phobos")]
+    pub fn amphibious_enter(&self, rules: &crate::rules::ruleset::RuleSet) -> bool {
+        self.phobos_amphibious_enter
+            .unwrap_or(rules.phobos_globals.amphibious_enter)
+    }
+
+    /// Without the `phobos` feature neither key is read, so the stock water
+    /// refusal stays.
+    #[cfg(not(feature = "phobos"))]
+    pub const fn amphibious_enter(&self, _rules: &crate::rules::ruleset::RuleSet) -> bool {
+        false
+    }
+
+    /// Phobos `AmphibiousUnload=` (`Ext/TechnoType/Body.cpp:1044`) else
+    /// `[General] AmphibiousUnload=` (`Ext/Rules/Body.cpp:196`): the head
+    /// passenger's own land row replaces the water refusal
+    /// (`Ext/Techno/Hooks.Transport.cpp:375-380`, rewrite of
+    /// `0x4835D5`/`0x74004B`, consumed at `0x73D769`), and the unload searches
+    /// seed the passenger's own SpeedType/MovementZone (`0x73D7AB`,
+    /// `0x740C9C`, `0x73DAD8`). The type key wins when set: the single place
+    /// this precedence is defined.
+    #[cfg(feature = "phobos")]
+    pub fn amphibious_unload(&self, rules: &crate::rules::ruleset::RuleSet) -> bool {
+        self.phobos_amphibious_unload
+            .unwrap_or(rules.phobos_globals.amphibious_unload)
+    }
+
+    /// Without the `phobos` feature neither key is read, so the stock
+    /// land-only unload stays.
+    #[cfg(not(feature = "phobos"))]
+    pub const fn amphibious_unload(&self, _rules: &crate::rules::ruleset::RuleSet) -> bool {
+        false
+    }
+
     /// The rider-side `OpenTransport.*` values (see
     /// [`crate::rules::phobos_open_transport`]).
     #[cfg(feature = "phobos")]

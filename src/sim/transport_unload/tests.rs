@@ -937,6 +937,240 @@ fn hover_transport_on_water_is_sent_to_a_raised_bank() {
     );
 }
 
+/// A limboed vehicle placed in a transport's cargo, the prestate every unload
+/// test starts from (`AddPassenger` prepends, so it sits at the cargo head).
+fn board_vehicle(fx: &mut Fixture, transport: u64, type_id: &str) -> u64 {
+    let (rx, ry) = {
+        let transport = fx.sim.substrate.entities.get(transport).expect("transport");
+        (transport.position.rx(), transport.position.ry())
+    };
+    let pax = fx
+        .sim
+        .spawn_object_limbo_at_height(type_id, OWNER, rx + 2, ry + 2, 0, 0, &fx.rules)
+        .expect("limbo passenger");
+    let cargo = fx
+        .sim
+        .substrate
+        .entities
+        .get_mut(transport)
+        .and_then(|t| t.passenger_role.cargo_mut())
+        .expect("transport cargo");
+    assert!(cargo.can_accept(1.0), "cargo accepts the vehicle");
+    cargo.board_forced_chain(&[(pax, 1.0)]);
+    fx.sim
+        .substrate
+        .entities
+        .get_mut(pax)
+        .expect("passenger")
+        .passenger_role = PassengerRole::inside_for_test(transport, false);
+    pax
+}
+
+/// Phobos `AmphibiousUnload` (`Ext/Techno/Hooks.Transport.cpp:375-380`,
+/// `:653`; rewrite of `0x4835D5`/`0x74004B`, consumed at `0x73D769`) plus the
+/// searches it reseeds (`0x73D7AB`, `0x740C9C`, `0x73DAD8`): with the key set
+/// the transport's own cell answers the head passenger's land row and the
+/// unload places that passenger on water; without it the stock water refusal
+/// keeps the cargo aboard.
+#[cfg(feature = "phobos")]
+#[test]
+fn an_amphibious_unload_puts_the_passenger_out_on_water() {
+    // (a) Every cell is water, and only the passenger's own Hover row admits
+    // it: the stock Foot exit scan and the Wheel leave-position seed refuse
+    // that placement, so a passenger on water proves both were reseeded from
+    // the passenger's type.
+    let mut fx = Fixture::from_rules(
+        rules_with_patch(
+            "[General]\nAmphibiousUnload=yes\n\
+             [Water]\nBuildable=no\nFoot=0%\nTrack=0%\nWheel=0%\nFloat=100%\nHover=100%\n\
+             Amphibious=100%\nFloatBeach=100%\n\
+             [BGGY]\nSpeedType=Hover\n",
+        ),
+        |_, _| true,
+    );
+    // The keyed arm reads the rules land row (`GroundType::Array[land]`), not
+    // the cell's own copy, so bind the fixture grid to the rules table.
+    fx.sim
+        .resolved_terrain
+        .as_mut()
+        .expect("fixture terrain")
+        .set_land_speed_rules_for_test(&fx.rules.terrain_rules);
+    let lcrf = fx.spawn("LCRF", 20, 20, 0x20);
+    let bggy = board_vehicle(&mut fx, lcrf, "BGGY");
+    {
+        let entity = fx.sim.substrate.entities.get(lcrf).expect("transport");
+        assert!(
+            super::transport_can_unload_now(&fx.sim, &fx.rules, entity),
+            "the key admits the water cell"
+        );
+    }
+    assert!(fx.apply(Command::UnloadPassengers { transport_id: lcrf }));
+    let order = fx.run_until_revealed_with_missions(&[bggy], 300);
+    assert_eq!(order.len(), 1, "the passenger left on water: {order:?}");
+    let (rx, ry) = fx.cell(bggy);
+    assert_eq!(
+        fx.sim
+            .resolved_terrain
+            .as_ref()
+            .expect("fixture terrain")
+            .cell(rx, ry)
+            .expect("passenger cell")
+            .land_type,
+        LandType::Water.as_index(),
+        "placed on water ({rx}, {ry})"
+    );
+
+    // The same hull and terrain without the key: the predicate refuses and
+    // the cargo stays inside.
+    let mut fx = Fixture::from_rules(rules_with_patch("[BGGY]\nSpeedType=Hover\n"), |_, _| true);
+    let lcrf = fx.spawn("LCRF", 20, 20, 0x20);
+    let bggy = board_vehicle(&mut fx, lcrf, "BGGY");
+    {
+        let entity = fx.sim.substrate.entities.get(lcrf).expect("transport");
+        assert!(
+            !super::transport_can_unload_now(&fx.sim, &fx.rules, entity),
+            "the stock water refusal stays with the key off"
+        );
+    }
+    assert!(fx.apply(Command::UnloadPassengers { transport_id: lcrf }));
+    for _ in 0..20 {
+        fx.tick();
+    }
+    assert_eq!(
+        fx.cargo_ids(lcrf),
+        vec![bggy],
+        "nobody dropped in the water"
+    );
+    assert!(!fx.revealed(bggy));
+
+    // (b) The find-unload-position seed (`0x73D7AB`): the transport is on water
+    // and only the passenger's own Track row admits the shore, so the stock
+    // `Wheel`/`Normal` seed would fail its search and take the CannotUnload
+    // tail instead of setting a destination.
+    let mut fx = Fixture::from_rules(
+        rules_with_patch(
+            "[General]\nAmphibiousUnload=yes\n\
+             [Water]\nBuildable=no\nFoot=0%\nTrack=0%\nWheel=0%\nFloat=100%\nHover=0%\n\
+             Amphibious=100%\nFloatBeach=100%\n\
+             [BGGY]\nSpeedType=Track\n",
+        ),
+        |rx, _| rx < 25,
+    );
+    fx.sim
+        .resolved_terrain
+        .as_mut()
+        .expect("fixture terrain")
+        .set_land_speed_rules_for_test(&fx.rules.terrain_rules);
+    {
+        let terrain = fx.sim.resolved_terrain.as_mut().expect("fixture terrain");
+        for y in 0..MAP {
+            for x in 25..MAP {
+                let cell = terrain.cell_mut_for_test(x, y).expect("land cell");
+                let zero = Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+                let one = Some(crate::util::native_x87::NativeF32Bits::ONE);
+                cell.speed_costs.wheel = zero;
+                cell.speed_costs.track = one;
+                cell.base_speed_costs.wheel = zero;
+                cell.base_speed_costs.track = one;
+            }
+        }
+    }
+    let lcrf = fx.spawn("LCRF", 20, 20, 0x20);
+    let bggy = board_vehicle(&mut fx, lcrf, "BGGY");
+    assert!(fx.apply(Command::UnloadPassengers { transport_id: lcrf }));
+    let mut sent = None;
+    for _ in 0..10 {
+        fx.tick();
+        sent = fx
+            .sim
+            .substrate
+            .entities
+            .get(lcrf)
+            .expect("transport")
+            .navigation
+            .nav_com();
+        if sent.is_some() {
+            break;
+        }
+    }
+    assert!(
+        matches!(sent, Some(crate::sim::components::NavTargetRef::Cell { rx, .. }) if rx >= 25),
+        "the passenger's Track row found the shore: {sent:?}"
+    );
+    assert_eq!(fx.cargo_ids(lcrf), vec![bggy]);
+}
+
+/// Phobos `AmphibiousUnload` on the two cursor-side arms: `0x70107A`
+/// ([`Simulation::can_deploy_slash_unload`],
+/// `Ext/Techno/Hooks.Transport.cpp:646-657`) and `0x7400B5`
+/// ([`Simulation::unit_self_deploy_site_refused`], `:632-644`). Both answer the
+/// water/land question `CanUnloadNow` answers for one on-water and one on-land
+/// cell; the mouse-over arm keeps native's water pass-through and its keyed
+/// low-cost land refusal, which the deploy-slash arm does not read.
+#[cfg(feature = "phobos")]
+#[test]
+fn the_mouse_over_and_deploy_slash_gates_agree_with_the_predicate() {
+    // The head passenger is a Hover vehicle, so both keyed arms read its row:
+    // `[Water]` is retail's `Hover=100%`, `[Clear]` carries the `1%` boundary.
+    let case = |general: &str, water: bool, low_cost_land: bool| {
+        let land_row = if low_cost_land {
+            "[Clear]\nBuildable=yes\nFoot=100%\nTrack=100%\nWheel=100%\nHover=0.5%\n"
+        } else {
+            "[Clear]\nBuildable=yes\nFoot=100%\nTrack=100%\nWheel=100%\nHover=100%\n"
+        };
+        let patch = format!(
+            "[General]\n{general}\
+             [Water]\nBuildable=no\nFoot=0%\nTrack=0%\nWheel=0%\nFloat=100%\nHover=100%\n\
+             Amphibious=100%\nFloatBeach=100%\n\
+             [BGGY]\nSpeedType=Hover\n{land_row}"
+        );
+        let rules = rules_with_patch(&patch);
+        let mut fx = Fixture::from_rules(rules, move |_, _| water);
+        fx.sim
+            .resolved_terrain
+            .as_mut()
+            .expect("fixture terrain")
+            .set_land_speed_rules_for_test(&fx.rules.terrain_rules);
+        // The deploy-slash gate refuses water only for a human house
+        // (`0x70107A`'s `pThis->Owner->Is_Human` arm), so register one.
+        let owner = fx.sim.intern(OWNER);
+        fx.sim
+            .houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
+        let lcrf = fx.spawn("LCRF", 20, 20, 0x20);
+        board_vehicle(&mut fx, lcrf, "BGGY");
+        let predicate = {
+            let entity = fx.sim.substrate.entities.get(lcrf).expect("transport");
+            super::transport_can_unload_now(&fx.sim, &fx.rules, entity)
+        };
+        (
+            predicate,
+            fx.sim.can_deploy_slash_unload(lcrf, &fx.rules),
+            fx.sim.unit_self_deploy_site_refused(lcrf, &fx.rules, None),
+        )
+    };
+
+    // One on-water cell: the predicate and the deploy-slash gate agree in both
+    // directions; the mouse-over arm's water pass-through is native's own
+    // asymmetry (`:631`).
+    assert_eq!(case("", true, false), (false, false, false));
+    assert_eq!(
+        case("AmphibiousUnload=yes\n", true, false),
+        (true, true, false)
+    );
+    // One on-land cell: all three admit at the stock `1%` row.
+    assert_eq!(case("", false, false), (true, true, false));
+    // Below `1%` the keyed land arm (`:636`) refuses without the key and
+    // admits with it; the deploy-slash gate reads no cost row.
+    assert_eq!(case("", false, true), (true, true, true));
+    assert_eq!(
+        case("AmphibiousUnload=yes\n", false, true),
+        (true, true, false)
+    );
+}
+
 /// Original73D7B5 ->741970 ->514D90 controls: failed FNPC still passes
 /// Map(0,0), and the Unload setter's west-cell lookup may restamp that same
 /// Dummy before Foot reads its +4C. These states start stopped with no path.
