@@ -293,7 +293,33 @@ impl Simulation {
             LocomotorKind::Rocket => {
                 Ok(self.process_rocket_locomotor(stable_id, rules, overlay_registry, ctx.effects))
             }
+            // TunnelLocomotionClass::Process 0x728E30: the class owns its
+            // position writes and never searches a route.
+            LocomotorKind::Tunnel => Ok(self.process_tunnel_locomotor(stable_id, rules)),
         }
+    }
+
+    /// TunnelLocomotionClass::Process `0x728E30` for one object. The dig timer
+    /// divides by the type's `Speed=` (`GetType()->+0x71c`, read in
+    /// `ProcessPreDigIn 0x7291F0`).
+    fn process_tunnel_locomotor(
+        &mut self,
+        id: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> LocomotorProcess {
+        let frame = self.session.binary_frame();
+        let speed = self
+            .substrate
+            .entities
+            .get(id)
+            .map(|entity| entity.type_ref())
+            .and_then(|type_ref| self.interner.object_type(type_ref, rules))
+            .map(|object| object.speed)
+            .unwrap_or(0);
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            crate::sim::movement::tunnel_locomotion::process(entity, speed, frame);
+        }
+        LocomotorProcess::admitted()
     }
 
     /// Fly and Jumpjet Process: the air pass inside the Fly cell-list

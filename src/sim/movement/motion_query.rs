@@ -51,6 +51,14 @@ pub(crate) fn destination(entity: &GameEntity) -> Option<crate::sim::components:
         LocomotorKind::Fly => loco.fly_runtime()?.destination(),
         LocomotorKind::Jumpjet => loco.jumpjet_runtime()?.destination(),
         LocomotorKind::Teleport => loco.teleport_runtime()?.armed_destination().unwrap_or(null),
+        // Destination 0x728A90 answers the stored Coords while moving and the
+        // object's own position when Idle.
+        LocomotorKind::Tunnel if !is_moving(entity)? => {
+            super::foot_coordinate::current_coordinate(entity)
+        }
+        LocomotorKind::Tunnel => {
+            super::tunnel_locomotion::destination_coord(entity).unwrap_or(null)
+        }
     })
 }
 
@@ -80,6 +88,8 @@ pub fn is_moving(entity: &GameEntity) -> Option<bool> {
         LocomotorKind::Rocket => locomotor
             .rocket_runtime()
             .map(super::rocket_movement::RocketRuntime::is_moving),
+        // Is_Moving 0x728A50: any state but Idle.
+        LocomotorKind::Tunnel => Some(locomotor.tunnel_runtime()?.is_moving()),
     }
 }
 

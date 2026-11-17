@@ -2869,6 +2869,15 @@ fn hash_locomotor_payload(
             10u8.hash(hasher);
             state.hash(hasher);
         }
+        // Tunnel keeps three defined fields: State, DigTimer.start and
+        // DigTimer.duration (`0x3C`-byte object, `+0x18/+0x28/+0x34`).
+        LocomotorRuntimePayload::Tunnel(state) => {
+            11u8.hash(hasher);
+            let (tunnel_state, timer_start, timer_duration) = state.hash_fields();
+            tunnel_state.hash(hasher);
+            timer_start.hash(hasher);
+            timer_duration.hash(hasher);
+        }
     }
 }
 
