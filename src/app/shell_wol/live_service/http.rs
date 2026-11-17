@@ -1623,12 +1623,12 @@ mod tests {
         );
     }
 
-    /// A bearer the shell stopped logging out (Back in an outage, or a
-    /// sign-in that answered after its wait) is logged out before the next
-    /// sign-in instead of reporting the name in use; while the lobby is
-    /// away it stays held.
-    #[test]
-    fn a_held_bearer_is_logged_out_before_signing_in_again() {
+    /// A lobby on a local port that reads one request until `done` holds for
+    /// what it read, answers it with `reply`, and hands back what it read.
+    fn one_request_lobby(
+        done: fn(&[u8]) -> bool,
+        reply: &'static [u8],
+    ) -> (std::net::SocketAddr, std::thread::JoinHandle<String>) {
         use std::io::{Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
@@ -1637,16 +1637,28 @@ mod tests {
             stream
                 .set_read_timeout(Some(Duration::from_secs(2)))
                 .unwrap();
-            let (mut request, mut chunk) = (Vec::new(), [0; 1024]);
-            while !String::from_utf8_lossy(&request).contains("logout") {
+            let (mut request, mut chunk) = (Vec::new(), [0; 4096]);
+            while !done(&request) {
                 let read = stream.read(&mut chunk).unwrap();
-                assert_ne!(read, 0, "the request ended without a logout");
+                assert_ne!(read, 0, "the request ended early");
                 request.extend_from_slice(&chunk[..read]);
             }
-            stream
-                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
-                .unwrap();
+            stream.write_all(reply).unwrap();
+            String::from_utf8_lossy(&request).into_owned()
         });
+        (address, lobby)
+    }
+
+    /// A bearer the shell stopped logging out (Back in an outage, or a
+    /// sign-in that answered after its wait) is logged out before the next
+    /// sign-in instead of reporting the name in use; while the lobby is
+    /// away it stays held.
+    #[test]
+    fn a_held_bearer_is_logged_out_before_signing_in_again() {
+        let (address, lobby) = one_request_lobby(
+            |request| request.windows(6).any(|bytes| bytes == b"logout"),
+            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+        );
         let mut client = Client {
             stopping: Arc::new(AtomicBool::new(false)),
             agent: ureq::Agent::new_with_defaults(),
@@ -2103,25 +2115,10 @@ mod tests {
     /// A sign-in names the game's version and build beside what it can do.
     #[test]
     fn a_sign_in_names_the_version_and_build() {
-        use std::io::{Read, Write};
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let lobby = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            stream
-                .set_read_timeout(Some(Duration::from_secs(2)))
-                .unwrap();
-            let (mut request, mut chunk) = (Vec::new(), [0; 4096]);
-            while !request.ends_with(b"}") {
-                let read = stream.read(&mut chunk).unwrap();
-                assert_ne!(read, 0, "the sign-in ended before its body");
-                request.extend_from_slice(&chunk[..read]);
-            }
-            stream
-                .write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
-                .unwrap();
-            String::from_utf8(request).unwrap().to_ascii_lowercase()
-        });
+        let (address, lobby) = one_request_lobby(
+            |request| request.ends_with(b"}"),
+            b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+        );
         let client = Client {
             stopping: Arc::new(AtomicBool::new(false)),
             agent: ureq::Agent::config_builder()
@@ -2141,16 +2138,29 @@ mod tests {
             Err(RequestFailure::Status(503))
         );
         let request = lobby.join().unwrap();
-        for header in [
-            format!("vera-version: {}", env!("CARGO_PKG_VERSION")),
-            format!(
-                "vera-build: {}",
-                crate::app::shell_network_setup::agreement::version()
-            ),
-            "vera-relay-federation: 1".to_owned(),
-        ] {
-            assert!(request.contains(&header.to_ascii_lowercase()), "{header}");
-        }
+        let header = |name: &str| {
+            request.lines().find_map(|line| {
+                let (key, value) = line.split_once(':')?;
+                key.eq_ignore_ascii_case(name)
+                    .then(|| value.trim().to_owned())
+            })
+        };
+        assert_eq!(
+            header("Vera-Version").as_deref(),
+            Some(env!("CARGO_PKG_VERSION"))
+        );
+        assert_eq!(header("Vera-Relay-Federation").as_deref(), Some("1"));
+        // The build `ready` and `map_status` carry, in the characters and
+        // length the lobby takes (docs/lobby-protocol.md "Sign-in headers").
+        let build = header("Vera-Build").unwrap();
+        assert_eq!(build, crate::app::shell_network_setup::agreement::version());
+        assert!(
+            (1..=128).contains(&build.len())
+                && build
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b".:_+-".contains(&byte)),
+            "{build}"
+        );
     }
 
     /// The browser's gateway forwards every header a browser game's sign-in

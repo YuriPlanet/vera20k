@@ -115,11 +115,13 @@ adds nothing to what game, lobby and relay exchange.
 Every game names its version and build when it signs in (`Vera-Version` and `Vera-Build`,
 docs/lobby-protocol.md "Sign-in headers"); the browser's sends every sign-in header the
 desktop's does but federation (`live_service::http::sign_in_headers`). The lobby compares
-two games' builds when both name one, else their versions, so it shows no room or match
-to watch from another build, and Quick Match pairs none, where the start would be
-refused. A released game names only its version, in its User-Agent, and is compared by
-that. A lobby that does not read the headers ignores them, and a rollback of game or
-lobby compares versions again. The browser gateway must forward them: an older one
+two games' builds when both name one, else their versions. Two games that both name a
+build therefore see no room or match to watch from another build, and Quick Match does
+not pair them, where the start would be refused. Where one names no build, such as a
+released game, which names only its version in its User-Agent, their versions decide as
+before, and two builds of one version can still meet and be refused at the start. A
+lobby that does not read the headers ignores them, and a rollback of game or lobby
+compares versions again. The browser gateway must forward them: an older one
 refuses them at its CORS check, failing a newer browser package's sign-in, so the
 gateway ships first.
 
