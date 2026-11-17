@@ -15,8 +15,8 @@ pub(crate) mod maps;
 mod service;
 pub(crate) use service::{
     HostOptions, NetworkSetupEvent, accept_network_map_source, accept_network_random_map_preview,
-    fail_go_handoff, invalidate_network_agreement, poll, prepare_lan_guest_handoff,
-    refuse_local_acceptance, service_event, set_network_map_progress,
+    fail_go_delivery, fail_go_handoff, invalidate_network_agreement, poll,
+    prepare_lan_guest_handoff, refuse_local_acceptance, service_event, set_network_map_progress,
 };
 mod teams;
 pub(crate) use teams::lobby_refused_option;
