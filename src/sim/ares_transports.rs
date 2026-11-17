@@ -78,7 +78,7 @@ impl Simulation {
     ///     `ExtraPower=` is positive; any other first hears its HELLO
     ///     (RequestLink); then CargoClass AddPassenger and AbortMotion;
     ///   - a Foot takes the transport's Location (SetLocation vt+0x1B4), an
-    ///     `OpenTopped=` transport makes it a rider (EnteredOpenTopped
+    ///     `OpenTopped=` transport makes it a rider on Guard (EnteredOpenTopped
     ///     `0x00710470`), Transporter is the transport, and AddPassenger
     ///     (vt+0x394, a `Gunner=` transport's gunner included) runs with
     ///     VocClass::VoicesEnabled cleared, so no EnterTransportSound;

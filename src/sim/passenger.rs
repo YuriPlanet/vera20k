@@ -513,11 +513,13 @@ impl Simulation {
 
     /// Ares conductAbduction's tail (10054A80), after its Limbo: the
     /// abductee's Transporter (`+0x11C`) is the abductor, an allied rider of
-    /// an `OpenTopped=` abductor is marked (EnteredOpenTopped `0x00710470`,
-    /// keeping its AI in the logic order), then AddPassenger (vt+0x394).
-    /// CreateInitialPayload's Foot arm (10043C10, `sim::ares_transports`)
-    /// takes the same steps with VocClass::VoicesEnabled cleared around
-    /// AddPassenger (`voices` false). Answers whether the hold took it.
+    /// an `OpenTopped=` abductor enters it ([`Self::enter_open_topped`],
+    /// through the DLL's thunk 10044880 at 10054FB1), then AddPassenger
+    /// (vt+0x394). CreateInitialPayload's Foot arm (10043C10,
+    /// `sim::ares_transports`) takes the same steps with
+    /// VocClass::VoicesEnabled cleared around AddPassenger (`voices` false);
+    /// it enters (10043E65) before it writes Transporter, which the guard
+    /// reset does not read. Answers whether the hold took it.
     pub(crate) fn ares_abduct_into_hold(
         &mut self,
         passenger: u64,
@@ -535,7 +537,7 @@ impl Simulation {
             entity.passenger_role.transporter = Some(carrier);
         }
         if rider {
-            let _ = self.register_open_topped_passenger(passenger);
+            let _ = self.enter_open_topped(passenger, context.rules(), context.effects());
         }
         self.add_passenger_voiced(carrier, &[(passenger, size)], voices, context)
     }
@@ -559,10 +561,24 @@ impl Simulation {
             passenger.passenger_role.transporter = Some(carrier);
         }
         if open_topped {
-            self.reset_orders_to_guard(passenger, rules, effects);
-            let registered = self.register_open_topped_passenger(passenger);
+            let registered = self.enter_open_topped(passenger, rules, effects);
             debug_assert!(registered, "accepted open-topped passenger remains active");
         }
+    }
+
+    /// TechnoClass::SetInOpenTransport (`0x00710470`, Ares' EnteredOpenTopped)
+    /// for a rider whose carrier link already marks it open-topped (`+0x82`,
+    /// `0x0071047D`): ResetOrdersToGuard (vt+0x3D0, `0x00710484`), then
+    /// LogicClass::AddObject(rider, false) (`0x00710492`), so its AI stays in
+    /// the logic order. Answers whether the rider is in that order.
+    fn enter_open_topped(
+        &mut self,
+        passenger: u64,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        self.reset_orders_to_guard(passenger, rules, effects);
+        self.register_open_topped_passenger(passenger)
     }
 
     /// CargoClass::AddPassenger4733A0: Limbo the supplied head, then attach
@@ -631,7 +647,8 @@ enum Role {
         /// `TechnoClass+0x82` InOpenToppedTransport. Only
         /// `SetInOpenTransport @ 0x00710470` sets it, when an `OpenTopped=`
         /// transport takes the passenger aboard (Infantry `0x0051A45E`, Unit
-        /// `0x0073A75D`). It clears on a successful unload
+        /// `0x0073A75D`, and Ares' abduction and InitialPayload through the
+        /// DLL's thunk at 10054FB1 and 10043E65). It clears on a successful unload
         /// (`ClearInOpenTransport`, `0x0073DB98`) and the dying transport's
         /// passenger prefix (`ClearAllInOpenTransport`, `0x00737F92`), before
         /// any passenger is removed; a failed

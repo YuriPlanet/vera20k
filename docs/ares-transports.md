@@ -33,8 +33,9 @@ Convert.Deploy=DEPLOYED
     the BuildingType/AircraftType skip and the infantry-only building rule follow
     the DLL. A garrison appends occupants and refreshes its threat; an absorber marks
     the infantry absorbed; another building hears HELLO, then takes it through
-    CargoClass with AbortMotion; a Foot transport sets the rider's Location,
-    OpenTopped rider, Transporter and AddPassenger with VoicesEnabled cleared (no
+    CargoClass with AbortMotion; a Foot transport sets the rider's Location, makes
+    an OpenTopped rider (SetInOpenTransport 0x710470, which resets its orders to
+    Guard), then Transporter and AddPassenger with VoicesEnabled cleared (no
     EnterTransportSound; a Gunner transport takes its gunner).
 - `Convert.Deploy` (+0x60C): UnitClass_Mi_Unload_SimpleDeployer 1004C070 (hook
   0x73DE90) converts a deployed simple deployer in place (ConvertToType 10043650,
