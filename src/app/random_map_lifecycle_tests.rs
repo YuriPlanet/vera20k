@@ -62,6 +62,7 @@ fn launch_session(seed_name: &str) -> SkirmishLaunchSession {
             start_position: LaunchStartPosition::Position(1),
             team: LaunchTeam::None,
             difficulty: AiDifficulty::Easy,
+            driver_policy: None,
         }],
         pre_fill_house_roster: crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(1),
         options: SkirmishLaunchOptions::default(),

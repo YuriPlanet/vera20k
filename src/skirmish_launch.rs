@@ -682,6 +682,13 @@ pub struct SkirmishAiSlot {
     pub start_position: LaunchStartPosition,
     pub team: LaunchTeam,
     pub difficulty: AiDifficulty,
+    /// Driver policy: when set, the slot's house is command-driven — the
+    /// native AI stands down for it
+    /// ([`HouseState::command_driven`](crate::sim::house_state::HouseState::command_driven))
+    /// and the app's match loop drives it through the command layer
+    /// instead. `None` is a native computer.
+    #[serde(default)]
+    pub driver_policy: Option<crate::sim::driver::DriverPolicy>,
 }
 
 fn legacy_raw_ai_slot() -> u8 {
@@ -1418,6 +1425,7 @@ mod tests {
                         start_position: LaunchStartPosition::Auto,
                         team: LaunchTeam::None,
                         difficulty: AiDifficulty::Easy,
+                        driver_policy: None,
                     }
                 })
                 .collect();
@@ -1655,6 +1663,7 @@ mod tests {
                     start_position: LaunchStartPosition::Auto,
                     team: LaunchTeam::None,
                     difficulty: AiDifficulty::Easy,
+                    driver_policy: None,
                 },
                 SkirmishAiSlot {
                     raw_slot_index: 2,
@@ -1665,6 +1674,7 @@ mod tests {
                     start_position: LaunchStartPosition::Auto,
                     team: LaunchTeam::None,
                     difficulty: AiDifficulty::Easy,
+                    driver_policy: None,
                 },
             ],
             pre_fill_house_roster: PreFillHouseRoster::from_compact_skirmish(2),

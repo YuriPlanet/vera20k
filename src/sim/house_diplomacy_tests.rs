@@ -155,6 +155,7 @@ fn computer_paranoid_needs_allies_allowed_and_no_computer_team() {
         controllers: Vec::new(),
         handle: None,
         difficulty: crate::sim::house_state::HouseDifficulty::Normal,
+        driver_policy: None,
         commander: None,
     };
     for (human_team, computer_team, paranoid_runs) in [

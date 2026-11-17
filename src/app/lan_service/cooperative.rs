@@ -292,6 +292,7 @@ fn round_options(
             start_position: choices.start_position,
             team: choices.team,
             difficulty: options::decoded_difficulty(words.difficulty)?,
+            driver_policy: None,
         });
     }
     Ok(CooperativeRoundOptions {
@@ -363,6 +364,7 @@ mod tests {
                 start_position: LaunchStartPosition::Position(4),
                 team: LaunchTeam::Team(1),
                 difficulty: AiDifficulty::Hard,
+                driver_policy: None,
             }],
         };
         let message = options_record(&options).encode("Host").unwrap();

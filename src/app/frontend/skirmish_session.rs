@@ -633,6 +633,7 @@ impl MultiplayerShellRuntime {
                         LaunchTeam::None
                     },
                     difficulty,
+                    driver_policy: None,
                 });
             } else if persisted.row_type == 3 {
                 vacancies[usize::from(row)] = NetworkVacancy::Closed;
@@ -2695,6 +2696,7 @@ mod tests {
                 start_position: LaunchStartPosition::Auto,
                 team: LaunchTeam::Team(3),
                 difficulty: AiDifficulty::Hard,
+                driver_policy: None,
             };
             launch.opponents = vec![
                 ai.clone(),
@@ -2985,6 +2987,7 @@ mod tests {
                 start_position: LaunchStartPosition::Auto,
                 team: LaunchTeam::None,
                 difficulty: AiDifficulty::Easy,
+                driver_policy: None,
             }],
             pre_fill_house_roster:
                 crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(1),

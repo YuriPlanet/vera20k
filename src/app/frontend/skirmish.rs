@@ -299,6 +299,7 @@ mod tests {
                 start_position: LaunchStartPosition::Auto,
                 team: LaunchTeam::None,
                 difficulty: Default::default(),
+                driver_policy: None,
             }],
             pre_fill_house_roster:
                 crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(1),
@@ -1479,6 +1480,7 @@ mod tests {
             start_position: LaunchStartPosition::Auto,
             team: LaunchTeam::Team(1),
             difficulty: Default::default(),
+            driver_policy: None,
         });
         let slots = normalized_launch_slots(&session);
         let alliances = launch_alliance_map(&slots, &session.mode);
@@ -1513,6 +1515,7 @@ mod tests {
             start_position: LaunchStartPosition::Auto,
             team: LaunchTeam::None,
             difficulty: Default::default(),
+            driver_policy: None,
         });
         let slots = normalized_launch_slots(&session);
 
@@ -1848,6 +1851,7 @@ mod tests {
             start_position: LaunchStartPosition::Auto,
             team: LaunchTeam::None,
             difficulty: Default::default(),
+            driver_policy: None,
         });
         let starts = test_launch_starts();
         let mut expected_rng = SimRng::new(8);
