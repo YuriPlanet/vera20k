@@ -609,6 +609,85 @@ pub fn probe(map_name: Option<String>) -> Result<String, JsValue> {
     serde_json::to_string(&report).map_err(|error| JsValue::from_str(&error.to_string()))
 }
 
+/// docs/spawn.md "Random maps": the random map a share code (`VR1-…`) or
+/// `.SED` text describes, made from the retail files imported with
+/// `import_file` (never a mod), as `{ report, bytes }`: `report` is the JSON
+/// line desktop `vera20k --generate-map` prints, `bytes` the map file. It
+/// rejects with an Error saying what is wrong. It needs no running engine.
+/// On the threaded package with its pool started it runs on a pool worker
+/// and the page's thread goes on; otherwise it runs here (seconds).
+#[wasm_bindgen(unchecked_return_type = "Promise<{ report: string; bytes: Uint8Array }>")]
+pub fn generate_map(input: String) -> js_sys::Promise {
+    install_config();
+    let generate = move || {
+        let config = crate::util::config::GameConfig::load()?;
+        crate::app::random_map_file::generate_from_game(&config, None, &input)
+    };
+    #[cfg(feature = "wasm-threads")]
+    if sim_worker::pool_started() {
+        return wasm_bindgen_futures::future_to_promise(async move {
+            generated_map(on_pool(move || generate().map_err(|error| format!("{error:#}"))).await)
+        });
+    }
+    match generated_map(generate().map_err(|error| format!("{error:#}"))) {
+        Ok(map) => js_sys::Promise::resolve(&map),
+        Err(error) => js_sys::Promise::reject(&error),
+    }
+}
+
+/// `generate_map`'s resolved value, or the Error it rejects with.
+fn generated_map(
+    map: Result<crate::app::random_map_file::RandomMapFile, String>,
+) -> Result<JsValue, JsValue> {
+    let map = map.map_err(|error| js_sys::Error::new(&error))?;
+    let report = serde_json::to_string(&map.report)
+        .map_err(|error| js_sys::Error::new(&error.to_string()))?;
+    let value = js_sys::Object::new();
+    js_sys::Reflect::set(&value, &"report".into(), &report.into())?;
+    js_sys::Reflect::set(
+        &value,
+        &"bytes".into(),
+        &js_sys::Uint8Array::from(map.bytes.as_slice()),
+    )?;
+    Ok(value.into())
+}
+
+/// Run `work` on the rayon pool and wait for it without blocking this
+/// thread, which traps when it waits on another: check every 20 ms.
+#[cfg(feature = "wasm-threads")]
+async fn on_pool(
+    work: impl FnOnce() -> Result<crate::app::random_map_file::RandomMapFile, String> + Send + 'static,
+) -> Result<crate::app::random_map_file::RandomMapFile, String> {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    rayon::spawn(move || {
+        let _ = sender.send(work());
+    });
+    loop {
+        match receiver.try_recv() {
+            Ok(result) => return result,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                return Err("the map generation stopped".to_owned());
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+        }
+        // A panic traps the worker before its sender drops.
+        if let Some(error) = sim_worker::worker_panic() {
+            return Err(format!("the map generation stopped: {error}"));
+        }
+        let pause = js_sys::Promise::new(&mut |resolve, _| {
+            let waited = web_sys::window().and_then(|window| {
+                window
+                    .set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, 20)
+                    .ok()
+            });
+            if waited.is_none() {
+                let _ = resolve.call0(&JsValue::NULL);
+            }
+        });
+        let _ = wasm_bindgen_futures::JsFuture::from(pause).await;
+    }
+}
+
 fn install_config() {
     crate::util::file_system::import_file("/config.toml", config_text().into_bytes());
 }

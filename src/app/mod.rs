@@ -97,6 +97,7 @@ pub(crate) mod process_assets;
 #[cfg(feature = "telemetry-dashboard")]
 pub(crate) mod process_stats;
 pub(crate) mod radar_movie;
+pub(crate) mod random_map_file;
 #[cfg(all(test, tests_app))]
 mod random_map_lifecycle_tests;
 pub(crate) mod renderer_state;

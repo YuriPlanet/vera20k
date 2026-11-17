@@ -46,6 +46,11 @@ static WORKER_PANIC: Mutex<Option<String>> = Mutex::new(None);
 /// after the log and `except.txt` are written, and must not panic itself.
 pub fn report_panic(info: &std::panic::PanicHookInfo<'_>) {
     let on_main = MAIN_THREAD.get() == Some(&std::thread::current().id());
+    if on_main {
+        // The game ends here; the network must not answer for it while the
+        // box waits. A worker's panic may not end it, so it stops nothing.
+        crate::net::udp::stop_io_after_crash();
+    }
     if let Some(what) = note_panic(on_main, info.to_string(), &WORKER_PANIC) {
         show_crash(what);
     }
@@ -57,6 +62,7 @@ pub fn report_panic(info: &std::panic::PanicHookInfo<'_>) {
 /// would end the game with no box; show it here. A panic that began on the
 /// main thread already showed its box, and [`show_fatal`] shows only one.
 pub fn report_reraised_panic(payload: &(dyn Any + Send)) {
+    crate::net::udp::stop_io_after_crash();
     show_crash(reraised_panic_text(payload, &WORKER_PANIC));
 }
 

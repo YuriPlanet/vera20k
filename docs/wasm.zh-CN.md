@@ -74,7 +74,7 @@ python3 tools/wasm/serve.py
 
 只有同时启用 `wasm-net` 和浏览器目标，才会启用 Fetch、WS socket 和延后的联机加载等待。桌面构建（包括启用 `wasm-net` 的构建）仍使用原生 UDP、阻塞 HTTPS 和线程调度。仅启用 `wasm` 的单机包仍会在网络入口明确返回不支持错误。浏览器不支持 LAN 发现和直接 UDP 连接。
 
-此单线程预览版也不支持随机地图生成和同步 GPU 截图／捕获，仍以已有安装地图为目标。非美式键盘布局中需要 Shift 的标点快捷键尚未完全映射。聊天框通过引擎在激活时加到页面上的隐藏 textarea 接收输入法文字（`src/web/ime.rs`），宿主页面无需为此添加标记。大型图集工作和同步存档准备仍可能阻塞浏览器事件循环；运行和性能验证尚待完成。
+浏览器版也不支持在独立线程上生成地图的“生成地图”对话框，以及同步 GPU 截图／捕获。页面改用 `generate_map(input)` 生成随机地图文件（[随机地图](spawn.md#random-maps)）：多线程包在线程池启动后于池中的 Worker 上生成，否则在页面线程上生成。非美式键盘布局中需要 Shift 的标点快捷键尚未完全映射。聊天框通过引擎在激活时加到页面上的隐藏 textarea 接收输入法文字（`src/web/ime.rs`），宿主页面无需为此添加标记。大型图集工作和同步存档准备仍可能阻塞浏览器事件循环；运行和性能验证尚待完成。
 
 ## 检查
 
@@ -122,7 +122,7 @@ finish/leave 收尾完成后发送 `match-ended`，随即请求退出引擎，�
 `engine-exited` 回调返回后，同一页面可以再次调用 `start_spawn`：先用
 `import_spawn_file` 导入下一局的文件，调用 `prepare_audio`，并传入新的画布。
 已导入的游戏资源会保留，所以 `import_file` 仍被拒绝，更换游戏目录需要新页面；
-`restore_user_file` 和 `probe` 在两局之间可用，每局都会重新读取设置。输出用的
+`restore_user_file`、`probe` 和 `generate_map` 在两局之间可用，每局都会重新读取设置。输出用的
 `AudioContext` 也会保留，所以后续启动不需要新的用户手势。一局在 `/spawn` 下的
 文件在退出时删除。`can_start_spawn()` 表示能否再次启动；对局运行中、`start_game`
 之后和 panic 之后都为 false，这些情况需要新页面/实例。线性内存不会缩小，宿主可在
