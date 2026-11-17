@@ -151,8 +151,10 @@ impl OnlineCleanup {
         service.auth_attempt = service.auth_attempt.wrapping_add(1);
         service.start_preparation = None;
         service.pending_choices = None;
-        if let Some(pending) = service.pending.take() {
-            service.match_id.get_or_insert(pending.match_id);
+        if let Some(pending) = service.pending.take()
+            && service.match_id.is_none()
+        {
+            service.hold_match(Some(pending.match_id));
         }
         self.retired = Some(RetiredService {
             service,
@@ -221,7 +223,7 @@ impl OnlineCleanup {
                         && !id.is_empty()
                         && id.len() <= 128
                     {
-                        retired.service.match_id = Some(id.to_owned());
+                        retired.service.hold_match(Some(id.to_owned()));
                     }
                 }
                 http::Response::Offline => {
@@ -273,6 +275,8 @@ pub(super) struct LiveService {
     player_id: String,
     member_ids: BTreeMap<String, String>,
     pending: Option<PendingStart>,
+    /// The started match this player is in, until its `finish` is
+    /// acknowledged or the session ends; only [`Self::hold_match`] writes it.
     match_id: Option<String>,
     finishing: Option<RetryingCommand>,
     leaving: Option<RetryingCommand>,
@@ -829,7 +833,7 @@ impl LiveService {
             .is_some_and(|finish| finish.request_id == id)
         {
             self.finishing = None;
-            self.match_id = None;
+            self.hold_match(None);
             self.network_quality = None;
             self.finish_result = None;
             self.finish_winners = None;
@@ -942,10 +946,35 @@ impl LiveService {
         self.leaving = None;
         self.left_for_match = false;
         self.logging_out = None;
-        self.match_id = None;
+        self.hold_match(None);
         self.watching = None;
         self.next_renewal_attempt = None;
         self.relay_renewal_due = None;
+    }
+
+    /// The one writer of the match this player is in. The worker holds the
+    /// same match: it resumes it when the lobby has lost this session's
+    /// event history, and finishes it before logging out a bearer it still
+    /// holds. A room left for the match, as Quick Match leaves it, keeps it.
+    fn hold_match(&mut self, match_id: Option<String>) {
+        if self.match_id != match_id {
+            let _ = self
+                .requests
+                .send(http::Request::HoldMatch(match_id.clone()));
+            self.match_id = match_id;
+        }
+    }
+
+    /// A new sign-in under `auth_attempt`. The worker first logs out a bearer
+    /// it still holds, finishing this service's match with it; only then is
+    /// that match, and any cleanup still owed for the old session, dropped.
+    fn sign_in(&mut self, nickname: String, credential: http::Credential) {
+        let _ = self.requests.send(http::Request::OpenSession {
+            attempt: self.auth_attempt,
+            nickname,
+            credential,
+        });
+        self.clear_cleanup();
     }
 
     /// A gameplay grant reached its UDP owner at `now_ms`.
@@ -1792,16 +1821,11 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             remember,
             ..
         } => {
-            service.clear_cleanup();
             service.auth_attempt = service.auth_attempt.wrapping_add(1);
             let credential =
                 sign_in_credential(settings_dir(state), service, &nickname, password, remember);
             service.signing_in_remembered = matches!(credential, http::Credential::Remembered(_));
-            let _ = service.requests.send(http::Request::OpenSession {
-                attempt: service.auth_attempt,
-                nickname,
-                credential,
-            });
+            service.sign_in(nickname, credential);
         }
         WolServiceRequest::Account(request) => send_account_request(service, request),
         WolServiceRequest::ForgetSignIn => forget_sign_in(settings_dir(state), service),
@@ -3511,7 +3535,7 @@ fn enter_timed_start(
     )?;
     // A watched match is no match of this player's: nothing finishes it.
     if service.watching.is_none() {
-        service.match_id = Some(match_id);
+        service.hold_match(Some(match_id));
     }
     service.pending = None;
     Ok(())
@@ -4585,7 +4609,15 @@ mod completion_tests {
         );
         service.finish_completed(5);
         // The next start is cancelled before it plays.
-        service.match_id = Some("cancelled-match".into());
+        service.hold_match(Some("cancelled-match".into()));
+        assert!(matches!(
+            input.try_recv(),
+            Ok(http::Request::HoldMatch(None))
+        ));
+        assert!(matches!(
+            input.try_recv(),
+            Ok(http::Request::HoldMatch(Some(_)))
+        ));
         assert_eq!(
             finish_payload_sent(&mut service, &input),
             json!({"match_id":"cancelled-match"})
@@ -5202,6 +5234,10 @@ mod completion_tests {
         assert!(service.admission_blocked());
         service.finish_completed(id);
         assert!(!service.admission_blocked());
+        assert!(matches!(
+            input.try_recv(),
+            Ok(http::Request::HoldMatch(None))
+        ));
         service.clear_cleanup(); //Definitive Offline has retired the authority.
         visit.match_returned((None, None, None), now);
         assert!(
@@ -5259,6 +5295,36 @@ mod completion_tests {
         assert!(service.room_closed(), "a leave before any start");
     }
 
+    /// The worker holds the match through Quick Match's leave, and a new
+    /// sign-in lets it finish that match with the bearer it logs out before
+    /// the service drops it.
+    #[test]
+    fn the_worker_holds_the_match_through_a_leave_until_the_next_sign_in() {
+        let (mut service, input, _output) = control_service(None);
+        service.hold_match(Some("quick-match".into()));
+        service.leave_room(Instant::now());
+        service.leave_completed(5);
+        service.sign_in("Tanya".into(), http::Credential::Guest);
+        let sent: Vec<_> = input
+            .try_iter()
+            .map(|request| match request {
+                http::Request::HoldMatch(id) => format!("hold {id:?}"),
+                http::Request::Command { operation, .. } => operation.to_owned(),
+                http::Request::OpenSession { .. } => "sign in".to_owned(),
+                _ => "other".to_owned(),
+            })
+            .collect();
+        assert_eq!(
+            sent,
+            [
+                "hold Some(\"quick-match\")",
+                "leave",
+                "sign in",
+                "hold None"
+            ]
+        );
+    }
+
     #[test]
     fn finish_retries_the_same_request_and_retains_match_until_acknowledged() {
         let (mut service, input, _output) = control_service(Some("test-match"));
@@ -5295,6 +5361,10 @@ mod completion_tests {
         assert!(service.finishing.is_some());
         service.finish_completed(id);
         assert!(service.finishing.is_none() && service.match_id.is_none());
+        assert!(matches!(
+            input.try_recv(),
+            Ok(http::Request::HoldMatch(None))
+        ));
         service.poll_cleanup(now + Duration::from_secs(60));
         assert!(input.try_recv().is_err());
         service.begin_leave(now);
@@ -5518,6 +5588,10 @@ mod completion_tests {
                 .is_ok()
         );
         let _ = cleanup.poll(now + Duration::from_secs(3));
+        assert!(matches!(
+            input.try_recv(),
+            Ok(http::Request::HoldMatch(None))
+        ));
         assert!(
             input.try_recv().is_err(),
             "leave acknowledgement still owns the room drain"
@@ -5588,6 +5662,10 @@ mod completion_tests {
                 .is_ok()
         );
         let _ = cleanup.poll(now);
+        assert!(matches!(
+            input.try_recv(),
+            Ok(http::Request::HoldMatch(Some(id))) if id == "late-match"
+        ));
         let http::Request::Command {
             operation: "finish",
             payload,
