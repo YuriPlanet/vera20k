@@ -1395,7 +1395,18 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                 let starts = matches!(request, NetworkSetupRequest::StartGame { .. });
                 if let Err(error) = request_setup(state, &mut service, request) {
                     log::warn!("Online setup request failed: {error:#}");
-                    let text = tr("VERA:OnlineRequestMismatch");
+                    let text = if let Some(MapTooSmall(capacity)) = error.downcast_ref() {
+                        crate::assets::csf_file::format_csf(
+                            &crate::app::App::csf_label(
+                                state,
+                                "TXT_SCENARIO_TOO_SMALL",
+                                "TXT_SCENARIO_TOO_SMALL",
+                            ),
+                            &[crate::assets::csf_file::CsfArg::Int(i64::from(*capacity))],
+                        )
+                    } else {
+                        tr("VERA:OnlineRequestMismatch")
+                    };
                     if starts {
                         service.start_preparation = None;
                         fail_start(state, &text);
@@ -1453,11 +1464,10 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
     Some(Instant::now() + POLL_INTERVAL)
 }
 
-/// A lobby that listed matches to watch refused the room's options: it may
-/// have gone back to before watching since, so it is asked for its list
-/// again, and a list it no longer has stops the room's Watching.
+/// An unknown lobby may support the refused options. Recheck a previously
+/// supported watch list too, in case the lobby rolled back after sign-in.
 fn recheck_lobby_watches(state: &AppState, service: &LiveService, failure: http::CommandFailure) {
-    if failure == http::CommandFailure::InvalidOptions && super::lobby_watches(state) == Some(true)
+    if failure == http::CommandFailure::InvalidOptions && super::lobby_watches(state) != Some(false)
     {
         let _ = service.requests.send(http::Request::Matches);
     }
@@ -2156,6 +2166,23 @@ fn local_map_status(state: &AppState, service: &LiveService) -> u8 {
     )
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("room exceeds the map's {0} starts")]
+struct MapTooSmall(i32);
+
+fn check_map_capacity(options: &wire::Options) -> Result<(), MapTooSmall> {
+    let launch = &options.launch;
+    let needed = crate::app::shell_network_setup::starts_needed(
+        launch,
+        launch.options.teams.is_some(),
+        crate::ui::multiplayer_setup::SetupFlavor::Wol,
+    );
+    if needed > options.map_metadata.player_capacity {
+        return Err(MapTooSmall(options.map_metadata.player_capacity));
+    }
+    Ok(())
+}
+
 fn options(state: &AppState) -> Result<wire::Options> {
     let session = &state.match_state.session;
     let launch = session
@@ -2170,7 +2197,7 @@ fn options(state: &AppState) -> Result<wire::Options> {
         crate::app::shell_network_setup::local_map_metadata(state, file).inspect_err(|_| {
             log::warn!("Online host map metadata could not be prepared");
         })?;
-    Ok(wire::Options {
+    let options = wire::Options {
         launch,
         map_metadata: metadata.into(),
         random_map: crate::app::shell_network_setup::maps::host_generated_manifest(state)?,
@@ -2194,7 +2221,9 @@ fn options(state: &AppState) -> Result<wire::Options> {
             .as_ref()
             .and_then(|protocol| protocol.published_watching(super::lobby_watches(state)))
             .map(str::to_owned),
-    })
+    };
+    check_map_capacity(&options)?;
+    Ok(options)
 }
 
 /// The host's current `C0` text for its options, only in Cooperative: the
@@ -2624,13 +2653,12 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             // A lobby that lists no matches is from before watching, or went
             // back to it: a room whose options carried its Watching goes on
             // without it.
-            if !watches
-                && before != Some(false)
+            if state.match_state.session.host()
                 && state
                     .frontend
                     .network_setup_protocol
                     .as_mut()
-                    .is_some_and(|room| room.stop_watching(None))
+                    .is_some_and(|room| room.received_watch_list(before, watches))
             {
                 notice(state, &tr("VERA:WatchingNotTaken"));
             }
@@ -5246,6 +5274,16 @@ mod completion_tests {
             .accept_network_setup(launch, true, None, false)
             .unwrap();
         session
+    }
+
+    #[test]
+    fn host_options_need_one_map_start_per_playing_team() {
+        let cases = crate::test_fixture::json("tests/fixtures/lobby/options.json");
+        let mut room: wire::Options =
+            serde_json::from_value(cases["rooms"]["fifteen_teams_of_thirty"].clone()).unwrap();
+        assert!(check_map_capacity(&room).is_ok());
+        room.map_metadata.player_capacity = 14;
+        assert_eq!(check_map_capacity(&room).unwrap_err().0, 14);
     }
 
     #[test]

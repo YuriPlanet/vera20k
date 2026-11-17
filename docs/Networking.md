@@ -429,7 +429,11 @@ ignores the field and is refused at the build check. Online, an older guest cann
 read the host's options while Teams is set and says the update was invalid, in a room
 that cannot start, since its players' versions differ. A lobby from before Teams
 refuses the field; the host's game then turns Teams Off, says so and sends its options
-again without it. A room has 2 to 15 teams, named A to O.
+again without it. A lobby that lists matches to watch already supports Teams, the queue
+and the room rules. A refusal from it leaves the settings in place. The host checks the
+map has enough starts for the playing teams, people and AI before publishing, so they
+can change the map or the seats while keeping their room settings. A room has 2 to 15
+teams, named A to O.
 
 In a VERA room whose mode has teams and Teams set, people play only on a team. A newcomer
 comes in watching while a spectator seat is open and takes a seat with a team header's
