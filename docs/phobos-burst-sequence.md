@@ -161,6 +161,9 @@ are written to fail while the repeat re-admits.
   `DelayedFire.PauseFiringSequence=yes` and `Burst.FireWithinSequence=yes`;
   effect: a delayed burst shot may skip or repeat one pause step. Retail sets
   neither key.
-- The completed burst's full rearm still consumes the stock
-  `RandomRanged(0, 2)` GetROF draw; `ROF.RandomDelay` only replaces the value
-  (native `0x6FD0B5` runs after that draw). The tests pin that draw.
+- The completed burst's rearm takes one Scenario jitter draw:
+  `TechnoClass_RearmDelay_ROF` (`0x6FD0B5`, six replaced bytes covering the
+  stock random call, `SkipGameCode=0x6FD0BB`) *replaces* that draw with
+  `GetRangedRandomOrSingleValue(ROF.RandomDelay)`; the `{0, 2}` default is the
+  vanilla jitter. `sim::combat::rof::get_rof` therefore draws the stock range
+  only when no `ROF.RandomDelay` range answers.
