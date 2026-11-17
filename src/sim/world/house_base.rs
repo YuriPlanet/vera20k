@@ -2396,6 +2396,14 @@ Foundation=1x1
             false,
         );
         sim.substrate.entities.insert(entity);
+        // A constructor's InLimbo (`0x005F392A`) would leave the entry out of
+        // the centre average; the corpus stands for placed buildings.
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .expect("inserted building")
+            .lifecycle
+            .set_in_limbo_for_test(false);
         sim.append_house_base_building_for_test(id);
     }
 
@@ -2410,12 +2418,12 @@ Foundation=1x1
     #[cfg(feature = "phobos")]
     #[test]
     fn an_ignored_building_leaves_the_centre_average() {
-        for (ignore, expected) in [(true, (9, 10)), (false, (11, 10))] {
+        for (ignore, expected) in [(true, (5, 5)), (false, (7, 5))] {
             let rules = centre_average_rules(ignore);
             let mut sim = native_map_fixture();
             let owner = add_house(&mut sim, "Americans", &rules);
-            insert_building(&mut sim, owner, 31, "PLAIN", (9, 10));
-            insert_building(&mut sim, owner, 32, "COUNTED", (13, 10));
+            insert_building(&mut sim, owner, 31, "PLAIN", (5, 5));
+            insert_building(&mut sim, owner, 32, "COUNTED", (9, 5));
             sim.houses
                 .get_mut(&owner)
                 .unwrap()

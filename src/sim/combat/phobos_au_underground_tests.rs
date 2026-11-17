@@ -47,16 +47,21 @@ fn scene(rules: &RuleSet) -> (Simulation, u64, u64) {
     let firer = sim
         .spawn_object("SCORER", "Russians", 10, 10, 0, rules)
         .expect("firer");
+    // A second ground Techno cannot Unlimbo into the firer's cell, so the
+    // burrowed unit starts next door; its cached layer, not its cell, is what
+    // separates it from a surface unit.
     let target = sim
-        .spawn_object("BURROWED", "Americans", 10, 10, 0, rules)
+        .spawn_object("BURROWED", "Americans", 11, 10, 0, rules)
         .expect("target");
-    // A burrowed techno sits in the firer's cell, below the surface: only the
-    // locomotor's cached layer separates it from a surface unit.
-    let entity = sim.substrate.entities.get_mut(target).expect("target");
-    let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Drive);
-    locomotor.set_layer_for_test(MovementLayer::Underground);
-    entity.locomotor = Some(locomotor);
+    set_layer(&mut sim, target, MovementLayer::Underground);
     (sim, firer, target)
+}
+
+fn set_layer(sim: &mut Simulation, id: u64, layer: MovementLayer) {
+    let entity = sim.substrate.entities.get_mut(id).expect("entity");
+    let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Drive);
+    locomotor.set_layer_for_test(layer);
+    entity.locomotor = Some(locomotor);
 }
 
 fn fire_error(
@@ -115,12 +120,22 @@ fn a_weapon_without_au_refuses_an_underground_target() {
     // must pass every other arm.
     for (au, expected) in [("no", FireError::Illegal), ("yes", FireError::Ok)] {
         let rules = rules(au, "no");
-        let (sim, firer, target) = scene(&rules);
+        let (mut sim, firer, target) = scene(&rules);
         assert_eq!(
             fire_error(&sim, &rules, firer, target, 0),
             expected,
             "AU={au} decides the underground arm"
         );
+        if expected == FireError::Illegal {
+            // The same adjacent target on the surface passes every other arm,
+            // so the layer is what the gate read.
+            set_layer(&mut sim, target, MovementLayer::Ground);
+            assert_eq!(
+                fire_error(&sim, &rules, firer, target, 0),
+                FireError::Ok,
+                "a surfaced target needs no AU"
+            );
+        }
     }
 }
 
