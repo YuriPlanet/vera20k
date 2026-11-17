@@ -248,11 +248,15 @@ Lines the lobby writes itself, from the notice sender (`VERA20k`) and the matchb
 which `text` is the English joined by spaces (for a matchbot line, the text after its
 first word, `Info`). A client shows each sentence as its
 language file's `VERA:Lobby<key>` with `{name}` filled from `values`, and shows `text`
-when it lacks one of the keys or values. A value is a string, a number, a phrase, an
+when it lacks one of the keys, a sentence names a value its phrase lacks, or a phrase or
+join fills past 2048 UTF-8 bytes, the chat limit. A value is a string, a number, a phrase, an
 `{and:[value]}` list read "a, b and c", or a `{unit:[value]}` list read "a, b, c"; the
 language file gives both joins. A phrase whose values hold `count` takes the plural form
 its language gives that number. The keys and their English are the `VERA:Lobby` entries of
 `src/i18n/vera20k.en.ini`, and a key the lobby adds needs its English line there.
+A key keeps its values and meaning once a release has shipped it, and a change takes a
+new key: games before 0.3.6 show a value their sentence names and the phrase lacks as
+its `{name}`, while every game shows `text` for a key it lacks.
 Operator notices carry no `phrases`: they come in the session's language when the
 operator translated them.
 
