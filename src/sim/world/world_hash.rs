@@ -738,9 +738,14 @@ impl Simulation {
         self.hash_ion_blasts(hasher);
         #[cfg(feature = "phobos")]
         self.warhead_anim_runtime.hash_state(hasher);
-        // ScenarioClass owns the sole saved/synchronized RNG. Main and MapGen
-        // are process globals and are deliberately absent from this hash.
+        // Offline, ScenarioClass owns the sole synchronized RNG; Main and
+        // MapGen are process globals. Network MapGen is agreed at fresh start
+        // because bridge repair consumes it to select hashed overlay IDs.
         self.scenario_rng.hash_state(hasher);
+        if self.session.game_mode().is_network() {
+            b"network-mapgen-v1".hash(hasher);
+            self.mapgen_rng.hash_state(hasher);
+        }
         // Scenario+214 controls identities of future constructors and therefore
         // guided Bullet steering. The saved prefix/phase also controls a fresh
         // map-read continuation. This is independent of Rust stable handles.
