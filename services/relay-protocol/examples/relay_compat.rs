@@ -272,16 +272,18 @@ fn run(started: Instant) -> Result<String> {
             deadline,
         )?);
     }
-    let certificate = OrderingCertificate {
-        room,
-        sources_mask: 0b111,
-        tick_hz: 45,
-        expires: now.as_secs() + 600,
-        pacing: Default::default(),
-        ordered_alone: false,
-    }
-    .sign(&key)
-    .map_err(|_| "certificate")?;
+    // A VO1C certificate parsed from its layout (room, LE mask, LE Hz, LE expiry,
+    // a placeholder HMAC that signing replaces) rather than built as a struct, so
+    // this builds against releases whose certificate has fewer fields.
+    let mut layout = b"VO1C".to_vec();
+    layout.extend_from_slice(&room);
+    layout.extend_from_slice(&0b111u32.to_le_bytes());
+    layout.extend_from_slice(&45u16.to_le_bytes());
+    layout.extend_from_slice(&(now.as_secs() + 600).to_le_bytes());
+    layout.extend_from_slice(&[0; 32]);
+    let certificate = OrderingCertificate::parse(&layout)
+        .and_then(|certificate| certificate.sign(&key))
+        .map_err(|_| "certificate")?;
     let mut bytes = Vec::new();
     let mut ready = [false; 2];
     let mut retry_at = Instant::now();
