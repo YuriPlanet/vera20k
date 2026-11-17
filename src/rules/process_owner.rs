@@ -3,6 +3,8 @@
 //! Active YR selects RULESMD/LANGRULE/ARTMD once during `Load_Game_Rules @
 //! 0x0052CD70`. Cold startup constructs a partial Type registry, and later
 //! preview/Full_Init rebuilds mutate or replace that same process authority.
+//! VERA starts each independent network match from the cold registry so peers'
+//! earlier maps cannot supply defaults to the incoming match.
 //! The compatibility `RuleSet` is a projection from those sources; it is never
 //! allowed to become a second registry owner.
 
@@ -21,6 +23,10 @@ mod planning_rules_tests;
 #[cfg(all(test, tests_rules_o_z))]
 #[path = "object_image_tests.rs"]
 mod object_image_tests;
+
+#[cfg(all(test, tests_rules_o_z))]
+#[path = "network_isolation_tests.rs"]
+mod network_isolation_tests;
 
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -132,6 +138,32 @@ struct NativeRulesSourceSnapshot {
     /// VERA: the player's Ares setting is Off, so no Ares key turns Ares on
     /// in a game this process loads.
     ares_keys_off: bool,
+}
+
+impl NativeRulesSourceSnapshot {
+    /// Rebuild the cold registry from the same immutable source selection.
+    /// Load_Game_Rules52CD70 runs this before any scenario-specific reads.
+    fn cold_registry(&self) -> Result<NativeTypeConstructionTrace, RulesError> {
+        let langrule = match self
+            .langrule
+            .as_ref()
+            .map(NativeLangRuleSource::read_for_process)
+        {
+            Some(NativeLangRuleRead::Accepted(ini)) => Some(ini),
+            Some(NativeLangRuleRead::DigestRejected | NativeLangRuleRead::DigestIndeterminate) => {
+                return Err(RulesError::LangRuleDigestRejected);
+            }
+            None | Some(NativeLangRuleRead::Absent | NativeLangRuleRead::SelectionFailed) => None,
+        };
+        process_native_rules_cold_start(
+            NativeRulesRegistryState::new(self.ships_ares),
+            &self.selected_rules_root,
+            &self.fixed_art,
+            langrule.as_ref(),
+            &self.fixed_eva,
+            &self.fixed_sounds,
+        )
+    }
 }
 
 #[derive(Debug)]
@@ -365,41 +397,36 @@ impl NativeRulesProcessOwner {
         if let Some(NativeLangRuleSource::SelectionFailed(error)) = langrule.as_ref() {
             log::warn!("Optional LANGRULE.INI selection failed: {error}");
         }
-        // A rejected Digest is fatal at startup. Each reset re-reads this same
-        // snapshot, so the reset tail's rejected branch cannot follow.
-        let startup_langrule = match langrule
-            .as_ref()
-            .map(NativeLangRuleSource::read_for_process)
-        {
-            Some(NativeLangRuleRead::Accepted(ini)) => Some(ini),
-            Some(NativeLangRuleRead::DigestRejected | NativeLangRuleRead::DigestIndeterminate) => {
-                return Err(RulesError::LangRuleDigestRejected);
-            }
-            None | Some(NativeLangRuleRead::Absent | NativeLangRuleRead::SelectionFailed) => None,
+        let sources = NativeRulesSourceSnapshot {
+            rules_art_names,
+            selected_rules_root,
+            langrule,
+            fixed_art,
+            movies,
+            fixed_sounds,
+            fixed_eva,
+            personal_rules,
+            ships_ares,
+            ares_keys_off,
         };
-        let cold_trace = process_native_rules_cold_start(
-            NativeRulesRegistryState::new(ships_ares),
-            &selected_rules_root,
-            &fixed_art,
-            startup_langrule.as_ref(),
-            &fixed_eva,
-            &fixed_sounds,
-        )?;
+        let cold_trace = sources.cold_registry()?;
         Ok(Self {
-            sources: NativeRulesSourceSnapshot {
-                rules_art_names,
-                selected_rules_root,
-                langrule,
-                fixed_art,
-                movies,
-                fixed_sounds,
-                fixed_eva,
-                personal_rules,
-                ships_ares,
-                ares_keys_off,
-            },
+            sources,
             registry: Some(NativeRulesRegistryOwner::BeforeReset(cold_trace)),
         })
+    }
+
+    /// A new network game starts from the same Rules state as a fresh process.
+    /// Native Reset6686C0 deliberately keeps Rules scalars and Tiberium objects;
+    /// carrying them across independent peers makes earlier maps affect play.
+    /// This VERA network boundary replaces only the live registry, preserving
+    /// selected sources, fixed audio and the incoming room's personal rules.
+    /// Offline loads continue through their native retaining reset.
+    pub fn reset_for_network_match(&mut self) -> Result<(), RulesError> {
+        self.assert_no_prepared_prefix();
+        let cold = self.sources.cold_registry()?;
+        self.registry = Some(NativeRulesRegistryOwner::BeforeReset(cold));
+        Ok(())
     }
 
     /// The same cold start for a game that ships `ares.mix` (or not): it
@@ -898,8 +925,8 @@ impl NativeRulesProcessOwner {
             .map_err(|failure| failure.into_parts().0)
     }
 
-    /// Read-only prospective generation inputs for network agreement. Actual
-    /// Generate uses `prepare_random_map_preview` and retains its full result.
+    /// Read-only prospective inputs for an offline generation. Actual Generate
+    /// uses `prepare_random_map_preview` and retains its full result.
     /// Carry the process-global Powerups, land and sound inputs into this
     /// temporary source projection; no live table or registry is replaced.
     pub fn random_map_preview_projection(
@@ -907,14 +934,37 @@ impl NativeRulesProcessOwner {
         mode_rules_override: Option<&IniFile>,
         theater_name: &str,
     ) -> Result<ProcessedRulesLayers, RulesError> {
-        let (layers, skip_root_color_add_and_mode) =
-            self.random_map_preview_layers(mode_rules_override);
         let state = self
             .registry
             .as_ref()
             .expect("Rules transition reentered")
             .registry_state()
             .retained_random_map_projection_seed();
+        self.random_map_projection_from_state(state, mode_rules_override, theater_name)
+    }
+
+    /// Network seed agreement must describe a fresh game's generation, not
+    /// globals written by the previous map. This has no live registry writes.
+    pub fn network_random_map_preview_projection(
+        &self,
+        mode_rules_override: Option<&IniFile>,
+        theater_name: &str,
+    ) -> Result<ProcessedRulesLayers, RulesError> {
+        let state = self
+            .sources
+            .cold_registry()?
+            .into_registry_state_discarding_events();
+        self.random_map_projection_from_state(state, mode_rules_override, theater_name)
+    }
+
+    fn random_map_projection_from_state(
+        &self,
+        state: NativeRulesRegistryState,
+        mode_rules_override: Option<&IniFile>,
+        theater_name: &str,
+    ) -> Result<ProcessedRulesLayers, RulesError> {
+        let (layers, skip_root_color_add_and_mode) =
+            self.random_map_preview_layers(mode_rules_override);
         layers
             .process_with_fixed_art_and_registry_state_recovering(
                 &self.sources.fixed_art,
@@ -927,6 +977,17 @@ impl NativeRulesProcessOwner {
                 &self.sources.fixed_sounds,
             )
             .map_err(|failure| failure.into_parts().0)
+    }
+
+    /// A network preview is recreated from the same cold Rules inputs as its
+    /// accepted .SED load. Offline previews retain the native cache behavior.
+    pub fn prepare_network_random_map_preview(
+        &mut self,
+        mode_rules_override: Option<&IniFile>,
+        theater_name: &str,
+    ) -> Result<(), RulesError> {
+        self.reset_for_network_match()?;
+        self.prepare_random_map_preview(mode_rules_override, theater_name, true)
     }
 
     /// RMG599650 resets the actual Type registries at59A0F0 only on a cache

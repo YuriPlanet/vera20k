@@ -468,7 +468,7 @@ pub(super) fn guest_joined(state: &mut AppState) -> anyhow::Result<()> {
                 "TXT_SAVE_CAMP_AVAILABLE",
                 "TXT_SAVE_CAMP_AVAILABLE",
             );
-            crate::app::shell_lan::append_chat(
+            crate::app::shell_lan::append_room_chat(
                 state,
                 crate::ui::lan_shell::LanChatLine {
                     text: text.encode_utf16().collect(),

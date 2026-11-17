@@ -10,8 +10,6 @@ use crate::ui::wol_lobby::{WolChannel, WolMember};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(super) struct Channel {
-    #[serde(default)]
-    pub id: String,
     pub kind: u32,
     pub max_users: i32,
     pub users: i32,
@@ -35,7 +33,6 @@ fn unknown_ping() -> i32 {
 impl From<WolChannel> for Channel {
     fn from(channel: WolChannel) -> Self {
         Self {
-            id: String::new(),
             kind: channel.kind,
             max_users: channel.max_users,
             users: channel.users,
@@ -243,7 +240,6 @@ pub(super) struct Session {
     pub player_id: String,
     pub nickname: String,
     pub token: String,
-    pub expires_at: u64,
     // The operator's welcome, when one is set; the game's own otherwise.
     #[serde(default)]
     pub motd: Option<String>,
@@ -251,6 +247,10 @@ pub(super) struct Session {
     /// remembered sign-in (docs/lobby-protocol.md "Accounts").
     #[serde(default)]
     pub sign_in_token: Option<String>,
+    /// What this lobby offers beyond protocol 4: `visit_lobby`
+    /// (docs/lobby-protocol.md "Visiting the lobby").
+    #[serde(default)]
+    pub features: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -379,9 +379,7 @@ pub(super) struct WatchGrant {
 /// played one.
 #[derive(Deserialize)]
 pub(super) struct Ladder {
-    /// The running season's number; `None` when none runs, as from a lobby
-    /// from before seasons.
-    #[serde(default)]
+    /// The running season's number; `None` when none runs.
     pub season: Option<u32>,
     pub records: Vec<LadderRecord>,
     /// Absent from a lobby from before all-time badges.

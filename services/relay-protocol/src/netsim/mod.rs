@@ -192,6 +192,7 @@ impl Simulation {
             tick_hz: scenario.tick_hz,
             expires,
             pacing: crate::CertificatePacing::On,
+            ordered_alone: false,
         }
         .sign(&key)
         .expect("certificate");

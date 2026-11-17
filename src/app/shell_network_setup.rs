@@ -126,14 +126,40 @@ pub(crate) enum NetworkSetupRequest {
     },
 }
 
-/// The online lobby first publishes final assignments, then submits Start only
-/// after every player has accepted that same revision. The transport owns the
-/// outstanding request; this owner retains only the setup input phase.
+/// The setup's start as its inputs see it. The online live service owns the
+/// outstanding request (`StartPreparation`) and sets this phase with it; the
+/// classic WOL service goes from Idle straight to Submitted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum OnlineStartPhase {
+pub(crate) enum StartPhase {
     Idle,
+    /// VERA's online host: the final settings are published and the guests
+    /// accept that revision; the lobby's `start` is not sent yet.
     Preparing,
+    /// WOL `00B77DEC`/`00B77E28` after the host's StartGame request, until
+    /// the server's OnGameStart rejects it; a matching OnGameStart holds it
+    /// (`[0xB77E28] = 2`) until the abort or the match. A guest enters it
+    /// only there.
     Submitted,
+}
+
+impl StartPhase {
+    /// Native's drops while StartGame is pending: the parse's option texts,
+    /// `A` and `K` (`0x5E3E73..0x5E3E90`), a guest's `R` (`0x7A8260`), the
+    /// host's preview answer and its ping requests. Preparing takes them:
+    /// its guests' `A` and `K` on the final revision complete it, and an `R`
+    /// cancels it.
+    pub(crate) fn submitted(self) -> bool {
+        self == Self::Submitted
+    }
+
+    /// The host's room holds still from its Start until the abort or the
+    /// match: its edits, the join queue and a newcomer's seat wait, as C2's
+    /// do while StartGame is pending. While the guests accept, only a guest's
+    /// own change, the host's kick or a departure changes the settings, and
+    /// each cancels the start.
+    pub(crate) fn in_progress(self) -> bool {
+        self != Self::Idle
+    }
 }
 
 pub(crate) struct NetworkSetupProtocol {
@@ -147,11 +173,8 @@ pub(crate) struct NetworkSetupProtocol {
     /// runs unchanged and Negotiated(0) starts loading directly; a direct
     /// (LAN) launch runs the LAN GO and its completion starts loading.
     external: bool,
-    /// WOL `00B77DEC`/`00B77E28` after the host's StartGame request, until
-    /// the server's OnGameStart rejects it; a matching OnGameStart holds it
-    /// (`[0xB77E28] = 2`) until the abort or the match.
-    wol_start_pending: bool,
-    online_start_preparing: bool,
+    /// Written only through [`Self::set_start_phase`].
+    start_phase: StartPhase,
     /// WOL host `SetTimer(0x14AF8, 5000)` (`0x7914FF`).
     ping_deadline: Option<Instant>,
     /// WOL `00B76440`: last ping per participant name (`007A0EA0`).
@@ -412,8 +435,7 @@ impl NetworkSetupProtocol {
             locked: false,
             quick_match,
             external: false,
-            wol_start_pending: false,
-            online_start_preparing: false,
+            start_phase: StartPhase::Idle,
             ping_deadline: wol_host.then(|| Instant::now() + wol::PING_PERIOD),
             pings: Vec::new(),
             wol_host: None,
@@ -460,16 +482,20 @@ impl NetworkSetupProtocol {
         self.quiet_joins_until = Some(Instant::now() + QUIET_JOINS);
     }
 
-    pub(crate) fn set_online_start_phase(&mut self, phase: OnlineStartPhase) {
-        self.online_start_preparing = phase == OnlineStartPhase::Preparing;
-        self.wol_start_pending = phase == OnlineStartPhase::Submitted;
-        if phase == OnlineStartPhase::Idle {
-            self.start_requested = false;
-        }
+    pub(crate) fn set_start_phase(&mut self, phase: StartPhase) {
+        self.start_phase = phase;
     }
 
-    pub(crate) fn start_in_progress(&self) -> bool {
-        self.wol_start_pending || self.online_start_preparing
+    /// The host's StartGame with every channel user (C2's `0x790BB9`, Quick
+    /// Match's `0x0077EA53..0x0077EB72`), then `[0xB77DEC]` until
+    /// OnGameStart answers. A start already under way takes no second one.
+    fn submit_start(&mut self, users: Vec<String>) -> bool {
+        if self.start_phase.in_progress() {
+            return false;
+        }
+        self.set_start_phase(StartPhase::Submitted);
+        self.requests.push(NetworkSetupRequest::StartGame { users });
+        true
     }
 
     /// VERA: the next join is the kept room's partner coming back.
@@ -633,6 +659,15 @@ pub(crate) fn quick_match(state: &AppState) -> bool {
         .is_some_and(|protocol| protocol.quick_match)
 }
 
+/// The admitted setup's start; Idle without a setup.
+pub(crate) fn start_phase(state: &AppState) -> StartPhase {
+    state
+        .frontend
+        .network_setup_protocol
+        .as_ref()
+        .map_or(StartPhase::Idle, |protocol| protocol.start_phase)
+}
+
 /// The admitted setup belongs to an external launch, with no dialog.
 pub(crate) fn external(state: &AppState) -> bool {
     state
@@ -749,7 +784,7 @@ pub(crate) fn install_watch_setup(
 /// WOL chat notices.
 fn chat_notice(state: &mut AppState, key: &str, args: &[crate::assets::csf_file::CsfArg]) {
     let text = crate::assets::csf_file::format_csf(&App::csf_label(state, key, key), args);
-    crate::app::shell_lan::append_chat(
+    crate::app::shell_lan::append_room_chat(
         state,
         crate::ui::lan_shell::LanChatLine {
             text: text.encode_utf16().collect(),
@@ -1104,15 +1139,7 @@ fn install_setup(
         state.platform.window.request_redraw();
         return Ok(());
     }
-    state.frontend.shell_route = crate::app::shell_route::ShellRoute::NetworkSetup;
-    state
-        .frontend
-        .shell_controller
-        .reset_to(dialog.page().dialog, false);
-    state.frontend.skirmish_shell_state.choose_map_modal = None;
-    state.frontend.skirmish_preview_texture = None;
-    shell_transition::invalidate_main_menu_dialog_instance(state);
-    state.platform.window.request_redraw();
+    show_dialog(state, dialog);
     Ok(())
 }
 
@@ -1257,6 +1284,35 @@ pub(crate) fn return_after_match(state: &mut AppState) {
         crate::app::lan_service::restart_lobby_visit(state);
         App::reopen_lan_room(state);
     }
+}
+
+/// VERA: the room goes on unshown while its player looks round the public
+/// lobby (docs/lobby-protocol.md "Visiting the lobby"); [`show_room`] shows
+/// it again and [`abandon_for_wol_runner`] ends it.
+pub(crate) fn hide_room(state: &mut AppState) {
+    state.frontend.skirmish_shell_state.choose_map_modal = None;
+    if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
+        ui.show_box(None);
+    }
+    state.frontend.shell_route = crate::app::shell_route::ShellRoute::WolLobby;
+}
+
+/// The hidden room is back on screen as it is now.
+pub(crate) fn show_room(state: &mut AppState) {
+    show_dialog(state, dialog(state));
+}
+
+/// The setup's dialog on screen, newly installed or shown again.
+fn show_dialog(state: &mut AppState, dialog: SetupDialog) {
+    state.frontend.shell_route = crate::app::shell_route::ShellRoute::NetworkSetup;
+    state
+        .frontend
+        .shell_controller
+        .reset_to(dialog.page().dialog, false);
+    state.frontend.skirmish_shell_state.choose_map_modal = None;
+    state.frontend.skirmish_preview_texture = None;
+    shell_transition::invalidate_main_menu_dialog_instance(state);
+    state.platform.window.request_redraw();
 }
 
 /// Type8's synchronous native departure drain blocks further setup input.
@@ -1405,6 +1461,32 @@ mod tests {
         );
         guest.record_remote_user_left(false, false);
         assert!(guest.take_service_requests().is_empty());
+    }
+
+    /// The online service prepares the host's StartGame before it submits
+    /// it: a Quick Match guest's next `A` then sends no second one.
+    #[test]
+    fn a_prepared_start_takes_no_second_start_game() {
+        let mut host = NetworkSetupProtocol::new(
+            SetupDialog {
+                host: true,
+                flavor: SetupFlavor::Wol,
+                modern: false,
+            },
+            true,
+        );
+        let users = vec!["Guest".to_owned(), "Host".to_owned()];
+        assert!(host.submit_start(users.clone()));
+        assert_eq!(
+            host.take_service_requests(),
+            vec![NetworkSetupRequest::StartGame {
+                users: users.clone()
+            }]
+        );
+        host.set_start_phase(StartPhase::Preparing);
+        assert!(!host.submit_start(users));
+        assert!(host.take_service_requests().is_empty());
+        assert_eq!(host.start_phase, StartPhase::Preparing);
     }
 
     /// A VERA room's options carry its host's Watching, and leave it out

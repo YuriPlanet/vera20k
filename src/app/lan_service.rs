@@ -3424,7 +3424,8 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
     };
     // The loading wait may already have retired a source684596. Initialize
     // timing from MatchSession's accepted connected roster before the first
-    // shared frame; private transport cleanup is drained by its existing owner.
+    // shared frame; `gameplay_connections` built the private connections from
+    // the same roster.
     let source_houses = state
         .match_state
         .session
@@ -3504,7 +3505,7 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
         .and_then(|transport| transport.ordering_certificate())
         .map(|bytes| crate::net::udp::OrderingCertificate::parse(&bytes))
         .transpose()?
-        .filter(|cert| cert.sources_mask.count_ones() > 1);
+        .filter(|cert| cert.relay_orders());
     let frame_send_rate = ordering_clock.map_or_else(
         || online_timing.map_or(5, |timing| timing.frame_send_rate as u32),
         |_| 1,
@@ -3663,51 +3664,21 @@ fn send_sources(state: &mut AppState, bytes: &[u8], sources: impl IntoIterator<I
 }
 
 fn drain_match_requests(state: &mut AppState) {
-    use super::match_runtime::session::NetworkLoadingRequest;
-    let requests = state.match_state.session.take_network_loading_requests();
+    use super::match_runtime::session::NetworkSendRequest;
+    if let Some(service) = state.match_state.lan_service.as_mut()
+        && let Err(error) = service.drain_loading_reports(&mut state.match_state.session)
+    {
+        // The held loader fails its load on the same error.
+        log::warn!("Loading report failed: {error:#}");
+        super::loading::pump::cancel_network_loading(
+            state,
+            &format!("{}: {error:#}", crate::i18n::tr("VERA:LoadingFailed")),
+        );
+    }
+    let requests = state.match_state.session.take_network_send_requests();
     for request in requests {
         match request {
-            NetworkLoadingRequest::ReportProgress(percent) => {
-                if state.match_state.live_network.is_none() || percent >= 100 {
-                    if let Some(service) = state.match_state.lan_service.as_mut() {
-                        match service.queue_loading_progress(&state.match_state.session, percent) {
-                            Ok(true) => service.flush_setup(),
-                            Ok(false) => state
-                                .match_state
-                                .session
-                                .report_network_loading_progress(percent),
-                            Err(error) => {
-                                state
-                                    .match_state
-                                    .session
-                                    .report_network_loading_progress(percent);
-                                log::warn!("Loading report failed: {error:#}");
-                            }
-                        }
-                    }
-                } else {
-                    let scope = state
-                        .match_state
-                        .lan_service
-                        .as_ref()
-                        .and_then(LanService::setup_scope);
-                    match loading::progress_packets(&state.match_state.session, scope, percent) {
-                        Ok(packets) => {
-                            for (bytes, destination) in packets {
-                                send_bytes(state, &bytes, destination, false);
-                            }
-                        }
-                        Err(error) => {
-                            state
-                                .match_state
-                                .session
-                                .report_network_loading_progress(percent);
-                            log::warn!("Loading report failed: {error:#}");
-                        }
-                    }
-                }
-            }
-            NetworkLoadingRequest::ProposeKick { target_source } => {
+            NetworkSendRequest::ProposeKick { target_source } => {
                 if let Some(runtime) = state.match_state.sim_runtime.runtime()
                     && let Some(message) = super::match_runtime::network_match::encode_kick_proposal(
                         &state.match_state.session,
@@ -3729,19 +3700,7 @@ fn drain_match_requests(state: &mut AppState) {
                     send_sources(state, &message, sources);
                 }
             }
-            NetworkLoadingRequest::Disconnect { source_index, .. } => {
-                if let Some(runtime) = state.match_state.sim_runtime.runtime()
-                    && let Some(house) = super::match_runtime::network_match::source_house(
-                        &state.match_state.session,
-                        &runtime.simulation,
-                        source_index,
-                    )
-                    && let Some(live) = state.match_state.live_network.as_mut()
-                {
-                    live.remove_peer(house as i8);
-                }
-            }
-            NetworkLoadingRequest::Chat { recipients, text } => {
+            NetworkSendRequest::Chat { recipients, text } => {
                 // BC6's chat writes [0x7EEF2C] (0x0046E126).
                 let color = if state.match_state.session.cooperative_round().is_some() {
                     crate::ui::wol_chat::PUBLIC_COLOR as i32
@@ -3759,7 +3718,7 @@ fn drain_match_requests(state: &mut AppState) {
                     send_sources(state, message.as_bytes(), recipients);
                 }
             }
-            NetworkLoadingRequest::Taunt { recipients, byte } => {
+            NetworkSendRequest::Taunt { recipients, byte } => {
                 let color = state
                     .match_state
                     .session
@@ -3772,7 +3731,7 @@ fn drain_match_requests(state: &mut AppState) {
                     send_sources(state, message.as_bytes(), recipients);
                 }
             }
-            NetworkLoadingRequest::Beacon(record) => {
+            NetworkSendRequest::Beacon(record) => {
                 if let Ok(message) =
                     crate::net::lan_messages::ingame::BeaconMessage::new(&local_name(state), record)
                 {
@@ -3784,7 +3743,7 @@ fn drain_match_requests(state: &mut AppState) {
                     send_sources(state, message.as_bytes(), peers);
                 }
             }
-            NetworkLoadingRequest::BeaconText { house, slot, text } => {
+            NetworkSendRequest::BeaconText { house, slot, text } => {
                 if let Ok(message) = LanMessage::beacon_text(&local_name(state), house, slot, &text)
                 {
                     let peers: Vec<_> =
@@ -4723,7 +4682,7 @@ mod tests {
             .as_mut()
             .unwrap()
             .global_mut()
-            .receive(source, 0, frame, 32, &mut |_, bytes| {
+            .receive(source, 0, frame, &mut |_, bytes| {
                 replies.push(bytes.to_vec())
             })
             .unwrap();
