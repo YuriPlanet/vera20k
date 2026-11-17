@@ -1519,6 +1519,8 @@ pub(super) fn leave_visit(state: &mut AppState) {
 /// the visit so nothing but that cleanup runs until exit. A lobby match the
 /// shell return has not finished first finishes with the player's result:
 /// `quit`, as Abort Mission records it, unless the game already decided one.
+/// One still loading has no result and finishes without one, as a match
+/// whose loading failed does.
 pub(crate) fn retire_visit_for_exit(state: &mut AppState) {
     let Some(visit) = state
         .frontend

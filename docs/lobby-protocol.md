@@ -62,7 +62,8 @@ every reader for 10 seconds.
 
 `POST /v1/commands` accepts `{request_id,after,operation,payload}`. A request ID is unique
 within a session and retries are idempotent: a retry sends the same payload, and a request ID
-reused with another payload is refused with 409 `request_conflict`. Responses and
+the lobby committed, reused with another payload, is refused with 409 `request_conflict`; a
+refused request records nothing. Responses and
 `GET /v1/events?after=<cursor>` return `{events:[{sequence,kind,payload}],cursor}`.
 Sequences increase within a session. An event appears once logically even when
 responses are repeated. `GET /v1/channels?kind=0|41` returns `{kind,channels}`. The
@@ -803,7 +804,7 @@ score screen holds back, so the lobby times a player's leaving by their game, no
 closed the score screen; a retry repeats it. A lobby from before it refuses the field, and the
 game then finishes again without it. A desktop game closed during its match or on the score
 screen finishes the match as it closes, with `quit` unless it had already decided the player's
-result.
+result; one closed while the match loads finishes it without a result.
 
 `ladder` with up to 64 names answers with the running season's records of those that
 played a rated game in it (`season` is `null` and `records` empty when no season runs),

@@ -286,8 +286,10 @@ match on the same relay, or the match's final frame after 24 hours of play ends
 membership. The relay
 remains required for progress.
 
-A process that left a match without Leave (a closed window or browser tab, a crash)
-can be replaced within that silence limit. The launcher receives a fresh `[Relay]`
+A closed desktop game first sends the relay its Leave and the lobby its `finish`,
+waiting up to three seconds for them. A process that left a match without Leave (a
+crash, a closed browser tab, or a closed game whose Leave did not arrive in time) can
+be replaced within that silence limit. The launcher receives a fresh `[Relay]`
 section with `ResumePings`, the timing vector every client started with, and
 `ResumeCursor`, the end of the lobby events that process already consumed. The new
 process skips the start barriers, loads the same world without reporting progress to
