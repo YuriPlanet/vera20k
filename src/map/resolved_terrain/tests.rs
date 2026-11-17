@@ -445,8 +445,9 @@ fn scenario_overlay_wall_flags_bind_with_the_grid() {
             Some(OverlayPassability {
                 wall: true,
                 crushable: true,
-                // Retail sandbags author no `Armor=`.
-                armor_is_wood: false,
+                // Retail `[GASAND]` authors `Armor=wood`, so a `Wood=`
+                // warhead breaks sandbags.
+                armor_is_wood: true,
             })
         );
     }
