@@ -38,9 +38,9 @@ pub(crate) struct WorldZoomPass {
     source_size: [u32; 2],
     scale: f32,
     /// The frame's battlefield as `composite` left it, before anything drew
-    /// over it: the window copy's mask.
-    world_frame: wgpu::Texture,
-    world_frame_view: wgpu::TextureView,
+    /// over it: the window copy's mask. Kept only while there is a window
+    /// copy (`set_view`).
+    world_frame: Option<wgpu::Texture>,
     window: MaskedCopy,
     window_placement: wgpu::Buffer,
 }
@@ -72,12 +72,6 @@ impl WorldZoomPass {
             Some(wgpu::TextureFormat::Depth32Float),
         );
         surface.place(queue, (0.0, 0.0), scale, scale.fract() == 0.0);
-        let (world_frame, world_frame_view) = create_color_target(
-            device,
-            "Wheel zoom world frame",
-            format,
-            (target[0], target[1]),
-        );
         let window = MaskedCopy::new(device, "Wheel zoom window", format, WindowMask::Changed);
         let window_placement = window.placement_buffer(device);
         Self {
@@ -85,19 +79,21 @@ impl WorldZoomPass {
             world_depth,
             source_size,
             scale,
-            world_frame,
-            world_frame_view,
+            world_frame: None,
             window,
             window_placement,
         }
     }
 
+    /// `window_copy`: the Options zoom scales this frame into the window, so
+    /// the world also goes there itself (`draw_window_copy`).
     pub(crate) fn set_view(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         target: [u32; 2],
         scale: f32,
+        window_copy: bool,
     ) {
         let source_size = world_source_size(device, target, scale);
         if source_size != self.source_size {
@@ -107,15 +103,18 @@ impl WorldZoomPass {
             self.source_size = source_size;
         }
         self.surface.resize(device, (target[0], target[1]));
-        let frame = self.world_frame.size();
-        if [frame.width, frame.height] != target.map(|v| v.max(1)) {
-            (self.world_frame, self.world_frame_view) = create_color_target(
-                device,
-                "Wheel zoom world frame",
-                self.world_frame.format(),
-                (target[0], target[1]),
-            );
-        }
+        self.world_frame = window_copy.then(|| match self.world_frame.take() {
+            Some(frame) if [frame.width(), frame.height()] == target.map(|v| v.max(1)) => frame,
+            _ => {
+                create_color_target(
+                    device,
+                    "Wheel zoom world frame",
+                    self.surface.color_texture().format(),
+                    (target[0], target[1]),
+                )
+                .0
+            }
+        });
         if scale != self.scale {
             self.surface
                 .place(queue, (0.0, 0.0), scale, scale.fract() == 0.0);
@@ -154,8 +153,8 @@ impl WorldZoomPass {
     }
 
     /// Resample the completed world `source` into the frame's `tactical`
-    /// rect. `for_window` also keeps that rect as it is now, before anything
-    /// draws over it, for `draw_window_copy`.
+    /// rect. With a window copy, also keep that rect as it is now, before
+    /// anything draws over it, for `draw_window_copy`.
     pub(crate) fn composite(
         &self,
         device: &wgpu::Device,
@@ -163,7 +162,6 @@ impl WorldZoomPass {
         source: &wgpu::Texture,
         tactical: [u32; 4],
         clear: wgpu::Color,
-        for_window: bool,
     ) {
         let bind_group = self.surface.bind_group_for(device, source);
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -191,11 +189,14 @@ impl WorldZoomPass {
         });
         self.surface.draw(&mut pass, Some(&bind_group), tactical);
         drop(pass);
-        let frame = self.world_frame.size();
+        let Some(world_frame) = &self.world_frame else {
+            return;
+        };
+        let frame = world_frame.size();
         let [x, y, width, height] = tactical;
         let (x, y) = (x.min(frame.width), y.min(frame.height));
         let (width, height) = (width.min(frame.width - x), height.min(frame.height - y));
-        if for_window && width > 0 && height > 0 {
+        if width > 0 && height > 0 {
             let at = |texture| wgpu::TexelCopyTextureInfo {
                 texture,
                 mip_level: 0,
@@ -204,7 +205,7 @@ impl WorldZoomPass {
             };
             encoder.copy_texture_to_texture(
                 at(self.surface.color_texture()),
-                at(&self.world_frame),
+                at(world_frame),
                 wgpu::Extent3d {
                     width,
                     height,
@@ -218,7 +219,8 @@ impl WorldZoomPass {
     /// scaled this frame into, at the zoom's scale times the wheel's, over
     /// the window pixels wholly inside the frame's `tactical` rect. A window
     /// pixel over a frame pixel that changed since `composite` kept the world
-    /// keeps the zoomed frame. Needs `composite(.., for_window: true)`.
+    /// keeps the zoomed frame. Draws nothing unless `set_view` kept a window
+    /// copy.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn draw_window_copy(
         &self,
@@ -230,6 +232,9 @@ impl WorldZoomPass {
         zoom: ZoomGeometry,
         tactical: (u32, u32, u32, u32),
     ) {
+        let Some(world_frame) = &self.world_frame else {
+            return;
+        };
         // World pixel (0, 0) is frame pixel (0, 0) (`new`), which the zoom
         // puts at its origin.
         let origin = (zoom.origin.0 as f32, zoom.origin.1 as f32);
@@ -243,6 +248,7 @@ impl WorldZoomPass {
         );
         self.window.place_frame(queue, origin, zoom.scale());
         let source = source.create_view(&Default::default());
+        let before = world_frame.create_view(&Default::default());
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Wheel zoom window"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -266,7 +272,7 @@ impl WorldZoomPass {
             &self.window_placement,
             MaskSource::Changed {
                 frame: self.surface.color_view(),
-                before: &self.world_frame_view,
+                before: &before,
             },
             zoom.window_rect(tactical),
         );
@@ -560,7 +566,8 @@ mod tests {
         // 0.5 shows an 8x8 world in it: one world pixel per window pixel.
         let zoom = ZoomGeometry::new(8, 8, 200, FrameShape::Window);
         assert_eq!((zoom.src_width, zoom.src_height), (4, 4));
-        let pass = WorldZoomPass::new(&gpu.device, &gpu.queue, FORMAT, [4, 4], 0.5);
+        let mut pass = WorldZoomPass::new(&gpu.device, &gpu.queue, FORMAT, [4, 4], 0.5);
+        pass.set_view(&gpu.device, &gpu.queue, [4, 4], 0.5, true);
         assert_eq!(pass.source_size(), [8, 8]);
         // A one-pixel checkerboard, which the 4x4 frame can only show grey.
         let checker = |x: u32, y: u32| {
@@ -586,7 +593,6 @@ mod tests {
             &world,
             [0, 0, 4, 4],
             wgpu::Color::BLACK,
-            true,
         );
         // UI the frame then draws over the battlefield, at frame pixel (3, 3).
         encoder.copy_texture_to_texture(

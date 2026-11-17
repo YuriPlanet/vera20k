@@ -69,7 +69,7 @@ fn production_world_zoom_resolves_before_screen_fixed_ui() {
     let size = [12, 8];
     let mut zoom =
         super::upscale_pass::WorldZoomPass::new(&gpu.device, &gpu.queue, format, [10, 8], 1.25);
-    zoom.set_view(&gpu.device, &gpu.queue, size, 0.8);
+    zoom.set_view(&gpu.device, &gpu.queue, size, 0.8, false);
     let source_size = zoom.source_size();
     assert_eq!(source_size, [15, 10]);
     let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
@@ -142,7 +142,6 @@ fn production_world_zoom_resolves_before_screen_fixed_ui() {
         composition.composition_texture(),
         tactical,
         wgpu::Color::BLACK,
-        false,
     );
     {
         let mut pass = load_pass(&mut encoder, zoom.color_view(), zoom.frame_depth_view());

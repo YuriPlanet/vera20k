@@ -235,7 +235,6 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
         &color,
         [0, 0, 856, 736],
         background,
-        false,
     );
     let read = gpu.read(&mut encoder, world_zoom.color_texture());
     let pixels = gpu.finish(encoder, &[read], [1024, 768]).remove(0);
