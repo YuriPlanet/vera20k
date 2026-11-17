@@ -921,6 +921,12 @@ pub struct RelayServer {
     ended_orderings: HashMap<[u8; 16], u64>,
     // Since `take_ordering_counts` last read them.
     ordering_counts: OrderingCounts,
+    // The ordering bytes the last pass over every room counted, plus what
+    // was reserved or sealed since (`reserve_ordering`), so a reservation
+    // needs no count of every room. Freed bytes leave it at the next pass:
+    // it overcounts, and only an exact count refuses or evicts. Growth no
+    // reservation covers, such as a federated frame, joins it at that pass.
+    ordering_estimate: usize,
     // Every live or leaving hop by its session (spec §6.2).
     sessions: HashMap<u32, SessionSlot>,
     // Released sessions until they may be assigned again (spec §6.2).
@@ -957,6 +963,7 @@ impl RelayServer {
             journal_directory: None,
             ended_orderings: HashMap::new(),
             ordering_counts: OrderingCounts::default(),
+            ordering_estimate: 0,
             sessions: HashMap::new(),
             retired_sessions: HashMap::new(),
             mac_counts: MacFailureCounts::default(),

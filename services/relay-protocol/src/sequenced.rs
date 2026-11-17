@@ -5255,6 +5255,44 @@ mod tests {
         assert_eq!(std::fs::read(room.join("stream.data")).unwrap(), before);
     }
 
+    /// Past the reservation estimate every room is counted: reservations
+    /// that hold nothing refuse no batch, and bytes no reservation covered
+    /// are found by the next pass, which evicts before the next batch is
+    /// refused.
+    #[test]
+    fn ordering_reservations_past_the_estimate_count_every_room() {
+        let key = SecretKey::new([73; 32]);
+        let (mut server, mut first, _second) = paced_room(&key);
+        let mut submit = |server: &mut RelayServer, id, now_ms| {
+            let mut bytes = Vec::new();
+            first.test_submit(id, b"input", &mut bytes).unwrap();
+            events(server, &mut first, &bytes, now_ms).remove(0)
+        };
+        server.ordering_estimate = GLOBAL_ORDERING_BYTES;
+        assert!(matches!(
+            submit(&mut server, 1, 0),
+            OrderEvent::Ack { batch_id: 1, .. }
+        ));
+        server
+            .rooms
+            .get_mut(&[5; 16])
+            .unwrap()
+            .ordering
+            .as_mut()
+            .unwrap()
+            .sources[1]
+            .last_batch = Some((0, 0, vec![0; GLOBAL_ORDERING_BYTES]));
+        server.advance_clock(1000, unix(1000));
+        assert!(ordering(&server).history.is_empty());
+        assert!(matches!(
+            submit(&mut server, 2, 1000),
+            OrderEvent::Error {
+                code: OrderError::Backpressure,
+                expected: 2
+            }
+        ));
+    }
+
     fn started_journal_room(
         directory: &TestDirectory,
     ) -> (RelayServer, ClientSession, ClientSession) {
@@ -5897,11 +5935,12 @@ impl RelayServer {
             }
             // Limit peak retained growth to one bounded room at a time.
             if total > GLOBAL_ORDERING_BYTES {
-                self.reserve_ordering(0);
-                total = self.ordering_memory();
+                total = self.evict_ordering(0);
             }
         }
         self.cleanup_ordering(now_ms, now);
+        // Cleanup only frees, so the pass's count still bounds what is held.
+        self.ordering_estimate = total;
     }
 
     fn cleanup_ordering(&mut self, now_ms: u64, now: u64) {
@@ -5968,7 +6007,9 @@ impl RelayServer {
             let before = ordering.memory();
             ordering.advance(now_ms, room.federation.as_mut());
             ordering.count_changes(&mut self.ordering_counts);
-            if ordering.memory() > before {
+            let grown = ordering.memory().saturating_sub(before);
+            if grown > 0 {
+                self.ordering_estimate = self.ordering_estimate.saturating_add(grown);
                 self.reserve_ordering(0);
             }
         }
@@ -5982,7 +6023,26 @@ impl RelayServer {
             .sum()
     }
 
+    /// Room for `additional` more ordering bytes under
+    /// `GLOBAL_ORDERING_BYTES`. Within `ordering_estimate` it takes no count;
+    /// past it, every room is counted and the oldest history evicted. False
+    /// when that still leaves no room.
     fn reserve_ordering(&mut self, additional: usize) -> bool {
+        let estimate = self.ordering_estimate.saturating_add(additional);
+        if estimate <= GLOBAL_ORDERING_BYTES {
+            self.ordering_estimate = estimate;
+            return true;
+        }
+        let total = self.evict_ordering(additional);
+        let reserved = total.saturating_add(additional) <= GLOBAL_ORDERING_BYTES;
+        self.ordering_estimate = if reserved { total + additional } else { total };
+        reserved
+    }
+
+    /// Counts every room's ordering bytes and evicts the oldest history,
+    /// across rooms, until `additional` more fit under
+    /// `GLOBAL_ORDERING_BYTES` or no history is left; returns what remains.
+    fn evict_ordering(&mut self, additional: usize) -> usize {
         let mut total = self.ordering_memory();
         while total.saturating_add(additional) > GLOBAL_ORDERING_BYTES {
             let oldest = self
@@ -5995,14 +6055,14 @@ impl RelayServer {
                 })
                 .min_by_key(|(id, time)| (*time, *id));
             let Some((id, _)) = oldest else {
-                return false;
+                break;
             };
             let ordering = self.rooms.get_mut(&id).unwrap().ordering.as_mut().unwrap();
             let before = ordering.memory();
             ordering.pop_oldest();
             total -= before - ordering.memory();
         }
-        true
+        total
     }
 
     pub(super) fn ordering_request(
