@@ -59,16 +59,19 @@ The auto-target side reads the object's `GetHeight` (vt+0x1C8,
   which this package's boundaries exclude. Trigger: a player moving the cursor
   over a burrowed techno with a weapon whose projectile lacks `AU`. Frequency:
   none in retail (no Tunnel locomotor). Risk: the vanilla cursor answer stands.
-- The gattling selection hook `0x6F3432` is unported as a whole: VERA's
-  gattling arm returns the stage pair without asking `isWeaponValid`, so its
-  AA, `CanBeTargeted`, Verses-0 and AU rows are all missing. Porting only the
-  AU row would answer the stage index while skipping the other three gates, so
-  that belongs to a gattling-eligibility chain.
+- The gattling selection hook `0x6F3432` is now ported
+  (`phobos_gattling_weapon_index` + `phobos_weapon_valid_against`): its
+  `isWeaponValid` walks AA, underground `AU`, the target shield's
+  `CanBeTargeted` and the raw-armor Verses-0 row in native order over the
+  `2 * CurrentGattlingStage` pair, after a `PickWeaponIndex` with both fallback
+  gates on. Tests:
+  `sim::combat::phobos_gattling_select_tests`. The stock golden
+  (`original_weapon_selection_rows`) still drives the closure-less entry, so it
+  keeps describing the stock pair.
 - The shield arm at `0x6F36DB:151` is now ported
   (`phobos_shield_weapon_index` + `sim::shield::can_be_targeted`): its
   underground-secondary row is one of the four gates that admit the
-  secondary. The same hook's gattling counterpart (`0x6F3432:231`) still
-  shares the unported gattling block above.
+  secondary.
 - The Tunnel locomotor is unported: `rules/locomotor_type.rs` keeps the
   Tiberian Sun Tunnel/Mech/DropPod classes out of the installed table, so a
   unit whose `Locomotor=` names that CLSID never caches

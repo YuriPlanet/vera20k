@@ -933,6 +933,7 @@ pub(crate) fn what_weapon_should_i_use<'r>(
         || None,
         || None,
         || None,
+        || None,
     )
 }
 
@@ -955,6 +956,10 @@ pub(crate) fn what_weapon_should_i_use_with_force<'r>(
     // asked only when `pick` answered `-1`, before the stock `0x6F36E3` Verses
     // arm. Lazy: no answer means the ladder continues.
     shield: impl FnOnce() -> Option<i32>,
+    // Phobos `TechnoClass_WhatWeaponShouldIUse_Gattling` at `0x6F3432`
+    // (`Hooks.Firing.cpp:204..283`), which replaces the stock gattling answer
+    // in arm H. Lazy: only a gattling type asks it.
+    gattling: impl FnOnce() -> Option<i32>,
 ) -> i32 {
     match attacker.kind {
         TechnoKind::Infantry if obj.deploy_fire => {
@@ -969,7 +974,7 @@ pub(crate) fn what_weapon_should_i_use_with_force<'r>(
         _ => {}
     }
     techno_what_weapon_should_i_use(
-        rules, obj, attacker, target, get_weapon, forced, multi, pick, shield,
+        rules, obj, attacker, target, get_weapon, forced, multi, pick, shield, gattling,
     )
 }
 
@@ -1019,6 +1024,7 @@ fn techno_what_weapon_should_i_use<'r>(
     multi: impl FnOnce() -> Option<i32>,
     pick: impl FnOnce() -> Option<i32>,
     shield: impl FnOnce() -> Option<i32>,
+    gattling: impl FnOnce() -> Option<i32>,
 ) -> i32 {
     // A @ 0x006F333B: turreted non-gattling types fire the gunner slot,
     // unconditionally (`-1` collapses to 0). Phobos
@@ -1075,9 +1081,17 @@ fn techno_what_weapon_should_i_use<'r>(
     let secondary_aa = projectile_aa(rules, secondary);
     let secondary_warhead = rules.weapon_warhead(secondary);
     let primary_warhead = rules.weapon_warhead(primary);
-    // H @ 0x006F3422: gattling stage pair. Note the AA test reads
-    // `GetWeapon(1)`'s projectile regardless of the current stage.
+    // H @ 0x006F3422: gattling stage pair. Phobos answers the whole arm from
+    // its `0x6F3432` hook (`Ext/Techno/Hooks.Firing.cpp:204-283`): a
+    // `PickWeaponIndex` over the pair with both fallback gates on, then the
+    // four `isWeaponValid` rows, the naval selector and `LandTargeting`. The
+    // stock pair below keeps the AA test reading `GetWeapon(1)`'s projectile
+    // regardless of the current stage; without the capability nothing asks the
+    // hook and the stock answer stands.
     if obj.is_gattling {
+        if let Some(index) = gattling() {
+            return index;
+        }
         // `LEA` at `0x006F345C`/`0x006F346A`: no clamp, and `2s` wraps.
         let stage = attacker.gattling_stage;
         if secondary_aa && techno.is_some_and(TargetFacts::is_high_flying) {
@@ -1559,9 +1573,13 @@ pub(crate) fn select_weapon_index_against_in_query(
     #[cfg(not(feature = "phobos"))]
     let multi = || -> Option<i32> { None };
     // Phobos `PickWeaponIndex` at `0x6F36DB`, after the arms A–P that return
-    // earlier; lazy like `multi`.
+    // earlier; lazy like `multi`. The stock hook passes slots 0/1 and the
+    // multi-weapon fallback keys.
     #[cfg(feature = "phobos")]
     let pick = || {
+        let settings = &attacker_obj.phobos_multi_weapon;
+        let allow_fallback = !settings.no_secondary_weapon_fallback;
+        let allow_aa_fallback = allow_fallback || settings.no_secondary_weapon_fallback_allow_aa;
         phobos_pick_weapon_index(
             rules,
             attacker_entity,
@@ -1571,6 +1589,10 @@ pub(crate) fn select_weapon_index_against_in_query(
             target_facts.as_ref(),
             world,
             interner,
+            0,
+            1,
+            allow_fallback,
+            allow_aa_fallback,
         )
     };
     #[cfg(not(feature = "phobos"))]
@@ -1592,6 +1614,23 @@ pub(crate) fn select_weapon_index_against_in_query(
     };
     #[cfg(not(feature = "phobos"))]
     let shield = || -> Option<i32> { None };
+    // Phobos `TechnoClass_WhatWeaponShouldIUse_Gattling` at `0x6F3432`; lazy,
+    // so only the gattling arm asks for it.
+    #[cfg(feature = "phobos")]
+    let gattling = || {
+        phobos_gattling_weapon_index(
+            rules,
+            attacker_entity,
+            attacker_obj,
+            attacker,
+            target,
+            target_facts.as_ref(),
+            world,
+            interner,
+        )
+    };
+    #[cfg(not(feature = "phobos"))]
+    let gattling = || -> Option<i32> { None };
     Some(what_weapon_should_i_use_with_force(
         rules,
         attacker_obj,
@@ -1611,6 +1650,7 @@ pub(crate) fn select_weapon_index_against_in_query(
         multi,
         pick,
         shield,
+        gattling,
     ))
 }
 
@@ -1799,8 +1839,9 @@ fn phobos_force_weapon_index(
 /// Phobos `TechnoExt::PickWeaponIndex` (`Ext/Techno/WeaponHelpers.cpp:7-100`),
 /// asked by the stock ladder hook at `0x6F36DB`
 /// (`Ext/Techno/Hooks.Firing.cpp:121-165`) for slots 0/1 of every Techno that
-/// reaches Q. `None` is native `-1`: the caller keeps the stock Verses arm at
-/// `0x6F36E3`.
+/// reaches Q, and by the gattling hook at `0x6F3432` for the current stage pair.
+/// `one`/`two` are native `weaponIndexOne`/`weaponIndexTwo`; the answer is one
+/// of them, or `None` for native `-1`.
 #[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 fn phobos_pick_weapon_index(
@@ -1812,11 +1853,15 @@ fn phobos_pick_weapon_index(
     target_facts: Option<&TargetFacts<'_>>,
     world: &Simulation,
     interner: &StringInterner,
+    one: i32,
+    two: i32,
+    allow_fallback: bool,
+    allow_aa_fallback: bool,
 ) -> Option<i32> {
     let Some(primary) = get_weapon(
         attacker_entity,
         attacker_obj,
-        0,
+        one,
         &world.substrate.entities,
         rules,
         interner,
@@ -1824,22 +1869,22 @@ fn phobos_pick_weapon_index(
         return get_weapon(
             attacker_entity,
             attacker_obj,
-            1,
+            two,
             &world.substrate.entities,
             rules,
             interner,
         )
-        .map(|_| 1);
+        .map(|_| two);
     };
     let Some(secondary) = get_weapon(
         attacker_entity,
         attacker_obj,
-        1,
+        two,
         &world.substrate.entities,
         rules,
         interner,
     ) else {
-        return Some(0);
+        return Some(one);
     };
     let target_entity = match target {
         Some(TargetKind::Entity(id)) => world.substrate.entities.get(*id),
@@ -1929,16 +1974,9 @@ fn phobos_pick_weapon_index(
     // Phobos' secondary gate, before the fallback keys: an ineligible
     // secondary leaves the primary.
     if !allowed(secondary) {
-        return Some(0);
+        return Some(one);
     }
     let second_is_aa = airborne && projectile_aa(rules, secondary);
-    let allow_fallback = !attacker_obj
-        .phobos_multi_weapon
-        .no_secondary_weapon_fallback;
-    let allow_aa_fallback = allow_fallback
-        || attacker_obj
-            .phobos_multi_weapon
-            .no_secondary_weapon_fallback_allow_aa;
     let first_skip = super::world_fire::phobos_skip_weapon_picking(primary);
     let first_allowed_ae = first_skip
         || world.weapon_attach_effects_allow(primary, target_entity, Some(attacker_entity), rules);
@@ -1947,11 +1985,11 @@ fn phobos_pick_weapon_index(
         && first_allowed_ae
         && !can_fire_no_ammo_weapon(attacker_obj, attacker.ammo, 1)
     {
-        return Some(0);
+        return Some(one);
     }
     // Phobos' primary gate; `firstAllowedAE` is part of it.
     if !allowed(primary) || !first_allowed_ae {
-        return Some(1);
+        return Some(two);
     }
     // Cell target only: a Naval_Primary or Land_Secondary type answers the
     // secondary on land.
@@ -1961,9 +1999,145 @@ fn phobos_pick_weapon_index(
         && cell.land != Some(LandType::Water)
         && cell.land != Some(LandType::Beach)
     {
-        return Some(1);
+        return Some(two);
     }
     None
+}
+
+/// Phobos `TechnoClass_WhatWeaponShouldIUse_Gattling` (`0x6F3432`,
+/// `Ext/Techno/Hooks.Firing.cpp:204-283`): the gattling arm's answer once the
+/// hook is installed. `odd = 2 * CurrentGattlingStage`, `even = odd + 1`;
+/// native first asks `PickWeaponIndex` over that pair with both fallback gates
+/// on, then walks the `isWeaponValid` rows, the naval selector and
+/// `LandTargeting`. Always answers for a gattling type, like the hook.
+#[cfg(feature = "phobos")]
+#[allow(clippy::too_many_arguments)]
+fn phobos_gattling_weapon_index(
+    rules: &RuleSet,
+    attacker_entity: &GameEntity,
+    attacker_obj: &ObjectType,
+    attacker: &AttackerFacts,
+    target: Option<&TargetKind>,
+    target_facts: Option<&TargetFacts<'_>>,
+    world: &Simulation,
+    interner: &StringInterner,
+) -> Option<i32> {
+    if !attacker_obj.is_gattling {
+        return None;
+    }
+    let odd = attacker.gattling_stage.wrapping_mul(2);
+    let even = odd.wrapping_add(1);
+    // Native passes `true` for both fallback gates, not the multi-weapon keys.
+    if let Some(index) = phobos_pick_weapon_index(
+        rules,
+        attacker_entity,
+        attacker_obj,
+        attacker,
+        target,
+        target_facts,
+        world,
+        interner,
+        odd,
+        even,
+        true,
+        true,
+    ) {
+        return Some(index);
+    }
+    let Some(TargetFacts::Techno {
+        obj: target_obj,
+        flight,
+        on_bridge,
+        cell_land_type,
+        ..
+    }) = target_facts
+    else {
+        return Some(odd);
+    };
+    let target_entity = match target {
+        Some(TargetKind::Entity(id)) => world.substrate.entities.get(*id),
+        _ => None,
+    };
+    // Check the even weapon first; a null slot cannot pass `isWeaponValid`.
+    let even_valid = get_weapon(
+        attacker_entity,
+        attacker_obj,
+        even,
+        &world.substrate.entities,
+        rules,
+        interner,
+    )
+    .is_some_and(|weapon| {
+        phobos_weapon_valid_against(rules, target_entity, target_obj, flight, weapon)
+    });
+    if !even_valid {
+        return Some(odd);
+    }
+    // `!OnBridge && !inAir`: a water or beach cell answers through
+    // `SelectNavalTargeting` and returns at the hook either way.
+    if !*on_bridge
+        && !flight.high()
+        && (*cell_land_type == LandType::Water.as_index()
+            || *cell_land_type == LandType::Beach.as_index())
+    {
+        return Some(
+            if select_naval_targeting_weapon(attacker_obj, target_facts) == 1 {
+                even
+            } else {
+                odd
+            },
+        );
+    }
+    let odd_valid = get_weapon(
+        attacker_entity,
+        attacker_obj,
+        odd,
+        &world.substrate.entities,
+        rules,
+        interner,
+    )
+    .is_some_and(|weapon| {
+        phobos_weapon_valid_against(rules, target_entity, target_obj, flight, weapon)
+    });
+    if !odd_valid || attacker_obj.land_targeting == 2 {
+        Some(even)
+    } else {
+        Some(odd)
+    }
+}
+
+/// The `isWeaponValid` lambda of the gattling hook (`Hooks.Firing.cpp:222-235`)
+/// in native row order: airborne needs an AA projectile, underground needs an
+/// `AU` one, an active target shield must admit the weapon, and the warhead's
+/// Verses against the target's **own** armor must not be exactly zero.
+#[cfg(feature = "phobos")]
+fn phobos_weapon_valid_against(
+    rules: &RuleSet,
+    target_entity: Option<&GameEntity>,
+    target_obj: &ObjectType,
+    flight: &TargetFlight<'_>,
+    weapon: &WeaponType,
+) -> bool {
+    if flight.high() && !projectile_aa(rules, weapon) {
+        return false;
+    }
+    if flight.underground() && !projectile_au(rules, weapon) {
+        return false;
+    }
+    if let Some(state) = target_entity.and_then(|entity| entity.shield())
+        && state.is_active()
+    {
+        let (Some(ty), Some(warhead)) = (
+            rules.shield_type(state.type_name()),
+            rules.weapon_warhead(weapon),
+        ) else {
+            return false;
+        };
+        if !crate::sim::shield::can_be_targeted(rules, state, ty, target_obj, warhead) {
+            return false;
+        }
+    }
+    !verses_is_zero(rules.weapon_warhead(weapon), target_obj.armor_id())
 }
 
 /// The shield arm of the same `0x6F36DB` hook (`Ext/Techno/Hooks.Firing.cpp:140-162`),

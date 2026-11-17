@@ -85,6 +85,15 @@ and a `CanFireNoAmmoWeapon` secondary also blocks the primary answer. A cell
 target on land also picks the secondary for `NavalTargeting=1` or
 `LandTargeting=2`.
 
+The gattling hook at `0x6F3432` (`Ext/Techno/Hooks.Firing.cpp:204-283`) reuses
+that same pick owner over `odd = 2 * CurrentGattlingStage` and `even = odd + 1`
+with **both** fallback gates hard-wired true, not the type keys. When the pick
+answers `-1`, its `isWeaponValid` lambda walks, in order, airborne without an
+AA projectile, underground without `AU`, an active target shield whose
+`CanBeTargeted` refuses the weapon, and Verses exactly zero against the
+target's own armor; the map's water/beach cell then answers through
+`SelectNavalTargeting`, and `LandTargeting=2` answers `even` after that.
+
 ## Voice attack
 
 `TechnoTypeExt::GetVoiceAttack` (`Ext/TechnoType/Hooks.MultiWeapon.cpp:82-116`,
@@ -105,7 +114,9 @@ slot lazily at the `0x6F3428` position via `phobos_multi_weapon_index`, and
 `phobos_pick_weapon_index` runs the `0x6F36DB` pick from the same owner (it
 reuses `world_fire::phobos_skip_weapon_picking`, `crit::cell_eligible` /
 `techno_eligible`, `can_target_house`, `health_in_threshold`,
-`affected_veterancy_allows` and `weapon_attach_effects_allow`);
+`affected_veterancy_allows` and `weapon_attach_effects_allow`); the same pick
+owner serves the gattling pair through `phobos_gattling_weapon_index`, whose
+`phobos_weapon_valid_against` is the `isWeaponValid` lambda;
 `multi_weapon_can_fire` reuses `phobos_airburst::weapon_picking_allows_with`
 for the target-eligibility and warhead-versus gates.
 `sim::world::selection_voice::attack_voice_request` owns the Phobos voice arm.

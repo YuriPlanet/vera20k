@@ -168,6 +168,8 @@ mod phobos_open_topped_fire_tests;
 #[cfg(all(test, feature = "phobos"))]
 mod phobos_open_transport_tests;
 #[cfg(all(test, feature = "phobos"))]
+mod phobos_gattling_select_tests;
+#[cfg(all(test, feature = "phobos"))]
 mod phobos_shrapnel_trigger_tests;
 #[cfg(all(test, feature = "phobos"))]
 mod phobos_shield_weapon_tests;
