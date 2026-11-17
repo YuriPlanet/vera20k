@@ -123,6 +123,11 @@ still points to the GitHub releases. Nothing exchanged changes: a released game
 shows only the text with its link, and a rollback does the same.
 
 When an online start fails, each player's game says whose side failed and logs why.
+If the lobby announces a match whose start this game cannot accept (for example,
+its map or rules differ), the game finishes that specific pending match. Its
+player sees the local reason, and the lobby tells the others the start was
+cancelled. An older game that refuses locally still leaves everyone waiting for
+the admission timeout. No packets or lobby changes are needed.
 A start whose 30-second relay admission runs out tells a player whose `relay_ready` the
 lobby took that another player's game could not reach the game server, a player whose
 relay answered but whose `relay_ready` the lobby never took that the lobby is busy or not
