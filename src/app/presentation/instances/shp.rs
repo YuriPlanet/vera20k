@@ -870,6 +870,9 @@ pub(crate) fn shp_visitor<'a>(
                 let (turret_dx, turret_dy) =
                     shp_turret_offset_screen(turret_offset, render_pose.body, render_pose.turret);
                 let turret_id = rules.unit_turret_shp_id(type_str);
+                // The atlas binds `<image>TUR.SHP` only when
+                // `rules::shp_vehicle_sequence::shp_vehicle_turret_shape_file`
+                // found the file, so a bound frame 0 is that owner's answer.
                 let turret_shape_present = turret_id.as_ref().is_some_and(|id| {
                     atlas
                         .get(&ShpSpriteKey {

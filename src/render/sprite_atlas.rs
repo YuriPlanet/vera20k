@@ -1868,10 +1868,16 @@ fn insert_new_object_keys(
         // Phobos `UnitTypeClass_ReadINI_TurretShape` (`0x747A2E`): a non-voxel
         // turreted UnitType may carry `<image>TUR.SHP`. Bind its frames under
         // the derived stem; an absent file leaves the body-slice fallback.
+        // `rules::shp_vehicle_sequence::shp_vehicle_turret_shape_file` owns
+        // the type gate, the `ArtImageSwap` name and the file existence test.
         if category == EntityCategory::Unit
             && let Some(rules) = rules
+            && let Some(file) = crate::rules::shp_vehicle_sequence::shp_vehicle_turret_shape_file(
+                rules,
+                asset_manager,
+                type_str,
+            )
             && let Some(turret_id) = rules.unit_turret_shp_id(type_str)
-            && let Some(file) = rules.unit_turret_shp_file(type_str)
             && let Some(data) = asset_manager.get_shared(&file)
         {
             let frame_count = rules
