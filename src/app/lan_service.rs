@@ -4723,7 +4723,7 @@ mod tests {
             .as_mut()
             .unwrap()
             .global_mut()
-            .receive(source, 0, frame, 32, &mut |_, bytes| {
+            .receive(source, 0, frame, &mut |_, bytes| {
                 replies.push(bytes.to_vec())
             })
             .unwrap();

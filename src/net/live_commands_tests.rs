@@ -882,7 +882,6 @@ fn initial_response_histories_clear_only_on_successful_barrier_once() {
                 endpoint,
                 0,
                 &connection_prefix(0x1236, 2, sequence, 2),
-                now + 22,
                 &mut |_, _| {},
             )
             .unwrap();
@@ -1058,13 +1057,7 @@ fn ordinary_wait_uses_private_response_history_with_larger_primary_global_mean()
     ));
     live.global_mut().service(1100, &mut |_, _| {});
     live.global_mut()
-        .receive(
-            peer,
-            0,
-            &connection_prefix(0x1236, 2, 0, 2),
-            1300,
-            &mut |_, _| {},
-        )
+        .receive(peer, 0, &connection_prefix(0x1236, 2, 0, 2), &mut |_, _| {})
         .unwrap();
     live.global_mut().service(1300, &mut |_, _| {});
     assert_eq!(live.connections().mean_response_time(1), Some(10));

@@ -989,7 +989,7 @@ fn manager_response_reset_keeps_sockets_raw_queues_and_pending_channel_traffic()
     let mut global_ack = global_frame.clone();
     global_ack[2] = 2;
     wire.global_mut()
-        .receive(peer, 0, &global_ack, 122, &mut |_, _| {})
+        .receive(peer, 0, &global_ack, &mut |_, _| {})
         .unwrap();
     wire.global_mut().service(122, &mut |_, _| {});
     assert_eq!(wire.connections().mean_response_time(1), Some(11));
@@ -1012,7 +1012,7 @@ fn manager_response_reset_keeps_sockets_raw_queues_and_pending_channel_traffic()
         )
         .unwrap();
     wire.global_mut()
-        .receive(peer, 0, &global_frame, 123, &mut |_, _| {})
+        .receive(peer, 0, &global_frame, &mut |_, _| {})
         .unwrap();
     wire.lock().primary_send.send(
         peer,
@@ -1110,7 +1110,7 @@ fn response_time_matches_native_private_maximum_excluding_primary_global() {
             .service(1, &mut |_, frame| ack = frame.to_vec());
         ack[2] = 2;
         wire.global_mut()
-            .receive(endpoint, 0, &ack, 1, &mut |_, _| {})
+            .receive(endpoint, 0, &ack, &mut |_, _| {})
             .unwrap();
         wire.global_mut()
             .service(1_u32.wrapping_add(primary), &mut |_, _| {});
@@ -1216,6 +1216,31 @@ fn alternate_global_receive_also_sends_ack_from_primary() {
     frame.truncate(16);
     frame[2] = 2;
     assert_eq!(&reply[..length], datagram(&frame));
+}
+
+/// Winsock reports the ICMP port-unreachable an earlier send drew as
+/// WSAECONNRESET on a later read; the datagram behind it arrives in the same
+/// pass. Other platforms report nothing on an unconnected socket.
+#[cfg(windows)]
+#[test]
+fn port_unreachable_from_an_earlier_send_does_not_end_the_receive_pass() {
+    let mut receiver = transport();
+    let closed = ipv4_addr(&raw_peer()).unwrap();
+    receiver.lock().primary.send_to(b"gone", closed).unwrap();
+    std::thread::sleep(Duration::from_millis(50));
+    let mut frame = vec![0x36, 0x12, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0xaa];
+    frame.extend(b"after reset");
+    raw_peer()
+        .send_to(&datagram(&frame), receiver.primary_addr().unwrap())
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(50));
+    let report = receiver.service(1);
+    let failure = report.first_io_error.as_ref().expect("WSAECONNRESET");
+    assert_eq!(failure.error.raw_os_error(), Some(10054));
+    assert_eq!(
+        receiver.pop_global_received().unwrap().payload,
+        b"after reset"
+    );
 }
 
 #[test]
