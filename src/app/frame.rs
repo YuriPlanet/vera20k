@@ -309,20 +309,43 @@ impl App {
             if before == Some((session.tick(), session.binary_frame())) {
                 break;
             }
-            let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-            // The pass's own admission decides whether another follows.
-            let may_continue = sim_tick::online_frame_admits(state, now_ms).unwrap_or_else(|| {
+            let Some(live) = state
+                .match_state
+                .live_network
+                .as_ref()
+                .filter(|live| live.uses_sequenced_lockstep())
+            else {
                 // Main__ThrottleFrame (0x0055E160) polls its timer without
                 // waiting for a refresh: run every frame already due, so an
                 // interval shorter than one refresh keeps its native rate.
-                let (game_speed, network_fps) = sim_tick::local_pacing_inputs(state);
-                state
-                    .platform
-                    .frame_pacer
-                    .should_admit(now_ms, game_speed, network_fps, false)
-            });
-            if !may_continue {
+                let (game_speed, network_fps) =
+                    crate::app::match_runtime::sim_tick::local_pacing_inputs(state);
+                if state.platform.frame_pacer.should_admit(
+                    crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+                    game_speed,
+                    network_fps,
+                    false,
+                ) {
+                    continue;
+                }
                 break;
+            };
+            if !live.has_terminal_network_error() {
+                let frame = session.binary_frame();
+                let inputs = crate::app::match_runtime::sim_tick::online_pacing_inputs(
+                    state,
+                    frame,
+                    crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+                );
+                if !state.platform.frame_pacer.admits_online_frame(
+                    Instant::now(),
+                    frame,
+                    live.committed_frontier(),
+                    inputs,
+                    runtime.simulation.pending_network_wait(),
+                ) {
+                    break;
+                }
             }
         }
         state.platform.frame_pacer.end_service();
@@ -672,20 +695,24 @@ impl App {
             return None;
         }
         let frame = sim.session().binary_frame();
-        if let Some((timing, recovering)) = sim_tick::online_playout_receipt(
-            state,
-            frame,
-            crate::app::match_runtime::frame_pacer::wall_clock_ms(),
-        ) && !state.platform.frame_pacer.online_frame_due(
-            Instant::now(),
-            frame,
-            live.committed_frontier(),
-            timing,
-            recovering,
-        ) {
+        let frontier = live.committed_frontier();
+        if let Some((timing, recovering)) =
+            crate::app::match_runtime::sim_tick::online_pacing_inputs(
+                state,
+                frame,
+                crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+            )
+            && !state.platform.frame_pacer.online_frame_due(
+                Instant::now(),
+                frame,
+                frontier,
+                timing,
+                recovering,
+            )
+        {
             return None;
         }
-        (frame > 0).then_some((frame, live.committed_frontier()))
+        (frame > 0).then_some((frame, frontier))
     }
 
     /// Does a hidden window still have a running match to service? True while

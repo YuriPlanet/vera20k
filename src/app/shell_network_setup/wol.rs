@@ -173,7 +173,7 @@ pub(crate) fn send_first_choices(state: &mut AppState) {
 /// RESIDUAL: the host's node takes the mode's default country (mode
 /// vt+0x28) natively; it is unset here.
 pub(crate) fn user_joined(state: &mut AppState, name: String) -> anyhow::Result<()> {
-    let pending = start_pending(state)
+    let pending = super::start_phase(state).in_progress()
         || state
             .frontend
             .network_setup_protocol
@@ -273,7 +273,9 @@ fn departed(state: &mut AppState, name: &str, operator: bool, tell: bool) -> any
 /// (`[0xB77E28]`), and nothing in Quick Match (`[0xA8B244]` 1-3 take only
 /// `Z`), where the matchbot's options seat both players; the sender must be
 /// a channel user (the caller's check) and own a node here. Only a host
-/// receives it.
+/// receives it. VERA's online host takes it while its guests accept the
+/// final settings: the lobby has un-readied the sender, so the change
+/// republishes and cancels that start.
 pub(crate) fn player_choices(
     state: &mut AppState,
     name: &str,
@@ -281,7 +283,7 @@ pub(crate) fn player_choices(
     observer: bool,
 ) -> anyhow::Result<()> {
     if crate::app::shell_wol::in_match(state)
-        || start_pending(state)
+        || super::start_phase(state).submitted()
         || super::quick_match(state)
         || !state.match_state.session.host()
     {
@@ -302,11 +304,12 @@ pub(crate) fn player_choices(
 
 /// The VERA lobby's `balance` event, its answer to the host's `/balance` or
 /// Balance automatically (no native counterpart): a team for each named
-/// player. It has `player_choices`' gates, and acts only in a mode that lets
-/// players ally outside a clan room, where the team combos show.
+/// player. It has `player_choices`' gates but waits, as the host's own edits
+/// do, from its Start click, and acts only in a mode that lets players ally
+/// outside a clan room, where the team combos show.
 pub(crate) fn balance_teams(state: &mut AppState, teams: &[(String, u8)]) -> anyhow::Result<()> {
     if crate::app::shell_wol::in_match(state)
-        || start_pending(state)
+        || super::start_phase(state).in_progress()
         || super::quick_match(state)
         || !state.match_state.session.host()
     {
@@ -356,7 +359,7 @@ fn team_moves(
 /// (`0x5E3E73..0x5E3E90`); the user's node takes the value, and its
 /// accept icon shows only for 1 (`0x5EA3E0`).
 pub(crate) fn player_ready(state: &mut AppState, name: &str, value: i32) -> anyhow::Result<()> {
-    if crate::app::shell_wol::in_match(state) || start_pending(state) {
+    if crate::app::shell_wol::in_match(state) || super::start_phase(state).submitted() {
         return Ok(());
     }
     let result = ready_arm(state, name, value);
@@ -382,17 +385,14 @@ fn quick_match_start(state: &mut AppState, name: &str) {
     if !session.host() || !second || users.len() != 2 {
         return;
     }
-    let Some(protocol) = state.frontend.network_setup_protocol.as_mut() else {
-        return;
-    };
-    if protocol.wol_start_pending {
-        return;
+    if state
+        .frontend
+        .network_setup_protocol
+        .as_mut()
+        .is_some_and(|protocol| protocol.submit_start(users.into_iter().rev().collect()))
+    {
+        crate::app::shell_wol::quick_match::start_requested(state);
     }
-    protocol.wol_start_pending = true;
-    protocol.requests.push(NetworkSetupRequest::StartGame {
-        users: users.into_iter().rev().collect(),
-    });
-    crate::app::shell_wol::quick_match::start_requested(state);
 }
 
 /// The Quick Match guest's options sink `+0x58` after its parse
@@ -445,7 +445,7 @@ fn ready_arm(state: &mut AppState, name: &str, value: i32) -> anyhow::Result<()>
 /// is open. Like `A`, it is dropped while a match runs or a start is
 /// requested (`0x005E3E73..0x005E3E90`).
 pub(crate) fn map_status(state: &mut AppState, name: &str, status: u8) -> anyhow::Result<()> {
-    if crate::app::shell_wol::in_match(state) || start_pending(state) {
+    if crate::app::shell_wol::in_match(state) || super::start_phase(state).submitted() {
         return Ok(());
     }
     let result = match participant(state, name) {
@@ -553,7 +553,7 @@ pub(super) fn options_preview(state: &mut AppState, new_scenario: bool) {
 pub(crate) fn preview_request(state: &mut AppState) -> anyhow::Result<()> {
     if !state.match_state.session.host()
         || crate::app::shell_wol::in_match(state)
-        || start_pending(state)
+        || super::start_phase(state).submitted()
         || state
             .match_state
             .session
@@ -589,7 +589,7 @@ fn participant_in(launch: &SkirmishLaunchSession, name: &str) -> Option<usize> {
 pub(crate) fn user_kicked(state: &mut AppState, name: &str, line: String) -> anyhow::Result<()> {
     let full = state.match_state.session.network_no_open_player_row();
     if !full {
-        crate::app::shell_lan::append_chat(
+        crate::app::shell_lan::append_room_chat(
             state,
             LanChatLine {
                 text: line.encode_utf16().collect(),
@@ -643,14 +643,6 @@ fn queue(state: &mut AppState, request: NetworkSetupRequest) {
     }
 }
 
-pub(super) fn start_pending(state: &AppState) -> bool {
-    state
-        .frontend
-        .network_setup_protocol
-        .as_ref()
-        .is_some_and(|protocol| protocol.wol_start_pending)
-}
-
 /// `005E9850`: clear every acceptance but the host's and enable Accept on C9.
 pub(super) fn clear_guest_acceptance(state: &mut AppState) -> anyhow::Result<()> {
     state.match_state.session.clear_guest_readiness()?;
@@ -701,7 +693,7 @@ pub(super) fn game_started(
         });
     if !matches {
         if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
-            protocol.wol_start_pending = false;
+            protocol.set_start_phase(super::StartPhase::Idle);
         }
         return Ok(());
     }
@@ -733,7 +725,7 @@ pub(super) fn game_started(
     protocol.locked = true;
     // 0x7A7E03: [0xB77E28] = 2 until the abort or the match, so packets,
     // joins and the setup's own controls stay dropped under 0x130.
-    protocol.wol_start_pending = true;
+    protocol.set_start_phase(super::StartPhase::Submitted);
     protocol.ping_deadline = None;
     protocol.wol_verify = Some(crate::ui::wol_verify::WolVerifyDialog::open(names));
     Ok(())
@@ -993,7 +985,7 @@ pub(super) fn chat(state: &mut AppState, text: Vec<u16>) {
     crate::app::shell_wol::chat_sent(state, &line);
     queue(state, NetworkSetupRequest::WolChat(line));
     if let Some((text, color)) = echo {
-        crate::app::shell_lan::append_chat(state, LanChatLine { text, color });
+        crate::app::shell_lan::append_room_chat(state, LanChatLine { text, color });
     }
 }
 
@@ -1011,7 +1003,7 @@ pub(super) fn emote(state: &mut AppState) {
         return;
     }
     let nickname = local_nickname(state);
-    crate::app::shell_lan::append_chat(
+    crate::app::shell_lan::append_room_chat(
         state,
         LanChatLine {
             text: wol_chat::emote_echo(&nickname, &text),
@@ -1055,7 +1047,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
     let next = now + PING_PERIOD;
     protocol.ping_deadline = Some(next);
     protocol.requests.push(NetworkSetupRequest::BroadcastPings);
-    if !protocol.wol_start_pending {
+    if !protocol.start_phase.submitted() {
         protocol.requests.push(NetworkSetupRequest::RequestPings);
     }
     Some(next)

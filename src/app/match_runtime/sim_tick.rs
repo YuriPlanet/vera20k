@@ -1133,17 +1133,37 @@ fn advance_in_game_runtime_mode(
     // Locally paced frames keep their due time; see `admitted_frame_start_ms`.
     let mut paced_frame_start_ms = None;
     let pacer_timing_admits = match mode {
-        // Pure timing consult; pause/menu blocking belongs to the decision.
-        RuntimeAdvanceMode::WallClock { now_ms } => match online_frame_admits(state, now_ms) {
-            Some(admits) => admits,
-            None => {
-                let (game_speed, network_fps) = local_pacing_inputs(state);
+        RuntimeAdvanceMode::WallClock { now_ms } => {
+            // Pure timing consult; pause/menu blocking belongs to the decision.
+            let (game_speed, network_fps) = local_pacing_inputs(state);
+            if let Some(live) = state
+                .match_state
+                .live_network
+                .as_ref()
+                .filter(|live| live.uses_sequenced_lockstep())
+            {
+                if live.has_terminal_network_error() {
+                    true
+                } else if let Some(runtime) = state.match_state.sim_runtime.runtime() {
+                    let frame = runtime.simulation.session().binary_frame();
+                    let inputs = online_pacing_inputs(state, frame, now_ms);
+                    state.platform.frame_pacer.admits_online_frame(
+                        crate::util::time::Instant::now(),
+                        frame,
+                        live.committed_frontier(),
+                        inputs,
+                        resume_wait,
+                    )
+                } else {
+                    false
+                }
+            } else {
                 let pacer = &state.platform.frame_pacer;
                 paced_frame_start_ms =
                     Some(pacer.admitted_frame_start_ms(now_ms, game_speed, network_fps));
                 pacer.should_admit(now_ms, game_speed, network_fps, false)
             }
-        },
+        }
         RuntimeAdvanceMode::ExactOneStep => false,
     };
     let wall_ms = match mode {
@@ -1285,13 +1305,15 @@ fn advance_in_game_runtime_mode(
             .as_ref()
             .filter(|live| live.uses_sequenced_lockstep() && !live.has_terminal_network_error())
         {
+            // A frame step has cleared its request above; it ticks inline
+            // whatever this answers.
             Some(live) => state.match_state.sim_runtime.runtime().is_some_and(|rt| {
                 let next_frame = rt.simulation.session().binary_frame().wrapping_add(1);
                 pacer.another_online_pass_follows(
                     now,
                     next_frame,
                     live.committed_frontier(),
-                    online_playout_receipt(state, next_frame, wall_ms),
+                    online_pacing_inputs(state, next_frame, wall_ms),
                 )
             }),
             None => pacer.another_pass_follows(
@@ -1622,9 +1644,8 @@ fn play_hash_interval(network: bool) -> std::num::NonZeroU64 {
     }
 }
 
-/// The GameSpeed and network FPS the local pacer times Main_Tick by;
-/// sequenced online play paces with its own clock instead
-/// ([`online_frame_admits`]).
+/// Game speed and network FPS for the local frame timer.
+/// Relay-sequenced play uses the online pacer.
 pub(crate) fn local_pacing_inputs(state: &AppState) -> (u8, Option<u16>) {
     let game_speed = state
         .match_state
@@ -1648,47 +1669,14 @@ pub(crate) fn local_pacing_inputs(state: &AppState) -> (u8, Option<u16>) {
     (game_speed, super::network_match::frame_budget(state))
 }
 
-/// Whether sequenced online play admits its next canonical frame now; `None`
-/// when the local pacer times the match ([`local_pacing_inputs`]). The online
-/// pacer times the frame while it may ([`online_playout_receipt`]); otherwise
-/// the committed frontier alone admits it. A terminal network error admits the
-/// pass that reports it.
-pub(crate) fn online_frame_admits(state: &mut AppState, now_ms: u64) -> Option<bool> {
-    let live = state
-        .match_state
-        .live_network
-        .as_ref()
-        .filter(|live| live.uses_sequenced_lockstep())?;
-    if live.has_terminal_network_error() {
-        return Some(true);
-    }
-    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
-        return Some(false);
-    };
-    let frame = runtime.simulation.session().binary_frame();
-    let frontier = live.committed_frontier();
-    let resuming = runtime.simulation.pending_network_wait();
-    Some(match online_playout_receipt(state, frame, now_ms) {
-        Some((timing, recovering)) => state
-            .platform
-            .frame_pacer
-            .online_frame_decision(
-                crate::util::time::Instant::now(),
-                frame,
-                frontier,
-                timing,
-                resuming,
-                recovering,
-            )
-            .admits(),
-        None => super::frame_pacer::LocalFramePacer::admits_canonical_frame(frame, frontier),
-    })
-}
-
-/// The relay's playout timing for `frame` and whether the session is
-/// recovering at it, while the online pacer may time frames: no replay,
-/// frame step, pause, focus freeze or scenario pause holds the match.
-pub(crate) fn online_playout_receipt(
+/// The online pacer's inputs for canonical `frame`: the relay's timing and
+/// whether `frame` is being recovered. `None` while the match is held
+/// (paused, focus-frozen, scenario-paused, replaying or frame-stepping) or
+/// before the relay's timing arrives; the committed frontier alone then
+/// admits frames (`LocalFramePacer::admits_canonical_frame`). The pass, the
+/// lend decision, the catch-up service and the render continuation all ask
+/// this; each keeps its own policy for a terminal network error.
+pub(crate) fn online_pacing_inputs(
     state: &AppState,
     frame: u32,
     now_ms: u64,
@@ -1700,11 +1688,11 @@ pub(crate) fn online_playout_receipt(
         .runtime()?
         .simulation
         .session();
-    if state.match_state.match_diagnostics.is_replay_playback()
-        || state.diag.debug_frame_step_requested
-        || state.match_state.paused()
+    if state.match_state.paused()
         || state.focus_freeze_active()
         || session.scenario_paused()
+        || state.match_state.match_diagnostics.is_replay_playback()
+        || state.diag.debug_frame_step_requested
     {
         return None;
     }

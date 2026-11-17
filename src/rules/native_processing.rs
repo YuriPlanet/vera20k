@@ -4744,7 +4744,8 @@ impl NativeRulesRegistryState {
             rules_global_sounds: self.rules_global_sounds.clone(),
             rules_class_extra_lights: self.rules_class_extra_lights,
             // ReadCrateRules66BA08 retains the same process scalar on a
-            // failed root lookup, including prospective RMG agreement.
+            // failed root lookup in an offline preview. Network agreement
+            // projects from the cold registry instead.
             rules_crate: CrateRules {
                 heal_crate_sound: self.rules_crate.heal_crate_sound.clone(),
                 ..CrateRules::default()

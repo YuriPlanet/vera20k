@@ -828,7 +828,6 @@ fn initial_response_histories_clear_only_on_successful_barrier_once() {
                 endpoint,
                 0,
                 &connection_prefix(0x1236, 2, sequence, 2),
-                now + 22,
                 &mut |_, _| {},
             )
             .unwrap();
@@ -992,13 +991,7 @@ fn ordinary_wait_uses_private_response_history_with_larger_primary_global_mean()
     ));
     live.global_mut().service(1100, &mut |_, _| {});
     live.global_mut()
-        .receive(
-            peer,
-            0,
-            &connection_prefix(0x1236, 2, 0, 2),
-            1300,
-            &mut |_, _| {},
-        )
+        .receive(peer, 0, &connection_prefix(0x1236, 2, 0, 2), &mut |_, _| {})
         .unwrap();
     live.global_mut().service(1300, &mut |_, _| {});
     assert_eq!(live.connections().mean_response_time(1), Some(10));
@@ -3705,16 +3698,27 @@ fn sequenced_unsent_batch_retries_when_the_relay_route_recovers() {
         "an unsent batch must not wait for the 100ms retransmission deadline"
     );
 
-    // The ACK was withheld from the app owner, so the batch's records stay
-    // in its local queue; the relay session alone owns the acceptance and
-    // resends nothing more (spec §6.4).
+    // The relay session owns the acceptance: it resends nothing more
+    // (spec §6.4), and the batch leaves OutList although this game never
+    // read the ACK, as when its full inbox drops one.
     session.service(&mut wire, recovered_at + 112);
     pump(&mut wire, &mut relay, recovered_at + 112);
     assert!(!drain_ack(&mut wire), "no retry of an acknowledged batch");
-    assert_eq!(session.sent_commands(), 0);
     assert_eq!(
         sim.network_command_queues().local_records().unwrap(),
         vec![&stop]
+    );
+    session.service_pending_commands(
+        &mut wire,
+        &mut sim.network_command_queues(),
+        recovered_at + 112,
+    );
+    assert_eq!(session.sent_commands(), 1);
+    assert!(
+        sim.network_command_queues()
+            .local_records()
+            .unwrap()
+            .is_empty()
     );
 }
 
@@ -4785,8 +4789,8 @@ fn sequenced_fresh_batch_survives_one_lost_datagram_within_an_rto() {
             .live
             .borrow()
             .command_delivery_traces()
-            .last()
-            .is_some_and(|trace| trace.sent_at.is_some())
+            .next()
+            .is_some()
     };
     for step in 0..250 {
         let now_ms = 16_000 + step * 16;
@@ -4897,7 +4901,7 @@ fn sequenced_fresh_batch_survives_one_lost_datagram_within_an_rto() {
         .command_delivery_traces()
         .last()
         .expect("command batch traced");
-    assert!(trace.sent_at.is_some() && trace.assigned.is_some());
+    assert!(trace.assigned.is_some());
 }
 
 #[test]

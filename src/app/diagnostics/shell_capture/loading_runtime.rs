@@ -271,7 +271,7 @@ pub(crate) fn observe_progress(state: &mut AppState) {
 }
 
 pub(crate) fn progress_receipt(state: &AppState) -> Result<Option<Value>> {
-    use crate::net::global::{GlobalDestination, LoadingObservation};
+    use crate::net::global::{GlobalDestination, LoadingObservation, with_port_override};
     let observed = state
         .match_state
         .live_network
@@ -302,13 +302,7 @@ pub(crate) fn progress_receipt(state: &AppState) -> Result<Option<Value>> {
         GlobalDestination::Direct {
             endpoint,
             port_override,
-        } => {
-            let mut address = *endpoint;
-            if *port_override != 0 {
-                address.set_port(*port_override);
-            }
-            address.to_string()
-        }
+        } => with_port_override(*endpoint, *port_override).to_string(),
     };
     let events=log.records().iter().map(|event|match event {
         LoadingObservation::Admitted{sequence,destination:d,percent,reliable} => json!({"kind":"admitted","sequence":sequence,"destination":destination(d),"percent":percent,"reliable":reliable}),

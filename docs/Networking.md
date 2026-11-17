@@ -42,6 +42,14 @@ longer carries its locals either. Loading a save keeps its saved variables. Offl
 the original game's local variable carryover. This changes no packets: mixed builds
 are refused by the existing build check, and a rollback restores the earlier
 carryover behavior.
+
+Each new LAN or online match also rebuilds mutable Rules from the frozen startup
+sources and the room's current options. This includes the country/color choices
+shown before loading and the Rules used for random-map agreement and generation.
+A previous map's scalars or extra Types cannot become defaults for the next room.
+Offline loads keep the original retaining reset. No packet changes are required;
+mixed builds use the existing refusal, and a rollback restores the earlier retention.
+
 Whether Ares plays in a match is decided from that same data: the rules, mode
 and map, whether the selected mod loads `ares.mix`, and the player's
 [Ares setting](ares.md#the-ares-setting), which the rules agreement covers. With
@@ -195,6 +203,10 @@ later player's Ready: the others wait until that player leaves, which cancels
 the start, or for up to 3 minutes, then start without it (a match on several
 relays is cancelled instead).
 Deploying the relay change is separate from publishing a new game build.
+Relays of one match must also speak one relay-to-relay link version: a relay
+that hears another version cancels the startup at once, and one too old to know
+this cancels at its loading limit, so players get the cancelled-start message
+instead of a frozen match. Game and lobby traffic do not change.
 At each deadline, missing input is empty; a command joins the next unsealed
 frame. The sender also waits for that commit.
 Frames use the existing Event codec and simulation queues, with a fresh compression
@@ -203,6 +215,11 @@ them, and only the per-hop MAC authenticates them. A batch's Event packet header
 is not sent; each client rebuilds it from the batch's source and frame. A batch
 that does not decode, or whose House is not its source's, makes its sender leave
 at that frame on every client, as if by Leave; the rest of its stream is ignored.
+Online and on LAN, every client also drops a received order for an object, wall or
+bomb that another House owns, and a plan's dispatch (MEGAMISSION planning flag 2),
+which each client's planner adds itself and never sends; gamemd trusts both.
+No packet changes: older builds are refused by the build check, and a rollback
+admits these orders again.
 
 Redundancy follows each player's measured link
 (`services/relay/adaptive-transport/spec.md`). One merged UPLINK request carries
@@ -322,8 +339,10 @@ match on the same relay, or the match's final frame after 24 hours of play ends
 membership. The relay
 remains required for progress.
 
-A process that left a match without Leave (a closed window or browser tab, a crash)
-can be replaced within that silence limit. The launcher receives a fresh `[Relay]`
+A closed desktop game first sends the relay its Leave and the lobby its `finish`,
+waiting up to three seconds for them. A process that left a match without Leave (a
+crash, a closed browser tab, or a closed game whose Leave did not arrive in time) can
+be replaced within that silence limit. The launcher receives a fresh `[Relay]`
 section with `ResumePings`, the timing vector every client started with, and
 `ResumeCursor`, the end of the lobby events that process already consumed. The new
 process skips the start barriers, loads the same world without reporting progress to
@@ -478,6 +497,27 @@ way, through `room_reopened`. A room with an older game in it, or a Quick Match 
 closes as before, so an older game never meets `host_changed`; a game that does not know
 it would ignore it and leave the room once its host left. A rollback closes every such
 room again.
+
+In a VERA room before its start, the host and every guest can press Lobby to look round
+the public lobby while staying in the room, and Back to Room shows the room again
+(docs/lobby-protocol.md "Visiting the lobby"). The room goes on hidden: its chat, picks,
+readiness and newcomers keep reaching the visitor's game, and the host's game keeps
+seating newcomers. The room's start brings everyone back to it. The new commands are
+`visit_lobby` and `end_visit`, and the lobby marks the visited lobby's `joined`, `chat`,
+`member_joined` and `member_left` with `visit`. Released games never send the commands,
+and nobody else sees a difference: a visitor is a member of both channels, listed in the
+public lobby too. A lobby from before this lists no `visit_lobby` among the sign-in
+answer's `features`, so the game greys Lobby out. One rolled back after the sign-in
+refuses `visit_lobby`; the game then says it could not go to the lobby, and the player
+stays in the room. A rollback during a visit leaves the visitor in both channels: the
+older lobby sends the public lobby's events to their game unmarked, which takes them as
+the room's, and refuses Back to Room's `end_visit` and their lobby chat with a notice. A
+host who visited then seats the public lobby's newcomers in their room; the older lobby
+refuses options naming them, so the room cannot start until those players leave the
+public lobby or the host leaves the room, and a visitor who joins the public lobby again
+is listed twice. Roll the lobby back past this only when no room has a visitor. The
+public lobby lists a stranded visitor until this lobby is back and they leave the room
+or sign out; it then also drops an entry whose session is gone.
 
 Games 0.3.3 and 0.3.4 had a host setting, Balance automatically, that travels online as
 `launch.options.auto_balance` and had the lobby balance the room 5 seconds after who
@@ -751,6 +791,25 @@ directory, and the bind/peer endpoints exchanged. The output manifest's
 `lan.rounds[n].runtime.native_checksums` records per-frame checksums for each
 round. The live targets drive real Move/Stop input, results, a rematch in the
 host's reopened room and Main Menu return across two games.
+For a process-state comparison, give both peers `--lan-isolation-seed 73`
+and the host `--lan-map XMP03T4.MAP`. This fixes the seed, countries, colors and
+start positions across both rounds and skips the separate observer-seat exercise. Compare
+the accepted launch, startup receipt and committed frame checksums; any input
+timing differences still need to be reconciled before attributing a difference
+to retained state.
+The host can add `--lan-prior-map <history-map>` to play a different first map.
+The second round still uses `--lan-map`. Each round records `setup_catalog`
+before loading and `gameplay_rules` afterward, so the comparison can confirm
+that the history changed the first world and that its choices were then cleared.
+
+`sim-bench --state-isolation-report <new.json> --map XMP03T4.MAP --seed 73
+--client-timing --isolation-mode wol --isolation-humans 1 --computers 1`
+provides the complementary headless comparison. Run it in separate processes,
+first without a history, then with one or more `--prior-map <map>` arguments.
+Equal `target` values cover the Rules owner, world construction and every
+recorded simulation frame for that fixture. This does not cover app input or
+the network transport.
+
 The `lan-live-timeout-host` and `lan-live-quit-host` targets pair with
 `lan-live-failure-guest` on the same endpoints. That guest plays the shared 300-frame
 prefix and then exits without leaving, so the host meets a real peer disappearance

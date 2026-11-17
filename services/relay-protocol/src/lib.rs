@@ -1014,7 +1014,7 @@ impl RelayServer {
         // sender's own limits, so forged, junk or replayed datagrams cannot
         // spend capacity other players need. Rejecting one costs at most
         // three HMACs. No source-address map grows under spoofed UDP traffic.
-        if bytes.starts_with(sequenced::federation::LINK_MAGIC) {
+        if sequenced::federation::is_link_packet(bytes) {
             return self.federation_receive(bytes, now, now_millis);
         }
         let header = envelope::peek(envelope::Direction::Up, bytes)?;
