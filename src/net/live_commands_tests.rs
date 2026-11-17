@@ -248,8 +248,6 @@ fn poll_pair(
     (passes[0], passes[1])
 }
 
-/// A real private-UDP cohort; the agreement is the install-time snapshot,
-/// never inferred from subsequent probes or the mutable connection table.
 /// Games that load the same world but would play it differently, another
 /// build or other rules, never certify one start; the start report names
 /// the part that differs.
@@ -290,6 +288,8 @@ fn start_identity_differs_by_build_and_by_rules() {
     }
 }
 
+/// A real private-UDP cohort; the agreement is the install-time snapshot,
+/// never inferred from subsequent probes or the mutable connection table.
 fn startup_cohort(active: &[u8], hashes: &[u64]) -> Vec<LiveCommandSession> {
     assert_eq!(active.len(), hashes.len());
     let mut wires: Vec<_> = active.iter().map(|_| transport()).collect();

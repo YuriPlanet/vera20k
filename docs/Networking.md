@@ -227,8 +227,10 @@ compares (`StartupAgreement`), and a match that never started reports them as it
 before its start, so only a launcher's relay match (`tools/spawn`) meets the new
 refusal: one whose players run other builds or rules, which used to start and could
 desync later, is now refused at its start like a different world, a released game
-facing this one included. Players of one build agree as before, also after a
-rollback, and nothing new is exchanged.
+facing this one included. Its box (`VERA:MatchStartMismatch`) names the version and
+files and, for a launcher's match, Terrain Deformation and the Superweapon Limit.
+Players of one build agree as before, also after a rollback, and nothing new is
+exchanged.
 At each deadline, missing input is empty; a command joins the next unsealed
 frame. The sender also waits for that commit.
 Frames use the existing Event codec and simulation queues, with a fresh compression

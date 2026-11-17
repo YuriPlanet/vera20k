@@ -3713,6 +3713,18 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
         &multiplayer.version,
         &multiplayer.rules_digest,
     )?;
+    // The lobby keeps a report of at most 64 start parts (`start_hash` in
+    // docs/lobby-protocol.md) and drops a longer one whole.
+    const _: () = {
+        const fn parts<T, const N: usize>(_: fn(&T) -> [(&'static str, u64); N]) -> usize {
+            N
+        }
+        assert!(
+            parts(crate::net::live_commands::StartupAgreement::report_parts)
+                + parts(crate::sim::world::Simulation::state_hash_owners)
+                <= 64
+        );
+    };
     if ordering_clock.is_some() {
         let parts = agreement
             .report_parts()
