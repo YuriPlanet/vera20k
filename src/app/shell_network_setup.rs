@@ -168,10 +168,8 @@ pub(crate) struct NetworkSetupProtocol {
     /// run without C2/C9 (`0x007A6208..0x007A6229`, `0x0078A36C..0x0078A386`)
     /// under the runner's `0x117`.
     quick_match: bool,
-    /// An external launch (docs/spawn.md): a launcher formed the room, so
-    /// like Quick Match no setup dialog exists. The relay start handshake
-    /// runs unchanged and Negotiated(0) starts loading directly; a direct
-    /// (LAN) launch runs the LAN GO and its completion starts loading.
+    /// A launcher or a watch supplied the setup: it has no dialog.
+    /// Negotiated(0) starts loading directly; a direct LAN launch takes GO.
     external: bool,
     /// Written only through [`Self::set_start_phase`].
     start_phase: StartPhase,
@@ -662,7 +660,7 @@ pub(crate) fn start_phase(state: &AppState) -> StartPhase {
         .map_or(StartPhase::Idle, |protocol| protocol.start_phase)
 }
 
-/// The admitted setup belongs to an external launch, with no dialog.
+/// A launcher or watch supplied the admitted setup, with no dialog.
 pub(crate) fn external(state: &AppState) -> bool {
     state
         .frontend
@@ -757,6 +755,10 @@ pub(crate) fn install_watch_setup(
         .selected_map_file
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("the match has no map"))?;
+    anyhow::ensure!(
+        !crate::map::rmg::is_seed_selection(file),
+        "watching a generated map is unavailable"
+    );
     maps::validate_room_map_name(file)?;
     let session = &mut state.match_state.session;
     session.enter_network(crate::app::match_runtime::session::NetworkReturnContext::Wol);
