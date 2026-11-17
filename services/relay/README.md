@@ -35,7 +35,8 @@ Generation tombstones last for the maximum 300-second ticket
 lifetime, so old still-valid grants cannot recreate retired rooms. Renewals keep
 the same player, match and generation, and are a new hop with a new session;
 the old session then takes only Leave, so a player quitting before the new
-READY still leaves, and is released like an expired one. A released session
+READY still leaves, and is released 300 seconds after its old ticket expires,
+so renewals every few minutes do not fill the session table. A released session
 is never assigned again for 10 minutes. Each hop counts its sequences from 1
 to `u32::MAX` (a 300-second ticket never comes near it), and a relay that ran
 out would stop sending on the hop. An authenticated datagram whose sequence
