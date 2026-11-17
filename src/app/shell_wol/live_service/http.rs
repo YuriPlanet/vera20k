@@ -466,8 +466,9 @@ pub(super) enum CommandFailure {
     /// 400 `invalid_options`: the lobby cannot take the room's options, as
     /// one from before a field they carry (`launch.options.teams`) does.
     InvalidOptions,
-    /// 409 `stale_revision`: the room's settings changed while a `ready`,
-    /// `map_status` or `start` for the older ones was on its way.
+    /// 409 `stale_revision`: the room has moved on from the settings a
+    /// `ready`, `map_status` or `start` was for (they changed, or a player
+    /// came or went), or has none yet.
     StaleRevision,
 }
 
