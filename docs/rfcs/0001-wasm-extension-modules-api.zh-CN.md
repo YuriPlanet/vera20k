@@ -591,11 +591,11 @@ bytes: u32,               // 投递区的字节数
 
 | 事件 | 字段 | 引发时机 | 绑定 | 可决定 | 结果槽 |
 | --- | --- | --- | --- | --- | --- |
-| `TakeDamage` | `other` 来源（可为 0），`value` 护甲结算后的伤害，`id` 弹头 | 批量伤害提交结束后 | 对象 | 是：伤害提交前 | 最终伤害；批量提交时成批决定 |
-| `HitByWarhead` | `id` 弹头，`value` 最终伤害，`other` 来源 | 伤害被接收后；免疫的命中不算 | 对象 | 否 | — |
+| `TakeDamage` | `other` 来源（可为 0），`value` 护甲结算后的伤害，`id` 弹头，`x`、`y`、`z` 主体位置（lepton） | 批量伤害提交结束后 | 对象 | 是：伤害提交前 | 最终伤害；批量提交时成批决定 |
+| `HitByWarhead` | `id` 弹头，`value` 最终伤害，`other` 来源，`x`、`y`、`z` 主体位置（lepton） | 伤害被接收后；免疫的命中不算 | 对象 | 否 | — |
 | `AttackedBy` | `other` 攻击者，`value` 武器槽位（−1 无），`projectile`（可为 0） | 开火步骤后，在目标上 | 对象 | 否 | — |
-| `FatalDamage` | `other` 攻击者（可为 0），`value` 伤害，`id` 弹头 | 致命伤害提交后、死亡流程前；死亡流程重新检查 | 对象 | 是：死亡流程中 | 死亡方式：位 0–31 为死亡武器 ID 加 1（0 无），位 32 产生幸存者，位 33 留下残骸 |
-| `Killed` | `other` 击杀者（可为 0） | 击杀记录后 | 对象 | 否 | — |
+| `FatalDamage` | `other` 攻击者（可为 0），`value` 伤害，`id` 弹头，`x`、`y`、`z` 主体位置（lepton） | 致命伤害提交后、死亡流程前；死亡流程重新检查 | 对象 | 是：死亡流程中 | 死亡方式：位 0–31 为死亡武器 ID 加 1（0 无），位 32 产生幸存者，位 33 留下残骸 |
+| `Killed` | `other` 击杀者（可为 0），`id` 致死弹头（无为 −1），`x`、`y`、`z` 死亡位置（lepton） | 击杀记录后 | 对象 | 否 | — |
 | `Fire` | `other` 目标（可为 0），`cell` 目标格子（总会填入），`value` 武器槽位，`id` 武器，`projectile`（可为 0） | 射击完成后 | 对象+武器 | 是：射出前 | 射击方案条数；方案是结果区中的 `ProjectileSpec` 数组（[RFC 9](0001-wasm-extension-modules.zh-CN.md#9-示例抛射体弹道)） |
 | `SpawnFire` | `other` 子机，`value` 武器槽位，`projectile`；目标在 `cell` 或子机的 `Target` 属性 | 子机射击后 | 对象 | 否 | — |
 | `HitTarget` | `other` 目标，`value` 伤害，`id` 武器，`projectile` | 批量伤害提交结束后，在开火者上 | 对象+武器 | 否 | — |
@@ -607,7 +607,7 @@ bytes: u32,               // 投递区的字节数
 | `TransportExited` | 同 `TransportEntered` | 离开完成后 | 对象 | 否 | — |
 | `PassengerAdded` | 在载具或建筑（`subject`）上；`other` 乘客，`value` 已占空间，`value2` 驻军标志 | 同 `TransportEntered` | 对象 | 否 | — |
 | `PassengerRemoved` | 同 `PassengerAdded` | 同 `TransportExited` | 对象 | 否 | — |
-| `Crushed` | `other` 碾压者 | 碾压后 | 对象 | 否 | — |
+| `Crushed` | `other` 碾压者，`x`、`y`、`z` 位置（lepton） | 碾压后 | 对象 | 否 | — |
 | `HouseTransfer` | `house` 新所属方，`value` 1 为心控 | 转移前；转移重新检查 | 对象 | 否 | — |
 | `HouseTransferred` | `house` 原所属方，`value` 1 为心控 | 转移后 | 对象 | 否 | — |
 | `ModifierStart` | `modifier`，`value` 属性 ID，`other` 来源（可为 0） | 修饰器加入后 | 对象；所属方上的修饰器为全局，填 `house` | 否 | — |
