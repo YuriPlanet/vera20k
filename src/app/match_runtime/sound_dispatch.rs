@@ -155,6 +155,9 @@ pub(super) fn dispatch_sim_sound_events(
                 };
                 GameSoundEvent::UiSound { sound_id }
             }
+            SimSoundEvent::TriggerAudio { reference, target } => {
+                GameSoundEvent::TriggerAudio { reference, target }
+            }
             SimSoundEvent::TriggerEva { index } => GameSoundEvent::TriggerEva { index },
             SimSoundEvent::VocCenteredIndex { index } => GameSoundEvent::VocIndex { index },
             SimSoundEvent::UnitVoiceVisit { owner } => GameSoundEvent::UnitVoiceVisit { owner },

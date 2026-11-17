@@ -64,6 +64,11 @@ impl SoundSource {
 /// A sound event produced by the game simulation or UI.
 #[derive(Debug, Clone)]
 pub enum GameSoundEvent {
+    /// A network trigger's authored operand, resolved only by local playback.
+    TriggerAudio {
+        reference: crate::rules::sound_ini::SoundReference,
+        target: crate::sim::world::TriggerSoundTarget,
+    },
     /// One `VoxClass::PlayEVA @ 0x00752700` call: the `[DialogList]` event
     /// name and the call site's type override (`-1` = the entry's own
     /// `Type=`). `SelectClass::Action` passes `-1` at all eight of its sites
@@ -350,6 +355,46 @@ pub enum GameSoundEvent {
 }
 
 impl GameSoundEvent {
+    /// Resolve without changing the simulation or consuming RNG. Missing local
+    /// audio is silent; the authored request still lives in the shared world.
+    pub(crate) fn resolve_trigger_audio(
+        &self,
+        sounds: &crate::rules::sound_ini::SoundRegistry,
+        eva: &crate::rules::sound_ini::EvaRegistry,
+    ) -> Option<Self> {
+        let Self::TriggerAudio { reference, target } = self else {
+            return None;
+        };
+        use crate::sim::world::TriggerSoundTarget;
+        if matches!(target, TriggerSoundTarget::Eva) {
+            return Some(Self::TriggerEva {
+                index: reference.eva_index(eva)?,
+            });
+        }
+        let sound_id = reference.sound(sounds)?.to_owned();
+        Some(match target {
+            TriggerSoundTarget::Centered => Self::VocAt {
+                sound_id,
+                source: None,
+            },
+            TriggerSoundTarget::Coordinate { coordinate, flags } => {
+                let coordinate = [coordinate.x, coordinate.y, coordinate.z];
+                Self::VocAtCoord {
+                    sound_id,
+                    coordinate,
+                    flags: *flags,
+                    source: SoundSource::from_coordinate(coordinate),
+                }
+            }
+            TriggerSoundTarget::Object { owner, world } => Self::AnimationStarted {
+                anim_id: *owner,
+                sound_id,
+                source: Some(SoundSource::from_coordinate([world.x, world.y, world.z])),
+            },
+            TriggerSoundTarget::Eva => return None,
+        })
+    }
+
     /// Get the sound ID for this event.
     pub fn sound_id(&self) -> &str {
         match self {
@@ -385,7 +430,8 @@ impl GameSoundEvent {
             | Self::UnitVoiceDestroyed { .. }
             | Self::UnitVoiceMoved { .. }
             | Self::TriggerEva { .. }
-            | Self::VocIndex { .. } => "",
+            | Self::VocIndex { .. }
+            | Self::TriggerAudio { .. } => "",
             // The event name, not a sample: the sample is a per-side column
             // the `VoxClass` consumer resolves.
             Self::Eva { event, .. } | Self::EvaRemove { event } => event,
@@ -622,5 +668,51 @@ impl SoundEventQueue {
     /// Whether there are pending events.
     pub fn is_empty(&self) -> bool {
         self.events.is_empty()
+    }
+}
+
+#[cfg(all(test, tests_audio))]
+mod trigger_audio_tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::sound_ini::{EvaRegistry, SoundReference, SoundRegistry};
+    use crate::sim::world::TriggerSoundTarget;
+
+    #[test]
+    fn trigger_references_resolve_only_against_the_listeners_catalog() {
+        let sounds = SoundRegistry::from_ini(&IniFile::from_str("[SoundList]\n0=Other\n1=Alert\n"));
+        let eva = EvaRegistry::from_ini(&IniFile::from_str("[DialogList]\n0=Other\n1=Alert\n"));
+        let named = GameSoundEvent::TriggerAudio {
+            reference: SoundReference::Name("ALERT".into()),
+            target: TriggerSoundTarget::Eva,
+        };
+        assert!(matches!(
+            named.resolve_trigger_audio(&sounds, &eva),
+            Some(GameSoundEvent::TriggerEva { index: 1 })
+        ));
+        assert!(
+            named
+                .resolve_trigger_audio(&sounds, &EvaRegistry::default())
+                .is_none()
+        );
+        let indexed = GameSoundEvent::TriggerAudio {
+            reference: SoundReference::Index(1),
+            target: TriggerSoundTarget::Coordinate {
+                coordinate: crate::sim::components::DriveCoord {
+                    x: 256,
+                    y: 512,
+                    z: 0,
+                },
+                flags: 1,
+            },
+        };
+        assert!(
+            matches!(indexed.resolve_trigger_audio(&sounds, &eva), Some(GameSoundEvent::VocAtCoord { sound_id, coordinate: [256, 512, 0], flags: 1, .. }) if sound_id == "Alert")
+        );
+        assert!(
+            indexed
+                .resolve_trigger_audio(&SoundRegistry::default(), &eva)
+                .is_none()
+        );
     }
 }
