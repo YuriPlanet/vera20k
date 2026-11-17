@@ -44,8 +44,8 @@ pub(crate) enum PhraseValue {
 
 /// A lobby line's `phrases` in the language in use, or `None` when a
 /// language file lacks one of their keys, a sentence names a value its phrase
-/// lacks, a value is malformed or the line fills past [`MAX_LINE_BYTES`], and
-/// the line's own text stands.
+/// lacks, a value is malformed or a phrase or join fills past the lobby's chat
+/// limit, and the line's own text stands.
 pub(crate) fn localized(phrases: &[Phrase]) -> Option<String> {
     let sentences = phrases
         .iter()
@@ -140,17 +140,14 @@ fn join(key: &str, first: &str, second: &str) -> Option<String> {
     filled(&pattern, &[("first", &first), ("second", &second)])
 }
 
-/// The lobby's chat limit in UTF-8 bytes (`docs/lobby-protocol.md`), which
-/// none of its own lines comes near. A phrase or join that fills past it
-/// leaves the line's `text`, which bounds the work a line takes: a phrase
-/// nested in a value its sentence names twice doubles at each level, and each
-/// join of a list copies the rest of it again.
-const MAX_LINE_BYTES: usize = 2048;
-
 /// `template` with its values, or `None` when it names a value it lacks or
-/// fills past [`MAX_LINE_BYTES`].
+/// fills past the lobby's chat limit, which none of its own lines comes near.
+/// Checking each fill bounds the work a line takes: a phrase nested in a
+/// value its sentence names twice doubles at each level, and each join of a
+/// list copies the rest of it again.
 fn filled(template: &str, values: &[(&str, &dyn Display)]) -> Option<String> {
-    crate::i18n::fill_all(template, values).filter(|line| line.len() <= MAX_LINE_BYTES)
+    crate::i18n::fill_all(template, values)
+        .filter(|line| line.len() <= super::live_service::CHAT_LIMIT_BYTES)
 }
 
 #[cfg(all(test, tests_app))]
@@ -207,7 +204,8 @@ mod tests {
 
     /// A line that fills past the chat limit leaves the lobby's text: a
     /// phrase nested in the value its sentence names twice, which doubles at
-    /// each level, and a run of sentences, whose every join copies the rest.
+    /// each level, also in a value no sentence names, and a run of sentences,
+    /// whose every join copies the rest.
     #[test]
     fn a_line_past_the_chat_limit_leaves_the_lobbys_text() {
         let mut name = r#""x""#.to_owned();
@@ -216,6 +214,10 @@ mod tests {
         }
         let nested: Vec<Phrase> = serde_json::from_str(&format!("[{name}]")).unwrap();
         assert_eq!(localized(&nested), None);
+        let unnamed: Vec<Phrase> =
+            serde_json::from_str(&format!(r#"[{{"key":"Ranked","values":{{"x":{name}}}}}]"#))
+                .unwrap();
+        assert_eq!(localized(&unnamed), None, "each fill is bounded");
         let ranked = Phrase {
             key: "Ranked".to_owned(),
             ..Phrase::default()

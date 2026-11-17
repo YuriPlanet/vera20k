@@ -58,6 +58,10 @@ const RELAY_GRANT_LIFETIME: Duration = Duration::from_secs(300);
 /// spends 6 of renew_relay's 12 a minute (docs/lobby-protocol.md).
 const RELAY_RENEWAL_MARGIN: Duration = Duration::from_secs(150);
 const RELAY_RENEWAL_RETRY_MS: u32 = 10_000;
+/// The lobby's chat limit in UTF-8 bytes (docs/lobby-protocol.md): the
+/// longest text `/v1/translate` takes, and the longest a lobby phrase fills
+/// to before its line's own text stands ([`super::lobby_phrases`]).
+pub(super) const CHAT_LIMIT_BYTES: usize = 2048;
 
 /// The configured lobby's HTTPS origin: the build's, or `VERA20K_LOBBY_URL`
 /// for staging.
@@ -542,7 +546,7 @@ impl Translations {
         let text = String::from_utf16_lossy(text);
         if self.pending.len() >= MAX_PENDING_TRANSLATIONS
             || self.paused_until.is_some_and(|until| now < until)
-            || text.len() > 2048
+            || text.len() > CHAT_LIMIT_BYTES
         {
             return;
         }
