@@ -142,6 +142,46 @@ fn object_attack_is_admitted(
         actor.owner(),
         target.owner(),
     );
+    let Some(kind) = sim.interner().object_type(actor.type_ref(), rules) else {
+        return false;
+    };
+    // The ladder is lazy: the ordinary enemy path answers at the disguise
+    // rung below, and only the Phobos underground gate and the friend-fire
+    // rows need the selected weapon.
+    #[allow(unused_mut)]
+    let mut selected_weapon = || {
+        let cells = sim
+            .resolved_terrain()
+            .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
+        combat_weapon::select_weapon_against_in_query(
+            rules,
+            actor,
+            kind,
+            &combat_weapon::attacker_facts(actor, kind),
+            Some(&TargetKind::Entity(target_id)),
+            sim,
+            sim.interner(),
+            cells.as_ref(),
+            Some(sim.house_alliances()),
+        )
+        .and_then(|(_, weapon)| weapon)
+    };
+    // Phobos `TechnoClass_MouseOverObject_AttackUnderGround` (`0x70023B`,
+    // `Ext/Techno/Hooks.cpp:1497-1511`): an object that is not surfaced
+    // (`IsSurfaced()`) answers Attack only when the selected weapon's
+    // projectile has `AU`; otherwise the rung falls to the tail
+    // (`0x70056C`). The force-fire key returns earlier (`0x700048..0x700072`),
+    // so this gate is unforced-only, like the rest of this admission.
+    #[cfg(feature = "phobos")]
+    if crate::sim::world::entity_is_underground(target)
+        && !selected_weapon().as_ref().is_some_and(|selected| {
+            rules
+                .weapon_projectile(selected.weapon)
+                .is_some_and(|projectile| projectile.au)
+        })
+    {
+        return false;
+    }
     //70025D..70030F: this is the firing blink, not the reacquisition timer.
     let disguise_admitted = rules.general.attack_cursor_on_disguise
         || sim
@@ -165,27 +205,10 @@ fn object_attack_is_admitted(
     if !allied && disguise_admitted {
         return true;
     }
-    let Some(kind) = sim.interner().object_type(actor.type_ref(), rules) else {
-        return false;
-    };
     if kind.attacks_friendlies() {
         return true;
     }
-    let cells = sim
-        .resolved_terrain()
-        .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
-    let weapon = combat_weapon::select_weapon_against_in_query(
-        rules,
-        actor,
-        kind,
-        &combat_weapon::attacker_facts(actor, kind),
-        Some(&TargetKind::Entity(target_id)),
-        sim,
-        sim.interner(),
-        cells.as_ref(),
-        Some(sim.house_alliances()),
-    )
-    .and_then(|(_, weapon)| weapon);
+    let weapon = selected_weapon();
     let ivan_transport = weapon
         .as_ref()
         .is_some_and(|weapon| weapon.warhead.ivan_bomb)
@@ -8882,6 +8905,10 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
 #[cfg(test)]
 #[path = "allied_object_action_tests.rs"]
 mod allied_object_action_tests;
+
+#[cfg(all(test, feature = "phobos"))]
+#[path = "phobos_attack_underground_tests.rs"]
+mod phobos_attack_underground_tests;
 
 #[cfg(test)]
 #[path = "context_order_cursor_contract_tests.rs"]

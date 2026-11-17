@@ -44,6 +44,10 @@ The auto-target side reads the object's `GetHeight` (vt+0x1C8,
   the stock `0x6F37E7` AA answer, via `projectile_au`.
 - Both consumer families are `#[cfg(feature = "phobos")]`, so a build without
   the feature keeps the vanilla paths.
+- The cursor half is the app crate's `object_attack_is_admitted`
+  (`src/app/input/context_order.rs`), which reads the same
+  `sim::world::entity_is_underground` answer and the same
+  `ProjectileType::au` through `RuleSet::weapon_projectile`.
 
 ## Tests
 
@@ -54,11 +58,19 @@ The auto-target side reads the object's `GetHeight` (vt+0x1C8,
 
 ## Residuals
 
-- The `What_Action` cursor admission (`0x70023B`) has no VERA20K owner in this
-  package: the port lives in `src/app/input` (`What_Action`/`what_action_*`),
-  which this package's boundaries exclude. Trigger: a player moving the cursor
-  over a burrowed techno with a weapon whose projectile lacks `AU`. Frequency:
-  none in retail (no Tunnel locomotor). Risk: the vanilla cursor answer stands.
+- The `What_Action` cursor admission (`0x70023B`) is now ported in
+  `src/app/input/context_order.rs`: the unforced object rung
+  (`object_attack_is_admitted`, reached by [`attack_action`] and the hover
+  cursor) refuses a target that is not surfaced when the selected weapon's
+  projectile lacks `AU`, and falls to the native tail. It reads
+  `sim::world::entity_is_underground` (the one-owner layer answer) and
+  `RuleSet::weapon_projectile(...).au`. Tests:
+  `app::input::context_order::phobos_attack_underground_tests` (three cases:
+  refused burrowed cursor plus its surfaced twin, `AU=yes` admitted, and the
+  selected secondary's `AU` admitted over a `AU=no` primary). Dormant in retail
+  (no Tunnel locomotor, and no retail projectile sets `AU`).
+
+[`attack_action`]: ../src/app/input/context_order.rs
 - The gattling selection hook `0x6F3432` is now ported
   (`phobos_gattling_weapon_index` + `phobos_weapon_valid_against`): its
   `isWeaponValid` walks AA, underground `AU`, the target shield's

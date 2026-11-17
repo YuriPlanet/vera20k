@@ -33,7 +33,7 @@ use crate::sim::world::ObjectSubstrate;
 /// the CLSID (that is the dormancy golden); a mod's rules may. The branch is
 /// what the layer answer becomes once the Tunnel locomotor exists, and what
 /// fixtures set meanwhile.
-pub(crate) fn entity_is_underground(entity: &GameEntity) -> bool {
+pub fn entity_is_underground(entity: &GameEntity) -> bool {
     entity
         .locomotor
         .as_ref()
