@@ -49,11 +49,9 @@ first; the Ares part is then small. None of them is reachable with retail YR dat
 | Gate placement selling walls (0x440709, 100156F0) | The hook's wall test in BuildingClass::Unlimbo's Gate arm; the stock arm is ported with the stock wall ids | A mod `Wall=` overlay stays under a gate |
 | Tunnel entry by an absorber click (0x44351A, 100172F0) | The absorber click that sends radio 0x10 | Ares tunnels are mod-only |
 
-Stock gaps found in passing, with no Ares dependency:
-- BuildingType GetPipMax (0x45ECE0): retail refineries show 5 ore pips where native shows
-  30 (GAREFN, NAREFN) or 15 (YAREFN).
-- Generate_Starting_Units (0x5D6D80) stops for every later house when one house has no
-  starting-unit candidates; VERA skips only that house.
+Stock gap found in passing, with no Ares dependency: Generate_Starting_Units (0x5D6D80)
+stops for every later house when one house has no starting-unit candidates; VERA skips
+only that house.
 
 ## Ares mechanisms ported in part
 
