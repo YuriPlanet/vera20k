@@ -28,9 +28,9 @@ use crate::ui::shell::connection::{ConnectionPage, ConnectionRow};
 ///
 /// Residual: in WOL with MaxAhead above 30, MainTick55D5A4..55D7C2 adds 10 ms
 /// for each quarter of MaxAhead the furthest-behind peer lags
-/// (UpdatePeerFrameLag652187), up to 30 ms. That delay is not ported: VERA's
-/// online play is always relay-sequenced and paced by the relay's rate, and
-/// LAN never adds it.
+/// (UpdatePeerFrameLag652187), up to 30 ms. VERA's multi-human online
+/// matches use the relay clock. A locally paced solo match has no peer to
+/// measure, and LAN never adds this delay.
 pub(crate) fn frame_budget(state: &AppState) -> Option<u16> {
     if let Some(fps) = state
         .match_state
