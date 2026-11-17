@@ -7820,6 +7820,85 @@ fn phobos_multi_weapon_cycles_only_the_admitted_slots() {
     );
 }
 
+/// `TechnoExt::MultiWeaponCanFire`'s cell arm
+/// (`Ext/Techno/WeaponHelpers.cpp:486-495`): a `Wall=` overlay under the
+/// force-fired cell admits only a `Wall=` warhead, or a `Wood=` warhead when
+/// the overlay's `Armor=` is wood. The slot walk therefore skips a plain
+/// weapon the wall refuses and answers the first slot the wall admits.
+#[cfg(feature = "phobos")]
+#[test]
+fn phobos_multi_weapon_cell_wall_gate_reads_the_overlay_armor() {
+    let ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=Americans\n1=Russians\n\
+         [OverlayTypes]\n0=NOWALLT\n1=WOODWALL\n2=STEELWALL\n\
+         [NOWALLT]\nWall=no\n\
+         [WOODWALL]\nWall=yes\nArmor=wood\n\
+         [STEELWALL]\nWall=yes\nArmor=steel\n\
+         [VehicleTypes]\n0=WALLER\n\
+         [WALLER]\nStrength=200\nCost=200\nSpeed=6\nArmor=none\n\
+         WeaponCount=3\nWeapon1=PlainGun\nWeapon2=WoodGun\nWeapon3=WallGun\n\
+         MultiWeapon=yes\nMultiWeapon.SelectCount=3\n\
+         [PlainGun]\nDamage=10\nROF=50\nRange=6\nWarhead=PlainWH\n\
+         [WoodGun]\nDamage=10\nROF=50\nRange=6\nWarhead=WoodWH\n\
+         [WallGun]\nDamage=10\nROF=50\nRange=6\nWarhead=WallWH\n\
+         [PlainWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         [WoodWH]\nWood=yes\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         [WallWH]\nWall=yes\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    );
+    let rules = RuleSet::from_ini(&ini).expect("wall gate rules");
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
+    let wood_wall = registry.id_for_name("WOODWALL").expect("[WOODWALL]");
+    let steel_wall = registry.id_for_name("STEELWALL").expect("[STEELWALL]");
+    assert!(registry.flags(wood_wall).unwrap().armor_is_wood);
+    assert!(!registry.flags(steel_wall).unwrap().armor_is_wood);
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 13);
+    sim.resolved_terrain_mut_for_test()
+        .as_mut()
+        .expect("arena terrain")
+        .set_overlay_types_for_test(&registry);
+    let waller = sim
+        .spawn_object("WALLER", "Americans", 12, 15, 0, &rules)
+        .expect("wall breaker spawns");
+    // A wood wall admits `Wood=` and `Wall=`, not the plain primary.
+    sim.place_overlay_for_test((14, 15), wood_wall, 0, &registry);
+    sim.overlay_cell_mut_for_test(14, 15).overlay_id = Some(wood_wall);
+    // A steel wall admits only `Wall=`, so the `Wood=` slot is refused too.
+    sim.place_overlay_for_test((13, 16), steel_wall, 0, &registry);
+    sim.overlay_cell_mut_for_test(13, 16).overlay_id = Some(steel_wall);
+    let select = |sim: &crate::sim::world::Simulation, target: TargetKind| {
+        let entity = sim.entities().get(waller).unwrap();
+        let object = rules.object("WALLER").unwrap();
+        combat_weapon::select_weapon_against(
+            &rules,
+            entity,
+            object,
+            &combat_weapon::attacker_facts(entity, object),
+            Some(&target),
+            sim,
+            &sim.interner,
+            sim.resolved_terrain.as_ref(),
+            Some(&sim.house_alliances),
+        )
+        .unwrap()
+        .0
+    };
+    assert_eq!(
+        select(&sim, TargetKind::Cell(12, 16)),
+        0,
+        "without an overlay the plain primary is admitted first"
+    );
+    assert_eq!(
+        select(&sim, TargetKind::Cell(14, 15)),
+        1,
+        "an Armor=Wood wall admits the Wood= slot"
+    );
+    assert_eq!(
+        select(&sim, TargetKind::Cell(13, 16)),
+        2,
+        "a non-wood wall refuses Wood= and answers the Wall= slot"
+    );
+}
+
 /// `NoSecondaryWeaponFallback` (`Ext/TechnoType/Body.cpp:186,223-238`): with
 /// the key on, a two-weapon `SelectMultiWeapon` continues instead of falling
 /// through, and the drain priority is disabled, so the primary answers. The

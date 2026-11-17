@@ -2383,9 +2383,9 @@ fn phobos_multi_weapon_index(
 /// `CanTargetVeterancy`; this native body does not read those two, a residual
 /// the default target flags keep dormant.
 ///
-/// RESIDUAL: `WeaponTypeExt::SkipWeaponPicking` (default false) and the
-/// `CanTarget` cell/overlay Wall/Armor=Wood gate for a force-fire cell are not
-/// ported; `AllowAirstrike` and the warhead gates follow Phobos.
+/// RESIDUAL: `WeaponTypeExt::SkipWeaponPicking` (default false) is not
+/// ported; `AllowAirstrike`, the warhead gates and the cell/overlay
+/// `Wall=`/`Armor=Wood` gate follow Phobos.
 #[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 fn multi_weapon_can_fire(
@@ -2456,12 +2456,33 @@ fn multi_weapon_can_fire(
                 .as_ref()
                 .and_then(|terrain| terrain.cell(*rx, *ry))
                 .and_then(|cell| LandType::from_index(cell.land_type));
-            return super::crit::cell_eligible(
+            if !super::crit::cell_eligible(
                 land,
                 weapon.weapon_targeting().can_target,
                 Some(techno_content),
                 world.cell_has_bridge_head((*rx, *ry)),
-            );
+            ) {
+                return false;
+            }
+            // `Ext/Techno/WeaponHelpers.cpp:486-495`: a `Wall=` overlay under
+            // the fired-at cell admits only a `Wall=` warhead, or `Wood=` when
+            // that overlay's armour is wood. The per-identity table the
+            // resolved terrain already binds carries both bits.
+            let wall = world
+                .overlay_grid
+                .as_ref()
+                .and_then(|grid| grid.cell(*rx, *ry).overlay_id)
+                .and_then(|overlay| {
+                    world
+                        .resolved_terrain
+                        .as_ref()
+                        .and_then(|terrain| terrain.overlay_passability(i32::from(overlay)))
+                });
+            return !wall.is_some_and(|wall| {
+                wall.wall
+                    && !warhead
+                        .is_some_and(|warhead| warhead.wall || (warhead.wood && wall.armor_is_wood))
+            });
         }
         return false;
     };

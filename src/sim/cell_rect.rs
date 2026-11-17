@@ -1306,6 +1306,7 @@ mod tests {
     const WALL: OverlayPassability = OverlayPassability {
         wall: true,
         crushable: false,
+        armor_is_wood: false,
     };
 
     #[test]
@@ -1403,6 +1404,7 @@ mod tests {
             land: zero_row_land(Some(OverlayPassability {
                 wall: true,
                 crushable: true,
+                armor_is_wood: false,
             })),
             ..clear_to_move_request()
         };
