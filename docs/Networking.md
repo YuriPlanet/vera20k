@@ -100,6 +100,16 @@ status page says the games differ (`VERA:MatchStartMismatch`), the log records b
 hashes, and the search goes on after the stage timeout; the host only times out. This
 adds nothing to what game, lobby and relay exchange.
 
+Network trigger playback keeps the map's sound/EVA name or numeric sound slot until
+local audio consumes it. Different local audio catalogs and optional music therefore
+do not change startup hashes or the scheduling of an object's custom sound. A missing
+local cue is silent. Gameplay actions that use an audio-catalog ordinal as a number
+(such as a timer with a sound-name parameter) still retain and hash that number, so
+real gameplay differences are refused. This changes no messages: older builds are
+refused by the existing build check. Saved custom sound references use a new automatic
+snapshot layout; older layouts are refused. A rollback uses its earlier audio resolution
+and save layout.
+
 The online lobby's Options page has a Translate Chat Into list: Off, or one of 14
 languages, saved as `[VERA] TranslateChat=`, and under it a Translate in Matches box, on
 by default and saved as `[VERA] TranslateMatches=`. With a language chosen, other

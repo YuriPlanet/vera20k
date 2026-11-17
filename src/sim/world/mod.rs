@@ -598,10 +598,21 @@ pub struct AresUnitLostLine {
     pub radar_event: bool,
 }
 
+
+/// The native playback destination for a map-authored sound reference.
+#[derive(Debug, Clone)]
+pub enum TriggerSoundTarget {
+    Centered,
+    Eva,
+    Coordinate { coordinate: DriveCoord, flags: u32 },
+    Object { owner: u64, world: crate::sim::anim_class::AnimWorldCoord },
+}
+
 /// A sound event produced during simulation (combat, death, production).
 /// Pure data — no audio library dependency. Drained by the app layer each frame.
 #[derive(Debug, Clone)]
 pub enum SimSoundEvent {
+    TriggerAudio { reference: crate::rules::sound_ini::SoundReference, target: TriggerSoundTarget },
     /// PlanMgr638593 accepted an editing order; audio gates the local issuer.
     PlanningNodeAdded { owner: InternedId },
     /// TAction21 Execute6DD8B0 calls VoxQueueVoice752480 with its literal
@@ -1622,9 +1633,10 @@ pub struct Simulation {
     /// `ObjectClass+0x64`: the custom sound trigger action 99 gave an object
     /// (a Building or Terrain), keyed by stable id. Absent is the
     /// constructor's -1. Only `object_sound` writes it; the object's
-    /// destruction removes it.
+    /// destruction removes it. A network trigger retains the authored
+    /// name/slot so local playback availability cannot change idle admission.
     #[serde(default)]
-    object_custom_sounds: BTreeMap<u64, String>,
+    object_custom_sounds: BTreeMap<u64, crate::rules::sound_ini::SoundReference>,
     /// Test observation of each refinery unload gate. The dock commits the
     /// gate's smoke and SpecialAnim itself; the frame tail drops these.
     #[cfg(any(test, feature = "test-support"))]

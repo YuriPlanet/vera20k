@@ -55,8 +55,9 @@
 //! - Anim, Bullet and Wave types do not bind AmbientSound
 //!   (dormant: no retail one sets it).
 
-use super::{FrameEffects, SimSoundEvent, Simulation};
+use super::{FrameEffects, SimSoundEvent, Simulation, TriggerSoundTarget};
 use crate::rules::ruleset::RuleSet;
+use crate::rules::sound_ini::SoundReference;
 use crate::sim::anim_class::AnimWorldCoord;
 use crate::sim::components::DriveCoord;
 use crate::sim::movement::locomotor::MovementLayer;
@@ -88,6 +89,41 @@ pub const fn object_sound_object(owner: u64) -> Option<u64> {
 }
 
 impl Simulation {
+    /// Keep existing named requests, while numeric trigger slots reach the
+    /// local playback owner without becoming a process-dependent name.
+    pub(crate) fn emit_trigger_sound(
+        &mut self,
+        reference: &SoundReference,
+        target: TriggerSoundTarget,
+    ) {
+        let SoundReference::Name(sound_id) = reference else {
+            self.sound_events.emit(SimSoundEvent::TriggerAudio {
+                reference: reference.clone(),
+                target,
+            });
+            return;
+        };
+        self.sound_events.emit(match target {
+            TriggerSoundTarget::Centered => SimSoundEvent::VocCentered {
+                sound_id: sound_id.clone(),
+            },
+            TriggerSoundTarget::Coordinate { coordinate, flags } => SimSoundEvent::VocAtCoord {
+                sound_id: sound_id.clone(),
+                coordinate,
+                flags,
+            },
+            TriggerSoundTarget::Object { owner, world } => SimSoundEvent::AnimationStarted {
+                anim_id: owner,
+                sound_id: sound_id.clone(),
+                world,
+            },
+            TriggerSoundTarget::Eva => SimSoundEvent::TriggerAudio {
+                reference: reference.clone(),
+                target,
+            },
+        });
+    }
+
     /// `ObjectClass::AI`'s sound block for one visit of a Techno or Terrain.
     pub(crate) fn object_ai_sounds(&mut self, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
         // `+0x1F4` and `+0x64` are read before `Location`, so an object
@@ -108,11 +144,13 @@ impl Simulation {
             effects.flush_sound(self, rules);
         }
         if let Some(sound_id) = self.object_custom_sounds.get(&id).cloned() {
-            self.sound_events.emit(SimSoundEvent::AnimationStarted {
-                anim_id: custom_sound_owner(id),
-                sound_id,
-                world,
-            });
+            self.emit_trigger_sound(
+                &sound_id,
+                TriggerSoundTarget::Object {
+                    owner: custom_sound_owner(id),
+                    world,
+                },
+            );
             effects.flush_sound(self, rules);
         }
     }
@@ -123,7 +161,7 @@ impl Simulation {
     ///Map/ground/bridge or custom-object lookup. Voc750E20 receives flags0.
     pub(crate) fn trigger_play_sound_at_random_waypoint(
         &mut self,
-        sound: Option<&str>,
+        sound: Option<&SoundReference>,
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) -> bool {
@@ -186,25 +224,27 @@ impl Simulation {
             0,
         );
         if let Some(sound_id) = sound {
-            self.sound_events.emit(SimSoundEvent::VocAtCoord {
-                sound_id: sound_id.to_owned(),
-                coordinate: DriveCoord {
-                    x: coordinate.x,
-                    y: coordinate.y,
-                    z: 0,
+            self.emit_trigger_sound(
+                sound_id,
+                TriggerSoundTarget::Coordinate {
+                    coordinate: DriveCoord {
+                        x: coordinate.x,
+                        y: coordinate.y,
+                        z: 0,
+                    },
+                    flags: 0,
                 },
-                flags: 0,
-            });
+            );
             effects.flush_sound(self, rules);
         }
         true
     }
 
-    /// TAction 99's body: see the module doc. `sound` is the action's
-    /// resolved `+0x90` (`None` for -1).
+    /// TAction 99's body: see the module doc. Offline `sound` is the resolved
+    /// +90; network playback retains the authored name/slot (`None` for -1).
     pub(crate) fn trigger_play_sound_at_waypoint(
         &mut self,
-        sound: Option<&str>,
+        sound: Option<&SoundReference>,
         waypoint: Option<u32>,
         rules: &RuleSet,
         effects: FrameEffects<'_>,
@@ -223,11 +263,13 @@ impl Simulation {
             return true;
         }
         if let Some(sound_id) = sound {
-            self.sound_events.emit(SimSoundEvent::VocAtCoord {
-                sound_id: sound_id.to_owned(),
-                coordinate: DriveCoord { x, y, z },
-                flags: 1,
-            });
+            self.emit_trigger_sound(
+                sound_id,
+                TriggerSoundTarget::Coordinate {
+                    coordinate: DriveCoord { x, y, z },
+                    flags: 1,
+                },
+            );
             effects.flush_sound(self, rules);
         }
         true
@@ -305,7 +347,7 @@ impl Simulation {
     }
 
     /// `ObjectClass::Set_Custom_Sound @ 0x005F6CB0`.
-    fn set_custom_sound(&mut self, object: u64, sound: Option<&str>) {
+    fn set_custom_sound(&mut self, object: u64, sound: Option<&SoundReference>) {
         // The object's next visit plays the sound (`ObjectClass::AI
         // @ 0x005F3E70`); a sleeping one must take it (`world::idle_sleep`).
         self.substrate.entities.wake(object);
