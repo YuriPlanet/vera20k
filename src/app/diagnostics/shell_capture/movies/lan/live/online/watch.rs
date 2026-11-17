@@ -184,6 +184,15 @@ impl LiveRoundFlow {
             .filter(|live| live.watching())
             .and_then(|live| live.relay_watch_delay())
             .context("the watched match runs without a watcher's relay route")?;
+        ensure!(
+            state.match_state.sandbox_full_visibility
+                && state
+                    .match_state
+                    .sim_runtime
+                    .runtime()
+                    .is_some_and(|runtime| runtime.simulation.session().watcher()),
+            "the watched match started as a player's world, without the whole map"
+        );
         let native = native_frame(state)?;
         run.delay_seconds = Some(delay);
         run.first_frame = Some(native);

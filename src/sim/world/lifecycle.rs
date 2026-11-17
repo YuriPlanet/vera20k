@@ -1979,7 +1979,8 @@ impl Simulation {
     /// match its game watches. It stands in the followed player's seat for
     /// that player's view, sidebar and sounds, or shows the observer's
     /// sidebar there, but sends nothing, so every command record is another
-    /// game's. The app installs it with the world, before its first frame.
+    /// game's. The app installs it once the match's live session says this
+    /// game watches, before the world's first frame.
     pub fn install_watcher(&mut self) {
         self.session.install_watcher();
     }
