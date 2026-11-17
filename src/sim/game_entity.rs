@@ -194,6 +194,18 @@ pub struct GameEntity {
     #[cfg(feature = "phobos")]
     #[serde(default)]
     phobos_random_factor: i32,
+    /// Phobos `TechnoExt::DropCrate`: the per-object override written only by
+    /// the trigger action 600 (`TActionExt::SetDropCrate`,
+    /// `Ext/TAction/Body.cpp:690-720`). `-1` unset, `0` disables, `1` uses
+    /// `DropCrateType` (`Ext/Techno/Body.Internal.cpp:275-299`).
+    #[cfg(feature = "phobos")]
+    #[serde(default = "minus_one_i32")]
+    phobos_drop_crate: i32,
+    /// Phobos `TechnoExt::DropCrateType`: the `[Powerups]` slot the action's
+    /// `Param3` names; read only while `DropCrate == 1`.
+    #[cfg(feature = "phobos")]
+    #[serde(default = "minus_one_i32")]
+    phobos_drop_crate_type: i32,
     /// Phobos `BuildingExt::IsCreatedFromMapFile`: the map's `[Structures]`
     /// reader built this building. `BuildingClass_Unlimbo_SetShouldRebuild`
     /// (`Ext/Building/Hooks.cpp:321-323`) skips the AI-repairable grant for
@@ -2383,6 +2395,29 @@ impl GameEntity {
         self.phobos_random_factor = factor;
     }
 
+    /// Phobos `TechnoExt::DropCrate`: `-1` unset, `0` disables, `1`
+    /// `DropCrateType`.
+    #[cfg(feature = "phobos")]
+    pub(crate) const fn phobos_drop_crate(&self) -> i32 {
+        self.phobos_drop_crate
+    }
+
+    #[cfg(feature = "phobos")]
+    pub(crate) fn set_phobos_drop_crate(&mut self, value: i32) {
+        self.phobos_drop_crate = value;
+    }
+
+    /// Phobos `TechnoExt::DropCrateType`: the `[Powerups]` slot.
+    #[cfg(feature = "phobos")]
+    pub(crate) const fn phobos_drop_crate_type(&self) -> i32 {
+        self.phobos_drop_crate_type
+    }
+
+    #[cfg(feature = "phobos")]
+    pub(crate) fn set_phobos_drop_crate_type(&mut self, crate_type: i32) {
+        self.phobos_drop_crate_type = crate_type;
+    }
+
     /// Phobos `BuildingExt::IsCreatedFromMapFile`: set by the map's
     /// `[Structures]` spawn (`CreateBuildingFromINIFile`).
     #[cfg(feature = "phobos")]
@@ -2756,6 +2791,10 @@ impl GameEntity {
             phobos_keep_target_on_move: false,
             #[cfg(feature = "phobos")]
             phobos_random_factor: 0,
+            #[cfg(feature = "phobos")]
+            phobos_drop_crate: -1,
+            #[cfg(feature = "phobos")]
+            phobos_drop_crate_type: -1,
             #[cfg(feature = "phobos")]
             created_from_map_file: false,
             #[cfg(feature = "phobos")]

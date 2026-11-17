@@ -35,14 +35,6 @@ impl Simulation {
     /// `TechnoExt::GetDropCrateIndex` plus `TryToCreateCrate`, run from the
     /// destruction transaction (`TechnoClass::RegisterDestruction`, hook
     /// `0x702E4E`, `Ext/Techno/Hooks.cpp:667-686`).
-    ///
-    /// RESIDUAL: the per-instance `TechnoExt::DropCrate` / `DropCrateType`
-    /// override (`Ext/Techno/Body.Internal.cpp:285-295`) is only written by
-    /// the Phobos trigger action `SetDropCrate=600`
-    /// (`Ext/TAction/Body.cpp:690-720`), which VERA does not port yet. Trigger:
-    /// a map that fires that action. Effect: the type key decides, an override
-    /// is ignored. Frequency: mod-authored maps. Risk: a crate drops whose type
-    /// the map meant to replace.
     pub(crate) fn drop_crate_on_destruction(
         &mut self,
         victim_id: u64,
@@ -53,28 +45,82 @@ impl Simulation {
         let Some(registry) = registry else {
             return;
         };
-        let Some((type_ref, cell)) = self.substrate.entities.get(victim_id).map(|victim| {
-            let location =
-                crate::sim::movement::ground_pose::position_world_coord(&victim.position);
-            (
-                victim.type_ref(),
+        let Some((type_ref, cell, instance)) =
+            self.substrate.entities.get(victim_id).map(|victim| {
+                let location =
+                    crate::sim::movement::ground_pose::position_world_coord(&victim.position);
                 (
-                    crate::util::lepton::lepton_to_cell_packed(location.x),
-                    crate::util::lepton::lepton_to_cell_packed(location.y),
-                ),
-            )
-        }) else {
+                    victim.type_ref(),
+                    (
+                        crate::util::lepton::lepton_to_cell_packed(location.x),
+                        crate::util::lepton::lepton_to_cell_packed(location.y),
+                    ),
+                    (victim.phobos_drop_crate(), victim.phobos_drop_crate_type()),
+                )
+            })
+        else {
             return;
         };
-        let Some(powerup) = self
+        let type_slot = self
             .interner
             .object_type(type_ref, rules)
             .and_then(|object| object.phobos_techno_extras.drop_crate)
-        else {
+            .map(|slot| slot as i32);
+        let Some(powerup) = drop_crate_index(instance.0, instance.1, type_slot) else {
             return;
         };
         try_to_create_crate(self, rules, registry, cell, powerup as u8, effects);
     }
+
+    /// `TActionExt::SetDropCrate` (`Ext/TAction/Body.cpp:690-720`), action
+    /// 600: every techno carrying a tag whose trigger chain lists a trigger
+    /// typed `trigger_type_id` takes `DropCrate = value`; a value of `1` also
+    /// stores the action's `Param3` as `DropCrateType`.
+    pub(crate) fn phobos_set_drop_crate(
+        &mut self,
+        trigger_type_id: &str,
+        value: i32,
+        crate_type: i32,
+    ) {
+        let mut ordinal = 0;
+        while ordinal < self.substrate.entities.techno_registry_len() {
+            let Some(id) = self.substrate.entities.techno_registry_at(ordinal) else {
+                ordinal += 1;
+                continue;
+            };
+            ordinal += 1;
+            // `pTechno->AttachedTag` then the tag's `FirstTrigger` chain.
+            let Some(tag) = self.trigger_runtime.object_tag(id) else {
+                continue;
+            };
+            if !self
+                .trigger_runtime
+                .tag_carries_trigger_type(tag, trigger_type_id)
+            {
+                continue;
+            }
+            if let Some(entity) = self.substrate.entities.get_mut(id) {
+                entity.set_phobos_drop_crate(value);
+                if value == 1 {
+                    entity.set_phobos_drop_crate_type(crate_type);
+                }
+            }
+        }
+    }
+}
+
+/// `TechnoExt::GetDropCrateIndex` (`Ext/Techno/Body.Internal.cpp:275-299`):
+/// an instance override wins whenever it is set (`>= 0`); only `1` answers the
+/// stored slot, anything else answers "none". Without an override the type
+/// key's slot is the answer.
+fn drop_crate_index(instance: i32, instance_type: i32, type_slot: Option<i32>) -> Option<i32> {
+    if instance >= 0 {
+        if instance == 1 && instance_type >= 0 {
+            return Some(instance_type);
+        }
+        return None;
+    }
+    type_slot
 }
 
 /// `TechnoExt::TryToCreateCrate`'s outward scan
