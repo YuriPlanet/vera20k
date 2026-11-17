@@ -8466,6 +8466,59 @@ mod tests {
         assert_eq!(object.phobos_spawn_height, None);
     }
 
+    /// Phobos `UnitTypeExt::LoadFromINIFile`'s `TurretResponse=`
+    /// (`Ext/UnitType/Body.cpp:83`, `Nullable<bool>` declared
+    /// `Ext/UnitType/Body.h:68`): a fresh UnitType starts unset, so
+    /// `0x736B60` falls back to `UnitExt::CannotMove`; `yes`/`no` set the key,
+    /// a blank value leaves it unset, and `<default>` restores the unset state
+    /// over a value read earlier in the same pass. UnitType-only.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn turret_response_reads_the_nullable_bool_and_resets_on_default() {
+        let read = |category: ObjectCategory, keys: &str| {
+            let ini = IniFile::from_str(&format!("[TYP]\nStrength=100\n{keys}"));
+            ObjectType::from_ini_section("TYP", ini.section("TYP").unwrap(), category)
+                .phobos_turret_response
+        };
+        assert_eq!(
+            read(ObjectCategory::Vehicle, ""),
+            None,
+            "an absent key leaves the constructor's unset state"
+        );
+        assert_eq!(
+            read(ObjectCategory::Vehicle, "TurretResponse=yes\n"),
+            Some(true)
+        );
+        assert_eq!(
+            read(ObjectCategory::Vehicle, "TurretResponse=no\n"),
+            Some(false)
+        );
+        // `Valueable<bool>`'s native decision byte: `0` is false.
+        assert_eq!(
+            read(ObjectCategory::Vehicle, "TurretResponse=0\n"),
+            Some(false)
+        );
+        assert_eq!(
+            read(ObjectCategory::Vehicle, "TurretResponse=\n"),
+            None,
+            "an empty value never reaches the nullable template"
+        );
+        assert_eq!(
+            read(ObjectCategory::Vehicle, "TurretResponse=<default>\n"),
+            None
+        );
+        let ini = IniFile::from_str("[TYP]\nTurretResponse=<default>\n");
+        assert_eq!(
+            ini.section("TYP")
+                .unwrap()
+                .read_phobos_nullable_bool("TurretResponse", Some(true)),
+            None,
+            "`<default>` clears a retained value"
+        );
+        // A UnitType key: an Aircraft section never reads it.
+        assert_eq!(read(ObjectCategory::Aircraft, "TurretResponse=yes\n"), None);
+    }
+
     #[test]
     fn signed_dock_count_is_distinct_from_contact_capacity() {
         #[derive(serde::Deserialize)]

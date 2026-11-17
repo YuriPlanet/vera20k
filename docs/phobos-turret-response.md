@@ -36,13 +36,24 @@ both hold the last aim. `UnitExt::CannotMove` (`Ext/Unit/Body.cpp:193-220`) is:
 ## Where VERA20K owns it
 
 - `rules::object_type::ObjectType::phobos_turret_response` (`TurretResponse`,
-  Vehicle types only).
-- `sim::movement::turret::cannot_move`: the `UnitExt::CannotMove` port, reading
-  the type's `speed`, `movement_restricted_to`, the unit's cell land type
-  (`CellRef::land_type`) and `GameEntity::on_bridge`.
-- `sim::movement::turret::facing_update`'s idle arm: `skip_idle_return` is
-  `!TurretResponse` when set, else `cannot_move`, and suppresses
-  `turret_destination` exactly where `0x736B60` jumps out.
+  Vehicle types only): field `rules/object_type.rs:1422`, read `:6428` through
+  the nullable helper, which keeps the unset state on an absent or blank value
+  and clears it on `<default>`.
+- `sim::movement::turret::cannot_move` (`sim/movement/turret.rs:310`): the one
+  `UnitExt::CannotMove` port, reading the type's `speed`,
+  `movement_restricted_to`, the unit's cell land type (`CellRef::land_type`)
+  and `GameEntity::on_bridge`. No second `Speed == 0` / land comparison exists
+  anywhere else.
+- `sim::movement::turret::facing_update`'s idle arm (`:258-272`):
+  `skip_idle_return` is `!TurretResponse` when set, else `cannot_move`, and it
+  suppresses `turret_destination` exactly where `0x736B60` jumps out — after
+  the bunker, deployed-simple-deployer and lift holds, which stay untouched.
+- Tests: `sim::movement::turret::tests::turret_response_overrides_the_class_answer`
+  (`yes`/`no`/unset on a movable hull, `yes` over `Speed=0`),
+  `the_unset_key_falls_back_to_cannot_move` (`Speed=0`, a Road restriction on
+  water, the same water cell under a bridge deck, and a Tunnel cell), and
+  `rules::object_type::tests::turret_response_reads_the_nullable_bool_and_resets_on_default`
+  (`yes`/`no`/`0`/blank/`<default>`, Vehicle-only).
 
 ## Residuals
 
@@ -51,3 +62,6 @@ both hold the last aim. `UnitExt::CannotMove` (`Ext/Unit/Body.cpp:193-220`) is:
 - `CannotMove`'s other consumers (`Mission::Move`/`Hunt`/`AreaGuard`,
   `ApproachTarget`, `GetFireError`, auto-target and retaliation hooks) are
   separate chains and stay stock.
+- A cell whose `CellClass+0xEC` byte is outside the twelve land types answers
+  `cannot_move = true`; native has no such state (`LandType` is the enum), so
+  the answer never differs in a loaded map.

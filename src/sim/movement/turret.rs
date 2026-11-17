@@ -407,41 +407,105 @@ mod tests {
         }
     }
 
-    /// Phobos `UnitClass_Rotation_AI_DisallowMoving` (`0x00736B60`,
-    /// `Ext/Unit/Hooks.DisallowMoving.cpp:69-75`): `TurretResponse=yes` keeps
-    /// the idle return for a unit `CannotMove` would skip it on; `no` always
-    /// skips; unset falls back to `CannotMove` (`Speed == 0` /
-    /// `MovementRestrictedTo`).
+    /// One idle-turret read through the production `facing_update` owner
+    /// (`0x00736B60`): the tank stands on cell `(5, 5)`, whose land type `land`
+    /// replaces the Clear default, and `on_bridge` is `UnitClass+0x140`'s deck
+    /// flag. `None` answers "the idle return was skipped".
+    #[cfg(feature = "phobos")]
+    fn turret_idle(
+        type_keys: &str,
+        land: crate::rules::terrain_rules::LandType,
+        on_bridge: bool,
+    ) -> Option<u16> {
+        use crate::rules::ini_parser::IniFile;
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=TANK\n[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+             [TANK]\nStrength=300\nArmor=none\nTurret=yes\nPrimary=Gun\n{type_keys}\
+             [Gun]\nDamage=10\nROF=20\nRange=6\nWarhead=WH\n\
+             [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+        )))
+        .unwrap();
+        let mut entity = GameEntity::test_default(1, "TANK", "Americans", 5, 5);
+        entity.barrel_facing = Some(crate::sim::movement::FacingClass::new(0, 5));
+        entity.set_on_bridge(on_bridge);
+        let mut cells: Vec<_> = (0..16)
+            .flat_map(|ry| {
+                (0..16).map(move |rx| crate::map::resolved_terrain::test_smudge_cell(rx, ry))
+            })
+            .collect();
+        cells[5 * 16 + 5].land_type = land.as_index();
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.interner = crate::sim::intern::test_interner();
+        sim.install_resolved_terrain_for_new_map(
+            crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(16, 16, cells),
+        );
+        facing_update(&entity, &sim, &rules, &sim.interner, 100).turret_destination
+    }
+
+    /// `0x00736B60` (`Ext/Unit/Hooks.DisallowMoving.cpp:74`): an isset key
+    /// answers `!TurretResponse` on its own, so on a hull that `CannotMove`
+    /// reports as movable `no` still holds the last aim while `yes` and the
+    /// unset key both take the idle return.
     #[cfg(feature = "phobos")]
     #[test]
-    fn turret_response_gates_the_idle_return_on_cannot_move() {
-        use crate::rules::ini_parser::IniFile;
-        let idle = |type_keys: &str| {
-            let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
-                "[VehicleTypes]\n0=TANK\n[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
-                 [TANK]\nStrength=300\nArmor=none\nTurret=yes\nPrimary=Gun\n{type_keys}\
-                 [Gun]\nDamage=10\nROF=20\nRange=6\nWarhead=WH\n\
-                 [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
-            )))
-            .unwrap();
-            let mut entity = GameEntity::test_default(1, "TANK", "Americans", 5, 5);
-            entity.barrel_facing = Some(crate::sim::movement::FacingClass::new(0, 5));
-            let mut sim = crate::sim::world::Simulation::new();
-            sim.interner = crate::sim::intern::test_interner();
-            facing_update(&entity, &sim, &rules, &sim.interner, 100).turret_destination
-        };
-        assert!(idle("Speed=6\n").is_some(), "a movable unit returns");
+    fn turret_response_overrides_the_class_answer() {
+        use crate::rules::terrain_rules::LandType;
         assert!(
-            idle("Speed=0\n").is_none(),
-            "CannotMove skips the idle return"
+            turret_idle("Speed=6\n", LandType::Clear, false).is_some(),
+            "an unset key on a movable hull returns"
         );
         assert!(
-            idle("Speed=0\nTurretResponse=yes\n").is_some(),
-            "yes keeps the return on a unit that cannot move"
+            turret_idle("Speed=6\nTurretResponse=yes\n", LandType::Clear, false).is_some(),
+            "yes keeps the idle return"
         );
         assert!(
-            idle("Speed=6\nTurretResponse=no\n").is_none(),
-            "no always skips the idle return"
+            turret_idle("Speed=6\nTurretResponse=no\n", LandType::Clear, false).is_none(),
+            "no holds the aim where the hull points"
+        );
+        assert!(
+            turret_idle("Speed=0\nTurretResponse=yes\n", LandType::Clear, false).is_some(),
+            "yes overrides CannotMove on a stationary hull"
+        );
+    }
+
+    /// The unset fallback is `UnitExt::CannotMove` (`Ext/Unit/Body.cpp:193-220`):
+    /// `Speed == 0`, or a `MovementRestrictedTo` land different from the
+    /// occupied cell's — `Tunnel` exempts, and on a bridge a `Water` deck reads
+    /// as `Road` (`:210-217`).
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn the_unset_key_falls_back_to_cannot_move() {
+        use crate::rules::terrain_rules::LandType;
+        assert!(
+            turret_idle("Speed=0\n", LandType::Clear, false).is_none(),
+            "Speed == 0 is CannotMove"
+        );
+        assert!(
+            turret_idle(
+                "Speed=6\nMovementRestrictedTo=Road\n",
+                LandType::Water,
+                false
+            )
+            .is_none(),
+            "a Road-restricted hull on water cannot move"
+        );
+        assert!(
+            turret_idle(
+                "Speed=6\nMovementRestrictedTo=Road\n",
+                LandType::Water,
+                true
+            )
+            .is_some(),
+            "the same water cell reads as Road under a bridge deck"
+        );
+        assert!(
+            turret_idle(
+                "Speed=6\nMovementRestrictedTo=Road\n",
+                LandType::Tunnel,
+                false
+            )
+            .is_some(),
+            "a Tunnel cell never blocks the restriction"
         );
     }
 
