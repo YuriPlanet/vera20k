@@ -217,11 +217,11 @@ impl OnlineCleanup {
                 },
                 http::Response::Event(event) if event.kind == "game_started" => {
                     // A start can commit just before Back, while its callback is
-                    // still in this FIFO. Finish that actual identity first.
+                    // still in this FIFO. Finish that actual identity first; the
+                    // worker also resumes it by URL, so only a match UUID is held.
                     if retired.service.match_id.is_none()
                         && let Some(id) = event.payload["match_id"].as_str()
-                        && !id.is_empty()
-                        && id.len() <= 128
+                        && relay_uuid(id).is_ok()
                     {
                         retired.service.hold_match(Some(id.to_owned()));
                     }
@@ -966,8 +966,9 @@ impl LiveService {
     }
 
     /// A new sign-in under `auth_attempt`. The worker first logs out a bearer
-    /// it still holds, finishing this service's match with it; only then is
-    /// that match, and any cleanup still owed for the old session, dropped.
+    /// it still holds, after one attempt to finish this service's match with
+    /// it; then that match, and any cleanup still owed for the old session,
+    /// is dropped, whether or not the lobby answered.
     fn sign_in(&mut self, nickname: String, credential: http::Credential) {
         let _ = self.requests.send(http::Request::OpenSession {
             attempt: self.auth_attempt,
@@ -5628,6 +5629,7 @@ mod completion_tests {
 
     #[test]
     fn online_exit_finishes_a_late_committed_start_and_bounds_worker_shutdown() {
+        const LATE: &str = "22222222-2222-2222-2222-222222222222";
         let (service, input, output) = control_service(None);
         let mut visit = super::super::WolVisit::open(false);
         visit.live_service = Some(service);
@@ -5648,7 +5650,7 @@ mod completion_tests {
                 .send(http::Response::Event(wire::Envelope {
                     sequence: 1,
                     kind: "game_started".into(),
-                    payload: json!({"match_id":"late-match"})
+                    payload: json!({"match_id":LATE})
                 }))
                 .is_ok()
         );
@@ -5664,7 +5666,7 @@ mod completion_tests {
         let _ = cleanup.poll(now);
         assert!(matches!(
             input.try_recv(),
-            Ok(http::Request::HoldMatch(Some(id))) if id == "late-match"
+            Ok(http::Request::HoldMatch(Some(id))) if id == LATE
         ));
         let http::Request::Command {
             operation: "finish",
@@ -5674,7 +5676,7 @@ mod completion_tests {
         else {
             panic!("late match finish");
         };
-        assert_eq!(payload, json!({"match_id":"late-match"}));
+        assert_eq!(payload, json!({"match_id":LATE}));
         let _ = cleanup.poll(now + EXIT_CLEANUP_TIMEOUT);
         let stopping = Arc::clone(&cleanup.retired.as_ref().unwrap().service.stopping);
         assert!(stopping.load(Ordering::Acquire));
