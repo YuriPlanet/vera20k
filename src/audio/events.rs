@@ -371,7 +371,20 @@ impl GameSoundEvent {
                 index: reference.eva_index(eva)?,
             });
         }
-        let sound_id = reference.sound(sounds)?.to_owned();
+        let Some(sound_id) = reference.sound(sounds).map(str::to_owned) else {
+            // VocClass::PlayAt7509E0 leaves the requested Voc null for an
+            // invalid index (7509F5..750A0F), stops a different live handle
+            // (750A24..750A36), then rewrites that handle (750AA5..750AAE).
+            // Keep this local stop even though the shared request is retained.
+            return match target {
+                TriggerSoundTarget::Object { owner, .. } => Some(Self::AnimationStopped {
+                    anim_id: *owner,
+                    stop_sound_id: None,
+                    source: None,
+                }),
+                _ => None,
+            };
+        };
         Some(match target {
             TriggerSoundTarget::Centered => Self::VocAt {
                 sound_id,
@@ -714,5 +727,29 @@ mod trigger_audio_tests {
                 .resolve_trigger_audio(&SoundRegistry::default(), &eva)
                 .is_none()
         );
+
+        // A valid custom cue followed by an unavailable slot must reach the
+        // existing stop owner, rather than leave the old loop playing.
+        let custom = |index| GameSoundEvent::TriggerAudio {
+            reference: SoundReference::Index(index),
+            target: TriggerSoundTarget::Object {
+                owner: 44,
+                world: crate::sim::anim_class::AnimWorldCoord {
+                    x: 256,
+                    y: 512,
+                    z: 0,
+                },
+            },
+        };
+        assert!(matches!(custom(1).resolve_trigger_audio(&sounds, &eva),
+            Some(GameSoundEvent::AnimationStarted { anim_id: 44, sound_id, .. }) if sound_id == "Alert"));
+        assert!(matches!(
+            custom(99).resolve_trigger_audio(&sounds, &eva),
+            Some(GameSoundEvent::AnimationStopped {
+                anim_id: 44,
+                stop_sound_id: None,
+                source: None
+            })
+        ));
     }
 }
