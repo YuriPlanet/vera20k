@@ -559,7 +559,7 @@ impl LoadingRequest {
             map_additions,
             progress,
         )?;
-        initial.retain_process_state(mapgen_retention, resident);
+        initial.retain_process_state(mapgen_retention, resident, self.startup().session_mode());
         self.prepare_initial(initial)
     }
 
