@@ -59,49 +59,6 @@ fn transport() -> LanUdpTransport {
     .unwrap()
 }
 
-#[test]
-fn wol_catchup_pacing_uses_admitted_peer_progress_and_existing_rtt() {
-    let (mut live, _) = pair(73);
-    live.mode = LiveCommandMode::Wol;
-    let mut sim = Simulation::new();
-    let packet = crate::net::event_packet::EventPacketCodec::default()
-        .encode_packet(
-            &[],
-            crate::net::event_packet::EventPacketHeader::Vera {
-                frame_info: FrameInfo {
-                    house_id: 1,
-                    event_frame: 0,
-                    checksum: 0,
-                    timing_word: 0,
-                    delay: 0,
-                },
-                command_frontier: 0,
-            },
-            0,
-            crate::net::event_packet::NATIVE_EVENT_PACKET_CAPACITY,
-        )
-        .unwrap()
-        .bytes;
-    assert!(
-        live.exchange
-            .receive(1, &packet, 73, &mut sim.network_command_queues(), 0)
-            .unwrap()
-    );
-    live.exchange.record_peer_lag(1, 40, 60, 40);
-    assert_eq!(live.peers()[0].lag_frames(), 20);
-    assert_eq!(live.pacing_delay_millis(40), 20);
-    assert_eq!(live.pacing_delay_millis(30), 0);
-    assert!(
-        !live
-            .exchange
-            .receive(1, &packet, 73, &mut sim.network_command_queues(), 0)
-            .unwrap()
-    );
-    assert_eq!(live.pacing_delay_millis(40), 20);
-    live.remove_peer(1);
-    assert_eq!(live.pacing_delay_millis(40), 0);
-}
-
 // Pure native queue/probe fixtures declare their complete protocol snapshot.
 // The new certificate regressions below exercise real sockets and real hashes.
 fn fixture_agreement(
@@ -255,7 +212,6 @@ fn poll_pair(
                 now,
                 (now).wrapping_mul(16),
                 0,
-                0,
             )
             .unwrap();
         passes[1] = right
@@ -265,7 +221,6 @@ fn poll_pair(
                 10,
                 now,
                 (now).wrapping_mul(16),
-                0,
                 0,
             )
             .unwrap();
@@ -363,7 +318,6 @@ fn full_and_majority_loading_rosters_require_the_same_frozen_world() {
                         100 + (start.elapsed().as_millis() / 16) as u32,
                         1600,
                         0,
-                        0,
                     )
                     .unwrap();
             }
@@ -419,7 +373,6 @@ fn full_and_majority_loading_rosters_require_the_same_frozen_world() {
                 10,
                 100,
                 1600,
-                0,
                 0,
             ) {
                 Err(LiveCommandError::Startup(StartupError::Mismatch)) => rejected[index] = true,
@@ -581,7 +534,6 @@ fn startup_ready_retries_after_release_and_old_scope_cannot_certify_rematch() {
                     now,
                     now * 16,
                     0,
-                    0,
                 )
                 .unwrap();
         }
@@ -605,7 +557,6 @@ fn startup_ready_retries_after_release_and_old_scope_cannot_certify_rematch() {
                 10,
                 now,
                 now * 16,
-                0,
                 0,
             )
             .unwrap();
@@ -645,7 +596,6 @@ fn startup_ready_retries_after_release_and_old_scope_cannot_certify_rematch() {
                     10,
                     now,
                     now * 16,
-                    0,
                     0,
                 )
                 .unwrap();
@@ -688,7 +638,6 @@ fn startup_ready_retries_after_release_and_old_scope_cannot_certify_rematch() {
                 10,
                 now,
                 now * 16,
-                0,
                 0
             )
             .unwrap(),
@@ -737,7 +686,6 @@ fn startup_ready_retries_after_release_and_old_scope_cannot_certify_rematch() {
                 10,
                 now,
                 now * 16,
-                0,
                 0
             )
             .unwrap(),
@@ -756,7 +704,6 @@ fn startup_ready_retries_after_release_and_old_scope_cannot_certify_rematch() {
                     10,
                     now,
                     now * 16,
-                    0,
                     0,
                 )
                 .unwrap();
@@ -812,7 +759,6 @@ fn initial_barrier_off_cadence_and_positive_frame_use_one_native_queue() {
             10,
             1001,
             (1001_u32).wrapping_mul(16),
-            0,
             0
         )
         .unwrap(),
@@ -919,7 +865,6 @@ fn initial_response_histories_clear_only_on_successful_barrier_once() {
                 10,
                 now,
                 now * 16,
-                0,
                 0
             )
             .unwrap(),
@@ -942,7 +887,6 @@ fn initial_response_histories_clear_only_on_successful_barrier_once() {
             10,
             1002,
             16032,
-            0,
             0
         )
         .unwrap(),
@@ -961,16 +905,8 @@ fn initial_response_histories_clear_only_on_successful_barrier_once() {
         },
     ] {
         assert_eq!(
-            live.poll(
-                &mut sim.network_command_queues(),
-                next,
-                10,
-                1200,
-                19200,
-                0,
-                0
-            )
-            .unwrap(),
+            live.poll(&mut sim.network_command_queues(), next, 10, 1200, 19200, 0)
+                .unwrap(),
             NetworkQueuePass::SkipDispatch
         );
         assert_eq!(live.connections().mean_response_time(1), Some(11));
@@ -1011,7 +947,6 @@ fn ordinary_wait_uses_private_response_history_with_larger_primary_global_mean()
             5,
             1000,
             16000,
-            0,
             0
         )
         .unwrap(),
@@ -1028,7 +963,6 @@ fn ordinary_wait_uses_private_response_history_with_larger_primary_global_mean()
             5,
             1001,
             16016,
-            0,
             0
         )
         .unwrap(),
@@ -1077,7 +1011,6 @@ fn ordinary_wait_uses_private_response_history_with_larger_primary_global_mean()
                 5,
                 1300 + frame,
                 (1300 + frame) * 16,
-                0,
                 0
             )
             .unwrap(),
@@ -1094,7 +1027,6 @@ fn ordinary_wait_uses_private_response_history_with_larger_primary_global_mean()
             5,
             1305,
             20880,
-            0,
             0
         )
         .unwrap(),
@@ -1141,7 +1073,6 @@ fn online_initial_probe_waits_for_the_online_table_boundary() {
         1000,
         16000,
         0,
-        0,
     )
     .unwrap();
     live.take_service_report();
@@ -1152,7 +1083,6 @@ fn online_initial_probe_waits_for_the_online_table_boundary() {
         1119,
         17904,
         0,
-        0,
     )
     .unwrap();
     assert_eq!(live.take_service_report().unwrap().sent_datagrams, 0);
@@ -1162,7 +1092,6 @@ fn online_initial_probe_waits_for_the_online_table_boundary() {
         10,
         1120,
         17920,
-        0,
         0,
     )
     .unwrap();
@@ -1202,7 +1131,6 @@ fn initial_probe_repeats_only_at_the_native_wall_clock_boundary() {
             10,
             1000,
             (1000_u32).wrapping_mul(16),
-            0,
             0
         )
         .unwrap(),
@@ -1232,7 +1160,6 @@ fn initial_probe_repeats_only_at_the_native_wall_clock_boundary() {
             10,
             1059,
             (1059_u32).wrapping_mul(16),
-            0,
             0
         )
         .unwrap(),
@@ -1246,7 +1173,6 @@ fn initial_probe_repeats_only_at_the_native_wall_clock_boundary() {
             10,
             1060,
             (1060_u32).wrapping_mul(16),
-            0,
             0
         )
         .unwrap(),
@@ -1264,7 +1190,6 @@ fn initial_probe_repeats_only_at_the_native_wall_clock_boundary() {
         1159,
         (1159_u32).wrapping_mul(16),
         0,
-        0,
     )
     .unwrap();
     assert_eq!(live.take_service_report().unwrap().sent_datagrams, 0);
@@ -1274,7 +1199,6 @@ fn initial_probe_repeats_only_at_the_native_wall_clock_boundary() {
         10,
         1160,
         (1160_u32).wrapping_mul(16),
-        0,
         0,
     )
     .unwrap();
@@ -1298,7 +1222,6 @@ fn ordinary_wait_uses_180_buckets_and_keeps_the_frame_send_complete() {
                 10,
                 2000,
                 (2000_u32).wrapping_mul(16),
-                0,
                 0,
             )
             .unwrap();
@@ -1325,7 +1248,6 @@ fn ordinary_wait_uses_180_buckets_and_keeps_the_frame_send_complete() {
             10,
             2000,
             (2000_u32).wrapping_mul(16),
-            0,
             0
         )
         .unwrap(),
@@ -1349,7 +1271,6 @@ fn ordinary_wait_uses_180_buckets_and_keeps_the_frame_send_complete() {
             10,
             2179,
             (2179_u32).wrapping_mul(16),
-            0,
             0
         )
         .unwrap(),
@@ -1363,7 +1284,6 @@ fn ordinary_wait_uses_180_buckets_and_keeps_the_frame_send_complete() {
             10,
             2180,
             (2180_u32).wrapping_mul(16),
-            0,
             0
         )
         .unwrap(),
@@ -1380,7 +1300,6 @@ fn ordinary_wait_uses_180_buckets_and_keeps_the_frame_send_complete() {
         2479,
         (2479_u32).wrapping_mul(16),
         0,
-        0,
     )
     .unwrap();
     assert_eq!(left.take_service_report().unwrap().sent_datagrams, 0);
@@ -1390,7 +1309,6 @@ fn ordinary_wait_uses_180_buckets_and_keeps_the_frame_send_complete() {
         10,
         2480,
         (2480_u32).wrapping_mul(16),
-        0,
         0,
     )
     .unwrap();
@@ -1457,7 +1375,6 @@ fn invalid_roster_context_and_initial_seed_are_explicit_failures() {
             10,
             100,
             1600,
-            0,
             0
         )
         .unwrap(),
@@ -1511,7 +1428,6 @@ fn invalid_roster_context_and_initial_seed_are_explicit_failures() {
             10,
             1000,
             (1000_u32).wrapping_mul(16),
-            0,
             0
         ),
         Err(LiveCommandError::FrameSequence {
@@ -1528,7 +1444,6 @@ fn invalid_roster_context_and_initial_seed_are_explicit_failures() {
             1000,
             (1000_u32).wrapping_mul(16),
             0,
-            0,
         );
         let r = right.poll(
             &mut b.network_command_queues(),
@@ -1536,7 +1451,6 @@ fn invalid_roster_context_and_initial_seed_are_explicit_failures() {
             10,
             1000,
             (1000_u32).wrapping_mul(16),
-            0,
             0,
         );
         if matches!(
@@ -1573,7 +1487,6 @@ fn failed_retry_service_keeps_receiving_and_retains_its_diagnostic() {
             10,
             2000,
             (2000_u32).wrapping_mul(16),
-            0,
             0,
         )
         .unwrap();
@@ -1620,7 +1533,6 @@ fn failed_retry_service_keeps_receiving_and_retains_its_diagnostic() {
                 now,
                 (now).wrapping_mul(16),
                 0,
-                0,
             )
             .unwrap();
         assert_eq!(left.take_service_report().unwrap().failed_peer, Some(1));
@@ -1640,7 +1552,6 @@ fn failed_retry_service_keeps_receiving_and_retains_its_diagnostic() {
             10,
             2003,
             (2003_u32).wrapping_mul(16),
-            0,
             0
         )
         .unwrap(),
@@ -1665,7 +1576,6 @@ fn removing_the_last_peer_resumes_wait_and_keeps_local_transfer_running() {
             2000,
             (2000_u32).wrapping_mul(16),
             0,
-            0,
         )
         .unwrap();
     }
@@ -1682,7 +1592,6 @@ fn removing_the_last_peer_resumes_wait_and_keeps_local_transfer_running() {
             10,
             2001,
             (2001_u32).wrapping_mul(16),
-            0,
             0
         )
         .unwrap(),
@@ -1698,7 +1607,6 @@ fn removing_the_last_peer_resumes_wait_and_keeps_local_transfer_running() {
             10,
             2002,
             (2002_u32).wrapping_mul(16),
-            0,
             0
         )
         .unwrap(),
@@ -1717,7 +1625,6 @@ fn removing_the_last_peer_resumes_wait_and_keeps_local_transfer_running() {
                 10,
                 2003,
                 (2003_u32).wrapping_mul(16),
-                0,
                 0
             )
             .unwrap(),
@@ -1788,7 +1695,6 @@ impl NetworkCommandBoundary for Boundary {
             ahead,
             self.now.get(),
             (self.now.get()).wrapping_mul(16),
-            0,
             0,
         )
         .map(Some)
@@ -3390,7 +3296,6 @@ fn sequenced_udp_paused_client_catches_up_without_stalling_healthy_commands() {
             && *applied),
         "a late order executes only at a future canonical frame"
     );
-    assert_eq!(boundaries[0].live.borrow().pacing_delay_millis(40), 0);
     drop(boundaries);
     drop(relay);
     std::fs::remove_dir_all(journal_dir).unwrap();
@@ -5243,13 +5148,13 @@ fn a_reported_relay_failure_stays_with_its_session() {
         frame: 0,
         checksum: 0,
     };
-    let reported = live.poll(&mut queues, context, 10, 1, 16, 0, 30);
+    let reported = live.poll(&mut queues, context, 10, 1, 16, 0);
     assert!(matches!(
         reported,
         Err(LiveCommandError::Sequenced(SequencedError::HistoryExpired))
     ));
     assert!(live.has_terminal_network_error());
-    let again = live.poll(&mut queues, context, 10, 2, 32, 0, 30);
+    let again = live.poll(&mut queues, context, 10, 2, 32, 0);
     assert!(matches!(again, Err(LiveCommandError::Failed)));
     assert_eq!(
         live.delivery_counters().unwrap().failure,

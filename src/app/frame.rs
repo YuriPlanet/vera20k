@@ -309,62 +309,20 @@ impl App {
             if before == Some((session.tick(), session.binary_frame())) {
                 break;
             }
-            let Some(live) = state
-                .match_state
-                .live_network
-                .as_ref()
-                .filter(|live| live.uses_sequenced_lockstep())
-            else {
+            let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
+            // The pass's own admission decides whether another follows.
+            let may_continue = sim_tick::online_frame_admits(state, now_ms).unwrap_or_else(|| {
                 // Main__ThrottleFrame (0x0055E160) polls its timer without
                 // waiting for a refresh: run every frame already due, so an
                 // interval shorter than one refresh keeps its native rate.
-                let (game_speed, network_fps) =
-                    crate::app::match_runtime::sim_tick::local_pacing_inputs(state);
-                if state.platform.frame_pacer.should_admit(
-                    crate::app::match_runtime::frame_pacer::wall_clock_ms(),
-                    game_speed,
-                    network_fps,
-                    false,
-                ) {
-                    continue;
-                }
+                let (game_speed, network_fps) = sim_tick::local_pacing_inputs(state);
+                state
+                    .platform
+                    .frame_pacer
+                    .should_admit(now_ms, game_speed, network_fps, false)
+            });
+            if !may_continue {
                 break;
-            };
-            if !live.has_terminal_network_error() {
-                let frame = session.binary_frame();
-                let frontier = live.committed_frontier();
-                let may_continue = if let Some(timing) = live.sequenced_timing().filter(|_| {
-                    !state.match_state.paused()
-                        && !state.focus_freeze_active()
-                        && !session.scenario_paused()
-                        && !state.match_state.match_diagnostics.is_replay_playback()
-                }) {
-                    let recovering = live
-                        .recovery_status(
-                            crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
-                            frame,
-                        )
-                        .is_some();
-                    state
-                        .platform
-                        .frame_pacer
-                        .online_frame_decision(
-                            Instant::now(),
-                            frame,
-                            frontier,
-                            timing,
-                            runtime.simulation.pending_network_wait(),
-                            recovering,
-                        )
-                        .admits()
-                } else {
-                    crate::app::match_runtime::frame_pacer::LocalFramePacer::admits_canonical_frame(
-                        frame, frontier,
-                    )
-                };
-                if !may_continue {
-                    break;
-                }
             }
         }
         state.platform.frame_pacer.end_service();
@@ -714,22 +672,18 @@ impl App {
             return None;
         }
         let frame = sim.session().binary_frame();
-        if let Some(timing) = live.sequenced_timing() {
-            let recovering = live
-                .recovery_status(
-                    crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
-                    frame,
-                )
-                .is_some();
-            if !state.platform.frame_pacer.online_frame_due(
-                Instant::now(),
-                frame,
-                live.committed_frontier(),
-                timing,
-                recovering,
-            ) {
-                return None;
-            }
+        if let Some((timing, recovering)) = sim_tick::online_playout_receipt(
+            state,
+            frame,
+            crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+        ) && !state.platform.frame_pacer.online_frame_due(
+            Instant::now(),
+            frame,
+            live.committed_frontier(),
+            timing,
+            recovering,
+        ) {
+            return None;
         }
         (frame > 0).then_some((frame, live.committed_frontier()))
     }
