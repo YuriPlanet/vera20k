@@ -173,7 +173,7 @@ Prerequisite=custom,COLLIDE,POWER
 ";
 
 #[test]
-fn ares_build_resolves_custom_members_and_building_collision_without_ini_opt_in() {
+fn ares_way_resolves_custom_members_and_building_collision_without_ini_opt_in() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&IniFile::from_str(TYPE_RULES)).unwrap();
     assert_eq!(

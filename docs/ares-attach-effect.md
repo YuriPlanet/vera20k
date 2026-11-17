@@ -175,7 +175,7 @@ Armor1/Armor2 crate hooks (`0x1005F840`/`0x1005F870`,
 test/write the baseline, then recompute before the next recipient. Expiry and
 DiscardOnEntry restore the baseline through the shared attachment lifecycle.
 Both baseline and effective armor are saved, hashed and validated on restore;
-the added saved field is Ares-only. Default-build state and hashes are unchanged.
+the added saved field is Ares-only. A game Ares does not play in keeps its state and hashes.
 
 The current chain admits effects with TemporalHidesAnim disabled. Temporal
 hide behavior and airborne half-distance collection remain later mechanisms, not silently visual-only

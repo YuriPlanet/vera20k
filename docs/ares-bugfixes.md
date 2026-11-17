@@ -136,7 +136,7 @@ as Ares in every game); **residual** (gameplay, but its host is unported);
 | `0x75D660`, `0x75DAE6` | `1005C080`, `1005C0E0` | WarheadType AnimList, DebrisMaximums, DebrisTypes through ParseList at `0x75D660`; the later debris reads skipped | ported: `process_warhead_family`, `WarheadType::debris_maximums` |
 | `0x772462` | `1005C0F0` | WeaponType `Anim=` through ParseList | ported: `process_weapon_family` |
 | `0x511D16` | `1005BE70` | Country veteran lists through ParseList | ported earlier (`process_house_family`) |
-| `0x4750EC`, `0x475107` | `1005BED0`, `1005BEF0` | ReadHouseTypesList (Owner, RequiredHouses, ForbiddenHouses, SecretHouses) reads into the 0x800 buffer | ported: `object_type` house lists; residual: Phobos `SuperWeaponSidebar.*Houses` (same reader) keep 0x80 in an ares+phobos build |
+| `0x4750EC`, `0x475107` | `1005BED0`, `1005BEF0` | ReadHouseTypesList (Owner, RequiredHouses, ForbiddenHouses, SecretHouses) reads into the 0x800 buffer | ported: `object_type` house lists; residual: Phobos `SuperWeaponSidebar.*Houses` (same reader) keep 0x80 in a `phobos` build when the game plays Ares |
 | `0x47527C`, `0x475297` | `1005BED0`, `1005BEF0` | GetAlliesBitfield buffer | ported earlier (`read_houses_list`) |
 | `0x7274AF`, `0x7274C8`, `0x727529`, `0x727544` | `1005BED0`, `1005BEF0`, `1005C070` | Trigger `[Events]`/`[Actions]` lines read into the 0x800 buffer | n/a: the INI loader (`0x00525A60`) keeps 511 bytes of a line, so a value never fills the original 512-byte buffer |
 | `0x6A9348` | `1005BF00` | Cameo tooltip formatted with `_TRUNCATE` | n/a: buffer guard; VERA builds the tooltip as a String |
