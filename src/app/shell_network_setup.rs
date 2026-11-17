@@ -755,6 +755,10 @@ pub(crate) fn install_watch_setup(
         .selected_map_file
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("the match has no map"))?;
+    anyhow::ensure!(
+        !crate::map::rmg::is_seed_selection(file),
+        "watching a generated map is unavailable"
+    );
     maps::validate_room_map_name(file)?;
     let session = &mut state.match_state.session;
     session.enter_network(crate::app::match_runtime::session::NetworkReturnContext::Wol);

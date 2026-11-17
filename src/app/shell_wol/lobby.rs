@@ -413,6 +413,16 @@ impl WolLobby {
         }
     }
 
+    /// The grant answered the watch command. The map transfer and relay
+    /// admission now own their deadlines while the lobby keeps the wait box.
+    pub(super) fn watch_granted(&mut self, granted: &str) {
+        if let Step::Watching { match_id, request } = &mut self.step
+            && match_id == granted
+        {
+            *request = None;
+        }
+    }
+
     pub(crate) fn message(&self) -> Option<&WolMessageBox> {
         self.message.as_ref().map(|(message, _)| message)
     }
@@ -5319,6 +5329,21 @@ mod tests {
 
     /// VERA's modern list: each match to watch by its room's name, or the
     /// map's when the room has none, with its watchers; a full one greyed.
+    #[test]
+    fn a_watch_grant_ends_only_its_request_deadline() {
+        let mut lobby = listed_runner(0);
+        lobby.step = Step::Watching {
+            match_id: "current".into(),
+            request: None,
+        };
+        assert!(lobby.step.bind_online_request(17, Instant::now()));
+        lobby.watch_granted("earlier");
+        assert!(lobby.step.accepts_online_result(17));
+        lobby.watch_granted("current");
+        assert!(!lobby.step.accepts_online_result(17));
+        assert!(matches!(&lobby.step, Step::Watching { match_id, .. } if match_id == "current"));
+    }
+
     #[test]
     fn watch_rows_name_each_match_with_its_watchers() {
         let watch = |match_id: &str, name: &str, watchers| service::WolMatch {

@@ -661,7 +661,9 @@ The lobby's grant carries the match's start, its options and a watch ticket. The
 watcher's game downloads the map as a guest does, checks that its version and rules
 digest are the players', and joins the relay as a watcher (`live_service::prepare_watch`,
 `poll_watch`): a read-only session that pulls the match's stream from its first frame,
-held back by the delay. If its setup cannot start, the game releases the watch grant with
+held back by the delay. Receiving the grant ends the lobby request's wait. The map
+download and relay connection each keep their own deadline. If the setup cannot
+start, the game releases the watch grant with
 `unwatch` and shows the failure in the lobby. A watcher only reads the stream
 (relay README, "Watchers"). It loads the world as a returning player does, with no
 progress reports and nobody waiting for it, and then plays the stream's frames. Until

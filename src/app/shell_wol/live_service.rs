@@ -3228,9 +3228,18 @@ fn apply_event(
                 .to_owned();
             relay_uuid(&id)?;
             let awaited = super::lobby::awaits_watch(state, &id);
-            if let Err(error) =
-                service.receive_watch_start(&id, awaited, || prepare_watch(state, decode(payload)?))
-            {
+            if let Err(error) = service.receive_watch_start(&id, awaited, || {
+                let start = prepare_watch(state, decode(payload)?)?;
+                if let Some(lobby) = state
+                    .frontend
+                    .wol
+                    .as_mut()
+                    .and_then(|visit| visit.lobby_mut())
+                {
+                    lobby.watch_granted(&id);
+                }
+                Ok(start)
+            }) {
                 log::warn!("Could not watch the match: {error:#}");
                 fail_watch(state, service, "VERA:WatchCouldNotStart");
             }
