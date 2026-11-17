@@ -921,6 +921,12 @@ pub struct RelayServer {
     ended_orderings: HashMap<[u8; 16], u64>,
     // Since `take_ordering_counts` last read them.
     ordering_counts: OrderingCounts,
+    // The ordering bytes the last pass over every room counted, plus what
+    // was reserved or sealed since (`reserve_ordering`), so a reservation
+    // needs no count of every room. Freed bytes leave it at the next pass:
+    // it overcounts, and only an exact count refuses or evicts. Growth no
+    // reservation covers, such as a federated frame, joins it at that pass.
+    ordering_estimate: usize,
     // Every live or leaving hop by its session (spec §6.2).
     sessions: HashMap<u32, SessionSlot>,
     // Released sessions until they may be assigned again (spec §6.2).
@@ -957,6 +963,7 @@ impl RelayServer {
             journal_directory: None,
             ended_orderings: HashMap::new(),
             ordering_counts: OrderingCounts::default(),
+            ordering_estimate: 0,
             sessions: HashMap::new(),
             retired_sessions: HashMap::new(),
             mac_counts: MacFailureCounts::default(),
@@ -1488,13 +1495,17 @@ impl RelayServer {
         }
         // The replaced hop keeps its session for LEAVE: a client that quits
         // before the new READY arrives leaves from it (spec §6.2 "续期").
+        // The client moves to the new hop on that READY, so the session is
+        // released a ticket lifetime after the old ticket expires, 300 to 600
+        // seconds from now (`prune` already dropped an expired peer): time
+        // for the client's minute of Leave retries.
         if let Some(old) = replaced
             && let Some(slot) = self.sessions.get_mut(&old.session)
         {
             slot.hop = SessionHop::Leaving(Box::new(LeavingHop {
                 ticket: old.ticket,
                 key: old.key.clone(),
-                until: now.saturating_add(LEAVE_GRACE),
+                until: old.ticket.expires.saturating_add(MAX_TICKET_LIFETIME),
             }));
         }
         let mut admission = prior.unwrap_or(Admission {
@@ -1878,8 +1889,9 @@ impl ClientSession {
 impl RelayServer {
     /// Test support only: every hop in the session table (§6.2), ordered by
     /// session. A hop is in it from its accepted CONFIRM until
-    /// `LEAVE_GRACE` seconds after its LEAVE, its ticket's expiry or the
-    /// accepted CONFIRM of its renewal (§6.2).
+    /// `LEAVE_GRACE` seconds after its LEAVE or its ticket's expiry, or, once
+    /// a renewal's CONFIRM replaced it, until `MAX_TICKET_LIFETIME` seconds
+    /// after its ticket's expiry (§6.2).
     pub fn session_table(&self) -> Vec<SessionEntry> {
         let mut table: Vec<_> = self
             .sessions
@@ -2188,7 +2200,8 @@ mod tests {
             .unwrap();
         connect(&mut server, &mut renewed, endpoint);
         // The renewal takes the hop over; the old session takes only LEAVE
-        // until its grace ends, then retires (spec §6.2 "续期", "释放").
+        // until a ticket lifetime after its ticket expired (1200), then
+        // retires (spec §6.2 "续期", "释放").
         let table = server.session_table();
         assert_eq!(table.len(), 2);
         let old = table
@@ -2201,7 +2214,14 @@ mod tests {
             server.process(endpoint, &bytes, 1000).err(),
             Some(RelayError::Unregistered)
         );
-        let released = 1000 + LEAVE_GRACE;
+        let released = 1200 + MAX_TICKET_LIFETIME;
+        server.process(endpoint, &bytes, released - 1).ok();
+        assert!(
+            server
+                .session_table()
+                .iter()
+                .any(|entry| entry.session == 0x0102_0304 && entry.leaving)
+        );
         server.process(endpoint, &bytes, released).ok();
         assert_eq!(
             server.session_retired_until(0x0102_0304),
