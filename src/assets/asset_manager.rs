@@ -163,6 +163,32 @@ fn nested_archive<'a>(parent: &MixArchive, id: i32) -> Option<Cow<'a, MixArchive
         .map(Cow::Owned)
 }
 
+thread_local! {
+    /// The names [`record_lookups`] is collecting on this thread, if it runs.
+    static LOOKUPS: std::cell::RefCell<Option<std::collections::BTreeSet<String>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// VERA: run `f` and return the file names it looked up on this thread
+/// through any [`AssetManager`], found or not, in uppercase: a loose file's
+/// or an archive entry's, by any lookup family. The online agreement uses it
+/// to learn which art files the Rules' asset binders read
+/// (`app::changed_art`).
+pub fn record_lookups<T>(f: impl FnOnce() -> T) -> (T, std::collections::BTreeSet<String>) {
+    let outer = LOOKUPS.with_borrow_mut(|names| names.replace(Default::default()));
+    let result = f();
+    let names = LOOKUPS.with_borrow_mut(|names| std::mem::replace(names, outer));
+    (result, names.unwrap_or_default())
+}
+
+fn note_lookup(name: &str) {
+    LOOKUPS.with_borrow_mut(|names| {
+        if let Some(names) = names.as_mut() {
+            names.insert(name.trim().to_ascii_uppercase());
+        }
+    });
+}
+
 #[derive(Default)]
 struct WildcardMount {
     matched: bool,
@@ -675,6 +701,26 @@ impl AssetManager {
         Ok(manager)
     }
 
+    /// VERA: [`AssetManager::with_mod_and_ares`]'s archives for a check that
+    /// needs a manager of its own (`app::changed_art`). It is not the game the
+    /// launch plays, so the launch's Ares answers (`util::ares_launch`) stay.
+    pub fn with_mod_and_ares_for_check(
+        ra2_dir: &Path,
+        mod_dir: Option<&Path>,
+        media_mode: MediaArchiveMode,
+        ares_setting: crate::util::ares_launch::AresSetting,
+        family: ArchiveFamily,
+    ) -> Result<Self, AssetError> {
+        Self::open_startup_archives(
+            ra2_dir,
+            mod_dir,
+            media_mode,
+            ares_setting,
+            family,
+            StartupArchivePolicy::OptionalWarnings,
+        )
+    }
+
     /// Inspect the ordinary startup stack while retaining readable archives for
     /// resource diagnostics. Missing optional probes stay silent, except the
     /// map and movie media reported as optional issues. The partial
@@ -1035,7 +1081,20 @@ impl AssetManager {
     /// Retail provenance: Raw-before-MIX size selection — `CCFileClass__GetSize_RawThenMix` @ `0x00473C00`.
     /// Retail provenance: Raw-before-MIX byte selection — `CCFileClass__Open_RawThenMix` @ `0x00473D10`.
     /// A cache miss takes loose bytes before registered MIX bytes; that first CRC winner is sticky.
+    /// VERA: forget every file [`Self::load_file_from_mix`] kept, so a check
+    /// on a manager of its own (`app::changed_art`) reads each theater as a
+    /// newly started game does. The game's own manager keeps them for the
+    /// process, as `LoadFileFromMIX @ 0x005B40B0` does.
+    pub fn forget_loaded_files(&self) {
+        self.mix_file_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clear();
+    }
+
     pub fn load_file_from_mix(&self, name: &str) -> Option<MixFileLoad> {
+        // A cached name is still a read [`record_lookups`] collects.
+        note_lookup(name);
         let cache_key = mix_hash(name);
         if let Some(cached) = self
             .mix_file_cache
@@ -1509,6 +1568,7 @@ impl AssetManager {
     /// Retail provenance: First-match MIX filename resolution — `MixFileSystem__Resolve_First` @ `0x005B4430`.
     /// Retail provenance: Padded filename CRC — `CRCEngine__AddData` @ `0x004A1DE0`.
     fn lookup_location_for_name(&self, name: &str) -> Option<AssetLocation> {
+        note_lookup(name);
         self.lookup_index.get(&mix_hash(name)).copied()
     }
 
@@ -1995,6 +2055,7 @@ impl AssetManager {
     }
 
     fn loose_asset(&self, name: &str) -> Option<&LooseAsset> {
+        note_lookup(name);
         let key = loose_lookup_key(name)?;
         self.loose_files.get(&key)
     }

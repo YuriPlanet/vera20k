@@ -50,6 +50,7 @@ pub mod app_bundle;
 pub(crate) mod audio_runtime;
 pub(crate) mod campaign_defeat;
 pub(crate) mod campaign_victory;
+pub(crate) mod changed_art;
 pub(crate) mod chrono_screen;
 mod cncnet;
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]

@@ -351,7 +351,7 @@ const SHIPPED_LOCAL: &str = "localmd.mix";
 
 /// Whether a source (`AssetResolutionRef::source_archive`, an archive's name)
 /// is a shipped archive or nested in one. A loose file never is.
-pub(crate) fn shipped_source(source: &str) -> bool {
+pub fn shipped_source(source: &str) -> bool {
     !source.starts_with("loose:")
         && SHIPPED_ARCHIVES
             .iter()
@@ -360,7 +360,7 @@ pub(crate) fn shipped_source(source: &str) -> bool {
 
 /// The game-folder file a source comes from: a loose file's name, else the
 /// archive's outermost name (`expandmd99.mix`).
-pub(crate) fn game_folder_file(source: &str) -> String {
+pub fn game_folder_file(source: &str) -> String {
     match source.strip_prefix("loose:") {
         Some(path) => std::path::Path::new(path).file_name().map_or_else(
             || path.to_owned(),

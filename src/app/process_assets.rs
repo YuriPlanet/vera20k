@@ -94,6 +94,10 @@ pub(crate) struct ProcessAssets {
     /// process sources by whichever needs them first: the startup hashes, or
     /// the rules digest of a process that never starts (the launch probe).
     changed_tiles: std::sync::OnceLock<crate::map::theater::ChangedTiles>,
+    /// VERA: the art files the game folder changes whose values the
+    /// simulation reads, found once by whichever needs them first: the rules
+    /// digest or Quick Match's check ([`Self::changed_game_files`]).
+    changed_art: std::sync::OnceLock<crate::app::changed_art::ChangedArt>,
 }
 
 fn mod_files_digest(dir: &std::path::Path) -> Result<[u8; 32], String> {
@@ -148,6 +152,7 @@ impl ProcessAssets {
             native_ini_hashes: None,
             changed_game_files: Vec::new(),
             changed_tiles: Default::default(),
+            changed_art: Default::default(),
         }
     }
 
@@ -307,15 +312,50 @@ impl ProcessAssets {
     }
 
     /// Loose files or archives in the game folder that change the rules the
-    /// network compares or a theater's tiles from the retail copies, e.g.
-    /// `rulesmd.ini`, `clear01.sno` or `expandmd99.mix`; found at startup.
-    pub(crate) fn changed_game_files(&self) -> &[String] {
-        &self.changed_game_files
+    /// network compares, a theater's tiles or the values a match reads from
+    /// art from the retail copies, e.g. `rulesmd.ini`, `clear01.sno`,
+    /// `gtcnstmk.shp` or `expandmd99.mix`. The rules and tiles are found at
+    /// startup, the art the first time it is asked for.
+    pub(crate) fn changed_game_files(&self) -> Vec<String> {
+        let mut files = self.changed_game_files.clone();
+        for file in self.changed_art().into_iter().flat_map(|art| &art.files) {
+            if !files.contains(file) {
+                files.push(file.clone());
+            }
+        }
+        files
     }
 
     fn changed_tiles(&self, assets: &AssetManager) -> &crate::map::theater::ChangedTiles {
         self.changed_tiles
             .get_or_init(|| crate::map::theater::changed_tiles(assets))
+    }
+
+    /// The art files the game folder changes whose values a match reads
+    /// (`app::changed_art`), found on a manager of their own; `None` while
+    /// the retail sources load. A selected mod's files take part in the
+    /// agreement whole ([`Self::mod_files`]), so with a mod this compares
+    /// nothing. Residual: game-folder art outside the mod folder still plays
+    /// in a mod's match and is not compared.
+    fn changed_art(&self) -> Option<&crate::app::changed_art::ChangedArt> {
+        if let Some(found) = self.changed_art.get() {
+            return Some(found);
+        }
+        let rules = self.native_rules.as_ref()?;
+        let assets = self.manager.as_ref()?;
+        Some(self.changed_art.get_or_init(|| {
+            if self.mod_dir.is_some() {
+                return Default::default();
+            }
+            let root = assets.ra2_dir();
+            crate::app::changed_art::find(rules, || {
+                self.open_manager(root, AssetManager::with_mod_and_ares_for_check)
+            })
+            .unwrap_or_else(|error| {
+                log::warn!("The game folder's art could not be compared: {error}");
+                Default::default()
+            })
+        }))
     }
 
     /// Recovery uses the process's already resolved choice, never a new Auto
@@ -324,7 +364,23 @@ impl ProcessAssets {
         &self,
         root: &std::path::Path,
     ) -> anyhow::Result<AssetManager> {
-        let assets = AssetManager::with_mod_and_ares(
+        self.open_manager(root, AssetManager::with_mod_and_ares)
+    }
+
+    /// The launch's archives and INI roots, opened by `open`
+    /// (`AssetManager::with_mod_and_ares` or its `_for_check` twin).
+    fn open_manager(
+        &self,
+        root: &std::path::Path,
+        open: fn(
+            &std::path::Path,
+            Option<&std::path::Path>,
+            MediaArchiveMode,
+            crate::util::ares_launch::AresSetting,
+            crate::assets::asset_manager::ArchiveFamily,
+        ) -> Result<AssetManager, crate::assets::error::AssetError>,
+    ) -> anyhow::Result<AssetManager> {
+        let assets = open(
             root,
             self.mod_dir.as_deref(),
             self.media_archive_mode,
@@ -516,7 +572,7 @@ impl ProcessAssets {
     /// The VERA protocol compares the exact process-selected Rules/LANGRULE/ART
     /// plus the selected mode and AIMD snapshots used by scenario loading,
     /// each theater's INI as `map::theater::load_theater` reads it, and the
-    /// theater tiles the game folder changes.
+    /// theater tiles and the art values the game folder changes.
     /// The legacy advertisement CRC remains a separate native UI value.
     pub(crate) fn multiplayer_rules_digest(&self, mode: &str) -> Result<String, String> {
         use crate::rules::ini_parser::IniFile;
@@ -558,6 +614,12 @@ impl ProcessAssets {
             if let Some(digest) = digest {
                 bytes.extend_from_slice(digest.as_bytes());
             }
+        }
+        // VERA: and the values a match reads from the art files the game
+        // folder changes (`app::changed_art`); none add nothing.
+        if let Some(art) = self.changed_art().and_then(|art| art.digest.as_deref()) {
+            bytes.extend_from_slice(b"art values\0");
+            bytes.extend_from_slice(art.as_bytes());
         }
         // Whether Ares plays (`rules::ares_switch`) follows these sources and
         // the map, which the map agreement covers, and whether the game is an
@@ -1277,6 +1339,84 @@ mod tests {
         assert_eq!(started().changed_game_files(), ["isosnomd.mix"]);
         std::fs::write(dir.path().join("isosnomd.mix"), b"not a MIX").unwrap();
         assert_eq!(started().changed_game_files(), ["isosnomd.mix"]);
+    }
+
+    /// VERA: a match reads a building's construction frames from its Buildup
+    /// SHP in the player's own files (`app::changed_art`). A game-folder copy
+    /// whose frame count differs from the retail one changes the agreement
+    /// and is named for Quick Match; one with other pixels and the same header
+    /// changes nothing.
+    #[test]
+    fn art_values_a_match_reads_take_part_in_the_agreement() {
+        use crate::map::source::test_support::make_new_format_mix_bytes;
+        let dir = crate::assets::asset_manager::test_support::audio_test_install("art-values");
+        let local = make_new_format_mix_bytes(&[
+            (
+                "rulesmd.ini",
+                b"[BuildingTypes]\n1=GACNST\n[GACNST]\nStrength=1000\n",
+            ),
+            ("artmd.ini", b"[GACNST]\nBuildup=GACNSTMK\n"),
+            ("aimd.ini", b"[AI]\nValue=1\n"),
+        ]);
+        // An SHP(TS) header (zero, width, height, frame count), each frame's
+        // 24-byte header, then one byte of pixels.
+        let buildup = |frames: u16, pixel: u8| {
+            let mut bytes: Vec<u8> = [0, 60, 48, frames]
+                .iter()
+                .flat_map(|word: &u16| word.to_le_bytes())
+                .collect();
+            bytes.resize(8 + 24 * usize::from(frames), 0);
+            bytes.push(pixel);
+            bytes
+        };
+        std::fs::remove_file(dir.path().join("localmd.mix")).unwrap();
+        std::fs::write(
+            dir.path().join("ra2md.mix"),
+            make_new_format_mix_bytes(&[
+                ("localmd.mix", &local),
+                ("ggcnstmk.shp", &buildup(20, 1)),
+            ]),
+        )
+        .unwrap();
+        let started = || {
+            let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
+            let assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+            process.initialize_sources_if_needed(&assets).unwrap();
+            process.install_native_ini_hashes(&assets, &[]);
+            process.return_from_loading(assets);
+            process
+        };
+        let retail = started();
+        assert!(retail.changed_game_files().is_empty());
+        let digest = retail.multiplayer_rules_digest("").unwrap();
+        std::fs::write(dir.path().join("ggcnstmk.shp"), buildup(20, 2)).unwrap();
+        let cosmetic = started();
+        assert!(cosmetic.changed_game_files().is_empty());
+        assert_eq!(cosmetic.multiplayer_rules_digest("").unwrap(), digest);
+        std::fs::write(dir.path().join("ggcnstmk.shp"), buildup(21, 1)).unwrap();
+        let longer = started();
+        assert_eq!(longer.changed_game_files(), ["ggcnstmk.shp"]);
+        assert_ne!(longer.multiplayer_rules_digest("").unwrap(), digest);
+    }
+
+    /// VERA: a stock install changes no art a match reads, so the check
+    /// refuses no one's Quick Match. Its archives the shipped set leaves out
+    /// (`multimd.mix`, `mapsmd03.mix`, the themes, movies and YROs) hold none
+    /// of the files the catalogs read.
+    #[test]
+    fn a_retail_install_changes_no_art_a_match_reads() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mut process = ProcessAssets::new_with_ini_config(
+            MediaArchiveMode::STOCK_DIGITAL,
+            false,
+            Default::default(),
+        );
+        process.initialize_sources_if_needed(&assets).unwrap();
+        process.return_from_loading(assets);
+        let files = process.changed_game_files();
+        assert!(files.is_empty(), "{files:?}");
     }
 
     #[test]

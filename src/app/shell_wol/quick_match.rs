@@ -377,9 +377,10 @@ use crate::app::shell_network_setup::agreement::changed_files_text;
 
 /// VERA: Quick Match pairs players who agreed on nothing, so it plays the
 /// original game. A mod fails the pre-match check; other INI roots or
-/// changed game files fail the join's rules hash (`0x0079BA60`, silently in
+/// changed rules files fail the join's rules hash (`0x0079BA60`, silently in
 /// Quick Match), against any opponent without the same, and an Ares setting
-/// other than Auto fails the start's rules digest. The box says what to
+/// other than Auto, changed theater tiles or art values a match reads fail
+/// the start's rules digest. The box says what to
 /// turn off, and the runner ends before it queues. The Options switches need
 /// nothing: its room has no host rules, so its match
 /// plays without them (`HostRules`).
@@ -414,7 +415,7 @@ pub(super) fn lobbies_listed(state: &mut AppState, lobbies: &[WolChannel]) {
     {
         lobby::quick_match_box(state, key, lobby::QuickMatchBoxThen::Return);
         if key == CHANGED_FILES {
-            let files = changed_files_text(state.process_assets.changed_game_files());
+            let files = changed_files_text(&state.process_assets.changed_game_files());
             lobby::replace_box_body(state, &crate::i18n::tr_fill(key, &[("files", &files)]));
         }
         return;

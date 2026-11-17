@@ -76,7 +76,23 @@ whose tilesets decide each cell's land and height. It also covers the theater ti
 game folder changes (`map::theater::changed_tiles`, found once per process): by name and
 content, each tile file a theater reads whose bytes differ from the ones a retail install
 reads, variants included, since map loading picks each cell's variant by how many its tile
-has. A theater MIX that takes a retail one's place counts even if it does not open. With a
+has. A theater MIX that takes a retail one's place counts even if it does not open.
+Without a mod it also covers the art the game folder changes in ways a match reads
+(`app::changed_art`, found once per process the first time the digest or Quick Match
+needs it). A match binds values from each player's own files: SHP frame counts and
+heights for the animation, effect, build-up, rubble and terrain catalogs, crater and
+scorch frame sizes, building palettes, each voxel's load state and size, and whether
+each overlay's SHP (which overlays a map places) and light glow's (`AlphaImage=`, which
+Ares particle systems read) loads. The check binds those from the process's Rules, ART
+and AI for every theater on a manager of its own, and compares each file they read from a loose file or an archive a retail
+install lacks (`expandmd99.mix`, `ecache01.mix`) with the copy a retail install reads
+(`map::theater::RetailReads`), by those values only: by name and values, each one that
+differs. A replacement with other pixels and the same values changes nothing, and
+`RuleSet::simulation_config_hash`'s sound references stay out. Not covered: an image only
+a mode INI or a map names (trigger animations, its overlays' cell animations) and theater
+tile animations, which the check does not bind; game-folder art in a mod's match, where
+only the mod's folder is compared; and a file changed while VERA runs, which is compared
+as the check found it. With a
 mod in use ([modding guide](modding.md#the-mods-folder)) it also covers every file in the mod's
 folder but `mod.ini`, `veraui.ini` and `mod-files.txt`, by path and content, so players whose copies of a mod differ are
 refused as on any rules difference. A mod that adds INI files to every map
@@ -85,18 +101,23 @@ as the game read them for its matches, once per start, so a player whose file ch
 after that is refused rather than playing different maps; older builds are refused by
 the build check, and a rollback plays them as an ordinary mod's files. The files are read once, starting when the player
 opens Network or Internet, and nothing more is exchanged. A game from before the mod
-files, the theater INIs or their tiles were compared is another version and is
-refused by the build check first; a rollback returns to the earlier digest for everyone
-on that build. Quick Match plays the original game, and the matchbot pairs without the
+files, the theater INIs, their tiles or the art values were compared is another version
+and is refused by the build check first; a rollback returns to the earlier digest for
+everyone on that build, and players whose art differs then meet the start's frame-0
+check or a desync as before. Quick Match plays the original game, and the matchbot pairs without the
 rules hash, so a client ends its search before it queues with a message saying what to
 turn off: a mod in use; `[ini]` roots or a `theater_suffix` in config.toml other than
 YR's; an [Ares setting](ares.md#the-ares-setting) other than Auto; game-folder files that change a compared INI (Rules, Art, AI, MPModesMD and the mode INIs, CoopCampMD,
-the theater INIs) or a theater's tiles from the retail copy; a copy from a retail
+the theater INIs), a theater's tiles or a value a match reads from art from the retail
+copy; a copy from a retail
 archive (`langmd.mix`, `language.mix`, `expandmd01.mix`, `ra2md.mix`, `ra2.mix`) counts as
 the original, another INI is compared with the retail archives' own entry, else
 `ra2md.mix`'s `localmd.mix` (`retail_sources::files_changing_shipped_inis`), and another
 tile with the one a retail install reads (`map::theater::changed_tiles`), both found at
-startup; the message names three and counts the rest, which the log lists. Personal
+startup, and art as above (`app::changed_art`), found before the first search; the message
+names three and counts the rest, which the log lists. The player moves those files out of
+the game folder and restarts VERA; a room's refused start names them the same way
+(`agreement::own_changes_text`). Personal
 rules, Terrain Deformation and the Superweapon Limit need nothing: Quick Match's room has no
 [room rules](#room-rules), so its match plays without them. A difference none of
 these catches still meets the guest's admission: after `WOL:MatchErrorJoiningGame` its

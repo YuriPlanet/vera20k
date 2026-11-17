@@ -369,6 +369,32 @@ pub(crate) fn bind_rules_asset_closure(
     theater_name: &str,
     terrain_phase: crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase,
 ) -> anyhow::Result<()> {
+    bind_rules_catalog_assets(
+        rules,
+        roots,
+        authored_anim_roots,
+        assets,
+        theater_ext,
+        theater_name,
+        terrain_phase,
+    );
+    bind_rules_alpha_images(rules, overlay_registry, assets);
+    Ok(())
+}
+
+/// [`bind_rules_asset_closure`]'s catalogs and animation bindings, in
+/// loading's order, without its light glows ([`bind_rules_alpha_images`]).
+/// The online agreement (`app::changed_art`) binds the two apart, since it
+/// compares other values from each one's files.
+pub(crate) fn bind_rules_catalog_assets(
+    rules: &mut RuleSet,
+    roots: &[String],
+    authored_anim_roots: &[String],
+    assets: &AssetManager,
+    theater_ext: &str,
+    theater_name: &str,
+    terrain_phase: crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase,
+) {
     // The asset closures follow the way the game's Rules were read.
     let _ares_way = crate::rules::ares_switch::read_ares_way(rules.reads_ares_way());
     rules.bind_scheduler_anim_assets(roots, assets, theater_ext, theater_name);
@@ -381,8 +407,18 @@ pub(crate) fn bind_rules_asset_closure(
     rules.bind_building_buildup_assets(assets, theater_name);
     rules.bind_building_rubble_assets(assets, theater_ext, theater_name);
     rules.bind_terrain_assets(assets, theater_ext, terrain_phase);
+}
+
+/// The light glows (`AlphaImage=`) of [`bind_rules_asset_closure`]. Whether
+/// one loads decides whether an object makes an alpha shape and, in a game
+/// Ares plays in, a particle system's mode (`sim::particles::ares_system`).
+pub(crate) fn bind_rules_alpha_images(
+    rules: &mut RuleSet,
+    overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+    assets: &AssetManager,
+) {
+    let _ares_way = crate::rules::ares_switch::read_ares_way(rules.reads_ares_way());
     rules.bind_alpha_images(overlay_registry, assets);
-    Ok(())
 }
 
 /// Palette variants reachable from scenario-start crate CellAnim before the

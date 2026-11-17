@@ -138,7 +138,7 @@ pub(crate) fn own_changes_text(state: &AppState) -> Option<String> {
     }
     let files = state.process_assets.changed_game_files();
     if !files.is_empty() {
-        changes.push(changed_files_text(files));
+        changes.push(changed_files_text(&files));
     }
     (!changes.is_empty()).then(|| {
         tr_fill(

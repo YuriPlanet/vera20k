@@ -741,6 +741,11 @@ pub fn theater_names_and_extensions() -> impl Iterator<Item = (&'static str, &'s
         .map(|(name, def)| (*name, def.extension))
 }
 
+/// The MIX archives `load_theater` mounts for a theater name, in order.
+pub fn theater_mix_archives(name: &str) -> Option<&'static [&'static str]> {
+    theater_def(name).map(|def| def.mix_archives)
+}
+
 /// Look up the theater definition for a theater name (e.g., "TEMPERATE").
 fn theater_def(name: &str) -> Option<&'static TheaterDef> {
     let upper: String = name.to_ascii_uppercase();
@@ -891,17 +896,7 @@ pub struct ChangedTiles {
 /// MIXes as `AssetManager::theater_archives_unmounted` finds them.
 pub fn changed_tiles(asset_manager: &AssetManager) -> ChangedTiles {
     use crate::rules::retail_sources::{game_folder_file, shipped_source};
-    let registered: Vec<_> = asset_manager
-        .registered_archives()
-        .filter_map(|(source, archive)| retail_archive(asset_manager, source, Some(archive)))
-        .collect();
-    // The first registered archive listing each name, as `lookup_index`.
-    let mut registered_index = HashMap::new();
-    for (position, (_, archive)) in registered.iter().enumerate() {
-        for entry in archive.entries() {
-            registered_index.entry(entry.id).or_insert(position);
-        }
-    }
+    let retail = RetailReads::new(asset_manager);
     let mut files = Vec::new();
     let mut digest: Option<crate::util::sha256::Sha256> = None;
     for (_, def) in THEATER_DEFS {
@@ -924,16 +919,7 @@ pub fn changed_tiles(asset_manager: &AssetManager) -> ChangedTiles {
             })
             .collect();
         let read = |name: &str| asset_manager.resolve_ref_with_unmounted(name, &theater);
-        let read_retail = |name: &str| {
-            let id = mix_hash(name);
-            let (replaces, archive) = match registered_index.get(&id) {
-                Some(&position) => &registered[position],
-                None => theater_retail
-                    .iter()
-                    .find(|(_, archive)| archive.contains_id(id))?,
-            };
-            archive.get_by_id(id).map(|bytes| (*replaces, bytes))
-        };
+        let read_retail = |name: &str| retail.read(name, &theater_retail);
         for pristine in lookup.entries.iter().flatten() {
             let used = tile_files(pristine, |name| read(name).is_some());
             let original = tile_files(pristine, |name| read_retail(name).is_some());
@@ -987,6 +973,57 @@ pub fn changed_tiles(asset_manager: &AssetManager) -> ChangedTiles {
     ChangedTiles {
         files,
         digest: digest.map(|hash| crate::util::sha256::digest_hex(hash.finalize())),
+    }
+}
+
+/// One archive a retail install searches: the game-folder source it stands in
+/// for, if any, and the archive.
+type RetailArchive<'a> = (Option<&'a str>, Cow<'a, MixArchive>);
+
+/// VERA: what a retail install reads where `assets` reads. In the same search
+/// order: the shipped archives, and the shipped copy of an archive the game
+/// folder puts in a shipped one's place (a loose `isosnomd.mix`, even one that
+/// does not open); no loose file and no other archive (`expandmd99.mix`). A
+/// replaced shipped archive is not caught, as in
+/// `retail_sources::files_changing_shipped_inis`. The theater tiles' check
+/// ([`changed_tiles`]) and the art one (`app::changed_art`) share it.
+pub struct RetailReads<'a> {
+    registered: Vec<RetailArchive<'a>>,
+    /// The first registered archive listing each name, as `lookup_index`.
+    index: HashMap<i32, usize>,
+}
+
+impl<'a> RetailReads<'a> {
+    pub fn new(assets: &'a AssetManager) -> Self {
+        let registered: Vec<_> = assets
+            .registered_archives()
+            .filter_map(|(source, archive)| retail_archive(assets, source, Some(archive)))
+            .collect();
+        let mut index = HashMap::new();
+        for (position, (_, archive)) in registered.iter().enumerate() {
+            for entry in archive.entries() {
+                index.entry(entry.id).or_insert(position);
+            }
+        }
+        Self { registered, index }
+    }
+
+    /// The bytes a retail install reads for `name`, with the game-folder
+    /// source a shipped copy stands in for; `unmounted` (theater archives as
+    /// a retail install searches them) comes after the registered archives.
+    pub fn read<'b>(
+        &'b self,
+        name: &str,
+        unmounted: &'b [RetailArchive<'b>],
+    ) -> Option<(Option<&'b str>, &'b [u8])> {
+        let id = mix_hash(name);
+        let (replaces, archive) = match self.index.get(&id) {
+            Some(&position) => &self.registered[position],
+            None => unmounted
+                .iter()
+                .find(|(_, archive)| archive.contains_id(id))?,
+        };
+        archive.get_by_id(id).map(|bytes| (*replaces, bytes))
     }
 }
 
