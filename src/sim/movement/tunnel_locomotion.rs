@@ -14,7 +14,12 @@
 //!   binary64 at `0x7F5B18` is `64.0`.
 //! - Sink/rise: `ProcessDugIn` (inline at `0x728F86`) and `ProcessPreDigOut
 //!   0x7298F0` move Z by `max(5, round(Speed * frame_scale))` per frame, and
-//!   `DugIn` stops at the exact `0xFFFFFF00` (-256) floor.
+//!   `DugIn` stops at the exact `0xFFFFFF00` (-256) offset below the ground.
+//! - Ground: both bodies call `MapClass::0x578080(&current coord)` on every
+//!   frame and rebuild their target from that answer, so the sink floor and
+//!   the surfacing height follow the cell the object is over, not the cell it
+//!   dug in from. The caller supplies that query as [`GroundQuery`]; this
+//!   module keeps no ground sample of its own.
 //! - Underground travel: `ProcessDigging 0x729580` moves toward the stored
 //!   `Coords` at the binary64 `TunnelMovementSpeed` `0x7F5B20` (= 19.0), and
 //!   takes the arrival branch once the 2-D distance drops under `0x14` (20
@@ -71,6 +76,12 @@ pub enum TunnelState {
     DugOut,
 }
 
+/// `MapClass::Get_Ground_Height 0x578080(&coord)` in leptons, as
+/// `ProcessDugIn` (`0x728F86`) and `ProcessPreDigOut 0x7298F0` read it on every
+/// frame. `None` is what the caller answers when it has no terrain to query,
+/// the one case that falls back to [`TunnelRuntime::ground_z`].
+pub(crate) type GroundQuery<'a> = &'a dyn Fn(DriveCoord) -> Option<i32>;
+
 /// The class-local state carried in
 /// [`LocomotorRuntimePayload::Tunnel`](super::locomotion::piggyback::LocomotorRuntimePayload).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
@@ -80,9 +91,10 @@ pub struct TunnelRuntime {
     timer_start: u32,
     /// `DigTimer.duration` (`+0x34`).
     timer_duration: u32,
-    /// The cell ground height the dig started from, in leptons
-    /// (`ProcessPreDigOut 0x7298F0`'s `0x578080(&coord)` answer for that cell).
-    /// The sink floor and the surfacing target are relative to it, not to 0.
+    /// The height the unit stood at when the dig-in timer completed, in
+    /// leptons. Native keeps no such sample — both sink and surfacing re-read
+    /// `0x578080` — so this is only the query-failure fallback for a caller
+    /// without terrain, plus the hash fold's record of that sample.
     #[serde(default)]
     ground_z: i32,
 }
@@ -157,8 +169,9 @@ impl TunnelRuntime {
     }
 
     /// Advance one frame. `destination` is the cell-centre `Move_To` stored,
-    /// `speed` the type's `Speed=` and `frame` the binary frame counter.
-    /// Returns whether the object changed place this frame.
+    /// `speed` the type's `Speed=`, `frame` the binary frame counter and
+    /// `ground_of` the `0x578080` query the sink and surfacing bodies rebuild
+    /// their target from. Returns whether the object changed place this frame.
     pub(crate) fn process(
         &mut self,
         position: &mut crate::sim::movement::ground_pose::Position,
@@ -166,14 +179,15 @@ impl TunnelRuntime {
         destination: Option<DriveCoord>,
         speed: i32,
         frame: u32,
+        ground_of: GroundQuery<'_>,
     ) -> bool {
         match self.state {
             TunnelState::Idle => false,
             TunnelState::PreDigIn => self.pre_dig_in(position, facing, destination, speed, frame),
             TunnelState::DiggingIn => self.digging_in(position, frame),
-            TunnelState::DugIn => self.dug_in(position, speed),
+            TunnelState::DugIn => self.dug_in(position, speed, ground_of),
             TunnelState::Digging => self.digging(position, facing, destination, frame),
-            TunnelState::PreDigOut => self.pre_dig_out(position, speed, frame),
+            TunnelState::PreDigOut => self.pre_dig_out(position, speed, frame, ground_of),
             TunnelState::DiggingOut => self.digging_out(frame),
             TunnelState::DugOut => self.dug_out(frame),
         }
@@ -210,8 +224,8 @@ impl TunnelRuntime {
     }
 
     /// `ProcessDiggingIn 0x729370`: `elapsed / duration == 1.0` (`0x7E1718`)
-    /// completes the dig-in. The cell's ground height is sampled here, before
-    /// the first sink frame moves Z.
+    /// completes the dig-in. The body has no ground read of its own; the object
+    /// Z it leaves with is kept only as the query-failure fallback.
     fn digging_in(
         &mut self,
         position: &mut crate::sim::movement::ground_pose::Position,
@@ -226,15 +240,19 @@ impl TunnelRuntime {
     }
 
     /// `ProcessDugIn` (inline at `0x728F86`): sink by
-    /// `max(5, round(Speed * frame_scale))` until exactly `-256`, where the
-    /// object becomes underground (`State = 4`).
+    /// `max(5, round(Speed * frame_scale))` toward `ground - 256`, where the
+    /// object becomes underground (`State = 4`). The ground is the cell under
+    /// the object this frame (`0x578080(&coord)`), so a dive that ends over
+    /// another cell settles on that cell's floor.
     fn dug_in(
         &mut self,
         position: &mut crate::sim::movement::ground_pose::Position,
         speed: i32,
+        ground_of: GroundQuery<'_>,
     ) -> bool {
         let coord = position_world(position);
-        let floor = self.ground_z + UNDERGROUND_Z;
+        let ground = ground_of(coord).unwrap_or(self.ground_z);
+        let floor = ground + UNDERGROUND_Z;
         if coord.z <= floor {
             position.put_location(DriveCoord { z: floor, ..coord });
             self.state = TunnelState::Digging;
@@ -290,29 +308,28 @@ impl TunnelRuntime {
         true
     }
 
-    /// `ProcessPreDigOut 0x7298F0`: raise Z by `max(5, round(rate *
-    /// frame_scale))` up to the cell's ground height, then arm the dig-out
-    /// timer the same `round(64.0 / Speed)` way (`0x729A54`) and enter
-    /// `DiggingOut`.
+    /// `ProcessPreDigOut 0x7298F0`: read the object's current cell
+    /// (`0x578080(&coord)`), raise Z by `max(5, round(rate * frame_scale))` up
+    /// to that ground, then arm the dig-out timer the same `round(64.0 / Speed)`
+    /// way (`0x729A54`) and enter `DiggingOut`.
     fn pre_dig_out(
         &mut self,
         position: &mut crate::sim::movement::ground_pose::Position,
         speed: i32,
         frame: u32,
+        ground_of: GroundQuery<'_>,
     ) -> bool {
         let coord = position_world(position);
+        let ground = ground_of(coord).unwrap_or(self.ground_z);
         let step = z_step(speed);
-        if coord.z >= self.ground_z {
-            position.put_location(DriveCoord {
-                z: self.ground_z,
-                ..coord
-            });
+        if coord.z >= ground {
+            position.put_location(DriveCoord { z: ground, ..coord });
             self.start_timer(dig_frames(speed), frame);
             self.state = TunnelState::DiggingOut;
             return true;
         }
         position.put_location(DriveCoord {
-            z: (coord.z + step).min(self.ground_z),
+            z: (coord.z + step).min(ground),
             ..coord
         });
         true
@@ -389,7 +406,15 @@ fn facing_toward(from: DriveCoord, to: DriveCoord) -> u16 {
 }
 
 /// Run the Tunnel controller for one entity this frame.
-pub(crate) fn process(entity: &mut GameEntity, speed: i32, frame: u32) -> bool {
+///
+/// `ground_of` is the caller's `MapClass::0x578080` query, the answer both
+/// sink and surfacing rebuild their target from every frame.
+pub(crate) fn process(
+    entity: &mut GameEntity,
+    speed: i32,
+    frame: u32,
+    ground_of: GroundQuery<'_>,
+) -> bool {
     let destination = destination_coord(entity);
     let Some(loco) = entity.locomotor.as_mut() else {
         return false;
@@ -406,6 +431,7 @@ pub(crate) fn process(entity: &mut GameEntity, speed: i32, frame: u32) -> bool {
         destination,
         speed,
         frame,
+        ground_of,
     )
 }
 

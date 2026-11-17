@@ -301,7 +301,10 @@ impl Simulation {
 
     /// TunnelLocomotionClass::Process `0x728E30` for one object. The dig timer
     /// divides by the type's `Speed=` (`GetType()->+0x71c`, read in
-    /// `ProcessPreDigIn 0x7291F0`).
+    /// `ProcessPreDigIn 0x7291F0`). `ProcessDugIn` (`0x728F86`) and
+    /// `ProcessPreDigOut 0x7298F0` read the ground under the object's current
+    /// coordinate with `MapClass::0x578080` every frame, so the tunnel is handed
+    /// the same canonical cell query the other movers build.
     fn process_tunnel_locomotor(
         &mut self,
         id: u64,
@@ -316,8 +319,19 @@ impl Simulation {
             .and_then(|type_ref| self.interner.object_type(type_ref, rules))
             .map(|object| object.speed)
             .unwrap_or(0);
+        // Field-level borrows: `cells` holds `self.resolved_terrain`, the
+        // entity map below holds `self.substrate`.
+        let cells = self
+            .resolved_terrain
+            .as_ref()
+            .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+        let ground_of = |coord: crate::sim::components::DriveCoord| -> Option<i32> {
+            cells
+                .as_ref()
+                .and_then(|cells| movement::ground_pose::query_ground_height(cells, coord).ok())
+        };
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            crate::sim::movement::tunnel_locomotion::process(entity, speed, frame);
+            crate::sim::movement::tunnel_locomotion::process(entity, speed, frame, &ground_of);
         }
         LocomotorProcess::admitted()
     }
