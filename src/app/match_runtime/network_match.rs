@@ -14,7 +14,7 @@ use crate::app::match_runtime::sim_host::SimWrite;
 use std::collections::{BTreeMap, VecDeque};
 
 use crate::app::AppState;
-use crate::app::match_runtime::session::{MatchSession, SessionMode, WallBucketTimer};
+use crate::app::match_runtime::session::{MatchSession, WallBucketTimer};
 use crate::net::live_commands::{LiveWaitInfo, LiveWaitKind, MatchSpeedChange};
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
@@ -879,6 +879,9 @@ fn lowest_record(state: &AppState) -> Option<usize> {
 /// The first dialog pass (`0x00648C40..0x006490D4`): create 0xEA with the
 /// node names, clear the vote tables and the received proposals, and fill
 /// list 0x651. `0x005E2820` adds nothing for the empty strings between.
+/// VERA relay adaptation: a WOL match never opens 0xEA (a relay-sequenced
+/// session has no Wait_For_Players phase and a solo one has no peer), so the
+/// pass's WOL lines (TXT_RECONNECT_HELP3/3B/3C, HELP2B) are not ported.
 fn open_dialog(state: &mut AppState, elapsed: u64) {
     let session = &state.match_state.session;
     let rows = nodes(session)
@@ -888,7 +891,6 @@ fn open_dialog(state: &mut AppState, elapsed: u64) {
             name: participant_name(session, source_index),
         })
         .collect();
-    let wol = state.match_state.session_mode() == SessionMode::Wol;
     let reconnecting = lowest_record(state)
         .map(|source| participant_name(&state.match_state.session, source))
         .unwrap_or_default();
@@ -912,32 +914,19 @@ fn open_dialog(state: &mut AppState, elapsed: u64) {
         append_line(state, &csf(state, "TXT_WAITING_FOR_CONNECTIONS"));
         return;
     }
-    let mut lines = vec![crate::assets::csf_file::format_csf(
-        &csf(state, "TXT_RECONNECTING_TO"),
-        &[crate::assets::csf_file::CsfArg::Str(&reconnecting)],
-    )];
-    if wol {
-        lines.push(format!(
-            "{} {} {}",
-            csf(state, "TXT_RECONNECT_HELP3"),
-            csf(state, "TXT_RECONNECT_HELP3B"),
-            csf(state, "TXT_RECONNECT_HELP3C")
-        ));
-    }
-    lines.push(format!(
-        "{} {}",
-        csf(state, "TXT_RECONNECT_HELP2"),
-        csf(
-            state,
-            if wol {
-                "TXT_RECONNECT_HELP2B"
-            } else {
-                "TXT_RECONNECT_HELP4"
-            }
-        )
-    ));
-    lines.push(csf(state, "TXT_RECONNECT_HELP5"));
-    lines.push(csf(state, "TXT_RECONNECT_HELP1"));
+    let lines = [
+        crate::assets::csf_file::format_csf(
+            &csf(state, "TXT_RECONNECTING_TO"),
+            &[crate::assets::csf_file::CsfArg::Str(&reconnecting)],
+        ),
+        format!(
+            "{} {}",
+            csf(state, "TXT_RECONNECT_HELP2"),
+            csf(state, "TXT_RECONNECT_HELP4")
+        ),
+        csf(state, "TXT_RECONNECT_HELP5"),
+        csf(state, "TXT_RECONNECT_HELP1"),
+    ];
     for line in lines {
         append_line(state, &line);
     }
@@ -1208,10 +1197,10 @@ pub(crate) fn request_leave(state: &mut AppState) {
     }
 }
 
-/// A row button (`0x0064AAE0`): the local row explains itself; in a WOL
-/// tournament game another row is refused with `TXT_CANT_KICK`
-/// (`0x0064AB6A..0x0064AB98`); otherwise it sends the proposal to every
-/// other node and counts the local vote.
+/// A row button (`0x0064AAE0`): the local row explains itself; another row
+/// sends the proposal to every other node and counts the local vote. Its WOL
+/// tournament refusal (`TXT_CANT_KICK`, `0x0064AB6A..0x0064AB98`) is not
+/// ported: a WOL match never opens 0xEA (see `open_dialog`).
 pub(crate) fn propose_kick(state: &mut AppState, row: usize) {
     let Some(target) = state
         .match_state
@@ -1226,16 +1215,6 @@ pub(crate) fn propose_kick(state: &mut AppState, row: usize) {
     };
     if target == local {
         let line = csf(state, "TXT_RECONNECT_KICK_SELF");
-        append_line_and_show_last(state, &line);
-        return;
-    }
-    if state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .is_some_and(|runtime| runtime.simulation.session().wol_tournament_game())
-    {
-        let line = csf(state, "TXT_CANT_KICK");
         append_line_and_show_last(state, &line);
         return;
     }
@@ -1256,6 +1235,7 @@ pub(crate) fn propose_kick(state: &mut AppState, row: usize) {
 #[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
+    use crate::app::match_runtime::session::SessionMode;
     use crate::net::live_commands::LiveCommandMode;
 
     /// The countdown is the timeout's remaining buckets /60: 33 when 0xEA
@@ -2045,8 +2025,8 @@ mod tests {
             assert!(Instant::now() < deadline);
             std::thread::yield_now();
         }
-        // A's tally reaches nodeCount - 1 against source 0 while B, still
-        // missing A's vote, kicks no one.
+        // A removes source 0 as its kick tally would (the tally_kicks tests
+        // cover the count); B, still missing A's vote, removes no one.
         destroy_connection(&mut a, &mut wa, 0, ConnectionError::Lost, Some(&mut first)).unwrap();
         assert_eq!(a.network_connected_source_indices(), &[1, 2]);
         assert_eq!(b.network_connected_source_indices(), &[0, 1, 2]);
