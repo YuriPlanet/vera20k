@@ -353,8 +353,10 @@ pub struct AnimTypeRuntimeConfig {
     /// mode): the palette file a nonempty read names, `~~~` standing for
     /// the theater extension (`CustomPalette::LoadFromINI`, 1000A4B0 after
     /// MakeInfantryOwner). AnimClass_Draw_SetPalette (Ares.dll 1000ACE0,
-    /// hook 0x4232CE) draws the anim with it when it loads; the atlas binds
-    /// it as the type's custom palette when the file loads.
+    /// hook 0x4232CE) draws the anim with it, and
+    /// BulletClass_Draw_SetAnimPalette (1001A7B0, hook 0x468379) a bullet
+    /// whose Image names this AnimType; `AresCustomPalettes` in the sprite
+    /// atlas loads it for both.
     pub(crate) ares_custom_palette: Option<String>,
     /// Phobos `CreateUnit=` + `CreateUnit.Owner` (default `Victim`) +
     /// `CreateUnit.RemapAnim` (default no): `Some` when the animation names a

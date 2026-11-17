@@ -2083,7 +2083,14 @@ fn palette_context_preserves_simultaneous_global_cell_and_attached_sprite_keys()
         key.palette_context = context;
         keys.insert(key.clone());
         assert_eq!(
-            sprite_palette_for_key(&key, Some(&art), &effects, &cells, None),
+            sprite_palette_for_key(
+                &key,
+                Some(&art),
+                &effects,
+                &cells,
+                None,
+                &AresCustomPalettes::default()
+            ),
             palette
         );
     }
@@ -2093,12 +2100,26 @@ fn palette_context_preserves_simultaneous_global_cell_and_attached_sprite_keys()
     key.type_id = "ALT".into();
     key.palette_context = ShpPaletteContext::AnimPalette;
     assert_eq!(
-        sprite_palette_for_key(&key, Some(&art), &effects, &cells, None),
+        sprite_palette_for_key(
+            &key,
+            Some(&art),
+            &effects,
+            &cells,
+            None,
+            &AresCustomPalettes::default()
+        ),
         SpritePaletteChoice::Anim
     );
     key.palette_context = ShpPaletteContext::GlobalAnim;
     assert_eq!(
-        sprite_palette_for_key(&key, Some(&art), &effects, &cells, None),
+        sprite_palette_for_key(
+            &key,
+            Some(&art),
+            &effects,
+            &cells,
+            None,
+            &AresCustomPalettes::default()
+        ),
         SpritePaletteChoice::Unit
     );
     let probe = native_palette_probe_page();
@@ -2117,7 +2138,14 @@ fn a_custom_palette_type_bakes_against_the_extra_building_palette() {
     let choose = |type_id: &str, context, cells: &HashSet<String>, extra| {
         let mut key = make_shp_key(type_id, 0);
         key.palette_context = context;
-        sprite_palette_for_key(&key, Some(&art), &none, cells, extra)
+        sprite_palette_for_key(
+            &key,
+            Some(&art),
+            &none,
+            cells,
+            extra,
+            &AresCustomPalettes::default(),
+        )
     };
     let legacy = ShpPaletteContext::Legacy;
     assert_eq!(
@@ -2204,6 +2232,7 @@ fn retail_statue_bakes_against_the_theater_lib_palette() {
         &HashSet::new(),
         &HashSet::new(),
         Some(&HashSet::from(["CANEWY04".to_string()])),
+        &AresCustomPalettes::default(),
     );
     assert_eq!(choice, SpritePaletteChoice::ExtraBuilding);
     let source = load_shp_source(
@@ -3490,7 +3519,8 @@ fn custom_harvest_uses_bound_theater_shape_all_frames_and_own_placement() {
             Some(rules.art()),
             &HashSet::new(),
             &HashSet::new(),
-            None
+            None,
+            &AresCustomPalettes::default()
         ),
         SpritePaletteChoice::Anim,
         "AltPalette belongs to AnimClass drawing, not the gather hook",

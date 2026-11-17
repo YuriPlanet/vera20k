@@ -1531,6 +1531,10 @@ pub(crate) enum SpritePaletteChoice {
     /// The selected successfully loaded extra building palette for the
     /// active theater (`RuleSet::load_extra_building_palette`).
     ExtraBuilding,
+    /// An Ares AnimType `CustomPalette=` file ([`AresCustomPalettes`]). Both
+    /// hooks hand over its plain convert with no ColorScheme, so 16..31 keep
+    /// the file's own colours.
+    AresCustom,
 }
 
 /// Pick the palette a sprite key's frames are baked against.
@@ -1569,21 +1573,85 @@ pub(crate) fn sprite_palette_choice(
     }
 }
 
-/// Ares 0.2 custom animation/projectile palettes: a BulletType's `Image=`
-/// names the AnimType whose ART section carries `CustomPalette=`, and Ares
-/// requires that name in `[Animations]`. The atlas keys a bullet by its
-/// ProjectileType id (`SEITAADMISSILEP`, not `NANOBALLSM`), so resolve the
-/// alias before looking up the ART section. Non-projectile types keep the
-/// ordinary object `Image=` alias.
-fn projectile_anim_palette_base<'a>(
-    rules: Option<&'a RuleSet>,
-    type_id: &str,
-    fallback: &'a str,
-) -> &'a str {
-    rules
-        .and_then(|rules| rules.projectile(type_id))
-        .and_then(|projectile| projectile.image_loads.first())
-        .map_or(fallback, |load| load.image.as_str())
+/// The Ares AnimType `CustomPalette=` files that loaded, by atlas type id
+/// (uppercase), as resolved names.
+///
+/// AnimClass_Draw_SetPalette (Ares.dll `1000ACE0`, hook `0x4232CE`, resumes
+/// at `0x4232D4`) swaps an anim's ANIM.PAL convert for its own palette.
+/// BulletClass_Draw_SetAnimPalette (`1001A7B0`, hook `0x468379`, resumes at
+/// `0x4683D7`) gives a bullet the palette of the AnimType its ImageFile
+/// names (GetConvert `10019360`, AnimType Find `1000D3E0`), skipping
+/// PALETTE.PAL, ANIM.PAL and the firer's scheme.
+#[derive(Default)]
+struct AresCustomPalettes {
+    anims: HashMap<String, String>,
+    bullets: HashMap<String, String>,
+}
+
+impl AresCustomPalettes {
+    /// The palette file the hook for `key`'s context would use, if any.
+    fn file(&self, key: &ShpSpriteKey) -> Option<&str> {
+        let by_type = match key.palette_context {
+            ShpPaletteContext::GlobalAnim => &self.anims,
+            ShpPaletteContext::BulletDefault
+            | ShpPaletteContext::BulletAnim
+            | ShpPaletteContext::BulletFirer => &self.bullets,
+            _ => return None,
+        };
+        by_type
+            .get(&key.type_id.to_ascii_uppercase())
+            .map(String::as_str)
+    }
+
+    /// Load and register the palette `key`'s AnimType names, once per type.
+    /// CustomPalette::LoadFromINI (`10076160`) turns the first `~~~` into the
+    /// theater extension and opens the name as written, adding no `.pal`. A
+    /// file that does not load keeps the stock palette.
+    ///
+    /// A bullet's Image must name an existing AnimType: Find `1000D3E0`
+    /// searches only AnimTypeClass's array, and a miss keeps the stock arms.
+    /// An `IsVeins=yes` anim takes the player's scheme at `0x42312A` and
+    /// never reaches hook `0x4232CE`.
+    fn register(
+        &mut self,
+        key: &ShpSpriteKey,
+        rules: Option<&RuleSet>,
+        art: Option<&ArtRegistry>,
+        theater_ext: &str,
+        load: &mut impl FnMut(&str) -> bool,
+    ) {
+        let (by_type, anim) = match key.palette_context {
+            ShpPaletteContext::GlobalAnim => (&mut self.anims, Some(key.type_id.as_str())),
+            ShpPaletteContext::BulletDefault
+            | ShpPaletteContext::BulletAnim
+            | ShpPaletteContext::BulletFirer => (
+                &mut self.bullets,
+                rules.and_then(|rules| {
+                    let image = rules.projectile(key.type_id.as_str())?.image.as_deref()?;
+                    rules
+                        .anim_type_names
+                        .contains(&image.to_ascii_uppercase())
+                        .then_some(image)
+                }),
+            ),
+            _ => return,
+        };
+        let upper = key.type_id.to_ascii_uppercase();
+        if by_type.contains_key(&upper) {
+            return;
+        }
+        let Some(name) = anim
+            .and_then(|anim| art?.anim_runtime_config(anim))
+            .filter(|config| !config.is_veins)
+            .and_then(|config| config.custom_palette())
+        else {
+            return;
+        };
+        let file = name.replacen("~~~", theater_ext, 1);
+        if load(&file) {
+            by_type.insert(upper, file);
+        }
+    }
 }
 
 /// `extra_palette_type_ids` holds the custom-palette TechnoTypes, `None` when
@@ -1591,42 +1659,29 @@ fn projectile_anim_palette_base<'a>(
 /// TerrainPalette first (`0x00705EC7`), then draws from GetRemapColour
 /// (`0x00705F81`), whose `+0xDF0` arm (`0x00705D82..0x00705D9A`) picks the
 /// house's scheme from the type's generated palette.
+///
+/// `ares_palettes` holds the Ares `CustomPalette=` files that loaded. A bullet
+/// takes its file in every context (hook `0x468379`). An anim takes it only
+/// in GlobalAnim: a cell-drawn anim (+0x196, AnimCell, `0x4231FB`) and one
+/// with its own scheme (+0xD4, AnimScheme, `0x4232AB`) skip hook `0x4232CE`,
+/// and `AltPalette=` replaces the convert again after the hook resumes
+/// (`0x4232D8`).
 fn sprite_palette_for_key(
     key: &ShpSpriteKey,
     art: Option<&ArtRegistry>,
     effect_type_ids: &HashSet<String>,
     cell_palette_type_ids: &HashSet<String>,
     extra_palette_type_ids: Option<&HashSet<String>>,
+    ares_palettes: &AresCustomPalettes,
 ) -> SpritePaletteChoice {
-    // Ares 0.2 `CustomPalette=` on an AnimType is an explicit palette
-    // override for both the animation and — when that type is a BulletType's
-    // `Image=` and is registered in `[Animations]` — the projectile's SHP
-    // frames. The draw hands that file's convert to `CC_Draw_Shape` and skips
-    // both the selected ColorScheme and the global ANIM.PAL; Ares extends the
-    // same convert to `BulletClass::Draw`, which otherwise picks PALETTE.PAL,
-    // ANIM.PAL or the firer's scheme (`46838D`/`468409`). Only types whose
-    // palette actually loaded are registered, so a missing file keeps the
-    // ordinary arm below. Tiled and fogged draws select ANIM.PAL by their own
-    // literals and stay on them.
-    let custom_palette_context = matches!(
-        key.palette_context,
-        ShpPaletteContext::GlobalAnim
-            | ShpPaletteContext::AnimScheme
-            | ShpPaletteContext::SelectedScheme
-    ) || (cfg!(feature = "ares")
-        && matches!(
-            key.palette_context,
-            ShpPaletteContext::BulletDefault
-                | ShpPaletteContext::BulletAnim
-                | ShpPaletteContext::BulletFirer
-        ));
-    if custom_palette_context
-        && extra_palette_type_ids
-            .is_some_and(|ids| ids.contains(&key.type_id.to_ascii_uppercase()))
-    {
-        return SpritePaletteChoice::ExtraBuilding;
-    }
     match key.palette_context {
+        ShpPaletteContext::BulletDefault
+        | ShpPaletteContext::BulletAnim
+        | ShpPaletteContext::BulletFirer
+            if ares_palettes.file(key).is_some() =>
+        {
+            SpritePaletteChoice::AresCustom
+        }
         ShpPaletteContext::BulletDefault => SpritePaletteChoice::Bullet,
         ShpPaletteContext::BulletAnim => SpritePaletteChoice::Anim,
         ShpPaletteContext::AnimPalette | ShpPaletteContext::Harvest => SpritePaletteChoice::Anim,
@@ -1642,6 +1697,8 @@ fn sprite_palette_for_key(
                 .is_some_and(|c| c.alt_palette)
             {
                 SpritePaletteChoice::Unit
+            } else if ares_palettes.file(key).is_some() {
+                SpritePaletteChoice::AresCustom
             } else {
                 SpritePaletteChoice::Anim
             }
@@ -2808,9 +2865,6 @@ pub(crate) fn prepare_sprite_atlas(
         let base = type_id.strip_suffix("_MAKE").unwrap_or(type_id);
         let object = rules.and_then(|rules| rules.object(base));
         let image = object.map_or(base, |object| object.image.as_str());
-        // A projectile is keyed by its BulletType id, but `CustomPalette=`
-        // lives on the ART section named by its `Image=` AnimType.
-        let anim_base = projectile_anim_palette_base(rules, base, image);
         if art
             .and_then(|art| art.resolve_metadata_entry(base, image))
             .is_some_and(|entry| entry.terrain_palette)
@@ -2822,42 +2876,6 @@ pub(crate) fn prepare_sprite_atlas(
                 rules?
                     .load_extra_building_palette(asset_manager, theater_ext, Some(name))
                     .map(|(_, palette)| palette)
-            });
-            if palette.is_some() {
-                extra_palette_type_ids.insert(type_id.to_ascii_uppercase());
-                extra_palette_names.insert(type_id.to_ascii_uppercase(), name);
-            }
-        }
-        // Ares 0.2 `CustomPalette=` on the ART section names a palette *file*,
-        // not a rules palette group: the theater suffix a TechnoType request
-        // gets must not be appended, and `~~~` stands for the theater's
-        // three-letter extension (`lib~~~.pal` -> `libtem.pal`). A missing
-        // file leaves the ordinary scheme instead of abandoning the atlas.
-        // For a projectile the ART section is the BulletType's `Image=`
-        // AnimType resolved above.
-        if let Some(name) = art
-            .and_then(|art| art.anim_runtime_config(anim_base))
-            .and_then(|config| config.custom_palette())
-        {
-            let resolved = {
-                #[cfg(feature = "ares")]
-                {
-                    name.replace("~~~", theater_ext)
-                }
-                #[cfg(not(feature = "ares"))]
-                {
-                    name.to_owned()
-                }
-            };
-            let file = if resolved.to_ascii_lowercase().ends_with(".pal") {
-                resolved
-            } else {
-                format!("{resolved}.pal")
-            };
-            let palette = extra_palettes.entry(name).or_insert_with(|| {
-                asset_manager
-                    .get_ref(&file)
-                    .and_then(|data| Palette::from_bytes(data).ok())
             });
             if palette.is_some() {
                 extra_palette_type_ids.insert(type_id.to_ascii_uppercase());
@@ -2878,6 +2896,20 @@ pub(crate) fn prepare_sprite_atlas(
             });
         }
     }
+    let mut ares_palette_files: HashMap<String, Option<Palette>> = HashMap::new();
+    let mut ares_palettes = AresCustomPalettes::default();
+    for key in &new_keys {
+        ares_palettes.register(key, rules, art, theater_ext, &mut |file| {
+            ares_palette_files
+                .entry(file.to_owned())
+                .or_insert_with(|| {
+                    asset_manager
+                        .get_ref(file)
+                        .and_then(|data| Palette::from_bytes(data).ok())
+                })
+                .is_some()
+        });
+    }
     let palette_choices: Vec<SpritePaletteChoice> = new_keys
         .iter()
         .map(|key| {
@@ -2893,6 +2925,7 @@ pub(crate) fn prepare_sprite_atlas(
                 &effects.type_ids,
                 &cell_palette_type_ids,
                 extra_available.then_some(&extra_palette_type_ids),
+                &ares_palettes,
             )
         })
         .collect();
@@ -2909,13 +2942,14 @@ pub(crate) fn prepare_sprite_atlas(
         );
     }
     if effect_palette.is_none()
-        && new_keys.iter().any(|key| {
-            matches!(
-                key.palette_context,
-                ShpPaletteContext::BulletAnim
-                    | ShpPaletteContext::AnimPalette
-                    | ShpPaletteContext::Harvest
-            )
+        && new_keys.iter().zip(&palette_choices).any(|(key, choice)| {
+            *choice != SpritePaletteChoice::AresCustom
+                && matches!(
+                    key.palette_context,
+                    ShpPaletteContext::BulletAnim
+                        | ShpPaletteContext::AnimPalette
+                        | ShpPaletteContext::Harvest
+                )
         })
     {
         return PreparedSpriteAtlas::abandoned(
@@ -3004,25 +3038,20 @@ pub(crate) fn prepare_sprite_atlas(
                     .expect("chosen only when loaded");
                 (palette, name)
             }
+            SpritePaletteChoice::AresCustom => {
+                let name = ares_palettes
+                    .file(&key)
+                    .expect("chosen only when registered");
+                let palette = ares_palette_files[name]
+                    .as_ref()
+                    .expect("registered only when loaded");
+                (palette, name)
+            }
         };
         // 0x00627590 builds each scheme with ColorScheme's constructor
         // (0x0068C710), which writes the colour's ramp over indices 16..31.
         let house_remap = match key.palette_context {
             ShpPaletteContext::Legacy => palette_choice != SpritePaletteChoice::CellIso,
-            // Ares `CustomPalette=` (animation or projectile) is a *plain*
-            // convert: no ColorScheme is built, so the SHP's 16..31 band
-            // keeps the custom file's own colours. A TechnoType palette
-            // request (`Legacy` above) is scheme-owned and does remap.
-            ShpPaletteContext::GlobalAnim
-            | ShpPaletteContext::AnimScheme
-            | ShpPaletteContext::SelectedScheme
-            | ShpPaletteContext::BulletDefault
-            | ShpPaletteContext::BulletAnim
-            | ShpPaletteContext::BulletFirer
-                if palette_choice == SpritePaletteChoice::ExtraBuilding =>
-            {
-                false
-            }
             _ => matches!(
                 palette_choice,
                 SpritePaletteChoice::Unit | SpritePaletteChoice::ExtraBuilding

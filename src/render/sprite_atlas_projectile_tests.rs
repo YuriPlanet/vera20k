@@ -22,89 +22,67 @@ fn simple_rules(art: &str) -> RuleSet {
     )
 }
 
-/// Ares 0.2 custom animation/projectile palettes: `[SeitaadMissileP]` keys
-/// the atlas, but the `CustomPalette=` lives on the ART section named by its
-/// `Image=NANOBALLSM`. Without the alias the bullet fell through to
-/// PALETTE.PAL and only its rising frames were miscoloured.
+/// An Ares mod gives `[SeitaadMissileP] Image=NANOBALLSM` an AnimType with
+/// `CustomPalette=`. Hook 0x468379 gives the bullet that palette in every
+/// bullet context, but only when its Image is an AnimType (Find 1000D3E0);
+/// hook 0x4232CE gives an anim its own only when it has no scheme of its own
+/// and no AltPalette (0x4232AB, 0x4232D8). The name opens with its first
+/// `~~~` as the theater extension and no `.pal` added
+/// (CustomPalette::LoadFromINI 10076160).
 #[test]
-fn ares_projectile_custom_palette_resolves_through_the_image_anim_type() {
+fn ares_custom_palette_reaches_bullets_and_plain_anims_only() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
-        "[VehicleTypes]\n0=SEITAAD\n[SEITAAD]\nPrimary=SeitaadMissile\n\
+        "[Animations]\n0=NANOBALLSM\n1=ALTANIM\n\
+         [VehicleTypes]\n0=SEITAAD\n\
+         [SEITAAD]\nPrimary=SeitaadMissile\nSecondary=LooseMissile\n\
          [SeitaadMissile]\nProjectile=SeitaadMissileP\n\
-         [SeitaadMissileP]\nImage=NANOBALLSM\n",
-        "[NANOBALLSM]\nCustomPalette=axespam.pal\n",
+         [SeitaadMissileP]\nImage=NANOBALLSM\n\
+         [LooseMissile]\nProjectile=LooseP\n[LooseP]\nImage=LOOSE\n",
+        "[NANOBALLSM]\nCustomPalette=axes~~~.pal\n\
+         [ALTANIM]\nCustomPalette=alt~~~~~~\nAltPalette=yes\n\
+         [LOOSE]\nCustomPalette=axes~~~.pal\n",
     );
-    assert_eq!(
-        projectile_anim_palette_base(Some(&rules), "SeitaadMissileP", "SEITAADMISSILEP"),
-        "NANOBALLSM",
-        "the bullet key must reach [NANOBALLSM]'s CustomPalette"
-    );
-    assert_eq!(
-        projectile_anim_palette_base(Some(&rules), "SEITAAD", "SEITAAD"),
-        "SEITAAD",
-        "a non-projectile type keeps its object Image alias"
-    );
-    assert_eq!(
-        projectile_anim_palette_base(None, "SEITAADMISSILEP", "SEITAADMISSILEP"),
-        "SEITAADMISSILEP",
-        "without Rules the lookup cannot invent an alias"
-    );
-}
-
-/// Ares 0.2's `CustomPalette=` also covers projectiles, provided the
-/// BulletType's `Image=` AnimType is listed in `[Animations]`. MO does
-/// exactly that for `[SeitaadMissileP] Image=NANOBALLSM` with
-/// `CustomPalette=axespam.pal`. Without the projectile arm the rising bullet
-/// was baked against PALETTE.PAL, whose low entries are black, purple,
-/// green, yellow and red instead of axespam.pal's cyan ramp. Only the rise
-/// is a Bullet; the burst already took the animation arm, which is why only
-/// that phase looked wrong.
-#[test]
-fn ares_custom_palette_also_covers_the_projectile_frames() {
-    let registered: HashSet<String> = HashSet::from(["SEITAADMISSILEP".to_string()]);
-    let empty = HashSet::new();
-    for (context, ordinary) in [
-        (
-            ShpPaletteContext::BulletDefault,
-            SpritePaletteChoice::Bullet,
-        ),
-        (ShpPaletteContext::BulletAnim, SpritePaletteChoice::Anim),
-        (ShpPaletteContext::BulletFirer, SpritePaletteChoice::Unit),
-    ] {
-        let chosen = |ids: Option<&HashSet<String>>| {
-            sprite_palette_for_key(
-                &ShpSpriteKey {
-                    palette_context: context,
-                    type_id: "SEITAADMISSILEP".into(),
-                    facing: 0,
-                    frame: 0,
-                    house_color: crate::rules::house_colors::NO_REMAP,
-                },
-                None,
-                &empty,
-                &empty,
-                ids,
-            )
-        };
-        assert_eq!(
-            chosen(None),
-            ordinary,
-            "{context:?} keeps the native arm when no custom palette loaded"
-        );
-        if cfg!(feature = "ares") {
-            assert_eq!(
-                chosen(Some(&registered)),
-                SpritePaletteChoice::ExtraBuilding,
-                "{context:?} must draw through the AnimType's CustomPalette"
-            );
-        } else {
-            assert_eq!(
-                chosen(Some(&registered)),
-                ordinary,
-                "the Ares projectile palette is feature-gated"
-            );
-        }
+    let key = |palette_context, type_id: &str| ShpSpriteKey {
+        palette_context,
+        type_id: type_id.into(),
+        facing: 0,
+        frame: 0,
+        house_color: crate::rules::house_colors::NO_REMAP,
+    };
+    let bullets = [
+        ShpPaletteContext::BulletDefault,
+        ShpPaletteContext::BulletAnim,
+        ShpPaletteContext::BulletFirer,
+    ]
+    .map(|context| key(context, "SeitaadMissileP"));
+    let anim = key(ShpPaletteContext::GlobalAnim, "NANOBALLSM");
+    let schemed = key(ShpPaletteContext::AnimScheme, "NANOBALLSM");
+    let alt = key(ShpPaletteContext::GlobalAnim, "ALTANIM");
+    let loose = key(ShpPaletteContext::BulletDefault, "LooseP");
+    let mut ares = AresCustomPalettes::default();
+    let mut opened = Vec::new();
+    for key in bullets.iter().chain([&anim, &schemed, &alt, &loose]) {
+        ares.register(key, Some(&rules), Some(rules.art()), "sno", &mut |file| {
+            opened.push(file.to_owned());
+            true
+        });
     }
+    assert_eq!(opened, ["axessno.pal", "axessno.pal", "altsno~~~"]);
+    let empty = HashSet::new();
+    let choose = |key| sprite_palette_for_key(key, Some(rules.art()), &empty, &empty, None, &ares);
+    for key in &bullets {
+        assert_eq!(
+            choose(key),
+            SpritePaletteChoice::AresCustom,
+            "{:?}",
+            key.palette_context
+        );
+    }
+    assert_eq!(choose(&anim), SpritePaletteChoice::AresCustom);
+    assert_eq!(choose(&schemed), SpritePaletteChoice::Unit);
+    assert_eq!(choose(&alt), SpritePaletteChoice::Unit);
+    assert_eq!(choose(&loose), SpritePaletteChoice::Bullet);
 }
 
 #[test]
@@ -182,7 +160,14 @@ fn bullet_palette_context_ignores_animation_aliases_and_alt_palette() {
         projectile.firers_palette = firer;
         let key = projectile_key("Cannon", &projectile, 0, HouseColorIndex(4));
         assert_eq!(
-            sprite_palette_for_key(&key, Some(art), &effects, &cells, None),
+            sprite_palette_for_key(
+                &key,
+                Some(art),
+                &effects,
+                &cells,
+                None,
+                &AresCustomPalettes::default()
+            ),
             expected
         );
         assert_eq!(
