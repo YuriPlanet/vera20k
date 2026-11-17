@@ -1199,6 +1199,18 @@ pub(crate) fn prepare_lan_guest_handoff(state: &mut AppState) -> anyhow::Result<
 }
 
 pub(crate) fn fail_go_handoff(state: &mut AppState) {
+    fail_go_handoff_with_notice(state, "TXT_UNABLE_PLAY_WAAUGH", "TXT_UNABLE_PLAY_WAAUGH");
+}
+
+pub(crate) fn fail_go_delivery(state: &mut AppState) {
+    fail_go_handoff_with_notice(
+        state,
+        "TXT_SYSTEM_NOT_RESPONDING",
+        "The other system is not responding.",
+    );
+}
+
+fn fail_go_handoff_with_notice(state: &mut AppState, label: &str, fallback: &str) {
     if state
         .frontend
         .network_setup_protocol
@@ -1219,7 +1231,7 @@ pub(crate) fn fail_go_handoff(state: &mut AppState) {
         App::fail_external_launch(state, "the direct start handshake failed");
         return;
     }
-    let message = App::csf_label(state, "TXT_UNABLE_PLAY_WAAUGH", "TXT_UNABLE_PLAY_WAAUGH");
+    let message = App::csf_label(state, label, fallback);
     let ok = App::csf_label(state, "TXT_OK", "OK");
     state
         .frontend
