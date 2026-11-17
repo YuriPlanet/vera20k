@@ -118,8 +118,9 @@ only once the silence limits below pass.
 
 The service journal reports aggregate traffic and rejection counts once a minute,
 with the ordering push datagrams and their bytes as `pushed` and `pushed_bytes`
-the Pull requests answered as `pull_replies`, and the matches it ended with a
-desync record as `desyncs`. The reader downlink adds `push_packets` and
+the Pull requests answered as `pull_replies`, the matches it ended with a
+desync record as `desyncs`, and the startups it refused for a different initial
+world as `start_mismatches`. The reader downlink adds `push_packets` and
 `push_bytes` by kind (status, new pack, repeat, retransmission, tail probe),
 `piggybacked_records`, `down_lost` datagrams and the `retransmitted_records`
 for them, `readers_avg` (subscribed readers per state: good, lossy, congested,
@@ -301,9 +302,12 @@ A relay that misses a packet ignores later ones until then. A
 frame is emitted once every relay sealed it, in the same canonical order, so
 every relay delivers the same stream and sequence numbers. Player DATA to a remote source crosses one link to its relay. The
 first roster relay picks the start time from measured link round trips; the
-others follow its clock offset. Only it cancels a startup on request: another relay's Leave
-before the start asks it to, and becomes a frame-1 departure if the start was
-already on its way. Federated rooms cannot pause. The other relays forward
+others follow its clock offset. It alone cancels a startup for an ordinary
+reason: another relay's Leave before the start asks it to, and becomes a
+frame-1 departure if the start was already on its way. A relay that proves an
+agreement mismatch (below) refuses the start itself and asks it to cancel the
+rest; one that hears another link version (below) cancels its own startup.
+Federated rooms cannot pause. The other relays forward
 their players' latest pace reports to the coordinator every 500 ms as link kind
 2, `[count]` then per source `[source][pace][LE frames u16][LE tick µs u32, 0
 none][LE age ms u32]`. The coordinator's rate change travels as a contribution
@@ -318,18 +322,19 @@ them, and its desync travels as a contribution of source 255 (batch ID
 seal, which every relay emits after that frame's end. Every relay also tells
 every other when it last heard its players (link kind 4, Silence below). Link packets go to the roster
 address on the relay's existing UDP port and are authenticated by their MAC,
-whatever address they arrive from. The digit in `VF1L` is the link version,
-bumped whenever the layout or meaning of an existing link kind changes (the
-FRAME header and its entries, a coordinator control batch, DATA, pace,
-checksum or silence reports), since a relay refuses a packet it cannot read:
-one refused FRAME stalls the merged stream, and refused reports leave desyncs
-and slow players unnoticed. Only a new kind whose loss changes no result
-needs none, as kind 4 did: an older relay only leaves that silence untold. The 32-byte link
-header and the MAC domain stay the same in every version, so a relay that
-authenticates a link packet of another version cancels that startup at once.
-A relay too old to know this drops the packet and cancels at its 3-minute
-loading limit. Relays of different link versions therefore never start a match
-together.
+whatever address they arrive from. Deploy and roll back every relay at once,
+so all run one version: relays of different versions can end the same startup
+differently. The digit in `VF1L` is the link version, bumped whenever the
+layout or meaning of an existing link kind changes (the FRAME header and its
+entries, a coordinator control batch, DATA, pace, checksum or silence reports),
+since a relay refuses a packet it cannot read: one refused FRAME stalls the
+merged stream, and refused reports leave desyncs and slow players unnoticed.
+Only a new kind whose loss changes no result needs none, as kind 4 did: an
+older relay only leaves that silence untold. The 32-byte link header and the
+MAC domain stay the same in every version, so a relay that authenticates a link
+packet of another version cancels that startup at once. A relay too old to
+know this drops the packet and cancels at its 3-minute loading limit. Relays of
+different link versions therefore never start a match together.
 
 The RAM hot cache retains4,096 entries/2 MiB per room under a64 MiB global
 budget. Eviction from this cache does not evict match history: every complete
@@ -347,10 +352,17 @@ that hears nothing from its relay for that long releases its route, which ends
 a match of two or more players). Before the start, a
 source that never sent Ready departs in frame 1 after 60 seconds of silence,
 counted from its last packet even before the room existed, or once the room is 3
-minutes old, and the others start without it; a Ready source waits. A federated
-startup cannot drop a source alone: those limits, or any relay's room reaching 3
-minutes unstarted, ask the coordinator to cancel it, and a relay whose
-coordinator has then been silent for 10 seconds cancels on its own. A relay
+minutes old, and the others start without it; a Ready source waits. A Ready
+whose agreement, roster or rate differs from the room's first gets
+`AgreementMismatch`. From a source still loading, it proves the others cannot
+start with it: the relay cancels the startup for every source at once, as that
+source's Leave could, and answers every later Ready, and the ready sources'
+Pull and UPLINK, with the same error. A federated relay also refuses so once another relay's ready players
+report a different agreement. A federated startup cannot drop a source alone:
+those limits, a refused start, or any relay's room reaching 3 minutes unstarted
+ask the coordinator to cancel it, and a relay whose coordinator has then been
+silent for 10 seconds cancels on its own. Players on a relay that proved no
+mismatch see an ordinary cancellation. A relay
 reports only its own players' departures, and a restarted relay never does. Once
 a started two-relay room has heard nothing from the other relay for 10 minutes,
 that relay's players depart as lost after the last frame it sealed there, and

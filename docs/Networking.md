@@ -33,11 +33,15 @@ them as one just opened does; nothing new is exchanged, and older builds are
 refused by the build check.
 Fresh LAN and online matches also initialize local trigger variables from the
 incoming map only. Unassigned values cannot carry over from a player's previous
-match, including on generated maps with no local assignments. Network replay and
-rejoin reconstruction use the same fresh state; loading a save keeps its saved
-variables. Offline skirmish and campaign loads retain the original game's local
-variable carryover. This changes no packets: mixed builds are refused by the
-existing build check, and a rollback restores the earlier carryover behavior.
+match, including on generated maps with no local assignments. This includes a
+co-op campaign's next mission and a retried mission, where the original game keeps
+the previous mission's unassigned locals. Network replay and rejoin are unchanged:
+each runs in a newly started game, so it never had an earlier match to carry from.
+Watching loads in the running game, so a watcher who played an earlier match no
+longer carries its locals either. Loading a save keeps its saved variables. Offline skirmish and campaign loads retain
+the original game's local variable carryover. This changes no packets: mixed builds
+are refused by the existing build check, and a rollback restores the earlier
+carryover behavior.
 Whether Ares plays in a match is decided from that same data: the rules, mode
 and map, whether the selected mod loads `ares.mix`, and the player's
 [Ares setting](ares.md#the-ares-setting), which the rules agreement covers. With
@@ -100,12 +104,17 @@ status page says the games differ (`VERA:MatchStartMismatch`), the log records b
 hashes, and the search goes on after the stage timeout; the host only times out. This
 adds nothing to what game, lobby and relay exchange.
 
-Network trigger playback keeps the map's sound/EVA name or numeric sound slot until
-local audio consumes it. Different local audio catalogs and optional music therefore
-do not change startup hashes or the scheduling of an object's custom sound. A missing
-local cue is silent. Gameplay actions that use an audio-catalog ordinal as a number
-(such as a timer with a sound-name parameter) still retain and hash that number, so
-real gameplay differences are refused. This changes no messages: older builds are
+In network games, the trigger actions that only play audio (19, 20, 21, 98 and 99)
+keep the map's sound, EVA or theme name, or its numeric sound slot, until the local
+audio owner resolves it; offline games still resolve it when the map loads. A player
+whose sound, EVA or music catalog lacks that entry therefore starts with the same
+world as the others, and an object's action-99 custom sound keeps the same schedule.
+That cue is silent for that player. On an action-99 object it also stops the object's
+previous custom sound. The original game does the same for a missing slot, but for a
+name that player's catalog lacks it lets the previous sound play out.
+Other actions that use an audio-catalog ordinal as a number (such as a timer with a
+sound-name parameter) still retain and hash that number, so real gameplay
+differences are refused. This changes no messages: older builds are
 refused by the existing build check. Saved custom sound references use a new automatic
 snapshot layout; older layouts are refused. A rollback uses its earlier audio resolution
 and save layout.
@@ -140,20 +149,25 @@ finishes loading must agree to the initial world before it starts. A player who
 never finishes loading leaves in the first frame once silent for 60 seconds, or 3
 minutes after the first client was ready; the native loading timeout leaves that
 departure to the relay. A match spread over several relays is cancelled instead.
-If ready players on different relays report different initial worlds, updated
-relays refuse the start as soon as those authenticated reports arrive, using the
-existing agreement-mismatch error. A relay whose players have not sent Ready is
-still loading, not a mismatch. The refusal remains available to retries after
-the empty match journal is removed. No client or federation packet changes:
-released clients already understand the error. Relay upgrades can be gradual;
-an older relay may still report ordinary cancellation or wait for its loading
-timeout, but cannot start a match with different agreements. Rolling the relay
-back restores that older reporting. Deploying the relay change is separate from
-publishing a new game build. Relays of one match must also speak one
-relay-to-relay link version: a relay that hears another version cancels the
-startup at once, and one too old to know this cancels at its loading limit, so
-players get the cancelled-start message instead of a frozen match. Game and
-lobby traffic do not change.
+If a loading player's Ready reports a different initial world from the one its
+relay already took, or ready players on different relays report different
+worlds, the relay refuses the start for everyone at once with the existing
+agreement-mismatch error, instead of keeping the first ready players waiting.
+The other relays of such a match cancel through the coordinator, so their
+players may see an ordinary cancellation. A relay whose players have not sent
+Ready is still loading, not a mismatch. The refusal remains available to retries
+after the empty match journal is removed. No client or relay packet changes.
+Games from 0.2.9 name the start mismatch; 0.2.7 and 0.2.8, the oldest the lobby
+admits, show a connection failure. Every relay is deployed and rolled back at
+once (`services/relay/README.md`). A rolled-back relay again refuses only the
+later player's Ready: the others wait until that player leaves, which cancels
+the start, or for up to 3 minutes, then start without it (a match on several
+relays is cancelled instead).
+Deploying the relay change is separate from publishing a new game build.
+Relays of one match must also speak one relay-to-relay link version: a relay
+that hears another version cancels the startup at once, and one too old to know
+this cancels at its loading limit, so players get the cancelled-start message
+instead of a frozen match. Game and lobby traffic do not change.
 At each deadline, missing input is empty; a command joins the next unsealed
 frame. The sender also waits for that commit.
 Frames use the existing Event codec and simulation queues, with a fresh compression
@@ -296,10 +310,13 @@ playback requires the current version to avoid executing old internal events twi
 
 Fresh LAN and online games also seed the bridge-repair MapGen RNG from the
 agreed match seed, instead of retaining each player's earlier random-map or
-bridge-repair history. Its cursor participates in network state checks, so a
-difference is detected before another repair writes different bridge overlays.
+bridge-repair history; on a generated map this replaces the cursor the map's
+generation left. The cursor is part of the world hash the start agreement compares,
+so a difference stops the start; the per-frame sync checksum does not include it.
 Rejoining and watching rebuild this same start before replaying the relay's
-history. Offline games keep the native process-cursor retention. This adds no
+history. Offline games carry the cursor over from the previous game as the original
+game does, but right after a network match that is the match's reseeded cursor,
+not the one the original game would have kept. This adds no
 packet fields; older builds are refused by the existing build check, and a
 rollback restores that build's earlier retention and checksums.
 

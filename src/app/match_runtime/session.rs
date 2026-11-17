@@ -233,6 +233,8 @@ enum NetworkPhase {
         inactive_ai_options: [NetworkAiOptions; NETWORK_PLAYER_SLOT_COUNT],
         /// A8DA90 AI display pointers. Roster packets change these without
         /// changing Session's AI arrays; global packets may arrive reordered.
+        /// A WOL host's options are its roster (`'L'`, `0x5E8EA0`), so there
+        /// they set these from the AI arrays on the rows they send Closed.
         display_ai: [Option<crate::skirmish_launch::AiDifficulty>; NETWORK_PLAYER_SLOT_COUNT],
         /// Native831700/8316A4: prior capacity and independent reserved observer row.
         capacity: i32,
@@ -618,13 +620,7 @@ impl MatchSession {
             .collect();
         let inactive_choices =
             std::array::from_fn(|_| native_network_row_defaults(&launch.mode, false));
-        let display_ai = std::array::from_fn(|row| {
-            launch
-                .opponents
-                .iter()
-                .find(|ai| usize::from(ai.raw_slot_index) == row)
-                .map(|ai| ai.difficulty)
-        });
+        let display_ai = display_ai_rows(&launch);
         network.phase = NetworkPhase::Setup {
             display_ai,
             capacity: 8,
@@ -1755,7 +1751,9 @@ impl MatchSession {
     /// values, never roster identity or its independent ready/map acknowledgements.
     /// The service adapter applies the packet's local-ready invalidation separately.
     /// A WOL Quick Match host applies the matchbot's options the same way
-    /// (`matchbot`, `0x007A6DE2..0x007A6DF3`).
+    /// (`matchbot`, `0x007A6DE2..0x007A6DF3`). In WOL the options also bind
+    /// the rows, as the roster `'L'` (`0x5E8EA0`) does, so they replace the
+    /// AI display rows too; a LAN guest takes those from its roster packet.
     pub(crate) fn accept_network_host_setup<const N: usize>(
         &mut self,
         mut incoming: SkirmishLaunchSession,
@@ -1779,6 +1777,7 @@ impl MatchSession {
                 NetworkPhase::Setup {
                     launch,
                     vacancies,
+                    display_ai,
                     capacity: retained_capacity,
                     observer_row: retained_observer_row,
                     ..
@@ -1827,6 +1826,16 @@ impl MatchSession {
         *launch = incoming;
         *vacancies = [NetworkVacancy::Open; NETWORK_PLAYER_SLOT_COUNT];
         vacancies[..N].copy_from_slice(&incoming_vacancies);
+        if return_context.session_mode() == SessionMode::Wol {
+            // The host sends each AI row it shows as Closed; Cooperative's
+            // start AI (`0x5C30C0`) fills AI arrays only, behind Open rows.
+            *display_ai = display_ai_rows(launch);
+            for (ai, vacancy) in display_ai.iter_mut().zip(vacancies.iter()) {
+                if *vacancy != NetworkVacancy::Closed {
+                    *ai = None;
+                }
+            }
+        }
         *retained_capacity = admitted_capacity;
         *retained_observer_row = observer_row;
         Ok(())
@@ -3833,6 +3842,29 @@ fn native_network_row_defaults(
     }
 }
 
+/// The AI display rows a setup's AI arrays give: each AI's difficulty on its
+/// row, unless a human holds that row, as the host's own rows show it
+/// ([`MatchSession::add_network_participant`] clears a row a human takes).
+fn display_ai_rows(
+    launch: &SkirmishLaunchSession,
+) -> [Option<crate::skirmish_launch::AiDifficulty>; NETWORK_PLAYER_SLOT_COUNT] {
+    std::array::from_fn(|row| {
+        let row = row as u8;
+        if launch
+            .humans
+            .iter()
+            .any(|human| human.raw_slot_index == Some(row))
+        {
+            return None;
+        }
+        launch
+            .opponents
+            .iter()
+            .find(|ai| ai.raw_slot_index == row)
+            .map(|ai| ai.difficulty)
+    })
+}
+
 /// Each packet owns one domain. Until both arrive, a display human and a raw
 /// AI slot may share a row; only final start admission requires disjoint rows.
 fn validate_network_option_rows(launch: &SkirmishLaunchSession) -> anyhow::Result<()> {
@@ -4106,6 +4138,55 @@ mod tests {
     fn guest(session: &MatchSession) -> (bool, Option<u8>) {
         let guest = &session.network_setup().unwrap().humans[1];
         (guest.is_observer(), guest.raw_slot_index)
+    }
+
+    /// An online guest takes its AI rows from each of the host's options,
+    /// which stand in for the roster `'L'` (`0x5E8EA0`): an AI the host adds
+    /// after the guest joined shows on the guest's row, one it removes leaves
+    /// it, and AI the host does not show stay hidden.
+    #[test]
+    fn an_online_guest_shows_the_ai_the_host_adds_and_removes() {
+        use super::{NetworkRowKind, NetworkVacancy};
+        use crate::skirmish_launch::AiDifficulty;
+        let mut host = vera_room();
+        let mut guest = MatchSession::default();
+        guest.enter_network(super::NetworkReturnContext::Wol);
+        guest
+            .accept_network_setup(network_fixture(), false, Some(7), true)
+            .unwrap();
+        // The host's options as the online service sends them: a row
+        // without a vacancy (a person or an AI) goes as Closed.
+        let send = |host: &MatchSession, guest: &mut MatchSession| {
+            let mut launch = host.network_setup().unwrap().clone();
+            launch.local_player_index = 1;
+            let vacancies: [NetworkVacancy; 30] = std::array::from_fn(|row| {
+                host.network_vacancy(row as u8)
+                    .unwrap_or(NetworkVacancy::Closed)
+            });
+            guest
+                .accept_network_host_setup(launch, vacancies, 4, Some(7), false)
+                .unwrap();
+        };
+        host.choose_network_row_kind(2, NetworkRowKind::Ai(AiDifficulty::Hard))
+            .unwrap();
+        send(&host, &mut guest);
+        assert_eq!(guest.network_display_ai(2), Some(AiDifficulty::Hard));
+        assert_eq!(guest.network_vacancy(2), None);
+        // Cooperative's start AI (`0x5C30C0`) stays behind the host's Open row.
+        let mut opponents = host.network_setup().unwrap().opponents.clone();
+        let mut start_ai = opponents[0].clone();
+        start_ai.raw_slot_index = 3;
+        opponents.push(start_ai);
+        host.apply_network_ai_preparation(None, Some(opponents))
+            .unwrap();
+        send(&host, &mut guest);
+        assert_eq!(guest.network_display_ai(3), None);
+        assert_eq!(guest.network_vacancy(3), host.network_vacancy(3));
+        host.choose_network_row_kind(2, NetworkRowKind::Open)
+            .unwrap();
+        send(&host, &mut guest);
+        assert_eq!(guest.network_display_ai(2), None);
+        assert_eq!(guest.network_vacancy(2), Some(NetworkVacancy::Open));
     }
 
     /// The spectator row a VERA room keeps open: a guest who watches takes
