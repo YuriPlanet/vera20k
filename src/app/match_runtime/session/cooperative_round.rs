@@ -6,11 +6,10 @@
 //! Bodies: the loop `CampaignScoreClass vt+4` (`0x0046FC00`) and
 //! `Dialog0xBC6__DlgProc` (`0x0046DFD0`). Peers arrive as decoded
 //! [`CooperativeRoundEvent`]s and every packet this side sends is a
-//! [`NetworkLoadingRequest`]; `lan_service::cooperative` moves both.
+//! [`NetworkSendRequest`]; `lan_service::cooperative` moves both.
 
-use super::{
-    MatchSession, NetworkLoadingRequest, NetworkPhase, NetworkReturnContext, NetworkSession,
-};
+use super::{MatchSession, NetworkPhase, NetworkReturnContext, NetworkSendRequest, NetworkSession};
+use crate::net::lan_messages::cooperative::ROWS;
 use crate::skirmish_launch::{
     LaunchStartPosition, SkirmishAiSlot, SkirmishLaunchSession, SkirmishLocalSlot,
 };
@@ -24,8 +23,8 @@ use std::sync::Arc;
 pub(crate) struct CooperativeRoundState {
     /// `0x89E000[8]`, by raw slot: empty slots start ready
     /// (`0x0046EF06..0x0046EF4A`), and every un-ready pass clears human
-    /// slots only.
-    ready: [bool; 8],
+    /// slots only. Start admission keeps every human row below [`ROWS`].
+    ready: [bool; ROWS],
     /// `0x89E05C`.
     local_ready: bool,
     /// `0x89E058`, the master's ack count.
@@ -167,7 +166,7 @@ impl MatchSession {
         }
         launch.rebuild_house_roster();
         // 0x0046EF06: empty slots ready, every bound human slot not.
-        let mut ready = [true; 8];
+        let mut ready = [true; ROWS];
         for (index, human) in launch.humans.iter().enumerate() {
             if let Some(row) = human.raw_slot_index
                 && connected.contains(&index)
@@ -191,7 +190,8 @@ impl MatchSession {
             launch,
             round,
         };
-        network.loading_requests.clear();
+        network.send_requests.clear();
+        network.loading_reports.clear();
         Ok(())
     }
 
@@ -279,9 +279,9 @@ impl MatchSession {
         }
         if host && round.can_continue {
             let options = round_options(launch, difficulty);
-            requests.push(NetworkLoadingRequest::CooperativeOptions(options));
+            requests.push(NetworkSendRequest::CooperativeOptions(options));
         }
-        requests.push(NetworkLoadingRequest::CooperativeReady);
+        requests.push(NetworkSendRequest::CooperativeReady);
         if host && round.all_ready() {
             if !round.can_continue {
                 round.outcome = Some(false);
@@ -310,10 +310,10 @@ impl MatchSession {
             launch,
             round,
         } = round_parts(self)?;
-        requests.push(NetworkLoadingRequest::CooperativeBegin);
+        requests.push(NetworkSendRequest::CooperativeBegin);
         round.acks += 1;
         let options = round_options(launch, difficulty);
-        requests.push(NetworkLoadingRequest::CooperativeOptions(options));
+        requests.push(NetworkSendRequest::CooperativeOptions(options));
         Ok(())
     }
 
@@ -324,7 +324,7 @@ impl MatchSession {
         } = round_parts(self)?;
         if round.outcome.is_none() {
             round.outcome = Some(false);
-            requests.push(NetworkLoadingRequest::CooperativeLeave);
+            requests.push(NetworkSendRequest::CooperativeLeave);
         }
         Ok(())
     }
@@ -392,7 +392,7 @@ impl MatchSession {
                 }
                 if round.begin {
                     round.quit_enabled = false;
-                    requests.push(NetworkLoadingRequest::CooperativeAck);
+                    requests.push(NetworkSendRequest::CooperativeAck);
                 }
                 Ok(CooperativeRoundStep::OptionsApplied {
                     difficulty: options.difficulty,
@@ -403,7 +403,7 @@ impl MatchSession {
                 round.acks += 1;
                 if round.acks == round.rows {
                     round.outcome = Some(true);
-                    requests.push(NetworkLoadingRequest::CooperativeGo);
+                    requests.push(NetworkSendRequest::CooperativeGo);
                     return Ok(CooperativeRoundStep::Exit(true));
                 }
                 Ok(tail(requests, host, round))
@@ -493,7 +493,7 @@ impl MatchSession {
 /// The round's fields, split from the visit so a step can queue requests
 /// while it edits the round.
 struct RoundParts<'a> {
-    requests: &'a mut Vec<NetworkLoadingRequest>,
+    requests: &'a mut Vec<NetworkSendRequest>,
     connected: &'a mut Vec<usize>,
     launch: &'a mut SkirmishLaunchSession,
     round: &'a mut CooperativeRoundState,
@@ -501,7 +501,7 @@ struct RoundParts<'a> {
 
 fn round_parts(session: &mut MatchSession) -> anyhow::Result<RoundParts<'_>> {
     let NetworkSession {
-        loading_requests,
+        send_requests,
         phase,
         ..
     } = session
@@ -518,7 +518,7 @@ fn round_parts(session: &mut MatchSession) -> anyhow::Result<RoundParts<'_>> {
         anyhow::bail!("no co-op result dialog");
     };
     Ok(RoundParts {
-        requests: loading_requests,
+        requests: send_requests,
         connected,
         launch,
         round,
@@ -528,13 +528,13 @@ fn round_parts(session: &mut MatchSession) -> anyhow::Result<RoundParts<'_>> {
 /// The loop's tail `0x004702FD`: a master whose every slot is ready leaves
 /// on the next packet, sending `0x31`.
 fn tail(
-    requests: &mut Vec<NetworkLoadingRequest>,
+    requests: &mut Vec<NetworkSendRequest>,
     host: bool,
     round: &mut CooperativeRoundState,
 ) -> CooperativeRoundStep {
     if host && round.all_ready() && round.can_continue {
         round.outcome = Some(true);
-        requests.push(NetworkLoadingRequest::CooperativeGo);
+        requests.push(NetworkSendRequest::CooperativeGo);
         return CooperativeRoundStep::Exit(true);
     }
     CooperativeRoundStep::None
@@ -661,15 +661,15 @@ mod tests {
             CooperativeRoundStep::None
         );
         assert!(!session.cooperative_round_continue_enabled());
-        let requests = session.take_network_loading_requests();
+        let requests = session.take_network_send_requests();
         assert!(matches!(
             requests.as_slice(),
             [
-                NetworkLoadingRequest::CooperativeOptions(CooperativeRoundOptions {
+                NetworkSendRequest::CooperativeOptions(CooperativeRoundOptions {
                     difficulty: 1,
                     ..
                 }),
-                NetworkLoadingRequest::CooperativeReady,
+                NetworkSendRequest::CooperativeReady,
             ]
         ));
 
@@ -687,16 +687,16 @@ mod tests {
             CooperativeRoundStep::Assign
         );
         assert!(
-            session.take_network_loading_requests().is_empty(),
+            session.take_network_send_requests().is_empty(),
             "the begin waits for the assignment"
         );
         session.cooperative_round_assigned(1).unwrap();
-        let requests = session.take_network_loading_requests();
+        let requests = session.take_network_send_requests();
         assert!(matches!(
             requests.as_slice(),
             [
-                NetworkLoadingRequest::CooperativeBegin,
-                NetworkLoadingRequest::CooperativeOptions(_),
+                NetworkSendRequest::CooperativeBegin,
+                NetworkSendRequest::CooperativeOptions(_),
             ]
         ));
         assert_eq!(
@@ -710,8 +710,8 @@ mod tests {
             panic!("network start");
         };
         assert_eq!(
-            session.take_network_loading_requests(),
-            vec![NetworkLoadingRequest::CooperativeGo],
+            session.take_network_send_requests(),
+            vec![NetworkSendRequest::CooperativeGo],
             "the go outlives the freeze for the transport"
         );
         session.assert_network_start(&next);
@@ -757,8 +757,8 @@ mod tests {
         session.enter_cooperative_round(None, true, 2).unwrap();
         session.continue_cooperative_round(0).unwrap();
         assert_eq!(
-            session.take_network_loading_requests(),
-            vec![NetworkLoadingRequest::CooperativeReady],
+            session.take_network_send_requests(),
+            vec![NetworkSendRequest::CooperativeReady],
             "only the master sends options"
         );
         assert_eq!(
@@ -785,8 +785,8 @@ mod tests {
             5
         );
         assert_eq!(
-            session.take_network_loading_requests(),
-            vec![NetworkLoadingRequest::CooperativeAck]
+            session.take_network_send_requests(),
+            vec![NetworkSendRequest::CooperativeAck]
         );
         assert_eq!(
             session
@@ -811,8 +811,8 @@ mod tests {
         assert_eq!(session.network_connected_source_indices(), &[0]);
         session.quit_cooperative_round().unwrap();
         assert_eq!(
-            session.take_network_loading_requests(),
-            vec![NetworkLoadingRequest::CooperativeLeave]
+            session.take_network_send_requests(),
+            vec![NetworkSendRequest::CooperativeLeave]
         );
         assert_eq!(session.cooperative_round().unwrap().outcome, Some(false));
         assert!(session.freeze_cooperative_round(30, 1, None).is_err());
@@ -855,7 +855,7 @@ mod tests {
             CooperativeRoundStep::ContinueInRoom
         );
         assert_eq!(session.cooperative_round().unwrap().outcome, Some(false));
-        assert!(session.take_network_loading_requests().is_empty());
+        assert!(session.take_network_send_requests().is_empty());
 
         let (mut last, _) = frozen_in(NetworkReturnContext::Wol, 0);
         last.enter_cooperative_round(None, false, 2).unwrap();
@@ -866,6 +866,25 @@ mod tests {
     }
 
     #[test]
+    fn a_cooperative_start_refuses_a_human_past_the_rounds_rows() {
+        let freeze = |row| {
+            let mut launch = super::super::tests::network_fixture();
+            launch.mode.class = crate::skirmish_modes::MpModeClass::Cooperative;
+            launch.local_player_index = 0;
+            launch.humans[1].raw_slot_index = Some(row);
+            let mut session = MatchSession::default();
+            session.enter_network(NetworkReturnContext::LanLobby);
+            session.accept_network_setup(launch, true, None, false)?;
+            session.set_network_start_seed(SEED)?;
+            session.prepare_network_timing(2, || 0)?;
+            session.freeze_network_start(SEED).map(|_| session)
+        };
+        let mut session = freeze(7).unwrap();
+        session.enter_cooperative_round(None, true, 2).unwrap();
+        assert!(freeze(8).is_err());
+    }
+
+    #[test]
     fn the_last_mission_cannot_continue() {
         let (mut session, _) = frozen(1);
         session.enter_cooperative_round(None, false, 2).unwrap();
@@ -873,5 +892,15 @@ mod tests {
             session.continue_cooperative_round(0).unwrap(),
             CooperativeRoundStep::Exit(false)
         );
+    }
+
+    /// A report left from the last load must not count this side as loaded
+    /// in the next mission's load.
+    #[test]
+    fn the_round_entry_drops_a_report_left_from_the_last_load() {
+        let (mut session, _) = frozen(1);
+        session.report_network_loading_progress(100);
+        session.enter_cooperative_round(None, true, 2).unwrap();
+        assert!(session.take_network_loading_progress_reports().is_empty());
     }
 }

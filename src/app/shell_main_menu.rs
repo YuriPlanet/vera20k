@@ -595,7 +595,21 @@ impl App {
     /// Shared pre-dialog Session read: Skirmish at52E11E and LAN (including
     /// failed IPX admission) at52E37D. Preferences stay in their process
     /// caches; the original reads INI8870C0, not disk.
-    pub(crate) fn prepare_multiplayer_settings(state: &mut AppState) {
+    /// VERA starts network selection from cold Rules so an earlier map cannot
+    /// add Countries or replace the choices a peer is about to accept.
+    pub(crate) fn prepare_multiplayer_settings(
+        state: &mut AppState,
+        mode: crate::app::match_runtime::session::SessionMode,
+    ) -> bool {
+        if mode.is_network()
+            && let Some(owner) = state.process_assets.native_rules_mut_with_tile_cache().0
+            && let Err(error) = owner.reset_for_network_match()
+        {
+            state.frontend.main_menu_shell_error = Some(format!(
+                "Could not prepare network rules. Restart the game and try again.\n{error}"
+            ));
+            return false;
+        }
         // VERA: setup screens start from the player's own Options switches,
         // which a previous room's replaced; a room's agreement plays its
         // host's.
@@ -613,12 +627,15 @@ impl App {
             .prepare_multiplayer_settings(&main);
         state.process_assets.refresh_multiplayer_country_bodies();
         // These are compatibility projections of the one process registry.
-        // A finished world can remain resident behind the shell, and rules()
-        // reads its resource projection, so refresh both consumers together.
+        // A finished world can remain resident behind the shell. Offline
+        // selection keeps its native retaining view; network selection uses
+        // the startup frontend projection and the freshly rebuilt Countries.
         if let Some(rules) = state.frontend.frontend_rules.as_mut() {
             state.process_assets.project_multiplayer_countries(rules);
         }
-        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Rules) {
+        if !mode.is_network()
+            && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Rules)
+        {
             state
                 .process_assets
                 .project_multiplayer_countries(&mut runtime.resources_mut().rules);
@@ -646,6 +663,7 @@ impl App {
             .multiplayer_shell_runtime
             .set_lobby_colors(lobby_colors);
         state.match_state.session.set_lobby_colors(lobby_colors);
+        true
     }
 
     /// The score page `0x108` owns the result screen once its model is set
@@ -752,17 +770,7 @@ impl App {
 
         state.frontend.score_page = None;
         state.frontend.score_art = None;
-        let side = model.side;
-        state.frontend.campaign_score_art = state.process_assets.manager().and_then(|assets| {
-            crate::render::main_menu_shell_chrome::build_campaign_score_art(
-                &state.renderer.gpu,
-                &state.renderer.batch_renderer,
-                assets,
-                side,
-                crate::app::frontend::shell_layout::art_key_screen_width(state),
-                state.process_assets.side_score_art(side),
-            )
-        });
+        Self::prepare_campaign_score_art(state, model.side);
         if state.frontend.campaign_score_art.is_none() {
             log::warn!(
                 "Could not prepare Campaign StandaloneScore background; Continue remains available"
@@ -799,6 +807,21 @@ impl App {
         }
     }
 
+    /// `ScoreArt__Load` (`0x0072D300`): prepare the active side's campaign
+    /// score art for the standalone and Cooperative result pages.
+    pub(super) fn prepare_campaign_score_art(state: &mut AppState, side: i32) {
+        state.frontend.campaign_score_art = state.process_assets.manager().and_then(|assets| {
+            crate::render::main_menu_shell_chrome::build_campaign_score_art(
+                &state.renderer.gpu,
+                &state.renderer.batch_renderer,
+                assets,
+                side,
+                crate::app::frontend::shell_layout::art_key_screen_width(state),
+                state.process_assets.side_score_art(side),
+            )
+        });
+    }
+
     /// Cooperative `+0xA4`'s campaign end (`0x00471420`): the side's score
     /// art again (`0x0072D300`, `ScoreArt__Load`), the empty backdrop, then
     /// dialog `0xBC7` with the texts its init writes. No theme changes.
@@ -807,16 +830,7 @@ impl App {
         model: crate::ui::campaign_score_shell::CampaignEndModel,
     ) {
         use crate::ui::campaign_score_shell::{CAMPAIGN_END_DIALOG, CampaignScorePage};
-        state.frontend.campaign_score_art = state.process_assets.manager().and_then(|assets| {
-            crate::render::main_menu_shell_chrome::build_campaign_score_art(
-                &state.renderer.gpu,
-                &state.renderer.batch_renderer,
-                assets,
-                model.side,
-                crate::app::frontend::shell_layout::art_key_screen_width(state),
-                state.process_assets.side_score_art(model.side),
-            )
-        });
+        Self::prepare_campaign_score_art(state, model.side);
         if state.frontend.campaign_score_art.is_none() {
             log::warn!("Could not prepare the campaign-end score art; Continue remains available");
         }
@@ -1136,7 +1150,12 @@ impl App {
     /// `0x0052E119`, `0x0052E168` -> `0x006AE2C0`). Its Back returns to
     /// Single Player either way (GameMode 0, state 1, `0x0052E175`).
     pub(super) fn enter_native_skirmish_from_single_player(state: &mut AppState) {
-        Self::prepare_multiplayer_settings(state);
+        if !Self::prepare_multiplayer_settings(
+            state,
+            crate::app::match_runtime::session::SessionMode::Skirmish,
+        ) {
+            return;
+        }
         // Prepare dialog 0x102 from the process-lifetime MIX list before
         // destroying its 0x100 source. Active YR's FUN_00534E50 registers the
         // neutral pair on that shared list before the shell SHPs are loaded.
@@ -1995,6 +2014,10 @@ impl App {
             }
             ShellExitThen::NetworkSetupBack(_) => {
                 crate::app::shell_network_setup::commit_back(state)
+            }
+            ShellExitThen::NetworkSetupBackWithNotice { label, .. } => {
+                crate::app::shell_network_setup::commit_back(state);
+                crate::app::shell_lan::report_error(state, label);
             }
             ShellExitThen::NetworkSetupChooseMap(_) => {
                 crate::app::shell_network_setup::open_choose_map(state)

@@ -6,7 +6,7 @@ use super::*;
 use crate::app::frontend::skirmish_session::cooperative::encode_name;
 use crate::app::input::multiplayer_setup as setup_input;
 use crate::app::match_runtime::session::{
-    NetworkLoadingRequest, NetworkMapMetadata, NetworkVacancy, SessionMode,
+    NetworkMapMetadata, NetworkSendRequest, NetworkVacancy, SessionMode,
 };
 use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::shell_lan::{self as lobby, LanJoinAcceptance, LanServiceEvent, LanServiceRequest};
@@ -133,6 +133,7 @@ pub enum LanTarget {
     ColorChange,
     Kick,
     HostLeft,
+    ModernHostLeft,
     NoMap,
     TransferEligible,
     TransferProgress,
@@ -292,6 +293,7 @@ pub(crate) const LAN_CHECKPOINTS: &[(&str, LanTarget)] = &[
     ("lan-0xbd-color-change", LanTarget::ColorChange),
     ("lan-0xbd-kick", LanTarget::Kick),
     ("lan-0xbd-host-left", LanTarget::HostLeft),
+    ("lan-host-close-notice", LanTarget::ModernHostLeft),
     ("lan-0xbd-no-map", LanTarget::NoMap),
     ("lan-0xbd-transfer-eligible", LanTarget::TransferEligible),
     ("lan-map-transfer-progress", LanTarget::TransferProgress),
@@ -456,6 +458,7 @@ impl LanTarget {
                 | Self::ColorChange
                 | Self::Kick
                 | Self::HostLeft
+                | Self::ModernHostLeft
                 | Self::NoMap
                 | Self::TransferEligible
                 | Self::TransferProgress
@@ -1482,14 +1485,14 @@ impl LanCapture {
             && self.phase == LanPhase::Loading
             && state.frontend.screen == GameScreen::Loading
         {
-            let requests = state.match_state.session.take_network_loading_requests();
+            let reports = state
+                .match_state
+                .session
+                .take_network_loading_progress_reports();
             // The local terminal report is display100, including random maps
             // whose raw milestones were halved before publication. A peer
             // loading the same map reports the same terminal value.
-            if let Some(terminal) = requests.iter().find_map(|request| match request {
-                NetworkLoadingRequest::ReportProgress(percent) if *percent >= 100 => Some(*percent),
-                _ => None,
-            }) {
+            if let Some(&terminal) = reports.iter().find(|percent| **percent >= 100) {
                 let local = state
                     .match_state
                     .session
@@ -1514,19 +1517,18 @@ impl LanCapture {
                 }
                 self.route.push(json!({"frame":frame,
                     "action":"controlled remote loading completion after actual local report",
-                    "sources":peers,"percent":terminal,"requests":requests.iter().map(|r|format!("{r:?}")).collect::<Vec<_>>()}));
+                    "sources":peers,"percent":terminal,"reports":reports}));
             }
         }
         if self.target == LanTarget::LoadingTimeoutReturn
             && self.phase == LanPhase::Loading
             && state.frontend.screen == GameScreen::Loading
         {
-            let requests = state.match_state.session.take_network_loading_requests();
-            if self.loading_wait_reported_at.is_none()
-                && requests
-                    .iter()
-                    .any(|request| matches!(request, NetworkLoadingRequest::ReportProgress(100)))
-            {
+            let reports = state
+                .match_state
+                .session
+                .take_network_loading_progress_reports();
+            if self.loading_wait_reported_at.is_none() && reports.contains(&100) {
                 self.loading_wait_reported_at = Some(Instant::now());
                 self.event(
                     frame,
@@ -1534,9 +1536,12 @@ impl LanCapture {
                 );
             }
             ensure!(
-                !requests
-                    .iter()
-                    .any(|request| matches!(request, NetworkLoadingRequest::Disconnect { .. })),
+                state
+                    .match_state
+                    .session
+                    .network_connected_source_indices()
+                    .len()
+                    == 2,
                 "timeout disconnect preceded installed runtime"
             );
         }
@@ -2587,7 +2592,7 @@ impl LanCapture {
                     );
                     self.phase = LanPhase::Prompt(Instant::now());
                 }
-                LanTarget::Kick | LanTarget::HostLeft => {
+                LanTarget::Kick | LanTarget::HostLeft | LanTarget::ModernHostLeft => {
                     setup::service_event(
                         state,
                         if self.target == LanTarget::Kick {
@@ -2869,10 +2874,25 @@ impl LanCapture {
                     "setup owner survived return"
                 );
                 let bb = &state.frontend.lan.as_ref().context("returned BB")?.lobby;
-                ensure!(
-                    bb.games.is_empty() && bb.chat.lines.is_empty(),
-                    "returned BB retained old projection"
-                );
+                ensure!(bb.games.is_empty(), "returned BB retained old games");
+                if self.target == LanTarget::ModernHostLeft {
+                    let key = "VERA:HostLeftRoomClosed";
+                    let expected = App::csf_label(state, key, key);
+                    let text: Vec<_> = bb
+                        .chat
+                        .lines
+                        .iter()
+                        .flat_map(|line| line.text.iter().copied())
+                        .collect();
+                    let actual = String::from_utf16_lossy(&text);
+                    ensure!(
+                        actual.split_whitespace().collect::<String>()
+                            == expected.split_whitespace().collect::<String>(),
+                        "returned LAN lobby should show the host-close notice exactly once"
+                    );
+                } else {
+                    ensure!(bb.chat.lines.is_empty(), "returned BB retained old chat");
+                }
                 self.settle(state);
             }
             LanPhase::MainReturn
@@ -2929,7 +2949,6 @@ impl LanCapture {
                         elapsed >= Duration::from_secs(57),
                         "peer wait returned before the native initial timeout"
                     );
-                    let requests = state.match_state.session.take_network_loading_requests();
                     let launch = state
                         .match_state
                         .session
@@ -2945,20 +2964,6 @@ impl LanCapture {
                     let peer = (0..launch.humans.len())
                         .find(|index| *index != local)
                         .context("remote source")?;
-                    let disconnects = requests
-                        .iter()
-                        .filter_map(|request| match request {
-                            NetworkLoadingRequest::Disconnect {
-                                source_index,
-                                reason,
-                            } => Some((*source_index, *reason)),
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>();
-                    ensure!(
-                        disconnects == vec![(peer, 1)],
-                        "timeout omitted or duplicated actual reason1 Disconnect"
-                    );
                     let slots = crate::sim::scenario_bootstrap::normalized_launch_slots(launch);
                     let peer_slot = slots
                         .iter()
@@ -3018,7 +3023,6 @@ impl LanCapture {
                         "elapsed_since_observed_local100_ms":elapsed.as_millis(),"historical_sources":launch.humans.len(),
                         "connected_sources":state.match_state.session.network_connected_source_indices(),
                         "disconnected_source":peer,"mapped_house":peer_slot.owner_name,"pending_flag_to_die":true,
-                        "requests":requests.iter().map(|request|format!("{request:?}")).collect::<Vec<_>>(),
                         "message_rows":state.match_state.match_presentation.message_list.messages().iter().map(|message|&message.text).collect::<Vec<_>>()}));
                 }
                 let sim = &state
@@ -3482,10 +3486,10 @@ impl LanCapture {
                             squash(&listed.concat()).ends_with(&squash(&vote)),
                             "the vote line is missing from {listed:?}"
                         );
-                        let requests = state.match_state.session.take_network_loading_requests();
+                        let requests = state.match_state.session.take_network_send_requests();
                         ensure!(
                             requests
-                                .contains(&NetworkLoadingRequest::ProposeKick { target_source: 1 }),
+                                .contains(&NetworkSendRequest::ProposeKick { target_source: 1 }),
                             "no kick proposal was sent: {requests:?}"
                         );
                         self.route
@@ -3756,13 +3760,13 @@ impl LanCapture {
                         crate::app::input::coop_score::cursor_moved(state);
                         crate::app::input::coop_score::mouse(state, MouseButton::Left, true);
                         crate::app::input::coop_score::mouse(state, MouseButton::Left, false);
-                        let requests = state.match_state.session.take_network_loading_requests();
+                        let requests = state.match_state.session.take_network_send_requests();
                         ensure!(
                             matches!(
                                 requests.as_slice(),
                                 [
-                                    NetworkLoadingRequest::CooperativeOptions(_),
-                                    NetworkLoadingRequest::CooperativeReady
+                                    NetworkSendRequest::CooperativeOptions(_),
+                                    NetworkSendRequest::CooperativeReady
                                 ]
                             ),
                             "the master's Continue sent {requests:?}"
@@ -3782,14 +3786,13 @@ impl LanCapture {
                             state,
                             CooperativeRoundEvent::PeerReady { source: 1 },
                         )?;
-                        let requests = state.match_state.session.take_network_loading_requests();
-                        let Some(NetworkLoadingRequest::CooperativeOptions(options)) =
-                            requests.get(1)
+                        let requests = state.match_state.session.take_network_send_requests();
+                        let Some(NetworkSendRequest::CooperativeOptions(options)) = requests.get(1)
                         else {
                             anyhow::bail!("the all-ready sent {requests:?}");
                         };
                         ensure!(
-                            requests.first() == Some(&NetworkLoadingRequest::CooperativeBegin),
+                            requests.first() == Some(&NetworkSendRequest::CooperativeBegin),
                             "the begin must precede the options: {requests:?}"
                         );
                         let ai: Vec<String> = options
@@ -3809,9 +3812,9 @@ impl LanCapture {
                             state,
                             CooperativeRoundEvent::Ack { source: 1 },
                         )?;
-                        let requests = state.match_state.session.take_network_loading_requests();
+                        let requests = state.match_state.session.take_network_send_requests();
                         ensure!(
-                            requests.contains(&NetworkLoadingRequest::CooperativeGo),
+                            requests.contains(&NetworkSendRequest::CooperativeGo),
                             "the master's last ack sent {requests:?}"
                         );
                         ensure!(
@@ -4211,11 +4214,11 @@ impl LanCapture {
                 );
                 // Enter: the chat-mask set, now empty of connected peers.
                 line(state, Key::Named(NamedKey::Enter), "hi", true);
-                let requests = state.match_state.session.take_network_loading_requests();
+                let requests = state.match_state.session.take_network_send_requests();
                 ensure!(
                     !requests
                         .iter()
-                        .any(|request| matches!(request, NetworkLoadingRequest::Chat { .. })),
+                        .any(|request| matches!(request, NetworkSendRequest::Chat { .. })),
                     "a line went to a cleared listener: {requests:?}"
                 );
                 let echo = format!("{host}:hi ");
@@ -4226,9 +4229,9 @@ impl LanCapture {
                 );
                 // `\`: everyone.
                 line(state, Key::Character("\\".into()), "all", true);
-                let requests = state.match_state.session.take_network_loading_requests();
+                let requests = state.match_state.session.take_network_send_requests();
                 ensure!(
-                    requests.contains(&NetworkLoadingRequest::Chat {
+                    requests.contains(&NetworkSendRequest::Chat {
                         recipients: vec![1],
                         text: "all ".into(),
                     }),
@@ -4237,9 +4240,9 @@ impl LanCapture {
                 // VERA's `/pause`: sent as chat like any line, then answered
                 // as a command; a LAN match has no shared pause.
                 line(state, Key::Character("\\".into()), "/pause", true);
-                let requests = state.match_state.session.take_network_loading_requests();
+                let requests = state.match_state.session.take_network_send_requests();
                 ensure!(
-                    requests.contains(&NetworkLoadingRequest::Chat {
+                    requests.contains(&NetworkSendRequest::Chat {
                         recipients: vec![1],
                         text: "/pause ".into(),
                     }),
@@ -4296,9 +4299,9 @@ impl LanCapture {
             state
                 .match_state
                 .session
-                .take_network_loading_requests()
+                .take_network_send_requests()
                 .into_iter()
-                .filter(|request| matches!(request, NetworkLoadingRequest::Taunt { .. }))
+                .filter(|request| matches!(request, NetworkSendRequest::Taunt { .. }))
                 .collect::<Vec<_>>()
         };
         match step {
@@ -4325,7 +4328,7 @@ impl LanCapture {
                 let sent = taunts(state);
                 let byte = ((country as u8) << 4) | 1;
                 ensure!(
-                    sent == [NetworkLoadingRequest::Taunt {
+                    sent == [NetworkSendRequest::Taunt {
                         recipients: vec![1],
                         byte
                     }],

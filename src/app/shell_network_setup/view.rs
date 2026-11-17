@@ -323,7 +323,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     // The local player's Join and Watch on the headers: a seated player
     // joins another team, a guest watching takes a free seat on any, or
     // with none free joins the queue for the next.
-    let starting = super::wol::start_pending(state);
+    let starting = super::start_phase(state).in_progress();
     let placed = local.raw_slot_index.is_some();
     let seated = placed && !local.is_observer();
     let seat_free = !session.network_no_open_player_row();
@@ -959,6 +959,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         team_starts_enabled: host && teams.is_some() && local_map_index(state).is_some(),
         team_colors_enabled: host && teams.is_some(),
         balance_enabled: host && grouped && dialog.wol(),
+        lobby_enabled: dialog.wol() && crate::app::shell_wol::lobby_visits(state),
         drag_rows,
         map_offer_open: state
             .frontend

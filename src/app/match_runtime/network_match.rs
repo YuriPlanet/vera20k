@@ -170,7 +170,7 @@ pub(crate) fn destroy_connection(
     let sequenced = live
         .as_ref()
         .is_some_and(|(live, _)| live.uses_sequenced_lockstep());
-    if !session.disconnect_network_participant(source_index, error.code()) {
+    if !session.disconnect_network_participant(source_index) {
         return None;
     }
     log::warn!(
@@ -2072,6 +2072,7 @@ mod tests {
             tick_hz: 30,
             expires: u64::MAX / 2,
             pacing: Default::default(),
+            ordered_alone: false,
         }
         .sign(&key)
         .unwrap();

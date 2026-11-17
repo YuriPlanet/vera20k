@@ -131,7 +131,11 @@ Use them to distinguish rate limits, expired grants and authentication failures
 from packet loss and client timeouts.
 
 Modern ordering uses authenticated control kind4 and a lobby-signed `VO1C` or
-`VO2C` certificate (see `../../docs/lobby-protocol.md`). Every source that becomes ready
+`VO2C` certificate (see `../../docs/lobby-protocol.md`). The relay orders a match of
+two or more sources, or of one whose `VO2C` flags bit 1 the lobby set: one person
+who watches AI play, ordered so that others can watch it
+(`OrderingCertificate::relay_orders`). It refuses the Ready of any other one-source
+certificate (`Authentication`), whose match runs locally. Every source that becomes ready
 certifies the same initial world; fixed FPS deadlines then commit batches
 sorted by source and
 batch ID, followed by an explicit frame end. An absent input contributes nothing.
@@ -349,7 +353,7 @@ player can replay from its old cursor even after every short hop ticket expired.
 Any authenticated packet, keepalives included, keeps a source's place. A started
 source silent for 10 minutes departs through the stream (`ABSENT_MS`; a game
 that hears nothing from its relay for that long releases its route, which ends
-a match of two or more players). Before the start, a
+the match). Before the start, a
 source that never sent Ready departs in frame 1 after 60 seconds of silence,
 counted from its last packet even before the room existed, or once the room is 3
 minutes old, and the others start without it; a Ready source waits. A Ready

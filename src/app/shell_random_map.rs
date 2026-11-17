@@ -265,6 +265,50 @@ fn random_map_preview_cells(
     cells
 }
 
+/// What colouring a generated map's preview reads besides the map: the
+/// generation's theater, terrain rules and Rules projection.
+pub(super) struct RandomMapPreviewInputs<'a> {
+    theater: &'a crate::map::theater::TheaterData,
+    terrain_rules: &'a crate::rules::terrain_rules::TerrainRules,
+    preview_rules: Option<&'a RandomMapPreviewRules>,
+}
+
+/// Colour and rasterise a map, with red start markers baked in at `markers`
+/// (`preview::marker_waypoints`; empty for none). The resolver reads theater
+/// data and the Overlay type/header colors share the retained asset inputs.
+///
+/// `main` is the Main cursor the terrain-variant selector's table draws from
+/// when `selector_cache` holds none yet: the process frontend's for the
+/// dialog, a seeded one for a headless export (`random_map_file`).
+pub(super) fn rasterise_random_map(
+    map_file: &crate::map::map_file::MapFile,
+    markers: &[(u16, u16)],
+    inputs: RandomMapPreviewInputs<'_>,
+    asset_manager: Option<&crate::assets::asset_manager::AssetManager>,
+    main: &mut crate::sim::rng::MainRngDraws,
+    selector_cache: &mut crate::map::tile_variant_selector::TileVariantSelectorCache,
+) -> Option<crate::map::rmg::preview::PreviewImage> {
+    // LAT defaults off for runtime maps, so resolve the same way the load
+    // path will; a different setting here would colour cells the player
+    // never sees.
+    let resolved_terrain = build_random_map_preview_grid(
+        map_file,
+        Some(inputs.theater),
+        asset_manager,
+        Some(inputs.terrain_rules),
+        main,
+        selector_cache,
+    );
+    let cells = random_map_preview_cells(
+        map_file,
+        &resolved_terrain,
+        inputs.preview_rules,
+        asset_manager,
+        inputs.theater.extension,
+    );
+    crate::map::rmg::preview::render_preview(&cells, markers)
+}
+
 /// A random-map generation handed to a worker thread.
 ///
 /// The worker only *generates*; colouring a preview needs the terrain resolver
@@ -656,6 +700,15 @@ impl RandomMapObjects {
 }
 
 impl PreparedRandomMapGeneration {
+    /// What [`rasterise_random_map`] reads from this generation.
+    pub(super) fn preview_inputs(&self) -> RandomMapPreviewInputs<'_> {
+        RandomMapPreviewInputs {
+            theater: &self.theater,
+            terrain_rules: &self.terrain_rules,
+            preview_rules: self.preview_rules.as_ref(),
+        }
+    }
+
     /// These are the same resolved generation inputs, including the process
     /// Powerups table that the generated scenario inherits. Projection consumes
     /// no RNG and never mutates the live Rules owner.
@@ -700,7 +753,10 @@ impl PreparedRandomMapGeneration {
 /// Actual dialog generation mutates the one Rules owner at the native cache
 /// boundary. Network agreement only inspects prospective generation inputs.
 pub(super) enum RandomMapRulesPreparation<'a> {
+    #[cfg(test)]
     ReadOnly(Option<&'a crate::rules::process_owner::NativeRulesProcessOwner>),
+    NetworkAgreement(Option<&'a crate::rules::process_owner::NativeRulesProcessOwner>),
+    NetworkGeneration(Option<&'a mut crate::rules::process_owner::NativeRulesProcessOwner>),
     Generation {
         owner: Option<&'a mut crate::rules::process_owner::NativeRulesProcessOwner>,
         reinitialize: bool,
@@ -720,15 +776,36 @@ pub(super) fn prepare_random_map_generation(
         return None;
     };
     let prospective_rules = match &preparation {
+        #[cfg(test)]
         RandomMapRulesPreparation::ReadOnly(Some(owner)) => Some(
             owner
                 .random_map_preview_projection(mode_rules_override, theater_name)
                 .ok()?,
         ),
+        RandomMapRulesPreparation::NetworkAgreement(Some(owner)) => Some(
+            owner
+                .network_random_map_preview_projection(mode_rules_override, theater_name)
+                .ok()?,
+        ),
         _ => None,
     };
     let native_rules = match preparation {
+        #[cfg(test)]
         RandomMapRulesPreparation::ReadOnly(owner) => owner,
+        RandomMapRulesPreparation::NetworkAgreement(owner) => owner,
+        RandomMapRulesPreparation::NetworkGeneration(owner) => {
+            if let Some(owner) = owner {
+                if let Err(error) =
+                    owner.prepare_network_random_map_preview(mode_rules_override, theater_name)
+                {
+                    log::warn!("Network random-map Rules preparation failed: {error}");
+                    return None;
+                }
+                Some(&*owner)
+            } else {
+                None
+            }
+        }
         RandomMapRulesPreparation::Generation {
             owner,
             reinitialize,
@@ -1249,7 +1326,8 @@ impl App {
         );
         // Reset668B8E reads the committed Session mode. ChooseMap only
         // commits its draft after UseMap5E7367; RMG runs before that call.
-        let mode_file = if state.frontend.shell_route.network_setup() {
+        let network = state.frontend.shell_route.network_setup();
+        let mode_file = if network {
             state
                 .match_state
                 .session
@@ -1263,6 +1341,11 @@ impl App {
                 .resolve(&state.frontend.skirmish_modes)
                 .map(|mode| mode.override_file.clone())
         };
+        if network {
+            // A network preview must not reuse the preceding match's Rules
+            // generation or MapClass storage state (native599B8E cache gate).
+            state.frontend.random_map_retention.destroy_map_storage();
+        }
         let map_storage_decision = state
             .frontend
             .random_map_retention
@@ -1290,12 +1373,14 @@ impl App {
             // Drain its live Rules writes before59A0F0 destroys those Types;
             // a later Full_Init must not replay them onto the preview registry.
             runtime.simulation.retire_scenario_started();
-            if let Err(error) = crate::app::process_assets::transfer_outgoing_simulation_rules(
-                owner,
-                &mut runtime.simulation,
-            ) {
-                log::warn!("Random-map outgoing Rules transfer failed: {error}");
-                return false;
+            if !network {
+                if let Err(error) = crate::app::process_assets::transfer_outgoing_simulation_rules(
+                    owner,
+                    &mut runtime.simulation,
+                ) {
+                    log::warn!("Random-map outgoing Rules transfer failed: {error}");
+                    return false;
+                }
             }
         }
         let Some(PreparedRandomMapGeneration {
@@ -1311,9 +1396,13 @@ impl App {
         }) = prepare_random_map_generation(
             asset_manager,
             options,
-            RandomMapRulesPreparation::Generation {
-                owner: native_rules,
-                reinitialize: map_storage_decision.reinitialize,
+            if network {
+                RandomMapRulesPreparation::NetworkGeneration(native_rules)
+            } else {
+                RandomMapRulesPreparation::Generation {
+                    owner: native_rules,
+                    reinitialize: map_storage_decision.reinitialize,
+                }
             },
             mode_rules.as_ref(),
         )
@@ -1597,32 +1686,20 @@ impl App {
         map_file: &crate::map::map_file::MapFile,
         start_waypoints: &[(u8, u16, u16)],
     ) -> Option<crate::map::rmg::preview::PreviewImage> {
-        // LAT defaults off for runtime maps, so resolve the same way the load
-        // path will; a different setting here would colour cells the player
-        // never sees.
-        let resolved_terrain = {
-            let mut main = crate::app::state::process_main_draws(&state.frontend.frontend_main_rng);
-            let (manager, _, selector_cache) =
-                state.process_assets.manager_and_rules_with_tile_cache();
-            let asset_manager = manager.map(|m| &*m);
-            build_random_map_preview_grid(
-                map_file,
-                Some(&job.theater),
-                asset_manager,
-                Some(&job.terrain_rules),
-                &mut main,
-                selector_cache,
-            )
-        };
-        let cells = random_map_preview_cells(
+        let mut main = crate::app::state::process_main_draws(&state.frontend.frontend_main_rng);
+        let (manager, _, selector_cache) = state.process_assets.manager_and_rules_with_tile_cache();
+        rasterise_random_map(
             map_file,
-            &resolved_terrain,
-            job.preview_rules.as_ref(),
-            state.process_assets.manager(),
-            job.theater.extension,
-        );
-        let waypoints = crate::map::rmg::preview::marker_waypoints(start_waypoints);
-        crate::map::rmg::preview::render_preview(&cells, &waypoints)
+            &crate::map::rmg::preview::marker_waypoints(start_waypoints),
+            RandomMapPreviewInputs {
+                theater: &job.theater,
+                terrain_rules: &job.terrain_rules,
+                preview_rules: job.preview_rules.as_ref(),
+            },
+            manager.map(|m| &*m),
+            &mut main,
+            selector_cache,
+        )
     }
 
     /// Persist accepted random-map setup, refresh the sentinel record, and
@@ -2194,6 +2271,14 @@ mod tests {
         )
         .unwrap()
         .multiplayer_digest();
+        let network_original = prepare_random_map_generation(
+            &mut assets,
+            &options,
+            RandomMapRulesPreparation::NetworkAgreement(Some(&owner)),
+            None,
+        )
+        .unwrap()
+        .multiplayer_digest();
         owner
             .load_scenario(
                 crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
@@ -2215,8 +2300,26 @@ mod tests {
             original, after_history,
             "same sources do not erase Powerups history"
         );
+        let network_after_history = prepare_random_map_generation(
+            &mut assets,
+            &options,
+            RandomMapRulesPreparation::NetworkAgreement(Some(&owner)),
+            None,
+        )
+        .unwrap()
+        .multiplayer_digest();
+        assert_eq!(network_original, network_after_history);
         assert_eq!(owner.saved_scenario_rules().unwrap().powerups(), &live);
         assert!(owner.prepared_random_map_rules().is_none());
+        let generated = prepare_random_map_generation(
+            &mut assets,
+            &options,
+            RandomMapRulesPreparation::NetworkGeneration(Some(&mut owner)),
+            None,
+        )
+        .unwrap()
+        .multiplayer_digest();
+        assert_eq!(generated, network_original);
     }
 
     #[test]

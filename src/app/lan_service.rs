@@ -510,6 +510,36 @@ impl LanService {
             .find(|record| endpoint_id(record.endpoint) == id)
     }
 
+    /// The lobby's game ID is the sender endpoint. VERA: gamemd's receive
+    /// (`0x005E018D..0x005E0233`) finds the row by name and moves its address
+    /// only when the game turns open, so same-named hosts share one row; here
+    /// each sender keeps its own row, and a rematch guest rejoins its original
+    /// host. The usual `0x005DB720` expiry retires stale entries.
+    fn record_advertised_game(
+        &mut self,
+        endpoint: SocketAddrV4,
+        name: String,
+        open: bool,
+        now: u32,
+    ) {
+        if let Some(record) = self
+            .games
+            .iter_mut()
+            .find(|record| record.endpoint == endpoint)
+        {
+            record.name = name;
+            record.open = open;
+            record.last_seen = now;
+        } else {
+            self.games.push(DiscoveryRecord {
+                endpoint,
+                name,
+                open,
+                last_seen: now,
+            });
+        }
+    }
+
     fn pop_lobby_received(
         &mut self,
         session: &super::match_runtime::session::MatchSession,
@@ -2317,7 +2347,8 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
         }
         LanMessageKind::Advertisement => {
             let local = local_name(state);
-            if message.name().eq_ignore_ascii_case(&local) {
+            let name = message.name();
+            if name.eq_ignore_ascii_case(&local) {
                 return Ok(());
             }
             let service = state
@@ -2326,22 +2357,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 .as_mut()
                 .expect("live LAN visit");
             let open = message.advertisement_flags().expect("advertisement") & 1 != 0;
-            if let Some(record) = service
-                .games
-                .iter_mut()
-                .find(|record| record.name.eq_ignore_ascii_case(&message.name()))
-            {
-                record.endpoint = incoming.source;
-                record.open = open;
-                record.last_seen = now;
-            } else {
-                service.games.push(DiscoveryRecord {
-                    endpoint: incoming.source,
-                    name: message.name(),
-                    open,
-                    last_seen: now,
-                });
-            }
+            service.record_advertised_game(incoming.source, name, open, now);
             project_games(state);
         }
         LanMessageKind::Discovery => {
@@ -3408,7 +3424,8 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
     };
     // The loading wait may already have retired a source684596. Initialize
     // timing from MatchSession's accepted connected roster before the first
-    // shared frame; private transport cleanup is drained by its existing owner.
+    // shared frame; `gameplay_connections` built the private connections from
+    // the same roster.
     let source_houses = state
         .match_state
         .session
@@ -3488,7 +3505,7 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
         .and_then(|transport| transport.ordering_certificate())
         .map(|bytes| crate::net::udp::OrderingCertificate::parse(&bytes))
         .transpose()?
-        .filter(|cert| cert.sources_mask.count_ones() > 1);
+        .filter(|cert| cert.relay_orders());
     let frame_send_rate = ordering_clock.map_or_else(
         || online_timing.map_or(5, |timing| timing.frame_send_rate as u32),
         |_| 1,
@@ -3647,51 +3664,21 @@ fn send_sources(state: &mut AppState, bytes: &[u8], sources: impl IntoIterator<I
 }
 
 fn drain_match_requests(state: &mut AppState) {
-    use super::match_runtime::session::NetworkLoadingRequest;
-    let requests = state.match_state.session.take_network_loading_requests();
+    use super::match_runtime::session::NetworkSendRequest;
+    if let Some(service) = state.match_state.lan_service.as_mut()
+        && let Err(error) = service.drain_loading_reports(&mut state.match_state.session)
+    {
+        // The held loader fails its load on the same error.
+        log::warn!("Loading report failed: {error:#}");
+        super::loading::pump::cancel_network_loading(
+            state,
+            &format!("{}: {error:#}", crate::i18n::tr("VERA:LoadingFailed")),
+        );
+    }
+    let requests = state.match_state.session.take_network_send_requests();
     for request in requests {
         match request {
-            NetworkLoadingRequest::ReportProgress(percent) => {
-                if state.match_state.live_network.is_none() || percent >= 100 {
-                    if let Some(service) = state.match_state.lan_service.as_mut() {
-                        match service.queue_loading_progress(&state.match_state.session, percent) {
-                            Ok(true) => service.flush_setup(),
-                            Ok(false) => state
-                                .match_state
-                                .session
-                                .report_network_loading_progress(percent),
-                            Err(error) => {
-                                state
-                                    .match_state
-                                    .session
-                                    .report_network_loading_progress(percent);
-                                log::warn!("Loading report failed: {error:#}");
-                            }
-                        }
-                    }
-                } else {
-                    let scope = state
-                        .match_state
-                        .lan_service
-                        .as_ref()
-                        .and_then(LanService::setup_scope);
-                    match loading::progress_packets(&state.match_state.session, scope, percent) {
-                        Ok(packets) => {
-                            for (bytes, destination) in packets {
-                                send_bytes(state, &bytes, destination, false);
-                            }
-                        }
-                        Err(error) => {
-                            state
-                                .match_state
-                                .session
-                                .report_network_loading_progress(percent);
-                            log::warn!("Loading report failed: {error:#}");
-                        }
-                    }
-                }
-            }
-            NetworkLoadingRequest::ProposeKick { target_source } => {
+            NetworkSendRequest::ProposeKick { target_source } => {
                 if let Some(runtime) = state.match_state.sim_runtime.runtime()
                     && let Some(message) = super::match_runtime::network_match::encode_kick_proposal(
                         &state.match_state.session,
@@ -3713,19 +3700,7 @@ fn drain_match_requests(state: &mut AppState) {
                     send_sources(state, &message, sources);
                 }
             }
-            NetworkLoadingRequest::Disconnect { source_index, .. } => {
-                if let Some(runtime) = state.match_state.sim_runtime.runtime()
-                    && let Some(house) = super::match_runtime::network_match::source_house(
-                        &state.match_state.session,
-                        &runtime.simulation,
-                        source_index,
-                    )
-                    && let Some(live) = state.match_state.live_network.as_mut()
-                {
-                    live.remove_peer(house as i8);
-                }
-            }
-            NetworkLoadingRequest::Chat { recipients, text } => {
+            NetworkSendRequest::Chat { recipients, text } => {
                 // BC6's chat writes [0x7EEF2C] (0x0046E126).
                 let color = if state.match_state.session.cooperative_round().is_some() {
                     crate::ui::wol_chat::PUBLIC_COLOR as i32
@@ -3743,7 +3718,7 @@ fn drain_match_requests(state: &mut AppState) {
                     send_sources(state, message.as_bytes(), recipients);
                 }
             }
-            NetworkLoadingRequest::Taunt { recipients, byte } => {
+            NetworkSendRequest::Taunt { recipients, byte } => {
                 let color = state
                     .match_state
                     .session
@@ -3756,7 +3731,7 @@ fn drain_match_requests(state: &mut AppState) {
                     send_sources(state, message.as_bytes(), recipients);
                 }
             }
-            NetworkLoadingRequest::Beacon(record) => {
+            NetworkSendRequest::Beacon(record) => {
                 if let Ok(message) =
                     crate::net::lan_messages::ingame::BeaconMessage::new(&local_name(state), record)
                 {
@@ -3768,7 +3743,7 @@ fn drain_match_requests(state: &mut AppState) {
                     send_sources(state, message.as_bytes(), peers);
                 }
             }
-            NetworkLoadingRequest::BeaconText { house, slot, text } => {
+            NetworkSendRequest::BeaconText { house, slot, text } => {
                 if let Ok(message) = LanMessage::beacon_text(&local_name(state), house, slot, &text)
                 {
                     let peers: Vec<_> =
@@ -4260,10 +4235,11 @@ fn setup_request(
         )
 }
 
-/// The name of the LAN host that admitted this guest, while its setup lasts.
-pub(crate) fn admitted_host_name(state: &AppState) -> Option<String> {
+/// The name and discovery ID of the LAN host that admitted this guest.
+pub(crate) fn admitted_host_room(state: &AppState) -> Option<(String, u64)> {
     let service = state.match_state.lan_service.as_ref()?;
-    Some(service.admitted_host.as_ref()?.0.clone())
+    let (name, endpoint) = service.admitted_host.as_ref()?;
+    Some((name.clone(), endpoint_id(*endpoint)))
 }
 
 pub(crate) fn force_presence(state: &mut AppState) {
@@ -4615,6 +4591,27 @@ mod tests {
         service
     }
 
+    #[test]
+    fn same_named_games_keep_each_host_endpoint() {
+        let mut service = service();
+        let host = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 1234);
+        let other = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 1236);
+        service.record_advertised_game(host, "Host".into(), false, 10);
+        service.record_advertised_game(other, "Host".into(), true, 11);
+        let original = service
+            .game(endpoint_id(host))
+            .expect("original host's advertisement");
+        assert!(!original.open);
+        assert_eq!(original.last_seen, 10);
+
+        service.record_advertised_game(host, "Host".into(), true, 12);
+        let reopened = service.game(endpoint_id(host)).unwrap();
+        assert!(reopened.open);
+        assert_eq!(reopened.last_seen, 12);
+        assert_eq!(service.game(endpoint_id(other)).unwrap().last_seen, 11);
+        assert_eq!(service.games.len(), 2);
+    }
+
     fn launch() -> crate::skirmish_launch::SkirmishLaunchSession {
         let profile: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/map_observation.command-bar.example.json",
@@ -4685,7 +4682,7 @@ mod tests {
             .as_mut()
             .unwrap()
             .global_mut()
-            .receive(source, 0, frame, 32, &mut |_, bytes| {
+            .receive(source, 0, frame, &mut |_, bytes| {
                 replies.push(bytes.to_vec())
             })
             .unwrap();

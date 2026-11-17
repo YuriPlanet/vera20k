@@ -251,6 +251,10 @@ pub(super) struct Session {
     /// remembered sign-in (docs/lobby-protocol.md "Accounts").
     #[serde(default)]
     pub sign_in_token: Option<String>,
+    /// What this lobby offers beyond protocol 4: `visit_lobby`
+    /// (docs/lobby-protocol.md "Visiting the lobby").
+    #[serde(default)]
+    pub features: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -296,6 +300,10 @@ impl From<Match> for crate::app::shell_wol::WolMatch {
 pub(super) struct Joined {
     pub channel: Channel,
     pub members: Vec<Member>,
+    /// VERA: the public lobby this player visits from their game room
+    /// (docs/lobby-protocol.md "Visiting the lobby").
+    #[serde(default)]
+    pub visit: bool,
 }
 
 #[derive(Deserialize)]
