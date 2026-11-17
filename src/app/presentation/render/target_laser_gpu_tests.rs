@@ -62,7 +62,7 @@ fn tail_stores_reach_the_gpu_over_any_z_without_writing_it() {
         terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
         terrain.begin_surface_lines();
         let mut display = DisplayLayers::default();
-        assert!(display.submit(7, Some(DisplayLayer::GROUND), &|_| 0));
+        assert!(display.submit(7, Some(DisplayLayer::GROUND)));
         let order = NativeDisplayOrder::from_display(&display);
         let mut unit = PlannedObjectInstance::object(
             order.object_draw(7, SpriteEncoding::Plain).unwrap(),

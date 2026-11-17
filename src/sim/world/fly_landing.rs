@@ -713,7 +713,6 @@ mod tests {
         sim.add_entity_occupancy(id);
         Simulation::submit_entity_display(
             &sim.interner,
-            &sim.terrain_objects,
             &mut sim.substrate,
             &sim.resolved_terrain,
             id,

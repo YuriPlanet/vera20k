@@ -1011,14 +1011,12 @@ pub(crate) fn is_local_anim_id(id: u64) -> bool {
 /// Each reads its own log, so one reader's take leaves the others' intact.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum AnimTouchReader {
-    /// The kept Ground display sort keys.
-    GroundKeys = 0,
     /// The pointer-expiry broadcast's listener index.
-    ExpiryListeners = 1,
+    ExpiryListeners = 0,
 }
 
 impl AnimTouchReader {
-    const COUNT: usize = 2;
+    const COUNT: usize = 1;
 }
 
 impl AnimStore {
@@ -3359,14 +3357,7 @@ impl Simulation {
             return;
         }
         if let Some(layer) = self.anim_display_layer(id, rules) {
-            Self::submit_object_display(
-                &self.interner,
-                &self.terrain_objects,
-                &mut self.substrate,
-                id,
-                layer,
-                rules,
-            );
+            Self::submit_object_display(&mut self.substrate, id, layer);
         } else {
             self.substrate.display.remove(id);
         }
@@ -6725,7 +6716,7 @@ mod tests {
 
     /// The store saves as the former derived newtype `AnimStore(map)` (the
     /// touch log is never saved), and every mutable hand-out is noted for the
-    /// kept Ground sort keys.
+    /// pointer-expiry listener index.
     #[test]
     fn anim_store_saves_as_before_and_notes_every_hand_out() {
         #[derive(Serialize)]
@@ -6753,7 +6744,7 @@ mod tests {
         );
 
         // Nothing has been derived from a fresh store yet.
-        let keys = AnimTouchReader::GroundKeys;
+        let keys = AnimTouchReader::ExpiryListeners;
         assert_eq!(store.take_touched(keys), Touched::All);
         assert!(store.get(id).is_some());
         assert_eq!(store.take_touched(keys), Touched::Ids(Vec::new()));
@@ -6761,11 +6752,6 @@ mod tests {
         let removed = store.remove(id).unwrap();
         store.insert(removed);
         assert_eq!(store.take_touched(keys), Touched::Ids(vec![id]));
-        // Each reader takes its own log.
-        assert_eq!(
-            store.take_touched(AnimTouchReader::ExpiryListeners),
-            Touched::All
-        );
         assert_eq!(store.clone().take_touched(keys), Touched::All);
         let _ = store.values_mut().count();
         assert_eq!(store.take_touched(keys), Touched::All);
@@ -7749,7 +7735,7 @@ mod tests {
                 .unwrap();
             sim.substrate
                 .anims
-                .take_touched(AnimTouchReader::GroundKeys)
+                .take_touched(AnimTouchReader::ExpiryListeners)
         };
         visit(&mut sim, 0); // constructor first-AI guard
         visit(&mut sim, 1); // delay 1 -> 0

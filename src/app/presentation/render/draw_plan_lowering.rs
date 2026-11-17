@@ -26,7 +26,8 @@ pub(crate) struct PlannedBuildingPieceInstance {
 /// Texture/pipeline identity retained after native object ordering is decided.
 ///
 /// Atlas identity is deliberately data carried by a draw piece, never a sort
-/// key. Parent order comes exclusively from the retained Display vector.
+/// key. Parent order comes exclusively from the Display draw order
+/// ([`NativeDisplayOrder`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ObjectTexture {
     /// Ordered DSurface calls, fenced into this parent's native draw slot.
@@ -197,52 +198,51 @@ pub(crate) struct ObjectLayerPass {
     pub owners: Vec<DrawId>,
 }
 
-/// Frame-local lookup derived solely from the five retained Display vectors.
-/// The sim owns all registration and sorting; atlas builders only read ranks.
-/// Built once for each presentation frame
-/// (`PresentationFrame::display_order`) for every Display member and only
-/// looked up, so it takes the lookup hasher, sized up front.
+/// Frame-local draw order of the Display members
+/// (`Simulation::display_draw_order`): the simulation owns registration, and
+/// the presentation sorts Ground off the simulation's frame. Built once for
+/// each presentation frame (`PresentationFrame::display_order`) for every
+/// Display member and only looked up, so it takes the lookup hasher, sized
+/// up front.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct NativeDisplayOrder {
     positions: LookupMap<DrawId, (TacticalLayer, u64)>,
+    ordered: Vec<(crate::sim::world::display_layers::DisplayLayer, u64)>,
 }
 
 impl NativeDisplayOrder {
-    pub(crate) fn from_display(display: &crate::sim::world::display_layers::DisplayLayers) -> Self {
-        use crate::sim::world::display_layers::DisplayLayer;
-        let layer = |index| DisplayLayer::from_index(index).expect("native Display layer index");
-        let members: usize = (0..5u8)
-            .map(|index| display.members(layer(index)).len())
-            .sum();
-        let mut positions = LookupMap::with_capacity_and_hasher(members, Default::default());
-        for index in 0..5u8 {
-            for (rank, &id) in display.members(layer(index)).iter().enumerate() {
-                positions.insert(id, (TacticalLayer(index), rank as u64));
-            }
-        }
-        Self { positions }
+    /// `sim`'s draw order under `rules`.
+    pub(crate) fn from_world(
+        sim: &crate::sim::world::Simulation,
+        rules: Option<&crate::rules::ruleset::RuleSet>,
+    ) -> Self {
+        Self::from_ordered(sim.display_draw_order(rules))
     }
 
-    /// [`Self::from_display`] for `sim`'s Display, with each presentation anim
-    /// (`Simulation::presentation_anims`) after the members of its layer, in
-    /// the order they were made.
-    pub(crate) fn from_world(sim: &crate::sim::world::Simulation) -> Self {
-        let display = sim.display_layers();
-        let mut order = Self::from_display(display);
-        let mut next = [0u64; 5];
-        for (index, slot) in next.iter_mut().enumerate() {
-            let layer = crate::sim::world::display_layers::DisplayLayer::from_index(index as u8)
-                .expect("native Display layer index");
-            *slot = display.members(layer).len() as u64;
+    /// The order of `ordered`, every Display member with its layer in draw
+    /// order.
+    pub(crate) fn from_ordered(
+        ordered: Vec<(crate::sim::world::display_layers::DisplayLayer, u64)>,
+    ) -> Self {
+        let mut positions = LookupMap::with_capacity_and_hasher(ordered.len(), Default::default());
+        let mut rank = [0u64; 5];
+        for &(layer, id) in &ordered {
+            let next = &mut rank[usize::from(layer.index())];
+            positions.insert(id, (TacticalLayer(layer.index()), *next));
+            *next += 1;
         }
-        for (id, layer) in sim.presentation_anims() {
-            let index = usize::from(layer.index());
-            order
-                .positions
-                .insert(id, (TacticalLayer(layer.index()), next[index]));
-            next[index] += 1;
-        }
-        order
+        Self { positions, ordered }
+    }
+
+    /// Every Display member with its layer, in draw order.
+    pub(crate) fn ordered(&self) -> &[(crate::sim::world::display_layers::DisplayLayer, u64)] {
+        &self.ordered
+    }
+
+    /// The order of a bare `display`, Ground as it holds its members.
+    #[cfg(test)]
+    pub(crate) fn from_display(display: &crate::sim::world::display_layers::DisplayLayers) -> Self {
+        Self::from_ordered(display.members_in_order().collect())
     }
 
     #[cfg(test)]
@@ -253,11 +253,15 @@ impl NativeDisplayOrder {
                 .enumerate()
                 .map(|(rank, &id)| (id, (TacticalLayer(2), rank as u64)))
                 .collect(),
+            ordered: ids
+                .iter()
+                .map(|&id| (crate::sim::world::display_layers::DisplayLayer::GROUND, id))
+                .collect(),
         }
     }
 
     /// `id`'s place in the Display walk, `None` for an id no layer holds:
-    /// ordering by it is the order of `DisplayLayers::ordered_ids`.
+    /// ordering by it is the order of [`Self::ordered`].
     pub(crate) fn position(&self, id: DrawId) -> Option<(TacticalLayer, u64)> {
         self.positions.get(&id).copied()
     }
@@ -277,9 +281,10 @@ impl NativeDisplayOrder {
     }
 }
 
-/// Restore the retained Display vector order after the class-specific builders.
-/// Native Tactical6D8F39 reads members in order; neither sprite depth nor a new
-/// GetYSort query participates. Building pieces remain contiguous in their slot.
+/// Restore the Display draw order ([`NativeDisplayOrder`]) after the
+/// class-specific builders. Native Tactical6D8F39 reads members in order;
+/// sprite depth does not participate. Building pieces remain contiguous in
+/// their slot.
 pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [ObjectLayerPass; 5] {
     // Side tables of the frame's Display parents, keyed by parent id. They
     // are only filled and then taken by key in plan order, never walked, so
@@ -1039,9 +1044,7 @@ mod tests {
                         let layer = DisplayLayer::from_index(
                             row["queries"][actor]["layer"].as_u64().unwrap() as u8,
                         );
-                        display.submit(actor as u64 + 1, layer, &|id| {
-                            keys[id as usize - 1].expect("native only queries Ground keys")
-                        });
+                        display.submit(actor as u64 + 1, layer);
                     }
                     "remove" => {
                         display.remove(actor.unwrap() as u64 + 1);
@@ -1052,11 +1055,9 @@ mod tests {
                                 .wrapping_add(step["xyz"][1].as_i64().unwrap() as i32),
                         );
                     }
-                    "sort" => {
-                        display.sort_ground_pass(&|id| {
-                            keys[id as usize - 1].expect("native only queries Ground keys")
-                        });
-                    }
+                    // VERA's simulation keeps Ground unordered; the picture
+                    // sorts it at once (`Simulation::ground_draw_order`).
+                    "sort" => {}
                     other => panic!("unexpected native step {other}"),
                 }
                 // Load must preserve the retained order even when it is only
@@ -1065,7 +1066,21 @@ mod tests {
                     &crate::util::save_codec::serialize(&display).unwrap(),
                 )
                 .unwrap();
-                let order = NativeDisplayOrder::from_display(&display);
+                // Ground by key, as `Simulation::ground_draw_order` sorts it.
+                // Equal keys by id here: this checks that lowering keeps the
+                // order it is handed, not how ties are broken.
+                let ground_key = |id: u64| (keys[id as usize - 1].unwrap_or(i32::MIN), id);
+                let mut ordered: Vec<_> = display.members_in_order().collect();
+                // Stable: the other layers keep their members' order.
+                ordered.sort_by_key(|&(layer, id)| {
+                    let key = if layer == DisplayLayer::GROUND {
+                        ground_key(id)
+                    } else {
+                        (0, 0)
+                    };
+                    (layer.index(), key)
+                });
+                let order = NativeDisplayOrder::from_ordered(ordered);
                 let entries = actors
                     .iter()
                     .enumerate()
@@ -1094,12 +1109,19 @@ mod tests {
                     .collect();
                 let lowered = lower_object_instances(entries);
                 for (index, pass) in lowered.iter().enumerate() {
-                    let owners: Vec<_> = expected[index]
+                    let mut members: Vec<u64> = expected[index]
                         .as_array()
                         .unwrap()
                         .iter()
-                        .flat_map(|value| {
-                            let actor = value.as_u64().unwrap() as usize;
+                        .map(|value| value.as_u64().unwrap())
+                        .collect();
+                    if index == usize::from(DisplayLayer::GROUND.index()) {
+                        members.sort_by_key(|&actor| ground_key(actor + 1));
+                    }
+                    let owners: Vec<_> = members
+                        .iter()
+                        .flat_map(|&value| {
+                            let actor = value as usize;
                             std::iter::repeat_n(
                                 actor as u64 + 1,
                                 if actors[actor]["kind"] == "bullet" {
@@ -1134,7 +1156,10 @@ mod tests {
         use crate::util::fixed_math::SimFixed;
 
         // Original instructions produce a partially sorted vector after each
-        // 551A30 call. Rendering must preserve every intermediate history.
+        // 551A30 call and reach the sorted order after three. VERA's
+        // simulation keeps Ground unordered and the picture sorts it at once
+        // (`Simulation::ground_draw_order`, a sim-scale deviation): picking and
+        // drawing see the order native settles on as soon as members move.
         let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
             "tools/spatial_oracle/crate_ground_membership.json",
         ))
@@ -1173,6 +1198,8 @@ mod tests {
             sim.entities_mut_for_test().insert(entity);
         }
         sim.set_logic_order_for_test(vec![4, 3, 2, 1]);
+        let settled = row["after_steps"].as_array().unwrap().last().unwrap()["layers"][2].clone();
+        let mut moved = false;
         for (step, observed) in row["input"]["steps"]
             .as_array()
             .unwrap()
@@ -1181,10 +1208,9 @@ mod tests {
         {
             let id = step["actor"].as_u64().map(|index| index + 1);
             match step["op"].as_str().unwrap() {
-                "submit" => {
-                    sim.submit_object_display_for_test(id.unwrap(), DisplayLayer::GROUND, None)
-                }
+                "submit" => sim.submit_object_display_for_test(id.unwrap(), DisplayLayer::GROUND),
                 "coordinates" => {
+                    moved = true;
                     let entity = sim.entities_mut_for_test().get_mut(id.unwrap()).unwrap();
                     entity.position.set_sub_x_for_test(SimFixed::from_num(
                         step["xyz"][0].as_i64().unwrap() - 2560,
@@ -1198,7 +1224,16 @@ mod tests {
                 }
                 op => panic!("unexpected {op}"),
             }
-            let expected: Vec<_> = observed["layers"][2]
+            // Between the moves the order follows whichever keys moved so far.
+            if moved && step["op"] == "coordinates" {
+                continue;
+            }
+            let native = if moved {
+                &settled
+            } else {
+                &observed["layers"][2]
+            };
+            let expected: Vec<_> = native
                 .as_array()
                 .unwrap()
                 .iter()
@@ -1209,7 +1244,7 @@ mod tests {
                 expected,
                 "pick: {step}"
             );
-            let order = NativeDisplayOrder::new(sim.display_layers().members(DisplayLayer::GROUND));
+            let order = NativeDisplayOrder::new(&sim.ground_draw_order(None));
             let entries = (1..=4)
                 .rev()
                 .filter_map(|id| {

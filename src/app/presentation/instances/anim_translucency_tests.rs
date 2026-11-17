@@ -144,7 +144,7 @@ fn emit_with_lighting(
     detail.throttle_tail(0);
     let detail = RefCell::new(detail);
     let hidden = Default::default();
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let before_hash = sim.state_hash();
     let before_rng = sim.rng_state();
     let mut out = Vec::new();

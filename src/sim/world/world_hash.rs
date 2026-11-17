@@ -3997,7 +3997,7 @@ mod particle_hash_tests {
         let id = sim.substrate.allocate_stable_id();
         system.set_stable_id_for_test(id);
         sim.substrate.particle_systems.insert(system);
-        sim.reveal_particle_system(id, crate::rules::ruleset::RuleSet::empty_for_test());
+        sim.reveal_particle_system(id);
         id
     }
 

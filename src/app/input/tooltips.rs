@@ -276,7 +276,7 @@ fn tactical_world_tip_text_for_viewer(
             rules: Some(rules),
             translucent_viewer,
         },
-        sim.display_layers().ordered_ids(),
+        &crate::app::presentation::instances::display_draw_ids(sim, Some(rules)),
         Some(view.fog()),
         Some(view.interner().resolve(viewer)),
         world.0,

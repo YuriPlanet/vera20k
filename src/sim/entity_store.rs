@@ -191,14 +191,12 @@ struct SleepCell {
 pub(crate) enum TouchReader {
     /// The movement pass's kept blocker plane.
     BlockerPlane = 0,
-    /// The kept Ground display sort keys.
-    GroundKeys = 1,
     /// The pointer-expiry broadcast's listener index.
-    ExpiryListeners = 2,
+    ExpiryListeners = 1,
 }
 
 impl TouchReader {
-    const COUNT: usize = 3;
+    const COUNT: usize = 2;
 }
 
 impl Clone for EntityStore {
@@ -1467,7 +1465,10 @@ mod tests {
         }
         // Nothing has been derived from a fresh store yet.
         assert_eq!(store.take_touched(TouchReader::BlockerPlane), Touched::All);
-        assert_eq!(store.take_touched(TouchReader::GroundKeys), Touched::All);
+        assert_eq!(
+            store.take_touched(TouchReader::ExpiryListeners),
+            Touched::All
+        );
         {
             let position = &mut store.get_mut(2).unwrap().position;
             position.set_rx_for_test(position.rx() + 1);
@@ -1479,7 +1480,7 @@ mod tests {
         );
         store.get_mut(1);
         assert_eq!(
-            store.take_touched(TouchReader::GroundKeys),
+            store.take_touched(TouchReader::ExpiryListeners),
             Touched::Ids(vec![2, 3, 1])
         );
         assert_eq!(
@@ -1487,10 +1488,16 @@ mod tests {
             Touched::Ids(vec![1])
         );
         let mut copy = store.clone();
-        assert_eq!(copy.take_touched(TouchReader::GroundKeys), Touched::All);
+        assert_eq!(
+            copy.take_touched(TouchReader::ExpiryListeners),
+            Touched::All
+        );
         assert_eq!(copy.take_touched(TouchReader::BlockerPlane), Touched::All);
         let _ = store.values_mut().count();
-        assert_eq!(store.take_touched(TouchReader::GroundKeys), Touched::All);
+        assert_eq!(
+            store.take_touched(TouchReader::ExpiryListeners),
+            Touched::All
+        );
         assert_eq!(store.take_touched(TouchReader::BlockerPlane), Touched::All);
     }
 

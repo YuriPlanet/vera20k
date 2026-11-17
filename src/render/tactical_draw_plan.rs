@@ -108,7 +108,7 @@ impl BlitPolicy {
 pub struct ObjectDraw {
     pub id: DrawId,
     pub layer: TacticalLayer,
-    /// Position in the retained Display vector, including its sort history.
+    /// Position in the layer's draw order (`Simulation::display_draw_order`).
     pub display_order: u64,
     pub policy: BlitPolicy,
 }
@@ -184,9 +184,10 @@ pub struct TacticalDrawPlan {
 }
 
 impl TacticalDrawPlan {
-    /// Reassemble class-specific draws in retained Display order. The sim owns
-    /// Submit4A9720 and the single adjacent Ground pass551A30. Tactical6D8F19
-    /// walks each vector forward; a fresh full Y-sort here would erase history.
+    /// Reassemble class-specific draws in Display draw order. The sim owns
+    /// Submit4A9720; the presentation sorts Ground by GetYSort
+    /// (`Simulation::ground_draw_order`). Tactical6D8F19 walks each layer
+    /// forward.
     pub fn build(inputs: impl IntoIterator<Item = TacticalDrawInput>) -> Self {
         let mut plan = Self::default();
         let mut entries = Vec::new();

@@ -220,7 +220,7 @@ impl Scene {
             &self.runtime,
             &Default::default(),
         );
-        let order = NativeDisplayOrder::from_display(sim.display_layers());
+        let order = NativeDisplayOrder::from_world(&sim, None);
         let voxel_images = RefCell::new(VoxelImageCache::default());
         let mut parents = Vec::new();
         build_shp_instances_from_inputs(

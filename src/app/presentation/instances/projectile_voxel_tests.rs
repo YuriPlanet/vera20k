@@ -166,7 +166,7 @@ pub(crate) fn launched_stock_submarine_torpedo(
             "Torpedo"
         );
         assert!(bullet.in_logic_vector());
-        let order = NativeDisplayOrder::from_display(sim.display_layers());
+        let order = NativeDisplayOrder::from_world(&sim, None);
         let parent = order
             .object_draw(id, crate::render::tactical_draw_plan::SpriteEncoding::Voxel)
             .expect("the real Flat Bullet retains Display membership");
@@ -185,7 +185,7 @@ fn stock_submarine_attack_has_a_visible_flat_voxel_torpedo(elite: bool) {
     };
     let kind = rules.projectile("Torpedo").unwrap();
     let bullet = sim.projectiles().get(id).unwrap();
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let parent = order
         .object_draw(id, crate::render::tactical_draw_plan::SpriteEncoding::Voxel)
         .unwrap();
@@ -274,7 +274,7 @@ fn stock_submarine_attack_has_a_visible_flat_voxel_torpedo(elite: bool) {
         .expect("ordinary torpedo flight/impact frame");
         if sim.projectiles().get(id).is_none() {
             assert!(
-                NativeDisplayOrder::from_display(sim.display_layers())
+                NativeDisplayOrder::from_world(&sim, None)
                     .object_draw(id, crate::render::tactical_draw_plan::SpriteEncoding::Voxel)
                     .is_none(),
                 "retirement removes the tracked torpedo's draw membership"
@@ -320,7 +320,7 @@ fn admitted_stock_kirov_bomb_has_a_visible_voxel_body() {
         assert_eq!(kind.color_scheme(), 1);
         let (mut sim, id) = admitted_kirov_bomb(rules, weapon_name);
         let position = sim.projectiles().get(id).unwrap().position();
-        let order = NativeDisplayOrder::from_display(sim.display_layers());
+        let order = NativeDisplayOrder::from_world(&sim, None);
         let (x, y) = absolute_leptons_to_screen(position.x, position.y, position.z);
         let object = projectile_draw_instance(
             sim.projectiles().get(id).unwrap(),
@@ -416,7 +416,7 @@ fn admitted_stock_kirov_bomb_has_a_visible_voxel_body() {
             }
         }
         assert!(sim.retire_non_entity_object(id, crate::sim::world::UninitContext::default()));
-        let removed = NativeDisplayOrder::from_display(sim.display_layers());
+        let removed = NativeDisplayOrder::from_world(&sim, None);
         assert!(
             projectile_draw_instance(
                 sim.projectiles().get(id).unwrap(),

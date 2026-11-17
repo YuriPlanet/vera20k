@@ -459,7 +459,7 @@ fn free_anim_draw_in(
         AnimClassSpawnDescriptor::new(sim.intern("ANIM"), 4, 4, SIM_ZERO, SIM_ZERO, level);
     descriptor.draw_flags = 0x600;
     let id = sim.spawn_anim_object(&rules, descriptor).unwrap();
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let detail = RefCell::new(crate::app::presentation::detail::DetailState::new());
     let lighting = Default::default();
     let house_colors = Default::default();

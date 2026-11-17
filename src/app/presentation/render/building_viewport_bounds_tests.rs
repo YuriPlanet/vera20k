@@ -120,7 +120,7 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
     let zbind = batch.create_zshape_bind_group_on_device(&gpu.device, &zview);
     let lighting = CellLightGrid::new();
     let voxel_images = RefCell::new(VoxelImageCache::default());
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let before = (sim.state_hash(), sim.rng_state());
     let mut parents = Vec::new();
     build_shp_instances_from_inputs(

@@ -18,19 +18,24 @@ use crate::sim::vision::FogState;
 
 /// Tactical6D8F19..6D95A9 visits the five retained Display vectors forward.
 /// Store-only and Logic-only entities cannot become render/pick candidates.
+/// Ground is in draw order (`Simulation::display_draw_order`), here without
+/// a Building's type terms.
 pub(crate) fn tactical_entity_encounter_order(sim: &crate::sim::world::Simulation) -> Vec<u64> {
-    display_objects(sim, |id| sim.entities().contains(id))
+    display_draw_ids(sim, None)
+        .into_iter()
+        .filter(|&id| sim.entities().contains(id))
+        .collect()
 }
 
-/// [`tactical_entity_encounter_order`] of the objects `is_object` knows.
-fn display_objects(
+/// Every Display member's id in draw order
+/// (`Simulation::display_draw_order`) under `rules`.
+pub(crate) fn display_draw_ids(
     sim: &crate::sim::world::Simulation,
-    is_object: impl Fn(u64) -> bool,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
 ) -> Vec<u64> {
-    sim.display_layers()
-        .ordered_ids()
-        .copied()
-        .filter(|id| is_object(*id))
+    sim.display_draw_order(rules)
+        .into_iter()
+        .map(|(_, id)| id)
         .collect()
 }
 
@@ -349,7 +354,13 @@ fn compose_tactical_screen_entity_encounter_order(
     // (0x006D9EF0) refuses entries past 500, so with more objects in view the
     // band box and the T key's screen pass reach only the first 500 drawn.
     // VERA registers all.
-    let mut candidates = display_objects(sim, |id| frame.contains(id));
+    let mut candidates: Vec<u64> = frame
+        .display_order(sim)
+        .ordered()
+        .iter()
+        .map(|&(_, id)| id)
+        .filter(|&id| frame.contains(id))
+        .collect();
     // Band-box preflight has a separate native bulk Building registration
     // path. Ordinary picking/rendering never scans the unregistered store.
     if bulk_register_live_buildings {
@@ -408,8 +419,8 @@ pub(crate) enum EntityDrawBand {
     Top,
 }
 
-/// Tactical6D8F19..6D95A9 draws the retained Display vectors, not a fresh
-/// GetLayer query. Height/locomotor changes take effect here only after their
+/// Tactical6D8F19..6D95A9 draws the Display members' registered layers, not
+/// a fresh GetLayer query. Height/locomotor changes take effect here only after their
 /// simulation-owned remove/submit transaction (Fly phase4CD2A0, for example).
 /// Unregistered objects and layers without an entity body stream emit nothing.
 pub(crate) fn layer_draw_band(

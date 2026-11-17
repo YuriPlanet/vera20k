@@ -58,7 +58,7 @@ fn each_display_member_is_filed_under_its_store_and_terrain_is_left_out() {
             crate::sim::terrain_object::TerrainObjectState::for_test(tree_id, tree, 12, 12),
         );
     for id in [tank_id, tree_id] {
-        sim.submit_object_display_for_test(id, DisplayLayer::GROUND, Some(&rules));
+        sim.submit_object_display_for_test(id, DisplayLayer::GROUND);
     }
     let frame = PresentationFrame::of_test(&sim, &rules);
     let members = frame.display_members(&sim);

@@ -612,9 +612,7 @@ fn particle_frame_boundary_fixture(frame_count: u16) -> (Simulation, RuleSet) {
         system.set_done_spawning_for_test(true);
         system
     });
-    assert!(
-        sim.reveal_particle_system(stable_id, crate::rules::ruleset::RuleSet::empty_for_test())
-    );
+    assert!(sim.reveal_particle_system(stable_id));
     (sim, rules)
 }
 
@@ -8252,7 +8250,7 @@ fn repro_second_vehicle_ordered_onto_an_occupied_cell() {
 /// only on the frames its Guard handler runs (every 14 to 16 frames here) and
 /// an idle building never: the mission AI counter and a building's tint
 /// sample, which change every frame, are written without a note. The logs'
-/// readers (the blocker plane, the kept Ground keys and the expiry listener
+/// readers (the blocker plane and the expiry listener
 /// index) re-read every object named, so when each walk borrowed every
 /// entity, a 20k-object world was re-read almost whole every frame.
 #[test]

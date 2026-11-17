@@ -133,7 +133,7 @@ impl DisplayMembers {
         // (`Simulation::allocate_stable_id`), so an id has one store and the
         // order of these tests picks no winner: records, Anims and Terrain
         // objects, the many, are asked first.
-        for (layer, id) in sim.display_layers().members_in_order() {
+        for &(layer, id) in frame.display_order(sim).ordered() {
             let object = |kind| ObjectMember { layer, id, kind };
             let kind = if let Some((slot, span)) = frame.slot_and_span(id) {
                 objects.push(object(ObjectKind::Record { slot, span }));

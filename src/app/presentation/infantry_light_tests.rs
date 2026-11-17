@@ -199,7 +199,7 @@ fn assert_shp_light(
             building_zshape: false,
         },
         &mut draws,
-        &NativeDisplayOrder::from_display(sim.display_layers()),
+        &NativeDisplayOrder::from_world(&sim, None),
     );
     let mut bodies = draws
         .iter()

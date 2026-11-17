@@ -332,8 +332,8 @@ fn render_original_body_pixels(
         .set_infantry_doing_verified(int(&actor["doing"]))
         .unwrap();
     sim.entities_mut_for_test().insert(gi);
-    sim.submit_object_display_for_test(1, DisplayLayer::GROUND, Some(&rules));
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    sim.submit_object_display_for_test(1, DisplayLayer::GROUND);
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let resources = SimResources::new(rules);
     if production {
         let mut terrain = crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
