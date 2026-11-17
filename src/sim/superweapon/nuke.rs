@@ -280,11 +280,12 @@ pub(super) fn launch(
         return false;
     };
     // VERA's Superweapon Limit: each `SuperWeaponPerBuilding=` silo fires its
-    // own shot, so a launch takes the first one not already firing and gives
-    // it its own target; gamemd's first silo and NukeTarget otherwise.
+    // own shot, so a launch takes the silo whose charge the ready shot is and
+    // gives it its own target; gamemd's first silo and NukeTarget otherwise.
     let per_building = silo_object.super_weapon_per_building;
     let silo = if per_building {
-        find_idle_silo(sim, owner, silo_type)
+        find_charged_silo(sim, owner, sw_type_id, silo_type)
+            .or_else(|| find_idle_silo(sim, owner, silo_type))
             .or_else(|| find_building_of_type(sim, owner, silo_type))
     } else {
         find_building_of_type(sim, owner, silo_type)
@@ -342,9 +343,56 @@ fn find_building_of_type(sim: &Simulation, owner: InternedId, type_id: InternedI
         })
 }
 
+/// Superweapon Limit: the silo the House's ready shot belongs to. The Super
+/// keeps one native timer, which is one building's charge
+/// ([`SuperWeaponInstance::charge_owner`]) and the one whose `SuperAnim` opens;
+/// the missile has to leave that building, not the first silo in building
+/// order. Falls back to the most charged idle silo when the holder is gone or
+/// already firing.
+pub(super) fn find_charged_silo(
+    sim: &Simulation,
+    owner: InternedId,
+    sw_type: InternedId,
+    type_id: InternedId,
+) -> Option<u64> {
+    let instance = sim.super_weapons.get(&owner)?.get(&sw_type)?;
+    let idle = |id: u64| {
+        sim.substrate.entities.get(id).is_some_and(|building| {
+            !building.lifecycle.in_limbo()
+                && building.type_ref() == type_id
+                && building.mission.current().known() != Some(MissionType::Missile)
+        })
+    };
+    if let Some(holder) = instance.charge_owner()
+        && idle(holder)
+    {
+        return Some(holder);
+    }
+    let frame = sim.session.binary_frame() as i32;
+    sim.houses
+        .get(&owner)?
+        .base_projection()
+        .buildings()
+        .iter()
+        .copied()
+        .filter(|&id| idle(id))
+        .min_by_key(|&id| {
+            (
+                instance
+                    .building_charge_remaining(id, frame)
+                    .unwrap_or(i32::MAX),
+                id,
+            )
+        })
+}
+
 /// Superweapon Limit: the house's first silo of `type_id`, as
 /// [`find_building_of_type`] orders them, whose mission is not Missile.
-fn find_idle_silo(sim: &Simulation, owner: InternedId, type_id: InternedId) -> Option<u64> {
+pub(super) fn find_idle_silo(
+    sim: &Simulation,
+    owner: InternedId,
+    type_id: InternedId,
+) -> Option<u64> {
     let house = sim.houses.get(&owner)?;
     house
         .base_projection()

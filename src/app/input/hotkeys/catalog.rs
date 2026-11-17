@@ -103,7 +103,7 @@ const CAMERA_COMMANDS: [CommandMetadata; 4] = [
 /// (`hotkeys::VERA_DEFAULT_KEYS`). Each name is the Options page's label for
 /// the same setting, but Thread Stats', Ferry's, Relation Colours' and the two
 /// Formation commands', which have none; each category literal is [`VERA_CATEGORY_KEY`].
-const SHORTCUT_COMMANDS: [CommandMetadata; 11] = [
+const SHORTCUT_COMMANDS: [CommandMetadata; 12] = [
     command!(
         HotkeyCommand::PerformanceStats,
         "PerformanceStats",
@@ -150,6 +150,14 @@ const SHORTCUT_COMMANDS: [CommandMetadata; 11] = [
         "VERA:LayoutEdit",
         "VERA:HotkeyCategory",
         "VERA:LayoutEditDesc",
+        None
+    ),
+    command!(
+        HotkeyCommand::SuperweaponTimers,
+        "SuperweaponTimers",
+        "VERA:SuperweaponBuildingTimers",
+        "VERA:HotkeyCategory",
+        "VERA:SuperweaponBuildingTimersHelp",
         None
     ),
     command!(

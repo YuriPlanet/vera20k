@@ -22,7 +22,7 @@ use crate::ui::game_screen::GameScreen;
 
 /// Frames to a timer line's second (`0x88888889`, `sar 3`: a truncating
 /// divide).
-const FRAMES_PER_SECOND: i32 = 15;
+pub(crate) const FRAMES_PER_SECOND: i32 = 15;
 /// The blackout lines' label, read through the string table (`0x00842A50`,
 /// `0x00734E60`).
 const BLACKOUT_LABEL: &str = "MSG:BlackoutTimer";
