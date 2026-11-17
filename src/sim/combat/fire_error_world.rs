@@ -216,10 +216,29 @@ impl<'a> FireSubject<'a> {
         )
     }
 
-    fn weapon_facts(&self, weapon: &WeaponType, target_obj: Option<&ObjectType>) -> WeaponFacts {
+    fn weapon_facts(
+        &self,
+        weapon: &WeaponType,
+        target_obj: Option<&ObjectType>,
+        target: Option<&GameEntity>,
+    ) -> WeaponFacts {
         let warhead = self.rules.weapon_warhead(weapon);
         let projectile = self.rules.weapon_projectile(weapon);
-        let armor = target_obj.map(ObjectType::armor_id);
+        // The armour this weapon's Verses reads for the prospective target.
+        #[cfg(not(feature = "phobos"))]
+        let _ = target;
+        let armor = target_obj.map(|obj| {
+            // Phobos `TechnoClass_ReplaceArmorWithShields` (`0x6FCB64`,
+            // `Ext/Techno/Hooks.cpp:482`) replaces this site's
+            // `mov eax,[eax+0x9c]` armor load: an active shield that absorbs
+            // this warhead answers its own armor. Native always has a warhead
+            // here; a Rules weapon naming a missing section keeps the type's.
+            #[cfg(feature = "phobos")]
+            if let (Some(target), Some(warhead)) = (target, warhead) {
+                return crate::sim::shield::warhead_versus_armor(target, self.rules, warhead, obj);
+            }
+            obj.armor_id()
+        });
         WeaponFacts {
             damage: weapon.damage,
             ambient_damage: weapon.ambient_damage,
@@ -782,7 +801,7 @@ impl FireQuery for WorldQuery<'_, '_> {
         let subject = self.subject;
         subject
             .weapon_at(index)
-            .map(|weapon| subject.weapon_facts(weapon, self.target.obj))
+            .map(|weapon| subject.weapon_facts(weapon, self.target.obj, self.target.entity))
     }
 
     /// Phobos `TechnoClass_CanFire` (`0x6FC339`): the cell arm gates the firer

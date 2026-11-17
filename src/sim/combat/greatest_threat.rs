@@ -427,7 +427,10 @@ fn threat_score(
     // `0x0070CEB9`). Both verses terms read `WarheadType::interaction`, which
     // under Ares is the extension's table, as TechnoClass_EvalThreatRating_
     // Verses1 (10054310, hook 0x70CEA0) and TechnoClass_EvalThreatRating
-    // (100542E0, hook 0x70CF45) read it.
+    // (100542E0, hook 0x70CF45) read it. This term's armour is the scorer
+    // type's, loaded from `ebx` at `0x0070CEA8`/`0x0070CEBD`; Phobos'
+    // shield substitution patches only the candidate's load at `0x70CF39`
+    // (see the A term), so this term keeps the raw techno armour.
     let scorer_as_target = techno_target_facts(
         scorer,
         scorer_type,
@@ -472,14 +475,22 @@ fn threat_score(
     );
 
     // A: the scorer's selected weapon against the candidate, retained for the
-    // native range term below.
+    // native range term below. Phobos `TechnoClass_ReplaceArmorWithShields`
+    // (`0x70CF39`, `Ext/Techno/Hooks.cpp:480-515`) replaces the candidate's
+    // `mov eax,[eax+0x9c]` armor load, the one that feeds this term's
+    // `fmul [ecx+eax*8+0xa0]` at `0x0070CF49`; the candidate's active shield
+    // armor answers while it absorbs this warhead.
     if let Some(selected) = scorer_weapon {
-        let verses = ScoreX87::load_f64(
-            selected
-                .warhead
-                .interaction(candidate_type.armor_id())
-                .multiplier(),
+        #[cfg(feature = "phobos")]
+        let armor = crate::sim::shield::warhead_versus_armor(
+            candidate,
+            rules,
+            selected.warhead,
+            candidate_type,
         );
+        #[cfg(not(feature = "phobos"))]
+        let armor = candidate_type.armor_id();
+        let verses = ScoreX87::load_f64(selected.warhead.interaction(armor).multiplier());
         score = spill_threat_double(ScoreX87::add(ScoreX87::mul(coeff_a, verses), score));
     }
 
@@ -2427,12 +2438,24 @@ fn evaluate_candidate(
     }
     // G4 `0x006F7D19..0x006F7D4F`: a scanner with no weapon in the selected
     // slot skips the floor test (`test ebp,ebp ; je 0x6f7d55 @ 0x006F7D1B`).
-    if let Some(selected) = &selected
+    if let Some(selected) = &selected {
         // Ares10054270 replaces only the native numeric floor; a missing
         // selected weapon still skips this gate as in the original caller.
-        && !selected.warhead.interaction(candidate_obj.armor_id()).can_passively_acquire()
-    {
-        return None;
+        // Phobos `TechnoClass_ReplaceArmorWithShields` (`0x6F7D31`,
+        // `Ext/Techno/Hooks.cpp:481`) replaces the candidate's armor load at
+        // `0x006F7D31`; its shield answers while it absorbs this warhead.
+        #[cfg(feature = "phobos")]
+        let armor = crate::sim::shield::warhead_versus_armor(
+            candidate,
+            ctx.rules,
+            selected.warhead,
+            candidate_obj,
+        );
+        #[cfg(not(feature = "phobos"))]
+        let armor = candidate_obj.armor_id();
+        if !selected.warhead.interaction(armor).can_passively_acquire() {
+            return None;
+        }
     }
 
     // `0x006F7D55..0x006F7D82`: a `LandTargeting=2` scanner (`+0x604`; on

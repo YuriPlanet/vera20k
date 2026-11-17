@@ -518,7 +518,16 @@ pub(crate) fn should_retaliate(
         .is_none_or(|warhead| {
             // Ares 3.0 hook100543E0 replaces only this original threshold
             // with the independently retained Retaliate flag.
-            warhead.interaction(source_type.armor_id()).can_retaliate()
+            // Phobos `TechnoClass_ReplaceArmorWithShields` (`0x708AEB`,
+            // `Ext/Techno/Hooks.cpp:483`) replaces the source's armor load at
+            // `0x00708AEB`; its shield answers while the victim's warhead
+            // cannot penetrate it.
+            #[cfg(feature = "phobos")]
+            let armor =
+                crate::sim::shield::warhead_versus_armor(source, rules, warhead, source_type);
+            #[cfg(not(feature = "phobos"))]
+            let armor = source_type.armor_id();
+            warhead.interaction(armor).can_retaliate()
         })
 }
 
