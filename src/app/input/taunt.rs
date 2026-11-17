@@ -4,7 +4,7 @@
 //! not EventClass records and not part of lockstep.
 //!
 //! The transport is the controlled network service: a send queues
-//! [`NetworkLoadingRequest::Taunt`](crate::app::match_runtime::session::NetworkLoadingRequest)
+//! [`NetworkSendRequest::Taunt`](crate::app::match_runtime::session::NetworkSendRequest)
 //! and a received packet arrives as `NetworkMatchEvent::Taunt`. Playback is
 //! the taunt stream, `SfxPlayer::play_taunt`.
 //!

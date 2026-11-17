@@ -21,28 +21,33 @@ use crate::sim::world::Simulation;
 use crate::ui::lan_shell::LanChatLine;
 use crate::ui::shell::connection::{ConnectionPage, ConnectionRow};
 
-/// The simulation owns FPS/MaxAhead; the live channel owns sampled peer lag.
-/// Presentation and the frame pacer consume the same combined interval.
-pub(crate) fn frame_budget(state: &AppState) -> Option<(u16, u32)> {
+/// The network FPS whose 1000/FPS ms interval Main_Tick arms
+/// (`MainTick55D4FB`): the relay's rate in sequenced online play, else the
+/// simulation's. Presentation, telemetry and the frame pacer read this one
+/// value.
+///
+/// Residual: in WOL with MaxAhead above 30, MainTick55D5A4..55D7C2 adds 10 ms
+/// for each quarter of MaxAhead the furthest-behind peer lags
+/// (UpdatePeerFrameLag652187), up to 30 ms. VERA's multi-human online
+/// matches use the relay clock. A locally paced solo match has no peer to
+/// measure, and LAN never adds this delay.
+pub(crate) fn frame_budget(state: &AppState) -> Option<u16> {
     if let Some(fps) = state
         .match_state
         .live_network
         .as_ref()
         .and_then(|live| live.relay_frames_per_second())
     {
-        return Some((fps, 0));
+        return Some(fps);
     }
-    let session = state
+    let timing = state
         .match_state
         .sim_runtime
         .runtime()?
         .simulation
-        .session();
-    let timing = session.network_command_timing()?;
-    let delay = state.match_state.live_network.as_ref().map_or(0, |live| {
-        live.pacing_delay_millis(session.network_max_ahead_frames().unwrap_or(0))
-    });
-    Some((timing.frames_per_second(), delay))
+        .session()
+        .network_command_timing()?;
+    Some(timing.frames_per_second())
 }
 
 /// One game frame's length in milliseconds, as the pacer admits frames;
@@ -170,7 +175,7 @@ pub(crate) fn destroy_connection(
     let sequenced = live
         .as_ref()
         .is_some_and(|(live, _)| live.uses_sequenced_lockstep());
-    if !session.disconnect_network_participant(source_index, error.code()) {
+    if !session.disconnect_network_participant(source_index) {
         return None;
     }
     log::warn!(
@@ -1987,7 +1992,6 @@ mod tests {
                     100,
                     1600,
                     0,
-                    0,
                 )
                 .unwrap_err();
             assert!(matches!(
@@ -2274,15 +2278,7 @@ mod tests {
         };
         assert_eq!(
             first
-                .poll(
-                    &mut wa.network_command_queues(),
-                    context,
-                    10,
-                    100,
-                    1600,
-                    0,
-                    0
-                )
+                .poll(&mut wa.network_command_queues(), context, 10, 100, 1600, 0)
                 .unwrap(),
             NetworkQueuePass::Waiting
         );
@@ -2290,15 +2286,7 @@ mod tests {
         while second.peers().iter().any(|peer| peer.frame() < 0) {
             assert_eq!(
                 second
-                    .poll(
-                        &mut wb.network_command_queues(),
-                        context,
-                        10,
-                        101,
-                        1616,
-                        0,
-                        0
-                    )
+                    .poll(&mut wb.network_command_queues(), context, 10, 101, 1616, 0)
                     .unwrap(),
                 NetworkQueuePass::Waiting
             );
@@ -2318,28 +2306,12 @@ mod tests {
         assert_eq!(wa.state_hash(), original_hash);
         assert_eq!(wb.state_hash(), original_hash);
         assert!(matches!(
-            first.poll(
-                &mut wa.network_command_queues(),
-                context,
-                10,
-                102,
-                1632,
-                0,
-                0
-            ),
+            first.poll(&mut wa.network_command_queues(), context, 10, 102, 1632, 0),
             Err(LiveCommandError::Startup(StartupError::Aborted))
         ));
         assert_eq!(
             second
-                .poll(
-                    &mut wb.network_command_queues(),
-                    context,
-                    10,
-                    102,
-                    1632,
-                    0,
-                    0
-                )
+                .poll(&mut wb.network_command_queues(), context, 10, 102, 1632, 0)
                 .unwrap(),
             NetworkQueuePass::Waiting
         );

@@ -281,6 +281,11 @@ fn load_with_assets(
         cold_rules_owner = owner;
         &mut cold_rules_owner
     };
+    if game_mode.is_network() {
+        native_rules_owner
+            .reset_for_network_match()
+            .map_err(|error| format!("reset network Rules: {error}"))?;
+    }
     // ThemeClass::ReadINI720590 is process data even without an output device.
     // Keep the existing headless archive stack: THEMEMD.MIX and the preserved
     // RA2 THEME.MIX extension were mounted at startup; this route has no shell

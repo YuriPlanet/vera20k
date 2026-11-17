@@ -11,7 +11,7 @@
 
 use super::*;
 use crate::app::match_runtime::session::{
-    CooperativeRoundEvent, CooperativeRoundOptions, NetworkAiOptions, NetworkLoadingRequest,
+    CooperativeRoundEvent, CooperativeRoundOptions, NetworkAiOptions, NetworkSendRequest,
 };
 use crate::net::lan_messages::cooperative::{
     CooperativeAiWords, CooperativeHumanWords, CooperativeOptionsRecord, CooperativeSignal,
@@ -156,7 +156,7 @@ fn chat_event(
 }
 
 /// A queued round record to every other node.
-pub(super) fn send(state: &mut AppState, request: NetworkLoadingRequest) {
+pub(super) fn send(state: &mut AppState, request: NetworkSendRequest) {
     if state.match_state.session_mode() != SessionMode::Lan {
         return;
     }
@@ -167,12 +167,12 @@ pub(super) fn send(state: &mut AppState, request: NetworkLoadingRequest) {
             .skip(1)
             .collect();
     let signal = match request {
-        NetworkLoadingRequest::CooperativeReady => CooperativeSignal::Ready,
-        NetworkLoadingRequest::CooperativeLeave => CooperativeSignal::Left,
-        NetworkLoadingRequest::CooperativeBegin => CooperativeSignal::Begin,
-        NetworkLoadingRequest::CooperativeAck => CooperativeSignal::Ack,
-        NetworkLoadingRequest::CooperativeGo => CooperativeSignal::Go,
-        NetworkLoadingRequest::CooperativeOptions(options) => {
+        NetworkSendRequest::CooperativeReady => CooperativeSignal::Ready,
+        NetworkSendRequest::CooperativeLeave => CooperativeSignal::Left,
+        NetworkSendRequest::CooperativeBegin => CooperativeSignal::Begin,
+        NetworkSendRequest::CooperativeAck => CooperativeSignal::Ack,
+        NetworkSendRequest::CooperativeGo => CooperativeSignal::Go,
+        NetworkSendRequest::CooperativeOptions(options) => {
             if let Ok(message) = options_record(&options).encode(&name) {
                 send_sources(state, message.as_bytes(), peers);
             }
