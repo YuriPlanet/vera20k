@@ -123,6 +123,16 @@ finishes loading must agree to the initial world before it starts. A player who
 never finishes loading leaves in the first frame once silent for 60 seconds, or 3
 minutes after the first client was ready; the native loading timeout leaves that
 departure to the relay. A match spread over several relays is cancelled instead.
+If ready players on different relays report different initial worlds, updated
+relays refuse the start as soon as those authenticated reports arrive, using the
+existing agreement-mismatch error. A relay whose players have not sent Ready is
+still loading, not a mismatch. The refusal remains available to retries after
+the empty match journal is removed. No client or federation packet changes:
+released clients already understand the error. Relay upgrades can be gradual;
+an older relay may still report ordinary cancellation or wait for its loading
+timeout, but cannot start a match with different agreements. Rolling the relay
+back restores that older reporting. Deploying the relay change is separate from
+publishing a new game build.
 At each deadline, missing input is empty; a command joins the next unsealed
 frame. The sender also waits for that commit.
 Frames use the existing Event codec and simulation queues, with a fresh compression

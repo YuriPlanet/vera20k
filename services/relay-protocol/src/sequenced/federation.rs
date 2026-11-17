@@ -349,6 +349,14 @@ impl Federation {
             .fold(local_ready & self.local, |mask, link| mask | link.ready)
     }
 
+    fn agreement_mismatch(&self, agreement: &[u8; 32]) -> bool {
+        // Before its first player sends Ready a relay advertises zeroes,
+        // which are not a proposal. A nonempty mask authenticates its choice.
+        self.links
+            .iter()
+            .any(|link| link.ready != 0 && link.agreement != *agreement)
+    }
+
     /// Relays forwarding a player DATA packet from `source` to `target`.
     pub(crate) fn data_links(&self, source: u8, target: u8) -> Vec<usize> {
         (0..self.links.len())
@@ -443,10 +451,22 @@ impl Federation {
 
     /// Startup: the coordinator starts once every relay reports the full
     /// roster ready, leaving its slowest link time to hear. The others place
-    /// the same start on their own clocks and keep slewing toward it. Only
-    /// the coordinator cancels, on any relay's request before its start; each
-    /// relay requests it once its own startup reaches the loading limit.
+    /// the same start on their own clocks and keep slewing toward it. Ordinary
+    /// cancellation goes through the coordinator, on any relay's request;
+    /// a proved agreement mismatch refuses the start on each relay itself.
+    /// Each relay requests cancellation once its loading limit is reached.
     pub(super) fn coordinate(&mut self, ordering: &mut OrderingRoom, now_ms: u64) {
+        // VERA's initial-world agreement has no native counterpart. Reject
+        // proved disagreement instead of treating the other relay as unready
+        // until the loading timeout. Keep checking cancelled starts: a late
+        // proof can replace a generic cancellation reason on this relay.
+        if ordering.starts_at.is_none()
+            && self.agreement_mismatch(&ordering.agreement)
+            && !ordering.agreement_mismatch
+        {
+            ordering.agreement_mismatch = true;
+            ordering.cancel(now_ms);
+        }
         if ordering.finished_at.is_some() {
             return;
         }
@@ -1083,7 +1103,7 @@ impl RelayServer {
 #[cfg(test)]
 mod tests {
     use super::super::tests::{
-        TestDirectory, certificate, client, configure, connect, endpoint, events, pull, renew,
+        TestDirectory, certificate, client, connect, endpoint, events, pull, renew,
         told_silent, unix,
     };
     use super::*;
@@ -1119,6 +1139,14 @@ mod tests {
 
         /// A match whose players on unready relays connect but never send Ready.
         fn build(drop_first_copies: bool, ready: [bool; 2]) -> Self {
+            Self::with_agreements(drop_first_copies, ready, [[7; 32]; 2])
+        }
+
+        fn with_agreements(
+            drop_first_copies: bool,
+            ready: [bool; 2],
+            agreements: [[u8; 32]; 2],
+        ) -> Self {
             let keys = [SecretKey::new([11; 32]), SecretKey::new([12; 32])];
             let addresses = [
                 SocketAddrV4::new(Ipv4Addr::new(192, 0, 2, 1), 5000),
@@ -1153,10 +1181,18 @@ mod tests {
                 game.clients[relay].set_federation(&roster).unwrap();
                 connect(&mut game.relays[relay], &mut game.clients[relay], clock);
                 if ready[relay] {
-                    configure(
+                    let mut bytes = Vec::new();
+                    game.clients[relay]
+                        .configure_ordering(
+                            &certificate(&keys[relay], 3, 2000),
+                            agreements[relay],
+                            &mut bytes,
+                        )
+                        .unwrap();
+                    events(
                         &mut game.relays[relay],
                         &mut game.clients[relay],
-                        &certificate(&keys[relay], 3, 2000),
+                        &bytes,
                         clock,
                     );
                 }
@@ -1712,6 +1748,96 @@ mod tests {
         );
         assert_eq!(latency[0], healthy[0]);
         assert_eq!(game.stream(0), game.stream(1));
+    }
+
+    #[test]
+    fn different_federated_start_agreements_refuse_both_players_promptly() {
+        let mut game = Match::with_agreements(false, [true; 2], [[7; 32], [8; 32]]);
+        for _ in 0..400 {
+            game.step();
+        }
+        for relay in 0..2 {
+            let ordering = game.ordering(relay);
+            assert!(ordering.starts_at.is_none() && ordering.finished_at.is_some());
+            assert_eq!(ordering.head, 0, "no gameplay frame may be published");
+            let clock = game.clock(relay);
+            assert!(matches!(
+                pull(&mut game.relays[relay], &mut game.clients[relay], 1, clock).as_slice(),
+                [OrderEvent::Error {
+                    code: OrderError::AgreementMismatch,
+                    ..
+                }]
+            ));
+            let mut bytes = Vec::new();
+            let current = game.clients[relay].ordering.as_ref().unwrap();
+            let (certificate, agreement) = (current.certificate.clone(), current.agreement);
+            game.clients[relay]
+                .configure_ordering(&certificate, agreement, &mut bytes)
+                .unwrap();
+            assert!(matches!(
+                events(
+                    &mut game.relays[relay],
+                    &mut game.clients[relay],
+                    &bytes,
+                    clock
+                )
+                .as_slice(),
+                [OrderEvent::Error {
+                    code: OrderError::AgreementMismatch,
+                    ..
+                }]
+            ));
+            bytes.clear();
+            game.clients[relay]
+                .test_uplink(None, clock, &mut bytes)
+                .unwrap();
+            assert!(matches!(
+                events(
+                    &mut game.relays[relay],
+                    &mut game.clients[relay],
+                    &bytes,
+                    clock
+                )
+                .as_slice(),
+                [OrderEvent::Error {
+                    code: OrderError::AgreementMismatch,
+                    ..
+                }]
+            ));
+        }
+        // Empty journals are reclaimed, but the refusal remains a tombstone.
+        game.step();
+        assert!(game.ordering(0).journal.is_none() && game.ordering(1).journal.is_none());
+    }
+
+    #[test]
+    fn a_late_different_ready_refuses_a_previously_unready_federated_relay() {
+        let mut game = Match::build(false, [true, false]);
+        for _ in 0..400 {
+            game.step();
+        }
+        assert!(game.ordering(0).finished_at.is_none());
+        let clock = game.clock(1);
+        let key = game.relays[1].key.clone();
+        let mut bytes = Vec::new();
+        game.clients[1]
+            .configure_ordering(&certificate(&key, 3, 2000), [8; 32], &mut bytes)
+            .unwrap();
+        events(&mut game.relays[1], &mut game.clients[1], &bytes, clock);
+        for _ in 0..400 {
+            game.step();
+        }
+        for relay in 0..2 {
+            assert!(game.ordering(relay).starts_at.is_none());
+            let clock = game.clock(relay);
+            assert!(matches!(
+                pull(&mut game.relays[relay], &mut game.clients[relay], 1, clock).as_slice(),
+                [OrderEvent::Error {
+                    code: OrderError::AgreementMismatch,
+                    ..
+                }]
+            ));
+        }
     }
 
     #[test]
