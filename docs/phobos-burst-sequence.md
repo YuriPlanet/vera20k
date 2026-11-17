@@ -126,6 +126,14 @@ control.
   `ARTMD.INI` belongs to a `[VehicleTypes]` entry), so this stays dormant.
   Effect: VERA launches on frame 0 where native would never launch. `FireUp=0`
   is not affected: native's frame 0 matches.
+- `OmniFire.TurnToTarget` while a `FireUp=` frame holds the shot: native's
+  `UnitClass_UpdateFiring_OmniFireTurnToTarget @ 0x736E6E` runs before
+  `UnitClass_UpdateFiring_FireUp @ 0x736F61`, so the hull or jumpjet facing
+  turns even when the sequence holds the shot. VERA evaluates the turn before
+  the gate but applies it only on the non-held path. Trigger: a unit authoring
+  both an SHP `FireUp=` and `OmniFire.TurnToTarget=yes`; retail authors no unit
+  `FireUp=`, so this stays dormant. Effect: VERA keeps the previous facing on
+  held frames.
 - `Burst.NoDelay` together with this key: VERA's `Burst.NoDelay` loop re-enters
   admission, which re-runs the sequence frame test and its draws; native's
   `Burst.NoDelay` hook calls `Fire` directly and fires the remaining shots
