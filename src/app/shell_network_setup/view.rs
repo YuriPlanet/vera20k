@@ -32,8 +32,7 @@ pub(crate) fn choice(state: &AppState, item: SkirmishComboItem) -> SetupChoice {
         }
         SkirmishComboItem::ColorSentinel(value) => value,
         SkirmishComboItem::Color(value) => value as i32,
-        SkirmishComboItem::Start(LaunchStartPosition::Auto) => -2,
-        SkirmishComboItem::Start(LaunchStartPosition::Position(index)) => i32::from(index),
+        SkirmishComboItem::Start(start) => start.shell_value(),
         SkirmishComboItem::Team(value) => value,
         SkirmishComboItem::AiType(value) => value.item_data(),
     };
@@ -45,12 +44,6 @@ pub(crate) fn choice(state: &AppState, item: SkirmishComboItem) -> SetupChoice {
         } else {
             None
         },
-    }
-}
-fn team_value(team: LaunchTeam) -> i32 {
-    match team {
-        LaunchTeam::None => -2,
-        LaunchTeam::Team(index) => i32::from(index),
     }
 }
 
@@ -457,20 +450,10 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         // (`service::place_player`).
         let host_moves = several && host && !is_local && human.is_some() && !observer;
         let choices = session.network_row_choices(row)?;
-        let country = if observer {
-            -3
-        } else if choices.country_random {
-            -2
-        } else {
-            side_item_data_for_country(choices.country)
-        };
-        let color = if choices.color_random {
-            -2
-        } else {
-            i32::from(choices.color_index)
-        };
+        let country = choices.country_shell_value(observer);
+        let color = choices.color_shell_value();
         let start = choices.start_position;
-        let team = team_value(choices.team);
+        let team = choices.team.shell_value();
         let slot_value = if human.is_some() {
             0
         } else if let Some(ai) = ai {
@@ -750,14 +733,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         for (column, value, choices) in [
             (SetupColumn::Country, country, countries),
             (SetupColumn::Color, color, colors),
-            (
-                SetupColumn::Start,
-                match start {
-                    LaunchStartPosition::Auto => -2,
-                    LaunchStartPosition::Position(index) => i32::from(index),
-                },
-                starts,
-            ),
+            (SetupColumn::Start, start.shell_value(), starts),
             (SetupColumn::Team, team, team_items),
         ] {
             let selected = choices.iter().position(|item| item.value == value);

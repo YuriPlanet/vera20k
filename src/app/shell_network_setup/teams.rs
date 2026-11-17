@@ -44,13 +44,7 @@ pub(crate) fn lobby_refused_option(state: &mut AppState) -> Option<&'static str>
     {
         return Some("VERA:WatchingNotTaken");
     }
-    let random_map = state
-        .match_state
-        .session
-        .network_setup()
-        .and_then(|launch| launch.selected_map_file.as_deref())
-        .is_some_and(|file| file.eq_ignore_ascii_case("RandMap.Sed"));
-    if random_map
+    if super::maps::generated_selection(&state.match_state.session)
         && state
             .frontend
             .multiplayer_shell_runtime
@@ -170,10 +164,7 @@ pub(super) fn team_starts(state: &mut AppState, keep_picks: bool) -> anyhow::Res
     // -2 is the Team list's no team, which plays alone.
     let teams: Vec<i32> = seats
         .iter()
-        .map(|&(_, team, _)| match team {
-            LaunchTeam::Team(team) => i32::from(team),
-            LaunchTeam::None => -2,
-        })
+        .map(|&(_, team, _)| team.shell_value())
         .collect();
     let session = &state.match_state.session;
     let bases = starts

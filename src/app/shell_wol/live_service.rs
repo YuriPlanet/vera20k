@@ -2043,7 +2043,7 @@ fn local_map_status(state: &AppState, service: &LiveService) -> u8 {
     else {
         return 0;
     };
-    if file.eq_ignore_ascii_case("RandMap.Sed")
+    if crate::map::rmg::is_seed_selection(file)
         && state
             .match_state
             .session

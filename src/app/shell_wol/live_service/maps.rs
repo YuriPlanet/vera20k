@@ -193,38 +193,28 @@ impl Transfers {
         if !self.active {
             return Ok(());
         }
-        let Some(launch) = state.match_state.session.network_setup() else {
+        if state.match_state.session.network_setup().is_none() {
             self.key = None;
             self.transfer = None;
             return Ok(());
-        };
+        }
         let Some(metadata) = state.match_state.session.network_map_metadata().cloned() else {
             return Ok(());
         };
         let Some(scope) = self.scope(state) else {
             return Ok(());
         };
-        let seed = launch
-            .selected_map_file
-            .as_deref()
-            .is_some_and(|s| s.eq_ignore_ascii_case("RandMap.Sed"));
+        let seed = shared_maps::generated_selection(&state.match_state.session);
         if seed && self.generated.is_none() {
             return Ok(());
         }
         let key = Key {
             room: scope,
             digest: metadata.source_sha256.clone(),
-            total: usize::try_from(metadata.byte_length)?,
+            total: shared_maps::transfer_length(&metadata)?,
             effective_digest: metadata.effective_digest.clone(),
             random: self.generated.clone(),
         };
-        ensure!(
-            crate::map::source::valid_source_sha256(&key.digest)
-                && crate::map::source::valid_source_sha256(&key.effective_digest)
-                && key.total > 0
-                && key.total <= TransferResource::Map.limit(),
-            "invalid map transfer identity"
-        );
         if self.key.as_ref() != Some(&key) {
             self.forget_other_available(&key);
             // An offer for the previous map closes, asking or downloading.
@@ -562,7 +552,7 @@ impl Transfers {
                             .ok_or_else(|| anyhow!("no asset directory"))?;
                         let source = crate::map::source::transfer_file_source(
                             &crate::map::source::random_map_dir(&config.paths.ra2_dir)
-                                .join("RandMap.img"),
+                                .join(crate::map::skirmish_scenarios::RANDMAP_PREVIEW),
                             resource,
                         )?;
                         ensure!(

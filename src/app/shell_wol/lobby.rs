@@ -5016,7 +5016,7 @@ pub(super) fn locale_name(state: &AppState, name: &str) -> Option<String> {
 fn scenario_description(state: &AppState, scenario: &str) -> String {
     use crate::util::native_string::crt_strcmpi;
     use std::cmp::Ordering;
-    if crt_strcmpi(scenario, crate::app::shell_random_map::RANDMAP_SED_FILE) == Ordering::Equal {
+    if crt_strcmpi(scenario, crate::map::skirmish_scenarios::RANDMAP_SED) == Ordering::Equal {
         return csf(
             state,
             crate::app::shell_random_map::RANDOM_MAP_DESCRIPTION_KEY,

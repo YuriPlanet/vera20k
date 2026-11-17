@@ -111,6 +111,15 @@ pub fn ini_sections(sections: &serde_json::Value) -> crate::rules::ini_parser::I
     crate::rules::ini_parser::IniFile::from_str(&text)
 }
 
+/// The bytes a fixture's hex string spells, two digits each.
+pub fn unhex(text: &str) -> Vec<u8> {
+    assert!(text.len().is_multiple_of(2), "odd-length hex fixture");
+    text.as_bytes()
+        .chunks_exact(2)
+        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+        .collect()
+}
+
 /// Contents of the fixture at `path`, relative to the checkout root.
 pub fn bytes(path: &'static str) -> &'static [u8] {
     fixture(path).bytes.get_or_init(|| {

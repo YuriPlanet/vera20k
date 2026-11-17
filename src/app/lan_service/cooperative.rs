@@ -201,17 +201,9 @@ fn options_record(options: &CooperativeRoundOptions) -> CooperativeOptionsRecord
                     color: -1,
                 },
                 |(_, choices)| CooperativeHumanWords {
-                    start: options::start_value(choices.start_position),
-                    country: if choices.country_random {
-                        -2
-                    } else {
-                        i32::from(choices.country.raw_index())
-                    },
-                    color: if choices.color_random {
-                        -2
-                    } else {
-                        i32::from(choices.color_index)
-                    },
+                    start: choices.start_position.shell_value(),
+                    country: choices.country_shell_value(false),
+                    color: choices.color_shell_value(),
                 },
             )
     });
@@ -257,7 +249,7 @@ fn round_options(
             words.country,
             words.color,
             words.start,
-            options::team_value(human.slot.team),
+            human.slot.team.shell_value(),
         )?;
         humans.push((row, choices));
     }

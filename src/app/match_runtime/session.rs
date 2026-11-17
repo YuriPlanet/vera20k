@@ -107,24 +107,10 @@ impl NetworkAiOptions {
     pub(crate) fn of(ai: &crate::skirmish_launch::SkirmishAiSlot) -> Self {
         Self {
             difficulty: ai.difficulty.as_i32(),
-            country: if ai.country_random {
-                -2
-            } else {
-                i32::from(ai.country.raw_index())
-            },
-            color: if ai.color_random {
-                -2
-            } else {
-                i32::from(ai.color_index)
-            },
-            start: match ai.start_position {
-                crate::skirmish_launch::LaunchStartPosition::Auto => -2,
-                crate::skirmish_launch::LaunchStartPosition::Position(index) => i32::from(index),
-            },
-            team: match ai.team {
-                crate::skirmish_launch::LaunchTeam::None => -2,
-                crate::skirmish_launch::LaunchTeam::Team(index) => i32::from(index),
-            },
+            country: ai.country_shell_value(),
+            color: ai.color_shell_value(),
+            start: ai.start_position.shell_value(),
+            team: ai.team.shell_value(),
         }
     }
 
@@ -202,7 +188,7 @@ impl NetworkMapMetadata {
     ///5E5500..5844: custom missing maps permit Accept and request transfer;
     /// RandMap.Sed bypasses physical availability.
     pub fn admission(&self, file: &str, local_present: bool) -> NetworkMapAdmission {
-        if local_present || file.eq_ignore_ascii_case("RandMap.Sed") {
+        if local_present || file.eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED) {
             NetworkMapAdmission::Present
         } else if self.official {
             NetworkMapAdmission::Unavailable
@@ -1367,10 +1353,7 @@ impl MatchSession {
             inactive_choices[index].team = native_network_row_defaults(&launch.mode, false).team;
             //5ED1B0 ->5EE510 runs after the clear above, including for Open
             //and Closed rows: the raw team array takes mode+2C last.
-            inactive_ai_options[index].team = match inactive_choices[index].team {
-                crate::skirmish_launch::LaunchTeam::None => -2,
-                crate::skirmish_launch::LaunchTeam::Team(team) => i32::from(team),
-            };
+            inactive_ai_options[index].team = inactive_choices[index].team.shell_value();
         }
         launch.ai_player_count = launch.opponents.len() as i32;
         launch.rebuild_house_roster();
@@ -2814,10 +2797,7 @@ impl MatchSession {
         //5EE510 writes A8B2FC even for rows whose display pointer is human
         //or vacant.5E9E70's start reset affects controls, not A8B2DC.
         for raw in inactive_ai_options {
-            raw.team = match human_team {
-                crate::skirmish_launch::LaunchTeam::None => -2,
-                crate::skirmish_launch::LaunchTeam::Team(team) => i32::from(team),
-            };
+            raw.team = human_team.shell_value();
         }
         launch.rebuild_house_roster();
         candidate.keep_spectator_row()?;

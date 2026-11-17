@@ -160,11 +160,11 @@ fn seat_value(seat: SkirmishSetupSeat) -> String {
         .color
         .and_then(|color| i32::try_from(color).ok())
         .unwrap_or(RANDOM_ITEM_DATA);
-    let start = match seat.start {
-        LaunchStartPosition::Auto => RANDOM_ITEM_DATA,
-        LaunchStartPosition::Position(index) => i32::from(index),
-    };
-    format!("{country},{color},{start},{}", seat.team)
+    format!(
+        "{country},{color},{},{}",
+        seat.start.shell_value(),
+        seat.team
+    )
 }
 
 #[cfg(all(test, tests_app_frontend))]

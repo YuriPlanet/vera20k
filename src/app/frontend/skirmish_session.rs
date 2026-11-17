@@ -703,16 +703,8 @@ impl MultiplayerShellRuntime {
                         AiDifficulty::Normal => 5,
                         AiDifficulty::Hard => 6,
                     },
-                    country: if ai.country_random {
-                        RANDOM_ITEM_DATA
-                    } else {
-                        menu_country_item_data(ai.country)
-                    },
-                    colour: if ai.color_random {
-                        RANDOM_ITEM_DATA
-                    } else {
-                        i32::from(ai.color_index)
-                    },
+                    country: ai.country_shell_value(),
+                    colour: ai.color_shell_value(),
                 }
             } else if let Some(human) = launch
                 .humans
@@ -723,18 +715,8 @@ impl MultiplayerShellRuntime {
                 // getters still preserve that row's country/color (5ED400).
                 SkirmishPersistedSlot {
                     row_type: 2,
-                    country: if human.is_observer() {
-                        -3
-                    } else if human.slot.country_random {
-                        RANDOM_ITEM_DATA
-                    } else {
-                        menu_country_item_data(human.slot.country)
-                    },
-                    colour: if human.slot.color_random {
-                        RANDOM_ITEM_DATA
-                    } else {
-                        i32::from(human.slot.color_index)
-                    },
+                    country: human.slot.country_shell_value(human.is_observer()),
+                    colour: human.slot.color_shell_value(),
                 }
             } else {
                 SkirmishPersistedSlot {
@@ -749,23 +731,12 @@ impl MultiplayerShellRuntime {
                         row_choices[usize::from(row)]
                             .as_ref()
                             .map_or(RANDOM_ITEM_DATA, |choices| {
-                                if choices.country_random {
-                                    RANDOM_ITEM_DATA
-                                } else {
-                                    menu_country_item_data(choices.country)
-                                }
+                                choices.country_shell_value(false)
                             })
                     },
-                    colour: row_choices[usize::from(row)].as_ref().map_or(
-                        RANDOM_ITEM_DATA,
-                        |choices| {
-                            if choices.color_random {
-                                RANDOM_ITEM_DATA
-                            } else {
-                                i32::from(choices.color_index)
-                            }
-                        },
-                    ),
+                    colour: row_choices[usize::from(row)]
+                        .as_ref()
+                        .map_or(RANDOM_ITEM_DATA, |choices| choices.color_shell_value()),
                 }
             };
         }
@@ -2114,18 +2085,7 @@ pub(crate) fn persona_seat(country: i32, color: i32) -> crate::skirmish_launch::
 /// A seat's side and colour as My Information's item data (-2 Random):
 /// [`persona_seat`]'s inverse.
 pub(crate) fn seat_items(slot: &crate::skirmish_launch::SkirmishLocalSlot) -> (i32, i32) {
-    (
-        if slot.country_random {
-            RANDOM_ITEM_DATA
-        } else {
-            menu_country_item_data(slot.country)
-        },
-        if slot.color_random {
-            RANDOM_ITEM_DATA
-        } else {
-            i32::from(slot.color_index)
-        },
-    )
+    (slot.country_shell_value(false), slot.color_shell_value())
 }
 
 fn menu_country_from_item_data(value: i32) -> Option<LaunchCountry> {

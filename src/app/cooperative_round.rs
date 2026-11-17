@@ -124,18 +124,7 @@ fn save_houses(state: &AppState) -> [(i32, i32); 2] {
         return [(-1, -1); 2];
     };
     let value = |slot: &crate::skirmish_launch::SkirmishLocalSlot| {
-        (
-            if slot.country_random {
-                -2
-            } else {
-                i32::from(slot.country.raw_index())
-            },
-            if slot.color_random {
-                -2
-            } else {
-                i32::from(slot.color_index)
-            },
-        )
+        (slot.country_shell_value(false), slot.color_shell_value())
     };
     let partner = launch
         .humans
