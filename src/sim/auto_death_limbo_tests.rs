@@ -126,7 +126,11 @@ fn the_limbo_arm_settles_the_transporter_gunner_and_the_power_recheck() {
     let transport = place(&mut sim, &rules, "TRNS", 10, 10);
     let payload = cargo(&sim, transport);
     assert_eq!(payload.len(), 3, "InitialPayload fills the hold");
-    let (dead, first, last) = (payload[0], payload[1], payload[2]);
+    // `passengers()` is list head first and each Ares payload passenger joins
+    // at the head, so the first boarded `TLIMBO` is the list's last entry and
+    // the two IFVs sit in front of it in reverse board order.
+    let dead = payload[2];
+    let (ifv1, ifv2) = (payload[1], payload[0]);
     assert!(
         sim.auto_death_objects.contains(&dead),
         "the Ares payload admission registers a keyed type only"
@@ -146,7 +150,7 @@ fn the_limbo_arm_settles_the_transporter_gunner_and_the_power_recheck() {
     assert!(!alive(&sim, dead), "the limbo arm uninits the object");
     assert_eq!(
         cargo(&sim, transport),
-        [first, last],
+        [ifv2, ifv1],
         "UnInit leaves the surviving cargo behind"
     );
     assert_eq!(
@@ -154,8 +158,8 @@ fn the_limbo_arm_settles_the_transporter_gunner_and_the_power_recheck() {
             .get(transport)
             .unwrap()
             .current_weapon_number(),
-        2,
-        "ReceiveGunner takes the last remaining passenger, whose IFVMode is 2"
+        1,
+        "ReceiveGunner takes the cargo list's last remaining passenger (TIFV1), whose IFVMode is 1"
     );
 
     // `:739-743`: an absorbed passenger's extra power leaves with it. The
