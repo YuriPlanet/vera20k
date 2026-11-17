@@ -435,7 +435,7 @@ bytes: u32,               // 投递区的字节数
 | 18 | `client_send_order` | `(ptr, len) -> i32` | 发出标准玩家指令（`Order`），像玩家输入一样校验 |
 | 19 | `client_send_message` | `(ptr, len) -> i32` | 消息进入命令流，到达同一来源模拟模块的 `on_message`；观战者为 `Refused`；限大小和频率（[RFC 11](0001-wasm-extension-modules.zh-CN.md#11-联机)） |
 | 20 | `client_storage_read` | `(key: ptr, key_len, out: ptr, cap: i32) -> i32` | 读模块来源的存储，返回长度；没有为 −1 和 `NotFound`（[RFC 10](0001-wasm-extension-modules.zh-CN.md#10-客户端模块)） |
-| 21 | `client_storage_write` | `(key: ptr, key_len, data: ptr, data_len) -> i32` | 写存储；超出配额为 `Refused` |
+| 21 | `client_storage_write` | `(key: ptr, key_len, data: ptr, data_len) -> i32` | 写存储；`data_len` 为 0 时删除该键；键 1..64 字节 ASCII，值 ≤ 16 KiB，每个来源 ≤ 256 个键、合计 ≤ 256 KiB；超出为 `Refused`，存储不变 |
 
 `client_init` 中只可用 `client_lookup`、`client_name_of`、`client_has_kind`、`client_last_status`、`client_log`。
 
