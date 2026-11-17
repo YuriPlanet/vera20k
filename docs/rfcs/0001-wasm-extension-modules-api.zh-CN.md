@@ -69,6 +69,7 @@
 | `ref` | 引用 |
 | `id` | 某个名字种类的 ID |
 | `string` | 字符串 ID：用 `name_of(String, id, ...)` 读出（SDK 直接返回字符串）；用 `client_set_bytes` 写 |
+| `bytes` | 字节数据，布局见该属性；用 `client_set_bytes` 写 |
 
 ### 字符串与缓冲区
 
@@ -240,9 +241,10 @@ struct ActionParams {     // 72 字节
 struct ClientEventRecord { // 32 字节
     kind: i32,             // 0   客户端事件种类（4.6）
     source: i32,           // 4   Notify：发送模块的来源，0 mod，1 地图；否则为 0
-    node: i64,             // 8   Click、Hover、Dismiss：节点；否则为 0
+    ref: i64,              // 8   Click、Hover、Dismiss：节点；MapClick：格子引用；否则为 0
     id: i32,               // 16  Hotkey：热键 ID；Notify：通知 ID；否则为 -1
-    value: i32,            // 20  Hover：1 进入，0 离开；Click：List 的行号，其他为 −1
+    value: i32,            // 20  Hover：1 进入，0 离开；Click：List 的行号或 CameoGrid 的条目下标，其他为 −1；
+                           //     MapClick：0 左键，1 右键
     data: i32,             // 24  Notify：数据，位于投递区
     data_len: i32,         // 28
 }
@@ -424,8 +426,8 @@ bytes: u32,               // 投递区的字节数
 | 9 | `client_get_many` | `(refs: ptr, n: i32, props: ptr, m: i32, out: ptr) -> i32` | 同 `get_many`，规则同上 |
 | 10 | `client_find` | `(query: ptr, len, out: ptr, cap: i32) -> i32` | 同 `find`，只返回本玩家能看到的 |
 | 11 | `client_var_get` | `(scope: i64, var: i32) -> i64` | 读变量，受可见度限制（[RFC 6e](0001-wasm-extension-modules.zh-CN.md#6e-变量)） |
-| 12 | `client_set` | `(ref: i64, prop: i32, value: i64) -> i32` | 写客户端拥有的引用的属性：节点、镜头、本地设置；无权写的节点为 `Refused`（[RFC 10](0001-wasm-extension-modules.zh-CN.md#10-客户端模块)） |
-| 13 | `client_set_bytes` | `(ref: i64, prop: i32, ptr, len) -> i32` | 写字符串属性（`Label`、`Art`、`Items`……）；无权写的节点为 `Refused` |
+| 12 | `client_set` | `(ref: i64, prop: i32, value: i64) -> i32` | 写客户端拥有的引用的属性：节点、镜头、光标、本地设置；无权写的节点为 `Refused`（[RFC 10](0001-wasm-extension-modules.zh-CN.md#10-客户端模块)） |
+| 13 | `client_set_bytes` | `(ref: i64, prop: i32, ptr, len) -> i32` | 写字符串或字节属性（`Label`、`Art`、`Items`、`ItemProgress`……）；无权写的节点为 `Refused` |
 | 14 | `client_node_create` | `(kind: i32, parent: i64, props: ptr, len) -> i64` | 新建节点（`NodeKind`），初始属性为 `PropValue` 数组；`parent` 0 为顶层 |
 | 15 | `client_node_remove` | `(node: i64) -> i32` | 删除节点及子节点；无权删除的节点为 `Refused` |
 | 16 | `client_node_find` | `(ptr, len) -> i64` | 按 `Name` 找节点（7.10：INI 节点为当前布局中的部件名）；同名时为先创建的；没有为 0 |
@@ -480,7 +482,7 @@ bytes: u32,               // 投递区的字节数
 
 规则见 [RFC 5](0001-wasm-extension-modules.zh-CN.md#5-执行模型)、[RFC 6a](0001-wasm-extension-modules.zh-CN.md#6a-触发器事件筛选子句和动作)、[RFC 6f](0001-wasm-extension-modules.zh-CN.md#6f-可决定事件)、[RFC 7](0001-wasm-extension-modules.zh-CN.md#7-运行时的触发器和标签)。
 
-图例：**字段**为填入的 `EventRecord` 字段；**绑定** `对象` 为只对绑定了触发器的对象（对象绑定、类型绑定或标签）引发，`格子` 为只对绑定了触发器的格子（CellTag 或格子绑定）引发，`全局` 为无需绑定；**结果槽**为 `result` 的含义（`native` 同义）；结果区的字节数按事件种类固定（待定问题 7）。House 标签事件每 8 帧轮询，Logic 标签事件每帧轮询。
+图例：**字段**为填入的 `EventRecord` 字段；**绑定** `对象` 为只对绑定了触发器的对象（对象绑定、类型绑定或标签）引发，`类型` 为只对绑定了触发器的类型引发，`格子` 为只对绑定了触发器的格子（CellTag 或格子绑定）引发，`全局` 为无需绑定；**结果槽**为 `result` 的含义（`native` 同义）；结果区的字节数按事件种类固定（待定问题 7）。House 标签事件每 8 帧轮询，Logic 标签事件每帧轮询。
 
 ### 4.1 原版事件 0..61
 
@@ -607,6 +609,7 @@ bytes: u32,               // 投递区的字节数
 | `TransportExited` | 同 `TransportEntered` | 离开完成后 | 对象 | 否 | — |
 | `PassengerAdded` | 在载具或建筑（`subject`）上；`other` 乘客，`value` 已占空间，`value2` 驻军标志 | 同 `TransportEntered` | 对象 | 否 | — |
 | `PassengerRemoved` | 同 `PassengerAdded` | 同 `TransportExited` | 对象 | 否 | — |
+| `Commanded` | 在单位（`subject`）上；`value` 指令（`Command`），`other` 目标对象（可为 0），`cell` 目标格子（可为 0），`value2` 指令序号（一次点击下给多个单位的同一条指令共用） | 模拟执行绑定对象的玩家或 AI 指令后 | 对象 | 否 | — |
 | `Crushed` | `other` 碾压者，`x`、`y`、`z` 位置（lepton） | 碾压后 | 对象 | 否 | — |
 | `HouseTransfer` | `house` 新所属方，`value` 1 为心控 | 转移前；转移重新检查 | 对象 | 否 | — |
 | `HouseTransferred` | `house` 原所属方，`value` 1 为心控 | 转移后 | 对象 | 否 | — |
@@ -615,6 +618,7 @@ bytes: u32,               // 投递区的字节数
 | `ModifierStacks` | `modifier`，`value` 同组的新修饰器数 | 同组修饰器数增加后 | 对象；所属方上的修饰器为全局，填 `house` | 否 | — |
 | `Timer` | `value` 上次触发的帧 | 每 `interval` 帧 | 全局 | 否 | — |
 | `SuperWeaponLaunched` | `id` 超级武器类型，`house`，`cell` 目标 | 超级武器发射后 | 全局 | 否 | — |
+| `ProductionCancelled` | `house`，`id` 类型，`value` 退还的金钱 | 玩家或 AI 取消生产队列中的条目后 | 类型 | 否 | — |
 
 ### 4.4 新的轮询型事件
 
@@ -643,6 +647,7 @@ bytes: u32,               // 投递区的字节数
 | 事件 | 字段 | 决策点 | 绑定 | 结果槽 | 层级 |
 | --- | --- | --- | --- | --- | --- |
 | `ProductionAllowed` | `house`，`id` 类型 | 每帧每个所属方和每个绑定类型一次，在固定步骤；侧边栏和 AI 读缓存结果 | 类型 | 1 允许，0 不允许 | v1? |
+| `ProductionQueued` | `house`，`id` 类型，`subject` 0 | 玩家或 AI 把类型加入生产队列时 | 类型 | 1 允许，0 拒绝：拒绝的条目不入队，不花钱 | v1? |
 | `CommandAllowed` | `subject`，`value` 指令（`Command`），`other` 目标对象，`cell` 目标格子 | 模拟执行绑定对象的每条玩家或 AI 指令时；光标预览不引发 | 对象 | 1 允许，0 拒绝 | v1? |
 | `Launch` | `projectile`，`subject` 发射者，`other` 目标，`cell` 目标格子 | 绑定类型的每个抛射体射出时一次 | 对象+武器 | `PathSpec` 的字节数（32 + 24 × 点数）；结果区为一个 `PathSpec` | later |
 | `ProjectileFrame` | `projectile`，`value` 已飞行帧数 | 每帧在引擎推进抛射体之前，每个绑定抛射体类型一批，含该类型全部抛射体 | 抛射体类型 | 不用；结果区为一个 `ProjectileStep`；`handled` 为 0 时按原生推进 | later |
@@ -653,10 +658,11 @@ bytes: u32,               // 投递区的字节数
 
 | 种类 | 字段 | 何时 | 条件 |
 | --- | --- | --- | --- |
-| `Click` | `node`，`value` `List` 的行号（从 0 开始），其他节点为 −1 | 节点被点击；点击不再传给地图 | 节点 `Clickable` 为 1 |
-| `Hover` | `node`，`value` 1 进入 / 0 离开 | 光标进入或离开节点 | 节点 `Hoverable` 为 1 |
+| `Click` | `ref` 节点，`value` `List` 的行号或 `CameoGrid` 的条目下标（从 0 开始），其他节点为 −1 | 节点被点击；点击不再传给地图 | 节点 `Clickable` 为 1 |
+| `Hover` | `ref` 节点，`value` 1 进入 / 0 离开 | 光标进入或离开节点 | 节点 `Hoverable` 为 1 |
 | `Hotkey` | `id` 热键 ID | 注册的热键被按下 | 用本地动作 `RegisterHotkey` 注册（5.4）；按键也绑定了游戏热键时只执行游戏热键 |
-| `Dismiss` | `node` | 在节点外按下鼠标或按 Esc | 节点 `Dismissable` 为 1 且可见 |
+| `Dismiss` | `ref` 节点 | 在节点外按下鼠标或按 Esc | 节点 `Dismissable` 为 1 且可见 |
+| `MapClick` | `ref` 格子，`value` 0 左键 / 1 右键 | 在地图上点击；已产生 `Click` 或 `Dismiss` 的点击除外 | 总是；光标 `CaptureMapClick` 为 1 时点击不再传给游戏 |
 | `SelectionChanged` | — | 本地选择变化；用带 `Selected=1` 子句的 `client_find` 读取 | 总是 |
 | `Notify` | `source`，`id` 通知 ID，`data`、`data_len` | 发给本机的通知到达（[RFC 10](0001-wasm-extension-modules.zh-CN.md#10-客户端模块)） | 总是 |
 
@@ -852,7 +858,7 @@ Ares 动作（未启用 Ares 时为 `Unsupported`）：
 | `Damage` | 对象 | `id` 弹头，`value` 伤害；`other` 来源（可选） | — | 经弹头和护甲造成伤害，计击杀和经验 | native | v1? |
 | `SetHealth` | 对象 | `value` 生命点数 | — | 设定生命，不计击杀（同写 `Health`） | none | v1? |
 | `Heal` | 对象 | `value` 生命点数 | — | 回复生命，不计击杀 | none | v1? |
-| `CreateObject` | 格子 | `id` 类型；`house` 所属方；`arg` 初始任务（`Mission`，255 默认）；`other` 非 0 时复制其标签 | 新对象 | 创建完整对象；格子被占为 `Refused`，返回 0 | native | v1? |
+| `CreateObject` | 格子，或工厂建筑 | `id` 类型；`house` 所属方；`arg` 初始任务（`Mission`，255 默认）；`other` 非 0 时复制其标签 | 新对象 | 创建完整对象；目标为建筑时经该工厂的原生出口离开（开门、驶出、前往集结点，出口被堵时等待），建筑不是能生产该类型类别的工厂时为 `Refused`，返回 0；其他目标放在格子上，格子被占为 `Refused`，返回 0 | native | v1? |
 | `SetMission` | 对象 | `arg` 任务，`cell` 或 `other` 为任务目标 | — | 像玩家指令一样排入任务；带格子的 `Move` 移到该格 | none | v1 |
 | `Teleport` | 对象 | `cell`，`arg` 目标格被占时的规则（`Blocked`） | — | 超时空式移动；`Nearby` 选附近格子，`Fail` 拒绝 | native | v1? |
 | `ClearTarget` | 对象 | — | — | 放弃当前目标 | none | v1? |
@@ -1044,6 +1050,8 @@ INI，在 `on_rules` 中用 `rules_set` 写入，经原生读取器；这些节�
 | `NearbyEnemyCount` | int | R（派生） | own | v1? | 视野（`Sight`）内的敌方对象数 |
 | `TargetInRange` | bool | R（派生） | own | v1? | 当前目标在主武器射程内 |
 | `CanFireAtTarget` | bool | R（派生） | own | v1? | 现在能向当前目标开火 |
+| `DoorOpen` | bool | W | seen | v1? | 建筑：工厂出口的门开着；没有出口门的建筑和其他对象为 `Unsupported`；写入只改引擎绘制的显示状态，不开始生产或出厂 |
+| `Animating` | bool | W | seen | v1? | 建筑：工作动画开着；其他对象为 `Unsupported`；写入只改引擎绘制的显示状态，不开始生产或出厂 |
 | 可修饰属性 | 见 7.2 | | | | 可修饰 |
 
 ### 7.2 可修饰属性
@@ -1282,14 +1290,14 @@ Ares 和 Phobos 的键尚未分类。
 | `Text` | `Text` | v1 |
 | `Button` | `Button` | v1 |
 | `Row`、`Column` | `Row`、`Column` | v1 |
-| `CameoGrid` | `CameoGrid` | v1? |
+| `CameoGrid` | `CameoGrid` | v1 |
 | `List` | `List`（本 RFC 新增） | v1? |
 | `Image` | — | v1? |
-| `Bar`（进度条） | — | later |
+| `Bar`（进度条） | — | v1 |
 | `Decoration` | —：挂在一个对象上的显示属性 | v1? |
-| `MapMarker` | —：小地图或地图上的点、线、文字 | later |
+| `MapMarker` | —：小地图或地图上的点、线、文字 | v1 |
 
-**节点属性**（除注明外可写；`string` 用 `client_set_bytes` 写）：
+**节点属性**（除注明外可写；`string`、`bytes` 用 `client_set_bytes` 写）：
 
 | 属性 | 值 | 适用于 | 说明 |
 | --- | --- | --- | --- |
@@ -1303,7 +1311,9 @@ Ares 和 Phobos 的键尚未分类。
 | `Dismissable` | bool | 全部 | 为 1 且可见时，在节点外按下鼠标或按 Esc 产生 `Dismiss`；这次按下不传给地图 |
 | `Clickable` | bool | 全部 | 为 1 时产生 `Click`；INI 的 `Button` 默认为 1，其他为 0 |
 | `Hoverable` | bool | 全部 | 为 1 时产生 `Hover` |
-| `Items` | string | `List` | 每行一个条目（CSF 条目名或文字），`\n` 分隔 |
+| `Items` | string | `List`、`CameoGrid` | 每行一个条目，`\n` 分隔：`List` 为 CSF 条目名或文字；`CameoGrid` 为类型名，只用于模块新建的网格，原生网格只读 |
+| `ItemProgress` | bytes | `CameoGrid` | 按 `Items` 的顺序每个条目一个 `i32`：0..100，−1 为没有；只用于模块新建的网格 |
+| `ItemTooltips` | string | `CameoGrid` | 每行 `类型名=附加文字`，附加在该类型的提示文字之后；原生网格也可写 |
 | `Fill` | int | `Bar` | 0..100 |
 | `Anchor` | ref（对象） | `Decoration` | 所挂的对象；对象看不见时不显示 |
 | `Palette` | string | `Decoration` | |
@@ -1337,6 +1347,7 @@ Ares 和 Phobos 的键尚未分类。
 | 本地设置 | 其他本地设置 | — | 待定问题 14 | later |
 | 光标 | `X`、`Y` | int | R：屏幕像素，与节点 `X`、`Y` 同一坐标系 | v1（阶段 2） |
 | 光标 | `Cell` | ref（格子） | R：光标下的格子；不在地图上时为 0 | v1（阶段 2） |
+| 光标 | `CaptureMapClick` | bool | W：为 1 时地图点击只作为 `MapClick` 交给模块，不传给游戏；为 0（默认）时照常传给游戏，`MapClick` 仍会到达 | v1（阶段 2） |
 
 ## 8. 名字种类、搜索范围与其他枚举
 

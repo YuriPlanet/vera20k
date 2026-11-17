@@ -243,7 +243,7 @@ onScenarioStart((): void => {
 | 接口 | `vera:sim@1` | `vera:client@1`，每个函数都以 `client_` 开头 |
 | 运行在 | 每台机器上，锁步执行 | 仅本机 |
 | 确定性 | 是 | 否 |
-| 可以改变 | 游戏状态，通过引擎的 owner | 界面节点、镜头、本地设置、声音 |
+| 可以改变 | 游戏状态，通过引擎的 owner | 界面节点、镜头、光标、本地设置、声音 |
 | 影响游戏的方式 | 动作、属性写入、变量 | 通过命令流发出标准玩家指令和消息 |
 | 引擎侧 | `sim/` | `ui/`、`render/`、`audio/` |
 
@@ -406,7 +406,7 @@ MapUI=overlay        ; overlay、full 或 no
 - 会超过任一上限的触发器被推迟：它在下一帧模块阶段开始时、排队的动作之前触发，带着它原有的载荷。它的原版动作和原子动作在那时执行，它的模块动作加入那一帧的批次。如果它在此期间被禁用或删除，就被丢弃；它的筛选子句重新检查，它的所属方是主体在那一刻的所属方，作用于已不存在的主体的动作得到 `Gone`。等待中的推迟触发器存档并计入哈希。
 - 只由原版事件和原版动作组成的连锁从不推迟，与原版中完全一样地运行（目标 5）。
 
-**高频事件只对绑定的对象引发。** 伤害、开火、命中、抛射体引爆和碾压这类事件，以及所有可决定事件，只对绑定了触发器的对象或类型引发（第 6a 节）；没有“订阅所有对象”的用法。
+**高频事件只对绑定的对象引发。** 伤害、开火、命中、抛射体引爆、碾压和执行指令这类事件，以及所有可决定事件，只对绑定了触发器的对象或类型引发（第 6a 节）；没有“订阅所有对象”的用法。
 
 **存档。** 读档后，模块内存随快照恢复。初始化函数和 `on_scenario_start` 都不会再次运行，也没有 `on_load`。模块内存里的引用仍指向同样的对象，因为句柄是创建序号，不是存储位置。
 
@@ -484,7 +484,7 @@ MapUI=overlay        ; overlay、full 或 no
   Wasm.Tags=MissileFiredTag   ; 每个使用 RedEye2 的射手开火时都引发其 Fire 触发器
   ```
 
-- 高频事件（伤害、开火、命中、抛射体引爆、碾压）没有“所有对象”的订阅。真的需要全部对象时，SDK 的 `bindAllTypes` 把触发器逐个绑定到每个类型上，开销因此在代码里是明的。
+- 高频事件（伤害、开火、命中、抛射体引爆、碾压、执行指令）没有“所有对象”的订阅。真的需要全部对象时，SDK 的 `bindAllTypes` 把触发器逐个绑定到每个类型上，开销因此在代码里是明的。
 - 格子绑定（代码中把触发器绑定到格子引用）只用于[附录 4.1](0001-wasm-extension-modules-api.zh-CN.md#41-原版事件-061)中绑定列为“格子”的事件；把其他事件的触发器绑定到格子是非法参数。地图的 CellTag 照原版处理。
 - 和对象无关的全局事件（所属方事件、逻辑事件、`Timer`、`SuperWeaponLaunched`）不需要绑定。
 - 绑定到某个类型的触发器在每个绑定对象上以各自的实例运行（第 7 节）。
@@ -522,7 +522,7 @@ onScenarioStart((): void => {
 });
 ```
 
-版本 1 的候选连同各自的记录字段列在附录中：投递型事件见 [4.3](0001-wasm-extension-modules-api.zh-CN.md#43-新的投递型事件)（`TakeDamage`、`HitByWarhead`、`AttackedBy`、`FatalDamage`、`Killed`、`Fire`、`SpawnFire`、`HitTarget`、`Detonated`、`TargetChanged`、`ProjectileIncoming`、`Birth`、`TransportEntered`、`TransportExited`、`PassengerAdded`、`PassengerRemoved`、`Crushed`、`HouseTransfer`、`HouseTransferred`、`ModifierStart`、`ModifierStacks`、`ModifierExpire`、`Timer`、`SuperWeaponLaunched`），轮询型事件见 [4.4](0001-wasm-extension-modules-api.zh-CN.md#44-新的轮询型事件)（生命、弹药、乘客数、运载空间、载矿量、任务、是否移动、地形类型、所属方金钱、所属方电力、修饰器数量、距离、变量），只可决定的事件见 [4.5](0001-wasm-extension-modules-api.zh-CN.md#45-只可决定的事件)。哪些进入版本 1 是待定问题 12。
+版本 1 的候选连同各自的记录字段列在附录中：投递型事件见 [4.3](0001-wasm-extension-modules-api.zh-CN.md#43-新的投递型事件)（`TakeDamage`、`HitByWarhead`、`AttackedBy`、`FatalDamage`、`Killed`、`Fire`、`SpawnFire`、`HitTarget`、`Detonated`、`TargetChanged`、`ProjectileIncoming`、`Birth`、`TransportEntered`、`TransportExited`、`PassengerAdded`、`PassengerRemoved`、`Crushed`、`HouseTransfer`、`HouseTransferred`、`ModifierStart`、`ModifierStacks`、`ModifierExpire`、`Timer`、`SuperWeaponLaunched`、`Commanded`、`ProductionCancelled`），轮询型事件见 [4.4](0001-wasm-extension-modules-api.zh-CN.md#44-新的轮询型事件)（生命、弹药、乘客数、运载空间、载矿量、任务、是否移动、地形类型、所属方金钱、所属方电力、修饰器数量、距离、变量），只可决定的事件见 [4.5](0001-wasm-extension-modules-api.zh-CN.md#45-只可决定的事件)。哪些进入版本 1 是待定问题 12。
 
 **不进入引擎的：** INI 里的记录器、算子和表达式键。历史数据（比如某个攻击者累计造成的伤害）由模块记在变量或自己的内存里，并随之一起存档和计入哈希。INI 保持为数据，不变成一门编程语言。
 
@@ -553,7 +553,7 @@ onScenarioStart((): void => {
 - 明确的所属方（`House` 目标、`SetOwner` 的新所属方、所创建对象的所属方）取参数中的所属方。它为 0 时：在触发器中使用触发器的所属方（第 6a 节）；在直接调用中是非法参数（第 3 节）。原版动作中隐含使用触发器所属方的地方（例如 `LightningStormStrike`）同样取这个所属方。
 - 在触发器中，来源（伤害、击杀或引爆的来源：`Kill`、`Damage`、`DetonateWeapon`、`DetonateWarhead`）是事件中的另一方对象，并且是可选的：没有来源时，动作在没有来源的情况下执行，不计击杀归属。直接调用时，来源取参数中的引用。
 - 动作施加作用的第二个对象（乘客）在触发器中是事件中的另一方对象，直接调用时是参数中的引用。没有第二个对象，或者 `FireWeapon` 没有可瞄准的格子、另一方对象或当前目标时，动作得到 `Gone` 并被跳过。
-- 对象目标的格子是对象所在的格子；`Projectile` 目标的格子是抛射体下方的格子。坐标取该格子的中心；`Projectile` 目标例外，其坐标为抛射体的中心。
+- 对象目标的格子是对象所在的格子；`Projectile` 目标的格子是抛射体下方的格子。坐标取该格子的中心；`Projectile` 目标例外，其坐标为抛射体的中心。`CreateObject` 的目标为建筑时例外：新对象从这座工厂的原生出口离开，而不是放在格子上（附录 [5.3](0001-wasm-extension-modules-api.zh-CN.md#53-原子动作)）。
 - 每种动作用到的目标和字段，以及各动作自己的规则（例如 `FireWeapon` 的瞄准），见[附录 5.1](0001-wasm-extension-modules-api.zh-CN.md#51-动作的用法)。
 
 检查：
@@ -631,7 +631,7 @@ onScenarioStart((): void => {
 - mod 和地图的链式规则见第 2 节，不重入和额度见第 5 节。
 - 侧边栏和 AI 这类本地或频繁的读者读取缓存的结果：例如 `ProductionAllowed` 每帧对每个所属方和每个绑定类型决定一次，侧边栏显示这个结果。
 
-版本 1 提供哪两三个可决定事件是待定问题 10。候选：`TakeDamage`（伤害）、`TargetChanged`（目标选择）、`ProductionAllowed`、`Fire`（接管一次射击，第 9 节）、`CommandAllowed`、`FatalDamage`（死亡方式）。
+版本 1 提供哪两三个可决定事件是待定问题 10。候选：`TakeDamage`（伤害）、`TargetChanged`（目标选择）、`ProductionAllowed`、`ProductionQueued`（生产入队）、`Fire`（接管一次射击，第 9 节）、`CommandAllowed`、`FatalDamage`（死亡方式）。
 
 ### 7. 运行时的触发器和标签
 
@@ -702,7 +702,7 @@ Trigger.on(Event.TakeDamage).bind(Rules.technoType("E1")).action(giPanic);   // 
 
 ### 10. 客户端模块
 
-**导出。** 客户端模块导出四个函数：`client_init()`（SDK 从顶层代码生成）、`client_on_start()`（对局界面建好、INI 布局读完之后一次）、`client_on_render(dt, alpha)`（每个渲染帧一次）和 `client_on_events(ptr, count)`（每个渲染帧一次，带本帧的客户端事件）。点击、悬停、热键、关闭、选择变化和通知都是客户端事件种类（[附录 4.6](0001-wasm-extension-modules-api.zh-CN.md#46-客户端事件种类)）。
+**导出。** 客户端模块导出四个函数：`client_init()`（SDK 从顶层代码生成）、`client_on_start()`（对局界面建好、INI 布局读完之后一次）、`client_on_render(dt, alpha)`（每个渲染帧一次）和 `client_on_events(ptr, count)`（每个渲染帧一次，带本帧的客户端事件）。点击、悬停、热键、关闭、地图点击、选择变化和通知都是客户端事件种类（[附录 4.6](0001-wasm-extension-modules-api.zh-CN.md#46-客户端事件种类)）。
 
 **界面树。** 界面树由引擎持有，引擎负责布局和绘制。节点是客户端拥有的引用，有种类和属性（显示文字、图像、位置、可见性、可点击……）。模块用 `client_node_find` 按名字找到节点（INI 布局中的节点按部件名，即节名中布局前缀之后、`Parts=` 中写的名字，只在当前生效的布局中查找），用 `client_node_create` 和 `client_node_remove` 新建和删除节点，用 `client_set` 和 `client_set_bytes`（字符串属性）设置属性。修改按渲染帧批量提交，不会每帧重建整棵树。不暴露图形 API。
 
@@ -750,8 +750,8 @@ React 或 JSX 风格的库可以放在 SDK 里：它在模块内部计算差异�
 **其他客户端功能：**
 
 - 单个对象的显示属性用一种节点表示：`Decoration` 节点挂在一个对象上（`Anchor` 属性），带图像、调色板、着色、附加动画、可见性，以及显示在对象上方的文字、数值或按钮。它们只影响本机的画面；会影响玩法的属性（如隐形）属于模拟模块。
-- 本地动作（`client_action`）：播放声音和 EVA 语音、移动镜头、本地选择、闪烁对象、显示一行消息、注册热键。镜头和本地设置也是客户端拥有的引用：镜头的 `Cell` 可以用 `client_set` 写（和镜头动作一样尚是 `v1?`），本地设置中哪些属性可写是待定问题 14。
-- 点在可点击节点上的鼠标不再传给地图。模块热键与游戏热键冲突时，游戏热键优先。客户端可以读光标的屏幕位置和光标下的格子（附录 7.10）。
+- 本地动作（`client_action`）：播放声音和 EVA 语音、移动镜头、本地选择、闪烁对象、显示一行消息、注册热键。镜头、光标和本地设置也是客户端拥有的引用：镜头的 `Cell` 可以用 `client_set` 写（和镜头动作一样尚是 `v1?`），本地设置中哪些属性可写是待定问题 14。
+- 点在可点击节点上的鼠标不再传给地图。点在地图上的鼠标作为 `MapClick` 客户端事件到达模块，同时照常传给游戏；模块把光标的 `CaptureMapClick` 写为 1 时，地图点击只交给模块，不传给游戏。模块热键与游戏热键冲突时，游戏热键优先。客户端可以读光标的屏幕位置和光标下的格子（附录 7.10）。
 - 选中单位和点击按钮属于客户端事件。要改变游戏，模块发送一条消息，由模拟模块在 `on_message` 中处理，这样联机和回放都保持一致。
 - 客户端模块可以发出标准玩家指令（移动、攻击、部署、建造……，`client_send_order`），引擎像校验任何玩家输入一样校验它们。消息用于自定义逻辑。
 - 图像、动画和模型都按名字引用，从不按文件格式引用，所以以后新增素材格式（单独的 RFC）不需要修改 API。
@@ -780,7 +780,7 @@ React 或 JSX 风格的库可以放在 SDK 里：它在模块内部计算差异�
 - 黑幕下的对象不出现，迷雾下本玩家当前看不到的其他所属方对象也不出现：引擎不保存“最后一次看到”的副本。隐形的敌人除非被侦测到，否则不出现。格子的地形类型和高度对客户端全部公开，因为地图文件本身就是公开的；格子的其他属性只对看得到的格子给出。
 - 变量按它的可见度（第 6e 节）。触发器和标签只属于模拟。视点属性只以本玩家自己的所属方为视点。
 - 观战者的模块看到观战者能看到的范围，房间允许时为整张地图。观战者没有自己的所属方，所以只有在房间向观战者显示某个所属方的信息时，针对自己所属方的读取才有回答。
-- 客户端只能写客户端拥有的引用：节点、镜头和本地设置。没有对模拟状态的写入，模拟也从不读取客户端的状态，客户端之间也没有直接的通道。
+- 客户端只能写客户端拥有的引用：节点、镜头、光标和本地设置。没有对模拟状态的写入，模拟也从不读取客户端的状态，客户端之间也没有直接的通道。
 
 **通信。** 模拟到客户端不经过网络：客户端读取它能看到的状态和变量，模拟用 `send_notify` 发出通知。客户端到模拟只有命令流：
 
@@ -802,7 +802,7 @@ onStart((): void => {
   Node.setClickable(buy, true);
 });
 onClientEvent(ClientEvent.Click, (e: ClientEventRecord): void => {
-  if (e.node == buy) Client.sendMessage(BUY_MESSAGE);   // client_send_message
+  if (e.ref == buy) Client.sendMessage(BUY_MESSAGE);   // client_send_message
 });
 onRender((dt: f32, alpha: f32): void => {
   const me = Client.viewer();                                   // 观战者为 NO_HANDLE
