@@ -22,7 +22,9 @@ and maintenance message then come in that language when the operator wrote it: t
 translation for that tag, else for its language alone (`zh`), else for another region of
 that language, else the operator's `text`. A missing or malformed tag gets `text`.
 Each entry receives a fresh random player
-UUID and bearer token. `expires_at` is a Unix timestamp in seconds. An active name
+UUID and bearer token. `expires_at` is a Unix timestamp in seconds by the lobby's clock,
+which alone decides expiry; games before 0.3.6 need the field and refuse a session their
+own clock calls expired. An active name
 returns 409 `name_unavailable`; entering its name never replaces that session.
 An account's name signs in only with its password or a remembered sign-in, and a name
 without an account enters as a guest ([Accounts](#accounts)).
@@ -101,6 +103,8 @@ operations retain the cursor barrier. Clients attempt logout with their existing
 bearer before discarding a session whose history expired.
 
 Channel: `{id,kind,max_users,users,tournament,flags,game_flags,ping,name,ex_info}`.
+`id` is the lobby's own; it ignores one in `create` and `advertise`, where games from
+0.3.6 leave it out and older games send it empty, so it stays optional there.
 `kind` is 0 for chat and 41 for a game. The service sets `flags` from the room, never
 from the creator: 256 when a game has a password, which clients show as a lock and
 ask for before joining, otherwise 0. `max_users` (1–30) from `create` and the host's
@@ -701,8 +705,10 @@ value, `quick_coop:true` for a Quick Co-op room (a paired room with tournament 0
 `pings` of `timing_confirmed`, the delay, `playing_since`, `ranked:true` for a ranked
 game, and a WatchGrant. It fails with 409 `unknown_match` when the caller may not watch that match,
 409 `match_active` while the caller plays one, and 409 `watchers_full` when the match has
-its 10 watchers. Watching the same match again, as after the game restarted, keeps the
-watcher's place. An account is always the same watcher of a match on a relay, its
+its 10 watchers. `match_active` also refuses `create`, `join` and `logout` while the caller
+plays, and a room's commands once its game started. Of the room and match commands, games say
+why only for `watch`; account deletion refuses with it too and shows its message ([Accounts](#accounts)).
+Watching the same match again, as after the game restarted, keeps the watcher's place. An account is always the same watcher of a match on a relay, its
 identity there an HMAC of the match and the player under the relay's ticket key, so a
 newer watch ticket replaces the relay session it had rather than taking another place.
 While the match plays, its watchers download its map as a
@@ -806,6 +812,8 @@ password. Every request below is a `POST` with a JSON body; a refusal's
   owner; anyone may then take the name. Records of its ranked games stay 90 days for
   disputes, and no profile names it. A wrong password counts as at `/v1/sessions` (403
   `wrong_password`, the lock), and a name without an account returns 404 `no_account`.
+  It refuses with 409 `match_active` while its player is in a match or a ranked game of
+  theirs has not ended for every player.
 
 At `/v1/sessions` an account's name needs its `password` or a `sign_in_token`, never
 both: with neither it returns 403 `name_claimed`, with a wrong one 403 `wrong_password`,

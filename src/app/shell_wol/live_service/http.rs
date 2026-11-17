@@ -367,6 +367,9 @@ enum RequestFailure {
         code: u32,
     },
     AlreadyFinished,
+    /// 409 `match_active`: the lobby refuses a command this player's own
+    /// running match blocks (docs/lobby-protocol.md "Watching").
+    MatchActive,
     /// 400 `invalid_options` ([`CommandFailure::InvalidOptions`]).
     InvalidOptions,
     /// 409 `stale_revision` ([`CommandFailure::StaleRevision`]).
@@ -394,13 +397,10 @@ enum RequestFailure {
 }
 
 /// What the shell hears when a sign-in gets no session. A 409 is the name
-/// in use (0x8004_0064, TXT_LOGIN_USED); code 0 is no usable answer.
+/// in use (0x8004_0064, TXT_LOGIN_USED); code 0 is no usable answer,
+/// including a 401 or 403 without the lobby's code.
 fn sign_in_failure(attempt: u64, failure: RequestFailure) -> Response {
     match failure {
-        RequestFailure::Status(401 | 403) => Response::LoginFailed {
-            attempt,
-            code: 0x8004_0073,
-        },
         RequestFailure::Status(409) => Response::LoginFailed {
             attempt,
             code: 0x8004_0064,
@@ -516,12 +516,9 @@ impl RequestFailure {
                 code: 0x8004_0070,
             },
             Some("unknown_match") if status == 409 => Self::AlreadyFinished,
-            // A `watch` while this player plays, or of a match with all its
-            // watchers (docs/lobby-protocol.md "Watching").
-            Some("match_active") if status == 409 => Self::ChannelRejected {
-                status,
-                code: crate::app::shell_wol::lobby::WATCH_MATCH_ACTIVE,
-            },
+            Some("match_active") if status == 409 => Self::MatchActive,
+            // A `watch` of a match with all its watchers
+            // (docs/lobby-protocol.md "Watching").
             Some("watchers_full") if status == 409 => Self::ChannelRejected {
                 status,
                 code: crate::app::shell_wol::lobby::WATCHERS_FULL,
@@ -601,6 +598,11 @@ impl RequestFailure {
             Self::AlreadyFinished if operation == "watch" => {
                 CommandFailure::Rejected(crate::app::shell_wol::lobby::WATCH_UNKNOWN_MATCH)
             }
+            // Only a refused `watch` says why; other commands get the plain
+            // refusal below.
+            Self::MatchActive if operation == "watch" => {
+                CommandFailure::Rejected(crate::app::shell_wol::lobby::WATCH_MATCH_ACTIVE)
+            }
             Self::ChannelRejected { code, .. } => CommandFailure::Rejected(*code),
             Self::InvalidOptions => CommandFailure::InvalidOptions,
             Self::StaleRevision => CommandFailure::StaleRevision,
@@ -612,7 +614,9 @@ impl RequestFailure {
     fn status(&self) -> u16 {
         match self {
             Self::Status(status) | Self::ChannelRejected { status, .. } => *status,
-            Self::LostCursor | Self::AlreadyFinished | Self::StaleRevision => 409,
+            Self::LostCursor | Self::AlreadyFinished | Self::MatchActive | Self::StaleRevision => {
+                409
+            }
             Self::InvalidOptions => 400,
             Self::UpgradeRequired(_) => 426,
             Self::Maintenance(_) | Self::Full(_) => 503,
@@ -650,12 +654,7 @@ fn decode_session(value: Value, requested_nickname: &str) -> Result<Session, Req
     // A successful response may preserve the requested name's casing, but
     // cannot replace the name the player chose. Session credentials
     // remain private; validation errors never contain response field values.
-    let now = crate::util::time::SystemTime::now()
-        .duration_since(crate::util::time::UNIX_EPOCH)
-        .map_err(|_| RequestFailure::Status(0))?
-        .as_secs();
     if !session.nickname.eq_ignore_ascii_case(requested_nickname)
-        || session.expires_at <= now
         || session.token.len() != 43
         || !base64::engine::general_purpose::URL_SAFE_NO_PAD
             .decode(&session.token)
@@ -1140,16 +1139,14 @@ macro_rules! serial_driver {
                             data: String,
                             complete: bool,
                         }
+                        // maps.rs's transfer checks the chunk's size and place.
                         serde_json::from_value::<Chunk>(value)
                             .ok()
                             .and_then(|chunk| {
-                                if chunk.data.len() > 43700 {
-                                    return None;
-                                }
                                 let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
                                     .decode(&chunk.data)
                                     .ok()?;
-                                (bytes.len() <= 32768).then_some(Response::MapChunk {
+                                Some(Response::MapChunk {
                                     transfer,
                                     digest: chunk.digest,
                                     total: chunk.byte_length,
@@ -1496,7 +1493,7 @@ mod tests {
     }
 
     #[test]
-    fn authentication_response_rejects_malformed_player_bearer_and_expiry() {
+    fn authentication_response_rejects_malformed_player_and_bearer() {
         let response = session_response();
         let nickname = response["nickname"].as_str().unwrap();
         let mut malformed_player = response.clone();
@@ -1505,9 +1502,16 @@ mod tests {
         let mut malformed_bearer = response.clone();
         malformed_bearer["token"] = json!("untrusted\r\nHeader: value");
         assert!(decode_session(malformed_bearer, nickname).is_err());
-        let mut expired = response.clone();
-        expired["expires_at"] = json!(1);
-        assert!(decode_session(expired, nickname).is_err());
+    }
+
+    /// The lobby owns a session's expiry: a game whose clock runs ahead of
+    /// the lobby's still signs in.
+    #[test]
+    fn a_session_signs_in_whatever_the_local_clock_says() {
+        let mut response = session_response();
+        response["expires_at"] = json!(1);
+        let nickname = response["nickname"].as_str().unwrap().to_owned();
+        assert!(decode_session(response, &nickname).is_ok());
     }
 
     /// A refused `watch` reaches the lobby's box with the lobby's reason; a
@@ -1571,6 +1575,13 @@ mod tests {
         );
         assert_eq!(
             finished.command_failure("create"),
+            CommandFailure::Rejected(0x8000_4005)
+        );
+        // A command the player's own running match blocks; only `watch`
+        // says why.
+        let playing = RequestFailure::response(409, br#"{"error":{"code":"match_active"}}"#);
+        assert_eq!(
+            playing.command_failure("join"),
             CommandFailure::Rejected(0x8000_4005)
         );
         // Options a lobby cannot take, apart from a player who has left.
@@ -1986,6 +1997,21 @@ mod tests {
             RequestFailure::answer("/v1/commands", 409, taken).command_failure("create"),
             CommandFailure::Rejected(crate::app::shell_wol::lobby::ROOM_NAME_TAKEN)
         );
+    }
+
+    /// A sign-in refused without the lobby's code, as by something between
+    /// the game and the lobby, is a failed connection.
+    #[test]
+    fn an_uncoded_sign_in_refusal_is_a_failed_connection() {
+        for status in [401, 403] {
+            assert!(matches!(
+                sign_in_failure(7, RequestFailure::answer("/v1/sessions", status, b"")),
+                Response::LoginFailed {
+                    attempt: 7,
+                    code: 0
+                }
+            ));
+        }
     }
 
     /// An account's refusals show the lobby's words; only `wrong_password`
