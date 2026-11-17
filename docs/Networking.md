@@ -123,8 +123,12 @@ it and that a firewall may block UDP; one that runs out in the latency check aft
 a player's game could not finish checking its connection. The lobby's `start_rejected`
 reasons (a player left, cancelled, could not reach the relay or could not finish the
 latency check) show as their own lines ([lobby protocol](lobby-protocol.md)); any other
-reason keeps the general line. Nothing new travels: released games keep their earlier
-lines, as does a rollback.
+reason keeps the general line. A start that times out connecting also names, in
+`start_rejected`'s optional `phrases`, the players whose games never sent `relay_ready`,
+so every player reads the same names after their line. A failed start leaves the room and
+its chat, so the game keeps its line for the chat the player lands in next. Released games
+read only `message` and show their earlier line, and a lobby rolled back to before this
+sends no names, so current games show their own line alone. Nothing else new travels.
 
 In network games, the trigger actions that only play audio (19, 20, 21, 98 and 99)
 keep the map's sound, EVA or theme name, or its numeric sound slot, until the local

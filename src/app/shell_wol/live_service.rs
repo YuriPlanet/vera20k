@@ -1457,20 +1457,33 @@ fn fail_start(state: &mut AppState, text: &str) {
         crate::app::App::fail_external_launch(state, text);
         return;
     }
-    notice(state, text);
-    if crate::app::shell_network_setup::verify(state).is_some() {
+    let verifying = crate::app::shell_network_setup::verify(state).is_some();
+    if !verifying && let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+        // A rejected HTTP Start has not handed the setup to the lobby runner.
+        // Keep the ordinary host/join screen and release its pending input.
+        protocol.set_online_start_phase(crate::app::shell_network_setup::OnlineStartPhase::Idle);
+        notice(state, text);
+        return;
+    }
+    // VERA: the abort leaves the room, and the setup's chat with it
+    // (`start_aborted`), so the reason waits for the chat the player lands in.
+    crate::app::shell_wol::hold_problem_line(state, text.to_owned());
+    if verifying {
         let _ = crate::app::shell_network_setup::service_event(
             state,
             NetworkSetupEvent::Negotiated { result: 1 },
         );
-    } else if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
-        // A rejected HTTP Start has not handed the setup to the lobby runner.
-        // Keep the ordinary host/join screen and release its pending input.
-        protocol.set_online_start_phase(crate::app::shell_network_setup::OnlineStartPhase::Idle);
-        state.platform.window.request_redraw();
     } else {
         crate::app::shell_wol::start_aborted(state);
     }
+}
+
+/// The lobby's `start_rejected` `phrases` in the language in use: who held
+/// the start up. Phrases this game cannot read are left out.
+fn lobby_names(payload: &Value) -> Option<String> {
+    let phrases: Vec<super::lobby_phrases::Phrase> =
+        serde_json::from_value(payload.get("phrases")?.clone()).ok()?;
+    super::lobby_phrases::localized(&phrases).filter(|names| !names.is_empty())
 }
 
 /// Whose game failed relay admission: once the lobby took this game's
@@ -3440,10 +3453,26 @@ fn apply_event(
         }
         "start_rejected" => {
             let reason = payload["message"].as_str().unwrap_or_default();
-            log::warn!("The lobby refused the online start: {reason}");
-            let line = service.start_rejected_line(reason);
+            let names = lobby_names(&payload);
+            log::warn!(
+                "The lobby refused the online start: {reason} {}",
+                names.as_deref().unwrap_or_default()
+            );
+            if service.pending.is_none()
+                && crate::app::shell_network_setup::verify(state).is_none()
+                && state.frontend.network_setup_protocol.is_none()
+            {
+                // This game already failed the start and left the room: only
+                // the lobby's names are new.
+                if let Some(names) = names {
+                    crate::app::shell_wol::add_problem_line(state, names);
+                }
+                return Ok(());
+            }
+            let line = tr(service.start_rejected_line(reason));
+            let text = names.map_or_else(|| line.clone(), |names| format!("{line} {names}"));
             cancel_pending(state, service);
-            fail_start(state, &tr(line));
+            fail_start(state, &text);
         }
         "error" => notice(state, &tr("VERA:OnlineServiceRefused")),
         _ => {}
@@ -4707,6 +4736,17 @@ mod completion_tests {
             service.start_rejected_line("A newer reason."),
             "VERA:StartRefusedConnection"
         );
+        // The names a timed-out start's `start_rejected` carries, as
+        // `service.js` sends them; a released lobby sends none.
+        let names = serde_json::json!({"message": relay, "phrases": [{"key": "StartNotConnected",
+            "values": {"names": {"and": ["Alex", "Sam"]}, "count": 2}}]});
+        assert_eq!(
+            lobby_names(&names).as_deref(),
+            Some(
+                "Alex and Sam did not connect to the game server in time, so the game did not start."
+            )
+        );
+        assert_eq!(lobby_names(&serde_json::json!({"message": relay})), None);
         for key in [
             "VERA:StartRelayNotReached",
             "VERA:StartRelayNotReachedByOther",
