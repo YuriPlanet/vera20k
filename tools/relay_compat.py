@@ -4,10 +4,10 @@
 itself (a control that the check works) and against the protocol crate of every
 build the lobby admits: each stable release from `OLDEST_ADMITTED` on and the
 newest dev build, once per distinct protocol crate. Each client then plays one
-short loopback match against the relay built from the checkout. The match covers
-every record kind a match can carry, including the departure the relay writes
-when it removes a silent player. A client that cannot read one stalls, as a
-released game would, and one that cannot read a Status fails.
+short loopback match against the relay built from the checkout. The match
+carries frame ends, a batch and two departures, one of them the departure the
+relay writes when it removes a silent player. A client that cannot read one
+stalls, as a released game would, and one that cannot read a Status fails.
 
 It runs only in GitHub Actions (`.github/workflows/relay-compat.yml`), on PRs
 that touch the relay and on demand with other `--client` tags or commits: it
