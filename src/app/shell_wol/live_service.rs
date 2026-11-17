@@ -2554,6 +2554,12 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                     );
                 }
             }
+            // The room moved on before these reached the lobby: the host
+            // changed its settings again, as a dragged slider does at each
+            // step, or a player came or went. Its next options send the map
+            // status again, with the host's ready; a guest's ready follows
+            // its Accept, the automatic one in VERA's room.
+            "map_status" | "ready" if failure == http::CommandFailure::StaleRevision => {}
             "finish" => {
                 let first_failure = service
                     .finishing
