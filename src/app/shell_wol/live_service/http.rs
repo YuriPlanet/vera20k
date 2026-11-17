@@ -95,7 +95,9 @@ pub(super) enum Request {
     },
     Channels(u32),
     /// `GET /v1/matches`, answered by [`Response::Matches`].
-    Matches,
+    Matches {
+        refused_options: Option<u64>,
+    },
     Command {
         id: u64,
         operation: &'static str,
@@ -291,7 +293,10 @@ pub(super) enum Response {
     Channels(ChannelList),
     /// The matches the player can watch, or `None` from a lobby from before
     /// watching, which answers 404.
-    Matches(Option<Vec<Match>>),
+    Matches {
+        list: Option<Vec<Match>>,
+        refused_options: Option<u64>,
+    },
     Event(Envelope),
     CommandCompleted {
         id: u64,
@@ -1282,17 +1287,17 @@ macro_rules! serial_driver {
                     }
                 }
             }
-            Some(Request::Matches) => {
+            Some(Request::Matches { refused_options }) => {
                 match platform_await!(client.request("/v1/matches", None)).and_then(|value| {
                     serde_json::from_value::<MatchList>(value)
                         .map_err(|_| RequestFailure::Status(0))
                 }) {
                     Ok(list) => {
-                        let _ = output.send(Response::Matches(Some(list.matches)));
+                        let _ = output.send(Response::Matches { list: Some(list.matches), refused_options });
                     }
                     // A lobby from before watching lists no match.
                     Err(RequestFailure::Status(404)) => {
-                        let _ = output.send(Response::Matches(None));
+                        let _ = output.send(Response::Matches { list: None, refused_options });
                     }
                     // The game list asked at the same time says when the
                     // lobby could not be refreshed.

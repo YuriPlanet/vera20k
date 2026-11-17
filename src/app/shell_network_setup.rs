@@ -565,16 +565,14 @@ impl NetworkSetupProtocol {
         }
     }
 
-    /// A newly confirmed old lobby takes no Watching. Republish once so any
-    /// options refused before its capability reply can continue on that lobby.
-    pub(crate) fn received_watch_list(&mut self, before: Option<bool>, supports: bool) -> bool {
-        if supports || before == Some(false) {
+    /// A lobby confirmed to lack the match list cannot share Watching.
+    pub(crate) fn stop_legacy_watching(&mut self) -> bool {
+        if self.watching == RoomWatching::Off {
             return false;
         }
-        let stopped = self.watching != RoomWatching::Off;
         self.watching = RoomWatching::Off;
         self.requests.push(NetworkSetupRequest::PublishOptions);
-        stopped
+        true
     }
 
     /// Presentation of the active service operation, never map ownership or
@@ -1504,13 +1502,13 @@ mod tests {
         assert_eq!(room.published_watching(None), Some("live"));
         room.watching = RoomWatching::Delayed;
         assert_eq!(room.published_watching(None), Some("delayed"));
-        assert!(room.received_watch_list(None, false));
+        assert!(room.stop_legacy_watching());
         assert_eq!(
             room.take_service_requests(),
             [NetworkSetupRequest::PublishOptions]
         );
         assert_eq!(room.published_watching(None), None);
-        assert!(!room.received_watch_list(Some(false), false));
+        assert!(!room.stop_legacy_watching());
         assert!(room.take_service_requests().is_empty());
     }
 
@@ -1531,8 +1529,6 @@ mod tests {
         room.watching = RoomWatching::Live;
         assert_eq!(room.published_watching(Some(false)), None);
         assert_eq!(room.published_watching(Some(true)), Some("live"));
-        assert!(!room.received_watch_list(None, true));
-        assert!(!room.received_watch_list(Some(true), true));
         assert!(room.take_service_requests().is_empty());
         assert_eq!(room.published_watching(Some(true)), Some("live"));
     }

@@ -205,8 +205,8 @@ drops the room's rules, says so and sends its options again, before it stops que
 then turns Teams Off if the lobby still refuses. `watching`, the room's Watching, is `off`,
 `delayed` or `live` ([Watching](#watching)). A lobby from before it refuses it in the same
 way; the host's game then turns Watching off, says so and sends its options again, before
-any of the others. The host checks the lobby's watch list before changing settings on a
-refusal. A lobby that lists matches already understands those fields, so its refusal
+any of the others. Only a fresh 404 on the watch list for the latest, still unchanged room
+publication can retire an unsupported setting. A lobby that lists matches already understands those fields, so its refusal
 keeps the room settings. `map_metadata` is
 `{display_name,player_capacity,official,byte_length,digest,source_sha256,effective_digest}`. The legacy
 INI `digest` remains distinct from lowercase SHA-256 over the physical map bytes;

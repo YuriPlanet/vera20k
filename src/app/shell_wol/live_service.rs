@@ -271,6 +271,9 @@ pub(super) struct LiveService {
     revision: u64,
     // Canonical received options only; MatchSession remains the editable owner.
     accepted_options: Option<Value>,
+    // The latest ordinary host publication. A legacy refusal may only change
+    // the editable room while this exact snapshot is still current.
+    published_options: Option<(u64, Value)>,
     start_preparation: Option<StartPreparation>,
     /// The local reason was already shown. The ordered lobby stream will echo
     /// the cancellation before announcing another match.
@@ -668,6 +671,7 @@ impl LiveService {
             auth_attempt: 0,
             revision: 0,
             accepted_options: None,
+            published_options: None,
             start_preparation: None,
             locally_refused_start: false,
             last_ready_request: None,
@@ -709,6 +713,32 @@ impl LiveService {
             self.outdated_notice = Some(self.auth_attempt);
             update_required_text(message)
         })
+    }
+
+    fn publish_room_options(&mut self, options: wire::Options) {
+        let options = json!(options);
+        let id = self.command_with_id("options", json!({"options": &options}));
+        self.published_options = Some((id, options));
+    }
+
+    fn is_room_publication(&self, id: u64) -> bool {
+        self.published_options
+            .as_ref()
+            .is_some_and(|(sent, _)| *sent == id)
+    }
+
+    fn take_legacy_refusal(
+        &mut self,
+        id: u64,
+        watches: bool,
+        current: impl FnOnce() -> Option<Value>,
+    ) -> bool {
+        if !self.is_room_publication(id) {
+            return false;
+        }
+        self.published_options
+            .take()
+            .is_some_and(|(_, sent)| !watches && current().as_ref() == Some(&sent))
     }
 
     fn command(&mut self, operation: &'static str, payload: Value) {
@@ -945,6 +975,7 @@ impl LiveService {
     }
 
     fn begin_leave(&mut self, now: Instant) {
+        self.published_options = None;
         if self.leaving.is_none() {
             self.leaving = Some(self.retrying_command("leave", json!({}), now));
         }
@@ -993,6 +1024,7 @@ impl LiveService {
     }
 
     fn clear_cleanup(&mut self) {
+        self.published_options = None;
         self.locally_refused_start = false;
         self.finishing = None;
         self.leaving = None;
@@ -1464,15 +1496,6 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
     Some(Instant::now() + POLL_INTERVAL)
 }
 
-/// An unknown lobby may support the refused options. Recheck a previously
-/// supported watch list too, in case the lobby rolled back after sign-in.
-fn recheck_lobby_watches(state: &AppState, service: &LiveService, failure: http::CommandFailure) {
-    if failure == http::CommandFailure::InvalidOptions && super::lobby_watches(state) != Some(false)
-    {
-        let _ = service.requests.send(http::Request::Matches);
-    }
-}
-
 fn notice(state: &mut AppState, text: &str) {
     crate::app::shell_lan::append_chat(
         state,
@@ -1907,7 +1930,9 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             let _ = service.requests.send(http::Request::Channels(kind));
         }
         WolServiceRequest::ListMatches => {
-            let _ = service.requests.send(http::Request::Matches);
+            let _ = service.requests.send(http::Request::Matches {
+                refused_options: None,
+            });
         }
         WolServiceRequest::Watch { match_id } => {
             if super::lobby::bind_online_request(state, service.next_request) {
@@ -2370,8 +2395,12 @@ fn request_setup(
     request: NetworkSetupRequest,
 ) -> Result<()> {
     match request {
-        NetworkSetupRequest::PublishOptions | NetworkSetupRequest::PublishRoster => {
-            service.command("options", json!({"options":options(state)?}));
+        // The staging and Cooperative C0 also travel in the host's options.
+        NetworkSetupRequest::PublishOptions
+        | NetworkSetupRequest::PublishRoster
+        | NetworkSetupRequest::PublishStartStaging(_)
+        | NetworkSetupRequest::PublishCooperativeCampaign(_) => {
+            service.publish_room_options(options(state)?);
         }
         NetworkSetupRequest::PlayerChoices {
             row,
@@ -2455,6 +2484,7 @@ fn request_setup(
         }
         NetworkSetupRequest::StartGame { users } => {
             if service.start_preparation.is_none() {
+                service.published_options = None;
                 let snapshot = canonical_options(&options(state)?)?;
                 let revision = (service.accepted_options.as_ref() == Some(&snapshot))
                     .then_some(service.revision);
@@ -2508,15 +2538,6 @@ fn request_setup(
         ),
         NetworkSetupRequest::Chat(text) => {
             send_chat(service, WolChatLine::Say(text), Vec::new(), false)
-        }
-        NetworkSetupRequest::PublishStartStaging(_) => {
-            service.command("options", json!({"options":options(state)?}));
-        }
-        // +0x60's C0 rides in the options (`cooperative_campaign`), so its
-        // publish is one of them; the loop drops it when its batch already
-        // publishes options or starts.
-        NetworkSetupRequest::PublishCooperativeCampaign(_) => {
-            service.command("options", json!({"options":options(state)?}));
         }
         // RESIDUAL: mode+64's C1 (0x005C2710) is not carried, as on LAN:
         // VERA reads no round assignment after the publish, so guests keep
@@ -2643,8 +2664,21 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 channels: list.channels.into_iter().map(Into::into).collect(),
             },
         ),
-        http::Response::Matches(matches) => {
+        http::Response::Matches {
+            list: matches,
+            refused_options,
+        } => {
+            if refused_options.is_some_and(|id| !service.is_room_publication(id)) {
+                return;
+            }
             let watches = matches.is_some();
+            // Compare before replacing the capability: it affects the Watching
+            // field in the options we originally sent.
+            let legacy_refusal = refused_options.is_some_and(|id| {
+                service.take_legacy_refusal(id, watches, || {
+                    options(state).ok().map(|room| json!(room))
+                })
+            });
             let before = state
                 .frontend
                 .wol
@@ -2653,14 +2687,22 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             // A lobby that lists no matches is from before watching, or went
             // back to it: a room whose options carried its Watching goes on
             // without it.
-            if state.match_state.session.host()
-                && state
+            if !watches
+                && state.match_state.session.host()
+                && (legacy_refusal || refused_options.is_none() && before != Some(false))
+            {
+                if state
                     .frontend
                     .network_setup_protocol
                     .as_mut()
-                    .is_some_and(|room| room.received_watch_list(before, watches))
-            {
-                notice(state, &tr("VERA:WatchingNotTaken"));
+                    .is_some_and(|room| room.stop_legacy_watching())
+                {
+                    notice(state, &tr("VERA:WatchingNotTaken"));
+                } else if legacy_refusal
+                    && let Some(key) = crate::app::shell_network_setup::lobby_refused_option(state)
+                {
+                    notice(state, &tr(key));
+                }
             }
             service_event(
                 state,
@@ -2685,6 +2727,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             }
         }
         http::Response::CommandCompleted { id, operation } => match operation {
+            "options" if service.is_room_publication(id) => service.published_options = None,
             "finish" => service.finish_completed(id),
             "leave" => service.leave_completed(id),
             "logout" => service.logout_completed(id),
@@ -2725,17 +2768,16 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                     .is_some_and(|start| start.publication_request == Some(id)) =>
             {
                 service.start_preparation = None;
-                recheck_lobby_watches(state, service, failure);
                 fail_start(state, &tr("VERA:SettingsNotPublished"));
             }
             "options" if failure == http::CommandFailure::InvalidOptions => {
-                // A lobby from before Teams or the join queue refuses the
-                // field: the room goes on without it and publishes its
-                // options again.
-                let text = crate::app::shell_network_setup::lobby_refused_option(state)
-                    .unwrap_or("VERA:OnlineRequestRefused");
-                notice(state, &tr(text));
-                recheck_lobby_watches(state, service, failure);
+                if service.is_room_publication(id) {
+                    notice(state, &tr("VERA:OnlineRequestRefused"));
+                    // Only a fresh 404 for this publication can confirm rollback.
+                    let _ = service.requests.send(http::Request::Matches {
+                        refused_options: Some(id),
+                    });
+                }
             }
             "choices"
                 if service
@@ -3197,6 +3239,7 @@ fn apply_event(
             let joined: wire::Joined = decode(payload)?;
             service.revision = 0;
             service.accepted_options = None;
+            service.published_options = None;
             service.last_ready_request = None;
             service.pending_choices = None;
             service.start_preparation = None;
@@ -3243,6 +3286,7 @@ fn apply_event(
                 );
             }
             service.accepted_options = None;
+            service.published_options = None;
             service.last_ready_request = None;
             service.pending_choices = None;
             maps::cancel(state, service);
@@ -3290,6 +3334,7 @@ fn apply_event(
             }
             let p: Payload = decode(payload)?;
             service.accepted_options = None;
+            service.published_options = None;
             service.last_ready_request = None;
             service.pending_choices = None;
             service.start_preparation = None;
@@ -4468,6 +4513,7 @@ mod completion_tests {
             auth_attempt: 0,
             revision: 0,
             accepted_options: None,
+            published_options: None,
             start_preparation: None,
             locally_refused_start: false,
             last_ready_request: None,
@@ -5274,6 +5320,33 @@ mod completion_tests {
             .accept_network_setup(launch, true, None, false)
             .unwrap();
         session
+    }
+
+    #[test]
+    fn a_legacy_reply_can_only_retry_its_unchanged_publication_once() {
+        let (mut service, input, _) = control_service(None);
+        let options: wire::Options = serde_json::from_value(
+            crate::test_fixture::json("tests/fixtures/lobby/options.json")["rooms"]["cooperative"]
+                .clone(),
+        )
+        .unwrap();
+        let publish = |service: &mut LiveService| {
+            service.publish_room_options(options.clone());
+            let http::Request::Command { id, payload, .. } = input.try_recv().unwrap() else {
+                panic!("expected the room options");
+            };
+            (id, payload["options"].clone())
+        };
+        let (old, _) = publish(&mut service);
+        let (latest, sent) = publish(&mut service);
+        assert!(!service.take_legacy_refusal(old, false, || Some(sent.clone())));
+        assert!(!service.take_legacy_refusal(latest, true, || Some(sent.clone())));
+        let (edited, mut other) = publish(&mut service);
+        other["launch"]["options"]["short_game"] = json!(!options.launch.options.short_game);
+        assert!(!service.take_legacy_refusal(edited, false, || Some(other)));
+        let (unchanged, sent) = publish(&mut service);
+        assert!(service.take_legacy_refusal(unchanged, false, || Some(sent.clone())));
+        assert!(!service.take_legacy_refusal(unchanged, false, || Some(sent)));
     }
 
     #[test]
