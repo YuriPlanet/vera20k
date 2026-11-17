@@ -203,6 +203,11 @@ them, and only the per-hop MAC authenticates them. A batch's Event packet header
 is not sent; each client rebuilds it from the batch's source and frame. A batch
 that does not decode, or whose House is not its source's, makes its sender leave
 at that frame on every client, as if by Leave; the rest of its stream is ignored.
+Online and on LAN, every client also drops a received order for an object, wall or
+bomb that another House owns, and a plan's dispatch (MEGAMISSION planning flag 2),
+which each client's planner adds itself and never sends; gamemd trusts both.
+No packet changes: older builds are refused by the build check, and a rollback
+admits these orders again.
 
 Redundancy follows each player's measured link
 (`services/relay/adaptive-transport/spec.md`). One merged UPLINK request carries
