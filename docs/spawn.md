@@ -17,7 +17,9 @@ It reports the multiplayer `version` (`[Settings] ExpectedVersion`) and its part
 (`build_identity`), the Battle mode's `rules_digest` (`ExpectedRulesDigest`) and each `GameMode`'s
 in `game_modes`, the `map` given (`file`, `byte_length`, `source_sha256` for
 `ExpectedMapDigest`, `effective_digest`) and its `max_start_waypoints`, the `Side=` values
-(`countries`), the `Color=` values (`colors`) and the `campaigns` a single-player launch may start.
+(`countries`), the `Color=` values (`colors`), the `campaigns` a single-player launch may start,
+and `"generate_map": true` when the build has the random-map command below. A build without it
+lacks the field and would start the game for `--generate-map`, so check it first.
 The game folder comes from `config.toml` unless `--ra2-dir` names one, the mod from `config.toml`
 unless `--mod` or `--no-mod` chooses, and the Ares setting from VERA.INI unless `--ares` names the
 one `spawn.ini`'s `[Settings] Ares=` will. In the browser, `probe(map_name)` returns the same JSON

@@ -56,6 +56,11 @@ pub(crate) struct ProbeReport {
     /// The campaign catalog (`[Battles]` of the BATTLEMD file the INI roots
     /// name), in list order.
     pub campaigns: Vec<ProbeCampaign>,
+    /// This build makes random-map files: `--generate-map` on the desktop,
+    /// `generate_map()` in the browser (docs/spawn.md, "Random maps"). An
+    /// older build's report lacks the field, and that build would start the
+    /// game for `--generate-map` instead.
+    pub generate_map: bool,
 }
 
 /// One `[Battles]` campaign of the game data, as the campaign startup reads it.
@@ -328,6 +333,7 @@ pub(crate) fn probe(
         countries,
         colors,
         campaigns,
+        generate_map: true,
     })
 }
 
@@ -677,6 +683,8 @@ mod tests {
             return;
         };
         let report = run_desktop(Some(&root), None, None, None).unwrap();
+        // The launcher reads this before it runs `--generate-map`.
+        assert!(report.generate_map);
         let stock = &report.countries[..10];
         assert!(
             stock
@@ -761,6 +769,7 @@ mod tests {
                     name: "Allied 01".into(),
                 }],
             }],
+            generate_map: true,
         };
         let value = serde_json::to_value(&report).unwrap();
         let mut keys: Vec<_> = value.as_object().unwrap().keys().cloned().collect();
@@ -773,6 +782,7 @@ mod tests {
                 "colors",
                 "countries",
                 "game_modes",
+                "generate_map",
                 "map",
                 "max_start_waypoints",
                 "rules_digest",
@@ -800,6 +810,7 @@ mod tests {
             env!("CARGO_PKG_VERSION")
         );
         assert!(value["version"].is_string());
+        assert_eq!(value["generate_map"], true);
         let none = ProbeReport {
             map: None,
             max_start_waypoints: None,
