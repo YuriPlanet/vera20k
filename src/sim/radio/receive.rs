@@ -3452,7 +3452,7 @@ mod tests {
         use crate::rules::ini_parser::IniFile;
         use crate::sim::passenger::{PassengerCargo, PassengerRole};
 
-        let build = |general: &str| {
+        let build = |general: &str, all_water: bool| {
             let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(&format!(
                 "[General]\n{general}\
                  [VehicleTypes]\n0=APC\n[APC]\nStrength=200\nPassengers=5\nSizeLimit=5\n\
@@ -3460,15 +3460,22 @@ mod tests {
             )))
             .unwrap();
             let mut sim = Simulation::with_seed(32);
-            let mut terrain = ResolvedTerrainGrid::from_cells(
+            let terrain = ResolvedTerrainGrid::from_cells(
                 4,
                 4,
                 (0..4)
-                    .flat_map(|y| (0..4).map(move |x| test_flat_cell(x, y)))
+                    .flat_map(move |y| {
+                        (0..4).map(move |x| {
+                            let mut cell = test_flat_cell(x, y);
+                            if all_water || (x, y) == (2, 2) {
+                                cell.land_type =
+                                    crate::rules::terrain_rules::LandType::Water.as_index();
+                            }
+                            cell
+                        })
+                    })
                     .collect(),
             );
-            terrain.cell_mut_for_test(2, 2).unwrap().land_type =
-                crate::rules::terrain_rules::LandType::Water.as_index();
             sim.install_resolved_terrain_for_new_map(terrain);
             let own = sim.intern("Americans");
             let apc_type = sim.intern("APC");
@@ -3508,7 +3515,7 @@ mod tests {
             (sim, rules)
         };
 
-        let (sim, rules) = build("");
+        let (sim, rules) = build("", false);
         assert_eq!(
             super::can_load_query(&sim, 1, 2, &rules),
             RadioResponse::None
@@ -3517,7 +3524,7 @@ mod tests {
         assert!(!crate::sim::passenger::can_enter_transport(
             &sim, &rules, 2, 1
         ));
-        let (sim, rules) = build("AmphibiousEnter=yes\n");
+        let (sim, rules) = build("AmphibiousEnter=yes\n", false);
         assert_eq!(
             super::can_load_query(&sim, 1, 2, &rules),
             RadioResponse::Roger
@@ -3525,6 +3532,35 @@ mod tests {
         assert!(crate::sim::passenger::can_enter_transport(
             &sim, &rules, 2, 1
         ));
+
+        // `0x73796B` (`UnitClass::Receive_Radio` case 0x0E, hook
+        // `Ext/Techno/Hooks.Transport.cpp:613-628`): both on the same water
+        // zone, the key decides whether the transport asks the passenger to
+        // come alongside (`Docking`) or completes the handshake (`Roger`).
+        let (mut sim, rules) = build("", true);
+        assert_eq!(
+            super::unit_docking(
+                &mut sim,
+                1,
+                2,
+                crate::sim::radio::RadioPayload::default(),
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            ),
+            RadioResponse::Docking
+        );
+        let (mut sim, rules) = build("AmphibiousEnter=yes\n", true);
+        assert_eq!(
+            super::unit_docking(
+                &mut sim,
+                1,
+                2,
+                crate::sim::radio::RadioPayload::default(),
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            ),
+            RadioResponse::Roger
+        );
     }
 
     /// The aircraft receiver's transport arms need `Carryall=` (`+0xDFC`) or
