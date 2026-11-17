@@ -1642,6 +1642,33 @@ impl Simulation {
         self.spawn_anim_at_world(rules, descriptor, world_coord)
     }
 
+    /// [`Self::spawn_anim_object`] for a muzzle flash, impact or trailer: it
+    /// takes [`Self::effect_anim_constructor`], so after
+    /// [`Self::present_effect_anims`] a picture-only type is a presentation
+    /// anim, as in a match.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn spawn_effect_anim_object(
+        &mut self,
+        rules: &RuleSet,
+        descriptor: AnimClassSpawnDescriptor,
+    ) -> Result<AnimId, AnimSpawnError> {
+        let world_coord = AnimWorldCoord::from_cell_sub_z(
+            descriptor.rx,
+            descriptor.ry,
+            descriptor.sub_x,
+            descriptor.sub_y,
+            descriptor.z,
+        );
+        let constructor = self.effect_anim_constructor(rules, descriptor.type_name);
+        self.spawn_anim_at_world_with_constructor(
+            rules,
+            descriptor,
+            world_coord,
+            constructor,
+            FrameEffects::default(),
+        )
+    }
+
     /// Construct one combat explosion as a real `AnimClass` instance.
     ///
     /// gamemd-derived: the warhead's `AnimList=` pick reaches
@@ -1900,10 +1927,11 @@ impl Simulation {
     ///
     /// RESIDUAL: a local anim runs the whole AnimClass::AI, as gamemd's does.
     /// A MoveFlash type that damages, leaves a scorch or crater, spawns
-    /// particles, a `TrailerAnim=` or a `Next=` anim, marks `MakeInfantry=`
-    /// cells or sits in `Layer=Ground` (whose sorted order is shared state)
-    /// would change the clicking game alone, as in gamemd. Retail RING does
-    /// none of these.
+    /// particles, a `TrailerAnim=` or a `Next=` anim or marks `MakeInfantry=`
+    /// cells would change the clicking game alone, as in gamemd. A
+    /// `Layer=Ground` one keeps its own list (`DisplayLayers::local_ground`),
+    /// so it moves no shared member, but draws after every Ground member
+    /// rather than at its sort key. Retail RING does none of these.
     pub(crate) fn spawn_move_flash(&mut self, rules: &RuleSet, cell: (u16, u16)) -> bool {
         if rules.general.move_flash.name.is_empty() {
             return false;

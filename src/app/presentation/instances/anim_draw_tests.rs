@@ -396,7 +396,7 @@ fn free_anim_draw_with(
     empty_body: bool,
     ground_level: Option<u8>,
 ) -> Vec<crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance> {
-    let planned = free_anim_draw_in(extra_keys, level, empty_body, ground_level, |_| {
+    let planned = free_anim_draw_in(extra_keys, level, empty_body, ground_level, false, |_| {
         ([-1000.0; 2], [0, 0, 2000, 2000])
     });
     assert_eq!(planned.len(), 1);
@@ -404,12 +404,15 @@ fn free_anim_draw_with(
 }
 
 /// [`free_anim_draw_with`] seen through the camera and tactical rect `view`
-/// gives for the point the frame files the Anim at.
+/// gives for the point the frame files the Anim at. An `effect` Anim is made
+/// as a match makes a muzzle flash or an impact
+/// (`Simulation::present_effect_anims`).
 fn free_anim_draw_in(
     extra_keys: &str,
     level: u8,
     empty_body: bool,
     ground_level: Option<u8>,
+    effect: bool,
     view: impl FnOnce([f32; 2]) -> ([f32; 2], [u32; 4]),
 ) -> Vec<crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance> {
     use crate::app::presentation::display_members::{EffectKind, EffectMember};
@@ -458,7 +461,19 @@ fn free_anim_draw_in(
     let mut descriptor =
         AnimClassSpawnDescriptor::new(sim.intern("ANIM"), 4, 4, SIM_ZERO, SIM_ZERO, level);
     descriptor.draw_flags = 0x600;
-    let id = sim.spawn_anim_object(&rules, descriptor).unwrap();
+    let id = if effect {
+        sim.present_effect_anims();
+        let id = sim.spawn_effect_anim_object(&rules, descriptor).unwrap();
+        let presented: Vec<_> = sim.presentation_anims().map(|(id, _)| id).collect();
+        assert_eq!(
+            presented,
+            [id],
+            "a presentation anim, holding no Display slot"
+        );
+        id
+    } else {
+        sim.spawn_anim_object(&rules, descriptor).unwrap()
+    };
     let order = NativeDisplayOrder::from_world(&sim, None);
     let detail = RefCell::new(crate::app::presentation::detail::DetailState::new());
     let lighting = Default::default();
@@ -519,7 +534,7 @@ fn free_anim_draw_in(
 fn a_free_anim_is_passed_by_only_past_its_own_views_margin() {
     // `across` is the Anim's offset from the battlefield's corner.
     let drawn = |across: f32| {
-        free_anim_draw_in("", 0, false, None, |[x, y]| {
+        free_anim_draw_in("", 0, false, None, false, |[x, y]| {
             ([x - across - 100.0, y - 300.0], [100, 0, 800, 600])
         })
         .len()
@@ -528,6 +543,17 @@ fn a_free_anim_is_passed_by_only_past_its_own_views_margin() {
     assert_eq!(drawn(800.0 + 361.0), 0);
     assert_eq!(drawn(-360.0), 1);
     assert_eq!(drawn(-361.0), 0);
+}
+
+/// A match runs a picture-only muzzle flash, impact or trailer as a
+/// presentation anim. It holds no Display slot, but the frame's draw order
+/// still gives it a place after its layer's members, so it is drawn.
+#[test]
+fn a_presentation_anim_is_drawn() {
+    let planned = free_anim_draw_in("", 0, false, None, true, |_| {
+        ([-1000.0; 2], [0, 0, 2000, 2000])
+    });
+    assert_eq!(planned.len(), 1);
 }
 
 #[test]

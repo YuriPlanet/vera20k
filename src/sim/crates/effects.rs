@@ -144,7 +144,8 @@ pub(crate) fn apply_cloak_crate(
 /// The Armor and Firepower arms: every Techno within the radius whose
 /// multiplier is exactly 1.0 takes `multiplier * magnitude` (x87 double
 /// multiply, `0x00482E6D..0x00482E79`). Returns the owners of the changed
-/// objects, in native visit order; the arm announces when one of them is the
+/// objects, in the Ground set's order rather than gamemd's sorted vector's
+/// (`DisplayLayers::submit`); the arm announces when one of them is the
 /// local player (`vt+0x3C` then `0x0050B6F0`, `0x00482E7F..0x00482E8D`).
 pub(crate) fn apply_multiplier_crate(
     substrate: &mut ObjectSubstrate,

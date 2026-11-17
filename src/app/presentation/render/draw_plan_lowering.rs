@@ -202,8 +202,8 @@ pub(crate) struct ObjectLayerPass {
 /// (`Simulation::display_draw_order`): the simulation owns registration, and
 /// the presentation sorts Ground off the simulation's frame. Built once for
 /// each presentation frame (`PresentationFrame::display_order`) for every
-/// Display member and only looked up, so it takes the lookup hasher, sized
-/// up front.
+/// Display member and presentation anim and only looked up, so it takes the
+/// lookup hasher, sized up front.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct NativeDisplayOrder {
     positions: LookupMap<DrawId, (TacticalLayer, u64)>,
@@ -211,19 +211,38 @@ pub(crate) struct NativeDisplayOrder {
 }
 
 impl NativeDisplayOrder {
-    /// `sim`'s draw order under `rules`.
+    /// `sim`'s draw order under `rules`, with each presentation anim
+    /// (`Simulation::presentation_anims`) after the members of its layer, in
+    /// the order they were made. They hold no Display slot, so
+    /// [`Self::ordered`] leaves them out.
     pub(crate) fn from_world(
         sim: &crate::sim::world::Simulation,
         rules: Option<&crate::rules::ruleset::RuleSet>,
     ) -> Self {
-        Self::from_ordered(sim.display_draw_order(rules))
+        let (mut order, mut next) = Self::ranked(sim.display_draw_order(rules));
+        for (id, layer) in sim.presentation_anims() {
+            let rank = &mut next[usize::from(layer.index())];
+            order
+                .positions
+                .insert(id, (TacticalLayer(layer.index()), *rank));
+            *rank += 1;
+        }
+        order
     }
 
     /// The order of `ordered`, every Display member with its layer in draw
     /// order.
+    #[cfg(test)]
     pub(crate) fn from_ordered(
         ordered: Vec<(crate::sim::world::display_layers::DisplayLayer, u64)>,
     ) -> Self {
+        Self::ranked(ordered).0
+    }
+
+    /// [`Self::from_ordered`] and each layer's member count.
+    fn ranked(
+        ordered: Vec<(crate::sim::world::display_layers::DisplayLayer, u64)>,
+    ) -> (Self, [u64; 5]) {
         let mut positions = LookupMap::with_capacity_and_hasher(ordered.len(), Default::default());
         let mut rank = [0u64; 5];
         for &(layer, id) in &ordered {
@@ -231,7 +250,7 @@ impl NativeDisplayOrder {
             positions.insert(id, (TacticalLayer(layer.index()), *next));
             *next += 1;
         }
-        Self { positions, ordered }
+        (Self { positions, ordered }, rank)
     }
 
     /// Every Display member with its layer, in draw order.
@@ -261,7 +280,8 @@ impl NativeDisplayOrder {
     }
 
     /// `id`'s place in the Display walk, `None` for an id no layer holds:
-    /// ordering by it is the order of [`Self::ordered`].
+    /// ordering by it is the order of [`Self::ordered`], with the
+    /// presentation anims after each layer's members.
     pub(crate) fn position(&self, id: DrawId) -> Option<(TacticalLayer, u64)> {
         self.positions.get(&id).copied()
     }

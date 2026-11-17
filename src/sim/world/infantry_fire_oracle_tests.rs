@@ -601,7 +601,7 @@ fn assert_memberships(sim: &Simulation, expected: &Value, ids: &BTreeMap<String,
             members.sort_unstable();
             native.sort_unstable();
         }
-        assert_eq!(members, native, "{name}: ordered Display layer{index}");
+        assert_eq!(members, native, "{name}: Display layer{index}");
     }
 }
 
