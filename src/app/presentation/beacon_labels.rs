@@ -182,7 +182,7 @@ pub(crate) fn instances(
     (fills, outlines, texts)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
 

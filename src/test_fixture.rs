@@ -169,7 +169,7 @@ where
     slot.get_or_init(load).clone()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_scenario))]
 mod tests {
     #[test]
     fn shared_rng_states_read_back_in_place_without_the_table() {
