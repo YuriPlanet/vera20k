@@ -167,9 +167,14 @@ run at the next dispatch opportunity without a multiplayer lead-time buffer. The
 first simulation frame still primes the existing network queue. Game-speed and CPU
 timing continue through the same timing owner. Games originally admitted with
 multiple human sources, including observers, retain synchronized scheduling even
-after other players leave. AI players never acquire network identities.
+after other players leave. AI players never acquire network identities. One
+exception: one person who watches AI play in a room others may watch plays through
+the relay, so that its match can be watched. The lobby marks that match's
+certificate (`OrderingCertificate::ordered_alone`, [Watching](#watching)), and the
+relay orders a one-source match only with that mark.
 
-Online matches with two or more human sources use a lobby-certified relay clock
+Online matches with two or more human sources, or one the lobby marked, use a
+lobby-certified relay clock
 and one immutable relay command stream. Every originally admitted client that
 finishes loading must agree to the initial world before it starts. A player who
 never finishes loading leaves in the first frame once silent for 60 seconds, or 3
@@ -306,8 +311,9 @@ After ten minutes of silence the relay removes the player
 through the same stream. A game that has had no answer from the relay for that
 long, and 15 seconds more, releases its relay route and sends it nothing more:
 its place is gone, and a game whose ticket lapsed gets no answer that says so.
-A match of two or more players then ends with the game-server connection
-message; a one-human match plays on without the relay. Like a native lost connection, a removal for silence
+A match the relay orders then ends with the game-server connection message, also
+one person's who watches AI play; any other one-human match plays on without the
+relay. Like a native lost connection, a removal for silence
 destroys the player's House and shows "connection lost"; a player who quits still
 leaves through EXIT. While Reconnecting, the relay cannot sequence that EXIT, so
 a confirmed Abort Mission returns to the shell once the relay has been silent for
@@ -451,8 +457,9 @@ Everyone in a VERA room may watch while two or more AI play, a match gamemd's ro
 starts. It runs until one AI, or one team of them, is left: no spectator's defeat
 decides it, and the AI left do not band together when one falls (`[AI] Paranoid`). Its
 spectators look on from one start, which the first AI then takes, so the map needs a
-start for each AI. The lobby places its relay by the people watching and does not list
-it to watch, as a watcher's game follows a player. Nothing new travels. A lobby from
+start for each AI. The lobby places its relay by the people watching and lists it to
+watch like any match ([Watching](#watching)), also when one person alone watches, to
+games that can watch it (`Vera-Watch-AI: 1`). Nothing new travels. A lobby from
 before this refuses to start it, and the host's game says the match could not start; an
 older game keeps its rule that someone plays, and a rollback does again.
 
@@ -580,11 +587,26 @@ A player in VERA's online lobby can watch a match being played (VERA's; gamemd h
 no such thing). The game list shows running matches after the rooms, tagged Watch,
 with how many watch each out of the 10 it takes; Join on one asks the lobby to `watch`
 it ([lobby protocol](lobby-protocol.md#watching)). The lobby lists only matches of the
-watcher's own version between two or more players, on a relay that lets watchers in,
+watcher's own version with two or more people in them, one of them playing, or, to a
+game that signed in with `Vera-Watch-AI: 1`, where only AI play while everyone in the
+room watches; on a relay that lets watchers in,
 and never one from a room with a password, a clan room, a generated map or a co-op
 mission: a watcher's game cannot yet rebuild their starts. A host chooses in Create
 Game who may watch the room's games: everyone 2 minutes behind (the default), nobody,
 or everyone live. Quick Match and ranked games are always watched 2 minutes behind.
+
+One person who watches AI play alone would play without the relay, which then keeps no
+stream to watch ([above](#current-production-path)). When the room lets others watch,
+the person's game signed in with `Vera-Watch-AI: 1` and the match's relay lets watchers
+in, the lobby marks the match's certificate (VO2C flags bit 1,
+`OrderingCertificate::ordered_alone`) and the relay orders the match from its one
+source. That person's game then plays it through the relay as a match of two would
+(`LiveCommandSession::new`), with its command lead time, and losing the relay ends it.
+Watching is on by default, so such a match holds a relay ordering room and journal, one
+source's share, whether or not anyone watches; a host who turns watching off plays it
+without the relay. Every game built with this sends the header on `POST /v1/sessions`;
+a version cannot say it, since a nightly build names the next version before it has
+the code.
 
 The lobby's grant carries the match's start, its options and a watch ticket. The
 watcher's game downloads the map as a guest does, checks that its version and rules
@@ -602,7 +624,10 @@ alike and stops with the usual message when they differ.
 
 A watcher stands in one player's seat: that player's sight, sidebar, credits and
 sounds. Every House keeps its own fog in the shared world, so the watcher's map and
-radar show that House's, as the player sees them. It sends nothing in that seat either
+radar show that House's, as the player sees them. Where only AI play, it stands in the
+first observer's seat (`live_service::followed_user`) and sees what that observer sees:
+the observer's sidebar and the whole map; Tab then has no player to follow and changes
+nothing. It sends nothing in that seat either
 (`Simulation::install_watcher`): the
 followed player's records are another game's to it, so their Options opens nothing and
 their leaving ends the watch no more than it ends the other players' match. Tab follows
@@ -637,6 +662,16 @@ after the player gave up waiting for it is handed back (`unwatch`). A relay roll
 to before watchers refuses watch tickets: a new watch
 ends in the lobby with the relay connection message, and a watcher already on it loses
 its connection and returns to the lobby with the usual message.
+
+A game that does not send `Vera-Watch-AI: 1`, such as any released before this, gets
+no marked certificate, plays one person's match without the relay as before, and never
+sees a match where only AI play listed. A lobby from before this marks no certificate,
+so one person watching AI play plays without the relay, unwatched, and it lists no such
+match. A lobby rolled back to before this will not sign a marked match's certificate
+again, so that match's relay ticket lapses and it ends with the lost connection, its
+watchers' too: roll the lobby back while none runs. A relay from before this refuses a
+marked certificate as malformed, and the game that sent it would wait at its start, so
+the relays go first: deploy them before the lobby, and roll the lobby back before them.
 
 ## Native behavior and deliberate bounds
 

@@ -3504,7 +3504,7 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
         .and_then(|transport| transport.ordering_certificate())
         .map(|bytes| crate::net::udp::OrderingCertificate::parse(&bytes))
         .transpose()?
-        .filter(|cert| cert.sources_mask.count_ones() > 1);
+        .filter(|cert| cert.relay_orders());
     let frame_send_rate = ordering_clock.map_or_else(
         || online_timing.map_or(5, |timing| timing.frame_send_rate as u32),
         |_| 1,

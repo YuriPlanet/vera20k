@@ -757,6 +757,7 @@ mod tests {
             tick_hz: 30,
             expires: 1400,
             pacing: Default::default(),
+            ordered_alone: false,
         }
         .sign(&key)
         .unwrap();
@@ -797,6 +798,7 @@ mod tests {
             tick_hz: 30,
             expires: 1400,
             pacing: Default::default(),
+            ordered_alone: false,
         }
         .sign(&key)
         .unwrap();

@@ -1977,6 +1977,53 @@ fn retail_infantry_plan_finishes_both_moves_over_lan() {
     }
 }
 
+/// One person watching AI play runs the match through the relay when the
+/// lobby marked its certificate, so that others can watch it; any other
+/// one-human match keeps local input.
+#[test]
+fn a_one_human_match_orders_through_the_relay_only_when_the_lobby_marked_it() {
+    use crate::net::udp::{
+        CertificatePacing, OrderingCertificate, RelayTicket,
+        test_support::{SecretKey, derive_packet_key},
+    };
+    let key = SecretKey::new([31; 32]);
+    let ticket = RelayTicket {
+        room: [27; 16],
+        player: [1; 16],
+        source: 0,
+        generation: 1,
+        expires: 300,
+        nonce: [3; 16],
+    }
+    .sign(&key)
+    .unwrap();
+    let rate = NonZeroU32::new(1).unwrap();
+    for alone in [false, true] {
+        let mut wire = transport();
+        wire.enable_relay(
+            SocketAddrV4::new(Ipv4Addr::LOCALHOST, 9),
+            &ticket,
+            *derive_packet_key(&key, &ticket).expose_for_https(),
+            [29; 32],
+        )
+        .unwrap();
+        let certificate = OrderingCertificate {
+            room: [27; 16],
+            sources_mask: 1,
+            tick_hz: 30,
+            expires: 86_500,
+            pacing: CertificatePacing::On,
+            ordered_alone: alone,
+        };
+        wire.set_ordering_certificate(certificate.sign(&key).unwrap())
+            .unwrap();
+        let agreement = StartupAgreement::new([(0, 0)], [0], 73, 10, 30, rate, 0).unwrap();
+        let live =
+            LiveCommandSession::new(agreement, wire, 0, 73, rate, LiveCommandMode::Wol).unwrap();
+        assert_eq!(live.uses_sequenced_lockstep(), alone, "marked: {alone}");
+    }
+}
+
 #[test]
 fn solo_wol_commands_apply_without_ahead_or_batching_across_timing_updates() {
     let (mut sim, rules, actor) = stop_scene();
@@ -3105,6 +3152,7 @@ fn sequenced_udp_paused_client_catches_up_without_stalling_healthy_commands() {
         tick_hz: 30,
         expires: 86_500,
         pacing: Default::default(),
+        ordered_alone: false,
     }
     .sign(&key)
     .unwrap();
@@ -3380,6 +3428,7 @@ fn sequenced_service_ends_a_match_a_newer_relay_keeps_stalling() {
         tick_hz: 30,
         expires: 86_500,
         pacing: Default::default(),
+        ordered_alone: false,
     }
     .sign(&key)
     .unwrap();
@@ -3573,6 +3622,7 @@ fn sequenced_unsent_batch_retries_when_the_relay_route_recovers() {
         tick_hz: 30,
         expires: 86_500,
         pacing: Default::default(),
+        ordered_alone: false,
     }
     .sign(&key)
     .unwrap();
@@ -3805,6 +3855,7 @@ fn sequenced_pair_with_second_hash_offset(offset: u64) -> SequencedPair {
         tick_hz: 30,
         expires: 86_500,
         pacing: Default::default(),
+        ordered_alone: false,
     }
     .sign(&key)
     .unwrap();
