@@ -168,6 +168,16 @@ impl LiveRoundFlow {
     ) -> Result<bool> {
         let mode_id = self.config.as_ref().and_then(|config| config.mode_id);
         let ai = self.config.as_ref().and_then(|config| config.ai);
+        let prior_map = self
+            .rounds
+            .is_empty()
+            .then(|| {
+                core.config
+                    .as_ref()
+                    .and_then(|config| config.prior_map.clone())
+            })
+            .flatten();
+        let selected_map = prior_map.as_deref().or(selected_map);
         if let Some(input) = self.random_map_input.as_mut() {
             if !input.after_present(state, frame, &mut self.route)? {
                 return Ok(false);
@@ -1715,6 +1725,7 @@ fn reset_round(core: &mut LiveLanCapture) {
     core.simulation_hashes.clear();
     core.startup = None;
     core.map_admission = None;
+    core.setup_catalog = None;
     core.actions.clear();
     core.actor = None;
     core.actor_last_seen = None;
