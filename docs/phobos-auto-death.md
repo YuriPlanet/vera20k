@@ -183,10 +183,22 @@ clock has a zero maximum, which the renderer skips.
 - `FootExt::IsOwnerChangeFromRevertOnExit` is unported — the AttachEffect
   discard chain also reads it as `false` — so `IgnoreRevertOnExit` cannot fire
   and the owner-change transporter gate has no revert term.
-- Ares `SpawnSurvivors` before the fatal hit (`Ext/Techno/Body.Update.cpp:810-816`)
-  is not ported. The hit ignores defenses, and VERA's death path then refuses its
-  own survivor release and marks the transport handled, so an `AutoDeath`-killed
-  `Crewed=`/driver Unit or Aircraft loses its crew where native ejects it.
-  Reproducing Phobos' pre-call needs VERA's survivor owner taught the
-  pre-damage context (it currently assumes the unit is already lifted), which is
-  its own chain.
+- **Ares-scoped, deferred:** `AresFunctions::SpawnSurvivors` before the fatal
+  hit (`Ext/Techno/Body.Update.cpp:810-819`) is not called. This is not a
+  Phobos feature: Phobos only calls it from the `Kill` arm when Ares is
+  loaded (`if (AresFunctions::SpawnSurvivors)`), for `AbstractType::Unit` and
+  `AbstractType::Aircraft` only, as
+  `SpawnSurvivors(static_cast<FootClass*>(pThis), nullptr, false, false)` — a
+  null attacker, so this is Ares' own pre-death survivor pass, not the stock
+  killing-blow release. It has to run **before**
+  `ReceiveDamage(&pThis->Health, 0, C4Warhead, nullptr, true, false, nullptr)`
+  at `:820`, because that hit ignores defenses and clears the transport.
+  VERA ports the stock `UnitClass`/`BuildingClass::SpawnSurvivors`
+  (`0x00442D90`) as `sim/crew_survival.rs:759` `spawn_vehicle_crew` plus
+  `release_ares_vehicle_survivors`, but the latter assumes the damage path has
+  already lifted the unit (`foot_mark_remove`), so calling it from here places
+  no survivor. Trigger: `AutoDeath.Behavior=Kill` (the default) on a `Crewed=`
+  or driver Unit/Aircraft in an Ares build. Effect: the crew is lost where
+  native ejects it. Frequency: mod-authored AutoDeath. Why deferred: the
+  survivor owner needs a pre-damage entry of its own, which is a separate
+  chain; the code marker sits at `src/sim/auto_death.rs:642-651`.
