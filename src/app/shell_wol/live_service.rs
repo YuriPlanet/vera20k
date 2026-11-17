@@ -2464,10 +2464,12 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             )
         }
         http::Response::Event(event) => {
-            if apply_event(state, service, &event.kind, event.payload).is_err() {
+            // The reason goes in the log: a guest who sees too little of the
+            // host's room can only tell from it which check refused it.
+            if let Err(error) = apply_event(state, service, &event.kind, event.payload) {
                 log::warn!(
-                    "Online lobby update rejected: host_options={}",
-                    event.kind == "options"
+                    "Online lobby update rejected: kind={}: {error:#}",
+                    event.kind
                 );
                 notice(state, &tr("VERA:InvalidLobbyUpdate"));
             }
