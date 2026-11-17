@@ -11,6 +11,9 @@ publish = false
 vera20k-core = { path = "../src" }
 # The harness installs a stderr logger; the policy itself never logs.
 log = "0.4"
+# The replay reader writes its report as JSON. serde_json is already a
+# workspace dependency, and the engine's own diagnostic artifacts are JSON.
+serde_json = { workspace = true }
 
 [dev-dependencies]
 # The retail fixture reads RULESMD.INI through the production reader; tests that
@@ -32,6 +35,13 @@ required-features = ["retail-fixture"]
 name = "autoplay-match"
 path = "src/bin/match.rs"
 required-features = ["retail-fixture"]
+
+# Read a recorded match back and report the whole process: the reference a
+# policy change is measured against. It needs the retail install at run time,
+# not the rules fixture, so it builds without `retail-fixture`.
+[[bin]]
+name = "autoplay-replay"
+path = "src/bin/replay.rs"
 
 # The role weights the army picker reads, so the composition can be reviewed
 # without running a match.

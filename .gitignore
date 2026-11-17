@@ -51,6 +51,7 @@ Thumbs.db
 !/docs/ares-country-presentation.md
 !/docs/ares-country-paradrop.md
 !/docs/ares-country-powerplants.md
+!/docs/sidebar-columns.md
 !/docs/phobos.md
 !/docs/phobos-custom-radiation.md
 !/docs/phobos-superweapon-technos.md
@@ -188,3 +189,6 @@ tools/vendor-eval/
 /android/local.properties
 /android/**/build/
 /android/app/src/main/jniLibs/
+
+# Reference matches: 140 MB of replays and logs, kept on disk and out of git
+/autoplay/reference/
