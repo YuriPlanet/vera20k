@@ -3,9 +3,9 @@
 I adapted configurable root-file selection from my ra2-mono
 `GameConfig.cs` / `GameIniLoader.cs` into VERA's existing source owners.
 This selects one Rules, fixed Art and standalone AI root as a unit, plus
-optional SOUNDMD and EVAMD roots and the theater INI suffix. It does not
-replace the parser, ordered Rules processing, AI registry/map passes, archive
-mounting or simulation authority.
+optional SOUNDMD and EVAMD roots, the theater INI suffix, and the profile's
+theme and campaign files. It does not replace the parser, ordered Rules
+processing, AI registry/map passes, archive mounting or simulation authority.
 
 ## Configuration
 
@@ -70,6 +70,20 @@ reads, so players whose theater INIs differ are refused before a match, and
 Quick Match names a theater INI that changes the retail one
 ([Networking](Networking.md)).
 
+The profile also selects the theme and campaign files:
+
+| Profile | Theme | Campaigns | Missions | Map select |
+| --- | --- | --- | --- | --- |
+| `yr`, `custom` | `thememd.ini` | `BATTLEMD.INI` | `MISSIONMD.INI` | `MAPSELMD.INI` |
+| `mo` | `thememo.ini` | `BATTLEMO.INI` | `MISSIONMO.INI` | `MAPSELMO.INI` |
+
+`auto` takes the MO names once it selects MO. gamemd reads the MD names
+(`THEMEMD.INI`, `BATTLEMD.INI`, `MISSIONMD.INI`, `MAPSELMD.INI`); the MO names
+are the ones Mental Omega's spawner gives them. They have no `[ini]` key and no
+stock fallback, and they are not probed at startup. A missing file does what
+gamemd does without it: no campaigns, no mission briefing or loading text, the
+current map replayed at map select, or no menu music.
+
 Custom mode requires all three logical Rules/Art/AI basenames. Paths and
 wildcards are rejected; these names are resolved through the existing VFS, not
 arbitrary host file access. Overrides cannot be mixed with a preset. Explicit
@@ -120,11 +134,12 @@ remain YR and never reread an unrelated cwd configuration.
 
 ## Scope and source
 
-This is root selection only. Theme, mode/campaign catalogs, UI (UIMD),
+This is root selection only. Mode catalogs (MPModesMD), UI (UIMD),
 localization, arbitrary MOD archives and Ares/Phobos gameplay tags are not
-retargeted. A directory missing required retail archives still cannot enter the
-normal game bootstrap. Selecting the MO triplet does not certify that every MO
-definition, asset or gameplay mechanism is supported.
+retargeted; the Theme and campaign catalogs follow the profile as above. A
+directory missing required retail archives still cannot enter the normal game
+bootstrap. Selecting the MO triplet does not certify that every MO definition,
+asset or gameplay mechanism is supported.
 
 [Include and inheritance](ini-directives.md) expand at the selected source
 boundary only in a game read the Ares way ([Ares](ares.md)) or a `phobos` build. Root selection itself
