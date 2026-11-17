@@ -458,3 +458,93 @@ fn synchronous_sound_prefix_keeps_eva_text_rows() {
         ]
     );
 }
+
+/// A network trigger's authored operand crosses the dispatcher unresolved, and
+/// only the listener's own catalog resolves it at playback: an action-21 EVA
+/// name, an action-99 sound slot on an object, then a slot this catalog lacks,
+/// which stops that object's custom sound as PlayAt7509E0 stops a handle for
+/// an invalid index (7509F5..750A36).
+#[test]
+#[ignore = "requires an audio output device; run when changing trigger audio delivery"]
+fn network_trigger_audio_resolves_only_in_the_local_playback_consumer() {
+    use crate::app::presentation::building_anim::SoundPlaybackInputs;
+    use crate::audio::events::GameSoundEvent;
+    use crate::audio::sfx::{SfxPlayer, SpatialListener};
+    use crate::rules::sound_ini::SoundReference;
+    use crate::sim::anim_class::AnimWorldCoord;
+    use crate::sim::world::TriggerSoundTarget;
+    let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
+    let mut process = crate::app::process_assets::ProcessAssets::new(
+        crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
+        true,
+    );
+    process.initialize_sources_if_needed(&assets).unwrap();
+    let catalog = process.audio_catalog().unwrap();
+    let mut player =
+        SfxPlayer::new().expect("selected device-dependent regression needs audio output");
+    player.set_volume(0.0);
+    let world = AnimWorldCoord {
+        x: 2688,
+        y: 2688,
+        z: 0,
+    };
+    let source = super::anim_world_sound_source(world);
+    let inputs = SoundPlaybackInputs {
+        assets: &assets,
+        catalog,
+        listener: SpatialListener {
+            tactical_width: 640,
+            tactical_height: 480,
+            origin_x: source.screen_x - 320.0,
+            origin_y: source.screen_y - 240.0,
+            zoom: 1.0,
+        },
+    };
+    let sim = Simulation::new();
+    let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
+    let deliver = |player: &mut SfxPlayer, event: SimSoundEvent| {
+        let mut queue = SoundEventQueue::new();
+        dispatch_sim_sound_events(
+            [event],
+            &sim,
+            &rules,
+            None,
+            &mut |_| panic!("trigger audio has no radar admission"),
+            &mut queue,
+            None,
+        );
+        let events = queue.drain();
+        assert!(
+            matches!(events.as_slice(), [GameSoundEvent::TriggerAudio { .. }]),
+            "the dispatcher keeps the authored operand"
+        );
+        inputs.consume(player, &events, Some(&sim), None);
+    };
+
+    let eva = catalog.eva().entry_by_index(0).unwrap().name.clone();
+    deliver(
+        &mut player,
+        SimSoundEvent::TriggerAudio {
+            reference: SoundReference::Name(eva.to_ascii_uppercase()),
+            target: TriggerSoundTarget::Eva,
+        },
+    );
+    assert_eq!(player.current_eva_event(), Some(eva.as_str()));
+
+    let owner = 44;
+    let object = |index| SimSoundEvent::TriggerAudio {
+        reference: SoundReference::Index(index),
+        target: TriggerSoundTarget::Object { owner, world },
+    };
+    let slot = 1;
+    let sound = catalog.sounds().entry_by_index(slot).unwrap().id.clone();
+    deliver(&mut player, object(slot));
+    assert_eq!(player.handle_sound_id(owner), Some(sound.as_str()));
+    let missing = i32::try_from(catalog.sounds().len()).unwrap();
+    deliver(&mut player, object(missing));
+    assert_eq!(
+        player.handle_sound_id(owner),
+        None,
+        "a slot missing locally stops the object's custom sound"
+    );
+}

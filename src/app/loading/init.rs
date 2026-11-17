@@ -1643,7 +1643,15 @@ impl MapLoadInitial {
     /// The same inactive transfer retains current SpecialFlags and offline local
     /// values. ClearScene6851F0 clears globals, but ReadLocal689B20 retains
     /// unassigned locals. VERA starts fresh LAN/WOL worlds from map assignments
-    /// only: peers (including replays/rejoins) cannot share prior-match locals.
+    /// only: peers cannot share prior-match locals. Replays and rejoins run in
+    /// a newly started process and never had any.
+    ///
+    /// RESIDUAL (VERA network adaptation): a LAN/WOL co-op campaign's next
+    /// mission and a retried mission are such starts too, so they drop the
+    /// previous mission's unassigned locals, which gamemd's ReadLocal689B20
+    /// keeps. Trigger: a co-op stage whose triggers test a local its map does
+    /// not assign; effect: that local reads cleared instead of carried.
+    /// Frequency over the retail co-op maps is not counted.
     pub(super) fn retain_process_state(
         &mut self,
         retention: &mut crate::app::shell_random_map::RandomMapGenerationRetention,

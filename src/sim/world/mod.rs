@@ -3910,6 +3910,13 @@ impl Simulation {
             // supplies bridge repair's overlay variants, so a shared match
             // must not inherit each client's unrelated RMG/repair history.
             // Rejoin/watch use this same fresh start before replaying history.
+            // On a generated map this also replaces the post-RMG cursor the
+            // bootstrap installed (Generate598960 leaves MapGen advanced, and
+            // gamemd's repairs continue from it), so a generated network map's
+            // repair variants differ from gamemd's for the same map seed. The
+            // match seed is the one value every peer, rejoiner and watcher
+            // already holds. Truncated to 32 bits as for Scenario/Main, it gives
+            // MapGen their seeded state, from which it advances on its own.
             self.mapgen_rng = SimRng::new(self.session.seed());
         }
         self.session.set_game_mode(mode);
