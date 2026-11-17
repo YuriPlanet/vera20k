@@ -123,9 +123,7 @@ fn save_houses(state: &AppState) -> [(i32, i32); 2] {
     let Some(launch) = state.match_state.session.network_setup() else {
         return [(-1, -1); 2];
     };
-    let value = |slot: &crate::skirmish_launch::SkirmishLocalSlot| {
-        (slot.country_shell_value(false), slot.color_shell_value())
-    };
+    let value = crate::app::frontend::skirmish_session::seat_items;
     let partner = launch
         .humans
         .iter()
@@ -195,27 +193,10 @@ pub(crate) fn open_result(state: &mut AppState, victory: bool) {
     }
     // The repaint's country pass 0x0046F6D0 against the next stage.
     let runtime = &state.frontend.multiplayer_shell_runtime;
-    let admit = |slot: &mut crate::skirmish_launch::SkirmishLocalSlot| {
-        let requested = if slot.country_random {
-            -2
-        } else {
-            i32::from(slot.country.raw_index())
-        };
-        if runtime.cooperative_admits(requested) {
-            return;
-        }
-        match runtime.cooperative_default_country() {
-            Some(country) => {
-                slot.country = country;
-                slot.country_random = false;
-            }
-            None => slot.country_random = true,
-        }
-    };
     if let Err(error) = state
         .match_state
         .session
-        .admit_cooperative_round_countries(admit)
+        .admit_cooperative_round_countries(|slot| runtime.cooperative_admit_country(slot))
     {
         log::warn!("co-op round countries: {error:#}");
     }

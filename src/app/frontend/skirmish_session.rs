@@ -18,6 +18,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::sim::rng::SimRng;
 use crate::skirmish_launch::{
     LaunchCountry, RandomCountryRole, ShellRandomAssignmentState, SkirmishLaunchSession,
+    SkirmishLocalSlot,
 };
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
 use crate::ui::skirmish_shell::{
@@ -1330,13 +1331,25 @@ impl MultiplayerShellRuntime {
         self.cooperative_registry.campaign_for_scenario(scenario)
     }
 
-    /// Cooperative `+0x1C` for a native country value (-2 Random).
-    pub(crate) fn cooperative_admits(&self, country: i32) -> bool {
-        self.cooperative_progress.admits_country(
+    /// Cooperative's country check on one seat, run on a join
+    /// (`0x005E1945..0x005E1973`) and by a round's repaint (`0x0046F6D0`):
+    /// a country the mode does not admit (`+0x1C`) becomes its default
+    /// (`+0x28`, Random when it has none).
+    pub(crate) fn cooperative_admit_country(&self, slot: &mut SkirmishLocalSlot) {
+        if self.cooperative_progress.admits_country(
             &self.cooperative_registry,
             &self.cooperative_country_roster,
-            country,
-        )
+            slot.country_shell_value(false),
+        ) {
+            return;
+        }
+        match self.cooperative_default_country() {
+            Some(country) => {
+                slot.country = country;
+                slot.country_random = false;
+            }
+            None => slot.country_random = true,
+        }
     }
 
     /// Cooperative `+0x28` as a launch country: None is Random.

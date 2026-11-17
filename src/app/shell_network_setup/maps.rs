@@ -63,6 +63,22 @@ pub(crate) fn generated_selection(session: &MatchSession) -> bool {
         .is_some_and(crate::map::rmg::is_seed_selection)
 }
 
+/// A host's map name a room takes: a valid logical name, and no seed but
+/// `RandMap.Sed`, the only seed the catalog lists and the one name the
+/// guest's start staging (`AcceptedRmgStartStaging::from_retained_staging`)
+/// and map admission (`0x005E5500`) take. Any other seed would pass setup as
+/// a [`generated_selection`] and fail only at load.
+pub(crate) fn validate_room_map_name(file: &str) -> Result<()> {
+    crate::map::source::validate_network_map_name(file)?;
+    ensure!(
+        !crate::map::rmg::is_seed_selection(file)
+            || file.eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED),
+        "a room's random map is not {}",
+        crate::map::skirmish_scenarios::RANDMAP_SED
+    );
+    Ok(())
+}
+
 /// The selected map's byte length, once its identity is one a transfer can
 /// carry.
 pub(crate) fn transfer_length(metadata: &NetworkMapMetadata) -> Result<usize> {
@@ -535,6 +551,15 @@ mod tests {
                 .unwrap();
             assert_eq!(generated_selection(&session), generated, "{file}");
         }
+    }
+
+    /// A seed other than `RandMap.Sed` would pass setup as generated and
+    /// fail only at load, without the guest's start staging.
+    #[test]
+    fn a_room_takes_no_seed_but_randmap_sed() {
+        assert!(validate_room_map_name("randmap.sed").is_ok());
+        assert!(validate_room_map_name("Authored.map").is_ok());
+        assert!(validate_room_map_name("Saved.sed").is_err());
     }
 
     #[test]

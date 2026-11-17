@@ -5411,11 +5411,14 @@ mod tests {
         assert!(!host.cancel_peer_admission(endpoint, &stale));
         assert!(host.peer_admission_matches(endpoint, &proof));
         assert!(host.pending_admissions.is_empty());
+        // StartPrompt, Departure, the kick and cancel admit a proof through
+        // in_room: any options revision, but only this build.
+        assert!(host.in_room(&proof) && !host.validate_scope(&proof));
         let mut other_build = proof.clone();
         other_build.version.push('x');
         assert!(
-            !host.cancel_peer_admission(endpoint, &other_build),
-            "another build's proof cannot cancel an admitted peer"
+            !host.in_room(&other_build),
+            "another build's proof is not in this room"
         );
         assert!(host.cancel_peer_admission(endpoint, &proof));
         assert!(host.peer_admissions.is_empty());

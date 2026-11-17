@@ -445,7 +445,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 "a host cannot receive guest-authored host setup"
             );
             if let Some(file) = launch.selected_map_file.as_deref()
-                && let Err(error) = crate::map::source::validate_network_map_name(file)
+                && let Err(error) = super::maps::validate_room_map_name(file)
             {
                 fail_go_handoff(state);
                 return Err(error);
