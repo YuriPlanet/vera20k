@@ -1146,30 +1146,14 @@ fn advance_in_game_runtime_mode(
                     true
                 } else if let Some(runtime) = state.match_state.sim_runtime.runtime() {
                     let frame = runtime.simulation.session().binary_frame();
-                    let frontier = live.committed_frontier();
-                    if let Some(timing) = live.sequenced_timing().filter(|_| {
-                        !replaying
-                            && !frame_stepping
-                            && !state.match_state.paused()
-                            && !state.focus_freeze_active()
-                            && !runtime.simulation.session().scenario_paused()
-                    }) {
-                        let recovering = live.recovery_status(now_ms as u32, frame).is_some();
-                        state
-                            .platform
-                            .frame_pacer
-                            .online_frame_decision(
-                                crate::util::time::Instant::now(),
-                                frame,
-                                frontier,
-                                timing,
-                                resume_wait,
-                                recovering,
-                            )
-                            .admits()
-                    } else {
-                        super::frame_pacer::LocalFramePacer::admits_canonical_frame(frame, frontier)
-                    }
+                    let inputs = online_pacing_inputs(state, frame, now_ms);
+                    state.platform.frame_pacer.admits_online_frame(
+                        crate::util::time::Instant::now(),
+                        frame,
+                        live.committed_frontier(),
+                        inputs,
+                        resume_wait,
+                    )
                 } else {
                     false
                 }
@@ -1321,27 +1305,15 @@ fn advance_in_game_runtime_mode(
             .as_ref()
             .filter(|live| live.uses_sequenced_lockstep() && !live.has_terminal_network_error())
         {
+            // A frame step has cleared its request above; it ticks inline
+            // whatever this answers.
             Some(live) => state.match_state.sim_runtime.runtime().is_some_and(|rt| {
-                let session = rt.simulation.session();
-                let next_frame = session.binary_frame().wrapping_add(1);
-                let receipt = live
-                    .sequenced_timing()
-                    .filter(|_| {
-                        !replaying
-                            && !frame_stepping
-                            && !state.match_state.paused()
-                            && !state.focus_freeze_active()
-                            && !session.scenario_paused()
-                    })
-                    .map(|timing| {
-                        let recovering = live.recovery_status(wall_ms as u32, next_frame).is_some();
-                        (timing, recovering)
-                    });
+                let next_frame = rt.simulation.session().binary_frame().wrapping_add(1);
                 pacer.another_online_pass_follows(
                     now,
                     next_frame,
                     live.committed_frontier(),
-                    receipt,
+                    online_pacing_inputs(state, next_frame, wall_ms),
                 )
             }),
             None => pacer.another_pass_follows(
@@ -1695,6 +1667,37 @@ pub(crate) fn local_pacing_inputs(state: &AppState) -> (u8, Option<(u16, u32)>) 
             },
         );
     (game_speed, super::network_match::frame_budget(state))
+}
+
+/// The online pacer's inputs for canonical `frame`: the relay's timing and
+/// whether `frame` is being recovered. `None` while the match is held
+/// (paused, focus-frozen, scenario-paused, replaying or frame-stepping) or
+/// before the relay's timing arrives; the committed frontier alone then
+/// admits frames (`LocalFramePacer::admits_canonical_frame`). The pass, the
+/// lend decision, the catch-up service and the render continuation all ask
+/// this; each keeps its own policy for a terminal network error.
+pub(crate) fn online_pacing_inputs(
+    state: &AppState,
+    frame: u32,
+    now_ms: u64,
+) -> Option<(crate::net::live_commands::SequencedTiming, bool)> {
+    let live = state.match_state.live_network.as_ref()?;
+    let session = state
+        .match_state
+        .sim_runtime
+        .runtime()?
+        .simulation
+        .session();
+    if state.match_state.paused()
+        || state.focus_freeze_active()
+        || session.scenario_paused()
+        || state.match_state.match_diagnostics.is_replay_playback()
+        || state.diag.debug_frame_step_requested
+    {
+        return None;
+    }
+    let timing = live.sequenced_timing()?;
+    Some((timing, live.recovery_status(now_ms as u32, frame).is_some()))
 }
 
 /// Debug speed is limited to an offline Skirmish; online, LAN and campaign

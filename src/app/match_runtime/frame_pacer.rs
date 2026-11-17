@@ -763,6 +763,27 @@ impl LocalFramePacer {
         self.debug_speed
     }
 
+    /// Whether the pass may run `next_frame` online: the online pacer decides
+    /// ([`Self::online_frame_decision`]) with the inputs
+    /// `sim_tick::online_pacing_inputs` gives. Without them (a held match, or
+    /// no relay timing yet) the committed frontier alone admits the frame, as
+    /// in [`Self::another_online_pass_follows`].
+    pub(crate) fn admits_online_frame(
+        &mut self,
+        now: Instant,
+        next_frame: u32,
+        frontier: u32,
+        inputs: Option<(SequencedTiming, bool)>,
+        resuming: bool,
+    ) -> bool {
+        match inputs {
+            Some((receipt, recovering)) => self
+                .online_frame_decision(now, next_frame, frontier, receipt, resuming, recovering)
+                .admits(),
+            None => Self::admits_canonical_frame(next_frame, frontier),
+        }
+    }
+
     pub(crate) fn online_frame_decision(
         &mut self,
         now: Instant,
