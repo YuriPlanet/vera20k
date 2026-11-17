@@ -7,7 +7,9 @@ use std::collections::{BTreeMap, VecDeque};
 
 use vera20k_relay_protocol::{
     CHECKSUM_INTERVAL, ClientLinkStats, ORDERING_BATCH_CAPACITY, OrderEntry, OrderError,
-    OrderEvent, OrderPace, OrderingCertificate, paced_rates,
+    OrderEvent, OrderPace, OrderingCertificate, OrderingGap, PACE_INTERVAL_MS,
+    READY_REQUEST_INTERVAL_MS, REORDER_WINDOW, RESTORE_PULL_INTERVAL_MS, WATCH_MARK_MS,
+    paced_rates,
 };
 
 use super::{LiveCommandError, StartupAgreement, StartupError};
@@ -21,13 +23,8 @@ use crate::sim::world::{
 use crate::util::time::Instant;
 
 const BUFFERED_FRAMES: usize = 64;
-const REORDER_WINDOW: u64 = 256;
 const MAX_FRAME_RECORDS: usize = 4096;
 const SAMPLE_HISTORY: usize = 4096;
-// READY_REQUEST resends until the start (spec §6.0).
-const CONFIGURE_INTERVAL_MS: i32 = 125;
-// A restoring process reads history by PULL every 100 ms (spec §7.7).
-const REPLAY_RETRY_INTERVAL_MS: i32 = 100;
 const PAUSE_PROBE_INTERVAL_MS: i32 = 500;
 const PAUSE_COMPATIBILITY_PROBE_INTERVAL_MS: i32 = 5_000;
 const COMMAND_TRACE_HISTORY: usize = 256;
@@ -36,7 +33,6 @@ const COMMAND_TRACE_HISTORY: usize = 256;
 // repeating it. Silence alone never ends a match.
 const UNREADABLE_LIMIT_MS: u32 = 5_000;
 const UNREADABLE_REPEAT_MS: u32 = 1_000;
-const PACE_REPORT_INTERVAL_MS: i32 = 1_000;
 // Frames must wait here this long before this PC counts as lagging.
 const PACE_BACKLOG_MS: u32 = 2_000;
 // Ticks kept for one pace report's tick-cost percentile.
@@ -233,7 +229,7 @@ impl PaceMeter {
         } else {
             self.backlog_since = None;
         }
-        if !service_due(self.last_report, now, PACE_REPORT_INTERVAL_MS) {
+        if !service_due(self.last_report, now, PACE_INTERVAL_MS as i32) {
             return None;
         }
         let ran = self.last_report.map_or(pace_fps, |last| {
@@ -1031,24 +1027,17 @@ impl SequencedSession {
         }
     }
 
-    /// The gap the uplink scheduler acts on (spec §6.3 row 2), while the
-    /// frame buffer has room for what is missing.
-    fn ordering_gap(&self) -> Option<vera20k_relay_protocol::OrderingGap> {
-        use vera20k_relay_protocol::OrderingGap;
-        if self.frames.len() >= BUFFERED_FRAMES {
+    /// The relay holds records past the contiguous cursor (spec §6.3 row 2),
+    /// and the frame buffer has room for them.
+    fn ordering_gap(&self) -> Option<OrderingGap> {
+        if self.frames.len() >= self.buffered_frames() {
             return None;
         }
-        if self
-            .entries
-            .first_key_value()
-            .is_some_and(|(seq, _)| *seq > self.next_sequence)
-        {
-            Some(OrderingGap::Reordered)
-        } else if self.remote_next_sequence > self.next_sequence {
-            Some(OrderingGap::BehindStatus)
-        } else {
-            None
-        }
+        OrderingGap::of(
+            self.next_sequence,
+            self.remote_next_sequence,
+            self.entries.first_key_value().map(|(seq, _)| *seq),
+        )
     }
 
     fn service_delivery(&mut self, transport: &mut LanUdpTransport, now: u32) {
@@ -1056,7 +1045,7 @@ impl SequencedSession {
             // Ready until the start, then a Pull from the cursor: the relay
             // pushes nothing to a watcher.
             let sent = if !self.started {
-                service_due(self.last_control, now, CONFIGURE_INTERVAL_MS)
+                service_due(self.last_control, now, READY_REQUEST_INTERVAL_MS as i32)
                     && transport.configure_watch(self.agreement).is_ok()
             } else {
                 service_due(self.last_control, now, WATCH_PULL_INTERVAL_MS as i32)
@@ -1073,7 +1062,7 @@ impl SequencedSession {
         if !self.started {
             // Only READY_REQUEST until the start: its STATUS replies carry
             // the start, and there are no records to pull (spec §6.0).
-            if service_due(self.last_control, now, CONFIGURE_INTERVAL_MS)
+            if service_due(self.last_control, now, READY_REQUEST_INTERVAL_MS as i32)
                 && transport.configure_ordering(self.agreement).is_ok()
             {
                 // Before the first request that can bring back an entry.
@@ -1084,8 +1073,8 @@ impl SequencedSession {
         }
         if self.restoring {
             // RESTORING: the relay pushes no new records; read them by PULL.
-            if self.cursor_gap()
-                && service_due(self.last_control, now, REPLAY_RETRY_INTERVAL_MS)
+            if self.ordering_gap().is_some()
+                && service_due(self.last_control, now, RESTORE_PULL_INTERVAL_MS as i32)
                 && transport.pull_ordering(self.next_sequence).is_ok()
             {
                 self.last_control = Some(now);
@@ -1125,7 +1114,8 @@ impl SequencedSession {
         let Some(unreadable) = self.unreadable else {
             return Ok(());
         };
-        let cursor_held = self.next_sequence == unreadable.next_sequence && self.cursor_gap();
+        let cursor_held =
+            self.next_sequence == unreadable.next_sequence && self.ordering_gap().is_some();
         let status_held = !self.started && self.statuses == unreadable.statuses;
         if !cursor_held && !status_held {
             self.unreadable = None;
@@ -1135,17 +1125,6 @@ impl SequencedSession {
             return Err(SequencedError::NewerClientRequired);
         }
         Ok(())
-    }
-
-    /// The relay holds entries past the contiguous cursor, and the frame
-    /// buffer has room for them.
-    fn cursor_gap(&self) -> bool {
-        self.frames.len() < self.buffered_frames()
-            && (self.remote_next_sequence > self.next_sequence
-                || self
-                    .entries
-                    .first_key_value()
-                    .is_some_and(|(seq, _)| *seq > self.next_sequence))
     }
 
     fn receive(&mut self, event: OrderEvent, received_at: Instant) -> Result<(), SequencedError> {
@@ -1906,12 +1885,12 @@ fn gameplay_opcode(opcode: u8) -> bool {
 }
 
 /// Frames that reach a watcher together at `fps`: what its relay releases
-/// at once (a second's mark when it holds the stream back, a turn when it
-/// does not; relay README "Watchers"), and two pulls' worth for the pull
-/// that brings them.
+/// at once (a `WATCH_MARK_MS` mark when it holds the stream back, a turn
+/// when it does not; relay README "Watchers"), and two pulls' worth for the
+/// pull that brings them.
 fn watch_turn(fps: u16, delay_seconds: u32) -> u32 {
     let released = if delay_seconds > 0 {
-        u32::from(fps)
+        (u64::from(fps) * WATCH_MARK_MS / 1000) as u32
     } else {
         vera20k_relay_protocol::turn_frames(fps)
     };
