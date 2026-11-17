@@ -1496,7 +1496,7 @@ fn fail_start(state: &mut AppState, text: &str) {
     if !verifying && let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
         // A rejected HTTP Start has not handed the setup to the lobby runner.
         // Keep the ordinary host/join screen and release its pending input.
-        protocol.set_online_start_phase(crate::app::shell_network_setup::OnlineStartPhase::Idle);
+        protocol.set_start_phase(crate::app::shell_network_setup::StartPhase::Idle);
         notice(state, text);
         return;
     }
@@ -1534,7 +1534,7 @@ fn relay_failure_line(pending: &PendingStart) -> &'static str {
 fn cancel_pending(state: &mut AppState, service: &mut LiveService) {
     service.start_preparation = None;
     if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
-        protocol.set_online_start_phase(crate::app::shell_network_setup::OnlineStartPhase::Idle);
+        protocol.set_start_phase(crate::app::shell_network_setup::StartPhase::Idle);
     }
     if service.pending.take().is_some() {
         // A Ready relay may already have moved into the shared transport owner.
@@ -2271,8 +2271,7 @@ fn poll_start_preparation(state: &mut AppState, service: &mut LiveService) -> Re
     start.submitted_request = Some(service.command_with_id("start", payload));
     start.deadline = Instant::now() + RELAY_TIMEOUT;
     if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
-        protocol
-            .set_online_start_phase(crate::app::shell_network_setup::OnlineStartPhase::Submitted);
+        protocol.set_start_phase(crate::app::shell_network_setup::StartPhase::Submitted);
     }
     service.start_preparation = Some(start);
     Ok(())
@@ -2389,9 +2388,8 @@ fn request_setup(
                     deadline: Instant::now() + Duration::from_secs(90),
                 });
                 if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
-                    protocol.set_online_start_phase(
-                        crate::app::shell_network_setup::OnlineStartPhase::Preparing,
-                    );
+                    protocol
+                        .set_start_phase(crate::app::shell_network_setup::StartPhase::Preparing);
                 }
                 notice(state, &tr("VERA:ConfirmingFinalSettings"));
             }
