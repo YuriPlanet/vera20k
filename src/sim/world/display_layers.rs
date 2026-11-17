@@ -126,9 +126,13 @@ impl DisplayLayers {
     /// unordered set: a submit appends and a removal swaps the last member
     /// into the hole. Only the picture orders Ground by key
     /// (`Simulation::ground_draw_order`), on the presentation side; the
-    /// simulation reads Ground as a set (crate radius effects, whose
-    /// per-object writes are independent of each other, and the network
-    /// checksum, which folds members in this deterministic order). With
+    /// simulation reads Ground in this deterministic set order: crate radius
+    /// effects, whose per-object writes are independent of each other, the
+    /// network checksum, and RefreshTechnoShroud4ADFF0
+    /// (`refresh_techno_shroud`), which reveals each member's sight in this
+    /// order instead of roughly GetYSort order and, when a reveal removes a
+    /// member, skips the member swapped into its place rather than the next
+    /// one. With
     /// 20,000 objects the ordered insert and pass cost about a tenth of a
     /// battle frame.
     pub fn submit(&mut self, id: u64, layer: Option<DisplayLayer>) -> bool {

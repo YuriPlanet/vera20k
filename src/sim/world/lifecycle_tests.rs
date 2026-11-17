@@ -9942,8 +9942,8 @@ fn jumpjet_process_compares_live_layer_queries_not_cached_registration() {
 
 /// Fly's phase tail (4CD4DE) resubmits Display after callbacks that may have
 /// UnInit an owner (landing retry's C4 receiver). Mark5F5850 refuses the
-/// Limbo owner; store removal expires the Display registration so the next
-/// Ground sort cannot meet a removed identity.
+/// Limbo owner; store removal expires the Display registration so no later
+/// Ground walk meets a removed identity.
 #[test]
 fn display_registration_expires_with_a_resubmitted_uninit_owner() {
     use super::display_layers::DisplayLayer;

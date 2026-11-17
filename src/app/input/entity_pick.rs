@@ -2369,7 +2369,8 @@ mod tests {
             let world = crate::render::locomotor_visual::screen_position(&entity);
             sim.entities_mut_for_test().insert(entity);
             sim.resubmit_entity_display_for_test(1);
-            let order = crate::app::presentation::instances::tactical_entity_encounter_order(&sim);
+            let order =
+                crate::app::presentation::instances::tactical_entity_encounter_order(&sim, None);
 
             let expected = admitted.then_some(1);
             assert_eq!(

@@ -701,12 +701,15 @@ fn tactical_left_up(state: &mut AppState) {
         };
         match action {
             SelectAction::Click(sx, sy) => {
-                // Native TacticalPick6DA380 reads the retained
-                // Display registrations after the projected click
+                // Native TacticalPick6DA380 reads the Display
+                // registrations in draw order after the projected click
                 // gate. The ScreenSelection list belongs to band/type
                 // scope, not this pointer pick.
                 let click_order =
-                    crate::app::presentation::instances::tactical_entity_encounter_order(sim);
+                    crate::app::presentation::instances::tactical_entity_encounter_order(
+                        sim,
+                        state.rules(),
+                    );
                 let world_x: f32 =
                     sx / state.match_state.input.zoom_level + state.match_state.input.camera_x;
                 let world_y: f32 =
@@ -6184,7 +6187,7 @@ mod control_group_tests {
             crate::sim::world::RevealOutcome::Revealed { .. }
         ));
         assert!(
-            crate::app::presentation::instances::tactical_entity_encounter_order(&sim)
+            crate::app::presentation::instances::tactical_entity_encounter_order(&sim, None)
                 .contains(&27)
         );
 
@@ -6246,7 +6249,7 @@ mod control_group_tests {
             crate::sim::world::RevealOutcome::Revealed { .. }
         ));
         assert!(
-            crate::app::presentation::instances::tactical_entity_encounter_order(&sim)
+            crate::app::presentation::instances::tactical_entity_encounter_order(&sim, None)
                 .contains(&27)
         );
 
@@ -6566,7 +6569,7 @@ mod control_group_tests {
         // the common CurrentPlayer-allied path implemented here.
         sim.fog_mut_for_test().mark_visible_for_owner(owner, 12, 10);
         let display_order =
-            crate::app::presentation::instances::tactical_entity_encounter_order(&sim);
+            crate::app::presentation::instances::tactical_entity_encounter_order(&sim, None);
         for id in [17, 18, 19] {
             assert!(
                 display_order.contains(&id),
@@ -6813,7 +6816,7 @@ mod control_group_tests {
         let mut groups = vec![Vec::new(); 10];
         groups[1] = vec![80];
         assert!(
-            crate::app::presentation::instances::tactical_entity_encounter_order(&sim)
+            crate::app::presentation::instances::tactical_entity_encounter_order(&sim, None)
                 .contains(&80),
             "the allied unit remains in the retained Display projection"
         );

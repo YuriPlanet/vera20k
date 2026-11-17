@@ -18,10 +18,12 @@ use crate::sim::vision::FogState;
 
 /// Tactical6D8F19..6D95A9 visits the five retained Display vectors forward.
 /// Store-only and Logic-only entities cannot become render/pick candidates.
-/// Ground is in draw order (`Simulation::display_draw_order`), here without
-/// a Building's type terms.
-pub(crate) fn tactical_entity_encounter_order(sim: &crate::sim::world::Simulation) -> Vec<u64> {
-    display_draw_ids(sim, None)
+/// Ground is in draw order (`Simulation::display_draw_order`) under `rules`.
+pub(crate) fn tactical_entity_encounter_order(
+    sim: &crate::sim::world::Simulation,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+) -> Vec<u64> {
+    display_draw_ids(sim, rules)
         .into_iter()
         .filter(|&id| sim.entities().contains(id))
         .collect()
@@ -445,9 +447,11 @@ pub(crate) fn drawn_display_entities<'a>(
         EntityDrawBand,
     ),
 > {
-    sim.display_layers()
-        .members_in_order()
-        .filter_map(|(layer, id)| Some((frame.object(id)?, layer_draw_band(layer)?)))
+    frame
+        .display_order(sim)
+        .ordered()
+        .iter()
+        .filter_map(|&(layer, id)| Some((frame.object(id)?, layer_draw_band(layer)?)))
 }
 
 /// Convert the screen row an entity is *drawn* at into the row it *sorts* at.
@@ -988,23 +992,23 @@ mod tests {
         sim.reveal(2);
         sim.reveal(1);
         sim.set_logic_order_for_test(vec![1, 2]);
-        assert_eq!(tactical_entity_encounter_order(&sim), [2, 1]);
+        assert_eq!(tactical_entity_encounter_order(&sim, None), [2, 1]);
         sim.entities_mut_for_test().insert(entity(3));
         sim.set_logic_order_for_test(vec![3, 1, 2]);
         assert_eq!(
-            tactical_entity_encounter_order(&sim),
+            tactical_entity_encounter_order(&sim, None),
             [2, 1],
             "Logic/store membership is insufficient"
         );
         sim.conceal(2);
         assert_eq!(
-            tactical_entity_encounter_order(&sim),
+            tactical_entity_encounter_order(&sim, None),
             [1],
             "conceal removes the pick/render candidate"
         );
         sim.reveal(2);
         assert_eq!(
-            tactical_entity_encounter_order(&sim),
+            tactical_entity_encounter_order(&sim, None),
             [1, 2],
             "resubmission follows retained equal-key members"
         );

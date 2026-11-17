@@ -1240,7 +1240,7 @@ mod tests {
                 .map(|id| id.as_u64().unwrap() + 1)
                 .collect();
             assert_eq!(
-                tactical_entity_encounter_order(&sim),
+                tactical_entity_encounter_order(&sim, None),
                 expected,
                 "pick: {step}"
             );
