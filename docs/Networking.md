@@ -37,7 +37,8 @@ match, including on generated maps with no local assignments. This includes a
 co-op campaign's next mission and a retried mission, where the original game keeps
 the previous mission's unassigned locals. Network replay and rejoin are unchanged:
 each runs in a newly started game, so it never had an earlier match to carry from.
-Loading a save keeps its saved variables. Offline skirmish and campaign loads retain
+Watching loads in the running game, so a watcher who played an earlier match no
+longer carries its locals either. Loading a save keeps its saved variables. Offline skirmish and campaign loads retain
 the original game's local variable carryover. This changes no packets: mixed builds
 are refused by the existing build check, and a rollback restores the earlier
 carryover behavior.
@@ -109,8 +110,8 @@ audio owner resolves it; offline games still resolve it when the map loads. A pl
 whose sound, EVA or music catalog lacks that entry therefore starts with the same
 world as the others, and an object's action-99 custom sound keeps the same schedule.
 That cue is silent for that player. On an action-99 object it also stops the object's
-previous custom sound, as an invalid slot does in the original game; a name no
-catalog knows does the same, where the original game lets that sound play out.
+previous custom sound. The original game does the same for a missing slot, but for a
+name that player's catalog lacks it lets the previous sound play out.
 Other actions that use an audio-catalog ordinal as a number (such as a timer with a
 sound-name parameter) still retain and hash that number, so real gameplay
 differences are refused. This changes no messages: older builds are

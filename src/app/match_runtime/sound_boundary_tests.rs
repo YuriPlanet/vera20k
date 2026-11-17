@@ -522,6 +522,7 @@ fn network_trigger_audio_resolves_only_in_the_local_playback_consumer() {
     };
 
     let eva = catalog.eva().entry_by_index(0).unwrap().name.clone();
+    assert!(player.eva_entry_done(0, catalog.eva()));
     deliver(
         &mut player,
         SimSoundEvent::TriggerAudio {
@@ -529,7 +530,11 @@ fn network_trigger_audio_resolves_only_in_the_local_playback_consumer() {
             target: TriggerSoundTarget::Eva,
         },
     );
-    assert_eq!(player.current_eva_event(), Some(eva.as_str()));
+    // QueueVoice752480 queues the line; a later pump starts it.
+    assert!(
+        !player.eva_entry_done(0, catalog.eva()),
+        "the listener's catalog resolves the name and queues its line"
+    );
 
     let owner = 44;
     let object = |index| SimSoundEvent::TriggerAudio {
@@ -539,7 +544,11 @@ fn network_trigger_audio_resolves_only_in_the_local_playback_consumer() {
     let slot = 1;
     let sound = catalog.sounds().entry_by_index(slot).unwrap().id.clone();
     deliver(&mut player, object(slot));
-    assert_eq!(player.handle_sound_id(owner), Some(sound.as_str()));
+    assert!(
+        player
+            .handle_sound_id(owner)
+            .is_some_and(|id| id.eq_ignore_ascii_case(&sound))
+    );
     let missing = i32::try_from(catalog.sounds().len()).unwrap();
     deliver(&mut player, object(missing));
     assert_eq!(

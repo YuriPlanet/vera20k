@@ -188,13 +188,14 @@ impl RuntimeAction {
     // every peer even when one client cannot play it. A negative literal
     // still means no sound. No RNG, timer or detach is added by this read.
     //
-    // RESIDUAL: an action-99 name no catalog knows stays a name here, so the
-    // object keeps a custom sound (and stays awake for it) whose every
-    // PlayAt7509E0 visit finds no cue and stops the object's live handle:
-    // its previous loop is cut. Native resolves that name to -1, and
-    // Set_Custom_Sound5F6CB0(-1) detaches the handle through 405FD0, so the
-    // loop plays out. Network games only; a misspelt or mod-only name on a
-    // building or tree that already plays a custom sound.
+    // RESIDUAL: an action-99 name stays a name here, so where this player's
+    // catalog lacks it the object keeps a custom sound (and stays awake for
+    // it) whose every PlayAt7509E0 visit finds no cue and stops the object's
+    // live handle: its previous loop is cut. Native resolves the name in each
+    // player's own catalog to -1, and Set_Custom_Sound5F6CB0(-1) detaches the
+    // handle through 405FD0, so the loop plays out. Network games only; a
+    // misspelt, mod-only or locally missing name on a building or tree that
+    // already plays a custom sound.
     fn retain_network_playback(&mut self) {
         if !self.playback_operand() || self.entry.kind == 20 {
             return;

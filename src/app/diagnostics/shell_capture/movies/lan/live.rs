@@ -1840,7 +1840,7 @@ fn terminal_simulation_receipt(state: &AppState) -> Result<Value> {
     Ok(
         json!({"tick":tick,"native_frame":sim.session().binary_frame(),
         "hash":hash,"recorded_hashes":hashes,"score_finalized":true,
-        "state_hash_owners":sim.state_hash_owners()}),
+        "state_hash_owners":sim.state_hash_owners().to_vec()}),
     )
 }
 

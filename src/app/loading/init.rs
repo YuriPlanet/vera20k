@@ -1644,7 +1644,8 @@ impl MapLoadInitial {
     /// values. ClearScene6851F0 clears globals, but ReadLocal689B20 retains
     /// unassigned locals. VERA starts fresh LAN/WOL worlds from map assignments
     /// only: peers cannot share prior-match locals. Replays and rejoins run in
-    /// a newly started process and never had any.
+    /// a newly started process and never had any; a watch loads in the running
+    /// game and starts fresh too.
     ///
     /// RESIDUAL (VERA network adaptation): a LAN/WOL co-op campaign's next
     /// mission and a retried mission are such starts too, so they drop the
