@@ -6,6 +6,7 @@ use super::*;
 use crate::app::match_runtime::session::NetworkRowKind;
 use crate::skirmish_launch::{AiDifficulty, LaunchCountry, LaunchStartPosition, LaunchTeam};
 use crate::ui::multiplayer_setup::*;
+use anyhow::Context;
 pub(crate) use start::begin_external_lan_go;
 
 /// While C2's StartGame request is pending (`00B77E28`), its proc skips
@@ -700,30 +701,30 @@ pub(super) fn accept(state: &mut AppState) -> anyhow::Result<()> {
 }
 
 pub(crate) fn commit_start(state: &mut AppState, agreed_seed: u32) {
-    let quick_match = super::quick_match(state);
-    let external = super::external(state);
-    // Quick Match and external launches have no setup dialog whose
-    // teardown writes settings.
-    if !quick_match && !external {
-        super::persist_setup_preferences(state);
-    }
-    if let Some(launch) = state.match_state.session.network_setup()
-        && let Err(error) = state
-            .frontend
-            .multiplayer_shell_runtime
-            .validate_network_countries(launch)
-    {
-        // The dialog has already slid out; a refused start returns to a
-        // fresh BB like the failed network StartScenario retry (52E75F).
-        log::error!("Cannot admit network country identity: {error}");
-        if external {
-            App::fail_external_launch(state, &format!("network country identity: {error}"));
-        } else if quick_match {
+    if let Err(error) = try_commit_start(state, agreed_seed) {
+        log::error!("Could not start the network match: {error:#}");
+        if state.frontend.external_launch {
+            App::fail_external_launch(state, &format!("{error:#}"));
+        } else if super::quick_match(state) {
             crate::app::shell_wol::start_aborted(state);
         } else {
             super::commit_back(state);
         }
-        return;
+    }
+}
+
+/// The lobby's watch admission and playable starts freeze the same world.
+/// Each caller owns the return from a refusal.
+pub(super) fn try_commit_start(state: &mut AppState, agreed_seed: u32) -> anyhow::Result<()> {
+    if !super::quick_match(state) && !super::external(state) {
+        super::persist_setup_preferences(state);
+    }
+    if let Some(launch) = state.match_state.session.network_setup() {
+        state
+            .frontend
+            .multiplayer_shell_runtime
+            .validate_network_countries(launch)
+            .context("network country identity")?;
     }
     // The host's random map keeps the start staging its generator wrote
     // (Scenario +0x1140, 0x0059647B..0x00596565), as skirmish's does. A
@@ -779,34 +780,24 @@ pub(crate) fn commit_start(state: &mut AppState, agreed_seed: u32) {
         (false, false) => crate::app::lan_service::admitted_host_room(state)
             .map(|(host, game_id)| crate::app::shell_lan::LanRematch::Guest { host, game_id }),
     };
-    match state.match_state.session.freeze_network_start(agreed_seed) {
-        Ok(startup) => {
-            if state.match_state.session_mode()
-                == crate::app::match_runtime::session::SessionMode::Wol
-            {
-                crate::app::shell_wol::match_started(state);
-            }
-            state.frontend.multiplayer_setup = None;
-            state.frontend.network_setup_protocol = None;
-            state.frontend.skirmish_preview_texture = None;
-            crate::app::loading::pump::begin_loading(
-                state,
-                crate::app::loading::pump::LoadingRequest::network(startup)
-                    .with_accepted_random_map(accepted_random_map)
-                    .with_start_staging(guest_staging),
-            );
-        }
-        Err(error) => {
-            log::error!("Could not freeze accepted LAN start: {error:#}");
-            if external {
-                App::fail_external_launch(state, &format!("network start: {error:#}"));
-            } else if quick_match {
-                crate::app::shell_wol::start_aborted(state);
-            } else {
-                super::commit_back(state);
-            }
-        }
+    let startup = state
+        .match_state
+        .session
+        .freeze_network_start(agreed_seed)
+        .context("network start")?;
+    if state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol {
+        crate::app::shell_wol::match_started(state);
     }
+    state.frontend.multiplayer_setup = None;
+    state.frontend.network_setup_protocol = None;
+    state.frontend.skirmish_preview_texture = None;
+    crate::app::loading::pump::begin_loading(
+        state,
+        crate::app::loading::pump::LoadingRequest::network(startup)
+            .with_accepted_random_map(accepted_random_map)
+            .with_start_staging(guest_staging),
+    );
+    Ok(())
 }
 
 pub(crate) fn open_choose_map(state: &mut AppState) {

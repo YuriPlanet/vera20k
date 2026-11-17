@@ -159,6 +159,7 @@ enum Step {
     /// VERA: a watch row's `watch` behind the wait box, until the lobby
     /// grants it ([`watch_admitted`]) or refuses it.
     Watching {
+        match_id: String,
         request: Option<OnlineRequest>,
     },
     /// VERA: the room's Lobby, until the public lobby's `joined` marked
@@ -182,7 +183,7 @@ impl Step {
             Self::JoiningLobby { request, .. }
             | Self::JoiningGame { request }
             | Self::Creating { request, .. }
-            | Self::Watching { request }
+            | Self::Watching { request, .. }
             | Self::Visiting { request } => *request,
             _ => None,
         }
@@ -193,7 +194,7 @@ impl Step {
             Self::JoiningLobby { request, .. }
             | Self::JoiningGame { request }
             | Self::Creating { request, .. }
-            | Self::Watching { request }
+            | Self::Watching { request, .. }
             | Self::Visiting { request } => Some(request),
             _ => None,
         }
@@ -2677,14 +2678,17 @@ fn begin_watch(state: &mut AppState, match_id: String) {
         return;
     };
     lobby.ui.disable_commands();
-    lobby.step = Step::Watching { request: None };
+    lobby.step = Step::Watching {
+        match_id: match_id.clone(),
+        request: None,
+    };
     show_wait(state, "VERA:ContactingOnline");
     request(state, WolServiceRequest::Watch { match_id });
 }
 
 /// VERA: whether the lobby page waits for a watch's grant.
-pub(crate) fn awaits_watch(state: &AppState) -> bool {
-    lobby(state).is_some_and(|lobby| matches!(lobby.step, Step::Watching { .. }))
+pub(crate) fn awaits_watch(state: &AppState, match_id: &str) -> bool {
+    lobby(state).is_some_and(|lobby| matches!(&lobby.step, Step::Watching { match_id: awaited, .. } if awaited == match_id))
 }
 
 /// VERA: the relay admitted the watch that [`Step::Watching`] waits for:
@@ -5305,7 +5309,10 @@ mod tests {
         step = Step::Ready;
         assert!(!step.bind_online_request(9, now));
         // A watch's refusal or silence reaches its step the same way.
-        step = Step::Watching { request: None };
+        step = Step::Watching {
+            match_id: "match".into(),
+            request: None,
+        };
         assert!(step.bind_online_request(10, now));
         assert!(step.accepts_online_result(10));
     }
