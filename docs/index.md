@@ -72,6 +72,7 @@ simulation, session and network command owners.
 - [Map format](map-format.md): bigger maps and maps for up to 30 players, for people who write map editors and tools.
 - [Primary rotation](primary-rotation.md): select several factories and press I to have them take turns being the primary.
 - [Random map Extras](random-map-extras.md): share codes, presets and choices that add to a generated map, and `RMGMD.INI [Extras]` for a mod's own.
+- [External launches](spawn.md): `vera20k --probe` and `--generate-map`, which a launcher runs before a `-SPAWN` match, and the browser's `probe()` and `generate_map()`.
 - [Relation colours](relation-colours.md): press Alt+A to draw your side blue, your allies green and your enemies red.
 - [SHP building turrets](ini-shp-turret-anims.md): the rules keys for a building turret drawn as a 32-frame animation.
 - [Sidebar build-list columns](sidebar-columns.md): the Options list that lays three to five build pictures a row inside the sidebar's own width.

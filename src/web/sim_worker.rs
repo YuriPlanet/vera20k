@@ -39,36 +39,51 @@ static WORKER_PANIC: crate::util::sync::OnceLock<String> = crate::util::sync::On
 
 /// Whether this page can run the worker: shared memory needs cross-origin
 /// isolation, and a tick's parallel work needs the pool `initThreadPool`
-/// started. Without that pool rayon runs its work on the thread that first
-/// asked for it, this one, which the worker's work would wait for in vain.
-/// Asked once, during a scenario, so after the host started the pool.
+/// started ([`pool_started`]). Asked once, during a scenario, so after the
+/// host started the pool.
 pub(crate) fn available() -> bool {
     thread_local! {
         static AVAILABLE: std::cell::OnceCell<bool> = const { std::cell::OnceCell::new() };
     }
     AVAILABLE.with(|available| {
         *available.get_or_init(|| {
-            let isolated =
-                js_sys::Reflect::get(&js_sys::global(), &JsValue::from_str("crossOriginIsolated"))
-                    .ok()
-                    .and_then(|value| value.as_bool())
-                    .unwrap_or(false);
-            // `current_num_threads` builds the global pool if the host did
-            // not; rayon-core then makes this thread its only worker.
-            let pool = isolated
-                && rayon::current_num_threads() > 0
-                && rayon::current_thread_index().is_none();
+            let pool = pool_started();
             if pool {
                 log::info!("Simulation thread: starting the simulation worker");
             } else {
                 log::info!(
-                    "Simulation thread: none in this page (cross-origin isolated: {isolated}); \
-                     ticks run on the main thread"
+                    "Simulation thread: none in this page (cross-origin isolated: {}); \
+                     ticks run on the main thread",
+                    cross_origin_isolated()
                 );
             }
             pool
         })
     })
+}
+
+fn cross_origin_isolated() -> bool {
+    js_sys::Reflect::get(&js_sys::global(), &JsValue::from_str("crossOriginIsolated"))
+        .ok()
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+}
+
+/// Whether the pool `initThreadPool` starts runs on Web Workers, so this
+/// thread can hand it work and go on. Without that pool rayon runs its work
+/// on the thread that first asked for it, this one, which would wait for it
+/// in vain. Ask only after the host has awaited `initThreadPool`:
+/// `current_num_threads` builds the global pool if the host did not, and
+/// rayon-core then makes this thread its only worker.
+pub(crate) fn pool_started() -> bool {
+    cross_origin_isolated()
+        && rayon::current_num_threads() > 0
+        && rayon::current_thread_index().is_none()
+}
+
+/// The first panic or trap noted on a worker ([`note_worker_panic`]).
+pub(crate) fn worker_panic() -> Option<&'static str> {
+    WORKER_PANIC.get().map(String::as_str)
 }
 
 /// Run `body` on a new worker. It may start late or not at all; `body`

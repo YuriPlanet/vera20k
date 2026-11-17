@@ -265,6 +265,50 @@ fn random_map_preview_cells(
     cells
 }
 
+/// What colouring a generated map's preview reads besides the map: the
+/// generation's theater, terrain rules and Rules projection.
+pub(super) struct RandomMapPreviewInputs<'a> {
+    theater: &'a crate::map::theater::TheaterData,
+    terrain_rules: &'a crate::rules::terrain_rules::TerrainRules,
+    preview_rules: Option<&'a RandomMapPreviewRules>,
+}
+
+/// Colour and rasterise a map, with red start markers baked in at `markers`
+/// (`preview::marker_waypoints`; empty for none). The resolver reads theater
+/// data and the Overlay type/header colors share the retained asset inputs.
+///
+/// `main` is the Main cursor the terrain-variant selector's table draws from
+/// when `selector_cache` holds none yet: the process frontend's for the
+/// dialog, a seeded one for a headless export (`random_map_file`).
+pub(super) fn rasterise_random_map(
+    map_file: &crate::map::map_file::MapFile,
+    markers: &[(u16, u16)],
+    inputs: RandomMapPreviewInputs<'_>,
+    asset_manager: Option<&crate::assets::asset_manager::AssetManager>,
+    main: &mut crate::sim::rng::MainRngDraws,
+    selector_cache: &mut crate::map::tile_variant_selector::TileVariantSelectorCache,
+) -> Option<crate::map::rmg::preview::PreviewImage> {
+    // LAT defaults off for runtime maps, so resolve the same way the load
+    // path will; a different setting here would colour cells the player
+    // never sees.
+    let resolved_terrain = build_random_map_preview_grid(
+        map_file,
+        Some(inputs.theater),
+        asset_manager,
+        Some(inputs.terrain_rules),
+        main,
+        selector_cache,
+    );
+    let cells = random_map_preview_cells(
+        map_file,
+        &resolved_terrain,
+        inputs.preview_rules,
+        asset_manager,
+        inputs.theater.extension,
+    );
+    crate::map::rmg::preview::render_preview(&cells, markers)
+}
+
 /// A random-map generation handed to a worker thread.
 ///
 /// The worker only *generates*; colouring a preview needs the terrain resolver
@@ -656,6 +700,15 @@ impl RandomMapObjects {
 }
 
 impl PreparedRandomMapGeneration {
+    /// What [`rasterise_random_map`] reads from this generation.
+    pub(super) fn preview_inputs(&self) -> RandomMapPreviewInputs<'_> {
+        RandomMapPreviewInputs {
+            theater: &self.theater,
+            terrain_rules: &self.terrain_rules,
+            preview_rules: self.preview_rules.as_ref(),
+        }
+    }
+
     /// These are the same resolved generation inputs, including the process
     /// Powerups table that the generated scenario inherits. Projection consumes
     /// no RNG and never mutates the live Rules owner.
@@ -1597,32 +1650,20 @@ impl App {
         map_file: &crate::map::map_file::MapFile,
         start_waypoints: &[(u8, u16, u16)],
     ) -> Option<crate::map::rmg::preview::PreviewImage> {
-        // LAT defaults off for runtime maps, so resolve the same way the load
-        // path will; a different setting here would colour cells the player
-        // never sees.
-        let resolved_terrain = {
-            let mut main = crate::app::state::process_main_draws(&state.frontend.frontend_main_rng);
-            let (manager, _, selector_cache) =
-                state.process_assets.manager_and_rules_with_tile_cache();
-            let asset_manager = manager.map(|m| &*m);
-            build_random_map_preview_grid(
-                map_file,
-                Some(&job.theater),
-                asset_manager,
-                Some(&job.terrain_rules),
-                &mut main,
-                selector_cache,
-            )
-        };
-        let cells = random_map_preview_cells(
+        let mut main = crate::app::state::process_main_draws(&state.frontend.frontend_main_rng);
+        let (manager, _, selector_cache) = state.process_assets.manager_and_rules_with_tile_cache();
+        rasterise_random_map(
             map_file,
-            &resolved_terrain,
-            job.preview_rules.as_ref(),
-            state.process_assets.manager(),
-            job.theater.extension,
-        );
-        let waypoints = crate::map::rmg::preview::marker_waypoints(start_waypoints);
-        crate::map::rmg::preview::render_preview(&cells, &waypoints)
+            &crate::map::rmg::preview::marker_waypoints(start_waypoints),
+            RandomMapPreviewInputs {
+                theater: &job.theater,
+                terrain_rules: &job.terrain_rules,
+                preview_rules: job.preview_rules.as_ref(),
+            },
+            manager.map(|m| &*m),
+            &mut main,
+            selector_cache,
+        )
     }
 
     /// Persist accepted random-map setup, refresh the sentinel record, and
