@@ -1372,6 +1372,27 @@ mod tests {
         assert_eq!(native_faults, 4);
     }
 
+    /// `Ext/WarheadType/Body.cpp:369`, declared `Body.h:239` and constructed
+    /// at `:539`: `CanKill=` is a plain `Valueable<bool>` defaulting to
+    /// **true**, so a no-kill warhead is opt-in and an absent or blank key
+    /// keeps the stock lethal hit.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn can_kill_reads_false_only_when_the_key_says_no() {
+        let verses = "Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n";
+        for (keys, expected) in [
+            ("", true),
+            ("CanKill=\n", true),
+            ("CanKill=yes\n", true),
+            ("CanKill=no\n", false),
+            ("CanKill=0\n", false),
+        ] {
+            let ini = IniFile::from_str(&format!("[HE]\n{verses}{keys}"));
+            let warhead = WarheadType::from_ini_section("HE", ini.section("HE").unwrap());
+            assert_eq!(warhead.can_kill, expected, "keys={keys:?}");
+        }
+    }
+
     /// Phobos `AEAttachInfoTypeClass` and `SuppressReflectDamage` on a
     /// warhead, through the production Rules reader, plus the `ReflectDamage`
     /// warhead the AttachEffect catalog alone names.

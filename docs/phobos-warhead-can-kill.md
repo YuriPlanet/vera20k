@@ -33,12 +33,21 @@ ORed in.
 
 ## Where VERA20K owns it
 
-- `rules::warhead_type::WarheadType::can_kill` (default `true`).
-- `sim::attach_effect::Simulation::apply_unkillable_clamp` opens on
+- `rules::warhead_type::WarheadType::can_kill` (default `true`,
+  `rules/warhead_type.rs:535`, read at `:1160`).
+- `sim::attach_effect::Simulation::apply_unkillable_clamp`
+  (`sim/attach_effect.rs:2847`) opens on
   `target.phobos_unkillable() || !warhead.can_kill`, then keeps the existing
-  house gate, `GetTotalDamage` kernel and the 1-HP write
-  (`sim/attach_effect.rs:2672`). Its caller is the ReceiveDamage wrapper
-  (`sim/combat/world_receiver.rs:1571`).
+  house gate, `GetTotalDamage` kernel and the 1-HP write. It also refuses a
+  hit whose receiver flags set `IgnoreDefenses`, because native's whole shield
+  block — this arm included — sits inside `if (!args->IgnoreDefenses)`
+  (`:141`). Its caller is the ReceiveDamage wrapper
+  (`sim/combat/world_receiver.rs:1780-1821`), which zeroes the packet and sets
+  `SkipLowDamageCheck`.
+- Tests: `sim::combat::combat_tests::can_kill_no_leaves_one_health_and_skips_the_low_damage_check`,
+  `can_kill_no_still_lets_a_nonlethal_hit_through`,
+  `an_ignore_defenses_hit_bypasses_the_can_kill_clamp`, and
+  `rules::warhead_type::tests::can_kill_reads_false_only_when_the_key_says_no`.
 
 ## Native anchors
 
