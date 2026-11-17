@@ -43,18 +43,29 @@ loop it restarts `RearmTimer` with the last captured value.
   `Valueable<bool>` semantics) on `WeaponType`.
 - `sim/combat/world_fire.rs` - `resolve_attacker_fire` is `TechnoClass::Fire` and
   stays one shot per call. When the weapon carries the key, the delayed-fire gate
-  above is open, the category is infantry or vehicle, `Burst` is above 1, the
-  shot stepped the burst and the burst did not complete, it hands the admitted
-  shot back to its caller. The two class firing updates -
-  `FireVisit::UnitTarget` and `FireVisit::InfantryTarget` in `visit_fire`, the
-  sites Phobos hooks - then run `fire_remaining_burst_this_frame`, which launches
-  that same admitted shot once per remaining shot and restores the last shot's
-  rearm; there is no second admission, so the class gates and RNG the first shot
-  already passed (the infantry `0x5209AF` sequence test and its
-  `Burst.FireWithinSequence` draws included) stay with the first shot, as
-  native's direct `Fire` loop has it. Every other FireAt caller (a mission's
-  `FireVisit::Direct`, retaliation, aircraft release) sees the ordinary one shot
-  per call.
+  above is open, the category is infantry or vehicle, `Burst` is above 1 and the
+  shot left a live burst index, it hands the admitted shot back to its caller.
+  The two class firing updates - `FireVisit::UnitTarget` and
+  `FireVisit::InfantryTarget` in `visit_fire`, the sites Phobos hooks - then run
+  `fire_remaining_burst_this_frame`, which is the hook's own loop
+  (`for (int i = pThis->CurrentBurstIndex; i < pWeapon->Burst &&
+  pThis->GetFireError(...) == FireError::OK && pThis->Fire(...); ++i)`):
+  it ends immediately when the first shot left `CurrentBurstIndex` at 0
+  (`Hooks.Firing.cpp:189`), otherwise it repeats `TechnoClass::Fire` while a
+  **local** counter stays below `Burst`. The counter is local because the shot
+  itself may reset `CurrentBurstIndex` - `SetChargeTurretDelay`'s sibling
+  `ForceFullRearmDelay` reset in `TechnoClass_FireAt_LateLogic` - and that neither
+  shortcuts nor extends the loop.
+
+  Every repeat is a real admission, not a clone of the first shot: `repeat`
+  tells `admit_attacker_fire` to skip the class firing-frame block (the
+  `0x5209AF` stage equality and its `Burst.FireWithinSequence`
+  `RandomRanged(3, 5)` draws, which belong to the class update, not to `Fire`)
+  and the infantry firing-action start, while `GetFireError` still runs. That
+  keeps the repeat behind the ammo, range and legality gate native asks again
+  for each shot, and keeps the second shot's own weapon/rearm arithmetic.
+  Every other FireAt caller (a mission's `FireVisit::Direct`, retaliation,
+  aircraft release) sees the ordinary one shot per call.
 
 ## Tests
 `sim::combat::burst_no_delay_tests` drives one class firing update per frame for
@@ -70,9 +81,12 @@ on the delayed-fire keys: `DelayedFire.Duration` with `OnlyOnInitialBurst` unset
 holds the cadence to one shot per frame, and adding `OnlyOnInitialBurst=yes`
 opens the repeat again. The last two meet the
 [Burst.FireWithinSequence](phobos-burst-sequence.md) gate: a visit with both keys
-and a listed `Burst.Delays` fires every shot and consumes only the completing
-shot's own rearm jitter, and a burst that starts on index 1 keeps the stage that
-admission matched instead of restarting the firing action.
+and a listed `Burst.Delays` fires every shot, consumes only the completing
+shot's own rearm jitter and never re-enters the sequence test; a burst that
+starts on index 1 also arms the gate's overrun in this fixture (no ART sequence
+record, so the projected frame is past a zero-frame sequence), so its shot
+resets `CurrentBurstIndex` to 0 and the hook's own `if (!CurrentBurstIndex)`
+check ends the visit after that one shot, with the retained stage untouched.
 
 ## Residuals
 

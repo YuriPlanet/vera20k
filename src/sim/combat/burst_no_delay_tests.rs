@@ -296,9 +296,11 @@ fn burst_no_delay_fires_all_shots_without_redrawing_the_sequence() {
         "InfantryTypes",
         "Burst.NoDelay=yes\nBurst.FireWithinSequence=yes\nBurst.Delays=0,0,0\n",
         "",
-        // `ROF.RandomDelay=0` replaces the full arm's jitter value without a
-        // second draw, so one Scenario value means one draw.
-        "[CombatDamage]\nROF.RandomDelay=0\n",
+        // No `[CombatDamage]` override: the default `ROF.RandomDelay` `{0, 2}`
+        // is the vanilla jitter, and `TechnoClass_RearmDelay_ROF` replaces the
+        // stock draw with it rather than following it, so the completing shot's
+        // full arm takes exactly one Scenario value.
+        "",
     );
     sim.scenario_rng = crate::sim::rng::SimRng::new(9);
     let mut expected = crate::sim::rng::SimRng::new(9);
@@ -322,17 +324,18 @@ fn burst_no_delay_fires_all_shots_without_redrawing_the_sequence() {
     );
 }
 
-/// A burst that starts on index 1 admits at `fireUp + max(delay, 1)` and must
-/// fire the remaining shot on the same visit without a second pass over the
-/// `0x5209AF` test: the retained stage stays where the admission found it, while
-/// a re-admission would first restart the firing action and move it back to 0.
-/// The Scenario values are not pinned here because this admission also arms the
-/// `Burst.FireWithinSequence` overrun (the fixture has no ART sequence record, so
-/// the projected frame is past a zero-frame sequence) and that full-rearm arm's
-/// own jitter would have to be counted as well; the draw claim stays with
-/// `burst_no_delay_fires_all_shots_without_redrawing_the_sequence`.
+/// A burst that starts on index 1 admits at `fireUp + max(delay, 1)`, and this
+/// admission also arms the `Burst.FireWithinSequence` overrun: the fixture has
+/// no ART sequence record, so the projected frame is past a zero-frame
+/// sequence. `LateLogic` (`Ext/Techno/Hooks.Firing.cpp:902-910`) then resets
+/// `CurrentBurstIndex` to 0 on the shot, and the hook's own
+/// `if (!pThis->CurrentBurstIndex) return SkipVanillaFire`
+/// (`Ext/Infantry/Hooks.Firing.cpp:189`) ends the visit right there — the
+/// repeat never runs. What the visit must not do is re-enter the `0x5209AF`
+/// test, so the retained stage stays where the admission found it; a
+/// re-admission would first restart the firing action and move it back to 0.
 #[test]
-fn burst_no_delay_repeat_does_not_restart_the_sequence_gate() {
+fn a_forced_full_rearm_reset_ends_the_repeat() {
     let (mut sim, rules, firer, target) = arena(
         "InfantryTypes",
         "Burst.NoDelay=yes\nBurst.FireWithinSequence=yes\nBurst.Delays=0,0,0\n",
@@ -346,19 +349,19 @@ fn burst_no_delay_repeat_does_not_restart_the_sequence_gate() {
     actor.weapon_burst.set_index(1);
     assert_eq!(
         visit(&mut sim, &rules, firer, target, "InfantryTypes"),
-        2,
-        "index 1 and index 2 both launch on this update"
+        1,
+        "the overrun reset left CurrentBurstIndex at 0, so the hook returns"
     );
     let entity = sim.entities().get(firer).expect("firer");
     assert_eq!(
         entity.weapon_burst.index(),
         0,
-        "the burst wrapped after the repeat"
+        "the forced full rearm reset the burst to its first shot"
     );
     assert_eq!(
         entity.native_stage().value(),
         stage,
-        "the repeat does not restart the firing action, so the stage never moves"
+        "the visit never re-enters the firing-frame gate, so the stage never moves"
     );
 }
 

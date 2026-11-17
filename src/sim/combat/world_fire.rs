@@ -127,6 +127,7 @@ pub(super) fn resolve_attacker_fire<'r>(
         &mut reach,
         out,
         effects,
+        false,
     ) else {
         return (reach, None);
     };
@@ -285,6 +286,7 @@ fn fire_remaining_burst_this_frame(
     overlay_registry: Option<&OverlayTypeRegistry>,
     admitted: &AdmittedFire<'_>,
     binary_frame: u32,
+    fog_enabled: bool,
     out: &mut CombatEmit,
     effects: FrameEffects<'_>,
 ) {
@@ -295,7 +297,15 @@ fn fire_remaining_burst_this_frame(
         .entities
         .get(firer)
         .map_or(0, |entity| entity.rearm_timer.remaining(frame));
-    loop {
+    // The hook continues only when the first shot left a live burst index
+    // (`Hooks.Firing.cpp:189`: `if (!pThis->CurrentBurstIndex) return
+    // SkipVanillaFire`). A shot that wrapped, or that `LateLogic`'s
+    // `ForceFullRearmDelay` arm reset to 0, ends here with its own rearm.
+    if let Some(mut index) = weapon_burst_index(world, firer)
+        && index != 0
+    {
+        let burst = admitted.selected.weapon.burst;
+        // `pThis->RearmTimer.Start(0)` after the first shot's captured value.
         world
             .substrate
             .entities
@@ -303,30 +313,58 @@ fn fire_remaining_burst_this_frame(
             .expect("firer")
             .rearm_timer
             .start(frame, 0);
-        let before = weapon_burst_index(world, firer);
-        emit_admitted_fire(
-            world,
-            rules,
-            admitted.clone(),
-            binary_frame,
-            out,
-            overlay_registry,
-            effects,
-        );
-        let after = weapon_burst_index(world, firer);
-        // `&& pThis->Fire(pTarget, weaponIndex)`: a shot that never happened ends
-        // the run, and so does the wrap that completes the burst.
-        let Some(after) = after else { break };
-        if Some(after) == before {
-            break;
-        }
-        rearm = world
-            .substrate
-            .entities
-            .get(firer)
-            .map_or(0, |entity| entity.rearm_timer.remaining(frame));
-        if after == 0 {
-            break;
+        // `for (int i = pThis->CurrentBurstIndex; i < pWeapon->Burst &&
+        // GetFireError(...) == OK && pThis->Fire(...); ++i)`: the counter is a
+        // local, so a `Fire` that resets `CurrentBurstIndex` (the forced full
+        // rearm) neither shortcuts nor extends it. Each repeat is
+        // `TechnoClass::Fire` called from the hook: it answers `GetFireError`
+        // again (ammo, target legality, range), but never re-enters the class
+        // firing update. So the `0x5209AF` stage equality and its
+        // `Burst.FireWithinSequence` `RandomRanged` draws stay with the first
+        // shot; `repeat` tells the admission to skip exactly that block.
+        while index < burst {
+            let has_active_wave = world.active_wave_id(firer).is_some();
+            let mut refused_reach = FireReach::default();
+            let Some(next) = admit_attacker_fire(
+                world,
+                rules,
+                overlay_registry,
+                &admitted.snap,
+                fog_enabled,
+                binary_frame,
+                has_active_wave,
+                &mut refused_reach,
+                out,
+                effects,
+                true,
+            ) else {
+                // A refused repeat ends the run; the value the failed attempt
+                // zeroed is restored from the last successful shot below.
+                break;
+            };
+            emit_admitted_fire(
+                world,
+                rules,
+                next,
+                binary_frame,
+                out,
+                overlay_registry,
+                effects,
+            );
+            // `rof = pThis->RearmTimer.TimeLeft; pThis->RearmTimer.Start(0)`.
+            rearm = world
+                .substrate
+                .entities
+                .get(firer)
+                .map_or(0, |entity| entity.rearm_timer.remaining(frame));
+            world
+                .substrate
+                .entities
+                .get_mut(firer)
+                .expect("firer")
+                .rearm_timer
+                .start(frame, 0);
+            index += 1;
         }
     }
     world
@@ -593,6 +631,10 @@ fn admit_attacker_fire<'r>(
     reach: &mut FireReach,
     out: &mut CombatEmit,
     effects: FrameEffects<'_>,
+    // `true` for a repeat of an already admitted burst shot: the class firing
+    // update is not re-entered, so the infantry firing-frame gate
+    // (`0x5209AF`) and its draws are skipped while `GetFireError` still runs.
+    repeat: bool,
 ) -> Option<AdmittedFire<'r>> {
     let sound_enabled = sound_enabled(world);
     let delayed_building_slot = match snap.building_shot {
@@ -741,7 +783,8 @@ fn admit_attacker_fire<'r>(
         world
             .interner
             .animation_sequence_in_category(snap.type_id, snap.category.into(), rules);
-    let firing_at_entry = infantry_fire
+    let firing_at_entry = !repeat
+        && infantry_fire
         && world
             .substrate
             .entities
@@ -995,7 +1038,7 @@ fn admit_attacker_fire<'r>(
     if code != fire_error::FireError::Ok {
         return None;
     }
-    if infantry_fire && !firing_at_entry {
+    if infantry_fire && !firing_at_entry && !repeat {
         let actor = world.substrate.entities.get(snap.stable_id)?;
         let fire_fly =
             obj.jumpjet && crate::sim::movement::infantry_action::uses_jumpjet_locomotor(actor);
@@ -3433,6 +3476,12 @@ pub(super) fn emit_admitted_fire(
         disguise.start_fire_blink(binary_frame, weapon.disguise_fake_blink_time);
         world.note_disguise_blink_started();
     }
+    if std::env::var("BURSTDBG").is_ok() {
+        eprintln!(
+            "emit-end rng_a={}",
+            world.scenario_rng.logical_state().index_a
+        );
+    }
     Some(bullet_id)
 }
 
@@ -4117,6 +4166,7 @@ pub(crate) fn visit_fire(
                                 overlay_registry,
                                 &shot,
                                 world.session.binary_frame(),
+                                fog_enabled,
                                 emit,
                                 run.effects(),
                             );
@@ -4175,6 +4225,7 @@ pub(crate) fn visit_fire(
                         overlay_registry,
                         &shot,
                         world.session.binary_frame(),
+                        fog_enabled,
                         emit,
                         run.effects(),
                     );
