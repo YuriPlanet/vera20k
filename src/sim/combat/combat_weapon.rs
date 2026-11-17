@@ -76,6 +76,7 @@ impl WeaponRecord<'_> {
 }
 
 /// Result of weapon selection: the chosen weapon and its warhead.
+#[derive(Clone)]
 pub struct SelectedWeapon<'a> {
     /// Section id of the selected weapon.
     pub weapon_id: &'a str,

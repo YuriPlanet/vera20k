@@ -56,6 +56,11 @@ a burst gap. The shot's burst step clears the flag and restarts the index at 0
   with the Scenario RNG exactly as the hooks do; both infantry admission sites
   (the retained sequence and the one that starts the action) compare the stage
   with `fireUp + cumulativeDelay` and set the full-rearm flag on an overrun.
+  `Burst.NoDelay`'s repeat (`fire_remaining_burst_this_frame`) launches the shot
+  the first pass was admitted on through `emit_admitted_fire` instead of asking
+  again, so a weapon authoring both keys fires its whole burst inside the
+  admitted sequence frame, without re-running the stage test or its
+  `RandomRanged(3, 5)` draws.
 - `sim/combat/burst.rs` - `WeaponBurst` carries the `ForceFullRearmDelay`
   equivalent: the flag is set by admission, read by GetROF, and cleared by
   `complete_shot`, which also restarts the index at 0.
@@ -106,6 +111,16 @@ pins the `-1` seed, a held frame and the authored frame;
 shot takes the full ROF; `the_key_off_keeps_the_stock_unit_cadence` is its
 control.
 
+`sim::combat::burst_no_delay_tests` covers the crossing with `Burst.NoDelay`:
+`burst_no_delay_fires_all_shots_without_redrawing_the_sequence` fires a `Burst=3`
+weapon's whole burst in one visit, and with `Burst.Delays` listed the only
+Scenario value that visit consumes is the completing shot's own stock GetROF
+jitter — the gate draws nothing, and a one-shot visit never arms that rearm at
+all. `burst_no_delay_repeat_does_not_restart_the_sequence_gate` starts the burst
+on index 1, keeps the stage that admission matched (a re-admission would first
+restart the firing action and move it) and still fires the remaining shot. Both
+are written to fail while the repeat re-admits.
+
 ## Residuals
 
 - The unit arm's `ForceFullRearmDelay` overrun needs `CurrentFiringFrame < -1`.
@@ -134,11 +149,6 @@ control.
   both an SHP `FireUp=` and `OmniFire.TurnToTarget=yes`; retail authors no unit
   `FireUp=`, so this stays dormant. Effect: VERA keeps the previous facing on
   held frames.
-- `Burst.NoDelay` together with this key: VERA's `Burst.NoDelay` loop re-enters
-  admission, which re-runs the sequence frame test and its draws; native's
-  `Burst.NoDelay` hook calls `Fire` directly and fires the remaining shots
-  inside the same sequence frame. Trigger: a weapon authoring both keys.
-  Effect: VERA fires one shot of that frame; the flag-restart still reloads.
 - `LastRearmWasFullDelay` (the other Phobos rearm flag, read by charge-turret
   AttachEffect) is not kept by VERA; `sim::attach_effect` records that residual
   with the charge timer.

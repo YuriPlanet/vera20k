@@ -42,16 +42,19 @@ loop it restarts `RearmTimer` with the last captured value.
 - `rules/weapon_type.rs` - the `Burst.NoDelay=` read (`read_ares_bool`, the
   `Valueable<bool>` semantics) on `WeaponType`.
 - `sim/combat/world_fire.rs` - `resolve_attacker_fire` is `TechnoClass::Fire` and
-  stays one shot per call, but it reports `FireReach::burst_repeat` when the
-  weapon carries the key, the delayed-fire gate above is open, the category is
-  infantry or vehicle, `Burst` is above
-  1, the shot stepped the burst and the burst did not complete. The two class
-  firing updates - `FireVisit::UnitTarget` and `FireVisit::InfantryTarget` in
-  `visit_fire`, the sites Phobos hooks - answer that by running
-  `fire_remaining_burst_this_frame`, which zero-arms `RearmTimer` between
-  attempts and restores the last shot's value after the loop. Every other
-  FireAt caller (a mission's `FireVisit::Direct`, retaliation, aircraft release)
-  sees the ordinary one shot per call.
+  stays one shot per call. When the weapon carries the key, the delayed-fire gate
+  above is open, the category is infantry or vehicle, `Burst` is above 1, the
+  shot stepped the burst and the burst did not complete, it hands the admitted
+  shot back to its caller. The two class firing updates -
+  `FireVisit::UnitTarget` and `FireVisit::InfantryTarget` in `visit_fire`, the
+  sites Phobos hooks - then run `fire_remaining_burst_this_frame`, which launches
+  that same admitted shot once per remaining shot and restores the last shot's
+  rearm; there is no second admission, so the class gates and RNG the first shot
+  already passed (the infantry `0x5209AF` sequence test and its
+  `Burst.FireWithinSequence` draws included) stay with the first shot, as
+  native's direct `Fire` loop has it. Every other FireAt caller (a mission's
+  `FireVisit::Direct`, retaliation, aircraft release) sees the ordinary one shot
+  per call.
 
 ## Tests
 `sim::combat::burst_no_delay_tests` drives one class firing update per frame for
@@ -65,7 +68,11 @@ mid-burst gap stands. A third test pins the placement: the same weapon through
 fails that test alone while the completed-burst test still passes. A fifth gates
 on the delayed-fire keys: `DelayedFire.Duration` with `OnlyOnInitialBurst` unset
 holds the cadence to one shot per frame, and adding `OnlyOnInitialBurst=yes`
-opens the repeat again.
+opens the repeat again. The last two meet the
+[Burst.FireWithinSequence](phobos-burst-sequence.md) gate: a visit with both keys
+and a listed `Burst.Delays` fires every shot and consumes only the completing
+shot's own rearm jitter, and a burst that starts on index 1 keeps the stage that
+admission matched instead of restarting the firing action.
 
 ## Residuals
 

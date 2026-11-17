@@ -776,7 +776,9 @@ pub(crate) fn resolve_attacker_fire(
             if let Some(fog) = fog {
                 world.fog = fog.clone();
             }
-            world_fire::resolve_attacker_fire(
+            // The receiver fixture has no class firing update around this call,
+            // so `Burst.NoDelay` has nobody to hand the repeat to.
+            let _ = world_fire::resolve_attacker_fire(
                 world,
                 rules,
                 overlay_registry,

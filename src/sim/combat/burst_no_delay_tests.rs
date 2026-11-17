@@ -13,6 +13,18 @@ use crate::sim::world::{FrameEffects, Simulation};
 /// A firer of `category` with a three-shot weapon, aimed east at a rival-house
 /// target one cell out. `type_extra` adds keys to the firer's own type.
 fn arena(category: &str, weapon: &str, type_extra: &str) -> (Simulation, RuleSet, u64, u64) {
+    arena_with(category, weapon, type_extra, "")
+}
+
+/// [`arena`] with `rules_extra` appended to the rules INI, for a test that needs
+/// another section (`[CombatDamage]`'s `ROF.RandomDelay=` keeps the full rearm
+/// draw-free so Scenario draws can be attributed).
+fn arena_with(
+    category: &str,
+    weapon: &str,
+    type_extra: &str,
+    rules_extra: &str,
+) -> (Simulation, RuleSet, u64, u64) {
     let (registry, firer) = match category {
         "VehicleTypes" => (
             "[VehicleTypes]\n0=FIRER\n",
@@ -30,7 +42,8 @@ fn arena(category: &str, weapon: &str, type_extra: &str) -> (Simulation, RuleSet
          [WeaponTypes]\n0=GUN\n[GUN]\nDamage=10\nROF=40\nRange=9.5\nSpeed=100\n\
          Projectile=INVIS\nWarhead=HIT\nBurst=3\n{weapon}\
          [INVIS]\nInviso=yes\nAG=yes\n\
-         [HIT]\nCellSpread=0\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+         [HIT]\nCellSpread=0\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         {rules_extra}"
     ));
     let rules = RuleSet::from_ini(&ini).expect("rules read");
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
@@ -257,6 +270,96 @@ fn a_delayed_fire_weapon_keeps_its_burst_cadence() {
             "{category}: OnlyOnInitialBurst opens the gate again"
         );
     }
+}
+
+/// Put the infantryman in the retained firing sequence at `stage`. The fixture
+/// carries no ART `FireUp=` record, so `infantry_fire_frame` answers 0 and the
+/// expected stage is the burst loop's `0 + cumulativeDelay` alone.
+fn enter_firing_sequence(sim: &mut Simulation, firer: u64, stage: i32) {
+    let actor = sim.entities_mut_for_test().get_mut(firer).expect("firer");
+    actor.mission_leaf.set_foot_firing_sequence(1);
+    actor.set_native_stage_value(stage);
+}
+
+/// The key's remainder is fired by the hook's own `TechnoClass::Fire` loop
+/// (`0x5209EE`), so it must not re-enter the `0x5209AF` firing-frame test that
+/// admitted the first shot: `Burst.FireWithinSequence` moves the expected stage
+/// to `fireUp + cumulativeDelay` and draws `RandomRanged(3, 5)` per unset
+/// `Burst.Delays` index for *each* admission. `Burst.Delays` is listed here so
+/// the gate and the mid-burst gaps are draw-free and the visit's Scenario use is
+/// exactly the completing shot's stock GetROF jitter — one value a one-shot
+/// visit never arms. (Before the direct loop this visit fired one shot and drew
+/// nothing at all.)
+#[test]
+fn burst_no_delay_fires_all_shots_without_redrawing_the_sequence() {
+    let (mut sim, rules, firer, target) = arena_with(
+        "InfantryTypes",
+        "Burst.NoDelay=yes\nBurst.FireWithinSequence=yes\nBurst.Delays=0,0,0\n",
+        "",
+        // `ROF.RandomDelay=0` replaces the full arm's jitter value without a
+        // second draw, so one Scenario value means one draw.
+        "[CombatDamage]\nROF.RandomDelay=0\n",
+    );
+    sim.scenario_rng = crate::sim::rng::SimRng::new(9);
+    let mut expected = crate::sim::rng::SimRng::new(9);
+    expected.next_range_u32_inclusive(0, 2);
+    enter_firing_sequence(&mut sim, firer, 0);
+    assert_eq!(
+        visit(&mut sim, &rules, firer, target, "InfantryTypes"),
+        3,
+        "one firing update empties the burst"
+    );
+    let entity = sim.entities().get(firer).expect("firer");
+    assert_eq!(
+        entity.weapon_burst.index(),
+        0,
+        "the burst wrapped, so the next update starts a new one"
+    );
+    assert_eq!(
+        sim.scenario_rng.logical_state(),
+        expected.logical_state(),
+        "the repeat asked no gate: the only Scenario value is the completing shot's own rearm jitter"
+    );
+}
+
+/// A burst that starts on index 1 admits at `fireUp + max(delay, 1)` and must
+/// fire the remaining shot on the same visit without a second pass over the
+/// `0x5209AF` test: the retained stage stays where the admission found it, while
+/// a re-admission would first restart the firing action and move it back to 0.
+/// The Scenario values are not pinned here because this admission also arms the
+/// `Burst.FireWithinSequence` overrun (the fixture has no ART sequence record, so
+/// the projected frame is past a zero-frame sequence) and that full-rearm arm's
+/// own jitter would have to be counted as well; the draw claim stays with
+/// `burst_no_delay_fires_all_shots_without_redrawing_the_sequence`.
+#[test]
+fn burst_no_delay_repeat_does_not_restart_the_sequence_gate() {
+    let (mut sim, rules, firer, target) = arena(
+        "InfantryTypes",
+        "Burst.NoDelay=yes\nBurst.FireWithinSequence=yes\nBurst.Delays=0,0,0\n",
+        "",
+    );
+    // `Burst.Delays=0,0,0`: index 0 contributes 0 and the listed zero of index
+    // 1 is clamped to one frame, so index 1's expected stage is 1.
+    let stage = 1;
+    enter_firing_sequence(&mut sim, firer, stage);
+    let actor = sim.entities_mut_for_test().get_mut(firer).expect("firer");
+    actor.weapon_burst.set_index(1);
+    assert_eq!(
+        visit(&mut sim, &rules, firer, target, "InfantryTypes"),
+        2,
+        "index 1 and index 2 both launch on this update"
+    );
+    let entity = sim.entities().get(firer).expect("firer");
+    assert_eq!(
+        entity.weapon_burst.index(),
+        0,
+        "the burst wrapped after the repeat"
+    );
+    assert_eq!(
+        entity.native_stage().value(),
+        stage,
+        "the repeat does not restart the firing action, so the stage never moves"
+    );
 }
 
 /// Phobos `SetChargeTurretDelay` (`Ext/Techno/Hooks.Firing.cpp:936-976`) at
