@@ -412,18 +412,14 @@ struct ScanlineRun {
 }
 
 impl BaseZoneFill<'_> {
-    /// `MapClass__FloodFillBaseZoneScanline @ 0x0056CBC0`: fills the run
+    /// `MapClass__FloodFillBaseZoneScanline @ 0x0056CB90`: fills the run
     /// through the seed, then each unassigned cell of the same class in the
     /// rows above and below it, and returns how far the caller's scan
     /// advances.
     ///
-    /// Native calls itself for each such cell. VERA keeps the runs waiting on
-    /// a child in `pending`, a heap stack, and resumes each where the native
-    /// frame resumes once its call returns: the same cells, zone IDs and edge
-    /// registrations, in the same order. A run nests one level per row, so a
-    /// 512x512 map whose open ground winds through a dense street grid nests
-    /// deeper than a browser lets Wasm recurse: its own call-stack limit
-    /// (about 1 MB in Chrome) is apart from the engine's 8 MiB Wasm stack.
+    /// Native calls itself at 0x0056CEB5 and 0x0056D000. VERA keeps the
+    /// pending runs on the heap so a winding zone can be filled in the same
+    /// depth-first order even when it exceeds the browser's call stack.
     fn flood_fill_node_index(
         &mut self,
         start_x: i32,
@@ -453,8 +449,9 @@ impl BaseZoneFill<'_> {
             let Some(parent) = pending.last_mut() else {
                 return advance;
             };
-            // Above advances beyond the returned child run; below rechecks
-            // the child run's rightmost cell once before advancing.
+            // Retail rechecks the rightmost cell in both rows. VERA's upper
+            // scan skips that recheck since the child already marked the cell
+            // with this zone ID. Keep the previous scan order on both rows.
             parent.scan_x += if parent.below { advance } else { advance + 1 };
         }
         unreachable!("the root run's pop returns")
