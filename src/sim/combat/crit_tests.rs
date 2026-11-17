@@ -683,6 +683,9 @@ fn a_positive_reveal_touches_only_the_owner_and_its_allies() {
         let americans = sim.interner.intern("Americans");
         let russians = sim.interner.intern("Russians");
         let koreans = sim.interner.intern("Koreans");
+        // The arena scene carries no client map; `ResetShroud`/`RevealArea`
+        // need a real grid, as every other reveal test gives its world.
+        sim.fog = crate::sim::vision::FogState::new(32, 32);
         sim.houses
             .register(crate::sim::house_state::HouseState::new(
                 koreans, 0, None, true, 0, 10,
@@ -693,12 +696,15 @@ fn a_positive_reveal_touches_only_the_owner_and_its_allies() {
             .set_is_human_for_test(true);
         sim.house_alliances_mut_for_test()
             .insert("KOREANS".into(), ["AMERICANS".into()].into());
+        sim.reset_shroud_for_owner(koreans, &rules);
+        sim.reset_shroud_for_owner(americans, &rules);
+        sim.reset_shroud_for_owner(russians, &rules);
         // The enemy's own explored cell is its counterweight: "untouched" then
         // means the reveal wrote no enemy cell, not that it had no map.
         sim.fog.reveal_map_cell(
             russians,
             (22, 20),
-            true,
+            false,
             None,
             crate::sim::vision::MapRevealProjection::Transient,
         );
@@ -744,6 +750,7 @@ fn a_negative_reveal_clears_the_owner_whole_map() {
     let (mut sim, rules, firer, target) = scene("", "Reveal=-1\n", "", "", "Russians");
     let americans = sim.interner.intern("Americans");
     let russians = sim.interner.intern("Russians");
+    sim.fog = crate::sim::vision::FogState::new(32, 32);
     sim.houses
         .get_mut(&russians)
         .expect("russians")
