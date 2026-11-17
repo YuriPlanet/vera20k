@@ -20,8 +20,14 @@ const ROSTER_ENTRY: usize = 10;
 const ROSTER_WRAP: usize = 80;
 const WRAP_DOMAIN: &[u8] = b"VERA20k relay federation wrap v1\0";
 const ROSTER_DOMAIN: &[u8] = b"VERA20k relay federation roster v1\0";
+// The link version is the magic's digit, `VF<version>L`. Bump it whenever the
+// FRAME layout, a FRAME entry or a coordinator control batch changes: a relay
+// refuses a FRAME it cannot read whole, and the merged stream then stalls. A
+// new link kind an older relay may drop, as SILENCE_KIND, needs no bump. The
+// 32-byte link header and LINK_DOMAIN stay the same in every version, so a
+// relay authenticates another version's packet and refuses the startup.
 const LINK_DOMAIN: &[u8] = b"VERA20k relay federation link v1\0";
-pub(crate) const LINK_MAGIC: &[u8; 4] = b"VF1L";
+const LINK_MAGIC: &[u8; 4] = b"VF1L";
 const LINK_HEADER: usize = 32;
 const FRAME_KIND: u8 = 0;
 // Link packets go out at least every 50 ms; a coordinator this quiet is gone.
@@ -65,6 +71,11 @@ pub(crate) const fn roster_len(relays: usize) -> usize {
 
 pub(crate) fn is_roster_len(length: usize) -> bool {
     (2..=MAX_FEDERATED_RELAYS).any(|relays| roster_len(relays) == length)
+}
+
+/// A link packet of any link version.
+pub(crate) fn is_link_packet(bytes: &[u8]) -> bool {
+    bytes.len() >= 4 && bytes[..2] == LINK_MAGIC[..2] && bytes[3] == LINK_MAGIC[3]
 }
 
 /// Layout shared with the lobby (docs/lobby-protocol.md): `VO1F`, room UUID16, relay
@@ -309,6 +320,13 @@ impl Federation {
         self.local
     }
 
+    /// The sources the roster homes on any of its relays.
+    pub(super) fn sources(&self) -> u32 {
+        self.links
+            .iter()
+            .fold(self.local, |mask, link| mask | link.sources)
+    }
+
     /// Sources homed on the other relays that report their players' silence.
     pub(super) fn reporting_silence(&self) -> u32 {
         self.links
@@ -453,7 +471,8 @@ impl Federation {
     /// roster ready, leaving its slowest link time to hear. The others place
     /// the same start on their own clocks and keep slewing toward it. Ordinary
     /// cancellation goes through the coordinator, on any relay's request;
-    /// a proved agreement mismatch refuses the start on each relay itself.
+    /// a proved agreement mismatch refuses the start on each relay itself,
+    /// as does another link version (`federation_receive`).
     /// Each relay requests cancellation once its loading limit is reached.
     pub(super) fn coordinate(&mut self, ordering: &mut OrderingRoom, now_ms: u64) {
         // VERA's initial-world agreement has no native counterpart. Reject
@@ -867,6 +886,7 @@ impl Federation {
                     match batch_id {
                         RATE_BATCH => length != 3,
                         DESYNC_BATCH => length != DESYNC_TAIL,
+                        // A new control batch bumps the link version (LINK_MAGIC).
                         _ => true,
                     }
                 } else if source >= MAX_PEERS || sources & (1 << source) == 0 {
@@ -967,6 +987,20 @@ impl RelayServer {
             return Err(RelayError::RateLimited);
         }
         self.ingress.charge_part(&mut room.ingress, 1);
+        // Relays of two link versions cannot merge one stream, so each that
+        // reads the other's version refuses the startup itself. No relay can
+        // have started it: the coordinator never read the other's readiness.
+        if bytes[2] != LINK_MAGIC[2] {
+            match room.ordering.as_mut() {
+                Some(ordering) => {
+                    if ordering.starts_at.is_none() && ordering.finished_at.is_none() {
+                        ordering.cancel(now_ms);
+                    }
+                }
+                None => room.ordering_cancelled = true,
+            }
+            return Err(RelayError::Malformed);
+        }
         match kind {
             FRAME_KIND => {
                 federation.receive_frame(position, payload, room.ordering.as_mut(), now_ms)?;
@@ -1103,8 +1137,8 @@ impl RelayServer {
 #[cfg(test)]
 mod tests {
     use super::super::tests::{
-        TestDirectory, certificate, client, connect, endpoint, events, pull, renew,
-        told_silent, unix,
+        TestDirectory, certificate, client, connect, endpoint, events, pull, renew, told_silent,
+        unix,
     };
     use super::*;
 
@@ -1838,6 +1872,71 @@ mod tests {
                 }]
             ));
         }
+    }
+
+    #[test]
+    fn a_follower_hearing_another_link_version_cancels_the_startup() {
+        let mut game = Match::new(false);
+        // The coordinator's first packet, as a relay one link version on.
+        let clock = game.clock(0);
+        let mut bytes = game.relays[0]
+            .drain_federation(clock, unix(clock))
+            .remove(0)
+            .bytes;
+        bytes[2] += 1;
+        let signed = bytes.len() - MAC_LEN;
+        let federation = game.relays[0].rooms[&[5; 16]].federation.as_ref().unwrap();
+        let tag = federation
+            .link
+            .mac(LINK_DOMAIN, &bytes[..signed])
+            .finalize();
+        bytes[signed..].copy_from_slice(&tag.into_bytes());
+        let clock = game.clock(1);
+        assert_eq!(
+            game.relays[1]
+                .process_at(game.addresses[0], &bytes, unix(clock), clock)
+                .map(|_| ()),
+            Err(RelayError::Malformed)
+        );
+        for _ in 0..400 {
+            game.step();
+        }
+        for relay in 0..2 {
+            let ordering = game.ordering(relay);
+            assert!(
+                ordering.starts_at.is_none() && ordering.finished_at.is_some(),
+                "relay {relay}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_ready_under_a_roster_homing_other_sources_than_the_certificate_is_refused() {
+        // Relay A homes both sources the certificate signs, B a third.
+        let keys = [SecretKey::new([11; 32]), SecretKey::new([12; 32])];
+        let address = |last| SocketAddrV4::new(Ipv4Addr::new(192, 0, 2, last), 5000);
+        let roster = sign_federation_roster(
+            [5; 16],
+            &[(address(1), 0b011, &keys[0]), (address(2), 0b100, &keys[1])],
+            &SecretKey::new([9; 32]),
+        )
+        .unwrap();
+        let mut relay = RelayServer::new(keys[0].clone(), 2);
+        let mut player = client(&keys[0], 0);
+        player.set_federation(&roster).unwrap();
+        connect(&mut relay, &mut player, 0);
+        let mut bytes = Vec::new();
+        player
+            .configure_ordering(&certificate(&keys[0], 0b011, 2000), [7; 32], &mut bytes)
+            .unwrap();
+        assert!(matches!(
+            events(&mut relay, &mut player, &bytes, 0).as_slice(),
+            [OrderEvent::Error {
+                code: OrderError::AgreementMismatch,
+                ..
+            }]
+        ));
+        assert!(relay.rooms[&[5; 16]].ordering.is_none());
     }
 
     #[test]

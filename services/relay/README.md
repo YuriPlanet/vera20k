@@ -289,7 +289,9 @@ as it reaches the frame after that record.
 A federated match spreads its sources over up to six relays, each serving the
 players nearest it. The lobby-signed `VO1F` roster (see `../../docs/lobby-protocol.md`)
 rides in every CONFIRM after the cookie; a relay admits only the sources its
-own roster entry homes and recovers the match link key with its ticket key. Each
+own roster entry homes and recovers the match link key with its ticket key. It
+refuses Ready as an agreement mismatch unless the roster homes exactly the
+certificate's sources. Each
 relay seals its own players' entries at the shared frame deadlines and sends
 them, authenticated with the link key, to every other relay as `VF1L` link
 packets at each new seal and otherwise every 50 ms. Each entry is sent once, in a
@@ -299,7 +301,7 @@ A relay that misses a packet ignores later ones until then. A
 frame is emitted once every relay sealed it, in the same canonical order, so
 every relay delivers the same stream and sequence numbers. Player DATA to a remote source crosses one link to its relay. The
 first roster relay picks the start time from measured link round trips; the
-others follow its clock offset. Only it cancels a startup: another relay's Leave
+others follow its clock offset. Only it cancels a startup on request: another relay's Leave
 before the start asks it to, and becomes a frame-1 departure if the start was
 already on its way. Federated rooms cannot pause. The other relays forward
 their players' latest pace reports to the coordinator every 500 ms as link kind
@@ -316,9 +318,15 @@ them, and its desync travels as a contribution of source 255 (batch ID
 seal, which every relay emits after that frame's end. Every relay also tells
 every other when it last heard its players (link kind 4, Silence below). Link packets go to the roster
 address on the relay's existing UDP port and are authenticated by their MAC,
-whatever address they arrive from. Deploy every relay of a federation at
-once: a relay rejects link entries newer than its own code, and one rejected
-packet stalls the whole merged stream.
+whatever address they arrive from. The digit in `VF1L` is the link version,
+bumped whenever the FRAME layout, a FRAME entry or a coordinator control batch
+changes, since one FRAME a relay cannot read stalls the merged stream; a new
+link kind an older relay may drop, as kind 4, needs none. The 32-byte link
+header and the MAC domain stay the same in every version, so a relay that
+authenticates a link packet of another version cancels that startup at once.
+A relay too old to know this drops the packet and cancels at its 3-minute
+loading limit. Relays of different link versions therefore never start a match
+together.
 
 The RAM hot cache retains4,096 entries/2 MiB per room under a64 MiB global
 budget. Eviction from this cache does not evict match history: every complete

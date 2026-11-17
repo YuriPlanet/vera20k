@@ -1502,8 +1502,15 @@ impl OrderingRoom {
         }
     }
 
+    /// Whether other relays home some of the sources. A federated room exists
+    /// only under a roster that homes exactly the certificate's sources on at
+    /// least two relays (Ready), so it never homes them all here.
+    fn federated(&self) -> bool {
+        self.local != self.certificate.sources_mask
+    }
+
     fn supported_pause_sources(&self) -> u32 {
-        if self.local != self.certificate.sources_mask {
+        if self.federated() {
             return 0;
         }
         self.sources
@@ -1603,7 +1610,7 @@ impl OrderingRoom {
             return;
         }
         if self.starts_at.is_none() {
-            if self.local == self.certificate.sources_mask {
+            if !self.federated() {
                 // An explicit Leave before the start cancels it for every
                 // source, including sources which never reached Ready. Keep an
                 // inactive short-ticket tombstone.
@@ -1646,7 +1653,7 @@ impl OrderingRoom {
     /// Starts once every remaining source is ready. A federated start belongs
     /// to the coordinator relay.
     fn start_when_ready(&mut self, now_ms: u64) {
-        if self.local == self.certificate.sources_mask
+        if !self.federated()
             && self.starts_at.is_none()
             && self.active != 0
             && self.ready == self.active
@@ -1674,10 +1681,10 @@ impl OrderingRoom {
                 && (silent >= LOADING_SILENCE_MS
                     || now_ms.saturating_sub(self.created_ms) >= LOADING_LIMIT_MS)
             {
-                if self.local == self.certificate.sources_mask {
-                    self.retire(source, true, now_ms);
-                } else {
+                if self.federated() {
                     self.cancel_requested = true;
+                } else {
+                    self.retire(source, true, now_ms);
                 }
             }
         }
@@ -6010,6 +6017,22 @@ impl RelayServer {
                 return self.ordering_reply(
                     message.ticket,
                     error(OrderError::Inactive, 0),
+                    now,
+                    now_ms,
+                    crate::link::SEND_OTHER,
+                );
+            }
+            // The lobby's roster partitions the certificate's sources over
+            // the relays (`OrderingRoom::federated`).
+            if self
+                .rooms
+                .get(&message.ticket.room)
+                .and_then(|room| room.federation.as_ref())
+                .is_some_and(|federation| federation.sources() != certificate.sources_mask)
+            {
+                return self.ordering_reply(
+                    message.ticket,
+                    error(OrderError::AgreementMismatch, 0),
                     now,
                     now_ms,
                     crate::link::SEND_OTHER,

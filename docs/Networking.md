@@ -149,7 +149,11 @@ released clients already understand the error. Relay upgrades can be gradual;
 an older relay may still report ordinary cancellation or wait for its loading
 timeout, but cannot start a match with different agreements. Rolling the relay
 back restores that older reporting. Deploying the relay change is separate from
-publishing a new game build.
+publishing a new game build. Relays of one match must also speak one
+relay-to-relay link version: a relay that hears another version cancels the
+startup at once, and one too old to know this cancels at its loading limit, so
+players get the cancelled-start message instead of a frozen match. Game and
+lobby traffic do not change.
 At each deadline, missing input is empty; a command joins the next unsealed
 frame. The sender also waits for that commit.
 Frames use the existing Event codec and simulation queues, with a fresh compression
