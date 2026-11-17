@@ -1996,6 +1996,10 @@ impl App {
             ShellExitThen::NetworkSetupBack(_) => {
                 crate::app::shell_network_setup::commit_back(state)
             }
+            ShellExitThen::NetworkSetupBackWithNotice { label, .. } => {
+                crate::app::shell_network_setup::commit_back(state);
+                crate::app::shell_lan::report_error(state, label);
+            }
             ShellExitThen::NetworkSetupChooseMap(_) => {
                 crate::app::shell_network_setup::open_choose_map(state)
             }

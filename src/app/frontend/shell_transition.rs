@@ -271,6 +271,10 @@ pub(crate) enum ShellExitThen {
     },
     LanJoinAccepted(crate::app::shell_lan::LanJoinAcceptance),
     NetworkSetupBack(crate::ui::multiplayer_setup::SetupDialog),
+    NetworkSetupBackWithNotice {
+        dialog: crate::ui::multiplayer_setup::SetupDialog,
+        label: &'static str,
+    },
     NetworkSetupChooseMap(crate::ui::multiplayer_setup::SetupDialog),
     NetworkStart {
         dialog: crate::ui::multiplayer_setup::SetupDialog,
@@ -373,6 +377,7 @@ impl ShellExitThen {
                 ShellSlideKind::LanLobby
             }
             Self::NetworkSetupBack(dialog)
+            | Self::NetworkSetupBackWithNotice { dialog, .. }
             | Self::NetworkSetupChooseMap(dialog)
             | Self::NetworkStart { dialog, .. } => ShellSlideKind::NetworkSetup(*dialog),
             Self::SkirmishChooseMap => ShellSlideKind::Skirmish,

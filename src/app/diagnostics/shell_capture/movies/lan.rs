@@ -133,6 +133,7 @@ pub enum LanTarget {
     ColorChange,
     Kick,
     HostLeft,
+    ModernHostLeft,
     NoMap,
     TransferEligible,
     TransferProgress,
@@ -292,6 +293,7 @@ pub(crate) const LAN_CHECKPOINTS: &[(&str, LanTarget)] = &[
     ("lan-0xbd-color-change", LanTarget::ColorChange),
     ("lan-0xbd-kick", LanTarget::Kick),
     ("lan-0xbd-host-left", LanTarget::HostLeft),
+    ("lan-host-close-notice", LanTarget::ModernHostLeft),
     ("lan-0xbd-no-map", LanTarget::NoMap),
     ("lan-0xbd-transfer-eligible", LanTarget::TransferEligible),
     ("lan-map-transfer-progress", LanTarget::TransferProgress),
@@ -456,6 +458,7 @@ impl LanTarget {
                 | Self::ColorChange
                 | Self::Kick
                 | Self::HostLeft
+                | Self::ModernHostLeft
                 | Self::NoMap
                 | Self::TransferEligible
                 | Self::TransferProgress
@@ -2587,7 +2590,7 @@ impl LanCapture {
                     );
                     self.phase = LanPhase::Prompt(Instant::now());
                 }
-                LanTarget::Kick | LanTarget::HostLeft => {
+                LanTarget::Kick | LanTarget::HostLeft | LanTarget::ModernHostLeft => {
                     setup::service_event(
                         state,
                         if self.target == LanTarget::Kick {
@@ -2869,10 +2872,25 @@ impl LanCapture {
                     "setup owner survived return"
                 );
                 let bb = &state.frontend.lan.as_ref().context("returned BB")?.lobby;
-                ensure!(
-                    bb.games.is_empty() && bb.chat.lines.is_empty(),
-                    "returned BB retained old projection"
-                );
+                ensure!(bb.games.is_empty(), "returned BB retained old games");
+                if self.target == LanTarget::ModernHostLeft {
+                    let key = "VERA:HostLeftRoomClosed";
+                    let expected = App::csf_label(state, key, key);
+                    let text: Vec<_> = bb
+                        .chat
+                        .lines
+                        .iter()
+                        .flat_map(|line| line.text.iter().copied())
+                        .collect();
+                    let actual = String::from_utf16_lossy(&text);
+                    ensure!(
+                        actual.split_whitespace().collect::<String>()
+                            == expected.split_whitespace().collect::<String>(),
+                        "returned LAN lobby should show the host-close notice exactly once"
+                    );
+                } else {
+                    ensure!(bb.chat.lines.is_empty(), "returned BB retained old chat");
+                }
                 self.settle(state);
             }
             LanPhase::MainReturn
