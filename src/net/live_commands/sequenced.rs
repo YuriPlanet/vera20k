@@ -330,6 +330,8 @@ pub enum SequencedError {
     /// The relay closed this match's room before it started: a player left.
     #[error("a player left before the online match started")]
     StartCancelled,
+    #[error("the match ended after the game servers lost contact with each other")]
+    FederationLost,
     #[error("online command queue is full")]
     QueueFull,
     #[error("this online match needs a newer VERA20k")]
@@ -360,6 +362,7 @@ impl SequencedError {
             Self::Unavailable => "unavailable",
             Self::Absent => "absent",
             Self::StartCancelled => "start_cancelled",
+            Self::FederationLost => "federation_lost",
             Self::QueueFull => "queue_full",
             Self::NewerClientRequired => "newer_client_required",
             Self::WatchDesync { .. } => "watch_desync",
@@ -379,6 +382,7 @@ impl SequencedError {
             Self::NewerClientRequired => NetworkInterruption::NewerClientRequired,
             Self::Refused(OrderError::AgreementMismatch) => NetworkInterruption::StartMismatch,
             Self::StartCancelled => NetworkInterruption::StartCancelled,
+            Self::FederationLost => NetworkInterruption::FederationLost,
             Self::HistoryExpired
             | Self::InvalidTimeline
             | Self::Unavailable
@@ -1243,7 +1247,10 @@ impl SequencedSession {
                         .or_insert(ReceivedEntry { entry, received_at });
                 }
             }
-            OrderEvent::Error { code, .. } => match code {
+            OrderEvent::Error { code, expected } => match code {
+                OrderError::Inactive if expected == vera20k_relay_protocol::FEDERATION_LOST => {
+                    return Err(SequencedError::FederationLost);
+                }
                 OrderError::NotConfigured => {
                     self.started = false;
                     self.last_control = None;
@@ -2091,6 +2098,18 @@ mod restore_tests {
             code: OrderError::Inactive,
             expected: 0,
         };
+
+        let lost = OrderEvent::Error {
+            code: OrderError::Inactive,
+            expected: vera20k_relay_protocol::FEDERATION_LOST,
+        };
+        assert_eq!(
+            session()
+                .receive(lost, Instant::now())
+                .unwrap_err()
+                .interruption(),
+            NetworkInterruption::FederationLost
+        );
 
         let refused = session().receive(inactive(), Instant::now()).unwrap_err();
         assert_eq!(refused.code(), "start_cancelled");

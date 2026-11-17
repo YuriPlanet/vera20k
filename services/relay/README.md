@@ -299,7 +299,7 @@ own roster entry homes and recovers the match link key with its ticket key. It
 refuses Ready as an agreement mismatch unless the roster homes exactly the
 certificate's sources. Each
 relay seals its own players' entries at the shared frame deadlines and sends
-them, authenticated with the link key, to every other relay as `VF1L` link
+them, authenticated with the link key, to every other relay as `VF1L` or `VF2L` link
 packets at each new seal and otherwise every 50 ms. Each entry is sent once, in a
 packet that goes out twice, and is retained until acknowledged; it is sent
 again only after going unacknowledged for the measured round trip plus 100 ms.
@@ -372,7 +372,30 @@ reports only its own players' departures, and a restarted relay never does. Once
 a started two-relay room has heard nothing from the other relay for 10 minutes,
 that relay's players depart as lost after the last frame it sealed there, and
 the room merges on without it: the match continues among the remaining players
-or ends. With three or more relays the survivors could disagree on that frame,
+or ends. A lobby can select adjudication for a match on three or more relays.
+Its VO1F wrap tags then use the domain `VERA20k relay adjudicated federation roster v1\0`;
+the admission and link key stay opaque to the game. The relay accepts such a grant
+only with its durable outcome reporter enabled. Each admitted member uses VF2L,
+where FRAME byte 4 keeps the pre-start cancellation bit 0, adds bit 1 for a
+durably recorded federation failure, and bit 2 for a sender that has started this
+match. A startup-only heartbeat after a process restart cannot renew the old
+match. If any member is missing for the full ten-minute in-match grace, the
+detecting relay freezes its ordered stream and signs a failure receipt. Once
+durably saved, it repeats the failure bit to every other relay. If its disk
+cannot take the receipt, it stops reporting a healthy started match to peers.
+Players get ordinary server unavailability after five seconds of backpressure.
+An unsaved verdict cannot award or void a ladder result. Any member that
+hears it also ends the match; this needs no living coordinator. Players and
+watchers receive `Inactive` with expected cursor 1. Released games show a game
+server failure; updated games say the match ended without a winner. A normal
+game signs its own ordinary close only after the ordered terminal frame.
+The lobby settles a marked game from the signed results, as described in the
+[federation outcome protocol](../../docs/lobby-protocol.md). Unmarked grants
+and two-relay matches continue to use VF1L. Enable the lobby's gate after all
+selected relays support the marked grants; disable it and drain marked matches
+before rolling relays back.
+
+In an unmarked match with three or more relays the survivors could disagree on that frame,
 so such a room ends instead once its own players have left and every other
 relay has been silent for 10 minutes. A
 departure's last byte is
@@ -510,3 +533,34 @@ Watchers spend budgets of their own, never the players': each watcher 64 packets
 32 journal pulls and 256 KiB out a second, all watchers together 4,096 packets,
 512 journal pulls and 8 MiB a second. A Pull that reads the journal pays before
 it reads.
+
+## Federation outcome delivery
+
+To enable signed outcome reporting, set `VERA_RELAY_OUTCOME_URL` to the lobby’s
+HTTPS origin followed by `/v1/relay/outcome`. The default is off. The relay
+checks the server certificate and sends the exact 94 signed bytes as
+`application/octet-stream`. It follows no redirects. The URL accepts no
+credentials, query string or fragment. The lobby authenticates the body itself.
+
+Before the relay publishes a marked federation’s terminal failure, its disk
+worker commits the signed receipt to `federation-outcomes.sqlite3` in the
+relay state directory. The database is mode 0600 on Unix. SQLite is bundled
+into the relay, so the host needs no separately installed database library or
+service. Its rollback journal and EXTRA-synchronous commits protect both the
+receipt and its retry deadline across process or machine restarts. Repeated
+handoffs of identical bytes for the same room are safe. Preserve this file
+alongside the relay state when restarting or moving a relay. It contains
+signed receipts and no signing key.
+
+HTTPS runs on a separate worker from disk writes and game traffic. A 204
+retires the receipt. Network failures, 408, 429 and 5xx responses retry with
+backoff from 10 seconds up to one hour, for seven days from the receipt’s
+issue time. A crash during a POST can repeat the delivery. All other HTTP
+responses keep the refused receipt until expiry without retrying it. The
+relay logs aggregate failure notices without receipt bytes or room IDs.
+
+The outbox holds up to 4,096 receipts, with an 8 MiB database limit plus
+SQLite’s transient rollback journal. An unavailable or full store acknowledges
+only the receipts it committed. Other terminal rooms wait for storage and
+cannot publish a failure on the strength of a volatile handoff. A restarted
+relay drains committed receipts when reporting is enabled again.

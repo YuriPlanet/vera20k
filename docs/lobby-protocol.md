@@ -955,3 +955,49 @@ command from anyone but the host with 403 `forbidden`. Current games never send 
 The host can also move a player by hand: to another team, into a free seat or to the
 spectators. The host's game publishes the options as it does after `/balance`, with no new
 field, and the moved player's game tells them in chat.
+
+### Confirming a federated match result
+
+For a match on three or more relays, the lobby can ask the relays to confirm whether
+they maintained one command history. Each selected relay must be configured to report
+outcomes and listed with `settlement: true` in the lobby's relay fleet. If a ranked
+room would use three or more homes and any selected relay lacks that capability, the
+lobby selects the ordinary central relay and keeps the room ranked. Matches already
+created keep the grants and scoring policy they started with.
+
+The marked `VO1F` roster uses the same table and wrapped link key as an ordinary roster.
+Only the per-relay roster authentication domain changes to
+`VERA20k relay adjudicated federation roster v1\0` (the final byte is zero).
+Released games can carry the signed roster unchanged. The marked relays speak `VF2L`.
+The lobby and each home retain the identity of the roster the lobby issued.
+
+Each home sends its immutable terminal receipt to the lobby over HTTPS with
+`POST /v1/relay/outcome` and `Content-Type: application/octet-stream`. The 94 bytes are:
+
+| Bytes | Meaning |
+|---|---|
+| 0–3 | ASCII `VFO1` |
+| 4–19 | Match UUID in roster byte order |
+| 20–51 | SHA-256 of the entire signed roster, including its wraps |
+| 52 | Home's index in that roster |
+| 53 | 0 for normal ordering closure, 1 for confirmed federation failure |
+| 54–61 | Issue time in Unix seconds, little-endian |
+| 62–93 | HMAC-SHA256 under that home's ticket key, over `VERA20k relay federation outcome v1\0` followed by bytes 0–61 |
+
+The lobby returns 204 for an accepted receipt, including an identical retry. A home
+can report only one outcome for the match. A conflicting report receives 409.
+A relay retries a network failure, 408, 429 or server error within seven days.
+The endpoint needs no player credentials. A player's disconnect, concession, quality
+report or missing finish cannot establish an infrastructure failure.
+
+One authenticated failure voids the match without changing any player's points, wins
+or losses. Normal closure from **every** home releases the ordinary player-reported
+result after the match closes. Players can finish and rejoin their room while delivery
+is pending. If evidence is still incomplete seven days after the match ends, the
+lobby records an unconfirmed result without changing ratings. A delayed finish cannot
+apply points to a different season.
+
+Roll out the receiving lobby and reporting relays before marking the fleet capable.
+Before a rollback, stop issuing marked rosters and drain marked matches and pending
+results. Remove the optional fleet field before restoring a lobby whose config reader
+predates it. Earlier lobbies do not rate a protected match from player reports alone.

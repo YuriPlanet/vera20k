@@ -1,4 +1,4 @@
-//! Small UDP-only relay. No retail assets, simulation engine, client identity
+//! UDP gameplay relay. No retail assets, simulation engine, client identity
 //! database or lobby bearer credentials are present in this process.
 
 use std::io;
@@ -102,6 +102,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(PathBuf::from)
         .ok_or("relay journal requires STATE_DIRECTORY or VERA_RELAY_STATE_DIR")?;
     let mut server = RelayServer::with_journal(SecretKey::new(key), 1024, &state_dir)?;
+    let mut reporter = vera20k_relay::Reporter::configured(&state_dir)?;
+    if reporter.is_some() {
+        server.enable_federation_outcomes();
+    }
     let mut buffer = [0u8; MAX_DATAGRAM + 1];
     let mut counts = TrafficCounts::default();
     let mut reported_at = Instant::now();
@@ -125,6 +129,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut counts,
                 server.drain_federation(monotonic_ms, now),
             );
+            if let Some(reporter) = &mut reporter {
+                reporter.poll(&mut server);
+            }
             let pushed = server.drain_ordering_push(monotonic_ms, now);
             counts.pushed += pushed.len() as u64;
             counts.pushed_bytes += pushed

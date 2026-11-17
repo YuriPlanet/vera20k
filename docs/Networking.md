@@ -301,6 +301,15 @@ every active client to report; a room with an older client or one spread over
 several relays keeps its speed. Native lockstep instead slows every match to its
 slowest player (ProcessNetwork `0x00647BF4..0x00647E6D`).
 
+When the lobby admits a match on three or more relays with federation
+adjudication, a relay missing for ten minutes ends that match without a winner.
+A short outage keeps its place. Losing a player's own connection still follows
+the ordinary reconnect rule below. Each surviving relay propagates a confirmed
+failure even when the missing relay coordinated the start; it creates no player
+departure or simulation frames to bridge the gap. Current games and watchers
+show what happened, and released games show a connection failure.
+The relay and lobby compatibility gates are in [the relay guide](../services/relay/README.md).
+
 The relay keeps a bounded RAM cache and the full match journal on disk. The
 journal is not encrypted: it holds plain commands and relies on file permissions. Temporary connection loss keeps the player's identity, units, input cursor
 and world in the match; the client renews its ticket and reads missed frames when

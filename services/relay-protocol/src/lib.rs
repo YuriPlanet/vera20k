@@ -27,16 +27,18 @@ pub mod netsim;
 mod sequenced;
 pub mod varint;
 pub use link::{ClientLinkStats, HopFeedback, LinkState, OrderingGap, ReaderLinkStats, RecvWindow};
-pub use sequenced::federation::{MAX_FEDERATED_RELAYS, sign_federation_roster};
+pub use sequenced::federation::{
+    FEDERATION_LOST, FederationOutcome, MAX_FEDERATED_RELAYS, sign_federation_roster,
+};
 pub use sequenced::pack::{decode_pack_v2, encode_pack_v2};
 pub use sequenced::watch::{
     MAX_ROOM_WATCHERS, MAX_WATCH_DELAY_SECONDS, WATCH_TICKET_VERSION, WatchTicket,
 };
 pub use sequenced::{
-    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY, ORDERING_CERTIFICATE_LEN,
-    ORDERING_CERTIFICATE_V2_LEN, ORDERING_PULL_LIMIT, OrderEntry, OrderError, OrderEvent,
-    OrderPace, OrderStatus, OrderingCertificate, is_ordering_certificate_len, paced_rates,
-    turn_frames, turn_ms,
+    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY,
+    ORDERING_CERTIFICATE_LEN, ORDERING_CERTIFICATE_V2_LEN, ORDERING_PULL_LIMIT, OrderEntry,
+    OrderError, OrderEvent, OrderPace, OrderStatus, OrderingCertificate,
+    is_ordering_certificate_len, paced_rates, turn_frames, turn_ms,
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -927,6 +929,8 @@ pub struct RelayServer {
     // it overcounts, and only an exact count refuses or evicts. Growth no
     // reservation covers, such as a federated frame, joins it at that pass.
     ordering_estimate: usize,
+    // An operational reporter owns durable delivery of marked VO1F outcomes.
+    federation_outcomes_enabled: bool,
     // Every live or leaving hop by its session (spec §6.2).
     sessions: HashMap<u32, SessionSlot>,
     // Released sessions until they may be assigned again (spec §6.2).
@@ -964,6 +968,7 @@ impl RelayServer {
             ended_orderings: HashMap::new(),
             ordering_counts: OrderingCounts::default(),
             ordering_estimate: 0,
+            federation_outcomes_enabled: false,
             sessions: HashMap::new(),
             retired_sessions: HashMap::new(),
             mac_counts: MacFailureCounts::default(),
@@ -1389,6 +1394,7 @@ impl RelayServer {
                 &self.key,
                 roster,
                 &message.ticket,
+                self.federation_outcomes_enabled,
             )?),
         };
         let cost = envelope::OVERHEAD as u64;
