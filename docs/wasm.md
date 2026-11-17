@@ -238,15 +238,10 @@ set_lifecycle_callback(event => {
   `kills`, `losses`, `built`, `raw_score` and `score`; they read the simulation's
   finalized snapshot without new RNG draws. `scores: null` means no terminal
   score snapshot was produced, including abort and cooperative paths.
-  `network_quality` is present for an online relay match only:
-  `played_seconds` (the time the record watched the match in play), `catch_up`
-  (`episodes`, `seconds`, `max_backlog_frames`, `skipped_draws`), `network`
-  (`gaps`, `repair_pulls`, nullable `command_round_trip_ms` with `mean`, `max`
-  and `samples`, `max_jitter_reserve_ms`, `underruns`), `performance`
-  (nullable `tick_ms_p50`, `tick_ms_p99`, `fps_p50`, `fps_p5`, and
-  `unfocused_seconds`), `pacing` (`slowdowns`, `slowed_by` Houses,
-  `slowed_seconds`) and `outcome` (nullable `desync_frame`, `reconnects`,
-  `started`, nullable `failure` and `start_hash`, as in `docs/lobby-protocol.md`).
+  `network_quality` is present for an online relay match only: the report a
+  lobby match's `finish` carries (`network_quality` in `docs/lobby-protocol.md`).
+  A watcher's report can also name the `failure` `watch_desync` or
+  `watch_lost`; a watcher sends no `finish`, so that list leaves them out.
   These are wall-clock observations of this client; desktop `-SPAWN` writes
   the same object into `spawn_result.json`, and every client logs it once as
   `Network quality:` when the match returns its transport.

@@ -278,42 +278,24 @@ mod tests {
         );
     }
 
+    /// A room takes only a seed's complete canonical record, which for a
+    /// generated map for thirty (VERA) runs past the native 37 numbers and
+    /// 512 characters. The lobby checks the record with its own copy of
+    /// these rules, and its tests read the same cases.
     #[test]
-    fn generated_staging_requires_canonical_complete_seed_capacity() {
-        let mut stage = crate::map::preview::ScenarioStartStaging {
-            width: 80,
-            height: 80,
-            count: 2,
-            ..Default::default()
-        };
-        stage.cells[0] = (20, 24);
-        stage.cells[1] = (42, 46);
-        assert!(checked_staging(&stage.to_w_text(), 2).is_ok());
-        assert!(checked_staging(&stage.to_w_text(), 3).is_err());
-        stage.cells[1] = (0, 0);
-        assert!(checked_staging(&stage.to_w_text(), 2).is_err());
-    }
-
-    /// VERA: a room takes a generated map for thirty players, whose record
-    /// runs past the native 37 numbers and 512 characters.
-    #[test]
-    fn generated_staging_takes_thirty_starts() {
-        let mut stage = crate::map::preview::ScenarioStartStaging {
-            width: 9_999,
-            height: 9_999,
-            start_x: -9_999,
-            start_y: -9_999,
-            count: 30,
-            ..Default::default()
-        };
-        for slot in 0..30 {
-            stage.pairs[slot] = (-99_999, -99_999);
-            stage.cells[slot] = (-9_999, -9_999);
+    fn generated_staging_gives_the_shared_cases_their_answers() {
+        let cases = &crate::test_fixture::json("tests/fixtures/lobby/start_staging.json")["cases"];
+        for case in cases.as_array().unwrap() {
+            let text = case["start_staging"].as_str().unwrap();
+            let capacity = case["capacity"].as_i64().unwrap() as i32;
+            let accepted = checked_staging(text, capacity).is_ok();
+            assert_eq!(
+                Some(accepted),
+                case["accepted"].as_bool(),
+                "{}",
+                case["case"]
+            );
         }
-        let text = stage.to_w_text();
-        assert!(text.len() > 512);
-        assert!(checked_staging(&text, 30).is_ok());
-        assert!(checked_staging(&text, 29).is_err());
     }
 }
 

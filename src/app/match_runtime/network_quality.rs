@@ -449,24 +449,66 @@ mod tests {
     }
 
     /// The lobby reads `finish`'s report by these names
-    /// (docs/lobby-protocol.md) and drops one it cannot read.
+    /// (docs/lobby-protocol.md) and drops one it cannot read; its tests read
+    /// this report, every field filled.
     #[test]
-    fn the_report_keeps_the_names_the_lobby_reads() {
-        let report = serde_json::to_value(NetworkQualityStats::default().summarize()).unwrap();
-        assert_eq!(
-            report,
-            serde_json::json!({
-                "played_seconds": 0.0,
-                "catch_up": {"episodes": 0, "seconds": 0.0, "max_backlog_frames": 0, "skipped_draws": 0},
-                "network": {"gaps": 0, "repair_pulls": 0, "command_round_trip_ms": null,
-                    "max_jitter_reserve_ms": 0.0, "underruns": 0, "underrun_wait_ms": 0.0,
-                    "max_underrun_wait_ms": 0.0, "link": null},
-                "performance": {"tick_ms_p50": null, "tick_ms_p99": null, "fps_p50": null,
-                    "fps_p5": null, "unfocused_seconds": 0.0},
-                "pacing": {"slowdowns": 0, "slowed_by": [], "slowed_seconds": 0.0},
-                "outcome": {"desync_frame": null, "reconnects": 0, "started": false, "failure": null,
-                    "start_hash": null},
-            })
+    fn a_full_report_sends_the_pinned_names() {
+        let mut stats = NetworkQualityStats {
+            played: Duration::from_millis(754_500),
+            catch_up_episodes: 3,
+            catch_up: Duration::from_millis(12_250),
+            max_backlog_frames: 45,
+            max_reserve_micros: 37_500,
+            underruns: 6,
+            underrun_wait_micros: 90_250,
+            max_underrun_wait_micros: 40_500,
+            unfocused: Duration::from_millis(2_500),
+            slowed: Duration::from_millis(8_750),
+            reconnects: 1,
+            slowdowns: 3,
+            slowed_by: vec![2, 5, 2],
+            delivery: DeliveryCounters {
+                link: Some(ClientLinkStats {
+                    uplink_state_ms: [700_000, 30_500, 24_000, 0],
+                    srtt_p50_ms: Some(38),
+                    up_loss_permille_max: 120,
+                    rto_timeouts: 4,
+                    gaps: 9,
+                    gaps_repaired_by_push: 7,
+                    repair_pulls: 2,
+                    jitter_max_us: 18_750,
+                    ..ClientLinkStats::default()
+                }),
+                round_trips: 400,
+                round_trip_total_ms: 30_000,
+                round_trip_max_ms: 250,
+                desync_frame: Some(9_000),
+                started: false,
+                failure: Some("agreement_mismatch"),
+            },
+            ..NetworkQualityStats::default()
+        };
+        stats.live.skipped_draws = 17;
+        for ms in [8.0, 9.5, 31.0] {
+            stats.tick_ms.record(ms);
+        }
+        for ms in [16.0, 16.0, 49.8] {
+            stats.frame_ms.record(ms);
+        }
+        stats.record_start_parts(vec![
+            ("setup_seed", 7),
+            ("houses", 0x0123_4567_89ab_cdef),
+            ("world", u64::MAX),
+        ]);
+        crate::test_fixture::assert_sent_json(
+            "tests/fixtures/lobby/network_quality.json",
+            &serde_json::json!({
+                "about": "A report as a game sends it with `finish` (`network_quality`, \
+                    docs/lobby-protocol.md), every field filled. The game's test in \
+                    src/app/match_runtime/network_quality.rs writes this file; a lobby \
+                    keeps the report.",
+                "report": stats.summarize(),
+            }),
         );
     }
 

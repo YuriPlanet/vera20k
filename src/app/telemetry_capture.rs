@@ -111,17 +111,9 @@ pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
             })
             .map(|name| bounded_text(name, TELEMETRY_MAX_NAME_BYTES));
     }
-    let speed = crate::sim::game_options::clamp_game_speed(
-        runtime.simulation.session().game_options().game_speed,
+    let mut timing = state.match_state.telemetry_timing.summarize(
+        crate::app::match_runtime::network_match::game_frame_ms(state),
     );
-    let mut timing =
-        state
-            .match_state
-            .telemetry_timing
-            .summarize(state.platform.frame_pacer.budget_ms(
-                speed,
-                crate::app::match_runtime::network_match::frame_budget(state),
-            ));
     // Each rate keeps its own owner: FPS is the render loop's, tick_hz is the
     // committed-tick meter's.
     timing.fps = state.diag.frame_timer.fps();
@@ -146,7 +138,9 @@ pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
         map_name: bounded_text(sim.session().map_name(), TELEMETRY_MAX_NAME_BYTES),
         // The app's GameMode holder, not the world's copy read a second way.
         game_mode: state.match_state.session_mode().as_str().to_owned(),
-        game_speed: speed,
+        game_speed: crate::sim::game_options::clamp_game_speed(
+            sim.session().game_options().game_speed,
+        ),
         local_owner: state
             .match_state
             .local_player_owner()
