@@ -882,6 +882,17 @@ impl Simulation {
                 let Some(object) = self.object_type(entity.type_ref(), rules) else {
                     continue;
                 };
+                // Phobos `HouseClass_RecalcCenter_LimboDelivery`
+                // (`Ext/House/Hooks.cpp:94-105`, `0x4FD1CD`/`0x4FD463`): an
+                // `IgnoreForBaseCenter=yes` building is skipped exactly like an
+                // illegal coordinate. Native runs the same skip in both passes
+                // and the weighted denominator is the cost sum it accumulates,
+                // so the building leaves the numerator and its denominator
+                // together — the one list below feeds both passes.
+                #[cfg(feature = "phobos")]
+                if object.phobos_ignore_for_base_center {
+                    continue;
+                }
                 buildings.push(ProjectionBuilding {
                     cost: self.cost_of(owner, object, rules),
                     coord: crate::sim::movement::ground_pose::object_get_coords(
@@ -2328,6 +2339,106 @@ Foundation=1x1
                 sim.houses[&owner].base_center(),
                 Some(expected),
                 "ignore={ignore}"
+            );
+        }
+    }
+
+    fn centre_average_rules(ignore: bool) -> RuleSet {
+        RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "[Countries]
+0=Americans
+1=Russians
+             [BuildingTypes]
+0=PLAIN
+1=COUNTED
+             [PLAIN]
+Cost=1000
+Strength=1000
+Foundation=1x1
+             [COUNTED]
+Cost=1000
+Strength=1000
+Foundation=1x1
+{}",
+            if ignore {
+                "IgnoreForBaseCenter=yes\n"
+            } else {
+                ""
+            }
+        )))
+        .unwrap()
+    }
+
+    /// A fixture building stored without an occupation plane, the way the native
+    /// `house_base_projection` corpus supplies its map. `spawn_object` would
+    /// register the cell's occupation, which the centre average's passable-cell
+    /// search then has to step past.
+    fn insert_building(
+        sim: &mut Simulation,
+        owner: InternedId,
+        id: u64,
+        kind: &str,
+        cell: (u16, u16),
+    ) {
+        let type_ref = sim.interner.intern(kind);
+        let entity = GameEntity::new_at_frame_zero_for_test(
+            id,
+            cell.0,
+            cell.1,
+            0,
+            0,
+            owner,
+            Health::new(100),
+            type_ref,
+            EntityCategory::Structure,
+            0,
+            0,
+            false,
+        );
+        sim.substrate.entities.insert(entity);
+        sim.append_house_base_building_for_test(id);
+    }
+
+    /// Phobos `HouseClass_RecalcCenter_LimboDelivery` (`Ext/House/Hooks.cpp:
+    /// 94-105`, `0x4FD1CD`/`0x4FD463`): `HouseClass::RecalculateBase @
+    /// 0x004FD150` averages one building list for the weighted centre and reads
+    /// the same list for its radius pass, so an `IgnoreForBaseCenter=yes`
+    /// building leaves the numerator and its denominator together. The key is
+    /// per TechnoType, so the pair uses two equal 1x1 types and only one carries
+    /// it: the plain building's cell remains, and without the key the average of
+    /// both returns.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn an_ignored_building_leaves_the_centre_average() {
+        for (ignore, expected) in [(true, (9, 10)), (false, (11, 10))] {
+            let rules = centre_average_rules(ignore);
+            let mut sim = native_map_fixture();
+            let owner = add_house(&mut sim, "Americans", &rules);
+            insert_building(&mut sim, owner, 31, "PLAIN", (9, 10));
+            insert_building(&mut sim, owner, 32, "COUNTED", (13, 10));
+            sim.houses
+                .get_mut(&owner)
+                .unwrap()
+                .tracking_mut()
+                .set_buildings_for_test(2);
+            assert_eq!(
+                rules
+                    .object("COUNTED")
+                    .unwrap()
+                    .phobos_ignore_for_base_center,
+                ignore
+            );
+            assert!(!rules.object("PLAIN").unwrap().phobos_ignore_for_base_center);
+            assert!(sim.recalculate_house_base_geometry(owner, &rules));
+            assert_eq!(
+                sim.houses[&owner].base_center(),
+                Some(expected),
+                "ignore={ignore}"
+            );
+            assert_eq!(
+                sim.houses[&owner].base_radius(),
+                512,
+                "the plain building's distance is unchanged: ignore={ignore}"
             );
         }
     }

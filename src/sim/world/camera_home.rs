@@ -18,6 +18,12 @@ impl Simulation {
     /// `HouseClass::Get_Base_Or_Starting_Coord @ 0x0050DF30` XY at Z 0. A map
     /// object that a trigger hands the player later is not counted.
     ///
+    /// Phobos `DisplayClass_ComputeStartPosition_IllegalCoords`
+    /// (`Ext/House/Hooks.cpp:111-120`, `0x4AC534`) is this loop: a techno whose
+    /// type has `IgnoreForBaseCenter=yes` is skipped like an illegal coordinate,
+    /// out of both the sum and the count, so an ignored starting techno leaves
+    /// the fallback coordinate in place.
+    ///
     /// Returns the view coordinate and the Cell that native stores in
     /// Scenario View1..4 (the coordinate divided by 256 toward zero). `None`
     /// without a current player, or (VERA adaptation for an observer, which
@@ -26,8 +32,11 @@ impl Simulation {
     /// ported here.
     pub(crate) fn opening_view_on_player_technos(
         &self,
+        rules: &RuleSet,
         cells: Option<&NativeCellQuery<'_>>,
     ) -> Option<([i32; 3], (u16, u16))> {
+        #[cfg(not(feature = "phobos"))]
+        let _ = rules;
         let owner = self.session.current_house()?;
         let entities = &self.substrate.entities;
         let (mut sum_x, mut sum_y, mut count) = (0i32, 0i32, 0i32);
@@ -39,6 +48,15 @@ impl Simulation {
                 continue;
             };
             if entity.lifecycle.in_limbo() || !entity.discovery.owned_by_current_house() {
+                continue;
+            }
+            #[cfg(feature = "phobos")]
+            let ignored = self
+                .object_type(entity.type_ref(), rules)
+                .is_some_and(|object| object.phobos_ignore_for_base_center);
+            #[cfg(not(feature = "phobos"))]
+            let ignored = false;
+            if ignored {
                 continue;
             }
             let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);

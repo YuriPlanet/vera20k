@@ -2,7 +2,8 @@
 
 A TechnoType can opt out of its House's base-center math: the building or
 starting techno still exists and plays normally, but it does not pull the
-House's base center. Phobos reads the flag as a `Valueable<bool>` (default
+House's base center, and a starting techno likewise does not pull the opening
+view's average. Phobos reads the flag as a `Valueable<bool>` (default
 `no`) in `Ext/TechnoType/Body.cpp:810`, declared `Body.h:77`, constructed
 `false` at `:515`.
 
@@ -26,17 +27,29 @@ its mission, or alter `BaseSpawnCell`.
 
 - `rules::object_type::ObjectType::phobos_ignore_for_base_center` reads
   `IgnoreForBaseCenter` with `read_bool` (constructor default `false`).
-- `sim::world::house_base::initialize_house_base_from_build_const` is VERA's
-  only building-derived base center (`0x0050C210`: the last non-limbo owned
-  BuildConst building anchors the House). Its candidate scan now also skips a
-  type with the flag, mirroring the RecalcCenter skip.
+- `sim::world::house_base::recalculate_house_base_geometry` is VERA's
+  `HouseClass::RecalculateBase @ 0x004FD150` projection. It builds the single
+  admitted list that `project_geometry` weights into the centre and then walks
+  again for the radius, so one filter serves both hook sites
+  (`0x4FD1CD` / `0x4FD463`, `Ext/House/Hooks.cpp:94-105`): a building whose
+  type has the flag never enters the list, leaving the weighted numerator and
+  its denominator together. Phobos' hook name says `RecalcCenter`; the patched
+  addresses lie inside the function VERA ports here.
+  `initialize_house_base_from_build_const` (House 0x0050C210, the `BuildConst`
+  anchor) keeps its own gate on the same key.
+- `sim::world::camera_home::opening_view_on_player_technos` is
+  `DisplayClass::CenterCameraOnPlayerTechnos @ 0x004AC4F0`. The hook Phobos
+  names `DisplayClass_ComputeStartPosition_IllegalCoords` (`0x4AC534`,
+  `Ext/House/Hooks.cpp:111-120`) patches the same routine: an ignored techno is
+  dropped from the wrapping sum and from the count, so a house whose starting
+  technos are all ignored keeps `HouseClass::Get_Base_Or_Starting_Coord`'s
+  coordinate as its opening view. VERA has no separate start-position scan;
+  this opening view is the native centre read the Phobos gate covers, and
+  `set_base_center` remains the only writer of the base centre.
 
-VERA's base center is otherwise static: the launch waypoint
-(`sim::scenario_bootstrap::assign_launch_base_centers`), the auto-base trigger's
-first BuildConst cell, or an MCV deploy's spawn cell. There is no
-`HouseClass::RecalcCenter` loop and no starting-techno
-`DisplayClass::ComputeStartPosition` scan to extend, so the flag currently
-gates the one center derivation VERA performs from a building list.
+Other base-centre writes (the launch waypoint, the auto-base trigger's first
+`BuildConst` cell, an MCV deploy) are explicit assignments, not averages,
+and native filters none of them with this key.
 
 ## Phobos quirks kept
 
@@ -54,20 +67,16 @@ None; the center derivation is a list scan and coordinate read.
 
 ## Residuals (trigger · impact · frequency · risk)
 
-- **No `HouseClass::RecalcCenter`.** VERA keeps its static base center; this
-  chain only filters the BuildConst-anchor candidate list, so a center that
-  was already assigned (launch waypoint, trigger, deploy) is not recomputed
-  when buildings are added or removed. Trigger: any later base-center event.
-  Frequency: always. Risk: ignored buildings only matter where the anchor is
-  chosen. A future `recalc_center` owner should apply the same
-  `phobos_ignore_for_base_center` gate; the build-const scan is the reference
-  site.
-- **No `DisplayClass::ComputeStartPosition`.** VERA derives multiplayer
-  starts from launch waypoints rather than averaging starting technos, so the
-  consumer that skips a starting techno with the flag is not ported. Trigger:
-  a scenario whose start position comes from preplaced technos. Frequency:
-  campaigns/maps outside the launch path. Risk: none until that scan exists.
-- **Non-BuildConst technos.** The flag is read for every TechnoType but only
-  consulted for a building that could anchor the base; an ignored ordinary
-  unit has no effect today.
+- **The illegal-coordinate term.** Both hooks also skip a techno or building
+  whose map coordinate is illegal; neither VERA loop models that term, because
+  a stored entity always carries a cell. Trigger: an object placed outside the
+  map. Frequency: rare. Risk: such an object would still count.
+- **Other base-centre writers.** The launch waypoint
+  (`sim::scenario_bootstrap::assign_launch_base_centers`), the auto-base trigger
+  and an MCV deploy assign the centre directly; native leaves them alone too.
+  Trigger: none. Frequency: always. Risk: none.
+- **Network / multi-client opening views.** Native runs
+  `CenterCameraOnPlayerTechnos` per client; VERA's port answers for the local
+  current House. The gate reads only the techno's type, so a peer's answer can
+  differ only through its own object set. Untested.
 - **Retail/visual parity untested** (no retail `ini/` in this checkout).
