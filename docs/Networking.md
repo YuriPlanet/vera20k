@@ -140,16 +140,21 @@ finishes loading must agree to the initial world before it starts. A player who
 never finishes loading leaves in the first frame once silent for 60 seconds, or 3
 minutes after the first client was ready; the native loading timeout leaves that
 departure to the relay. A match spread over several relays is cancelled instead.
-If ready players on different relays report different initial worlds, updated
-relays refuse the start as soon as those authenticated reports arrive, using the
-existing agreement-mismatch error. A relay whose players have not sent Ready is
-still loading, not a mismatch. The refusal remains available to retries after
-the empty match journal is removed. No client or federation packet changes:
-released clients already understand the error. Relay upgrades can be gradual;
-an older relay may still report ordinary cancellation or wait for its loading
-timeout, but cannot start a match with different agreements. Rolling the relay
-back restores that older reporting. Deploying the relay change is separate from
-publishing a new game build.
+If a loading player's Ready reports a different initial world from the one its
+relay already took, or ready players on different relays report different
+worlds, the relay refuses the start for everyone at once with the existing
+agreement-mismatch error, instead of keeping the first ready players waiting.
+The other relays of such a match cancel through the coordinator, so their
+players may see an ordinary cancellation. A relay whose players have not sent
+Ready is still loading, not a mismatch. The refusal remains available to retries
+after the empty match journal is removed. No client or relay packet changes.
+Games from 0.2.9 name the start mismatch; 0.2.7 and 0.2.8, the oldest the lobby
+admits, show a connection failure. Every relay is deployed and rolled back at
+once (`services/relay/README.md`). A rolled-back relay again refuses only the
+later player's Ready: the others wait until that player leaves, which cancels
+the start, or for up to 3 minutes, then start without it (a match on several
+relays is cancelled instead).
+Deploying the relay change is separate from publishing a new game build.
 At each deadline, missing input is empty; a command joins the next unsealed
 frame. The sender also waits for that commit.
 Frames use the existing Event codec and simulation queues, with a fresh compression

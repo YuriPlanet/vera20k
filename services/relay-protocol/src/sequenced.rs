@@ -1076,9 +1076,11 @@ pub(super) struct OrderingRoom {
     local: u32,
     // A federated Leave before the start asks the coordinator to cancel.
     cancel_requested: bool,
-    // A federated Ready proved a different initial world. Keep the reason
-    // in the cancelled room so retries receive the existing precise error.
+    // A Ready proved a different initial world. Keep the reason in the
+    // cancelled room so retries receive the existing precise error.
     agreement_mismatch: bool,
+    // That refusal, until the server counts it for its journal report.
+    mismatch_uncounted: bool,
     next_seq: u64,
     history: VecDeque<Stored>,
     history_bytes: usize,
@@ -1140,6 +1142,7 @@ impl OrderingRoom {
             local,
             cancel_requested: false,
             agreement_mismatch: false,
+            mismatch_uncounted: false,
             next_seq: 1,
             history: VecDeque::new(),
             history_bytes: 0,
@@ -1157,11 +1160,12 @@ impl OrderingRoom {
         }
     }
 
-    /// Move the rate changes and desyncs not yet counted into the journal
-    /// report's counts.
+    /// Move the rate changes, desyncs and refused start not yet counted into
+    /// the journal report's counts.
     pub(super) fn count_changes(&mut self, counts: &mut crate::OrderingCounts) {
         self.pace.count_changes(counts);
         counts.desyncs += u64::from(std::mem::take(&mut self.desyncs));
+        counts.start_mismatches += u64::from(std::mem::take(&mut self.mismatch_uncounted));
     }
 
     /// Any authenticated packet keeps a source's place; a newer admission of
@@ -1612,8 +1616,9 @@ impl OrderingRoom {
                 self.finished_at = Some(now_ms);
                 return;
             }
-            // Only the coordinator ends a federated startup. Its start may
-            // already be on the way; this Leave then departs at frame 1.
+            // Only the coordinator ends a federated startup for an ordinary
+            // reason. Its start may already be on the way; this Leave then
+            // departs at frame 1.
             self.cancel_requested = true;
         }
         self.retire(source, false, now_ms);
@@ -1699,6 +1704,17 @@ impl OrderingRoom {
         // Retain the authenticated Ready/agreement proof for other relays.
         // Cancellation still wins over starting, even on older relays.
         self.finished_at = Some(now_ms);
+    }
+
+    /// A Ready, here or on another relay, proved a different initial world:
+    /// cancel the startup and answer every later Ready, and a ready source's
+    /// Pull and UPLINK, with `AgreementMismatch`. A federated relay's
+    /// cancelled startup asks the coordinator to cancel it everywhere. Only a
+    /// startup this ends is counted, not one already cancelled otherwise.
+    fn refuse_start(&mut self, now_ms: u64) {
+        self.agreement_mismatch = true;
+        self.mismatch_uncounted = self.finished_at.is_none();
+        self.cancel(now_ms);
     }
 
     /// The latest pace reports of active sources homed here, encoded for
@@ -5430,6 +5446,47 @@ mod tests {
     }
 
     #[test]
+    fn a_loading_players_different_ready_refuses_the_start_for_everyone() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 2);
+        let mut players: Vec<_> = (0..2).map(|source| client(&key, source)).collect();
+        for player in &mut players {
+            connect(&mut server, player, 0);
+        }
+        let cert = certificate(&key, 0b11, 2000);
+        configure(&mut server, &mut players[0], &cert, 1000);
+        let ready = |player: &mut ClientSession, agreement| {
+            let mut bytes = Vec::new();
+            player
+                .configure_ordering(&cert, agreement, &mut bytes)
+                .unwrap();
+            bytes
+        };
+        let refused = |events: Vec<OrderEvent>| {
+            matches!(
+                events.as_slice(),
+                [OrderEvent::Error {
+                    code: OrderError::AgreementMismatch,
+                    ..
+                }]
+            )
+        };
+        // Games resend Ready until the start.
+        let other = ready(&mut players[1], [8; 32]);
+        assert!(refused(events(&mut server, &mut players[1], &other, 2000)));
+        // The first Ready's player no longer waits, and both retries agree.
+        let first = ready(&mut players[0], [7; 32]);
+        assert!(refused(events(&mut server, &mut players[0], &first, 3000)));
+        let other = ready(&mut players[1], [8; 32]);
+        assert!(refused(events(&mut server, &mut players[1], &other, 3000)));
+        // Nobody starts alone once the refused player goes silent.
+        let late = 3000 + LOADING_LIMIT_MS;
+        server.advance_clock(late, unix(late));
+        assert!(ordering(&server).starts_at.is_none());
+        assert_eq!(server.take_ordering_counts().start_mismatches, 1);
+    }
+
+    #[test]
     fn a_late_returner_cannot_restart_a_cleaned_up_match_under_its_id() {
         let directory = TestDirectory::new();
         let key = SecretKey::new([73; 32]);
@@ -6083,6 +6140,16 @@ impl RelayServer {
                 || ordering.certificate.tick_hz != certificate.tick_hz
                 || ordering.agreement != agreement
             {
+                // VERA: a loading player's Ready proves a world the first
+                // Ready players cannot start with. Cancel the start for
+                // everyone now, as its Leave could, instead of letting its
+                // keepalives hold the others until the loading limit drops it
+                // and they start without it. A ready source's agreement
+                // stands, so no federated start can be on its way.
+                let bit = 1 << message.ticket.source;
+                if ordering.starts_at.is_none() && ordering.active & !ordering.ready & bit != 0 {
+                    ordering.refuse_start(now_ms);
+                }
                 error(OrderError::AgreementMismatch, 0)
             } else if ordering.active & (1 << message.ticket.source) == 0 {
                 error(OrderError::Inactive, 0)

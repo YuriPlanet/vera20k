@@ -851,6 +851,9 @@ pub struct OrderingCounts {
     pub pull_replies: u64,
     /// Matches this relay ended with a DESYNC record.
     pub desyncs: u64,
+    /// Startups this relay cancelled because a Ready, on it or on another
+    /// relay of the match, proved a different initial world.
+    pub start_mismatches: u64,
     /// Reader downlink (spec §10.2). Pushed datagrams and their bytes by
     /// send-log kind: 0 status, 1 new pack, 2 repeat, 3 retransmission,
     /// 4 tail probe.
