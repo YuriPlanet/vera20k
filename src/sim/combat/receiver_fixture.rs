@@ -788,6 +788,7 @@ pub(crate) fn resolve_attacker_fire(
                 has_active_wave,
                 out,
                 crate::sim::world::FrameEffects::default(),
+                false,
             );
         },
     )

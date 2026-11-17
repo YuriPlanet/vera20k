@@ -1,9 +1,12 @@
 //! Phobos `UnitTypeExt::FireUp=` (`Ext/UnitType/Body.cpp:93`) through the
 //! production `FireVisit::UnitTarget` path: `UnitClass_UpdateFiring_FireUp`
-//! (`0x736F61`, `Ext/Unit/Hooks.Firing.cpp:7-102`) holds an SHP, non-turreted
+//! (`0x736F61`, `Ext/Unit/Hooks.Firing.cpp:7-109`) holds an SHP, non-turreted
 //! Unit on the authored body firing frame, drops the sequence of a really
-//! moving unit that does not have `OpportunityFire=`, and forces the full
-//! rearm when `Burst.FireWithinSequence` projects past the sequence.
+//! moving unit that does not have `OpportunityFire=`, forces the full rearm
+//! when `Burst.FireWithinSequence` projects past the sequence, never seeds a
+//! record that authors no `FiringFrames=`, and leaves `0x736E6E`'s hull turn
+//! running on a held frame. `the_full_rearm_flag_marks_only_a_full_arm` reads
+//! the `LastRearmWasFullDelay` the same shots record.
 use super::world_fire;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
@@ -15,14 +18,28 @@ use crate::sim::world::{FrameEffects, Simulation};
 use crate::util::fixed_math::SIM_ONE;
 
 const EAST: u16 = 0x4000;
+const NORTH: u16 = 0;
 /// `2 * 5 - 1`: a five-image ART firing sequence counts down from nine.
 const FRAMES: i32 = 9;
 
 /// An SHP, non-turreted `FIRER` unit aimed east at a rival `DUMMY` two cells
 /// east, with ART `FiringFrames=5` and ART `FireUp=fire_up` (`-1` is the key's
 /// constructor default). `firer_extra` appends `[FIRER]` keys, `weapon_extra`
-/// appends `[GUN]` keys. `ROF.RandomDelay=0` keeps the rearm draw-free.
+/// appends `[GUN]` keys. A test that needs a draw-free rearm pins the
+/// weapon-level `ROF.RandomDelay=0` there: `[CombatDamage]` never reaches this
+/// fixture's processed ruleset, so a global pin would fall back to `{0, 2}`.
 fn arena(firer_extra: &str, weapon_extra: &str, fire_up: i32) -> (Simulation, RuleSet, u64) {
+    arena_with_art(
+        firer_extra,
+        weapon_extra,
+        &format!("[FIRER]\nFiringFrames=5\nFireUp={fire_up}\n"),
+    )
+}
+
+/// [`arena`] with the fixed `[FIRER]` ART record written verbatim, for the
+/// keys the Unit ART reader owns: a record with no `FiringFrames=` leaves
+/// native's `frames` at its -1 sentinel.
+fn arena_with_art(firer_extra: &str, weapon_extra: &str, art: &str) -> (Simulation, RuleSet, u64) {
     let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
         "[Warheads]\n0=HIT\n[BuildingTypes]\n0=DUMMY\n\
          [VehicleTypes]\n0=FIRER\n\
@@ -33,12 +50,11 @@ fn arena(firer_extra: &str, weapon_extra: &str, fire_up: i32) -> (Simulation, Ru
          [GUN]\nDamage=10\nROF=40\nRange=9.5\nSpeed=100\nProjectile=INVIS\nWarhead=HIT\n\
          {weapon_extra}\
          [INVIS]\nInviso=yes\nAG=yes\n\
-         [HIT]\nCellSpread=0\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
-         [CombatDamage]\nROF.RandomDelay=0\n"
+         [HIT]\nCellSpread=0\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
     ));
     // The Unit ART reader owns `FiringFrames`, so the processed pass has to see
     // the fixed art; `install_art_data` then projects `FireUp=` and `Voxel=`.
-    let art = IniFile::from_str(&format!("[FIRER]\nFiringFrames=5\nFireUp={fire_up}\n"));
+    let art = IniFile::from_str(art);
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("rules read");
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
@@ -223,8 +239,22 @@ fn moving_clears_the_fire_up_sequence_unless_opportunity_fire() {
 fn burst_overrun_forces_a_full_rearm() {
     let (mut sim, rules, firer) = arena(
         "",
-        "Burst=2\nBurst.Delays=4,3\nBurst.FireWithinSequence=yes\n",
+        "Burst=2\nBurst.Delays=4,3\nBurst.FireWithinSequence=yes\nROF.RandomDelay=0\n",
         3,
+    );
+    assert_eq!(rules.weapon("GUN").expect("gun").rof, 40, "fixture ROF");
+    assert_eq!(
+        rules
+            .weapon("GUN")
+            .expect("gun")
+            .rof_random_delay
+            .expect("the weapon pins its jitter"),
+        crate::rules::ini_value::PartialIntPair {
+            low: 0,
+            high: 0,
+            values: 1,
+        },
+        "`ROF.RandomDelay=0` on the weapon keeps `GetROF` draw-free"
     );
     sim.entities_mut_for_test()
         .get_mut(firer)
@@ -238,10 +268,17 @@ fn burst_overrun_forces_a_full_rearm() {
         1,
         "`(9 + 5) / 2` is frame 7, `FireUp(3) + cumulative(4)`"
     );
+    // The full arm answers `GetROF` = `ROF * house ROF` + the `ROF.RandomDelay`
+    // jitter; the weapon's own `0` pin makes that exactly the ROF. The mid-burst
+    // arm would answer the authored `Burst.Delays` item (4 at index 1) instead.
     assert_eq!(
         rearm(&sim, firer),
         40,
-        "the overrun takes the full ROF, not the index's three-frame delay"
+        "the overrun takes the full ROF, not the index's `Burst.Delays` item"
+    );
+    assert!(
+        rearm_flag(&sim, firer),
+        "and the arm is the ordinary full one, not the burst gap"
     );
 }
 
@@ -254,5 +291,145 @@ fn the_key_off_keeps_the_stock_unit_cadence() {
         visit(&mut sim, &rules, firer),
         1,
         "no `FireUp=` holds nothing"
+    );
+}
+
+/// `FireUp=` on a record that authors no `FiringFrames=`: `frames` stays at
+/// native's `2 * 0 - 1 = -1` (`Ext/Unit/Hooks.Firing.cpp:33-34`), the `>= 0`
+/// seed arm at `:38` never runs, `CurrentFiringFrame` stays -1 and
+/// `(frames - (-1)) / 2` reads 0 on every update — so `FireUp=4` holds the
+/// shot for good while `FireUp=0` still launches on the first one.
+#[test]
+fn an_unset_firing_frames_holds_a_fire_up_shot() {
+    let (mut sim, rules, firer) = arena_with_art("", "", "[FIRER]\nFireUp=4\n");
+    for frame in 0..=4 {
+        sim.session.set_binary_frame_for_test(100 + frame);
+        assert_eq!(
+            visit(&mut sim, &rules, firer),
+            0,
+            "update {frame} decodes sequence frame 0, not `FireUp=4`"
+        );
+        assert_eq!(counter(&sim, firer), -1, "nothing seeds an unset record");
+    }
+
+    let (mut sim, rules, firer) = arena_with_art("", "", "[FIRER]\nFireUp=0\n");
+    assert_eq!(
+        visit(&mut sim, &rules, firer),
+        1,
+        "the same division reads frame 0, which `FireUp=0` matches"
+    );
+    assert_eq!(counter(&sim, firer), -1, "still unseeded");
+}
+
+/// `OmniFire.TurnToTarget` answers on a held frame too: native runs
+/// `UnitClass_UpdateFiring_OmniFireTurnToTarget @ 0x736E6E`
+/// (`Ext/Unit/Hooks.Jumpjet.cpp:50-96`) before
+/// `UnitClass_UpdateFiring_FireUp @ 0x736F61`, and the FireUp arm only skips
+/// the launch. The hull therefore turns toward the target while the unset
+/// record still holds the shot.
+#[test]
+fn omni_fire_turns_on_a_held_frame() {
+    let (mut sim, rules, firer) = arena_with_art(
+        "",
+        "OmniFire=yes\nOmniFire.TurnToTarget=yes\n",
+        "[FIRER]\nFireUp=4\n",
+    );
+    let actor = sim.entities_mut_for_test().get_mut(firer).expect("firer");
+    actor.body_facing.snap(NORTH, 100);
+    assert_eq!(
+        sim.entities()
+            .get(firer)
+            .expect("firer")
+            .body_facing
+            .destination(),
+        NORTH,
+        "the fixture starts facing north, two cells off the target"
+    );
+
+    assert_eq!(
+        visit(&mut sim, &rules, firer),
+        0,
+        "the unset `FiringFrames=` holds the shot"
+    );
+    // Native's chop conversion answers one word under the exact east heading
+    // for a purely east delta (`facing16_from_angle` truncates toward zero), so
+    // the destination is `EAST` or `EAST - 1`, not the next heading north.
+    let destination = sim
+        .entities()
+        .get(firer)
+        .expect("firer")
+        .body_facing
+        .destination();
+    assert!(
+        (EAST - 1..=EAST).contains(&destination),
+        "`0x736E6E` turned the hull before `0x736F61` held the shot: {destination}"
+    );
+}
+
+fn rearm_flag(sim: &Simulation, firer: u64) -> bool {
+    sim.entities()
+        .get(firer)
+        .expect("firer")
+        .weapon_burst
+        .last_rearm_was_full_delay()
+}
+
+/// One shot from a chosen burst index at a rearm-free frame: the admissions
+/// need `GetFireError` to answer OK, so the rearm timer is zeroed first.
+fn shoot(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    firer: u64,
+    index: i32,
+    force_full: bool,
+    frame: u32,
+) -> usize {
+    sim.session.set_binary_frame_for_test(frame);
+    let actor = sim.entities_mut_for_test().get_mut(firer).expect("firer");
+    actor.weapon_burst.set_index(index);
+    if force_full {
+        actor.weapon_burst.set_force_full_rearm();
+    }
+    actor.rearm_timer.start(frame as i32, 0);
+    visit(sim, rules, firer)
+}
+
+/// `TechnoExt::LastRearmWasFullDelay` through its owner: the mid-burst answer
+/// clears it (`0x6FD054`, `Ext/Techno/Hooks.Firing.cpp:1139`), and both the
+/// ordinary arm (the `0x6FD0B5` hook, `:1124`) and the forced full rearm — which
+/// clears at `0x6FD054` and then jumps into the ordinary arm at `0x6FD09E`
+/// (`:1141-1142`) — leave it set.
+#[test]
+fn the_full_rearm_flag_marks_only_a_full_arm() {
+    let (mut sim, rules, firer) = arena("", "Burst=2\n", -1);
+
+    // `Burst=2` at the stepped index 1 is below the burst: the mid-burst arm.
+    assert_eq!(
+        shoot(&mut sim, &rules, firer, 0, false, 100),
+        1,
+        "mid-burst shot"
+    );
+    assert!(!rearm_flag(&sim, firer), "a burst gap clears the flag");
+
+    // The forced full rearm skips that arm and joins the ordinary one.
+    assert_eq!(
+        shoot(&mut sim, &rules, firer, 1, true, 160),
+        1,
+        "forced shot"
+    );
+    assert!(
+        rearm_flag(&sim, firer),
+        "the forced arm ends on the full arm"
+    );
+
+    // Index 2 is not below `Burst=2`: the ordinary full arm.
+    assert_eq!(
+        shoot(&mut sim, &rules, firer, 1, false, 220),
+        1,
+        "last burst shot"
+    );
+    assert!(
+        rearm_flag(&sim, firer),
+        "the completed burst keeps the flag"
     );
 }

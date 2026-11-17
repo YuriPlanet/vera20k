@@ -342,10 +342,13 @@ impl UnitFiringCounter {
     }
 
     /// Phobos `UnitClass_UpdateFiring_FireUp @ 0x736F61`
-    /// (`src/Ext/Unit/Hooks.Firing.cpp:51-55`): a `CurrentFiringFrame` of -1
+    /// (`src/Ext/Unit/Hooks.Firing.cpp:38`): a `CurrentFiringFrame` of -1
     /// restarts the sequence at frame 0 by taking the caller's
-    /// `2 * FiringFrames - 1`. The same native arm's `fireUp < 0` synchronised
-    /// alternative stays with the unrepresented `FiringSyncFrame` reader
+    /// `2 * FiringFrames - 1`, and the caller only reaches this arm when that
+    /// value is `>= 0` — a record without `FiringFrames=` leaves `frames` at
+    /// -1, so the counter stays -1 and every update decodes sequence frame 0.
+    /// The same native arm's `fireUp < 0` synchronised alternative stays with
+    /// the unrepresented `FiringSyncFrame` reader
     /// ([`commit_unit_firing_counter`]).
     #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
     pub(crate) fn seed_sequence_frame(&mut self, frames: i32) {

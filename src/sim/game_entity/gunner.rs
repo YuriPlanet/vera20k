@@ -116,6 +116,25 @@ impl GameEntity {
         self.turret_selection.phobos_charge_turret_timer = Some(timer);
     }
 
+    /// Phobos `AttachEffectClass::AI`'s charge-turret reader
+    /// (`New/Entity/AttachEffectClass.cpp:209-210`): while the
+    /// `ChargeTurretTimer` has never started and the last GetROF answered the
+    /// ordinary full-rearm arm, an `ROFMultiplier` also scales the saved `+2F8`
+    /// denominator, with the same C++ `static_cast<int>(value * multiplier)`
+    /// truncation the rearm timer beside it takes.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn phobos_scale_charge_turret_delay(&mut self, multiplier: f64) {
+        if self.turret_selection.phobos_charge_turret_timer.is_some()
+            || !self.weapon_burst.last_rearm_was_full_delay()
+        {
+            return;
+        }
+        self.turret_selection.charge_turret_delay = crate::sim::attach_effect::scale_i32(
+            self.turret_selection.charge_turret_delay,
+            multiplier,
+        );
+    }
+
     /// TechnoAI6FA4FB..6FA5BE, after target validity and before missions.
     /// The signed wrapping product precedes IDIV, then the result is clamped.
     /// Only drawing reads this index; no weapon, timer or RNG is changed.

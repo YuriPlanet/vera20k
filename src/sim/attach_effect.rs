@@ -1135,9 +1135,11 @@ pub(crate) fn range_with_attach_effects(
 /// `FootClass+0x6CC IsAttackedByLocomotor` is set) and `0x006FC5C7`
 /// (open-topped `CheckTransportDisableWeapons` asks the transport's flag),
 /// plus the gattling AI arms, and VERA keeps no `IsAttackedByLocomotor`
-/// producer; and the charge-turret half of
-/// `ROFMultiplier.ApplyOnCurrentTimer` needs the
-/// `LastRearmWasFullDelay`/charge-timer state VERA does not keep.
+/// producer. The `ROFMultiplier.ApplyOnCurrentTimer` charge-turret half is
+/// ported on the per-effect initialization reader
+/// ([`crate::sim::game_entity::GameEntity::phobos_scale_charge_turret_delay`]);
+/// the batch attach path's copy (`AttachEffectClass.cpp:831-837`) is not,
+/// and that residual sits in `docs/phobos-burst-sequence.md`.
 #[cfg(feature = "phobos")]
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PhobosStatMultipliers {
@@ -2470,6 +2472,11 @@ impl Simulation {
                     .rearm_timer
                     .start(frame, scale_i32(remaining, effect.rof_multiplier));
             }
+            // Same block (`AttachEffectClass.cpp:209-210`): the saved
+            // charge-turret denominator follows the multiplier too, but only
+            // while the `ChargeTurret.Delays` timer has never started and the
+            // last GetROF answered the full-rearm arm.
+            entity.phobos_scale_charge_turret_delay(effect.rof_multiplier);
         }
         // `HasExpired || (IsActiveIgnorePowered && ShouldBeDiscardedNow)`:
         // a discardable effect behind a recreation delay is reset instead of
