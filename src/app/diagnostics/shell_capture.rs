@@ -1360,7 +1360,9 @@ impl ShellCaptureRequest {
                 provider: crate::app::shell_wol::WolProvider::Unavailable,
                 ..
             }) => true,
-            Some(movies::MoviesTarget::Lan(target)) => !target.live(),
+            Some(movies::MoviesTarget::Lan(target)) => {
+                !target.live() && target != movies::LanTarget::ModernHostLeft
+            }
             _ => false,
         }
     }

@@ -913,14 +913,17 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                     .multiplayer_shell_runtime
                     .clear_network_cooperative_partners();
             }
-            // Native leaves without a word; VERA says why the room closed.
-            if !state.frontend.native_shell_ui {
-                crate::app::shell_lan::report_error(state, HOST_LEFT_LABEL);
-            }
-            App::leave_shell_dialog(
-                state,
-                shell_transition::ShellExitThen::NetworkSetupBack(dialog),
-            );
+            // LAN Type 10 (0x005E10F2..0x005E1114) keeps its silent native exit.
+            let exit = if state.frontend.native_shell_ui {
+                shell_transition::ShellExitThen::NetworkSetupBack(dialog)
+            } else {
+                // VERA's notice belongs to the lobby opened after setup is retired.
+                shell_transition::ShellExitThen::NetworkSetupBackWithNotice {
+                    dialog,
+                    label: HOST_LEFT_LABEL,
+                }
+            };
+            App::leave_shell_dialog(state, exit);
         }
         NetworkSetupEvent::Kicked => {
             crate::app::shell_lan::report_error(state, "TXT_REQUEST_DENIED");
