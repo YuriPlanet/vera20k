@@ -657,6 +657,122 @@ fn reveal_warhead_reveals_the_map_for_its_owner() {
     );
 }
 
+/// Phobos `WarheadTypeExt::Detonate`'s positive Reveal arm
+/// (`Ext/WarheadType/Detonate.cpp:82-100`): the radius reaches the client
+/// maps `RevealArea2`'s house gate admits — the warhead's house and, with
+/// `AllyReveal=yes`, the house it names an ally — and `Detonate.cpp:88`
+/// admits that arm only while the current player is the warhead's house or
+/// its ally and is not defeated. The enemy's map keeps its shroud. Every unit
+/// in this scene carries `Sight=0`, so only the warhead can reveal the probe
+/// cells.
+#[cfg(feature = "phobos")]
+#[test]
+fn a_positive_reveal_touches_only_the_owner_and_its_allies() {
+    // `Koreans` owns the warhead and names `Americans`, the current player,
+    // its ally; `IsAlliedWith @ 0x004F9A50` reads the asking house's own bits,
+    // so only that one-way declaration admits the player's map. `Russians` is
+    // the enemy and keeps a client map of its own.
+    let reach = |defeated: bool| {
+        let (mut sim, rules, _firer, target) = scene(
+            "",
+            "Reveal=4\n",
+            "",
+            "[AudioVisual]\nAllyReveal=yes\n",
+            "Russians",
+        );
+        let americans = sim.interner.intern("Americans");
+        let russians = sim.interner.intern("Russians");
+        let koreans = sim.interner.intern("Koreans");
+        // The arena scene carries no client map; `ResetShroud`/`RevealArea`
+        // need a real grid, as every other reveal test gives its world.
+        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                koreans, 0, None, true, 0, 10,
+            ));
+        sim.houses
+            .get_mut(&russians)
+            .expect("russians")
+            .set_is_human_for_test(true);
+        sim.house_alliances_mut_for_test()
+            .insert("KOREANS".into(), ["AMERICANS".into()].into());
+        sim.reset_shroud_for_owner(koreans, &rules);
+        sim.reset_shroud_for_owner(americans, &rules);
+        sim.reset_shroud_for_owner(russians, &rules);
+        // The enemy's own explored cell is its counterweight: "untouched" then
+        // means the reveal wrote no enemy cell, not that it had no map.
+        sim.fog.reveal_map_cell(
+            russians,
+            (22, 20),
+            false,
+            None,
+            crate::sim::vision::MapRevealProjection::Transient,
+        );
+        sim.session.set_current_house_for_test(Some(americans));
+        if defeated {
+            sim.houses
+                .get_mut(&americans)
+                .expect("americans")
+                .set_is_defeated_for_test(true);
+        }
+        let firer = sim
+            .spawn_object("FIRER", "Koreans", 19, 20, 0, &rules)
+            .expect("ally firer");
+        detonate_once(&mut sim, &rules, firer, target, Some(target));
+        (
+            sim.fog.is_cell_revealed(koreans, 22, 20),
+            sim.fog.is_cell_revealed(americans, 22, 20),
+            sim.fog.is_cell_revealed(russians, 25, 20),
+            sim.fog.is_cell_revealed(koreans, 25, 20),
+            sim.fog.is_cell_revealed(koreans, 17, 20),
+            sim.fog.is_cell_revealed(russians, 22, 20),
+        )
+    };
+    assert_eq!(
+        reach(false),
+        (true, true, false, true, false, true),
+        "a radius 4 reaches the owner and its ally, and stops at its edge"
+    );
+    assert_eq!(
+        reach(true),
+        (false, false, false, false, false, true),
+        "a defeated current player admits no client map, the owner's included"
+    );
+}
+
+/// Phobos `WarheadTypeExt::Detonate`'s negative Reveal arm
+/// (`Ext/WarheadType/Detonate.cpp:94-99`, `MapClass::Reveal(pHouse)`): the
+/// firing house's whole map opens, including cells out of every unit's sight,
+/// and no other house's map is written.
+#[cfg(feature = "phobos")]
+#[test]
+fn a_negative_reveal_clears_the_owner_whole_map() {
+    let (mut sim, rules, firer, target) = scene("", "Reveal=-1\n", "", "", "Russians");
+    let americans = sim.interner.intern("Americans");
+    let russians = sim.interner.intern("Russians");
+    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    sim.houses
+        .get_mut(&russians)
+        .expect("russians")
+        .set_is_human_for_test(true);
+    sim.session.set_current_house_for_test(Some(americans));
+    detonate_once(&mut sim, &rules, firer, target, Some(target));
+    for cell in [(22, 20), (10, 16), (6, 16), (28, 16)] {
+        assert!(
+            sim.fog.is_cell_revealed(americans, cell.0, cell.1),
+            "the firing house's {cell:?} opens"
+        );
+        assert!(
+            !sim.fog.is_cell_revealed(russians, cell.0, cell.1),
+            "another house's {cell:?} keeps its shroud"
+        );
+    }
+    assert!(
+        !sim.fog.by_owner().contains_key(&russians),
+        "another house's client map is never written"
+    );
+}
+
 /// Phobos `WarheadTypeExt::Detonate`'s CreateGap block
 /// (`Ext/WarheadType/Detonate.cpp:51-80`): a negative value reshrouds the
 /// whole map for every non-allied house while the firing house keeps its

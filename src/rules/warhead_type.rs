@@ -1393,6 +1393,25 @@ mod tests {
         }
     }
 
+    /// Phobos `Reveal=` (`Ext/WarheadType/Body.cpp:157`, `Valueable<int>`,
+    /// default `0` at `Body.h:307`) read through the production Rules reader
+    /// as a signed cell radius: `-1` is the whole-map sentinel
+    /// (`Ext/WarheadType/Detonate.cpp:94-99`).
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn reveal_reads_as_a_signed_cell_radius() {
+        use crate::rules::ruleset::RuleSet;
+
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[Warheads]\n0=RADIUS\n1=WHOLE\n2=UNSET\n\
+             [RADIUS]\nReveal=6\n[WHOLE]\nReveal=-1\n[UNSET]\n",
+        ))
+        .expect("rules");
+        assert_eq!(rules.warhead("RADIUS").expect("warhead").reveal, 6);
+        assert_eq!(rules.warhead("WHOLE").expect("warhead").reveal, -1);
+        assert_eq!(rules.warhead("UNSET").expect("warhead").reveal, 0);
+    }
+
     /// Phobos `AEAttachInfoTypeClass` and `SuppressReflectDamage` on a
     /// warhead, through the production Rules reader, plus the `ReflectDamage`
     /// warhead the AttachEffect catalog alone names.
