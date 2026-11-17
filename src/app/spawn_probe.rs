@@ -192,10 +192,53 @@ pub(crate) fn build_identity() -> BuildIdentity {
     }
 }
 
-/// Load the process sources as startup does (config INI roots, personal
-/// rules, neutral archives) and report them; `map` is a path to the
-/// launcher's map file, and `mod_dir` the folder of the mod the launch would
-/// read (`mods::launch_dir`).
+/// The process sources startup loads (config INI roots, personal rules,
+/// neutral archives) from the game folder and the mod in `mod_dir`, with the
+/// startup Rules and shell projection their first load returns
+/// (`ProcessAssets::initialize_sources_if_needed`). `load_audio_index` reads
+/// the audio bag's index too, as startup does; it costs a hash of the bag.
+pub(crate) fn load_process_sources(
+    config: &crate::util::config::GameConfig,
+    personal_rules: crate::rules::personal_rules::PersonalRules,
+    media_archive_mode: MediaArchiveMode,
+    mod_dir: Option<std::path::PathBuf>,
+    ares_setting: crate::util::ares_launch::AresSetting,
+    load_audio_index: bool,
+) -> Result<(
+    ProcessAssets,
+    Option<crate::rules::ruleset::RuleSet>,
+    Option<crate::rules::ini_parser::IniFile>,
+)> {
+    let mut assets = AssetManager::with_mod_and_ares(
+        &config.paths.ra2_dir,
+        mod_dir.as_deref(),
+        media_archive_mode,
+        ares_setting,
+        crate::assets::asset_manager::ArchiveFamily::for_ini_profile(config.ini.profile),
+    )
+    .and_then(|assets| assets.with_ini_roots(&config.ini))
+    .context("could not load the game archives")?;
+    let mut process = ProcessAssets::new_with_ini_config(
+        media_archive_mode,
+        load_audio_index,
+        config.ini.clone(),
+    )
+    .with_personal_rules(personal_rules)
+    .with_mod_dir(mod_dir)
+    .with_ares_setting(ares_setting);
+    let (startup_rules, projection) = process
+        .initialize_sources_if_needed(&assets)
+        .map_err(anyhow::Error::msg)
+        .context("could not load the retail rules")?;
+    // Startup registers these before any match computes its agreement.
+    let _ = assets.register_neutral_archives();
+    process.return_from_loading(assets);
+    Ok((process, startup_rules, projection))
+}
+
+/// Load the process sources as startup does ([`load_process_sources`]) and
+/// report them; `map` is a path to the launcher's map file, and `mod_dir`
+/// the folder of the mod the launch would read (`mods::launch_dir`).
 pub(crate) fn probe(
     config: &crate::util::config::GameConfig,
     personal_rules: crate::rules::personal_rules::PersonalRules,
@@ -205,27 +248,14 @@ pub(crate) fn probe(
     ares_setting: crate::util::ares_launch::AresSetting,
 ) -> Result<ProbeReport> {
     let root = &config.paths.ra2_dir;
-    let mut assets = AssetManager::with_mod_and_ares(
-        root,
-        mod_dir.as_deref(),
+    let (mut process, mut startup_rules, projection) = load_process_sources(
+        config,
+        personal_rules,
         media_archive_mode,
+        mod_dir,
         ares_setting,
-        crate::assets::asset_manager::ArchiveFamily::for_ini_profile(config.ini.profile),
-    )
-    .and_then(|assets| assets.with_ini_roots(&config.ini))
-    .context("could not load the game archives")?;
-    let mut process =
-        ProcessAssets::new_with_ini_config(media_archive_mode, true, config.ini.clone())
-            .with_personal_rules(personal_rules)
-            .with_mod_dir(mod_dir)
-            .with_ares_setting(ares_setting);
-    let (mut startup_rules, projection) = process
-        .initialize_sources_if_needed(&assets)
-        .map_err(anyhow::Error::msg)
-        .context("could not load the retail rules")?;
-    // Startup registers these before any match computes its agreement.
-    let _ = assets.register_neutral_archives();
-    process.return_from_loading(assets);
+        true,
+    )?;
     let rules_digest = process
         .multiplayer_rules_digest(&spawn_battle_mode().override_file)
         .map_err(anyhow::Error::msg)
