@@ -209,10 +209,11 @@ fn moving_clears_the_fire_up_sequence_unless_opportunity_fire() {
     );
 }
 
-/// `Burst.Delays=1,3` at burst index 1 gives cumulative 4 and projected 7. A
-/// counter that decodes to `FireUp(3) + 4 = 7` accepts the shot, and
-/// `3 + 7 = 10` passes the nine-frame sequence, so the shot takes the full
-/// rearm instead of the index's three-frame delay.
+/// `Burst.Delays=4,3` at burst index 1 gives cumulative 4 and projected 8:
+/// native `GetBurstDelay(0)` is 0 by definition, and index 1 reads the first
+/// authored delay 4. A counter that decodes to `FireUp(3) + 4 = 7` accepts the
+/// shot, and `3 + 8 = 11` passes the nine-frame sequence, so the shot takes the
+/// full rearm instead of the index's delay.
 ///
 /// The counter is a fixture prior below the sequence floor: a live counter
 /// stops at -1 and every frame it decodes is at most half the sequence, which
@@ -222,7 +223,7 @@ fn moving_clears_the_fire_up_sequence_unless_opportunity_fire() {
 fn burst_overrun_forces_a_full_rearm() {
     let (mut sim, rules, firer) = arena(
         "",
-        "Burst=2\nBurst.Delays=1,3\nBurst.FireWithinSequence=yes\n",
+        "Burst=2\nBurst.Delays=4,3\nBurst.FireWithinSequence=yes\n",
         3,
     );
     sim.entities_mut_for_test()
