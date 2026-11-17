@@ -309,7 +309,7 @@ pub(super) fn apply_bridge_layer_state(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
 

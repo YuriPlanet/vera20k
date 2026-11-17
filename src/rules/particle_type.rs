@@ -111,6 +111,10 @@ pub struct ParticleType {
     /// Delete the particle when its animation state hits the limit.
     pub delete_on_state_limit: bool,
     /// Final animation state — particle is marked for deletion at this state.
+    ///
+    /// RESIDUAL: gamemd keeps this and the next three state bytes signed (a
+    /// value of 128 or more reads negative through `MOVSX`); VERA holds them
+    /// unsigned. Only mod data sets a state that high.
     pub end_state_ai: u8,
     /// Initial animation state (start of state machine).
     pub start_state_ai: u8,
@@ -266,7 +270,7 @@ impl ParticleType {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

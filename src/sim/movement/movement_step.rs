@@ -31,7 +31,7 @@ pub(super) fn handle_vehicle_rotation(
     RotationResult::StillRotating
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "movement_step_tests.rs"]
 mod tests;
 

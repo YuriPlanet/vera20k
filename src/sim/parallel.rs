@@ -127,7 +127,7 @@ pub fn drop_on_pool<T: Send + 'static>(value: T) {
     drop(value);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     #[test]
     fn results_keep_item_order() {

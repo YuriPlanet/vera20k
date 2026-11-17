@@ -341,6 +341,6 @@ fn tiled_column(
     tiles
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "anim_draw_tests.rs"]
 mod tests;

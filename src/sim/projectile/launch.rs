@@ -370,7 +370,7 @@ pub(crate) fn fireat_launch_scatter(
 /// The magnitude draw's `RandomRanged` bounds: `0, BallisticScatter` for
 /// the flak arm (`0x006FE709`), `BallisticScatter / 2, BallisticScatter`
 /// for the plain arm (`0x006FE815..0x006FE81C`: the halving is CDQ/SUB/SAR,
-/// toward zero). Ares builds take the projectile's `BallisticScatter.Min`
+/// toward zero). An Ares game takes the projectile's `BallisticScatter.Min`
 /// and `.Max` over these (`rules::ares_bullet_type`).
 pub(crate) fn fireat_scatter_bounds(flak: bool, ballistic_scatter: i32) -> (i32, i32) {
     if flak {
@@ -876,7 +876,7 @@ pub fn fireat_launch(input: FireAtLaunch) -> Option<FireAtLaunchResult> {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
     use serde_json::Value;

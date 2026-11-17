@@ -30,8 +30,8 @@ pub mod zone_search;
 // Re-export core types so external code uses crate::sim::pathfinding::PathGrid etc.
 pub use self::core::*;
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "zone_map_tests.rs"]
 mod zone_map_tests;
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 mod zone_threat_retail_tests;

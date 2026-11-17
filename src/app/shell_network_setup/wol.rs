@@ -168,7 +168,8 @@ pub(crate) fn send_first_choices(state: &mut AppState) {
 /// the first open observer row when no Open player row is left
 /// (`0x5E9510`); with neither (`0x5E9560`) the joiner is kicked
 /// (`0x7A6BC7`). VERA's room first frees the last AI's seat when every seat
-/// is taken, so it stays open until its host's Max players.
+/// is taken, so it stays open until its host's Max players, and one with
+/// Teams set lets the newcomer watch first (`MatchSession::network_join_row`).
 /// RESIDUAL: the host's node takes the mode's default country (mode
 /// vt+0x28) natively; it is unset here.
 pub(crate) fn user_joined(state: &mut AppState, name: String) -> anyhow::Result<()> {
@@ -182,18 +183,21 @@ pub(crate) fn user_joined(state: &mut AppState, name: String) -> anyhow::Result<
         state.match_state.session.free_network_seat_for_newcomer()?;
     }
     let session = &state.match_state.session;
-    let row = if !session.host() {
-        Some(None)
-    } else if session.network_room_full() {
-        // VERA's room is at its host's Max players.
-        None
+    let place = if !session.host() {
+        Some((None, false))
+    } else if session.network_several_observers() {
+        // VERA's room, to its host's Max players.
+        session
+            .network_join_row(false)
+            .map(|(row, observer)| (Some(row), observer))
     } else if session.network_no_open_player_row() {
-        session.network_free_row(true).map(Some)
+        session.network_free_row(true).map(|row| (Some(row), true))
     } else {
-        session.network_free_row(false).map(Some)
+        session
+            .network_free_row(false)
+            .map(|row| (Some(row), false))
     };
-    let observer = session.host() && session.network_no_open_player_row();
-    let Some(row) = row.filter(|_| !pending) else {
+    let Some((row, observer)) = place.filter(|_| !pending) else {
         let sound = state
             .rules()
             .and_then(|rules| rules.general.player_joined_sound())
@@ -229,6 +233,12 @@ pub(crate) fn user_joined(state: &mut AppState, name: String) -> anyhow::Result<
 /// complete launch roster, so it carries both native payloads without a
 /// duplicate relay update.
 pub(crate) fn user_left(state: &mut AppState, name: &str, operator: bool) -> anyhow::Result<()> {
+    // VERA's room tells who left, unless the host left (the room closes
+    // with its own line).
+    departed(state, name, operator, !operator)
+}
+
+fn departed(state: &mut AppState, name: &str, operator: bool, tell: bool) -> anyhow::Result<()> {
     play_player_left(state);
     if state
         .frontend
@@ -247,6 +257,9 @@ pub(crate) fn user_left(state: &mut AppState, name: &str, operator: bool) -> any
         return Ok(());
     };
     service::service_event(state, service::NetworkSetupEvent::ParticipantLeft { index })?;
+    if tell {
+        service::tell_room(state, super::dialog(state), "VERA:PlayerLeftRoom", name);
+    }
     clear_guest_acceptance(state)?;
     let host = state.match_state.session.host();
     if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
@@ -571,9 +584,11 @@ fn participant_in(launch: &SkirmishLaunchSession, name: &str) -> Option<usize> {
 
 /// The kick sink `0x7AB670` for another user in this game channel: its
 /// `TXT_USER_KICKED` line in C2/C9 unless `0x5E9510` finds no Open player
-/// row (`0x7AB860..0x7AB8AD`), then its leave.
+/// row (`0x7AB860..0x7AB8AD`), then its leave. VERA's room tells the leave
+/// only where that line was skipped.
 pub(crate) fn user_kicked(state: &mut AppState, name: &str, line: String) -> anyhow::Result<()> {
-    if !state.match_state.session.network_no_open_player_row() {
+    let full = state.match_state.session.network_no_open_player_row();
+    if !full {
         crate::app::shell_lan::append_chat(
             state,
             LanChatLine {
@@ -582,7 +597,7 @@ pub(crate) fn user_kicked(state: &mut AppState, name: &str, line: String) -> any
             },
         );
     }
-    user_left(state, name, false)
+    departed(state, name, false, full)
 }
 
 /// The kick sink for this user: `TXT_CHANNEL_FULL` when the session is
@@ -943,7 +958,7 @@ pub(crate) fn verify_poll_scroll(state: &mut AppState) -> Option<Instant> {
 pub(super) fn chat(state: &mut AppState, text: Vec<u16>) {
     // 5EDD00's TrimRight("\n\r") result is what WOL sends.
     let text = wol_chat::trim_line_end(&text).to_vec();
-    if text.is_empty() || crate::app::shell_wol::translation::command(state, &text) {
+    if text.is_empty() {
         return;
     }
     let commands = wol_chat::WolChatCommands {
@@ -1060,7 +1075,7 @@ pub(super) fn ping(state: &mut AppState, name: String, ping: i32) -> anyhow::Res
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

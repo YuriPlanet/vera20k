@@ -185,7 +185,9 @@ pub enum ScanMission {
     /// callsite passes `-1`, and a non-`-1` arg6 rejects any candidate whose
     /// cell is in a different component under the attacker's own
     /// `MovementZone=` (`0x006F7E7E`-`0x006F7E9C`). A hunter reaches the far
-    /// side of the map but not the far side of a river.
+    /// side of the map but not the far side of a river, unless Phobos plays
+    /// and its type's `TargetZoneScanType` lets it
+    /// (`combat::greatest_threat::zone_admits`).
     ///
     /// **Mask 0 is a scan TOPOLOGY, not a radius.** The jump at `0x006F8FE2`
     /// lands past the airborne pre-pass *and* past the expanding-ring cell walk
@@ -365,7 +367,7 @@ pub(crate) fn threat_range_leptons(obj: &ObjectType, mode: i32, weapon_ranges: [
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

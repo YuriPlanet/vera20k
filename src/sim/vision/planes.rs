@@ -382,7 +382,7 @@ impl<'de> Deserialize<'de> for Planes {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests {
     use super::{CellBounds, PlaneWrite, Planes};
     use crate::map::cell_index::NativeCellIdentity;

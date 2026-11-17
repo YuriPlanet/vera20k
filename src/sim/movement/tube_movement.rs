@@ -950,7 +950,7 @@ fn advance_amount(
     DriveCoord { x, y, z }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};

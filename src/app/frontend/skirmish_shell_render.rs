@@ -6,6 +6,7 @@
 mod chrome;
 mod controls;
 mod draw_order;
+mod game_options;
 #[cfg(test)]
 use draw_order::{
     SkirmishShellDrawRole, choose_map_modal_semantic_draw_order,
@@ -62,6 +63,22 @@ pub(crate) fn decode_network_map_preview(
 pub(crate) use text::{
     combo_item_label, skirmish_right_panel_label_strings, skirmish_selected_map_name,
 };
+
+/// The IME candidate anchor follows the search text and any active preedit.
+pub(crate) fn choose_map_search_ime_area(
+    state: &AppState,
+    layout: &ChooseMapModalLayout,
+    search: &str,
+) -> crate::ui::shell::geom::RectPx {
+    let display = text::map_search_display(state, search);
+    text::map_search_caret_rect(
+        &state.renderer.bit_font,
+        &display,
+        layout.map_search,
+        layout.scale,
+    )
+    .unwrap_or(layout.map_search)
+}
 
 use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellFrameWave;
@@ -232,11 +249,11 @@ fn build_skirmish_shell_instances(
     seed_layout: Option<&SavedSeedLayout>,
     setup_layout: Option<&RandomMapSetupLayout>,
     shell: &SkirmishShellState,
+    search_display: &str,
     rules: Option<&RuleSet>,
     maps: &[MapMenuEntry],
     wave: Option<&ShellFrameWave>,
     leaving: bool,
-    load_setup_enabled: bool,
 ) -> Vec<SpriteInstance> {
     let mut instances = Vec::new();
 
@@ -337,6 +354,7 @@ fn build_skirmish_shell_instances(
                     choose_map_layout,
                     interior,
                     shell,
+                    search_display,
                     wave.is_none(),
                 );
             }
@@ -398,26 +416,17 @@ fn build_skirmish_shell_instances(
                     shell.validation_modal.is_some(),
                 ),
                 (
+                    layout.game_options_button,
+                    OwnerDrawButton::GameOptions,
+                    false,
+                ),
+                (
                     layout.choose_map_button,
                     OwnerDrawButton::ChooseMap0x5aa,
                     false,
                 ),
-                (layout.save_setup_button, OwnerDrawButton::SaveSetup, false),
-                (
-                    layout.load_setup_button,
-                    OwnerDrawButton::LoadSetup,
-                    !load_setup_enabled,
-                ),
-                (
-                    layout.team_starts_button,
-                    OwnerDrawButton::TeamStarts,
-                    false,
-                ),
                 (layout.back_button, OwnerDrawButton::Back0x5c0, false),
-            ]
-            .into_iter()
-            .filter(|(rect, _, _)| rect.w > 0)
-            {
+            ] {
                 push_right_panel_button_shp(
                     &mut instances,
                     atlas,
@@ -542,6 +551,13 @@ fn render_skirmish_shell_with_atlas(
         .choose_map_modal
         .as_ref()
         .map(|_| crate::app::frontend::shell_layout::choose_map_layout(state));
+    let search_display = state
+        .frontend
+        .skirmish_shell_state
+        .choose_map_modal
+        .as_ref()
+        .map(|modal| text::map_search_display(state, &modal.search))
+        .unwrap_or_default();
     // `0x105` and the seed browser each replace the page beneath them, and both
     // the sprite pass and the text pass need the same rects: one layout per page
     // per frame, from the same seam the input handlers read.
@@ -754,11 +770,11 @@ fn render_skirmish_shell_with_atlas(
             seed_layout.as_ref(),
             setup_layout,
             &state.frontend.skirmish_shell_state,
+            &search_display,
             state.rules(),
             state.frontend.scenario_catalog.shell_maps(),
             wave.as_ref(),
             leaving,
-            crate::app::App::skirmish_setup_saved(state),
         )
     };
     if preview_instance.is_some() {
@@ -773,8 +789,10 @@ fn render_skirmish_shell_with_atlas(
     let parent_showing = !message_box_up && choose_map_layout.is_none() && !leaving;
     // ComboDropWin is a popup over the dialog: its frame and rows go after
     // every dialog text, which this unbuffered pass paints in queue order.
+    // VERA's Game Options box takes the same place; the two never show at
+    // once, as each takes every press while it is open.
     let mut dropdown_instances = Vec::new();
-    let dropdown_text_draws = if parent_showing {
+    let mut dropdown_text_draws = if parent_showing {
         push_dropdown_instances(
             &mut dropdown_instances,
             atlas,
@@ -792,6 +810,17 @@ fn render_skirmish_shell_with_atlas(
     } else {
         Vec::new()
     };
+    if parent_showing && let Some(open) = state.frontend.skirmish_shell_state.game_options.as_ref()
+    {
+        game_options::push_game_options_box(
+            &mut dropdown_instances,
+            &mut dropdown_text_draws,
+            state,
+            atlas,
+            &crate::ui::skirmish_shell::game_options::GameOptionsLayout::over(&layout),
+            open,
+        );
+    }
     let parent_statics = if parent_showing {
         text::paint_skirmish_statics(state, &layout, sliding)
     } else {
@@ -1099,7 +1128,7 @@ fn paint_map_dialog_statics(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use crate::ui::shell::geom::ShellScale;
@@ -2091,7 +2120,6 @@ pub(crate) use chrome::type3_button_frames;
 mod keyboard;
 mod lan_lobby;
 mod wol_buddy;
-mod wol_chat_translation;
 mod wol_lobby;
 mod wol_login;
 mod wol_my_info;
@@ -2101,7 +2129,6 @@ mod wol_persona;
 mod wol_quick_match;
 pub(crate) use lan_lobby::render_lan_lobby;
 pub(crate) use wol_buddy::paint_wol_buddy_children;
-pub(crate) use wol_chat_translation::paint_wol_chat_translation_children;
 pub(crate) use wol_lobby::{
     WolLobbyPaint, paint_wol_card_countries, paint_wol_lobby_children, paint_wol_lobby_popup,
     paint_wol_player_card,

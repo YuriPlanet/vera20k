@@ -15,7 +15,7 @@ use crate::sim::parallel;
 use crate::sim::state_hasher::digests;
 use crate::util::state_hasher::{self, StateHasher};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod retained_cell_hash_tests {
     use super::*;
     use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -154,7 +154,7 @@ fn hash_house_ai_activation_fields(
     house.current_iq().hash(hasher);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod drive_ship_slope_hash_tests {
     use super::Simulation;
     use crate::map::entities::EntityCategory;
@@ -201,7 +201,7 @@ mod drive_ship_slope_hash_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod locomotor_field_hash_tests {
     use super::Simulation;
     use crate::map::entities::EntityCategory;
@@ -263,7 +263,7 @@ mod locomotor_field_hash_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod playfield_authority_hash_tests {
     use super::Simulation;
     use crate::map::playfield::PlayfieldBounds;
@@ -306,7 +306,7 @@ mod playfield_authority_hash_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod hash_owner_attribution_tests {
     use super::Simulation;
 
@@ -328,7 +328,7 @@ mod hash_owner_attribution_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod shared_dummy_bridge_hash_tests {
     use super::Simulation;
     use glam::IVec3;
@@ -507,6 +507,11 @@ fn hash_mission_leaf(leaf: &crate::sim::mission::MissionLeafState, hasher: &mut 
         if building.firing_super_weapon() != -1 {
             b"building-firing-super-weapon-5f8".hash(hasher);
             building.firing_super_weapon().hash(hasher);
+        }
+        // Only Superweapon Limit sets it; None adds no bytes.
+        if let Some(cell) = building.own_nuke_target() {
+            b"building-own-nuke-target-vera".hash(hasher);
+            cell.hash(hasher);
         }
     }
     // Infantry already folds the same owned byte above. Native default0
@@ -1607,6 +1612,7 @@ impl Simulation {
                 inst.ready_tick().hash(hasher);
                 inst.hash_recharge_time(hasher);
                 inst.hash_grant_flags(hasher);
+                inst.hash_building_charges(hasher);
                 inst.hash_paid_selection(hasher);
                 inst.hash_ares_launch_history(hasher);
                 if let Some(id) = inst.native_unique_id() {
@@ -1730,6 +1736,10 @@ impl Simulation {
             debris.marked_for_deletion().hash(hasher);
             debris.owner_house().hash(hasher);
             debris.bounce().hash_bits(hasher);
+            // CRC74AA63 folds +0x108 only when set; no retail type sets it.
+            if let Some(system) = debris.attached_system() {
+                system.hash(hasher);
+            }
         }
     }
 }
@@ -2764,6 +2774,15 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
     if let Some(system) = entity.fire_particle_system.system() {
         (0x304_u16, system).hash(hasher);
     }
+    // A Building's natural `+0x30C` link gates the cloak fade-in's rebuild
+    // and its destroy-smoke `+0x320` link gates that pick; both hashed only
+    // when set, as no retail type sets either key.
+    if let Some(system) = entity.building.natural_particle_system.system() {
+        (0x30C_u16, system).hash(hasher);
+    }
+    if let Some(system) = entity.building.destroy_smoke_particle_system.system() {
+        (0x320_u16, system).hash(hasher);
+    }
 }
 
 /// One locomotor object, field for field, and the object its piggyback slot
@@ -2878,7 +2897,7 @@ fn hash_slope_transition_state(
     transition_total.hash(hasher);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod raw_cell_occupation_hash_tests {
     use super::Simulation;
 
@@ -2930,7 +2949,7 @@ mod raw_cell_occupation_hash_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod overlay_grid_hash_tests {
     use super::Simulation;
     use crate::map::overlay::OverlayDataPack;
@@ -3044,7 +3063,7 @@ mod overlay_grid_hash_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod lifecycle_hash_tests {
     use super::Simulation;
     use crate::sim::game_entity::GameEntity;
@@ -3189,7 +3208,7 @@ mod lifecycle_hash_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod mission_authority_hash_tests {
     use super::Simulation;
     use crate::sim::combat::TargetKind;
@@ -3438,7 +3457,7 @@ mod mission_authority_hash_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod track_authority_hash_tests {
     use super::Simulation;
     use crate::rules::locomotor_type::LocomotorKind;
@@ -3609,7 +3628,7 @@ mod track_authority_hash_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod state_hash_field_tests {
     use super::Simulation;
     use crate::sim::game_entity::GameEntity;
@@ -3961,7 +3980,7 @@ mod state_hash_field_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod particle_hash_tests {
     use super::Simulation;
     use crate::rules::particle_system_type::ParticleSystemTypeId;
@@ -3978,7 +3997,7 @@ mod particle_hash_tests {
         let id = sim.substrate.allocate_stable_id();
         system.set_stable_id_for_test(id);
         sim.substrate.particle_systems.insert(system);
-        sim.reveal_particle_system(id, crate::rules::ruleset::RuleSet::empty_for_test());
+        sim.reveal_particle_system(id);
         id
     }
 
@@ -4108,7 +4127,7 @@ mod particle_hash_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod radio_contact_hash_tests {
     use super::Simulation;
     use crate::map::entities::EntityCategory;
@@ -4201,7 +4220,7 @@ mod radio_contact_hash_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod building_anim_slot_hash_tests {
     #[test]
     fn retained_slot_identity_flag_and_runtime_change_hash() {
@@ -4239,7 +4258,7 @@ mod building_anim_slot_hash_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod infantry_hash_tests {
     use super::Simulation;
     use crate::map::entities::EntityCategory;
@@ -4396,10 +4415,8 @@ mod infantry_hash_tests {
 
     #[test]
     fn foot_retarget_snapshot_retains_native_next_scan_mask_and_empty_clear() {
-        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/spatial_oracle/anytown_damage/foot_missions.json",
-        ))
-        .unwrap();
+        let native =
+            crate::test_fixture::json("tools/spatial_oracle/anytown_damage/foot_missions.json");
         let row = native["greatest_threat_rows"]
             .as_array()
             .unwrap()
@@ -4453,10 +4470,8 @@ mod infantry_hash_tests {
 
     #[test]
     fn inherited_foot_firing_state_survives_snapshot_and_changes_noninfantry_hash() {
-        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/spatial_oracle/anytown_damage/foot_missions.json",
-        ))
-        .unwrap();
+        let native =
+            crate::test_fixture::json("tools/spatial_oracle/anytown_damage/foot_missions.json");
         let raw = native["rows"]
             .as_array()
             .unwrap()
@@ -4585,7 +4600,7 @@ mod infantry_hash_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod smudge_hash_tests {
     use super::*;
     use crate::sim::smudge_grid::{SmudgeCell, SmudgeGrid};
@@ -4610,7 +4625,7 @@ mod smudge_hash_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod bridge_state_hash_tests {
     use super::Simulation;
     use crate::sim::bridge_state::{BridgeEndpointRecord, BridgeRecordKind, BridgeRuntimeState};
@@ -4663,7 +4678,7 @@ mod bridge_state_hash_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod native_frame_tests {
     use super::Simulation;
 
@@ -4685,7 +4700,7 @@ mod native_frame_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod rocking_hash_tests {
     use super::Simulation;
     use crate::map::entities::EntityCategory;
@@ -4746,7 +4761,7 @@ mod rocking_hash_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod c4_hash_tests {
     use super::Simulation;
     use crate::map::entities::EntityCategory;
@@ -4797,7 +4812,7 @@ mod c4_hash_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod passenger_cargo_hash_tests {
     use super::Simulation;
     use crate::sim::game_entity::GameEntity;
@@ -4862,7 +4877,7 @@ mod passenger_cargo_hash_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod bridge161_hash_projection_tests {
     use super::*;
     use crate::map::entities::EntityCategory;
@@ -4996,10 +5011,10 @@ mod bridge161_hash_projection_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod prism_support_hash_tests {}
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod dynamic_terrain_hash_tests {
     use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
     use crate::sim::world::Simulation;
@@ -5036,6 +5051,6 @@ mod dynamic_terrain_hash_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "navigation_history_hash_tests.rs"]
 mod navigation_history_hash_tests;

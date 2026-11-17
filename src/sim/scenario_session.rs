@@ -868,6 +868,18 @@ pub struct ScenarioSession {
     /// identity, like `current_house`.
     #[serde(default)]
     local_shared_house_source: Option<i8>,
+    /// VERA watching (docs/Networking.md "Watching"): this process watches
+    /// the match and sends no command records, so no record's sender is its
+    /// own, not even the followed player's. Local identity, like
+    /// `current_house`, outside the shared hash.
+    #[serde(default)]
+    watcher: bool,
+    /// VERA watching: the watcher shows the observer's sidebar, Tab's stop
+    /// after the last player ([`crate::sim::world::Simulation::observe`]),
+    /// while its world keeps the House it last followed. Local identity, like
+    /// the current House, outside the shared hash.
+    #[serde(default)]
+    watcher_observes: bool,
     /// Scenario+11E4 is included in Save689372's complete Scenario block and
     /// retained by Load6894A8/NoInit683560. Fresh Clear_Scene starts at4.
     #[serde(default)]
@@ -1277,6 +1289,11 @@ impl ScenarioSession {
     }
 
     #[cfg(any(test, feature = "test-support"))]
+    pub fn install_observer_houses_for_test(&mut self, observers: Vec<InternedId>) {
+        self.observer_houses = observers;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
     pub fn set_scenario_side_for_test(&mut self, side: i32) {
         self.install_scenario_side(side);
     }
@@ -1450,6 +1467,25 @@ impl ScenarioSession {
     /// This process's sender while players share Houses.
     pub(crate) fn local_shared_house_source(&self) -> Option<i8> {
         self.local_shared_house_source
+    }
+
+    /// VERA watching: this process watches the match and sends nothing.
+    pub fn watcher(&self) -> bool {
+        self.watcher
+    }
+
+    pub(crate) fn install_watcher(&mut self) {
+        self.watcher = true;
+    }
+
+    /// VERA watching: the watcher shows the observer's sidebar.
+    pub fn watcher_observes(&self) -> bool {
+        self.watcher_observes
+    }
+
+    /// The watcher's Tab moves between a player's sidebar and the observer's.
+    pub(crate) fn show_observer_sidebar(&mut self, shown: bool) {
+        self.watcher_observes = shown;
     }
 
     /// Retire the existing admitted timing row at a shared EXIT/REMOVEPLAYER
@@ -1685,6 +1721,9 @@ impl ScenarioSession {
             .expect("the admitted menu row has a complementary computer row");
         // External launch input enters before House/terrain constructors. The
         // existing session remains the sole live owner of per-match options.
+        // RESIDUAL: gamemd's BuildOffAlly (0x00A8B264) is a process global that only
+        // option setup writes (e.g. `0x0052D20D`, the skirmish dialog's `0x006AD803`),
+        // so a campaign inherits the last game's value; VERA keeps this session's.
         if let Some(options) = game_options {
             self.game_options = options.clone();
         } else {
@@ -1810,6 +1849,9 @@ impl ScenarioSession {
         // observer_houses, like current_house, selects process-local presentation
         // and accepted outcome, and skips the observer's terminal score draw
         // (every peer holds the same node data, and the RNG state is hashed).
+        // VERA's network_ai_alone also asks it of every House for the shared
+        // MPlayer_Defeated and Computer_Paranoid decisions; every peer holds
+        // the same list, built from the room's roster.
         // It is saved and reference-validated, not shared CRC input.
         if let Some(campaign) = s.campaign {
             b"scenario-campaign-startup-v1".hash(hasher);
@@ -2072,6 +2114,8 @@ impl ScenarioSession {
             network_command_timing: None,
             shared_house_sources: Vec::new(),
             local_shared_house_source: None,
+            watcher: false,
+            watcher_observes: false,
             start_header: crate::map::preview::ScenarioStartHeader::default(),
             campaign: None,
             campaign_map_stage: 0,
@@ -2118,7 +2162,7 @@ impl ScenarioSession {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
     use crate::sim::world::Simulation;

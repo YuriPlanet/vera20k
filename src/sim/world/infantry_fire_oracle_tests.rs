@@ -593,12 +593,15 @@ fn assert_memberships(sim: &Simulation, expected: &Value, ids: &BTreeMap<String,
         "{name}: physical Bullet vector"
     );
     for (index, layer) in expected["display"].as_array().unwrap().iter().enumerate() {
-        assert_eq!(
-            sim.display_layers()
-                .members(DisplayLayer::from_index(index as u8).unwrap()),
-            recorded_ids(ids, layer),
-            "{name}: ordered Display layer{index}"
-        );
+        let layer_id = DisplayLayer::from_index(index as u8).unwrap();
+        let mut members = sim.display_layers().members(layer_id).to_vec();
+        let mut native = recorded_ids(ids, layer);
+        // VERA keeps Ground as an unordered set (`DisplayLayers::submit`).
+        if layer_id == DisplayLayer::GROUND {
+            members.sort_unstable();
+            native.sort_unstable();
+        }
+        assert_eq!(members, native, "{name}: Display layer{index}");
     }
 }
 

@@ -7,9 +7,10 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
 
 ## Where it stands
 
-- Everything is behind the `ares` cargo feature; default builds keep their behaviour. The
-  one deliberate default-build change: buildings and aircraft no longer take stealth from
-  `Cloakable=` (native vanilla never did; see [ares-bugfixes.md](ares-bugfixes.md)).
+- Everything is in every build and plays when the game plays Ares ([ares.md](ares.md));
+  other games keep their behaviour. The one deliberate change for every game: buildings
+  and aircraft no longer take stealth from `Cloakable=` (native vanilla never did; see
+  [ares-bugfixes.md](ares-bugfixes.md)).
 - INI keys: the restored Ares source reads 684 distinct keys. The engine reads every
   gameplay key among them. The keys still unread are UI and front-end keys (uimd.ini
   `[UISettings]`, campaign `HoverSound`, the movie list,
@@ -27,16 +28,10 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
   for the stock destructor. A residual disposition is still a gap: every
   residual in the chain docs is gathered on this page, the gameplay ones under
   [Smaller gameplay residuals](#smaller-gameplay-residuals).
-- Tests at the commit that adds this page (RA2_DIR set to a retail install):
-  - core `--features ares`: 8468 passed, 2 failed in the last full run; one of the two, the
-    WithConst test, was a fixture expectation fixed afterwards and passes in a focused rerun
-    of `sim::scenario_bootstrap::`
-  - core default: 7985 passed, 1 failed
-  - client `--features ares`: 3829 passed, 6 failed
-  - client default: 3788 passed, 6 failed
-  - `check -p vera20k --lib --features ares,phobos`: passes
-  The remaining failures are environment-only: the local retail install is Traditional
-  Chinese, so `rules::campaign_loading::tests::campaign_mission_names_use_physical_mission_and_csf_inputs`
+- Tests at the commit that adds this page, when Ares was still a build feature
+  (RA2_DIR set to a retail install): besides one fixture expectation fixed afterwards
+  (the WithConst test), the failures were environment-only: the local retail install is
+  Traditional Chinese, so `rules::campaign_loading::tests::campaign_mission_names_use_physical_mission_and_csf_inputs`
   and six client CSF tests (selection_navigation x4,
   `messages::trigger_message_csf_labels_match_original_lookup_through_retail_archive_reader`,
   `tooltips::retail_ifv_tip_names_its_turret_or_passenger`) compare against English text.
@@ -44,8 +39,8 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
 
 ## Blocked on gamemd logic VERA does not port
 
-These Ares features hook stock gamemd code that VERA has no port of, in either build.
-Porting that stock code changes default builds, so it belongs in its own native chain
+These Ares features hook stock gamemd code that VERA has no port of.
+Porting that stock code changes games without Ares too, so it belongs in its own native chain
 first; the Ares part is then small. None of them is reachable with retail YR data.
 
 | Ares feature (keys, hooks) | Needs this stock gamemd logic | Retail |
@@ -54,11 +49,9 @@ first; the Ares part is then small. None of them is reachable with retail YR dat
 | Gate placement selling walls (0x440709, 100156F0) | The hook's wall test in BuildingClass::Unlimbo's Gate arm; the stock arm is ported with the stock wall ids | A mod `Wall=` overlay stays under a gate |
 | Tunnel entry by an absorber click (0x44351A, 100172F0) | The absorber click that sends radio 0x10 | Ares tunnels are mod-only |
 
-Stock gaps found in passing, with no Ares dependency:
-- BuildingType GetPipMax (0x45ECE0): retail refineries show 5 ore pips where native shows
-  30 (GAREFN, NAREFN) or 15 (YAREFN).
-- Generate_Starting_Units (0x5D6D80) stops for every later house when one house has no
-  starting-unit candidates; VERA skips only that house.
+Stock gap found in passing, with no Ares dependency: Generate_Starting_Units (0x5D6D80)
+stops for every later house when one house has no starting-unit candidates; VERA skips
+only that house.
 
 ## Ares mechanisms ported in part
 
@@ -85,12 +78,10 @@ data.
 | Serial AI queues (`AllowParallelAIQueues=no`); the default changes nothing | `0x4502F4`, `0x4CA07A`, the four KickOutUnit hooks (`0x443CCA`, `0x444119`, `0x444131`, `0x44531F`) | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | An upgrade's ProduceCash timer is not started at Put, so the Update hook starts it one frame longer | `0x4409F4` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | Flying carriers: spawned aircraft keep their launch Z, and the spawn manager aims them at its cell | `0x414338`, `0x6B783B` | [ares-techno-hooks.md](ares-techno-hooks.md) |
-| Paradrop canopy: the dropped type's own `Parachute.Anim` before the Country's and Side's | `0x5F5ADD` (`10047C80`) | [ares-side-defaults.md](ares-side-defaults.md) |
 | Capture manager and parasite on any weapon slot (TechnoClass Init_1), with the parasite slot hooks | `0x6F407D`, `0x629804`, `0x62A020`, `0x62A7B1` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | Gunner temporal swap | `0x74642C`, `0x74653C` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | Hover `DeployToLand` landing | `0x513EAA`, `0x514A21`, `0x514DFE` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | Occupier + VehicleThief destination expiry | `0x4D9A83` | [ares-techno-hooks.md](ares-techno-hooks.md) |
-| Infantry `DamageSparks` parse order | `0x5240BD` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | The PermaDisguise arm of `InfantryClass::ClearDisguise` has no Rust caller | `0x5227A3` | [ares-combat-sim-hooks.md](ares-combat-sim-hooks.md) |
 | `GarrisonedIn` is not kept: a garrisoned infantryman's skipped death anim, its release on Limbo and Unlimbo | `0x518434`, `0x51DF38`, `0x51DFFD` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | A map house section's `Degrades=` | `0x50114D` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
@@ -118,9 +109,36 @@ receiver and Main draws ([ares-rmg.md](ares-rmg.md)), the country picks and flag
 ([ares-country-presentation.md](ares-country-presentation.md)), and the side theme and
 dialog caching ([ares-side-defaults.md](ares-side-defaults.md)).
 
+## WaterImage voxel path
+
+`[VehicleType] WaterImage=OtherVehicleType` retains a registered VehicleType
+through the Rules owner and saved scenario. The exact-case key alone selects the
+runtime Ares switch. The reader is Ares `TechnoTypeClass_LoadFromINI_EarlyReader`
+(`715320`, body `10041DC0`, resume `715326`), with an empty default and a 2048-byte
+Find-only read. Missing, empty and unknown values retain the pointer. The values
+`none` and `<none>` clear it.
+
+The VXL draw uses `GetUnitType10045340` through
+`UnitClass_DrawVXL_WaterType` (`73B4A0`, body `100481E0`, resume `73B4DA`). A water
+cell with OnBridge clear selects the alternate before deployed and disguise art.
+The ordinary type has already selected SHP/VXL dispatch. The shared atlas admits
+the alternate model, including an unloading harvester's alternate, before that
+model has its own unit. The current bounded chain is ordinary base-gun VXL art.
+RNG draws 0, simulation timer writes 0, detach calls 0.
+
+SHP image/frame hooks and mixed actual/alternate indexed-gun modes remain open.
+Native uses actual TurretCount/IsGattling to choose the selected model's base or
+indexed slots, while the current atlas keys derive this from the selected model.
+Custom combinations can show a different gun or omit it. These
+require separate physical slot identities through the existing voxel catalog and
+atlas. The ordinary ROBO/MTNK path has zero TurretCount on both types.
+
+[Ares WaterImage specification](https://ares-developers.github.io/Ares-docs/restored/amphibiousimagechanges.html)
+
 ## Presentation and UI not ported
 
-- Unit art: WaterImage and the SHP facings and change-type draws (Ext/Techno/Hooks.Art.cpp),
+- Unit art still needs WaterImage's SHP path and mixed indexed-gun draws above,
+  the SHP facings and change-type draws (Ext/Techno/Hooks.Art.cpp),
   AlphaImage lights (Ext/Techno/Hooks.Alpha.cpp) beyond a glow following its object
   (`sim/world/alpha_shape.rs` lists the rest), the ore-gather anim under EMP. Listed at
   the end. A `Turret=yes` NoSpawnAlt unit's turret over its WO body (`0x73B6E3`) and
@@ -135,9 +153,7 @@ dialog caching ([ares-side-defaults.md](ares-side-defaults.md)).
 - Sidebar and screens: the observer strip art (`0x6AA0CA`, `0x6AA164`;
   [ares-country-presentation.md](ares-country-presentation.md)), the Money superweapon
   tooltip (`0x6A932B`).
-- Palettes and draw order: a ParticleType's `Palette` (`0x62D015`) and the
-  Ground layer's per-frame sort (`0x551A30`). An anim's `CustomPalette`
-  (`0x4232CE`) is ported in `prepare_sprite_atlas`. See
+- Palettes: a ParticleType's `Palette` (`0x62D015`). See
   [ares-anim-particles.md](ares-anim-particles.md) and [ares-bugfixes.md](ares-bugfixes.md).
 - Audio: the move sound under a Magnetron (`0x4DAA68`, `0x7101CF`), the amphibious
   water sound (`0x51D799`), and loose WAV samples and extra audio bags (`0x4016F0`).
@@ -166,12 +182,13 @@ For each item:
   parser, Find vs FindOrAllocate, read order) into the extension's `src/rules/ares_*.rs`
   reader with the `read_ares_*` helpers.
 - Port the hook at the engine's single owner of the hooked gamemd function, behind
-  `cfg(feature = "ares")`, citing the Ares.dll function and the gamemd hook address.
+  the game's switch, `RuleSet::ares` (`RuleSet::ares_form` where it needs data only Rules
+  read the Ares way hold), citing the Ares.dll function and the gamemd hook address.
 - New simulation state is saved (serde default) and world-hashed in an owner struct with
   rule-named operations; the architecture guards check this.
 - One to three focused tests per mechanism. A stock oracle test that an installed Ares
-  hook changes gets an Ares expectation or a `cfg(not(feature = "ares"))` gate citing the
-  hook.
+  hook changes keeps its expectation in a game without Ares, and an Ares case gets the
+  Ares expectation, citing the hook.
 - Move the item's row from this page into its chain doc, and add the chain to
   [ares.md](ares.md).
 

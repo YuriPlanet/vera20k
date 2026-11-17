@@ -38,7 +38,7 @@ fn inspect(game_dir: &Path) -> InstallReport {
         destination.push(format!("{}: {}", issue.name, issue.detail));
     }
 
-    match CsfFile::load_active(|name| assets.get_ref(name)) {
+    match CsfFile::load_active(assets.ships_ares(), |name| assets.get_ref(name)) {
         Ok((csf, _)) => report.language = Some(csf.language),
         Err(error) => report.required.push(format!("ra2md.csf: {error}")),
     }
@@ -97,7 +97,7 @@ pub(super) fn check_and_write_report(game_dir: &Path, output_dir: &Path) -> Resu
     Ok(i32::from(!report.required.is_empty()))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::assets::asset_manager::test_support::TestDirectory;

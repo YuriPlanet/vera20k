@@ -229,7 +229,7 @@ fn read_native_slot_triple(section: &IniSection, key: &str, output: &mut Skirmis
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
 

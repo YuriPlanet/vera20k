@@ -1,7 +1,7 @@
 # Optional Ares per-type promotion sounds
 
-Build with `--features ares` to let a TechnoType choose the sound its
-promotion to veteran or elite plays.
+When a game plays Ares ([Ares](ares.md)), every build lets a TechnoType choose
+the sound its promotion to veteran or elite plays.
 
 ```ini
 [HERO]                         ; rulesmd.ini TechnoType section
@@ -11,7 +11,7 @@ Promote.EliteSound=HeroElite
 
 An unset override keeps the global promotion cue; an explicit `none`
 silences the cue for that type while keeping the rest of the promotion/EVA
-dispatch. Default builds ignore both tags and always play the global cue.
+dispatch. Other games ignore both tags and always play the global cue.
 
 ## Where VERA20K owns it
 

@@ -354,6 +354,6 @@ fn native_floor(value: X87Value) -> i32 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 #[path = "geometry_tests.rs"]
 mod tests;

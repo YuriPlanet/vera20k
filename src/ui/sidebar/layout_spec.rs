@@ -166,6 +166,13 @@ pub struct SidebarChromeLayoutSpec {
     pub cameo_columns: f32,
     /// From one cameo column to the next (`0x006A5090`: 0x3F or 0x40).
     pub cameo_column_pitch: f32,
+    /// One cell of SIDE2's own art, in its pixels: the button frame plus the
+    /// gap that follows it (0x3F, or 0x40 on the Soviet table). SIDE2 paints
+    /// two of these side by side, so a strip of more columns repeats this one
+    /// cut-out per cell instead of stretching the painted pair. It never
+    /// changes once the table is built: it is a source rectangle, not a
+    /// layout span.
+    pub cameo_cell_source_width: f32,
     pub cameo_width: f32,
     pub cameo_height: f32,
     /// From one cameo row to the next, and the height that decides how many
@@ -249,6 +256,7 @@ impl SidebarChromeLayoutSpec {
             cameo_inset_y: 1.0,
             cameo_columns: 2.0,
             cameo_column_pitch: if allied { 63.0 } else { 64.0 },
+            cameo_cell_source_width: if allied { 63.0 } else { 64.0 },
             cameo_width: 60.0,
             cameo_height: 48.0,
             cameo_row_height: 50.0,
@@ -296,6 +304,32 @@ impl SidebarChromeLayoutSpec {
         (self.cameo_columns as usize).max(1)
     }
 
+    /// VERA's own: the player's cameo columns, kept inside the sidebar's own
+    /// width. The two original columns keep the span they take (2 *
+    /// `cameo_column_pitch`, 126 in the allied table); each further column
+    /// takes an equal share of it, and the cameo and its row shrink by the
+    /// same factor, so a strip of 3 to 5 columns neither overlaps nor draws
+    /// past the column. 2 leaves the original's numbers alone.
+    ///
+    /// Call it once, on the numbers the side's layout starts from: a second
+    /// call would measure the span from the already shrunk pitch.
+    pub fn apply_player_columns(&mut self, columns: usize) {
+        let columns = columns.clamp(2, 5);
+        if columns == 2 {
+            return;
+        }
+        let span = 2.0 * self.cameo_column_pitch;
+        let gap = (self.cameo_column_pitch - self.cameo_width).max(0.0);
+        let pitch = span / columns as f32;
+        let width = (pitch - gap).max(1.0);
+        let scale = width / self.cameo_width.max(1.0);
+        self.cameo_columns = columns as f32;
+        self.cameo_column_pitch = pitch;
+        self.cameo_width = width;
+        self.cameo_height = (self.cameo_height * scale).max(1.0);
+        self.cameo_row_height = (self.cameo_row_height * scale).max(1.0);
+    }
+
     /// Whether the layout has this part.
     pub fn shows(&self, part: SidebarPart) -> bool {
         self.parts.contains(&Some(part))
@@ -313,7 +347,7 @@ impl Default for SidebarChromeLayoutSpec {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 
@@ -345,5 +379,38 @@ mod tests {
         // The 140-wide clip starts 13 px into the 168-wide housing, not
         // centred at 14.
         assert_eq!(allied_nod.radar_movie_origin(), [13.0, 0.0]);
+    }
+
+    #[test]
+    fn player_columns_share_the_original_span_without_overlapping() {
+        let stock = SidebarChromeLayoutSpec::stock();
+        let span = 2.0 * stock.cameo_column_pitch;
+        for columns in 3..=5 {
+            let mut spec = stock;
+            spec.apply_player_columns(columns);
+            assert_eq!(spec.columns(), columns);
+            // The sidebar's own width never changes: only the cells inside it.
+            assert_eq!(spec.sidebar_width, stock.sidebar_width);
+            // The strip still ends where the original's two columns ended.
+            let right = spec.cameo_inset_x + columns as f32 * spec.cameo_column_pitch;
+            assert!((right - (stock.cameo_inset_x + span)).abs() < 0.01);
+            // A cameo fits its pitch, so neighbours never overlap.
+            assert!(spec.cameo_width < spec.cameo_column_pitch);
+            assert!(spec.cameo_height < spec.cameo_row_height);
+            // SIDE2 paints one cell per column from this source cut, and that
+            // cut is the art's own, so it must not follow the pitch.
+            assert_eq!(spec.cameo_cell_source_width, stock.cameo_cell_source_width);
+            // The picture keeps its shape.
+            let ratio = spec.cameo_height / spec.cameo_width;
+            assert!((ratio - 48.0 / 60.0).abs() < 0.001);
+        }
+    }
+
+    #[test]
+    fn two_columns_leave_the_original_numbers_alone() {
+        let stock = SidebarChromeLayoutSpec::stock();
+        let mut spec = stock;
+        spec.apply_player_columns(2);
+        assert_eq!(spec, stock);
     }
 }

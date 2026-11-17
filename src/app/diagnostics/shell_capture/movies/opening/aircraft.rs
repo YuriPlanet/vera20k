@@ -20,7 +20,7 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
     build_unit_instances(
         state,
         &mut objects,
-        &NativeDisplayOrder::from_display(sim.display_layers()),
+        &NativeDisplayOrder::from_world(sim, None),
     );
     let mut observations = Vec::new();
     let model_coverage = sim.entities().values()

@@ -80,27 +80,18 @@ fn coefficients(object: Option<&ObjectType>) -> FootDepthCoefficients {
     })
 }
 
-/// Unit DrawExtras temporarily selects UnloadingClass (0x73D2C4). Art-only
-/// camouflage/NoSpawnAlt substitutions are not native UnitType substitutions.
 fn draw_type<'a>(
     runtime: &'a crate::sim::runtime::SimRuntime,
     entity: &ObjectRecord,
     unloading_body: bool,
 ) -> Option<&'a ObjectType> {
-    let view = runtime.view();
-    let actual = runtime
-        .resources
-        .rules
-        .object(view.interner().resolve(entity.type_ref()));
-    if unloading_body && actual.is_some_and(|o| o.harvester) {
-        entity
-            .display_type_override
-            .image()
-            .and_then(|id| runtime.resources.rules.object(view.interner().resolve(id)))
-            .or(actual)
+    let (interner, rules) = (runtime.view().interner(), &runtime.resources.rules);
+    let type_ref = if unloading_body {
+        super::helpers::unit_draw_type_ref(entity, interner, Some(rules))
     } else {
-        actual
-    }
+        entity.type_ref()
+    };
+    interner.object_type(type_ref, rules)
 }
 
 /// The world a draw asks for an object's depth: the presentation copy of the
@@ -351,7 +342,19 @@ fn unit_z_adjust_in(
         world_z_leptons: world_z,
         // Drive 0x4B4870, Ship 0x6A3EA0, and the shared 0x55ABA0 inherited
         // by Walk/Hover/Fly/Jumpjet/Teleport all return zero at loco slot +0x38.
-        locomotor_z: 0,
+        // Tunnel overrides it with Z_Adjust 0x00729E50, which also adds how
+        // far the owner's Z projects below the floor Map 0x00578080 reads.
+        locomotor_z: entity
+            .locomotor
+            .as_ref()
+            .and_then(|loco| loco.tunnel_runtime())
+            .map_or(0, |tunnel| {
+                let floor_rows = floor_probe(terrain, xy[0], xy[1]).map_or(0, |(floor, _)| {
+                    adjust_for_z_standard(floor).wrapping_sub(adjust_for_z_standard(world_z))
+                });
+                let frame = view.session().binary_frame();
+                tunnel.draw_z_adjust(frame, entity.body_facing_current(frame), floor_rows)
+            }),
         bridge_set_base: terrain.concrete_bridge_set_base(),
         unit_special_adjustment: special,
     };
@@ -365,6 +368,6 @@ fn unit_z_adjust_in(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "foot_depth_tests.rs"]
 mod tests;

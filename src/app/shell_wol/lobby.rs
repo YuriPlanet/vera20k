@@ -30,7 +30,6 @@ use super::service::{self, WolServiceEvent, WolServiceRequest};
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::shell_network_setup as setup;
 use crate::app::{App, AppState};
-use crate::ui::chat_translation::ChatPlace;
 use crate::ui::lan_shell::{LanChatLine, LanEditKey};
 use crate::ui::main_menu_dialogs::options::LauncherCue;
 use crate::ui::room_limits::RoomLimitsPress;
@@ -157,6 +156,11 @@ enum Step {
     /// VERA: after a match from VERA's own room, behind a wait box until the
     /// lobby gives the room back or closes it.
     ReturningToRoom,
+    /// VERA: a watch row's `watch` behind the wait box, until the lobby
+    /// grants it ([`watch_admitted`]) or refuses it.
+    Watching {
+        request: Option<OnlineRequest>,
+    },
 }
 
 /// Correlation for the online provider only. The lobby step continues to own
@@ -172,7 +176,8 @@ impl Step {
         match self {
             Self::JoiningLobby { request, .. }
             | Self::JoiningGame { request }
-            | Self::Creating { request, .. } => *request,
+            | Self::Creating { request, .. }
+            | Self::Watching { request } => *request,
             _ => None,
         }
     }
@@ -181,7 +186,8 @@ impl Step {
         match self {
             Self::JoiningLobby { request, .. }
             | Self::JoiningGame { request }
-            | Self::Creating { request, .. } => Some(request),
+            | Self::Creating { request, .. }
+            | Self::Watching { request } => Some(request),
             _ => None,
         }
     }
@@ -232,10 +238,10 @@ pub(super) fn online_request_failed(state: &mut AppState, id: u64, code: u32) ->
     if !lobby.step.accepts_online_result(id) {
         return false;
     }
-    let event = if matches!(lobby.step, Step::Creating { .. }) {
-        WolServiceEvent::Created(Err(code))
-    } else {
-        WolServiceEvent::Joined(Err(code))
+    let event = match lobby.step {
+        Step::Creating { .. } => WolServiceEvent::Created(Err(code)),
+        Step::Watching { .. } => WolServiceEvent::WatchRefused(code),
+        _ => WolServiceEvent::Joined(Err(code)),
     };
     service::service_event(state, event);
     true
@@ -267,6 +273,8 @@ enum BoxThen {
     JoinFailed { close: bool },
     /// Create's boxes: the lobby back with Join disabled.
     CreateFailed,
+    /// VERA: a refused watch's box: the lobby's commands back.
+    WatchFailed,
     /// `0x00789960`'s `WOL:ResolutionLimited*` Yes/No.
     Resolution { channel: WolChannel },
     /// The runner gives up and returns 0: the welcome.
@@ -326,6 +334,8 @@ pub(crate) struct WolLobby {
     deferred: Option<Result<WolJoined, u32>>,
     /// `0x00789960`'s record while its password popup `0xE1` runs.
     joining: Option<WolChannel>,
+    /// VERA: the running matches the modern list offers to watch.
+    matches: Vec<service::WolMatch>,
 }
 
 impl WolLobby {
@@ -421,7 +431,7 @@ fn buddy_runner(state: &AppState) -> bool {
 }
 
 /// The Quick Match runner holds the records.
-pub(super) fn quick_match_runner(state: &AppState) -> bool {
+pub(crate) fn quick_match_runner(state: &AppState) -> bool {
     lobby(state).is_some_and(|lobby| lobby.runner == Runner::QuickMatch)
 }
 
@@ -458,6 +468,12 @@ pub(super) fn games(state: &AppState) -> &[WolChannel] {
 /// The chat-lobby list `[0xB73E18]` of the running runner.
 pub(super) fn lobbies(state: &AppState) -> &[WolChannel] {
     lobby(state).map_or(&[], |lobby| &lobby.lobbies)
+}
+
+/// VERA: the running matches the modern list offers to watch; a watch
+/// row's `record` indexes them.
+pub(crate) fn watch_matches(state: &AppState) -> &[service::WolMatch] {
+    lobby(state).map_or(&[], |lobby| &lobby.matches)
 }
 
 /// This user is in a channel (`[0xB77DD0]`): a leave will see its OnPart.
@@ -1161,7 +1177,11 @@ fn room_reopened(state: &mut AppState, joined: WolJoined) {
             log::warn!("WOL reopened room keeps its mode: {error:#}");
         }
         // The players who came back take rows as joiners would, in the
-        // lobby's order, so the host's options name them all.
+        // lobby's order, so the host's options name them all; VERA's room
+        // does not tell them as joins.
+        if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+            protocol.quiet_joins();
+        }
         for name in listed
             .iter()
             .map(|member| member.name.clone())
@@ -1204,6 +1224,7 @@ fn new_runner(
         refresh_at: None,
         deferred: None,
         joining: None,
+        matches: Vec::new(),
     })
 }
 
@@ -1471,9 +1492,42 @@ fn refill_games(state: &mut AppState) {
             row.tag = tag.clone();
         }
     }
+    if lobby.ui.is_modern() {
+        rows.extend(watch_rows(&lobby.matches, &crate::i18n::tr(WATCH_LIST_TAG)));
+    }
     if let Some(lobby) = lobby_mut(state) {
         lobby.ui.replace_games(rows);
     }
+}
+
+/// VERA: the modern list's matches to watch, after its rooms: the room's
+/// name (the map's when it has none) with its watchers out of the most it
+/// takes, greyed once it has them all, and tagged. A row's key is its
+/// match, which the selection follows across refreshes.
+fn watch_rows(matches: &[service::WolMatch], tag: &str) -> Vec<WolGameRow> {
+    matches
+        .iter()
+        .enumerate()
+        .map(|(record, watch)| {
+            let name = if watch.name.is_empty() {
+                &watch.map
+            } else {
+                &watch.name
+            };
+            WolGameRow {
+                record,
+                name: watch.match_id.clone(),
+                text: format!("{name} {}/{}", watch.watchers, watch.max_watchers),
+                greyed: watch.watchers >= watch.max_watchers,
+                kind: GameTypeIcon::Plain,
+                keyed: false,
+                limit_icon: None,
+                ping: -1,
+                tag: Some(tag.to_owned()),
+                watch: true,
+            }
+        })
+        .collect()
 }
 
 /// The co-op campaign whose map a game's exInfo names.
@@ -1546,23 +1600,29 @@ pub(super) fn refill_players(state: &mut AppState) {
 }
 
 /// `0x0079BA60` for the selected game row (`show` prints its refusal).
+/// VERA: a match to watch passes; its `watch` is the lobby's to refuse.
 fn admit_row(state: &mut AppState, row: usize, observer: bool, show: bool) -> bool {
     let Some(lobby) = lobby(state) else {
         return false;
     };
-    let Some(channel) = lobby
-        .ui
-        .game_rows
-        .get(row)
-        .and_then(|row| lobby.games.get(row.record))
-    else {
+    let Some(row) = lobby.ui.game_rows.get(row) else {
+        return false;
+    };
+    if row.watch {
+        return true;
+    }
+    let Some(channel) = lobby.games.get(row.record) else {
         return false;
     };
     match admit(channel, observer, admission_context(state)) {
         Ok(()) => true,
         Err(key) => {
             if let (true, Some(key)) = (show, key) {
-                let text = csf(state, key);
+                let text = if key == crate::ui::wol_lobby::RULES_DIFFER {
+                    crate::app::shell_network_setup::agreement::rules_differ_text(state)
+                } else {
+                    csf(state, key)
+                };
                 message_line(state, text);
             }
             false
@@ -1574,6 +1634,7 @@ fn selected_channel(lobby: &WolLobby) -> Option<WolChannel> {
     lobby
         .ui
         .selected_game()
+        .filter(|row| !row.watch)
         .and_then(|row| lobby.games.get(row.record))
         .cloned()
 }
@@ -1733,7 +1794,8 @@ fn joined_game_line(users: &[(String, bool)], room: &str) -> Option<String> {
 /// (`setup::service::auto_accept`).
 const HOST_ROOM_LINE: &str = "VERA:HostRoomHint";
 
-fn modern_lobby(state: &AppState) -> bool {
+/// VERA's own online lobby, not gamemd's.
+pub(crate) fn modern_lobby(state: &AppState) -> bool {
     lobby(state).is_some_and(|lobby| lobby.ui.is_modern())
 }
 
@@ -2197,11 +2259,101 @@ fn begin_join(state: &mut AppState, row: usize, show: bool) {
     if !admitted {
         return;
     }
+    if let Some(match_id) = selected_match(lobby) {
+        begin_watch(state, match_id);
+        return;
+    }
     let Some(channel) = selected_channel(lobby) else {
         return;
     };
     lobby.ui.disable_commands();
     continue_join(state, channel);
+}
+
+/// VERA: the match of the selected watch row.
+fn selected_match(lobby: &WolLobby) -> Option<String> {
+    lobby
+        .ui
+        .selected_game()
+        .filter(|row| row.watch)
+        .and_then(|row| lobby.matches.get(row.record))
+        .map(|watch| watch.match_id.clone())
+}
+
+/// VERA: Join on a watch row sends the lobby's `watch` for its match
+/// behind the wait box (docs/lobby-protocol.md "Watching"). The player
+/// stays in the chat lobby meanwhile.
+fn begin_watch(state: &mut AppState, match_id: String) {
+    let Some(lobby) = lobby_mut(state) else {
+        return;
+    };
+    lobby.ui.disable_commands();
+    lobby.step = Step::Watching { request: None };
+    show_wait(state, "VERA:ContactingOnline");
+    request(state, WolServiceRequest::Watch { match_id });
+}
+
+/// VERA: whether the lobby page waits for a watch's grant.
+pub(crate) fn awaits_watch(state: &AppState) -> bool {
+    lobby(state).is_some_and(|lobby| matches!(lobby.step, Step::Watching { .. }))
+}
+
+/// VERA: the relay admitted the watch that [`Step::Watching`] waits for:
+/// the wait closes as a joined game's does, and the match loads. A watch
+/// keeps no room, so the lobby comes back after it as after any match.
+/// False when no watch was waiting.
+pub(crate) fn watch_admitted(state: &mut AppState) -> bool {
+    let Some(lobby) = lobby_mut(state) else {
+        return false;
+    };
+    if !matches!(lobby.step, Step::Watching { .. }) {
+        return false;
+    }
+    lobby.step = Step::Ready;
+    close_wait(state);
+    if let Some(visit) = state.frontend.wol.as_mut() {
+        visit.back_to_room = false;
+    }
+    true
+}
+
+/// VERA: a granted watch could not start (its map, version or relay): the
+/// wait closes, when it is still up, and a box says why.
+pub(crate) fn watch_failed(state: &mut AppState, key: &str) {
+    let Some(lobby) = lobby_mut(state) else {
+        return;
+    };
+    if matches!(lobby.step, Step::Watching { .. }) {
+        lobby.step = Step::Ready;
+        close_wait(state);
+    }
+    show_box(state, key, false, BoxThen::WatchFailed);
+}
+
+/// VERA: the lobby refused the watch, or it went unanswered: the wait
+/// closes and a box says why.
+fn watch_refused(state: &mut AppState, code: u32) {
+    let Some(lobby) = lobby_mut(state) else {
+        return;
+    };
+    if !matches!(lobby.step, Step::Watching { .. }) {
+        log::debug!("stale WOL watch refusal");
+        return;
+    }
+    lobby.step = Step::Ready;
+    close_wait(state);
+    show_box(state, watch_refusal_key(code), false, BoxThen::WatchFailed);
+}
+
+/// The text of a refused `watch`; other failures show the lobby's usual
+/// refusal.
+pub(super) fn watch_refusal_key(code: u32) -> &'static str {
+    match code {
+        WATCH_UNKNOWN_MATCH => "VERA:WatchUnknownMatch",
+        WATCH_MATCH_ACTIVE => "VERA:WatchMatchActive",
+        WATCHERS_FULL => "VERA:WatchersFull",
+        _ => "VERA:OnlineRequestRefused",
+    }
 }
 
 /// `0x00789960` past admission: the resolution limit, then the password.
@@ -2267,12 +2419,17 @@ fn popup_action(state: &mut AppState, action: WolPopupAction) {
             room,
             name,
             ranked,
+            watching,
         } => {
             if let Some(room) = room {
                 state.frontend.room_limits = room;
             }
             if let Some(ranked) = ranked {
                 state.frontend.wol_room_unranked = !ranked;
+            }
+            // The room takes it when its setup opens.
+            if let Some(watching) = watching {
+                state.frontend.wol_room_watching = watching;
             }
             // An untouched Room name keeps gamemd's "%s's_game".
             let default = default_room_name(&nickname(state));
@@ -2320,9 +2477,6 @@ fn popup_action(state: &mut AppState, action: WolPopupAction) {
 
 /// `0x0078AC10`'s 0x540 Enter after `0x005EDD00`.
 fn send_chat(state: &mut AppState, text: Vec<u16>) {
-    if super::translation::command(state, &text) {
-        return;
-    }
     let commands = wol_chat::WolChatCommands {
         page: units(state, "TXT_PAGE_COMMAND"),
         reply: units(state, "TXT_REPLY_COMMAND"),
@@ -2448,6 +2602,7 @@ pub(super) fn begin_create(state: &mut AppState) {
     let squad = squad_id(state);
     let room = state.frontend.room_limits;
     let ranked = !state.frontend.wol_room_unranked;
+    let watching = state.frontend.wol_room_watching;
     let name = state
         .frontend
         .wol_room_name
@@ -2460,11 +2615,11 @@ pub(super) fn begin_create(state: &mut AppState) {
     lobby.ui.game_list.selected = None;
     lobby.covered = true;
     // +0x13 starts as [0xAC10C8] == 1. VERA's lobby also offers its room's
-    // limits, name and Ranked game, from the host's last choice.
+    // limits, name, Ranked game and Watching, from the host's last choice.
     let room = lobby
         .ui
         .is_modern()
-        .then_some((room, name.as_str(), ranked));
+        .then_some((room, name.as_str(), ranked, watching));
     lobby.ui.popup = Some(WolLobbyPopup::create(width, limit, squad, observer, room));
     state
         .frontend
@@ -2494,13 +2649,7 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
                 lobby.ui.set_enabled(REFRESH, false);
                 lobby.refresh_at = Some(Instant::now() + REFRESH_HOLD);
             }
-            request(
-                state,
-                WolServiceRequest::ListChannels {
-                    kind: GAME_CHANNEL,
-                    flags: 1,
-                },
-            );
+            request_games(state);
         }
         WolLobbyAction::GameSort(control) => {
             let globals = &mut state.frontend.wol_lobby_globals;
@@ -2572,12 +2721,6 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
         WolLobbyAction::Options => {
             App::leave_shell_dialog(state, shell_transition::ShellExitThen::WolOptionsOpen);
         }
-        WolLobbyAction::ChatTranslation => {
-            App::leave_shell_dialog(
-                state,
-                shell_transition::ShellExitThen::WolChatTranslationOpen,
-            );
-        }
         WolLobbyAction::Page => super::page::open_page_dialog(state),
         // 0x0078BF7D: mode 5 with return mode 4; event 6 then ends the
         // runner as Back does, and WOL_Main runs the Buddy List runner.
@@ -2620,6 +2763,11 @@ pub(super) fn box_command(state: &mut AppState, control: u16) {
             BoxThen::QuickMatch(then) => super::quick_match::box_closed(state, then),
             BoxThen::JoinFailed { close } => join_failed_tail(state, close),
             BoxThen::CreateFailed => create_ended(state),
+            BoxThen::WatchFailed => {
+                if let Some(lobby) = lobby_mut(state) {
+                    lobby.ui.enable_commands(lobby.ui.selected_game().is_some());
+                }
+            }
             BoxThen::Resolution { channel } => {
                 answer_resolution(state, channel, control == BOX_YES)
             }
@@ -2739,6 +2887,12 @@ fn entry_shown(state: &mut AppState) {
     }
     close_wait(state);
     request(state, WolServiceRequest::ListChannels { kind: 0, flags: 0 });
+    request_games(state);
+}
+
+/// `0x0077EF90(0x29, 1)`: the game list with automatic pings. VERA's modern
+/// lobby asks for the matches to watch with it.
+fn request_games(state: &mut AppState) {
     request(
         state,
         WolServiceRequest::ListChannels {
@@ -2746,6 +2900,9 @@ fn entry_shown(state: &mut AppState) {
             flags: 1,
         },
     );
+    if modern_lobby(state) {
+        request(state, WolServiceRequest::ListMatches);
+    }
 }
 
 /// `0x007A5890` (CChatEventSink vt+0x28) for this user, or a result.
@@ -2908,6 +3065,15 @@ pub(crate) const KEPT_OUT_JOIN_ERROR: u32 = 0xA004_0072;
 /// VERA's lobby refused a Create because another open room has that name.
 pub(crate) const ROOM_NAME_TAKEN: u32 = 0xA004_0073;
 const ROOM_NAME_TAKEN_TEXT: &str = "VERA:RoomNameTaken";
+
+/// VERA's lobby refused a `watch` (docs/lobby-protocol.md "Watching"): 409
+/// `unknown_match` (the match ended, or this player may not watch it),
+/// `match_active` (this player plays one) or `watchers_full`.
+pub(crate) const WATCH_UNKNOWN_MATCH: u32 = 0xA004_0074;
+pub(crate) const WATCH_MATCH_ACTIVE: u32 = 0xA004_0075;
+pub(crate) const WATCHERS_FULL: u32 = 0xA004_0076;
+/// The modern list's tag of a match to watch.
+const WATCH_LIST_TAG: &str = "VERA:WatchListTag";
 
 fn join_error_reply(code: u32, pending: bool) -> JoinErrorReply {
     let reply = |key, close, forget, next_lobby| JoinErrorReply::Box {
@@ -3224,6 +3390,11 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             }
         }
         WolServiceEvent::Created(result) => created(state, result),
+        WolServiceEvent::Matches(matches) => {
+            lobby_mut(state).expect("checked").matches = matches;
+            refill_games(state);
+        }
+        WolServiceEvent::WatchRefused(code) => watch_refused(state, code),
         other => log::debug!("WOL event not for the lobby: {other:?}"),
     }
     state.platform.window.request_redraw();
@@ -3337,18 +3508,10 @@ pub(super) fn message_received(state: &mut AppState, message: ReceivedMessage) {
     let (line, color) = wol_chat::received_line(&sender(&from), &text, private, action);
     crate::app::shell_lan::append_chat_sent_at(state, LanChatLine { text: line, color }, sent_at);
     let (prefix, _) = wol_chat::received_line(&sender(&from), &[], private, action);
-    let place = if private {
-        ChatPlace::Private
-    } else if state.frontend.shell_route.network_setup() {
-        ChatPlace::Room
-    } else {
-        ChatPlace::Lobby
-    };
     super::translation::received(
         state,
         &text,
         super::translation::TranslatedLine::Wol { prefix, color },
-        place,
     );
     state.platform.window.request_redraw();
 }
@@ -3813,6 +3976,7 @@ fn popup_control(state: &AppState, popup: &WolLobbyPopup) -> Option<u16> {
                 Some((POPUP_PASSWORD, layout.password)),
                 layout.name.map(|(_, rect)| (CREATE_NAME, rect)),
                 layout.ranked.map(|rect| (CREATE_RANKED, rect)),
+                layout.watching.map(|(_, rect)| (CREATE_WATCHING, rect)),
             ]
             .into_iter()
             .flatten()
@@ -3845,7 +4009,7 @@ fn popup_screen(state: &AppState) -> (i32, i32) {
     )
 }
 
-fn create_layout(state: &AppState) -> crate::ui::shell::modal::WolCreateGameLayout {
+pub(crate) fn create_layout(state: &AppState) -> crate::ui::shell::modal::WolCreateGameLayout {
     let (width, height) = popup_screen(state);
     crate::ui::shell::modal::wol_create_game_layout_on(
         width,
@@ -3950,11 +4114,18 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         let press = match (picked, over) {
             (Some(RoomLimitsPress::Players), _) => Press::Nothing,
             (Some(RoomLimitsPress::Spectators), _) => Press::Cue(LauncherCue::Checkbox),
-            (_, Some(control @ (CREATE_CLAN | CREATE_LIMIT | CREATE_OBSERVE | CREATE_RANKED))) => {
+            (
+                _,
+                Some(
+                    control @ (CREATE_CLAN | CREATE_LIMIT | CREATE_OBSERVE | CREATE_RANKED
+                    | CREATE_WATCHING),
+                ),
+            ) => {
                 let window = match control {
                     CREATE_CLAN => rects.clan,
                     CREATE_LIMIT => Some(rects.limit),
                     CREATE_RANKED => rects.ranked,
+                    CREATE_WATCHING => rects.watching.map(|(_, rect)| rect),
                     _ => rects.observe,
                 };
                 if window.is_some_and(|window| {
@@ -4145,7 +4316,10 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
     {
         // An uncertain HTTP outcome may have joined on the server. Queue a
         // normal leave behind that command before allowing another attempt.
-        request(state, WolServiceRequest::LeaveChannel);
+        // A watch joins no channel: the player is still in the chat lobby.
+        if !matches!(lobby.step, Step::Watching { .. }) {
+            request(state, WolServiceRequest::LeaveChannel);
+        }
         online_request_failed(state, request_id, 0x8000_4005);
         state.platform.window.request_redraw();
         return None;
@@ -4215,6 +4389,9 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                 kind: GAME_CHANNEL,
                 flags: 1,
             });
+            if lobby.ui.is_modern() {
+                requests.push(WolServiceRequest::ListMatches);
+            }
         }
         if now >= lobby.lobbies_at {
             lobby.lobbies_at = now + LOBBIES_PERIOD;
@@ -4264,8 +4441,8 @@ pub(crate) fn status_help(state: &AppState) -> String {
     let ui = &lobby.ui;
     match ui.buttons.hovered {
         Some(GAMES) => match ui.game_list.hot_row.and_then(|row| ui.game_rows.get(row)) {
-            None => csf(state, "STT:LobbyListGames"),
-            Some(row) => game_help(state, row, ui.is_modern()),
+            Some(row) if !row.watch => game_help(state, row, ui.is_modern()),
+            _ => csf(state, "STT:LobbyListGames"),
         },
         Some(PLAYERS) => match ui
             .player_list
@@ -4453,7 +4630,7 @@ fn game_help(state: &AppState, row: &WolGameRow, modern: bool) -> String {
     help
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 
@@ -4563,7 +4740,7 @@ mod tests {
         lobby.set_lobbies(channels.clone());
         assert_eq!(lobby.lobbies.len(), 1);
         assert_eq!(lobby.lobbies[0].name, "Lob_41_2");
-        assert_eq!(lobby.ui.page_spec().stacked.len(), 5);
+        assert_eq!(lobby.ui.page_spec().stacked.len(), 4);
         let names = lobby_base_names(visit.modern_ui(), str::to_owned);
         assert_eq!(WolLobbyRow::joined_name(2, &names), "VERA20K Online");
         visit.set_legacy_ui(true);
@@ -4677,6 +4854,40 @@ mod tests {
         assert!(!step.accepts_online_result(8));
         step = Step::Ready;
         assert!(!step.bind_online_request(9, now));
+        // A watch's refusal or silence reaches its step the same way.
+        step = Step::Watching { request: None };
+        assert!(step.bind_online_request(10, now));
+        assert!(step.accepts_online_result(10));
+    }
+
+    /// VERA's modern list: each match to watch by its room's name, or the
+    /// map's when the room has none, with its watchers; a full one greyed.
+    #[test]
+    fn watch_rows_name_each_match_with_its_watchers() {
+        let watch = |match_id: &str, name: &str, watchers| service::WolMatch {
+            match_id: match_id.into(),
+            name: name.into(),
+            map: "Little Big Lake".into(),
+            watchers,
+            max_watchers: 10,
+            names: Vec::new(),
+        };
+        let matches = [watch("m1", "Ann's game", 9), watch("m2", "", 10)];
+        let rows = watch_rows(&matches, "Watch");
+        let shown: Vec<_> = rows
+            .iter()
+            .map(|row| (row.name.as_str(), row.text.as_str(), row.greyed))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                ("m1", "Ann's game 9/10", false),
+                ("m2", "Little Big Lake 10/10", true)
+            ]
+        );
+        assert!(rows.iter().enumerate().all(|(record, row)| {
+            row.record == record && row.watch && row.tag.as_deref() == Some("Watch")
+        }));
     }
 
     #[test]

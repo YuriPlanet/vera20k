@@ -130,6 +130,35 @@ fn without_a_selection_the_radar_only_recentres() {
     assert_eq!(action(&query(&sim, &rules, &[]), None, cell, object), None);
 }
 
+/// VERA minimap beacons: in Place Beacon mode with nothing selected, the
+/// option turns the radar's empty answer into the beacon action; off, the
+/// click only recentres as in gamemd. A selection's own action and an armed
+/// superweapon keep the click.
+#[test]
+fn minimap_beacons_answer_only_the_empty_radar_click() {
+    let Some((mut sim, rules)) = scene() else {
+        return;
+    };
+    let empty = action(&query(&sim, &rules, &[]), None, GROUND, None);
+    assert_eq!(with_minimap_beacon(empty, false, true, true, false), None);
+    assert_eq!(
+        with_minimap_beacon(empty, true, true, true, false),
+        Some(RadarAction::PlaceBeacon)
+    );
+    assert_eq!(
+        RadarAction::PlaceBeacon.cursor(true, false),
+        CursorId::Beacon
+    );
+    assert_eq!(with_minimap_beacon(empty, true, false, true, false), None);
+    assert_eq!(with_minimap_beacon(empty, true, true, true, true), None);
+    let tank = spawn(&mut sim, &rules, "MTNK", (12, 5));
+    let moved = action(&query(&sim, &rules, &[tank]), None, GROUND, None);
+    assert_eq!(
+        with_minimap_beacon(moved, true, true, false, false),
+        Some(RadarAction::Move)
+    );
+}
+
 /// Over a tracked object the radar asks the object's What_Action
 /// (`0x00653C72..0x00653C83`). The lone selected tank over its own dot
 /// answers NoMove — its Self arm leaves 0, which the Unit tail turns into
@@ -369,8 +398,8 @@ fn the_armed_superweapon_index_answers_first() {
     assert_eq!(action(&none, Some(3), GROUND, None), None);
     // Installed Ares asks the redirected Chronosphere first (hook 0x653B3A):
     // its Chronosphere cursor has no radar frames, so `0x653CA6` leaves no
-    // action, selection or not. A build with the `ares` feature reads every
-    // game the Ares way (`ares_switch::reading_mode`).
+    // action, selection or not. That holds in a game read the Ares way
+    // (`RuleSet::ares_form`).
     assert_eq!(
         action(&some, Some(3), GROUND, None),
         (!rules.ares_form()).then_some(RadarAction::Move)
@@ -503,14 +532,11 @@ fn special_place_names_the_first_type_of_the_release_action() {
     };
     let nuke = PlaceAction::Stock(RadarSuperWeapon::Nuke.action_name());
     let paradrop = PlaceAction::Stock(RadarSuperWeapon::ParaDrop.action_name());
-    // A build with the `ares` feature reads every game the Ares way
-    // (`ares_switch::reading_mode`).
     let stock = read("");
-    if !stock.ares_form() {
-        assert_eq!(special_place_type(&stock, "Storm", nuke), Some("Bomb"));
-        assert_eq!(special_place_type(&stock, "Bomb2", nuke), Some("Bomb"));
-        assert_eq!(special_place_type(&stock, "Storm", paradrop), None);
-    }
+    assert!(!stock.ares_form());
+    assert_eq!(special_place_type(&stock, "Storm", nuke), Some("Bomb"));
+    assert_eq!(special_place_type(&stock, "Bomb2", nuke), Some("Bomb"));
+    assert_eq!(special_place_type(&stock, "Storm", paradrop), None);
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let ares = read("SW.Deferment=1\n");
     assert!(ares.ares_form());

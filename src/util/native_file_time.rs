@@ -250,7 +250,7 @@ pub fn local_hour_minute(_unix_seconds: u64) -> Option<(u8, u8)> {
     None
 }
 
-#[cfg(all(test, unix))]
+#[cfg(all(test, tests_util, unix))]
 mod unix_tests {
     use super::{TICKS_PER_SECOND, WINDOWS_EPOCH_SECONDS, format_file_time_parts};
 
@@ -265,7 +265,7 @@ mod unix_tests {
     }
 }
 
-#[cfg(all(test, windows))]
+#[cfg(all(test, tests_util, windows))]
 mod tests {
     use super::{NativeSystemTime, format_local_system_time};
 

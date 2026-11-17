@@ -397,7 +397,7 @@ fn frame_busy_ns(stamps: &[u8], period_ns: f64) -> Option<f64> {
     Some(busy)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
     use crate::render::gpu::block_on;

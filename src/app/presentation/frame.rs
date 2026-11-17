@@ -18,8 +18,6 @@
 //! results that depend on the world, the committed binary frame and the
 //! local player, never on the camera, the cursor or render caches.
 
-use std::collections::HashMap;
-
 use crate::app::presentation::instances::TetherDraw;
 use crate::app::presentation::render_pose::RenderPose;
 use crate::map::entities::EntityCategory;
@@ -37,6 +35,9 @@ pub(crate) struct Capture<'a> {
     /// The local player drawing reads the frame for, by name and id.
     pub(crate) observer: Option<&'a str>,
     pub(crate) observer_id: Option<InternedId>,
+    /// The object types the local sidebar asks
+    /// ([`crate::app::sidebar_projection::SidebarTypes`]).
+    pub(crate) sidebar_types: &'a crate::app::sidebar_projection::SidebarTypes,
     /// The capture's isolated query of the live map: a miss stamps its own
     /// dummy, not the simulation's.
     pub(crate) cells: Option<crate::map::resolved_terrain::NativeCellQuery<'a>>,
@@ -151,7 +152,6 @@ struct Answers {
     has_airstrike_marker: bool,
     building_cloak_stage: u8,
     native_cloak_offset_words: i32,
-    #[cfg(feature = "ares")]
     driver_killed: bool,
     #[cfg(feature = "phobos")]
     is_power_plant_enhancer_active: bool,
@@ -182,7 +182,6 @@ impl Answers {
             has_airstrike_marker: entity.has_airstrike_marker(),
             building_cloak_stage: entity.building_cloak_stage(),
             native_cloak_offset_words: entity.native_cloak_offset_words(),
-            #[cfg(feature = "ares")]
             driver_killed: entity.driver_killed(),
             #[cfg(feature = "phobos")]
             is_power_plant_enhancer_active: entity.is_power_plant_enhancer_active(),
@@ -205,6 +204,10 @@ pub(crate) struct LocomotorView {
     rocket: Option<RocketDraw>,
     /// A Tunnel locomotor's `Is_To_Have_Shadow`.
     tunnel_has_shadow: Option<bool>,
+    /// The dig-timer state `Draw_Matrix` and `Z_Adjust` read. Both take their
+    /// phase from the current binary frame, so the draw snapshot must retain
+    /// the timer itself rather than a pre-baked angle or depth.
+    tunnel_runtime: Option<crate::sim::movement::tunnel_movement::TunnelRuntime>,
     /// A Drive locomotor's track destination and head.
     drive_track: Option<[Option<crate::sim::components::DriveCoord>; 2]>,
 }
@@ -236,6 +239,7 @@ impl LocomotorView {
             tunnel_has_shadow: locomotor
                 .tunnel_runtime()
                 .map(crate::sim::movement::tunnel_movement::TunnelRuntime::has_shadow),
+            tunnel_runtime: locomotor.tunnel_runtime().copied(),
             drive_track: (kind == crate::rules::locomotor_type::LocomotorKind::Drive).then(|| {
                 [
                     locomotor.track_destination(TrackFamily::Drive),
@@ -264,6 +268,14 @@ impl LocomotorView {
     /// A Tunnel locomotor's `Is_To_Have_Shadow`; `None` for other kinds.
     pub(crate) fn tunnel_has_shadow(&self) -> Option<bool> {
         self.tunnel_has_shadow
+    }
+
+    /// The Tunnel dig state `Draw_Matrix` and `Z_Adjust` read; `None` for
+    /// every other locomotor.
+    pub(crate) fn tunnel_runtime(
+        &self,
+    ) -> Option<&crate::sim::movement::tunnel_movement::TunnelRuntime> {
+        self.tunnel_runtime.as_ref()
     }
 
     /// A Drive locomotor's track destination and head.
@@ -315,7 +327,6 @@ pub(crate) struct Place {
     /// `Simulation::airstrike_tint_active`.
     pub(crate) airstrike_tint_active: bool,
     /// `Simulation::ares_is_operated`.
-    #[cfg(feature = "ares")]
     pub(crate) ares_operated: bool,
     /// `Simulation::airstrike_laser_target_color`.
     #[cfg(feature = "phobos")]
@@ -480,8 +491,9 @@ impl Place {
             // Only a Structure's is ever active.
             airstrike_tint_active: entity.category() == EntityCategory::Structure
                 && sim.airstrike_tint_active(entity.stable_id()),
-            #[cfg(feature = "ares")]
-            ares_operated: sim.ares_is_operated(entity.stable_id(), at.rules()),
+            // Read only by the DeactivateDim lighting, which runs when Ares plays.
+            ares_operated: at.rules().ares()
+                && sim.ares_is_operated(entity.stable_id(), at.rules()),
             #[cfg(feature = "phobos")]
             airstrike_laser_target_color: sim
                 .airstrike_laser_target_color(entity.stable_id(), at.rules()),
@@ -776,7 +788,6 @@ impl ObjectRecord {
         self.answers.native_cloak_offset_words
     }
 
-    #[cfg(feature = "ares")]
     pub(crate) fn driver_killed(&self) -> bool {
         self.answers.driver_killed
     }
@@ -1149,6 +1160,19 @@ pub(crate) struct PresentationFrame {
     /// searches. A draw asks for every Display member, and a search over the
     /// records themselves lands on a different large record at each step.
     ids: Vec<u64>,
+    /// Each record's screen span, in the same order: what the object loop
+    /// culls from without reading the record.
+    spans: Vec<crate::app::presentation::display_members::ScreenSpan>,
+    /// The slots of the building records, ascending: what the building
+    /// passes walk without reading every other record ([`Self::structures`]).
+    structures: Vec<usize>,
+    /// The slots of the records that can draw a tactical line, ascending
+    /// ([`ObjectRecord::may_draw_a_line`], [`Self::line_sources`]).
+    line_sources: Vec<usize>,
+    /// The Display members of the world this frame was captured from, filed
+    /// by the first draw that asks ([`Self::display_members`]).
+    display_members:
+        crate::util::sync::OnceLock<crate::app::presentation::display_members::DisplayMembers>,
     /// The Display order of the world this frame was captured from, built by
     /// the first draw that asks ([`Self::display_order`]). The frame is
     /// dropped before that world can change, so every later draw of it reads
@@ -1156,9 +1180,15 @@ pub(crate) struct PresentationFrame {
     display_order: crate::util::sync::OnceLock<
         crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
     >,
+    /// The rules the world was captured under, which the Ground draw order
+    /// reads (`Simulation::ground_draw_order`).
+    resources: CapturedRules,
     /// Every anim's absolute coordinate (`Simulation::anim_absolute_coord`),
     /// which an attached anim takes from its owner object.
-    anim_coords: HashMap<u64, crate::sim::anim_class::AnimWorldCoord>,
+    anim_coords: crate::util::lookup_hash::LookupMap<u64, crate::sim::anim_class::AnimWorldCoord>,
+    /// Object+88's held canopy identities, copied from GameEntity at capture.
+    /// The frame rebuilds this sparse lookup each time; ordinary objects add no entry.
+    parachute_animations: crate::util::lookup_hash::LookupMap<u64, u64>,
     /// What the scene's other drawers read of the world's objects
     /// (`frame_scene`).
     pub(crate) scene: crate::app::presentation::frame_scene::SceneFrame,
@@ -1166,10 +1196,24 @@ pub(crate) struct PresentationFrame {
     pub(crate) psychic_detection: bool,
 }
 
+/// The resources a frame was captured under; none for a default frame.
+#[derive(Clone, Default)]
+struct CapturedRules(Option<std::sync::Arc<crate::sim::runtime::SimResources>>);
+
+impl std::fmt::Debug for CapturedRules {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("CapturedRules")
+    }
+}
+
 impl PresentationFrame {
     /// The records of `runtime`'s objects, as its local player (the
-    /// scenario's current house) sees them.
-    pub(crate) fn capture(runtime: &SimRuntime) -> Self {
+    /// scenario's current house) sees them, with the sidebar's answers for
+    /// `sidebar_types`.
+    pub(crate) fn capture(
+        runtime: &SimRuntime,
+        sidebar_types: &crate::app::sidebar_projection::SidebarTypes,
+    ) -> Self {
         let sim = &runtime.simulation;
         let observer_id = sim.session().current_house();
         let observer = observer_id.map(|id| sim.interner().resolve(id));
@@ -1179,6 +1223,7 @@ impl PresentationFrame {
             binary_frame: sim.session().binary_frame(),
             observer,
             observer_id,
+            sidebar_types,
             cells: sim
                 .resolved_terrain()
                 .map(crate::map::resolved_terrain::NativeCellQuery::isolated),
@@ -1205,17 +1250,44 @@ impl PresentationFrame {
             },
         );
         let scene = scene.expect("captured beside the records");
-        let anim_coords = sim
-            .anims()
-            .filter_map(|(&id, _)| Some((id, sim.anim_absolute_coord(id)?)))
+        let anim_coords = sim.anim_absolute_coords().collect();
+        let parachute_animations = sim
+            .entities()
+            .values()
+            .filter_map(|entity| {
+                entity
+                    .parachute_animation()
+                    .map(|animation| (entity.stable_id(), animation))
+            })
             .collect();
         let psychic_detection = at.psychic.is_some();
-        let ids = objects.iter().map(|object| object.id).collect();
+        let mut ids = Vec::with_capacity(objects.len());
+        let mut spans = Vec::with_capacity(objects.len());
+        let mut structures = Vec::new();
+        let mut line_sources = Vec::new();
+        for (slot, object) in objects.iter().enumerate() {
+            ids.push(object.id);
+            spans.push(crate::app::presentation::display_members::ScreenSpan::of(
+                object,
+            ));
+            if object.category() == EntityCategory::Structure {
+                structures.push(slot);
+            }
+            if object.may_draw_a_line() {
+                line_sources.push(slot);
+            }
+        }
         Self {
             objects,
             ids,
+            spans,
+            structures,
+            line_sources,
+            display_members: Default::default(),
             display_order: Default::default(),
+            resources: CapturedRules(Some(runtime.resources.clone())),
             anim_coords,
+            parachute_animations,
             scene,
             psychic_detection,
         }
@@ -1225,18 +1297,44 @@ impl PresentationFrame {
         self.ids
             .binary_search(&id)
             .ok()
-            .map(|slot| &self.objects[slot])
+            .and_then(|slot| self.record_at(slot))
     }
 
-    /// `display`'s order for this frame's draws. `display` is the Display
-    /// registry of the world the frame was captured from.
+    /// Record `id`'s slot and screen span, without reading the record.
+    pub(crate) fn slot_and_span(
+        &self,
+        id: u64,
+    ) -> Option<(usize, crate::app::presentation::display_members::ScreenSpan)> {
+        let slot = self.ids.binary_search(&id).ok()?;
+        Some((slot, *self.spans.get(slot)?))
+    }
+
+    /// The record in `slot` ([`Self::slot_and_span`]).
+    pub(crate) fn record_at(&self, slot: usize) -> Option<&ObjectRecord> {
+        self.objects.get(slot)
+    }
+
+    /// The Display members of `sim`, filed once for this frame's draws.
+    /// `sim` is the world the frame was captured from.
+    pub(crate) fn display_members(
+        &self,
+        sim: &Simulation,
+    ) -> &crate::app::presentation::display_members::DisplayMembers {
+        self.display_members.get_or_init(|| {
+            crate::app::presentation::display_members::DisplayMembers::of(self, sim)
+        })
+    }
+
+    /// `sim`'s draw order for this frame's draws. `sim` is the world the
+    /// frame was captured from.
     pub(crate) fn display_order(
         &self,
-        display: &crate::sim::world::display_layers::DisplayLayers,
+        sim: &Simulation,
     ) -> &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder {
         self.display_order.get_or_init(|| {
-            crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder::from_display(
-                display,
+            crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder::from_world(
+                sim,
+                self.resources.0.as_ref().map(|resources| &resources.rules),
             )
         })
     }
@@ -1244,6 +1342,11 @@ impl PresentationFrame {
     /// `Simulation::anim_absolute_coord` of anim `id`.
     pub(crate) fn anim_coord(&self, id: u64) -> Option<crate::sim::anim_class::AnimWorldCoord> {
         self.anim_coords.get(&id).copied()
+    }
+
+    /// `GameEntity::parachute_animation` of object `id` at capture.
+    pub(crate) fn parachute_animation(&self, id: u64) -> Option<u64> {
+        self.parachute_animations.get(&id).copied()
     }
 
     /// Whether `object` stands for its own sound handles
@@ -1263,6 +1366,35 @@ impl PresentationFrame {
     /// Every record, in stable-id order.
     pub(crate) fn objects(&self) -> impl ExactSizeIterator<Item = &ObjectRecord> {
         self.objects.iter()
+    }
+
+    /// Every building's record, in stable-id order: the [`Self::objects`]
+    /// whose category is Structure, found without reading the others.
+    pub(crate) fn structures(&self) -> impl ExactSizeIterator<Item = &ObjectRecord> {
+        self.structures.iter().map(|&slot| &self.objects[slot])
+    }
+
+    /// The records that can draw a tactical line, in stable-id order: the
+    /// [`Self::objects`] the line passes visit, without reading the others.
+    pub(crate) fn line_sources(&self) -> impl ExactSizeIterator<Item = &ObjectRecord> {
+        self.line_sources.iter().map(|&slot| &self.objects[slot])
+    }
+}
+
+impl ObjectRecord {
+    /// Whether Tactical's Techno walk (`TacticalClass_Draw`, `0x006D4750..`)
+    /// can draw a line for it: a selected object's action line (vt+0x438),
+    /// the mind-control links of its own CaptureManager or its controller's
+    /// (`CaptureManagerClass::DrawLinks`), its airstrike designation, or its
+    /// psychic detection line (`FootClass::DrawPsychicDetectionLine`). An
+    /// object with none of these draws nothing there; each line's own tests
+    /// still decide for the others.
+    fn may_draw_a_line(&self) -> bool {
+        self.selection.is_selected()
+            || self.capture_manager.is_some()
+            || self.hud.controller().is_some()
+            || self.place.airstrike_designation.is_some()
+            || self.place.psychically_detected
     }
 }
 
@@ -1285,11 +1417,13 @@ impl PresentationFrame {
             let filler = interner.len();
             interner.intern(&format!("TEST-FILLER-{filler}"));
         }
+        let types =
+            crate::app::sidebar_projection::SidebarTypes::every_rules_type(&simulation, rules);
         let runtime = SimRuntime {
             simulation,
             resources: std::sync::Arc::new(crate::sim::runtime::SimResources::new(rules.clone())),
         };
-        Self::capture(&runtime)
+        Self::capture(&runtime, &types)
     }
 }
 
@@ -1343,6 +1477,6 @@ impl ObjectRecord {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "frame_tests.rs"]
 mod tests;

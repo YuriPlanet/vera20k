@@ -259,3 +259,32 @@ fn ares_null_destination_ends_the_dig() {
     sim.process_tunnel_locomotor(DIGGER, &rules, None, FrameEffects::default());
     assert_eq!(tunnel_state(&sim), Some(TunnelState::DugOut));
 }
+
+/// `Z_Adjust` (`0x00729E50`): `_ftol` truncates DiggingIn's ramp, a body
+/// facing byte in 71..139 takes the full depth at once, the held states add
+/// the floor term to 45, and the base states return zero whatever it is.
+#[test]
+fn z_adjust_truncates_its_ramp_and_adds_the_floor_rows() {
+    use crate::sim::movement::tunnel_movement::{TUNNEL_DIG_Z_ADJUST_ROWS, TunnelRuntime};
+    let digging_in = TunnelRuntime::for_test_dig(TunnelState::DiggingIn, 0, 10);
+    assert_eq!(digging_in.draw_z_adjust(3, 0, 0), 13, "45 * 0.3 truncates");
+    assert_eq!(digging_in.draw_z_adjust(3, 70 << 8, 0), 13, "byte 70 ramps");
+    assert_eq!(
+        digging_in.draw_z_adjust(3, 71 << 8, 0),
+        TUNNEL_DIG_Z_ADJUST_ROWS,
+        "byte 71 takes the full depth"
+    );
+    let dug_in = TunnelRuntime::for_test_dig(TunnelState::DugIn, 0, 10);
+    assert_eq!(
+        dug_in.draw_z_adjust(5, 0, 36),
+        TUNNEL_DIG_Z_ADJUST_ROWS + 36
+    );
+    let digging_out = TunnelRuntime::for_test_dig(TunnelState::DiggingOut, 0, 10);
+    assert_eq!(
+        digging_out.draw_z_adjust(10, 0, 7),
+        7,
+        "surfaced: the floor term"
+    );
+    let idle = TunnelRuntime::for_test_dig(TunnelState::Idle, 0, 10);
+    assert_eq!(idle.draw_z_adjust(5, 0, 36), 0);
+}

@@ -11,7 +11,7 @@ use crate::sim::components::NavTargetRef;
 use crate::sim::mission::MissionType;
 use crate::sim::movement::{ground_pose, motion_query, nav_target_coordinate};
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "aircraft_move_tests.rs"]
 pub(crate) mod tests;
 

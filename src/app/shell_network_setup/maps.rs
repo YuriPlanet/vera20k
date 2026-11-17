@@ -22,18 +22,25 @@ pub(crate) struct GeneratedMapManifest {
     pub preview: AssetMetadata,
 }
 
+/// The longest W record a room takes: thirty slots of four values, each at
+/// most eleven characters and a comma, fit with room to spare.
+pub(crate) const MAX_STAGING_TEXT: usize = 2048;
+
 /// The native W parser remains authoritative. Network admission also requires a
 /// complete canonical table for the selected seed, before any start is ready.
 pub(crate) fn checked_staging(
     text: &str,
     capacity: i32,
 ) -> Result<crate::map::preview::ScenarioStartStaging> {
-    ensure!(text.len() <= 512, "generated start staging is too large");
+    ensure!(
+        text.len() <= MAX_STAGING_TEXT,
+        "generated start staging is too large"
+    );
     let staging = crate::map::preview::ScenarioStartStaging::parse_w_text(text)
         .ok_or_else(|| anyhow!("generated start staging is missing"))?;
     ensure!(
         staging.to_w_text() == text
-            && (2..=8).contains(&staging.count)
+            && (2..=crate::map::preview::START_STAGING_SLOTS as i32).contains(&staging.count)
             && staging.count == capacity
             && staging.width > 0
             && staging.height > 0
@@ -151,7 +158,7 @@ pub(crate) fn staging_digest(state: &AppState) -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     #[test]
@@ -286,6 +293,28 @@ mod tests {
         stage.cells[1] = (0, 0);
         assert!(checked_staging(&stage.to_w_text(), 2).is_err());
     }
+
+    /// VERA: a room takes a generated map for thirty players, whose record
+    /// runs past the native 37 numbers and 512 characters.
+    #[test]
+    fn generated_staging_takes_thirty_starts() {
+        let mut stage = crate::map::preview::ScenarioStartStaging {
+            width: 9_999,
+            height: 9_999,
+            start_x: -9_999,
+            start_y: -9_999,
+            count: 30,
+            ..Default::default()
+        };
+        for slot in 0..30 {
+            stage.pairs[slot] = (-99_999, -99_999);
+            stage.cells[slot] = (-9_999, -9_999);
+        }
+        let text = stage.to_w_text();
+        assert!(text.len() > 512);
+        assert!(checked_staging(&text, 30).is_ok());
+        assert!(checked_staging(&text, 29).is_err());
+    }
 }
 
 pub(crate) fn local_transfer_source(
@@ -322,11 +351,13 @@ pub(crate) fn local_transfer_source(
         .session
         .network_map_metadata()
         .ok_or_else(|| anyhow!("map metadata missing"))?;
+    let ares = state.process_assets.reads_ares_way();
     let loaded = state.frontend.scenario_catalog.verify_network_map_input(
         file,
         metadata,
         &config.paths.ra2_dir,
         assets,
+        ares,
     );
     if resource == TransferResource::Map {
         if let Some(loaded) = &loaded {
@@ -394,17 +425,25 @@ pub(crate) fn accept_transfer_asset(
                 resource == TransferResource::Seed,
                 file,
             )?;
+            let ares = state.process_assets.reads_ares_way();
             let expected = state
                 .match_state
                 .session
                 .network_map_metadata()
                 .ok_or_else(|| anyhow!("map selection ended"))?;
-            ensure!(
+            let seed = resource == TransferResource::Seed;
+            let verified = |ares| {
                 crate::app::scenario_catalog::ScenarioCatalog::verify_transferred_network_map(
-                    &loaded,
-                    expected,
-                    resource == TransferResource::Seed
-                ),
+                    &loaded, expected, seed, ares,
+                )
+            };
+            // A seed that verifies only with the other answer is the host's
+            // file read by a game whose Ares answer differs. It is accepted,
+            // so the rules agreement, which covers that answer, refuses the
+            // game and its text names the Ares setting
+            // (`agreement::rules_differ_text`).
+            ensure!(
+                verified(ares) || (seed && verified(!ares)),
                 "downloaded map differs"
             );
             let effective = expected.effective_digest.clone();

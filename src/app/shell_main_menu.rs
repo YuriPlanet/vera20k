@@ -97,10 +97,23 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // The next battle frame lays out and draws the sidebar at this size.
         self.persistence.options_profile.sidebar = size;
     }
+    fn store_sidebar_columns(
+        &mut self,
+        columns: crate::ui::main_menu_dialogs::options::SidebarColumns,
+    ) {
+        // The spec is rebuilt from this every refresh, so the next frame lays
+        // the cameo grid out again; Options' accept writes it out.
+        self.persistence.options_profile.sidebar_columns = columns;
+    }
     fn store_health_bars(&mut self, mode: crate::ui::main_menu_dialogs::options::HealthBarMode) {
         // Presentation reads it every frame, so the next frame draws the new
         // strip policy; Options' accept writes it out.
         self.persistence.options_profile.health_bars = mode;
+    }
+    fn store_ares(&mut self, setting: crate::util::ares_launch::AresSetting) {
+        // Read at start, as the mod is: this launch keeps the setting it
+        // opened its files with. Options' accept writes it out.
+        self.persistence.options_profile.ares = setting;
     }
     fn store_color_vision(&mut self, mode: crate::ui::main_menu_dialogs::options::ColorVisionMode) {
         // The final-frame pass reads the profile every frame, so the very next
@@ -166,6 +179,11 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // waiting, so the switch never cuts a line that is halfway said.
         self.persistence.options_profile.custom_end_game_movie = enabled;
     }
+    fn store_commander_feedback(&mut self, enabled: bool) {
+        // The clip layer's next pass reads it, so a match mutes or unmutes
+        // its commanders at once; muted, it still spends what it sees.
+        self.persistence.options_profile.commander_feedback = enabled;
+    }
     fn store_shift_queue(&mut self, shift_queue: bool) {
         // The next cameo press reads it; Options' accept writes it out.
         self.persistence.options_profile.shift_queue = shift_queue;
@@ -174,15 +192,17 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // The next logic frame's pass reads it; Options' accept writes it out.
         self.persistence.options_profile.auto_repair = enabled;
     }
-    fn store_terrain_deformation(&mut self, enabled: bool) {
-        // The next game's rules and every later network agreement read it;
-        // Options' accept writes it out.
-        self.persistence.options_profile.terrain_deformation = enabled;
-        self.process_assets.set_terrain_deformation(enabled);
+    fn store_minimap_beacons(&mut self, enabled: bool) {
+        // The next radar click reads it; Options' accept writes it out.
+        self.persistence.options_profile.minimap_beacons = enabled;
     }
     fn store_detailed_eva_text(&mut self, enabled: bool) {
         // Presentation only: the next EVA text line reads it.
         self.persistence.options_profile.detailed_eva_text = enabled;
+    }
+    fn store_compact_super_timers(&mut self, enabled: bool) {
+        // Presentation only: the next timer draw reads it.
+        self.persistence.options_profile.compact_super_timers = enabled;
     }
     fn store_lock_cursor(&mut self, locked: bool) {
         // Saved, and applied at once: the window holds or frees the pointer.
@@ -230,6 +250,12 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
     fn store_smooth_online_menus(&mut self, enabled: bool) {
         // The online client's next frame draws its art by it.
         self.persistence.options_profile.smooth_online_menus = enabled;
+    }
+    fn store_vsync(&mut self, vsync: bool) {
+        // Applied at once: the window's surface presents by it from the
+        // next frame.
+        self.persistence.options_profile.vsync = vsync;
+        App::sync_present_mode(self);
     }
     fn store_hd_map_previews(&mut self, enabled: bool) {
         // The next setup screen picks its preview from it.
@@ -570,6 +596,10 @@ impl App {
     /// failed IPX admission) at52E37D. Preferences stay in their process
     /// caches; the original reads INI8870C0, not disk.
     pub(crate) fn prepare_multiplayer_settings(state: &mut AppState) {
+        // VERA: setup screens start from the player's own Options switches,
+        // which a previous room's replaced; a room's agreement plays its
+        // host's.
+        state.process_assets.use_own_personal_rules();
         //6980D6→6722F0 and475540 read the same process INI each visit and
         // may allocate a Country before the52E123 body pass.
         state
@@ -1148,6 +1178,7 @@ impl App {
         state.frontend.shell_first_paint_slide = None;
         state.frontend.skirmish_shell_state.choose_map_modal = None;
         state.frontend.skirmish_shell_state.validation_modal = None;
+        state.frontend.skirmish_shell_state.game_options = None;
         state.frontend.skirmish_shell_state.open_combo_dropdown = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_drag = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_press = None;
@@ -1707,6 +1738,22 @@ impl App {
                     result == crate::ui::shell::modal::ModalResult::MessageBox(0),
                 );
             }
+            ShellMessageBoxPurpose::ModFiles(which) => {
+                Self::close_shell_message_box_from_controller(state);
+                Self::answer_mod_files(
+                    state,
+                    which,
+                    result == crate::ui::shell::modal::ModalResult::MessageBox(0),
+                );
+            }
+            ShellMessageBoxPurpose::ModMade(dir) => {
+                Self::close_shell_message_box_from_controller(state);
+                Self::answer_mod_made(
+                    state,
+                    &dir,
+                    result == crate::ui::shell::modal::ModalResult::MessageBox(0),
+                );
+            }
         }
     }
 
@@ -1956,7 +2003,7 @@ impl App {
                 crate::app::shell_network_setup::commit_start(state, agreed_seed)
             }
             ShellExitThen::SkirmishChooseMap => {
-                let mode_id = state.frontend.skirmish_shell_state.selected_mode_id;
+                let mode_id = state.frontend.skirmish_shell_state.selected_mode.id;
                 let record_index = Self::current_choose_map_record_index(state);
                 Self::open_choose_map_modal(state, mode_id, record_index);
             }
@@ -1982,12 +2029,6 @@ impl App {
                 crate::app::shell_wol::lobby::commit_create(state, observe)
             }
             ShellExitThen::WolOptionsOpen => crate::app::shell_wol::options::commit_open(state),
-            ShellExitThen::WolChatTranslationOpen => {
-                crate::app::shell_wol::chat_translation::commit_open(state)
-            }
-            ShellExitThen::WolChatTranslationClose(staged) => {
-                crate::app::shell_wol::chat_translation::commit_close(state, staged)
-            }
             ShellExitThen::WolOptionsClose(staged) => {
                 crate::app::shell_wol::options::commit_close(state, staged)
             }
@@ -2355,7 +2396,7 @@ impl App {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod status_error_tests {
     use super::{CardHost, shell_error_card};
     use crate::app::initialize::{StartupFiles, StartupProblem};

@@ -107,6 +107,11 @@ pub(crate) struct LanShellRuntime {
     pub(crate) lobby: LanLobbyState,
     /// The single-OK box's label, a CSF or `VERA:` one ([`crate::i18n::label`]).
     pub(crate) modal: Option<&'static str>,
+    /// VERA: the box's text when it says more than its label: why the host
+    /// refused a join whose rules differ ([`agreement::rules_differ_text`]).
+    ///
+    /// [`agreement::rules_differ_text`]: crate::app::shell_network_setup::agreement::rules_differ_text
+    pub(crate) modal_body: Option<String>,
     /// VERA's Create Game box while it is up: the room's limits.
     pub(crate) create: Option<RoomLimitsPicker>,
     pending_join: Option<PendingJoin>,
@@ -119,6 +124,7 @@ impl LanShellRuntime {
         Self {
             lobby: LanLobbyState::new(name, observer),
             modal: None,
+            modal_body: None,
             create: None,
             pending_join: None,
             rejoin: None,
@@ -370,6 +376,7 @@ fn denial_modal(reason: u32, observer: bool) -> Option<&'static str> {
 fn show_modal(state: &mut AppState, key: &'static str) {
     let runtime = state.frontend.lan.as_mut().expect("active BB");
     runtime.modal = Some(key);
+    runtime.modal_body = None;
     runtime.lobby.cancel_pointer();
     state.frontend.shell_controller.push(MODAL, true);
 }
@@ -421,15 +428,15 @@ fn append_chat_to(
             .as_secs();
         line.text = crate::ui::wol_chat::timed_line(line.text, sent_at, now);
     }
-    let (rect, scale) = if setup {
+    let (rect, scale, text) = if setup {
         let layout = crate::app::input::multiplayer_setup::layout(state);
-        (layout.chat_log, layout.page.scale)
+        (layout.chat_log, layout.page.scale, layout.chat_text_scale())
     } else if wol_lobby {
         let layout = crate::app::shell_wol::lobby::layout(state);
-        (layout.chat_log, layout.page.scale)
+        (layout.chat_log, layout.page.scale, 1.0)
     } else {
         let layout = layout(state);
-        (layout.chat_log, layout.page.scale)
+        (layout.chat_log, layout.page.scale, 1.0)
     };
     let chat = if setup {
         state
@@ -454,9 +461,11 @@ fn append_chat_to(
     if let Some(chat) = chat {
         let visible = chat
             .list
-            .geometry(rect, chat.lines.len(), scale)
+            .geometry_for_text(rect, chat.lines.len(), scale, text)
             .visible_rows;
-        chat.append_message(line, scale.base_rect(rect).w, visible, |units| {
+        // Smaller text fits more of it in the log's width.
+        let width = (scale.base_rect(rect).w as f32 / text) as i32;
+        chat.append_message(line, width, visible, |units| {
             state
                 .renderer
                 .bit_font
@@ -660,6 +669,14 @@ pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
             if let Some(message) = message {
                 show_modal(state, message);
             }
+            // VERA: the host compared the rules hash, and retail's text for
+            // it sends the player to Westwood. Say what this game changes.
+            if reason == 6 {
+                let body = crate::app::shell_network_setup::agreement::rules_differ_text(state);
+                if let Some(runtime) = state.frontend.lan.as_mut() {
+                    runtime.modal_body = Some(body);
+                }
+            }
         }
         LanServiceEvent::JoinAccepted(accepted) => {
             if !runtime
@@ -815,6 +832,7 @@ fn create_box_layout(state: &AppState) -> crate::ui::shell::modal::LanCreateGame
 fn acknowledge(state: &mut AppState) {
     if let Some(runtime) = state.frontend.lan.as_mut() {
         runtime.modal = None;
+        runtime.modal_body = None;
         runtime.lobby.cancel_pointer();
     }
     state.frontend.shell_controller.pop();
@@ -1206,7 +1224,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     deadline
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

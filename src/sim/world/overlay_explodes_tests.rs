@@ -249,6 +249,11 @@ fn retail_barrel_death_checks_cardinal_overlay_before_arming_its_death_fuse() {
         )
         .unwrap();
     let overlay = rock(&mut sim, &rules, neighbor);
+    // Coord49F550 keeps the barrel's height above ground on the raised
+    // neighbor: Z 0 - ground 0 + ground at level 2 (208).
+    let terrain = sim.resolved_terrain.as_mut().unwrap();
+    let index = terrain.index(neighbor.0, neighbor.1).unwrap();
+    terrain.cells_mut_for_test()[index].level = 2;
     assert!(rules.object("CAMISC02").unwrap().explodes);
     assert!(
         rules
@@ -284,7 +289,7 @@ fn retail_barrel_death_checks_cardinal_overlay_before_arming_its_death_fuse() {
         crate::sim::anim_class::AnimWorldCoord {
             x: 13 * 256 + 128,
             y: 12 * 256 + 128,
-            z: 0
+            z: 208
         }
     );
     assert_eq!(fire.draw_flags(), 0x600);
@@ -333,7 +338,7 @@ fn retail_voxel_contact_cap_survives_snapshot_and_piece_retirement() {
         sim.resolved_terrain(),
     );
     let position = glam::IVec3::new(coord.x, coord.y, coord.z);
-    sim.emit_debris_voxel(type_id, kind, None, position, true, &mut Vec::new())
+    sim.emit_debris_voxel(type_id, kind, None, position, true, &mut Vec::new(), &rules)
         .unwrap();
     let piece = sim.voxel_anims().ids()[0];
     let warhead = sim.interner.intern("TankOGas");

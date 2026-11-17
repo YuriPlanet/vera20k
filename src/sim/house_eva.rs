@@ -178,7 +178,7 @@ fn tick_house_eva(sim: &mut Simulation, rules: &RuleSet) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

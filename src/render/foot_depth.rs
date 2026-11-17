@@ -376,7 +376,7 @@ pub(crate) fn unit_composite_split(
         || navigating_to_weapons_factory
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
 

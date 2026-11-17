@@ -15,7 +15,6 @@ use crate::map::waypoints::Waypoint;
 use crate::skirmish_launch::{LaunchCountry, SkirmishLaunchMode, SkirmishLaunchSession};
 use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale};
 
-const NATIVE_START_LIMIT: u32 = 8;
 const PREVIEW_SCALE: i64 = 1_000;
 const MARKER_FRACTION_SCALE: i64 = 1_000_000;
 const MMPB_OFFSET_X: i64 = -3;
@@ -341,7 +340,6 @@ pub(crate) struct LoadingCompositionSnapshot {
 impl LoadingCompositionSnapshot {
     /// Ares553820/553B3B/553E54 use the actual retained Country label records,
     /// keeping the shared localization, special uppercase and layout owners.
-    #[cfg(feature = "ares")]
     pub(crate) fn bind_country_loading(
         &mut self,
         loading: &crate::rules::country_loading::AresCountryLoading,
@@ -379,7 +377,10 @@ pub(crate) fn build_loading_composition(
     assignments: &[LoadingStartAssignment],
 ) -> LoadingCompositionSnapshot {
     let region = mmpb_region_rect(loading_authored_size(render_size, scale)[0]).scaled(scale);
-    let prefix = native_loading_waypoint_prefix(&map.waypoints);
+    let slot_limit = crate::map::waypoints::multiplayer_start_slot_limit(
+        crate::map::waypoints::skirmish_player_capacity(&map.ini),
+    );
+    let prefix = native_loading_waypoint_prefix(&map.waypoints, slot_limit);
     let bounds = projected_playfield_bounds(map);
 
     let mut markers = Vec::new();
@@ -392,7 +393,7 @@ pub(crate) fn build_loading_composition(
             let fit = aspect_fit_preview(region, preview.width, preview.height)?;
             let mut image = preview.clone();
             if let Some(bounds) = bounds {
-                burn_black_start_indicators(&mut image, &prefix, bounds);
+                burn_black_start_indicators(&mut image, &prefix, bounds, 0);
                 markers = build_mmpb_marker_records(&prefix, assignments, bounds, region, fit);
             }
             Some(PreparedLoadingPreview { image, region, fit })
@@ -433,9 +434,15 @@ pub(crate) fn build_random_map_loading_composition(
         .filter(valid_preview_buffer)
         .and_then(|mut image| {
             let fit = aspect_fit_preview(region, image.width, image.height)?;
-            let prefix = native_loading_waypoint_prefix(active_scenario_waypoints);
+            // The active array holds only the staged starts, so every staging
+            // slot is a start slot.
+            let prefix = native_loading_waypoint_prefix(
+                active_scenario_waypoints,
+                crate::map::preview::START_STAGING_SLOTS as u32,
+            );
             if let Some(bounds) = projected_playfield_bounds(launch_map) {
-                burn_black_start_indicators(&mut image, &prefix, bounds);
+                let halvings = random_map_preview_halvings(image.width, bounds);
+                burn_black_start_indicators(&mut image, &prefix, bounds, halvings);
                 markers = build_mmpb_marker_records(&prefix, assignments, bounds, region, fit);
             }
             Some(PreparedLoadingPreview { image, region, fit })
@@ -566,9 +573,18 @@ pub(crate) fn scenario_start_staging(
     staging
 }
 
-/// Reproduce the valid-count-then-numeric-prefix behavior over waypoint indices 0..7.
-pub(crate) fn native_loading_waypoint_prefix(waypoints: &HashMap<u32, Waypoint>) -> Vec<Waypoint> {
-    let valid_count = (0..NATIVE_START_LIMIT)
+/// Reproduce the valid-count-then-numeric-prefix behavior over waypoint indices
+/// `0..slot_limit`.
+///
+/// gamemd's compositor `FUN_00640A40` visits waypoints 0..7. VERA extension: a
+/// map that declares 9–30 starts, or a random map staged for more than eight
+/// players, passes its larger start-slot count (the limit Gather uses), so
+/// every start gets its marker. Ordinary maps pass 8 and play as gamemd.
+pub(crate) fn native_loading_waypoint_prefix(
+    waypoints: &HashMap<u32, Waypoint>,
+    slot_limit: u32,
+) -> Vec<Waypoint> {
+    let valid_count = (0..slot_limit)
         .filter(|index| waypoints.contains_key(index))
         .count() as u32;
     (0..valid_count)
@@ -661,25 +677,42 @@ pub(crate) fn build_mmpb_marker_records(
 
 /// Burn clipped opaque-black `4x4` source rectangles before preview aspect fitting.
 ///
+/// VERA extension: on a `RandMap.img` written at half size `halvings` times
+/// ([`random_map_preview_halvings`]) each rectangle and its place shrink the
+/// same way; at zero this is the native burn.
+///
 /// Returns the number of indicators that wrote at least one in-bounds pixel.
 pub(crate) fn burn_black_start_indicators(
     preview: &mut DecodedPreview,
     prefix: &[Waypoint],
     bounds: ProjectedPlayfieldBounds,
+    halvings: u32,
 ) -> usize {
     if !valid_preview_buffer(preview) {
         return 0;
     }
+    let size = (START_INDICATOR_SIZE >> halvings).max(1);
     let mut written = 0;
     for waypoint in prefix {
         let point = project_waypoint(*waypoint);
-        let x = (i64::from(point.x) - i64::from(bounds.min_x)) * 2 - 1;
-        let y = i64::from(point.y) - i64::from(bounds.min_y) - 1;
-        if fill_black_rect_clipped(preview, x, y) {
+        let x = ((i64::from(point.x) - i64::from(bounds.min_x)) * 2 - 1) >> halvings;
+        let y = (i64::from(point.y) - i64::from(bounds.min_y) - 1) >> halvings;
+        if fill_black_rect_clipped(preview, x, y, size) {
             written += 1;
         }
     }
     written
+}
+
+/// VERA: how many times a random map's preview was halved to fit a room's
+/// preview transfer (`shell_random_map::write_random_map_preview_to_dir`):
+/// the full preview is twice the projected width across. Zero for every size
+/// the original game makes.
+fn random_map_preview_halvings(width: u32, bounds: ProjectedPlayfieldBounds) -> u32 {
+    let full = i64::from(bounds.extent_x) * 2;
+    (0..8)
+        .take_while(|halvings| full >> (halvings + 1) >= i64::from(width))
+        .count() as u32
 }
 
 fn valid_preview_buffer(preview: &DecodedPreview) -> bool {
@@ -697,16 +730,16 @@ fn valid_preview_buffer(preview: &DecodedPreview) -> bool {
         && preview.height != 0
 }
 
-fn fill_black_rect_clipped(preview: &mut DecodedPreview, x: i64, y: i64) -> bool {
+fn fill_black_rect_clipped(preview: &mut DecodedPreview, x: i64, y: i64, size: i64) -> bool {
     let width = i64::from(preview.width);
     let height = i64::from(preview.height);
     let mut wrote = false;
-    for offset_y in 0..START_INDICATOR_SIZE {
+    for offset_y in 0..size {
         let pixel_y = y + offset_y;
         if !(0..height).contains(&pixel_y) {
             continue;
         }
-        for offset_x in 0..START_INDICATOR_SIZE {
+        for offset_x in 0..size {
             let pixel_x = x + offset_x;
             if !(0..width).contains(&pixel_x) {
                 continue;
@@ -770,7 +803,7 @@ fn composition_layers(
     layers
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 
@@ -881,7 +914,7 @@ mod tests {
             (4, waypoint(4, 4, 4)),
             (5, waypoint(5, 5, 5)),
         ]);
-        let prefix = native_loading_waypoint_prefix(&waypoints);
+        let prefix = native_loading_waypoint_prefix(&waypoints, 8);
         assert_eq!(
             prefix
                 .iter()
@@ -909,9 +942,43 @@ mod tests {
                 extent_x: 1,
                 extent_y: 1,
             },
+            0,
         );
         assert_eq!(written, 1);
         assert_eq!(preview.rgba, [0, 0, 0, 255].repeat(9));
+    }
+
+    /// VERA: a random map's preview written at half size takes its black
+    /// squares at half size and half the distance, so a start in its right
+    /// half still gets one.
+    #[test]
+    fn a_halved_random_map_preview_takes_halved_start_squares() {
+        let start = waypoint(0, 0, 0);
+        let point = project_waypoint(start);
+        let bounds = ProjectedPlayfieldBounds {
+            min_x: point.x - 10,
+            min_y: point.y - 2,
+            extent_x: 12,
+            extent_y: 8,
+        };
+        assert_eq!(random_map_preview_halvings(24, bounds), 0);
+        assert_eq!(random_map_preview_halvings(12, bounds), 1);
+        let mut preview = DecodedPreview {
+            width: 12,
+            height: 4,
+            rgba: vec![255; 12 * 4 * 4],
+        };
+        let halvings = random_map_preview_halvings(preview.width, bounds);
+        assert_eq!(
+            burn_black_start_indicators(&mut preview, &[start], bounds, halvings),
+            1
+        );
+        // Full size puts the square at (19, 1); half size at (9, 0), 2x2.
+        let black: Vec<(u32, u32)> = (0..preview.height)
+            .flat_map(|y| (0..preview.width).map(move |x| (x, y)))
+            .filter(|&(x, y)| preview.rgba[((y * preview.width + x) * 4) as usize] == 0)
+            .collect();
+        assert_eq!(black, [(9, 0), (10, 0), (9, 1), (10, 1)]);
     }
 
     #[test]
@@ -1421,9 +1488,9 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_country_loading_uses_retained_labels_instead_of_the_stock_slot() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let csf = test_csf(&[
             ("Name:Arabs", "Iraq"),
             ("Name:DESO", "Desolator"),
@@ -1507,5 +1574,79 @@ mod tests {
             );
         }
         CsfFile::from_bytes(&data).expect("valid test CSF")
+    }
+
+    #[test]
+    fn more_than_eight_starts_get_a_marker_each() {
+        use crate::map::map_file::MapCell;
+        use crate::rules::ini_parser::IniFile;
+
+        let cell = |rx, ry| MapCell {
+            legacy_ice_byte: 0,
+            rx,
+            ry,
+            tile_index: 0,
+            sub_tile: 0,
+            z: 0,
+        };
+        let starts: HashMap<u32, Waypoint> = (0..30)
+            .map(|index| (index, waypoint(index, 70 + index as i16, 70)))
+            .collect();
+        let assignments: Vec<_> = (0..30)
+            .map(|index| LoadingStartAssignment {
+                start_index: index,
+                participant: LoadingParticipantId::Opponent(index as usize),
+                color_priority: index as u8,
+            })
+            .collect();
+        let image = DecodedPreview {
+            width: 300,
+            height: 100,
+            rgba: vec![255; 300 * 100 * 4],
+        };
+        let map = |declaration: &str| {
+            let mut map = crate::map::rmg::emit::empty_map_file(
+                &crate::map::rmg::RmgOptions::default(),
+                100,
+                100,
+            );
+            map.cells = vec![cell(60, 60), cell(60, 140), cell(140, 60)];
+            let keys: String = (0..30)
+                .map(|index| format!("{index}={}\n", 70_070 + index))
+                .collect();
+            map.ini = IniFile::from_str(&format!("[Basic]\n{declaration}[Waypoints]\n{keys}"));
+            map.waypoints = starts.clone();
+            map.preview.decoded = Some(image.clone());
+            map
+        };
+        let selected = |declaration| {
+            build_loading_composition(
+                &map(declaration),
+                &test_launch_session(),
+                None,
+                [800, 600],
+                ShellScale::RETAIL,
+                &assignments,
+            )
+            .markers
+            .len()
+        };
+        // A map declaring thirty starts marks all thirty; an ordinary map keeps
+        // gamemd's eight.
+        assert_eq!(selected("MaxPlayers=30\n"), 30);
+        assert_eq!(selected(""), 8);
+        // A random map staged for thirty players marks every staged start.
+        let random = build_random_map_loading_composition(
+            &test_launch_session(),
+            None,
+            [800, 600],
+            ShellScale::RETAIL,
+            Some(image.clone()),
+            &map(""),
+            &starts,
+            &assignments,
+        );
+        assert_eq!(random.markers.len(), 30);
+        assert_eq!(random.markers[29].color_priority, 29);
     }
 }

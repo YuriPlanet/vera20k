@@ -1211,7 +1211,7 @@ impl BombBlast {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "bomb_tests.rs"]
 mod tests;
 
@@ -1268,6 +1268,6 @@ impl BombClock {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "bomb_detonate_tests.rs"]
 pub(crate) mod detonate_tests;

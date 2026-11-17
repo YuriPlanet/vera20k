@@ -152,3 +152,81 @@ fn bare_store_band_box_keeps_exact_local_owner_identity() {
     let snapshot = band(sim.entities(), &sim, Some("Russians"));
     assert_eq!(snapshot.select, vec![2]);
 }
+
+/// One T tap over the fixture world with `selected` already selected.
+fn type_select_tap(sim: &Simulation, selected: &[u64]) -> TypeSelectTapResult {
+    let order = encounter_order(sim);
+    compute_type_select_tap_with_playfield(
+        sim,
+        &order,
+        &order,
+        selected,
+        None,
+        Some("Russians"),
+        None,
+        Some(sim.interner()),
+        false,
+        false,
+    )
+}
+
+#[test]
+fn campaign_type_select_keeps_a_lone_player_controlled_selection() {
+    // `Tactical::Unselect_If_Not_Owned @ 0x006DA770` reads only the House's
+    // PlayerControl byte (+0x1ED) in campaign: a lone Romanov stays selected.
+    let (sim, _) = world(true, false);
+    assert!(type_select_tap(&sim, &[1]).mutation.deselect.is_empty());
+
+    // With a nonzero game mode the same House is another player's.
+    let (sim, _) = world(false, true);
+    assert_eq!(type_select_tap(&sim, &[1]).mutation.deselect, vec![1]);
+}
+
+#[test]
+fn campaign_type_select_gathers_a_player_controlled_houses_units() {
+    // `TypeSelect__AliveLocalOwnerPredicate @ 0x00732580`: a German
+    // conscript beside the player's own joins the on-screen pass, which
+    // Selects the already selected one again.
+    let (mut sim, houses) = world(true, false);
+    spawn_mobile(&mut sim, 4, 16, 10, houses.player_controlled, "E2");
+    let tap = type_select_tap(&sim, &[2]);
+    assert_eq!(tap.outcome, crate::app::types::TypeSelectOutcome::Screen);
+    assert_eq!(tap.mutation.select, vec![2, 4]);
+}
+
+/// A Shift-click on the conscript with `selected` already selected.
+fn shift_click_conscript(sim: &Simulation, selected: &[u64]) -> SelectionMutation {
+    let conscript = sim.entities().get(2).expect("the fixture conscript");
+    let (x, y) = crate::render::locomotor_visual::screen_position(conscript);
+    let order = encounter_order(sim);
+    compute_click_selection_snapshot_with_playfield(
+        sim,
+        &order,
+        selected,
+        None,
+        Some("Russians"),
+        x,
+        y,
+        true,
+        None,
+        Some(sim.interner()),
+        false,
+        None,
+    )
+    .expect("the click lands on the conscript")
+}
+
+#[test]
+fn campaign_shift_click_adds_to_a_player_controlled_selection() {
+    // The toggle arm asks `IsHumanPlayer` of the first selected object's
+    // House (0x004ABD50 calls 0x0050B6F0). In campaign PlayerControl answers
+    // yes, so the conscript joins Romanov instead of replacing him.
+    let (sim, _) = world(true, false);
+    let add = shift_click_conscript(&sim, &[1]);
+    assert!(!add.clear);
+    assert_eq!(add.select, vec![2]);
+
+    // With a nonzero game mode Romanov's House is another player's.
+    let (sim, _) = world(false, true);
+    assert!(shift_click_conscript(&sim, &[1]).clear);
+}

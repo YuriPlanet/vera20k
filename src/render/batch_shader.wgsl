@@ -121,20 +121,11 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
     return shade(input, tactical_a_at(input.position.xy));
 }
 
-// DSurface4C0750's dashed stores (rally passes, psychic detection dashes)
-// keep or skip each pixel by the live tactical A: FX_SURFACE_A_NONZERO
-// (256) stores where it is nonzero, FX_SURFACE_A_ZERO (512) where it is zero,
-// and neither stores everywhere. The stored color reads no palette row.
+// Surface stores at neutral A (the ground marks). The stored color reads no
+// palette row. The line strokes draw through `surface_strokes.wgsl`.
 @fragment
 fn fs_surface_store(input: VertexOutput) -> @location(0) vec4f {
-    var store = input;
-    store.fx_flags = input.fx_flags & ~768u;
-    let color = shade(store, 127u);
-    let a = tactical_a_at(input.position.xy);
-    if ((input.fx_flags & 256u) != 0u && a == 0u) || ((input.fx_flags & 512u) != 0u && a != 0u) {
-        discard;
-    }
-    return color;
+    return shade(input, 127u);
 }
 
 fn shade(input: VertexOutput, a: u32) -> vec4f {

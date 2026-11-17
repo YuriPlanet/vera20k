@@ -1268,11 +1268,11 @@ fn parse_sound_priority(raw: &str) -> u8 {
         .map_or(SOUND_PRIORITY_DEFAULT, |&(_, value)| value)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "sound_ini_ares_eva_tests.rs"]
 mod ares_eva_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
 

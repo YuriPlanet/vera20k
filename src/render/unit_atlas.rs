@@ -234,7 +234,7 @@ struct Resident {
     rendered_index: RenderedIndex,
     /// Each resident sprite's native pool size
     /// ([`crate::render::voxel_image_cache::sprite_pool_bytes`]).
-    pool_bytes: HashMap<UnitSpriteKey, u32>,
+    pool_bytes: LookupMap<UnitSpriteKey, u32>,
     /// Keys an admitted model draws that no draw has asked for yet. A key
     /// leaves when it is drawn, or fails to draw, and never returns.
     undrawn: HashSet<UnitSpriteKey>,
@@ -279,19 +279,19 @@ enum VoxelModel<'a> {
     Turret(&'a str),
 }
 
-/// The voxel models the world's objects draw with, keyed by rules type, each
-/// once however many objects share it: an object's model follows from its
-/// type, whether it is voxel, and its class.
+/// The voxel models `objects` draw with, keyed by rules type, each once
+/// however many objects share it: an object's model follows from its type,
+/// whether it is voxel, and its class.
 /// Buildings keep that identity too: their native loader resolves separate
 /// TurretAnim turret/barrel slots, and the draw consumes their own metadata.
-fn world_voxel_models<'a>(
-    entities: &'a crate::sim::entity_store::EntityStore,
+fn voxel_models<'a>(
+    objects: impl Iterator<Item = &'a crate::sim::game_entity::GameEntity> + 'a,
     rules: Option<&'a RuleSet>,
     interner: Option<&'a crate::sim::intern::StringInterner>,
 ) -> impl Iterator<Item = VoxelModel<'a>> + 'a {
     use crate::map::entities::EntityCategory;
     let mut asked = crate::util::lookup_hash::LookupSet::default();
-    entities.values().filter_map(move |entity| {
+    objects.filter_map(move |entity| {
         let voxel = entity.is_voxel();
         let category = entity.category();
         if !voxel && category != EntityCategory::Structure {
@@ -316,16 +316,26 @@ fn world_voxel_models<'a>(
 }
 
 /// Whether `atlas` — None while no unit atlas exists — has admitted every
-/// voxel model the world draws, so no admission is needed. This runs on
-/// every tick with a spawn, death or Limbo, so it asks once for each model
-/// and stops at the first miss.
+/// voxel model the world draws, so no admission is needed. It asks once for
+/// each model and stops at the first miss.
 pub fn atlas_covers_world(
     atlas: Option<&UnitAtlas>,
     entities: &crate::sim::entity_store::EntityStore,
     rules: Option<&RuleSet>,
     interner: Option<&crate::sim::intern::StringInterner>,
 ) -> bool {
-    let mut models = world_voxel_models(entities, rules, interner);
+    atlas_covers_objects(atlas, entities.values(), rules, interner)
+}
+
+/// Whether `atlas` has admitted every voxel model `objects` draw: the
+/// atlas check asks this of the objects whose look changed.
+pub(crate) fn atlas_covers_objects<'a>(
+    atlas: Option<&UnitAtlas>,
+    objects: impl Iterator<Item = &'a crate::sim::game_entity::GameEntity> + 'a,
+    rules: Option<&'a RuleSet>,
+    interner: Option<&'a crate::sim::intern::StringInterner>,
+) -> bool {
+    let mut models = voxel_models(objects, rules, interner);
     match atlas {
         Some(atlas) => models.all(|model| atlas.covered.contains(model)),
         None => models.next().is_none(),
@@ -340,7 +350,7 @@ impl UnitAtlasDemand {
         interner: Option<&crate::sim::intern::StringInterner>,
     ) -> Self {
         let mut demand = Self::default();
-        for model in world_voxel_models(entities, rules, interner) {
+        for model in voxel_models(entities.values(), rules, interner) {
             if !demand.contains(model) {
                 let (set, type_id) = match model {
                     VoxelModel::Ground(type_id) => (&mut demand.ground, type_id),
@@ -389,6 +399,14 @@ impl UnitAtlasDemand {
 }
 
 impl UnitAtlas {
+    /// The style baked into this model's stable pictures. TechnoClass's
+    /// uncached draw (706ED0) reads the actual Type at706F02 and its
+    /// UseBuffer at+DAC. UnitClass can select this model through another
+    /// type's UnloadingClass (73B4D8). A differing draw needs a style variant.
+    pub(crate) fn raster_style(&self, key: &UnitSpriteKey) -> Option<bool> {
+        self.models.get(&key.type_id).map(|model| model.use_buffer)
+    }
+
     /// The pool bytes `key`'s image takes when the original caches it,
     /// drawing it first if no draw has asked for it yet.
     pub(crate) fn pool_bytes(&self, key: &UnitSpriteKey) -> Option<u32> {
@@ -1227,9 +1245,11 @@ impl UnitModel {
         }
         let count = crate::rules::voxel_frame_catalog::indexed_turret_count(type_id, rules);
         let guns = if count > 0 {
-            // The loader owns the bounded native slot array; never allocate
-            // arbitrary space from an unchecked authored TurretCount.
-            (0..(count as usize).min(model.indexed_count()))
+            // Unit73B8D9/70DCF0 uses a positive count to select indexed mode,
+            // then draws the retained current slot without a count comparison.
+            // ObjectType5F865F keeps earlier native slots after a count shrink.
+            // Allocation follows the loader's represented physical slots.
+            (0..model.indexed_count())
                 .map(|index| {
                     let (turret, barrel) = model.indexed_parts(index);
                     GunParts {
@@ -1296,10 +1316,11 @@ impl UnitModel {
         self.render_styled(key, vpl, None, &mut None, true, depth)
     }
 
+    /// The style supplied by the native drawer/cache (706F02, 706640),
+    /// independently of the selected model's own UseBuffer default.
     /// `depth` rasterizes the requested part, or each part of a Composite,
-    /// on the shared depth map; the parts that only size its padding draw
-    /// clear.
-    fn render_styled(
+    /// on the shared depth map; the parts that only size its padding draw clear.
+    pub(crate) fn render_styled(
         &self,
         key: &UnitSpriteKey,
         vpl: Option<&VplFile>,
@@ -1468,7 +1489,7 @@ impl UnitModel {
     /// the cached one. The Jumpjet arm's half sizes come from this model's
     /// main voxel; one that never loaded leaves them at the constructor's
     /// zero (`0x00710C4E`). `depth_tested` is 0xB43180 at the draw; a
-    /// `UseBuffer=` type always sets it.
+    /// drawer whose actual type has `UseBuffer=` always sets it.
     pub(crate) fn render_pose(
         &self,
         key: &UnitSpriteKey,
@@ -1512,7 +1533,10 @@ impl UnitModel {
         VxlRenderParams,
         Option<[i32; 4]>,
     )> {
-        let use_buffer = self.use_buffer || depth_tested;
+        //706F02 reads the actual Type, while73B4D8 can select another model.
+        // The caller already resolved both the actual flag and a cached hit's
+        // retained style. The selected model cannot override that answer.
+        let use_buffer = depth_tested;
         let body = self.body.as_ref()?;
         if let PoseTilt::Ground(pose) = tilt {
             let matrices = vxl_raster::ground_unit_pose_matrices(
@@ -1972,7 +1996,7 @@ fn facing_config_for_layer(layer: VxlLayer) -> (u8, u16) {
 }
 
 // Tests extracted to unit_atlas_tests.rs to stay under 600 lines.
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "unit_atlas_tests.rs"]
 mod tests;
 

@@ -53,11 +53,52 @@ fn scene() -> Simulation {
     sim
 }
 
+/// Action 8's toggle needs the first selected House to be the player's
+/// (0x004ABD35..0x004ABD57). A lone selected enemy makes the click action 7,
+/// which unselects all (0x004ABE4A) before T's batch (0x004ABE67).
+#[test]
+fn shift_t_click_on_a_selected_enemy_replaces_it_with_the_players_type() {
+    for ares_way in [false, true] {
+        shift_t_click_replaces_a_selected_enemy(ares_way);
+    }
+}
+
+fn shift_t_click_replaces_a_selected_enemy(ares_way: bool) {
+    let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+    let rules = rules("no");
+    let ares = rules.ares();
+    assert_eq!(ares, ares_way);
+    let sim = scene();
+    let click = compute_type_select_click_mutation_with_playfield(
+        sim.entities(),
+        &[1, 2, 3, 4, 5, 6],
+        &[5],
+        5,
+        true,
+        Some("me"),
+        Some(&rules),
+        Some(sim.interner()),
+        false,
+    );
+    assert!(click.clear && click.deselect.is_empty());
+    let grouped = if ares { vec![1, 2, 3] } else { vec![1] };
+    assert_eq!(click.select, grouped);
+}
+
 #[test]
 fn type_selection_group_reaches_tap_click_band_and_deploy_gate() {
+    for ares_way in [false, true] {
+        type_selection_group_reaches_every_path(ares_way);
+    }
+}
+
+fn type_selection_group_reaches_every_path(ares_way: bool) {
+    let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
     let sim = scene();
     let order = [1, 2, 3, 4, 5, 6];
     let disabled_deploy = rules("no");
+    let ares = disabled_deploy.ares();
+    assert_eq!(ares, ares_way);
     let tap = |rules: &RuleSet| {
         compute_type_select_tap_with_playfield(
             sim.entities(),
@@ -76,25 +117,13 @@ fn type_selection_group_reaches_tap_click_band_and_deploy_gate() {
     };
     assert_eq!(
         tap(&disabled_deploy),
-        if cfg!(feature = "ares") {
-            vec![1, 2, 3]
-        } else {
-            vec![1, 4]
-        }
+        if ares { vec![1, 2, 3] } else { vec![1, 4] }
     );
     assert_eq!(
         tap(&rules("yes")),
-        if cfg!(feature = "ares") {
-            vec![1, 2, 3, 4]
-        } else {
-            vec![1, 4]
-        }
+        if ares { vec![1, 2, 3, 4] } else { vec![1, 4] }
     );
-    let grouped = if cfg!(feature = "ares") {
-        vec![1, 2, 3]
-    } else {
-        vec![1]
-    };
+    let grouped = if ares { vec![1, 2, 3] } else { vec![1] };
     let click = compute_type_select_click_mutation_with_playfield(
         sim.entities(),
         &order,
@@ -147,12 +176,5 @@ fn type_selection_group_reaches_tap_click_band_and_deploy_gate() {
         Some(sim.interner()),
         false,
     );
-    assert_eq!(
-        band.select,
-        if cfg!(feature = "ares") {
-            vec![1, 2, 3]
-        } else {
-            vec![1, 2]
-        }
-    );
+    assert_eq!(band.select, if ares { vec![1, 2, 3] } else { vec![1, 2] });
 }

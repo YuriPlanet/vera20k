@@ -445,6 +445,15 @@ impl MinimapRenderer {
         )>,
         relation_color_generation: u64,
     ) -> Option<u64> {
+        // RESIDUAL (dormant: retail rules set ShroudGrow=no and FogOfWar=no):
+        // gamemd repaints a radar cell only once it is marked
+        // (RadarClass::MarkCellPixelsDirty 0x006565A0, reached only through
+        // MapClass::NotifyCellVisibilityChanged 0x005865F0). Neither regrowth
+        // pass (RegrowShroud 0x004ACAC0, RegrowFog 0x004ACBC0) marks one;
+        // the 120-frame edge sweep 0x00578100 does only where a cell's shroud
+        // edge becomes -2. So its radar shows regrown cells late or, for fog,
+        // not at all. VERA composes shroud and fog from the live cell flags
+        // on every fog change and shows the regrowth at once.
         let fog_generation = if full_visibility {
             0
         } else {
@@ -952,10 +961,10 @@ fn create_white_texture(
     batch.create_texture_on_device(device, queue, &white_rgba, 2, 2, None)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 #[path = "minimap_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 #[path = "minimap_gpu_tests.rs"]
 mod gpu_tests;

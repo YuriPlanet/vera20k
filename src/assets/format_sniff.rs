@@ -140,7 +140,7 @@ pub fn detect_format(data: &[u8]) -> Option<&'static str> {
     None
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod tests {
     use super::*;
 

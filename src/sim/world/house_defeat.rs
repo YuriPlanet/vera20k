@@ -56,22 +56,26 @@
 //!   producers remain separate caller coverage.
 //! - MPlayer_Defeated's capture-the-flag cleanup (Flag_Remove `0x004FBE40` at
 //!   `0x004FC112..0x004FC15E`, Scenario flag `0x10`) and the Harvester-Truce
-//!   UnInit loop (`0x004FC163`, Scenario flag `0x800`) are not ported; their
-//!   Scenario flags are off in stock skirmish, and skirmish never sets `0x10`
-//!   (trace in `movement::foot_speed`).
+//!   UnInit loop (`0x004FC163`, Scenario flag `0x800`) are not ported.
+//!   Skirmish never sets `0x10` (trace in `movement::foot_speed`). The truce
+//!   loop removes the house's remaining Units (`0x008B410C`), but Blowup_All
+//!   has already destroyed them: the truce immunity guards only area damage
+//!   (`0x00489710`), not Blowup_All's direct damage.
+//! - Invisible, not ported: the WOL stats byte `0xA8B8C1` (set at
+//!   `0x004FC556`, read only by the stats sender `0x006C6FA0`), and the
+//!   local defeat's mouse call (`0x004FC22A`) and repaint flags.
 //! - The local-player branch (`0x004FC1B0..0x004FC307`) is ported for the
 //!   whole-map reveal, the radar and Session `+0x300` (see `mplayer_defeated`;
 //!   `local_player_defeated` names the ported readers). The borrowed client
 //!   boundary leaves planning (`0x00637A10`), supplies its2B event to the same
-//!   frame's dispatcher and rejects re-entry (`0x00731A50`). The beacons'
-//!   deletion (`0x00431410`) and beacon mode's exit (`0x004AC960`) are the
-//!   app's `match_runtime::beacons` owner, run from the PlayerDefeated line.
-//!   The chat-mask set (`0x00A8D108..0x00A8D10F`, `0x004FC23E`) is the app's
-//!   `input::chat` owner, run from the PlayerDefeated line; dialog 0x73
-//!   reads the mask whenever it draws (`0x004FC239..0x004FC25D` refresh). The command bar is
-//!   saved/closed6D1660 but restored4FC591→6D1610 on the common sole-human
-//!   terminal path, so its retained open state is unchanged. Wider multiplayer
-//!   close/restore paths remain outside this chain. Session+300 already guards
+//!   frame's dispatcher and rejects re-entry (`0x00731A50`). The app runs
+//!   the rest from `LifecycleOutput::MultiplayerHouseDefeated`, observers
+//!   included: the beacons' deletion (`0x00431410`) and beacon mode's exit
+//!   (`0x004AC960`) in `match_runtime::beacons`, the chat-mask set
+//!   (`0x00A8D108..0x00A8D10F`, `0x004FC23E`) in `input::chat`, which dialog
+//!   0x73 reads whenever it draws (`0x004FC239..0x004FC25D` refresh), and the
+//!   command bar's close (6D1660) and its reopening when the match is over
+//!   (4FC591→6D1610) in `ui::sidebar::gadget_flash`. Session+300 already guards
 //!   band-box/type/navigation selection, Cheer input and the command-bar
 //!   opener (`0x006D08F5`). Its F0 close remains allowed. Remaining UI readers
 //!   include taunt (`0x0053636C`),
@@ -262,7 +266,9 @@ impl Simulation {
     /// Returned events join the post-Logic dispatcher without executing during
     /// a House visit. Without `defeat_pass`
     /// (VERA's first tick) the defeat gates and the game-over scan are
-    /// skipped.
+    /// skipped. RESIDUAL (invisible): the online map-edge probe
+    /// (`0x004F882B..0x004F890D`) is not ported; it draws Scenario RNG only
+    /// on a cell state honest play never reaches.
     pub(super) fn house_rung(
         &mut self,
         rules: &RuleSet,
@@ -517,6 +523,14 @@ impl Simulation {
         {
             self.computer_paranoid(rules, context.registry(), context.effects());
         }
+        // The sidebar part is the app's: PlayerPtr's beacons, command bar and
+        // chat mask (0x004FC1BD..0x004FC23E, an observer's too), and the bar's
+        // reopening by any defeat that ends the match (0x004FC591..0x004FC59F).
+        self.lifecycle_outputs
+            .emit(super::LifecycleOutput::MultiplayerHouseDefeated {
+                owner,
+                match_decided: self.multiplayer_decision().is_some(),
+            });
         let planning_commit = if self.session.current_house() == Some(owner) {
             // Original gamemd:4FC1EE ->637A10, before Session+300/reveal
             // and the loss announcement. Input owns the exit and2B event;
@@ -603,6 +617,17 @@ impl Simulation {
         )
     }
 
+    /// VERA: a network match in which every human watches, as VERA's room
+    /// starts while two or more AI play: no House is a human's but an
+    /// observer's. gamemd's rooms never start one.
+    pub(crate) fn network_ai_alone(&self) -> bool {
+        self.session.game_mode().is_network()
+            && !self.houses.order().iter().any(|owner| {
+                !self.session.is_observer_house(*owner)
+                    && self.houses.get(owner).is_some_and(|house| house.is_human())
+            })
+    }
+
     /// MPlayer_Defeated4FC3DE..6B7's decision: `None` while hostile
     /// survivors and a human remain, else each outcome viewpoint and whether
     /// it wins.
@@ -635,15 +660,20 @@ impl Simulation {
                             .is_allied(&self.interner, *right, *left))
             })
         });
-        if !all_allied && alive.len() != 1 && living_humans != 0 {
+        // VERA: in a match only AI play, no human's defeat ends it; it ends
+        // when one side is left.
+        if !all_allied && alive.len() != 1 && (living_humans != 0 || self.network_ai_alone()) {
             return None;
         }
-        //4FC5DD/5EC: both class virtuals are true only for Cooperative
-        //(5C4EE0/5C4EF0); ordinary5C0E40 returns false.4FC62C's final
-        //human scan intentionally does not filter passive Houses.
+        // 0x004FC5DD/5EC: both class virtuals return true only for Cooperative
+        // (0x005C4EE0/0x005C4EF0); ordinary 0x005C0E40 returns false. 0x004FC62C's
+        // final human scan intentionally does not filter passive Houses. VERA
+        // gates shared allied victory via ModePolicy::shared_allied_victory.
         let cooperative_shared_win = self.session.game_mode().is_network()
-            && self.session.multiplayer_mode_class()
-                == Some(crate::skirmish_modes::MpModeClass::Cooperative)
+            && self
+                .session
+                .multiplayer_mode_class()
+                .is_some_and(|class| class.policy().shared_allied_victory)
             && (all_allied || alive.len() == 1)
             && self
                 .houses
@@ -1217,6 +1247,6 @@ fn take_blowup_trace() -> Vec<EntityDamageEvent> {
     BLOWUP_TRACE.with(|trace| std::mem::take(&mut *trace.borrow_mut()))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "house_defeat_tests.rs"]
 mod tests;

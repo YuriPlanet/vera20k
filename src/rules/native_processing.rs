@@ -220,8 +220,12 @@ struct RulesLayer {
 #[derive(Debug, Clone)]
 pub struct RulesLayerStack {
     layers: Vec<RulesLayer>,
-    /// The installed game or its mod ships `ares.mix` (`rules::ares_switch`).
+    /// The game is an Ares game (`rules::ares_switch`): it mounted `ares.mix`,
+    /// or the player's Ares setting is On.
     ships_ares: bool,
+    /// VERA: the player's Ares setting is Off, so no Ares key turns Ares on
+    /// (`ares_switch::launch_keys_off`).
+    ares_keys_off: bool,
 }
 
 impl RulesLayerStack {
@@ -235,6 +239,7 @@ impl RulesLayerStack {
             // (`NativeRulesProcessOwner::startup_layers`); a fixture stack
             // stands for the game `ares_switch::game_ships_ares` says.
             ships_ares: crate::rules::ares_switch::game_ships_ares(false),
+            ares_keys_off: crate::rules::ares_switch::launch_keys_off(),
         }
     }
 
@@ -245,6 +250,15 @@ impl RulesLayerStack {
     /// before any Process pass reads it.
     pub fn with_ares_mix(mut self, ships_ares: bool) -> Self {
         self.ships_ares = ships_ares;
+        self
+    }
+
+    /// VERA: the stack of a game whose player set Ares Off, where no Ares key
+    /// turns Ares on. The game's owner sets it from the launch
+    /// (`NativeRulesProcessOwner::startup_layers`); a fixture stack reads the
+    /// launch's (`ares_switch::launch_keys_off`).
+    pub fn with_ares_keys_off(mut self, off: bool) -> Self {
+        self.ares_keys_off = off;
         self
     }
 
@@ -289,8 +303,9 @@ impl RulesLayerStack {
         self.process_with_fixed_art(&IniFile::empty())
     }
 
-    /// Apply every Rules pass against fixed ARTMD with an empty EVA catalog.
-    /// Production uses the process owner to supply its fixed EVAMD catalog.
+    /// Apply every Rules pass against fixed ARTMD with empty EVA and SOUNDMD
+    /// catalogs, so no type sound resolves. Production uses the process owner
+    /// to supply its fixed EVAMD and SOUNDMD.
     ///
     /// Retail provenance: `Load_Game_Rules @ 0x0052CD70` selects ARTMD before
     /// the first `RulesClass::Process @ 0x00668BF0`; `ReadTypeData @ 0x00679A10`
@@ -303,6 +318,24 @@ impl RulesLayerStack {
             fixed_art,
             NativeRulesRegistryState::new(self.ships_ares),
         )
+    }
+
+    /// [`Self::process_with_fixed_art`] against a fixed SOUNDMD, which the
+    /// process owner always supplies outside tests.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn process_with_fixed_art_and_sounds(
+        &self,
+        fixed_art: &IniFile,
+        fixed_sounds: &SoundRegistry,
+    ) -> Result<ProcessedRulesLayers, RulesError> {
+        self.process_with_fixed_art_and_registry_state_recovering(
+            fixed_art,
+            NativeRulesRegistryState::new(self.ships_ares),
+            RulesProcessContext::Ordinary,
+            &EvaRegistry::default(),
+            fixed_sounds,
+        )
+        .map_err(NativeRulesProcessingFailure::into_error)
     }
 
     /// Continue Process calls against an already-live process registry.
@@ -450,6 +483,7 @@ impl RulesLayerStack {
                 let ares_inputs = crate::rules::ares_switch::AresInputs::from_passes(
                     &processor.ares_reads,
                     self.ships_ares,
+                    self.ares_keys_off,
                 );
                 let (ini, native_type_construction_trace) = processor.clone().finish();
                 let prefix = ProcessedRulesLayers {
@@ -484,6 +518,7 @@ impl RulesLayerStack {
         let ares_inputs = crate::rules::ares_switch::AresInputs::from_passes(
             &processor.ares_reads,
             self.ships_ares,
+            self.ares_keys_off,
         );
         let (ini, native_type_construction_trace) = processor.finish();
         Ok((
@@ -1153,13 +1188,15 @@ impl ProcessedRulesLayers {
                 "saved Rules require a different compiled extension capability",
             ));
         }
-        // A build without the `ares` feature reads only the stock way, since
-        // it never mounts `ares.mix`, and a build with it only the Ares way:
-        // neither restores Rules read the other way.
-        if !crate::rules::ares_switch::build_reads(registry.reads_ares_way) {
-            return Err(RulesError::InvalidSavedState(
-                "saved Rules were read in a way this build never reads",
-            ));
+        // A launch reads one way, by whether its game ships `ares.mix`
+        // (`ares_switch::launch_reads`): Rules read the other way are another
+        // game's.
+        if !crate::rules::ares_switch::launch_reads(registry.reads_ares_way) {
+            return Err(RulesError::InvalidSavedState(if registry.reads_ares_way {
+                "saved Rules are from a game with Ares (ares.mix), which the game now open is not"
+            } else {
+                "saved Rules are from a game without Ares, and the game now open ships ares.mix"
+            }));
         }
         // Only a read the Ares way fills these SuperWeaponType fields.
         if !registry.reads_ares_way
@@ -1711,6 +1748,22 @@ impl ProcessedRulesLayers {
             .into_iter()
             .flatten()
             .map(|member| (member.native_stored_id.as_str(), member.infantry_civilian))
+    }
+
+    /// TechnoType+C8F of each InfantryType after the last pass.
+    pub(crate) fn infantry_damage_spark_states(&self) -> impl Iterator<Item = (&str, bool)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .get(&RulesTypeFamily::Infantry)
+            .into_iter()
+            .flatten()
+            .map(|member| {
+                (
+                    member.native_stored_id.as_str(),
+                    member.infantry_damage_sparks,
+                )
+            })
     }
 
     /// Each InfantryType's fixed-ART reads after every reached pass.
@@ -4572,10 +4625,8 @@ impl Default for NativeRulesRegistryState {
 impl NativeRulesRegistryState {
     /// A fresh RulesClass and empty Type registries, read the Ares way
     /// (Ares' generic prerequisites and armor catalog with them) or the stock
-    /// way for the rest of the process. A build with the `ares` feature reads
-    /// every game the Ares way (`ares_switch::reading_mode`).
+    /// way for the rest of the process.
     pub(crate) fn new(ares_way: bool) -> Self {
-        let ares_way = crate::rules::ares_switch::reading_mode(ares_way);
         // RulesClass constructor values; `GeneralRules::default` owns them.
         let general = crate::rules::ruleset::GeneralRules::default();
         Self {
@@ -5479,6 +5530,11 @@ struct ProcessedType {
     /// the current byte as Civilian's default on each reached own-ID body.
     #[serde(default)]
     infantry_civilian: bool,
+    /// TechnoType+C8F: InfantryType ReadINI clears it on every pass
+    /// (`0x005240BD`, skipped under Ares), then a reached body sets it from
+    /// the retained `Cyborg` byte (`0x005243DD..0x005243E7`).
+    #[serde(default)]
+    infantry_damage_sparks: bool,
     #[serde(default)]
     infantry_infiltration: InfantryInfiltration,
     /// Infantry ctor `0x00523788`/`0x005236D7..0x005236F9` and the fixed-ART
@@ -5709,6 +5765,13 @@ pub(crate) struct TechnoTypeReferences {
     /// `UnloadingClass=` (+6B8, `0x007146E8..0x0071471A`), a UnitType, and
     /// `DeployingAnim=` (+6BC, `0x00714715..0x0071473F`), an AnimType.
     unloading_class: Option<String>,
+    /// Ares TechnoTypeExt ctor1003C9E4 clears +1DC. Early reader10041DC0 in
+    /// Ext/TechnoType/Hooks.cpp
+    /// (hook715320, resumes715326) calls1002EBC0/1002D970 and UnitType
+    /// Find1002DCF0, without allocation. Absent/empty/unknown retains the
+    /// pointer. The values none/<none> clear it. The draw consumes this pointer.
+    #[serde(default)]
+    water_image: Option<String>,
     deploying_anim: Option<String>,
     /// `Enslaves=` (+D40, `0x00714DD7..0x00714DEC`) through the InfantryType
     /// reader `0x0067BAC0`, and `Spawns=` (+D58, `0x00714E9E..0x00714EB3`)
@@ -5758,6 +5821,7 @@ impl TechnoTypeReferences {
             damage_particle_systems: Vec::new(),
             destroy_particle_systems: Vec::new(),
             unloading_class: None,
+            water_image: None,
             deploying_anim: None,
             enslaves: None,
             spawns: None,
@@ -5798,6 +5862,7 @@ impl TechnoTypeReferences {
             .destroy_particle_systems
             .clone_from(&self.destroy_particle_systems);
         object.unloading_class.clone_from(&self.unloading_class);
+        object.bind_water_image(self.water_image.as_deref());
         object.deploying_anim.clone_from(&self.deploying_anim);
         object.enslaves.clone_from(&self.enslaves);
         object.spawns.clone_from(&self.spawns);
@@ -5818,7 +5883,7 @@ impl TechnoTypeReferences {
 /// fixed ART section (`0x00428045..0x00428735`), retained on the live type:
 /// `RuleSet` hands them to its ART registry. Each is a ReadString into 0x80
 /// bytes whose empty read keeps the field; `Next=` (+2C8, `0x00428045`) and
-/// `Spawns=` (+34C, `0x004281DE`) go through `AnimTypeClass::FindOrCreate @
+/// `Spawns=` (+2F0, `0x004281DE..0x00428216`) go through `AnimTypeClass::FindOrCreate @
 /// 0x00428F70`, `BounceAnim=` (`0x0042840D`), `ExpireAnim=` (`0x004284C4`)
 /// and `TrailerAnim=` (`0x00428588`) through the inlined AnimType factory,
 /// `TiberiumSpawnType=` (+338, `0x0042828A`) through OverlayType's
@@ -5843,6 +5908,14 @@ pub(crate) struct AnimTypeReferences {
     /// sets it.
     #[serde(default)]
     weapon: Option<String>,
+    /// The one sound slot (+2F8, constructor -1) `AnimTypeClass::Start @
+    /// 0x00424CE0` plays: `StartSound=` resolved through VocClass::FindIndex
+    /// (`0x007514D0`), else `Report=` (`0x00428344..0x004283BC`).
+    start_sound: Option<String>,
+    /// The sound slot `AnimClass::UnInit @ 0x004255B0` plays (+2FC,
+    /// constructor -1): `StopSound=` read the same way, without a fallback
+    /// (`0x004283C2..0x00428415`).
+    stop_sound: Option<String>,
 }
 
 // A stock-way read never sets `weapon`, so a stock game's hash folds the
@@ -5857,6 +5930,8 @@ impl Hash for AnimTypeReferences {
         self.trailer_anim.hash(state);
         self.warhead.hash(state);
         self.spawns_particle.hash(state);
+        self.start_sound.hash(state);
+        self.stop_sound.hash(state);
         if self.weapon.is_some() {
             self.weapon.hash(state);
         }
@@ -5878,6 +5953,8 @@ impl AnimTypeReferences {
         config.spawns_particle = upper(&self.spawns_particle);
         // Ares AnimTypeExt `Weapon`; None unless read the Ares way.
         config.ares_weapon = self.weapon.clone();
+        config.start_sound = upper(&self.start_sound);
+        config.stop_sound = upper(&self.stop_sound);
     }
 }
 
@@ -6147,6 +6224,7 @@ impl ProcessedType {
             gattling_stages: Default::default(),
             infantry_pips: InfantryPips::default(),
             infantry_civilian: false,
+            infantry_damage_sparks: false,
             infantry_infiltration: InfantryInfiltration::default(),
             infantry_art: InfantryArt::default(),
             infantry_sequence_bank: None,
@@ -6868,9 +6946,10 @@ impl RulesPassProcessor {
         if name.is_empty() {
             return current;
         }
-        let index = self
-            .find_or_allocate(RulesTypeFamily::Side, &name)
-            .expect("a nonempty Side name is a valid factory input");
+        // `None` only past VERA's Side bound (`find_or_allocate`).
+        let Some(index) = self.find_or_allocate(RulesTypeFamily::Side, &name) else {
+            return current;
+        };
         i32::try_from(index).expect("native Side index exceeds i32")
     }
 
@@ -6883,10 +6962,26 @@ impl RulesPassProcessor {
         {
             return None;
         }
+        // VERA indexes Sides in one byte and Countries in two (`SideIdx`,
+        // `CountryIdx`); gamemd's arrays have no bound. A new name past that
+        // bound allocates nothing, so outside data never grows the retained
+        // registry past what every later scenario can project.
+        let limit = match family {
+            RulesTypeFamily::Side => Some(usize::from(u8::MAX) + 1),
+            RulesTypeFamily::Country => Some(usize::from(u16::MAX) + 1),
+            _ => None,
+        };
+        if let Some(limit) = limit
+            && self.families.get(&family).map_or(0, Vec::len) >= limit
+            && self.find_existing(family, incoming).is_none()
+        {
+            log::warn!("{family:?} {incoming} not allocated: VERA20k supports at most {limit}");
+            return None;
+        }
         Some(self.find_or_construct(family, incoming))
     }
 
-    /// ParticleTypeClass::FindOrAllocate @ 0x00645430 answers -1 only for
+    /// ParticleTypeClass::FindOrCreate @ 0x00645430 answers -1 only for
     /// `<none>` (`_strcmpi` against 0x00817474); an empty name or `none`
     /// finds or constructs a ParticleType like any other spelling.
     fn find_or_allocate_particle(&mut self, incoming: &str) -> Option<usize> {
@@ -8595,6 +8690,23 @@ impl RulesPassProcessor {
                 let member = &mut self.family_mut(RulesTypeFamily::Animation)[index];
                 member.read_object_sound(section, fixed_sounds);
                 member.anim_art_read = true;
+                // 0x00428344..0x004283BC: StartSound= is a ReadString128 and
+                // VocClass::FindIndex (0x007514D0) that keeps the current ID
+                // on an empty or unknown name. While the slot is still -1,
+                // Report= is read the same way, but its miss stores -1.
+                member.anim_references.start_sound = fixed_sounds
+                    .read_rules_reference(
+                        section,
+                        "StartSound",
+                        member.anim_references.start_sound.take(),
+                    )
+                    .or_else(|| fixed_sounds.read_rules_reference(section, "Report", None));
+                // 0x004283C2..0x00428415: StopSound= the same way, no fallback.
+                member.anim_references.stop_sound = fixed_sounds.read_rules_reference(
+                    section,
+                    "StopSound",
+                    member.anim_references.stop_sound.take(),
+                );
                 // AnimTypeRead427D1B admits the inherited Object read, then
                 //427D9D..427DDD supplies its own theater flags and image call.
                 // This retains the existing fresh/unowned read projection;
@@ -8681,11 +8793,27 @@ impl RulesPassProcessor {
         let ares_way = crate::rules::ares_switch::ares_way();
         let mut index = 0;
         while index < self.family_len(family) {
+            // `0x005240BD` clears +C8F on every pass, before the section
+            // check. Ares hooks that instruction and jumps past it
+            // (`InfantryTypeClass_LoadFromINI_DamageSparks`, Ares.dll
+            // `0x100499E0`), so under Ares a set flag stays set.
+            if family == RulesTypeFamily::Infantry && !ares_way {
+                self.family_mut(family)[index].infantry_damage_sparks = false;
+            }
             if let Some((native_stored_id, raw, effective)) =
                 self.begin_rules_member_read(family, index, pass)
             {
                 self.family_mut(family)[index].read_object_sound(&raw, fixed_sounds);
                 self.process_techno_base(family, index, &raw);
+                // Ares TechnoTypeClass_LoadFromINI_EarlyReader10041DC0
+                // replaces lea edi,[ebp+CB8] at715320, then resumes715326.
+                // Reading its isolated pointer in either mode also lets a
+                // key-only game select the runtime Ares switch.
+                if let Some(image) =
+                    self.resolve_existing_type_from(&raw, "WaterImage", RulesTypeFamily::Vehicle)
+                {
+                    self.family_mut(family)[index].techno_references.water_image = image;
+                }
                 // TechnoTypeClass::ReadINI parses `Prerequisite=` (`0x007141C5`)
                 // and `PrerequisiteOverride=` (`0x0071424B`) after `Dock=` and
                 // `DeploysInto=` (`0x00713180`, `0x00713279`), the reads above
@@ -8740,6 +8868,9 @@ impl RulesPassProcessor {
                     let member = &mut self.families.get_mut(&family).unwrap()[index];
                     member.infantry_pips.apply_pass(&raw);
                     member.infantry_civilian = raw.read_bool("Civilian", member.infantry_civilian);
+                    // `effective` holds every pass so far, so its `Cyborg` is
+                    // the retained +EAC; `0x005243E5..0x005243E7` only sets.
+                    member.infantry_damage_sparks |= effective.read_bool("Cyborg", false);
                     member.infantry_infiltration.apply_pass(&raw);
                 }
                 // ObjectType ReadINI (`0x005F92F8..0x005F933B`) reads Image
@@ -8888,6 +9019,15 @@ impl RulesPassProcessor {
                     self.families.get_mut(&family).unwrap()[index]
                         .ares_cursors
                         .read_techno_pass(&raw, &self.ares_mouse_cursors);
+                } else {
+                    // The isolated Find-only canopy read also admits a game
+                    // whose rules/map names this Ares key without ares.mix.
+                    let mut retained =
+                        std::mem::take(&mut self.family_mut(family)[index].techno_combat);
+                    retained.read_parachute_anim(|key| {
+                        self.resolve_existing_type_from(&raw, key, RulesTypeFamily::Animation)
+                    });
+                    self.family_mut(family)[index].techno_combat = retained;
                 }
                 if ares_way {
                     self.process_factory_owners(family, index, &raw);
@@ -9527,7 +9667,11 @@ impl RulesPassProcessor {
         // 0x0071287E between WeaponCount and ClearAllWeapons, is GunnerTurrets'.
         let mut slots = std::mem::take(&mut self.family_mut(family)[index].weapon_slots);
         slots.turret_count = raw.read_int("TurretCount", slots.turret_count);
-        slots.weapon_count = raw.read_int("WeaponCount", slots.weapon_count);
+        // Clamped to VERA's bound (`WEAPON_COUNT_LIMIT`): the slot loop below
+        // and the Ares way's vectors grow with it.
+        slots.weapon_count = raw
+            .read_int("WeaponCount", slots.weapon_count)
+            .min(crate::rules::object_type::WEAPON_COUNT_LIMIT);
         slots.clear_all_weapons = raw.read_bool("ClearAllWeapons", slots.clear_all_weapons);
         if slots.turret_count > 0 {
             if ares_way {
@@ -10353,7 +10497,8 @@ impl RulesPassProcessor {
                     .read_object_sound(&raw, fixed_sounds);
                 // ParticleSystemType ReadINI 0x0064430F..0x00644323: ReadString
                 // into 0x40 bytes over the shared empty default 0x00889F64,
-                // then an unconditional ParticleType FindOrAllocate whose index
+                // then an unconditional ParticleType FindOrCreate (0x00645430,
+                // called at 0x00644318) whose index
                 // replaces +294. A reached pass without HoldsWhat therefore
                 // binds the empty-named ParticleType.
                 let holds_what = raw.read_string("HoldsWhat", "", 0x40);
@@ -11059,90 +11204,90 @@ impl RulesPassProcessor {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "native_processing_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_country_veterancy_tests.rs"]
 mod ares_country_veterancy_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_factory_owners_tests.rs"]
 mod ares_factory_owners_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "side_registry_tests.rs"]
 mod side_registry_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_side_sidebar_tests.rs"]
 mod ares_side_sidebar_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_country_paradrop_tests.rs"]
 mod ares_country_paradrop_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_country_power_plants_tests.rs"]
 mod ares_country_power_plants_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_country_presentation_tests.rs"]
 mod ares_country_presentation_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_side_defaults_tests.rs"]
 mod ares_side_defaults_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "native_tech_level_tests.rs"]
 mod native_tech_level_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "projectile_art_tests.rs"]
 mod projectile_art_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "weapon_speed_tests.rs"]
 mod weapon_speed_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "weapon_registry_tests.rs"]
 mod weapon_registry_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "guided_controls_tests.rs"]
 mod guided_controls_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "select_anim_rules_tests.rs"]
 mod select_anim_rules_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "approach_rules_tests.rs"]
 mod approach_rules_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "chrono_beam_rules_tests.rs"]
 mod chrono_beam_rules_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "control_line_rules_tests.rs"]
 mod control_line_rules_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "disguise_cursor_rules_tests.rs"]
 mod disguise_cursor_rules_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "native_type_reader_tests.rs"]
 mod native_type_reader_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_side_eva_tests.rs"]
 mod ares_side_eva_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_country_loading_tests.rs"]
 mod ares_country_loading_tests;

@@ -1,13 +1,13 @@
 # Optional Ares building types: rubble, garrisons and engineers
 
-Build with `--features ares` to let a BuildingType turn into rubble when it
-dies and back when an engineer rebuilds it, to tune garrisons for urban
-combat, and to change what an engineer does to a hostile building. Default
-builds keep the original destruction (`BuildingClass::DestructionEffects @
-0x004415F0`), garrison admission (`BuildingClass::CanBeOccupiedBy @
-0x00457CE0`) and engineer arms (`InfantryClass::What_Action_OnObject @
-0x0051E3B0`, `InfantryClass::PerCellProcess @ 0x00519630`); INI keys cannot
-enable the extension there.
+When a game plays Ares ([Ares](ares.md)), every build lets a BuildingType
+turn into rubble when it dies and back when an engineer rebuilds it, tune
+garrisons for urban combat, and change what an engineer does to a hostile
+building. Other games keep the original destruction
+(`BuildingClass::DestructionEffects @ 0x004415F0`), garrison admission
+(`BuildingClass::CanBeOccupiedBy @ 0x00457CE0`) and engineer arms
+(`InfantryClass::What_Action_OnObject @ 0x0051E3B0`,
+`InfantryClass::PerCellProcess @ 0x00519630`).
 
 ```ini
 [GAPOWR]                                ; rulesmd.ini BuildingType
@@ -182,9 +182,9 @@ RulesExt `UnitsUnsellable` with the other `[General]` keys
 - `MassSelectable` (`10013CF0`, hook `0x459C03`): the stock band-selection
   test stays.
 - The stock `[AudioVisual] GateUp`/`GateDown` sounds of Mission_Open play in
-  Ares builds only, with the type's `GateUpSound`/`GateDownSound` first
+  a game that plays Ares only, with the type's `GateUpSound`/`GateDownSound` first
   (`sim::gate_runtime`, `10015670`/`100156B0`, hooks `0x44E550`/`0x44E61E`);
-  default builds keep them unplayed.
+  other games keep them unplayed.
 - `ProduceCashDisplay` (`100117C0`) rides Ares' replaced ProduceCash payout
   (`100146E0`, `10013D40`: hooks `0x43FD2C`, `0x4482BD`, with the upgrades'
   cash timers), ported in `sim::credit_income`. The upgrade's timer start at

@@ -64,9 +64,9 @@ mod saved_terrain;
 mod terrain_cells;
 mod tubes;
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod damaged_radar_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod pavement_catalog_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod tests;
@@ -1702,7 +1702,7 @@ impl ResolvedTerrainCell {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod mutation_epoch_tests {
     use super::*;
 
@@ -1733,7 +1733,7 @@ mod mutation_epoch_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod level_span_tests {
     use super::*;
 

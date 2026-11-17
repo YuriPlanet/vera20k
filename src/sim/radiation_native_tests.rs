@@ -32,8 +32,8 @@ fn light_lifecycle_matches_original_site_and_cell_boundaries() {
 /// activation and tints from the bound type's `RadColor` on every theater, so
 /// the corpus's per-frame tints cannot hold there. The capability's own tests
 /// cover the type-colored field instead. Ares skips the substitution too
-/// (`0x65B5FB`), so the corpus does not hold in an Ares build either.
-#[cfg(not(any(feature = "phobos", feature = "ares")))]
+/// (`0x65B5FB`), so the corpus does not hold in an Ares game either.
+#[cfg(not(feature = "phobos"))]
 #[test]
 fn snow_light_lifecycle_matches_original_site_and_cell_boundaries() {
     assert_light_lifecycle(

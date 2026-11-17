@@ -726,6 +726,6 @@ pub fn evaluate_target(input: &TargetPreflightInput<'_>) -> Result<(), TargetRej
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "superweapon_targeting_tests.rs"]
 mod tests;

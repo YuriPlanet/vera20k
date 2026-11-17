@@ -1818,30 +1818,30 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "building_missions_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "prism_support_tests.rs"]
 mod prism_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "building_gattling_tests.rs"]
 mod gattling_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "building_construction_tests.rs"]
 mod construction_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "building_opening_oracle_tests.rs"]
 mod opening_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "factory_unload_tests.rs"]
 mod factory_unload_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "../../docking/building_repair_service_oracle_tests.rs"]
 mod repair_service_oracle_tests;

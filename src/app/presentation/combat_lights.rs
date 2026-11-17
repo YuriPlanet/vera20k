@@ -78,8 +78,7 @@ pub(crate) fn particle_system_light(
     if !kind.one_frame_light || kind.light_size <= 0 || count <= 0 {
         return None;
     }
-    let base_size =
-        system_light_base_size(count, kind.particle_cap as i32, kind.light_size).ok()?;
+    let base_size = system_light_base_size(count, kind.particle_cap, kind.light_size).ok()?;
     CombatLight {
         coord: ProjectileCoord::new(system.coords().x, system.coords().y, system.coords().z),
         stage: system.facing(),
@@ -98,9 +97,15 @@ fn system_light_base_size(
     // Original62E280: division, binary64 lower clamp7E3550,
     // binary32 upper clamp7E2AC8, multiplication then Math::ftol.
     // Consumed original controls: procedural_drawing_oracle/welding.json.
-    let mut ratio = X::div(X::load_i32(count), X::load_i32(cap))?;
     let minimum = X::load_f64(NativeF64Bits::from_bits(0x3fd9_9999_9999_999a))?;
     let maximum = X::load_f32(NativeF32Bits::from_bits(0x3f80_0000))?;
+    // `ParticleCap=0` (mod data): FIDIV of a positive count by zero gives +inf
+    // under the masked zero-divide, which the upper clamp makes 1.0.
+    let mut ratio = if cap == 0 {
+        maximum
+    } else {
+        X::div(X::load_i32(count), X::load_i32(cap))?
+    };
     if X::compare(ratio, minimum) == X87Ordering::Less {
         ratio = minimum;
     }
@@ -252,12 +257,19 @@ fn scaled_surface_index(base_size: i32, stage: u8) -> i32 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::DetailRules;
     use crate::sim::world::Simulation;
+
+    /// `ParticleSystemClass::DrawIt @ 0x0062E280` with `ParticleCap=0`: the
+    /// zero divide gives +inf, clamped to 1.0, so the light is full size.
+    #[test]
+    fn a_zero_particle_cap_draws_the_full_size_light() {
+        assert_eq!(system_light_base_size(3, 0, 120).unwrap(), 120);
+    }
 
     #[test]
     fn welding_immediate_light_size_stage_and_admission_match_original_system_draw() {
@@ -725,7 +737,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod spotlight_tests {
     use super::*;
     #[test]

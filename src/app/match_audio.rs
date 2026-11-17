@@ -135,7 +135,7 @@ impl QuietSounds {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::{MatchAudioState, QuietSound, QuietSounds};
     use crate::sim::intern::InternedId;

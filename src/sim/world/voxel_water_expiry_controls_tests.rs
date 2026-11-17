@@ -25,6 +25,7 @@ fn piece_with_prior(runtime: &mut SimRuntime, z: i32, duration: i32) -> u64 {
         glam::IVec3::new(19972, 28836, 0),
         true,
         &mut Vec::new(),
+        rules,
     )
     .unwrap();
     let ids = sim.voxel_anims().ids();

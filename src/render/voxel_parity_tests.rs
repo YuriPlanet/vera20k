@@ -11,7 +11,7 @@
 //! Hull evidence does not establish relative turret/barrel transforms, part
 //! composition, final RGB, or complete live scene equivalence.
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use crate::assets::vxl_file::{VxlFile, VxlLimb, VxlVoxel};
     use crate::render::vxl_raster::{self, VxlRenderParams, VxlSprite};

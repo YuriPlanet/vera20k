@@ -1,10 +1,11 @@
 # Per-type SHP building palettes
 
-With the `ares` build feature, each reached TechnoType ART `Palette=` request
-can load its own palette for SHP bodies and building `Buildup=` frames. A
-non-Ares build retains the original compatibility policy: only types requesting
-the first successfully loaded custom group can use that group. A failed request
-cannot shadow a valid request or inherit its colors in either build.
+In a game [Ares](ares.md) plays in (`RuleSet::ares`), every build lets each
+reached TechnoType ART `Palette=` request load its own palette for SHP bodies
+and building `Buildup=` frames. A game without Ares retains the original
+compatibility policy: only types requesting the first successfully loaded
+custom group can use that group. A failed request cannot shadow a valid request
+or inherit its colors in either game.
 
 The fixed ART section is the type's retained Rules `Image=`, not an ART image
 redirect. The native reader retains the last nonempty request across reached
@@ -86,7 +87,7 @@ arithmetic, RNG draws, timer writes or detach calls are introduced. PAL byte
 conversion remains with the existing tested decoder. The earlier original
 multiple-name cache/count/history residual remains: this implementation does
 not reproduce cache retirement717840, historical-name cardinality, or original
-abort behavior for several successful groups in a non-Ares build. It also does
+abort behavior for several successful groups in a game without Ares. It also does
 not claim that two distinct historic names bound to one type at different
 times retain all original cached objects. The selected path is current retained
 body/MAKE and producer-frozen DestroyAnim bindings, including empty-read

@@ -50,6 +50,7 @@ Thumbs.db
 !/docs/ares-country-presentation.md
 !/docs/ares-country-paradrop.md
 !/docs/ares-country-powerplants.md
+!/docs/sidebar-columns.md
 !/docs/phobos.md
 !/docs/phobos-custom-radiation.md
 !/docs/phobos-superweapon-technos.md
@@ -68,6 +69,8 @@ Thumbs.db
 !/docs/phobos-building-queue.md
 !/docs/phobos-ai-dehardcode.md
 !/docs/phobos-parallel-ai-queues.md
+!/docs/phobos-power-surplus.md
+!/docs/phobos-target-zone.md
 !/docs/phobos-skirmish-unlimited-colors.md
 !/docs/phobos-superweapon-sidebar.md
 !/docs/phobos-prone-speed.md
@@ -90,7 +93,9 @@ Thumbs.db
 !/docs/ini-roots.md
 !/docs/personal-rules.md
 !/docs/modding.md
+!/docs/map-format.md
 !/docs/terrain-deformation.md
+!/docs/superweapon-limit.md
 !/docs/dormant-stock-rules.md
 !/docs/_config.yml
 !/docs/index.md
@@ -109,6 +114,7 @@ Thumbs.db
 !/docs/formation-line.md
 !/docs/ferry.md
 !/docs/auto-repair.md
+!/docs/minimap-beacons.md
 !/docs/primary-rotation.md
 !/docs/relation-colours.md
 !/docs/random-map-extras.md
@@ -156,6 +162,7 @@ tools/vendor-eval/
 !/README.ru.md
 !/README.th.md
 !/README.tr.md
+!/README.vi.md
 !/LEGAL.md
 # Kept visible: a root CLAUDE.md would stop Claude Code reading AGENTS.md.
 !/CLAUDE.md

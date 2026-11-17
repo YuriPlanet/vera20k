@@ -70,11 +70,6 @@ pub const FX_SHADOW: u32 = 1 << 6;
 /// Voxel body waterline clip. `sinking_row` carries Techno+3CA's retained
 /// world row; ordinary alpha remains in its own lane.
 pub(crate) const FX_SINKING_CLIP: u32 = 1 << 7;
-/// DSurface4C0750's dashed stores, kept or skipped per pixel by the live
-/// tactical A (`fs_surface_store` in batch_shader.wgsl): store where it is
-/// nonzero, or where it is zero (the second rally pass).
-pub(crate) const FX_SURFACE_A_NONZERO: u32 = 1 << 8;
-pub(crate) const FX_SURFACE_A_ZERO: u32 = 1 << 9;
 
 /// Resolved native visual character; the simulation owns the query and clock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -390,13 +385,16 @@ impl DrawState {
 
 /// The `+0x178` a Building writes into each slot Anim: its fade stage
 /// (`+0x6ED`), or 16 at stage 15 when its own GetVisualState(0, 0) is 5
-/// (`BuildingClass::UpdateCloak @ 0x00454E3A..0x00454E70`; a slot created
-/// mid-fade gets the same at `0x004519B9`). `AnimClass::DrawIt` turns it into
-/// 25%, 50% or no draw ([`crate::sim::anim_class::anim_translucency_selection`]).
-/// The 16 depends on the local player's sensors, so presentation derives it
-/// and the simulation never stores it. Residual: native writes it only when
-/// the stage changes, so a sensor gained or lost while the stage holds at 15
-/// reaches the anims at the next write; this follows it at once.
+/// (`BuildingClass::UpdateCloak @ 0x00454E3A..0x00454E70`).
+/// `AnimClass::DrawIt` turns it into 25%, 50% or no draw
+/// ([`crate::sim::anim_class::anim_translucency_selection`]). The 16 depends
+/// on the local player's sensors, so presentation derives it and the
+/// simulation never stores it. Residual: native writes it only when the stage
+/// changes, so a sensor gained or lost while the stage holds at 15 reaches the
+/// anims at the next write; this follows it at once. Likewise a slot anim made
+/// mid-fade keeps its constructor value until the next write, because the
+/// slot loop (`0x004519DA`) runs before the new anim is stored (`0x00451A2F`);
+/// this fades it at once. No retail building fades.
 pub(crate) fn building_slot_anim_ramp(
     building: &impl crate::render::snapshot::SnapshotObject,
     building_visual_state: u8,
@@ -460,7 +458,7 @@ fn opacity_for_selector_bits(bits: u8) -> f32 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
     use crate::app::presentation::frame::ObjectRecord;

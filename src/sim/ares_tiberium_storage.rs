@@ -714,6 +714,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ares_tiberium_storage_tests.rs"]
 mod tests;

@@ -16,7 +16,6 @@ fn signed(value: &serde_json::Value) -> i32 {
 
 /// Stock only: Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook
 /// `0x0056BC54`) moves the kernel these native rows centre on.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn original_signed_indices_and_all_nine_slot_adjustments() {
     let packet = packet();
@@ -390,7 +389,6 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
 
 /// Stock only: Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook
 /// `0x0056BC54`) writes row 559 away from the cell read back here.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn large_map_house_threat_keeps_high_coordinate_kernel_and_cleanup() {
     let mut grid = HouseSpatialThreat::default();

@@ -9,6 +9,7 @@
 //! `thememd.mix`; native YR otherwise selects only the latter when present.
 //! Audio selection and lifetime: [process audio owner](../../tools/audio_catalog_owner.md).
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -19,15 +20,15 @@ use crate::assets::error::AssetError;
 use crate::assets::mix_archive::{MixArchive, SharedBytes};
 use crate::assets::mix_hash::mix_hash;
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_assets))]
 #[path = "asset_manager_ares_sidebar_tests.rs"]
 mod ares_sidebar_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 #[path = "asset_manager_audio_bags_tests.rs"]
 mod audio_bags_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 #[path = "asset_manager_install_tests.rs"]
 mod install_inspection_tests;
 
@@ -131,6 +132,37 @@ struct AssetLocation {
     entry_id: i32,
 }
 
+/// Where a named archive comes from (`AssetManager::locate_named_archive`).
+enum NamedArchiveLocation {
+    Registered,
+    Loose(PathBuf),
+    /// Index into `archive_catalog`.
+    Catalogued(usize),
+    /// An entry of a registered archive.
+    Nested {
+        parent_index: usize,
+        entry_id: i32,
+    },
+}
+
+/// One archive [`AssetManager::theater_archives_unmounted`] finds.
+pub struct UnmountedArchive<'a> {
+    /// The name mounting would register it under (`ra2md.mix -> isosnomd.mix`).
+    pub source: String,
+    /// `None` when it does not open, so mounting skips it; a loose one still
+    /// takes the place of the copy it is named after.
+    pub archive: Option<Cow<'a, MixArchive>>,
+}
+
+/// A copy of the archive `parent` holds as `id`, owned, so it outlives `parent`.
+fn nested_archive<'a>(parent: &MixArchive, id: i32) -> Option<Cow<'a, MixArchive>> {
+    parent
+        .nested_archive_by_id(id)
+        .ok()
+        .flatten()
+        .map(Cow::Owned)
+}
+
 #[derive(Default)]
 struct WildcardMount {
     matched: bool,
@@ -168,7 +200,6 @@ pub struct LoadedAudioIndex {
     pub index: AudioIndex,
     pub sources: AudioIndexSources,
     /// Further admitted pairs in append order. The first remains `sources`.
-    #[cfg(feature = "ares")]
     pub additional_sources: Vec<AudioIndexSources>,
 }
 
@@ -188,7 +219,6 @@ pub fn load_audio_index_pair(
     Ok(LoadedAudioIndex {
         index,
         sources,
-        #[cfg(feature = "ares")]
         additional_sources: Vec::new(),
     })
 }
@@ -292,7 +322,6 @@ pub struct AssetManager {
     /// Currently registered theater identity and its archive names.
     active_theater: Option<String>,
     active_theater_archives: Vec<String>,
-    #[cfg(feature = "ares")]
     active_sidebar_archives: Vec<String>,
     /// Path to the RA2 installation directory.
     ra2_dir: PathBuf,
@@ -301,6 +330,9 @@ pub struct AssetManager {
     /// takes the place of the installation's file of the same name. `None`
     /// is the original game.
     mod_dir: Option<PathBuf>,
+    /// VERA: the player's Ares setting this game opened with
+    /// (`util::ares_launch::AresSetting`).
+    ares_setting: crate::util::ares_launch::AresSetting,
 }
 
 /// Test fixtures open the retail install once per test process and hand each
@@ -326,10 +358,10 @@ impl Clone for AssetManager {
             ini_roots: self.ini_roots.clone(),
             active_theater: self.active_theater.clone(),
             active_theater_archives: self.active_theater_archives.clone(),
-            #[cfg(feature = "ares")]
             active_sidebar_archives: self.active_sidebar_archives.clone(),
             ra2_dir: self.ra2_dir.clone(),
             mod_dir: self.mod_dir.clone(),
+            ares_setting: self.ares_setting,
         }
     }
 }
@@ -340,11 +372,9 @@ struct SavedLoadLookupAuthority {
     archives: Vec<NamedArchive>,
     active_theater: Option<String>,
     active_theater_archives: Vec<String>,
-    #[cfg(feature = "ares")]
     active_sidebar_archives: Vec<String>,
 }
 
-#[cfg(feature = "ares")]
 const SIDEBAR_RETIRED_PALETTES: [&str; 5] = [
     "YRII.PAL",
     "OBSERVER.PAL",
@@ -468,13 +498,36 @@ impl AssetManager {
         &self.ini_roots
     }
 
-    /// Whether startup mounted Ares's `ares.mix` from the installation or the
-    /// mod. It makes Ares play in every game (`rules::ares_switch`). A build
-    /// without the `ares` feature does not mount it yet.
+    /// Whether this game overlays a selected mod on the installation.
+    pub fn mod_selected(&self) -> bool {
+        self.mod_dir.is_some()
+    }
+
+    /// Whether this game is an Ares game (`rules::ares_switch`): the player's
+    /// Ares setting is On, or, set to Auto, the selected mod mounted Ares's
+    /// `ares.mix`, its own copy or the installation's. With no mod selected,
+    /// Auto ignores it; Off never mounts it. Such a game's files take the
+    /// forms an Ares launch gives them: the appended audio bags and the
+    /// supplemental string tables.
     pub fn ships_ares(&self) -> bool {
+        use crate::util::ares_launch::AresSetting;
+        match self.ares_setting {
+            AresSetting::On => true,
+            AresSetting::Off => false,
+            AresSetting::Auto => self.ares_mix_mounted(),
+        }
+    }
+
+    /// Whether `ares.mix` is mounted: the file itself, whatever the setting.
+    pub fn ares_mix_mounted(&self) -> bool {
         self.archives
             .iter()
             .any(|archive| archive_name_matches(&archive.name, "ares.mix"))
+    }
+
+    /// The player's Ares setting this game opened with.
+    pub fn ares_setting(&self) -> crate::util::ares_launch::AresSetting {
+        self.ares_setting
     }
 
     /// Read-only INI tooling without a complete retail installation. No game
@@ -502,10 +555,10 @@ impl AssetManager {
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
-            #[cfg(feature = "ares")]
             active_sidebar_archives: Vec::new(),
             ra2_dir: ra2_dir.to_path_buf(),
             mod_dir: mod_dir.map(Path::to_path_buf),
+            ares_setting: Default::default(),
         })
     }
 
@@ -516,6 +569,15 @@ impl AssetManager {
         manager
     }
 
+    /// [`Self::from_loose_root_for_test`], opened with the player's Ares
+    /// setting On, so it is an Ares game ([`Self::ships_ares`]).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn from_loose_root_with_ares_for_test(ra2_dir: &Path) -> Self {
+        let mut manager = Self::from_loose_root_for_test(ra2_dir);
+        manager.ares_setting = crate::util::ares_launch::AresSetting::On;
+        manager
+    }
+
     /// Load the core runtime archive stack for one native media-selection mode.
     pub fn new(ra2_dir: &Path, media_mode: MediaArchiveMode) -> Result<Self, AssetError> {
         Self::with_mod(ra2_dir, None, media_mode)
@@ -523,18 +585,55 @@ impl AssetManager {
 
     /// VERA: [`AssetManager::new`] with a mod folder's files read as if they
     /// had been copied on top of `ra2_dir`. gamemd has one folder; a mod made
-    /// to be copied into it resolves the same from its own folder.
+    /// to be copied into it resolves the same from its own folder. Only a
+    /// selected mod mounts `ares.mix`; with no mod selected it stays unused.
     pub fn with_mod(
         ra2_dir: &Path,
         mod_dir: Option<&Path>,
         media_mode: MediaArchiveMode,
     ) -> Result<Self, AssetError> {
-        Self::open_startup_archives(
+        let manager = Self::open_startup_archives(
             ra2_dir,
             mod_dir,
             media_mode,
+            Default::default(),
             StartupArchivePolicy::OptionalWarnings,
-        )
+        )?;
+        // The launch's `ares.mix` answer, as below; the Ares setting is left
+        // to the launch that chose one (`with_mod_and_ares`).
+        crate::util::ares_launch::set_game_ships_ares(manager.ships_ares());
+        Ok(manager)
+    }
+
+    /// VERA: [`AssetManager::with_mod`] under the player's Ares setting
+    /// (`util::ares_launch::AresSetting`), which can make the game an Ares
+    /// game, or not, whatever its mod ships.
+    pub fn with_mod_and_ares(
+        ra2_dir: &Path,
+        mod_dir: Option<&Path>,
+        media_mode: MediaArchiveMode,
+        ares_setting: crate::util::ares_launch::AresSetting,
+    ) -> Result<Self, AssetError> {
+        let manager = Self::open_startup_archives(
+            ra2_dir,
+            mod_dir,
+            media_mode,
+            ares_setting,
+            StartupArchivePolicy::OptionalWarnings,
+        )?;
+        // This is the game the launch plays: its `ares.mix` answer is the
+        // launch's (`util::ares_launch`), which a thread with no reading scope
+        // loads its INIs by.
+        crate::util::ares_launch::set_setting(ares_setting);
+        crate::util::ares_launch::set_game_ships_ares(manager.ships_ares());
+        if ares_setting == crate::util::ares_launch::AresSetting::On && !manager.ares_mix_mounted()
+        {
+            log::warn!(
+                "The Ares setting is On, but no ares.mix was found: the game reads the Ares way \
+                 without Ares' own archive"
+            );
+        }
+        Ok(manager)
     }
 
     /// Inspect the ordinary startup stack while retaining readable archives for
@@ -551,6 +650,7 @@ impl AssetManager {
             ra2_dir,
             None,
             media_mode,
+            Default::default(),
             StartupArchivePolicy::Inspect(&mut issues),
         )?;
         Ok((manager, issues))
@@ -560,9 +660,11 @@ impl AssetManager {
         ra2_dir: &Path,
         mod_dir: Option<&Path>,
         media_mode: MediaArchiveMode,
+        ares_setting: crate::util::ares_launch::AresSetting,
         mut policy: StartupArchivePolicy<'_>,
     ) -> Result<Self, AssetError> {
         let mut manager = Self::from_roots(ra2_dir, mod_dir)?;
+        manager.ares_setting = ares_setting;
 
         // WinMain registers the YR language archive before the RA2 fallback,
         // and Init_Game later runs Init_Base_Mix_Files (0x0052BB64). Ares's
@@ -570,11 +672,26 @@ impl AssetManager {
         // call at 0x006BD7EF) runs Init_Base_Mix_Files there instead, and
         // Expand_MIX_Deorg (0x0052BB64) skips Init_Game's call, so expansions
         // and the masters resolve ahead of LANGMD.MIX and LANGUAGE.MIX.
-        #[cfg(not(feature = "ares"))]
-        manager.mount_language_archives(&mut policy)?;
-        manager.mount_base_mix_files(&mut policy)?;
-        #[cfg(feature = "ares")]
-        manager.mount_language_archives(&mut policy)?;
+        // VERA's No mod choice ignores an installed ares.mix, so an Ares
+        // installation can also play the original game. A selected mod may
+        // supply it or inherit the installation's copy. Decide before any
+        // mount: Ares changes source priority as well as INI parsing.
+        // VERA: the player's Ares setting On mounts the installation's copy
+        // with no mod selected too, and Off mounts none.
+        let ares = match ares_setting {
+            crate::util::ares_launch::AresSetting::Auto => {
+                manager.mod_selected() && manager.loose_path("ares.mix").is_some()
+            }
+            crate::util::ares_launch::AresSetting::On => true,
+            crate::util::ares_launch::AresSetting::Off => false,
+        };
+        if !ares {
+            manager.mount_language_archives(&mut policy)?;
+        }
+        manager.mount_base_mix_files(ares, &mut policy)?;
+        if ares {
+            manager.mount_language_archives(&mut policy)?;
+        }
 
         // AudioSystem__Init uses exactly one archive: the MD archive when
         // present, otherwise the base archive.
@@ -651,16 +768,17 @@ impl AssetManager {
                     .map(|_| name.to_owned()),
             })
         };
-        #[cfg(not(feature = "ares"))]
-        let stems = vec!["audio".to_owned()];
         // Installed hook4011C0 -> Audio_Load1005ADD0: audio, ares, audio01..99.
         // Selection stays before bulk mounts. Executed native loop and merge:
         // tools/rules_oracle/ares_audio_bags.{py,json,md}.
-        #[cfg(feature = "ares")]
-        let stems = ["audio".to_owned(), "ares".to_owned()]
-            .into_iter()
-            .chain((1..100).map(|i| format!("audio{i:02}")))
-            .collect::<Vec<_>>();
+        let stems = if self.ships_ares() {
+            ["audio".to_owned(), "ares".to_owned()]
+                .into_iter()
+                .chain((1..100).map(|i| format!("audio{i:02}")))
+                .collect::<Vec<_>>()
+        } else {
+            vec!["audio".to_owned()]
+        };
         self.audio_pairs = stems
             .into_iter()
             .map(|stem| SelectedAudioPair {
@@ -704,8 +822,7 @@ impl AssetManager {
                 source.entry_id, source.source_archive
             ),
         };
-        #[cfg(not(feature = "ares"))]
-        {
+        if !self.ships_ares() {
             let Some(pair) = self.audio_pairs.first() else {
                 return Ok(None);
             };
@@ -714,9 +831,8 @@ impl AssetManager {
             };
             let idx_bytes = self.selected_audio_ref(idx).ok_or_else(|| missing(idx))?;
             let bag_bytes = self.selected_audio_ref(bag).ok_or_else(|| missing(bag))?;
-            load_audio_index_pair(idx_bytes, bag_bytes).map(Some)
+            return load_audio_index_pair(idx_bytes, bag_bytes).map(Some);
         }
-        #[cfg(feature = "ares")]
         {
             let mut indexes = Vec::new();
             let mut sources = Vec::new();
@@ -958,7 +1074,6 @@ impl AssetManager {
     /// On failure the native caller aborts loading; partial MD registration is
     /// retained until the next attempt. VERA's saved-load transaction may roll
     /// registrations back, but this method does not invent a native rollback.
-    #[cfg(feature = "ares")]
     pub fn activate_sidebar_archives(&mut self, mix_index: i32) -> Result<bool, AssetError> {
         let adjusted = mix_index.wrapping_sub(1);
         if adjusted < 0 {
@@ -1061,10 +1176,8 @@ impl AssetManager {
             archives: self.archives.clone(),
             active_theater: self.active_theater.clone(),
             active_theater_archives: self.active_theater_archives.clone(),
-            #[cfg(feature = "ares")]
             active_sidebar_archives: self.active_sidebar_archives.clone(),
         };
-        #[cfg(feature = "ares")]
         let previous_sidebar_cache: Vec<_> = {
             let cache = self
                 .mix_file_cache
@@ -1098,7 +1211,6 @@ impl AssetManager {
             self.archives = previous.archives;
             self.active_theater = previous.active_theater;
             self.active_theater_archives = previous.active_theater_archives;
-            #[cfg(feature = "ares")]
             {
                 self.active_sidebar_archives = previous.active_sidebar_archives;
                 let mut cache = self
@@ -1227,6 +1339,89 @@ impl AssetManager {
             .iter()
             .map(|archive| archive.name.clone())
             .collect()
+    }
+
+    /// The archives name lookups search, in search order, with their names.
+    pub fn registered_archives(&self) -> impl Iterator<Item = (&str, &MixArchive)> {
+        self.archives
+            .iter()
+            .map(|archive| (archive.name.as_str(), &archive.archive))
+    }
+
+    /// VERA: the archives [`Self::activate_theater_archives`] would add for
+    /// `archive_names`, without adding them: in its order, each found as
+    /// mounting finds it once the ones before it are added. One already
+    /// registered searches where it is and is left out. Lets a theater's files
+    /// be compared with no theater active ([`Self::resolve_ref_with_unmounted`]).
+    pub fn theater_archives_unmounted(&self, archive_names: &[&str]) -> Vec<UnmountedArchive<'_>> {
+        let mut found: Vec<UnmountedArchive<'_>> = Vec::new();
+        for &name in archive_names {
+            let (source, archive) = match self.locate_named_archive(name) {
+                Some(NamedArchiveLocation::Registered) => continue,
+                Some(NamedArchiveLocation::Loose(path)) => (
+                    name.to_string(),
+                    MixArchive::load(&path).ok().map(Cow::Owned),
+                ),
+                Some(NamedArchiveLocation::Catalogued(position)) => {
+                    let archive = &self.archive_catalog[position];
+                    (archive.name.clone(), Some(Cow::Borrowed(&archive.archive)))
+                }
+                Some(NamedArchiveLocation::Nested {
+                    parent_index,
+                    entry_id,
+                }) => {
+                    let parent = &self.archives[parent_index];
+                    (
+                        format!("{} -> {name}", parent.name),
+                        nested_archive(&parent.archive, entry_id),
+                    )
+                }
+                // Mounted, the first earlier one holding it would hold it.
+                None => {
+                    let id = mix_hash(name);
+                    let Some((parent, archive)) = found.iter().find_map(|earlier| {
+                        let archive = earlier.archive.as_deref()?;
+                        archive
+                            .contains_id(id)
+                            .then_some((&earlier.source, archive))
+                    }) else {
+                        continue;
+                    };
+                    (format!("{parent} -> {name}"), nested_archive(archive, id))
+                }
+            };
+            found.push(UnmountedArchive { source, archive });
+        }
+        found
+    }
+
+    /// VERA: what [`Self::resolve_ref`] would read for `name` with `unmounted`
+    /// (from [`Self::theater_archives_unmounted`]) mounted after the registered
+    /// archives: a loose file, else the first archive whose index lists the
+    /// name, even one that cannot read it, as `lookup_index` decides.
+    pub fn resolve_ref_with_unmounted<'a>(
+        &'a self,
+        name: &str,
+        unmounted: &'a [UnmountedArchive<'a>],
+    ) -> Option<(&'a str, &'a [u8])> {
+        if let Some((loose, bytes)) = self.loose_bytes(name) {
+            return Some((loose.source_name.as_str(), bytes));
+        }
+        if let Some((named, entry_id)) = self.lookup_asset_entry(name) {
+            return named
+                .archive
+                .get_by_id(entry_id)
+                .map(|bytes| (named.name.as_str(), bytes));
+        }
+        let id = mix_hash(name);
+        unmounted.iter().find_map(|unmounted| {
+            let archive = unmounted.archive.as_deref()?;
+            archive.contains_id(id).then(|| {
+                archive
+                    .get_by_id(id)
+                    .map(|bytes| (unmounted.source.as_str(), bytes))
+            })
+        })?
     }
 
     /// Return the RA2 installation directory.
@@ -1502,9 +1697,11 @@ impl AssetManager {
     }
 
     /// Init_Base_Mix_Files 0x005301A0: every expansion slot in descending
-    /// order, then the masters and their cache and local archives.
+    /// order, then the masters and their cache and local archives, with
+    /// `ares.mix` between them for an Ares game (`ares`).
     fn mount_base_mix_files(
         &mut self,
+        ares: bool,
         policy: &mut StartupArchivePolicy<'_>,
     ) -> Result<(), AssetError> {
         for index in (0..=99).rev() {
@@ -1514,8 +1711,9 @@ impl AssetManager {
         // constructs ares.mix once the expansion probe ends, before the
         // RA2MD.MIX constructor call at 0x005302AA, so it resolves after every
         // expansion and ahead of the masters. A missing file is skipped.
-        #[cfg(feature = "ares")]
-        self.mount_startup_archive("ares.mix", false, policy)?;
+        if ares {
+            self.mount_startup_archive("ares.mix", false, policy)?;
+        }
         for name in MASTER_ARCHIVES {
             self.mount_startup_archive(name, true, policy)?;
         }
@@ -1559,66 +1757,81 @@ impl AssetManager {
         }
     }
 
-    fn mount_named_archive(&mut self, name: &str, required: bool) -> Result<bool, AssetError> {
+    /// Where [`Self::mount_named_archive`] finds `name`, in its order: already
+    /// registered, a loose file, the catalogued nested copy, else the first
+    /// registered archive whose entry of that name it parses as a MIX.
+    fn locate_named_archive(&self, name: &str) -> Option<NamedArchiveLocation> {
         if self
             .archives
             .iter()
             .any(|archive| archive_name_matches(&archive.name, name))
         {
-            return Ok(true);
+            return Some(NamedArchiveLocation::Registered);
         }
-
-        if let Some(disk_path) = self.loose_path(name).map(Path::to_path_buf) {
-            let archive = MixArchive::load(&disk_path)?;
-            if let Some(position) = self
-                .archive_catalog
-                .iter()
-                .position(|catalogued| archive_name_matches(&catalogued.name, name))
-            {
-                self.archive_catalog.remove(position);
-            }
-            self.append_registered_archive(NamedArchive {
-                name: name.to_string(),
-                archive,
-            });
-            return Ok(true);
+        if let Some(path) = self.loose_path(name) {
+            return Some(NamedArchiveLocation::Loose(path.to_path_buf()));
         }
-
         if let Some(position) = self
             .archive_catalog
             .iter()
             .position(|archive| archive_name_matches(&archive.name, name))
         {
-            let archive = self.archive_catalog.remove(position);
-            self.append_registered_archive(archive);
-            return Ok(true);
+            return Some(NamedArchiveLocation::Catalogued(position));
         }
-
-        if let Some((parent_index, entry_id)) = self
-            .lookup_location_for_name(name)
-            .map(|location| (location.archive_index, location.entry_id))
-        {
-            let parent_name = self.archives[parent_index].name.clone();
-            let archive = self.archives[parent_index]
-                .archive
-                .nested_archive_by_id(entry_id)?
-                .ok_or_else(|| AssetError::AssetNotFound {
-                    name: name.to_string(),
-                })?;
-            self.append_registered_archive(NamedArchive {
-                name: format!("{parent_name} -> {name}"),
-                archive,
-            });
-            return Ok(true);
-        }
-
-        if required {
-            Err(AssetError::AssetNotFound {
-                name: name.to_string(),
+        self.lookup_location_for_name(name)
+            .map(|location| NamedArchiveLocation::Nested {
+                parent_index: location.archive_index,
+                entry_id: location.entry_id,
             })
-        } else {
-            log::debug!("{name} not found (optional, skipping)");
-            Ok(false)
+    }
+
+    fn mount_named_archive(&mut self, name: &str, required: bool) -> Result<bool, AssetError> {
+        match self.locate_named_archive(name) {
+            Some(NamedArchiveLocation::Registered) => Ok(true),
+            Some(NamedArchiveLocation::Loose(disk_path)) => {
+                let archive = MixArchive::load(&disk_path)?;
+                if let Some(position) = self
+                    .archive_catalog
+                    .iter()
+                    .position(|catalogued| archive_name_matches(&catalogued.name, name))
+                {
+                    self.archive_catalog.remove(position);
+                }
+                self.append_registered_archive(NamedArchive {
+                    name: name.to_string(),
+                    archive,
+                });
+                Ok(true)
+            }
+            Some(NamedArchiveLocation::Catalogued(position)) => {
+                let archive = self.archive_catalog.remove(position);
+                self.append_registered_archive(archive);
+                Ok(true)
+            }
+            Some(NamedArchiveLocation::Nested {
+                parent_index,
+                entry_id,
+            }) => {
+                let parent_name = self.archives[parent_index].name.clone();
+                let archive = self.archives[parent_index]
+                    .archive
+                    .nested_archive_by_id(entry_id)?
+                    .ok_or_else(|| AssetError::AssetNotFound {
+                        name: name.to_string(),
+                    })?;
+                self.append_registered_archive(NamedArchive {
+                    name: format!("{parent_name} -> {name}"),
+                    archive,
+                });
+                Ok(true)
+            }
+            None if required => Err(AssetError::AssetNotFound {
+                name: name.to_string(),
+            }),
+            None => {
+                log::debug!("{name} not found (optional, skipping)");
+                Ok(false)
+            }
         }
     }
 
@@ -1919,7 +2132,7 @@ pub mod test_support {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod tests {
     use super::test_support::{
         TestDirectory, audio_test_install, make_new_format_mix_bytes, write_audio_archive,
@@ -2050,16 +2263,17 @@ mod tests {
         write_audio_archive(&dir, "audiomd.mix", b"truncated", &[1, 2]);
         write_audio_archive(&dir, "audio.mix", &base, &[3, 4]);
         let manager = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
-        #[cfg(not(feature = "ares"))]
-        assert!(matches!(
-            manager.load_audio_index(),
-            Err(AssetError::ParseError { .. })
-        ));
-        #[cfg(feature = "ares")]
-        assert!(
-            manager.load_audio_index().unwrap().is_none(),
-            "Ares skips the malformed pair without opening another audio archive"
-        );
+        if manager.ships_ares() {
+            assert!(
+                manager.load_audio_index().unwrap().is_none(),
+                "Ares skips the malformed pair without opening another audio archive"
+            );
+        } else {
+            assert!(matches!(
+                manager.load_audio_index(),
+                Err(AssetError::ParseError { .. })
+            ));
+        }
     }
 
     #[test]
@@ -2323,6 +2537,36 @@ mod tests {
         assert_eq!(original.get_ref("new.vxl"), None);
     }
 
+    /// VERA's Ares setting: Auto ignores the installation's `ares.mix` with
+    /// no mod selected, On mounts it and makes an Ares game, and Off mounts
+    /// no copy, not even a selected mod's own.
+    #[test]
+    fn the_ares_setting_decides_the_ares_game_and_its_archive() {
+        use crate::util::ares_launch::AresSetting;
+        let install = audio_test_install("ares-setting");
+        install.write_mix("ares.mix", "ares.txt", b"installed Ares");
+        let mod_dir = TestDirectory::new("ares-setting-mod");
+        mod_dir.write_mix("ares.mix", "ares.txt", b"mod Ares");
+        let open = |mod_dir: Option<&Path>, setting| {
+            AssetManager::with_mod_and_ares(
+                install.path(),
+                mod_dir,
+                MediaArchiveMode::STOCK_DIGITAL,
+                setting,
+            )
+            .unwrap()
+        };
+
+        let auto = open(None, AresSetting::Auto);
+        assert!(!auto.ships_ares() && !auto.ares_mix_mounted());
+        let on = open(None, AresSetting::On);
+        assert!(on.ships_ares());
+        assert_eq!(on.get_ref("ares.txt"), Some(&b"installed Ares"[..]));
+        let off = open(Some(mod_dir.path()), AresSetting::Off);
+        assert!(!off.ships_ares() && !off.ares_mix_mounted());
+        assert_eq!(off.get_ref("ares.txt"), None);
+    }
+
     #[test]
     fn startup_mounts_ecache_then_elocal_archives_between_expansions_and_core() {
         let install = audio_test_install("ecache-elocal");
@@ -2477,10 +2721,10 @@ mod tests {
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
-            #[cfg(feature = "ares")]
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
 
@@ -2562,10 +2806,10 @@ mod tests {
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
-            #[cfg(feature = "ares")]
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
         manager
@@ -2637,10 +2881,10 @@ mod tests {
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
-            #[cfg(feature = "ares")]
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
 
@@ -2680,10 +2924,10 @@ mod tests {
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
-            #[cfg(feature = "ares")]
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
         manager.catalog_named_nested_archives();
@@ -2721,10 +2965,10 @@ mod tests {
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
-            #[cfg(feature = "ares")]
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
 
@@ -2763,10 +3007,10 @@ mod tests {
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
-            #[cfg(feature = "ares")]
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
 
@@ -2800,10 +3044,10 @@ mod tests {
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
-            #[cfg(feature = "ares")]
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
 
@@ -2858,10 +3102,10 @@ mod tests {
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
-            #[cfg(feature = "ares")]
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
 

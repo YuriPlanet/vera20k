@@ -201,8 +201,9 @@ fn sell_off_and_hunt(
 
 /// `0x004FD8F7..0x004FD907`, the no-factory block's calls, as Phobos
 /// `[General] AIFireSale=`, `AIFireSaleDelay=` and `AIAllToHunt=` gate them
-/// (`src/Ext/House/Hooks.cpp`). All_To_Hunt still runs while the delayed sale
-/// waits, and the timer is armed once and then only read.
+/// (`src/Ext/House/Hooks.cpp`) when Phobos plays (`RuleSet::phobos`).
+/// All_To_Hunt still runs while the delayed sale waits, and the timer is armed
+/// once and then only read.
 fn last_legs_actions(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -210,13 +211,13 @@ fn last_legs_actions(
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
-    #[cfg(feature = "phobos")]
-    phobos_last_legs_actions(sim, rules, owner, registry, frame_effects);
-    #[cfg(not(feature = "phobos"))]
-    sell_off_and_hunt(sim, rules, owner, "no factory", registry, frame_effects);
+    if rules.phobos() {
+        phobos_last_legs_actions(sim, rules, owner, registry, frame_effects);
+    } else {
+        sell_off_and_hunt(sim, rules, owner, "no factory", registry, frame_effects);
+    }
 }
 
-#[cfg(feature = "phobos")]
 fn phobos_last_legs_actions(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -477,6 +478,9 @@ pub(crate) fn all_to_hunt(
             continue;
         }
         if techno.category() == EntityCategory::Structure {
+            // RESIDUAL (invisible): native sells only a building with
+            // occupants (0x005014F9); this also clears an empty building's
+            // CurrentFireIdx.
             crate::sim::passenger::garrison_eject::sell_building_occupants(
                 sim,
                 rules,
@@ -615,6 +619,6 @@ pub(crate) fn all_to_hunt_score_override(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "house_strategy_tests.rs"]
 mod tests;

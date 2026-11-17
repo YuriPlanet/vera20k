@@ -637,10 +637,10 @@ pub(crate) fn respond_to_base_attack(
     selection.dispatch(world, rules, victim_id, attacker_id);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 #[path = "base_defense_response_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 #[path = "base_defense_response_oracle_tests.rs"]
 mod oracle_tests;

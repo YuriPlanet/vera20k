@@ -176,7 +176,6 @@ fn status_two_fires_from_the_native_stage() {
 // Stock PsyDom Start/Process (0x0053AE50, 0x0053AF40); installed Ares runs
 // SW_PsychicDominator's state machine (10070BA0) and Fire hook (10037840)
 // instead. Ares coverage: `ares_stock_types_tests`.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_process_steps_match_native() {
     let Some(rules) = retail_rules() else {
@@ -589,7 +588,6 @@ fn dominator_lighting_read_matches_native() {
 // Stock PsyDom Start/Process (0x0053AE50, 0x0053AF40); installed Ares runs
 // SW_PsychicDominator's state machine (10070BA0) and Fire hook (10037840)
 // instead. Ares coverage: `ares_stock_types_tests`.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_dominator_strike_captures_the_block() {
     let Some(rules) = retail_rules() else {

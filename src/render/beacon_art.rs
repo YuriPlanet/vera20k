@@ -5,9 +5,11 @@
 //! `BeaconClass::Draw 0x00430250` (tactical) and `0x00430650` (radar) blit
 //! them through the owning House's ColorScheme Convert (`ColorScheme+0x30C`,
 //! `0x004302EE`, `0x004306ED`) at brightness 1000 with flags `0x600`:
-//! centred, with no A-buffer and no Z. That Convert's palette is TEMPERAT.PAL
-//! with indices 16..31 replaced by the House's ramp
-//! (`ColorScheme__Constructor 0x0068C710`).
+//! centred, with no A-buffer and no Z. Init_Theater loads the theater's
+//! `UNIT%s.PAL` into `0x00886380` (`0x00534CB2..0x00534CD9`) and rebuilds
+//! every scheme's Convert from it (`0x00534D77` -> `0x0068C860`), so that
+//! Convert's palette is the unit palette with indices 16..31 replaced by the
+//! House's ramp (`ColorScheme__BuildRampPalette 0x0068C3B0`).
 //!
 //! ## Dependency rules
 //! - Part of render/ — the caller supplies the visible records.
@@ -18,6 +20,7 @@ use crate::assets::shp_file::ShpFile;
 use crate::render::batch::{BatchRenderer, SpriteInstance};
 use crate::render::palette_light::PaletteLight;
 use crate::render::selection_overlay::CenteredShapeStrip;
+use crate::render::sidebar_chrome::side_mix_file;
 
 /// One beacon a client draws, in the House-major order of the native loops
 /// (`0x00430AC0`, `0x00431700`).
@@ -44,19 +47,22 @@ impl BeaconArt {
         self.tactical.len()
     }
 
-    /// `ramps` holds each beacon row's House ramp, in House order.
+    /// `unit_palette` is the theater's unit palette; `ramps` holds each
+    /// beacon row's House ramp, in House order.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         batch: &BatchRenderer,
         assets: &AssetManager,
+        side_index: i32,
+        ares: bool,
+        unit_palette: Option<&Palette>,
         ramps: &[[Color; 16]],
     ) -> Self {
-        let shape = |name| ShpFile::from_bytes(assets.get_ref(name)?).ok();
-        let base = assets
-            .get_ref("temperat.pal")
-            .and_then(|bytes| Palette::from_bytes(bytes).ok());
-        let palettes: Vec<Palette> = base
+        let file = |name| side_mix_file(assets, side_index, ares, name);
+        let shape = |name| ShpFile::from_bytes(file(name)?).ok();
+        let palettes: Vec<Palette> = unit_palette
             .map(|base| {
                 ramps
                     .iter()
@@ -89,10 +95,19 @@ impl BeaconArt {
                 })
             })
             .collect();
+        let radar = shape("rdrbeacn.shp");
+        // 0x00430A2D and 0x00430A97 report each missing shape to the debug
+        // log; play goes on without it.
+        if tactical_shape.is_none() {
+            log::warn!("Failed to load BeaconArt");
+        }
+        if radar.is_none() {
+            log::warn!("Failed to load RadarBeaconArt");
+        }
         Self {
             tactical,
             tactical_frames: tactical_shape.map_or(0, |shp| shp.frames.len() as u32),
-            radar: shape("rdrbeacn.shp"),
+            radar,
             radar_colors,
         }
     }
@@ -165,7 +180,7 @@ fn radar_frame(frames: u32, counter: u32) -> Option<usize> {
     (frame < frames).then_some(frame as usize)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
 
@@ -177,5 +192,25 @@ mod tests {
         assert_eq!(radar_frame(5, 24), Some(4));
         assert_eq!(radar_frame(5, 25), None);
         assert_eq!(radar_frame(5, 40), Some(0));
+    }
+
+    /// Retail ships PBEACON.SHP and RDRBEACN.SHP only in sidec01.mix and
+    /// sidec02.mix, the side MIX groups Full_Init mounts before
+    /// Init_BeaconArt.
+    #[test]
+    fn retail_beacon_art_comes_from_each_sides_mix_group() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        for side in 0..3 {
+            for name in ["pbeacon.shp", "rdrbeacn.shp"] {
+                let shape = side_mix_file(&assets, side, false, name)
+                    .and_then(|bytes| ShpFile::from_bytes(bytes).ok());
+                assert!(
+                    shape.is_some_and(|shp| !shp.frames.is_empty()),
+                    "side {side} {name}"
+                );
+            }
+        }
     }
 }

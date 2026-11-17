@@ -4,7 +4,8 @@
 existing BuildingType processing and `TypeFacts` cache carry that same value;
 there is no parallel placement, navigation or renderer geometry registry.
 Stock tokens retain the original fixed 22-entry table and row-major cell order.
-With `ares`, the fixed ART effective Image section installs Custom geometry once:
+In a game read the Ares way ([Ares](../../docs/ares.md)), the fixed ART effective
+Image section installs Custom geometry once:
 `Foundation`, `Foundation.X/Y` (integer default 0), occupied `Foundation.i`, and
 `FoundationOutline.Length` (default 0, minimum 10) / `FoundationOutline.i`.
 The original cached INI readers and integer scanner are reused. Custom occupied
@@ -61,7 +62,7 @@ outline backing, direct exit slot, cursor, ART hash and unsupported-size admissi
 Production lifecycle regression:
 `sim::world::custom_foundation_tests::` (construct/Unlimbo/Mark, actual occupied
 cells, navigation, hidden counters, snapshot restore and UnInit cleanup).
-Feature-off protection: `rules::foundation::tests::`.
+Stock-way protection: `rules::foundation::tests::`.
 These are Rust regressions, not a claim of whole-game rendered parity.
 
 ## Bounds and residuals
@@ -77,15 +78,16 @@ needed to establish the selected building's final visual outcome. Ordinary
 positive custom shapes are the selected loaded-building chain, not universal
 support for pathological native allocations or every generator path.
 
-## Persistence and feature-off impact
+## Persistence and stock-game impact
 
 The String/u8 to typed Foundation migration changes ProcessedType cache and
 TypeFacts snapshot serialization even with Ares disabled. No legacy-byte
 serializer is installed. The existing automatic snapshot layout digest rejects
 old layouts before body decode; regenerate processed caches and start a new game
 with this candidate. Configuration hashes also intentionally include resolved
-stock/custom ART geometry. This is not an assertion of feature-off byte-layout
-compatibility. Feature-off still excludes Custom variants/readers.
+stock/custom ART geometry. This is not an assertion of byte-layout compatibility
+for games without Ares. A game read the stock way still excludes Custom
+variants/readers.
 
 The proximity correction also applies to stock shapes: providers must occupy an
 actual ground cell and be the first Building returned by that cell's existing

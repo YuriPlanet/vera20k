@@ -1,7 +1,7 @@
 # Optional Ares gate, wall, trench, tunnel and foundation hooks
 
-Build with `--features ares`. Default builds keep every stock path named
-below. This page covers the hooks of `Ext/Building/Hooks.Gates.cpp`,
+Every build takes these hooks when the game plays Ares ([Ares](ares.md));
+other games keep every stock path named below. This page covers the hooks of `Ext/Building/Hooks.Gates.cpp`,
 `Hooks.Infiltrate.cpp` (the sidebar and AllyWith ones), `Hooks.Sensor.cpp`
 (the redraw), `Hooks.Trenches.cpp`, `Hooks.Tunnels.cpp` and
 `Ext/BuildingType/Hooks.cpp` (pips, outline, undeploy) that no other page
@@ -96,8 +96,10 @@ SizeLimit=15              ; the largest Size= that may enter
   to the C4 planter or the eraser (`100093C0`); when it is sold, every
   member is put out on its cell and scattered (PlaceOne `10009810`).
 - **Custom foundation pips.** A building on a `Foundation=Custom` foundation
-  answers its `Foundation.X` width as its pip count, whatever its
-  `PipScale=` (Ares `10010150`, hook `0x45ECE0`; `ObjectType::pip_max`).
+  uses its `Foundation.X` as the foundation width in the stock BuildingType
+  GetPipMax (Ares `10010150`, hook `0x45ECE0`, resuming at `0x45ECED`;
+  `ObjectType::pip_max`): its Tiberium and Power pips are capped at
+  `width * 60 / 8`, and any other `PipScale=` keeps the TechnoType answer.
 
 ## Not included
 
@@ -125,12 +127,6 @@ SizeLimit=15              ; the largest Size= that may enter
 - `Passengers.Allowed`/`.Disallowed` also gate an aircraft's hold
   (`10048D10`, hook `0x41949F`), which VERA does not represent (no retail
   aircraft carries passengers).
-- The stock BuildingType override of GetPipMax (`0x0045ECE0`: Tiberium and
-  Power pips from `width * 60 / 8`, capped by `Storage=` or
-  `WeedCapacity=`) is not in VERA either; buildings take the TechnoType
-  answer (`0x00716290`), so a retail refinery's pip row has 5 slots where
-  native has 30 (GAREFN, NAREFN) or 15 (YAREFN). Default builds share
-  this gap.
 
 ## Hooks
 

@@ -302,8 +302,8 @@ fn surveyed_urban_names(theater_name: &str) -> Option<Vec<&'static str>> {
 
 /// Resolve the Ares `[Urban]` lists of `settings` against the processed Rules
 /// type arrays and the art foundations: a structure that is no BuildingType
-/// has no footprint, a foot that is no type is unknown.
-#[cfg(feature = "ares")]
+/// has no footprint, a foot that is no type is unknown. Used when Ares.dll is
+/// loaded (the game is read the Ares way).
 pub fn resolve_ares_urban(
     settings: &crate::map::rmg::RmgSettings,
     processed: &crate::rules::native_processing::ProcessedRulesLayers,
@@ -371,7 +371,7 @@ pub(crate) fn stock_contract_catalog() -> Vec<TechType> {
     resolve(processed.neutral_tech_buildings(), &art)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 
@@ -428,10 +428,10 @@ mod tests {
         }
     }
 
-    /// `strtok` skips empty fields but the type list allocates each token as
-    /// written, so a spaced name misses its art section. Ares's Find-only
-    /// read (Buf_AI 1005B830, hook 0x672B0E) allocates no spaced name.
-    #[cfg(not(feature = "ares"))]
+    /// `strtok` skips empty fields but, read the stock way, the type list
+    /// allocates each token as written, so a spaced name misses its art
+    /// section. Ares's Find-only read (Buf_AI 1005B830, hook 0x672B0E)
+    /// allocates no spaced name.
     #[test]
     fn list_entries_keep_their_spaces_and_empty_fields_drop() {
         let art = IniFile::from_str("[CAOILD]\nFoundation=2x2\n[CAPOWR]\nFoundation=2x2\n");

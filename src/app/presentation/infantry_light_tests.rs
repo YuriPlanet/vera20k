@@ -168,7 +168,8 @@ fn assert_shp_light(
     let location = crate::sim::movement::ground_pose::object_location(actor, Some(terrain));
     let screen =
         crate::util::lepton::absolute_leptons_to_screen(location.x, location.y, location.z);
-    let frame = crate::app::presentation::frame::PresentationFrame::capture(runtime);
+    let frame =
+        crate::app::presentation::frame::PresentationFrame::capture(runtime, &Default::default());
     let mut draws = Vec::new();
     build_shp_instances_from_inputs(
         &ShpInputs {
@@ -198,7 +199,7 @@ fn assert_shp_light(
             building_zshape: false,
         },
         &mut draws,
-        &NativeDisplayOrder::from_display(sim.display_layers()),
+        &NativeDisplayOrder::from_world(&sim, None),
     );
     let mut bodies = draws
         .iter()

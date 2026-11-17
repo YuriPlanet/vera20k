@@ -256,7 +256,7 @@ fn run(command: &mut Command) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

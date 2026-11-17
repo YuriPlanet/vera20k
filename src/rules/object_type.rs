@@ -101,6 +101,47 @@ impl VhpScan {
     }
 }
 
+/// Phobos `TargetZoneScanType=` (TechnoTypeExt, default `same`): what a
+/// scanner does with a candidate outside its movement zone in
+/// `Greatest_Threat`'s walk over every object, once Phobos plays
+/// (`crate::sim::combat::greatest_threat`'s zone gate).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TargetZoneScanType {
+    /// Refuse it.
+    #[default]
+    Same,
+    /// Keep it.
+    Any,
+    /// Keep it when the selected weapon reaches it from the passable cell
+    /// found nearest it.
+    InRange,
+}
+
+impl TargetZoneScanType {
+    /// Phobos' enum reader (`detail::read<TargetZoneScanType>`,
+    /// `src/Utilities/TemplateDef.h`): `INI_EX::ReadString` into its
+    /// 2048-byte buffer, then `_strcmpi` of the whole value with `same`, `any`
+    /// and `inrange`. Other text keeps the value, which Phobos logs
+    /// (`Debug::INIParseFailed`), and each rules pass supplies its prior value.
+    fn read_ini(section: &IniSection) -> Self {
+        section.read_string_with("TargetZoneScanType", 2048, Self::Same, |current, value| {
+            if value.eq_ignore_ascii_case("same") {
+                Self::Same
+            } else if value.eq_ignore_ascii_case("any") {
+                Self::Any
+            } else if value.eq_ignore_ascii_case("inrange") {
+                Self::InRange
+            } else {
+                log::warn!(
+                    "[{}] TargetZoneScanType={value}: expected same, any or inrange",
+                    section.name
+                );
+                current
+            }
+        })
+    }
+}
+
 /// Sidebar/build-queue classification for buildable buildings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildCategory {
@@ -240,7 +281,7 @@ impl InfantryInfiltration {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "infantry_infiltration_tests.rs"]
 mod infiltration_tests;
 
@@ -321,6 +362,17 @@ pub const HIDDEN_OCCUPY_SLOT_COUNT: usize = 8;
 /// `0 <= idx < 18`, and `EliteWeapon[]` (`+0xA94`) sits `18 * 0x1C` (+4)
 /// bytes after `Weapon[]` (`+0x898`).
 pub const WEAPON_SLOT_COUNT: usize = 18;
+
+/// VERA's bound on `WeaponCount=`. gamemd loops and Ares sizes its weapon,
+/// turret, label and insignia vectors by the raw signed value, so a value near
+/// `i32::MAX` freezes or exhausts memory there. Outside data never stops the
+/// game: the read clamps here, far above any weapon list a mod authors.
+pub const WEAPON_COUNT_LIMIT: i32 = 1024;
+
+/// VERA's bound on the radio contacts (dock slots) one building allocates.
+/// Native allocates `max(NumberOfDocks, 1)` contacts (`0x0043BCBD..0x0043BCD0`),
+/// which for a value near `i32::MAX` exhausts memory; no dock layout needs more.
+pub const DOCK_CONTACT_LIMIT: i32 = 256;
 
 /// Weapon-array slot the `Primary=` / `ElitePrimary=` keys name
 /// (`TechnoTypeClass+0x898` / `+0xA94`).
@@ -797,8 +849,9 @@ pub struct ObjectType {
     /// `[GlobalControls] AllowParallelAIQueues=` is on, a computer house that
     /// already has a factory building for this type's category does not start
     /// another one for this type.
-    #[cfg(feature = "phobos")]
     pub forbid_parallel_ai_queues: bool,
+    /// Phobos `TargetZoneScanType=` ([`TargetZoneScanType`]).
+    pub target_zone_scan_type: TargetZoneScanType,
     /// `[BuildingTypes] AIPlanningCount=` — the NPSE count of plan nodes a
     /// computer house's base plan gives this building. The techno reader
     /// extension chain reads it with the current field as its default and
@@ -1229,6 +1282,8 @@ pub struct ObjectType {
     convert_script: Option<crate::rules::superweapon_type::DeliveryType>,
     convert_water: Option<crate::rules::superweapon_type::DeliveryType>,
     convert_land: Option<crate::rules::superweapon_type::DeliveryType>,
+    /// TechnoTypeExt+1DC, a registered UnitType used by Ares' water draw.
+    water_image: Option<String>,
     turret_rot_override: Option<i32>,
     spotlight: crate::rules::ares_spotlight::SpotlightTypeRules,
     driver: crate::rules::ares_driver::DriverTypeRules,
@@ -1318,6 +1373,11 @@ pub struct ObjectType {
     pub super_weapon: Option<String>,
     /// Secondary superweapon type ID, typically from an upgrade (SuperWeapon2= in rules.ini).
     pub super_weapon2: Option<String>,
+    /// VERA's `SuperWeaponPerBuilding=` (default no; `docs/superweapon-limit.md`):
+    /// each building of this type charges its own shot of the Supers it
+    /// provides, rather than the house's one charge alone. gamemd has no such
+    /// key; the Superweapon Limit sets it.
+    pub super_weapon_per_building: bool,
     /// BuildingTypeExt+178, ordered lookup-only `SuperWeapons=` references.
     additional_super_weapons: Vec<String>,
     /// Phobos `UnitTypeExt`'s three `OreGathering.*` lists, retained per
@@ -1430,7 +1490,8 @@ pub struct ObjectType {
     ///
     /// After the art→rules merge:
     /// - If art declared at least one `DockingOffset%d`, the vec is sized to
-    ///   `number_of_docks` (zero-padding any indices missing in art, truncating excess).
+    ///   `number_of_docks` (zero-padding any indices missing in art, truncating excess),
+    ///   at most [`DOCK_CONTACT_LIMIT`].
     /// - If art declared none, the vec is left empty — consumers fall back to
     ///   their own anchor (e.g. `refinery_pad_cell`'s rightmost-column default).
     ///
@@ -2469,9 +2530,11 @@ pub struct ObjectType {
     // resolution against the particle-system registry is deferred (matches
     // the same deferred-typing decision used for ParticleType.warhead and
     // ParticleSystemType.holds_what's parse-side captures).
-    /// `NaturalParticleSystem=` — gap-generator / cloak-related particle
-    /// system. Live code path in YR (BuildingClass::UpdateGapGenerator_Tick),
-    /// but no retail INI sets the key, so the slot is normally null.
+    /// `NaturalParticleSystem=` (Type+0x764): the system a building keeps at
+    /// `+0x30C`. BuildingClass Unlimbo (`0x00440E99`) and UpdateCloak's
+    /// fade-in (`0x00454F72`) build it, the fade-out deletes it and
+    /// ReceiveDamage's NowYellow (`0x004426AC`) slows it. No retail INI sets
+    /// the key.
     pub natural_particle_system: Option<String>,
     /// `NaturalParticleLocation=` X,Y,Z offset paired with the system above.
     pub natural_particle_location: IVec3,
@@ -2539,14 +2602,13 @@ pub struct ObjectType {
     /// infantryman of such a type takes Area Guard unless it is in a team
     /// (`0x0051CD54..0x0051CD75`).
     pub default_to_guard_area: bool,
-    /// `Cyborg=` bool — gamemd's TechnoTypeClass `+0xC8F` "emits damage sparks"
-    /// flag that `AI_Update` gates the per-tick damage-Spark prob-roll on.
-    /// Verified: only `InfantryTypeClass::ReadINI` writes `+0xC8F` (from `Cyborg=`);
-    /// every other leaf (vehicle/building/aircraft) keeps the ctor default 0. So
-    /// the AI_Update spark draw fires only for `Cyborg=yes` INFANTRY — a TS legacy
-    /// with **no stock-YR users** (the effect is dormant in stock). Default false.
-    /// See [`ObjectType::emits_damage_spark`].
+    /// InfantryType `Cyborg=` (`+0xEAC`, ReadBool with the current value as
+    /// default at `0x005243B8`). No stock INI authors it. See
+    /// [`ObjectType::emits_damage_spark`] for the spark flag it feeds.
     pub cyborg: bool,
+    /// TechnoType `+0xC8F`, projected from the Rules passes: see
+    /// [`ObjectType::emits_damage_spark`].
+    pub damage_sparks: bool,
 
     /// InfantryType `UseOwnName=` (`+0xECA`, ReadBool `0x00524634..0x0052464E`,
     /// ctor 0 @ `0x005237DC`): an IFV carrying this infantryman names it in
@@ -3026,6 +3088,15 @@ impl ObjectType {
     ) {
         self.convert_water = water.cloned();
         self.convert_land = land.cloned();
+    }
+
+    /// Read-only projection of the retained WaterImage pointer.
+    pub fn water_image(&self) -> Option<&str> {
+        self.water_image.as_deref()
+    }
+
+    pub(crate) fn bind_water_image(&mut self, image: Option<&str>) {
+        self.water_image = image.map(str::to_owned);
     }
 
     /// Retained TechnoType+C9E; building crew admission reads this input
@@ -3674,24 +3745,38 @@ impl ObjectType {
         self.vehicle_thief = flags.vehicle_thief.unwrap_or(self.vehicle_thief);
     }
 
-    /// TechnoType GetPipMax716290, virtual+74. Signed configuration capacity;
-    /// callers own allocation/fill bounds. Uses the live bound base weapon0,
-    /// not a capture manager's retained admission capacity or elite weapon.
+    /// GetPipMax, virtual+74: BuildingType's override (0x0045ECE0) for a
+    /// Building, else TechnoType's (0x00716290). Signed configuration
+    /// capacity; callers own allocation/fill bounds. Uses the live bound base
+    /// weapon0, not a capture manager's retained admission capacity or elite
+    /// weapon.
     pub fn pip_max(&self, rules: &crate::rules::ruleset::RuleSet) -> i32 {
-        // Ares 3.0 BuildingTypeClass_GetMaxPips 10010150 (hook 0x45ECE0): a
-        // building on a custom foundation answers its `Foundation.X` width
-        // for every PipScale. (VERA lacks the stock BuildingType override
-        // 0x0045ECE0 itself, which sizes Tiberium and Power pips by the
-        // foundation width; buildings take the TechnoType answer below.)
-        // Only a Rules read the Ares way installs a custom foundation.
-        if self.category == ObjectCategory::Building
-            && matches!(
-                self.foundation,
-                crate::rules::foundation::Foundation::Custom(_)
-            )
-        {
-            return i32::from(self.foundation.dimensions().0);
+        // BuildingTypeClass::GetPipMax 0x0045ECE0: the foundation width
+        // (table 0x008192B8) times 60, divided by 8 toward zero
+        // (0x0045ECED..0x0045ED02), caps Tiberium pips at `Storage=`, or a
+        // Weeder's at `[General] WeedCapacity=`, a negative one answering 0;
+        // Power answers the cap, every other scale TechnoType's. Ares
+        // BuildingTypeClass_GetMaxPips (Ares.dll 10010150, hook 0x45ECE0)
+        // only loads a custom foundation's `Foundation.X` as that width and
+        // resumes at 0x0045ECED. Stock buildings draw no Tiberium pips
+        // (DrawPipScalePips 0x00709B61), so the Tiberium arm shows only with
+        // Ares' storage pips (docs/ares-tiberium.md).
+        if self.category == ObjectCategory::Building {
+            let cap = i32::from(self.foundation.dimensions().0) * 60 / 8;
+            match self.pip_scale {
+                PipScale::Tiberium => {
+                    let held = if self.weeder {
+                        rules.general.weed_capacity
+                    } else {
+                        self.storage
+                    };
+                    return if held < 0 { 0 } else { held.min(cap) };
+                }
+                PipScale::Power => return cap,
+                _ => {}
+            }
         }
+        // TechnoTypeClass::GetPipMax 0x00716290.
         match self.pip_scale {
             PipScale::None => 0,
             PipScale::Ammo => self.ammo,
@@ -4132,8 +4217,9 @@ impl ObjectType {
 
     /// Building43BCBD..43BCD0 allocates at least one radio contact even when
     /// the signed type count is nonpositive. This is not the coordinate-query count.
+    /// VERA clamps it to [`DOCK_CONTACT_LIMIT`].
     pub fn dock_contact_capacity(&self) -> u32 {
-        self.number_of_docks.max(1) as u32
+        self.number_of_docks.clamp(1, DOCK_CONTACT_LIMIT) as u32
     }
 
     /// BuildingType virtual used by the Building receive-damage prelude and
@@ -4188,13 +4274,16 @@ impl ObjectType {
             && !self.is_1x1_with_undeploy()
     }
 
-    /// gamemd's TechnoTypeClass `+0xC8F` — whether `AI_Update` runs the per-tick
-    /// damage-Spark prob-roll for this type. Only `InfantryTypeClass::ReadINI`
-    /// sets `+0xC8F` (from `Cyborg=`); all other leaves keep the ctor default 0,
-    /// so a non-infantry type never emits AI_Update sparks even if `Cyborg=yes` is
-    /// (nonsensically) set on it. Dormant in stock YR (no `Cyborg=yes` units).
+    /// gamemd's TechnoTypeClass `+0xC8F`: whether `AI_Update` runs the per-tick
+    /// damage-Spark roll for this type (`0x006FACD9`). Only
+    /// `InfantryTypeClass::ReadINI` writes it: every pass clears it
+    /// (`0x005240BD`) and a pass that reads the type's section sets it when
+    /// `Cyborg` holds (`0x005243DD..0x005243E7`). So the last Rules pass
+    /// (usually the map) must have the section; other leaves keep the ctor 0.
+    /// Ares skips the clear, so there any pass that sets it keeps it set.
+    /// Dormant in stock YR (no `Cyborg=yes` types).
     pub fn emits_damage_spark(&self) -> bool {
-        self.cyborg && self.category == ObjectCategory::Infantry
+        self.damage_sparks
     }
 
     /// `BuildingClass` vt+0x284 (`0x00455DA0`, HasRallyPoint): a
@@ -4467,8 +4556,9 @@ impl ObjectType {
             // (the live consumer executes IDIV without a zero guard).
             walk_rate: section.read_int("WalkRate", 1),
             idle_rate: section.read_int("IdleRate", 0),
-            // Double fields (`0x007124A3..0x007124E5`).
-            weight: SimFixed::from_num(section.read_double("Weight", 1.0) as f32),
+            // Double fields (`0x007124A3..0x007124E5`). Saturating: an
+            // out-of-range literal scans as infinity.
+            weight: SimFixed::saturating_from_num(section.read_double("Weight", 1.0) as f32),
             accel_factor: section.read_double_bits(
                 "AccelerationFactor",
                 NativeF64Bits::from_bits(0x3f9e_b851_eb85_1eb8),
@@ -4536,7 +4626,9 @@ impl ObjectType {
                     if degrees == -1.0 {
                         current
                     } else {
-                        SimFixed::from_num((degrees as f32) * (std::f32::consts::PI / 180.0))
+                        SimFixed::saturating_from_num(
+                            (degrees as f32) * (std::f32::consts::PI / 180.0),
+                        )
                     }
                 },
             ),
@@ -4581,8 +4673,13 @@ impl ObjectType {
             } else {
                 i32::MAX
             },
-            #[cfg(feature = "phobos")]
-            forbid_parallel_ai_queues: section.read_bool("ForbidParallelAIQueues", false),
+            forbid_parallel_ai_queues: crate::rules::phobos_switch::phobos_read(|| {
+                section.read_bool("ForbidParallelAIQueues", false)
+            }),
+            // TechnoTypeExt::ExtData::LoadFromINIFile (src/Ext/TechnoType/Body.cpp).
+            target_zone_scan_type: crate::rules::phobos_switch::phobos_read(|| {
+                TargetZoneScanType::read_ini(section)
+            }),
             ai_planning_count: if crate::rules::NPATCH_ENABLED {
                 building_int(section, category, "AIPlanningCount") & 0xFF
             } else {
@@ -4782,6 +4879,7 @@ impl ObjectType {
             convert_script: None,
             convert_water: None,
             convert_land: None,
+            water_image: None,
             turret_rot_override: None,
             spotlight: Default::default(),
             driver: Default::default(),
@@ -4819,6 +4917,7 @@ impl ObjectType {
             death_weapon_damage_modifier: section.read_float("DeathWeaponDamageModifier", 1.0),
             super_weapon: section.read_name("SuperWeapon", 0x20).map(str::to_owned),
             super_weapon2: section.read_name("SuperWeapon2", 0x20).map(str::to_owned),
+            super_weapon_per_building: section.read_bool("SuperWeaponPerBuilding", false),
             additional_super_weapons: Vec::new(),
             #[cfg(feature = "phobos")]
             ore_gathering: PhobosOreGathering::default(),
@@ -5317,6 +5416,7 @@ impl ObjectType {
             stupid_hunt: section.read_bool("StupidHunt", false),
             default_to_guard_area: section.read_bool("DefaultToGuardArea", false),
             cyborg: section.read_bool("Cyborg", false),
+            damage_sparks: false,
             use_own_name: category == ObjectCategory::Infantry
                 && section.read_bool("UseOwnName", false),
             destroy_particle_systems: Vec::new(),
@@ -5552,27 +5652,31 @@ fn building_bool(section: &IniSection, category: ObjectCategory, key: &str) -> b
     category == ObjectCategory::Building && section.read_bool(key, false)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "infantry_speed_type_tests.rs"]
 mod infantry_speed_type_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "vehicle_speed_type_tests.rs"]
 mod vehicle_speed_type_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "infantry_pip_tests.rs"]
 mod infantry_pip_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "ammo_pip_tests.rs"]
 mod ammo_pip_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "absorber_pip_tests.rs"]
 mod absorber_pip_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
+#[path = "building_pip_tests.rs"]
+mod building_pip_tests;
+
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     #[test]
     fn fly_bank_rules_read_stock_values_and_keep_each_pass_sentinels() {
@@ -5893,9 +5997,10 @@ mod tests {
             } else {
                 object.number_of_docks = row.count;
             }
+            // VERA bounds the native capacity (`DOCK_CONTACT_LIMIT`).
             assert_eq!(
                 object.dock_contact_capacity(),
-                row.capacity,
+                row.capacity.min(DOCK_CONTACT_LIMIT as u32),
                 "{:?}",
                 row.raw
             );
@@ -6680,6 +6785,17 @@ mod tests {
     }
 
     #[test]
+    fn weapon_count_stops_at_the_vera_bound() {
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=GUN\n[GUN]\nTurretCount=1\nWeaponCount=5000\nWeapon1=AG1\n",
+        ))
+        .unwrap();
+        let gun = rules.object("GUN").unwrap();
+        assert_eq!(gun.weapon_count, WEAPON_COUNT_LIMIT);
+        assert_eq!(gun.weapon_list[0].as_deref(), Some("AG1"));
+    }
+
+    #[test]
     fn weapon_slot_lists_parse_for_non_gunner_types_and_selector_flags_parse() {
         // Stock YAGGUN shape: IsGattling with six WeaponN/EliteWeaponN slots
         // and no Gunner=. Stock DEST shape: NavalTargeting=1.
@@ -6965,8 +7081,8 @@ mod tests {
     }
     /// `0x00713C37`: ReadString 0x80, then each `strtok` token as written to
     /// `ParticleSystemTypeClass::FindOrAllocate` (`0x00644890`).
-    // Ares reads these lists Find-only through ParseList (Misc/Bugfixes.Buffer.cpp).
-    #[cfg(not(feature = "ares"))]
+    // Read the stock way: Ares reads these lists Find-only through ParseList
+    // (Misc/Bugfixes.Buffer.cpp).
     #[test]
     fn techno_type_parses_damage_particle_systems_csv() {
         let rules = rules(
@@ -6990,32 +7106,30 @@ mod tests {
         );
     }
 
+    /// TechnoType+0xC8F: `InfantryTypeClass::ReadINI` clears it on every pass
+    /// (`0x005240BD`) and sets it only on a pass that reads the type's section
+    /// (`0x005243E7`); no other type writes it. Ares jumps past the clear.
     #[test]
-    fn emits_damage_spark_only_for_cyborg_infantry() {
-        // Type+0xC8F = Cyborg, written ONLY by InfantryTypeClass::ReadINI; other
-        // leaves keep the ctor default 0. So `emits_damage_spark` is true iff the
-        // type is `Cyborg=yes` AND infantry.
-        let ini = IniFile::from_str("[X]\nCyborg=yes\n");
-        let s = ini.section("X").unwrap();
-        assert!(
-            ObjectType::from_ini_section("X", s, ObjectCategory::Infantry).emits_damage_spark()
+    fn damage_sparks_need_the_infantry_section_in_the_last_rules_pass() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+        let sparks = |map: &str| {
+            let mut stack = RulesLayerStack::new(IniFile::from_str(
+                "[InfantryTypes]\n0=CYB\n[VehicleTypes]\n0=VCYB\n\
+                 [CYB]\nCyborg=yes\n[VCYB]\nCyborg=yes\n",
+            ));
+            stack.push(RulesLayerKind::Scenario, IniFile::from_str(map));
+            let rules = RuleSet::from_processed_rules(&stack.process().unwrap()).unwrap();
+            let spark = |id| rules.object(id).unwrap().emits_damage_spark();
+            (spark("CYB"), spark("VCYB"))
+        };
+        assert_eq!(
+            sparks("[CYB]\nStrength=90\n[VCYB]\nStrength=90\n"),
+            (true, false)
         );
-        // A Cyborg=yes vehicle/building/aircraft never emits (category gate).
-        assert!(
-            !ObjectType::from_ini_section("X", s, ObjectCategory::Vehicle).emits_damage_spark()
-        );
-        assert!(
-            !ObjectType::from_ini_section("X", s, ObjectCategory::Building).emits_damage_spark()
-        );
-        assert!(
-            !ObjectType::from_ini_section("X", s, ObjectCategory::Aircraft).emits_damage_spark()
-        );
-        // Default (no Cyborg key) → false even for infantry (dormant in stock YR).
-        let plain = IniFile::from_str("[E1]\nFixtureOnly=1\n");
-        let ps = plain.section("E1").unwrap();
-        let plain_inf = ObjectType::from_ini_section("E1", ps, ObjectCategory::Infantry);
-        assert!(!plain_inf.cyborg);
-        assert!(!plain_inf.emits_damage_spark());
+        assert_eq!(sparks(""), (false, false));
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        assert_eq!(sparks(""), (true, false));
     }
 
     #[test]
@@ -7559,7 +7673,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod simple_deploy_reader_tests {
     use crate::rules::{
         ini_parser::IniFile,

@@ -273,7 +273,7 @@ pub fn update_scroll<I>(
     true
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     use crate::ui::skirmish_shell::{SavedSeedBrowserRow, SavedSeedPrompt, SavedSeedPromptPurpose};

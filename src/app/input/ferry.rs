@@ -1251,6 +1251,6 @@ pub(crate) fn marks(state: &AppState) -> Vec<FerryRing> {
     rings
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "ferry_tests.rs"]
 mod tests;

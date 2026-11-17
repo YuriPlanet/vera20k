@@ -115,7 +115,8 @@ where
 /// `vera20k --probe [--ra2-dir <dir>] [--map <path>]` (docs/spawn.md): print
 /// one JSON object describing what a spawn launch on this installation is
 /// checked against, then exit. Headless: no logger, window or audio. `--mod
-/// <folder>` and `--no-mod` choose the mod as they do for that launch.
+/// <folder>` and `--no-mod` choose the mod as they do for that launch, and
+/// `--ares <Auto|On|Off>` the Ares setting spawn.ini's `[Settings] Ares=` will.
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub fn try_probe<I>(args: I) -> Option<Result<i32>>
 where
@@ -126,12 +127,25 @@ where
         return None;
     }
     Some((|| {
-        let (mod_switch, args) = crate::app::mods::take_switch(args.collect())?;
+        let (mod_switch, mut args) = crate::app::mods::take_switch(args.collect())?;
+        let ares = match args.iter().position(|arg| arg == OsStr::new("--ares")) {
+            Some(at) => {
+                let setting = args
+                    .get(at + 1)
+                    .and_then(|value| value.to_str())
+                    .and_then(crate::util::ares_launch::AresSetting::parse)
+                    .context("\"--ares\" needs Auto, On or Off")?;
+                args.drain(at..=at + 1);
+                Some(setting)
+            }
+            None => None,
+        };
         let (ra2_dir, map) = parse_probe_args(args.into_iter())?;
         let report = crate::app::spawn_probe::run_desktop(
             ra2_dir.as_deref(),
             map.as_deref(),
             mod_switch.as_ref(),
+            ares,
         )?;
         println!("{}", serde_json::to_string(&report)?);
         Ok(0)
@@ -556,7 +570,7 @@ fn set_once<T>(slot: &mut Option<T>, value: T, flag: &str) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};

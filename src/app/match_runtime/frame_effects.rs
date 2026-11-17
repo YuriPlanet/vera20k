@@ -17,11 +17,11 @@ use crate::sim::world::{
     SimSoundEvent, Simulation, SoundBoundary, TacticalRadarBoundary,
 };
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 #[path = "planning_defeat_tests.rs"]
 mod planning_defeat_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 #[path = "outcome_wait_tests.rs"]
 mod outcome_wait_tests;
 
@@ -489,7 +489,7 @@ impl TacticalRadarBoundary for FrameClientBoundary<'_> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tactical_radar_tests {
     use super::*;
     use crate::sim::world::FrameEffects;
@@ -558,7 +558,7 @@ mod tactical_radar_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod radar_persistence_tests {
     use super::*;
     use crate::render::radar::{ClientRadarEvents, saved_radar_fixture};
@@ -610,7 +610,7 @@ mod radar_persistence_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 pub(super) mod network_command_tests {
     use super::*;
     use crate::sim::house_state::HouseState;

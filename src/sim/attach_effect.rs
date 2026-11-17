@@ -3227,7 +3227,7 @@ fn affects_house(
     crate::sim::combat::can_target_house(flags, source, target, houses, alliances, interner)
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_a_b, feature = "phobos"))]
 mod tests {
     use super::*;
 

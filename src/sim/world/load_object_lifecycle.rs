@@ -491,7 +491,7 @@ impl LoadObjectLifecycle {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod tests {
     use super::super::substrate::DeferredDeleteTicket;
     use super::*;

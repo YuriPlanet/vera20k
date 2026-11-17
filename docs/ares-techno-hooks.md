@@ -1,7 +1,7 @@
 # Optional Ares TechnoClass hooks: healers, deploy facing, gaps and more
 
-Build with `--features ares`. Default builds keep every stock path named
-below. This page covers the hooks of `Ext/Techno/Hooks.cpp`,
+Every build takes these hooks when the game plays Ares ([Ares](ares.md));
+other games keep every stock path named below. This page covers the hooks of `Ext/Techno/Hooks.cpp`,
 `Hooks.Deactivated.cpp`, `Hooks.Gap.cpp`, `Hooks.Mechanical.cpp`,
 `Hooks.Spotlights.cpp` and `Ext/TechnoType/Hooks.Weapons.cpp`; the table at
 the end gives each one's disposition. Hooks that `ares-techno-types.md`,
@@ -110,7 +110,7 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
   swap (0x74642C, 0x74653C); Hover DeployToLand (0x513EAA, 0x514A21,
   0x514DFE); NoSelfGuardArea (0x51E748: the healer's self arm it skips is
   not ported); the Occupier+VehicleThief expiry
-  (0x4D9A83); the infantry DamageSparks parse order (0x5240BD).
+  (0x4D9A83).
 - Dormant in retail: flying carriers (0x414338, 0x6B783B).
 - Presentation and audio: the radial indicators of non-buildings
   (0x41BE80; the building GetSensorRange override 0x4566B0 is ported), damage
@@ -123,10 +123,10 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
 
 ## RulesExt general keys
 
-With `--features ares`, the RulesExt `[General]` and `[AudioVisual]` keys
+In a game that plays Ares, the RulesExt `[General]` and `[AudioVisual]` keys
 below are read by `AresGeneralRules` (`rules/native_processing.rs`) in
 LoadBeforeTypeData (`1002AB60`) or LoadAfterTypeData (`1002A800`), with the
-constructor's (`1002A360`) defaults. Default builds read none of them.
+constructor's (`1002A360`) defaults. A game without Ares uses none of them.
 
 ```ini
 [General]
@@ -236,7 +236,7 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | `5203F7` | InfantryClass_UpdateVehicleThief_Hijack | `100499A0` | ported earlier |
 | `52138C` | InfantryClass_UpdateDeployment_Deso2 | `100497F0` | ported earlier |
 | `5215F9` | InfantryClass_UpdateDeployment_Deso1 | `100497C0` | ported earlier |
-| `5240BD` | InfantryTypeClass_LoadFromINI_DamageSparks | `100499E0` | residual: infantry DamageSparks parse order |
+| `5240BD` | InfantryTypeClass_LoadFromINI_DamageSparks | `100499E0` | ported: the per-pass clear of the infantry spark flag is skipped (`RulesPassProcessor::process_techno_family`) |
 | `53C450` | TechnoClass_CanBePermaMC | `10049DA0` | ported earlier |
 | `54C767` | JumpjetLocomotionClass_State4_54C550_DeployDir | `100499F0` | ported: jumpjet DeployDir only with a DeployingAnim |
 | `5F3FB2` | ObjectClass_Update_MaxFallRate | `10049BA0` | ported earlier |

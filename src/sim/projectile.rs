@@ -199,6 +199,17 @@ impl ProjectileCoord {
     pub const fn new(x: i32, y: i32, z: i32) -> Self {
         Self { x, y, z }
     }
+
+    /// YRpp's `CoordStruct::DistanceFromSquared`, the distance Phobos
+    /// compares: each component's int difference as a double, then the sum of
+    /// their squares. Phobos is built for SSE2, so Rust's f64 gives the same
+    /// result on every platform.
+    pub(crate) fn distance_from_squared(self, other: Self) -> f64 {
+        let dx = f64::from(self.x.wrapping_sub(other.x));
+        let dy = f64::from(self.y.wrapping_sub(other.y));
+        let dz = f64::from(self.z.wrapping_sub(other.z));
+        dx * dx + dy * dy + dz * dz
+    }
 }
 
 /// CellClass virtual +0x48 @ 0x00486840 of the cell `MapClass::Get_CellClass`
@@ -1678,7 +1689,7 @@ impl<'a> NukeImpactContext<'a> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "projectile/trailer_tests.rs"]
 mod trailer_tests;
 
@@ -3181,19 +3192,9 @@ fn bridge_surface_z(
 }
 
 /// YR `BulletClass_GetAnimFrame` @ 0x00468000; `frame` is the frame counter
-/// (`Unsorted::CurrentFrame`).
+/// (`Unsorted::CurrentFrame`), `ares` whether the Rules were read the Ares
+/// way (`RuleSet::ares_form`).
 pub fn projectile_shp_frame(
-    projectile: &Projectile,
-    projectile_type: &crate::rules::projectile_type::ProjectileType,
-    frame: u32,
-) -> u16 {
-    // Still on the feature: the draw that asks holds no Rules, the owner
-    // passes it `RuleSet::ares_form`.
-    projectile_shp_frame_by_form(projectile, projectile_type, frame, cfg!(feature = "ares"))
-}
-
-/// [`projectile_shp_frame`] for a game read the Ares way (`ares`) or not.
-fn projectile_shp_frame_by_form(
     projectile: &Projectile,
     projectile_type: &crate::rules::projectile_type::ProjectileType,
     frame: u32,
@@ -3317,7 +3318,7 @@ fn detonation(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
 
@@ -3790,7 +3791,10 @@ mod tests {
             ini.section("P").unwrap(),
             ini.section("P"),
         );
-        assert_eq!(projectile_shp_frame(store.get(id).unwrap(), &kind, 0), 20);
+        assert_eq!(
+            projectile_shp_frame(store.get(id).unwrap(), &kind, 0, false),
+            20
+        );
 
         let projectile = store.projectiles.get_mut(&id).unwrap();
         projectile.visual = ProjectileVisualState {
@@ -3821,8 +3825,7 @@ mod tests {
             ini.section("P").unwrap(),
             ini.section("P"),
         );
-        let frame =
-            |counter| projectile_shp_frame_by_form(store.get(id).unwrap(), &kind, counter, true);
+        let frame = |counter| projectile_shp_frame(store.get(id).unwrap(), &kind, counter, true);
         assert_eq!([frame(0), frame(3), frame(5), frame(6)], [60, 61, 62, 60]);
     }
 
@@ -3860,7 +3863,7 @@ mod tests {
             projectile.visual.anim_low = input["anim_low"].as_u64().unwrap_or(0) as u8;
             projectile.visual.anim_high = input["anim_high"].as_u64().unwrap_or(0) as u8;
             projectile.visual.runtime_frame = input["runtime_frame"].as_u64().unwrap_or(0) as u8;
-            let frame = projectile_shp_frame(projectile, &kind, 0);
+            let frame = projectile_shp_frame(projectile, &kind, 0, false);
             for draw in row["draws"].as_array().unwrap() {
                 assert_eq!(u64::from(frame), draw["frame"].as_u64().unwrap(), "{input}");
             }

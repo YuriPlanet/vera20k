@@ -215,7 +215,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioTimerAction};

@@ -35,7 +35,7 @@ use crate::sim::world::{FrameEffects, Simulation};
 use crate::util::native_heap::NativeHeap;
 use crate::util::native_x87::{NativeF64Bits, X87Chop53, X87Ordering};
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_h_o, tests_sim_world_c_o)))]
 pub(crate) mod queue_oracle_tests;
 
 /// The `1e-05` double at `0x007E3810` every tiberium percentage gate compares
@@ -1887,7 +1887,7 @@ impl OreGrowthState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use super::*;
     use std::collections::BTreeMap;

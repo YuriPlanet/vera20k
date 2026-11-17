@@ -306,7 +306,7 @@ fn fill_and_literal_stream(block: &[u8]) -> Vec<u8> {
     out
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

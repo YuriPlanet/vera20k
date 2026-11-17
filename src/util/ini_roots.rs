@@ -124,6 +124,9 @@ impl IniRoots {
     pub fn eva(&self) -> &str {
         &self.eva
     }
+    pub fn theater_suffix(&self) -> &str {
+        &self.theater_suffix
+    }
 
     /// The theater INI for a control-file name such as `snow`.
     /// `Read_Theater_TileSets_INI` (`0x00545150`) formats it with `"%sMD.INI"`
@@ -281,7 +284,7 @@ fn validate_ini_basename(family: &str, name: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

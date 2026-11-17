@@ -13,7 +13,7 @@ fn frames(sim: &Simulation, rules: &RuleSet, transport: u64, hover: Option<u64>)
         sim,
         frame.object(transport).unwrap(),
         hover,
-        Some(OWNER),
+        sim.interner().get(OWNER),
         rules,
     )
     .into_iter()
@@ -408,7 +408,7 @@ fn ares_passenger_pips_clip_an_overfull_hold_and_step_once_after_the_gunner() {
         ));
         let record =
             crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, carrier);
-        super::ui_overlays::scale_pip_draws(&sim, &record, None, Some(OWNER), &rules)
+        super::ui_overlays::scale_pip_draws(&sim, &record, None, sim.interner().get(OWNER), &rules)
             .into_iter()
             .map(|pip| (pip.frame, pip.offset_pixels[0]))
             .collect::<Vec<_>>()

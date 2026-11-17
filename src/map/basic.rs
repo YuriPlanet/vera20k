@@ -386,7 +386,7 @@ fn is_string_table_name(value: &str) -> bool {
         .is_some_and(|(category, label)| name(category) && name(label))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

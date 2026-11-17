@@ -424,7 +424,7 @@ fn assign_least_travel(units: &[(u64, Cell)], points: &[Cell]) -> Vec<(u64, Cell
     orders
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
 

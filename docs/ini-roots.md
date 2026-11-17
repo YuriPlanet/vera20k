@@ -65,7 +65,10 @@ for `mo` (and for `auto` once it selects MO), so a snow map reads
 and reads the stock `snowmd.ini`, so a folder that loaded before keeps loading;
 only when neither exists does that theater load fail. Theater MIX names
 (`%sMD.MIX`) are unchanged. Letters and digits only; the suffix is not probed
-at startup.
+at startup. Online, the rules agreement compares the theater INI each theater
+reads, so players whose theater INIs differ are refused before a match, and
+Quick Match names a theater INI that changes the retail one
+([Networking](Networking.md)).
 
 Custom mode requires all three logical Rules/Art/AI basenames. Paths and
 wildcards are rejected; these names are resolved through the existing VFS, not
@@ -124,7 +127,7 @@ normal game bootstrap. Selecting the MO triplet does not certify that every MO
 definition, asset or gameplay mechanism is supported.
 
 [Include and inheritance](ini-directives.md) expand at the selected source
-boundary only in gameplay builds with `--features ares`. Root selection itself
+boundary only in a game read the Ares way ([Ares](ares.md)) or a `phobos` build. Root selection itself
 needs no extension feature. The read-only `ini-expand --source-only` probe works
 in every build and does not require a configured Rules/Art/AI triplet.
 

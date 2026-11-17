@@ -219,7 +219,7 @@ fn copy_rect(
     );
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
     use crate::render::frame_readback::PendingTextureReadback;

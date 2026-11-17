@@ -192,15 +192,16 @@ impl TacticalCaptureSession {
                 let bytes = std::fs::read(&path).context("read capture setup seed")?;
                 let ini = crate::rules::ini_parser::IniFile::from_bytes(&bytes)
                     .context("parse capture setup seed")?;
+                let ares = state.process_assets.reads_ares_way();
                 let mut options = crate::map::rmg::RmgOptions::default();
-                options.apply_sed(&ini);
+                options.apply_sed(&ini, ares);
                 options.normalize();
                 let mut modal = crate::ui::skirmish_shell::RandomMapSetupModalState::open(
                     options.clone(),
                     None,
                     false,
-                    true,
                 );
+                modal.ares = ares;
                 modal.begin_generate();
                 state.frontend.skirmish_shell_state.random_map_setup_modal = Some(modal);
                 ensure!(
@@ -323,7 +324,6 @@ impl TacticalCaptureSession {
                 bail!("sealed tactical launch was not accepted: {reason:?}")
             }
         };
-        #[cfg(feature = "ares")]
         crate::app::frontend::skirmish_session::prepare_external_skirmish_countries(
             &mut state.process_assets,
             &launch,
@@ -1788,7 +1788,7 @@ fn validate_houses_and_slots(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::derive_rate;
 

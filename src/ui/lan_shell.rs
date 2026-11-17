@@ -144,7 +144,19 @@ impl LanListState {
         count: usize,
         scale: ShellScale,
     ) -> ShellListGeometry {
-        ShellListGeometry::new(rect, count, self.top_index, ListMetrics::scaled(scale))
+        self.geometry_for_text(rect, count, scale, 1.0)
+    }
+
+    /// [`Self::geometry`] for rows of text at `text` times the shell's size.
+    pub(crate) fn geometry_for_text(
+        &self,
+        rect: RectPx,
+        count: usize,
+        scale: ShellScale,
+        text: f32,
+    ) -> ShellListGeometry {
+        let metrics = ListMetrics::for_text(scale, text);
+        ShellListGeometry::new(rect, count, self.top_index, metrics)
     }
 
     fn reconcile(&mut self, count: usize) {
@@ -156,10 +168,22 @@ impl LanListState {
     /// Reapply the shared scrollbar's range after discovery or a resized
     /// viewport, before painting/hit-testing its retained top index.
     pub(crate) fn reconcile_geometry(&mut self, rect: RectPx, count: usize, scale: ShellScale) {
+        self.reconcile_geometry_for_text(rect, count, scale, 1.0);
+    }
+
+    /// [`Self::reconcile_geometry`] for rows of text at `text` times the
+    /// shell's size.
+    pub(crate) fn reconcile_geometry_for_text(
+        &mut self,
+        rect: RectPx,
+        count: usize,
+        scale: ShellScale,
+        text: f32,
+    ) {
         self.reconcile(count);
         self.top_index = self
             .top_index
-            .min(self.geometry(rect, count, scale).max_top);
+            .min(self.geometry_for_text(rect, count, scale, text).max_top);
     }
 }
 
@@ -756,7 +780,7 @@ impl LanLobbyLayout {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

@@ -24,7 +24,6 @@ pub(crate) enum PresentedShell {
     WolLogin,
     WolLobby,
     WolOptions,
-    WolChatTranslation,
     WolSoundOptions,
     WolAutoLoginQuery,
     WolLocale,
@@ -175,6 +174,9 @@ pub(super) struct SkirmishCapture {
     /// mouse move.
     hover: Option<(i32, i32)>,
     hovered: bool,
+    /// Once `0x102` settles, open VERA's Game Options through its button.
+    game_options: bool,
+    game_options_opened: bool,
     /// The random-map routes rest the pointer on Create Random Map until the
     /// chooser's help has typed in before pressing it: the retail helper's
     /// click rests 100 ms before its press and 90 ms more before its release,
@@ -322,7 +324,7 @@ fn selected_scene(state: &AppState) -> Result<Value> {
     );
     Ok(json!({
         "map_file": map.file_name, "map_label": map.display_name,
-        "map_capacity": map.player_capacity, "mode_id": shell.selected_mode_id,
+        "map_capacity": map.player_capacity, "mode_id": shell.selected_mode.id,
         "preview": { "width": preview.width, "height": preview.height },
         "parsed_map_sha256": crate::util::sha256::sha256_hex(format!("{map:?}").as_bytes()),
         "parsed_map_hash_encoding": "Rust Debug representation; diagnostic identity only",
@@ -392,6 +394,13 @@ impl SkirmishCapture {
     pub(super) fn hover(point: (i32, i32)) -> Self {
         Self {
             hover: Some(point),
+            ..Self::default()
+        }
+    }
+
+    pub(super) fn game_options() -> Self {
+        Self {
+            game_options: true,
             ..Self::default()
         }
     }
@@ -809,6 +818,24 @@ impl SkirmishCapture {
     /// `BaseUnit=` left, defeat the house (`HouseClass::Update`
     /// `0x004F8EBD..0x004F8F77`); otherwise the starting units keep it alive.
     /// The route checks the box through the production click.
+    /// VERA's Game Options through the production press and release; the
+    /// pointer then rests again.
+    fn open_game_options(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        let button = crate::app::frontend::shell_layout::skirmish_layout(state).game_options_button;
+        Self::set_pointer(state, (button.x + button.w / 2, button.y + button.h / 2));
+        App::handle_skirmish_shell_mouse_down(state);
+        App::handle_skirmish_shell_mouse_up(state);
+        Self::set_pointer(state, self.rest_point());
+        ensure!(
+            state.frontend.skirmish_shell_state.game_options.is_some(),
+            "Game Options did not open its box"
+        );
+        self.game_options_opened = true;
+        self.route
+            .push(json!({"dialog": 0x102, "frame": frame, "action": "Game Options"}));
+        Ok(())
+    }
+
     fn check_short_game(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         use crate::ui::skirmish_shell::SkirmishCheckboxId;
         let layout = crate::app::frontend::shell_layout::skirmish_layout(state);
@@ -1035,6 +1062,11 @@ impl SkirmishCapture {
                     self.hovered = true;
                     self.route.push(json!({"dialog": 0x102, "frame": frame,
                         "action": "pointer rests", "point": [point.0, point.1]}));
+                } else if self.game_options
+                    && self.selected_scene.is_some()
+                    && !self.game_options_opened
+                {
+                    self.open_game_options(state, frame)?;
                 } else if self.selected_scene.is_some() && self.slide_out_tick.is_some() {
                     App::handle_skirmish_back(state);
                     ensure!(
@@ -1619,6 +1651,7 @@ impl SkirmishCapture {
             || self.last_presented != Some(PresentedShell::Skirmish)
             || self.selected_scene.is_none()
             || self.hover.is_some() != self.hovered
+            || self.game_options != self.game_options_opened
         {
             return Ok(false);
         }
@@ -1690,7 +1723,7 @@ impl SkirmishCapture {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

@@ -84,12 +84,11 @@ those operations, so the optimization changes no observed RNG/object result.
 
 Ares installs1001A090 over the entire fan, including Splitsfalse: it changes
 geometry, construction inputs and launch RNG. This original implementation is
-explicitly disabled in an Ares build. The later Ares consumer must extend this
+explicitly disabled in a game that plays Ares. The later Ares consumer must extend this
 same shared-tail boundary after its required WeaponTypes pre-registration,
 without changing stock factory/sweep order or adding recursive body reads.
 
 Focused Rust filters: `airburst_reference_retains_rebinds`,
 `stock_airburst_tail_matches_native_children_rng_and_cleanup`,
-`stock_airburst_children_reach_shared_damage_and_expire`,
-`stock_airburst_reads_live_source_and_requires_a_represented_parent`, and
-`stock_airburst_does_not_run_in_ares_build`.
+`stock_airburst_children_reach_shared_damage_and_expire` and
+`stock_airburst_reads_live_source_and_requires_a_represented_parent`.

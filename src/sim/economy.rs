@@ -56,7 +56,9 @@ pub struct Economy {
 
 impl Economy {
     /// A wallet holding `credits`: `HouseClass::Set_Credits_And_Color @
-    /// 0x004FCE00` seeds the balance of a new house.
+    /// 0x004FCE00` seeds the balance of a new house. RESIDUAL (invisible): it
+    /// also writes `+0x1DC` (`scenario_credits`), which stays 0 here for
+    /// multiplayer houses; no live multiplayer path reads it.
     pub(crate) const fn new(credits: i32) -> Self {
         Self {
             credits,
@@ -244,7 +246,7 @@ impl Economy {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use serde_json::Value;

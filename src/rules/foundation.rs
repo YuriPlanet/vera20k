@@ -260,7 +260,7 @@ impl Foundation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_rules_a_n, tests_sim_world_c_o, tests_sim_world_t_z)))]
 #[path = "foundation_custom_tests.rs"]
 pub(crate) mod custom_tests;
 
@@ -507,13 +507,12 @@ pub fn foundation_cell_offsets(value: &str) -> Vec<(i16, i16)> {
     offsets
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::*;
 
-    #[cfg(not(feature = "ares"))]
     #[test]
-    fn stock_build_has_no_custom_foundation_extension() {
+    fn stock_way_has_no_custom_foundation_extension() {
         use crate::rules::ini_parser::IniFile;
         use crate::rules::native_processing::RulesLayerStack;
         let rules = IniFile::from_str("[BuildingTypes]\n0=TEST\n[TEST]\nImage=ART\n");

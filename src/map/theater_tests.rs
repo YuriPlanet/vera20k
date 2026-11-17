@@ -713,88 +713,90 @@ fn selected_retail_temperate_rmg_roles_reach_tile_ids() {
 #[test]
 fn general_helpers_match_original_reader_and_signed_repair_keys() {
     use crate::map::bridge_rim_tiles::HighBridgeRimTiles;
-
-    let corpus = native_general_corpus();
-    for case in corpus["cases"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .chain(corpus["physical"].as_array().unwrap())
-    {
-        let name = case["name"]
-            .as_str()
-            .or_else(|| case["file"].as_str())
-            .unwrap();
-        // Ares's `INIClass_Parse_Override` (`0x5260D9`) keeps only the later
-        // of two equal keys; this control records the vanilla reader.
-        if cfg!(feature = "ares") && matches!(name, "duplicate_key" | "duplicate_key_reversed") {
-            continue;
-        }
-        let text = case["input_text"]
-            .as_str()
-            .or_else(|| case["general_text"].as_str())
-            .unwrap();
-        let ini = IniFile::from_bytes(text.as_bytes()).unwrap();
-        let general = ini.section("General");
-        for read in corpus["read_contract"].as_array().unwrap() {
-            let key = read["key"].as_str().unwrap();
-            let default = i32::try_from(read["default"].as_i64().unwrap()).unwrap();
-            assert_eq!(
-                i64::from(general.map_or(default, |section| section.read_int(key, default))),
-                case["values"][key].as_i64().unwrap(),
-                "{name}: original General/{key} at {}",
-                read["call"]
-            );
-        }
-        for key in [
-            "BridgeSet",
-            "WoodBridgeSet",
-            "SlopeSetPieces",
-            "SlopeSetPieces2",
-            "Tunnels",
-            "TrackTunnels",
-            "DirtTunnels",
-            "DirtTrackTunnels",
-            "BridgeMiddle1",
-            "BridgeMiddle2",
-        ] {
-            assert_eq!(
-                read_general_u16(general, key),
-                u16::try_from(case["values"][key].as_i64().unwrap()).ok(),
-                "{name}: bounded {key} ordinal"
-            );
-        }
-        let rim = HighBridgeRimTiles::from_ini(0, text.as_bytes());
-        let signed_pieces = [
-            rim.top_left,
-            rim.bottom_right,
-            rim.top_right,
-            rim.bottom_left,
-            rim.middle,
-        ]
-        .concat();
-        // Oversized/negative repair identities must survive the signed read.
-        for (index, key) in [
-            "BridgeTopLeft1",
-            "BridgeTopLeft2",
-            "BridgeBottomRight1",
-            "BridgeBottomRight2",
-            "BridgeTopRight1",
-            "BridgeTopRight2",
-            "BridgeBottomLeft1",
-            "BridgeBottomLeft2",
-            "BridgeMiddle1",
-            "BridgeMiddle2",
-        ]
-        .iter()
-        .enumerate()
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let corpus = native_general_corpus();
+        for case in corpus["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .chain(corpus["physical"].as_array().unwrap())
         {
-            let native = case["values"][key].as_i64().unwrap();
-            assert_eq!(
-                i64::from(signed_pieces[index]),
-                native,
-                "{name}: signed {key}"
-            );
+            let name = case["name"]
+                .as_str()
+                .or_else(|| case["file"].as_str())
+                .unwrap();
+            // Ares's `INIClass_Parse_Override` (`0x5260D9`) keeps only the later
+            // of two equal keys; this control records the vanilla reader.
+            if ares_way && matches!(name, "duplicate_key" | "duplicate_key_reversed") {
+                continue;
+            }
+            let text = case["input_text"]
+                .as_str()
+                .or_else(|| case["general_text"].as_str())
+                .unwrap();
+            let ini = IniFile::from_bytes(text.as_bytes()).unwrap();
+            let general = ini.section("General");
+            for read in corpus["read_contract"].as_array().unwrap() {
+                let key = read["key"].as_str().unwrap();
+                let default = i32::try_from(read["default"].as_i64().unwrap()).unwrap();
+                assert_eq!(
+                    i64::from(general.map_or(default, |section| section.read_int(key, default))),
+                    case["values"][key].as_i64().unwrap(),
+                    "{name}: original General/{key} at {}",
+                    read["call"]
+                );
+            }
+            for key in [
+                "BridgeSet",
+                "WoodBridgeSet",
+                "SlopeSetPieces",
+                "SlopeSetPieces2",
+                "Tunnels",
+                "TrackTunnels",
+                "DirtTunnels",
+                "DirtTrackTunnels",
+                "BridgeMiddle1",
+                "BridgeMiddle2",
+            ] {
+                assert_eq!(
+                    read_general_u16(general, key),
+                    u16::try_from(case["values"][key].as_i64().unwrap()).ok(),
+                    "{name}: bounded {key} ordinal"
+                );
+            }
+            let rim = HighBridgeRimTiles::from_ini(0, text.as_bytes());
+            let signed_pieces = [
+                rim.top_left,
+                rim.bottom_right,
+                rim.top_right,
+                rim.bottom_left,
+                rim.middle,
+            ]
+            .concat();
+            // Oversized/negative repair identities must survive the signed read.
+            for (index, key) in [
+                "BridgeTopLeft1",
+                "BridgeTopLeft2",
+                "BridgeBottomRight1",
+                "BridgeBottomRight2",
+                "BridgeTopRight1",
+                "BridgeTopRight2",
+                "BridgeBottomLeft1",
+                "BridgeBottomLeft2",
+                "BridgeMiddle1",
+                "BridgeMiddle2",
+            ]
+            .iter()
+            .enumerate()
+            {
+                let native = case["values"][key].as_i64().unwrap();
+                assert_eq!(
+                    i64::from(signed_pieces[index]),
+                    native,
+                    "{name}: signed {key}"
+                );
+            }
         }
     }
 }
@@ -1346,6 +1348,16 @@ fn gsi_13_04_tile_anims_come_from_the_setname_section() {
 
     // A tileset whose SetName names no section has no animations at all.
     assert_eq!(lookup.tile_anim(0), None);
+
+    // `none` and `<none>` get no type from FindOrAllocate (`0x00546538`), so
+    // the block is skipped (issue 4493).
+    let none = parse_tileset_ini(
+        b"[TileSet0000]\nSetName=Falls\nFileName=wf\nTilesInSet=2\n\
+          [Falls]\nTile01Anim=none\nTile02Anim=<None>\n",
+        "tem",
+    )
+    .unwrap();
+    assert_eq!((none.tile_anim(0), none.tile_anim(1)), (None, None));
 }
 
 #[test]

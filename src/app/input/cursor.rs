@@ -1847,7 +1847,9 @@ pub(crate) fn cursor_id_for_feedback(kind: CursorFeedbackKind) -> Option<CursorI
         CursorFeedbackKind::Minimap(id) => Some(id),
         CursorFeedbackKind::Enter | CursorFeedbackKind::Grind => Some(CursorId::Enter),
         CursorFeedbackKind::NoEnter => Some(CursorId::NoEnter),
-        // `SetCursorFromAction @ 0x004AAE90`: action 0x11, row 0x36.
+        // RESIDUAL (dormant, retail rules set `Carryall=` only on HIND):
+        // `SetCursorFromAction @ 0x004AAE90` sends action 0x11 to row 0x3C
+        // (`0x004AB45A`, frame 384); VERA draws row 0x36 (frame 329).
         CursorFeedbackKind::Tote => Some(CursorId::Tote),
         CursorFeedbackKind::EngineerDamage => Some(CursorId::EngineerRepair),
         CursorFeedbackKind::RepairAction(valid) => Some(if valid {
@@ -2558,7 +2560,7 @@ pub(crate) fn toggle_cursor_confinement(state: &mut AppState) {
     );
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 mod tests {
     use super::{
         ActionDistanceTarget, capability_cursor_for_hover, empty_cell_cursor, force_fire_feedback,
@@ -4329,7 +4331,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 mod cursor_attack_support_tests {
     use super::force_fire_feedback;
     use crate::app::types::CursorFeedbackKind;
@@ -4358,7 +4360,7 @@ mod cursor_attack_support_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 mod cursor_animation_tests {
     use super::CursorAnimation;
     use crate::app::input::entity_pick::HoverTargetKindWithId;
@@ -4501,6 +4503,6 @@ mod cursor_animation_tests {
     // outside this tactical object-route comparison.
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "cursor_contract_tests.rs"]
 mod contract_tests;

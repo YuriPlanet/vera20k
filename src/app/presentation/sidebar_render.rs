@@ -44,13 +44,15 @@ pub(crate) fn counter_credits(sim: &crate::sim::world::Simulation, owner: &str) 
     production::credits_for_owner(sim, owner).max(0)
 }
 
-/// Advance the displayed balance at the authoritative gameplay-frame seam.
-pub(crate) fn advance_sidebar_credits_after_frame(
-    state: &mut AppState,
-    frame_committed: bool,
-    tick_lane: crate::sim::world::TickLane,
-) {
-    if !crate::app::sidebar_projection::credits_advance_for_frame(frame_committed, tick_lane) {
+/// Step the credits counter once per Sidebar Action visit
+/// ([`sidebar_action_visits`](crate::app::presentation::sidebar_gadgets::sidebar_action_visits)):
+/// `CreditsClass::AI @ 0x004A2600`'s only caller is `TabClass::Action @
+/// 0x006D099D`, which GScreen Input reaches. Each visit reads the balance the
+/// pass ends with. Residual: Input runs before Logic (Main_Tick 0x0055D8AB),
+/// so gamemd counts toward the balance one frame older; the counter starts
+/// moving one frame later there, which a player cannot see.
+pub(crate) fn advance_sidebar_credits(state: &mut AppState, visits: u64) {
+    if visits == 0 {
         return;
     }
     let Some(owner_name) = preferred_local_owner_name(state) else {
@@ -64,20 +66,40 @@ pub(crate) fn advance_sidebar_credits_after_frame(
     else {
         return;
     };
+    if sim.interner().get(&owner_name).is_some_and(|owner| {
+        crate::app::presentation::observer_strip::shows_observer_sidebar(sim, owner)
+    }) {
+        // The observer's counter shows the time the match has run
+        // (`0x004A2614..0x004A2678`): Scenario +0x61C plus the running span
+        // since +0x614, over 60, set at once and silent.
+        let seconds = state
+            .match_state
+            .scenario_elapsed_clock
+            .elapsed_seconds(crate::app::match_runtime::frame_pacer::wall_clock_ms());
+        state
+            .match_state
+            .match_presentation
+            .sidebar_projection
+            .set_observer_clock(&owner_name, seconds);
+        return;
+    }
     let credits = counter_credits(sim, &owner_name);
-    let Some(tick) = state
-        .match_state
-        .match_presentation
-        .sidebar_projection
-        .advance_credits(&owner_name, credits)
-    else {
+    let projection = &mut state.match_state.match_presentation.sidebar_projection;
+    let mut last_step = None;
+    for _ in 0..visits {
+        let Some(step) = projection.advance_credits(&owner_name, credits) else {
+            break;
+        };
+        last_step = Some(step);
+    }
+    let Some(tick) = last_step else {
         return;
     };
-    // `CreditsClass::Draw @ 0x004A24F4..0x004A2533`: one `CreditTicks` cue per
-    // changed AI step — `[0]` counting up, `[1]` counting down — at volume
-    // `0.5f`, centre pan, for the local player's counter only (the observer
-    // branch draws elapsed time instead). Native plays it from the next
-    // sidebar draw, which clears the latch; VERA emits at the step itself.
+    // `CreditsClass::Draw @ 0x004A24F4..0x004A2533`: the `CreditTicks` cue
+    // of the latest changed AI step — `[0]` counting up, `[1]` counting
+    // down — at volume `0.5f`, centre pan, for the local player's counter
+    // only (the observer branch draws elapsed time instead). Draw plays it
+    // once per picture and clears the latch, so a pass plays at most one.
     let Some(sound_id) = state.rules().and_then(|rules| {
         crate::app::sidebar_projection::credit_tick_sound(&rules.general.credit_ticks, tick)
             .map(str::to_string)
@@ -157,6 +179,15 @@ pub(crate) fn sidebar_layout_spec(state: &AppState) -> crate::ui::sidebar::Sideb
     if let Some(layout) = side_layout(state).filter(|_| !map_picture) {
         layout.apply_to_sidebar(&mut spec);
     }
+    // VERA's own: the player's cameo columns, laid inside the width the
+    // layout leaves. After the layout, so the player's choice draws; a
+    // capture keeps the original's two so its pictures stay reproducible.
+    let columns = if state.platform.capture_client_size.is_some() {
+        2
+    } else {
+        state.persistence.options_profile.sidebar_columns.count()
+    };
+    spec.apply_player_columns(columns);
     spec
 }
 
@@ -258,34 +289,20 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
             .replace_view(None);
         return;
     };
-    // What the sidebar reads of the objects is the frame's
-    // (`presentation::frame`), captured for the local player.
-    state.match_state.sim_runtime.ensure_frame();
-    let inputs = {
-        let match_state = &mut state.match_state;
-        let (Some(_), Some(inputs)) = (
-            match_state.sim_runtime.presentation(),
-            match_state
-                .sim_runtime
-                .frame()
-                .and_then(|frame| frame.scene.ui.sidebar()),
-        ) else {
-            match_state
-                .match_presentation
-                .sidebar_projection
-                .replace_view(None);
-            return;
-        };
-        std::sync::Arc::clone(inputs)
+    let Some(owner) = state.match_state.sim_runtime.presentation().map(|runtime| {
+        runtime
+            .simulation
+            .interner()
+            .get(&owner_name)
+            .unwrap_or_default()
+    }) else {
+        state
+            .match_state
+            .match_presentation
+            .sidebar_projection
+            .replace_view(None);
+        return;
     };
-
-    let runtime = state
-        .match_state
-        .sim_runtime
-        .presentation()
-        .expect("sidebar runtime");
-    let (sim, rules) = (&runtime.simulation, &runtime.resources.rules);
-    let owner = sim.interner().get(&owner_name).unwrap_or_default();
     // A scenario's first projection seeds its strips from every building's
     // construction options (`UpdateConstructionOptions`), once: a query of
     // the live world, which waits for a pass that holds it.
@@ -305,6 +322,46 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
     } else {
         Vec::new()
     };
+    // What the sidebar reads of the objects is the frame's
+    // (`presentation::frame`), captured for the local player with the types
+    // its strips hold and are about to add.
+    let asked = state
+        .match_state
+        .match_presentation
+        .sidebar_projection
+        .asked_types(&seed_additions);
+    state.match_state.sim_runtime.ask_sidebar_types(&asked);
+    state.match_state.sim_runtime.ensure_frame();
+    let inputs = {
+        let match_state = &mut state.match_state;
+        let Some(frame) = match_state.sim_runtime.frame() else {
+            match_state
+                .match_presentation
+                .sidebar_projection
+                .replace_view(None);
+            return;
+        };
+        // Only a lent tick's frame can miss a type, one asked after the tick
+        // left: the House pass waits for a frame that answers it.
+        if !frame.scene.ui.sidebar_types().covers(&asked) {
+            return;
+        }
+        let Some(inputs) = frame.scene.ui.sidebar() else {
+            match_state
+                .match_presentation
+                .sidebar_projection
+                .replace_view(None);
+            return;
+        };
+        std::sync::Arc::clone(inputs)
+    };
+
+    let runtime = state
+        .match_state
+        .sim_runtime
+        .presentation()
+        .expect("sidebar runtime");
+    let (sim, rules) = (&runtime.simulation, &runtime.resources.rules);
     // Phobos adds a superweapon to the left sidebar first and skips its right
     // sidebar cameo (`SidebarClass_AddCameo` returns false once accepted).
     #[cfg(feature = "phobos")]
@@ -334,7 +391,6 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
             rules,
             state.process_assets.csf.as_ref(),
             owner,
-            &owner_name,
             &inputs,
             &right_sw_views,
             reuse_sim_inputs,
@@ -348,7 +404,12 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         .match_state
         .match_presentation
         .sidebar_projection
-        .reconcile_cameos(owner, &cameos, visible_rows, &seed_additions);
+        .reconcile_cameos(owner, &cameos, visible_rows, &seed_additions, rules.ares());
+    state
+        .match_state
+        .match_presentation
+        .sidebar_projection
+        .set_observer_entries(inputs.observers.as_ref().map(Vec::len));
     state
         .match_state
         .match_presentation
@@ -548,6 +609,25 @@ fn build_view(
             scroll[grid.part] = grid.scroll_rows;
         }
     }
+    // While the local player observes, the strip lists the players over the
+    // grid, and its TopRow counts them.
+    if let Some(houses) = inputs.sim.observers.as_deref()
+        && let Some(sim) = state
+            .match_state
+            .sim_runtime
+            .presentation()
+            .map(|rt| &rt.simulation)
+    {
+        let entries =
+            crate::app::presentation::observer_strip::observer_entries(state, sim, houses);
+        let top = state
+            .match_state
+            .match_presentation
+            .sidebar_projection
+            .cameo_strips()
+            .scroll_row(inputs.tab);
+        sidebar::apply_observer_strip(&mut view, inputs.spec, entries, top, &inputs.gadgets);
+    }
     // The view never substitutes another tab, so the retained active tab needs
     // no write-back: `apply_cameo_transitions` (and the switch itself) is the
     // only writer.
@@ -697,27 +777,14 @@ fn shows_alt_cameo(
         // Ares 3.0 1003D89A/1003D8DE/1003D911: a naval unit asks the
         // house's SpyEffect NavalVeterancy instead of the war factory's,
         // aircraft and non-undeploying buildings their own.
-        #[cfg(feature = "ares")]
-        {
-            return obj.trainable
-                && match obj.category {
-                    ObjectCategory::Infantry => !obj.naval && house.veteran_infantry(),
-                    ObjectCategory::Vehicle if obj.naval => house.naval_veterancy(),
-                    ObjectCategory::Vehicle => house.veteran_units(),
-                    ObjectCategory::Aircraft => house.aircraft_veterancy(),
-                    ObjectCategory::Building => house.building_veterancy(),
-                };
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            return obj.trainable
-                && !obj.naval
-                && match obj.category {
-                    ObjectCategory::Infantry => house.veteran_infantry(),
-                    ObjectCategory::Vehicle => house.veteran_units(),
-                    ObjectCategory::Aircraft | ObjectCategory::Building => false,
-                };
-        }
+        return obj.trainable
+            && match obj.category {
+                ObjectCategory::Infantry => !obj.naval && house.veteran_infantry(),
+                ObjectCategory::Vehicle if obj.naval => house.naval_veterancy(),
+                ObjectCategory::Vehicle => house.veteran_units(),
+                ObjectCategory::Aircraft => house.aircraft_veterancy(),
+                ObjectCategory::Building => house.building_veterancy(),
+            };
     }
     obj.trainable
         && match obj.category {
@@ -945,13 +1012,14 @@ pub(crate) fn active_minimap_screen_rect(state: &AppState) -> crate::ui::sidebar
 // ---------------------------------------------------------------------------
 
 /// Keep VERA's smooth sidebar (`render::sidebar_smoothing`) at this frame's
-/// draw scale, or drop its copies when the option is off or the sidebar draws
-/// at its own pixels.
+/// draw scale, or drop its copies when the option is off, the sidebar draws
+/// at its own pixels, or the scale is not a whole one (xBR has no 1.5x).
 pub(crate) fn prepare_smooth_sidebar(state: &mut AppState) {
     let scale = state
         .smooth_sidebar()
         .then(|| state.sidebar_frame().draw_scale())
-        .filter(|&scale| scale > 1);
+        .filter(|scale| *scale >= 2.0 && scale.fract() == 0.0)
+        .map(|scale| scale as u32);
     let side = current_sidebar_side(state);
     let (gpu, batch) = (&state.renderer.gpu, &state.renderer.batch_renderer);
     let presentation = &mut state.match_state.match_presentation;
@@ -963,36 +1031,48 @@ pub(crate) fn prepare_smooth_sidebar(state: &mut AppState) {
     }
 }
 
+/// The theme follows the arm the chrome set was built by, so it names the art
+/// the sidebar draws: a side without a retained Side sidebar configuration
+/// draws the stock sidebar. Before a set exists, the game's Ares switch
+/// (`RuleSet::ares`) decides.
 pub(crate) fn current_sidebar_theme(
     state: &AppState,
 ) -> crate::render::sidebar_chrome::SidebarTheme {
-    crate::render::sidebar_chrome::sidebar_theme_for_side(current_sidebar_side(state))
+    let ares = match state.match_state.match_presentation.sidebar_chrome.as_ref() {
+        Some(set) => set.ares(),
+        None => state.rules().is_some_and(|rules| rules.ares()),
+    };
+    crate::render::sidebar_chrome::sidebar_theme_for_side(current_sidebar_side(state), ares)
 }
 
-/// The active native Scenario.Side owns Ares MIX selection. The retail sandbox
-/// retains its development owner switch. Neither path rewrites House identity.
+/// When Ares plays in the game (`RuleSet::ares`), the active native
+/// Scenario.Side owns Ares MIX selection. Otherwise the retail sandbox retains
+/// its development owner switch. Neither path rewrites House identity.
 pub(crate) fn current_sidebar_side(state: &AppState) -> i32 {
+    let ares = state.rules().is_some_and(|rules| rules.ares());
     let sim = state
         .match_state
         .sim_runtime
         .presentation()
         .map(|rt| &rt.simulation);
-    #[cfg(feature = "ares")]
-    let owner = None::<String>;
-    #[cfg(not(feature = "ares"))]
-    let owner = preferred_local_owner_name(state);
-    project_sidebar_side(sim, owner.as_deref())
+    let owner = if ares {
+        None
+    } else {
+        preferred_local_owner_name(state)
+    };
+    project_sidebar_side(sim, owner.as_deref(), ares)
 }
 
 /// The production chrome and radar adapters share this side-index decision.
-/// Original68781F/534FA0 and Ares1002FA00 consume the installed Scenario.Side;
-/// the ordinary sandbox retains its existing live-owner development switch.
+/// Original68781F/534FA0 and Ares1002FA00 consume the installed Scenario.Side
+/// when Ares plays in the game (`ares`, `RuleSet::ares`); the ordinary sandbox
+/// retains its existing live-owner development switch.
 pub(crate) fn project_sidebar_side(
     simulation: Option<&crate::sim::world::Simulation>,
     owner: Option<&str>,
+    ares: bool,
 ) -> i32 {
-    #[cfg(feature = "ares")]
-    if let Some(sim) = simulation {
+    if ares && let Some(sim) = simulation {
         return sim.session().scenario_side();
     }
     owner
@@ -1161,7 +1241,7 @@ pub(crate) fn begin_main_load_pass<'a>(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::shows_alt_cameo;
     use crate::sim::house_state::HouseState;
@@ -1185,7 +1265,7 @@ mod tests {
                 gadgets.set_tab_disabled(index, before.as_bool().unwrap());
             }
             let mut projection = crate::app::sidebar_projection::SidebarProjectionState::default();
-            let reconciled = projection.reconcile_cameos(Default::default(), &[], 3, &[]);
+            let reconciled = projection.reconcile_cameos(Default::default(), &[], 3, &[], false);
             super::apply_cameo_transitions(reconciled.transitions(), &mut active, &mut gadgets);
             for (index, after) in control["disabled_after"]
                 .as_array()
@@ -1235,7 +1315,7 @@ mod tests {
             },
         };
         let mut saved = crate::app::sidebar_projection::SidebarProjectionState::default();
-        saved.reconcile_cameos(owner, &[cameo.clone()], 3, &[infantry]);
+        saved.reconcile_cameos(owner, &[cameo.clone()], 3, &[infantry], false);
         let order = saved.saved_order().unwrap();
         let mut outgoing = crate::app::sidebar_projection::SidebarProjectionState::default();
         let mut active = SidebarTab::Building;
@@ -1245,7 +1325,7 @@ mod tests {
             crate::app::sidebar_projection::prepare_saved_order(Some(order.clone()), &sim, &rules)
                 .unwrap();
         outgoing.restore_order(prepared);
-        let reconciled = outgoing.reconcile_cameos(owner, &[cameo], 3, &[]);
+        let reconciled = outgoing.reconcile_cameos(owner, &[cameo], 3, &[], false);
         super::apply_cameo_transitions(reconciled.transitions(), &mut active, &mut gadgets);
         assert_eq!(gadgets.tab_disabled, [true, true, false, true]);
         assert_eq!(outgoing.saved_order().unwrap().strips(), order.strips());
@@ -1286,7 +1366,7 @@ mod tests {
                          candidates: &[Cameo],
                          active: &mut SidebarTab,
                          gadgets: &mut SidebarGadgetState| {
-            let reconciled = strips.reconcile_fixture(candidates, 3, true);
+            let reconciled = strips.reconcile_fixture(candidates, 3, true, false);
             super::apply_cameo_transitions(reconciled.transitions(), active, gadgets);
         };
 
@@ -1360,7 +1440,7 @@ mod tests {
         assert!(shows(&war_factory, "MTNK"));
         assert_eq!(
             shows(&war_factory, "DEST"),
-            !crate::rules::ARES_BUILD,
+            !rules.ares(),
             "stock GetCameo uses the ground spy flag for ships; Ares separates naval gains"
         );
         assert!(!shows(&war_factory, "ORCA"));
@@ -1379,11 +1459,11 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_country_alternate_cameos_match_native_category_and_art_gates() {
         use crate::rules::ini_parser::IniFile;
         use crate::rules::ruleset::RuleSet;
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let corpus = crate::test_fixture::json("tools/rules_oracle/ares_country_veterancy.json");
         for row in corpus["cameo_country"].as_array().unwrap() {
             if row["unit_list_self"].as_bool().unwrap() {
@@ -1462,6 +1542,9 @@ pub(crate) struct UiFrame {
     /// The local player's sidebar inputs
     /// ([`crate::app::sidebar_projection::SidebarSimInputs::derive`]).
     sidebar: Option<std::sync::Arc<crate::app::sidebar_projection::SidebarSimInputs>>,
+    /// The object types those inputs answer: what the sidebar had asked when
+    /// the frame was captured (`SimHost::ask_sidebar_types`).
+    sidebar_types: crate::app::sidebar_projection::SidebarTypes,
     /// `production::cameo_draw_state` of each of those build options' types:
     /// what `StripClass::Draw` asks of every entry it draws.
     cameo_draw: std::collections::HashMap<
@@ -1499,7 +1582,10 @@ impl UiFrame {
         let (sim, rules) = (at.sim, at.rules());
         let sidebar = at.observer.map(|owner| {
             std::sync::Arc::new(crate::app::sidebar_projection::SidebarSimInputs::derive(
-                sim, rules, owner,
+                sim,
+                rules,
+                owner,
+                at.sidebar_types,
             ))
         });
         let cameo_draw = match (&sidebar, at.observer_id) {
@@ -1552,6 +1638,7 @@ impl UiFrame {
                 .observer
                 .map_or(0, |owner| sim.theoretical_power_for_owner(rules, owner)),
             sidebar,
+            sidebar_types: at.sidebar_types.clone(),
             cameo_draw,
             bomb_ticks,
             sound_owner_coords,
@@ -1571,8 +1658,15 @@ impl UiFrame {
         self.sidebar.as_ref()
     }
 
+    /// The object types [`Self::sidebar`] and [`Self::cameo_draw_state`]
+    /// answer.
+    pub(crate) fn sidebar_types(&self) -> &crate::app::sidebar_projection::SidebarTypes {
+        &self.sidebar_types
+    }
+
     /// `production::cameo_draw_state` of the local player's type `type_id`;
-    /// unavailable for a type no rules list builds.
+    /// unavailable for a type no rules list builds or the sidebar has not
+    /// asked.
     pub(crate) fn cameo_draw_state(
         &self,
         type_id: crate::sim::intern::InternedId,

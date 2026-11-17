@@ -161,13 +161,14 @@ impl FlyingCredits {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
 
     #[test]
     fn bounty_text_obeys_shroud_and_ages_once_per_composite() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=100\nSight=0\n",
         ))

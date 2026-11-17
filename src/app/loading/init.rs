@@ -98,7 +98,7 @@ fn connect_startup_crate_overlays(
     synced
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod map_wall_owner_candidate_tests {
     use super::*;
     use crate::map::entities::EntityCategory;
@@ -1671,6 +1671,23 @@ impl MapLoadInitial {
         &self.map_data
     }
 
+    /// VERA: the map with a mod's map additions (`app::mod_additions`), for a
+    /// match they reach (`mod_additions::reach`): after a network room's
+    /// checks of the map file, before anything reads the map's rules, AI or
+    /// triggers. A generated map read its rules while it was made and plays
+    /// without them.
+    pub(crate) fn with_mod_additions(
+        mut self,
+        additions: &crate::app::mod_additions::MapAdditions,
+    ) -> Result<Self> {
+        if matches!(self.map_source, LoadedMapSource::Generated { .. }) {
+            return Ok(self);
+        }
+        log::info!("The mod adds to the map: {}", additions.names().join(", "));
+        self.map_data = self.map_data.with_additions(additions.files())?;
+        Ok(self)
+    }
+
     /// Physical cached .SED names must not become shared Scenario identity.
     /// ReadScenario684620 regenerates from the supplied path, while the
     /// accepted network record remains the common logical seed name.
@@ -1747,7 +1764,7 @@ fn construction_trace_after_fill(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod fresh_transport_tests {
     use super::*;
 
@@ -2209,14 +2226,12 @@ impl MapLoadInitial {
             &overlay_registry,
             resolved_terrain.tile_animations(),
         );
-        rules
-            .bind_scheduler_anim_assets(
-                &scheduler_roots,
-                asset_manager,
-                theater_ext,
-                &map_data.header.theater,
-            )
-            .expect("retail scheduler animation closure");
+        rules.bind_scheduler_anim_assets(
+            &scheduler_roots,
+            asset_manager,
+            theater_ext,
+            &map_data.header.theater,
+        );
         // Every other AnimClass producer and the building animations: tolerant
         // pass, after the strict one, which rewrites the scheduler-owned set
         // wholesale.
@@ -2443,7 +2458,10 @@ pub(crate) fn load_csf(
     asset_manager: &AssetManager,
 ) -> anyhow::Result<crate::assets::csf_file::CsfFile> {
     let (mut csf, supplements) =
-        crate::assets::csf_file::CsfFile::load_active(|name| asset_manager.get_ref(name)).map_err(
+        crate::assets::csf_file::CsfFile::load_active(asset_manager.ships_ares(), |name| {
+            asset_manager.get_ref(name)
+        })
+        .map_err(
             // The startup error card shows these, before any string table.
             |err| match err {
                 crate::assets::error::AssetError::AssetNotFound { .. } => {
@@ -2537,12 +2555,18 @@ pub(crate) fn load_map_initial_with_assets(
         .map(str::to_string)
         .or(quickplay_seed);
     if let Some(seed_name) = seed_selection.as_deref() {
+        // Ares.dll is loaded when the game is read the Ares way: the process
+        // Rules owner's answer, the one the shell's dialog takes
+        // (`NativeRulesProcessOwner::reads_ares_way`).
+        let ares = native_rules
+            .as_deref()
+            .is_some_and(|owner| owner.reads_ares_way());
         let mut settings = crate::map::rmg::RmgSettings::load(asset_manager);
         let mut options = crate::map::rmg::RmgOptions::default();
         // A seed without VERA's UrbanAreas= key regenerates with the urban
-        // switch the process's first RMGMD.INI read gives (Ares.dll 1006ABF0).
-        #[cfg(feature = "ares")]
-        {
+        // switch the process's first RMGMD.INI read gives (Ares.dll 1006ABF0),
+        // when Ares.dll is loaded.
+        if ares {
             options.urban_areas = settings.generate_urban_areas;
         }
         // A received seed's name is already its cached path.
@@ -2554,7 +2578,7 @@ pub(crate) fn load_map_initial_with_assets(
                     crate::map::source::GeneratedSeedSource::from_consumed_bytes(seed_path, &bytes),
                 );
                 match crate::rules::ini_parser::IniFile::from_bytes(&bytes) {
-                    Ok(ini) => options.apply_sed(&ini),
+                    Ok(ini) => options.apply_sed(&ini, ares),
                     Err(err) => {
                         log::warn!(
                             "random map: {seed_name} is not valid INI ({err}); using defaults"
@@ -2647,33 +2671,35 @@ pub(crate) fn load_map_initial_with_assets(
                 |file| asset_manager.contains(file),
             );
         }
-        #[cfg(not(feature = "ares"))]
-        let _ = launch_seed;
-        #[cfg(not(feature = "ares"))]
-        let objects = crate::map::rmg::build::GenerationObjects::tech(&tech_types);
-        // Ares' foot picks draw Main (Ares.dll 1006AAD0). The launch load
-        // seeds Main with the match seed (ScenarioBootstrapRng::new) before
-        // it regenerates the seed. RESIDUAL: that owner is built after this
-        // generation and does not continue past these draws.
-        #[cfg(feature = "ares")]
-        let urban_catalog = crate::map::rmg::tech_catalog::resolve_ares_urban(
-            &settings,
-            processed,
-            owner.fixed_art(),
-        );
-        #[cfg(feature = "ares")]
-        let launch_main = std::cell::RefCell::new(crate::sim::rng::SimRng::new(u64::from(
-            launch_seed.unwrap_or_default(),
-        )));
-        #[cfg(feature = "ares")]
-        let main_draw = || launch_main.borrow_mut().next_u32();
-        #[cfg(feature = "ares")]
-        let objects = crate::map::rmg::build::GenerationObjects {
-            tech_types: &tech_types,
-            urban_areas: Some(crate::map::rmg::phases::urban_areas::UrbanInputs {
-                catalog: &urban_catalog,
-                main_draw: &main_draw,
-            }),
+        // Ares' foot picks draw Main (Ares.dll 1006AAD0) when Ares.dll is
+        // loaded. The launch load seeds Main with the match seed
+        // (ScenarioBootstrapRng::new) before it regenerates the seed.
+        // RESIDUAL: that owner is built after this generation and does not
+        // continue past these draws. The catalog and the stream outlive the
+        // generation objects that borrow them.
+        let urban_catalog;
+        let launch_main;
+        let main_draw;
+        let objects = if ares {
+            urban_catalog = crate::map::rmg::tech_catalog::resolve_ares_urban(
+                &settings,
+                processed,
+                owner.fixed_art(),
+            );
+            launch_main = std::cell::RefCell::new(crate::sim::rng::SimRng::new(u64::from(
+                launch_seed.unwrap_or_default(),
+            )));
+            main_draw = || launch_main.borrow_mut().next_u32();
+            crate::map::rmg::build::GenerationObjects {
+                tech_types: &tech_types,
+                urban_areas: Some(crate::map::rmg::phases::urban_areas::UrbanInputs {
+                    catalog: &urban_catalog,
+                    main_draw: &main_draw,
+                }),
+                ares,
+            }
+        } else {
+            crate::map::rmg::build::GenerationObjects::tech(&tech_types, ares)
         };
         let mut generated =
             crate::map::rmg::build::generate_map(&options, &settings, &resolved, &blocks, &objects);
@@ -2802,7 +2828,7 @@ fn generated_overlay_grid(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod generated_overlay_grid_tests {
     use super::*;
     use crate::map::rmg::{RmgGrid, RmgOptions, emit};
@@ -2929,7 +2955,7 @@ pub(crate) fn load_map_from_initial(
     runtime_color_scheme_count: usize,
     the_team_enabled: bool,
     native_rules_owner: &mut crate::rules::process_owner::NativeRulesProcessOwner,
-    #[cfg(feature = "ares")] prepared_noncampaign_prefix: &mut Option<
+    prepared_noncampaign_prefix: &mut Option<
         crate::rules::process_owner::NativeNonCampaignPrefixPreparation,
     >,
     audio: Option<&crate::app::process_assets::ProcessAudioCatalog>,
@@ -2953,7 +2979,6 @@ pub(crate) fn load_map_from_initial(
             asset_manager,
             native_rules_owner,
             the_team_enabled,
-            #[cfg(feature = "ares")]
             prepared_noncampaign_prefix,
             audio,
             themes,
@@ -3080,14 +3105,13 @@ fn load_map_first_step(
             // is missing keeps an empty layer (0x005D67B0) instead of aborting.
             let asset_manager = &mut *services.asset_manager;
             let native_rules_owner = &mut *services.native_rules_owner;
-            #[cfg(feature = "ares")]
+            // Only the Ares Country loading path binds this prefix; `None` is the stock prefix.
             let prepared_prefix = services.prepared_noncampaign_prefix.take();
             let prepared_rules = if let Some(generated_rules) = generated_rules {
                 anyhow::ensure!(
                     materialization == FreshMapMaterialization::AcceptedGenerated,
                     "authored map carried generated Full_Init Rules"
                 );
-                #[cfg(feature = "ares")]
                 assert!(
                     prepared_prefix.is_none(),
                     "generated loading cannot consume an ordinary prefix"
@@ -3114,7 +3138,6 @@ fn load_map_first_step(
                     services.the_team_enabled,
                 )?;
                 let rules_prefix = if game_mode_nonzero {
-                    #[cfg(feature = "ares")]
                     if let Some(preparation) = prepared_prefix {
                         crate::rules::process_owner::NativeScenarioRulesPrefix::PreparedNonCampaign {
                             preparation,
@@ -3125,12 +3148,7 @@ fn load_map_first_step(
                             mode_override_ini.as_ref(),
                         )
                     }
-                    #[cfg(not(feature = "ares"))]
-                    crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
-                        mode_override_ini.as_ref(),
-                    )
                 } else {
-                    #[cfg(feature = "ares")]
                     assert!(
                         prepared_prefix.is_none(),
                         "campaign loading cannot consume an ordinary prefix"
@@ -3420,8 +3438,8 @@ fn load_map_first_step(
                             let variant_table_draws = variant_selector.raw_draw_count();
                             drop(variant_draw);
                             // Bind the complete scheduler closure only after theater Tile##Anim rows
-                            // have resolved, but before any atlas or AnimClass construction. Missing
-                            // tile art is a load error rather than a silently invisible map feature.
+                            // have resolved, but before any atlas or AnimClass construction. A tile
+                            // name no AnimType holds becomes an unread type that draws nothing.
                             let roots = scheduler_anim_roots(
                                 &rules,
                                 &overlay_registry,
@@ -3737,11 +3755,12 @@ fn load_map_first_step(
                                                         // resolution must happen before any combat tick.
                                                         staged_simulation
                                                             .resolve_type_handles(&rules);
-                                                        staged_simulation
-        .install_team_ai_registry(
-            &team_ai_registry,
-            team_ai_rules_at_read.as_ref().unwrap_or(&rules),
-        );
+                                                        staged_simulation.install_team_ai_registry(
+                                                            &team_ai_registry,
+                                                            team_ai_rules_at_read
+                                                                .as_ref()
+                                                                .unwrap_or(&rules),
+                                                        );
 
                                                         if let (Some(launch), Some(projection)) = (
                                                             match_launch_descriptor.as_ref(),
@@ -4034,6 +4053,9 @@ fn load_map_first_step(
         if let Some([x, y, z]) = opening_view_coord {
             crate::util::lepton::absolute_leptons_to_screen(x, y, z)
         } else if let Some((rx, ry)) = opening_view_cell {
+            // RESIDUAL: native raises the HomeCell centre to its ground height
+            // (`0x00578080` at `0x00684D2F`), slope included; this takes the cell's
+            // base level, so on a ramp HomeCell the opening view sits a few pixels off.
             let z = resolved_terrain.cell(rx, ry).map_or(0, |cell| cell.level);
             crate::app::input::camera::cell_centre_world_point(rx, ry, z)
         } else if let Some(start_wp) = waypoints::first_multiplayer_start(&map_data.waypoints) {
@@ -4203,12 +4225,26 @@ pub(super) const fn should_read_tmcj4f(
     ) && the_team_enabled
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod full_init_rules_gate_tests {
     use super::*;
 
     #[test]
     fn generated_rules_are_read_before_generation_and_carried_once_through_failure() {
+        // The game loads a map on its main thread, which has 8 MiB on every
+        // platform (build.rs links `/STACK` on Windows), as the simulation
+        // thread has. Unoptimized, the frames from here to RuleSet::project
+        // hold about 2.2 MiB of Rules copies, past libtest's 2 MiB thread.
+        let test = std::thread::Builder::new()
+            .stack_size(8 << 20)
+            .spawn(generated_rules_read_before_generation_and_carried)
+            .unwrap();
+        if let Err(panic) = test.join() {
+            std::panic::resume_unwind(panic);
+        }
+    }
+
+    fn generated_rules_read_before_generation_and_carried() {
         use crate::app::match_runtime::session::SessionMode;
         use crate::map::source::test_support::TestDirectory;
         use crate::rules::ini_parser::IniFile;
@@ -4251,7 +4287,7 @@ mod full_init_rules_gate_tests {
             seed: 4242,
             ..Default::default()
         };
-        directory.write("early.sed", &options.to_sed_bytes());
+        directory.write("early.sed", &options.to_sed_bytes(false));
         let seed_path = directory.path().join("early.sed");
         let root =
             IniFile::from_str("[Countries]\n0=C]\n[Animations]\n0=BASE\n[Clear]\nWheel=25%\n");
@@ -4608,7 +4644,7 @@ mod full_init_rules_gate_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod random_map_retail_tests {
     //! Retail-input pass over the real `.SED` load path.
     //!
@@ -4666,7 +4702,7 @@ mod random_map_retail_tests {
         let dir = std::env::temp_dir().join(format!("vera20k-rmg-retail-{tag}"));
         crate::util::file_system::create_dir_all(&dir).expect("scratch dir");
         let name = format!("{tag}.sed");
-        crate::util::file_system::write(dir.join(&name), options.to_sed_bytes())
+        crate::util::file_system::write(dir.join(&name), options.to_sed_bytes(false))
             .expect("write .SED");
         (dir, name)
     }
@@ -4804,7 +4840,7 @@ mod random_map_retail_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod milestone_order_tests {
     /// A source-order guard. gamemd raises the bar in call order (45 -> 50 ->
     /// 55/58/60 -> 63/65/67 -> 68/69 -> 70, `0x00687847`,
@@ -4829,13 +4865,13 @@ mod milestone_order_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod network_seed_source_tests {
     use super::*;
     #[test]
     fn network_seed_cache_preserves_logical_name_and_consumed_identity() {
         let options = crate::map::rmg::RmgOptions::default();
-        let bytes = options.to_sed_bytes();
+        let bytes = options.to_sed_bytes(false);
         let source = crate::map::source::GeneratedSeedSource::from_consumed_bytes(
             std::env::temp_dir().join("seed-cache.sed"),
             &bytes,

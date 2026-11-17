@@ -167,8 +167,9 @@ impl PreparedSavedLocalView {
         sidebar.command_bar_closed = modes.command_bar_closed;
         input.targeting_mode = self.targeting;
         // The preview is derived from the cursor; the next tactical frame
-        // recomputes it. The BandBoxLeftUp retry copy (+1190..+1198) loads
-        // raw but MouseLoad never swizzles it, so no retry survives a load.
+        // recomputes it. RESIDUAL: the BandBoxLeftUp retry copy (+1190..+1198)
+        // loads raw and MouseLoad 0x005BDF70 never swizzles it, so natively it
+        // keeps stale pointers after a load; VERA drops it, so no retry survives.
         input.building_placement_preview = None;
         input.saved_building_placement = None;
         // The foundation latch (+0x1174/+0x1181) is in the same Display body.
@@ -307,12 +308,18 @@ pub(crate) struct MatchInputState {
     saved_building_placement: Option<SavedBuildingPlacement>,
 }
 
-/// `DisplayClass +0x1174`, the foundation's top-left Cell, and `+0x1181`,
+/// `DisplayClass +0x1174`, kept here as the foundation's top-left Cell, and `+0x1181`,
 /// whether the whole foundation was visible there, which `BandBox_LeftUp`
 /// tests (`0x004ABAB2`). `UpdateFoundationCenter @ 0x004A91B0` keeps both
 /// across placements and writes the visibility only when the Cell moves
 /// (early exit `0x004A9356..0x004A936E`, write `0x004A94DA`). `None` is the
 /// constructor's null Cell (`0x004A873D`, `0x004A875F`).
+///
+/// RESIDUAL: native `+0x1174` holds the centre Cell and the top-left is it plus
+/// the type's offset (`+0x1178`), so its compare differs from this top-left one
+/// only on the first call after the armed type changes. Native also refreshes
+/// proximity (`+0x1180`) only when the centre moves; the preview recomputes it,
+/// and the grid colour with it, every frame.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct FoundationLatch(Option<((u16, u16), bool)>);
 
@@ -359,7 +366,7 @@ impl FoundationLatch {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "ready_building_placement_tests.rs"]
 mod ready_building_placement_tests;
 
@@ -664,7 +671,7 @@ impl MatchInputState {
 
     /// Explicit House placement/abandon tails clear the type/foundation even
     /// when pointer expiry has already cleared the current product.
-    fn clear_building_placement(&mut self) -> bool {
+    pub(crate) fn clear_building_placement(&mut self) -> bool {
         if self
             .targeting_mode
             .as_ref()
@@ -732,6 +739,18 @@ impl MatchInputState {
             }
             other => self.targeting_mode = other,
         }
+    }
+
+    /// The pending grid's foundation: `SetPendingFoundation @ 0x004A8D50`
+    /// marks the saved transaction's cells (flag 4) at the click, and
+    /// HousePlace (`0x004FB328`, `0x004FB48F`) and PointerExpired
+    /// (`0x006DA58C`) unmark them as they drop it.
+    pub(crate) fn pending_building_placement_preview(
+        &self,
+    ) -> Option<&crate::sim::production::BuildingPlacementPreview> {
+        self.saved_building_placement
+            .as_ref()
+            .and_then(|saved| saved.preview.as_ref())
     }
 
     /// HousePlace4FB395..4FB49A restores the saved transaction, including an
@@ -867,15 +886,6 @@ impl MatchInputState {
         self.touch_mapper.reset();
     }
 
-    /// TAction46 clears the active display modes before Lock684240 cancels
-    /// the tactical drag through6938C0/4AEAD0/6DA160. Selection membership,
-    /// camera requests/focus and physical held-key state survive this call.
-    pub(crate) fn cancel_tactical_gesture_and_targeting(&mut self) {
-        self.targeting_mode = None;
-        self.building_placement_preview = None;
-        self.cancel_tactical_drag();
-    }
-
     /// Follow the pause across window events. While paused (Esc menu, shared
     /// pause, radar movie) gameplay admits no key or modifier change, so a key
     /// let go then would stay held after the pause: scrolling by itself, or
@@ -915,12 +925,20 @@ impl MatchInputState {
         }
     }
 
-    /// KeyboardClear54F720 drains accepted input and Lock/Unlock clear the
-    /// command latch. Edges are synchronous in this app, so no second ring
-    /// exists; discard only app command latches. Physical key state remains
-    /// owned by ordinary press/release delivery, not this bounded receipt.
+    /// KeyboardClear 0x0054F720 empties the keyboard's queued-event ring.
+    /// Lock_User_Input 0x00684240, Unlock_User_Input 0x00684290 and the page
+    /// dialog (0x0077D861, 0x0077D895) call it; Lock and Unlock also zero the
+    /// timed unlock frame 0x00B07784 (Main_Tick 0x0055DE79). Edges are
+    /// synchronous in this app, so no ring exists; discard only app command
+    /// latches. Physical key state remains owned by ordinary press/release
+    /// delivery, not this bounded receipt.
+    ///
+    /// The held T stays: TypeSelect's latch 0x00B0FE65 is cleared only by
+    /// its release (0x00732CC0), and while input is locked no key but Esc is
+    /// queued (0x0054F212..0x0054F223), so a T let go during a lock still
+    /// holds after it and band boxes select by type until T is pressed and
+    /// released again.
     pub(crate) fn clear_command_latches(&mut self) {
-        self.type_select.clear_held();
         self.formation_line.clear_key();
         self.ferry.disarm();
         // A command-latch clear does not end the local planning mode. Keep
@@ -975,23 +993,23 @@ impl MatchInputState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "pointer_resolution_tests.rs"]
 mod pointer_resolution_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "saved_local_view_tests.rs"]
 mod saved_local_view_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "house_cheer_tests.rs"]
 mod house_cheer_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "house_cheer_retail_tests.rs"]
 mod house_cheer_retail_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod pause_resync_tests {
     use super::*;
 

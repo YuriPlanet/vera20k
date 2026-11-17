@@ -70,6 +70,6 @@ impl ThreatCoefficients {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "threat_coefficients_tests.rs"]
 mod tests;

@@ -85,19 +85,21 @@ fn shared_ares_country_find_matches_native_controls_and_rules_projection() {
 
 #[test]
 fn all_techno_families_project_factory_fields_from_process_without_a_second_reader() {
-    for family in [
-        "BuildingTypes",
-        "VehicleTypes",
-        "AircraftTypes",
-        "InfantryTypes",
-    ] {
-        let registries = if family == "BuildingTypes" {
-            "[BuildingTypes]\n0=CONTROL\n1=SOURCE\n".to_owned()
-        } else {
-            format!("[BuildingTypes]\n0=SOURCE\n[{family}]\n0=CONTROL\n")
-        };
-        let ini = IniFile::from_str(&format!(
-            "[Countries]\n0=CountryA\n1=CountryB\n\
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        for family in [
+            "BuildingTypes",
+            "VehicleTypes",
+            "AircraftTypes",
+            "InfantryTypes",
+        ] {
+            let registries = if family == "BuildingTypes" {
+                "[BuildingTypes]\n0=CONTROL\n1=SOURCE\n".to_owned()
+            } else {
+                format!("[BuildingTypes]\n0=SOURCE\n[{family}]\n0=CONTROL\n")
+            };
+            let ini = IniFile::from_str(&format!(
+                "[Countries]\n0=CountryA\n1=CountryB\n\
              [CountryA]\nName=Alias\nParentCountry=CountryB\n\
              {registries}[SOURCE]\nFactory.ExplicitOnly=yes\n[CONTROL]\n\
              BuiltAt=SOURCE,SOURCE,unknown\nFactory.ExplicitOnly=yes\n\
@@ -105,62 +107,63 @@ fn all_techno_families_project_factory_fields_from_process_without_a_second_read
              FactoryOwners.Forbidden=CountryB\n\
              FactoryOwners.HaveAllPlans=yes\nFactoryOwners.Permanent=no\n\
              FactoryOwners.HasAllPlans=yes\n"
-        ));
-        let direct = crate::rules::object_type::ObjectType::from_ini_section(
-            "CONTROL",
-            ini.section("CONTROL").unwrap(),
-            ObjectCategory::Building,
-        );
-        assert!(
-            direct.factory_owners().is_empty(),
-            "raw constructor has no Country registry"
-        );
-        assert!(!direct.factory_owners_permanent());
-        assert!(!direct.factory_has_all_plans());
-        assert!(direct.built_at().is_empty());
-        assert!(!direct.factory_explicit_only());
+            ));
+            let direct = crate::rules::object_type::ObjectType::from_ini_section(
+                "CONTROL",
+                ini.section("CONTROL").unwrap(),
+                ObjectCategory::Building,
+            );
+            assert!(
+                direct.factory_owners().is_empty(),
+                "raw constructor has no Country registry"
+            );
+            assert!(!direct.factory_owners_permanent());
+            assert!(!direct.factory_has_all_plans());
+            assert!(direct.built_at().is_empty());
+            assert!(!direct.factory_explicit_only());
 
-        let rules = RuleSet::from_ini(&ini).unwrap();
-        let object = rules.object("CONTROL").unwrap();
-        let allowed = if crate::rules::ARES_BUILD {
-            vec![CountryIdx(0), CountryIdx(0), CountryIdx(1)]
-        } else {
-            vec![]
-        };
-        assert_eq!(object.factory_owners(), allowed, "{family}");
-        assert_eq!(
-            object.forbidden_factory_owners(),
-            if crate::rules::ARES_BUILD {
-                vec![CountryIdx(1)]
+            let rules = RuleSet::from_ini(&ini).unwrap();
+            let object = rules.object("CONTROL").unwrap();
+            let allowed = if ares_way {
+                vec![CountryIdx(0), CountryIdx(0), CountryIdx(1)]
             } else {
                 vec![]
-            },
-            "{family}"
-        );
-        assert!(!object.factory_owners_permanent(), "later alias wins");
-        assert_eq!(object.factory_has_all_plans(), crate::rules::ARES_BUILD);
-        let source = rules
-            .type_array_index(ObjectCategory::Building, "SOURCE")
-            .unwrap();
-        assert_eq!(rules.ares_find_building("sOuRcE"), Some(source));
-        assert_eq!(rules.ares_find_building("none"), None);
-        assert_eq!(rules.ares_find_building(" SOURCE"), None);
-        assert_eq!(
-            object.built_at(),
-            if crate::rules::ARES_BUILD {
-                vec![source, source]
-            } else {
-                vec![]
-            }
-        );
-        assert_eq!(
-            object.factory_explicit_only(),
-            crate::rules::ARES_BUILD && family == "BuildingTypes"
-        );
-        assert_eq!(
-            rules.object("SOURCE").unwrap().factory_explicit_only(),
-            crate::rules::ARES_BUILD
-        );
+            };
+            assert_eq!(object.factory_owners(), allowed, "{family}");
+            assert_eq!(
+                object.forbidden_factory_owners(),
+                if ares_way {
+                    vec![CountryIdx(1)]
+                } else {
+                    vec![]
+                },
+                "{family}"
+            );
+            assert!(!object.factory_owners_permanent(), "later alias wins");
+            assert_eq!(object.factory_has_all_plans(), ares_way);
+            let source = rules
+                .type_array_index(ObjectCategory::Building, "SOURCE")
+                .unwrap();
+            assert_eq!(rules.ares_find_building("sOuRcE"), Some(source));
+            assert_eq!(rules.ares_find_building("none"), None);
+            assert_eq!(rules.ares_find_building(" SOURCE"), None);
+            assert_eq!(
+                object.built_at(),
+                if ares_way {
+                    vec![source, source]
+                } else {
+                    vec![]
+                }
+            );
+            assert_eq!(
+                object.factory_explicit_only(),
+                ares_way && family == "BuildingTypes"
+            );
+            assert_eq!(
+                rules.object("SOURCE").unwrap().factory_explicit_only(),
+                ares_way
+            );
+        }
     }
 }
 
@@ -539,18 +542,18 @@ fn retained_global_controls_match_native_constructor_and_eight_read_history_cont
 
 #[test]
 fn global_controls_project_only_reached_build_capability_and_difficulty_indices() {
-    let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[GlobalControls]\nAllowBypassBuildLimit=no,yes,no\n",
-    ))
-    .unwrap();
-    assert!(!rules.ares_ai_bypasses_build_limit(0));
-    assert_eq!(
-        rules.ares_ai_bypasses_build_limit(1),
-        crate::rules::ARES_BUILD
-    );
-    assert!(!rules.ares_ai_bypasses_build_limit(2));
-    assert!(!rules.ares_ai_bypasses_build_limit(3));
-    assert!(!rules.ares_ai_bypasses_build_limit(usize::MAX));
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[GlobalControls]\nAllowBypassBuildLimit=no,yes,no\n",
+        ))
+        .unwrap();
+        assert!(!rules.ares_ai_bypasses_build_limit(0));
+        assert_eq!(rules.ares_ai_bypasses_build_limit(1), ares_way);
+        assert!(!rules.ares_ai_bypasses_build_limit(2));
+        assert!(!rules.ares_ai_bypasses_build_limit(3));
+        assert!(!rules.ares_ai_bypasses_build_limit(usize::MAX));
+    }
 }
 
 #[test]

@@ -1,6 +1,6 @@
 name: Capability tests
 
-# The optional capabilities (ares, phobos, npatch, the diagnostic builds) used
+# The optional capabilities (phobos, npatch, the diagnostic builds) used
 # to be compiled by nobody: the default-features suite, the release job and the
 # nightly all skip them, so a break could sit on main until someone happened to
 # build that combination by hand (#2798, #2789). This workflow runs

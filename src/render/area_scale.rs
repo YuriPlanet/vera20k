@@ -97,7 +97,7 @@ fn linear_to_srgb(value: f32) -> f32 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
 

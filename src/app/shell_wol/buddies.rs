@@ -337,7 +337,7 @@ pub(super) fn ladder_received(state: &mut AppState, records: Vec<WolLadderRecord
     super::buddy::stats_changed(state);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

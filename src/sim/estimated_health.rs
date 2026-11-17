@@ -56,6 +56,6 @@ impl EstimatedHealth {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "estimated_health_tests.rs"]
 mod tests;

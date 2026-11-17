@@ -131,7 +131,7 @@ pub(crate) fn ares_capped_duration(current: i32, duration: i32, cap: i32) -> i32
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests {
     use super::*;
 

@@ -691,7 +691,7 @@ pub(crate) fn release_saved_scenario_hold(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::sim::replay::{ReplayHeader, ReplayLog};

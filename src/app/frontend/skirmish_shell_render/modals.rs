@@ -252,6 +252,7 @@ pub(super) fn push_choose_map_modal_control_instances(
     layout: &ChooseMapModalLayout,
     interior: BackdropInteriorPaint,
     shell: &SkirmishShellState,
+    search_display: &str,
     steady: bool,
 ) {
     let Some(modal) = shell.choose_map_modal.as_ref() else {
@@ -291,7 +292,7 @@ pub(super) fn push_choose_map_modal_control_instances(
     }
     super::list::paint_list_frame(out, atlas, layout.map_search);
     if let Some(caret) =
-        super::text::map_search_caret_rect(font, &modal.search, layout.map_search, layout.scale)
+        super::text::map_search_caret_rect(font, search_display, layout.map_search, layout.scale)
     {
         push_solid_rect(
             out,
@@ -573,7 +574,7 @@ pub(super) fn push_random_map_setup_modal_control_instances(
             &chrome,
             ControlPaint::Trackbar {
                 rect: players,
-                thumb_left: modal.players_range().thumb_left_in(
+                thumb_left: crate::ui::skirmish_shell::PLAYERS_RANGE.thumb_left_in(
                     modal.options.num_players,
                     players,
                     layout.scale,
@@ -586,9 +587,9 @@ pub(super) fn push_random_map_setup_modal_control_instances(
     }
 
     // Ares' Urban Areas box (control 5000 of Ares' dialog 261), drawn as the
-    // shell's own checkbox; the Advanced view's seventh slider takes its place.
-    #[cfg(feature = "ares")]
-    if !modal.advanced {
+    // shell's own checkbox when Ares.dll is loaded; the Advanced view's
+    // seventh slider takes its place.
+    if modal.ares && !modal.advanced {
         paint_control(
             out,
             &chrome,
@@ -656,16 +657,8 @@ pub(super) fn push_random_map_setup_modal_control_instances(
         (layout.preset, RandomMapSetupControl::PresetCycle),
     ]
     .into_iter()
-    .filter(|(_, control)| {
-        let vera = matches!(
-            control,
-            RandomMapSetupControl::AdvancedToggle
-                | RandomMapSetupControl::ExportMap
-                | RandomMapSetupControl::FairStartsToggle
-                | RandomMapSetupControl::PresetCycle
-        );
-        steady && (!vera || modal.extended)
-    }) {
+    .filter(|_| steady)
+    {
         push_right_panel_button_shp(
             out,
             atlas,

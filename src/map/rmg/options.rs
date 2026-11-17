@@ -14,7 +14,8 @@ use crate::util::ini_writer::set_ini_values;
 /// Section a random-map seed file stores its options under.
 const SECTION: &str = "RandomMap";
 /// VERA's seed key for [`RmgOptions::urban_areas`]; native seeds lack it.
-#[cfg(feature = "ares")]
+/// Written and read only when Ares.dll is loaded (the game is read the Ares
+/// way).
 const URBAN_AREAS_KEY: &str = "UrbanAreas";
 
 /// One random-map configuration.
@@ -59,17 +60,17 @@ pub struct RmgOptions {
     /// hook 0x598FB8). Native Ares keeps it process-global and writes no copy;
     /// VERA stores it in the seed as `UrbanAreas=` so the launch regeneration
     /// and every network peer generate the same map. The record digest
-    /// ([`Self::native_digest`]) leaves it out.
-    #[cfg(feature = "ares")]
+    /// ([`Self::native_digest`]) leaves it out. Only code that runs when
+    /// Ares.dll is loaded (the game is read the Ares way) sets or reads it.
     pub urban_areas: bool,
 }
 
 impl RmgOptions {
-    /// Whether the urban pass (`0x005A5020`) runs: Ares' `RMG::UrbanAreas`,
-    /// or VERA's opted-in Urban Presence.
-    pub fn urban_pass_runs(&self) -> bool {
-        #[cfg(feature = "ares")]
-        if self.urban_areas {
+    /// Whether the urban pass (`0x005A5020`) runs: Ares' `RMG::UrbanAreas`
+    /// when Ares.dll is loaded (`ares`: the game is read the Ares way), or
+    /// VERA's opted-in Urban Presence.
+    pub fn urban_pass_runs(&self, ares: bool) -> bool {
+        if ares && self.urban_areas {
             return true;
         }
         self.urban_enabled
@@ -118,7 +119,6 @@ impl Default for RmgOptions {
             region_size: 0,
             seed: -1,
             description: SeedDescription::default(),
-            #[cfg(feature = "ares")]
             urban_areas: false,
         }
     }
@@ -168,7 +168,9 @@ impl RmgOptions {
     /// A missing key leaves the existing field alone because the original
     /// passes that field as the reader default. A present malformed value uses
     /// native `atoi` semantics and therefore becomes zero. Does not normalize.
-    pub fn apply_sed(&mut self, ini: &IniFile) {
+    /// `ares`: Ares.dll is loaded (the game is read the Ares way), so the
+    /// Urban Areas box is read too.
+    pub fn apply_sed(&mut self, ini: &IniFile, ares: bool) {
         let Some(section) = ini.section(SECTION) else {
             return;
         };
@@ -200,14 +202,15 @@ impl RmgOptions {
             let value = section.read_int(extra.key(), 0).clamp(0, 255);
             self.extras.set(extra, value as u8);
         }
-        #[cfg(feature = "ares")]
-        {
+        if ares {
             self.urban_areas = section.read_bool(URBAN_AREAS_KEY, self.urban_areas);
         }
     }
 
     /// Serialize to `.SED` bytes, writing every key in the original's order.
-    pub fn to_sed_bytes(&self) -> Vec<u8> {
+    /// `ares`: Ares.dll is loaded (the game is read the Ares way), so the
+    /// Urban Areas box is written too.
+    pub fn to_sed_bytes(&self, ares: bool) -> Vec<u8> {
         let values: Vec<(&str, String)> = vec![
             // The original emits Description first, ahead of the 16 integers.
             ("Description", encode_description(&self.description)),
@@ -242,11 +245,12 @@ impl RmgOptions {
                 values.push((extra.key(), value.to_string()));
             }
         }
-        #[cfg(feature = "ares")]
-        values.push((
-            URBAN_AREAS_KEY,
-            if self.urban_areas { "yes" } else { "no" }.to_string(),
-        ));
+        if ares {
+            values.push((
+                URBAN_AREAS_KEY,
+                if self.urban_areas { "yes" } else { "no" }.to_string(),
+            ));
+        }
         let pairs: Vec<(&str, &str)> = values
             .iter()
             .map(|(key, value)| (*key, value.as_str()))
@@ -292,19 +296,19 @@ impl RmgOptions {
     /// generates the same map. It carries this build's version, every
     /// option, VERA's switches and the Extras, not the description: `VR1-`
     /// then the bytes below and a check byte, in Crockford base 32, five
-    /// characters to a group.
-    pub fn share_code(&self) -> String {
-        self.share_code_made_by(ShareVersion::this_build())
+    /// characters to a group. `ares`: Ares.dll is loaded (the game is read the
+    /// Ares way), so the Urban Areas box is carried too.
+    pub fn share_code(&self, ares: bool) -> String {
+        self.share_code_made_by(ShareVersion::this_build(), ares)
     }
 
     /// [`Self::share_code`] as the VERA version `made_by` writes it.
-    fn share_code_made_by(&self, made_by: ShareVersion) -> String {
+    fn share_code_made_by(&self, made_by: ShareVersion, ares: bool) -> String {
         let mut options = self.clone();
         options.normalize();
         let byte = |value: i32| value.clamp(0, 255) as u8;
         let mut flags = u8::from(options.urban_enabled) | u8::from(options.fair_starts) << 1;
-        #[cfg(feature = "ares")]
-        {
+        if ares {
             flags |= u8::from(options.urban_areas) << 2;
         }
         let seed = options.seed_u16().to_le_bytes();
@@ -373,8 +377,9 @@ impl RmgOptions {
     /// build another map from the same options. Letters may be in either
     /// case, `I`/`L` read as `1` and `O` as `0`, and dashes and spaces are
     /// skipped. `None` for a text that is no code, is cut short or fails its
-    /// check; `self` is then unchanged.
-    pub fn from_share_code(&self, code: &str) -> Option<(Self, ShareVersion)> {
+    /// check; `self` is then unchanged. `ares`: Ares.dll is loaded (the game
+    /// is read the Ares way), so the Urban Areas box is read too.
+    pub fn from_share_code(&self, code: &str, ares: bool) -> Option<(Self, ShareVersion)> {
         let text = code.trim();
         let body = text
             .get(..SHARE_PREFIX.len())
@@ -426,8 +431,7 @@ impl RmgOptions {
             seed: i32::from(u16::from_le_bytes([bytes[16], bytes[17]])),
             ..self.clone()
         };
-        #[cfg(feature = "ares")]
-        {
+        if ares {
             options.urban_areas = bytes[15] & 4 != 0;
         }
         options.extras = super::extras::RmgExtras::default();
@@ -479,7 +483,7 @@ fn share_check(bytes: &[u8]) -> u8 {
         .fold(0x5Au8, |check, &byte| check.rotate_left(3) ^ byte)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 
@@ -498,31 +502,34 @@ mod tests {
                 urban_enabled,
                 ..RmgOptions::default()
             };
-            IniFile::from_bytes(&options.to_sed_bytes()).expect("seed INI")
+            IniFile::from_bytes(&options.to_sed_bytes(false)).expect("seed INI")
         };
         let mut read = RmgOptions {
             urban_enabled: true,
             ..RmgOptions::default()
         };
-        read.apply_sed(&seed(false));
+        read.apply_sed(&seed(false), false);
         assert!(!read.urban_enabled);
-        read.apply_sed(&seed(true));
+        read.apply_sed(&seed(true), false);
         assert!(read.urban_enabled);
     }
 
     /// VERA's Fair Starts key follows the towns key: written only when set.
     #[test]
     fn fair_starts_are_saved_only_when_set() {
-        let plain = RmgOptions::default().to_sed_bytes();
+        let plain = RmgOptions::default().to_sed_bytes(false);
         assert!(!String::from_utf8_lossy(&plain).contains("VeraFair"));
         let fair = RmgOptions {
             fair_starts: true,
             ..RmgOptions::default()
         };
         let mut read = RmgOptions::default();
-        read.apply_sed(&IniFile::from_bytes(&fair.to_sed_bytes()).expect("seed INI"));
+        read.apply_sed(
+            &IniFile::from_bytes(&fair.to_sed_bytes(false)).expect("seed INI"),
+            false,
+        );
         assert!(read.fair_starts);
-        read.apply_sed(&IniFile::from_bytes(&plain).expect("seed INI"));
+        read.apply_sed(&IniFile::from_bytes(&plain).expect("seed INI"), false);
         assert!(!read.fair_starts);
     }
 
@@ -547,14 +554,16 @@ mod tests {
         };
         sent.extras.set(Extra::TownVariant, 4);
         sent.normalize();
-        let code = sent.share_code();
+        let code = sent.share_code(false);
         assert!(code.starts_with("VR1-"), "{code}");
 
         let receiver = RmgOptions {
             description: "theirs".into(),
             ..RmgOptions::default()
         };
-        let (read, made_by) = receiver.from_share_code(&code).expect("a whole code reads");
+        let (read, made_by) = receiver
+            .from_share_code(&code, false)
+            .expect("a whole code reads");
         assert_eq!(made_by, ShareVersion::this_build());
         assert_eq!(
             read,
@@ -565,21 +574,47 @@ mod tests {
         );
         // Lower case, spaces for dashes and stray blanks still read.
         let typed = format!("  {}  ", code.to_ascii_lowercase().replace('-', " "));
-        assert_eq!(receiver.from_share_code(&typed), Some((read, made_by)));
+        assert_eq!(
+            receiver.from_share_code(&typed, false),
+            Some((read, made_by))
+        );
 
         // One changed character fails the check; other texts are no code.
         let last = code.len() - 1;
         let swapped = if code.ends_with('0') { "1" } else { "0" };
         let damaged = format!("{}{swapped}", &code[..last]);
-        assert_eq!(receiver.from_share_code(&damaged), None);
-        assert_eq!(receiver.from_share_code("hello"), None);
-        assert_eq!(receiver.from_share_code("VR1-"), None);
+        assert_eq!(receiver.from_share_code(&damaged, false), None);
+        assert_eq!(receiver.from_share_code("hello", false), None);
+        assert_eq!(receiver.from_share_code("VR1-", false), None);
 
         // Options without Extras give a shorter code that reads as none.
         let plain = RmgOptions::default();
-        assert!(plain.share_code().len() < code.len());
-        let (back, _) = sent.from_share_code(&plain.share_code()).expect("reads");
+        assert!(plain.share_code(false).len() < code.len());
+        let (back, _) = sent
+            .from_share_code(&plain.share_code(false), false)
+            .expect("reads");
         assert!(back.extras.is_default() && !back.fair_starts);
+    }
+
+    /// The Urban Areas box rides flag bit 2 only when Ares.dll is loaded:
+    /// without it the bit is neither written nor read.
+    #[test]
+    fn a_share_code_carries_the_urban_areas_box_only_with_ares() {
+        let sent = RmgOptions {
+            seed: 7,
+            urban_areas: true,
+            ..RmgOptions::default()
+        };
+        let read = |code: String, ares| {
+            RmgOptions::default()
+                .from_share_code(&code, ares)
+                .expect("a whole code reads")
+                .0
+                .urban_areas
+        };
+        assert!(read(sent.share_code(true), true));
+        assert!(!read(sent.share_code(false), true));
+        assert!(!read(sent.share_code(true), false));
     }
 
     /// A code from another VERA version still reads, and names that version,
@@ -594,10 +629,14 @@ mod tests {
             seed: 99,
             ..RmgOptions::default()
         };
-        let code = sent.share_code_made_by(older);
-        assert_ne!(code, sent.share_code(), "the version is part of the code");
+        let code = sent.share_code_made_by(older, false);
+        assert_ne!(
+            code,
+            sent.share_code(false),
+            "the version is part of the code"
+        );
         let (read, made_by) = RmgOptions::default()
-            .from_share_code(&code)
+            .from_share_code(&code, false)
             .expect("another version's code reads");
         assert_eq!((read.seed, made_by.to_string()), (99, "0.1.9".to_string()));
     }
@@ -606,14 +645,17 @@ mod tests {
     #[test]
     fn extras_are_saved_only_when_set() {
         use crate::map::rmg::extras::Extra;
-        let plain = RmgOptions::default().to_sed_bytes();
+        let plain = RmgOptions::default().to_sed_bytes(false);
         assert!(!String::from_utf8_lossy(&plain).contains("VeraOreVariant"));
         let mut varied = RmgOptions::default();
         varied.extras.set(Extra::OreVariant, 3);
         let mut read = RmgOptions::default();
-        read.apply_sed(&IniFile::from_bytes(&varied.to_sed_bytes()).expect("seed INI"));
+        read.apply_sed(
+            &IniFile::from_bytes(&varied.to_sed_bytes(false)).expect("seed INI"),
+            false,
+        );
         assert_eq!(read.extras.get(Extra::OreVariant), 3);
-        read.apply_sed(&IniFile::from_bytes(&plain).expect("seed INI"));
+        read.apply_sed(&IniFile::from_bytes(&plain).expect("seed INI"), false);
         assert!(read.extras.is_default());
     }
 
@@ -682,7 +724,6 @@ mod tests {
             region_size: -1,
             seed: 0x1_0000,
             description: SeedDescription::default(),
-            #[cfg(feature = "ares")]
             urban_areas: false,
         };
         options.normalize();
@@ -725,7 +766,7 @@ mod tests {
             num_players: 6,
             ..Default::default()
         };
-        options.apply_sed(&IniFile::from_str("[RandomMap]\nSeed=7\n"));
+        options.apply_sed(&IniFile::from_str("[RandomMap]\nSeed=7\n"), false);
 
         assert_eq!(options.seed, 7, "present key applies");
         assert_eq!(options.ruggedness, 42, "absent key carries, never zeroes");
@@ -738,44 +779,46 @@ mod tests {
             tiberium: 55,
             ..Default::default()
         };
-        options.apply_sed(&IniFile::from_str("[RandomMap]\nTiberium=abc\n"));
+        options.apply_sed(&IniFile::from_str("[RandomMap]\nTiberium=abc\n"), false);
         assert_eq!(options.tiberium, 0);
     }
 
     #[test]
     fn sed_round_trips() {
-        let mut original = RmgOptions {
-            theater: 2,
-            map_type: 3,
-            resources: 2,
-            ruggedness: 40,
-            time: 1,
-            water_amount: 55,
-            num_players: 6,
-            tiberium: 30,
-            tiberium_layout: 20,
-            vegetation: 70,
-            urban_presence: 10,
-            urban_enabled: false,
-            fair_starts: false,
-            extras: Default::default(),
-            width: 2,
-            height: 3,
-            accessibility: 60,
-            region_size: 45,
-            seed: 4321,
-            description: "Round Trip".into(),
-            #[cfg(feature = "ares")]
-            urban_areas: true,
-        };
-        original.normalize();
+        // The seed writes and reads `UrbanAreas=` only when Ares.dll is loaded.
+        for ares in [false, true] {
+            let mut original = RmgOptions {
+                theater: 2,
+                map_type: 3,
+                resources: 2,
+                ruggedness: 40,
+                time: 1,
+                water_amount: 55,
+                num_players: 6,
+                tiberium: 30,
+                tiberium_layout: 20,
+                vegetation: 70,
+                urban_presence: 10,
+                urban_enabled: false,
+                fair_starts: false,
+                extras: Default::default(),
+                width: 2,
+                height: 3,
+                accessibility: 60,
+                region_size: 45,
+                seed: 4321,
+                description: "Round Trip".into(),
+                urban_areas: ares,
+            };
+            original.normalize();
 
-        let bytes = original.to_sed_bytes();
-        let mut parsed = RmgOptions::default();
-        parsed.apply_sed(&IniFile::from_bytes(&bytes).unwrap());
-        parsed.normalize();
+            let bytes = original.to_sed_bytes(ares);
+            let mut parsed = RmgOptions::default();
+            parsed.apply_sed(&IniFile::from_bytes(&bytes).unwrap(), ares);
+            parsed.normalize();
 
-        assert_eq!(parsed, original);
+            assert_eq!(parsed, original);
+        }
     }
 
     #[test]
@@ -797,7 +840,7 @@ mod tests {
 
     #[test]
     fn description_is_the_first_emitted_key() {
-        let bytes = RmgOptions::default().to_sed_bytes();
+        let bytes = RmgOptions::default().to_sed_bytes(false);
         let text = String::from_utf8(bytes).expect("ini is utf-8");
         let body = text.split("[RandomMap]").nth(1).expect("section present");
         let first = body
@@ -821,9 +864,9 @@ mod tests {
             ..RmgOptions::default()
         };
         assert_eq!(original.description.display_text(), "\u{fffd}A");
-        let bytes = original.to_sed_bytes();
+        let bytes = original.to_sed_bytes(false);
         let mut loaded = RmgOptions::default();
-        loaded.apply_sed(&IniFile::from_bytes(&bytes).unwrap());
+        loaded.apply_sed(&IniFile::from_bytes(&bytes).unwrap(), false);
         assert_eq!(loaded.description.units(), [0xd83d, 0x41]);
         assert_eq!(loaded.description, original.description);
         assert!(

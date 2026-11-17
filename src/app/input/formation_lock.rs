@@ -142,7 +142,7 @@ fn centre(cells: impl Iterator<Item = Cell>) -> Option<Cell> {
     Some((i32::try_from(mean(x)).ok()?, i32::try_from(mean(y)).ok()?))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
 

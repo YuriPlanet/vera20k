@@ -65,6 +65,10 @@ pub(crate) enum FrameStep {
     /// Publish the terrain navigation and smudge changes the object pass left
     /// pending.
     TerrainNavigation,
+    /// The local anims' AI (`0x0055B61B..0x0055B649`, AnimClass vt+0x5C):
+    /// gamemd walks its local list (`0x00A83E00`) after the LogicClass
+    /// vector in LAN and online games, the only ones that fill it.
+    LocalAnims,
     /// `IonBlastClass::UpdateAll @ 0x0053D310` (`0x0055B64B`), then
     /// `AlphaShapeClass::PurgeDisabled @ 0x00420E90` (`0x0055B650`).
     IonBlasts,
@@ -81,7 +85,7 @@ pub(crate) enum FrameStep {
 }
 
 /// The master frame's steps before its tail, in the order they run.
-pub(crate) const LOGIC_STEPS: [FrameStep; 19] = [
+pub(crate) const LOGIC_STEPS: [FrameStep; 20] = [
     FrameStep::SessionCommands,
     FrameStep::AdmitCommands,
     FrameStep::Triggers,
@@ -98,6 +102,7 @@ pub(crate) const LOGIC_STEPS: [FrameStep; 19] = [
     FrameStep::Wakes,
     FrameStep::Vision,
     FrameStep::TerrainNavigation,
+    FrameStep::LocalAnims,
     FrameStep::IonBlasts,
     FrameStep::CrateRegen,
     FrameStep::Factories,
@@ -115,7 +120,7 @@ impl FrameStep {
             Self::Shroud => phase::SHROUD,
             Self::Lighting => phase::LIGHTING,
             Self::OreGrowth => phase::ORE_GROWTH,
-            Self::BombList => return None,
+            Self::BombList | Self::LocalAnims => return None,
             Self::Kamikaze | Self::DiskLasers => phase::BOMBS,
             Self::TeamScript => phase::TEAM_AI,
             Self::LightningStorm => phase::SUPERWEAPONS,
@@ -301,14 +306,10 @@ impl Simulation {
                 if request.lane == TickLane::Ordinary {
                     frame.commands = self.admit_frame_commands(request.ingress, rules, effects);
                 }
-                // MainTick55DBC8 precedes Logic55DC9E (including trigger polling).
-                Self::sort_display_ground(
-                    &self.interner,
-                    &self.terrain_objects,
-                    &mut self.substrate,
-                    rules,
-                );
-                // MainTick55DBCD saves the post-input, post-sort world before Logic.
+                // MainTick55DBC8 sorts Ground here, before Logic55DC9E. The
+                // simulation keeps Ground unordered (`DisplayLayers::submit`);
+                // the picture sorts it (`Simulation::ground_draw_order`).
+                // MainTick55DBCD saves the post-input world before Logic.
                 effects.before_logic(self);
                 self.lifecycle_outputs.emit(LifecycleOutput::LogicVisit);
             }
@@ -449,6 +450,27 @@ impl Simulation {
                 // Retaliation is not a step: every receiver issues its Mission
                 // Override inline (`TechnoClass::ReceiveDamage 0x00702A43`),
                 // and passengers board in their class PerCellProcess.
+            }
+            FrameStep::LocalAnims => {
+                for id in self.substrate.anims.local_ids() {
+                    // No expiry reaches a presentation anim, which nothing
+                    // lists: it ends with its owner's UnInit instead
+                    // (`AnimConstructorInput::Presentation`).
+                    if self.presentation_anim_orphaned(id) {
+                        self.destroy_anim(id, rules);
+                        continue;
+                    }
+                    frame.bridge_state_changed |= self
+                        .visit_anim(id, rules, overlay_registry, effects)
+                        .map_err(|error| {
+                            FrameAdvanceError::new(
+                                self.session.tick(),
+                                self.session.binary_frame(),
+                                id,
+                                error.to_string(),
+                            )
+                        })?;
+                }
             }
             // Follows the object loop.
             FrameStep::IonBlasts => {
@@ -1127,8 +1149,8 @@ impl Simulation {
         frame_clock: Option<crate::sim::frame_profile::FrameClock>,
     ) -> MasterFrameOutput {
         let tick_ms = inputs.tick_ms;
-        // A MindControl shot changes an existing SHP's house-colour key.
-        // Publish the atlas invalidation before the next draw, even with no spawn.
+        // An owner change outside the object pass (a MindControl shot)
+        // reaches the tick's report too.
         frame.ownership_changed |= std::mem::take(&mut self.ownership_changed_since_output);
         let frame_committed = if let FrameTailResult::Complete(committed) = result {
             committed

@@ -373,7 +373,7 @@ pub(crate) fn test_speed_percent(percent: impl std::fmt::Display) -> NativeF32Bi
     parse_cost(&section, "speed").unwrap()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
     use crate::util::fixed_math::SIM_ONE;

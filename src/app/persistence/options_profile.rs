@@ -141,6 +141,9 @@ pub(crate) struct RetailOptionsProfile {
     pub(crate) original_shape: bool,
     /// The Options page's battle sidebar size.
     pub(crate) sidebar: crate::ui::main_menu_dialogs::options::SidebarSize,
+    /// `[VERA] SidebarColumns=`: the cameo columns the sidebar lays inside its
+    /// own width, 2 to 5. Presentation only.
+    pub(crate) sidebar_columns: crate::ui::main_menu_dialogs::options::SidebarColumns,
     /// `[VERA] YROriginalStyle=`: whether the startup splash, the menu movie,
     /// the offline Skirmish background and the LAN/WOL lobby backgrounds use
     /// Yuri's Revenge's art. Off by default, so new profiles show Red Alert
@@ -183,6 +186,10 @@ pub(crate) struct RetailOptionsProfile {
     /// art through the smooth shader (`BatchRenderer::draw_chrome`). Off by
     /// default; presentation only.
     pub(crate) smooth_online_menus: bool,
+    /// `[VERA] VSync=`: the window presents in step with the display
+    /// (`GpuContext::set_vsync`). On by default; untick it for lower input
+    /// latency, with tearing. Presentation only.
+    pub(crate) vsync: bool,
     /// `[VERA] HdMapPreviews=`: the setup screens' map preview shows VERA's
     /// own drawing of the whole map (`app::map_picture`) in place of
     /// the map's `[PreviewPack]` picture. On by default; presentation only.
@@ -208,13 +215,28 @@ pub(crate) struct RetailOptionsProfile {
     /// A local input preference: nothing in the rules or on the network
     /// changes. Off by default, so buildings wait for the wrench as in gamemd.
     pub(crate) auto_repair: bool,
-    /// `[VERA] TerrainDeformation=`: the Options page's Terrain Deformation
+    /// `[VERA] MinimapBeacons=`: the Options page's Minimap Beacons box. On,
+    /// a left click on the radar in Place Beacon mode, with nothing selected,
+    /// places the beacon at that cell (`app::input::radar`,
+    /// `docs/minimap-beacons.md`); gamemd's radar answers that click with no
+    /// action and only recentres the view. A local input preference: the
+    /// beacon travels as the ordinary beacon record. Off by default.
+    pub(crate) minimap_beacons: bool,
+    /// `[VERA] TerrainDeformation=`: the skirmish Game Options' Terrain Deformation
     /// box. Explosions dent open ground as in Tiberian Sun and a nuke leaves a
     /// crater (`docs/terrain-deformation.md`). Unlike the presentation boxes it
     /// changes the rules each new game reads, so online peers must agree on it
     /// ([`crate::rules::personal_rules::PersonalRules::set_terrain_deformation`]).
     /// Off by default.
     pub(crate) terrain_deformation: bool,
+    /// `[VERA] SuperweaponLimit=`: the skirmish Game Options' Superweapon Limit.
+    /// Each superweapon may be built that many times and each building
+    /// charges its own shot (`docs/superweapon-limit.md`). Like Terrain
+    /// Deformation it changes the rules each new game reads
+    /// ([`crate::rules::personal_rules::PersonalRules::set_superweapon_limit`]).
+    /// 0, off, by default; read as
+    /// [`crate::rules::personal_rules::admitted_superweapon_limit`] admits it.
+    pub(crate) superweapon_limit: u8,
     /// `[VERA] WolTestService=`: Internet answers from VERA's stand-in WOL
     /// service instead of showing `TXT_APIMISSING`. No Options page offers it.
     /// Off by default; no real service exists yet.
@@ -257,16 +279,22 @@ pub(crate) struct RetailOptionsProfile {
     /// value. Defaults to the native rule. Client presentation only: the
     /// simulation never reads it, and the profile writer round-trips the value.
     pub(crate) health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode,
+    /// `[VERA] Ares=Auto|On|Off`: the Ares extension setting
+    /// (`util::ares_launch::AresSetting`). Read at start, like the mod: a
+    /// change applies from the next start. Auto keeps the game's data in
+    /// charge; an unknown value reads as Auto.
+    pub(crate) ares: crate::util::ares_launch::AresSetting,
     /// `[VERA] ColorVisionMode=`: the whole-viewport colour-vision filter, as
     /// a [`ColorVisionMode`](crate::ui::main_menu_dialogs::options::ColorVisionMode)
     /// value. `Off` keeps the retail image. Client presentation only: the
     /// final frame pass reads it live, and the simulation never sees it.
     pub(crate) color_vision: crate::ui::main_menu_dialogs::options::ColorVisionMode,
-    /// `[VERA] Translate*=`: what received online chat is translated into, and
-    /// where. The lobby's Chat Translation page and the `/translate` chat
-    /// command change it, and write it alone
+    /// `[VERA] TranslateChat=` and `TranslateMatches=`: the language other
+    /// players' online chat is translated into (off by default) and whether
+    /// a match's chat is too (on by default). Only the online lobby's Options
+    /// page changes them, and writes them alone
     /// ([`Self::commit_chat_translation`]).
-    pub(crate) chat_translation: crate::ui::chat_translation::ChatTranslationSettings,
+    pub(crate) chat_translation: crate::ui::chat_translation::ChatTranslation,
     /// `[VERA] Language=`: the tag of the interface language the player chose
     /// ([`crate::i18n`]); `None`, the default, follows the system's languages.
     /// Only the Language list changes it; Options' accept writes it out.
@@ -295,6 +323,20 @@ pub(crate) struct RetailOptionsProfile {
     /// voice never names it. Client presentation only: no sim, audio, state
     /// hash or network protocol reads it. Off by default.
     pub(crate) detailed_eva_text: bool,
+    /// `[VERA] CompactSuperTimers=`: the battlefield's super weapon timer
+    /// list shows at most six lines, the player's own first, with an arrow
+    /// that opens and scrolls the rest
+    /// (`app::presentation::super_timers::TimerDock`). Off by default, so the
+    /// list stacks every line as gamemd does (`TacticalClass::Draw`
+    /// `0x006D4941..0x006D4B25`). Client presentation only.
+    pub(crate) compact_super_timers: bool,
+    /// `[VERA] SuperweaponBuildingTimers=`: every building that provides one
+    /// of the player's super weapons draws its countdown above itself
+    /// (`app::presentation::ui_overlays`). A scenario starts from this value
+    /// and the match's hotkey command flips it, writing the choice back here;
+    /// the Options page keeps no box for it. Off by default, so the
+    /// battlefield shows only gamemd's labels. Client presentation only.
+    pub(crate) superweapon_building_timers: bool,
 }
 
 /// The two process-start products obtained from one physical `VERA.INI`
@@ -349,6 +391,7 @@ impl Default for RetailOptionsProfile {
             zoom: crate::ui::main_menu_dialogs::options::Zoom::Auto,
             original_shape: false,
             sidebar: crate::ui::main_menu_dialogs::options::SidebarSize::Normal,
+            sidebar_columns: crate::ui::main_menu_dialogs::options::SidebarColumns::Two,
             yr_original_style: false,
             skip_intro: false,
             show_string_keys: false,
@@ -359,12 +402,15 @@ impl Default for RetailOptionsProfile {
             hd_radar: false,
             smooth_sidebar: false,
             smooth_online_menus: false,
+            vsync: true,
             hd_map_previews: true,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
             auto_repair: false,
+            minimap_beacons: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             terrain_deformation: false,
+            superweapon_limit: 0,
             wol_test_service: false,
             solo_skirmish: false,
             commander_feedback: true,
@@ -372,6 +418,7 @@ impl Default for RetailOptionsProfile {
             custom_end_game_score: false,
             custom_end_game_movie: false,
             health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode::Vanilla,
+            ares: crate::util::ares_launch::AresSetting::Auto,
             color_vision: crate::ui::main_menu_dialogs::options::ColorVisionMode::Off,
             chat_translation: Default::default(),
             language: None,
@@ -380,6 +427,8 @@ impl Default for RetailOptionsProfile {
             online_locale: 0,
             display: crate::ui::main_menu_dialogs::options::DisplayTarget::Auto,
             detailed_eva_text: false,
+            compact_super_timers: false,
+            superweapon_building_timers: false,
         }
     }
 }
@@ -396,7 +445,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 31],
+    pub(crate) vera: [(&'static str, String); 38],
 }
 
 impl RetailOptionsLoad {
@@ -591,6 +640,10 @@ impl RetailOptionsProfile {
             self.sidebar = crate::ui::main_menu_dialogs::options::SidebarSize::from_ini_value(
                 vera.read_int("Sidebar", self.sidebar.ini_value()),
             );
+            self.sidebar_columns =
+                crate::ui::main_menu_dialogs::options::SidebarColumns::from_ini_value(
+                    vera.read_int("SidebarColumns", self.sidebar_columns.ini_value()),
+                );
             self.yr_original_style = vera.read_bool("YROriginalStyle", self.yr_original_style);
             // `SkipStartupLogo=` named this switch while it skipped only the
             // logo; the writer drops it.
@@ -605,6 +658,7 @@ impl RetailOptionsProfile {
             self.smooth_sidebar = vera.read_bool("SmoothSidebar", self.smooth_sidebar);
             self.smooth_online_menus =
                 vera.read_bool("SmoothOnlineMenus", self.smooth_online_menus);
+            self.vsync = vera.read_bool("VSync", self.vsync);
             self.hd_map_previews = vera.read_bool("HdMapPreviews", self.hd_map_previews);
             // A non-numeric value answers 0, which the clamp lifts to the
             // retail strength rather than to a negative boost.
@@ -619,7 +673,11 @@ impl RetailOptionsProfile {
             );
             self.terrain_deformation =
                 vera.read_bool("TerrainDeformation", self.terrain_deformation);
+            self.superweapon_limit = crate::rules::personal_rules::admitted_superweapon_limit(
+                vera.read_int("SuperweaponLimit", i32::from(self.superweapon_limit)),
+            );
             self.auto_repair = vera.read_bool("AutoRepair", self.auto_repair);
+            self.minimap_beacons = vera.read_bool("MinimapBeacons", self.minimap_beacons);
             self.wol_test_service = vera.read_bool("WolTestService", self.wol_test_service);
             self.solo_skirmish = vera.read_bool("SoloSkirmish", self.solo_skirmish);
             self.commander_feedback = vera.read_bool("CommanderFeedback", self.commander_feedback);
@@ -630,30 +688,36 @@ impl RetailOptionsProfile {
             self.custom_end_game_movie =
                 vera.read_bool("CustomEndGameMovie", self.custom_end_game_movie);
             self.detailed_eva_text = vera.read_bool("DetailedEvaText", self.detailed_eva_text);
+            self.compact_super_timers =
+                vera.read_bool("CompactSuperTimers", self.compact_super_timers);
+            self.superweapon_building_timers = vera.read_bool(
+                "SuperweaponBuildingTimers",
+                self.superweapon_building_timers,
+            );
             // Absent keeps the current value; a value this build does not know
             // reads as the native rule instead of hiding the original strip.
             self.health_bars = crate::ui::main_menu_dialogs::options::HealthBarMode::from_ini_value(
                 vera.read_int("HealthBars", self.health_bars.ini_value()),
             );
+            // Absent keeps the current value; an unknown one reads as Auto.
+            self.ares = crate::util::ares_launch::AresSetting::from_ini_text(&vera.read_string(
+                "Ares",
+                self.ares.ini_value(),
+                16,
+            ));
             // Absent keeps the current value; a value this build does not know
             // reads as Off instead of enabling a filter with no matrix.
             self.color_vision =
                 crate::ui::main_menu_dialogs::options::ColorVisionMode::from_ini_value(
                     vera.read_int("ColorVisionMode", self.color_vision.ini_value()),
                 );
-            let chat = &mut self.chat_translation;
+            // `off`, or a tag this build does not offer, is off.
             if let Some(value) = vera.read_name("TranslateChat", 16) {
-                chat.set_language(crate::ui::chat_translation::ChatLanguage::from_tag(value));
+                self.chat_translation.language =
+                    crate::ui::chat_translation::ChatLanguage::from_tag(value);
             }
-            for place in crate::ui::chat_translation::ChatPlace::ALL {
-                chat.set_translates(
-                    place,
-                    vera.read_bool(place.ini_key(), chat.translates(place)),
-                );
-            }
-            chat.show_source = vera.read_bool("TranslateShowSource", chat.show_source);
-            chat.same_alphabet = vera.read_bool("TranslateSameAlphabet", chat.same_alphabet);
-            chat.set_readable_tags(&vera.read_string("TranslateKnown", "", 64));
+            self.chat_translation.in_matches =
+                vera.read_bool("TranslateMatches", self.chat_translation.in_matches);
             // Empty, as a profile that never picked one writes it, follows
             // the system again.
             if let Some(value) = vera.read_name("Language", 16) {
@@ -757,6 +821,10 @@ impl RetailOptionsProfile {
                 ),
                 ("Sidebar", self.sidebar.ini_value().to_string()),
                 (
+                    "SidebarColumns",
+                    self.sidebar_columns.ini_value().to_string(),
+                ),
+                (
                     "YROriginalStyle",
                     format_bool(self.yr_original_style).to_string(),
                 ),
@@ -797,6 +865,7 @@ impl RetailOptionsProfile {
                 ("LockCursor", format_bool(self.lock_cursor).to_string()),
                 ("VeraIcon", format_bool(self.vera_icon).to_string()),
                 ("HealthBars", self.health_bars.ini_value().to_string()),
+                ("Ares", self.ares.ini_value().to_string()),
                 ("HdRadar", format_bool(self.hd_radar).to_string()),
                 (
                     "SmoothSidebar",
@@ -806,6 +875,7 @@ impl RetailOptionsProfile {
                     "SmoothOnlineMenus",
                     format_bool(self.smooth_online_menus).to_string(),
                 ),
+                ("VSync", format_bool(self.vsync).to_string()),
                 (
                     "HdMapPreviews",
                     format_bool(self.hd_map_previews).to_string(),
@@ -816,10 +886,23 @@ impl RetailOptionsProfile {
                     format_bool(self.detailed_eva_text).to_string(),
                 ),
                 (
+                    "CompactSuperTimers",
+                    format_bool(self.compact_super_timers).to_string(),
+                ),
+                (
+                    "SuperweaponBuildingTimers",
+                    format_bool(self.superweapon_building_timers).to_string(),
+                ),
+                (
                     "TerrainDeformation",
                     format_bool(self.terrain_deformation).to_string(),
                 ),
+                ("SuperweaponLimit", self.superweapon_limit.to_string()),
                 ("AutoRepair", format_bool(self.auto_repair).to_string()),
+                (
+                    "MinimapBeacons",
+                    format_bool(self.minimap_beacons).to_string(),
+                ),
                 (
                     "ShowStringKeys",
                     format_bool(self.show_string_keys).to_string(),
@@ -892,8 +975,8 @@ impl RetailOptionsProfile {
         profile_file::update(ra2_dir, |input| self.transform_wol_preferences(input))
     }
 
-    /// The Chat Translation page's and the `/translate` command's writer: the
-    /// `[VERA] Translate*=` keys alone.
+    /// The online lobby Options page's writer for `[VERA] TranslateChat=` and
+    /// `TranslateMatches=` alone.
     pub(crate) fn commit_chat_translation(&self, ra2_dir: &Path) -> io::Result<()> {
         profile_file::update(ra2_dir, |input| self.transform_chat_translation(input))
     }
@@ -935,20 +1018,32 @@ impl RetailOptionsProfile {
     }
 
     fn transform_chat_translation(&self, input: &[u8]) -> Vec<u8> {
-        use crate::ui::chat_translation::{ChatLanguage, ChatPlace};
-        let chat = &self.chat_translation;
-        let readable = chat.readable_tags();
-        let mut values = vec![(
-            "TranslateChat",
-            chat.language.map_or("off", ChatLanguage::tag),
-        )];
-        values.extend(
-            ChatPlace::ALL.map(|place| (place.ini_key(), format_bool(chat.translates(place)))),
+        let chat = self.chat_translation;
+        let language = chat
+            .language
+            .map_or("off", crate::ui::chat_translation::ChatLanguage::tag);
+        let output = set_ini_values(
+            input,
+            VERA_SECTION,
+            &[
+                ("TranslateChat", language),
+                ("TranslateMatches", format_bool(chat.in_matches)),
+            ],
         );
-        values.push(("TranslateShowSource", format_bool(chat.show_source)));
-        values.push(("TranslateSameAlphabet", format_bool(chat.same_alphabet)));
-        values.push(("TranslateKnown", readable.as_str()));
-        set_ini_values(input, VERA_SECTION, &values)
+        // Earlier builds' Chat Translation page wrote these; nothing reads
+        // them. It wrote TranslateMatches too, with the same meaning.
+        crate::util::ini_writer::remove_ini_keys(
+            &output,
+            VERA_SECTION,
+            &[
+                "TranslateLobby",
+                "TranslateRooms",
+                "TranslatePrivate",
+                "TranslateShowSource",
+                "TranslateSameAlphabet",
+                "TranslateKnown",
+            ],
+        )
     }
 
     fn transform_wol_preferences(&self, input: &[u8]) -> Vec<u8> {
@@ -1087,7 +1182,7 @@ fn encode_net_id(progress: crate::ui::movies_credits_shell::MovieProgress) -> St
     crate::rules::ini_value::encode_comma_hex_utf16(&flip_net_id_units(&units))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use std::cell::{Cell, RefCell};
 
@@ -1582,7 +1677,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
 
     #[test]
     fn vera_display_preferences_round_trip_in_their_own_section() {
-        use crate::ui::main_menu_dialogs::options::{SidebarSize, Zoom};
+        use crate::ui::main_menu_dialogs::options::{SidebarColumns, SidebarSize, Zoom};
         let defaults = load_snapshot(
             &RetailStartupOptions::default(),
             b"[Video]\nScreenWidth=800\n",
@@ -1591,6 +1686,11 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert_eq!(defaults.retained_profile.zoom, Zoom::Auto);
         assert!(!defaults.retained_profile.original_shape);
         assert_eq!(defaults.retained_profile.sidebar, SidebarSize::Normal);
+        // The sidebar keeps gamemd's two columns until the list says otherwise.
+        assert_eq!(
+            defaults.retained_profile.sidebar_columns,
+            SidebarColumns::Two
+        );
         assert!(!defaults.retained_profile.yr_original_style);
         // Shift + left click queues one copy, as in gamemd, until it is ticked.
         assert!(!defaults.retained_profile.shift_queue);
@@ -1621,12 +1721,22 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         // A value this build doesn't know reads as Auto.
         let unknown = load_snapshot(&RetailStartupOptions::default(), b"[VERA]\nZoom=9\n");
         assert_eq!(unknown.retained_profile.zoom, Zoom::Auto);
+        // Nor does an unknown column count leave the original layout.
+        let unknown_columns = load_snapshot(
+            &RetailStartupOptions::default(),
+            b"[VERA]\nSidebarColumns=9\n",
+        );
+        assert_eq!(
+            unknown_columns.retained_profile.sidebar_columns,
+            SidebarColumns::Two
+        );
 
         let profile = RetailOptionsProfile {
             full_screen: true,
             zoom: Zoom::Percent(150),
             original_shape: true,
             sidebar: SidebarSize::ExtraLarge,
+            sidebar_columns: SidebarColumns::Four,
             yr_original_style: true,
             skip_intro: true,
             show_string_keys: true,
@@ -1641,7 +1751,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                 .unwrap();
         assert!(
             output.contains(
-                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nYROriginalStyle=yes\r\nSkipIntro=yes\r\nShiftQueue=yes\r\nShiftQueueCount=7\r\nWolTestService=yes\r\nSoloSkirmish=yes\r\n"
+                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nSidebarColumns=4\r\nYROriginalStyle=yes\r\nSkipIntro=yes\r\nShiftQueue=yes\r\nShiftQueueCount=7\r\nWolTestService=yes\r\nSoloSkirmish=yes\r\n"
             ),
             "{output}"
         );
@@ -1650,6 +1760,10 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert_eq!(reread.retained_profile.zoom, Zoom::Percent(150));
         assert!(reread.retained_profile.original_shape);
         assert_eq!(reread.retained_profile.sidebar, SidebarSize::ExtraLarge);
+        assert_eq!(
+            reread.retained_profile.sidebar_columns,
+            SidebarColumns::Four
+        );
         assert!(reread.retained_profile.yr_original_style);
         assert!(reread.retained_profile.skip_intro);
         assert!(reread.retained_profile.show_string_keys);
@@ -1671,63 +1785,43 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
     }
 
     #[test]
-    fn chat_translation_writes_only_its_own_keys_and_reads_back() {
-        use crate::ui::chat_translation::{ChatLanguage, ChatPlace};
+    fn chat_translation_writes_its_settings_and_drops_the_retired_keys() {
+        use crate::ui::chat_translation::{ChatLanguage, ChatTranslation};
         let startup = RetailStartupOptions::default();
-        let mut profile = RetailOptionsProfile::default();
-        let chat = &mut profile.chat_translation;
-        chat.language = Some(ChatLanguage::SimplifiedChinese);
-        chat.set_translates(ChatPlace::Match, false);
-        chat.show_source = false;
-        chat.same_alphabet = true;
-        chat.set_reads(ChatLanguage::English, true);
-        chat.set_reads(ChatLanguage::Korean, true);
-        let output = profile.transform_chat_translation(b"[VERA]\r\nZoom=150\r\n");
+        let old = b"[VERA]\r\nZoom=150\r\nTranslateMatches=no\r\nTranslateKnown=en,ko\r\n";
+        // An earlier build's TranslateMatches=no still reads as off.
+        let mut profile = load_snapshot(&startup, old).retained_profile;
+        assert!(!profile.chat_translation.in_matches);
+        profile.chat_translation.language = Some(ChatLanguage::SimplifiedChinese);
+        let output = profile.transform_chat_translation(old);
         let text = String::from_utf8(output.clone()).unwrap();
         assert!(
             text.contains("Zoom=150")
                 && text.contains("TranslateChat=zh-Hans")
-                && text.contains("TranslateKnown=en,ko"),
+                && text.contains("TranslateMatches=no")
+                && !text.contains("TranslateKnown"),
             "{text}"
         );
         let reread = load_snapshot(&startup, &output).retained_profile;
         assert_eq!(reread.chat_translation, profile.chat_translation);
 
-        // Back to off, and an emptied list stays empty.
         let off = RetailOptionsProfile::default().transform_chat_translation(&output);
         let reread = load_snapshot(&startup, &off).retained_profile;
-        assert_eq!(reread.chat_translation, Default::default());
+        assert_eq!(reread.chat_translation, ChatTranslation::default());
     }
 
     #[test]
-    fn options_accept_leaves_the_chat_translation_keys_alone() {
-        use crate::ui::chat_translation::ChatLanguage;
+    fn options_accept_leaves_the_chat_translation_key_alone() {
         let startup = RetailStartupOptions::default();
-        let accepted = RetailOptionsProfile::default()
-            .transform_settings(b"[VERA]\r\nTranslateChat=ja\r\nTranslateKnown=ko\r\n");
-        let chat = load_snapshot(&startup, &accepted)
-            .retained_profile
-            .chat_translation;
-        assert_eq!(chat.language, Some(ChatLanguage::Japanese));
-        assert!(chat.reads(ChatLanguage::Korean));
-    }
-
-    /// A language with no saved choice starts as picking it would; a saved
-    /// choice stays.
-    #[test]
-    fn same_alphabet_starts_by_language_until_a_choice_is_saved() {
-        let startup = RetailStartupOptions::default();
-        let same_alphabet = |ini: &[u8]| {
-            load_snapshot(&startup, ini)
+        let accepted =
+            RetailOptionsProfile::default().transform_settings(b"[VERA]\r\nTranslateChat=ja\r\n");
+        assert_eq!(
+            load_snapshot(&startup, &accepted)
                 .retained_profile
                 .chat_translation
-                .same_alphabet
-        };
-        assert!(same_alphabet(b"[VERA]\r\nTranslateChat=de\r\n"));
-        assert!(!same_alphabet(b"[VERA]\r\nTranslateChat=en\r\n"));
-        assert!(!same_alphabet(
-            b"[VERA]\r\nTranslateChat=de\r\nTranslateSameAlphabet=no\r\n"
-        ));
+                .language,
+            Some(crate::ui::chat_translation::ChatLanguage::Japanese)
+        );
     }
 
     /// A windowed launch opens centred, so the window keys earlier builds
@@ -1763,6 +1857,21 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert!(changed.lock_cursor && changed.vera_icon);
         assert!(changed.hd_radar && changed.smooth_sidebar && !changed.hd_map_previews);
         assert!(changed.smooth_online_menus);
+    }
+
+    #[test]
+    fn vsync_starts_on_and_an_unticked_box_round_trips() {
+        let startup = RetailStartupOptions::default();
+        let unset = load_snapshot(&startup, b"[VERA]\n").retained_profile;
+        assert!(unset.vsync);
+        let off = RetailOptionsProfile {
+            vsync: false,
+            ..RetailOptionsProfile::default()
+        }
+        .transform_settings(b"");
+        let ini = IniFile::from_bytes(&off).unwrap();
+        assert!(!ini.section(VERA_SECTION).unwrap().read_bool("VSync", true));
+        assert!(!load_snapshot(&startup, &off).retained_profile.vsync);
     }
 
     #[test]
@@ -1927,6 +2036,21 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                 .right_click_orders
         );
         assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
+    }
+
+    #[test]
+    fn minimap_beacons_preference_defaults_off_and_round_trips() {
+        let startup = RetailStartupOptions::default();
+        let mut profile = load_snapshot(&startup, b"").retained_profile;
+        assert!(!profile.minimap_beacons);
+        profile.minimap_beacons = true;
+        let written = profile.transform_settings(b"[VERA]\nUnowned=keep\n");
+        assert!(String::from_utf8_lossy(&written).contains("MinimapBeacons=yes"));
+        assert!(
+            load_snapshot(&startup, &written)
+                .retained_profile
+                .minimap_beacons
+        );
     }
 
     /// `[VERA] CommanderFeedback=` is the talking-head switch. It defaults to
@@ -2466,6 +2590,30 @@ IsScoreRepeat=no\r\nIsScoreShuffle=no\r\nSoundLatency=9\r\nInGameMusic=yes\r\n\
                 .detailed_eva_text
         );
         assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
+    }
+
+    #[test]
+    fn compact_super_timers_defaults_off_and_round_trips_through_the_vera_section() {
+        let startup = RetailStartupOptions::default();
+        let read = |bytes: &[u8]| load_snapshot(&startup, bytes).retained_profile;
+        assert!(!read(b"").compact_super_timers);
+        let mut profile = read(b"[VERA]\nCompactSuperTimers=yes\n");
+        assert!(profile.compact_super_timers);
+        profile.compact_super_timers = false;
+        let written = profile.transform_settings(b"[VERA]\nCompactSuperTimers=yes\n");
+        assert!(!read(&written).compact_super_timers);
+    }
+
+    #[test]
+    fn superweapon_building_timers_defaults_off_and_round_trips_through_the_vera_section() {
+        let startup = RetailStartupOptions::default();
+        let read = |bytes: &[u8]| load_snapshot(&startup, bytes).retained_profile;
+        assert!(!read(b"").superweapon_building_timers);
+        let mut profile = read(b"[VERA]\nSuperweaponBuildingTimers=yes\n");
+        assert!(profile.superweapon_building_timers);
+        profile.superweapon_building_timers = false;
+        let written = profile.transform_settings(b"[VERA]\nSuperweaponBuildingTimers=yes\n");
+        assert!(!read(&written).superweapon_building_timers);
     }
 
     #[test]

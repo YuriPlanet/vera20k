@@ -707,6 +707,6 @@ fn draw_line(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 #[path = "events_tests.rs"]
 mod tests;

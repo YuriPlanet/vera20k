@@ -1,11 +1,14 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20K kapak görseli" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <strong>Türkçe</strong> · <a href="README.md" lang="en">English</a>
+  <a href="README.vi.md" lang="vi">Tiếng Việt</a> · <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <strong>Türkçe</strong> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
-  <a href="https://discord.gg/kmjRUn5m5F"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&amp;logo=discord&amp;logoColor=white" alt="Discord'a katılın" height="23" align="middle"></a>
-  <img src="https://img.shields.io/badge/QQ-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ grubu" height="23" align="middle">
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Son Linux kütüphane testi çalıştırması (elle başlatılır)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Linux kütüphane testleri" height="23" align="middle"></a>
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="Son Windows kütüphane testi çalıştırması (elle başlatılır)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="Windows kütüphane testleri" height="23" align="middle"></a>
+  <a href="https://discord.gg/kmjRUn5m5F"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscord.com%2Fapi%2Fv10%2Finvites%2FkmjRUn5m5F%3Fwith_counts%3Dtrue&amp;query=%24.approximate_presence_count&amp;suffix=%20online&amp;label=VERA20K%20Discord&amp;color=5865F2&amp;style=flat&amp;logo=discord&amp;logoColor=white" alt="Discord'a katılın" height="23" align="middle"></a>
+  <img src="https://img.shields.io/badge/VERA20K_QQ-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ grubu (VERA20K)" height="23" align="middle">
+  <img src="https://img.shields.io/badge/ra20k.com_QQ-319832195-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ grubu (ra20k.com)" height="23" align="middle">
 </p>
 
 # VERA20K
@@ -22,15 +25,8 @@ oyuncular söylüyor.
 ## İndir ve oyna
 
 1. Red Alert 2: Yuri's Revenge'i Steam'den ya da EA uygulamasından kurun.
-2. Aşağıdaki düğmelerle sisteminize uygun VERA20K'yi indirin.
+2. Sisteminize uygun VERA20K'yi [sürümler sayfasından](https://github.com/YuriPlanet/vera20k/releases) indirin.
 3. İndirdiğiniz dosyayı açın. Oyununuzu bulur ve VERA20K'yi kendi klasörüne kurar.
-
-<p dir="ltr">
-  <a href="https://vera20k.org/download/windows"><img src="https://img.shields.io/badge/Windows-1E4976?style=for-the-badge&amp;logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTMgM2g4LjV2OC41SDN6TTEyLjUgM0gyMXY4LjVoLTguNXpNMyAxMi41aDguNVYyMUgzek0xMi41IDEyLjVIMjFWMjFoLTguNXoiLz48L3N2Zz4%3D" alt="Windows için indir" height="28"></a>
-  <a href="https://vera20k.org/download/macos"><img src="https://img.shields.io/badge/macOS_%C2%B7_Apple_Silicon-000000?style=for-the-badge&amp;logo=apple&amp;logoColor=white" alt="macOS (Apple Silicon) için indir" height="28"></a>
-  <a href="https://vera20k.org/download/macos-x64"><img src="https://img.shields.io/badge/macOS_%C2%B7_Intel-000000?style=for-the-badge&amp;logo=apple&amp;logoColor=white" alt="macOS (Intel) için indir" height="28"></a>
-  <a href="https://vera20k.org/download/linux"><img src="https://img.shields.io/badge/Linux-000000?style=for-the-badge&amp;logo=linux&amp;logoColor=white" alt="Linux için indir" height="28"></a>
-</p>
 
 Takıldınız mı? [Yardım sayfasına](https://vera20k.org/tr/help) göz atın.
 
@@ -78,13 +74,6 @@ Oklar veri akışını gösterir:
 
 ## Derleme ve çalıştırma
 
-<p dir="ltr">
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="Son macOS kütüphane testi çalıştırması (elle başlatılır)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="macOS kütüphane testleri" height="23" align="middle"></a>
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Son Linux kütüphane testi çalıştırması (elle başlatılır)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Linux kütüphane testleri" height="23" align="middle"></a>
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="Son Windows kütüphane testi çalıştırması (elle başlatılır)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="Windows kütüphane testleri" height="23" align="middle"></a>
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml?query=branch%3Amain" title="Son WebAssembly derlemesi (elle başlatılır)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml/badge.svg?branch=main" alt="WebAssembly derlemesi" height="23" align="middle"></a>
-</p>
-
 Gerekenler:
 
 - **Rust ve Git:** rustup ile kurulmuş [Rust](https://rustup.rs/) 1.97 veya üzeri ve
@@ -113,7 +102,7 @@ VERA20K varsayılan olarak orijinal oyun gibi oynanır. Ares gibi modlardan gele
 her yeni özellik, şu yollardan biriyle açılana kadar kapalı kalmalıdır:
 
 - **Bir VERA oyuncu seçeneği**: **Options** altında bulunur ve `VERA.INI` dosyasının `[VERA]` bölümüne kaydedilir.
-- **Bir derleme seçeneği**: örneğin desteklenen [Ares eklentileri](docs/ares.md) için `--features ares`.
+- **Bir derleme seçeneği**: örneğin desteklenen [Phobos eklentileri](docs/phobos.md) için `--features phobos`.
 - **Bir INI anahtarı**: bir mod ya da harita tarafından ayarlanır.
 
 Ses, grafik ve kontrol ayarları `VERA.INI` dosyasına kaydedilir. Oynanış kuralları lobi
@@ -148,6 +137,7 @@ Electronic Arts'a aittir. VERA20K, Electronic Arts ile bağlantılı değildir v
 tarafından desteklenmemektedir.
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **VERA20K'yı paylaşmadan, satmadan veya fork'lamadan önce [yasal bildirimi](LEGAL.md) okuyun.**
 

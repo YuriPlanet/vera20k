@@ -733,10 +733,10 @@ pub(crate) fn set_should_enter_nearest_occupiable_for_test(entity: &mut GameEnti
     entity.building_entry.should_enter_nearest_occupiable = value;
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "building_entry_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "grinder_tests.rs"]
 mod grinder_tests;

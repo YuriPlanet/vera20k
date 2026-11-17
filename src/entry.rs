@@ -59,7 +59,6 @@ pub fn log_banner(log_path: Option<&Path>) {
         std::env::consts::OS,
         std::env::consts::ARCH,
     );
-    log::info!("Ares support compiled in: {}", crate::rules::ARES_BUILD);
     log::info!(
         "Phobos support compiled in: {}",
         crate::rules::PHOBOS_ENABLED
@@ -287,7 +286,7 @@ pub fn finish(result: Result<i32>) -> Result<()> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_root))]
 mod tests {
     use super::run_with_args;
     use std::ffi::OsString;

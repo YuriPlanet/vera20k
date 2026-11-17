@@ -220,7 +220,7 @@ pub fn enumerate(directory: &Path, pattern: &str) -> Vec<(NativeFileName, u32, u
     entries
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
     #[test]

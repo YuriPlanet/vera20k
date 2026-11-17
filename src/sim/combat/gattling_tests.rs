@@ -593,68 +593,73 @@ impl Spin {
 /// (one `g_MainRng` draw) and again at each stage-up, after a hard stop.
 #[test]
 fn a_gattling_tank_spins_up_while_it_fights() {
-    let mut spin = Spin::new();
-    let post = spin.spawn_post();
-    spin.order(crate::sim::command::Command::Attack {
-        attacker_id: spin.tank,
-        target_id: post,
-    });
-    let mut stage_ups = Vec::new();
-    let mut weapons_by_stage: std::collections::BTreeMap<i32, std::collections::BTreeSet<String>> =
-        Default::default();
-    let mut loops = Vec::new();
-    let mut previous = spin.state();
-    for frame in 0..620 {
-        let stage_before = spin.state().stage();
-        let (fired, sounds) = spin.tick();
-        for weapon in fired {
-            weapons_by_stage
-                .entry(stage_before)
-                .or_default()
-                .insert(weapon);
-        }
-        let now = spin.state();
-        assert_eq!(
-            now.value(),
-            (previous.value() + 1).min(600),
-            "frame {frame}: one point a frame up to the cap"
-        );
-        if now.stage() != previous.stage() {
-            stage_ups.push((now.stage(), now.value()));
-        }
-        for sound in sounds {
-            match sound {
-                crate::sim::world::SimSoundEvent::GattlingLoop { sound_id, .. } => {
-                    loops.push(sound_id);
-                }
-                crate::sim::world::SimSoundEvent::GattlingLoopStop { .. } => {
-                    loops.push("stop".to_string());
-                }
-                _ => panic!("frame {frame}: no release while charging"),
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let mut spin = Spin::new();
+        let post = spin.spawn_post();
+        spin.order(crate::sim::command::Command::Attack {
+            attacker_id: spin.tank,
+            target_id: post,
+        });
+        let mut stage_ups = Vec::new();
+        let mut weapons_by_stage: std::collections::BTreeMap<
+            i32,
+            std::collections::BTreeSet<String>,
+        > = Default::default();
+        let mut loops = Vec::new();
+        let mut previous = spin.state();
+        for frame in 0..620 {
+            let stage_before = spin.state().stage();
+            let (fired, sounds) = spin.tick();
+            for weapon in fired {
+                weapons_by_stage
+                    .entry(stage_before)
+                    .or_default()
+                    .insert(weapon);
             }
+            let now = spin.state();
+            assert_eq!(
+                now.value(),
+                (previous.value() + 1).min(600),
+                "frame {frame}: one point a frame up to the cap"
+            );
+            if now.stage() != previous.stage() {
+                stage_ups.push((now.stage(), now.value()));
+            }
+            for sound in sounds {
+                match sound {
+                    crate::sim::world::SimSoundEvent::GattlingLoop { sound_id, .. } => {
+                        loops.push(sound_id);
+                    }
+                    crate::sim::world::SimSoundEvent::GattlingLoopStop { .. } => {
+                        loops.push("stop".to_string());
+                    }
+                    _ => panic!("frame {frame}: no release while charging"),
+                }
+            }
+            previous = now;
         }
-        previous = now;
+        // Ares' stage test reads the charged value (hook 0x70DEBA): a frame earlier.
+        let stage_ups_at = if ares_way {
+            [(1, 200), (2, 400)]
+        } else {
+            [(1, 201), (2, 401)]
+        };
+        assert_eq!(stage_ups, stage_ups_at);
+        assert_eq!(previous.value(), 600);
+        let stage_weapons =
+            |stage: i32| -> Vec<String> { weapons_by_stage[&stage].iter().cloned().collect() };
+        assert_eq!(stage_weapons(0), ["G0"]);
+        assert_eq!(stage_weapons(1), ["G2"]);
+        assert_eq!(stage_weapons(2), ["G4"]);
+        //70DF9C stops before every new report, and70DF74 adds the stage stop.
+        assert_eq!(
+            loops,
+            [
+                "stop", "Loop0", "stop", "stop", "Loop2", "stop", "stop", "Loop4"
+            ]
+        );
     }
-    // Ares' stage test reads the charged value (hook 0x70DEBA): a frame earlier.
-    let stage_ups_at = if crate::rules::ARES_BUILD {
-        [(1, 200), (2, 400)]
-    } else {
-        [(1, 201), (2, 401)]
-    };
-    assert_eq!(stage_ups, stage_ups_at);
-    assert_eq!(previous.value(), 600);
-    let stage_weapons =
-        |stage: i32| -> Vec<String> { weapons_by_stage[&stage].iter().cloned().collect() };
-    assert_eq!(stage_weapons(0), ["G0"]);
-    assert_eq!(stage_weapons(1), ["G2"]);
-    assert_eq!(stage_weapons(2), ["G4"]);
-    //70DF9C stops before every new report, and70DF74 adds the stage stop.
-    assert_eq!(
-        loops,
-        [
-            "stop", "Loop0", "stop", "stop", "Loop2", "stop", "stop", "Loop4"
-        ]
-    );
 }
 
 /// Stopped at the cap after firing at the ground, with nothing to pick

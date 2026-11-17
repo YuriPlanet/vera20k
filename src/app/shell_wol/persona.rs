@@ -530,7 +530,7 @@ pub(super) fn poll_scroll_repeat(state: &mut AppState) -> Option<Instant> {
     page.scroll.repeat_at()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

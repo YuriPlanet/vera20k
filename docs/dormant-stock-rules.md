@@ -45,7 +45,7 @@ Read by `RulesClass::ReadCombatDamage` (`0x0066C545`, `0x0066C564`). With one sw
 the player selects a unit carrying a bomb of the player's house alone and clicks it: the cursor
 is the Demolish frames (action 0x37) and the bomb goes off at once
 (`TechnoClass::What_Action_OnObject` `0x006FFF8D..0x00700003`). The unit's owner is not asked,
-so a selected enemy works too. A death bomb only exists with Ares, so stock builds read only
+so a selected enemy works too. A death bomb only exists with Ares, so a game without Ares uses only
 `CanDetonateTimeBomb`. An Engineer over its own bombed self defuses instead.
 
 The click sends the DETONATE event (opcode 0x0A, the carrier's object token, the bomb's house

@@ -8,8 +8,7 @@ Nighthawk land as in the original game.
 LandNearby=3   ; cells to search, default 0 (off), at most 8
 ```
 
-A mod, a map or your [personal rules](personal-rules.md) (`VERARULES.INI`) can
-set it. In an online game every player needs the same rules, which the rules
+A mod's `rulesmd.ini` or a map can set it. In an online game every player needs the same rules, which the rules
 compatibility check compares.
 
 ## What the original does

@@ -134,9 +134,12 @@ fn emit(
     let before = (sim.state_hash(), sim.rng_state());
     let before_runtime = serde_json::to_value(sim.anim(id).unwrap().runtime()).unwrap();
     let building = sim.entities().get(plant).unwrap();
-    let frame = crate::app::presentation::frame::PresentationFrame::capture(&scene.runtime);
+    let frame = crate::app::presentation::frame::PresentationFrame::capture(
+        &scene.runtime,
+        &Default::default(),
+    );
     let record = frame.object(plant).unwrap();
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let light = CellLightGrid::new();
     let cell = (building.position.rx(), building.position.ry());
     let coord = sim.anim_absolute_coord(id).unwrap();
@@ -187,9 +190,16 @@ fn emit(
         &frame,
         local_owner,
         record,
-        &|anim| {
-            super::super::overlays::slot_anim_admissible(sim, &frame, anim, camera, [800.0, 600.0])
-        },
+        &super::admitted_slot_anims(
+            sim,
+            &frame,
+            record,
+            crate::app::presentation::instances::TacticalAdmission {
+                corner: camera,
+                size: [800.0, 600.0],
+            },
+        ),
+        &mut super::super::overlays::AnimTypeArts::new(rules, atlas),
         &|_| 0,
         crate::render::batch::DepthAxis::NONE.origin_y,
         crate::render::batch::DepthAxis::NONE.world_height,

@@ -83,14 +83,16 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
         }
     }
 
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let air = sim.display_layers().members(DisplayLayer::AIR).to_vec();
     let first = sim.voxel_anims().get(ids[0]).unwrap().world_coord();
     let [x, y] = screen(first.x, first.y, first.z);
     let view = DebrisView {
         terrain: sim.resolved_terrain().unwrap(),
-        camera: [x - 400.0, y - 300.0],
-        viewport: [800.0, 600.0],
+        admission: TacticalAdmission {
+            corner: [x - 400.0, y - 300.0],
+            size: [800.0, 600.0],
+        },
         axis: DepthAxis::NONE,
     };
     let tire =
@@ -208,7 +210,7 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
         }
     }
     assert!(sim.voxel_anims().is_empty());
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     assert!(
         ids.iter()
             .all(|&id| order.object_draw(id, SpriteEncoding::Voxel).is_none())
@@ -242,6 +244,7 @@ fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
         IVec3::new(12 * 256 + 128, 12 * 256 + 128, 0),
         true,
         &mut Vec::new(),
+        rules,
     )
     .unwrap();
     let ids = sim.voxel_anims().ids();
@@ -291,12 +294,14 @@ fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
         piece_palette(piece, &tiberium, &sim, &HouseColorMap::new(), &light),
         (0, 1, PaletteLight::plain(53, 425)),
     );
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let [x, y] = screen(location.x, location.y, location.z);
     let view = DebrisView {
         terrain: sim.resolved_terrain().unwrap(),
-        camera: [x - 400., y - 300.],
-        viewport: [800., 600.],
+        admission: TacticalAdmission {
+            corner: [x - 400., y - 300.],
+            size: [800., 600.],
+        },
         axis: DepthAxis::NONE,
     };
     let mut cache = crate::render::unit_pose_cache::VxlPoseFrameCache::default();

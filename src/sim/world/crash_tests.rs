@@ -158,7 +158,7 @@ fn lifted_impact_scene(kind: &str, overrides: &str) -> (Simulation, RuleSet, u64
         assert_eq!(warhead.cell_spread_f64, 1.0);
         assert_eq!(warhead.percent_at_max_f64, 1.0);
         // Under Ares the native raw11 read is skipped and the extension owns
-        // Verses, so check the interaction both builds consult.
+        // Verses, so check the interaction a game read either way consults.
         let multiplier = |armor| f64::from_bits(warhead.interaction(armor).multiplier().bits());
         assert_eq!(multiplier(armor_index("none")), verses);
         assert_eq!(multiplier(armor_index("light")), 0.0);

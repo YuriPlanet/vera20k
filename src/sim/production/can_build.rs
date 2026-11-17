@@ -31,7 +31,7 @@ use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::world::{SimSoundEvent, Simulation};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "thief_capture_tests.rs"]
 mod thief_capture_tests;
 
@@ -688,7 +688,7 @@ fn stock_check_build_limit(
     owner: InternedId,
     obj: &ObjectType,
 ) -> bool {
-    let strip = build_limit_strip(obj);
+    let strip = primary_factory_category(obj);
     if obj.category == ObjectCategory::Aircraft && obj.airport_bound {
         return airport_docks_full(sim, rules, owner, strip);
     }
@@ -741,7 +741,7 @@ fn ares_check_build_limit(
     owner: InternedId,
     obj: &ObjectType,
 ) -> bool {
-    let strip = build_limit_strip(obj);
+    let strip = primary_factory_category(obj);
     if obj.category == ObjectCategory::Aircraft
         && obj.airport_bound
         && airport_docks_full(sim, rules, owner, strip)
@@ -765,10 +765,12 @@ fn ares_check_build_limit(
         )
 }
 
-/// The strip whose House factory CheckBuildLimit counts: both structure
-/// strips count the Buildings factory (`0x0050B3B9`; Ares' GetPrimaryFactory
-/// `0x00500510` with BuildCat DontCare answers the same one).
-fn build_limit_strip(obj: &ObjectType) -> super::ProductionCategory {
+/// The House factory that GetPrimaryFactory `0x00500510` answers for `obj`'s
+/// kind with BuildCat DontCare: the Buildings factory for every structure.
+/// CheckBuildLimit counts it (`0x0050B3B9`; Ares' hook asks the same one),
+/// and StripClass::Draw's count badge asks it what it holds (BuildCat 0 at
+/// `0x006A9C52`, call at `0x006A9C67`).
+pub fn primary_factory_category(obj: &ObjectType) -> super::ProductionCategory {
     match obj.category {
         ObjectCategory::Building => super::ProductionCategory::Building,
         _ => super::production_tech::production_category_for_object(obj),
@@ -1249,14 +1251,14 @@ fn get_ownable(obj: &ObjectType, rules: &RuleSet, game_mode_nonzero: bool) -> u3
     obj.owner_mask(rules)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "can_build_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "can_build_produced_history_tests.rs"]
 mod produced_history_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "can_build_factory_owners_tests.rs"]
 mod factory_owners_tests;

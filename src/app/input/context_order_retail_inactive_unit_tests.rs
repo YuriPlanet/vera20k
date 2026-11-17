@@ -127,116 +127,119 @@ fn hover_cursor(
 /// selects.
 #[test]
 fn retail_inactive_robot_tank_crushes_or_selects_instead_of_attacking() {
-    let Some((retail, registry)) = retail() else {
-        return;
-    };
-    let rules = &retail.rules;
-    let mut sim = arena(rules);
-    // The Russians keep a building, so the skirmish has no winner.
-    sim.spawn_object("NAPOWR", "Russians", 3, 3, 0, rules)
-        .expect("russian power plant");
-    let robot = sim
-        .spawn_object("ROBO", "Americans", 16, 16, 0, rules)
-        .expect("robot tank");
-    let gi = sim
-        .spawn_object("E1", "Russians", 17, 16, 0, rules)
-        .expect("gi");
-    let tank = sim
-        .spawn_object("MTNK", "Russians", 16, 17, 0, rules)
-        .expect("tank");
-    let action = |sim: &Simulation, target, forced| {
-        attack_action(
-            sim,
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let Some((retail, registry)) = retail() else {
+            return;
+        };
+        let rules = &retail.rules;
+        let mut sim = arena(rules);
+        // The Russians keep a building, so the skirmish has no winner.
+        sim.spawn_object("NAPOWR", "Russians", 3, 3, 0, rules)
+            .expect("russian power plant");
+        let robot = sim
+            .spawn_object("ROBO", "Americans", 16, 16, 0, rules)
+            .expect("robot tank");
+        let gi = sim
+            .spawn_object("E1", "Russians", 17, 16, 0, rules)
+            .expect("gi");
+        let tank = sim
+            .spawn_object("MTNK", "Russians", 16, 17, 0, rules)
+            .expect("tank");
+        let action = |sim: &Simulation, target, forced| {
+            attack_action(
+                sim,
+                rules,
+                robot,
+                &TargetKind::Entity(target),
+                forced,
+                Some(&registry),
+            )
+        };
+        let enemy_cursor = |sim: &Simulation, target, modifier| {
+            hover_cursor(
+                sim,
+                rules,
+                &registry,
+                robot,
+                target,
+                crate::app::types::HoverTargetKind::EnemyUnit,
+                modifier,
+            )
+        };
+        for forced in [false, true] {
+            assert_eq!(action(&sim, gi, forced), AttackAction::Attack);
+            assert_eq!(action(&sim, tank, forced), AttackAction::Attack);
+        }
+        // The active robot's Ctrl click on the GI fires.
+        let fire = attack_branch_orders(
+            &sim,
             rules,
-            robot,
-            &TargetKind::Entity(target),
-            forced,
-            Some(&registry),
-        )
-    };
-    let enemy_cursor = |sim: &Simulation, target, modifier| {
-        hover_cursor(
-            sim,
-            rules,
+            &[robot],
+            TargetKind::Entity(gi),
+            true,
+            OrderMode::Move,
             &registry,
-            robot,
-            target,
-            crate::app::types::HoverTargetKind::EnemyUnit,
-            modifier,
-        )
-    };
-    for forced in [false, true] {
-        assert_eq!(action(&sim, gi, forced), AttackAction::Attack);
-        assert_eq!(action(&sim, tank, forced), AttackAction::Attack);
+        );
+        assert!(!fire.commands.is_empty());
+        sim.entities_mut_for_test()
+            .get_mut(robot)
+            .unwrap()
+            .deactivated
+            .set_for_test(true);
+        assert_eq!(action(&sim, gi, false), AttackAction::None);
+        assert_eq!(action(&sim, tank, false), AttackAction::None);
+        assert_eq!(action(&sim, gi, true), AttackAction::Move);
+        assert_eq!(action(&sim, tank, true), AttackAction::Select);
+        assert_eq!(
+            enemy_cursor(&sim, gi, OrderModifier::Normal),
+            Some(CursorId::Default)
+        );
+        // Ares hook 0x73FD5A (1004CF50): a Deactivated Unit answers
+        // GetDeactivatedAction alone, 0 over another House's object.
+        let (gi_forced, tank_forced) = if ares_way {
+            (CursorId::Default, CursorId::Default)
+        } else {
+            (CursorId::Move, CursorId::Select)
+        };
+        assert_eq!(
+            enemy_cursor(&sim, gi, OrderModifier::ForceFire),
+            Some(gi_forced)
+        );
+        assert_eq!(
+            enemy_cursor(&sim, tank, OrderModifier::ForceFire),
+            Some(tank_forced)
+        );
+        let crush = attack_branch_orders(
+            &sim,
+            rules,
+            &[robot],
+            TargetKind::Entity(gi),
+            true,
+            OrderMode::Move,
+            &registry,
+        );
+        assert!(crush.consumed && !crush.select_fallback);
+        assert!(crush.commands.is_empty(), "{:?}", crush.commands);
+        let select = attack_branch_orders(
+            &sim,
+            rules,
+            &[robot],
+            TargetKind::Entity(tank),
+            true,
+            OrderMode::Move,
+            &registry,
+        );
+        assert!(select.select_fallback && select.commands.is_empty());
     }
-    // The active robot's Ctrl click on the GI fires.
-    let fire = attack_branch_orders(
-        &sim,
-        rules,
-        &[robot],
-        TargetKind::Entity(gi),
-        true,
-        OrderMode::Move,
-        &registry,
-    );
-    assert!(!fire.commands.is_empty());
-    sim.entities_mut_for_test()
-        .get_mut(robot)
-        .unwrap()
-        .deactivated
-        .set_for_test(true);
-    assert_eq!(action(&sim, gi, false), AttackAction::None);
-    assert_eq!(action(&sim, tank, false), AttackAction::None);
-    assert_eq!(action(&sim, gi, true), AttackAction::Move);
-    assert_eq!(action(&sim, tank, true), AttackAction::Select);
-    assert_eq!(
-        enemy_cursor(&sim, gi, OrderModifier::Normal),
-        Some(CursorId::Default)
-    );
-    // Ares hook 0x73FD5A (1004CF50): a Deactivated Unit answers
-    // GetDeactivatedAction alone, 0 over another House's object.
-    let (gi_forced, tank_forced) = if cfg!(feature = "ares") {
-        (CursorId::Default, CursorId::Default)
-    } else {
-        (CursorId::Move, CursorId::Select)
-    };
-    assert_eq!(
-        enemy_cursor(&sim, gi, OrderModifier::ForceFire),
-        Some(gi_forced)
-    );
-    assert_eq!(
-        enemy_cursor(&sim, tank, OrderModifier::ForceFire),
-        Some(tank_forced)
-    );
-    let crush = attack_branch_orders(
-        &sim,
-        rules,
-        &[robot],
-        TargetKind::Entity(gi),
-        true,
-        OrderMode::Move,
-        &registry,
-    );
-    assert!(crush.consumed && !crush.select_fallback);
-    assert!(crush.commands.is_empty(), "{:?}", crush.commands);
-    let select = attack_branch_orders(
-        &sim,
-        rules,
-        &[robot],
-        TargetKind::Entity(tank),
-        true,
-        OrderMode::Move,
-        &registry,
-    );
-    assert!(select.select_fallback && select.commands.is_empty());
 }
 
 /// Ares' Deactivated rungs (hooks 0x73FD5A, 0x7404B9, 0x4D74EC, 0x4D7D58;
 /// 1004CF50, 1004CF30, 1004CBC0, 1004CBA0): an offline Robot Tank answers
 /// Select over an own tank and 0 over a Cell, and no click order reaches it.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_deactivated_robot_tank_only_selects_and_takes_no_click() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some((retail, registry)) = retail() else {
         return;
     };
@@ -280,16 +283,16 @@ fn ares_deactivated_robot_tank_only_selects_and_takes_no_click() {
         sim.cell_move_action(viewer, robot, (18, 18), query, rules, Some(&registry)),
         Ok(crate::sim::world::MoveAction::None)
     );
-    assert!(sim.click_order_receivers(&[robot, own], crate::rules::ARES_BUILD) == [own]);
+    assert!(sim.click_order_receivers(&[robot, own], true) == [own]);
 }
 
 /// SelectBestObjectForAction (0x005353D0) ranks an EMPed object 1 (vt+0x37C),
 /// below an unarmed one. A Deactivated cursor owner decides the whole
 /// release (DetermineAction 0x00692634): 0 over a Cell does nothing and Select
 /// over an own tank selects it, so the engineer beside it is sent nowhere.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_deactivated_cursor_owner_decides_the_release_for_the_selection() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some((retail, _registry)) = retail() else {
         return;
     };

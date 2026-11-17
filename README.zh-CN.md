@@ -1,11 +1,14 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20K 横幅" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.sv.md" lang="sv">Svenska</a> · <strong>简体中文</strong> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
+  <a href="README.vi.md" lang="vi">Tiếng Việt</a> · <a href="README.sv.md" lang="sv">Svenska</a> · <strong>简体中文</strong> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
-  <a href="https://discord.gg/kmjRUn5m5F"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&amp;logo=discord&amp;logoColor=white" alt="加入 Discord" height="23" align="middle"></a>
-  <img src="https://img.shields.io/badge/QQ-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ 群" height="23" align="middle">
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="最近一次手动运行的 Linux 库测试"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Linux 库测试" height="23" align="middle"></a>
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="最近一次手动运行的 Windows 库测试"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="Windows 库测试" height="23" align="middle"></a>
+  <a href="https://discord.gg/kmjRUn5m5F"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscord.com%2Fapi%2Fv10%2Finvites%2FkmjRUn5m5F%3Fwith_counts%3Dtrue&amp;query=%24.approximate_presence_count&amp;suffix=%20online&amp;label=VERA20K%20Discord&amp;color=5865F2&amp;style=flat&amp;logo=discord&amp;logoColor=white" alt="加入 Discord" height="23" align="middle"></a>
+  <img src="https://img.shields.io/badge/VERA20K_QQ-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ 群 (VERA20K)" height="23" align="middle">
+  <img src="https://img.shields.io/badge/ra20k.com_QQ-319832195-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ 群 (ra20k.com)" height="23" align="middle">
 </p>
 
 # VERA20K
@@ -19,15 +22,8 @@ VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 ## 下载与游玩
 
 1. 从 Steam 或 EA app 安装《红色警戒2：尤里的复仇》。
-2. 用下面的按钮下载适合你系统的 VERA20K。
+2. 从[发布页面](https://github.com/YuriPlanet/vera20k/releases)下载适合你系统的 VERA20K。
 3. 打开下载的文件。它会找到你的游戏，并把 VERA20K 安装到单独的文件夹。
-
-<p dir="ltr">
-  <a href="https://vera20k.org/download/windows"><img src="https://img.shields.io/badge/Windows-1E4976?style=for-the-badge&amp;logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTMgM2g4LjV2OC41SDN6TTEyLjUgM0gyMXY4LjVoLTguNXpNMyAxMi41aDguNVYyMUgzek0xMi41IDEyLjVIMjFWMjFoLTguNXoiLz48L3N2Zz4%3D" alt="下载 Windows 版" height="28"></a>
-  <a href="https://vera20k.org/download/macos"><img src="https://img.shields.io/badge/macOS_%C2%B7_Apple_Silicon-000000?style=for-the-badge&amp;logo=apple&amp;logoColor=white" alt="下载 macOS 版（Apple Silicon）" height="28"></a>
-  <a href="https://vera20k.org/download/macos-x64"><img src="https://img.shields.io/badge/macOS_%C2%B7_Intel-000000?style=for-the-badge&amp;logo=apple&amp;logoColor=white" alt="下载 macOS 版（Intel）" height="28"></a>
-  <a href="https://vera20k.org/download/linux"><img src="https://img.shields.io/badge/Linux-000000?style=for-the-badge&amp;logo=linux&amp;logoColor=white" alt="下载 Linux 版" height="28"></a>
-</p>
 
 遇到问题？请看[帮助页面](https://vera20k.org/zh/help)。
 
@@ -68,13 +64,6 @@ VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 
 ## 编译与运行
 
-<p dir="ltr">
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="最近一次手动运行的 macOS 库测试"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="macOS 库测试" height="23" align="middle"></a>
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="最近一次手动运行的 Linux 库测试"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Linux 库测试" height="23" align="middle"></a>
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="最近一次手动运行的 Windows 库测试"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="Windows 库测试" height="23" align="middle"></a>
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml?query=branch%3Amain" title="最近一次手动运行的 WebAssembly 构建"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml/badge.svg?branch=main" alt="WebAssembly 构建" height="23" align="middle"></a>
-</p>
-
 你需要：
 
 - **Rust 和 Git：** 通过 rustup 安装的 [Rust](https://rustup.rs/) 1.97 或更高版本，以及
@@ -110,7 +99,7 @@ VERA20K 的开发者都是你们的朋友。我们希望把庞大的中国红警
 只能通过以下方式之一开启：
 
 - **VERA 玩家选项**，位于 **Options**，保存在 `VERA.INI` 的 `[VERA]` 节下。
-- **构建选项**，例如用 `--features ares` 编译受支持的 [Ares 扩展](docs/ares.md)。
+- **构建选项**，例如用 `--features phobos` 编译受支持的 [Phobos 扩展](docs/phobos.md)。
 - **INI 键**，由模组或地图设置。
 
 声音、画面和操作设置保存在 `VERA.INI` 中。游戏规则由大厅设置、模组或地图决定。
@@ -139,6 +128,7 @@ Command & Conquer 和 Red Alert 是 Electronic Arts Inc. 的商标，截图和�
 VERA20K 与 Electronic Arts 无隶属关系，也未获其认可。
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **在分享、出售或复刻（fork）VERA20K 之前，请先阅读[法律声明](LEGAL.md)。**
 

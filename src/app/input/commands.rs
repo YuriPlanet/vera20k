@@ -8,7 +8,7 @@ use crate::map::entities::EntityCategory;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::intern::InternedId;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "ground_command_native_tests.rs"]
 mod ground_command_native_tests;
 
@@ -176,6 +176,11 @@ pub(crate) fn super_weapon_pointer_target_at_cursor_is_valid(
     )
 }
 
+// RESIDUAL (no retail map starts with a building owned by a PlayerControl
+// house other than the player's): DetermineAction's repair
+// (`0x006927EE`) and sell (`0x006929E5`) tests ask `HouseClass::IsHumanPlayer @
+// 0x0050B6F0`, which in a campaign also passes for a PlayerControl house; VERA
+// takes only the local player's own buildings.
 fn own_building_id(state: &AppState, stable_id: u64) -> Option<u64> {
     let sim = state
         .match_state
@@ -459,6 +464,9 @@ pub(crate) fn place_ready_building_at_cell(
                 // LeftUp4ABA16 adds the same type-derived offset as preview,
                 // using this fresh clicked Cell rather than the last draw.
                 let origin = object.foundation.placement_origin_at_cursor(cursor_cell);
+                // RESIDUAL (dormant, no retail type sets `PowersUpBuilding=`): LeftUp
+                // `0x004ABA64..0x004ABA9D` also sets proximity when the clicked Building
+                // takes this upgrade (`0x00452670`); this recompute leaves that out.
                 let in_build_area = crate::sim::production::is_within_build_area(
                     sim, rules, &owner, object, origin.0, origin.1,
                 );
@@ -1183,7 +1191,7 @@ pub(super) fn queue_house_cheer_in_sim(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 mod tests {
     use super::{
         EXECUTE_MARGIN, executed_by, schedule_command_in_sim, schedule_stress_attack_moves,
@@ -2244,14 +2252,14 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "local_owner_tests.rs"]
 mod local_owner_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "paid_superweapon_tests.rs"]
 mod paid_superweapon_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "force_shield_target_tests.rs"]
 mod force_shield_target_tests;

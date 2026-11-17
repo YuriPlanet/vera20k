@@ -324,7 +324,7 @@ pub(crate) fn frame_pass(state: &mut AppState) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::{RotationGroup, next_primary};
     use crate::rules::object_type::FactoryType;

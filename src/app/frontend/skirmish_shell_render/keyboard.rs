@@ -504,7 +504,7 @@ pub(crate) fn render_keyboard_shell(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
 

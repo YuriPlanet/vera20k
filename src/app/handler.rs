@@ -191,6 +191,15 @@ impl App {
         }
     }
 
+    /// Present by the Options page's VSync box (`[VERA] VSync=`). A sealed
+    /// capture keeps presenting in step with the display, as its profile
+    /// records.
+    pub(crate) fn sync_present_mode(state: &mut AppState) {
+        let vsync =
+            state.persistence.options_profile.vsync || state.platform.capture_client_size.is_some();
+        state.renderer.gpu.set_vsync(vsync);
+    }
+
     /// Where a match frame sits in the window at the Options choices: the
     /// geometry the zoom pass takes, and the battle frame the Options page
     /// offers sidebar sizes for.
@@ -567,6 +576,9 @@ impl ApplicationHandler for App {
                 .map(|request| request.retail_dir.as_path()),
             self.spawn_request.is_some() && Self::spawn_hidden_window_requested(),
             self.mod_switch.as_ref(),
+            self.spawn_request
+                .as_ref()
+                .and_then(|request| request.ares_setting),
         );
         let result = if capture_dimensions.is_some() {
             result.and_then(super::initialize::InitializationStep::finish_synchronously)
@@ -744,17 +756,35 @@ impl ApplicationHandler for App {
         let Some(state) = &mut self.state else { return };
         state.sync_cursor_space();
         // Playback has presentation-only input. Exit is local and never
-        // schedules EventClass EXIT or changes the recorded simulation.
-        if state.match_state.match_diagnostics.is_replay_playback() {
+        // schedules EventClass EXIT or changes the recorded simulation. A
+        // watcher's is presentation-only too: it gives no orders, Tab follows
+        // the next player and Escape leaves the match.
+        let replay = state.match_state.match_diagnostics.is_replay_playback();
+        let watching = !replay
+            && state.frontend.screen == GameScreen::InGame
+            && crate::app::match_runtime::watching::active(state);
+        if replay || watching {
             match &event {
-                WindowEvent::CloseRequested => {
+                WindowEvent::CloseRequested if replay => {
                     event_loop.exit();
                     return;
                 }
                 WindowEvent::KeyboardInput { event, .. } => {
                     if let PhysicalKey::Code(code) = event.physical_key {
-                        if code == KeyCode::Escape && event.state.is_pressed() {
-                            event_loop.exit();
+                        let pressed = event.state.is_pressed();
+                        if replay && code == KeyCode::Escape {
+                            if pressed {
+                                event_loop.exit();
+                            }
+                        } else if watching
+                            && crate::app::match_runtime::watching::key(
+                                state,
+                                code,
+                                pressed,
+                                event.repeat,
+                            )
+                        {
+                            // Escape and Tab are the watcher's own.
                         } else if matches!(
                             code,
                             KeyCode::ArrowLeft
@@ -762,7 +792,7 @@ impl ApplicationHandler for App {
                                 | KeyCode::ArrowUp
                                 | KeyCode::ArrowDown
                         ) {
-                            if event.state.is_pressed() {
+                            if pressed {
                                 state.match_state.input.keys_held.insert(code);
                             } else {
                                 state.match_state.input.keys_held.remove(&code);
@@ -785,7 +815,9 @@ impl ApplicationHandler for App {
                     crate::app::input::camera::apply_zoom(state, lines);
                     return;
                 }
-                WindowEvent::Resized(_)
+                // A watcher's window closes as a player's does.
+                WindowEvent::CloseRequested
+                | WindowEvent::Resized(_)
                 | WindowEvent::ScaleFactorChanged { .. }
                 | WindowEvent::Focused(_)
                 | WindowEvent::Occluded(_)
@@ -1339,6 +1371,24 @@ impl ApplicationHandler for App {
                     }
                     return;
                 }
+                // VERA's Game Options box takes the keys over the page;
+                // Escape and Enter close it, as they close the room's.
+                if screen == ScreenPage::Skirmish
+                    && state.frontend.skirmish_shell_state.game_options.is_some()
+                {
+                    if event.state.is_pressed()
+                        && !event.repeat
+                        && matches!(
+                            event.physical_key,
+                            PhysicalKey::Code(
+                                KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter
+                            )
+                        )
+                    {
+                        Self::close_skirmish_game_options(state);
+                    }
+                    return;
+                }
                 if let PhysicalKey::Code(code) = event.physical_key {
                     // ESC always reaches the handler when in-game (even when paused)
                     // so the player can toggle pause regardless of diagnostic GUI focus.
@@ -1884,6 +1934,17 @@ impl ApplicationHandler for App {
                 {
                     return;
                 }
+                if screen == ScreenPage::NetworkSetup
+                    && state
+                        .frontend
+                        .skirmish_shell_state
+                        .choose_map_modal
+                        .is_none()
+                    && crate::app::input::multiplayer_setup::wheel(state, lines)
+                {
+                    state.platform.window.request_redraw();
+                    return;
+                }
                 if screen == ScreenPage::Mods {
                     Self::handle_mods_wheel(state, lines);
                     return;
@@ -1980,6 +2041,10 @@ impl ApplicationHandler for App {
             // final admission. Ordinary input starts only with the full state.
             return;
         }
+        // For the performance panel's Ticks row.
+        if let Some(state) = self.state.as_mut() {
+            state.platform.frame_pacer.count_loop_turn();
+        }
         // A tick on the simulation thread has ended (its wake brought this
         // call): finish it, replay the window events it held, then service
         // the match at once, so the next tick leaves without waiting for a
@@ -2050,6 +2115,7 @@ impl ApplicationHandler for App {
                 crate::app::input::sound::poll_scroll_repeat(state),
                 Self::poll_movie_list_scroll(state),
                 Self::poll_mods_scroll(state),
+                Self::poll_mod_files(state),
                 Self::poll_choose_map_scroll(state),
                 Self::poll_skirmish_opponent_scroll(state),
                 // Captures replay sealed input; they never read the library.
@@ -2214,7 +2280,7 @@ impl ApplicationHandler for App {
                 event_loop.set_control_flow(if deferred {
                     ControlFlow::Poll
                 } else {
-                    ControlFlow::WaitUntil(Instant::now() + std::time::Duration::from_millis(8))
+                    ControlFlow::WaitUntil(Self::match_service_wake(state, Instant::now()))
                 });
             } else if state.platform.frame_pacer.render_deferred() {
                 event_loop.set_control_flow(ControlFlow::Poll);
@@ -2246,9 +2312,10 @@ impl ApplicationHandler for App {
                     {
                         return;
                     }
-                    event_loop.set_control_flow(ControlFlow::WaitUntil(
-                        Instant::now() + crate::app::match_runtime::frame_pacer::SERVICE_WAKE,
-                    ));
+                    event_loop.set_control_flow(ControlFlow::WaitUntil(Self::match_service_wake(
+                        state,
+                        Instant::now(),
+                    )));
                 } else {
                     // Nothing on screen to keep fresh: draw no frames until a
                     // window event (including the un-occlude edge). The shell's
@@ -2290,7 +2357,10 @@ impl ApplicationHandler for App {
                             );
                             state.platform.window.request_redraw();
                         } else {
-                            let wake = state.platform.redraw_gate.probe_wake(now);
+                            // The next frame's due time wakes the loop too,
+                            // so its tick and picture come on time.
+                            let frame_due = Self::next_local_frame_due(state, now);
+                            let wake = state.platform.redraw_gate.probe_wake(now, frame_due);
                             event_loop.set_control_flow(ControlFlow::WaitUntil(
                                 shell_scroll_wake.map_or(wake, |service| service.min(wake)),
                             ));
@@ -2322,7 +2392,7 @@ impl ApplicationHandler for App {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

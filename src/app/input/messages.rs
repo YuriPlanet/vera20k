@@ -43,23 +43,27 @@ pub(crate) fn post_trigger_message(state: &mut AppState, csf_key: &str) {
     // existing House owner supplies that side; a later scenario-side change
     // independent of the current House remains a separate retained-field gap.
     // Ares `TActionClass_Execute_MessageColor @ 0x1002FA80` reads the saved
-    // Scenario.PlayerSideIndex instead.
-    #[cfg(feature = "ares")]
-    let side = runtime.simulation.session().scenario_side();
-    #[cfg(not(feature = "ares"))]
-    let side = runtime
-        .simulation
-        .session()
-        .current_house()
-        .and_then(|owner| runtime.simulation.houses().get(&owner))
-        .map_or(0, |house| i32::from(house.side_index()));
+    // Scenario.PlayerSideIndex instead. Its `[Side] MessageTextColor=` lives
+    // in the SideExt only Rules read the Ares way hold.
     let rules = &runtime.resources.rules;
-    #[cfg(feature = "ares")]
-    let rgb = ares_message_text_rgb(rules, side).unwrap_or_else(|| {
+    let ares = rules.ares_form();
+    let side = if ares {
+        runtime.simulation.session().scenario_side()
+    } else {
+        runtime
+            .simulation
+            .session()
+            .current_house()
+            .and_then(|owner| runtime.simulation.houses().get(&owner))
+            .map_or(0, |house| i32::from(house.side_index()))
+    };
+    let rgb = if ares {
+        ares_message_text_rgb(rules, side).unwrap_or_else(|| {
+            trigger_message_rgb(&rules.color_schemes, side, rules.skirmish_colors())
+        })
+    } else {
         trigger_message_rgb(&rules.color_schemes, side, rules.skirmish_colors())
-    });
-    #[cfg(not(feature = "ares"))]
-    let rgb = trigger_message_rgb(&rules.color_schemes, side, rules.skirmish_colors());
+    };
     let timeout = message_delay_timeout_ms(rules.general.message_delay_minutes);
     post_localized_message(
         state,
@@ -89,7 +93,6 @@ fn message_delay_buckets(delay: crate::util::native_x87::NativeF64Bits) -> i32 {
 /// Ares `[Side] MessageTextColor=`: the stored runtime ColorScheme index (two
 /// schemes per `[Colors]` entry) resolves to that entry. `-1`/an
 /// out-of-range entry leaves the stock side-priority path unchanged.
-#[cfg(feature = "ares")]
 fn ares_message_text_rgb(rules: &crate::rules::ruleset::RuleSet, side: i32) -> Option<[f32; 3]> {
     let index = rules.side_message_text_color_index(side)?;
     if index < 0 {
@@ -730,6 +733,10 @@ fn post_named_house_line(
         ),
         HouseLineColor::Country => {
             // HouseType+0xC0 holds 2*entry+1 (ReadColor 0x474A90).
+            // RESIDUAL (kept by the maintainer, 2026-11-15): a multiplayer
+            // SetCreditsAndColor overwrites it with the slot's raw colour
+            // priority (`0x004FCE17`), so gamemd colours these lines with that
+            // scheme of the country's last slot house; VERA keeps Color=.
             let scheme = country.map_or(0, |country| rules.country_color_scheme(&country));
             country_message_rgb(scheme, &rules.color_schemes)
         }
@@ -895,9 +902,10 @@ fn post_grey_row(state: &mut AppState, text: &str, localize: bool, silent: bool)
     );
 }
 
-/// A relay speed change (`network_match::post_speed_changes`). gamemd has
-/// no such line, so `text` is VERA's own, not a CSF key.
-pub(crate) fn post_match_speed(state: &mut AppState, text: &str) {
+/// A change to the relay's shared timeline (`network_match`): a speed
+/// change, or another player's shared pause or resume. gamemd has no such
+/// lines, so `text` is VERA's own, not a CSF key.
+pub(crate) fn post_relay_notice(state: &mut AppState, text: &str) {
     post_grey_row(state, text, false, false);
 }
 
@@ -924,13 +932,24 @@ pub(crate) fn post_layout_problem(state: &mut AppState) {
     post_grey_row(state, &text, false, false);
 }
 
+/// What the layout edit mode tells the player (`input::layout_edit`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LayoutEditLine {
+    /// It is on, and how to use it.
+    On,
+    /// Save ended it, and what they moved is kept.
+    Saved,
+    /// It ended without saving.
+    Cancelled,
+}
+
 /// Tell the player the layout edit mode is on and how to use it, or that it
-/// is off and what they moved is kept.
-pub(crate) fn post_layout_edit(state: &mut AppState, on: bool) {
-    let key = if on {
-        "VERA:LayoutEditHint"
-    } else {
-        "VERA:LayoutEditDone"
+/// is off and whether what they moved is kept.
+pub(crate) fn post_layout_edit(state: &mut AppState, line: LayoutEditLine) {
+    let key = match line {
+        LayoutEditLine::On => "VERA:LayoutEditHint",
+        LayoutEditLine::Saved => "VERA:LayoutEditDone",
+        LayoutEditLine::Cancelled => "VERA:LayoutEditCancelled",
     };
     post_grey_row(state, &crate::i18n::tr(key), false, false);
 }
@@ -1167,8 +1186,10 @@ fn message_instances(
     let mut texts = Vec::new();
     // Draw 0x005D49A0 paints the edit label first, whole: its reveal flag
     // is never set and the chat cursor character 0 draws no caret.
+    // A hidden edit (the beacon label's) draws nothing, nor its composition.
     let edit = list
         .edit_line()
+        .filter(|edit| !edit.hidden)
         .map(|edit| crate::ui::messages::Message::edit_row(&edit));
     // The open composition follows the typed text (`app::input::ime`).
     let composition = edit.as_ref().zip(composition).map(|(row, units)| {
@@ -1221,7 +1242,7 @@ fn message_instances(
     (fills, texts)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
 
@@ -1254,9 +1275,9 @@ mod tests {
         assert_eq!(movie_subtitle_post("zero", 0, rgb).timeout_ms, Some(0));
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_refusal_post_uses_localized_message_owner_colour_and_expiry() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::ini_parser::IniFile;
         use crate::rules::native_processing::RulesLayerStack;
         use crate::rules::superweapon_type::AresSuperWeaponMessage;
@@ -1793,13 +1814,14 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_app_input_d_z))]
 mod ares_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
 
     #[test]
     fn fourth_side_message_text_color_resolves_to_its_colors_entry() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let mut colors = String::from("[Colors]\n");
         for index in 0..11 {
             colors.push_str(&format!("C{index}={},{},{}\n", index, index, index));

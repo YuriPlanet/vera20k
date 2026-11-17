@@ -38,7 +38,7 @@ use crate::util::native_x87::{NativeF64Bits, X87Chop53, X87Ordering};
 
 mod actions;
 mod follow_friendlies;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod follow_friendlies_tests;
 mod membership;
 mod orders;
@@ -47,7 +47,7 @@ mod reinforcements;
 mod super_actions;
 mod team_ai;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod ground_strike_tests;
 
 /// One resolved ScriptType action record.
@@ -470,11 +470,20 @@ pub struct TeamScriptMember {
     pub member_type: TeamMemberTypeIdentity,
 }
 
-/// The first unported action a team's script reached, kept for diagnostics.
-/// The team stays on it, running everything else `TeamClass::AI` does.
+/// The first action a team's script reached that VERA cannot run, kept for
+/// diagnostics. The team stays on it, running everything else
+/// `TeamClass::AI` does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TeamScriptRefusal {
-    UnsupportedAction { action_id: i32 },
+    UnsupportedAction {
+        action_id: i32,
+    },
+    /// An argument naming no type VERA can use, past the end of the native
+    /// array or without a definition.
+    InvalidArgument {
+        action_id: i32,
+        argument: i32,
+    },
 }
 
 /// One entry of a team's member list (`TeamClass+0x54`, linked through
@@ -1709,26 +1718,26 @@ pub(crate) fn join_team_for_test(
     teams.create_team_from_type(owner, team_type_id, &candidates, 0)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod firesale_retail_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod group_recruitment_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod oracle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod packed_cell_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod path_threat_input_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod recruit_candidates_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod recruit_oracle_tests;
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_t_z, tests_sim_trigger)))]
 pub(crate) mod reinforcements_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod type_conversion_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests {
     /// The bits beside the member map answer "none" only for an id the map
     /// does not hold: a removal leaves the bit, a load rebuilds the bits,

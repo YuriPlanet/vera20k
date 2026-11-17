@@ -603,6 +603,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "house_threat_tests.rs"]
 mod tests;

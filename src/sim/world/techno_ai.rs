@@ -2791,7 +2791,7 @@ fn clear_passive_target_off_mission(sim: &mut Simulation, id: u64, rules: &RuleS
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 mod tests {
     use super::*;
     use crate::map::tube_facts::TubeId;
@@ -6063,7 +6063,7 @@ ConditionRedSparkingProbability={red_prob}\nConditionYellowSparkingProbability={
     }
 
     /// Insert a unit whose type resolves to the Cyborg infantry "CYB". The entity
-    /// category is `Unit` (the only arm hosting `techno_common_post` today); the
+    /// category is `Unit` (every techno arm runs `techno_common_post`); the
     /// gate keys off the TYPE's `emits_damage_spark`, so this exercises the draw
     /// path. Live CYB Strength100 and the supplied actual HP set the health band.
     fn insert_cyborg_unit(sim: &mut Simulation, id: u64, current: i32) {
@@ -6352,45 +6352,45 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai_selfheal_tests.rs"]
 mod selfheal_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai_selfheal_oracle_tests.rs"]
 mod selfheal_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai/signed_health_tests.rs"]
 mod signed_health_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai/ares_self_heal_tests.rs"]
 mod ares_self_heal_tests;
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "techno_ai/bridge_target_layer_tests.rs"]
 mod bridge_target_layer_tests;
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "techno_ai/bridge_engineer_entry_tests.rs"]
 mod bridge_engineer_entry_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai/bridge_low_repair_tests.rs"]
 mod bridge_low_repair_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai/mirage_disguise_tests.rs"]
 mod mirage_disguise_tests;
 
 #[cfg(any(test, feature = "test-support"))]
 use super::bridge_test_evidence;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai/promotion_sound_tests.rs"]
 mod promotion_sound_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai/surface_conversion_tests.rs"]
 mod surface_conversion_tests;

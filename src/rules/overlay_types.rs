@@ -322,49 +322,37 @@ impl OverlayTypeRegistry {
     pub fn from_processed_rules(
         processed: &crate::rules::native_processing::ProcessedRulesLayers,
     ) -> Self {
-        let mut registry = Self::from_projected_ini(processed.ini(), processed.terrain_rules());
-        for (index, (_, damage_levels, explodes, cell_anim, image, crush_sound)) in
-            processed.overlay_type_states().enumerate()
+        let states = processed.overlay_type_states().collect::<Vec<_>>();
+        let names = states.iter().map(|state| state.0.to_owned()).collect();
+        let mut registry =
+            Self::from_projected_ini(processed.ini(), processed.terrain_rules(), names);
+        for (flags, (_, damage_levels, explodes, cell_anim, image, crush_sound)) in
+            registry.flags.iter_mut().zip(states)
         {
-            registry.flags[index].damage_levels = damage_levels;
-            registry.flags[index].explodes = explodes;
-            registry.flags[index].cell_anim = cell_anim.map(str::to_ascii_uppercase);
-            registry.flags[index].crush_sound = crush_sound.map(str::to_owned);
+            flags.damage_levels = damage_levels;
+            flags.explodes = explodes;
+            flags.cell_anim = cell_anim.map(str::to_ascii_uppercase);
+            flags.crush_sound = crush_sound.map(str::to_owned);
             registry.images.push(image.clone());
         }
-        assert_eq!(registry.names.len(), registry.images.len());
         registry
     }
 
-    fn from_projected_ini(ini: &IniFile, terrain_rules: &TerrainRules) -> Self {
+    /// `names` are the processed Overlay family in allocation order, the
+    /// array a map's overlay byte indexes. The raw `[OverlayTypes]` entries
+    /// are not that list: a repeated name, or a map pass, allocates
+    /// differently from the merged text.
+    fn from_projected_ini(ini: &IniFile, terrain_rules: &TerrainRules, names: Vec<String>) -> Self {
         let cliff_back_impassability =
             crate::rules::ruleset::read_cliff_back_impassability(ini.section("General"));
-        let section = match ini.section("OverlayTypes") {
-            Some(s) => s,
-            None => {
-                log::warn!("[OverlayTypes] section not found in rules.ini");
-                return OverlayTypeRegistry {
-                    cliff_back_impassability,
-                    ..Self::empty()
-                };
-            }
-        };
-
-        let names: Vec<String> = section
-            .registry_ids()
-            .into_iter()
-            .map(str::to_string)
-            .collect();
         if names.is_empty() {
-            log::warn!("[OverlayTypes] present but empty");
+            log::warn!("[OverlayTypes] lists no overlay types");
             return OverlayTypeRegistry {
                 cliff_back_impassability,
                 ..Self::empty()
             };
         }
 
-        // Native registry allocation follows declaration order; numeric key
-        // text is not a sorting authority.
         // Land is a retained global table, not a re-read of merged INI keys.
         // RecalcAttributes47D2B0 and RecalcZoneType483C80 use that same table.
         let clear_semantics = terrain_rules.semantics_for_land_type(LandType::Clear.as_index());
@@ -800,9 +788,34 @@ pub(crate) fn retained_overlay_land(flags: &OverlayTypeFlags, slope_type: u8) ->
     (uses_early_branch || flags.tiberium).then_some(flags.land)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_repeated_overlay_name_projects_the_processed_registry() {
+        // Repeating a name, here the list section's own, allocates one type.
+        let registry = OverlayTypeRegistry::from_ini(
+            &IniFile::from_str(
+                "[OverlayTypes]\n0=GASAND\n1=OverlayTypes\n2=OverlayTypes\n3=GASAND\n4=GAWALL\n",
+            ),
+            None,
+        );
+        assert_eq!(registry.len(), 3);
+        assert_eq!(registry.id_for_name("GAWALL"), Some(2));
+    }
+
+    #[test]
+    fn retail_map_overlay_list_naming_itself_adds_one_type() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(
+            &IniFile::from_str("[OverlayTypes]\n4=OverlayTypes\n6=OverlayTypes\n"),
+        ) else {
+            return;
+        };
+        let registry = retail.rules.overlay_registry();
+        let added = registry.id_for_name("OverlayTypes").unwrap();
+        assert_eq!(usize::from(added) + 1, registry.len());
+    }
 
     #[test]
     fn retail_wall_image_override_retains_damage_stages_through_a_hit() {

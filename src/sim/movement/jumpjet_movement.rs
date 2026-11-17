@@ -820,7 +820,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::ResolvedTerrainGrid;

@@ -57,7 +57,8 @@ pub(crate) fn requested_state(
         DiplomacyRequest::SidebarButton
             if !mode.is_nonzero()
                 || (mode.is_network()
-                    && mode_class.is_some_and(MpModeClass::restates_mission_for_diplomacy)) =>
+                    && mode_class
+                        .is_some_and(|class| class.policy().restates_mission_for_diplomacy)) =>
         {
             RequestedState::MissionBriefing
         }
@@ -578,6 +579,6 @@ fn toggle_taunts_box(state: &mut AppState) {
     App::play_shell_ui_sound_by_id(state, sound.as_deref());
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "diplomacy_tests.rs"]
 mod tests;

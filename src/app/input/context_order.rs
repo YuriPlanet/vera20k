@@ -4090,8 +4090,8 @@ fn self_action(
         });
     }
     // Ares 3.0 100173A0 (hook 0x44731C): a tunnel entrance with its
-    // owner's network loaded offers the unload action.
-    #[cfg(feature = "ares")]
+    // owner's network loaded offers the unload action. Only the Ares-form sim
+    // fills a network, so this runs in every game.
     if sim.ares_tunnel_offers_unload(target.stable_id, rules) {
         return Some(Command::UnloadPassengers {
             transport_id: target.stable_id,
@@ -5354,11 +5354,11 @@ fn selected_rally_producer_ids(
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "building_redeploy_tests.rs"]
 mod building_redeploy_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 mod tests {
     use super::*;
     use crate::sim::combat::Health;
@@ -8992,55 +8992,62 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_selection_tests.rs"]
 mod selection_dispatch_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_move_flash_tests.rs"]
 mod move_flash_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_retail_bridge_tests.rs"]
 mod retail_bridge_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_retail_engineer_tests.rs"]
 mod retail_engineer_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_retail_garrison_tests.rs"]
 mod retail_garrison_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_retail_entry_tests.rs"]
 mod retail_entry_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "disguise_cursor_tests.rs"]
 mod disguise_cursor_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_retail_terrain_tests.rs"]
 mod retail_terrain_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_retail_inactive_unit_tests.rs"]
 mod retail_inactive_unit_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_retail_self_deploy_tests.rs"]
 mod retail_self_deploy_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "building_bunker_self_click_tests.rs"]
 mod building_bunker_self_click_tests;
 
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(
+        tests_app_input_a_c,
+        tests_app_presentation_instances,
+        tests_app_presentation_render
+    )
+))]
 #[path = "context_order_retail_ifv_repair_tests.rs"]
 pub(in crate::app) mod retail_ifv_repair_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 mod stationary_attack_dispatch_tests {
     use super::*;
     use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -9185,22 +9192,22 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "allied_object_action_tests.rs"]
 mod allied_object_action_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_cursor_contract_tests.rs"]
 mod cursor_contract_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "engineer_special_entry_tests.rs"]
 mod engineer_special_entry_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "foot_unarmed_ctrl_tests.rs"]
 mod foot_unarmed_ctrl_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "infantry_healer_cell_tests.rs"]
 mod infantry_healer_cell_tests;

@@ -177,7 +177,7 @@ impl CrateRules {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::*;
     use crate::rules::powerups::{POWERUP_HEAL_BASE, POWERUP_MONEY, POWERUP_VETERAN};

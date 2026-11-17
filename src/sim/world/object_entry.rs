@@ -25,19 +25,19 @@ mod entry_facts;
 pub(crate) use entry_facts::EntryFacts;
 use entry_facts::{BlockerFacts, CellFacts, PlainCell};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "unit_entry_tests.rs"]
 mod unit_entry_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "infantry_entry_priority_tests.rs"]
 mod infantry_entry_priority_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "wall_entry_tests.rs"]
 mod wall_entry_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "plain_entry_tests.rs"]
 mod plain_entry_tests;
 
@@ -1919,7 +1919,7 @@ fn building_impassable(
     Ok(!admitted)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod tests {
     use super::*;
 

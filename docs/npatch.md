@@ -8,7 +8,7 @@ cargo run --release --bin vera20k --features npatch
 ```
 
 The feature compiles to `rules::NPATCH_ENABLED`. A build without it ignores the extension keys
-and keeps stock behavior, like a build without `ares` or `phobos`.
+and keeps stock behavior, like a build without `phobos`.
 
 `[General] VehicleParachute=` chooses the canopy for airdropped non-infantry, falling back to
 `Parachute=` when unset. Infantry keeps `Parachute=`. The name uses the retained animation
@@ -81,13 +81,15 @@ source for the `0xC3xxxx` addresses cited above.
 
 ## Cross-extension compatibility
 
-The three capabilities — `ares`, `phobos`, `npatch` — are orthogonal and mixable:
+Ares, Phobos and NPatch are orthogonal and mixable. Ares is in every build and a game's data
+switches it on ([Ares](ares.md)); the other two are build features:
 
 ```sh
-cargo run --release --bin vera20k --features ares,phobos,npatch
+cargo run --release --bin vera20k --features phobos,npatch
 ```
 
-Every implemented feature must keep working when the other capabilities are compiled in. A chain
+Every implemented feature must keep working when Ares plays or the other capabilities are
+compiled in. A chain
 may depend on another **capability's own** state (for example a Phobos key that only a Phobos type
 reads), but it must not assume the other features are absent, and it must not re-own state another
 capability already owns. When two extensions touch the same native site, one of them wins by native

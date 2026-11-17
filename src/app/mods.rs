@@ -4,7 +4,8 @@
 //! mod is a subfolder of `Mods` in the settings folder (docs/modding.md), and
 //! the one in use reads as if its files had been copied on top of the game
 //! folder ([`AssetManager::with_mod`], `map::source::set_mod_dir`). With no
-//! mod in use nothing here changes what the game reads.
+//! mod in use the asset manager skips an installed `ares.mix`, so the
+//! original game does not depend on whether the installation also has Ares.
 //!
 //! This module decides which mod a launch uses: the `--mod <folder>` or
 //! `--no-mod` switch, else config.toml's `[paths] mod`. A choice that cannot
@@ -14,7 +15,7 @@
 //! The Mods page (`app::shell_mods`) shows what `Mods` holds ([`installed`])
 //! and writes that line for the next start ([`Mods::keep_choice`]); the game
 //! then starts again (`app::restart`). The pre-match check compares a mod's files
-//! ([`files_digest`]), so players start a match only with the same ones.
+//! (`app::mod_files`), so players start a match only with the same ones.
 //!
 //! A mod that stops start-up would leave the player no menu to leave it from.
 //! So a start with a mod writes the mod's name to `mod-start.txt` in the
@@ -112,6 +113,10 @@ pub(crate) struct Mods {
     /// Why the mod asked for is not in use, or did not load: shown once the
     /// main menu is at rest.
     notice: Option<String>,
+    /// What a start says of the retired VERARULES.INI
+    /// (`persistence::rules_profile`), shown after [`Self::notice`]. Never a
+    /// refusal: a launch by another program plays on.
+    rules_file_notice: Option<String>,
     /// `mod-start.txt`, held while this run's start with a mod has yet to
     /// pass or fail. Never held by a run the game starts for itself (a map
     /// picture, a capture), which leaves the record to the player's own run.
@@ -124,6 +129,8 @@ pub(crate) struct Mods {
     /// The Mods page while it is open (`App::open_mods_page`): what `Mods`
     /// held when it opened, and the row picked.
     pub(crate) page: Option<crate::ui::shell::list::ListBoxState<Listed>>,
+    /// The page's Check Files, from its button to its last box.
+    pub(crate) files_check: Option<crate::app::mod_files::PageCheck>,
 }
 
 impl Mods {
@@ -141,6 +148,12 @@ impl Mods {
                 ModSwitch::Use(active.folder.clone())
             })
             .args()
+    }
+
+    /// What the main menu says of the retired VERARULES.INI once it is at
+    /// rest, after the mod's own notice (`persistence::rules_profile`).
+    pub(crate) fn add_rules_file_notice(&mut self, text: String) {
+        self.rules_file_notice = Some(text);
     }
 
     /// Why the mod this launch asked for is not in use, while the player has
@@ -174,6 +187,24 @@ impl Mods {
         let row = page.rows.get(page.selected?)?;
         let settled = self.in_use(row) && self.kept_is(row);
         (row.needs.is_none() && !settled).then_some(row)
+    }
+
+    /// Whether the Mods page's selected row is a mod, which has files for
+    /// Check Files to read; the original game's row has none.
+    pub(crate) fn picked_is_mod(&self) -> bool {
+        self.page
+            .as_ref()
+            .and_then(|page| page.rows.get(page.selected?))
+            .is_some_and(|row| row.folder.is_some())
+    }
+
+    /// That mod: the name its row shows, and its folder while it is still
+    /// in `Mods`.
+    pub(crate) fn picked_mod(&self, paths: &PathsConfig) -> Option<(String, Option<PathBuf>)> {
+        let page = self.page.as_ref()?;
+        let row = page.rows.get(page.selected?)?;
+        let dir = find_folder(&paths.mods_dir(), row.folder.as_deref()?).map(|(_, dir)| dir);
+        Some((row.title().into_owned(), dir))
     }
 }
 
@@ -480,7 +511,7 @@ pub(crate) fn open_folder(paths: &PathsConfig) -> Result<(), PathBuf> {
 }
 
 /// A name that file managers and tools leave in folders, never a mod's own.
-fn left_by_a_system(name: &str) -> bool {
+pub(crate) fn left_by_a_system(name: &str) -> bool {
     name.starts_with('.')
         // `__MACOSX`: what a zip made on a Mac leaves when Windows unpacks it.
         || ["Thumbs.db", "desktop.ini", "__MACOSX"]
@@ -535,116 +566,6 @@ fn write_choice(config: &Path, paths: &PathsConfig, folder: Option<&str>) -> std
         config,
         set_paths_key(&text, "mod", folder.unwrap_or_default()),
     )
-}
-
-/// How deep below a mod's folder its files are compared: deeper than the game
-/// reads, and an end to a folder that links back into itself.
-const FILES_DEPTH: usize = 6;
-/// Files in a mod's folder itself that players need not share, by
-/// [`name_key`]: `mod.ini`, the mod's account of itself, and `veraui.ini`,
-/// which lays out the sidebar and only changes what a player sees
-/// (docs/interface-layout.md).
-const UNCOMPARED: [&str; 2] = ["MOD.INI", crate::ui::match_layout::FILE_NAME];
-/// The most files of one mod that are compared. A mod has a few thousand;
-/// folders that link into one another can list far more.
-const FILES_LIMIT: usize = 50_000;
-
-/// One digest of the files in a mod's folder, for the pre-match check
-/// (`ProcessAssets::multiplayer_rules_digest`): players start a match only
-/// with the same files. Each file counts by its path below the folder
-/// ([`name_key`]) and by what it holds. The folder's own name and the order
-/// the file system lists in do not count, nor do two files in the folder
-/// itself that no match reads ([`UNCOMPARED`]). Only what can be read as a
-/// file counts: a link to nothing, a pipe or a device is none of the mod's
-/// files.
-pub(crate) fn files_digest(dir: &Path) -> std::io::Result<[u8; 32]> {
-    let mut files = Vec::new();
-    collect_files(dir, "", FILES_DEPTH, &mut files)?;
-    let mut digests = files
-        .into_iter()
-        .filter(|(name, _)| !UNCOMPARED.contains(&name.as_str()))
-        .map(|(name, path)| Ok((name, file_digest(&path)?)))
-        .collect::<std::io::Result<Vec<_>>>()?;
-    digests.sort();
-    let mut all = crate::util::sha256::Sha256::new();
-    all.update(b"VERA20k mod files v1\0");
-    for (name, digest) in digests {
-        all.update(&(name.len() as u64).to_le_bytes());
-        all.update(name.as_bytes());
-        all.update(&digest);
-    }
-    Ok(all.finalize())
-}
-
-/// Every file in `dir` and below, to `depth` folders down, as its path below
-/// the mod's folder (`prefix`, each part its [`name_key`], `/` between them)
-/// and where it is. Links are followed, as the game follows them.
-fn collect_files(
-    dir: &Path,
-    prefix: &str,
-    depth: usize,
-    files: &mut Vec<(String, PathBuf)>,
-) -> std::io::Result<()> {
-    for entry in file_system::read_dir(dir)? {
-        let path = entry?.path();
-        let Some(name) = path.file_name().map(|name| name.to_string_lossy()) else {
-            continue;
-        };
-        if left_by_a_system(&name) {
-            continue;
-        }
-        let name = format!("{prefix}{}", name_key(&name));
-        let Ok(kind) = file_system::metadata(&path) else {
-            continue;
-        };
-        if kind.is_dir() {
-            if depth > 0 {
-                collect_files(&path, &format!("{name}/"), depth - 1, files)?;
-            }
-        } else if kind.is_file() {
-            if files.len() == FILES_LIMIT {
-                return Err(std::io::Error::other("the mod has too many files"));
-            }
-            files.push((name, path));
-        }
-    }
-    Ok(())
-}
-
-/// How a file's or folder's name counts in the digest: without ASCII case,
-/// as the game finds files. A name with a letter outside ASCII counts as one
-/// fixed mark, so only its place and what the file holds are compared:
-/// systems spell such names differently (macOS can keep `é` as `e` and an
-/// accent), and the same mod must give the same digest on each.
-fn name_key(name: &str) -> String {
-    if name.is_ascii() {
-        name.to_ascii_uppercase()
-    } else {
-        "\u{fffd}".to_owned()
-    }
-}
-
-/// SHA-256 of a file, read a piece at a time: a mod's archives can be large.
-fn file_digest(path: &Path) -> std::io::Result<[u8; 32]> {
-    let mut digest = crate::util::sha256::Sha256::new();
-    // The browser holds a mod's files in memory: hashed where they lie.
-    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-    {
-        digest.update(&file_system::read_shared(path)?);
-        Ok(digest.finalize())
-    }
-    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-    {
-        use std::io::Read;
-        let mut file = std::fs::File::open(path)?;
-        let mut piece = vec![0; 1 << 16];
-        loop {
-            match file.read(&mut piece)? {
-                0 => return Ok(digest.finalize()),
-                read => digest.update(&piece[..read]),
-            }
-        }
-    }
 }
 
 /// A run's hold on `mod-start.txt`: the file names the mod being started and
@@ -711,8 +632,8 @@ fn claim(path: &Path, folder: &str) -> std::io::Result<Claim> {
 /// Decide this launch's mod.
 ///
 /// `hidden` is a run with a sealed set-up (a capture, a map picture): it
-/// reads no choice from config.toml, as it reads no VERA.INI or VERARULES.INI,
-/// and uses a mod only when a switch names one.
+/// reads no choice from config.toml, as it reads no VERA.INI, and uses a mod
+/// only when a switch names one.
 pub(crate) fn begin(paths: &PathsConfig, switch: Option<&ModSwitch>, hidden: bool) -> Mods {
     let mut mods = Mods {
         kept: paths.mod_name().map(str::to_owned),
@@ -843,11 +764,12 @@ pub(crate) fn start_failed_text(title: &str) -> String {
 }
 
 /// Once the main menu has been at rest for [`MENU_SETTLE`]: a start with a
-/// mod has passed, and a mod that is not in use is explained. Returns when to
+/// mod has passed, and a mod that is not in use, or a VERARULES.INI that is
+/// no longer read, is explained. Returns when to
 /// look again while that is still to come.
 pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     let mods = &state.frontend.mods;
-    if mods.record.is_none() && mods.notice.is_none() {
+    if mods.record.is_none() && mods.notice.is_none() && mods.rules_file_notice.is_none() {
         return None;
     }
     if !state.main_menu_at_rest() {
@@ -860,7 +782,12 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
         return Some(due);
     }
     started(state);
-    if let Some(text) = state.frontend.mods.notice.take() {
+    let mods = &mut state.frontend.mods;
+    let text = match (mods.notice.take(), mods.rules_file_notice.take()) {
+        (Some(first), Some(second)) => Some(format!("{first}\n\n{second}")),
+        (first, second) => first.or(second),
+    };
+    if let Some(text) = text {
         crate::app::App::open_shell_notice(state, text);
     }
     None
@@ -868,7 +795,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
 
 /// Make `Mods` and its README. The folder is the player's: nothing else in
 /// it is touched, and a failure only goes to the log.
-fn prepare_folder(mods_dir: &Path) {
+pub(crate) fn prepare_folder(mods_dir: &Path) {
     let mut text = crate::i18n::tr("VERA:ModsFolderReadme");
     if cfg!(windows) {
         // Notepad before Windows 10 1809 needs both to show the text.
@@ -887,7 +814,7 @@ fn prepare_folder(mods_dir: &Path) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 
@@ -1151,45 +1078,6 @@ mod tests {
         let loaded = load();
         assert_eq!(loaded.mod_name(), Some("Winter War"));
         assert_eq!(loaded.ra2_dir, paths.ra2_dir);
-        std::fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn a_mods_files_digest_follows_what_the_files_hold_not_their_spelling_or_the_mods_name() {
-        let root = std::env::temp_dir().join(format!("vera-mods-files-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        let write = |path: &str, bytes: &[u8]| {
-            let path = root.join(path);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, bytes).unwrap();
-        };
-        write("One/rulesmd.ini", b"[General]\n");
-        write("One/Maps/frozen.yrm", b"map");
-        write("One/mod.ini", b"[Mod]\nName=One\n");
-        // Another name, other spellings, another account of itself, a file
-        // a system left and a sidebar layout: the same mod to a match.
-        write("Two/RULESMD.INI", b"[General]\n");
-        write("Two/maps/Frozen.YRM", b"map");
-        write("Two/mod.ini", b"[Mod]\nName=Two\nAbout=A copy.\n");
-        write("Two/.DS_Store", b"x");
-        write("Two/veraui.ini", b"[Layouts]\n");
-        let digest = |folder: &str| files_digest(&root.join(folder)).unwrap();
-        assert_eq!(digest("One"), digest("Two"));
-
-        // A name outside ASCII counts by its place and what it holds: a Mac
-        // can keep the same name in other bytes. A link to nothing is no file.
-        write("One/Maps/caf\u{e9}.yrm", b"second map");
-        write("Two/maps/cafe\u{301}.yrm", b"second map");
-        #[cfg(unix)]
-        std::os::unix::fs::symlink("nowhere", root.join("Two").join("gone.shp")).unwrap();
-        assert_eq!(digest("One"), digest("Two"));
-
-        // What a file below the folder holds counts, and so does one more file.
-        write("Two/maps/Frozen.YRM", b"mop");
-        assert_ne!(digest("One"), digest("Two"));
-        write("Two/maps/Frozen.YRM", b"map");
-        write("Two/tank.vxl", b"");
-        assert_ne!(digest("One"), digest("Two"));
         std::fs::remove_dir_all(root).unwrap();
     }
 

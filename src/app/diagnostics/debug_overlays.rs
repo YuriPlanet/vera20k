@@ -760,7 +760,7 @@ pub(crate) fn build_foot_path_overlay_instances(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

@@ -47,7 +47,7 @@ pub fn encoded_unit_rgb(unit_position: u32, reveal: PathAReveal) -> Option<[u8; 
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
 

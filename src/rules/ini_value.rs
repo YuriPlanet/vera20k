@@ -815,6 +815,20 @@ impl IniSection {
         self.read_phobos_nullable_with(key, current, parse_ares_int)
     }
 
+    /// Phobos `Valueable<int>`: `INI_EX::ReadInteger` is ReadString(2048),
+    /// then `Read<int, 1>`, whose `Parser<int, 1>::Parse`
+    /// (`src/Utilities/Parser.h` at c783774a) converts only the text before
+    /// the first comma, through the `Parser<int>::TryParse` it shares with
+    /// Ares (`$%d` included): the [`scan_ares_fields`] scan with one slot.
+    /// Absent, empty and failed reads keep the current value.
+    pub fn read_phobos_int(&self, key: &str, current: i32) -> i32 {
+        self.read_string_with(key, 2048, current, |current, raw| {
+            let mut value = [current];
+            scan_ares_fields(raw, &mut value);
+            value[0]
+        })
+    }
+
     /// Phobos `Valueable<ColorStruct>` (`INI_EX::Read3Bytes`, then
     /// `Parser<BYTE,3>` at `src/Utilities/TemplateDef.h`): a comma-separated
     /// `R,G,B` needs all three channels inside `0..=255`. Absent, empty and
@@ -1052,7 +1066,7 @@ impl IniSection {
         default: u32,
         mut find_house: impl FnMut(&str) -> Option<usize>,
     ) -> u32 {
-        let capacity = if crate::rules::ARES_BUILD {
+        let capacity = if crate::rules::ares_switch::ares_way() {
             0x800
         } else {
             0x80
@@ -1170,16 +1184,20 @@ impl IniSection {
 
     /// `0x00476340` (ParticleSystemType `SpawnDirection=`): ReadString into
     /// 0x200 bytes, then three `strtok(",")` tokens through CRT `atof`
-    /// ([`parse_leading_f64`]) into a float vector. Absent keeps `default`;
-    /// a missing token reads as 0 where native passes NULL to `atof`.
-    pub fn read_float_tokens(&self, key: &str, default: [f32; 3]) -> [f32; 3] {
+    /// ([`parse_leading_f64`]) into a float vector, each stored with `FSTP
+    /// float` (`0x004763A1`, `0x004763B7`, `0x004763D8`). Absent keeps
+    /// `default`; a missing token reads as 0 where native passes NULL to `atof`.
+    pub fn read_float_tokens(&self, key: &str, default: [NativeF32Bits; 3]) -> [NativeF32Bits; 3] {
         let Some(tokens) = self.read_list(key, 0x200) else {
             return default;
         };
         std::array::from_fn(|index| {
-            tokens
+            let value = tokens
                 .get(index)
-                .map_or(0.0, |token| parse_leading_f64(token) as f32)
+                .map_or(0.0, |token| parse_leading_f64(token));
+            MaskedX87Chop53::store_f32_masked_chop(MaskedX87Chop53::load_f64(
+                NativeF64Bits::from_bits(value.to_bits()),
+            ))
         })
     }
 
@@ -2089,10 +2107,24 @@ fn leading_float_token(s: &str) -> Option<&str> {
     Some(&s[..end])
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::{crt_atoi, parse_leading_f32, strtok, truncate_native_bytes};
     use crate::rules::ini_parser::{IniFile, IniSection};
+    use crate::util::native_x87::NativeF32Bits;
+
+    /// Phobos' `Read<int, 1>` converts the text before the first comma, so a
+    /// hex value with more text after it still reads, and a piece of 128
+    /// bytes or more fails its `%[^,]` scan into 0x80 bytes and keeps the
+    /// value.
+    #[test]
+    fn phobos_integer_reader_converts_the_first_comma_piece() {
+        for (value, expected) in [("Ah ,0".to_owned(), 10), (format!("{:0>128},1", 7), -1)] {
+            let ini = IniFile::from_str(&format!("[AI]\nKey={value}\n"));
+            let ai = ini.section("AI").expect("section");
+            assert_eq!(ai.read_phobos_int("Key", -1), expected, "{value:?}");
+        }
+    }
 
     #[test]
     fn ares_integer_reader_retains_failed_values_and_uses_ares_dollar_decimal() {
@@ -2368,62 +2400,64 @@ mod tests {
 
     #[test]
     fn read_houses_list_matches_native_exact_lookup_and_default_controls() {
-        let native = crate::test_fixture::json(if crate::rules::ARES_BUILD {
-            "tools/input_oracle/ares_allies_reader.json"
-        } else {
-            "tools/input_oracle/campaign_start_houses.json"
-        });
-        let controls = &native["allies_reader_controls"];
-        assert_eq!(controls["delimiter_hex"], "2c00");
-        let names: Vec<_> = controls["registry"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|value| value.as_str().unwrap())
-            .collect();
-        let rows = controls["rows"].as_array().unwrap();
-        assert_eq!(rows.len(), 27);
-        for row in rows {
-            let mut ini = IniFile::empty();
-            let section = ini.projection_section_mut("Control");
-            for (key, value) in row["sections"]["Control"].as_object().unwrap() {
-                section.set(key, value.as_str().unwrap());
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            let native = crate::test_fixture::json(if ares_way {
+                "tools/input_oracle/ares_allies_reader.json"
+            } else {
+                "tools/input_oracle/campaign_start_houses.json"
+            });
+            let controls = &native["allies_reader_controls"];
+            assert_eq!(controls["delimiter_hex"], "2c00");
+            let names: Vec<_> = controls["registry"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_str().unwrap())
+                .collect();
+            let rows = controls["rows"].as_array().unwrap();
+            assert_eq!(rows.len(), 27);
+            for row in rows {
+                let mut ini = IniFile::empty();
+                let section = ini.projection_section_mut("Control");
+                for (key, value) in row["sections"]["Control"].as_object().unwrap() {
+                    section.set(key, value.as_str().unwrap());
+                }
+                let actual = section.read_houses_list(
+                    "Allies",
+                    row["default"].as_u64().unwrap() as u32,
+                    |name| names.iter().position(|candidate| *candidate == name),
+                );
+                assert_eq!(actual, row["result"].as_u64().unwrap() as u32, "{row}");
             }
-            let actual = section.read_houses_list(
-                "Allies",
-                row["default"].as_u64().unwrap() as u32,
-                |name| names.iter().position(|candidate| *candidate == name),
-            );
-            assert_eq!(actual, row["result"].as_u64().unwrap() as u32, "{row}");
         }
     }
 
     #[test]
     fn read_houses_list_matches_extended_native_buffer_controls() {
-        let native = crate::test_fixture::json("tools/input_oracle/ares_allies_reader.json");
-        let feature = if crate::rules::ARES_BUILD {
-            "ares"
-        } else {
-            "stock"
-        };
-        for row in native["extended_controls"].as_array().unwrap() {
-            // Exercise ReadString's buffer limit directly. Physical INI line
-            // admission belongs to the lexer, independently of this reader.
-            let mut ini = IniFile::empty();
-            let section = ini.projection_section_mut("Control");
-            section.set("Allies", row["value"].as_str().unwrap());
-            let names = row["registry"].as_array().unwrap();
-            let actual = section.read_houses_list("Allies", 0, |name| {
-                names
-                    .iter()
-                    .position(|candidate| candidate.as_str() == Some(name))
-            });
-            assert_eq!(
-                actual,
-                row["observations"][feature]["result"].as_u64().unwrap() as u32,
-                "{} ({feature})",
-                row["name"],
-            );
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            let native = crate::test_fixture::json("tools/input_oracle/ares_allies_reader.json");
+            let feature = if ares_way { "ares" } else { "stock" };
+            for row in native["extended_controls"].as_array().unwrap() {
+                // Exercise ReadString's buffer limit directly. Physical INI line
+                // admission belongs to the lexer, independently of this reader.
+                let mut ini = IniFile::empty();
+                let section = ini.projection_section_mut("Control");
+                section.set("Allies", row["value"].as_str().unwrap());
+                let names = row["registry"].as_array().unwrap();
+                let actual = section.read_houses_list("Allies", 0, |name| {
+                    names
+                        .iter()
+                        .position(|candidate| candidate.as_str() == Some(name))
+                });
+                assert_eq!(
+                    actual,
+                    row["observations"][feature]["result"].as_u64().unwrap() as u32,
+                    "{} ({feature})",
+                    row["name"],
+                );
+            }
         }
     }
 
@@ -2469,11 +2503,15 @@ mod tests {
     /// `0x00476340` reads three `atof` tokens.
     #[test]
     fn read_float_tokens_atofs_three_tokens() {
-        let ini = sec("[S]\nV=0.5, -1,2e1\nShort=3\n");
+        let ini = sec("[S]\nV=0.5, -1,2e1\nShort=3\nChop=0.1\n");
         let s = ini.section("S").unwrap();
-        assert_eq!(s.read_float_tokens("V", [9.0; 3]), [0.5, -1.0, 20.0]);
-        assert_eq!(s.read_float_tokens("Short", [9.0; 3]), [3.0, 0.0, 0.0]);
-        assert_eq!(s.read_float_tokens("MISSING", [9.0; 3]), [9.0; 3]);
+        let read = |key| s.read_float_tokens(key, [NativeF32Bits::from_bits(9.0f32.to_bits()); 3]);
+        let floats = |values: [f32; 3]| values.map(|v| NativeF32Bits::from_bits(v.to_bits()));
+        assert_eq!(read("V"), floats([0.5, -1.0, 20.0]));
+        assert_eq!(read("Short"), floats([3.0, 0.0, 0.0]));
+        assert_eq!(read("MISSING"), floats([9.0; 3]));
+        // FSTP float chops: 0.1 stores 0x3DCCCCCC, not the nearest 0x3DCCCCCD.
+        assert_eq!(read("Chop")[0].bits(), 0x3DCC_CCCC);
     }
 
     /// `0x00476420` tokenizes where `read_coord3` scans: stock
@@ -2631,7 +2669,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod pcx_cameo_tests {
     #[test]
     fn filename_projection_matches_original_ares_reader_controls() {

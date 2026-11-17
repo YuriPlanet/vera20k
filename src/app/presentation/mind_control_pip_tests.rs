@@ -17,7 +17,7 @@ fn pip_frames(scene: &MindScene, hovered: Option<u64>) -> Vec<usize> {
         sim,
         frame.object(scene.mind()).unwrap(),
         hovered,
-        Some(sim.interner().resolve(controller.owner())),
+        Some(controller.owner()),
         scene.rules(),
     )
     .into_iter()
@@ -80,7 +80,7 @@ fn stock_selected_mastermind_submits_real_capture_count_and_overload_pips() {
         scene.simulation(),
         frame.object(scene.mind()).unwrap(),
         None,
-        Some(scene.simulation().interner().resolve(owner)),
+        Some(owner),
         scene.rules(),
     )
     .into_iter()

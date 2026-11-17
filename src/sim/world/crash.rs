@@ -278,8 +278,9 @@ impl Simulation {
     ///
     /// RESIDUAL: the same block drops an unpowered living Fly by three a frame
     /// and its impact (`0x004CD8A9..0x004CD9C0`) kills it with the C4 warhead,
-    /// an explosion anim and area damage. Nothing in VERA powers an aircraft
-    /// off (native: `Power_Off`, reached by EMP), so the arm is dormant.
+    /// an explosion anim and area damage. Stock play never powers an
+    /// aircraft off, and Ares EMP crashes a flying one before it deactivates
+    /// (`emp.rs`), so the arm is dormant.
     ///
     /// A falling wreck is still alive for its class AI, so one that drifts
     /// past the playfield or `In_Bounds` meets `AircraftClass::AI`'s removal
@@ -333,7 +334,6 @@ impl Simulation {
             self.mark_entity_put(id, context);
             Self::submit_entity_display(
                 &self.interner,
-                &self.terrain_objects,
                 &mut self.substrate,
                 &self.resolved_terrain,
                 id,

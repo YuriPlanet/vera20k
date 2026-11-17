@@ -150,6 +150,47 @@ impl App {
         }
     }
 
+    /// When the local timer has the match's next frame due, for the frame
+    /// loop's wake (`LocalFramePacer::until_next_frame`): now or earlier once
+    /// it is due. `None` off the battlefield, at GameSpeed 0, before the
+    /// first frame, and in sequenced online play, whose frames the relay's
+    /// clock admits.
+    pub(super) fn next_local_frame_due(state: &AppState, now: Instant) -> Option<Instant> {
+        if state.frontend.screen != GameScreen::InGame
+            || state
+                .match_state
+                .live_network
+                .as_ref()
+                .is_some_and(|live| live.uses_sequenced_lockstep())
+        {
+            return None;
+        }
+        let (game_speed, network_fps) = sim_tick::local_pacing_inputs(state);
+        state
+            .platform
+            .frame_pacer
+            .until_next_frame(
+                crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+                game_speed,
+                network_fps,
+            )
+            .map(|left| now + left)
+    }
+
+    /// When a loop that services the match without drawing should wake:
+    /// after [`SERVICE_WAKE`], or sooner for a frame the local timer has due
+    /// before then ([`Self::next_local_frame_due`]). One already due moves
+    /// nothing: the pass that just ran did not admit it, and waking for it
+    /// again would spin.
+    ///
+    /// [`SERVICE_WAKE`]: crate::app::match_runtime::frame_pacer::SERVICE_WAKE
+    pub(super) fn match_service_wake(state: &AppState, now: Instant) -> Instant {
+        let service = now + crate::app::match_runtime::frame_pacer::SERVICE_WAKE;
+        Self::next_local_frame_due(state, now)
+            .filter(|due| *due > now)
+            .map_or(service, |due| due.min(service))
+    }
+
     /// Service the match runtime for one pass: the outcome voice wait, the
     /// scenario exit cascade, the quit cascade, the audio pump and, when
     /// admitted, each simulation advance due by now (only the first without
@@ -191,11 +232,18 @@ impl App {
         }
         let started = Instant::now();
         let mut result = RuntimeServiceResult::default();
+        // A watcher catching up plays minutes of its match at once, muted,
+        // with a longer budget a picture (`LocalFramePacer::permits_catch_up`).
+        let watcher_catching_up = crate::app::match_runtime::watching::catching_up(
+            state,
+            crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
+        );
         let restoring = state
             .match_state
             .live_network
             .as_ref()
-            .is_some_and(|live| live.restoring_match());
+            .is_some_and(|live| live.restoring_match())
+            || watcher_catching_up;
         let profile = &state.persistence.options_profile;
         let (sound, voice) = (
             f64::from(profile.sound_volume),
@@ -207,10 +255,11 @@ impl App {
             if catch_up_allowed {
                 // The pass decides from this whether its frame is the
                 // service's last (`LocalFramePacer::another_pass_follows`).
-                state
-                    .platform
-                    .frame_pacer
-                    .begin_service_pass(started, attempts);
+                state.platform.frame_pacer.begin_service_pass(
+                    started,
+                    attempts,
+                    watcher_catching_up,
+                );
             }
             let before = state.match_state.sim_runtime.runtime().map(|runtime| {
                 (
@@ -245,6 +294,7 @@ impl App {
                 || !crate::app::match_runtime::frame_pacer::LocalFramePacer::permits_catch_up(
                     attempts,
                     started.elapsed(),
+                    watcher_catching_up,
                 )
                 // A tick is running beside this thread: draw. Another pass
                 // would only find it running; its end wakes the next one.
@@ -867,10 +917,11 @@ impl App {
                 Some(splash),
             )?;
             if presented {
-                state
-                    .platform
-                    .frame_pacer
-                    .record_presented(Instant::now(), None);
+                state.platform.frame_pacer.record_presented(
+                    Instant::now(),
+                    None,
+                    crate::util::time::Duration::ZERO,
+                );
                 state
                     .frontend
                     .startup_splash
@@ -1037,6 +1088,9 @@ impl App {
             crate::app::frontend::shell_transition::MainMenuFirstPaintPoll::Acquire => {}
         }
 
+        // With VSync the acquire waits for a free picture, for most of a
+        // refresh once two are queued: the draw's wait, not its work.
+        let acquire_started = Instant::now();
         let Some(output) = state
             .renderer
             .gpu
@@ -1046,6 +1100,7 @@ impl App {
             Self::follow_window_size(state);
             return Ok(FrameRenderOutcome::Unavailable);
         };
+        let screen_wait = Instant::now().saturating_duration_since(acquire_started);
         let view: wgpu::TextureView = output.texture.create_view(&Default::default());
         let mut encoder: wgpu::CommandEncoder =
             state
@@ -1759,10 +1814,11 @@ impl App {
                 .record_render_phases(phases);
         }
         let battlefield = state.frontend.screen == GameScreen::InGame;
-        state
-            .platform
-            .frame_pacer
-            .record_presented(presented_at, battlefield.then_some(draw_started));
+        state.platform.frame_pacer.record_presented(
+            presented_at,
+            battlefield.then_some(draw_started),
+            screen_wait,
+        );
         if battlefield {
             state
                 .match_state
@@ -1948,7 +2004,7 @@ impl App {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

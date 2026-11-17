@@ -89,6 +89,9 @@ pub(super) struct Transfers {
     /// VERA: a guest's download of a map it does not have waits for the
     /// player's answer to the room's missing-map offer.
     asking: bool,
+    /// VERA: the match whose map a watcher's game downloads, which takes
+    /// the room's place (docs/lobby-protocol.md "Watching").
+    watching: Option<String>,
 }
 
 pub(super) fn received_options(
@@ -106,8 +109,17 @@ pub(super) fn received_options(
     Ok(())
 }
 
+/// A watcher's game fetches the map of the match `match_id`, as a guest
+/// fetches its room's: from its own maps, its cache, then the lobby.
+pub(super) fn watch(service: &mut LiveService, match_id: String) {
+    service.maps.watching = Some(match_id);
+    service.maps.generated = None;
+    service.maps.active = true;
+}
+
 pub(super) fn cancel(state: &mut AppState, service: &mut LiveService) {
     service.maps.active = false;
+    service.maps.watching = None;
     service.maps.generation = service.maps.generation.wrapping_add(1);
     service.maps.key = None;
     service.maps.transfer = None;
@@ -138,9 +150,19 @@ impl Transfers {
                     && key.total == usize::try_from(metadata.byte_length).unwrap_or(0)
                     && key.effective_digest == metadata.effective_digest
                     && key.random == self.generated
-                    && super::super::lobby::current_channel(state)
-                        .is_some_and(|channel| channel.name == key.room)
+                    && self.scope(state).is_some_and(|scope| scope == key.room)
             })
+    }
+    /// The transfer failed and will not retry.
+    pub(super) fn failed(&self) -> bool {
+        self.failed
+    }
+    /// What the transfer belongs to: the room this game is in, or the match
+    /// it watches.
+    fn scope(&self, state: &AppState) -> Option<String> {
+        self.watching.clone().or_else(|| {
+            super::super::lobby::current_channel(state).map(|channel| channel.name.clone())
+        })
     }
     fn fail(&mut self, state: &mut AppState) {
         // Retried failures and the deadline are the connection, not the map.
@@ -179,7 +201,7 @@ impl Transfers {
         let Some(metadata) = state.match_state.session.network_map_metadata().cloned() else {
             return Ok(());
         };
-        let Some(channel) = super::super::lobby::current_channel(state) else {
+        let Some(scope) = self.scope(state) else {
             return Ok(());
         };
         let seed = launch
@@ -190,7 +212,7 @@ impl Transfers {
             return Ok(());
         }
         let key = Key {
-            room: channel.name.clone(),
+            room: scope,
             digest: metadata.source_sha256.clone(),
             total: usize::try_from(metadata.byte_length)?,
             effective_digest: metadata.effective_digest.clone(),
@@ -265,6 +287,7 @@ impl Transfers {
                 seed_digest: key.digest.clone(),
                 digest: digest.to_owned(),
                 offset: transfer.offset,
+                match_id: self.watching.clone(),
             },
         };
         service.requests.send(request)?;
@@ -663,7 +686,7 @@ impl Transfer {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

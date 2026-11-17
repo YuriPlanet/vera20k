@@ -24,6 +24,7 @@ use crate::app::frontend::cncnet_spawn::{
 use crate::app::process_assets::ProcessAssets;
 use crate::app::shell_network_setup::agreement;
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
+use crate::assets::csf_file::CsfFile;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct ProbeGameMode {
@@ -44,8 +45,9 @@ pub(crate) struct ProbeReport {
     /// INI, so `ExpectedRulesDigest` must come from the row the launch selects.
     pub game_modes: Vec<ProbeGameMode>,
     pub map: Option<ProbeMap>,
-    /// `Side=` values: Country array indices this build admits.
-    pub countries: Vec<IndexedName>,
+    /// `Side=` values: Country array indices this build admits, read from the
+    /// loaded rules (a mod's own `[Countries]` when one is chosen).
+    pub countries: Vec<ProbeCountry>,
     /// `Color=` values: colour priorities and the `[Colors]` entry each draws.
     pub colors: Vec<IndexedName>,
     /// Start waypoints the map authors (`[SpawnLocations]` 0..N-1); null
@@ -92,7 +94,6 @@ pub(crate) struct BuildIdentity {
     pub package_version: String,
     /// Hash of the multiplayer sources and enabled Cargo features.
     pub network_build: String,
-    pub ares: bool,
     pub phobos: bool,
     pub npatch: bool,
     /// Informational; not part of `version`.
@@ -116,6 +117,23 @@ pub(crate) struct ProbeMap {
 pub(crate) struct IndexedName {
     pub index: u32,
     pub name: String,
+}
+
+/// One `Side=` value and what the skirmish country menu shows for it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct ProbeCountry {
+    /// The Country array index `Side=` takes.
+    pub index: u32,
+    /// The Country's ID as `[Countries]` lists it.
+    pub name: String,
+    /// Its `UIName=` through the game's string table, as the menu draws it
+    /// (`country_label`); empty when the table has no such label.
+    pub label: String,
+    /// Its `[Sides]` index after any `Side=` override; null when unbound.
+    pub side: Option<u8>,
+    /// Whether the skirmish menu offers it (`country_choices`, 4E3A00):
+    /// `Multiplay=yes`, a `UIName=`, and an Ares `ListIndex` of 0 or more.
+    pub selectable: bool,
 }
 
 /// The physical identity and start capacity of a launcher's map, read
@@ -147,7 +165,11 @@ pub(crate) fn spawn_map_identity(
             file,
             byte_length,
             source_sha256: source_sha256.to_owned(),
-            effective_digest: crate::map::source::effective_network_map_digest(&loaded.ini, false),
+            effective_digest: crate::map::source::effective_network_map_digest(
+                &loaded.ini,
+                false,
+                false,
+            ),
         },
         start_waypoints: crate::map::waypoints::skirmish_player_capacity(&loaded.ini),
     })
@@ -157,7 +179,6 @@ pub(crate) fn build_identity() -> BuildIdentity {
     BuildIdentity {
         package_version: env!("CARGO_PKG_VERSION").to_owned(),
         network_build: env!("VERA20K_NETWORK_BUILD").to_owned(),
-        ares: crate::rules::ARES_BUILD,
         phobos: crate::rules::PHOBOS_ENABLED,
         npatch: crate::rules::NPATCH_ENABLED,
         verax: crate::rules::VERAX_ENABLED,
@@ -179,16 +200,19 @@ pub(crate) fn probe(
     media_archive_mode: MediaArchiveMode,
     map: Option<&str>,
     mod_dir: Option<std::path::PathBuf>,
+    ares_setting: crate::util::ares_launch::AresSetting,
 ) -> Result<ProbeReport> {
     let root = &config.paths.ra2_dir;
-    let mut assets = AssetManager::with_mod(root, mod_dir.as_deref(), media_archive_mode)
-        .and_then(|assets| assets.with_ini_roots(&config.ini))
-        .context("could not load the game archives")?;
+    let mut assets =
+        AssetManager::with_mod_and_ares(root, mod_dir.as_deref(), media_archive_mode, ares_setting)
+            .and_then(|assets| assets.with_ini_roots(&config.ini))
+            .context("could not load the game archives")?;
     let mut process =
         ProcessAssets::new_with_ini_config(media_archive_mode, true, config.ini.clone())
             .with_personal_rules(personal_rules)
-            .with_mod_dir(mod_dir);
-    let (startup_rules, projection) = process
+            .with_mod_dir(mod_dir)
+            .with_ares_setting(ares_setting);
+    let (mut startup_rules, projection) = process
         .initialize_sources_if_needed(&assets)
         .map_err(anyhow::Error::msg)
         .context("could not load the retail rules")?;
@@ -216,16 +240,19 @@ pub(crate) fn probe(
     // not change.
     process.read_multiplayer_country(&crate::rules::ini_parser::IniFile::empty(), -1);
     process.refresh_multiplayer_country_bodies();
-    let max_country = max_spawn_country_index();
-    let countries = process
-        .multiplayer_countries()
-        .enumerate()
-        .take_while(|(index, _)| *index <= max_country as usize)
-        .map(|(index, (id, _))| IndexedName {
-            index: index as u32,
-            name: id.to_owned(),
-        })
-        .collect();
+    // The shell projects those bodies into its Rules before it builds the
+    // country menu (`prepare_multiplayer_settings`); the probe does the same.
+    if let Some(rules) = startup_rules.as_mut() {
+        process.project_multiplayer_countries(rules);
+    }
+    let csf =
+        crate::app::loading::init::load_csf(process.manager().context("retail sources missing")?)?;
+    let countries = country_catalog(
+        process.multiplayer_countries().map(|(id, _)| id),
+        startup_rules.as_ref(),
+        &csf,
+        process.reads_ares_way(),
+    );
     let schemes = probe_color_schemes(startup_rules.as_ref(), projection.as_ref());
     let color_mode = startup_rules
         .as_ref()
@@ -253,7 +280,7 @@ pub(crate) fn probe(
                 .collect()
         })
         .unwrap_or_default();
-    let campaigns = campaign_catalog(root, &process, &sides)?;
+    let campaigns = campaign_catalog(root, &process, &sides, &csf)?;
     Ok(ProbeReport {
         version: agreement::version(),
         build_identity: build_identity(),
@@ -267,6 +294,49 @@ pub(crate) fn probe(
     })
 }
 
+/// Each registered Country up to the largest index `Side=` admits, with the
+/// label, side and menu eligibility the skirmish shell's catalog gives it.
+/// `countries` is the process registry's order, which is the index `Side=`
+/// addresses; `rules` holds that registry's projected Country bodies, and
+/// `ares` is whether the game is read the Ares way.
+fn country_catalog<'a>(
+    countries: impl Iterator<Item = &'a str>,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    csf: &CsfFile,
+    ares: bool,
+) -> Vec<ProbeCountry> {
+    use crate::ui::skirmish_shell::{SkirmishComboItem, SkirmishCountryChoice};
+    let offered: Vec<u16> = rules
+        .map(crate::ui::skirmish_shell::country_choices)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|item| match item {
+            SkirmishComboItem::Country(SkirmishCountryChoice::Country(country)) => {
+                Some(country.raw_index())
+            }
+            _ => None,
+        })
+        .collect();
+    let max_country = max_spawn_country_index(ares);
+    countries
+        .enumerate()
+        .take_while(|(index, _)| *index <= max_country as usize)
+        .map(|(index, id)| ProbeCountry {
+            index: index as u32,
+            name: id.to_owned(),
+            label: rules
+                .and_then(|rules| rules.country_display_name_sources(id).0)
+                .and_then(|key| csf.get(key))
+                .unwrap_or_default()
+                .to_owned(),
+            side: rules
+                .and_then(|rules| rules.country_side_index(id))
+                .map(|side| side.0),
+            selectable: offered.contains(&(index as u16)),
+        })
+        .collect()
+}
+
 /// The process campaign registry with each entry's presentation fields: the
 /// same `BATTLEMD.INI` selection, `MISSIONMD.INI` and `ra2md.csf` the
 /// campaign startup and loading screen use.
@@ -274,12 +344,12 @@ fn campaign_catalog(
     root: &Path,
     process: &ProcessAssets,
     sides: &[String],
+    csf: &CsfFile,
 ) -> Result<Vec<ProbeCampaign>> {
     let Some(registry) = process.campaigns() else {
         return Ok(Vec::new());
     };
     let assets = process.manager().context("retail sources missing")?;
-    let csf = crate::app::loading::init::load_csf(assets)?;
     let select = |name| crate::rules::retail_sources::select_ini(assets, name).ok();
     let battles = select("BATTLEMD.INI");
     let missions = select("MISSIONMD.INI");
@@ -295,7 +365,7 @@ fn campaign_catalog(
                 missions.as_ref().map_or_else(String::new, |missions| {
                     let mut names =
                         crate::rules::campaign_loading::CampaignScenarioNames::default();
-                    names.apply_ini(&missions.ini, scenario, &csf);
+                    names.apply_ini(&missions.ini, scenario, csf);
                     String::from_utf16_lossy(names.name_units())
                 })
             };
@@ -421,13 +491,15 @@ fn color_names(
 }
 
 /// Desktop `--probe [--ra2-dir DIR] [--map PATH]`: the game folder comes from
-/// config.toml as for play unless `--ra2-dir` names one, and the mod from
-/// config.toml unless `--mod` or `--no-mod` chooses.
+/// config.toml as for play unless `--ra2-dir` names one, the mod from
+/// config.toml unless `--mod` or `--no-mod` chooses, and the Ares setting from
+/// VERA.INI unless `--ares` names the one spawn.ini will.
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub(crate) fn run_desktop(
     ra2_dir: Option<&Path>,
     map: Option<&Path>,
     mod_switch: Option<&crate::app::mods::ModSwitch>,
+    ares: Option<crate::util::ares_launch::AresSetting>,
 ) -> Result<ProbeReport> {
     let config = crate::util::config::GameConfig::load()?;
     let config = match ra2_dir {
@@ -439,6 +511,7 @@ pub(crate) fn run_desktop(
         None => config,
     };
     let personal_rules = existing_personal_rules(config.paths.settings_dir())?;
+    let ares = ares.unwrap_or_else(|| existing_ares_setting(config.paths.settings_dir()));
     let map = map
         .map(|path| {
             ensure_file(path)?;
@@ -454,6 +527,7 @@ pub(crate) fn run_desktop(
         crate::app::frontend::startup_options::RetailStartupOptions::default().media_archive_mode,
         map.as_deref(),
         crate::app::mods::launch_dir(&config.paths, mod_switch),
+        ares,
     )
 }
 
@@ -467,26 +541,32 @@ fn ensure_file(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The player's VERARULES.INI and Options switches as startup reads them,
-/// without creating the starter file (an absent file is the inactive starter).
+/// The player's Ares setting as startup reads it from VERA.INI.
+pub(crate) fn existing_ares_setting(settings_dir: &Path) -> crate::util::ares_launch::AresSetting {
+    crate::app::persistence::options_profile::RetailOptionsLoad::from_settings(
+        settings_dir,
+        &Default::default(),
+    )
+    .retained_profile
+    .ares
+}
+
+/// The player's Options switches as startup reads them from VERA.INI.
 pub(crate) fn existing_personal_rules(
     settings_dir: &Path,
 ) -> Result<crate::rules::personal_rules::PersonalRules> {
-    let mut rules = match crate::app::persistence::rules_profile::load_existing(settings_dir)? {
-        Some(bytes) => crate::rules::personal_rules::PersonalRules::from_bytes(&bytes)
-            .context("Could not read VERARULES.INI")?,
-        None => Default::default(),
-    };
+    let mut rules = crate::rules::personal_rules::PersonalRules::default();
     let profile = crate::app::persistence::options_profile::RetailOptionsLoad::from_settings(
         settings_dir,
         &Default::default(),
     )
     .retained_profile;
     rules.set_terrain_deformation(profile.terrain_deformation);
+    rules.set_superweapon_limit(i32::from(profile.superweapon_limit));
     Ok(rules)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::rules::color_scheme::ColorSchemeEntry;
@@ -551,6 +631,62 @@ mod tests {
         assert_eq!(colors[8].name, "VeraBurgundy");
     }
 
+    /// The desktop probe on retail data offers the ten stock countries on the
+    /// sides retail `[Sides]` gives them, each with its menu label.
+    #[test]
+    fn retail_probe_offers_the_stock_countries_on_their_sides() {
+        let Some((root, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let report = run_desktop(Some(&root), None, None, None).unwrap();
+        let stock = &report.countries[..10];
+        assert!(
+            stock
+                .iter()
+                .all(|country| country.selectable && !country.label.is_empty())
+        );
+        assert_eq!(
+            stock.iter().map(|country| country.side).collect::<Vec<_>>(),
+            [0, 0, 0, 0, 0, 1, 1, 1, 1, 2].map(Some)
+        );
+        assert_eq!(stock[9].name, "YuriCountry");
+    }
+
+    /// A mod that renames a Country, moves it to another side and hides
+    /// another: each row says what the skirmish menu shows for it.
+    #[test]
+    fn country_catalog_reads_label_side_and_menu_eligibility_from_the_rules() {
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[Countries]\n0=Americans\n1=China\n2=Hidden\n\
+                 [Sides]\nGDI=Americans,Hidden\nNod=China\n\
+                 [Americans]\nMultiplay=yes\nUIName=Name:Americans\n\
+                 [China]\nMultiplay=yes\nUIName=Name:China\n\
+                 [Hidden]\nMultiplay=no\nUIName=Name:Hidden\n",
+            ))
+            .unwrap();
+        let csf = crate::assets::csf_file::test_csf(&[("Name:China", "中国")]);
+        let ids: Vec<&str> = (0..3)
+            .map(|index| {
+                rules
+                    .country_name(crate::rules::ruleset::CountryIdx(index))
+                    .unwrap()
+            })
+            .collect();
+        let rows: Vec<_> = country_catalog(ids.into_iter(), Some(&rules), &csf, false)
+            .into_iter()
+            .map(|row| (row.index, row.name, row.label, row.side, row.selectable))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                (0, "Americans".into(), String::new(), Some(0), true),
+                (1, "China".into(), "中国".into(), Some(1), true),
+                (2, "Hidden".into(), String::new(), Some(0), false),
+            ]
+        );
+    }
+
     #[test]
     fn report_serializes_the_documented_shape() {
         let report = ProbeReport {
@@ -567,9 +703,12 @@ mod tests {
                 source_sha256: "s".into(),
                 effective_digest: "e".into(),
             }),
-            countries: vec![IndexedName {
+            countries: vec![ProbeCountry {
                 index: 0,
                 name: "Americans".into(),
+                label: "America".into(),
+                side: Some(0),
+                selectable: true,
             }],
             colors: Vec::new(),
             max_start_waypoints: Some(4),
@@ -609,7 +748,8 @@ mod tests {
         );
         assert_eq!(
             value["countries"][0],
-            serde_json::json!({"index":0,"name":"Americans"})
+            serde_json::json!({"index":0,"name":"Americans","label":"America","side":0,
+                "selectable":true})
         );
         assert_eq!(
             value["campaigns"][0],

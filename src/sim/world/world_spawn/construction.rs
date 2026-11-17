@@ -865,7 +865,7 @@ fn should_construct_locomotor(category: EntityCategory, object: &ObjectType) -> 
             && matches!(object.locomotor, LocomotorKind::Drive | LocomotorKind::Ship))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "perma_disguise_tests.rs"]
 mod perma_disguise_tests;
 

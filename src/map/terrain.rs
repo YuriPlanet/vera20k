@@ -15,11 +15,11 @@ use std::collections::BTreeMap;
 
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 #[path = "terrain_bridge_click_tests.rs"]
 mod bridge_click_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod plane_inverse_tests {
     #[test]
     fn plane_xyz_matches_original_tactical_body() {
@@ -601,7 +601,7 @@ pub fn build_terrain_grid_from_resolved(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use std::collections::{HashMap, HashSet};

@@ -128,8 +128,7 @@ fn answer_setup(state: &mut AppState, request: NetworkSetupRequest) {
         return;
     }
     // The stand-in lobby rates nobody, so its balance moves nobody.
-    if let NetworkSetupRequest::Balance { .. } = request {
-        crate::app::shell_network_setup::balance_answered(state);
+    if request == NetworkSetupRequest::Balance {
         return;
     }
     // 0x0078F000: the stand-in server keeps the host's new record.
@@ -535,6 +534,11 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
         }
         // VERA online's account requests: the stand-in lobby accepts each.
         WolServiceRequest::Account(_) => WolServiceEvent::Account(Ok(())),
+        // Nobody plays, so no match can be watched.
+        WolServiceRequest::ListMatches => WolServiceEvent::Matches(Vec::new()),
+        WolServiceRequest::Watch { .. } => {
+            WolServiceEvent::WatchRefused(super::lobby::WATCH_UNKNOWN_MATCH)
+        }
         // Nothing to cancel or deliver: nobody is online.
         WolServiceRequest::SetLocale(_)
         | WolServiceRequest::LeaveChannel
@@ -908,7 +912,7 @@ fn store_credential(stored: &mut Vec<WolCredential>, nickname: String, password:
     stored.sort_by_key(|stored| stored.slot);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

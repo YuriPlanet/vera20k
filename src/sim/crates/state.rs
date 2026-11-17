@@ -193,7 +193,7 @@ mod crate_slot_array_serde {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
 

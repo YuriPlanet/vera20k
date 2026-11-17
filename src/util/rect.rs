@@ -118,7 +118,7 @@ pub fn clip_blit_rects(
         .then_some((destination, source))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::{clip_blit_rects, union_native_draw_bounds};
 

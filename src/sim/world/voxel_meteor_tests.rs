@@ -104,6 +104,7 @@ fn retail_meteor02_rings_its_impact_cell_with_ore_and_pebble_seeds_its_own() {
         IVec3::new(64 * 256 + 128, 64 * 256 + 128, 0),
         true,
         &mut Vec::new(),
+        &rules,
     )
     .unwrap();
     let id = sim.voxel_anims().ids()[0];

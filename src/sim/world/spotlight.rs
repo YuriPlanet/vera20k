@@ -421,15 +421,8 @@ impl Simulation {
             .building
             .building_light
             .attach(id);
-        Self::submit_object_display(
-            &self.interner,
-            &self.terrain_objects,
-            &mut self.substrate,
-            id,
-            // BuildingLightClass::GetLayer @ 0x004369F0 returns Air (3).
-            DisplayLayer::AIR,
-            rules,
-        );
+        // BuildingLightClass::GetLayer @ 0x004369F0 returns Air (3).
+        Self::submit_object_display(&mut self.substrate, id, DisplayLayer::AIR);
         // BuildingLightClass::Unlimbo @ 0x00437050 registers it with Logic;
         // Limbo @ 0x00437030 is `conceal_spotlight_logic`.
         self.register_spotlight_logic(id);
@@ -771,6 +764,6 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "spotlight_tests.rs"]
 mod tests;

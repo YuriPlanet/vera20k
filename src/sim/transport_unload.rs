@@ -1540,5 +1540,5 @@ fn eject_from_aircraft(
     passenger.filter(|_| ejected)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests;

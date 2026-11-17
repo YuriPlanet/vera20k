@@ -51,6 +51,8 @@ pub enum Verb {
 pub struct Cli {
     pub ra2_dir: Option<PathBuf>,
     pub all_mixes: bool,
+    /// `--ares`: the player's Ares setting the game opens with.
+    pub ares: crate::util::ares_launch::AresSetting,
     pub verb: Verb,
     pub find: FindOptions,
     pub ls: LsOptions,
@@ -139,6 +141,9 @@ GLOBAL OPTIONS
   --all-mixes          Also mount archives the game's startup path skips.
                        Tooling-only: hits found this way are not what the game
                        would resolve.
+  --ares <Auto|On|Off> The Ares setting the game opens with. Default Auto, which
+                       reads the installation without its ares.mix; On reads
+                       it as an Ares game (string tables, audio bags, INIs).
   -h, --help           This text.
 
 find
@@ -180,7 +185,7 @@ palette-for
 
 csf-get / csf-grep
   --source <NAME>      Inspect one raw .csf. Default: the active game table
-                       (ra2md.csf; Ares builds also apply its supplements).
+                       (ra2md.csf; an Ares game also applies its supplements).
   --raw                Also report the stored text before normalisation.
   --limit/--offset     Paging. Default limit 50.
 
@@ -222,6 +227,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
     let mut cli = Cli {
         ra2_dir: None,
         all_mixes: false,
+        ares: Default::default(),
         verb: Verb::Help,
         find: FindOptions::default(),
         ls: LsOptions::default(),
@@ -334,6 +340,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
             && !matches!(
                 flag.as_str(),
                 "--ra2-dir"
+                    | "--ares"
                     | "--all-mixes"
                     | "--ini-profile"
                     | "--rules-ini"
@@ -349,6 +356,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
             && !matches!(
                 flag.as_str(),
                 "--ra2-dir"
+                    | "--ares"
                     | "--all-mixes"
                     | "--strict"
                     | "--max-depth"
@@ -363,6 +371,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
             && !matches!(
                 flag.as_str(),
                 "--ra2-dir"
+                    | "--ares"
                     | "--ini-profile"
                     | "--rules-ini"
                     | "--art-ini"
@@ -394,6 +403,11 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
             }
             "--ra2-dir" => cli.ra2_dir = Some(PathBuf::from(value(&mut args, "--ra2-dir")?)),
             "--all-mixes" => cli.all_mixes = true,
+            "--ares" => {
+                let text = value(&mut args, "--ares")?;
+                cli.ares = crate::util::ares_launch::AresSetting::parse(&text)
+                    .ok_or_else(|| format!("--ares takes Auto, On or Off, not {text:?}"))?;
+            }
             "--ini-profile" | "--rules-ini" | "--art-ini" | "--ai-ini" => {
                 if !matches!(
                     cli.verb,
@@ -635,7 +649,7 @@ fn flag_not_valid(flag: &str, verb: &Verb) -> String {
     format!("{flag} is not valid for `{verb_name}`")
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
 
@@ -771,6 +785,18 @@ mod tests {
             .err()
             .expect("a flag as a value is an error");
         assert!(err.contains("--filter needs a value"), "got {err}");
+    }
+
+    #[test]
+    fn ares_takes_the_players_setting() {
+        use crate::util::ares_launch::AresSetting;
+        assert_eq!(
+            parse(args(&["csf-get", "x"])).unwrap().ares,
+            AresSetting::Auto
+        );
+        let cli = parse(args(&["csf-get", "x", "--ares", "on"])).unwrap();
+        assert_eq!(cli.ares, AresSetting::On);
+        assert!(parse(args(&["csf-get", "x", "--ares", "maybe"])).is_err());
     }
 
     #[test]

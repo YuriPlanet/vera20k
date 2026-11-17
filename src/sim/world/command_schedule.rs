@@ -30,10 +30,10 @@ impl Simulation {
     /// Foot's cell click constructs MoveFlash before it issues the unit order
     /// (4D7EB5..4D8065), outside EventClass. In LAN/WOL the native flash joins
     /// a local unsynced list (4D7F28..4D8062). Keep that local action off the
-    /// packet FIFO while using the existing ingress and animation owners.
-    /// `spawn_move_flash` still declines network animation construction until
-    /// that local visual owner exists. Offline flashes retain their established
-    /// tail timing, including animation identities and any constructor RNG.
+    /// packet FIFO while using the existing ingress and animation owners:
+    /// `spawn_move_flash` makes the network flash a local anim. Offline
+    /// flashes retain their established tail timing, including animation
+    /// identities and any constructor RNG.
     fn command_uses_frame_ingress(command: &Command, is_network: bool) -> bool {
         command.uses_frame_ingress() || is_network && matches!(command, Command::MoveFlash { .. })
     }
@@ -962,17 +962,27 @@ impl Simulation {
     /// non-megamission scan, immediately before staged command execution.
     /// The group spread `0x0064CDA0` per run (`0x0064CB0A..0x0064CB60`): each Foot
     /// member's coordinates (Location) and source cell.
+    ///
+    /// VERA-only: in a LAN or WOL game a member whose order the network
+    /// ownership rule will refuse (`Simulation::network_actor_foreign`) is
+    /// left out, and a run left with fewer than two orders keeps its clicked
+    /// cells, as if `sender` had not ordered that member. Retail's member loop
+    /// (`0x0064CE59..0x0064CEDF`) tests only Foot and tube (`+0x684`), never
+    /// the owner, and `Execute_DoList` spreads every run of two or more
+    /// (`0x0064CBA4..0x0064CBDB`). Fixtures that skip the rule pass `None`.
     pub(super) fn adjust_staged_megamission_destinations(
         &self,
         commands: &mut [impl FormationCommand],
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        sender: Option<InternedId>,
     ) {
         let (Some(terrain), Some(zones)) =
             (self.resolved_terrain.as_ref(), self.zone_grid.as_ref())
         else {
             return;
         };
+        let sender = sender.map(|owner| self.interner.resolve(owner));
         let mut run_start = 0;
         while run_start < commands.len() {
             let Some(key) = Self::formation_key(&commands[run_start]) else {
@@ -983,7 +993,8 @@ impl Simulation {
             while run_end < commands.len() && Self::formation_key(&commands[run_end]) == Some(key) {
                 run_end += 1;
             }
-            if run_end - run_start > 1 {
+            let mut orders = run_end - run_start;
+            if orders > 1 {
                 let clicked_target = (key.1 as i16, key.2 as i16);
                 //64CDE9 resolves the Cell;64CDF6 returns for the shared
                 // dummy before member collection or destination rewrites.
@@ -1001,6 +1012,10 @@ impl Simulation {
                     let Some(entity) = self.substrate.entities.get(entity_id) else {
                         continue;
                     };
+                    if sender.is_some_and(|owner| self.network_actor_foreign(owner, entity_id)) {
+                        orders -= 1;
+                        continue;
+                    }
                     if !matches!(
                         entity.category(),
                         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
@@ -1027,6 +1042,10 @@ impl Simulation {
                             crate::util::lepton::lepton_to_cell(navigation.y),
                         ),
                     });
+                }
+                if orders < 2 {
+                    run_start = run_end;
+                    continue;
                 }
                 let mut member_target: Option<GroupMemberTarget> = None;
                 let mut assignments = group_destination::distribute_group_destinations(
@@ -1255,16 +1274,19 @@ impl Simulation {
         // One scan per command sender, in sender order. A sender is its
         // House's index, as in gamemd's House scan, unless players share
         // Houses (VERA): each of them then gets its own scan of that House.
+        // A watcher sends nothing, so no sender is its current player.
         let local_source = self.session.local_shared_house_source();
+        let watcher = self.session.watcher();
         let mut houses: Vec<_> = self
             .session
             .network_sources(self.houses.order().len())
             .filter_map(|(source, house)| {
                 let owner = *self.houses.order().get(house)?;
-                let current_player = match local_source {
-                    Some(local) => local == source,
-                    None => self.session.current_house() == Some(owner),
-                };
+                let current_player = !watcher
+                    && match local_source {
+                        Some(local) => local == source,
+                        None => self.session.current_house() == Some(owner),
+                    };
                 Some(
                     CommandDispatchHouse::new(owner, source, true)
                         .with_current_player(current_player),
@@ -1438,9 +1460,13 @@ impl DoListHost<QueuedCommand> for WorldCommandHost<'_, '_, '_> {
             .compare_frame_info(record, self.sim.session.binary_frame() as i32)
     }
 
-    fn adjust_megamissions(&mut self, _house: CommandDispatchHouse, entries: &mut [QueuedCommand]) {
-        self.sim
-            .adjust_staged_megamission_destinations(entries, self.rules, self.overlay_registry);
+    fn adjust_megamissions(&mut self, house: CommandDispatchHouse, entries: &mut [QueuedCommand]) {
+        self.sim.adjust_staged_megamission_destinations(
+            entries,
+            self.rules,
+            self.overlay_registry,
+            Some(house.owner),
+        );
     }
 
     fn execute(
@@ -1520,18 +1546,18 @@ fn within_spread_band(target_height: i32, candidate_height: i32) -> bool {
     (candidate_height - target_height).abs() <= 2
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "group_spread_gate_tests.rs"]
 mod group_spread_gate_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "command_admission_tests.rs"]
 mod command_admission_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "move_flash_ingress_tests.rs"]
 mod move_flash_ingress_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "control_group_ingress_tests.rs"]
 mod control_group_ingress_tests;

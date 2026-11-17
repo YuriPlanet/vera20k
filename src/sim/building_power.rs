@@ -269,7 +269,7 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod ares_tests {
     use crate::rules::ruleset::RuleSet;
     use crate::sim::world::{FrameEffects, Simulation};

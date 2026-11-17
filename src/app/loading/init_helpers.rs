@@ -371,7 +371,7 @@ pub(crate) fn bind_rules_asset_closure(
 ) -> anyhow::Result<()> {
     // The asset closures follow the way the game's Rules were read.
     let _ares_way = crate::rules::ares_switch::read_ares_way(rules.reads_ares_way());
-    rules.bind_scheduler_anim_assets(roots, assets, theater_ext, theater_name)?;
+    rules.bind_scheduler_anim_assets(roots, assets, theater_ext, theater_name);
     // The strict pass replaces the scheduler set; tolerant bindings must follow.
     let tolerant_roots = tolerant_anim_class_roots(rules);
     let unbound = rules.bind_anim_class_assets(&tolerant_roots, assets, theater_ext, theater_name);
@@ -685,8 +685,8 @@ pub(crate) fn finish_presentation_assets(
     // 0x1002ECC0 on every game load, freeing the previous match's surfaces
     // first. Only a side that names one of the two keys differs from the
     // process InitGame art, so the override atlas belongs to this world.
-    #[cfg(feature = "ares")]
-    let outcome_banner_side_art = {
+    // Only when Ares plays in the game (`RuleSet::ares`).
+    let outcome_banner_side_art = if rules.ares() {
         let (image, palette) = rules
             .side_graphical_text(simulation.session().scenario_side())
             .unwrap_or((None, None));
@@ -701,9 +701,9 @@ pub(crate) fn finish_presentation_assets(
         } else {
             None
         }
+    } else {
+        None
     };
-    #[cfg(not(feature = "ares"))]
-    let outcome_banner_side_art = None;
     // `[EndGameScreens]` may name the local player's own country a win/lose
     // card. It takes the retail `GRFXTXT` banner's slot in the tactical
     // viewport, so it is built with the world like the banner art above; the
@@ -795,11 +795,11 @@ pub(crate) fn finish_presentation_assets(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 #[path = "init_helpers_retail_placement_oracle_tests.rs"]
 mod retail_placement_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 #[path = "init_helpers_retail_buildup_tests.rs"]
 mod retail_buildup_tests;
 
@@ -828,7 +828,7 @@ fn voxel_palette_demand(
     colors
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     /// Building animations are tolerant roots, and only those the rules
     /// register as AnimTypes: art sections no rules list names (retail
@@ -1005,10 +1005,11 @@ mod tests {
         let mut rules =
             RuleSet::from_ini(&IniFile::from_str("[General]\nDamageFireTypes=\n")).expect("rules");
         let mut art = ArtRegistry::from_ini(&IniFile::from_str(
-            "[CUSTOM_TOP]\nLoopCount=-1\nStartSound=WaterfallLoop\n\
+            "[CUSTOM_TOP]\nLoopCount=-1\n\
              [CUSTOM_GROUND]\nLayer=ground\nLoopCount=-1\nYSortAdjust=1000\n",
         ));
         art.bind_anim_frame_count_for_test("CUSTOM_TOP", 16);
+        art.set_anim_sounds_for_test("CUSTOM_TOP", Some("WaterfallLoop"), None);
         art.bind_anim_frame_count_for_test("CUSTOM_GROUND", 2);
         rules.replace_art_registry_for_test(art);
 

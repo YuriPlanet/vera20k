@@ -268,6 +268,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "unit_repair_seek_tests.rs"]
 mod tests;

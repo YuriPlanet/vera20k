@@ -1106,11 +1106,11 @@ impl WorldQuery<'_, '_> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "fire_error_world_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod terrain_target_tests {
     use super::*;
 

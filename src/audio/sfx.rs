@@ -65,21 +65,21 @@ mod sample_queue;
 use clip_cache::ClipCache;
 use playback::{PlaybackControl, PlaylistCursor, RingSource};
 use sample_queue::SampleQueue;
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod ambient_playout_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod coordinate_playback_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod coordinate_sound_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod gattling_loop_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod house_cue_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod ring_resample_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod unit_voice_lifecycle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod unit_voice_tests;
 pub(crate) use observation::{PcmObservationConfig, PcmObservationContext, PcmObservationReport};
 use observation::{PcmObserver, VoiceLatchState};
@@ -3218,7 +3218,7 @@ fn taunt_filename(pattern: &str, number: u8) -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod tests {
     use super::*;
 
@@ -3661,7 +3661,7 @@ mod tests {
     /// lacks stores nothing and clears the entry's `+0x0C` (`0x00406510`), so
     /// `AllocateFromPool @ 0x00405190` refuses every play (`0x004051B6`) even
     /// though another name resolved. A 33rd token is refused before its lookup.
-    #[cfg(not(feature = "ares"))]
+    /// Read the stock way: Ares' AddSample (`0x1005AFA0`) never clears `+0x0C`.
     #[test]
     fn one_unresolvable_sample_name_silences_the_whole_entry() {
         use crate::assets::audio_bag::{AudioIndex, test_support::build_idx};
@@ -5265,7 +5265,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod country_taunt_tests {
     use super::taunt_filename;
 

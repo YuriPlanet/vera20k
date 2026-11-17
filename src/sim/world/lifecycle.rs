@@ -156,6 +156,16 @@ impl TechnoDiscoveryHistory {
         self.discovered_by_other_house
     }
 
+    /// VERA watching: this process's own bytes rebuilt for a newly followed
+    /// human from the history every peer keeps. `view` is that human's bit
+    /// in `network_human_discovery`; the House left behind becomes another
+    /// receiver.
+    fn follow_view(&mut self, owned: bool, view: u32) {
+        self.owned_by_current_house = owned;
+        self.discovered_by_current_house = self.network_human_discovery & view != 0;
+        self.discovered_by_other_house |= self.network_human_discovery & !view != 0;
+    }
+
     fn clear_current_discovery(&mut self) {
         self.discovered_by_current_house = false;
         // A shared lifecycle clear executes in every represented native view.
@@ -733,6 +743,15 @@ pub enum LifecycleOutput {
         owner: InternedId,
         message: super::planning::PlanningAppendMessage,
     },
+    /// MPlayer_Defeated 0x004FC0B0 for `owner`, after its Defeated flag and
+    /// Computer_Paranoid. The app runs PlayerPtr's local branch (beacons,
+    /// command bar, chat mask: 0x004FC1BD..0x004FC23E) and, when
+    /// `match_decided` (the decision at 0x004FC3DE..0x004FC6B7), reopens a
+    /// command bar that branch closed (0x004FC591..0x004FC59F).
+    MultiplayerHouseDefeated {
+        owner: InternedId,
+        match_decided: bool,
+    },
     /// HouseBegin4FA41C clears the category prediction gate before builder
     /// admission, including a refused Begin. The strip's request survives.
     /// Source: tools/sidebar_oracle/pending_production.md.
@@ -841,12 +860,6 @@ pub enum LifecycleOutput {
     ObjectPointerExpired {
         stable_id: u64,
     },
-    RevealDisplay {
-        stable_id: u64,
-    },
-    DisplayRemove {
-        stable_id: u64,
-    },
     DetachAttachedAnims {
         stable_id: u64,
     },
@@ -857,12 +870,6 @@ pub enum LifecycleOutput {
         stable_id: u64,
     },
     ClearRedraw {
-        stable_id: u64,
-    },
-    /// Same-object Type changes (Ares ConvertTechno10043740) keep their
-    /// Display membership. Presentation must re-resolve that object's model
-    /// without pretending that another object spawned or entered Display.
-    ObjectTypeChanged {
         stable_id: u64,
     },
 }
@@ -1189,10 +1196,7 @@ impl Simulation {
             };
         }
         if self.substrate.particle_systems.contains_key(stable_id) {
-            let registered = self.reveal_particle_system(
-                stable_id,
-                crate::rules::ruleset::RuleSet::empty_for_test(),
-            );
+            let registered = self.reveal_particle_system(stable_id);
             return RevealOutcome::Revealed {
                 logic_registered: registered,
             };
@@ -1211,7 +1215,7 @@ impl Simulation {
     }
 
     /// [`Self::reveal`] for an entity, with the rules context the type-reading
-    /// Unlimbo writers need (Aircraft Techno+3D4 retention, Ground sort keys).
+    /// Unlimbo writers need (Aircraft Techno+3D4 retention).
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn reveal_entity_with_rules(
         &mut self,
@@ -1774,11 +1778,20 @@ impl Simulation {
         // (0x004533A0(1)). VERA has no fence sections: a mod's posts stand
         // without a fence between them. No retail type is LaserFencePost=.
         self.discover_building_owner_after_unlimbo(stable_id, context);
-        // Residual: 0x00440E99..0x00440F5B. A type with NaturalParticleSystem=
-        // (Type+0x764) and no system yet (+0x30C) constructs one
-        // (0x0062DC50) at its location plus Type+0x768, owned by the
-        // building. Not ported: such a building shows no particles. No
-        // retail BuildingType sets the key.
+        // 0x00440E99..0x00440EB5: a type with NaturalParticleSystem=
+        // (Type+0x764) and no system yet (+0x30C) builds one. No retail
+        // BuildingType sets the key.
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| {
+                entity.category() == EntityCategory::Structure
+                    && entity.building.natural_particle_system.system().is_none()
+            })
+        {
+            self.construct_natural_particle_system(stable_id, context.rules());
+        }
         // While Ares plays, BuildingClass_Put_DontSpawnSpotlight (1004EA10,
         // hook 0x441163) skips this: TechnoClass's Put hook built the light.
         if !context.rules.ares() {
@@ -1812,15 +1825,12 @@ impl Simulation {
         if still_placed {
             Self::submit_entity_display(
                 &self.interner,
-                &self.terrain_objects,
                 &mut self.substrate,
                 &self.resolved_terrain,
                 stable_id,
                 context.rules,
                 context.terrain(),
             );
-            self.lifecycle_outputs
-                .emit(LifecycleOutput::RevealDisplay { stable_id });
             #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::RevealDisplayBoundary);
 
@@ -1963,6 +1973,74 @@ impl Simulation {
                 .checked_shl(ordinal as u32)
                 .expect("admitted network human count fits the30-player discovery mask"),
         )
+    }
+
+    /// VERA watching (docs/Networking.md "Watching"): this world plays a
+    /// match its game watches. It stands in the followed player's seat for
+    /// that player's view, sidebar and sounds, or shows the observer's
+    /// sidebar there, but sends nothing, so every command record is another
+    /// game's. The app installs it with the world, before its first frame.
+    pub fn install_watcher(&mut self) {
+        self.session.install_watcher();
+    }
+
+    /// VERA watching: a watcher's world follows another human, or the one it
+    /// kept while it showed the observer's sidebar ([`Self::observe`]).
+    /// Online, the current House selects only this process's view and
+    /// result, since every peer holds a different one (see
+    /// `shared_owned_by_current_house`), and PlayerControl only its EVA and
+    /// score lines (unhashed online), so following moves those and rebuilds
+    /// just the objects' owner and discovery bytes, from the history every
+    /// peer keeps. Refused offline and for a House that is no human player's,
+    /// and when the view may not change (`watcher_view_may_change`).
+    pub fn follow_house(&mut self, owner: InternedId) -> bool {
+        let Some(view) = self.network_discovery_view_bit(owner) else {
+            return false;
+        };
+        let current = self.session.current_house();
+        if !self.watcher_view_may_change()
+            || (current == Some(owner) && !self.session.watcher_observes())
+        {
+            return false;
+        }
+        self.session.show_observer_sidebar(false);
+        if current == Some(owner) {
+            return true;
+        }
+        for (house, controlled) in [(current, false), (Some(owner), true)] {
+            if let Some(house) = house.and_then(|house| self.houses.get_mut(&house)) {
+                house.assign_player_control(controlled);
+            }
+        }
+        self.session.install_current_house(Some(owner));
+        for entity in self.substrate.entities.values_mut() {
+            let owned = entity.owner() == owner;
+            entity.discovery.follow_view(owned, view);
+        }
+        true
+    }
+
+    /// VERA watching: the watcher shows the observer's sidebar, Tab's stop
+    /// after the last player (`ScenarioSession::watcher_observes`). Its world
+    /// keeps the House it last followed, and with it that player's sounds,
+    /// radar and result, so nothing else changes. Refused while it already
+    /// shows it and when the view may not change.
+    pub fn observe(&mut self) -> bool {
+        if !self.watcher_view_may_change() || self.session.watcher_observes() {
+            return false;
+        }
+        self.session.show_observer_sidebar(true);
+        true
+    }
+
+    /// Whether a watcher's view may change now: never for a player, once this
+    /// process's result is on its way, or in a frame stopped by a failure. A
+    /// frame waiting on the stream has run its logic, and a watcher's command
+    /// tail reads no current House, so it changes then as between frames.
+    fn watcher_view_may_change(&self) -> bool {
+        self.session.watcher()
+            && self.session.outcome_request().is_none()
+            && (self.frame_continuation.is_none() || self.pending_network_wait())
     }
 
     /// `+0x41A` as a decision every peer shares reads it: VisualCharacter's
@@ -2927,7 +3005,6 @@ impl Simulation {
         entity.position.put_z(world_z);
         Self::submit_entity_display(
             &self.interner,
-            &self.terrain_objects,
             &mut self.substrate,
             &self.resolved_terrain,
             stable_id,
@@ -3047,7 +3124,6 @@ impl Simulation {
         if let Some(before) = jumpjet_layer_before {
             Self::complete_jumpjet_display_process(
                 &self.interner,
-                &self.terrain_objects,
                 &mut self.substrate,
                 &self.resolved_terrain,
                 stable_id,
@@ -3186,7 +3262,6 @@ impl Simulation {
         // cell lists never regain it.
         Self::submit_entity_display(
             &self.interner,
-            &self.terrain_objects,
             &mut self.substrate,
             &self.resolved_terrain,
             id,
@@ -3511,6 +3586,7 @@ impl Simulation {
         // and Display. Its independent19B byte can still be zero, so it cannot
         // be resurrected through Reveal before the common deferred drain.
         if self.substrate.pending_delete.contains_object(&stable_id)
+            || self.substrate.anims.local_delete_queued(stable_id)
             || !self
                 .substrate
                 .anims
@@ -3523,11 +3599,18 @@ impl Simulation {
         if submit {
             self.submit_anim_display(stable_id, rules);
         }
+        // `ObjectClass::Unlimbo @ 0x005F4EC0` leaves an object with id -2 out
+        // of Logic in LAN and online games: the local list runs it instead
+        // (`FrameStep::LocalAnims`).
+        if crate::sim::anim_class::is_local_anim_id(stable_id) {
+            return false;
+        }
         self.register_logic_object(stable_id)
     }
 
     pub(crate) fn conceal_anim(&mut self, stable_id: u64) -> bool {
         self.substrate.display.remove(stable_id);
+        self.substrate.anims.conceal_presentation(stable_id);
         self.substrate.mark_anim_display(stable_id, false);
         self.unregister_logic_object(stable_id)
     }
@@ -3555,24 +3638,19 @@ impl Simulation {
         piece.lifecycle_mut().in_limbo = false;
         piece.lifecycle_mut().admit_mark_down();
         // VoxelAnim VT7F6318+78 ->74A960: always Air.
-        Self::submit_overhead_display(&mut self.substrate, stable_id, DisplayLayer::AIR);
+        Self::submit_object_display(&mut self.substrate, stable_id, DisplayLayer::AIR);
         self.register_logic_object(stable_id)
     }
 
-    pub(crate) fn reveal_particle_system(&mut self, stable_id: u64, rules: &RuleSet) -> bool {
+    pub(crate) fn reveal_particle_system(&mut self, stable_id: u64) -> bool {
         if !self.substrate.particle_systems.contains_key(stable_id) {
             return false;
         }
-        // ParticleSystem VT7EFB9C+78 ->62FE80: always Ground. Rules resolve
-        // the existing Building peers' GetYSort adjustments during insertion.
-        Self::submit_object_display(
-            &self.interner,
-            &self.terrain_objects,
-            &mut self.substrate,
-            stable_id,
-            DisplayLayer::GROUND,
-            rules,
-        );
+        // ParticleSystem VT7EFB9C+78 ->62FE80: always Ground.
+        // RESIDUAL: ObjectUnlimbo refuses the empty coordinate
+        // (`0x005F4ECD..0x005F4EEF`), so gamemd leaves a system built at
+        // 0,0,0 in Limbo; VERA reveals it. No producer builds one there.
+        Self::submit_object_display(&mut self.substrate, stable_id, DisplayLayer::GROUND);
         self.register_logic_object(stable_id)
     }
 
@@ -3585,7 +3663,7 @@ impl Simulation {
     /// AIR (3), so Display4A9720 reaches the existing append owner5519B0.
     /// A particle is owned by its system and never joins global Logic.
     pub(crate) fn reveal_particle(substrate: &mut ObjectSubstrate, stable_id: u64) {
-        Self::submit_overhead_display(substrate, stable_id, DisplayLayer::AIR);
+        Self::submit_object_display(substrate, stable_id, DisplayLayer::AIR);
     }
 
     /// Spark62ED2C (and the other System AI cleanup callers) invokes the
@@ -3624,14 +3702,7 @@ impl Simulation {
             });
         // Terrain ctor71BC76 reveals at the retained type-adjusted coordinate;
         // Object5F4260 selects Ground even on elevated cells.
-        Self::submit_object_display(
-            &self.interner,
-            &self.terrain_objects,
-            &mut self.substrate,
-            stable_id,
-            DisplayLayer::GROUND,
-            rules,
-        );
+        Self::submit_object_display(&mut self.substrate, stable_id, DisplayLayer::GROUND);
         // ObjectUnlimbo5F4FE2 submits Display before the independent Logic
         // admission5F4FEF..5F5040; ordinary trees still complete Unlimbo.
         if joins_logic {
@@ -3670,7 +3741,7 @@ impl Simulation {
         } else {
             DisplayLayer::AIR
         };
-        Self::submit_overhead_display(&mut self.substrate, stable_id, layer);
+        Self::submit_object_display(&mut self.substrate, stable_id, layer);
         self.register_logic_object(stable_id)
     }
 
@@ -3679,7 +3750,7 @@ impl Simulation {
             return false;
         }
         // Wave VT7F6BF4+78 ->75F890: always Air; Submit at75F952.
-        Self::submit_overhead_display(&mut self.substrate, stable_id, DisplayLayer::AIR);
+        Self::submit_object_display(&mut self.substrate, stable_id, DisplayLayer::AIR);
         self.register_logic_object(stable_id)
     }
 
@@ -4010,14 +4081,6 @@ impl Simulation {
         }
 
         self.substrate.display.remove(stable_id);
-        // The app consumes this projection to refresh entity/Anim atlases.
-        // Particles draw from the retained Display registry directly; their
-        // removal cannot introduce atlas entries and must not trigger a
-        // whole-world atlas coverage scan for every child retirement.
-        if self.substrate.entities.contains(stable_id) {
-            self.lifecycle_outputs
-                .emit(LifecycleOutput::DisplayRemove { stable_id });
-        }
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealDisplayBoundary);
         self.lifecycle_outputs
@@ -5058,6 +5121,8 @@ impl Simulation {
             listener.lift.source(),
             listener.drop_credit.manipulated_by(),
             listener.building.building_light.light(),
+            listener.building.natural_particle_system.system(),
+            listener.building.destroy_smoke_particle_system.system(),
         ]
         .into_iter()
         .flatten()
@@ -5570,6 +5635,12 @@ impl Simulation {
         let clear_fire_system = listener.fire_particle_system.system() == Some(expired_id);
         let clear_spark_system = listener.spark_particle_system.system() == Some(expired_id);
         let clear_railgun_system = listener.railgun_particle_system.system() == Some(expired_id);
+        // A Building's natural `+0x30C` and destroy-smoke `+0x320` links are
+        // two more of those eight.
+        let clear_natural_system =
+            listener.building.natural_particle_system.system() == Some(expired_id);
+        let clear_destroy_smoke =
+            listener.building.destroy_smoke_particle_system.system() == Some(expired_id);
         // Techno707AE7..707B03 clears ArchiveTarget+218 on control1. The
         // later Foot4D99F1..4D99FC clears a still-matching archive on both
         // controls, independent of sensors and same-owner target exemptions.
@@ -5670,6 +5741,8 @@ impl Simulation {
             || clear_fire_system
             || clear_spark_system
             || clear_railgun_system
+            || clear_natural_system
+            || clear_destroy_smoke
             || clear_damage_smoke
             || clear_archive_target
             || clear_suspended_nav_com
@@ -5708,6 +5781,12 @@ impl Simulation {
         }
         if clear_railgun_system {
             listener.railgun_particle_system.forget();
+        }
+        if clear_natural_system {
+            listener.building.natural_particle_system.forget();
+        }
+        if clear_destroy_smoke {
+            listener.building.destroy_smoke_particle_system.forget();
         }
         if clear_archive_target {
             listener.set_archive_target(None);
@@ -5779,8 +5858,12 @@ impl Simulation {
     /// has temporarily lent that grid through UninitContext. The remaining arms
     /// read the object's liveness, health and mission from the same world.
     pub(crate) fn notify_pointer_expired(&mut self, expired_id: u64, context: UninitContext<'_>) {
+        // A VoxelAnim (WhatAmI 0x29, `0x0074AB20`) takes the generic arm at
+        // `0x00725925` too, which reaches every particle system, so an
+        // AttachedSystem's owner hears of the anim's death.
         if !self.substrate.spotlights.contains_key(expired_id)
             && !self.substrate.entities.contains(expired_id)
+            && !self.substrate.voxel_anims.contains_key(expired_id)
             && !self.substrate.particle_systems.contains_key(expired_id)
             && self
                 .substrate
@@ -6035,6 +6118,11 @@ impl Simulation {
         // control and touches no other listener's state, so its place among
         // the listeners changes nothing.
         self.alpha_shapes.pointer_expired(expired_id);
+        // `0x0072590E..0x0072591F`: whatever the control, an expiring
+        // ParticleSystem that is the gas cloud clears that global first.
+        self.substrate
+            .particle_systems
+            .expire_gas_cloud_system(expired_id);
         // `DispatchPointerExpiredCleanup @ 0x007258D0` calls
         // `BombListClass::PointerGotInvalid @ 0x00439150` after its listener
         // loop (0x00725961) whatever the control, so a cloaking planter loses
@@ -6077,9 +6165,19 @@ impl Simulation {
             // held product; no entity listener consumes that factory pointer.
             let mut named = self.production.factories_mut().pointer_expired(expired_id);
             // `HouseClass::PointerExpired @ 0x004FB9B0`, each house a listener
-            // (`0x004F5FFB`), forgets House+54E0 whatever the control.
+            // (`0x004F5FFB`), forgets House+54E0 whatever the control. Phobos'
+            // `AnnounceInvalidPointer` hook at this dispatcher's entry
+            // (`0x7258D0`, resuming there) sends a removed building to every
+            // house's `HouseExt::OnDetach`, which clears the AI factory slots
+            // naming it; no other listener reads them.
+            let phobos_detach = context.rules.phobos() && control == PointerExpiryControl::Uninit;
             for house in self.houses.values_mut() {
                 named |= house.forget_lost_building(expired_id);
+                if phobos_detach {
+                    named |= house
+                        .ai_production_mut()
+                        .forget_parallel_factory(expired_id);
+                }
             }
             debug_assert!(
                 techno || !named,
@@ -6833,6 +6931,29 @@ impl Simulation {
         self.trace_lifecycle_for_test(LifecycleTestEvent::PendingDeleteQueued { stable_id });
     }
 
+    /// A particle system deleted at once rather than retired: its vt+0x20
+    /// with 1 (`0x00630230`) runs `~ParticleSystemClass @ 0x0062E070` and
+    /// frees the body. The destructor announces the expiry (`0x0062E092`),
+    /// Limbos the system (`0x0062E099`), deletes each particle
+    /// (`0x0062E0AE..0x0062E15D`) and leaves the system lists, all of which
+    /// the common destructor below does, so every listener's link clears and
+    /// the system and its particles are gone this frame. The destructor reads
+    /// no GameState. A queued ticket would name a freed body, so it goes too.
+    pub(crate) fn delete_particle_system_now(
+        &mut self,
+        stable_id: u64,
+        context: UninitContext<'_>,
+    ) {
+        if !self.substrate.particle_systems.contains_key(stable_id) {
+            return;
+        }
+        self.substrate.pending_delete.remove_object(stable_id);
+        // RESIDUAL: each particle's own destructor announces its expiry
+        // (`0x0062D9C8`); VERA only conceals them. No listener holds a
+        // particle id.
+        self.finalize_and_remove_common(stable_id, context, 1);
+    }
+
     /// A queued object's IsReadyToDelete (vt+0x44), by kind. An ID no store
     /// holds is ready.
     fn pending_object_is_ready(&self, stable_id: u64) -> bool {
@@ -7496,6 +7617,7 @@ impl Simulation {
             }
         }
         self.substrate.pending_delete.finish_drain();
+        self.substrate.anims.drain_local_deletes();
     }
 
     /// Test compatibility only.  Production has one ordinary tail drain.
@@ -7524,10 +7646,14 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "foot_archive_expiry_tests.rs"]
 mod foot_archive_expiry_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
+#[path = "watcher_tests.rs"]
+mod watcher_tests;
+
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "ares_prerequisite_lifecycle_tests.rs"]
 mod ares_prerequisite_lifecycle_tests;

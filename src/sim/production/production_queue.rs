@@ -313,8 +313,7 @@ pub(in crate::sim) fn exit_produced_object(
             // AircraftType` (`0x444119`, `0x444131`, `0x443CCA`) clears the
             // house's factory slot at this prefix, before FreeRadio and
             // placement retries can leave the product held.
-            #[cfg(feature = "phobos")]
-            if rules.parallel_ai_queues().allows_parallel() {
+            if rules.parallel_ai_queues_act() {
                 let slot = crate::sim::ai_base_building::AiFactorySlot::for_product(
                     product_type.category,
                     producer_type.naval,

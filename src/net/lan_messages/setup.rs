@@ -194,11 +194,15 @@ pub struct LanGameOptions<const N: usize = 8> {
     pub map_digest: String,
     pub humans: Vec<LanOptionsHuman>,
     pub ai: [LanOptionsAi; N],
+    /// VERA's room carries every AI row on any map, where gamemd's text
+    /// for a map of up to eight players carries eight.
+    pub all_ai_rows: bool,
 }
 
 impl<const N: usize> LanGameOptions<N> {
     /// 5DBB60 uses signed `%d`, three literal zero `%x` fields per human,
-    /// then the `@:` sentinel and all eight AI rows including their last comma.
+    /// then the `@:` sentinel and all eight AI rows including their last comma
+    /// (all `N` for a larger map or [`Self::all_ai_rows`]).
     pub fn encode(&self) -> Vec<u8> {
         let mut out = format!(
             "{},{},{},{},{},{},{},{},{},{},{},{},",
@@ -249,7 +253,11 @@ impl<const N: usize> LanGameOptions<N> {
         for ai in self
             .ai
             .iter()
-            .take(if self.map_player_capacity > 8 { N } else { 8 })
+            .take(if self.map_player_capacity > 8 || self.all_ai_rows {
+                N
+            } else {
+                8
+            })
         {
             out.extend(
                 format!(
@@ -317,6 +325,6 @@ pub fn unpack_map_description(packed: &[u8]) -> Vec<u16> {
     out
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 #[path = "setup_tests.rs"]
 mod tests;

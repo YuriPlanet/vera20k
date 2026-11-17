@@ -81,6 +81,9 @@ pub enum TriggerEffect {
         locked: bool,
         was_locked: bool,
     },
+    /// TAction46's Display clears ahead of its lock: the current placement
+    /// and its foundation, then the cursor modes. The other locks only lock.
+    CancelPlacementModes,
     LocalizedMessage {
         csf_label: String,
     },
@@ -960,6 +963,12 @@ impl PartialEq for TriggerRuntime {
 impl Eq for TriggerRuntime {}
 
 impl TriggerRuntime {
+    /// `TeamTypeClass::Array[index]` (`0x00A8ECA4`) by ID, in constructor
+    /// order. None past its end, where native reads out of bounds.
+    pub(crate) fn team_type_at(&self, index: usize) -> Option<&str> {
+        self.definitions.team_types.get(index).map(String::as_str)
+    }
+
     /// Trigger deleting destructor726950 selected by the common725C70 owner.
     /// Pointer expiry splices this identity out of every live Tag chain.
     pub(crate) fn delete_live_trigger(&mut self, index: usize) {
@@ -5207,6 +5216,14 @@ impl Simulation {
             }
             46 | 47 => {
                 let locked = action.kind == 46;
+                if locked {
+                    // TActionClass::Execute case 46 (0x006DED8B..0x006DEDD7;
+                    // 0x006E2660 is an unreferenced copy) clears the Display modes
+                    // before Lock_User_Input 0x00684240. The pause 0x00684060,
+                    // Flag_To_Win/Lose 0x004FCB39/0x004FCD22 and the chrono
+                    // screen 0x0053B54F lock without them.
+                    effects.push(TriggerEffect::CancelPlacementModes);
+                }
                 let was_locked = if locked {
                     self.session.lock_input()
                 } else {
@@ -5659,6 +5676,10 @@ impl Simulation {
                 };
                 return self.request_player_outcome(request, rules, frame_effects);
             }
+            // RESIDUAL (dormant, no retail map uses action 49 or 50): action 49, Zoom In (`0x006DEEB8`),
+            // sets Tactical's zoom factor from Rules, locks input (0x00A8ED9C), hides the cursor,
+            // cancels the drag (0x006938C0) and sleeps 1000 ms; action 50, Zoom Out (`0x006DEF35`),
+            // puts the factor back to 1.0 and restores the lock and cursor. VERA has no handler.
             _ => return false,
         }
         true
@@ -6088,160 +6109,160 @@ impl TriggerRuntime {
 #[path = "trigger_runtime_ares.rs"]
 mod ares;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_ares_tests.rs"]
 mod ares_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_factory_owner_tests.rs"]
 mod factory_owner_tests;
 
 // Vanilla duplicate keys: Ares's `INIClass_Parse_Override` (`0x5260D9`) keeps
 // only the later one (rules::ini_parser::ares_syntax).
-#[cfg(all(test, not(feature = "ares")))]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_duplicate_ini_tests.rs"]
 mod duplicate_ini_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_zone_entry_tests.rs"]
 mod zone_entry_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_native_tests.rs"]
 mod native_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_superweapon_state_tests.rs"]
 mod superweapon_state_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_superweapon_grant_tests.rs"]
 mod superweapon_grant_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_defense_target_tests.rs"]
 mod defense_target_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_type_tech_level_tests.rs"]
 mod type_tech_level_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_all_to_hunt_tests.rs"]
 mod all_to_hunt_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_no_factories_tests.rs"]
 mod no_factories_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_damage_event_tests.rs"]
 mod damage_event_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_reveal_zone_tests.rs"]
 mod reveal_zone_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_ai_activation_tests.rs"]
 mod ai_activation_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_crate_tests.rs"]
 mod crate_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_build_type_tests.rs"]
 mod build_type_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_house_notification_tests.rs"]
 mod house_notification_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_house_attacked_tests.rs"]
 mod house_attacked_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_group_wakeup_tests.rs"]
 mod group_wakeup_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_wakeup_tests.rs"]
 mod wakeup_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_chrono_reinforcement_tests.rs"]
 mod chrono_reinforcement_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_lightning_tests.rs"]
 mod lightning_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_building_power_tests.rs"]
 mod building_power_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_house_directive_tests.rs"]
 mod house_directive_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_home_camera_tests.rs"]
 mod home_camera_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_explosion_tests.rs"]
 mod explosion_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_movement_event_tests.rs"]
 mod movement_event_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_shroud_spy_tests.rs"]
 mod shroud_spy_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_periodic_cell_tests.rs"]
 mod periodic_cell_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_infantry_psycho_tests.rs"]
 mod infantry_psycho_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_ore_tests.rs"]
 mod ore_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_particle_tests.rs"]
 mod particle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_map_lighting_tests.rs"]
 mod map_lighting_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_tint_tests.rs"]
 mod tint_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_ambient_event_tests.rs"]
 mod ambient_event_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_nuke_tests.rs"]
 mod nuke_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_direct_strike_tests.rs"]
 mod direct_strike_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 mod meteor_action_tests {
     use super::*;
     use crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art;
@@ -6371,38 +6392,38 @@ mod meteor_action_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_talk_tests.rs"]
 mod talk_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_cargo_tests.rs"]
 mod cargo_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_restore_tests.rs"]
 mod restore_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_scenario_pause_tests.rs"]
 mod scenario_pause_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_outcome_tests.rs"]
 mod outcome_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_digest_ini_tests.rs"]
 mod digest_ini_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "world/building_sale_trigger_tests.rs"]
 mod building_sale_trigger_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_building_sale_tests.rs"]
 mod building_sale_native_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_skirmish_map_tests.rs"]
 mod skirmish_map_tests;

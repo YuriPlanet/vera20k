@@ -153,7 +153,7 @@ pub(crate) fn install_world_presentation(
     state.match_state.match_presentation.combat_lights.clear();
     state.renderer.performance_overlay.clear_simulation_rate();
     state.match_state.match_presentation.lasers.clear_on_load();
-    #[cfg(feature = "ares")]
+    // Empty unless a bounty or ProduceCashDisplay queued labels, which only Ares does.
     state
         .match_state
         .match_presentation
@@ -171,6 +171,12 @@ pub(crate) fn install_world_presentation(
         .electric_bolts
         .clear_on_load();
     state.match_state.match_presentation.airstrike_shades = Default::default();
+    state
+        .match_state
+        .match_presentation
+        .pixel_fx
+        .borrow_mut()
+        .clear_on_load();
     if let Some(runtime) = state.match_state.sim_runtime.runtime() {
         state
             .match_state
@@ -207,8 +213,10 @@ pub(crate) fn install_world_presentation(
 
     state.match_state.match_presentation.tile_atlas = assets.tile_atlas;
     state.match_state.match_presentation.building_zshape = assets.building_zshape;
-    // Growths prepared against the outgoing atlases never publish into these.
+    // Growths prepared against the outgoing atlases never publish into these,
+    // and what was checked against them says nothing about these.
     state.match_state.match_presentation.atlas_growth.cancel();
+    state.match_state.match_presentation.atlas_check = Default::default();
     state.match_state.match_presentation.unit_atlas = assets.unit_atlas;
     // Both voxel caches resolve model images through the replaced RuleSet.
     *state.renderer.vxl_pose_frame_cache.borrow_mut() = Default::default();
@@ -241,13 +249,25 @@ pub(crate) fn install_world_presentation(
             .configure(assets.sw_sidebar_ui, significance);
     }
     state.match_state.match_presentation.outcome_banner_side_art = assets.outcome_banner_side_art;
+    // Ares hook 6CC2B0's labels, only when Ares plays in the game
+    // (`RuleSet::ares`), resolved once here instead of with every sidebar draw.
+    let ares_status_texts = state.rules().filter(|rules| rules.ares()).map(|rules| {
+        crate::app::presentation::sidebar_build::ares_status_texts(rules, |label| {
+            state
+                .process_assets
+                .csf
+                .as_ref()
+                .map_or_else(|| label.to_owned(), |csf| csf.text(label).into_owned())
+        })
+    });
+    state.match_state.match_presentation.ares_status_texts = ares_status_texts;
     state.match_state.match_presentation.end_game_banner = assets.end_game_banner;
     // `Game_LoadUI_LoadSideData` resolves the dialog background pair once per
     // game load. The shell chrome atlas carries the three side slots, so a
     // changed pair drops it and the next paint rebuilds with the side's art;
-    // the process-lifetime slot 0 (`PUDLGBGN`) is not part of the hook.
-    #[cfg(feature = "ares")]
-    {
+    // the process-lifetime slot 0 (`PUDLGBGN`) is not part of the hook, which
+    // runs only when Ares plays in the game (`RuleSet::ares`).
+    if state.rules().is_some_and(|rules| rules.ares()) {
         let side = state
             .match_state
             .sim_runtime
@@ -299,6 +319,16 @@ pub(crate) fn install_world_presentation(
     // VERA relation colours start each scenario off, in the player colours.
     state.match_state.match_presentation.relation_colors = false;
     state.match_state.match_presentation.relation_color_map = None;
+    // VERA's Super Weapon Building Timers start from the saved switch; a
+    // match's own hotkey flips it from there.
+    let saved_timers = state
+        .persistence
+        .options_profile
+        .superweapon_building_timers;
+    state
+        .match_state
+        .match_presentation
+        .superweapon_building_timers = saved_timers;
     state.match_state.match_presentation.house_roster = map.house_roster;
     state.process_assets.csf = assets.csf;
     state.match_state.match_presentation.theater_name = map.theater_name;
@@ -387,14 +417,15 @@ pub(crate) fn install_world_presentation(
         );
     }
     // Ares `IvanBomb.Image` SHPs, retained once per match like the
-    // WeaponTypeExt's SHPStruct pointers.
-    #[cfg(feature = "ares")]
+    // WeaponTypeExt's SHPStruct pointers, when the Rules were read the Ares
+    // way: the bomb clock draws them then (`techno_extras_for_parent`).
     if let Some(assets) = state.process_assets.manager()
         && let Some(rules) = state
             .match_state
             .sim_runtime
             .runtime()
             .map(|runtime| &runtime.resources.rules)
+        && rules.ares_form()
         && let Some(overlay) = state
             .match_state
             .match_presentation
@@ -418,8 +449,11 @@ pub(crate) fn install_world_presentation(
         .placement_preview_art
         .borrow_mut()
         .reset();
-    // Full_Init 687BB2 -> Init_BeaconArt 4309D0; each row's ColorScheme is
-    // its House's (+0x16054).
+    // Full_Init 687BB2 -> Init_BeaconArt 4309D0, after 68781F mounted the
+    // side's MIX group; each row's ColorScheme is its House's (+0x16054),
+    // whose Convert Init_Theater rebuilt from UNIT%s.PAL (534D77).
+    let beacon_side = crate::app::presentation::sidebar_render::current_sidebar_side(state);
+    let beacon_ares = state.rules().is_some_and(|rules| rules.ares());
     state.match_state.match_presentation.beacon_art =
         state.process_assets.manager().and_then(|assets| {
             let runtime = state.match_state.sim_runtime.runtime()?;
@@ -437,11 +471,19 @@ pub(crate) fn install_world_presentation(
                     *runtime.resources.rules.house_color_ramps.ramp(index)
                 })
                 .collect();
+            let unit_palette = crate::map::theater::load_theater_unit_and_iso_palettes(
+                assets,
+                &state.match_state.match_presentation.theater_name,
+            )
+            .map(|(unit, _)| unit);
             Some(crate::render::beacon_art::BeaconArt::new(
                 &state.renderer.gpu.device,
                 &state.renderer.gpu.queue,
                 &state.renderer.batch_renderer,
                 assets,
+                beacon_side,
+                beacon_ares,
+                unit_palette.as_ref(),
                 &ramps,
             ))
         });
@@ -547,6 +589,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // Close the outgoing diagnostic timeline before replacing its runtime.
     crate::app::match_runtime::sim_tick::close_replay_segment_for_new_timeline(state);
     let incoming = result.scenario.simulation.zip(result.scenario.rules);
+    let watcher = crate::app::match_runtime::watching::active(state);
     if let Some(sfx) = state.audio.sfx_player.as_mut() {
         // Every committed replacement retires outgoing sources, including a
         // generic fallback with no incoming world. Cancellation precedes both
@@ -580,9 +623,14 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         .sim_runtime
         .install(incoming.map(|(mut simulation, rules)| {
             simulation.install_fresh_process_main(&state.frontend.frontend_main_rng);
+            // A watcher's world sends nothing, also in its followed player's seat.
+            if watcher {
+                simulation.install_watcher();
+            }
             simulation.publish_scenario_started();
             simulation.batch_path_searches();
             simulation.batch_target_scans();
+            simulation.present_effect_anims();
             simulation.sleep_idle_objects_in_match();
             crate::sim::runtime::SimRuntime {
                 simulation,
@@ -733,7 +781,10 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         .reset(state.platform.frame_pacer.total_render_deferrals());
     state.match_state.input.queued_order_mode = render::OrderMode::Move;
     state.match_state.match_audio.reset_for_new_match();
-    state.match_state.sandbox_full_visibility = result.scenario.sandbox_full_visibility;
+    // A watcher sees the whole map. Only the picture changes: every House
+    // keeps its own fog in the shared world.
+    state.match_state.sandbox_full_visibility = result.scenario.sandbox_full_visibility
+        || crate::app::match_runtime::watching::active(state);
 
     // `Start_Scenario @ 0x00683AB0` after `Read_Scenario`: `[Basic] Theme`
     // resolves through `From_Name` (`0x004758F0`); -1 -> `Stop(fade=1)` of the
@@ -922,7 +973,7 @@ pub(crate) fn clear_screen(encoder: &mut wgpu::CommandEncoder, view: &wgpu::Text
     });
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod game_speed_tests {
     use crate::sim::command::{Command, CommandEnvelope};
     use crate::sim::house_state::HouseState;

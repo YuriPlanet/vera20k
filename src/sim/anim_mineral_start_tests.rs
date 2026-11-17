@@ -49,9 +49,7 @@ fn scene(resource_name: &str, map_patch: &str) -> Option<(Simulation, RuleSet)> 
     let (_, mut assets) = retail_assets().unwrap();
     crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
     let roots = crate::map::actions::trigger_anim_class_roots(&rules, &map.actions);
-    rules
-        .bind_scheduler_anim_assets(&roots, &assets, "TEM", "TEMPERATE")
-        .unwrap();
+    rules.bind_scheduler_anim_assets(&roots, &assets, "TEM", "TEMPERATE");
     let effect_roots = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&rules);
     rules.bind_anim_class_assets(&effect_roots, &assets, "TEM", "TEMPERATE");
     let config = rules.art().anim_runtime_config("TWLT070T").unwrap();

@@ -31,7 +31,7 @@ fn setup_control_at_row(
         }) {
             return Ok(Some(combo.id));
         }
-        if view.first_row + view.dialog.rows_per_page() >= view.row_count {
+        if view.first_row + view.page_len >= view.row_count {
             return Ok(None);
         }
         setup_button(state, NEXT_ROWS)?;
@@ -90,7 +90,7 @@ impl StopObservation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod stop_observation_tests {
     use super::{AiActivity, LanTarget, LiveLanCapture, StopObservation};
     use crate::app::match_diagnostics::CommandExecutionObservation;

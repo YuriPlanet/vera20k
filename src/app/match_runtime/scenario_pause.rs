@@ -162,6 +162,6 @@ pub(crate) fn reset_clock(state: &mut AppState) {
     state.match_state.match_presentation.scenario_pause = ScenarioPauseClock::default();
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 #[path = "scenario_pause_tests.rs"]
 mod tests;

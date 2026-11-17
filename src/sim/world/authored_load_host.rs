@@ -8,7 +8,6 @@ use crate::map::overlay_mark::OverlayCellAnim;
 use crate::map::resolved_terrain::{
     AutomaticTubeAllocation, AutomaticTubeRequest, ResolvedTerrainGrid, TerrainTileAnimation,
 };
-use crate::rules::art_data::AnimAssetBindError;
 use crate::sim::anim_class::{
     AnimConstructorInput, AnimDrawRuntime, AnimSpawnError, AnimWorldCoord,
 };
@@ -28,8 +27,6 @@ pub enum SimulationAuthoredLoadError {
     OverlayLifecycle(#[from] LoadOverlayLifecycleError),
     #[error(transparent)]
     Anim(#[from] AnimSpawnError),
-    #[error(transparent)]
-    AnimAsset(#[from] AnimAssetBindError),
 }
 
 /// Narrow host over the one staged Simulation. Geometry, overlay identity, and
@@ -83,7 +80,7 @@ impl<'a> SimulationAuthoredLoadHost<'a> {
             self.assets,
             self.theater_ext,
             self.theater_name,
-        )?;
+        );
         descriptor.type_name = self.sim.interner.intern(anim_name);
         let native_unique_id = self.next_native_id()?;
         self.sim
@@ -241,7 +238,7 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
             self.assets,
             self.theater_ext,
             self.theater_name,
-        )?;
+        );
         let ground = OverlayCellAnimGround::read(terrain, &request);
         let native_unique_id = self.next_native_id()?;
         // The common constructor publishes the original cell's light read
@@ -287,7 +284,7 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod tests {
     use super::*;
     use crate::map::source::test_support::TestDirectory;
@@ -299,14 +296,16 @@ mod tests {
     use crate::sim::{native_identity::NativeUniqueIdCursor, snapshot::GameSnapshot};
 
     fn load_rules() -> RuleSet {
-        let art_ini = IniFile::from_str(
-            "[LATE]\nLayer=ground\nShadow=no\nRate=900\nStartSound=TileStart\n\
-             [MALFORMED]\nImage=BROKEN\n",
-        );
-        let processed =
-            RulesLayerStack::new(IniFile::from_str("[Animations]\n0=LATE\n1=MALFORMED\n"))
-                .process_with_fixed_art(&art_ini)
-                .expect("process canonical ART read admission");
+        let art_ini =
+            IniFile::from_str("[LATE]\nLayer=ground\nShadow=no\nRate=900\nStartSound=TileStart\n");
+        let processed = RulesLayerStack::new(IniFile::from_str("[Animations]\n0=LATE\n"))
+            .process_with_fixed_art_and_sounds(
+                &art_ini,
+                &crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+                    "[SoundList]\n0=TileStart\n",
+                )),
+            )
+            .expect("process canonical ART read admission");
         let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
         rules.install_art_data(ArtRegistry::from_ini(&art_ini));
         rules
@@ -318,9 +317,6 @@ mod tests {
         // The bounds binder consumes this SHP header; no pixel decode is
         // involved in this synthetic constructor/ownership regression.
         root.write("LATE.SHP", &[0, 0, 1, 0, 1, 0, 2, 0]);
-        // Missing images are valid native null images. A malformed signed
-        // frame count still exercises the strict pre-constructor failure.
-        root.write("BROKEN.SHP", &[0, 0, 1, 0, 1, 0, 255, 255]);
         let assets = AssetManager::from_loose_root_for_test(root.path());
         let request = TerrainTileAnimation {
             rx: 1,
@@ -406,23 +402,6 @@ mod tests {
             restored.anim_display_layer(id, &rules),
             Some(DisplayLayer::GROUND)
         );
-
-        let before_failure = sim.state_hash();
-        let mut malformed = request.clone();
-        malformed.anim_name = "MALFORMED".into();
-        assert!(
-            SimulationAuthoredLoadHost::new(&mut sim, &mut rules, &assets, "TEM", "TEMPERATE")
-                .construct_terrain_attached_anim(&malformed)
-                .is_err()
-        );
-        assert_eq!(
-            sim.native_unique_ids.as_ref().unwrap().current_raw(),
-            701,
-            "strict load failure precedes native ID allocation, unlike runtime spawn"
-        );
-        assert_eq!(sim.state_hash(), before_failure);
-        assert_eq!(sim.rng_state(), before_rng);
-        assert_eq!(rules.simulation_config_hash(), bound_rules_hash);
 
         // A fresh staged load does not inherit the previous match's bound set.
         let mut reload_rules = load_rules();

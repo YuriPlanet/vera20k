@@ -22,7 +22,7 @@
 
 use glam::IVec3;
 
-use super::helpers::projection_admitted;
+use super::helpers::{TacticalAdmission, projection_admitted};
 use crate::app::AppState;
 use crate::app::presentation::render::draw_plan_lowering::{
     NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, PlannedObjectInstance,
@@ -126,9 +126,19 @@ fn piece_palette(
 /// What every piece of one frame shares.
 struct DebrisView<'a> {
     terrain: &'a ResolvedTerrainGrid,
-    camera: [f32; 2],
-    viewport: [f32; 2],
+    admission: TacticalAdmission,
     axis: DepthAxis,
+}
+
+impl DebrisView<'_> {
+    /// Whether `piece`'s body point passes Object6D2140's padded projection
+    /// admission, which VoxelAnimDrawIfVisible749B20 tests before DrawIt.
+    /// The point is the piece's own position, whatever floor lies under it.
+    fn admits(&self, piece: &VoxelAnimObject) -> bool {
+        let location = piece.world_coord();
+        let (x, y) = absolute_leptons_to_screen(location.x, location.y, location.z);
+        projection_admitted([x, y], self.admission)
+    }
 }
 
 /// One Display member's piece, if `id` names one that draws. The caller
@@ -149,22 +159,16 @@ pub(crate) fn voxel_anim_visitor<'a>(
         return None;
     }
     let rules = &rt.resources.rules;
-    let input = &state.match_state.input;
-    // Draw admission measures from the camera, the frame's corner, so it
-    // takes the centring size: the battlefield and its offset on both sides.
-    let (width, height) = crate::app::input::camera::tactical_centring_size(state);
     let view = DebrisView {
         terrain,
-        camera: [input.camera_x, input.camera_y],
-        viewport: [
-            width as f32 / input.zoom_level,
-            height as f32 / input.zoom_level,
-        ],
+        admission: TacticalAdmission::of_state(state),
         axis: super::helpers::depth_axis(state),
     };
     let presentation = &state.match_state.match_presentation;
     Some(move |objects: &mut Vec<PlannedObjectInstance>, id: u64| {
-        let Some(piece) = sim.voxel_anims().get(id) else {
+        // A piece off the view is passed by before its type, palette and
+        // floor are looked up.
+        let Some(piece) = sim.voxel_anims().get(id).filter(|piece| view.admits(piece)) else {
             return;
         };
         let kind = rules.voxel_anim_type(piece.type_id());
@@ -215,9 +219,10 @@ pub(crate) fn voxel_anim_visitor<'a>(
     })
 }
 
-/// One piece's draw. Display membership is admission: storage alone never
-/// draws a piece. `render` rasterizes the bound physical model at the drawing
-/// matrix and places its body and shadow on the pose page.
+/// One admitted piece's draw ([`DebrisView::admits`]). Display membership is
+/// admission: storage alone never draws a piece. `render` rasterizes the
+/// bound physical model at the drawing matrix and places its body and shadow
+/// on the pose page.
 fn voxel_anim_draw_instance(
     id: u64,
     piece: &VoxelAnimObject,
@@ -231,10 +236,6 @@ fn voxel_anim_draw_instance(
     let location = piece.world_coord();
     let (ground_z, bridge) = super::foot_depth::floor_probe(view.terrain, location.x, location.y)?;
     let geometry = geometry(location, ground_z, bridge);
-    // Object6D2140's padded projection admission precedes DrawIt.
-    if !projection_admitted(geometry.body.point, view.camera, view.viewport) {
-        return None;
-    }
     let matrix = piece.bounce().drawing_matrix().ok().map(|matrix| {
         crate::render::vxl_raster::hva_to_mat4(&matrix.map(|v| f32::from_bits(v.bits())), 1.)
     })?;
@@ -309,6 +310,6 @@ fn pose_piece(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "voxel_anims_tests.rs"]
 mod tests;

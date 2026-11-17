@@ -221,21 +221,28 @@ fn dying_spill_and_remains_types_leave_ore_around_their_cell() {
 
 /// Ares 1004BD90 (hook 0x738749): with `TiberiumExplosive=yes` a dying
 /// harvester's bales times Power go off as one Apply_area_damage with
-/// `TiberiumExplosiveWarhead` that leaves tiberium alone.
+/// `TiberiumExplosiveWarhead` that leaves tiberium alone. The hook sits in
+/// Death_Explosion's `Explosion=` block (JLE 0x738695), so a harvester with
+/// none does not blast.
 #[test]
 fn tiberium_explosive_harvester_blasts_bales_times_power() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
-    let (mut sim, rules, _) = scene_with_harvester(
-        "\n[CombatDamage]\nTiberiumExplosive=yes\nTiberiumExplosiveWarhead=TIBWH\n",
-    );
-    let id = harvester(&mut sim, &rules, "HARV", 10);
-    let (_, visits) =
-        crate::sim::combat::receiver_fixture::trace_area_visits(|| kill(&mut sim, &rules, id));
-    // 10 bales of Power=4 Riparius.
-    assert_eq!(visits.len(), 1);
-    assert_eq!(visits[0]["damage"], 40);
-    assert_eq!(visits[0]["warhead"], "TIBWH");
-    assert_eq!(visits[0]["affects_tiberium"], false);
+    for (explosion, blasts) in [("Explosion=TWLT070\n", 1), ("", 0)] {
+        let (mut sim, rules, _) = scene_with_harvester(&format!(
+            "{explosion}[CombatDamage]\nTiberiumExplosive=yes\nTiberiumExplosiveWarhead=TIBWH\n"
+        ));
+        let id = harvester(&mut sim, &rules, "HARV", 10);
+        let (_, visits) =
+            crate::sim::combat::receiver_fixture::trace_area_visits(|| kill(&mut sim, &rules, id));
+        assert_eq!(visits.len(), blasts, "{explosion:?}");
+        if blasts == 0 {
+            continue;
+        }
+        // 10 bales of Power=4 Riparius.
+        assert_eq!(visits[0]["damage"], 40);
+        assert_eq!(visits[0]["warhead"], "TIBWH");
+        assert_eq!(visits[0]["affects_tiberium"], false);
+    }
 }
 
 /// Ore on (5, 5) that kills a Strength-100 `E1` standing on it, with

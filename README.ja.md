@@ -1,11 +1,14 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20K メインビジュアル" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <strong>日本語</strong> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
+  <a href="README.vi.md" lang="vi">Tiếng Việt</a> · <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <strong>日本語</strong> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
-  <a href="https://discord.gg/kmjRUn5m5F"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&amp;logo=discord&amp;logoColor=white" alt="Discord に参加" height="23" align="middle"></a>
-  <img src="https://img.shields.io/badge/QQ-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ グループ" height="23" align="middle">
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Linux ライブラリテストの最新の実行結果（手動で実行）"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Linux ライブラリテスト" height="23" align="middle"></a>
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="Windows ライブラリテストの最新の実行結果（手動で実行）"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="Windows ライブラリテスト" height="23" align="middle"></a>
+  <a href="https://discord.gg/kmjRUn5m5F"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscord.com%2Fapi%2Fv10%2Finvites%2FkmjRUn5m5F%3Fwith_counts%3Dtrue&amp;query=%24.approximate_presence_count&amp;suffix=%20online&amp;label=VERA20K%20Discord&amp;color=5865F2&amp;style=flat&amp;logo=discord&amp;logoColor=white" alt="Discord に参加" height="23" align="middle"></a>
+  <img src="https://img.shields.io/badge/VERA20K_QQ-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ グループ (VERA20K)" height="23" align="middle">
+  <img src="https://img.shields.io/badge/ra20k.com_QQ-319832195-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ グループ (ra20k.com)" height="23" align="middle">
 </p>
 
 # VERA20K
@@ -19,15 +22,8 @@ VERA20K はゲーマーによる、ゲーマーのためのプロジェクトで
 ## ダウンロードとプレイ
 
 1. Steam または EA app から Red Alert 2: Yuri's Revenge をインストールします。
-2. 下のボタンから、お使いのシステム用の VERA20K をダウンロードします。
+2. [リリースページ](https://github.com/YuriPlanet/vera20k/releases)から、お使いのシステム用の VERA20K をダウンロードします。
 3. ダウンロードしたファイルを開きます。ゲームを見つけて、VERA20K を専用のフォルダーにセットアップします。
-
-<p dir="ltr">
-  <a href="https://vera20k.org/download/windows"><img src="https://img.shields.io/badge/Windows-1E4976?style=for-the-badge&amp;logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTMgM2g4LjV2OC41SDN6TTEyLjUgM0gyMXY4LjVoLTguNXpNMyAxMi41aDguNVYyMUgzek0xMi41IDEyLjVIMjFWMjFoLTguNXoiLz48L3N2Zz4%3D" alt="Windows 版をダウンロード" height="28"></a>
-  <a href="https://vera20k.org/download/macos"><img src="https://img.shields.io/badge/macOS_%C2%B7_Apple_Silicon-000000?style=for-the-badge&amp;logo=apple&amp;logoColor=white" alt="macOS 版（Apple Silicon）をダウンロード" height="28"></a>
-  <a href="https://vera20k.org/download/macos-x64"><img src="https://img.shields.io/badge/macOS_%C2%B7_Intel-000000?style=for-the-badge&amp;logo=apple&amp;logoColor=white" alt="macOS 版（Intel）をダウンロード" height="28"></a>
-  <a href="https://vera20k.org/download/linux"><img src="https://img.shields.io/badge/Linux-000000?style=for-the-badge&amp;logo=linux&amp;logoColor=white" alt="Linux 版をダウンロード" height="28"></a>
-</p>
 
 うまくいかないときは[ヘルプページ](https://vera20k.org/help)（英語）をご覧ください。
 
@@ -68,13 +64,6 @@ CnCNet クライアントから YR のシングルプレイ用スカーミッシ
 
 ## ビルドと実行
 
-<p dir="ltr">
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="macOS ライブラリテストの最新の実行結果（手動で実行）"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="macOS ライブラリテスト" height="23" align="middle"></a>
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Linux ライブラリテストの最新の実行結果（手動で実行）"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Linux ライブラリテスト" height="23" align="middle"></a>
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="Windows ライブラリテストの最新の実行結果（手動で実行）"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="Windows ライブラリテスト" height="23" align="middle"></a>
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml?query=branch%3Amain" title="WebAssembly ビルドの最新の実行結果（手動で実行）"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml/badge.svg?branch=main" alt="WebAssembly ビルド" height="23" align="middle"></a>
-</p>
-
 必要なもの：
 
 - **Rust と Git**：rustup でインストールした [Rust](https://rustup.rs/) 1.97 以降と [Git](https://git-scm.com/)。
@@ -97,7 +86,7 @@ cargo run --release --bin vera20k
 VERA20K は、既定ではオリジナルのゲームと同じようにプレイできます。Ares などの MOD に由来する拡張を含め、新しい機能はすべて、次のいずれかで有効にされるまでオフのままでなければなりません。
 
 - **VERA のプレイヤーオプション**：**Options** にあり、`VERA.INI` の `[VERA]` に保存されます。
-- **ビルドオプション**：対応する [Ares 拡張](docs/ares.md)を有効にする `--features ares` など。
+- **ビルドオプション**：対応する [Phobos 拡張](docs/phobos.md)を有効にする `--features phobos` など。
 - **INI キー**：MOD またはマップが設定します。
 
 サウンド、グラフィック、操作の設定は `VERA.INI` に保存されます。ゲームプレイのルールは、ロビーの設定、MOD、マップによって決まります。
@@ -121,6 +110,7 @@ OpenRA、XCC Mixer、ModEnc wiki、Project Perfect Mod、EA が GPL で公開し
 本プロジェクトは[追加条項](LEGAL.md#additional-terms)付きの [GPLv3](LICENSE-GPL) でライセンスされています。このリポジトリにゲームファイルは含まれていません。Command & Conquer および Red Alert は Electronic Arts Inc. の商標です。スクリーンショットとアプリアイコン（Red Alert 2 の赤い星）には、Electronic Arts が所有するゲームアートが含まれています。VERA20K は Electronic Arts と提携関係になく、同社の承認を受けたものでもありません。
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **VERA20K を共有、販売、またはフォークする前に、[法的通知](LEGAL.md)をお読みください。**
 

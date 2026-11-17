@@ -421,7 +421,7 @@ fn is_sidebar_ui(lower: &str, source_lower: &str) -> bool {
         || source_lower.contains("sidec")
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
 

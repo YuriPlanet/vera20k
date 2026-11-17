@@ -10,7 +10,8 @@ use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::ui::main_menu_dialogs::options::{
     ColorVisionMode, DisplayTarget, HealthBarMode, LauncherCue, LauncherOptionsEvent,
     LauncherOptionsLabels, LauncherOptionsPacked, LauncherOptionsValues, LauncherParentResult,
-    OptionsDialogState, SidebarSize, Zoom, admitted_initial_position, admitted_volume_position,
+    OptionsDialogState, SidebarColumns, SidebarSize, Zoom, admitted_initial_position,
+    admitted_volume_position,
 };
 
 /// Project the retained signed profile into the fresh native-shaped controls.
@@ -41,19 +42,25 @@ pub(crate) fn launcher_values_from_profile(
         hd_radar: profile.hd_radar,
         smooth_sidebar: profile.smooth_sidebar,
         smooth_online_menus: profile.smooth_online_menus,
+        vsync: profile.vsync,
         hd_map_previews: profile.hd_map_previews,
         shift_queue: profile.shift_queue,
         auto_repair: profile.auto_repair,
-        terrain_deformation: profile.terrain_deformation,
+        minimap_beacons: profile.minimap_beacons,
+        // Off at the left end, then 2 at the first notch.
         performance_stats: false,
         show_string_keys: profile.show_string_keys,
         skip_intro: profile.skip_intro,
         custom_end_game_banner: profile.custom_end_game_banner,
         custom_end_game_score: profile.custom_end_game_score,
         custom_end_game_movie: profile.custom_end_game_movie,
+        commander_feedback: profile.commander_feedback,
         detailed_eva_text: profile.detailed_eva_text,
+        compact_super_timers: profile.compact_super_timers,
         sidebar: profile.sidebar,
+        sidebar_columns: profile.sidebar_columns,
         health_bars: profile.health_bars,
+        ares: profile.ares,
         color_vision: profile.color_vision,
         // The slider's position is the stored level less the retail strength,
         // so gamemd's own bands sit at the left end.
@@ -103,8 +110,12 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn play_cue(&mut self, cue: LauncherCue);
     fn store_zoom(&mut self, zoom: Zoom);
     fn store_sidebar(&mut self, size: SidebarSize);
+    /// The `[VERA] SidebarColumns=` list's pick; presentation only.
+    fn store_sidebar_columns(&mut self, columns: SidebarColumns);
     /// The `[VERA] HealthBars=` list's pick; presentation only.
     fn store_health_bars(&mut self, mode: HealthBarMode);
+    /// The `[VERA] Ares=` list's pick; the game reads it at its next start.
+    fn store_ares(&mut self, setting: crate::util::ares_launch::AresSetting);
     /// The `[VERA] ColorVisionMode=` list's pick; presentation only, read by
     /// the final frame pass on the very next frame.
     fn store_color_vision(&mut self, mode: ColorVisionMode);
@@ -126,6 +137,9 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_smooth_sidebar(&mut self, enabled: bool);
     /// Smooth the online client's enlarged art (`[VERA] SmoothOnlineMenus=`).
     fn store_smooth_online_menus(&mut self, enabled: bool);
+    /// Present in step with the display, or as soon as a frame is drawn
+    /// (`[VERA] VSync=`).
+    fn store_vsync(&mut self, vsync: bool);
     /// Show VERA's own map pictures in the setup screens (`[VERA] HdMapPreviews=`).
     fn store_hd_map_previews(&mut self, enabled: bool);
     /// Switch VERA's interface to the language `tag` names (`[VERA] Language=`).
@@ -133,9 +147,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_shift_queue(&mut self, shift_queue: bool);
     /// Send the Repair order for damaged buildings by itself (`[VERA] AutoRepair=`).
     fn store_auto_repair(&mut self, enabled: bool);
-    /// Let explosions dent the ground from the next game on
-    /// (`[VERA] TerrainDeformation=`).
-    fn store_terrain_deformation(&mut self, enabled: bool);
+    /// Place a beacon with a radar click in Place Beacon mode (`[VERA] MinimapBeacons=`).
+    fn store_minimap_beacons(&mut self, enabled: bool);
     fn set_performance_stats(&mut self, shown: bool);
     /// Show each label's string-table key instead of its text.
     fn set_show_string_keys(&mut self, shown: bool);
@@ -146,8 +159,12 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_custom_end_game_score(&mut self, enabled: bool);
     /// Whether the exit lets the closing commander clip finish.
     fn store_custom_end_game_movie(&mut self, enabled: bool);
+    /// Whether computer commanders play their clips.
+    fn store_commander_feedback(&mut self, enabled: bool);
     /// VERA-only accessibility text rows; default off.
     fn store_detailed_eva_text(&mut self, enabled: bool);
+    /// VERA's six-line super weapon timer list; default off.
+    fn store_compact_super_timers(&mut self, enabled: bool);
     /// VERA's team-colour strength, as the level the profile stores.
     fn store_house_color_strength(&mut self, strength: u8);
 }
@@ -163,7 +180,11 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::Cue(cue) => operations.play_cue(cue),
         LauncherOptionsEvent::ZoomSelected(zoom) => operations.store_zoom(zoom),
         LauncherOptionsEvent::SidebarSelected(size) => operations.store_sidebar(size),
+        LauncherOptionsEvent::SidebarColumnsSelected(columns) => {
+            operations.store_sidebar_columns(columns)
+        }
         LauncherOptionsEvent::HealthBarModeSelected(mode) => operations.store_health_bars(mode),
+        LauncherOptionsEvent::AresSelected(setting) => operations.store_ares(setting),
         LauncherOptionsEvent::ColorVisionModeSelected(mode) => operations.store_color_vision(mode),
         LauncherOptionsEvent::DisplaySelected(display) => operations.set_display(display),
         LauncherOptionsEvent::LanguageSelected(tag) => operations.store_language(tag),
@@ -171,9 +192,11 @@ pub(crate) fn dispatch_launcher_preview_event(
             operations.set_full_screen(full_screen);
         }
         LauncherOptionsEvent::SetWindowSizeRequested => operations.restore_launch_window(),
-        // The in-game menu opens these dialogs itself (`app::input::pause_menu`).
+        // The in-game menu opens these dialogs, and starts the layout edit
+        // mode, itself (`app::input::pause_menu`).
         LauncherOptionsEvent::InGameKeyboardRequested
-        | LauncherOptionsEvent::InGameSoundRequested => {}
+        | LauncherOptionsEvent::InGameSoundRequested
+        | LauncherOptionsEvent::EditLayoutRequested => {}
         LauncherOptionsEvent::OriginalShapeChanged(original_shape) => {
             operations.store_original_shape(original_shape);
         }
@@ -195,6 +218,7 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::SmoothOnlineMenusChanged(enabled) => {
             operations.store_smooth_online_menus(enabled);
         }
+        LauncherOptionsEvent::VSyncChanged(vsync) => operations.store_vsync(vsync),
         LauncherOptionsEvent::HdMapPreviewsChanged(enabled) => {
             operations.store_hd_map_previews(enabled);
         }
@@ -204,8 +228,8 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::AutoRepairChanged(enabled) => {
             operations.store_auto_repair(enabled);
         }
-        LauncherOptionsEvent::TerrainDeformationChanged(enabled) => {
-            operations.store_terrain_deformation(enabled);
+        LauncherOptionsEvent::MinimapBeaconsChanged(enabled) => {
+            operations.store_minimap_beacons(enabled);
         }
         LauncherOptionsEvent::PerformanceStatsChanged(shown) => {
             operations.set_performance_stats(shown)
@@ -225,8 +249,14 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::CustomEndGameMovieChanged(enabled) => {
             operations.store_custom_end_game_movie(enabled);
         }
+        LauncherOptionsEvent::CommanderFeedbackChanged(enabled) => {
+            operations.store_commander_feedback(enabled);
+        }
         LauncherOptionsEvent::DetailedEvaTextChanged(enabled) => {
             operations.store_detailed_eva_text(enabled);
+        }
+        LauncherOptionsEvent::CompactSuperTimersChanged(enabled) => {
+            operations.store_compact_super_timers(enabled);
         }
         LauncherOptionsEvent::HouseColorStrengthChanged(strength) => {
             operations.store_house_color_strength(strength);
@@ -361,7 +391,7 @@ pub(crate) fn dispatch_launcher_parent_result(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 
@@ -558,7 +588,6 @@ mod tests {
             skip_intro: true,
             mouse_wheel_zoom: true,
             shift_queue: true,
-            terrain_deformation: true,
             ..RetailOptionsProfile::default()
         });
         assert!(!booleans.tooltips);
@@ -568,6 +597,5 @@ mod tests {
         assert!(booleans.skip_intro);
         assert!(booleans.mouse_wheel_zoom);
         assert!(booleans.shift_queue);
-        assert!(booleans.terrain_deformation);
     }
 }

@@ -744,12 +744,12 @@ fn cell_spread_technos(
                 }
                 let distance_squared = if is_center {
                     if coords.z.wrapping_sub(cell_center.z) > LEPTONS_PER_LEVEL as i32 {
-                        distance_squared(cell_center, coords)
+                        cell_center.distance_from_squared(coords)
                     } else {
                         0.0
                     }
                 } else {
-                    distance_squared(cell_center, coords)
+                    cell_center.distance_from_squared(coords)
                 };
                 let limit = if is_center {
                     threshold_squared
@@ -763,7 +763,7 @@ fn cell_spread_technos(
                 let location =
                     crate::sim::movement::ground_pose::object_get_coords(entity, terrain);
                 let location = ProjectileCoord::new(location.x, location.y, location.z);
-                if distance_squared(location, coords) > spread_squared {
+                if location.distance_from_squared(coords) > spread_squared {
                     continue;
                 }
             }
@@ -815,7 +815,7 @@ fn cell_spread_technos(
             location.z = coords.z;
         }
         let location = ProjectileCoord::new(location.x, location.y, location.z);
-        let mut distance_squared = distance_squared(location, coords);
+        let mut distance_squared = location.distance_from_squared(coords);
         if entity.category() == crate::map::entities::EntityCategory::Aircraft {
             distance_squared *= 0.25;
         }
@@ -827,13 +827,6 @@ fn cell_spread_technos(
     }
 
     found.into_values().collect()
-}
-
-fn distance_squared(left: ProjectileCoord, right: ProjectileCoord) -> f64 {
-    let dx = f64::from(left.x.wrapping_sub(right.x));
-    let dy = f64::from(left.y.wrapping_sub(right.y));
-    let dz = f64::from(left.z.wrapping_sub(right.z));
-    dx * dx + dy * dy + dz * dz
 }
 
 /// `Target->GetCoords()` for the target held by a Bullet: delegate the
@@ -1208,6 +1201,6 @@ fn firing_report(
         ));
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "phobos_airburst_tests.rs"]
 mod tests;

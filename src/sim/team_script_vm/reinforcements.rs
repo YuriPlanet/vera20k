@@ -97,6 +97,25 @@ impl Simulation {
         Some(id)
     }
 
+    /// `TeamClass::TeamClass @ 0x006E8A90` called directly, with no `Max=`
+    /// gate: Reinforcement65DD30 and team script action 18 (`0x006E96E4`).
+    /// The constructor takes the TeamType's initial waypoint and its own Tag.
+    pub(crate) fn construct_team_unlimited(
+        &mut self,
+        team_type: InternedId,
+        owner: InternedId,
+    ) -> Option<u64> {
+        let zone = self.team_initial_zone(team_type);
+        let team = self.team_script_vm.construct_team_instance(
+            team_type,
+            owner,
+            self.session.binary_frame() as i32,
+            zone,
+        )?;
+        self.attach_team_trigger_tag(team, team_type);
+        Some(team)
+    }
+
     /// Trigger4 original6DEB6B brackets CreateTeam with A8E7AC. Recruiting
     /// remains in TeamAI's normal same-frame visit, using real class arrays.
     pub(crate) fn trigger_create_team(
@@ -761,14 +780,7 @@ impl Simulation {
             return None;
         }
         let owner = self.team_type_house(team_type, rules)?;
-        let zone = self.team_initial_zone(team_type);
-        let team = self.team_script_vm.construct_team_instance(
-            team_type,
-            owner,
-            self.session.binary_frame() as i32,
-            zone,
-        )?;
-        self.attach_team_trigger_tag(team, team_type);
+        let team = self.construct_team_unlimited(team_type, owner)?;
         let state = self
             .team_script_vm
             .teams

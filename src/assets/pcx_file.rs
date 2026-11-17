@@ -316,7 +316,7 @@ fn pcx_error(detail: impl Into<String>) -> AssetError {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod tests {
     use super::PcxFile;
 
@@ -485,7 +485,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod direct_rgb_roundtrip_tests {
     use super::*;
 

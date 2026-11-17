@@ -189,7 +189,7 @@ fn spawn(sim: &mut Simulation, rules: &RuleSet, kind: &str, rx: u16, ry: u16) ->
 }
 
 /// Every anim in creation order: (type, coordinate, delay, flags, zAdjust).
-fn anims(sim: &Simulation) -> Vec<(String, AnimWorldCoord, u16, u32, i32)> {
+fn anims(sim: &Simulation) -> Vec<(String, AnimWorldCoord, i32, u32, i32)> {
     sim.substrate
         .anims
         .iter()
@@ -242,7 +242,7 @@ fn a_destroyed_building_explodes_per_foundation_cell_then_plays_its_destroy_anim
                 0x40,
                 super::super::inviso_scatter::RandomDirectionSnap::Preserve,
             );
-            let delay = replay.next_range_u32_inclusive(0, 3) as u16;
+            let delay = replay.next_range_u32_inclusive(0, 3) as i32;
             let anim = pick(&mut replay, &["EXPA", "EXPB"]);
             let coord = AnimWorldCoord {
                 x,
@@ -862,7 +862,6 @@ fn a_custom_palette_building_gives_its_destroy_anim_the_palette_scheme() {
 /// first draw.
 // Stock Building GetCrew44EB10 always draws for the Engineer; Ares1004C650
 // draws only with a positive Engineer chance.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn a_killed_building_draws_its_death_anims_before_its_survivors() {
     let rules = rules();
@@ -886,7 +885,7 @@ fn a_killed_building_draws_its_death_anims_before_its_survivors() {
                 0x40,
                 super::super::inviso_scatter::RandomDirectionSnap::Preserve,
             );
-            let delay = replay.next_range_u32_inclusive(0, 3) as u16;
+            let delay = replay.next_range_u32_inclusive(0, 3) as i32;
             let anim = pick(&mut replay, &["EXPA", "EXPB"]);
             let coord = AnimWorldCoord {
                 x,
@@ -1450,7 +1449,7 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
             assert_eq!(
                 (anim.2, anim.3, anim.4),
                 (
-                    ctor["delay"].as_u64().unwrap() as u16,
+                    ctor["delay"].as_u64().unwrap() as i32,
                     ctor["flags"].as_u64().unwrap() as u32,
                     0
                 ),
@@ -1509,7 +1508,7 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
                 (
                     event["type"].as_str().unwrap().to_string(),
                     ints(&event["coord"]),
-                    event["delay"].as_u64().unwrap() as u16,
+                    event["delay"].as_u64().unwrap() as i32,
                     event["flags"].as_u64().unwrap() as u32,
                 )
             })
@@ -2071,4 +2070,102 @@ fn destroy_anim_retains_each_loaded_palette_and_house_fallback_after_save() {
         before,
         "the frozen palette enters simulation hashing"
     );
+}
+
+/// DestructionEffects `0x00441D69..0x00441EF6`: the `DestroyParticleSystems=`
+/// Smoke types from last to first, one Scenario pick, one system owned by the
+/// building at Location plus `DestroySmokeOffset=`. With `+0x320` set, a
+/// second pass builds and draws nothing.
+#[test]
+fn destroy_smoke_picks_once_from_the_reversed_smoke_types() {
+    let shed =
+        "[SHED]\nStrength=100\nDestroyParticleSystems=SmkA,Spk,SmkB\nDestroySmokeOffset=10,20,30\n";
+    let rules = rules_from(&format!(
+        "{}[Particles]\n0=Puff\n[Puff]\nBehavesLike=Smoke\nMaxEC=10\n\
+         [ParticleSystems]\n0=SmkA\n1=Spk\n2=SmkB\n\
+         [SmkA]\nBehavesLike=Smoke\nHoldsWhat=Puff\n\
+         [Spk]\nBehavesLike=Spark\nHoldsWhat=Puff\n\
+         [SmkB]\nBehavesLike=Smoke\nHoldsWhat=Puff\n",
+        RULES.replace("[SHED]\nStrength=100\n", shed)
+    ));
+    let mut sim = sim(1);
+    let shed = spawn(&mut sim, &rules, "SHED", 20, 20);
+    let location = position_world_coord(&sim.substrate.entities.get(shed).unwrap().position);
+    let mut replay = sim.scenario_rng.clone();
+    let pass = |sim: &mut Simulation| {
+        sim.building_destruction_effects(
+            &rules,
+            shed,
+            false,
+            &mut Vec::new(),
+            |_, _| {},
+            FrameEffects::empty(),
+        );
+    };
+    pass(&mut sim);
+    let pick = replay.next_range_u32_inclusive(0, 1) as usize;
+    assert_eq!(sim.scenario_rng.state(), replay.state());
+    let link = sim.substrate.entities.get(shed).unwrap();
+    let link = link
+        .building
+        .destroy_smoke_particle_system
+        .system()
+        .unwrap();
+    let sys = sim.particle_systems().get(link).unwrap();
+    assert_eq!(
+        rules.particle_system_type(sys.type_id()).name,
+        ["SmkB", "SmkA"][pick]
+    );
+    assert_eq!(sys.owner_entity(), Some(shed));
+    assert_eq!(
+        sys.coords(),
+        glam::IVec3::new(location.x + 10, location.y + 20, location.z + 30)
+    );
+
+    let systems = sim.particle_systems().len();
+    pass(&mut sim);
+    assert_eq!(sim.scenario_rng.state(), replay.state());
+    assert_eq!(sim.particle_systems().len(), systems);
+}
+
+/// BuildingClass::ReceiveDamage's NowYellow arm (`0x004426AC..0x004426C2`)
+/// multiplies the natural system's spawn timer (`+0xE8`) by the binary32 1.5
+/// at `0x007E4460`; a hit that stays green leaves it.
+#[test]
+fn a_yellow_hit_slows_the_natural_particle_system() {
+    let shed = "[SHED]\nStrength=100\nNaturalParticleSystem=Sys\n";
+    let rules = rules_from(&format!(
+        "{}[AudioVisual]\nConditionYellow=0.5\nConditionRed=0.25\n[Particles]\n0=Puff\n[Puff]\nBehavesLike=Smoke\nMaxEC=10\n\
+         [ParticleSystems]\n0=Sys\n[Sys]\nBehavesLike=Smoke\nHoldsWhat=Puff\n",
+        RULES.replace("[SHED]\nStrength=100\n", shed)
+    ));
+    let mut sim = sim(3);
+    let shed = spawn(&mut sim, &rules, "SHED", 20, 20);
+    let system = sim.substrate.entities.get(shed).unwrap();
+    let system = system.building.natural_particle_system.system().unwrap();
+    // 1.2f; times 1.5 is exactly 1.8000001f.
+    let start = crate::util::native_x87::NativeF32Bits::from_bits(0x3F99_999A);
+    sim.substrate
+        .particle_systems
+        .get_mut(system)
+        .unwrap()
+        .set_spawn_timer_for_test(start);
+    let hit = |sim: &mut Simulation, damage: i32| {
+        let hit = EntityDamageEvent::direct_receiver(
+            shed,
+            damage,
+            0,
+            RAD_NO_ATTACKER,
+            None,
+            sim.interner.intern("KILLWH"),
+            ReceiverCallFlags {
+                ignore_defenses: false,
+                arg6: false,
+            },
+        );
+        sim.commit_noncombat_aoe_hits(&rules, None, &[hit], FrameEffects::default());
+        sim.particle_systems().get(system).unwrap().spawn_timer()
+    };
+    assert_eq!(hit(&mut sim, 10), start, "still green");
+    assert_eq!(hit(&mut sim, 50).bits(), 0x3FE6_6667, "now yellow");
 }

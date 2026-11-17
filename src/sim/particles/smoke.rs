@@ -26,17 +26,30 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     // ParticleSystemAI62ED40 / ParticleAIDispatch62CE40: child Gas damage
     // calls ReceiveDamage synchronously. Keep this registered system resident
     // while that callback inserts another Ground system and reads GetYSort.
-    //62ED49..62EDB5: follow the Foot owner before any child AI, including when
-    //done spawning. Publish the new coordinates to the same store first.
+    //62ED49..62EDB5: follow an Object owner that is not a Building (a Foot, or
+    // the VoxelAnim an AttachedSystem rides, 0x007498A5) before any child AI,
+    // including when done spawning. Publish the new coordinates to the same
+    // store first.
+    let cells = sim
+        .resolved_terrain
+        .as_ref()
+        .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
     let followed = sys
         .owner_entity
-        .and_then(|owner| sim.substrate.entities.get(owner))
-        .filter(|owner| owner.category().is_foot())
-        .map(|owner| {
-            let origin = crate::sim::movement::ground_pose::object_get_coords(
-                owner,
-                sim.resolved_terrain.as_ref(),
-            );
+        .filter(|&owner| {
+            sim.substrate
+                .entities
+                .get(owner)
+                .is_none_or(|owner| owner.category().is_foot())
+        })
+        .and_then(|owner| {
+            crate::sim::movement::ground_pose::target_get_coords(
+                crate::sim::combat::TargetKind::Entity(owner),
+                sim,
+                cells.as_ref(),
+            )
+        })
+        .map(|origin| {
             offset_coords(
                 IVec3::new(origin.x, origin.y, origin.z),
                 sys.offset.x,
@@ -282,6 +295,6 @@ fn symmetric_offset(radius: i32, rng: &mut SimRng) -> i32 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "smoke_native_tests.rs"]
 mod native_tests;

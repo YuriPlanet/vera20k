@@ -1,8 +1,8 @@
 # Ares reverse engineering, unit sale, produced cash and the Secret Lab
 
-This optional chain requires the compile-time `ares` feature. Default builds
-read none of its keys and keep stock grinding, the building-only SELL event,
-stock ProduceCash and the stock Secret Lab draw alone.
+Every build runs this chain when the game plays Ares ([Ares](ares.md)). Other
+games use none of its keys and keep stock grinding, the building-only SELL
+event, stock ProduceCash and the stock Secret Lab draw alone.
 
 ## Reverse engineering
 

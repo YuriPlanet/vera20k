@@ -161,7 +161,7 @@ pub(crate) fn set_bunker_wall_slots(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod tests {
     use super::*;
     use crate::rules::art_data::ArtRegistry;

@@ -418,7 +418,7 @@ pub(super) fn attack_world_z_leptons(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod tests {
     use super::*;
 

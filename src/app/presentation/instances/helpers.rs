@@ -18,19 +18,26 @@ use crate::sim::vision::FogState;
 
 /// Tactical6D8F19..6D95A9 visits the five retained Display vectors forward.
 /// Store-only and Logic-only entities cannot become render/pick candidates.
-pub(crate) fn tactical_entity_encounter_order(sim: &crate::sim::world::Simulation) -> Vec<u64> {
-    display_objects(sim, |id| sim.entities().contains(id))
+/// Ground is in draw order (`Simulation::display_draw_order`) under `rules`.
+pub(crate) fn tactical_entity_encounter_order(
+    sim: &crate::sim::world::Simulation,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+) -> Vec<u64> {
+    display_draw_ids(sim, rules)
+        .into_iter()
+        .filter(|&id| sim.entities().contains(id))
+        .collect()
 }
 
-/// [`tactical_entity_encounter_order`] of the objects `is_object` knows.
-fn display_objects(
+/// Every Display member's id in draw order
+/// (`Simulation::display_draw_order`) under `rules`.
+pub(crate) fn display_draw_ids(
     sim: &crate::sim::world::Simulation,
-    is_object: impl Fn(u64) -> bool,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
 ) -> Vec<u64> {
-    sim.display_layers()
-        .ordered_ids()
-        .copied()
-        .filter(|id| is_object(*id))
+    sim.display_draw_order(rules)
+        .into_iter()
+        .map(|(_, id)| id)
         .collect()
 }
 
@@ -39,6 +46,7 @@ fn display_objects(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TacticalEntityPurpose {
     Drawing,
+    /// The selectable list (`TacticalClass::AddSelectable @ 0x006D9EF0`).
     ScreenSelection,
 }
 
@@ -167,6 +175,30 @@ pub(crate) fn observer_draw_context(
     }
 }
 
+/// The actual UnitType during UnitClass::DrawIt (73CEC0).73D29C saves
+/// Type,73D2C4 temporarily substitutes a Harvester's unloading type while
+/// +6D1 is set, and73D3A2 restores it. Miner owns the display-image latch.
+/// Simple deployment and disguise choose art and leave the actual type alone.
+pub(super) fn unit_draw_type_ref(
+    entity: &ObjectRecord,
+    interner: &crate::sim::intern::StringInterner,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+) -> InternedId {
+    let original = entity.type_ref();
+    let Some(rules) = rules else { return original };
+    if entity.category() == EntityCategory::Unit
+        && interner
+            .object_type(original, rules)
+            .is_some_and(|object| object.harvester)
+        && let Some(unloading) = entity.display_type_override.image()
+        && interner.object_type(unloading, rules).is_some()
+    {
+        unloading
+    } else {
+        original
+    }
+}
+
 /// Unit73D2CA..73D38F dispatches on the selected type's Voxel field. The
 /// original identity remains authoritative for animation, pose and lifecycle.
 pub(crate) fn drawn_type_uses_voxel(
@@ -196,23 +228,24 @@ pub(crate) fn drawn_type_uses_voxel(
 /// Native Building6D9920 ->43CEA0 ->43D290 submits ordinary building bodies
 /// independently of top/center shroud; the existing ABuffer clips their pixels.
 /// Unit73B0B0 and Infantry/Aircraft5F4B10 likewise reach their original
-/// DrawIt entries without querying anchor shroud. Screen selection retains its
-/// exploration gate; lifecycle and DrawState still own transport/cloak admission.
+/// DrawIt entries without querying anchor shroud, and screen selection follows
+/// them; lifecycle and DrawState still own transport/cloak admission.
 /// Native controls: tools/procedural_drawing_oracle/{building_reveal,entity_reveal}.md.
 pub(crate) fn tactical_entity_admission(
     purpose: TacticalEntityPurpose,
     entity: &ObjectRecord,
-    owner: &str,
-    local_owner: Option<&str>,
     local_owner_id: Option<InternedId>,
     fog: &FogState,
-    alliances: &crate::map::houses::HouseAllianceMap,
     ignore_visibility: bool,
     current_frame: u32,
     remap_row: u32,
     observer: crate::render::draw_state::ObserverDrawContext,
 ) -> Option<crate::render::draw_state::DrawDecision> {
-    let requires_revealed_anchor = purpose == TacticalEntityPurpose::ScreenSelection;
+    // AddSelectable (0x006D9EF0) tests no shroud, and the object loop
+    // (0x006D8DB0) reaches a Techno's DrawIt, which registers it (UnitClass at
+    // 0x0073CF6B), with no shroud test either: its FogOfWar test,
+    // MapClass::IsFogged 0x005865E0, always answers no. The shroud only masks
+    // the pixels, so screen selection takes what the draw takes.
     if (entity.category() == EntityCategory::Structure && !entity.lifecycle.object_alive())
         // Tactical6D9985..6D9996 skips the live building while its frozen
         // FoggedObjectClass is drawn by the separate4D1890 base pass.
@@ -223,17 +256,15 @@ pub(crate) fn tactical_entity_admission(
                 .is_some_and(|viewer| fog.is_object_fogged(viewer, entity.stable_id())))
         || entity.lifecycle.in_limbo()
         || entity.passenger_role.is_inside_transport()
-        || (requires_revealed_anchor
-            && !ignore_visibility
-            && !object_shown_to_local_owner(
-                local_owner,
-                local_owner_id,
-                fog,
-                alliances,
-                &entity.position,
-                owner,
-                false,
-            ))
+        // UnitClass::DrawIt returns before AddSelectable while the unit
+        // deploys or undeploys (+0x6E1 / +0x6E2, 0x0073CF46..0x0073CF5C); its
+        // Extras still draw (0x006D9789), so only the list leaves it out.
+        // RESIDUAL (dormant, no retail rules use drop pods): InfantryClass::
+        // DrawIt also skips AddSelectable for an infantry still falling by
+        // DropPod locomotor (0x0051913B..0x0051928C); VERA lists it.
+        || (purpose == TacticalEntityPurpose::ScreenSelection
+            && entity.category() == EntityCategory::Unit
+            && entity.unit_deploying())
     {
         return None;
     }
@@ -278,6 +309,11 @@ fn tactical_bounded_entity_encounter_order(
         return Vec::new();
     };
     let zoom = state.match_state.input.zoom_level.max(f32::EPSILON);
+    // RESIDUAL: the 32 pixels are `TacticalClass::AddSelectable @ 0x006D9EF0`'s,
+    // for mobiles. `0x006D9CE0` first clips a building's anchor to the tactical
+    // rectangle Draw passes (0x00886FA0, `0x006D45F2..0x006D461A`), so natively a
+    // building just outside the view is never registered; here it is, and a click
+    // at the view's edge can reach it through its anchor rather than its cell.
     let margin = 32.0 / zoom;
     // The world rectangle the battlefield shows: from the camera, the
     // frame's corner, in by the battlefield's own corner.
@@ -297,7 +333,6 @@ fn tactical_bounded_entity_encounter_order(
         sim,
         &frame,
         (min_x, min_y, max_x, max_y),
-        local_owner.as_deref(),
         local_owner_id,
         sim.fog(),
         state.match_state.sandbox_full_visibility,
@@ -310,7 +345,6 @@ fn compose_tactical_screen_entity_encounter_order(
     sim: &crate::sim::world::Simulation,
     frame: &crate::app::presentation::frame::PresentationFrame,
     bounds: (f32, f32, f32, f32),
-    local_owner: Option<&str>,
     local_owner_id: Option<InternedId>,
     fog: &FogState,
     ignore_visibility: bool,
@@ -318,21 +352,31 @@ fn compose_tactical_screen_entity_encounter_order(
     bulk_register_live_buildings: bool,
 ) -> Vec<u64> {
     let (min_x, min_y, max_x, max_y) = bounds;
-    let mut candidates = display_objects(sim, |id| frame.contains(id));
+    // RESIDUAL (kept by the maintainer, for big battles): AddSelectable
+    // (0x006D9EF0) refuses entries past 500, so with more objects in view the
+    // band box and the T key's screen pass reach only the first 500 drawn.
+    // VERA registers all.
+    let mut candidates: Vec<u64> = frame
+        .display_order(sim)
+        .ordered()
+        .iter()
+        .map(|&(_, id)| id)
+        .filter(|&id| frame.contains(id))
+        .collect();
     // Band-box preflight has a separate native bulk Building registration
     // path. Ordinary picking/rendering never scans the unregistered store.
     if bulk_register_live_buildings {
-        candidates.extend(frame.objects().filter_map(|entity| {
-            (entity.category() == EntityCategory::Structure
-                && sim.display_layers().layer_of(entity.stable_id()).is_none())
-            .then_some(entity.stable_id())
+        candidates.extend(frame.structures().filter_map(|entity| {
+            sim.display_layers()
+                .layer_of(entity.stable_id())
+                .is_none()
+                .then_some(entity.stable_id())
         }));
     }
     candidates
         .into_iter()
         .filter(|id| {
             frame.object(*id).is_some_and(|entity| {
-                let owner = sim.interner().resolve(entity.owner());
                 let admitted = if bulk_register_live_buildings
                     && entity.category() == EntityCategory::Structure
                 {
@@ -341,11 +385,8 @@ fn compose_tactical_screen_entity_encounter_order(
                     tactical_entity_admission(
                         TacticalEntityPurpose::ScreenSelection,
                         entity,
-                        owner,
-                        local_owner,
                         local_owner_id,
                         fog,
-                        sim.house_alliances().as_map(),
                         ignore_visibility,
                         current_frame,
                         0,
@@ -380,8 +421,8 @@ pub(crate) enum EntityDrawBand {
     Top,
 }
 
-/// Tactical6D8F19..6D95A9 draws the retained Display vectors, not a fresh
-/// GetLayer query. Height/locomotor changes take effect here only after their
+/// Tactical6D8F19..6D95A9 draws the Display members' registered layers, not
+/// a fresh GetLayer query. Height/locomotor changes take effect here only after their
 /// simulation-owned remove/submit transaction (Fly phase4CD2A0, for example).
 /// Unregistered objects and layers without an entity body stream emit nothing.
 pub(crate) fn layer_draw_band(
@@ -406,9 +447,11 @@ pub(crate) fn drawn_display_entities<'a>(
         EntityDrawBand,
     ),
 > {
-    sim.display_layers()
-        .members_in_order()
-        .filter_map(|(layer, id)| Some((frame.object(id)?, layer_draw_band(layer)?)))
+    frame
+        .display_order(sim)
+        .ordered()
+        .iter()
+        .filter_map(|&(layer, id)| Some((frame.object(id)?, layer_draw_band(layer)?)))
 }
 
 /// Convert the screen row an entity is *drawn* at into the row it *sorts* at.
@@ -514,9 +557,10 @@ pub(crate) fn apply_shape_z_adjust(depth: f32, z_adjust_px: i32, world_height: f
 }
 
 /// Is `owner`'s object at `pos` shown to the local player? The one rule
-/// tactical presentation (screen selection, VERA's translucent fog) and input
-/// picking (band preflight, TypeSelect's screen stage, translucent pick
-/// concealment) share; callers keep their own full-visibility switch.
+/// VERA's translucent fog and input picking (TypeSelect's screen stage,
+/// translucent pick concealment) share; callers keep their own
+/// full-visibility switch. Screen selection and the band preflight take no
+/// shroud test (`TacticalClass::AddSelectable @ 0x006D9EF0`).
 ///
 /// Without a known local player everything is shown. The local player's
 /// allies, as its house counts them, always are (VERA's policy, with no native
@@ -729,18 +773,58 @@ pub(crate) fn cell_visibility_for_local_owner(
     }
 }
 
+/// The battlefield every Display member is admitted in, in world pixels: its
+/// corner, Tactical's ViewOrigin (+0xB0/+0xB4), and its size, the tactical
+/// rect 0xB0CE28's width and height. Set_View_Dimensions4A89B8 /
+/// Scenario687620 copy that rect through6D5F60; the sidebar and bottom strip
+/// are outside it, so a layout that sets the battlefield in from the frame's
+/// corner moves this corner in from the camera.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct TacticalAdmission {
+    pub(crate) corner: [f32; 2],
+    pub(crate) size: [f32; 2],
+}
+
+impl TacticalAdmission {
+    /// The battlefield `origin` in from the corner of a frame whose corner is
+    /// the world point `camera`, and `size` across, all in world pixels.
+    pub(crate) fn at(camera: [f32; 2], origin: [f32; 2], size: [f32; 2]) -> Self {
+        Self {
+            corner: [camera[0] + origin[0], camera[1] + origin[1]],
+            size,
+        }
+    }
+
+    /// The battlefield at `tactical` (`[x, y, width, height]` in frame
+    /// pixels) of a frame whose corner is the world point `camera`, at `zoom`
+    /// (`camera::tactical_origin_world`).
+    pub(crate) fn of(camera: [f32; 2], tactical: [u32; 4], zoom: f32) -> Self {
+        let [x, y, width, height] = tactical.map(|v| v as f32 / zoom);
+        Self::at(camera, [x, y], [width, height])
+    }
+
+    /// This draw's battlefield (`camera::tactical_viewport_px`).
+    pub(crate) fn of_state(state: &AppState) -> Self {
+        let input = &state.match_state.input;
+        let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+        Self::of(
+            [input.camera_x, input.camera_y],
+            [x, y, width, height],
+            input.zoom_level,
+        )
+    }
+}
+
 /// Object5F4B10 -> CoordsToClient2 6D2140 admits this inclusive padding before
-/// invoking a body draw. Both coordinates and tactical dimensions are in world
-/// pixels. Set_View_Dimensions4A89B8 / Scenario687620 copy the tactical rectangle
-/// through6D5F60; the sidebar and bottom strip are outside that rectangle.
-/// Native Unit boundaries and retained sinking history: naval_sinking_clip.py.
+/// invoking a body draw: `point`, in world pixels, measured from `view`'s
+/// corner. Native Unit boundaries and retained sinking history:
+/// naval_sinking_clip.py.
 pub(in crate::app::presentation) fn projection_admitted(
     point: [f32; 2],
-    camera: [f32; 2],
-    viewport: [f32; 2],
+    view: TacticalAdmission,
 ) -> bool {
-    let [x, y] = [point[0] - camera[0], point[1] - camera[1]];
-    x >= -360.0 && x <= viewport[0] + 360.0 && y >= -180.0 && y <= viewport[1] + 180.0
+    let [x, y] = [point[0] - view.corner[0], point[1] - view.corner[1]];
+    x >= -360.0 && x <= view.size[0] + 360.0 && y >= -180.0 && y <= view.size[1] + 180.0
 }
 
 /// Viewport frustum cull check: is the entity's bounding box visible on screen?
@@ -758,7 +842,97 @@ pub(crate) fn in_view(
     x + w >= cam_x - m && x <= cam_x + sw + m && y + h >= cam_y - m && y <= cam_y + sh + m
 }
 
-#[cfg(test)]
+/// The box a Display record's span must reach before the object loop hands
+/// the record to the unit and SHP visitors: every view they admit from (the
+/// battlefield the unit visitor takes, which the centring size from the
+/// camera covers; the render size; the building clip), widened by the widest
+/// margin either uses ([`projection_admitted`]'s 360 px) and by
+/// [`super::shp::BUILDING_SLOT_WINDOW_SLACK`] for building art and aircraft
+/// shadows. A record outside it plans nothing in either.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct PassByWindow {
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+}
+
+impl PassByWindow {
+    const MARGIN: f32 = 360.0 + super::shp::BUILDING_SLOT_WINDOW_SLACK;
+
+    /// The window around `views`, each `[left, top, right, bottom]` in
+    /// world pixels.
+    pub(crate) fn around(views: impl IntoIterator<Item = [f32; 4]>) -> Self {
+        let [left, top, right, bottom] = views.into_iter().fold(
+            [
+                f32::INFINITY,
+                f32::INFINITY,
+                f32::NEG_INFINITY,
+                f32::NEG_INFINITY,
+            ],
+            |[left, top, right, bottom], view| {
+                [
+                    left.min(view[0]),
+                    top.min(view[1]),
+                    right.max(view[2]),
+                    bottom.max(view[3]),
+                ]
+            },
+        );
+        Self {
+            left: left - Self::MARGIN,
+            top: top - Self::MARGIN,
+            right: right + Self::MARGIN,
+            bottom: bottom + Self::MARGIN,
+        }
+    }
+
+    /// The window of this draw: `building_view` is the SHP visitor's
+    /// building clip, when it runs.
+    pub(crate) fn of(
+        state: &AppState,
+        building_view: Option<crate::app::presentation::target_lines::TacticalViewport>,
+    ) -> Self {
+        let input = &state.match_state.input;
+        let camera = [input.camera_x, input.camera_y];
+        let zoom = input.zoom_level;
+        let (centring_width, centring_height) =
+            crate::app::input::camera::tactical_centring_size(state);
+        let from_camera = |width: u32, height: u32| {
+            [
+                camera[0],
+                camera[1],
+                camera[0] + width as f32 / zoom,
+                camera[1] + height as f32 / zoom,
+            ]
+        };
+        let buildings = building_view.map(|view| {
+            let [x, y] = view.camera.map(|v| v as f32);
+            [x, y, x + view.clip[2] as f32, y + view.clip[3] as f32]
+        });
+        Self::around(
+            [
+                from_camera(centring_width, centring_height),
+                from_camera(state.render_width(), state.render_height()),
+            ]
+            .into_iter()
+            .chain(buildings),
+        )
+    }
+
+    /// Whether `span` reaches the window.
+    pub(crate) fn reaches(
+        &self,
+        span: crate::app::presentation::display_members::ScreenSpan,
+    ) -> bool {
+        span.x >= self.left
+            && span.x <= self.right
+            && span.bottom >= self.top
+            && span.top <= self.bottom
+    }
+}
+
+#[cfg(all(test, tests_app_presentation_instances))]
 mod tests {
     use super::*;
     use crate::render::locomotor_visual::screen_position;
@@ -818,23 +992,23 @@ mod tests {
         sim.reveal(2);
         sim.reveal(1);
         sim.set_logic_order_for_test(vec![1, 2]);
-        assert_eq!(tactical_entity_encounter_order(&sim), [2, 1]);
+        assert_eq!(tactical_entity_encounter_order(&sim, None), [2, 1]);
         sim.entities_mut_for_test().insert(entity(3));
         sim.set_logic_order_for_test(vec![3, 1, 2]);
         assert_eq!(
-            tactical_entity_encounter_order(&sim),
+            tactical_entity_encounter_order(&sim, None),
             [2, 1],
             "Logic/store membership is insufficient"
         );
         sim.conceal(2);
         assert_eq!(
-            tactical_entity_encounter_order(&sim),
+            tactical_entity_encounter_order(&sim, None),
             [1],
             "conceal removes the pick/render candidate"
         );
         sim.reveal(2);
         assert_eq!(
-            tactical_entity_encounter_order(&sim),
+            tactical_entity_encounter_order(&sim, None),
             [1, 2],
             "resubmission follows retained equal-key members"
         );
@@ -904,11 +1078,8 @@ mod tests {
                 tactical_entity_admission(
                     purpose,
                     &building,
-                    "Neutral",
-                    Some("Americans"),
                     Some(local),
                     &fog,
-                    &Default::default(),
                     false,
                     0,
                     0,
@@ -922,10 +1093,11 @@ mod tests {
                 expected,
                 "{input}"
             );
+            // AddSelectable (0x006D9EF0) tests no shroud.
             assert_eq!(
                 admitted(TacticalEntityPurpose::ScreenSelection),
-                expected && input["top_revealed"].as_bool().unwrap_or(false),
-                "screen selection must retain anchor exploration: {input}",
+                expected,
+                "screen selection follows the draw: {input}",
             );
             compared += 1;
         }
@@ -1017,11 +1189,8 @@ mod tests {
                 tactical_entity_admission(
                     purpose,
                     &entity,
-                    "Neutral",
-                    Some("Americans"),
                     Some(local),
                     &fog,
-                    &Default::default(),
                     false,
                     0,
                     0,
@@ -1033,8 +1202,8 @@ mod tests {
             assert_eq!(admitted(TacticalEntityPurpose::Drawing), expected, "{row}");
             assert_eq!(
                 admitted(TacticalEntityPurpose::ScreenSelection),
-                expected && revealed,
-                "masked pixels must not expose selection: {row}"
+                expected,
+                "a shrouded body still registers: {row}"
             );
             compared += 1;
         }
@@ -1078,7 +1247,6 @@ mod tests {
                 &sim,
                 &frame,
                 bounds,
-                Some("Americans"),
                 Some(owner),
                 sim.fog(),
                 false,
@@ -1115,8 +1283,57 @@ mod tests {
         assert!(mutation.clear);
     }
 
+    /// UnitClass::DrawIt returns before AddSelectable while the unit deploys
+    /// (0x0073CF46..0x0073CF5C), so the band box and the T key miss it.
     #[test]
-    fn item83_band_preflight_source_bulk_registers_hidden_live_building_only() {
+    fn a_deploying_unit_is_not_screen_selectable() {
+        use crate::sim::combat::Health;
+
+        let mut sim = crate::sim::world::Simulation::new();
+        let owner = sim.intern("Americans");
+        let typ = sim.intern("SCHP");
+        for id in [1, 2] {
+            let mut unit = GameEntity::new_at_frame_zero_for_test(
+                id,
+                10 + id as u16,
+                10,
+                0,
+                0,
+                owner,
+                Health::new(100),
+                typ,
+                EntityCategory::Unit,
+                0,
+                5,
+                true,
+            );
+            unit.lifecycle.set_in_limbo_for_test(true);
+            sim.entities_mut_for_test().insert(unit);
+            sim.reveal(id);
+        }
+        sim.entities_mut_for_test()
+            .get_mut(2)
+            .unwrap()
+            .set_unit_simple_deploy_for_test(false, true, false);
+        let frame = crate::app::presentation::frame::PresentationFrame::of_test(
+            &sim,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+        );
+        let order = compose_tactical_screen_entity_encounter_order(
+            &sim,
+            &frame,
+            (-1.0e6, -1.0e6, 1.0e6, 1.0e6),
+            Some(owner),
+            sim.fog(),
+            true,
+            0,
+            false,
+        );
+        assert_eq!(order, [1]);
+    }
+
+    #[test]
+    fn band_preflight_catches_shrouded_enemies() {
         use crate::app::input::entity_pick::compute_box_selection_snapshot;
         use crate::sim::combat::Health;
 
@@ -1181,7 +1398,6 @@ mod tests {
             &sim,
             &frame,
             bounds,
-            Some("Americans"),
             Some(local_owner),
             sim.fog(),
             false,
@@ -1192,7 +1408,6 @@ mod tests {
             &sim,
             &frame,
             bounds,
-            Some("Americans"),
             Some(local_owner),
             sim.fog(),
             false,
@@ -1200,14 +1415,13 @@ mod tests {
             true,
         );
 
-        assert!(
-            visible.is_empty(),
-            "neither shrouded enemy is render-tracked"
-        );
+        // UnitClass::DrawIt registers the shrouded unit (0x0073CF6B);
+        // AddSelectable (0x006D9EF0) tests no shroud.
+        assert_eq!(visible, [1], "the shrouded enemy unit still registers");
         assert_eq!(
             preflight,
-            [2],
-            "only the live building is bulk-registered for band preflight"
+            [1, 2],
+            "the live building joins it in bulk for band preflight"
         );
 
         let building_box = compute_box_selection_snapshot(
@@ -1233,26 +1447,24 @@ mod tests {
             "bulk registration affects caught-anything only, not band candidates"
         );
 
-        assert!(
-            compute_box_selection_snapshot(
-                sim.entities(),
-                &preflight,
-                &visible,
-                &[],
-                Some((sim.fog(), sim.house_alliances().as_map())),
-                Some("Americans"),
-                mobile_anchor.0 - 1.0,
-                mobile_anchor.1 - 1.0,
-                mobile_anchor.0 + 1.0,
-                mobile_anchor.1 + 1.0,
-                false,
-                None,
-                None,
-                Some(sim.interner()),
-            )
-            .is_none(),
-            "a shrouded mobile leaves the band truly empty for click fallback"
-        );
+        let mobile_box = compute_box_selection_snapshot(
+            sim.entities(),
+            &preflight,
+            &visible,
+            &[],
+            Some((sim.fog(), sim.house_alliances().as_map())),
+            Some("Americans"),
+            mobile_anchor.0 - 1.0,
+            mobile_anchor.1 - 1.0,
+            mobile_anchor.0 + 1.0,
+            mobile_anchor.1 + 1.0,
+            false,
+            None,
+            None,
+            Some(sim.interner()),
+        )
+        .expect("a shrouded enemy unit consumes the band release too");
+        assert!(mobile_box.clear && mobile_box.select.is_empty());
     }
 
     #[test]
@@ -1446,8 +1658,28 @@ mod tests {
         assert!(!conceal(&explored, &enemy_entity, "Soviet", false));
         assert!(!conceal(&explored, &enemy_entity, "Soviet", true));
     }
+
+    /// The pass-by window is the union of the views widened by its margin:
+    /// a span on its edge reaches it and one a pixel past does not, and a
+    /// column reaches it by either end, as an aircraft above the view does
+    /// by its shadow.
+    #[test]
+    fn a_span_on_the_widened_views_edge_reaches_it_and_one_past_does_not() {
+        use crate::app::presentation::display_members::ScreenSpan;
+        let window = PassByWindow::around([[100., 50., 900., 650.], [100., 50., 1000., 600.]]);
+        let margin = PassByWindow::MARGIN;
+        let reaches = |x: f32, top: f32, bottom: f32| window.reaches(ScreenSpan { x, top, bottom });
+        assert!(reaches(1000. + margin, 300., 300.));
+        assert!(!reaches(1001. + margin, 300., 300.));
+        assert!(reaches(100. - margin, 300., 300.));
+        assert!(!reaches(99. - margin, 300., 300.));
+        assert!(reaches(500., -2000. - margin, 50. - margin));
+        assert!(!reaches(500., -2000. - margin, 49. - margin));
+        assert!(reaches(500., 650. + margin, 2000. + margin));
+        assert!(!reaches(500., 651. + margin, 2000. + margin));
+    }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "building_warp_draw_tests.rs"]
 mod building_warp_draw_tests;

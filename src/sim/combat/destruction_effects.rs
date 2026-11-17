@@ -58,7 +58,7 @@
 //! - Steps with no stock trigger or no VERA state: 2 (radar-spy bits `+0x210`),
 //!   3 and 4 (CloakGenerator, LaserFencePost), 10
 //!   (stored-ore spill; YR never fills building storage), 11 (ShakeScreen, a
-//!   bare `RET`), 14 (`DestroyParticleSystems=` smoke; no stock user).
+//!   bare `RET`). Step 14 (`DestroyParticleSystems=` smoke) has no stock user.
 //! - Ordinary ground weapon-fire ammo debits remain separate. The shared Ammo
 //!   owner retains constructor and chrono reinforcement writes, which the
 //!   `Death_Explosion` last-entry override reads. No stock `Explodes=` vehicle
@@ -497,13 +497,16 @@ impl Simulation {
                 picked
             };
             self.emit_death_anim(rules, anims, anim, DeathAnimSpawn::at(coord, 0));
-        }
-        // `0x00738749..0x007387FC` sums the stored ore's value into a local
-        // nothing reads and calls the ShakeScreen stub (`0x0048DED0`, a bare
-        // `RET`): no effect. Ares 3.0 1004BD90 (hook 0x738749) puts the
-        // TiberiumExplosive blast there (`sim::ares_tiberium`).
-        if rules.ares() {
-            self.ares_unit_tiberium_explosive(unit_id, rules, registry, effects);
+            // `0x00738749..0x007387FC` sums the stored ore's value into a
+            // local nothing reads and calls the ShakeScreen stub
+            // (`0x0048DED0`, a bare `RET`): no effect. Ares 3.0 1004BD90 (hook
+            // 0x738749) puts the TiberiumExplosive blast there
+            // (`sim::ares_tiberium`). It sits inside this block: with no
+            // `Explosion=` entry, JLE `0x00738695` goes straight to
+            // `0x00738801` and the hook never runs.
+            if rules.ares() {
+                self.ares_unit_tiberium_explosive(unit_id, rules, registry, effects);
+            }
         }
         if !object.destroy_anims.is_empty() {
             let anim = pick_death_anim(&mut self.scenario_rng, &object.destroy_anims);
@@ -668,16 +671,37 @@ impl Simulation {
 
         // 9. BuildingDestructionEffects441A31..441B24, original gamemd.exe.
         // The literal direction table818CB8 visits N,E,S,W. Coord49F550
-        // adds initialized49F3A0 lepton deltas to the building's Location;
-        // GetCell uses that coordinate, while Anim retains its exact XYZ.
+        // adds initialized49F3A0 lepton deltas to the building's Location and
+        // keeps its height above ground: Z - ground(Location) + ground(step),
+        // the Location's Map578080 first (49F587, 49F59C). GetCell and the
+        // Anim both take that coordinate.
         if object.explodes {
             for direction in [0, 2, 4, 6] {
                 let (dx, dy) = crate::util::direction_tables::LEPTON_DELTAS[direction];
-                let coord = AnimWorldCoord {
-                    x: location.x.wrapping_add(dx),
-                    y: location.y.wrapping_add(dy),
-                    z: location.z,
-                };
+                let (x, y) = (location.x.wrapping_add(dx), location.y.wrapping_add(dy));
+                // Without terrain or for a slope past the table, the Z stays.
+                let z = self
+                    .resolved_terrain
+                    .as_ref()
+                    .and_then(|terrain| {
+                        let cells =
+                            crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+                        let ground = |x, y| {
+                            crate::sim::movement::ground_pose::query_ground_height(
+                                &cells,
+                                crate::sim::components::DriveCoord {
+                                    x,
+                                    y,
+                                    z: location.z,
+                                },
+                            )
+                            .ok()
+                        };
+                        let source = ground(location.x, location.y)?;
+                        Some(ground(x, y)?.wrapping_add(location.z.wrapping_sub(source)))
+                    })
+                    .unwrap_or(location.z);
+                let coord = AnimWorldCoord { x, y, z };
                 let explosive = self.resolved_terrain.as_ref().is_some_and(|terrain| {
                     let cell = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain)
                         .lookup_world(coord.x, coord.y);
@@ -769,6 +793,9 @@ impl Simulation {
             let follow_up = remap.map(DeathAnimFollowUp::Remap);
             self.emit_death_anim(rules, anims, anim, DeathAnimSpawn { follow_up, ..spawn });
         }
+        // 14. `0x00441D69..0x00441EF6`: one `DestroyParticleSystems=` Smoke
+        // system, owned by the building.
+        self.construct_destroy_smoke(building_id, rules);
         // `0x00441EFC..0x00441F0B`: after the Health 0 write (`0x00441F00`),
         // the killing call's IgnoreDefenses becomes NoSurvivor.
         if ignore_defenses && let Some(building) = self.substrate.entities.get_mut(building_id) {
@@ -783,7 +810,7 @@ pub(crate) fn pick_death_anim<'r>(rng: &mut SimRng, list: &'r [String]) -> &'r s
     &list[index]
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "destruction_effects_tests.rs"]
 mod tests;
 

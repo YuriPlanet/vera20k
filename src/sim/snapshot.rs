@@ -79,21 +79,31 @@ pub enum SavedCameoId {
 ///
 /// SidebarClass Save 6AC5E0 / Load 6AC5D0 only forward to RadarClass; Mouse
 /// Save5BE6D0 writes the whole 0x556C object at5BE715..5BE71C, including
-/// four strips at +1544, stride F94. Load5BDF70 reads it at5BE089..5BE092;
-/// no-init5BE9B0->6A4F20 resets progress6AC7C0, preserving count/type/order.
+/// four strips at +1544, stride F94, and ActiveTab at +539C. Load5BDF70 reads
+/// it at5BE089..5BE092; no-init5BE9B0->6A4F20 resets progress6AC7C0,
+/// preserving count/type/order and the open tab.
 /// Each strip's saved TopRow is absent: Load_Game_From_File calls TabClass Init
 /// 6D03A0 at 67E68F, whose SidebarClass Init 6A5310 hides and shows the shown
 /// sidebar, and ToggleSidebar 6A7D70 zeroes every strip's TopRow on the show.
+/// Residual: each strip's PendingScroll, saved inside the same object, is not
+/// carried, so a scroll still rolling at the save does not finish after the
+/// load. Trigger: saving within the few frames after an arrow or wheel
+/// scroll; a player cannot see it.
 /// This neutral transport does not introduce a sim dependency on a UI owner.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavedSidebarOrder {
     owner: InternedId,
     strips: [Vec<SavedCameoId>; 4],
+    /// Each strip's record flash deadlines (+0x88): one per entry, then the
+    /// empty records up to the last one a cameo flash lit (at most 75 records).
     flash_deadlines: [Vec<i32>; 4],
     redraw_until: i32,
     request_states: [Vec<u8>; 4],
     factory_links: [Vec<Option<crate::sim::production::ProductionFactoryVisit>>; 4],
     prediction_categories: Vec<crate::sim::production::ProductionCategory>,
+    /// The open strip's index (Sidebar `ActiveTab`, `+0x539C`), part of the
+    /// same 0x556C object Mouse Save/Load write and read.
+    active_tab: u8,
     /// Phobos `ScenarioExt::SWSidebar_Enable`, false while the left sidebar is
     /// collapsed. Companion state to this local presentation envelope.
     #[cfg(feature = "phobos")]
@@ -113,6 +123,7 @@ impl SavedSidebarOrder {
             request_states,
             factory_links,
             prediction_categories: Vec::new(),
+            active_tab: 0,
             // `ScenarioExt::SWSidebar_Enable { true }` in Phobos's constructor.
             #[cfg(feature = "phobos")]
             sw_sidebar_expanded: true,
@@ -181,6 +192,15 @@ impl SavedSidebarOrder {
 
     pub fn prediction_categories(&self) -> &[crate::sim::production::ProductionCategory] {
         &self.prediction_categories
+    }
+
+    pub fn with_active_tab(mut self, index: u8) -> Self {
+        self.active_tab = index;
+        self
+    }
+
+    pub fn active_tab(&self) -> u8 {
+        self.active_tab
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -1555,6 +1575,14 @@ fn restore_object_references(
                 "damage_smoke_system_id",
                 entity.damage_smoke_system_id.system(),
             ),
+            (
+                "natural_particle_system",
+                entity.building.natural_particle_system.system(),
+            ),
+            (
+                "destroy_smoke_particle_system",
+                entity.building.destroy_smoke_particle_system.system(),
+            ),
         ]
         .into_iter()
         .filter_map(|(field, system)| system.map(|id| (field, id)))
@@ -1604,7 +1632,12 @@ fn restore_object_references(
     }
 
     for (&system_id, system) in sim.substrate.particle_systems.iter() {
-        if let Some(owner_id) = system.owner_entity() {
+        // A VoxelAnim owns its AttachedSystem (`0x007498A5`); Smoke follows
+        // it through `target_get_coords`, which resolves that store too.
+        if let Some(owner_id) = system
+            .owner_entity()
+            .filter(|&owner| !sim.substrate.voxel_anims.contains_key(owner))
+        {
             require_object_reference(
                 &entity_ids,
                 sim.terrain_objects.objects(),
@@ -1793,11 +1826,11 @@ impl Simulation {
     pub fn validate_ares_state_for_load(&self, ares: bool) -> Result<(), SnapshotRestoreError> {
         for (_, entity) in self.substrate.entities.iter_sorted() {
             entity
-                .validate_ares_build_compatibility(ares)
+                .validate_ares_compatibility(ares)
                 .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
         }
         self.unit_deliveries
-            .validate_ares_build_compatibility(ares)
+            .validate_ares_compatibility(ares)
             .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
         self.validate_paid_super_weapon_selections_for_load(ares)
             .map_err(SnapshotRestoreError::InvalidPaidSuperWeaponSelection)?;
@@ -2457,7 +2490,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -3601,8 +3634,9 @@ mod tests {
         let bytes = GameSnapshot::save_validated(&Simulation::new(), 0, 0, "synthetic", 0);
         let mut header = GameSnapshot::read_header(&bytes).unwrap();
         // Flip every capability bit: the result is a foreign mode for any build.
+        // No build records the Ares bit any more, so it flips to set.
         header.compatibility = RulesCompatibility::from_capabilities(
-            !crate::rules::ARES_BUILD,
+            true,
             !crate::rules::PHOBOS_ENABLED,
             !crate::rules::NPATCH_ENABLED,
             !crate::rules::VERAX_ENABLED,

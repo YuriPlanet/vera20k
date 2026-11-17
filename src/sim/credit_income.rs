@@ -802,7 +802,7 @@ pub(crate) fn drain_unit_ai_step(sim: &mut Simulation, stable_id: u64, rules: &R
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -1039,7 +1039,6 @@ mod tests {
     /// house grants nothing.
     /// Ares replaces both ProduceCash blocks (hooks 0x43FD2C, 0x4482BD;
     /// `ares_cash_restarts_spent_timers_and_adds_each_upgrade`).
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn derrick_capture_grant_then_twenty_per_ninety_nine_frames() {
         let rules = rules();
@@ -1668,7 +1667,6 @@ mod tests {
         assert!(anim_uninited(&sim, anim));
     }
 
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn constructed_timer_never_fires() {
         // Frames only move forward from the construction frame natively.

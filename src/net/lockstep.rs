@@ -692,7 +692,7 @@ impl LockstepScheduler {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 mod tests {
     use std::num::{NonZeroU8, NonZeroU32};
 

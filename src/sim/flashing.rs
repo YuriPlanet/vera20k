@@ -162,6 +162,6 @@ impl crate::sim::world::Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "flashing_tests.rs"]
 mod tests;

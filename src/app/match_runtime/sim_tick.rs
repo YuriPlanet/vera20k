@@ -16,7 +16,6 @@ use crate::app::match_runtime::session::SessionMode;
 
 use crate::app::types::SIM_TICK_MS;
 use crate::map::terrain;
-use crate::render::sprite_atlas;
 use crate::sim::production;
 use crate::sim::replay::ScenarioServiceInput;
 use crate::sim::trigger_runtime::TriggerEffect;
@@ -433,7 +432,7 @@ fn format_campaign_score_time(total_seconds: i32) -> String {
     format!("{hours:02}:{minutes:02}:{seconds:02}")
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod campaign_score_model_tests {
     use super::build_campaign_score_screen_model_from_sources;
     use crate::assets::csf_file::test_csf;
@@ -911,13 +910,20 @@ pub(crate) struct RuntimePassDecision {
     /// Game frames are running, whatever this pass's timing. Only then do
     /// Follow and a cinematic pan rewrite the view.
     pub(crate) frames_running: bool,
+    /// GScreen Input 4F4320 reaches Sidebar Action 6A7780 this pass.
+    /// Main_Tick polls it (55D8AB) only with the window active (A8ED80) and no
+    /// in-game menu (A8EDA0), online too, and returns before it while the
+    /// scenario pauses (55D82E..55D877); Wait_For_Players polls it until
+    /// dialog 0xEA opens (6497EC). Unlike `scroll_input`, no VERA policy
+    /// widens it.
+    pub(crate) sidebar_action: bool,
 }
 
 /// Decide one in-game runtime pass from raw predicates. This is the single
-/// freeze contract for simulation admission and therefore displayed-credit
-/// cadence: paused/menu redraws, focus-frozen windows, missing startup receipts,
-/// and closed pacer windows all resolve to `run_sim: false`, and a committed
-/// network-modal frame keeps its non-`Ordinary` lane. `sidebar_credit_gate_matrix`
+/// freeze contract for simulation admission and Sidebar Action's visits:
+/// paused/menu redraws, focus-frozen windows, missing startup receipts, and
+/// closed pacer windows all resolve to `run_sim: false`, and a committed
+/// network-modal frame keeps its non-`Ordinary` lane. `sidebar_action_gate_matrix`
 /// pins the matrix through this function.
 pub(crate) fn decide_runtime_pass(inputs: RuntimePassInputs) -> RuntimePassDecision {
     if inputs.exact_step && !inputs.network_wait {
@@ -932,6 +938,7 @@ pub(crate) fn decide_runtime_pass(inputs: RuntimePassInputs) -> RuntimePassDecis
             scroll_input: true,
             camera_scroll: true,
             frames_running: true,
+            sidebar_action: true,
         };
     }
     // The session owner (`MatchSession`) carries no network service-only
@@ -977,6 +984,11 @@ pub(crate) fn decide_runtime_pass(inputs: RuntimePassInputs) -> RuntimePassDecis
         // stop that remains: Main_Tick returns before input (0x55D830..0x55D859).
         camera_scroll: input_gate && (!scenario_blocks || input_between_frames),
         frames_running: frame_gate && !inputs.paused,
+        sidebar_action: inputs.window_active
+            && inputs.startup_admitted
+            && !inputs.menu_open
+            && !inputs.network_dialog_open
+            && !scenario_blocks,
     }
 }
 
@@ -1266,7 +1278,10 @@ fn advance_in_game_runtime_mode(
             decision.frames_running,
             decision.run_sim,
         ),
-        RuntimeAdvanceMode::ExactOneStep => u32::from(decision.scroll_input),
+        RuntimeAdvanceMode::ExactOneStep if decision.scroll_input => {
+            crate::app::input::camera::ScrollSteps::Whole
+        }
+        RuntimeAdvanceMode::ExactOneStep => crate::app::input::camera::ScrollSteps::None,
     };
     // Sample the gesture once, before simulation. Apply its request at the
     // native Tactical__AI/pre-follow seam, after this frame's bounds writers.
@@ -1400,7 +1415,7 @@ fn advance_in_game_runtime_mode(
         // A frame sent to the simulation thread has no result yet: the pass
         // that finishes it does this ([`finish_threaded_frame`]).
         if frame_committed || !state.match_state.sim_runtime.is_lent() {
-            after_frame(state, frame_committed, tick_lane);
+            after_frame(state, frame_committed);
         }
     } else if let Some(request) = mouse_scroll {
         crate::app::input::camera::commit_camera_scroll(state, request);
@@ -1415,16 +1430,11 @@ fn advance_in_game_runtime_mode(
 }
 
 /// The client work that follows one frame's result, committed or not.
-fn after_frame(state: &mut AppState, frame_committed: bool, tick_lane: TickLane) {
+fn after_frame(state: &mut AppState, frame_committed: bool) {
     #[cfg(feature = "telemetry-dashboard")]
     if frame_committed && state.diag.telemetry_active() {
         state.match_state.telemetry_tick_rate.record(Instant::now());
     }
-    crate::app::presentation::sidebar_render::advance_sidebar_credits_after_frame(
-        state,
-        frame_committed,
-        tick_lane,
-    );
     if frame_committed {
         // House4F92E2's strip pass reaches this frame as a pending
         // recheck; membership must not wait for the next player input.
@@ -1475,7 +1485,7 @@ pub(crate) fn finish_threaded_frame(state: &mut AppState) {
     {
         return;
     }
-    after_frame(state, frame_committed, TickLane::Ordinary);
+    after_frame(state, frame_committed);
     // What the pass that admitted the frame left to its result: the
     // Main_Tick's tactical composite, and its audio pump after Logic
     // (`0x0055DE4A`), so the tick's sounds start now and not when the next
@@ -1535,7 +1545,7 @@ pub(crate) fn service_beside_tick(state: &mut AppState) {
     // A held key release has not reached the keys yet: an arrow it lets go
     // must not keep scrolling until the tick is back.
     let keyboard_steps = if state.platform.window_events_held {
-        0
+        crate::app::input::camera::ScrollSteps::None
     } else {
         scroll_steps
     };
@@ -1559,7 +1569,7 @@ fn after_simulation_pass(
     state: &mut AppState,
     decision: RuntimePassDecision,
     main_tick_pumps_audio: bool,
-    scroll_steps: u32,
+    scroll_steps: crate::app::input::camera::ScrollSteps,
     replaying: bool,
 ) -> bool {
     // MainThrottle55E33B publishes Logic visits per60 wall-clock buckets,
@@ -1577,8 +1587,13 @@ fn after_simulation_pass(
     refresh_cell_lighting(state);
 
     crate::app::presentation::building_anim::update_radar_state(state);
-    crate::app::presentation::building_anim::update_power_bar_anim(state, wall_ms);
-    crate::app::presentation::sidebar_gadgets::update_sidebar_gadget_state(state);
+    let sidebar_visits = crate::app::presentation::sidebar_gadgets::current_sidebar_action_visits(
+        state,
+        decision.sidebar_action,
+    );
+    crate::app::presentation::building_anim::update_power_bar_anim(state, wall_ms, sidebar_visits);
+    crate::app::presentation::sidebar_render::advance_sidebar_credits(state, sidebar_visits);
+    crate::app::presentation::sidebar_gadgets::update_sidebar_gadget_state(state, sidebar_visits);
     // Per-frame gadget idle tick (G22 rows 2/3 drag-off/drag-back tracking).
     crate::app::input::gadget_input::idle_tick(state);
     // The audio service is NOT gated on the simulation. gamemd's
@@ -1607,9 +1622,7 @@ fn after_simulation_pass(
     if decision.run_sim && main_tick_pumps_audio && !state.match_state.sim_runtime.is_lent() {
         pump_audio_service(state, music_now_ms);
     }
-    for _ in 0..scroll_steps {
-        crate::app::input::camera::queue_keyboard_scroll(state);
-    }
+    crate::app::input::camera::queue_keyboard_scroll(state, scroll_steps);
     if decision.tactical_mutation || replaying {
         crate::app::input::camera::animate_zoom(state);
     }
@@ -1741,7 +1754,6 @@ enum FrameResume {
 /// House+56F9, the House colour an Ares `Beam.IsHouseColor` birth keeps
 /// (TechnoClass_FireRadBeam1, Ares.dll 10056010), through the shared
 /// colour-map lookup the other House+56F9 readers use.
-#[cfg(feature = "ares")]
 fn house_rgb(
     runtime: Option<&crate::sim::runtime::SimRuntime>,
     colors: &crate::map::houses::HouseColorMap,
@@ -1769,12 +1781,13 @@ fn house_laser_rgb(
         return [0; 3];
     };
     let name = runtime.simulation.interner().resolve(owner);
-    // CreateHouses initializes the two literal special houses without
-    // ComputeRemap; their +56FC stays0.
+    // CreateHouses gives the two literal special houses InitColor
+    // (0x688320/0x688373, which writes +56F9 only) but no ComputeRemap, so
+    // the constructor's white +56FC..+56FE (0x4F5C2E..0x4F5C54) stays.
     if runtime.simulation.session().game_mode_nonzero()
         && (name.eq_ignore_ascii_case("Neutral") || name.eq_ignore_ascii_case("Special"))
     {
-        return [0; 3];
+        return [0xFF; 3];
     }
     let index = colors.get(name).copied().or_else(|| {
         colors
@@ -2059,6 +2072,9 @@ fn advance_one_simulation_frame(
                 log.record(sim, record, applied);
             }
         };
+        let active_tab = crate::app::persistence::commands::saved_active_tab(
+            state.match_state.match_presentation.active_sidebar_tab,
+        );
         let sidebar =
             std::cell::RefCell::new(&mut state.match_state.match_presentation.sidebar_projection);
         #[cfg(feature = "phobos")]
@@ -2079,7 +2095,9 @@ fn advance_one_simulation_frame(
                 if let Some(owner) = sim.session().current_house() {
                     sidebar.reconcile_factory_links(sim, owner);
                 }
-                let order = sidebar.saved_order();
+                let order = sidebar
+                    .saved_order()
+                    .map(|order| order.with_active_tab(active_tab));
                 #[cfg(feature = "phobos")]
                 let order = order.map(|mut order| {
                     order.set_sw_sidebar_expanded(sw_sidebar_expanded);
@@ -2123,9 +2141,8 @@ fn advance_one_simulation_frame(
                 .as_mut()
                 .and_then(|radar| radar.set_has_radar(available))
         };
-        #[cfg(feature = "ares")]
+        // Only Ares bounty or ProduceCashDisplay sums emit text, so this runs in every game.
         let flying_credits = &state.match_state.match_presentation.flying_credits;
-        #[cfg(feature = "ares")]
         let queue_bounty = |sim: &crate::sim::world::Simulation,
                             rules: &crate::rules::ruleset::RuleSet,
                             text: crate::sim::bounty::BountyText| {
@@ -2162,7 +2179,6 @@ fn advance_one_simulation_frame(
             .with_network_commands(&boundary)
             .with_production_strip(&production_visits, &clear_production_request)
             .with_before_logic(&before_logic);
-        #[cfg(feature = "ares")]
         let effects = effects.with_bounty_text(&queue_bounty);
         // Recorded completion owns outcome timing during playback;
         // a local audio wait cannot add a frame or change its hash.
@@ -2337,7 +2353,7 @@ fn run_deferred_tick(
     let record_clear = |type_id| {
         deferred.record(super::deferred_effects::DeferredEffect::ProductionRequestCleared(type_id));
     };
-    #[cfg(feature = "ares")]
+    // Only Ares bounty or ProduceCashDisplay sums emit text, so this runs in every game.
     let record_bounty = |_: &crate::sim::world::Simulation,
                          _: &crate::rules::ruleset::RuleSet,
                          text: crate::sim::bounty::BountyText| {
@@ -2350,7 +2366,6 @@ fn run_deferred_tick(
         .with_local_planning(deferred)
         .with_production_strip(production_visits, &record_clear)
         .with_outcome_wait(deferred);
-    #[cfg(feature = "ares")]
     let effects = effects.with_bounty_text(&record_bounty);
     let effects = if deferred.hands_off_queue() {
         effects.with_network_commands(deferred)
@@ -2383,7 +2398,6 @@ fn finish_simulation_frame(
         prefix_eva_text,
         deferred,
     } = finish;
-    let mut refresh_atlases_after_tick = false;
     let mut frame_committed = false;
     let mut drained_lifecycle_outputs: Vec<LifecycleOutput> = Vec::new();
     let mut drained_combat_lights = Vec::new();
@@ -2547,6 +2561,13 @@ fn finish_simulation_frame(
                     .apply_events(terrain, &lighting_events);
             }
             let sim = &mut rt.simulation;
+            // The objects whose look the tick changed, for the atlas check at
+            // the tail.
+            state
+                .match_state
+                .match_presentation
+                .atlas_check
+                .note(sim.take_looks());
             trigger_effects = frame_trigger_effects;
             frame_overlay_updates = overlay_updates;
             frame_overlay_removals = overlay_removals;
@@ -2605,14 +2626,15 @@ fn finish_simulation_frame(
                 sim.interner(),
                 local_owner_name.as_deref(),
             );
-            #[cfg(feature = "ares")]
-            hud_messages.extend(super::sound_dispatch::ares_superweapon_messages(
-                &frame_sound_events,
-                sim,
-                &resources.rules,
-                local_owner_name.as_deref(),
-            ));
-            #[cfg(feature = "ares")]
+            if resources.rules.ares_form() {
+                hud_messages.extend(super::sound_dispatch::ares_superweapon_messages(
+                    &frame_sound_events,
+                    sim,
+                    &resources.rules,
+                    local_owner_name.as_deref(),
+                ));
+            }
+            // The sim fills these labels only when Ares plays, so this runs in every game.
             hud_messages.extend(super::sound_dispatch::ares_tech_capture_messages(
                 &frame_sound_events,
                 sim,
@@ -2668,18 +2690,6 @@ fn finish_simulation_frame(
                 local_owner_name.as_deref(),
                 &mut state.match_state.match_audio.sound_events,
             );
-            if tick_result.destroyed_structure {
-                refresh_atlases_after_tick = true;
-            }
-            if tick_result.bridge_state_changed {
-                refresh_atlases_after_tick = true;
-            }
-            if tick_result.ownership_changed {
-                refresh_atlases_after_tick = true;
-            }
-            if tick_result.spawned_entities {
-                refresh_atlases_after_tick = true;
-            }
             // Both terminal routes belong to the deterministic stream even
             // though Main_Tick skips its frame commit. EventClass EXIT carries
             // a command; natural win/loss carries the one-shot score/RNG latch.
@@ -2812,6 +2822,29 @@ fn finish_simulation_frame(
                         true,
                     );
                 }
+                // MPlayer_Defeated's local branch deletes PlayerPtr's beacons,
+                // closes the command bar and leaves beacon mode (0x004FC1C6,
+                // 0x004FC1D9, 0x004FC1FA), then sets the chat mask
+                // (0x004FC23E) before the line (0x004FC271) this frame posts.
+                // Any defeat that ends the match reopens the bar (0x004FC591).
+                LifecycleOutput::MultiplayerHouseDefeated {
+                    owner,
+                    match_decided,
+                } => {
+                    if Some(owner) == local_house {
+                        super::beacons::local_player_defeated(state);
+                        let presentation = &mut state.match_state.match_presentation;
+                        presentation
+                            .sidebar_gadget_state
+                            .close_command_bar_at_local_defeat();
+                        presentation.chat.local_player_defeated();
+                    }
+                    state
+                        .match_state
+                        .match_presentation
+                        .sidebar_gadget_state
+                        .reopen_command_bar_at_match_end(match_decided);
+                }
                 LifecycleOutput::SidebarConstructionOption { .. }
                 | LifecycleOutput::SidebarRecalculated { .. }
                 | LifecycleOutput::ProductionBeginAttempted { .. }
@@ -2865,7 +2898,7 @@ fn finish_simulation_frame(
                     presentation
                         .radiation_beams
                         .create(birth, |owner, kind| match kind {
-                            #[cfg(feature = "ares")]
+                            // Only a birth fired while Ares plays asks for House.
                             crate::sim::combat::radiation_beam::BeamHouseColor::House => {
                                 house_rgb(runtime, colors, owner)
                             }
@@ -2891,22 +2924,20 @@ fn finish_simulation_frame(
                 // Attached anims are simulation objects; the store detaches
                 // them itself.
                 LifecycleOutput::DetachAttachedAnims { .. } => {}
-                // Unlimbo's Display admission can introduce a model without
-                // TickResult::spawned_entities (e.g. Action7's ALL01 ORCA
-                // teams). Resolve it before their first ordinary body draw;
-                // crash-pose rendering must not be the first path to load it.
-                // In-place conversion keeps its ID and Display membership,
-                // so its new model needs the same coverage/growth check.
-                LifecycleOutput::RevealDisplay { .. }
-                | LifecycleOutput::DisplayRemove { .. }
-                | LifecycleOutput::ObjectTypeChanged { .. } => {
-                    refresh_atlases_after_tick = true;
-                }
                 LifecycleOutput::DirtyTacticalRect { .. }
                 | LifecycleOutput::ClearDrawnState { .. }
                 | LifecycleOutput::ClearRedraw { .. } => {}
             }
         }
+        // The sidebar's next membership pass reads the House pass's AddCameo
+        // attempts from the frame: ask them before it is captured, also when
+        // the next tick is lent with it.
+        let asked = state
+            .match_state
+            .match_presentation
+            .sidebar_projection
+            .asked_types(&[]);
+        state.match_state.sim_runtime.ask_sidebar_types(&asked);
         // Main_Tick runs PlanMgr_Process_Frame after the frame's events
         // (0x0055DEA4); its input tail follows their lifecycle outputs.
         if frame_committed {
@@ -2933,24 +2964,6 @@ fn finish_simulation_frame(
         }
 
         for message in hud_messages {
-            // MPlayer_Defeated's local branch deletes the player's beacons
-            // and leaves beacon mode (0x004FC1C6, 0x004FC1FA), then sets the
-            // chat mask (0x004FC23E) before it posts its line (0x004FC271).
-            if let crate::app::input::messages::HudMessage::PlayerDefeated(house) = message
-                && state
-                    .match_state
-                    .sim_runtime
-                    .runtime()
-                    .and_then(|runtime| runtime.simulation.session().current_house())
-                    == Some(house)
-            {
-                super::beacons::local_player_defeated(state);
-                state
-                    .match_state
-                    .match_presentation
-                    .chat
-                    .local_player_defeated();
-            }
             crate::app::input::messages::post_hud_message(state, message);
         }
 
@@ -2978,43 +2991,47 @@ fn finish_simulation_frame(
     if frame_committed && state.match_state.match_presentation.relation_colors {
         state.match_state.refresh_relation_colors();
     }
-    // AnimClass producers can install a new palette after construction without
-    // changing any entity identity. Unit deploy Anim+D4 (739C1A/739DFE) is one
-    // such producer: its first ordinary draw needs the selected-scheme atlas
-    // frames even when the tick reports no entity spawn or ownership change.
-    // A refresh asked beside the tick (`refresh_entity_atlases`) runs here.
-    if refresh_atlases_after_tick
-        || state.match_state.match_presentation.atlas_refresh_owed
-        || (frame_committed
-            && state
-                .match_state
-                .sim_runtime
-                .runtime()
-                .is_some_and(|runtime| {
-                    !sprite_atlas::atlas_covers_anim_remaps(
-                        state.match_state.match_presentation.sprite_atlas.as_ref(),
-                        &runtime.simulation,
-                        state
-                            .match_state
-                            .match_presentation
-                            .effective_house_color_map(),
-                    ) || !sprite_atlas::atlas_covers_sprite_keys(
-                        state.match_state.match_presentation.sprite_atlas.as_ref(),
-                        &sprite_atlas::collect_fogged_sprite_keys(
-                            &runtime.simulation,
-                            &runtime.resources.rules,
-                            state
-                                .match_state
-                                .match_presentation
-                                .effective_house_color_map(),
-                        ),
-                        Some(&runtime.resources.rules),
-                    )
-                }))
-    {
+    // The atlases are checked against what the tick changed, before its first
+    // draw: a new object, owner, type or disguise, an anim's new colour remap
+    // (Unit deploy Anim+D4, 739C1A/739DFE, installs one after construction),
+    // a new FoggedObject record. A miss, or a refresh asked beside a lent
+    // tick (`refresh_entity_atlases`), runs the full refresh here.
+    if state.match_state.match_presentation.atlas_refresh_owed || atlas_check_finds_miss(state) {
         refresh_entity_atlases(state);
     }
     frame_committed
+}
+
+/// Check the entity atlases against the looks changed since the last check
+/// ([`EntityAtlasCheck`]): whether they may lack something the world draws.
+/// A world away on the simulation thread is checked once it is back.
+///
+/// [`EntityAtlasCheck`]: crate::render::entity_atlas_growth::EntityAtlasCheck
+fn atlas_check_finds_miss(state: &mut AppState) -> bool {
+    if state.match_state.sim_runtime.is_lent() {
+        return false;
+    }
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
+        return false;
+    };
+    let presentation = &mut state.match_state.match_presentation;
+    let house_colors = presentation
+        .relation_color_map
+        .as_ref()
+        .unwrap_or(&presentation.house_color_map);
+    let miss = presentation.atlas_check.finds_miss(
+        &runtime.simulation,
+        Some(&runtime.resources.rules),
+        presentation.sprite_atlas.as_ref(),
+        presentation.unit_atlas.as_ref(),
+        house_colors,
+    );
+    if !miss {
+        presentation
+            .atlas_check
+            .checked(&runtime.simulation, house_colors);
+    }
+    miss
 }
 
 /// Refresh the presentation-owned light transaction from the committed runtime.
@@ -3105,6 +3122,18 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
             }
             TriggerEffect::InputLockChanged { locked, was_locked } => {
                 crate::app::input::campaign_input::apply_lock_effect(state, *locked, *was_locked);
+            }
+            TriggerEffect::CancelPlacementModes => {
+                // Main_Tick runs Logic, where action 46 fires (0x0055DC9E),
+                // before the frame's events (0x00647260 at 0x0055DE40 ->
+                // Execute_DoList 0x0064C380). A PLACE that fails in that frame
+                // restores its placement (HousePlace 0x004FB395..0x004FB49A)
+                // after this clear; the BuildingPlacementRetry outputs, applied
+                // after these effects, keep that order.
+                crate::app::input::campaign_input::cancel_placement_modes(
+                    &mut state.match_state.input,
+                    &mut state.match_state.match_presentation.sidebar_gadget_state,
+                );
             }
             TriggerEffect::RecentEventCell { cell } => {
                 if let Some(minimap) = state.match_state.match_presentation.minimap.as_mut() {
@@ -3224,6 +3253,9 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState, centre: Fo
     {
         // Product-only pointer expiry retains the current type/foundation;
         // it is neither an abandon nor a permission to emit another PLACE.
+        // RESIDUAL: `0x004A91B0` reads only the foundation (+0x117C), not the
+        // product (+0x11A4), so natively the grid keeps following the cursor
+        // after the product expires; here it stays where it was.
         return;
     }
     // The owner's buildings bound the build area (`is_within_build_area`),
@@ -3291,9 +3323,9 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState, centre: Fo
     state.match_state.input.building_placement_preview = preview;
 }
 
-/// Admit the voxel models and grow the SHP atlas after entities spawn, die,
-/// change type or owner, or leave the display. A new voxel model's pictures
-/// are drawn the first time a frame shows them
+/// Admit the voxel models and grow the SHP atlas when the atlas check finds a
+/// changed look they lack, and again after a growth publishes. A new voxel
+/// model's pictures are drawn the first time a frame shows them
 /// ([`crate::render::unit_atlas::admit_world_models`]); the SHP raster runs on
 /// a worker ([`EntityAtlasGrowth::start`]) and [`publish_entity_atlas_growth`]
 /// completes it. Reuses the process asset manager instead of creating a new
@@ -3325,21 +3357,27 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
         Some(rt.simulation.interner()),
         state.renderer.gpu.device.limits().max_texture_dimension_2d,
     );
+    let house_colors = presentation
+        .relation_color_map
+        .as_ref()
+        .unwrap_or(&presentation.house_color_map);
     presentation.atlas_growth.start(
         &crate::render::entity_atlas_growth::GrowthSource {
             sim: &rt.simulation,
             rules: Some(&rt.resources.rules),
             asset_manager,
-            house_colors: presentation
-                .relation_color_map
-                .as_ref()
-                .unwrap_or(&presentation.house_color_map),
+            house_colors,
             theater_name: &presentation.theater_name,
             theater_ext: &presentation.theater_ext,
             max_texture_dimension_2d: state.renderer.gpu.device.limits().max_texture_dimension_2d,
         },
         presentation.sprite_atlas.as_ref(),
     );
+    // A growth this found running checks the whole world again once it
+    // publishes (`publish_entity_atlas_growth`).
+    presentation
+        .atlas_check
+        .checked(&rt.simulation, house_colors);
 }
 
 /// Publish the finished atlas growths before a picture is judged, then start
@@ -3495,7 +3533,7 @@ pub(crate) fn screen_point_to_world_cell(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::{
         ExactStepError, ExactStepReceipt, frame_ticks_inline, upsert_overlay_entries,
@@ -3517,6 +3555,25 @@ mod tests {
             overlay_id,
             frame,
         }
+    }
+
+    /// Online Neutral and Special keep the constructor's white laser colour.
+    #[test]
+    fn neutral_and_special_lasers_stay_white_online() {
+        let mut sim = crate::sim::world::Simulation::with_seed(1);
+        sim.session_mut_for_test().set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
+        let neutral = sim.interner_mut_for_test().intern("Neutral");
+        let runtime = crate::sim::runtime::SimRuntime {
+            simulation: sim,
+            resources: std::sync::Arc::new(crate::sim::runtime::SimResources::empty()),
+        };
+        let colors = crate::map::houses::HouseColorMap::default();
+        assert_eq!(
+            super::house_laser_rgb(Some(&runtime), &colors, neutral),
+            [0xFF; 3]
+        );
     }
 
     /// A catch-up frame goes to the simulation thread when lending is
@@ -3795,11 +3852,11 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 #[path = "camera_cadence_tests.rs"]
 mod camera_cadence_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod modal_pump_tests {
     use super::{
         SessionMode, audio_pump_follows_main_tick, modal_pump_should_advance_sim,

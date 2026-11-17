@@ -435,7 +435,7 @@ pub(crate) fn grow_lake(
     true
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::rmg::grid::RmgGrid;

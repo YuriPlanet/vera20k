@@ -135,7 +135,7 @@ fn parse_name(fields: &[&str]) -> Option<String> {
         .map(|name| truncate_native_bytes(name, 0x30).to_string())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

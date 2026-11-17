@@ -7,6 +7,7 @@
 //! - util/ has NO dependencies on other game modules.
 //! - Any module may depend on util/.
 
+pub mod ares_launch;
 pub mod base64;
 #[cfg(target_os = "android")]
 pub mod app_icon;

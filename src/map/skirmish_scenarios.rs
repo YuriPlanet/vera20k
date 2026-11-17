@@ -307,7 +307,7 @@ pub fn upsert_random_map_sentinel(
     idx
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::skirmish_modes::stock_skirmish_modes;

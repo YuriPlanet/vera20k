@@ -272,7 +272,7 @@ fn cropped(lit: &HashSet<(i32, i32)>, rows: usize, blank_width: usize) -> FntGly
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use std::collections::{BTreeSet, HashMap};
 

@@ -71,7 +71,7 @@ pub fn parse_tags(ini: &IniFile) -> TagMap {
     tags
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

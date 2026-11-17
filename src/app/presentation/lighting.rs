@@ -684,7 +684,7 @@ fn effect_light(
 /// BerserkColor while Techno+298 is active, into the caller's colour word.
 /// Composite73C1A5 passes that word to the existing packed blitter owner.
 /// A deactivated Unit (+1C8) then halves intensity, signed toward zero.
-/// Ares replaces that halving (hook73C143 -> UnitClass_DrawVXL_Deactivated
+/// When Ares plays, it replaces that halving (hook73C143 -> UnitClass_DrawVXL_Deactivated
 /// 1004CEA0) for Units: under EMP `[AudioVisual]DeactivateDimEMP`, else when
 /// deactivated DeactivateDimOperator without its operator, otherwise
 /// DeactivateDimPowered; the CRT ftol100772B0 truncates the product.
@@ -734,8 +734,9 @@ pub(crate) fn unit_voxel_effect_light(
         });
         light = light.with_colour_word(light.colour_word() | word);
     }
-    #[cfg(feature = "ares")]
-    if category == crate::map::entities::EntityCategory::Unit {
+    if category == crate::map::entities::EntityCategory::Unit
+        && rules.is_some_and(|rules| rules.ares())
+    {
         use crate::rules::ares_cloak_power::DeactivateDim;
         let kind = if entity.emp_remaining() > 0 {
             DeactivateDim::Emp
@@ -1410,27 +1411,27 @@ fn collect_live_building_lights(
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "curtain_tint_tests.rs"]
 mod curtain_tint_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "lighting_tint_tests.rs"]
 mod tint_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "anim_lighting_tests.rs"]
 mod anim_lighting_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "unit_light_tests.rs"]
 mod unit_light_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "infantry_light_tests.rs"]
 mod infantry_light_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod palette_producer_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

@@ -9,7 +9,7 @@
 //! sim/ only — never render/ui/audio/net.
 use serde::{Deserialize, Serialize};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod civilian_tests;
 pub mod contacts;
 pub mod receive;

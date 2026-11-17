@@ -290,20 +290,25 @@ fn rejects_network_sessions_unsupported_extensions_and_invalid_assignments() {
 }
 
 #[test]
-fn cncnet_country_indices_respect_the_compiled_capability_and_identity_width() {
+fn cncnet_country_indices_respect_the_game_capability_and_identity_width() {
     for index in [10, 11, i32::from(u16::MAX)] {
         let text = SKIRMISH.replacen("Side=0", &format!("Side={index}"), 1);
-        let result = SpawnRequest::parse(&text);
-        if crate::rules::ARES_BUILD {
-            let SpawnGame::Skirmish(session) = result.unwrap().game else {
-                panic!("Battle Country identity");
-            };
-            assert_eq!(i32::from(session.local_slot().country.raw_index()), index);
-            assert!(!session.local_slot().country_random);
-        } else {
-            assert!(result.is_err(), "stock adapter rejects Country {index}");
-        }
+        let request = SpawnRequest::parse(&text).unwrap();
+        assert!(
+            request.check_country_limits(false).is_err(),
+            "a stock game refuses Country {index}"
+        );
+        request.check_country_limits(true).unwrap();
+        let SpawnGame::Skirmish(session) = request.game else {
+            panic!("Battle Country identity");
+        };
+        assert_eq!(i32::from(session.local_slot().country.raw_index()), index);
+        assert!(!session.local_slot().country_random);
     }
+    // An AI's `[HouseCountries]` entry has the same limit.
+    let ai = SpawnRequest::parse(&SKIRMISH.replacen("Multi2=8", "Multi2=10", 1)).unwrap();
+    assert!(ai.check_country_limits(false).is_err());
+    ai.check_country_limits(true).unwrap();
     for value in ["-1", "65536", "4294967306", "$10000", "broken"] {
         for text in [
             SKIRMISH.replacen("Side=0", &format!("Side={value}"), 1),
@@ -312,14 +317,13 @@ fn cncnet_country_indices_respect_the_compiled_capability_and_identity_width() {
             assert!(SpawnRequest::parse(&text).is_err(), "Country {value}");
         }
     }
-    assert_eq!(
-        SpawnRequest::parse("[Settings]\nIsSinglePlayer=Yes\nSide=10\n").is_ok(),
-        crate::rules::ARES_BUILD,
-        "campaign Side has its own byte-wide adapter identity in Ares builds"
-    );
+    // Campaign Side has its own byte-wide adapter identity in a game read
+    // the Ares way.
+    let campaign = SpawnRequest::parse("[Settings]\nIsSinglePlayer=Yes\nSide=10\n").unwrap();
+    assert!(campaign.check_country_limits(false).is_err());
+    campaign.check_country_limits(true).unwrap();
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn cncnet_ares_country_indices_reach_house_side_and_mcv_selection() {
     use crate::rules::ruleset::RuleSet;
@@ -330,6 +334,7 @@ fn cncnet_ares_country_indices_reach_house_side_and_mcv_selection() {
     };
     use crate::sim::world::Simulation;
 
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut ini = String::from("[Countries]\n");
     for index in 0..12 {
         ini.push_str(&format!("{index}=C{index:02}\n"));

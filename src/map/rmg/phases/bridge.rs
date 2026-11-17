@@ -433,7 +433,7 @@ pub(crate) fn jump(heading_dir: usize) -> (i32, i32) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::ResolvedTerrainGrid;

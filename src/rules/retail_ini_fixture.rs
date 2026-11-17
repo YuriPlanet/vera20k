@@ -385,6 +385,9 @@ pub fn retail_rules_owner(
     ]
     .into_iter()
     .map(|name| {
+        if name == "langrule.ini" && !assets.mod_selected() {
+            return None;
+        }
         assets.resolve_ref(name).map(|entry| {
             (
                 entry.source_archive.to_owned(),
@@ -405,6 +408,9 @@ pub fn retail_rules_owner(
             ("soundmd.ini", audio_definitions.sound_source()),
             ("evamd.ini", audio_definitions.eva_source()),
         ] {
+            if name == "langrule.ini" && !assets.mod_selected() {
+                continue;
+            }
             assert!(
                 selected.is_some() || assets.resolve_ref(name).is_none(),
                 "present optional retail source {name} must parse"

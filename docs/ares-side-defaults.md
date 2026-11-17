@@ -1,7 +1,7 @@
 # Ares fourth-side defaults
 
-Build with `--features ares`. The stock build and INIs without Ares Side
-sections keep their existing three-side behavior.
+A game that ships `ares.mix` reads these keys in every build ([Ares](ares.md)).
+Other games keep their three-side behavior.
 
 `[Sides]` already registers any number of Side identities; a Country's
 `Side=` selects one. Ares 3.0 attaches a `SideExt` to every allocated Side.
@@ -34,7 +34,7 @@ while a side's own section can replace them:
 | `EVA.Tag` | index 0 (Allied) | EVA queue |
 
 Each score name is substituted on its own, the way `0x1002F270` copies every
-SideExt field over gamemd's buffer, so an Ares build never selects the 640-wide
+SideExt field over gamemd's buffer, so an Ares game never selects the 640-wide
 `*SM.SHP` shapes: `SideExt::initialize` always holds a medium name. The SideExt
 reader also retains `HunterSeeker`, which the Hunter Seeker launch reads
 ([ares-hunter-seeker.md](ares-hunter-seeker.md)).
@@ -108,14 +108,14 @@ same build as `tools/rules_oracle/ares_side_sidebar.py`):
 - A custom `AI.BaseDefenseCounts` vector shorter than the difficulty row is
   rejected by preflight as a missing difficulty; the native read past the
   vector is undefined data.
-- **Canopy layers.** The Ares canopy hook (`0x5F5ADD` -> `0x10047C80`)
-  takes the dropped type's own `Parachute.Anim`, then the Country's, before
-  the Side's. VERA reads the Country and Side layers but not the type key.
-- The Ares save layout gained the new fields; saves made before this change
-  do not load in Ares builds.
-- With Ares and NPatch compiled together, `Parachute.Anim` takes precedence
+- Saves hold the new fields; a save from an older build with the retired
+  `ares` feature does not load.
+- With Ares playing and NPatch compiled in, `Parachute.Anim` takes precedence
   over NPSE `VehicleParachute=` and the stock canopy. The installed DLL's
   hook order at the shared `0x5F5ADD` site is not separately proven.
 - The fourth side's sidebar geometry uses the existing nonzero (Soviet)
   layout while its files come from `Sidebar.MixFileIndex` /
   `Sidebar.YuriFileNames`. Ares does not add a fourth geometry family.
+- A side without a retained sidebar configuration (a game Ares plays in by its
+  keys alone, read the stock way) draws the three stock sidebars instead of
+  stopping the match load (`build_sidebar_chrome_set`).

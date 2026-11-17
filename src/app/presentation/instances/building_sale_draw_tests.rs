@@ -201,7 +201,8 @@ fn gate_piece(
     use std::cell::RefCell;
     let lighting = CellLightGrid::new();
     let voxel_images = RefCell::new(VoxelImageCache::default());
-    let presented = crate::app::presentation::frame::PresentationFrame::capture(runtime);
+    let presented =
+        crate::app::presentation::frame::PresentationFrame::capture(runtime, &Default::default());
     let input = ShpInputs {
         runtime,
         frame: &presented,
@@ -225,7 +226,7 @@ fn gate_piece(
         house_colors: colors,
         building_zshape: true,
     };
-    let order = NativeDisplayOrder::from_display(runtime.simulation.display_layers());
+    let order = NativeDisplayOrder::from_world(&runtime.simulation, None);
     let mut planned = Vec::new();
     build_shp_instances_from_inputs(&input, &mut planned, &order);
     let piece = planned

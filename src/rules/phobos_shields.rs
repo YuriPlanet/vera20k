@@ -737,6 +737,6 @@ impl ShieldGlobals {
     }
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_rules_o_z, feature = "phobos"))]
 #[path = "phobos_shields_tests.rs"]
 mod tests;

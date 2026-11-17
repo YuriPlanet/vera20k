@@ -24,6 +24,8 @@ pub(crate) const CREATE_OBSERVE: u16 = 0x71F;
 pub(crate) const CREATE_NAME: u16 = 0x7FF0;
 /// VERA's online popup's Ranked game box (no gamemd control).
 pub(crate) const CREATE_RANKED: u16 = 0x7FF1;
+/// VERA's online popup's Watching box (no gamemd control).
+pub(crate) const CREATE_WATCHING: u16 = 0x7FF2;
 
 /// The Room name edit's limit: a nickname's 24, in units below `0x100`.
 const ROOM_NAME_LIMIT: usize = 24;
@@ -32,7 +34,8 @@ const ROOM_NAME_LIMIT: usize = 24;
 const PASSWORD_LIMIT: usize = 8;
 
 /// Executed `0x6040B0` help of `0xC3`; `0xE1` has none. VERA's Ranked game
-/// box says when the lobby ranks a room's games.
+/// box says when the lobby ranks a room's games, and its Watching box when
+/// others may watch them.
 pub(crate) fn create_tooltip_key(control: u16) -> Option<&'static str> {
     Some(match control {
         POPUP_OK => "STT:WOLNewGameOK",
@@ -41,8 +44,41 @@ pub(crate) fn create_tooltip_key(control: u16) -> Option<&'static str> {
         CREATE_LIMIT => "STT:WOLLimitScreenResolution",
         POPUP_PASSWORD => "STT:WOLNewGamePassword",
         CREATE_RANKED => "VERA:RankedGameHelp",
+        CREATE_WATCHING => "VERA:WatchingHelp",
         _ => return None,
     })
+}
+
+/// VERA's online popup's Watching: whether players in the online lobby may
+/// watch the room's games, and how far behind its players. The lobby still
+/// lets everyone watch Quick Match and ranked games 2 minutes behind, and
+/// nobody a room with a password (docs/lobby-protocol.md "Watching").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RoomWatching {
+    /// Everyone, 2 minutes behind the players: the first choice.
+    Delayed,
+    Off,
+    /// Everyone, with no delay.
+    Live,
+}
+
+impl RoomWatching {
+    /// The value a press on the box shows next.
+    fn next(self) -> Self {
+        match self {
+            Self::Delayed => Self::Off,
+            Self::Off => Self::Live,
+            Self::Live => Self::Delayed,
+        }
+    }
+
+    pub(crate) fn label_key(self) -> &'static str {
+        match self {
+            Self::Delayed => "VERA:WatchingDelayed",
+            Self::Off => "VERA:WatchingOff",
+            Self::Live => "VERA:WatchingLive",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,6 +95,8 @@ pub(crate) enum WolPopupAction {
         name: Option<String>,
         /// VERA's online popup's Ranked game.
         ranked: Option<bool>,
+        /// VERA's online popup's Watching.
+        watching: Option<RoomWatching>,
     },
     CreateCancelled,
     PasswordConfirmed(String),
@@ -91,6 +129,8 @@ pub(crate) struct WolCreateGame {
     pub(crate) room: Option<RoomLimitsPicker>,
     /// VERA's Ranked game: whether the lobby may rank the room's games.
     pub(crate) ranked: Option<bool>,
+    /// VERA's Watching, beside Ranked game.
+    pub(crate) watching: Option<RoomWatching>,
 }
 
 #[derive(Debug, Clone)]
@@ -109,16 +149,17 @@ impl WolLobbyPopup {
     /// `0x0078DB70`'s `0x497`. `screen_width` is Options' ScreenWidth
     /// (`[0xA8EB84]`); `limit` the process byte `[0xA8B540]`, already cleared
     /// by `0x00789B60` at 1024 or wider; `clan_id` `[0xB77DE4]`; `room` the
-    /// host's last limits, room name and Ranked game in VERA's online lobby.
+    /// host's last limits, room name, Ranked game and Watching in VERA's
+    /// online lobby.
     pub(crate) fn create(
         screen_width: i32,
         limit: bool,
         clan_id: i32,
         observe: bool,
-        room: Option<(RoomLimits, &str, bool)>,
+        room: Option<(RoomLimits, &str, bool, RoomWatching)>,
     ) -> Self {
         let narrow = screen_width < 1024;
-        let name = room.map(|(_, name, _)| {
+        let name = room.map(|(_, name, _, _)| {
             let mut edit = SavedSeedDescriptionEdit {
                 focused: true,
                 ..Default::default()
@@ -137,8 +178,9 @@ impl WolLobbyPopup {
                 limit: limit && narrow,
                 limit_enabled: narrow,
                 observe,
-                room: room.map(|(limits, _, _)| RoomLimitsPicker::new(limits)),
-                ranked: room.map(|(_, _, ranked)| ranked),
+                room: room.map(|(limits, _, _, _)| RoomLimitsPicker::new(limits)),
+                ranked: room.map(|(_, _, ranked, _)| ranked),
+                watching: room.map(|(_, _, _, watching)| watching),
             }),
             buttons: ShellButtonInteraction::default(),
         }
@@ -230,6 +272,9 @@ impl WolLobbyPopup {
             CREATE_RANKED => {
                 matches!(&self.kind, WolPopupKind::Create(create) if create.ranked.is_some())
             }
+            CREATE_WATCHING => {
+                matches!(&self.kind, WolPopupKind::Create(create) if create.watching.is_some())
+            }
             _ => true,
         }
     }
@@ -238,7 +283,8 @@ impl WolLobbyPopup {
         self.buttons = ShellButtonInteraction::default();
     }
 
-    /// A checkbox press (`OwnerDraw_CheckBox` toggles on the press).
+    /// A checkbox press (`OwnerDraw_CheckBox` toggles on the press). VERA's
+    /// Watching box steps to its next value instead.
     pub(crate) fn toggle(&mut self, control: u16) -> bool {
         if !self.enabled(control) {
             return false;
@@ -254,6 +300,13 @@ impl WolLobbyPopup {
                 Some(ranked) => ranked,
                 None => return false,
             },
+            CREATE_WATCHING => {
+                let Some(watching) = create.watching.as_mut() else {
+                    return false;
+                };
+                *watching = watching.next();
+                return true;
+            }
             _ => return false,
         };
         *value = !*value;
@@ -275,6 +328,7 @@ impl WolLobbyPopup {
                 room: create.room.as_ref().map(|room| room.limits),
                 name: self.room_name(),
                 ranked: create.ranked,
+                watching: create.watching,
             },
             (WolPopupKind::Create(_), POPUP_CANCEL) => WolPopupAction::CreateCancelled,
             (WolPopupKind::Password(_), POPUP_OK) => WolPopupAction::PasswordConfirmed(password),
@@ -326,7 +380,7 @@ impl WolLobbyPopup {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 
@@ -349,8 +403,13 @@ mod tests {
             players: 5,
             spectators: false,
         };
-        let mut modern =
-            WolLobbyPopup::create(1024, false, 0, false, Some((limits, "Boris's game", true)));
+        let mut modern = WolLobbyPopup::create(
+            1024,
+            false,
+            0,
+            false,
+            Some((limits, "Boris's game", true, RoomWatching::Delayed)),
+        );
         assert!(matches!(
             modern.activate(POPUP_OK),
             Some(WolPopupAction::CreateConfirmed { room: Some(room), ranked: Some(true), .. }) if room == limits
@@ -388,6 +447,7 @@ mod tests {
                 room: None,
                 name: None,
                 ranked: None,
+                watching: None,
             })
         );
         let mut password = WolLobbyPopup::password();
@@ -408,7 +468,12 @@ mod tests {
             false,
             0,
             false,
-            Some((RoomLimits::default(), "Boris's game", true)),
+            Some((
+                RoomLimits::default(),
+                "Boris's game",
+                true,
+                RoomWatching::Delayed,
+            )),
         );
         for _ in 0.."Boris's game".len() {
             popup.edit_key(LanEditKey::Backspace);
@@ -425,5 +490,33 @@ mod tests {
             (password.as_str(), name.as_deref()),
             ("pw", Some("No rush"))
         );
+    }
+
+    /// VERA's Watching starts on the host's last choice, and each press
+    /// steps it to Off, Live and back to 2 minutes behind; OK sends it. The
+    /// native popup has none.
+    #[test]
+    fn watching_steps_through_its_three_values() {
+        let room = (
+            RoomLimits::default(),
+            "Boris's game",
+            true,
+            RoomWatching::Delayed,
+        );
+        let mut popup = WolLobbyPopup::create(1024, false, 0, false, Some(room));
+        let sent = |popup: &mut WolLobbyPopup| match popup.activate(POPUP_OK) {
+            Some(WolPopupAction::CreateConfirmed { watching, .. }) => watching,
+            other => panic!("{other:?}"),
+        };
+        let mut steps = Vec::new();
+        for _ in 0..3 {
+            assert!(popup.toggle(CREATE_WATCHING));
+            steps.push(sent(&mut popup));
+        }
+        use RoomWatching::*;
+        assert_eq!(steps, [Some(Off), Some(Live), Some(Delayed)]);
+        let mut native = WolLobbyPopup::create(1024, false, 0, false, None);
+        assert!(!native.toggle(CREATE_WATCHING));
+        assert_eq!(sent(&mut native), None);
     }
 }

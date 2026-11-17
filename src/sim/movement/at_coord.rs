@@ -136,6 +136,6 @@ fn matches_coord(point: DriveCoord, probe: DriveCoord) -> bool {
         && point.z.wrapping_sub(probe.z).wrapping_abs() <= GROUND_LEVEL_HEIGHT_LEPTONS
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "at_coord_tests.rs"]
 mod tests;

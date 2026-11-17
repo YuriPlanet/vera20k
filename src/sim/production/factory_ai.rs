@@ -167,10 +167,7 @@ fn exit_finished_object(
             // Phobos `BuildingClass_KickOutUnit_BuildingType_Phobos 0x44531F`
             // clears the building slot after the placed structure exits.
             // Unit, Infantry and Aircraft clear in Exit_Object's prelude.
-            #[cfg(feature = "phobos")]
-            if product_type.category == ObjectCategory::Building
-                && rules.parallel_ai_queues().allows_parallel()
-            {
+            if product_type.category == ObjectCategory::Building && rules.parallel_ai_queues_act() {
                 let slot = crate::sim::ai_base_building::AiFactorySlot::for_product(
                     product_type.category,
                     product_type.naval,
@@ -276,7 +273,6 @@ fn start_factory(
         .is_some_and(|ty| ty.naval);
     // Phobos `BuildingClass_Update_Factory_Phobos 0x4502F4` runs before the
     // money gate, so its claimed slot survives a start that stops here.
-    #[cfg(feature = "phobos")]
     if !parallel_start_allowed(sim, rules, building, owner, factory_rtti, factory_naval) {
         return;
     }
@@ -354,7 +350,6 @@ fn start_factory(
 /// type in current production forbids parallel queues. The type check reads
 /// the same native `Producing*TypeIndex` choice fields that
 /// [`ai_base_building::suggest_new_object`] consumes.
-#[cfg(feature = "phobos")]
 fn parallel_start_allowed(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -365,10 +360,10 @@ fn parallel_start_allowed(
 ) -> bool {
     use crate::sim::ai_base_building::AiFactorySlot;
     use crate::sim::ai_unit_choice::UnitChoiceKind;
-    let switches = rules.parallel_ai_queues();
-    if !switches.allows_parallel() {
+    if !rules.parallel_ai_queues_act() {
         return true;
     }
+    let switches = rules.parallel_ai_queues();
     let Some(slot) = AiFactorySlot::for_producer(factory_rtti, naval) else {
         return true;
     };
@@ -414,7 +409,6 @@ fn parallel_start_allowed(
     !choice.is_some_and(|object| object.forbid_parallel_ai_queues)
 }
 
-#[cfg(feature = "phobos")]
 fn choice_product<'r>(
     sim: &Simulation,
     rules: &'r RuleSet,
@@ -539,6 +533,6 @@ pub(crate) fn detach_all(
     );
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "factory_ai_tests.rs"]
 mod tests;

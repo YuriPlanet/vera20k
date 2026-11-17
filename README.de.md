@@ -1,11 +1,14 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20K Titelbild" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <strong>Deutsch</strong> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
+  <a href="README.vi.md" lang="vi">Tiếng Việt</a> · <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <strong>Deutsch</strong> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
-  <a href="https://discord.gg/kmjRUn5m5F"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&amp;logo=discord&amp;logoColor=white" alt="Discord beitreten" height="23" align="middle"></a>
-  <img src="https://img.shields.io/badge/QQ-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ-Gruppe" height="23" align="middle">
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Letzter Testlauf der Bibliothek unter Linux (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Bibliothekstests unter Linux" height="23" align="middle"></a>
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="Letzter Testlauf der Bibliothek unter Windows (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="Bibliothekstests unter Windows" height="23" align="middle"></a>
+  <a href="https://discord.gg/kmjRUn5m5F"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscord.com%2Fapi%2Fv10%2Finvites%2FkmjRUn5m5F%3Fwith_counts%3Dtrue&amp;query=%24.approximate_presence_count&amp;suffix=%20online&amp;label=VERA20K%20Discord&amp;color=5865F2&amp;style=flat&amp;logo=discord&amp;logoColor=white" alt="Discord beitreten" height="23" align="middle"></a>
+  <img src="https://img.shields.io/badge/VERA20K_QQ-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ-Gruppe (VERA20K)" height="23" align="middle">
+  <img src="https://img.shields.io/badge/ra20k.com_QQ-319832195-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ-Gruppe (ra20k.com)" height="23" align="middle">
 </p>
 
 # VERA20K
@@ -22,16 +25,9 @@ das Projekt entwickelt.
 ## Herunterladen und spielen
 
 1. Installiere Red Alert 2: Yuri's Revenge über Steam oder die EA app.
-2. Lade VERA20K für dein System mit den Knöpfen unten herunter.
+2. Lade VERA20K für dein System von der [Release-Seite](https://github.com/YuriPlanet/vera20k/releases) herunter.
 3. Öffne die heruntergeladene Datei. Sie findet dein Spiel und richtet VERA20K in einem eigenen
    Ordner ein.
-
-<p dir="ltr">
-  <a href="https://vera20k.org/download/windows"><img src="https://img.shields.io/badge/Windows-1E4976?style=for-the-badge&amp;logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTMgM2g4LjV2OC41SDN6TTEyLjUgM0gyMXY4LjVoLTguNXpNMyAxMi41aDguNVYyMUgzek0xMi41IDEyLjVIMjFWMjFoLTguNXoiLz48L3N2Zz4%3D" alt="Für Windows herunterladen" height="28"></a>
-  <a href="https://vera20k.org/download/macos"><img src="https://img.shields.io/badge/macOS_%C2%B7_Apple_Silicon-000000?style=for-the-badge&amp;logo=apple&amp;logoColor=white" alt="Für macOS (Apple Silicon) herunterladen" height="28"></a>
-  <a href="https://vera20k.org/download/macos-x64"><img src="https://img.shields.io/badge/macOS_%C2%B7_Intel-000000?style=for-the-badge&amp;logo=apple&amp;logoColor=white" alt="Für macOS (Intel) herunterladen" height="28"></a>
-  <a href="https://vera20k.org/download/linux"><img src="https://img.shields.io/badge/Linux-000000?style=for-the-badge&amp;logo=linux&amp;logoColor=white" alt="Für Linux herunterladen" height="28"></a>
-</p>
 
 Kommst du nicht weiter? Schau auf der [Hilfeseite](https://vera20k.org/de/help) nach.
 
@@ -79,13 +75,6 @@ Die Pfeile zeigen den Datenfluss:
 
 ## Kompilieren und starten
 
-<p dir="ltr">
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="Letzter Testlauf der Bibliothek unter macOS (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="Bibliothekstests unter macOS" height="23" align="middle"></a>
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Letzter Testlauf der Bibliothek unter Linux (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Bibliothekstests unter Linux" height="23" align="middle"></a>
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="Letzter Testlauf der Bibliothek unter Windows (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="Bibliothekstests unter Windows" height="23" align="middle"></a>
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml?query=branch%3Amain" title="Letzter WebAssembly-Build (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml/badge.svg?branch=main" alt="WebAssembly-Build" height="23" align="middle"></a>
-</p>
-
 Du brauchst:
 
 - **Rust und Git:** [Rust](https://rustup.rs/) 1.97 oder neuer, installiert mit rustup, und
@@ -115,7 +104,7 @@ VERA20K spielt sich standardmäßig wie das Originalspiel. Jede neue Funktion, a
 aus Mods wie Ares, muss ausgeschaltet bleiben, bis sie auf einem dieser Wege aktiviert wird:
 
 - **Eine VERA-Spieleroption** unter **Options**, gespeichert im Abschnitt `[VERA]` in `VERA.INI`.
-- **Eine Build-Option**, z. B. `--features ares` für die unterstützten [Ares-Erweiterungen](docs/ares.md).
+- **Eine Build-Option**, z. B. `--features phobos` für die unterstützten [Phobos-Erweiterungen](docs/phobos.md).
 - **Ein INI-Schlüssel**, den eine Mod oder eine Karte setzt.
 
 Einstellungen für Ton, Grafik und Steuerung werden in `VERA.INI` gespeichert. Die Spielregeln
@@ -150,6 +139,7 @@ VERA20K steht in keiner Verbindung zu Electronic Arts und wird nicht von Electro
 unterstützt.
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **Lies den [rechtlichen Hinweis](LEGAL.md), bevor du VERA20K weitergibst, verkaufst oder forkst.**
 

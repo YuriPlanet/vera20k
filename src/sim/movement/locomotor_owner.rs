@@ -325,6 +325,6 @@ pub(crate) fn owner_is_warping(entity: &GameEntity) -> bool {
     entity.is_warping_in() || entity.is_warped_out()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "locomotor_owner_tests.rs"]
 mod tests;

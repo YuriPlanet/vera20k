@@ -519,7 +519,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
     use crate::map::entities::{EntityCategory, MapEntity};
@@ -704,7 +704,6 @@ mod tests {
     /// centre (41, 41).
     // Ares hooks455828/4556E1/43FE69 replace these stock counter skews
     // (`ares_sensor_array_follows_power_and_removes_what_it_added`).
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn napsis_construction_stamps_nothing_yet_limbo_still_debits_both_circles() {
         let rules = rules();
@@ -852,7 +851,6 @@ mod tests {
     /// circle.
     // Ares hooks455828/4556E1/43FE69 replace these stock counter skews
     // (`ares_sensor_array_follows_power_and_removes_what_it_added`).
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn selling_a_captured_psychic_sensor_debits_the_captor_and_leaves_the_first_owner_detecting() {
         let rules = rules();

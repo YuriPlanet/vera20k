@@ -91,7 +91,7 @@ pub(crate) fn digital_display_instances(
     }
     // `TechnoExt::ProcessDigitalDisplays` is called from DrawHealthBar, so the
     // stock health-bar admission is the only lifecycle gate here.
-    if !health_bar_drawable(sim, entity, hovered_id, local_owner) {
+    if !health_bar_drawable(sim, entity, hovered_id, local_owner, rules.ares()) {
         return out;
     }
     let is_building = entity.category() == EntityCategory::Structure;
@@ -536,7 +536,7 @@ fn display_shape(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
     use crate::rules::digital_display::DigitalHorizontalAnchor;

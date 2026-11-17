@@ -20,26 +20,10 @@ HOME_PATH = re.compile(
 # Hash-pinned native evidence older than this rule: its own tests check the
 # recorded hashes, so rewriting the paths inside would break it.
 PINNED_EVIDENCE = frozenset(f'tools/spatial_oracle/{name}' for name in '''
-_factory_infantry_output/accepted/no_rally.private.json.gz
-_factory_infantry_output/accepted/no_rally.receipt.json.gz
-_factory_infantry_output/accepted/publication-phase-native-after-strip-attempt-1.json.gz
-_factory_infantry_output/accepted/publication-phase-native-before-strip-attempt-1.json.gz
-_factory_infantry_output/accepted/rally.private.json.gz
-_factory_infantry_output/accepted/rally.receipt.json.gz
-_factory_infantry_output/accepted/unit-ready-pcm.native.json.gz
-_factory_infantry_output/consumer-meta.json
 _factory_infantry_output/fixtures/initialized-no_rally.json.gz
 _factory_infantry_output/fixtures/initialized-rally.json.gz
 _factory_infantry_output/fixtures/ordinary-input-closure.json.gz
-_factory_infantry_output/gate-meta.json
-_factory_infantry_output/inputs/infantry-unlimbo-gate-retail.json
 _factory_infantry_output/meta.json
-_walk_first_path/failed/human_Doing27_B-r7.json.gz
-_walk_first_path/failed/paid_head_B-r6.json.gz
-_walk_first_path/failed/prone_B-r8.json.gz
-_walk_first_path/failed/unit_shift_outside_playfield_B-r5.json.gz
-_walk_first_path/failed/unit_shift_outside_playfield_B-r6.json.gz
-_walk_first_path/original/gi-cellclick-wrapper-original-source-r8.json
 '''.split())
 
 

@@ -1136,7 +1136,7 @@ impl crate::sim::houses::Houses {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod tests {
     use super::*;
     use crate::sim::combat::Health;
@@ -2081,6 +2081,6 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "house_edge_tests.rs"]
 mod edge_tests;

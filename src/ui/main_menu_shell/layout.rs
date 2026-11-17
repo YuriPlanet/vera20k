@@ -304,7 +304,7 @@ pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> MainMenuShellL
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

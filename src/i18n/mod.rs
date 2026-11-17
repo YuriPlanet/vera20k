@@ -19,7 +19,7 @@
 //! Name=Deutsch
 //!
 //! [Strings]
-//! VERA:SaveSetup=Setup speichern
+//! VERA:ChooseMap=Karte wählen
 //! VERA:CatchingUp[one]=Holt auf - {count} Frame zurück
 //! VERA:CatchingUp[other]=Holt auf - {count} Frames zurück
 //! ; One of the game's own labels.
@@ -1347,7 +1347,7 @@ pub fn check(file_name: &str, text: &str) -> CheckReport {
     report
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_root))]
 mod tests {
     use super::*;
     use crate::assets::csf_file::test_csf;
@@ -1491,7 +1491,7 @@ mod tests {
         // A rewrite does.
         std::fs::write(
             &file,
-            "[Language]\nName=Test\n[Strings]\nVERA:SaveSetup=S\n",
+            "[Language]\nName=Test\n[Strings]\nVERA:ChooseMap=S\n",
         )
         .unwrap();
         assert_ne!(language_file_stamp(Some(&dir), None), before);
@@ -1509,12 +1509,12 @@ mod tests {
         std::fs::create_dir_all(&source).unwrap();
         std::fs::write(
             settings.join("vera20k.xx.ini"),
-            "[Language]\nName=Settings\n[Strings]\nVERA:SaveSetup=Settings\n",
+            "[Language]\nName=Settings\n[Strings]\nVERA:ChooseMap=Settings\n",
         )
         .unwrap();
         std::fs::write(
             source.join("vera20k.xx.ini"),
-            "[Language]\nName=Source\n[Strings]\nVERA:SaveSetup=Source\n",
+            "[Language]\nName=Source\n[Strings]\nVERA:ChooseMap=Source\n",
         )
         .unwrap();
         let languages = languages_with_source(Some(&settings), Some(&source));
@@ -1523,7 +1523,7 @@ mod tests {
             .find(|language| language.tag == "xx")
             .unwrap();
         assert_eq!(
-            xx.strings.get("VERA:SAVESETUP").map(String::as_str),
+            xx.strings.get("VERA:CHOOSEMAP").map(String::as_str),
             Some("Source")
         );
         std::fs::remove_dir_all(&root).unwrap();

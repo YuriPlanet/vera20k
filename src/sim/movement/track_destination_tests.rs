@@ -970,10 +970,8 @@ fn destination_receipt_actor(
 fn noncell_foot_destinations_match_original_anytown_class_calls() {
     use crate::sim::rng::SimRng;
 
-    let native: Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/spatial_oracle/anytown_damage/foot_missions.json",
-    ))
-    .unwrap();
+    let native =
+        crate::test_fixture::json("tools/spatial_oracle/anytown_damage/foot_missions.json");
     let rows = native["navigation_rows"].as_array().unwrap();
     assert_eq!(rows.len(), 2);
     for row in rows {

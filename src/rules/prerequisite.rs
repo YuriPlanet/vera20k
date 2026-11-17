@@ -136,15 +136,14 @@ pub(crate) fn parse_prerequisites(
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
     use serde_json::Value;
 
-    #[cfg(not(feature = "ares"))]
     #[test]
-    fn retail_build_ignores_generic_definitions_and_keeps_group_precedence() {
+    fn stock_way_ignores_generic_definitions_and_keeps_group_precedence() {
         let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
             "[BuildingTypes]\n0=POWER\n1=A\n\
              [VehicleTypes]\n0=UNIT\n\

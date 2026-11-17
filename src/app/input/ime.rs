@@ -1,4 +1,4 @@
-//! OS input-method (IME) text entry for the chat edits.
+//! OS input-method (IME) text entry for chat and chooser edits.
 //!
 //! gamemd removes its main window's input context when it creates the window
 //! (CreateMainWindow `0x00777D80`: ImmGetContext, then
@@ -14,10 +14,10 @@
 //! paints the open composition (`0x00777EA0`) at its caret (`0x00623880`).
 //!
 //! VERA20k takes the composition and the finished text from winit's `Ime`
-//! events, and asks for an input method only while a chat edit takes keys:
+//! events, and asks for an input method only while an edit takes keys:
 //! the in-game line, the WOL lobby (`0x10F`), the WOL game room and LAN setup
-//! (C2/C9, BC/BD) and the LAN lobby (BB). Finished text goes through each
-//! screen's own text path, as WM_IME_CHAR does.
+//! (C2/C9, BC/BD), the LAN lobby (BB), and Choose Map's search line. Finished
+//! text goes through each screen's own text path, as WM_IME_CHAR does.
 //!
 //! Player-name edits take no input method: NewEdit `0x00614B30` drops units at
 //! or above 0x100 from them (`0x00615226..0x0061527A`, the byte-only filter),
@@ -47,13 +47,14 @@ use winit::event::Ime;
 /// ShellDialog__SubclassChildByClass `0x0060F9A0` sets.
 pub(crate) const COMPOSITION_RGB: [u8; 3] = [0x9F, 0x9F, 0x00];
 
-/// The chat edit that takes IME input.
+/// An edit that takes IME input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ImeTarget {
     InGameChat,
     WolLobbyChat,
     SetupChat,
     LanLobbyChat,
+    ChooseMapSearch,
 }
 
 /// Process-local input-method state. Presentation-only: never serialized or
@@ -91,7 +92,7 @@ impl ImeState {
     }
 }
 
-/// The chat edit that takes keys now, with its rectangle in window pixels.
+/// The edit that takes keys now, with its rectangle in window pixels.
 /// The dialogs the key dispatch serves first leave none.
 fn target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
     if state.main_menu_dialog_open()
@@ -117,12 +118,16 @@ fn target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
             ImeTarget::WolLobbyChat,
             crate::app::shell_wol::lobby::ime_chat_rect(state),
         ),
+        (
+            ImeTarget::ChooseMapSearch,
+            crate::app::App::choose_map_search_ime_rect(state),
+        ),
     ]
     .into_iter()
     .find_map(|(target, rect)| rect.map(|rect| (target, rect)))
 }
 
-/// Ask for an input method exactly while a chat edit takes keys
+/// Ask for an input method exactly while a supported edit takes keys
 /// (`0x00778180` / `0x007781A0`), and keep the system's candidate window at
 /// that edit.
 pub(crate) fn sync(state: &mut AppState) {
@@ -174,6 +179,9 @@ pub(crate) fn event(state: &mut AppState, event: Ime) {
                 .map_or(ime.composition.len(), |prefix| {
                     prefix.encode_utf16().count()
                 });
+            if target(state).is_some_and(|(target, _)| target == ImeTarget::InGameChat) {
+                crate::app::input::chat::composition_changed(state);
+            }
         }
         Ime::Commit(text) => {
             state.platform.ime.cancel();
@@ -185,8 +193,7 @@ pub(crate) fn event(state: &mut AppState, event: Ime) {
     state.platform.window.request_redraw();
 }
 
-/// WM_IME_CHAR's consumers: the in-game queue and NewEdit's WM_CHAR insertion,
-/// here each screen's own text path.
+/// WM_IME_CHAR's consumers: each screen's own text path.
 fn commit(state: &mut AppState, text: &str) {
     match target(state).map(|(target, _)| target) {
         Some(ImeTarget::InGameChat) => crate::app::input::chat::commit_text(state, text),
@@ -196,6 +203,9 @@ fn commit(state: &mut AppState, text: &str) {
         }
         Some(ImeTarget::WolLobbyChat) => {
             crate::app::shell_wol::lobby::key_press(state, None, Some(text))
+        }
+        Some(ImeTarget::ChooseMapSearch) => {
+            crate::app::App::choose_map_search_text(state, text);
         }
         None => {}
     }

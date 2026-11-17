@@ -137,7 +137,6 @@ fn raw_ini_walks_have_pinned_production_callers() {
             "registry_ids",
             &[
                 ("rules/ini_parser.rs", 1), // the definition
-                ("rules/overlay_types.rs", 1),
                 // Includes parse_registry copying already resolved stored IDs.
                 ("rules/ruleset.rs", 3),
                 ("rules/smudge_type.rs", 1),
@@ -418,6 +417,10 @@ fn engine_per_client_reads_have_pinned_callers() {
                 // sees a Super's timer line; only the timer drawing asks.
                 ("sim/superweapon/ares_presentation.rs", 1),
                 ("sim/superweapon/lightning_storm.rs", 1),
+                // building_super_charges: whose providers draw the countdown
+                // labels, and which lines an enemy's building may show; only
+                // the label capture (HudFacts) asks, which feeds drawing.
+                ("sim/superweapon/mod.rs", 1),
                 ("sim/superweapon/psychic_reveal.rs", 1),
                 ("sim/team_script_vm/actions.rs", 1),
                 ("sim/team_script_vm/reinforcements.rs", 2),
@@ -429,7 +432,7 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/world/gap_generator.rs", 1),
                 ("sim/world/house_defeat.rs", 9),
                 ("sim/world/jumpjet_cruise.rs", 1),
-                ("sim/world/lifecycle.rs", 6),
+                ("sim/world/lifecycle.rs", 7),
                 ("sim/world/mod.rs", 7),
                 ("sim/world/object_turn.rs", 1),
                 ("sim/world/planning.rs", 2),
@@ -458,7 +461,9 @@ fn engine_per_client_reads_have_pinned_callers() {
                 // IsTimerVisible's observer case, as for `current_house`.
                 ("sim/superweapon/ares_presentation.rs", 1),
                 ("sim/superweapon/mod.rs", 1),
-                ("sim/world/house_defeat.rs", 2),
+                // The third is `network_ai_alone`: it asks of every House,
+                // and each peer holds the same observer list from the room.
+                ("sim/world/house_defeat.rs", 3),
             ],
         ),
         (
@@ -520,7 +525,7 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/game_entity.rs", 3),
                 ("sim/miner/ore_scan.rs", 1),
                 ("sim/world/camera_home.rs", 1),
-                ("sim/world/lifecycle.rs", 8),
+                ("sim/world/lifecycle.rs", 9),
                 ("sim/world/object_entry.rs", 1),
             ],
         ),
@@ -533,7 +538,7 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/power_system.rs", 2),
                 ("sim/production/production_tech.rs", 1),
                 ("sim/trigger_runtime.rs", 1),
-                ("sim/world/lifecycle.rs", 11),
+                ("sim/world/lifecycle.rs", 12),
                 ("sim/world/mod.rs", 1),
                 ("sim/world/shroud_refresh.rs", 1),
                 ("sim/world/world_commands.rs", 1),
@@ -1887,8 +1892,8 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         (
             "rules/personal_rules.rs",
             "set_terrain_deformation",
-            "VERA's own switch with no native member: the Options page's Terrain Deformation \
-             box, which the app passes in for the rules the next scenario reads",
+            "VERA's own switch with no native member: the skirmish Game Options' Terrain \
+             Deformation box, which the app passes in for the rules the next scenario reads",
         ),
         (
             "rules/superweapon_type.rs",
@@ -1938,12 +1943,6 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              PointerExpired's NULL store (0x00707A33)",
         ),
         (
-            "sim/cloak_disguise.rs",
-            "set_attached",
-            "Ares RecalculateStats 0x1004613B/0x1004617D commits the cloak aggregate \
-             derived from the canonical attachment vector; permanent crate capability stays separate",
-        ),
-        (
             "sim/combat/base_defense_response.rs",
             "set_team_recruitable",
             "TeamClass::Add_Member stores AreTeamMembersRecruitable into +0x422 (0x006EA500)",
@@ -1958,6 +1957,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "set",
             "the native +0x6C stores outside ReceiveDamage listed on Health::set, \
              such as a crash's kill (0x004DEC72) and a parasite's death (0x0062A46A)",
+        ),
+        (
+            "sim/components.rs",
+            "set_attached",
+            "Ares RecalculateStats 0x100460A0 derives Foot+580 from the attachment vector; \
+             GameEntity::set_attached_speed records here whether it differs from the crate baseline",
         ),
         (
             "sim/game_entity.rs",
@@ -2119,6 +2124,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "set_credits_counter",
             "MouseClass::Save (0x005BE6D0, store 0x005BE715) captures CreditsClass+4; \
              this snapshot field records the presentation owner's displayed counter",
+        ),
+        (
+            "sim/snapshot/saved_local_view.rs",
+            "set_radar_housing",
+            "RadarClass::Load (0x006568A0) and MouseClass::Load (0x005BDF70, 0x005BE092) \
+             read the radar housing back; this snapshot field records the render owner's housing",
         ),
         (
             "sim/stage.rs",

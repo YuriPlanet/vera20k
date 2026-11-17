@@ -15,8 +15,8 @@ use super::super::layout::{SkirmishShellLayout, SkirmishTrackbarId, shown_player
 use super::trackbars::SkirmishTrackbarBounds;
 use super::{
     ChooseMapModalState, DropdownScrollDragState, DropdownScrollbarPressState, OpenComboDropdown,
-    OwnerDrawButton, RandomMapSetupModalState, SkirmishShellOpponent, SkirmishShellUiSound,
-    SkirmishValidationModalState, default_opponents,
+    OwnerDrawButton, RandomMapSetupModalState, SkirmishModeSelection, SkirmishShellOpponent,
+    SkirmishShellUiSound, SkirmishValidationModalState, default_opponents,
 };
 
 pub const PLAYER_NAME_DEFAULT: &str = "Player";
@@ -342,7 +342,7 @@ pub struct SkirmishShellState {
     /// claim and random draw of the shell reads this copy.
     pub(crate) lobby_colors: crate::rules::skirmish_colors::SkirmishColorMode,
     pub selected_map_idx: usize,
-    pub selected_mode_id: i32,
+    pub selected_mode: SkirmishModeSelection,
     pub player_name_edit: PlayerNameEditState,
     pub player_country: LaunchCountry,
     pub player_country_random: bool,
@@ -391,6 +391,9 @@ pub struct SkirmishShellState {
     /// the setup dialog on screen while that dialog keeps its working options.
     pub saved_seed_browser: Option<super::SavedSeedBrowserState>,
     pub validation_modal: Option<SkirmishValidationModalState>,
+    /// VERA's Game Options box, open over the page: it takes every press
+    /// and key until OK, Enter or Esc closes it.
+    pub game_options: Option<crate::ui::skirmish_shell::game_options::GameOptionsBox>,
     pub pending_ui_sounds: Vec<SkirmishShellUiSound>,
     /// The kind-1 statics; the status line holds the hover help.
     pub(crate) statics: SkirmishStatics,
@@ -447,7 +450,7 @@ impl Default for SkirmishShellState {
             country_catalog: CountryMenuCatalog::default(),
             lobby_colors: Default::default(),
             selected_map_idx: 0,
-            selected_mode_id: 1,
+            selected_mode: 1.into(),
             player_name_edit: PlayerNameEditState::default(),
             player_country: LaunchCountry::default(),
             player_country_random: false,
@@ -481,6 +484,7 @@ impl Default for SkirmishShellState {
             random_map_setup_modal: None,
             saved_seed_browser: None,
             validation_modal: None,
+            game_options: None,
             pending_ui_sounds: Vec::new(),
             statics: SkirmishStatics::default(),
         }
@@ -675,7 +679,7 @@ pub fn initialize_rows_for_selected_map(state: &mut SkirmishShellState, maps: &[
     reset_rows_hidden_by_capacity(state, capacity);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod multiplayer_dialog_value_tests {
     use super::*;
 
@@ -725,7 +729,9 @@ mod multiplayer_dialog_value_tests {
 }
 
 pub fn repair_teams_for_selected_mode(state: &mut SkirmishShellState, modes: &[SkirmishGameMode]) {
-    let mode = mode_by_id(modes, state.selected_mode_id)
+    let mode = state
+        .selected_mode
+        .resolve(modes)
         .or_else(|| mode_by_id(modes, 1))
         .or_else(|| modes.first());
     if let Some(mode) = mode {

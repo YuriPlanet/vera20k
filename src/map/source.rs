@@ -182,11 +182,15 @@ static MOD_DIR: std::sync::RwLock<Option<&'static Path>> = std::sync::RwLock::ne
 /// a start.
 pub fn set_mod_dir(dir: Option<PathBuf>) {
     let dir = dir.map(|dir| &*Box::leak(dir.into_boxed_path()));
-    *MOD_DIR.write().unwrap_or_else(std::sync::PoisonError::into_inner) = dir;
+    *MOD_DIR
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = dir;
 }
 
 pub fn mod_dir() -> Option<&'static Path> {
-    *MOD_DIR.read().unwrap_or_else(std::sync::PoisonError::into_inner)
+    *MOD_DIR
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// The folders a listing of the game folder reads, for
@@ -335,7 +339,7 @@ fn expand_map_ini_with_options(
     strict: bool,
     logical_name: Option<&str>,
 ) -> Result<IniFile> {
-    if !(crate::rules::ARES_BUILD || crate::rules::PHOBOS_ENABLED) {
+    if !(crate::rules::ares_switch::ares_way() || crate::rules::PHOBOS_ENABLED) {
         return Ok(ini);
     }
     let name = match source {
@@ -387,12 +391,15 @@ pub fn validate_network_map_content(ini: &IniFile, seed: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn effective_network_map_digest(ini: &IniFile, seed: bool) -> String {
+/// `ares`: Ares.dll is loaded (the game is read the Ares way); only a seed
+/// reads it, whose bytes then carry the Urban Areas box
+/// (`RmgOptions::to_sed_bytes`).
+pub fn effective_network_map_digest(ini: &IniFile, seed: bool, ares: bool) -> String {
     if seed {
         let mut options = crate::map::rmg::RmgOptions::default();
-        options.apply_sed(ini);
+        options.apply_sed(ini, ares);
         options.normalize();
-        return IniFile::from_bytes(&options.to_sed_bytes())
+        return IniFile::from_bytes(&options.to_sed_bytes(ares))
             .expect("serialized seed INI")
             .multiplayer_digest();
     }
@@ -654,7 +661,9 @@ fn decode_transfer(bytes: &[u8], resource: TransferResource) -> Result<TransferC
             "random-map seed options missing"
         );
         let mut options = crate::map::rmg::RmgOptions::default();
-        options.apply_sed(&ini);
+        // The options are read and dropped: whether Ares.dll is loaded (the
+        // Urban Areas box) changes nothing here.
+        options.apply_sed(&ini, false);
         options.normalize();
     } else if !include_expansion_will_run(&ini) {
         map_file::MapFile::from_ini(ini.clone())?;
@@ -1058,7 +1067,7 @@ pub mod test_support {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::test_support::{TestDirectory, make_new_format_mix_bytes};
 
@@ -1547,7 +1556,7 @@ mod tests {
         let mut options = crate::map::rmg::RmgOptions::default();
         options.seed = 1234;
         options.normalize();
-        let bytes = options.to_sed_bytes();
+        let bytes = options.to_sed_bytes(false);
         let digest = sha256_hex(&bytes);
         let loaded = install_received_asset(
             root.path(),
@@ -1561,7 +1570,7 @@ mod tests {
             panic!("seed INI");
         };
         let mut decoded = crate::map::rmg::RmgOptions::default();
-        decoded.apply_sed(&ini);
+        decoded.apply_sed(&ini, false);
         decoded.normalize();
         assert_eq!(decoded, options);
         let LoadedMapSource::Loose { path, .. } = loaded.source else {
@@ -1620,44 +1629,48 @@ mod tests {
 
     #[test]
     fn network_effective_digest_uses_existing_include_expansion_and_rejects_missing_closure() {
-        let root = TestDirectory::new("network-map-includes");
-        let mut bytes = SOURCE_TEST_MAP.to_vec();
-        bytes.extend_from_slice(b"\n[#include]\n0=child.ini\n");
-        root.write("Shared.map", &bytes);
-        root.write("child.ini", b"[General]\nBuildSpeed=.5\n");
-        let a = AssetManager::from_loose_root_for_test(root.path());
-        let first = load_network_map_ini(root.path(), "Shared.map", &a).unwrap();
-        root.write("child.ini", b"[General]\nBuildSpeed=.7\n");
-        let b = AssetManager::from_loose_root_for_test(root.path());
-        let second = load_network_map_ini(root.path(), "Shared.map", &b).unwrap();
-        assert_eq!(
-            first.source.physical_identity(),
-            second.source.physical_identity()
-        );
-        assert_eq!(
-            effective_network_map_digest(&first.ini, false)
-                != effective_network_map_digest(&second.ini, false),
-            crate::rules::ARES_BUILD
-        );
-        std::fs::remove_file(root.path().join("child.ini")).unwrap();
-        let c = AssetManager::from_loose_root_for_test(root.path());
-        assert_eq!(
-            load_network_map_ini(root.path(), "Shared.map", &c).is_err(),
-            crate::rules::ARES_BUILD
-        );
-        if crate::rules::ARES_BUILD {
-            root.write("child.ini", SOURCE_TEST_MAP);
-            let bytes = b"[#include]\n0=child.ini\n".to_vec();
-            let loaded = install_received_map(
-                &root.path().join("cache"),
-                bytes.clone(),
-                &sha256_hex(&bytes),
-                bytes.len(),
-            )
-            .unwrap();
-            let assets = AssetManager::from_loose_root_for_test(root.path());
-            let loaded = resolve_network_map_ini(loaded, &assets, false, "Included.map").unwrap();
-            validate_network_map_content(&loaded.ini, false).unwrap();
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            let root = TestDirectory::new("network-map-includes");
+            let mut bytes = SOURCE_TEST_MAP.to_vec();
+            bytes.extend_from_slice(b"\n[#include]\n0=child.ini\n");
+            root.write("Shared.map", &bytes);
+            root.write("child.ini", b"[General]\nBuildSpeed=.5\n");
+            let a = AssetManager::from_loose_root_for_test(root.path());
+            let first = load_network_map_ini(root.path(), "Shared.map", &a).unwrap();
+            root.write("child.ini", b"[General]\nBuildSpeed=.7\n");
+            let b = AssetManager::from_loose_root_for_test(root.path());
+            let second = load_network_map_ini(root.path(), "Shared.map", &b).unwrap();
+            assert_eq!(
+                first.source.physical_identity(),
+                second.source.physical_identity()
+            );
+            assert_eq!(
+                effective_network_map_digest(&first.ini, false, false)
+                    != effective_network_map_digest(&second.ini, false, false),
+                ares_way
+            );
+            std::fs::remove_file(root.path().join("child.ini")).unwrap();
+            let c = AssetManager::from_loose_root_for_test(root.path());
+            assert_eq!(
+                load_network_map_ini(root.path(), "Shared.map", &c).is_err(),
+                ares_way
+            );
+            if ares_way {
+                root.write("child.ini", SOURCE_TEST_MAP);
+                let bytes = b"[#include]\n0=child.ini\n".to_vec();
+                let loaded = install_received_map(
+                    &root.path().join("cache"),
+                    bytes.clone(),
+                    &sha256_hex(&bytes),
+                    bytes.len(),
+                )
+                .unwrap();
+                let assets = AssetManager::from_loose_root_for_test(root.path());
+                let loaded =
+                    resolve_network_map_ini(loaded, &assets, false, "Included.map").unwrap();
+                validate_network_map_content(&loaded.ini, false).unwrap();
+            }
         }
     }
 
@@ -1725,52 +1738,55 @@ mod tests {
 
     #[test]
     fn ini_directives_map_gameplay_and_metadata_follow_build_capability() {
-        let dir = TestDirectory::new("map-ini-directives");
-        let root = [
-            SOURCE_TEST_MAP,
-            b"[#include]\n0=rules-extra.ini\n[Unit]\n$Inherits=Base\nOwn=map\n",
-        ]
-        .concat();
-        dir.write("Arena.map", &root);
-        dir.write(
-            "rules-extra.ini",
-            b"[Basic]\nName=Included name\n[Base]\nStrength=250\nOwn=parent\n",
-        );
-        let assets = AssetManager::from_loose_root_for_test(dir.path());
-        let loaded =
-            load_map_by_name_or_path_with_assets(dir.path(), "Arena.map", &assets).unwrap();
-        let metadata =
-            load_map_ini_by_name_or_path_with_assets(dir.path(), "Arena.map", &assets).unwrap();
-        assert_eq!(loaded.map.ini.content_hash(), metadata.ini.content_hash());
-        let ares_include = crate::rules::ARES_BUILD;
-        assert_eq!(
-            loaded
-                .map
-                .ini
-                .section_or_empty("Unit")
-                .read_int("Strength", 0),
-            if ares_include { 250 } else { 0 }
-        );
-        assert_eq!(
-            loaded
-                .map
-                .ini
-                .section_or_empty("Unit")
-                .read_name("Own", 128),
-            Some("map")
-        );
-        assert_eq!(
-            loaded
-                .map
-                .ini
-                .section_or_empty("Basic")
-                .read_name("Name", 128),
-            ares_include.then_some("Included name")
-        );
-        assert_eq!(
-            serde_json::to_value(&loaded.source).unwrap(),
-            serde_json::to_value(&metadata.source).unwrap()
-        );
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            let dir = TestDirectory::new("map-ini-directives");
+            let root = [
+                SOURCE_TEST_MAP,
+                b"[#include]\n0=rules-extra.ini\n[Unit]\n$Inherits=Base\nOwn=map\n",
+            ]
+            .concat();
+            dir.write("Arena.map", &root);
+            dir.write(
+                "rules-extra.ini",
+                b"[Basic]\nName=Included name\n[Base]\nStrength=250\nOwn=parent\n",
+            );
+            let assets = AssetManager::from_loose_root_for_test(dir.path());
+            let loaded =
+                load_map_by_name_or_path_with_assets(dir.path(), "Arena.map", &assets).unwrap();
+            let metadata =
+                load_map_ini_by_name_or_path_with_assets(dir.path(), "Arena.map", &assets).unwrap();
+            assert_eq!(loaded.map.ini.content_hash(), metadata.ini.content_hash());
+            let ares_include = ares_way;
+            assert_eq!(
+                loaded
+                    .map
+                    .ini
+                    .section_or_empty("Unit")
+                    .read_int("Strength", 0),
+                if ares_include { 250 } else { 0 }
+            );
+            assert_eq!(
+                loaded
+                    .map
+                    .ini
+                    .section_or_empty("Unit")
+                    .read_name("Own", 128),
+                Some("map")
+            );
+            assert_eq!(
+                loaded
+                    .map
+                    .ini
+                    .section_or_empty("Basic")
+                    .read_name("Name", 128),
+                ares_include.then_some("Included name")
+            );
+            assert_eq!(
+                serde_json::to_value(&loaded.source).unwrap(),
+                serde_json::to_value(&metadata.source).unwrap()
+            );
+        }
     }
 
     #[test]

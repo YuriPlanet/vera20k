@@ -87,6 +87,6 @@ impl ConversionHealth {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "conversion_health_tests.rs"]
 mod tests;

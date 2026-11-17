@@ -1115,7 +1115,13 @@ pub(super) fn verify_setup_agreement(state: &mut AppState) -> anyhow::Result<()>
         }
     };
     if expected != actual {
-        reject_setup_compatibility(state, &crate::i18n::tr("VERA:LanClientsDiffer"));
+        // VERA: with the same build, say what this game changes.
+        let message = if expected.version == actual.version {
+            super::shell_network_setup::agreement::rules_differ_text(state)
+        } else {
+            crate::i18n::tr("VERA:LanClientsDiffer")
+        };
+        reject_setup_compatibility(state, &message);
         anyhow::bail!("LAN selected-mode agreement mismatch");
     }
     Ok(())
@@ -1285,8 +1291,11 @@ pub(crate) fn install_online_transport(
         transport.relay_ready(),
         "relay has not completed its UDP probe"
     );
+    // A watcher has no source of its own: it stands in the seat of the
+    // player it follows (relay README "Watchers").
     anyhow::ensure!(
-        transport.relay_source().map(usize::from) == Some(launch.local_player_index),
+        transport.relay_watch_delay().is_some()
+            || transport.relay_source().map(usize::from) == Some(launch.local_player_index),
         "relay identity differs from the admitted local participant"
     );
     for source in 0..launch.humans.len() {
@@ -1985,6 +1994,18 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
             super::input::taunt::receive(state, taunt.byte);
             return Ok(());
         }
+        if let Some(text) = message.beacon_text_fields() {
+            //48D7F4..48D810: like 0x20/0x21, no source or session check.
+            if state.match_state.sim_runtime.is_installed() {
+                super::match_runtime::beacons::receive_text(
+                    state,
+                    text.house,
+                    text.slot,
+                    &text.text_units(),
+                );
+            }
+            return Ok(());
+        }
         if let Some(runtime) = state.match_state.sim_runtime.runtime()
             && let Some(event) = super::match_runtime::network_match::decode_kick_proposal(
                 &state.match_state.session,
@@ -2169,16 +2190,17 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                     crate::skirmish_launch::LaunchStartPosition::Position(u8::try_from(values[2])?)
                 };
                 choices.team = crate::skirmish_launch::LaunchTeam::from_shell_value(values[3]);
-                // A guest's own team pick keeps to the room's Teams.
-                let refused = state
+                // A guest's own seat and team pick keep to the room's teams.
+                let mut observer = values[0] == -3;
+                let refused = state.match_state.session.admit_network_team(
+                    source,
+                    &mut choices,
+                    &mut observer,
+                );
+                let mut change = state
                     .match_state
                     .session
-                    .admit_network_team(source, &mut choices);
-                let mut change = state.match_state.session.accept_lan_peer_choices(
-                    source,
-                    choices,
-                    values[0] == -3,
-                )?;
+                    .accept_lan_peer_choices(source, choices, observer)?;
                 change.options |= refused;
                 // A VERA room's guest who starts or stops watching changes
                 // rows: the roster, then the options, as WOL's R arm.
@@ -3746,6 +3768,17 @@ fn drain_match_requests(state: &mut AppState) {
                     send_sources(state, message.as_bytes(), peers);
                 }
             }
+            NetworkLoadingRequest::BeaconText { house, slot, text } => {
+                if let Ok(message) = LanMessage::beacon_text(&local_name(state), house, slot, &text)
+                {
+                    let peers: Vec<_> =
+                        super::match_runtime::network_match::nodes(&state.match_state.session)
+                            .into_iter()
+                            .skip(1)
+                            .collect();
+                    send_sources(state, message.as_bytes(), peers);
+                }
+            }
             // BC6's records; an ordinary Battle match never emits them.
             other => cooperative::send(state, other),
         }
@@ -4560,7 +4593,7 @@ pub(crate) fn loading_test_pair() -> (
     )
 }
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 mod tests {
     use super::*;
     use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext};
@@ -6025,7 +6058,7 @@ fn advance_go(state: &mut AppState, now: u32, service_ok: bool) {
     {
         // A retired failed send is not proof that its final fragment or GO
         // arrived. Fail through the existing setup owner instead of loading.
-        super::shell_network_setup::fail_go_handoff(state);
+        super::shell_network_setup::fail_go_delivery(state);
         return;
     }
     let queued = observation.queued;

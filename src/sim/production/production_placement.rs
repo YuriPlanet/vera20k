@@ -490,7 +490,10 @@ pub(crate) fn place_production_with_overlays(
         }
         wall_placement::autofill_walls(sim, rules, registry, obj, (rx, ry), owner_id, effects);
         // The native4FB240..4FB2C7 completion/radio/abandon tail also runs
-        // for an UnInit'ed object; only local selection tests its alive byte.
+        // for an UnInit'ed object. RESIDUAL (invisible): PlayerPtr's
+        // 4FB2DE..4FB2F7 vt+0x198 call (44D5D0 -> 6F4960) is not ported; in
+        // multiplayer Unlimbo made it already (440D25..440D61), and its House
+        // writes repeat Record_Last_Built's and Unlimbo's.
         held.entity_id()
     } else {
         let foundation = &obj.foundation;
@@ -840,6 +843,9 @@ pub fn is_within_build_area(
                 continue;
             }
         } else if provider_owner.eq_ignore_ascii_case(owner) {
+            // RESIDUAL (dormant, the retail EligibileForAllyBuilding= types keep
+            // BaseNormal=yes): native sends an own BaseNormal=no building on to the
+            // BuildOffAlly test (`0x004A8FE4` -> `0x004A8FFA`), where it can still count.
             if !existing.base_normal {
                 continue;
             }

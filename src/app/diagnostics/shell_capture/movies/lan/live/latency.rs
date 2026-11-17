@@ -1014,7 +1014,7 @@ fn action_gpu_complete(action: &Action) -> bool {
         .is_some_and(|response| response.gpu_completed_at().is_some())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::sim::command::{CommandRecord, IDLE_OPCODE};

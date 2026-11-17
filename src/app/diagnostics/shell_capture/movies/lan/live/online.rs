@@ -8,8 +8,10 @@ use crate::ui::wol_lobby;
 use std::io::Read;
 
 mod exit_reentry;
+mod watch;
 use crate::app::diagnostics::shell_capture::loading_host_loss::LoadingHostLoss;
 use exit_reentry::ExitReentry;
+use watch::WatchRun;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RoundPhase {
@@ -20,6 +22,9 @@ enum RoundPhase {
     /// Quick Match pressed: the runner, the matchbot's pairing and the
     /// automatic room run until gameplay.
     QuickMatch,
+    /// `online-live-watch` from the settled lobby: the watch list, the
+    /// watched match and Escape back to the lobby.
+    Watch,
     Create,
     Discover,
     HostSetup,
@@ -70,6 +75,7 @@ pub(super) struct LiveRoundFlow {
     quick_match_wait: Option<(Instant, bool, Option<Instant>)>,
     /// Quick Match: the paired room, recorded once per round.
     quick_match_room: Option<String>,
+    watch: Option<WatchRun>,
 }
 
 impl LiveRoundFlow {
@@ -120,6 +126,7 @@ impl LiveRoundFlow {
             guest_back: false,
             quick_match_wait: None,
             quick_match_room: None,
+            watch: None,
         }
     }
 
@@ -208,7 +215,7 @@ impl LiveRoundFlow {
                 .network_setup()
                 .context("restored online setup")?;
             ensure!(
-                restored.mode.class.lists_in_skirmish(),
+                restored.mode.class.policy().lists_in_skirmish,
                 "ordinary online setup did not offer computer opponents"
             );
             self.record(
@@ -447,7 +454,6 @@ impl LiveRoundFlow {
                 WolPage::Message { .. } => "message",
                 WolPage::Lobby => "lobby",
                 WolPage::Options(_) => "options",
-                WolPage::ChatTranslation(_) => "chat_translation",
                 WolPage::AutoLoginQuery(_) => "auto_login",
                 WolPage::Locale(_) => "locale",
                 WolPage::MyInformation(_) => "my_information",
@@ -783,6 +789,10 @@ impl LiveRoundFlow {
                     self.observe_reentry_lobby(state, frame)?;
                     return Ok(());
                 }
+                if core.target == LanTarget::OnlineWatch {
+                    self.watch_from_lobby(frame);
+                    return Ok(());
+                }
                 if self.online_config().quick_match {
                     if !self.quick_match_turn(core, state) {
                         return Ok(());
@@ -850,54 +860,13 @@ impl LiveRoundFlow {
                             .position(|row| row.name.eq_ignore_ascii_case(&expected))
                     });
                 if let Some(row) = selected {
-                    let layout = crate::app::shell_wol::lobby::layout(state);
-                    let lobby = state
-                        .frontend
-                        .wol
-                        .as_ref()
-                        .and_then(|visit| visit.lobby())
-                        .context("online lobby")?;
-                    let geometry = lobby.ui.game_list.geometry(
-                        layout.games,
-                        lobby.ui.game_rows.len(),
-                        layout.page.scale,
-                    );
-                    if row < lobby.ui.game_list.top_index
-                        || row >= lobby.ui.game_list.top_index + geometry.visible_rows
-                    {
-                        let rect = if let Some(bar) = geometry.scrollbar {
-                            let y = if row < lobby.ui.game_list.top_index {
-                                bar.y + 1
-                            } else {
-                                bar.y + bar.h - 2 - geometry.metrics.arrow_h
-                            };
-                            RectPx::new(bar.x + 1, y, bar.w - 2, geometry.metrics.arrow_h)
-                        } else {
-                            // replace_games preserves the old top row by name.
-                            // With a newly shorter list its ordinary mouse input
-                            // reconciles that stale viewport before any row click.
-                            ensure!(
-                                lobby.ui.game_list.top_index > geometry.max_top,
-                                "offscreen online game has no ordinary scroll input"
-                            );
-                            RectPx::new(layout.games.x, layout.games.y, layout.games.w, 1)
-                        };
-                        click(state, rect);
+                    if !join_game_row(state, row)? {
                         self.record(
                             frame,
                             "Game list scrolled toward the configured discovered room",
                         );
                         return Ok(()); // Re-read the row on its next presented frame.
                     }
-                    let rect = geometry.row(row - lobby.ui.game_list.top_index);
-                    click(state, rect);
-                    click(
-                        state,
-                        layout
-                            .page
-                            .button_rect(wol_lobby::JOIN)
-                            .context("Join button")?,
-                    );
                     self.record(frame, "Configured discovered game joined");
                     self.phase = RoundPhase::GuestSetup;
                 } else if self.last_refresh.elapsed() >= Duration::from_secs(2) {
@@ -1603,6 +1572,7 @@ impl LiveRoundFlow {
                 );
                 self.phase = RoundPhase::MainReturn;
             }
+            RoundPhase::Watch => self.watch_step(state, rendered, frame)?,
             RoundPhase::ExitFault => {
                 if self.exit_block_applied(state, rendered, frame)? {
                     let rect = crate::app::shell_wol::lobby::layout(state)
@@ -1695,6 +1665,9 @@ impl LiveRoundFlow {
     }
 
     pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
+        if let Some(watch) = &self.watch {
+            return self.watch_receipt(state, watch);
+        }
         let startup_failure = self
             .config
             .as_ref()
@@ -1814,6 +1787,56 @@ pub(super) fn online_setup_settled(state: &AppState, host: bool) -> bool {
         .multiplayer_setup
         .as_ref()
         .is_some_and(|ui| ui.statics.is_terminal())
+}
+
+/// Select a game list row and press Join, through the ordinary mouse
+/// adapter. False after a click that scrolls toward a row outside the list's
+/// view instead.
+fn join_game_row(state: &mut AppState, row: usize) -> Result<bool> {
+    let layout = crate::app::shell_wol::lobby::layout(state);
+    let lobby = state
+        .frontend
+        .wol
+        .as_ref()
+        .and_then(|visit| visit.lobby())
+        .context("online lobby")?;
+    let geometry =
+        lobby
+            .ui
+            .game_list
+            .geometry(layout.games, lobby.ui.game_rows.len(), layout.page.scale);
+    let top = lobby.ui.game_list.top_index;
+    if row < top || row >= top + geometry.visible_rows {
+        let rect = if let Some(bar) = geometry.scrollbar {
+            let y = if row < top {
+                bar.y + 1
+            } else {
+                bar.y + bar.h - 2 - geometry.metrics.arrow_h
+            };
+            RectPx::new(bar.x + 1, y, bar.w - 2, geometry.metrics.arrow_h)
+        } else {
+            // replace_games preserves the old top row by name. With a newly
+            // shorter list its ordinary mouse input reconciles that stale
+            // viewport before any row click.
+            ensure!(
+                top > geometry.max_top,
+                "offscreen online game has no ordinary scroll input"
+            );
+            RectPx::new(layout.games.x, layout.games.y, layout.games.w, 1)
+        };
+        click(state, rect);
+        return Ok(false);
+    }
+    let rect = geometry.row(row - top);
+    click(state, rect);
+    click(
+        state,
+        layout
+            .page
+            .button_rect(wol_lobby::JOIN)
+            .context("Join button")?,
+    );
+    Ok(true)
 }
 
 fn click(state: &mut AppState, rect: RectPx) {

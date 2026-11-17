@@ -141,7 +141,7 @@ pub(crate) fn is_open(state: &AppState) -> bool {
     state.frontend.preview_zoom.is_some()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
 

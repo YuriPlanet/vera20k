@@ -80,8 +80,11 @@ pub(crate) mod match_audio;
 pub mod match_bootstrap;
 pub(crate) mod match_diagnostics;
 pub(crate) mod match_runtime;
+pub(crate) mod mod_additions;
+pub(crate) mod mod_files;
 pub(crate) mod mods;
 pub(crate) mod movie_playback;
+pub(crate) mod new_mod;
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 mod network_goodbye;
 pub(crate) mod movie_subtitles;
@@ -94,7 +97,7 @@ pub(crate) mod process_assets;
 #[cfg(feature = "telemetry-dashboard")]
 pub(crate) mod process_stats;
 pub(crate) mod radar_movie;
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod random_map_lifecycle_tests;
 pub(crate) mod renderer_state;
 pub(crate) mod restart;
@@ -114,7 +117,7 @@ mod shell_saved_seeds;
 mod shell_skirmish;
 mod shell_wol;
 pub(crate) mod sidebar_projection;
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod sidebar_projection_tests;
 pub(crate) mod spawn_probe;
 mod state;
@@ -136,27 +139,18 @@ mod window_icon;
 /// this exact title, so `main` hands the same constant to
 /// `util::single_instance::acquire`.
 pub const WINDOW_TITLE: &str = match (
-    crate::rules::ARES_BUILD,
     crate::rules::PHOBOS_ENABLED,
     crate::rules::NPATCH_ENABLED,
     crate::rules::NPBUG_ENABLED,
 ) {
-    (true, true, true, false) => "VERA20K [Ares+Phobos+NPatch]",
-    (true, true, false, false) => "VERA20K [Ares+Phobos]",
-    (true, false, true, false) => "VERA20K [Ares+NPatch]",
-    (true, false, false, false) => "VERA20K [Ares]",
-    (false, true, true, false) => "VERA20K [Phobos+NPatch]",
-    (false, true, false, false) => "VERA20K [Phobos]",
-    (false, false, true, false) => "VERA20K [NPatch]",
-    (false, false, false, false) => "VERA20K",
-    (true, true, true, true) => "VERA20K [Ares+Phobos+NPatch+NPBug]",
-    (true, true, false, true) => "VERA20K [Ares+Phobos+NPBug]",
-    (true, false, true, true) => "VERA20K [Ares+NPatch+NPBug]",
-    (false, true, true, true) => "VERA20K [Phobos+NPatch+NPBug]",
-    (true, false, false, true) => "VERA20K [Ares+NPBug]",
-    (false, true, false, true) => "VERA20K [Phobos+NPBug]",
-    (false, false, true, true) => "VERA20K [NPatch+NPBug]",
-    (false, false, false, true) => "VERA20K [NPBug]",
+    (true, true, false) => "VERA20K [Phobos+NPatch]",
+    (true, false, false) => "VERA20K [Phobos]",
+    (false, true, false) => "VERA20K [NPatch]",
+    (false, false, false) => "VERA20K",
+    (true, true, true) => "VERA20K [Phobos+NPatch+NPBug]",
+    (true, false, true) => "VERA20K [Phobos+NPBug]",
+    (false, true, true) => "VERA20K [NPatch+NPBug]",
+    (false, false, true) => "VERA20K [NPBug]",
 };
 
 /// Identity stamp shared by the status screen and the telemetry capture. Not a
@@ -411,7 +405,7 @@ impl App {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

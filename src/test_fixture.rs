@@ -43,11 +43,53 @@ pub fn text(path: &'static str) -> &'static str {
 
 /// The fixture at `path`, relative to the checkout root, parsed as JSON. Tests
 /// that read one corpus share its parse instead of repeating it.
+///
+/// A corpus that stores its RNG states once, in a top-level `shared_rng_states` table
+/// (`tools/native_oracle.py`, `shared_rng_states`), reads back with each
+/// `{"rng_state": n}` replaced by entry `n` and without the table.
 pub fn json(path: &'static str) -> &'static serde_json::Value {
     fixture(path).json.get_or_init(|| {
-        serde_json::from_str(text(path))
-            .unwrap_or_else(|error| panic!("test fixture {path} is not JSON: {error}"))
+        let mut value = serde_json::from_str(text(path))
+            .unwrap_or_else(|error| panic!("test fixture {path} is not JSON: {error}"));
+        expand_shared_rng_states(path, &mut value);
+        value
     })
+}
+
+fn expand_shared_rng_states(path: &str, document: &mut serde_json::Value) {
+    fn expand(value: &mut serde_json::Value, table: &[serde_json::Value], path: &str) {
+        let reference = match &*value {
+            serde_json::Value::Object(map) if map.len() == 1 => {
+                map.get("rng_state").and_then(serde_json::Value::as_u64)
+            }
+            _ => None,
+        };
+        if let Some(number) = reference {
+            *value = usize::try_from(number)
+                .ok()
+                .and_then(|number| table.get(number))
+                .unwrap_or_else(|| panic!("test fixture {path} has no RNG state {number}"))
+                .clone();
+            return;
+        }
+        match value {
+            serde_json::Value::Object(map) => map.values_mut().for_each(|v| expand(v, table, path)),
+            serde_json::Value::Array(items) => {
+                items.iter_mut().for_each(|v| expand(v, table, path))
+            }
+            _ => {}
+        }
+    }
+    let Some(table) = document
+        .as_object_mut()
+        .and_then(|map| map.remove("shared_rng_states"))
+    else {
+        return;
+    };
+    let table = table
+        .as_array()
+        .unwrap_or_else(|| panic!("test fixture {path} shared_rng_states is not a list"));
+    expand(document, table, path);
 }
 
 /// Serialize declared section/key string inputs into the production INI parser.
@@ -125,4 +167,34 @@ where
         Arc::clone(by_key.entry((key, ares_way)).or_default())
     };
     slot.get_or_init(load).clone()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn shared_rng_states_read_back_in_place_without_the_table() {
+        let state =
+            serde_json::json!({"disabled": false, "index_a": 0, "index_b": 31, "state": [7]});
+        let mut document = serde_json::json!({
+            "rows": [{"rng_before": {"rng_state": 0}, "rng_after": {"rng_state": 0}}],
+            "shared_rng_states": [state.clone()],
+        });
+        super::expand_shared_rng_states("inline", &mut document);
+        assert_eq!(
+            document,
+            serde_json::json!({"rows": [{"rng_before": state.clone(), "rng_after": state}]})
+        );
+    }
+
+    #[test]
+    fn a_corpus_with_its_own_rng_states_table_reads_back_unchanged() {
+        // pending_production.json keeps its own `rng_states`, keyed by checksum.
+        let document = serde_json::json!({
+            "rng_states": {"1234": {"disabled": false, "index_a": 0, "index_b": 31}},
+            "rows": [{"rng_checksum": 1234}],
+        });
+        let mut expanded = document.clone();
+        super::expand_shared_rng_states("inline", &mut expanded);
+        assert_eq!(expanded, document);
+    }
 }
