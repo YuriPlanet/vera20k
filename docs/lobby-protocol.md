@@ -165,7 +165,9 @@ bounded to 2048 bytes. A lobby from before those maps refuses a record past 37 n
 or 512 bytes with 400 `invalid_options`;
 `staging_digest` is its lowercase SHA-256, or the empty string for authored maps.
 `launch` is the existing serde representation of `SkirmishLaunchSession` (including
-its human rows, AI rows and launch options). `launch.options.teams`, a VERA room's
+its human rows, AI rows and launch options). `launch.options.game_speed` is a setup
+speed, 0 to 6 or VERA's 8; a guest's game refuses host options with any other speed
+and shows its invalid-update line. `launch.options.teams`, a VERA room's
 Teams count, is an optional integer from 2 to 15 that the game leaves out while Teams
 is Off. A lobby from before it refuses options that carry
 it with 400 `invalid_options`; the host's game then turns Teams Off, says so in the
