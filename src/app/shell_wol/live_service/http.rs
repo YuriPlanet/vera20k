@@ -756,14 +756,16 @@ impl Client {
             let mut request = self.agent.post(&url).header("User-Agent", USER_AGENT);
             if path == "/v1/sessions" {
                 // Its relay CONFIRM carries a federation roster, it plays
-                // Quick Match, and it takes over a room its host left; see
-                // docs/lobby-protocol.md. The operator's welcome, notice and
-                // maintenance message come in the player's language when the
-                // operator wrote it.
+                // Quick Match, it takes over a room its host left, and it
+                // watches a match where only AI play and plays one the lobby
+                // has the relay order alone; see docs/lobby-protocol.md. The
+                // operator's welcome, notice and maintenance message come in
+                // the player's language when the operator wrote it.
                 request = request
                     .header("Vera-Relay-Federation", "1")
                     .header("Vera-Quick-Match", "1")
                     .header("Vera-Host-Handover", "1")
+                    .header("Vera-Watch-AI", "1")
                     .header("Vera-Language", crate::i18n::selected_language());
             }
             if let Some(token) = &self.token {

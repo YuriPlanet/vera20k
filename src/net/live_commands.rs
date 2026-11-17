@@ -201,15 +201,24 @@ impl LiveCommandSession {
             houses.push(house);
         }
         // Intentional modern online policy: solo AI needs no command lead
-        // time. The original admission is immutable; losing remote players
-        // later must never switch an existing multiplayer game to local input.
-        let policy = if mode == LiveCommandMode::Wol && agreement.is_original_singleton() {
+        // time, unless the lobby has the relay order the match, so that others
+        // can watch the one person in it watch AI play
+        // (`OrderingCertificate::relay_orders`). The original admission is
+        // immutable; losing remote players later must never switch an
+        // existing multiplayer game to local input.
+        let relay_orders = transport
+            .ordering_certificate()
+            .and_then(|bytes| super::udp::OrderingCertificate::parse(&bytes).ok())
+            .is_some_and(|certificate| certificate.relay_orders());
+        let solo =
+            mode == LiveCommandMode::Wol && agreement.is_original_singleton() && !relay_orders;
+        let policy = if solo {
             NetworkSendPolicy::Local
         } else {
             NetworkSendPolicy::FrameSendRate2 { frame_send_rate }
         };
         let sequenced = if mode == LiveCommandMode::Wol
-            && !agreement.is_original_singleton()
+            && !solo
             && transport.ordering_certificate().is_some()
         {
             Some(sequenced::SequencedSession::new(

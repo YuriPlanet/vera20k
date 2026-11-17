@@ -2467,6 +2467,7 @@ mod departure_tests {
             tick_hz: 30,
             expires: 2000,
             pacing: Default::default(),
+            ordered_alone: false,
         }
         .sign(&key)
         .unwrap();

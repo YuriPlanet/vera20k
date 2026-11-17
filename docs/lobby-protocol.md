@@ -274,9 +274,10 @@ source mask LEu32, fixed FPS LEu16, expiry LEu64, then HMAC-SHA256 over the
 first34 bytes with domain `VERA20k relay ordering certificate v1\0`. A lobby
 whose every member build reads relay rate markers may instead issue a 67-byte
 `VO2C` certificate: the same fields, then a flags byte (bit 0: the host turned
-relay pacing off; other bits zero), then HMAC-SHA256 over the first35 bytes with
+relay pacing off; bit 1: the relay orders this one-source match, below; other bits
+zero), then HMAC-SHA256 over the first35 bytes with
 domain `VERA20k relay ordering certificate v2\0`. Every grant of one match carries
-the same version and flags; clients reject a renewal whose pacing differs. The signed
+the same version and flags; clients reject a renewal whose flags differ. The signed
 mask includes all human sources (including observers); AI has no source. FPS
 follows launch speed `[60,45,30,20,15,12,10]` for stored settings 0–6;
 VERA's setting 8 selects 90 FPS. Setting 7 is not a selectable setup speed.
@@ -323,7 +324,13 @@ For one human playing against AI, there are no remote peers: the latency report
 is `pings:[]` and the confirmed per-source timings are `pings:[0]`. AI players do
 not receive source indices or relay credentials. Such a match runs its commands
 locally: its grant still carries an ordering certificate, which released clients
-require, but the relay refuses a one-source certificate.
+require, but the relay refuses a one-source certificate. The one exception is one
+person who watches AI play: when its room has watching on, its game signed in with
+`Vera-Watch-AI: 1` on `POST /v1/sessions` and its relay lets watchers in, the
+certificate carries VO2C flags bit 1. The relay then
+orders the match from that one source, and the game plays it through the relay so
+that others can watch it ([Watching](#watching)). Deploy the relays that admit bit 1
+before a lobby that sets it: an older relay refuses the certificate.
 Only then does game loading start. Each barrier has a 30-second timeout. Within it,
 clients resend `relay_ready` and `latency_ready` under the same request ID after a
 429, a 5xx or no answer, and a UDP I/O error alone does not end admission.
@@ -619,13 +626,17 @@ players' games never learn it is there (relay README, "Watchers").
 `GET /v1/matches` returns
 `{matches:[{match_id,name,map,mode,players,observers,computers,since,names:[name],watchers,max_watchers,delay_seconds}]}`:
 the matches the caller may watch. These are matches in play between two or more humans,
-at least one of them playing (a watcher's game follows a player), with watching on, in a
+at least one of them playing (a watcher's game follows a player), or, to a caller that
+signed in with `Vera-Watch-AI: 1`, where only AI play while every human watches (a
+watcher's game then takes the first observer's seat), one human only when its
+certificate carries VO2C flags bit 1; with watching on, in a
 room without a password, on a relay that lets watchers in and on the caller's version
 (as `kind=41` lists rooms), that the caller plays no part in. Clan rooms, generated maps
 and co-op missions are never listed: a watcher's game cannot yet rebuild a start that
 splits players by squad, comes from the host's map seed or from a campaign. `name`
 is the room's; `map`, `mode`, `players`, `observers`, `computers` and `since` (when play
-began, Unix seconds) are as the dashboard shows a match; `names` are the playing humans;
+began, Unix seconds) are as the dashboard shows a match; `names` are the playing humans
+(none where only AI play);
 `watchers` counts who watches now, of at most `max_watchers` (10); and `delay_seconds` is
 how far behind its players a watcher sees it: 120, or 0 when the host chose `live`. Quick
 Match and ranked games are always 120 seconds behind; other rooms follow the host's

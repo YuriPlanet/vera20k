@@ -3530,9 +3530,8 @@ fn begin_start(state: &mut AppState, service: &mut LiveService, start: wire::Sta
 
 /// The lobby's `watch_started` (docs/lobby-protocol.md "Watching"): this
 /// game sets up the start every player's game set up, standing in the seat
-/// of the first player in source order who plays rather than observes. The
-/// match's map then arrives as a guest's would, and [`poll_watch`] asks the
-/// relay to let this game in.
+/// [`followed_user`] picks. The match's map then arrives as a guest's would,
+/// and [`poll_watch`] asks the relay to let this game in.
 fn begin_watch(
     state: &mut AppState,
     service: &mut LiveService,
@@ -3556,18 +3555,9 @@ fn begin_watch(
         .collect();
     ensure!(hosts.len() == 1, "start requires one admitted host");
     let host_name = hosts[0].name.clone();
-    let humans = &started.options.launch.humans;
-    let followed = started
-        .users
-        .iter()
-        .find(|user| {
-            humans
-                .iter()
-                .any(|human| human.name.eq_ignore_ascii_case(&user.name) && !human.is_observer())
-        })
+    let followed = followed_user(&started.users, &started.options.launch.humans)
         .ok_or_else(|| anyhow!("the match has no player to follow"))?
-        .name
-        .clone();
+        .to_owned();
     let names: Vec<_> = started.users.iter().map(|user| user.name.clone()).collect();
     let options = started.options.into_options(&followed)?;
     crate::app::shell_network_setup::install_watch_setup(
@@ -3608,6 +3598,29 @@ fn begin_watch(
     });
     maps::watch(service, started.match_id);
     Ok(())
+}
+
+/// The user whose seat a watcher takes: the first in source order who plays
+/// rather than observes, or, where only AI play and everyone observes, the
+/// first one, whose seat shows the observer's sidebar and the whole map.
+fn followed_user<'a>(
+    users: &'a [wire::WatchedUser],
+    humans: &[crate::skirmish_launch::SkirmishHumanSlot],
+) -> Option<&'a str> {
+    let plays = |user: &&wire::WatchedUser| {
+        humans
+            .iter()
+            .any(|human| human.name.eq_ignore_ascii_case(&user.name) && !human.is_observer())
+    };
+    users
+        .iter()
+        .find(plays)
+        .or_else(|| {
+            users
+                .first()
+                .filter(|_| humans.iter().all(|human| human.is_observer()))
+        })
+        .map(|user| user.name.as_str())
 }
 
 /// A watch whose map is here asks its relay to let this game in, as a
@@ -4027,6 +4040,7 @@ mod completion_tests {
                     tick_hz: 45,
                     expires: 86400,
                     pacing: Default::default(),
+                    ordered_alone: false,
                 }
                 .sign(&signing_key)
                 .unwrap(),
@@ -4048,6 +4062,7 @@ mod completion_tests {
             tick_hz: 45,
             expires: 86400,
             pacing: crate::net::udp::CertificatePacing::Off,
+            ordered_alone: false,
         }
         .sign(&signing_key)
         .unwrap();
@@ -4060,6 +4075,37 @@ mod completion_tests {
         );
         grant.payload_key.clear();
         assert!(decode_relay_grant(&grant, match_id, player_id).is_err());
+    }
+
+    /// A watcher stands in the first player's seat, and where only AI play and
+    /// everyone watches, in the first observer's.
+    #[test]
+    fn a_watcher_follows_the_first_player_or_where_only_ai_play_an_observer() {
+        let fixture: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/map_observation.command-bar.example.json",
+        ))
+        .unwrap();
+        let launch: crate::skirmish_launch::SkirmishLaunchSession =
+            serde_json::from_value(fixture["launch"].clone()).unwrap();
+        let human = |name: &str, observer| {
+            let mut human = launch.humans[0].clone();
+            human.name = name.into();
+            human.set_observer(observer);
+            human
+        };
+        let users = ["Host", "Guest"].map(|name| wire::WatchedUser {
+            name: name.into(),
+            flags: 0,
+            source_index: 0,
+        });
+        let followed = |host_plays: bool, guest_plays: bool| {
+            followed_user(
+                &users,
+                &[human("Host", !host_plays), human("Guest", !guest_plays)],
+            )
+        };
+        assert_eq!(followed(false, true), Some("Guest"));
+        assert_eq!(followed(false, false), Some("Host"));
     }
 
     /// A watch grant admits to the watched match's room only.
@@ -4092,6 +4138,7 @@ mod completion_tests {
                     tick_hz: 45,
                     expires: 86400,
                     pacing: Default::default(),
+                    ordered_alone: false,
                 }
                 .sign(&signing_key)
                 .unwrap(),

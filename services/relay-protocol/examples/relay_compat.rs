@@ -278,6 +278,7 @@ fn run(started: Instant) -> Result<String> {
         tick_hz: 45,
         expires: now.as_secs() + 600,
         pacing: Default::default(),
+        ordered_alone: false,
     }
     .sign(&key)
     .map_err(|_| "certificate")?;
