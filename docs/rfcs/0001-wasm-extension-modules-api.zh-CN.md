@@ -113,7 +113,7 @@ enum Status {
 **事件记录**，在 `on_events` 的批次中原地读取：
 
 ```rust
-struct EventRecord {      // 96 字节
+struct EventRecord {      // 112 字节
     key: i32,             // 0   模块动作或决定处理函数的分派键
     kind: i32,            // 4   事件种类（第 4 节）
     trigger: i64,         // 8   触发的触发器；总会设置
@@ -128,6 +128,10 @@ struct EventRecord {      // 96 字节
     value2: i64,          // 80  表中列出时的第二个整数
     id: i32,              // 88  表中列出时的类型 ID：武器、弹头、超级武器类型；否则为 -1
     frame: i32,           // 92  事件发生的帧
+    x: i32,               // 96  表中列出时：事件发生的坐标（lepton）
+    y: i32,               // 100
+    z: i32,               // 104
+    reserved: i32,        // 108 0
 }
 ```
 
@@ -136,15 +140,15 @@ struct EventRecord {      // 96 字节
 **决定记录**，在 `on_decide` 的批次中原地读写（[RFC 6f](0001-wasm-extension-modules.zh-CN.md#6f-可决定事件)）：
 
 ```rust
-struct DecideRecord {     // 136 字节
+struct DecideRecord {     // 152 字节
     event: EventRecord,   // 0    同上
-    native: i64,          // 96   引擎自己的结果
-    previous: i64,        // 104  上一环的结果；第一环为原生值
-    result: i64,          // 112  由处理函数写入
-    handled: i32,         // 120  处理函数设为 1；为 0 时保留上一环的结果
-    area: i32,            // 124  模块内存中的结果区；该种类没有时为 0
-    area_cap: i32,        // 128  结果区的可用字节数
-    previous_len: i32,    // 132  上一环结果的字节数，已复制进结果区
+    native: i64,          // 112  引擎自己的结果
+    previous: i64,        // 120  上一环的结果；第一环为原生值
+    result: i64,          // 128  由处理函数写入
+    handled: i32,         // 136  处理函数设为 1；为 0 时保留上一环的结果
+    area: i32,            // 140  模块内存中的结果区；该种类没有时为 0
+    area_cap: i32,        // 144  结果区的可用字节数
+    previous_len: i32,    // 148  上一环结果的字节数，已复制进结果区
 }
 ```
 
@@ -219,7 +223,7 @@ struct ActionParams {     // 72 字节
     value2: i64,          // 24  第二个值：帧数……
     cell: i64,            // 32  格子或路径点引用；0 为没有
     house: i64,           // 40  House 目标、SetOwner 的新所属方、所创建对象的所属方，以及原版动作隐含的所属方；
-                          //     0：触发器中为触发器的所属方，直接调用中为对象目标当前的所属方，否则为中立所属方
+                          //     0：触发器中为触发器的所属方；直接调用中为非法参数
     other: i64,           // 48  第二个对象：来源、乘客、小队、触发器、标签；触发器中取自事件（5.1）
     text: i32,            // 56  字符串参数（CSF 条目名、音乐、EVA 名称、国家、日志文字）；trigger_create 会复制
     text_len: i32,        // 60
@@ -597,7 +601,7 @@ bytes: u32,               // 投递区的字节数
 | `HitTarget` | `other` 目标，`value` 伤害，`id` 武器，`projectile` | 批量伤害提交结束后，在开火者上 | 对象+武器 | 否 | — |
 | `TargetChanged` | `other` 新目标（清除时为 0） | 目标设定或清除后；并行扫描时在扫描结束后 | 对象 | 是：设定目标前 | 选中的目标引用（0 不选）；不能攻击的目标用原生结果；候选用 `find` 读；并行扫描后成批决定 |
 | `ProjectileIncoming` | `projectile`，`other` 发射者（可为 0） | 抛射体被接纳后 | 对象 | 否 | — |
-| `Detonated` | `projectile`（投递时读出为不存在），`cell`，`other` 来源（可为 0），`id` 弹头，`value` 引爆点 X（低 32 位）和 Y（高 32 位），`value2` 引爆点 Z（lepton） | 引爆后 | 对象+武器 | 否 | — |
+| `Detonated` | `projectile`（投递时读出为不存在），`cell`，`other` 来源（可为 0），`id` 弹头，`x`、`y`、`z` 引爆点（lepton） | 引爆后 | 对象+武器 | 否 | — |
 | `Birth` | `other` 生产者（可为 0），`value` 生产时间（−1 无） | 对象放置后（生产、增援、生成） | 对象 | 否 | — |
 | `TransportEntered` | 在乘客（`subject`）上；`other` 载具或建筑，`value` 已占空间，`value2` 1 驻军 / 0 载员 | 进入完成后 | 对象 | 否 | — |
 | `TransportExited` | 同 `TransportEntered` | 离开完成后 | 对象 | 否 | — |
