@@ -78,7 +78,19 @@ The layer answer is what the package-93 `AU` chain consumes:
   1/2/3 abort the dig to Idle, state 4 (`0x728C1E`) surfaces in place, states
   5/6/7 finish surfacing. The bodies at `0x728DD0`, `0x728DD9` and `0x728DE0`
   are unread.
-- `Is_Moving_Now 0x728A60` (state 1 only) is not reported by
-  `ready_producer::ready_state_for`, which answers `None` for Tunnel.
+- `Is_Moving_Now 0x728A60` answers `State == 1` only, and
+  `motion_query::is_moving_now` reads that from the class runtime.
+  `ready_producer::ready_state_for` still answers `None` for Tunnel: the class
+  has no readiness inputs.
 - `[General] TunnelSpeed` is **not** this class's input: the class travels at
-  the fixed binary64 `0x7F5B20` = 19.0. Where the rules key is read stays open.
+  the fixed binary64 `0x7F5B20` = 19.0. The key itself is read once, by the
+  `[General]` rules block, and nothing consumes the field: the literal
+  `TunnelSpeed` sits at VA `0x0083CA34` between `HoverDampen 0x0083CA28` and
+  `CrewEscape 0x0083CA40`, its only `imm32` reference is the `push 0x83CA34` at
+  `0x0066EDA1`, and `CCINIClass::ReadDouble`-alike `0x005283D0` then stores a
+  binary64 at `RulesClass+0x20` (`fstp qword ptr [esi+0x20]`, `0x0066EDAE`).
+  A scan of the whole `.text` finds one non-stack 8-byte `[reg+0x20]` read
+  (`0x0042E276`, an unrelated object) and none inside
+  `0x728E30..0x72A200`, so retail's `TunnelSpeed=1` (`rulesmd.ini:365`) is a
+  dormant Tiberian Sun leftover. VERA's `RuleSet::general.tunnel_speed`
+  mirrors that read and likewise has no consumer.
