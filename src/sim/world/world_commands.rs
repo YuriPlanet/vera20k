@@ -4014,6 +4014,39 @@ mod tests {
         assert!(sim.apply_command("British", &move_order, Some(&rules)));
     }
 
+    /// DETONATE `0x004C7823` clears its carrier's planning tokens
+    /// (`0x004C7831`) before it looks for a bomb. Online, a carrier with no
+    /// bomb answers to its owner: another House's DETONATE leaves its plan,
+    /// the owner's own still clears it.
+    #[test]
+    fn network_detonate_on_a_bombless_carrier_answers_to_its_owner() {
+        use crate::sim::house_state::HouseState;
+        use crate::sim::scenario_session::ScenarioGameMode;
+        let rules = amcv_move_rules();
+        let mut sim = Simulation::new();
+        for (index, name) in [(0, "Americans"), (1, "British")] {
+            let owner = sim.intern(name);
+            sim.houses
+                .register(HouseState::new(owner, index, None, true, 0, 10));
+        }
+        sim.session.set_game_mode(ScenarioGameMode::Wol);
+        spawn_rule_backed_unit(&mut sim, 42, "AMCV", &rules);
+        sim.start_empty_planning_path_for_test(42);
+        let mut record = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).unwrap();
+        crate::sim::command::DetonateRecord {
+            house_id: 1,
+            frame: 0,
+            entity_id: 42,
+        }
+        .write_into(&mut record);
+        let detonate = Command::SynchronizedRecord { record };
+
+        assert!(!sim.apply_command("British", &detonate, Some(&rules)));
+        assert!(sim.has_planning_path_for_test(42));
+        assert!(!sim.apply_command("Americans", &detonate, Some(&rules)));
+        assert!(!sim.has_planning_path_for_test(42));
+    }
+
     /// `TechnoClass::Select @ 0x006FBFA0` raises event 33 (`0x006FBFE4`) for
     /// a client-local selection. A network game raises none, so the clients
     /// keep one trigger state; offline Selects still spring the trigger.
