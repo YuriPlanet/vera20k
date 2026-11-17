@@ -167,7 +167,6 @@ pub struct LiveCommandSession {
     current: Option<CurrentFrame>,
     last_service: Option<UdpServiceReport>,
     sequenced: Option<sequenced::SequencedSession>,
-    sequenced_failed: bool,
 }
 
 impl LiveCommandSession {
@@ -239,7 +238,6 @@ impl LiveCommandSession {
             current: None,
             last_service: None,
             sequenced,
-            sequenced_failed: false,
         })
     }
 
@@ -331,11 +329,9 @@ impl LiveCommandSession {
     }
 
     pub fn has_terminal_network_error(&self) -> bool {
-        self.sequenced_failed
-            || self
-                .sequenced
-                .as_ref()
-                .is_some_and(|session| session.failed())
+        self.sequenced
+            .as_ref()
+            .is_some_and(|session| session.failed())
     }
 
     /// Highest complete immutable frame buffered by this client. The relay's
@@ -397,19 +393,17 @@ impl LiveCommandSession {
     /// Shared pause is a relay timeline control, independent of local menus.
     /// Unsupported or mixed-version matches leave it unavailable.
     pub fn multiplayer_pause(&self) -> Option<MultiplayerPauseStatus> {
-        let mut status = self.sequenced.as_ref()?.pause_status();
-        status.available &= !self.sequenced_failed;
-        Some(status)
+        self.sequenced
+            .as_ref()
+            .map(|session| session.pause_status())
     }
 
     /// Request an explicit state. Network service retries the same request;
     /// canonical receipt, never this button press, determines the boundary.
     pub fn request_multiplayer_pause(&mut self, paused: bool) -> bool {
-        !self.sequenced_failed
-            && self
-                .sequenced
-                .as_mut()
-                .is_some_and(|session| session.request_pause(paused))
+        self.sequenced
+            .as_mut()
+            .is_some_and(|session| session.request_pause(paused))
     }
 
     /// Called only after a confirmed UI exit has queued its native EXIT.
@@ -529,9 +523,7 @@ impl LiveCommandSession {
         now_wall_bucket: u32,
     ) {
         self.service_transport(now_wall_bucket);
-        if !self.sequenced_failed
-            && let Some(session) = &mut self.sequenced
-        {
+        if let Some(session) = &mut self.sequenced {
             session.service_pending_commands(
                 &mut self.transport,
                 queues,
@@ -670,10 +662,12 @@ impl LiveCommandSession {
 
     /// A kick/cancel before release cannot elect a smaller initial set. The
     /// snapshot remains immutable even while ordinary cleanup removes sockets.
-    /// A failed startup remains uncertified throughout that cleanup.
+    /// A failed startup remains uncertified throughout that cleanup. A relay
+    /// match that ran once stays released, even while a relay that lost its
+    /// configuration (NotConfigured) has its clock stopped.
     pub fn startup_pending(&self) -> bool {
         if let Some(session) = &self.sequenced {
-            return !session.started();
+            return !session.ever_started();
         }
         !self.startup.released()
     }
@@ -789,9 +783,6 @@ impl LiveCommandSession {
         logic_frame_rate: u32,
     ) -> Result<NetworkQueuePass, LiveCommandError> {
         self.last_service = None;
-        if self.sequenced_failed {
-            return Err(LiveCommandError::Failed);
-        }
         if let Some(session) = &mut self.sequenced {
             retain_service_report(
                 &mut self.last_service,
@@ -800,17 +791,13 @@ impl LiveCommandSession {
             // Transport-only service receives the same wall bucket. Do not
             // alternate raw milliseconds with its rounded value: a later
             // rounded sample can otherwise underflow sequenced retry timers.
-            let result = session.poll(
+            // The session keeps any failure it reports.
+            return session.poll(
                 &mut self.transport,
                 queues,
                 context,
                 now_wall_bucket.wrapping_shl(4),
             );
-            if let Err(error) = &result {
-                session.record_failure(error);
-            }
-            self.sequenced_failed = result.is_err();
-            return result;
         }
         let result = self.poll_inner(
             queues,

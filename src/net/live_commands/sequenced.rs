@@ -53,8 +53,9 @@ const WATCH_SAMPLES: usize = 16;
 // the relay dropped it long before.
 const WATCH_SILENCE_MS: u32 = 60_000;
 
-/// App diagnostics for one match's ordered delivery, counted by the session
-/// that owns it. Wall-clock observations; never simulation or delivery input.
+/// One match's ordered delivery as the app reads it: a copy of what the
+/// session that owns it counted and of its lifecycle, which the session itself
+/// decides from. Wall-clock observations; never simulation or delivery input.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DeliveryCounters {
     /// The relay session's link measurements as last read (spec §10.1),
@@ -68,10 +69,44 @@ pub struct DeliveryCounters {
     /// The sampled frame whose checksums differed, from the relay's DESYNC.
     pub desync_frame: Option<u32>,
     /// The relay's clock for this match has started, even if the relay
-    /// lost the match later.
+    /// lost the match later (the session's `ever_started`).
     pub started: bool,
-    /// The name (`SequencedError::code`) of the error that ended the match here.
+    /// The name (`SequencedError::code`) of the error that ended the match
+    /// here (the session's `failure`).
     pub failure: Option<&'static str>,
+}
+
+/// What the session counts for `DeliveryCounters`.
+#[derive(Debug, Clone, Copy, Default)]
+struct DeliveryCounts {
+    link: Option<ClientLinkStats>,
+    round_trips: u64,
+    round_trip_total_ms: u64,
+    round_trip_max_ms: u64,
+    desync_frame: Option<u32>,
+}
+
+/// The error that ended a match here. It stays for the rest of the session:
+/// `poll` hands out the error itself once and `LiveCommandError::Failed`
+/// after, so every later read still sees a failed match.
+#[derive(Debug)]
+struct Failure {
+    /// `SequencedError::code`, or `local_error` for one of this PC's own.
+    code: &'static str,
+    unreported: Option<LiveCommandError>,
+}
+
+impl Failure {
+    fn new(error: LiveCommandError) -> Self {
+        let code = match &error {
+            LiveCommandError::Sequenced(error) => error.code(),
+            _ => "local_error",
+        };
+        Self {
+            code,
+            unreported: Some(error),
+        }
+    }
 }
 
 /// App diagnostics for one local command batch: its first transmission, the
@@ -421,9 +456,13 @@ pub(super) struct SequencedSession {
     /// The relay's current sealing rate, which paces playout.
     pub(super) pace_fps: u16,
     pace_meter: PaceMeter,
+    /// The relay runs this match's clock now. A relay that lost the match's
+    /// configuration (NotConfigured) clears it until it is configured again.
     started: bool,
+    /// The relay has run this match's clock at some point; this never clears.
+    ever_started: bool,
     head_frame: u32,
-    error: Option<LiveCommandError>,
+    failure: Option<Failure>,
     last_response: Option<u32>,
     /// When the ordered stream last moved (its head, next sequence or our
     /// cursor). A relay can keep answering while its stream stands still:
@@ -434,7 +473,7 @@ pub(super) struct SequencedSession {
     unreadable: Option<Unreadable>,
     last_control: Option<u32>,
     remote_next_sequence: u64,
-    delivery: DeliveryCounters,
+    delivery: DeliveryCounts,
     pause: CanonicalPause,
     /// VERA: the current pause found this game catching up, and it has not
     /// reached the pause yet; see `take_caught_up_in_pause`.
@@ -556,8 +595,9 @@ impl SequencedSession {
             pace_fps: fps,
             pace_meter: PaceMeter::default(),
             started: false,
+            ever_started: false,
             head_frame: 0,
-            error: None,
+            failure: None,
             last_response: None,
             last_progress: None,
             first_service: None,
@@ -565,7 +605,7 @@ impl SequencedSession {
             unreadable: None,
             last_control: None,
             remote_next_sequence: 1,
-            delivery: DeliveryCounters::default(),
+            delivery: DeliveryCounts::default(),
             pause: CanonicalPause::default(),
             pause_found_behind: false,
             pause_relay_supported: false,
@@ -701,7 +741,7 @@ impl SequencedSession {
     #[cfg(any(test, feature = "test-support"))]
     pub(super) fn mark_started_for_test(&mut self) {
         self.started = true;
-        self.delivery.started = true;
+        self.ever_started = true;
     }
 
     pub(super) fn frontier(&self) -> u32 {
@@ -718,8 +758,18 @@ impl SequencedSession {
     pub(super) fn started(&self) -> bool {
         self.started
     }
+    pub(super) fn ever_started(&self) -> bool {
+        self.ever_started
+    }
     pub(super) fn failed(&self) -> bool {
-        self.error.is_some()
+        self.failure.is_some()
+    }
+
+    /// Ends this match here. The first error is the one it ended with.
+    fn fail(&mut self, error: impl Into<LiveCommandError>) {
+        if self.failure.is_none() {
+            self.failure = Some(Failure::new(error.into()));
+        }
     }
     pub(super) fn record_tick_cost(&mut self, micros: u32) {
         self.pace_meter.record_tick_cost(micros);
@@ -734,16 +784,16 @@ impl SequencedSession {
     }
 
     pub(super) fn delivery_counters(&self) -> DeliveryCounters {
-        self.delivery
-    }
-
-    /// Keeps the error that ended this match for its report.
-    pub(super) fn record_failure(&mut self, error: &LiveCommandError) {
-        let code = match error {
-            LiveCommandError::Sequenced(error) => error.code(),
-            _ => "local_error",
-        };
-        self.delivery.failure.get_or_insert(code);
+        let counts = self.delivery;
+        DeliveryCounters {
+            link: counts.link,
+            round_trips: counts.round_trips,
+            round_trip_total_ms: counts.round_trip_total_ms,
+            round_trip_max_ms: counts.round_trip_max_ms,
+            desync_frame: counts.desync_frame,
+            started: self.ever_started,
+            failure: self.failure.as_ref().map(|failure| failure.code),
+        }
     }
 
     /// The relay's sealed head as this PC last learned it.
@@ -831,11 +881,8 @@ impl SequencedSession {
                 self.note_unreadable(now);
                 continue;
             }
-            match self.receive(received.event, received.received_at) {
-                Ok(()) => {}
-                Err(error) => {
-                    self.error.get_or_insert(error.into());
-                }
+            if let Err(error) = self.receive(received.event, received.received_at) {
+                self.fail(error);
             }
         }
         // Network silence is recoverable until the relay departs this source
@@ -846,7 +893,7 @@ impl SequencedSession {
         // here instead of showing Reconnecting for as long as the game stays
         // open. Before anything below asks the released route to send.
         if transport.relay_absent() {
-            self.error.get_or_insert(SequencedError::Absent.into());
+            self.fail(SequencedError::Absent);
         }
         if self.watch.is_some()
             && self
@@ -854,17 +901,19 @@ impl SequencedSession {
                 .or(self.first_service)
                 .is_some_and(|last| now.wrapping_sub(last) > WATCH_SILENCE_MS)
         {
-            self.error.get_or_insert(SequencedError::WatchLost.into());
+            self.fail(SequencedError::WatchLost);
         }
-        if self.error.is_some() {
+        // A failed match pulls, paces and seals nothing more; the transport
+        // keeps its route until the app leaves the match.
+        if self.failed() {
             return;
         }
         if let Err(error) = self.assemble() {
-            self.error = Some(error.into());
+            self.fail(error);
             return;
         }
         if let Err(error) = self.check_unreadable(now) {
-            self.error = Some(error.into());
+            self.fail(error);
             return;
         }
         let position = (
@@ -883,7 +932,7 @@ impl SequencedSession {
         self.service_pause(transport, now);
         self.service_pace(transport, now);
         if let Err(error) = self.seal_submissions(transport) {
-            self.error = Some(error.into());
+            self.fail(error);
             return;
         }
         // The relay session decides every UPLINK (spec §6.3); this layer only
@@ -1128,7 +1177,7 @@ impl SequencedSession {
                     self.last_progress = None;
                 }
                 self.started |= status.started;
-                self.delivery.started |= status.started;
+                self.ever_started |= status.started;
                 self.head_frame = self.head_frame.max(status.head_frame);
                 self.remote_next_sequence = self.remote_next_sequence.max(status.next_seq);
                 self.pause_active_sources &= status.active_sources;
@@ -1231,7 +1280,7 @@ impl SequencedSession {
                 OrderError::HistoryGap => return Err(SequencedError::HistoryExpired),
                 // Only a match that never started: a restored session has not
                 // heard from the relay yet, and its match did start.
-                OrderError::Inactive if !self.delivery.started && !self.restoring => {
+                OrderError::Inactive if !self.ever_started && !self.restoring => {
                     return Err(SequencedError::StartCancelled);
                 }
                 OrderError::Inactive | OrderError::StorageUnavailable => {
@@ -1645,7 +1694,7 @@ impl SequencedSession {
         queues: &mut NetworkCommandQueues<'_>,
         now: u32,
     ) {
-        if !self.started || self.error.is_some() {
+        if !self.started || self.failed() {
             return;
         }
         let Some((context, _)) = self.current.filter(|(context, _)| context.frame != 0) else {
@@ -1654,7 +1703,7 @@ impl SequencedSession {
         if let Err(error) = self.flush_local_commands(transport, queues, context, now) {
             // The regular frame boundary owns terminal error delivery. Its
             // admission gate also observes this retained error while stalled.
-            self.error = Some(error);
+            self.fail(error);
         }
     }
 
@@ -1776,6 +1825,8 @@ impl SequencedSession {
         Ok(())
     }
 
+    /// Any error ends the match here and stays: the first poll after it
+    /// returns that error, every later one `LiveCommandError::Failed`.
     pub(super) fn poll(
         &mut self,
         transport: &mut LanUdpTransport,
@@ -1784,9 +1835,29 @@ impl SequencedSession {
         now: u32,
     ) -> Result<NetworkQueuePass, LiveCommandError> {
         self.service(transport, now);
-        if let Some(error) = self.error.take() {
-            return Err(error);
+        if !self.failed() {
+            match self.poll_frame(transport, queues, context, now) {
+                Ok(pass) => return Ok(pass),
+                // The frame's own error (a desync, a full queue) is the one
+                // that ends the match, even when its flush's service recorded
+                // a relay error earlier in this call.
+                Err(error) => self.failure = Some(Failure::new(error)),
+            }
         }
+        Err(self
+            .failure
+            .as_mut()
+            .and_then(|failure| failure.unreported.take())
+            .unwrap_or(LiveCommandError::Failed))
+    }
+
+    fn poll_frame(
+        &mut self,
+        transport: &mut LanUdpTransport,
+        queues: &mut NetworkCommandQueues<'_>,
+        context: NetworkQueueContext,
+        now: u32,
+    ) -> Result<NetworkQueuePass, LiveCommandError> {
         if let Some((old, done)) = self.current {
             if context.frame == old.frame {
                 if context.checksum != old.checksum {
