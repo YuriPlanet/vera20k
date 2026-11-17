@@ -84,10 +84,13 @@ The layer answer is what the package-93 `AU` chain consumes:
   1/2/3 abort the dig to Idle, state 4 (`0x728C1E`) surfaces in place, states
   5/6/7 finish surfacing. The bodies at `0x728DD0`, `0x728DD9` and `0x728DE0`
   are unread.
-- `Is_Moving_Now 0x728A60` answers `State == 1` only, and
-  `motion_query::is_moving_now` reads that from the class runtime.
-  `ready_producer::ready_state_for` still answers `None` for Tunnel: the class
-  has no readiness inputs.
+- `Is_Moving_Now 0x728A60` answers `State == 1` (`PreDigIn`) only;
+  `ready_producer::ready_state_for` maps the class state to
+  `LocomotorReadyState::Tunnel { state }`, so the Mission gate sees a unit that
+  has just taken a Tunnel `Move_To` as moving until the hull finishes turning.
+  Every dig/underground/surfacing state answers false, as it does natively.
+  `motion_query::is_moving_now` keeps answering from the same class state for
+  the other callers.
 - `[General] TunnelSpeed` is **not** this class's input: the class travels at
   the fixed binary64 `0x7F5B20` = 19.0. The key itself is read once, by the
   `[General]` rules block, and nothing consumes the field: the literal
