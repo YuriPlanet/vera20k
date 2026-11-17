@@ -157,10 +157,12 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
         )
     {
         // A direct spawn has no room to return to: a participant whose setup
-        // lease expired before GO ends the launch.
+        // lease expired before GO ends the launch. One whose launch differs
+        // derives another scope (`DirectAdmission::derive`) and never answers.
         App::fail_external_launch(
             state,
-            "a direct participant did not respond (unreachable, or its spawn.ini differs)",
+            "a direct participant did not respond (unreachable, or its spawn.ini, \
+             Options rules or VERA20k build differ)",
         );
         return Ok(());
     }

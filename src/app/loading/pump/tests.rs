@@ -251,6 +251,8 @@ fn cold_and_warm_rules_share_world_and_agreement_identity(
                 45,
                 std::num::NonZeroU32::new(u32::from(send_rate)).unwrap(),
                 sim.state_hash(),
+                "",
+                "",
             )
             .unwrap(),
         );
