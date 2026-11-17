@@ -97,16 +97,16 @@ pub(super) struct FireReach {
     /// routine's tail ([`infantry_fire_tail`]) follows whether the shot fired
     /// or was refused.
     pub(super) infantry_fire_frame: bool,
-    /// `Burst.NoDelay` asked for the rest of the burst and the first shot left
-    /// the burst unfinished, so the class firing update repeats the dispatch
-    /// (Phobos hooks `0x736F67` / `0x5209EE`, which are the `UpdateFiring`
-    /// callers of this routine — not `TechnoClass::Fire` itself).
-    pub(super) burst_repeat: bool,
 }
 
-pub(super) fn resolve_attacker_fire(
+/// One class firing update's `Fire_At_Target`. The second answer is the
+/// admitted shot when `Burst.NoDelay` still owes the rest of the burst: the
+/// class update's hook (`0x736F67` / `0x5209EE`) then fires those shots through
+/// [`fire_remaining_burst_this_frame`], which needs the shot the first launch
+/// was admitted on.
+pub(super) fn resolve_attacker_fire<'r>(
     world: &mut Simulation,
-    rules: &RuleSet,
+    rules: &'r RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
     snap: &AttackerSnapshot,
     fog_enabled: bool,
@@ -114,7 +114,7 @@ pub(super) fn resolve_attacker_fire(
     has_active_wave: bool,
     out: &mut CombatEmit,
     effects: FrameEffects<'_>,
-) -> FireReach {
+) -> (FireReach, Option<AdmittedFire<'r>>) {
     let mut reach = FireReach::default();
     let Some(shot) = admit_attacker_fire(
         world,
@@ -127,8 +127,9 @@ pub(super) fn resolve_attacker_fire(
         &mut reach,
         out,
         effects,
+        false,
     ) else {
-        return reach;
+        return (reach, None);
     };
     // Phobos `Burst.NoDelay` applies to an infantry or vehicle firing a weapon
     // whose `Burst` is above 1; the two hooks exist only for those classes
@@ -150,21 +151,23 @@ pub(super) fn resolve_attacker_fire(
     let burst_no_delay = false;
     // Phobos's hooks test `pThis->Fire(...)`, whose false answer means the shot
     // never happened. The burst index is VERA's observable for that: a launched
-    // shot steps it, a refused launch leaves it where it was.
+    // shot steps it, a refused launch leaves it where it was. A wrapped index
+    // (`CurrentBurstIndex == 0`) is native's early return: the burst is spent,
+    // so nothing repeats.
     let burst_before = weapon_burst_index(world, snap.stable_id);
     emit_admitted_fire(
         world,
         rules,
-        shot,
+        shot.clone(),
         binary_frame,
         out,
         overlay_registry,
         effects,
     );
     let burst_after = weapon_burst_index(world, snap.stable_id);
-    reach.burst_repeat = burst_no_delay
+    let repeat = burst_no_delay
         && matches!(burst_after, Some(index) if Some(index) != burst_before && index != 0);
-    reach
+    (reach, repeat.then_some(shot))
 }
 
 /// One evaluated `UnitClass_UpdateFiring_OmniFireTurnToTarget @ 0x736E6E`
@@ -261,35 +264,48 @@ fn weapon_burst_index(world: &Simulation, id: u64) -> Option<i32> {
 
 /// The loop both Phobos hooks run after their first shot
 /// (`UnitClass_UpdateFiring_BurstNoDelay @ 0x736F67`,
-/// `InfantryClass_UpdateFiring_BurstNoDelay @ 0x5209EE`): capture the rearm the
-/// shot armed, start `RearmTimer` at 0 so `GetFireError`'s T45 admits another,
-/// and keep calling Fire while the burst has not wrapped, the error test still
-/// answers OK and the launch itself succeeded. Then restore the last captured
-/// rearm, which is the full ROF once the burst completed — so the mid-burst
-/// `BurstDelay` values are skipped entirely rather than shortened. A burst
-/// interrupted by an error keeps its remaining shots for later frames, because
-/// the restore is the last shot's own value.
-#[allow(clippy::too_many_arguments)]
+/// `InfantryClass_UpdateFiring_BurstNoDelay @ 0x5209EE`): the hook body calls
+/// `TechnoClass::Fire` directly for the rest of the burst, so each later shot
+/// re-enters neither the class firing update nor anything the first shot
+/// already answered. On VERA's side that means one launch of the admitted
+/// [`AdmittedFire`] per shot ([`emit_admitted_fire`]) — the firing-sequence
+/// frame test of `InfantryClass_FiringAI @ 0x5209AF` and its
+/// `Burst.FireWithinSequence` `RandomRanged(3, 5)` draws stay with the first
+/// shot, exactly as native's loop bypasses them — instead of a second
+/// `admit_attacker_fire`.
+///
+/// The rearm handshake is native's: capture the value each shot armed, zero
+/// `RearmTimer` as the loop does before its next `GetFireError`, and restore
+/// the last captured value once the run ends. That is the full ROF when the
+/// burst completed, so the mid-burst `BurstDelay` values are skipped entirely
+/// rather than shortened; a burst cut short by a refused shot keeps its
+/// remaining shots and the last successful shot's own value.
 fn fire_remaining_burst_this_frame(
     world: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    snap: &AttackerSnapshot,
-    fog_enabled: bool,
+    admitted: &AdmittedFire<'_>,
     binary_frame: u32,
-    has_active_wave: bool,
-    reach: &mut FireReach,
+    fog_enabled: bool,
     out: &mut CombatEmit,
     effects: FrameEffects<'_>,
 ) {
-    let firer = snap.stable_id;
+    let firer = admitted.snap.stable_id;
     let frame = binary_frame as i32;
     let mut rearm = world
         .substrate
         .entities
         .get(firer)
         .map_or(0, |entity| entity.rearm_timer.remaining(frame));
-    loop {
+    // The hook continues only when the first shot left a live burst index
+    // (`Hooks.Firing.cpp:189`: `if (!pThis->CurrentBurstIndex) return
+    // SkipVanillaFire`). A shot that wrapped, or that `LateLogic`'s
+    // `ForceFullRearmDelay` arm reset to 0, ends here with its own rearm.
+    if let Some(mut index) = weapon_burst_index(world, firer)
+        && index != 0
+    {
+        let burst = admitted.selected.weapon.burst;
+        // `pThis->RearmTimer.Start(0)` after the first shot's captured value.
         world
             .substrate
             .entities
@@ -297,44 +313,58 @@ fn fire_remaining_burst_this_frame(
             .expect("firer")
             .rearm_timer
             .start(frame, 0);
-        let Some(next) = admit_attacker_fire(
-            world,
-            rules,
-            overlay_registry,
-            snap,
-            fog_enabled,
-            binary_frame,
-            has_active_wave,
-            reach,
-            out,
-            effects,
-        ) else {
-            break;
-        };
-        let before = weapon_burst_index(world, firer);
-        emit_admitted_fire(
-            world,
-            rules,
-            next,
-            binary_frame,
-            out,
-            overlay_registry,
-            effects,
-        );
-        let after = weapon_burst_index(world, firer);
-        // `&& pThis->Fire(pTarget, weaponIndex)`: a shot that never happened ends
-        // the run, and so does the wrap that completes the burst.
-        let Some(after) = after else { break };
-        if Some(after) == before {
-            break;
-        }
-        rearm = world
-            .substrate
-            .entities
-            .get(firer)
-            .map_or(0, |entity| entity.rearm_timer.remaining(frame));
-        if after == 0 {
-            break;
+        // `for (int i = pThis->CurrentBurstIndex; i < pWeapon->Burst &&
+        // GetFireError(...) == OK && pThis->Fire(...); ++i)`: the counter is a
+        // local, so a `Fire` that resets `CurrentBurstIndex` (the forced full
+        // rearm) neither shortcuts nor extends it. Each repeat is
+        // `TechnoClass::Fire` called from the hook: it answers `GetFireError`
+        // again (ammo, target legality, range), but never re-enters the class
+        // firing update. So the `0x5209AF` stage equality and its
+        // `Burst.FireWithinSequence` `RandomRanged` draws stay with the first
+        // shot; `repeat` tells the admission to skip exactly that block.
+        while index < burst {
+            let has_active_wave = world.active_wave_id(firer).is_some();
+            let mut refused_reach = FireReach::default();
+            let Some(next) = admit_attacker_fire(
+                world,
+                rules,
+                overlay_registry,
+                &admitted.snap,
+                fog_enabled,
+                binary_frame,
+                has_active_wave,
+                &mut refused_reach,
+                out,
+                effects,
+                true,
+            ) else {
+                // A refused repeat ends the run; the value the failed attempt
+                // zeroed is restored from the last successful shot below.
+                break;
+            };
+            emit_admitted_fire(
+                world,
+                rules,
+                next,
+                binary_frame,
+                out,
+                overlay_registry,
+                effects,
+            );
+            // `rof = pThis->RearmTimer.TimeLeft; pThis->RearmTimer.Start(0)`.
+            rearm = world
+                .substrate
+                .entities
+                .get(firer)
+                .map_or(0, |entity| entity.rearm_timer.remaining(frame));
+            world
+                .substrate
+                .entities
+                .get_mut(firer)
+                .expect("firer")
+                .rearm_timer
+                .start(frame, 0);
+            index += 1;
         }
     }
     world
@@ -601,6 +631,10 @@ fn admit_attacker_fire<'r>(
     reach: &mut FireReach,
     out: &mut CombatEmit,
     effects: FrameEffects<'_>,
+    // `true` for a repeat of an already admitted burst shot: the class firing
+    // update is not re-entered, so the infantry firing-frame gate
+    // (`0x5209AF`) and its draws are skipped while `GetFireError` still runs.
+    repeat: bool,
 ) -> Option<AdmittedFire<'r>> {
     let sound_enabled = sound_enabled(world);
     let delayed_building_slot = match snap.building_shot {
@@ -749,7 +783,8 @@ fn admit_attacker_fire<'r>(
         world
             .interner
             .animation_sequence_in_category(snap.type_id, snap.category.into(), rules);
-    let firing_at_entry = infantry_fire
+    let firing_at_entry = !repeat
+        && infantry_fire
         && world
             .substrate
             .entities
@@ -1003,7 +1038,7 @@ fn admit_attacker_fire<'r>(
     if code != fire_error::FireError::Ok {
         return None;
     }
-    if infantry_fire && !firing_at_entry {
+    if infantry_fire && !firing_at_entry && !repeat {
         let actor = world.substrate.entities.get(snap.stable_id)?;
         let fire_fly =
             obj.jumpjet && crate::sim::movement::infantry_action::uses_jumpjet_locomotor(actor);
@@ -1353,7 +1388,10 @@ fn uncloak_to_fire(
 /// This is call-local data, never a saved permission to fire on a later frame.
 /// Native Mission_Attack418403 checks legality once before its burst loop;
 /// separating emission lets the aircraft caller reselect from live state
-/// without repeating admission for every FireAt call.
+/// without repeating admission for every FireAt call. `Burst.NoDelay`'s
+/// remainder ([`fire_remaining_burst_this_frame`]) clones it instead of
+/// admitting again: every field is an immutable borrow or a snapshot copy.
+#[derive(Clone)]
 pub(super) struct AdmittedFire<'a> {
     pub(super) snap: AttackerSnapshot,
     pub(super) obj: &'a ObjectType,
@@ -3438,6 +3476,12 @@ pub(super) fn emit_admitted_fire(
         disguise.start_fire_blink(binary_frame, weapon.disguise_fake_blink_time);
         world.note_disguise_blink_started();
     }
+    if std::env::var("BURSTDBG").is_ok() {
+        eprintln!(
+            "emit-end rng_a={}",
+            world.scenario_rng.logical_state().index_a
+        );
+    }
     Some(bullet_id)
 }
 
@@ -4058,7 +4102,9 @@ pub(crate) fn visit_fire(
                 }
             });
             if let Some(snapshot) = snapshot {
-                resolve_attacker_fire(
+                // A building has neither `Burst.NoDelay` hook, so the admitted
+                // shot is never repeated in this visit.
+                let _ = resolve_attacker_fire(
                     world,
                     rules,
                     overlay_registry,
@@ -4100,7 +4146,7 @@ pub(crate) fn visit_fire(
                     #[cfg(not(feature = "phobos"))]
                     let fire_up_skips = false;
                     if !fire_up_skips {
-                        let mut reach = resolve_attacker_fire(
+                        let (reach, repeat_shot) = resolve_attacker_fire(
                             world,
                             rules,
                             overlay_registry,
@@ -4111,16 +4157,16 @@ pub(crate) fn visit_fire(
                             emit,
                             run.effects(),
                         );
-                        if reach.burst_repeat {
+                        // `UnitClass_UpdateFiring_BurstNoDelay @ 0x736F67` fires
+                        // the rest of the burst inside this same update.
+                        if let Some(shot) = repeat_shot {
                             fire_remaining_burst_this_frame(
                                 world,
                                 rules,
                                 overlay_registry,
-                                &snap,
-                                fog_enabled,
+                                &shot,
                                 world.session.binary_frame(),
-                                world.active_wave_id(id).is_some(),
-                                &mut reach,
+                                fog_enabled,
                                 emit,
                                 run.effects(),
                             );
@@ -4158,7 +4204,7 @@ pub(crate) fn visit_fire(
             let target = actor.and_then(|actor| actor.attack_target.target());
             if let (Some(actor), Some(target)) = (actor, target) {
                 let snap = build_attacker_snapshot(actor, target, None);
-                let mut reach = resolve_attacker_fire(
+                let (reach, repeat_shot) = resolve_attacker_fire(
                     world,
                     rules,
                     overlay_registry,
@@ -4169,16 +4215,17 @@ pub(crate) fn visit_fire(
                     emit,
                     run.effects(),
                 );
-                if reach.burst_repeat {
+                // `InfantryClass_UpdateFiring_BurstNoDelay @ 0x5209EE` fires the
+                // rest of the burst inside this same update, past the
+                // `0x5209AF` firing-frame test.
+                if let Some(shot) = repeat_shot {
                     fire_remaining_burst_this_frame(
                         world,
                         rules,
                         overlay_registry,
-                        &snap,
-                        fog_enabled,
+                        &shot,
                         world.session.binary_frame(),
-                        world.active_wave_id(id).is_some(),
-                        &mut reach,
+                        fog_enabled,
                         emit,
                         run.effects(),
                     );

@@ -237,16 +237,19 @@ pub(crate) fn get_rof(query: &RofQuery<'_>, rng: &mut SimRng) -> i32 {
         }
         return rng.next_range_u32_inclusive(3, 5) as i32;
     }
-    let jitter = rng.next_range_u32_inclusive(0, 2) as i32;
-    // Phobos `TechnoClass_RearmDelay_ROF` (`0x006FD0B5`) runs after that draw
-    // and replaces the jitter (EAX, stored at `0x006FD0BB`) with
-    // `GetRangedRandomOrSingleValue(ROF.RandomDelay)`.
+    // Phobos `TechnoClass_RearmDelay_ROF` (`0x006FD0B5`) replaces the stock
+    // random arm with `GetRangedRandomOrSingleValue(ROF.RandomDelay)` (EAX
+    // stored at `0x006FD0BB`): the replaced code is the draw itself, so a
+    // Phobos build takes exactly one jitter draw there, not the stock draw plus
+    // this one. `ROF.RandomDelay`'s `{0, 2}` default is the vanilla jitter.
     #[cfg(feature = "phobos")]
     let jitter = match query.rof_random_delay {
         Some(range) if range.is_single() => range.low,
         Some(range) => rng.next_range_i32_inclusive(range.low, range.high),
-        None => jitter,
+        None => rng.next_range_u32_inclusive(0, 2) as i32,
     };
+    #[cfg(not(feature = "phobos"))]
+    let jitter = rng.next_range_u32_inclusive(0, 2) as i32;
     // Phobos 0x006FD0B5 loads `ROF * AE` (C++ double) in place of the stock
     // int `ROF`. An identity factor loads the same exact value.
     let phobos_rof = f64::from(weapon.rof) * query.ae_rof;
