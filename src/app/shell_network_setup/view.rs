@@ -959,6 +959,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         team_starts_enabled: host && teams.is_some() && local_map_index(state).is_some(),
         team_colors_enabled: host && teams.is_some(),
         balance_enabled: host && grouped && dialog.wol(),
+        lobby_enabled: dialog.wol() && crate::app::shell_wol::lobby_visits(state),
         drag_rows,
         map_offer_open: state
             .frontend

@@ -1270,6 +1270,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                         | WolServiceRequest::CreateChannel { .. }
                         | WolServiceRequest::Watch { .. }
                         | WolServiceRequest::Connect { .. }
+                        | WolServiceRequest::VisitLobby
                 )
             {
                 // Keep the existing UI request queued until acknowledged
@@ -1821,6 +1822,17 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
                 service.command("join", json!({"channel":channel.name,"key":key}));
             }
         }
+        WolServiceRequest::VisitLobby => {
+            if super::lobby::bind_online_request(state, service.next_request) {
+                service.command("visit_lobby", json!({}));
+            }
+        }
+        WolServiceRequest::EndVisit => service.command("end_visit", json!({})),
+        WolServiceRequest::VisitChat { line, to } => send_chat(service, line, to, true),
+        WolServiceRequest::VisitEmote { text, to } => service.command(
+            "chat",
+            json!({"text":String::from_utf16_lossy(&text),"to":to,"action":true,"visit":true}),
+        ),
         WolServiceRequest::CreateChannel {
             channel,
             key,
@@ -1850,7 +1862,7 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             service.begin_logout(Instant::now());
             crate::app::lan_service::close(state);
         }
-        WolServiceRequest::Chat { line, to } => send_chat(service, line, to),
+        WolServiceRequest::Chat { line, to } => send_chat(service, line, to, false),
         WolServiceRequest::Emote { text, to } => service.command(
             "chat",
             json!({"text":String::from_utf16_lossy(&text),"to":to,"action":true}),
@@ -1893,6 +1905,7 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
                         WolServiceRequest::JoinChannel { .. }
                             | WolServiceRequest::CreateChannel { .. }
                             | WolServiceRequest::Watch { .. }
+                            | WolServiceRequest::VisitLobby
                     )
                 });
             }
@@ -1941,10 +1954,12 @@ fn request_match(
         service,
         WolChatLine::Say(text.encode_utf16().collect()),
         vec![matchbot],
+        false,
     );
 }
 
-fn send_chat(service: &mut LiveService, line: WolChatLine, mut to: Vec<String>) {
+/// `visit` sends to the public lobby this player visits from their room.
+fn send_chat(service: &mut LiveService, line: WolChatLine, mut to: Vec<String>, visit: bool) {
     let text = match line {
         WolChatLine::Say(text) | WolChatLine::Reply { text } => text,
         WolChatLine::Page { name, text } => {
@@ -1957,10 +1972,11 @@ fn send_chat(service: &mut LiveService, line: WolChatLine, mut to: Vec<String>) 
         }
         WolChatLine::Notice(_) => return,
     };
-    service.command(
-        "chat",
-        json!({"text":String::from_utf16_lossy(&text),"to":to,"action":false}),
-    );
+    let mut chat = json!({"text":String::from_utf16_lossy(&text),"to":to,"action":false});
+    if visit {
+        chat["visit"] = Value::Bool(true);
+    }
+    service.command("chat", chat);
 }
 
 fn local_agreement(state: &mut AppState, revision: u64) -> Result<Value> {
@@ -2371,12 +2387,14 @@ fn request_setup(
         NetworkSetupRequest::Balance => {
             service.command("chat", json!({"text":"/balance","to":[],"action":false}))
         }
-        NetworkSetupRequest::WolChat(line) => send_chat(service, line, Vec::new()),
+        NetworkSetupRequest::WolChat(line) => send_chat(service, line, Vec::new(), false),
         NetworkSetupRequest::WolEmote(text) => service.command(
             "chat",
             json!({"text":String::from_utf16_lossy(&text),"to":[],"action":true}),
         ),
-        NetworkSetupRequest::Chat(text) => send_chat(service, WolChatLine::Say(text), Vec::new()),
+        NetworkSetupRequest::Chat(text) => {
+            send_chat(service, WolChatLine::Say(text), Vec::new(), false)
+        }
         NetworkSetupRequest::PublishStartStaging(_) => {
             service.command("options", json!({"options":options(state)?}));
         }
@@ -2446,6 +2464,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             nickname,
             motd,
             sign_in_token,
+            lobby_visits,
         } if attempt == service.auth_attempt => {
             if validate_online_identity(&player_id, &nickname).is_err() {
                 state.frontend.wol_account.password.clear();
@@ -2463,7 +2482,10 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             let motd = motd
                 .filter(|motd| !motd.trim().is_empty())
                 .unwrap_or_default();
-            service_event(state, WolServiceEvent::Login(Ok(WolLoginAccepted { motd })));
+            service_event(
+                state,
+                WolServiceEvent::Login(Ok(WolLoginAccepted { motd, lobby_visits })),
+            );
         }
         http::Response::LoginFailed { attempt, code } if attempt == service.auth_attempt => {
             state.frontend.wol_account.password.clear();
@@ -2574,6 +2596,11 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                     }
                     super::lobby::online_request_failed(state, id, failure.wol_code());
                 }
+            }
+            // VERA: a refused visit leaves the player in their room
+            // (docs/lobby-protocol.md "Visiting the lobby").
+            "visit_lobby" => {
+                super::lobby::online_request_failed(state, id, failure.wol_code());
             }
             // A watch joins no room, so nothing needs leaving; a place it
             // took anyway frees itself once its grant runs out.
@@ -2765,6 +2792,9 @@ struct Chat {
     quick_match: Option<super::quick_match::MatchStart>,
     #[serde(default)]
     sent_at: Option<u64>,
+    /// VERA: said in the public lobby this player visits from their room.
+    #[serde(default)]
+    visit: bool,
     /// The lobby's own lines as phrases ([`super::lobby_phrases`]), read
     /// only once the event decodes, so that a shape this game does not know
     /// leaves the line in `text`.
@@ -3037,6 +3067,23 @@ fn apply_event(
             )?;
             service.relay_granted(crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32);
         }
+        // The public lobby this player visits from a game room, whose state
+        // stays as it is.
+        "joined" if payload["visit"].as_bool() == Some(true) => {
+            let joined: wire::Joined = decode(payload)?;
+            let members = joined
+                .members
+                .into_iter()
+                .map(|member| member.into_member(&local))
+                .collect();
+            service_event(
+                state,
+                WolServiceEvent::VisitJoined(super::lobby::WolJoined {
+                    channel: joined.channel.into(),
+                    members,
+                }),
+            );
+        }
         "joined" | "created" | "room_reopened" => {
             let joined: wire::Joined = decode(payload)?;
             service.revision = 0;
@@ -3103,8 +3150,17 @@ fn apply_event(
             #[derive(Deserialize)]
             struct Payload {
                 member: wire::Member,
+                #[serde(default)]
+                visit: bool,
             }
             let p: Payload = decode(payload)?;
+            if p.visit {
+                service_event(
+                    state,
+                    WolServiceEvent::VisitUserJoined(p.member.into_member(&local)),
+                );
+                return Ok(());
+            }
             service.member_ids.insert(
                 p.member.name.to_ascii_lowercase(),
                 p.member.player_id.clone(),
@@ -3142,6 +3198,10 @@ fn apply_event(
                 .as_str()
                 .ok_or_else(|| anyhow!("missing member"))?
                 .to_owned();
+            if payload["visit"].as_bool() == Some(true) {
+                service_event(state, WolServiceEvent::VisitUserLeft(name));
+                return Ok(());
+            }
             service.member_ids.remove(&name.to_ascii_lowercase());
             let required = state
                 .match_state
@@ -3315,6 +3375,19 @@ fn apply_event(
         }
         "chat" => {
             let p: Chat = decode(payload)?;
+            if p.visit {
+                service_event(
+                    state,
+                    WolServiceEvent::VisitMessage {
+                        text: p.shown_text().encode_utf16().collect(),
+                        from: p.from.into_member(&local),
+                        private: p.private,
+                        action: p.action,
+                        sent_at: p.sent_at,
+                    },
+                );
+                return Ok(());
+            }
             let options = p
                 .hosted_pairing(&local)
                 .and_then(|pairing| super::quick_match::online_start_options(state, pairing));
@@ -3399,6 +3472,8 @@ fn apply_event(
             );
         }
         "game_started" => {
+            // The lobby ended a visit to the public lobby for the match.
+            super::lobby::visit_ends(state);
             begin_start(state, service, decode(payload)?)?;
             service.start_preparation = None;
         }
@@ -5454,6 +5529,7 @@ mod completion_tests {
                     nickname: "OldVisit".into(),
                     motd: None,
                     sign_in_token: None,
+                    lobby_visits: false,
                 })
                 .is_ok()
         );

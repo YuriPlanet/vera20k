@@ -12,8 +12,10 @@ persistent state is created.
 
 `POST /v1/sessions` accepts exactly
 `{nickname,protocol:4,password?,remember?,sign_in_token?}` and returns
-`{player_id,nickname,token,expires_at}`, plus `motd` while an operator welcome is set:
+`{player_id,nickname,token,expires_at,features?}`, plus `motd` while an operator welcome is set:
 text the game prints in the chat lobby, one line per `\n`. Without it the game prints no welcome.
+`features` lists what the lobby offers beyond protocol 4, and a game offers only what it
+lists: `visit_lobby` ([Visiting the lobby](#visiting-the-lobby)).
 A client names its player's language in `Vera-Language: <tag>`, a BCP 47 tag of two or
 three letters and at most three subtags such as `zh-CN`; the operator's welcome, notice
 and maintenance message then come in that language when the operator wrote it: the
@@ -125,6 +127,7 @@ Commands and their payloads:
 | `join` | `{channel:<channel name>,key}` |
 | `create` | `{channel:<Channel>,key,ranked?}` |
 | `leave` | `{}` |
+| `visit_lobby` / `end_visit` | `{}` ([Visiting the lobby](#visiting-the-lobby)) |
 | `logout` | `{}` |
 | `options` | `{options:<HostOptions>}` |
 | `choices` | `{row,slot:<SkirmishLocalSlot>,observer}` |
@@ -138,7 +141,7 @@ Commands and their payloads:
 | `renew_relay` | `{match_id}` |
 | `watch` / `renew_watch` / `unwatch` | `{match_id}` ([Watching](#watching)) |
 | `map_upload` | `{digest,byte_length,offset,data,resource?}` |
-| `chat` | `{text,to:[name],action}` |
+| `chat` | `{text,to:[name],action,visit?}` |
 | `ping` | `{}` |
 | `locales` | `{names:[name]}` |
 | `set_locale` | `{locale}` |
@@ -216,17 +219,17 @@ Event kinds and payloads:
 
 | kind | payload |
 | --- | --- |
-| `joined` / `created` | `{channel:<Channel>,members:[Member]}` |
+| `joined` / `created` | `{channel:<Channel>,members:[Member],visit?}` |
 | `channel_left` | `{}` |
 | `room_reopened` | `{channel:<Channel>,members:[Member]}` |
-| `member_joined` | `{member:<Member>}` |
-| `member_left` | `{name}` |
+| `member_joined` | `{member:<Member>,visit?}` |
+| `member_left` | `{name,visit?}` |
 | `host_changed` | `{member:<Member>, channel:<Channel>}` |
 | `options` | `{revision,options:<HostOptions>}` |
 | `choices` | `{from,row,slot,observer}` |
 | `ready` | `{from,ready,revision}` |
 | `map_status` | `{from,status,revision}` |
-| `chat` | `{from:<Member>,text,private,action,sent_at,ansi?,quick_match?,phrases?}` |
+| `chat` | `{from:<Member>,text,private,action,sent_at,ansi?,quick_match?,phrases?,visit?}` |
 | `game_started` | `{match_id,revision,version,rules_digest,seed,users:[{player_id,name,flags,source_index}],relay:<RelayGrant>}` |
 | `start_confirmed` | `{match_id}` |
 | `timing_confirmed` | `{match_id,pings:[integer],relay:<RelayGrant>,ranked?}` |
@@ -633,6 +636,25 @@ notice sender after its `joined`. The line says how many players are online: in 
 public channel, in game rooms, playing, for sessions that play Quick Match searching on
 their version, and elsewhere. It also counts the game rooms the list leaves out for another
 version and, when the list holds none for the session, says how to start a game.
+
+## Visiting the lobby
+
+A member of a VERA game room before its start may `visit_lobby`: they also join the
+public lobby and stay in the room, which goes on as before (chat, choices, readiness,
+host changes and the start all reach them). They get the public lobby's `joined` with
+`visit:true`, and the lobby's others get `member_joined` as for any join. While the
+visit lasts, the public lobby's `chat`, `member_joined` and `member_left` reach the
+visitor marked `visit:true`, and their `chat` with `visit:true` goes to the lobby
+instead of the room. `end_visit` leaves the lobby (`member_left` there, nothing to the
+visitor); so do leaving the room, joining or creating another, signing out, an expired
+session and the room's `start`, before its `game_started`. A kick (`kicked`) or the room
+closing (`channel_left`, after `error` when it says why) leaves the visitor in the
+public lobby as their channel, with no `channel_left` for the lobby; a visitor the lobby
+no longer lists gets `channel_left` after `kicked` and is in no channel. A repeated
+`visit_lobby` answers `joined` again; a Quick Match room, also after its first start, or
+one past its lobby phase refuses it (409 `room_busy`). A lobby from before it lists no
+`visit_lobby` in the sign-in's `features` and refuses the command as unknown. `locate`
+names the visitor's room, not the lobby.
 
 ## Watching
 
