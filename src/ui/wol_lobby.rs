@@ -126,13 +126,15 @@ const ONLINE_PAGE: MenuPageSpec = MenuPageSpec {
 
 /// The online page while this player visits the lobby from a game room
 /// (docs/lobby-protocol.md "Visiting the lobby"): Join Game, which leaves
-/// that room, Options and Back to Room.
+/// that room, Options and Back to Room. Its Back goes back to the room too,
+/// so it says nothing of the online menu.
 const ONLINE_VISIT_PAGE: MenuPageSpec = MenuPageSpec {
     stacked: &[
         button(JOIN, 111, "GUI:JoinGame", "STT:LobbyButtonJoin"),
         button(OPTIONS, 138, "GUI:WOLOptions", "STT:WOLLobbyOptions"),
         button(BACK_TO_ROOM, 166, "VERA:BackToRoom", ""),
     ],
+    back: button(BACK, 332, "GUI:Back", ""),
     ..ONLINE_PAGE
 };
 

@@ -1494,14 +1494,9 @@ fn visit_failed(state: &mut AppState) {
     state.platform.window.request_redraw();
 }
 
-/// The visit ends with its room, as the runner closes: the hidden room ends
-/// as leaving it would.
-fn drop_visit(state: &mut AppState) {
-    take_visit(state);
-}
-
-/// Ends the visit with its room: the hidden room is dropped through its
-/// owner. The lobby visited, if there was a visit.
+/// Ends the visit with its room, as leaving it or the runner's close does:
+/// the hidden room is dropped through its owner. The lobby visited, if
+/// there was a visit.
 fn take_visit(state: &mut AppState) -> Option<LobbyVisit> {
     let runner = lobby_mut(state)?;
     let visit = runner.visit.take()?;
@@ -1517,7 +1512,7 @@ fn take_visit(state: &mut AppState) -> Option<LobbyVisit> {
 /// it closed, which leaves them in the lobby.
 fn visit_room_left(state: &mut AppState) {
     if lobby(state).is_some_and(|lobby| matches!(lobby.step, Step::Leaving { .. })) {
-        drop_visit(state);
+        take_visit(state);
         leave_finished(state, true);
         return;
     }
@@ -2288,7 +2283,7 @@ fn join_failed_locally(state: &mut AppState, game: bool) {
 /// slide and `WOL_Main` shows the welcome (mode 0), or the online lobby
 /// again for a Quick Match runner that lobby started.
 fn close_runner(state: &mut AppState) {
-    drop_visit(state);
+    take_visit(state);
     let quick_match = quick_match_runner(state);
     if quick_match {
         super::quick_match::runner_closed(state);

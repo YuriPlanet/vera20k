@@ -484,10 +484,14 @@ public lobby too. A lobby from before this lists no `visit_lobby` among the sign
 answer's `features`, so the game greys Lobby out. One rolled back after the sign-in
 refuses `visit_lobby`; the game then says it could not go to the lobby, and the player
 stays in the room. A rollback during a visit leaves the visitor in both channels: the
-older lobby sends the public lobby's events to their game unmarked, which shows them as
-the room's, and refuses Back to Room's `end_visit` and their lobby chat with a notice.
-The public lobby lists them until this lobby is back and they leave the room or sign
-out; it then also drops an entry whose session is gone.
+older lobby sends the public lobby's events to their game unmarked, which takes them as
+the room's, and refuses Back to Room's `end_visit` and their lobby chat with a notice. A
+host who visited then seats the public lobby's newcomers in their room; the older lobby
+refuses options naming them, so the room cannot start until those players leave the
+public lobby or the host leaves the room, and a visitor who joins the public lobby again
+is listed twice. Roll the lobby back past this only when no room has a visitor. The
+public lobby lists a stranded visitor until this lobby is back and they leave the room
+or sign out; it then also drops an entry whose session is gone.
 
 Games 0.3.3 and 0.3.4 had a host setting, Balance automatically, that travels online as
 `launch.options.auto_balance` and had the lobby balance the room 5 seconds after who

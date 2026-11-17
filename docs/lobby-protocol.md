@@ -497,25 +497,7 @@ then on the room is listed to the new owner's version, and it stays ranked or un
 as it was created. The room's options, map upload and advertisement stay until the new
 owner's game publishes its own. A Quick Match room, or one with a game that did not send
 the header, closes with `error` `host_left` and `channel_left` as before. A lobby from
-before handover closes every such room that way.
-
-#### Visiting the lobby
-
-A member of a VERA game room before its start may `visit_lobby`: they also join the
-public lobby and stay in the room, which goes on as before (chat, choices, readiness,
-host changes and the start all reach them). They get the public lobby's `joined` with
-`visit:true`, and the lobby's others get `member_joined` as for any join. While the
-visit lasts, the public lobby's `chat`, `member_joined` and `member_left` reach the
-visitor marked `visit:true`, and their `chat` with `visit:true` goes to the lobby
-instead of the room. `end_visit` leaves the lobby (`member_left` there, nothing to the
-visitor); so do leaving the room, joining or creating another, signing out, an expired
-session and the room's `start`, before its `game_started`. A kick (`kicked`) or the
-room closing (`channel_left`, after `error` when it says why) leaves the visitor in the
-public lobby as their channel, with no `channel_left` for the lobby. A repeated
-`visit_lobby` answers `joined` again; a Quick Match room or one past its lobby phase
-refuses it (409 `room_busy`). A lobby from before it lists no `visit_lobby` in the
-sign-in's `features` and refuses the command as unknown. `locate` names the visitor's
-room, not the lobby. Membership,
+before handover closes every such room that way. Membership,
 authorization, readiness, sequence history and idle expiration are server-owned.
 Idle lobby visits expire after 120 seconds. An unfinished v4 playing membership
 survives that idle interval while another unfinished player of the match is online
@@ -647,6 +629,25 @@ notice sender after its `joined`. The line says how many players are online: in 
 public channel, in game rooms, playing, for sessions that play Quick Match searching on
 their version, and elsewhere. It also counts the game rooms the list leaves out for another
 version and, when the list holds none for the session, says how to start a game.
+
+## Visiting the lobby
+
+A member of a VERA game room before its start may `visit_lobby`: they also join the
+public lobby and stay in the room, which goes on as before (chat, choices, readiness,
+host changes and the start all reach them). They get the public lobby's `joined` with
+`visit:true`, and the lobby's others get `member_joined` as for any join. While the
+visit lasts, the public lobby's `chat`, `member_joined` and `member_left` reach the
+visitor marked `visit:true`, and their `chat` with `visit:true` goes to the lobby
+instead of the room. `end_visit` leaves the lobby (`member_left` there, nothing to the
+visitor); so do leaving the room, joining or creating another, signing out, an expired
+session and the room's `start`, before its `game_started`. A kick (`kicked`) or the room
+closing (`channel_left`, after `error` when it says why) leaves the visitor in the
+public lobby as their channel, with no `channel_left` for the lobby; a visitor the lobby
+no longer lists gets `channel_left` after `kicked` and is in no channel. A repeated
+`visit_lobby` answers `joined` again; a Quick Match room, also after its first start, or
+one past its lobby phase refuses it (409 `room_busy`). A lobby from before it lists no
+`visit_lobby` in the sign-in's `features` and refuses the command as unknown. `locate`
+names the visitor's room, not the lobby.
 
 ## Watching
 
