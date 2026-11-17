@@ -2003,7 +2003,7 @@ impl App {
                 crate::app::shell_network_setup::commit_start(state, agreed_seed)
             }
             ShellExitThen::SkirmishChooseMap => {
-                let mode_id = state.frontend.skirmish_shell_state.selected_mode_id;
+                let mode_id = state.frontend.skirmish_shell_state.selected_mode.id;
                 let record_index = Self::current_choose_map_record_index(state);
                 Self::open_choose_map_modal(state, mode_id, record_index);
             }

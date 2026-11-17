@@ -1256,11 +1256,12 @@ impl App {
                 .network_setup()
                 .map(|launch| launch.mode.override_file.clone())
         } else {
-            crate::skirmish_modes::mode_by_id(
-                &state.frontend.skirmish_modes,
-                state.frontend.skirmish_shell_state.selected_mode_id,
-            )
-            .map(|mode| mode.override_file.clone())
+            state
+                .frontend
+                .skirmish_shell_state
+                .selected_mode
+                .resolve(&state.frontend.skirmish_modes)
+                .map(|mode| mode.override_file.clone())
         };
         let map_storage_decision = state
             .frontend
@@ -1670,11 +1671,11 @@ impl App {
                 &chooser_layout,
             )
         };
-        let mode_id = modal.selected_mode_id;
+        let mode = modal.selected_mode;
         let _ = modal;
         if let Some(index) = index {
             let selection = crate::ui::skirmish_shell::ChooseMapSelection {
-                mode_id,
+                mode,
                 record_index: Some(index),
             };
             // Success runs the hidden chooser's Use Map (`0x005E6B2F`): its

@@ -324,7 +324,7 @@ fn selected_scene(state: &AppState) -> Result<Value> {
     );
     Ok(json!({
         "map_file": map.file_name, "map_label": map.display_name,
-        "map_capacity": map.player_capacity, "mode_id": shell.selected_mode_id,
+        "map_capacity": map.player_capacity, "mode_id": shell.selected_mode.id,
         "preview": { "width": preview.width, "height": preview.height },
         "parsed_map_sha256": crate::util::sha256::sha256_hex(format!("{map:?}").as_bytes()),
         "parsed_map_hash_encoding": "Rust Debug representation; diagnostic identity only",

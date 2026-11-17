@@ -6937,7 +6937,7 @@ impl WolCapture {
                 let listed: Vec<_> = modal
                     .mode_rows()
                     .iter()
-                    .filter_map(|id| crate::skirmish_modes::mode_by_id(modes, *id))
+                    .filter_map(|row| row.resolve(modes))
                     .map(|mode| mode.class)
                     .collect();
                 let records = state.frontend.scenario_catalog.records();

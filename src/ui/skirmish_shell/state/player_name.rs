@@ -15,8 +15,8 @@ use super::super::layout::{SkirmishShellLayout, SkirmishTrackbarId, shown_player
 use super::trackbars::SkirmishTrackbarBounds;
 use super::{
     ChooseMapModalState, DropdownScrollDragState, DropdownScrollbarPressState, OpenComboDropdown,
-    OwnerDrawButton, RandomMapSetupModalState, SkirmishShellOpponent, SkirmishShellUiSound,
-    SkirmishValidationModalState, default_opponents,
+    OwnerDrawButton, RandomMapSetupModalState, SkirmishModeSelection, SkirmishShellOpponent,
+    SkirmishShellUiSound, SkirmishValidationModalState, default_opponents,
 };
 
 pub const PLAYER_NAME_DEFAULT: &str = "Player";
@@ -342,7 +342,7 @@ pub struct SkirmishShellState {
     /// claim and random draw of the shell reads this copy.
     pub(crate) lobby_colors: crate::rules::skirmish_colors::SkirmishColorMode,
     pub selected_map_idx: usize,
-    pub selected_mode_id: i32,
+    pub selected_mode: SkirmishModeSelection,
     pub player_name_edit: PlayerNameEditState,
     pub player_country: LaunchCountry,
     pub player_country_random: bool,
@@ -450,7 +450,7 @@ impl Default for SkirmishShellState {
             country_catalog: CountryMenuCatalog::default(),
             lobby_colors: Default::default(),
             selected_map_idx: 0,
-            selected_mode_id: 1,
+            selected_mode: 1.into(),
             player_name_edit: PlayerNameEditState::default(),
             player_country: LaunchCountry::default(),
             player_country_random: false,
@@ -729,7 +729,9 @@ mod multiplayer_dialog_value_tests {
 }
 
 pub fn repair_teams_for_selected_mode(state: &mut SkirmishShellState, modes: &[SkirmishGameMode]) {
-    let mode = mode_by_id(modes, state.selected_mode_id)
+    let mode = state
+        .selected_mode
+        .resolve(modes)
         .or_else(|| mode_by_id(modes, 1))
         .or_else(|| modes.first());
     if let Some(mode) = mode {

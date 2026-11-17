@@ -40,7 +40,8 @@ pub use opponent_scroll::{
 pub use choose_map::{
     ChooseMapContext, ChooseMapListPress, ChooseMapModalState, ChooseMapPrompt,
     ChooseMapPromptAnswer, ChooseMapPromptButton, ChooseMapPromptKind, ChooseMapSelection,
-    FAVORITES_ROW, ONLINE_MAPS_ROW, SEARCH_MAX_CHARS, ai_rows_beyond_limit_occupied, favorite_key,
+    FAVORITES_ROW, ONLINE_MAPS_ROW, SEARCH_MAX_CHARS, SkirmishModeSelection,
+    ai_rows_beyond_limit_occupied, favorite_key,
 };
 pub(crate) use player_name::CountryMenuCatalog;
 pub use player_name::{
@@ -172,7 +173,7 @@ pub enum SkirmishHoverTarget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChooseMapHoverTarget {
     ModeList0x6eb,
-    ModeListRow0x6eb { mode_id: i32 },
+    ModeListRow0x6eb { mode: SkirmishModeSelection },
     MapList0x553,
     Preview0x468,
     StatusHelp0x695,

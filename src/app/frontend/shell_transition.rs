@@ -1448,7 +1448,7 @@ mod tests {
         let chooser = shell.choose_map_modal.as_mut().unwrap();
         chooser.message_box = Some(ChooseMapPrompt {
             selection: ChooseMapSelection {
-                mode_id: 1,
+                mode: 1.into(),
                 record_index: Some(0),
             },
             pressed: None,
