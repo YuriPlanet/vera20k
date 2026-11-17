@@ -63,8 +63,8 @@ The check runs from `TechnoExt::OnEarlyUpdate` (`:26`), called at
 the visit that killed its object never reaches the interceptor scan, and
 `sim/world/techno_ai.rs` calls `apply_interceptor` only when
 `check_auto_death` reports no self-kill. Every arm returning `true`
-(`:161`, `:168`, `:181`, `:218`, `:231`, `:241`, `:252`) has just called
-`KillSelf`, so the skipped scan only covers an object that is already gone
+(`:162`, `:169`, `:182`, `:219`, `:232`, `:243`, `:254`) has just called
+`KillSelf` on the line above, so the skipped scan only covers an object that is already gone
 (`Kill`/`Vanish`) or one whose `Selling` mission `ApplyInterceptor`'s own
 `Selling`/`Construction` guard (`:60-61`) refuses anyway. The limbo sweep below
 never runs `ApplyInterceptor` at all, matching native, which only calls
