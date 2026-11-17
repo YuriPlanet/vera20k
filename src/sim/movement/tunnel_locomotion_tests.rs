@@ -418,7 +418,7 @@ fn stopping_while_underground_surfaces_in_place() {
     );
 }
 #[test]
-fn stopping_an_armed_dig_returns_to_idle() {
+fn stopping_the_dig_in_timer_settles_as_dug_out() {
     let mut runtime = TunnelRuntime::constructed();
     let mut position = test_position();
     let mut facing = crate::sim::movement::FacingClass::new(0, 0);
@@ -430,7 +430,7 @@ fn stopping_an_armed_dig_returns_to_idle() {
     });
     runtime.move_to(false);
     // One frame arms the dig timer and enters DiggingIn; the hull is still on
-    // the surface, so an abort here must not have moved Z.
+    // the surface, so a stop here must not have moved Z.
     runtime.process(&mut position, &mut facing, destination, 5, 1, &flat_ground);
     assert_eq!(runtime.state(), TunnelState::DiggingIn);
     assert_eq!(
@@ -438,7 +438,70 @@ fn stopping_an_armed_dig_returns_to_idle() {
         0,
         "the dig-in left the Z alone"
     );
-    runtime.state = TunnelState::Idle;
-    assert_eq!(position_world(&position).z, 0, "the abort left the Z alone");
-    assert!(!runtime.refuses_fire());
+
+    // State 2 -> `0x728DD9` sets `DugOut`: nothing ever sank, so there is
+    // nothing to raise.
+    runtime.stop_moving();
+    assert_eq!(runtime.state(), TunnelState::DugOut);
+    assert_eq!(position_world(&position).z, 0, "the stop left the Z alone");
+}
+
+/// State 3 (`DugIn`) -> `0x728DD0` sets `PreDigOut`, so a unit stopped part
+/// way through the sink rises from the Z it reached instead of staying buried.
+#[test]
+fn stopping_half_sunk_raises_the_unit_from_where_it_is() {
+    let mut runtime = TunnelRuntime::constructed();
+    let mut position = test_position();
+    let mut facing = crate::sim::movement::FacingClass::new(0, 0);
+    let from = position_world(&position);
+    let destination = Some(DriveCoord {
+        x: from.x,
+        y: from.y - 300,
+        z: UNDERGROUND_Z,
+    });
+    runtime.move_to(false);
+    let mut frame = 0u32;
+    while runtime.state() != TunnelState::DugIn && frame < 500 {
+        frame += 1;
+        runtime.process(
+            &mut position,
+            &mut facing,
+            destination,
+            5,
+            frame,
+            &flat_ground,
+        );
+    }
+    assert_eq!(runtime.state(), TunnelState::DugIn);
+    // One sink frame leaves the hull between the ground and the plane.
+    frame += 1;
+    runtime.process(
+        &mut position,
+        &mut facing,
+        destination,
+        5,
+        frame,
+        &flat_ground,
+    );
+    let sunk = position_world(&position).z;
+    assert!(sunk < 0 && sunk > UNDERGROUND_Z, "not half sunk: {sunk}");
+
+    runtime.stop_moving();
+    assert_eq!(runtime.state(), TunnelState::PreDigOut);
+
+    for _ in 0..500 {
+        frame += 1;
+        runtime.process(
+            &mut position,
+            &mut facing,
+            destination,
+            5,
+            frame,
+            &flat_ground,
+        );
+        if runtime.state() == TunnelState::Idle {
+            break;
+        }
+    }
+    assert_eq!(position_world(&position).z, 0, "the stop did not surface");
 }

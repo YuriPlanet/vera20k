@@ -79,11 +79,37 @@ The layer answer is what the package-93 `AU` chain consumes:
   flags at `+0x11c`/`+0x140`, i.e. a void cell, not terrain, walls or
   buildings. Nothing in VERA's tunnel chain calls it (the controller writes
   coordinates directly), so it stays unported by design.
-- `Z_Adjust 0x729E50` is draw-only and belongs to the presentation layer.
-- `Stop_Moving 0x728C00`'s table `0x728E08` is ported by its targets: states
-  1/2/3 abort the dig to Idle, state 4 (`0x728C1E`) surfaces in place, states
-  5/6/7 finish surfacing. The bodies at `0x728DD0`, `0x728DD9` and `0x728DE0`
-  are unread.
+- `Z_Adjust 0x729E50` is draw-only and belongs to the presentation layer. Its
+  body is decoded but unported: it transforms `Owner->Location` (`Owner`
+  `[this+8]`, Location `+0x9c`) through `0x6D2140` (`ecx = [0x887324]`), asks
+  `0x578080` for that cell's ground and transforms the ground point the same
+  way, so `edi` is the sprite's pixel height above its ground. It then builds
+  `fraction = (total - remaining) / total` from the dig timer (`[+0x30]`
+  total, `[+0x24]` start, `[+0x2c]` duration, `[0xa8ed84]` current frame;
+  `fraction = 1.0` when `total` is 0) and `ecx = ((([Owner+0x388]`-derived
+  value `>> 7) + 1) >> 1) & 0xFF`. The switch on `State - 2` (`0x72A000`) adds
+  the dword constant `45` (`0x844A9C`) or `45` (`0x844A98`, `0x729FDE`):
+  `DiggingIn` adds 45 when `70 < ecx < 140`, otherwise `round(45 * fraction)`,
+  and latches `[this+0x34] = 1` once `fraction > 0.4` (`0x7E3550`); `DugIn`,
+  `Digging` and `PreDigOut` add 45; `DiggingOut` adds
+  `round(45 * (1 - fraction))`; every other state falls through to the base
+  class `0x55ABA0`. Porting it needs the consumer trace (where `DrawIt` adds
+  the result to the drawn Y) plus the `[Owner+0x388]` field identity, so VERA's
+  renderer keeps its own `foot_depth` z chain for tunnel units.
+- `Stop_Moving 0x728C00` dispatches on `State - 1` through table `0x728E08`,
+  read by target:
+  - states 1/5/6/7 → `0x728DE0` (unchanged) after writing the null coordinate
+    (`[0xB0F910..0xB0F918]`, BSS zeros) over the stored `+0x18` coord. State 1
+    then leaves at the next `ProcessPreDigIn`, whose null-coordinate arm is
+    `Idle`;
+  - state 2 (`DiggingIn`) → `0x728DD9` sets `DugOut` (7): the timer never
+    finished, so nothing sank;
+  - state 3 (`DugIn`) → `0x728DD0` sets `PreDigOut` (5): rise from the Z
+    reached so far;
+  - state 4 (`Digging`) → `0x728C1E`, which measures the location against the
+    stored coord (`0x4CAC40`) and surfaces in place.
+  `TunnelRuntime::stop_moving` now maps exactly that table (an earlier port
+  folded states 2 and 3 into `Idle`, which left a half-sunk hull buried).
 - `Is_Moving_Now 0x728A60` answers `State == 1` (`PreDigIn`) only;
   `ready_producer::ready_state_for` maps the class state to
   `LocomotorReadyState::Tunnel { state }`, so the Mission gate sees a unit that

@@ -146,6 +146,26 @@ impl TunnelRuntime {
         self.state != TunnelState::Idle
     }
 
+    /// `Stop_Moving 0x728C00`'s jump table `0x728E08`, indexed by `State - 1`:
+    ///
+    /// | state | target | result |
+    /// |-------|--------|--------|
+    /// | 1 `PreDigIn` | `0x728DE0` | unchanged; the null coordinate written there makes the next `ProcessPreDigIn` leave it at `Idle` |
+    /// | 2 `DiggingIn` | `0x728DD9` | `DugOut` (7): the timer never finished, so nothing sank |
+    /// | 3 `DugIn` | `0x728DD0` | `PreDigOut` (5): rise from the Z reached so far |
+    /// | 4 `Digging` | `0x728C1E` | `PreDigOut`: surface where the unit stands |
+    /// | 5/6/7 | `0x728DE0` | unchanged; surfacing continues |
+    ///
+    /// Every target also stores the null coordinate over `+0x18`; VERA's stored
+    /// destination is the NavCom cell, which the same stop clears.
+    pub(crate) fn stop_moving(&mut self) {
+        self.state = match self.state {
+            TunnelState::DiggingIn => TunnelState::DugOut,
+            TunnelState::DugIn | TunnelState::Digging => TunnelState::PreDigOut,
+            state => state,
+        };
+    }
+
     /// `Move_To 0x728AF0`'s tail: a destination arms `PreDigIn`, and an
     /// already-underground unit goes straight to `Digging`.
     pub(crate) fn move_to(&mut self, below_ground: bool) {
@@ -442,22 +462,16 @@ pub(crate) fn process(
 /// `0x728C1E`, whose body measures the object's location against the stored
 /// coordinate — a travelling unit surfaces where it is instead of popping up.
 pub(crate) fn stop_moving(entity: &mut GameEntity) {
+    // Every `Stop_Moving` target writes the null coordinate over `+0x18`
+    // (`0x728DE0`, and the `0x728DD9`/`0x728DD0` arms reach it); the NavCom cell
+    // is this class's stored destination.
+    entity.navigation.stop_moving();
     if let Some(runtime) = entity
         .locomotor
         .as_mut()
         .and_then(|loco| loco.tunnel_runtime_mut())
     {
-        runtime.state = match runtime.state {
-            // An armed or in-progress dig never started, so it aborts to Idle.
-            TunnelState::PreDigIn | TunnelState::DiggingIn | TunnelState::DugIn => {
-                TunnelState::Idle
-            }
-            // Underground, the stop raises the object where it stands
-            // (`0x728C1E` -> `PreDigOut`).
-            TunnelState::Digging => TunnelState::PreDigOut,
-            // A surfacing unit finishes surfacing; 0x728DE0 leaves it alone.
-            state => state,
-        };
+        runtime.stop_moving();
     }
 }
 
