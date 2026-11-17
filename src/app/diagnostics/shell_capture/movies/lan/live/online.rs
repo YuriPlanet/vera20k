@@ -980,11 +980,7 @@ impl LiveRoundFlow {
                                 && session.network_map_status(i) == Some(1)
                         })
                 });
-                let starting = state
-                    .frontend
-                    .network_setup_protocol
-                    .as_ref()
-                    .is_some_and(|protocol| protocol.start_in_progress());
+                let starting = crate::app::shell_network_setup::start_phase(state).in_progress();
                 let start = self.online_config().start;
                 if ready
                     && !starting

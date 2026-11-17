@@ -337,7 +337,10 @@ guest's client accepts the final displayed settings by itself once it has the
 verified map; players never ready up by hand. Only after the matching options
 revision and every fresh acknowledgement arrive does the retained Start request
 reach the server. A local optimistic choice cannot be accepted before its host
-options echo. Later edits cancel the staged request; rejected or timed-out starts
+options echo. While the request is staged, the host's client holds its own
+edits, kicks a newcomer and ignores `balance`; a guest's changed choices, the
+host's kick of a guest and any departure change the options, which cancels the
+staged request, as the host leaving does. Rejected or timed-out starts
 release the normal setup screen for retry without rerunning assignment while a
 request is pending. The service continues enforcing the same full agreement.
 

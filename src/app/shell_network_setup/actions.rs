@@ -8,27 +8,65 @@ use crate::skirmish_launch::{AiDifficulty, LaunchCountry, LaunchStartPosition, L
 use crate::ui::multiplayer_setup::*;
 pub(crate) use start::begin_external_lan_go;
 
+/// While C2's StartGame request is pending (`00B77E28`), its proc skips
+/// checkboxes and sliders (`0x78F823`), and Back, ChooseMap and every
+/// row combo test the same flag (`0x790C5B`, `0x791033`, `0x791075`,
+/// `0x791097`, `0x790D12`). VERA's online host holds the same edits, and its
+/// room's own, from its Start click while the guests accept the final
+/// settings. It may still leave then, or `kick` a guest from its Player list:
+/// either cancels that start, so a stalled guest need not hold the room to
+/// the start's deadline.
+fn held_while_starting(phase: StartPhase, action: &SetupAction, kick: bool) -> bool {
+    match action {
+        SetupAction::Back => phase.submitted(),
+        SetupAction::Select { .. } if kick => phase.submitted(),
+        SetupAction::ChooseMap
+        | SetupAction::Select { .. }
+        | SetupAction::Toggle { .. }
+        | SetupAction::Trackbar { .. }
+        | SetupAction::Join { .. }
+        | SetupAction::DropRow { .. }
+        | SetupAction::TeamStarts
+        | SetupAction::TeamColors
+        | SetupAction::Balance
+        | SetupAction::Lobby => phase.in_progress(),
+        _ => false,
+    }
+}
+
+/// The host's Player list puts Open, Closed, Open Observer or an AI on a
+/// guest's row, which kicks the guest (`select`).
+fn kicks_guest(state: &AppState, action: &SetupAction) -> bool {
+    let SetupAction::Select { control, value } = *action else {
+        return false;
+    };
+    // 0 keeps the guest; the other two move it.
+    !matches!(value, 0 | MOVE_TO_SPECTATORS | GIVE_SEAT)
+        && matches!(SetupColumn::decode(control), Some((SetupColumn::Player, _)))
+        && super::view(state)
+            .and_then(|view| view.combo(control).map(|combo| combo.row))
+            .is_some_and(|row| guest_on_row(state, row).is_some())
+}
+
+/// The guest, not the host itself, on a host's row, with its team.
+fn guest_on_row(state: &AppState, row: u8) -> Option<(usize, LaunchTeam)> {
+    let session = &state.match_state.session;
+    let launch = session.network_setup().filter(|_| session.host())?;
+    launch
+        .humans
+        .iter()
+        .enumerate()
+        .find(|(index, human)| {
+            *index != launch.local_player_index && human.raw_slot_index == Some(row)
+        })
+        .map(|(index, human)| (index, human.slot.team))
+}
+
 pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
     let dialog = super::dialog(state);
-    // While C2's StartGame request is pending (`00B77E28`), its proc skips
-    // checkboxes and sliders (`0x78F823`), and Back, ChooseMap and every
-    // row combo test the same flag (`0x790C5B`, `0x791033`, `0x791075`,
-    // `0x791097`, `0x790D12`).
-    if super::wol::start_pending(state)
-        && matches!(
-            action,
-            SetupAction::Back
-                | SetupAction::ChooseMap
-                | SetupAction::Select { .. }
-                | SetupAction::Toggle { .. }
-                | SetupAction::Trackbar { .. }
-                | SetupAction::Join { .. }
-                | SetupAction::TeamStarts
-                | SetupAction::TeamColors
-                | SetupAction::Balance
-                | SetupAction::Lobby
-        )
-    {
+    let phase = super::start_phase(state);
+    let kick = phase.in_progress() && kicks_guest(state, &action);
+    if held_while_starting(phase, &action, kick) {
         return;
     }
     let result = match action {
@@ -335,22 +373,7 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
     // VERA's host moves a guest as the guest's own choices would: into a
     // seat or to the spectators from its Player list; its side, colour,
     // start and team from the rest of its row, below.
-    let guest = state
-        .match_state
-        .session
-        .host()
-        .then(|| {
-            let launch = state.match_state.session.network_setup()?;
-            launch
-                .humans
-                .iter()
-                .enumerate()
-                .find(|(index, human)| {
-                    *index != launch.local_player_index && human.raw_slot_index == Some(combo.row)
-                })
-                .map(|(index, human)| (index, human.slot.team))
-        })
-        .flatten();
+    let guest = guest_on_row(state, combo.row);
     if let Some((index, team)) = guest {
         let observer = match value {
             MOVE_TO_SPECTATORS => Some(true),
@@ -907,4 +930,32 @@ pub(crate) fn commit_map_selection(
         queue(state, NetworkSetupRequest::PublishRoster);
     }
     Ok(())
+}
+
+#[cfg(all(test, tests_app))]
+mod tests {
+    use super::*;
+
+    /// VERA's online host keeps its room still from its Start click, as C2
+    /// does once StartGame is out, but may leave or kick a stalled guest
+    /// while the guests accept.
+    #[test]
+    fn a_preparing_start_holds_the_hosts_edits_but_not_its_back_or_kick() {
+        let edit = SetupAction::Select {
+            control: 0,
+            value: 0,
+        };
+        let drag = SetupAction::DropRow {
+            row: 1,
+            group: SetupGroup::Spectators,
+        };
+        let back = SetupAction::Back;
+        assert!(held_while_starting(StartPhase::Preparing, &edit, false));
+        assert!(held_while_starting(StartPhase::Preparing, &drag, false));
+        assert!(!held_while_starting(StartPhase::Preparing, &back, false));
+        assert!(!held_while_starting(StartPhase::Preparing, &edit, true));
+        assert!(held_while_starting(StartPhase::Submitted, &back, false));
+        assert!(held_while_starting(StartPhase::Submitted, &edit, true));
+        assert!(!held_while_starting(StartPhase::Idle, &edit, false));
+    }
 }
