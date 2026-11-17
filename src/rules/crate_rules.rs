@@ -8,6 +8,13 @@ use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::sound_ini::SoundRegistry;
 use crate::util::native_x87::NativeF64Bits;
 
+/// VERA's bound on `CrateMinimum=` and `CrateMaximum=` (ReadInt at
+/// `0x0066BA50` and `0x0066BA70`), twice the 256-slot crate table. Each start
+/// crate calls the random placer (`0x0056BD40`), which tries up to 1000 cells
+/// until that table is full, so on a map with too few open cells to fill it a
+/// count near `i32::MAX` never finishes loading; retail allows 255.
+pub const CRATE_COUNT_LIMIT: i32 = 512;
+
 /// Every `[CrateRules]` field `RulesClass__ReadCrateRules @ 0x0066B900` reads,
 /// in its native read order.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -34,9 +41,9 @@ pub struct CrateRules {
     /// The saved name distinguishes it from the old unchecked raw token.
     #[serde(rename = "heal_crate_sound_binding")]
     pub heal_crate_sound: Option<String>,
-    /// `CrateMinimum` -> `Rules+0x1470`.
+    /// `CrateMinimum` -> `Rules+0x1470`, at most [`CRATE_COUNT_LIMIT`].
     pub minimum: i32,
-    /// `CrateMaximum` -> `Rules+0x1474`.
+    /// `CrateMaximum` -> `Rules+0x1474`, at most [`CRATE_COUNT_LIMIT`].
     pub maximum: i32,
     /// `CrateRadius` -> `Rules+0x172C`, read by `CCINIClass::ReadRange` and
     /// stored in leptons. Every radius crate effect compares a 3-D distance
@@ -126,10 +133,14 @@ impl CrateRules {
         self.heal_crate_sound =
             sounds.read_rules_reference(section, "HealCrateSound", self.heal_crate_sound.take());
         if section.is_present("CrateMinimum") {
-            self.minimum = section.read_int("CrateMinimum", self.minimum);
+            self.minimum = section
+                .read_int("CrateMinimum", self.minimum)
+                .min(CRATE_COUNT_LIMIT);
         }
         if section.is_present("CrateMaximum") {
-            self.maximum = section.read_int("CrateMaximum", self.maximum);
+            self.maximum = section
+                .read_int("CrateMaximum", self.maximum)
+                .min(CRATE_COUNT_LIMIT);
         }
         // `CrateRadius` is stored in leptons; the stock `3.0` is three cells.
         // ReadRange owns the absent-key and `-1` sentinel cases itself, so this
@@ -276,6 +287,16 @@ mod tests {
         assert_eq!(rules.radius, 768);
         assert_eq!(rules.silver_crate, POWERUP_VETERAN);
         assert_eq!(rules.minimum, 4);
+    }
+
+    #[test]
+    fn huge_crate_counts_stop_at_the_crate_bound() {
+        let rules =
+            parse_layers(&["[CrateRules]\nCrateMinimum=2147483647\nCrateMaximum=2147483647\n"]);
+        assert_eq!(
+            (rules.minimum, rules.maximum),
+            (CRATE_COUNT_LIMIT, CRATE_COUNT_LIMIT)
+        );
     }
 
     /// A failed Voc lookup retains the live index. These spellings clear an

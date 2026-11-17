@@ -615,8 +615,12 @@ impl WarheadType {
         // (`0x0084439C`) and `MinDebris` (`0x00844390`). No stock `[Warheads]`
         // section mis-spells either — only `Smashing` and `TRexWH` author them
         // at all — so this changes nothing in retail and is right in principle.
-        let max_debris = section.read_int("MaxDebris", 0);
-        let min_debris = section.read_int("MinDebris", 0).max(0);
+        let max_debris = section
+            .read_int("MaxDebris", 0)
+            .min(crate::rules::object_type::DEBRIS_LIMIT);
+        let min_debris = section
+            .read_int("MinDebris", 0)
+            .clamp(0, crate::rules::object_type::DEBRIS_LIMIT);
         let max_debris = max_debris.max(min_debris);
 
         Self {
