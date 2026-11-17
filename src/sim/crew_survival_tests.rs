@@ -462,6 +462,7 @@ fn survivor_count_divides_the_refund_by_the_side_divisor() {
             .entities
             .get_mut(id)
             .unwrap()
+            .building
             .has_been_captured
             .set_for_test(captured);
         assert_eq!(
@@ -473,6 +474,7 @@ fn survivor_count_divides_the_refund_by_the_side_divisor() {
             .entities
             .get_mut(id)
             .unwrap()
+            .building
             .no_survivor
             .set_for_test(true);
         assert_eq!(sim.building_survivor_count(&rules, id), 0, "NoSurvivor");
@@ -491,6 +493,7 @@ fn a_captured_building_remembers_it() {
             .entities
             .get(id)
             .unwrap()
+            .building
             .has_been_captured
             .is_set()
     );
@@ -498,6 +501,7 @@ fn a_captured_building_remembers_it() {
         .entities
         .get_mut(id)
         .unwrap()
+        .building
         .repairing
         .set_for_test(true);
     sim.sound_events.clear_for_test();
@@ -510,8 +514,8 @@ fn a_captured_building_remembers_it() {
         crate::sim::world::FrameEffects::default(),
     );
     let building = sim.substrate.entities.get(id).unwrap();
-    assert!(building.has_been_captured.is_set());
-    assert!(!building.repairing.is_on());
+    assert!(building.building.has_been_captured.is_set());
+    assert!(!building.building.repairing.is_on());
     assert!(
         !sim.sound_events
             .iter()
@@ -526,7 +530,6 @@ fn a_captured_building_remembers_it() {
 /// Scatter's first draw, in that order.
 // Stock Building GetCrew44EB10 always draws for the Engineer; Ares1004C650
 // draws only with a positive Engineer chance.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn phase_b_interleaves_each_cells_roll_with_its_mark() {
     let rules = rules();
@@ -600,6 +603,7 @@ fn a_captured_yard_rolls_one_in_nine_without_the_engineer_draw() {
         .entities
         .get_mut(yard)
         .unwrap()
+        .building
         .has_been_captured
         .set_for_test(true);
     let mut replay = sim.scenario_rng.clone();
@@ -692,6 +696,7 @@ fn a_building_owing_no_survivor_draws_and_marks_nothing() {
             .entities
             .get_mut(id)
             .unwrap()
+            .building
             .no_survivor
             .set_for_test(no_survivor);
         let before = sim.scenario_rng.state();
@@ -710,7 +715,6 @@ fn a_building_owing_no_survivor_draws_and_marks_nothing() {
 /// enemy planter; an allied planter only changes the odds.
 // Stock Building GetCrew44EB10 always draws for the Engineer; Ares1004C650
 // draws only with a positive Engineer chance.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn survivors_of_a_c4_charged_building_attack_an_enemy_planter() {
     let rules = rules();
@@ -724,6 +728,7 @@ fn survivors_of_a_c4_charged_building_attack_an_enemy_planter() {
                 .entities
                 .get_mut(plant)
                 .unwrap()
+                .building
                 .pending_c4_detonation
                 .set_for_test(Some(crate::sim::c4_plant::PendingC4Detonation::new(
                     crate::sim::timer::CdTimer::started(0, 100),
@@ -905,9 +910,11 @@ fn no_survivor_uninits_the_absorbed_infantry() {
     let absorbed = load_absorbed(&mut sim, &rules, reactor, 2);
     let mut replay = sim.scenario_rng.clone();
     let reactor_entity = sim.substrate.entities.get_mut(reactor).unwrap();
-    reactor_entity.no_survivor.set_for_test(true);
-    reactor_entity.pending_c4_detonation.set_for_test(Some(
-        crate::sim::c4_plant::PendingC4Detonation::new(
+    reactor_entity.building.no_survivor.set_for_test(true);
+    reactor_entity
+        .building
+        .pending_c4_detonation
+        .set_for_test(Some(crate::sim::c4_plant::PendingC4Detonation::new(
             crate::sim::timer::CdTimer::started(0, 100),
             Some(planter),
         ),
@@ -1072,7 +1079,6 @@ fn hijacked_vehicle_returns_its_captor_without_an_escape_roll() {
 /// The vehicle's transferable Tag waits for the escaped infantry's death,
 /// rather than firing Unit744720's destruction prefix on the vehicle.
 // Stock Unit tail; Ares's SpawnSurvivors100464C0 attaches no Tag to the hijacker.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn hijacked_vehicle_preserves_its_transferable_tag_until_captor_death() {
     let rules = rules();
@@ -1234,7 +1240,6 @@ const ORDINARY: ReceiverCallFlags = ReceiverCallFlags {
 /// fixture's registered infantry types keeps this test about the binding.
 // Ares GetCrew1004C780 reads HouseType SideIndex (+BC), which this fixture's
 // undeclared countries leave at -1, and returns the Technician.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn renamed_general_crew_types_spawn_through_the_building_death_receiver() {
     let renamed = RULES
@@ -1359,7 +1364,6 @@ fn cargo_len(sim: &Simulation, transport: u64) -> usize {
 /// onto its cell in cargo order, uncredited; a computer's Hunt and a human's
 /// stay put.
 // Stock Unit tail (737F97..73838A); Ares replaces it with SpawnSurvivors100464C0.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn a_killing_hit_lets_the_passengers_out() {
     let rules = rules();
@@ -1864,7 +1868,6 @@ fn a_select_started_by_a_partners_tag_event_does_not_expand() {
 /// keys bind, and a power plant and an MCV killed through the production
 /// receiver leave stock crew with native health ranges.
 // The MCV crew takes the stock Unit tail; Ares's EjectSurvivor needs a map cell.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_rules_crew_the_power_plant_and_the_mcv() {
     let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
@@ -2293,7 +2296,7 @@ fn a_selected_mcvs_crewman_speaks_his_select_voice() {
         let mut sim = sim_on_arena(seed, &rules);
         let owner = sim.interner.intern("AlliedHuman");
         // Ares GetCrew1004C7F0 reads the actual Country's side, not only
-        // House.side_index. Keep this a valid retail Allied house in both builds.
+        // House.side_index. Keep this a valid retail Allied house either way.
         let country = sim.interner.intern("Americans");
         sim.houses
             .get_mut(&owner)
@@ -2374,6 +2377,7 @@ fn a_refused_passenger_of_a_sale_books_a_loss_with_no_kill() {
         .entities
         .get_mut(reactor)
         .unwrap()
+        .building
         .no_survivor
         .set_for_test(true);
     let stats = |sim: &Simulation| {
@@ -2416,7 +2420,6 @@ fn a_refused_passenger_of_a_sale_books_a_loss_with_no_kill() {
 
 /// Ares 3.0 SideExt reader plus the gameplay consumers. A fourth side with no
 /// keys takes the Allied defaults; explicit keys replace them.
-#[cfg(feature = "ares")]
 fn ares_fourth_side_rules(fourth: &str) -> RuleSet {
     let text = format!("{RULES}\n[Sides]\nGDI=x\nNod=x\nThirdSide=x\nFourth=x\n[Fourth]\n{fourth}");
     let processed = crate::rules::native_processing::RulesLayerStack::new(IniFile::from_str(&text))
@@ -2425,9 +2428,9 @@ fn ares_fourth_side_rules(fourth: &str) -> RuleSet {
     RuleSet::from_processed_rules(&processed).expect("fourth-side projection")
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn ares_fourth_side_crew_and_survivor_defaults_follow_side_extension() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let defaults = ares_fourth_side_rules("");
     let mut rng = SimRng::new(7);
     assert_eq!(
@@ -2541,9 +2544,9 @@ fn open_topped_death_clears_rider_flags_before_crashable_exit() {
 
 /// Installed Ares100464C0 orders captor, pilots, then existing passengers;
 /// the death hook's final argument is IgnoreDefenses, not PreventCrewEscape.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_fatal_vehicle_returns_saved_captor_pilot_and_existing_passenger() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::sim::passenger::{BoardingArm, board_passenger};
     use crate::util::native_x87::NativeF32Bits;
     let (mut sim, rules, overlays) = crate::sim::world::entry_test_fixture::fixture_with_rules(
@@ -2648,9 +2651,9 @@ fn ares_fatal_vehicle_returns_saved_captor_pilot_and_existing_passenger() {
 
 /// Aircraft41668B ->10048C50 uses the same survivor owner, before its
 /// nullable Crashable override. Negative passenger chance has no Unit fallback.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_fatal_aircraft_parachutes_crew_and_honors_explicit_no_crash() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::sim::passenger::{BoardingArm, board_passenger};
     let (mut sim, rules, overlays) = crate::sim::world::entry_test_fixture::fixture_with_rules(
         "[Countries]\n0=Americans\n[Sides]\nGDI=Americans\n[Americans]\nSide=GDI\n\

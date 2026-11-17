@@ -162,4 +162,76 @@ fn retail_stencils_match_the_cpu_raster() {
     for ((case, pixels), gpu_pixels) in expected.iter().zip(read) {
         assert_eq!(&gpu_pixels, pixels, "{case:?}");
     }
+
+    // VoxelAnim749CCF/749DCE: one selected physical section supplies both
+    // passes. Exercise the UnitModel adapter, not a test-only raster plan.
+    let fixture = crate::test_fixture::json("tools/voxel_oracle/aircraft_shadow.json");
+    let decode = |key| {
+        fixture["generated"][key]
+            .as_str()
+            .unwrap()
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect::<Vec<_>>()
+    };
+    let directory = crate::map::source::test_support::TestDirectory::new("gpu-tumble-section");
+    std::fs::write(directory.path().join("MULTI.VXL"), decode("vxl")).unwrap();
+    let files =
+        crate::assets::asset_manager::AssetManager::from_loose_root_for_test(directory.path());
+    let model = VoxelPart::load(&files, "MULTI", false).unwrap();
+    let vpl = VplFile::from_bytes(&decode("vpl")).unwrap();
+    let matrix = vxl_raster::projectile_voxel_matrix(
+        crate::sim::projectile::ProjectileVelocity::new(3, -2, 1),
+    )
+    .unwrap();
+    let (body, shadow) = crate::render::unit_atlas::UnitModel::render_tumble(
+        &model,
+        2,
+        matrix,
+        Some(&vpl),
+        false,
+        None,
+    )
+    .unwrap();
+    let (paint, stencil) =
+        crate::render::unit_atlas::UnitModel::tumble_images(&model, 2, matrix, Some(&vpl), false)
+            .unwrap();
+    let mut raster = VoxelGpu::default();
+    let mut images = Vec::new();
+    let mut expected = Vec::new();
+    for (image, sprite) in [paint, stencil.unwrap()]
+        .into_iter()
+        .zip([body, shadow.unwrap()])
+    {
+        images.push((
+            raster
+                .admit(&image, Some(&vpl))
+                .expect("selected section GPU draw"),
+            crop(&sprite),
+        ));
+        expected.push(sprite.palette_indices);
+    }
+    assert_eq!(
+        draw(&gpu, &batch, &mut raster, &images, Some(&vpl)),
+        expected
+    );
+    let (buffered, _) =
+        crate::render::unit_atlas::UnitModel::tumble_images(&model, 2, matrix, Some(&vpl), true)
+            .unwrap();
+    assert!(
+        raster.admit(&buffered, Some(&vpl)).is_none(),
+        "UseBuffer stays on the shared CPU depth path"
+    );
+    let buffered = buffered.render_cpu(Some(&vpl)).unwrap();
+    let (cpu, _) = crate::render::unit_atlas::UnitModel::render_tumble(
+        &model,
+        2,
+        matrix,
+        Some(&vpl),
+        true,
+        None,
+    )
+    .unwrap();
+    assert_eq!(buffered.palette_indices, cpu.palette_indices);
 }

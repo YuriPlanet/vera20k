@@ -591,6 +591,6 @@ pub(crate) fn choose_next_production(
     true
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ai_base_defense_tests.rs"]
 mod tests;

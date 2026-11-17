@@ -238,7 +238,7 @@ fn tank_bunker_seek(sim: &mut Simulation, rules: &RuleSet, id: u64) -> bool {
 fn install_state(sim: &Simulation, bunker: u64) -> (BunkerState, Option<u64>) {
     let building = entity(sim, bunker);
     (
-        building.bunker_runtime.unwrap().state(),
+        building.building.bunker_runtime.unwrap().state(),
         building.radio_contacts.slot(0),
     )
 }
@@ -508,13 +508,13 @@ fn an_absorber_refuses_a_controller() {
         .entities
         .get_mut(controller)
         .unwrap()
-        .capture_manager = Some(
+        .capture_manager = Some(Box::new(
         crate::sim::capture_manager::CaptureManagerState::with_victims_for_test(
             1,
             false,
             &[captive],
         ),
-    );
+    ));
 
     assert_eq!(
         can_load(&mut sim, &rules, controller, reactor),
@@ -1886,8 +1886,7 @@ fn the_nearest_own_bunker_with_room_takes_an_occupier() {
         .set_for_test(100);
     // Ares 3.0 10017060 (hook 0x457D58) refuses a red building only when it
     // is civilian (TechLevel -1).
-    #[cfg(not(feature = "ares"))]
-    {
+    if !rules.ares_form() {
         assert!(!garrison_seek(&mut sim, &rules, infantry));
         assert!(!entity(&sim, infantry).building_entry.seeking());
     }
@@ -2242,7 +2241,7 @@ fn a_refused_foot_or_a_held_tank_bunker_gets_no_order() {
     let unarmed = spawn(&mut sim, &rules, "LTNK", "YuriCountry", 10, 12);
     let infantry = spawn(&mut sim, &rules, "INIT", "YuriCountry", 10, 14);
     for id in [drone, unarmed, infantry] {
-        let mission = entity(&sim, id).mission;
+        let mission = entity(&sim, id).mission.clone();
         assert!(!tank_bunker_seek(&mut sim, &rules, id));
         assert_eq!(entity(&sim, id).mission, mission);
         assert_eq!(entity(&sim, id).bunker.link(), BunkerLink::None);
@@ -2258,7 +2257,7 @@ fn a_refused_foot_or_a_held_tank_bunker_gets_no_order() {
         .bunker
         .set_bunker_occupant_for_test(Some(occupant));
     let tank = spawn(&mut sim, &rules, "YTNK", "YuriCountry", 12, 16);
-    let mission = entity(&sim, tank).mission;
+    let mission = entity(&sim, tank).mission.clone();
 
     assert!(!tank_bunker_seek(&mut sim, &rules, tank));
 
@@ -2866,9 +2865,9 @@ fn retail_all01_script64_conscript_admits_a_map_civilian_garrison() {
 /// kicks its first passenger out through ExitObject, and Ares 10014100
 /// (hook 0x444D26) gives a human Armory's trainee the exit post's
 /// Area_Guard as a Hospital's patient gets.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_armory_unload_kicks_out_its_trainee_on_guard() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini_with_fixed_art_for_test(
         &crate::sim::arena_fixture::clear_ground_ini(&format!(
             "{}[ARMORY]\nStrength=500\nArmory=yes\nPassengers=5\n",

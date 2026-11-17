@@ -293,9 +293,11 @@ pub fn retail_audio_index() -> Option<&'static crate::assets::asset_manager::Loa
 /// [`AudioDefinitions::select`]: crate::rules::audio_sources::AudioDefinitions::select
 pub fn retail_audio_definitions() -> Option<&'static crate::rules::audio_sources::AudioDefinitions>
 {
-    static DEFINITIONS: std::sync::OnceLock<Option<crate::rules::audio_sources::AudioDefinitions>> =
-        std::sync::OnceLock::new();
-    DEFINITIONS
+    // One for each Rules-reading mode (`ares_switch::ares_way`).
+    static DEFINITIONS: [std::sync::OnceLock<
+        Option<crate::rules::audio_sources::AudioDefinitions>,
+    >; 2] = [std::sync::OnceLock::new(), std::sync::OnceLock::new()];
+    DEFINITIONS[usize::from(crate::rules::ares_switch::ares_way())]
         .get_or_init(|| {
             let (_, assets) = retail_assets()?;
             Some(crate::rules::audio_sources::AudioDefinitions::select(
@@ -383,6 +385,9 @@ pub fn retail_rules_owner(
     ]
     .into_iter()
     .map(|name| {
+        if name == "langrule.ini" && !assets.mod_selected() {
+            return None;
+        }
         assets.resolve_ref(name).map(|entry| {
             (
                 entry.source_archive.to_owned(),
@@ -403,6 +408,9 @@ pub fn retail_rules_owner(
             ("soundmd.ini", audio_definitions.sound_source()),
             ("evamd.ini", audio_definitions.eva_source()),
         ] {
+            if name == "langrule.ini" && !assets.mod_selected() {
+                continue;
+            }
             assert!(
                 selected.is_some() || assets.resolve_ref(name).is_none(),
                 "present optional retail source {name} must parse"
@@ -420,7 +428,9 @@ pub fn retail_rules_owner(
     })
     .expect("selected retail startup sources");
     // No fixture reads the shell compatibility projection `into_startup` also
-    // derives.
+    // derives. The fixture game ships `ares.mix` when its thread reads the
+    // Ares way (`ares_switch::game_ships_ares`); a test of the retail install
+    // itself says `with_ares_mix(false)`.
     sources.into_owner(sounds, eva).expect("cold startup")
 }
 

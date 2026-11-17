@@ -129,7 +129,6 @@ impl LocomotorState {
     /// Ares conversion1004382D..100438AD compares the two Type CLSIDs, not
     /// the active (possibly piggybacked) locomotor. Equal CLSIDs retain the
     /// instance and its timers; VERA's derived type caches still need rebinding.
-    #[cfg(feature = "ares")]
     pub(crate) fn change_type_binding(
         &mut self,
         old_type_kind: LocomotorKind,
@@ -413,6 +412,13 @@ impl LocomotorState {
             (LocomotorKind::Tunnel, LocomotorRuntimePayload::Tunnel(runtime)) => Some(runtime),
             _ => None,
         }
+    }
+
+    /// Install a Tunnel payload from a draw test in `vera20k`, which cannot
+    /// reach this crate's `pub(crate)` writer.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_tunnel_runtime_for_test(&mut self, runtime: super::tunnel_movement::TunnelRuntime) {
+        self.runtime_payload = LocomotorRuntimePayload::Tunnel(runtime);
     }
 
     pub(crate) fn teleport_runtime(&self) -> Option<&super::teleport_movement::TeleportRuntime> {
@@ -869,6 +875,6 @@ impl LocomotorState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "locomotor_tests.rs"]
 mod locomotor_tests;

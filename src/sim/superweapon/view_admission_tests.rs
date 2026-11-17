@@ -239,7 +239,7 @@ mod layered_enum_history {
         let destination = rules.super_weapon("Destination").unwrap();
         // Ares LoadFromINIFile (10033370's tail) writes -1 over every pass's
         // read for a type its ChronoWarp handler takes.
-        if cfg!(feature = "ares") {
+        if rules.ares() {
             assert_eq!(destination.pre_dependent, -1);
             return;
         }

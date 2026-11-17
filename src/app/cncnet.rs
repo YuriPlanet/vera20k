@@ -372,6 +372,14 @@ impl App {
                 .as_deref()
                 .unwrap_or_default()
         );
+        let mut request = request.admit_loaded_modes(&state.frontend.skirmish_modes)?;
+        request.check_country_limits(state.process_assets.reads_ares_way())?;
+        if let SpawnGame::Network(network) = &mut request.game {
+            // VERA: a launcher's room has no host to share rules: each
+            // player plays their own, which its ExpectedRulesDigest compares.
+            network.session.options.host_rules =
+                crate::skirmish_launch::HostRules::from_own(state.process_assets.personal_rules());
+        }
         if let SpawnGame::Network(network) = &request.game {
             match &network.transport {
                 // Browsers cannot open the UDP sockets direct play needs.
@@ -426,7 +434,6 @@ impl App {
         let mut clock = SpawnSeedClock { seed: request.seed };
         match request.game {
             SpawnGame::Skirmish(session) => {
-                #[cfg(feature = "ares")]
                 crate::app::frontend::skirmish_session::prepare_external_skirmish_countries(
                     &mut state.process_assets,
                     &session,
@@ -551,7 +558,7 @@ impl App {
         {
             return;
         }
-        let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+        let Some(runtime) = state.match_state.sim_runtime.runtime() else {
             return;
         };
         let frame = runtime.simulation.session().binary_frame();
@@ -704,7 +711,7 @@ impl App {
         use crate::ui::shell::abort::{AbortButton, AbortSecondary};
         match &state.frontend.screen {
             GameScreen::InGame => {
-                if state.match_state.sim_runtime.is_none()
+                if !state.match_state.sim_runtime.is_installed()
                     || state.match_state.scenario_exit.is_some()
                     || state.match_state.scenario_outcome.is_some()
                     || Self::house_outcome_wait_pending(state)
@@ -826,15 +833,17 @@ impl App {
     /// network match also records the players who won it.
     pub(crate) fn record_match_result(state: &mut AppState, result: ExternalMatchResult) {
         use crate::app::match_runtime::session::SessionMode;
+        // A watcher has no result: the followed player's is not its own.
         if (!state.frontend.external_launch && state.match_state.session_mode() != SessionMode::Wol)
             || state.frontend.match_result.is_some()
+            || crate::app::match_runtime::watching::active(state)
         {
             return;
         }
         let sim = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|runtime| &runtime.simulation);
         let local = sim.and_then(|sim| {
             sim.session()
@@ -874,7 +883,7 @@ impl App {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::app::frontend::cncnet_spawn::{SpawnGame, SpawnRequest};

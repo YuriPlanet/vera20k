@@ -47,8 +47,7 @@ impl Simulation {
         // `Convert.Deploy` converts in place (TechnoExt::ConvertToType
         // 10043650) and, converted, is no longer deployed; then the Unload
         // waits (return 1 at 0x73E5B1) while the locomotor is moving.
-        #[cfg(feature = "ares")]
-        {
+        if rules.ares_form() {
             let entity = self
                 .substrate
                 .entities
@@ -129,7 +128,7 @@ impl Simulation {
         // Ares 3.0 UnitClass_SimpleDeploy_Height (1004C380, hook 0x739ADA)
         // drops the airborne non-DeployToLand refusal: such a deployer
         // deploys where it is.
-        let airborne_refused = !cfg!(feature = "ares") && height > 0 && !object.deploy_to_land;
+        let airborne_refused = !rules.ares() && height > 0 && !object.deploy_to_land;
         if deploying {
             if !object.is_simple_deployer || airborne_refused || leaf.deployed() != 0 {
                 return Ok(());
@@ -150,7 +149,7 @@ impl Simulation {
         if deploying
             && !entity.landing_for_deploy()
             && height > 0
-            && (!cfg!(feature = "ares") || deploy_to_land)
+            && (!rules.ares() || deploy_to_land)
         {
             self.substrate
                 .entities
@@ -270,8 +269,7 @@ impl Simulation {
     /// turns (Do_Turn, while its locomotor is not moving) and starts no
     /// animation (0x739C70, the shared sound tail). True while it turns.
     fn ares_simple_deploy_turning(&mut self, id: u64, rules: &RuleSet) -> bool {
-        #[cfg(feature = "ares")]
-        {
+        if rules.ares_form() {
             let frame = self.session.binary_frame();
             let Some(entity) = self.substrate.entities.get(id) else {
                 return false;
@@ -296,10 +294,7 @@ impl Simulation {
                 crate::sim::movement::locomotor_do_turn(entity, dir << 13, frame);
             }
             true
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = (id, rules);
+        } else {
             false
         }
     }
@@ -364,10 +359,10 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "unit_simple_deploy_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "unit_simple_deploy_retail_tests.rs"]
 mod retail_tests;

@@ -21,7 +21,13 @@
 //!   comes from the shared wake pass (`Simulation::spawn_wakes_for_frame`,
 //!   gated on the Hover's Is_Moving_Now), not from this Process tail. WAKE1
 //!   draws no RNG; the residual is the anim's creation order (its AbstractClass
-//!   ID) relative to the objects after this one.
+//!   ID) relative to the objects after this one. Process also returns before
+//!   the wake when the unit is dead after its speed update
+//!   (`0x00514342..0x0051435E`), dead, in limbo or falling after its cell
+//!   step (`0x00514640..0x00514664` to `0x005149F4`, and
+//!   `0x005146D3..0x005146F9`), and once it is in a tube (Foot `+0x684` >= 0,
+//!   `0x00514705..0x00514717`); the shared pass does not check those, which
+//!   no player sees.
 //! - The vein tag (0x00486920) is not ported: the vein cell has no retail
 //!   user.
 //! - Hover's own tube entry (0x0051503B..0x005152CE: Mark(UP) 0x0051508B, the
@@ -278,9 +284,18 @@ impl Simulation {
         path_grid: &Option<Arc<PathGrid>>,
         resolved_terrain: &Option<ResolvedTerrainGrid>,
         id: u64,
+        ares: bool,
     ) {
         if let Some(head) = substrate.hover_mut(id).and_then(|hover| hover.head.take()) {
-            Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, id, head, false);
+            Self::track_raw_mark_at(
+                substrate,
+                path_grid,
+                resolved_terrain,
+                id,
+                head,
+                false,
+                ares,
+            );
         }
     }
 
@@ -297,6 +312,7 @@ impl Simulation {
         resolved_terrain: &Option<ResolvedTerrainGrid>,
         id: u64,
         put: bool,
+        ares: bool,
     ) {
         if put {
             return;
@@ -311,7 +327,15 @@ impl Simulation {
             super::super::foot_coordinate::stored_head(entity),
             super::super::foot_coordinate::current_coordinate(entity),
         );
-        Self::object_raw_receiver_at(substrate, path_grid, resolved_terrain, id, coord, false);
+        Self::object_raw_receiver_at(
+            substrate,
+            path_grid,
+            resolved_terrain,
+            id,
+            coord,
+            false,
+            ares,
+        );
     }
 
     /// The Foot's current speed (vt+0x538, GetCurrentSpeed 0x004DB1A0).
@@ -497,6 +521,7 @@ impl Simulation {
                     id,
                     location,
                     true,
+                    rules.ares_form(),
                 );
             }
             out.bridge_state_changed |= self.per_cell_process(
@@ -532,6 +557,7 @@ impl Simulation {
                 &self.path_grid,
                 &self.resolved_terrain,
                 id,
+                rules.ares_form(),
             );
             return Ok(Arrival::Tail);
         }
@@ -565,6 +591,7 @@ impl Simulation {
                 id,
                 location,
                 false,
+                rules.ares_form(),
             );
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 entity.foot_occupation_enabled.suspend();
@@ -1100,6 +1127,7 @@ impl Simulation {
             &self.path_grid,
             &self.resolved_terrain,
             id,
+            rules.ares_form(),
         );
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             hover_stop_moving(entity);
@@ -1164,6 +1192,7 @@ impl Simulation {
             &self.path_grid,
             &self.resolved_terrain,
             id,
+            rules.ares_form(),
         );
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(7);
@@ -1279,6 +1308,7 @@ impl Simulation {
                         id,
                         head,
                         true,
+                        rules.ares_form(),
                     );
                 }
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
@@ -1299,6 +1329,7 @@ impl Simulation {
                         &self.path_grid,
                         &self.resolved_terrain,
                         id,
+                        rules.ares_form(),
                     );
                     Self::hover_restart_path(&self.session, &mut self.substrate, id);
                     self.hover_path_and_arrival(id, 0, rules, registry, effects)?;
@@ -1443,7 +1474,7 @@ enum Arrival {
     Step,
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
 

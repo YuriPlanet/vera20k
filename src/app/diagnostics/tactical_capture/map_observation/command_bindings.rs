@@ -264,7 +264,7 @@ fn substitute_symbols(
     Ok((command, count))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;

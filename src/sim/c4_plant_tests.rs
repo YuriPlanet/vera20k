@@ -150,7 +150,7 @@ fn step_until_planted(
             .substrate
             .entities
             .get(building)
-            .is_some_and(|building| building.pending_c4_detonation.pending().is_some())
+            .is_some_and(|building| building.building.pending_c4_detonation.pending().is_some())
         {
             return frame;
         }
@@ -352,6 +352,7 @@ fn a_tanya_ordered_to_sabotage_walks_in_and_plants_the_charge() {
         .entities
         .get(building)
         .unwrap()
+        .building
         .pending_c4_detonation
         .pending()
         .unwrap();
@@ -453,6 +454,7 @@ fn a_retail_area_guard_tanya_with_a_building_target_plants_c4() {
         .entities
         .get(building)
         .unwrap()
+        .building
         .pending_c4_detonation
         .pending()
         .unwrap();
@@ -562,6 +564,7 @@ fn forced_retail_tanya_orders_reach_allied_and_own_detonations() {
             .entities
             .get(building)
             .unwrap()
+            .building
             .pending_c4_detonation
             .pending()
             .unwrap();
@@ -653,6 +656,7 @@ fn a_second_planter_leaves_the_first_charge_alone() {
         .entities
         .get(building)
         .unwrap()
+        .building
         .pending_c4_detonation;
     sim.session
         .set_binary_frame_for_test(sim.session.binary_frame() + 5);
@@ -672,7 +676,7 @@ fn a_second_planter_leaves_the_first_charge_alone() {
     );
 
     let target = sim.substrate.entities.get(building).unwrap();
-    assert_eq!(target.pending_c4_detonation, charge);
+    assert_eq!(target.building.pending_c4_detonation, charge);
     assert_eq!(target.flashing.frames(), 0, "no second flash");
     let planter = sim.substrate.entities.get(second).unwrap();
     assert_eq!(
@@ -723,7 +727,7 @@ fn a_sold_or_curtained_building_takes_no_charge() {
 
         let target = sim.substrate.entities.get(building).unwrap();
         assert!(
-            target.pending_c4_detonation.pending().is_none(),
+            target.building.pending_c4_detonation.pending().is_none(),
             "curtained {curtained}"
         );
         assert_eq!(target.flashing.frames(), 0, "curtained {curtained}");
@@ -785,6 +789,7 @@ fn the_arm_plants_only_from_a_sabotage_c4_arrival_at_its_navcom() {
                 .entities
                 .get(building)
                 .unwrap()
+                .building
                 .pending_c4_detonation
                 .pending()
                 .is_none(),
@@ -898,7 +903,7 @@ fn a_computer_tanya_reaching_her_navcom_cell_on_sabotage_sets_off_c4_there() {
     );
     let target = sim.substrate.entities.get(building).unwrap();
     assert_eq!(target.health.current(), building_health);
-    assert!(target.pending_c4_detonation.pending().is_none());
+    assert!(target.building.pending_c4_detonation.pending().is_none());
     let tanya = sim.substrate.entities.get(tanya).unwrap();
     assert!(tanya.is_alive() && !tanya.death.is_dying());
     let Some(NavTargetRef::Cell { rx, ry }) = tanya.navigation.nav_com() else {
@@ -953,9 +958,9 @@ fn the_sourceless_blasts_kill_a_c4_infantryman_standing_in_its_cell() {
 /// Ares 10025730 (hook 0x51A4D2): a veteran whose rank holds the C4 ability
 /// plants on a Sabotage arrival though its type is not `C4=`; a rookie of
 /// the same type does not.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_a_veteran_c4_ability_plants_the_charge() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let art = IniFile::from_str(ART);
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
         &crate::sim::arena_fixture::clear_ground_ini(&RULES.replace(
@@ -986,6 +991,7 @@ fn ares_a_veteran_c4_ability_plants_the_charge() {
             .entities
             .get(building)
             .unwrap()
+            .building
             .pending_c4_detonation
             .pending();
         assert_eq!(charge.is_some(), planted, "rank {rank}");

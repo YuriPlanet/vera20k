@@ -1242,11 +1242,11 @@ fn render_smudge_sprite(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 #[path = "overlay_atlas_tibtre_tests.rs"]
 mod tibtre_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 #[path = "overlay_atlas_mirage_tests.rs"]
 mod mirage_tests;
 
@@ -1381,7 +1381,7 @@ impl OverlayAtlas {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     #[test]
     fn animated_terrain_binds_stage_256_body_and_paired_shadow() {

@@ -36,5 +36,5 @@ pub mod water;
 pub mod water_finalize;
 pub mod zones;
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 mod cliff_native_tests;

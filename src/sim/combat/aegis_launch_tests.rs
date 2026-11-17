@@ -240,8 +240,9 @@ fn target_replacement_and_null_preserve_the_next_radial_shot() {
             .is_ok()
     );
     // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53) keeps the
-    // burst word through the NULL target, so the next shot ends the burst.
-    let ares = cfg!(feature = "ares");
+    // burst word through the NULL target, so the next shot ends the burst
+    // (`mission::concrete_effects::represented_assign_target_admitted`).
+    let ares = scene.rules.ares_form();
     assert_eq!(
         (scene.radial_index(), scene.burst_index()),
         (1, i32::from(ares))

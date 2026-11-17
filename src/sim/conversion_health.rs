@@ -51,7 +51,6 @@ impl ConversionHealth {
     /// Ares in-place conversion1004370E..10043752 stores the source ratio
     /// as a double before calling ObjectClass::SetHealthFraction5F5C80.
     /// Keep that setter with Health; deploy conversions have another clamp.
-    #[cfg(feature = "ares")]
     pub(crate) fn capture_in_place(
         source: &GameEntity,
         source_type: &ObjectType,
@@ -88,6 +87,6 @@ impl ConversionHealth {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "conversion_health_tests.rs"]
 mod tests;

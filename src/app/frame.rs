@@ -36,7 +36,7 @@ pub(super) struct RuntimeServiceResult {
     /// Offset selected for this service's draw: normal Input result, the
     /// paused render-before-Input snapshot, or the last presented freeze value.
     pub(super) screen_shake_offset: Option<[i32; 2]>,
-    completed_frames: u32,
+    pub(super) completed_frames: u32,
     last_frame_completed: bool,
 }
 
@@ -120,15 +120,75 @@ fn apply_screen_shake(
 
 impl App {
     /// Move the simulation's pending radar-terrain marks into the minimap's
-    /// backlog. Without a minimap they stay with the simulation, as before.
+    /// backlog before a draw. While a tick runs on the simulation thread the
+    /// marks stay with it: that tick's tail hands them over
+    /// ([`sim_tick::drain_radar_terrain_marks`]) with the frame they belong
+    /// to, and taking them here would wait for the tick.
     fn drain_radar_terrain_marks(state: &mut AppState) {
-        let match_state = &mut state.match_state;
-        if let (Some(minimap), Some(runtime)) = (
-            match_state.match_presentation.minimap.as_mut(),
-            match_state.sim_runtime.as_mut(),
-        ) {
-            minimap.queue_radar_terrain_cells(runtime.take_radar_terrain_dirty());
+        if !state.match_state.sim_runtime.is_lent() {
+            sim_tick::drain_radar_terrain_marks(&mut state.match_state);
         }
+    }
+
+    /// docs/sim-thread.md: once a pass finds back the tick that held the
+    /// window events, finish that tick and replay them in order, so they act
+    /// on its world before the pass services the next frame.
+    pub(super) fn release_held_events(&mut self, event_loop: &ActiveEventLoop) {
+        if self.held_window_events.is_empty() {
+            return;
+        }
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+        if !state.match_state.sim_runtime.pass_may_run(false) {
+            return;
+        }
+        sim_tick::finish_threaded_frame(state);
+        state.platform.window_events_held = false;
+        for (window, event) in std::mem::take(&mut self.held_window_events) {
+            winit::application::ApplicationHandler::window_event(self, event_loop, window, event);
+        }
+    }
+
+    /// When the local timer has the match's next frame due, for the frame
+    /// loop's wake (`LocalFramePacer::until_next_frame`): now or earlier once
+    /// it is due. `None` off the battlefield, at GameSpeed 0, before the
+    /// first frame, and in sequenced online play, whose frames the relay's
+    /// clock admits.
+    pub(super) fn next_local_frame_due(state: &AppState, now: Instant) -> Option<Instant> {
+        if state.frontend.screen != GameScreen::InGame
+            || state
+                .match_state
+                .live_network
+                .as_ref()
+                .is_some_and(|live| live.uses_sequenced_lockstep())
+        {
+            return None;
+        }
+        let (game_speed, network_fps) = sim_tick::local_pacing_inputs(state);
+        state
+            .platform
+            .frame_pacer
+            .until_next_frame(
+                crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+                game_speed,
+                network_fps,
+            )
+            .map(|left| now + left)
+    }
+
+    /// When a loop that services the match without drawing should wake:
+    /// after [`SERVICE_WAKE`], or sooner for a frame the local timer has due
+    /// before then ([`Self::next_local_frame_due`]). One already due moves
+    /// nothing: the pass that just ran did not admit it, and waking for it
+    /// again would spin.
+    ///
+    /// [`SERVICE_WAKE`]: crate::app::match_runtime::frame_pacer::SERVICE_WAKE
+    pub(super) fn match_service_wake(state: &AppState, now: Instant) -> Instant {
+        let service = now + crate::app::match_runtime::frame_pacer::SERVICE_WAKE;
+        Self::next_local_frame_due(state, now)
+            .filter(|due| *due > now)
+            .map_or(service, |due| due.min(service))
     }
 
     /// Service the match runtime for one pass: the outcome voice wait, the
@@ -138,22 +198,52 @@ impl App {
     /// hidden-window service loop in `about_to_wait`, so the world keeps the
     /// same cadence whether or not a frame is drawn. Returns quit state and
     /// the pre-Logic Main_Tick admission for its later consumers.
+    /// `wait_for_tick` makes a desktop pass wait for a tick still on the
+    /// simulation thread instead of passing beside it, for captures whose
+    /// pictures must each follow a finished tick.
     pub(super) fn service_match_runtime(
         state: &mut AppState,
         event_loop: &ActiveEventLoop,
         simulation_allowed: bool,
         catch_up_allowed: bool,
+        wait_for_tick: bool,
     ) -> RuntimeServiceResult {
         if state.persistence.pending_load.is_some() {
             return RuntimeServiceResult::default();
         }
+        // No pass waits for a tick still on the simulation thread
+        // (docs/sim-thread.md). This one admits no frame and takes nothing
+        // from the world: the camera and the presentation services run as in
+        // a pass the pacer does not admit, and it draws the frame published
+        // for that tick. No Input, so the screen shake stands as last
+        // presented. The tick's end wakes the pass that finishes it.
+        if !state.match_state.sim_runtime.pass_may_run(wait_for_tick) {
+            sim_tick::service_beside_tick(state);
+            return RuntimeServiceResult {
+                screen_shake_offset: (state.frontend.screen == GameScreen::InGame).then(|| {
+                    state
+                        .match_state
+                        .match_presentation
+                        .screen_shake
+                        .service_offset_snapshot(None, false)
+                }),
+                ..RuntimeServiceResult::default()
+            };
+        }
         let started = Instant::now();
         let mut result = RuntimeServiceResult::default();
+        // A watcher catching up plays minutes of its match at once, muted,
+        // with a longer budget a picture (`LocalFramePacer::permits_catch_up`).
+        let watcher_catching_up = crate::app::match_runtime::watching::catching_up(
+            state,
+            crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
+        );
         let restoring = state
             .match_state
             .live_network
             .as_ref()
-            .is_some_and(|live| live.restoring_match());
+            .is_some_and(|live| live.restoring_match())
+            || watcher_catching_up;
         let profile = &state.persistence.options_profile;
         let (sound, voice) = (
             f64::from(profile.sound_volume),
@@ -162,7 +252,16 @@ impl App {
         state.audio.mute_for_restore(restoring, sound, voice);
         let mut attempts = 0;
         loop {
-            let before = state.match_state.sim_runtime.as_ref().map(|runtime| {
+            if catch_up_allowed {
+                // The pass decides from this whether its frame is the
+                // service's last (`LocalFramePacer::another_pass_follows`).
+                state.platform.frame_pacer.begin_service_pass(
+                    started,
+                    attempts,
+                    watcher_catching_up,
+                );
+            }
+            let before = state.match_state.sim_runtime.runtime().map(|runtime| {
                 (
                     runtime.simulation.session().tick(),
                     runtime.simulation.session().binary_frame(),
@@ -172,7 +271,7 @@ impl App {
             result.main_tick_admitted |= pass.main_tick_admitted;
             result.screen_shake_offset = pass.screen_shake_offset;
             result.quit_requested |= pass.quit_requested;
-            let after = state.match_state.sim_runtime.as_ref().map(|runtime| {
+            let after = state.match_state.sim_runtime.runtime().map(|runtime| {
                 (
                     runtime.simulation.session().tick(),
                     runtime.simulation.session().binary_frame(),
@@ -195,11 +294,15 @@ impl App {
                 || !crate::app::match_runtime::frame_pacer::LocalFramePacer::permits_catch_up(
                     attempts,
                     started.elapsed(),
+                    watcher_catching_up,
                 )
+                // A tick is running beside this thread: draw. Another pass
+                // would only find it running; its end wakes the next one.
+                || state.match_state.sim_runtime.is_lent()
             {
                 break;
             }
-            let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+            let Some(runtime) = state.match_state.sim_runtime.runtime() else {
                 break;
             };
             let session = runtime.simulation.session();
@@ -264,6 +367,7 @@ impl App {
                 }
             }
         }
+        state.platform.frame_pacer.end_service();
         crate::app::match_runtime::network_quality::observe_pass(state);
         result
     }
@@ -276,6 +380,9 @@ impl App {
         event_loop: &ActiveEventLoop,
         simulation_allowed: bool,
     ) -> RuntimeServiceResult {
+        // A tick the simulation thread ran since the last pass ends here,
+        // before anything in this pass reads or routes its result.
+        sim_tick::finish_threaded_frame(state);
         let mut main_tick_admitted = false;
         // GScreen Input reads the current native frame parity but does not
         // advance it. Hidden background service still owns Input while the
@@ -283,7 +390,7 @@ impl App {
         let network_wait_pending = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .is_some_and(|rt| rt.simulation.pending_network_wait());
         let in_game = state.frontend.screen == GameScreen::InGame;
         // Wait_For_Players still enters GScreen Input at 0x006485B7 and
@@ -296,7 +403,7 @@ impl App {
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .map(|rt| rt.simulation.session().binary_frame())
         });
         let screen_shake_offset = if in_game {
@@ -514,7 +621,7 @@ impl App {
         let network_frame_pending = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .is_some_and(|rt| rt.simulation.pending_network_wait());
         // Main_Game48CE8A..48CEA8 runs the router 55CFD0 after every
         // Main_Tick and leaves the loop once it routes, so no frame follows a
@@ -598,7 +705,7 @@ impl App {
             state.match_state.live_network.as_ref().filter(|live| {
                 live.uses_sequenced_lockstep() && !live.has_terminal_network_error()
             })?;
-        let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+        let sim = &state.match_state.sim_runtime.runtime()?.simulation;
         if sim.session().scenario_paused()
             || sim.pending_network_wait()
             || sim.pending_network_interruption().is_some()
@@ -664,7 +771,8 @@ impl App {
             ScreenPage::InGameShell(InGameMenuState::SavedGame(_)) => {
                 shell::render_saved_game_shell(state, encoder, destination)
             }
-            _ => shell::render_in_game_options_shell(state, encoder, destination),
+            // No other state draws the active-game shell.
+            _ => Ok(()),
         }
     }
 
@@ -809,10 +917,11 @@ impl App {
                 Some(splash),
             )?;
             if presented {
-                state
-                    .platform
-                    .frame_pacer
-                    .record_presented(Instant::now(), None);
+                state.platform.frame_pacer.record_presented(
+                    Instant::now(),
+                    None,
+                    crate::util::time::Duration::ZERO,
+                );
                 state
                     .frontend
                     .startup_splash
@@ -855,6 +964,7 @@ impl App {
             event_loop,
             hidden_run.is_none() && !shell_capture_owns_simulation,
             catch_up_allowed,
+            shell_capture.is_some() || hidden_run.is_some(),
         );
         if runtime_pass.quit_requested {
             return Ok(FrameRenderOutcome::Unavailable);
@@ -978,6 +1088,9 @@ impl App {
             crate::app::frontend::shell_transition::MainMenuFirstPaintPoll::Acquire => {}
         }
 
+        // With VSync the acquire waits for a free picture, for most of a
+        // refresh once two are queued: the draw's wait, not its work.
+        let acquire_started = Instant::now();
         let Some(output) = state
             .renderer
             .gpu
@@ -987,6 +1100,7 @@ impl App {
             Self::follow_window_size(state);
             return Ok(FrameRenderOutcome::Unavailable);
         };
+        let screen_wait = Instant::now().saturating_duration_since(acquire_started);
         let view: wgpu::TextureView = output.texture.create_view(&Default::default());
         let mut encoder: wgpu::CommandEncoder =
             state
@@ -1132,6 +1246,17 @@ impl App {
                                 &output.texture,
                             )? {
                                 presented_shell = PresentedShell::MovieList;
+                            } else {
+                                Self::render_shell_error(state, &mut encoder, &view)?;
+                            }
+                        }
+                        ScreenPage::Mods => {
+                            if crate::app::frontend::mods_render::render_mods_page(
+                                state,
+                                &mut encoder,
+                                &output.texture,
+                            )? {
+                                presented_shell = PresentedShell::Mods;
                             } else {
                                 Self::render_shell_error(state, &mut encoder, &view)?;
                             }
@@ -1472,7 +1597,7 @@ impl App {
                     let frame = state
                         .match_state
                         .sim_runtime
-                        .as_ref()?
+                        .runtime()?
                         .simulation
                         .session()
                         .binary_frame();
@@ -1484,8 +1609,8 @@ impl App {
                             // The relay drops a lapsed pass, which only the
                             // lobby can renew: then waiting cannot help.
                             let lapsed = live.relay_expires().is_some_and(|expires| {
-                                std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
+                                crate::util::time::SystemTime::now()
+                                    .duration_since(crate::util::time::UNIX_EPOCH)
                                     .is_ok_and(|now| now.as_secs() >= expires)
                             });
                             Some(crate::i18n::tr(if lapsed {
@@ -1689,10 +1814,11 @@ impl App {
                 .record_render_phases(phases);
         }
         let battlefield = state.frontend.screen == GameScreen::InGame;
-        state
-            .platform
-            .frame_pacer
-            .record_presented(presented_at, battlefield.then_some(draw_started));
+        state.platform.frame_pacer.record_presented(
+            presented_at,
+            battlefield.then_some(draw_started),
+            screen_wait,
+        );
         if battlefield {
             state
                 .match_state
@@ -1819,7 +1945,7 @@ impl App {
                 let runtime = state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .expect("rendered replay runtime");
                 state
                     .match_state
@@ -1878,7 +2004,7 @@ impl App {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

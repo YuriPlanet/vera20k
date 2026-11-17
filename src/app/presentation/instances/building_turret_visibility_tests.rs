@@ -47,7 +47,7 @@ impl Patriot {
             Some(&rules),
         ));
         let mut runtime = SimRuntime::from_simulation(sim);
-        runtime.resources.rules = rules;
+        runtime.resources_mut().rules = rules;
         let mut shp = SpriteAtlas::from_test_entries(Default::default());
         shp.make_frame_counts.insert("NASAM_MAKE".into(), 8);
         let entries = (0..32)
@@ -113,8 +113,13 @@ impl Patriot {
         let lighting = CellLightGrid::new();
         let voxel_images = RefCell::new(VoxelImageCache::default());
         let colors = HouseColorMap::default();
+        let frame = crate::app::presentation::frame::PresentationFrame::capture(
+            &self.runtime,
+            &Default::default(),
+        );
         let input = ShpInputs {
             runtime: &self.runtime,
+            frame: &frame,
             atlas: Some(&self.shp),
             overlay_atlas: None,
             unit_atlas: Some(&self.voxel),
@@ -135,7 +140,7 @@ impl Patriot {
             house_colors: &colors,
             building_zshape: false,
         };
-        let order = NativeDisplayOrder::from_display(self.runtime.simulation.display_layers());
+        let order = NativeDisplayOrder::from_world(&self.runtime.simulation, None);
         let mut planned = Vec::new();
         build_shp_instances_from_inputs(&input, &mut planned, &order);
         planned
@@ -167,7 +172,15 @@ fn retail_patriot_turret_appears_on_the_last_buildup_frame() {
         "queued Construction frame immediately after PLACE"
     );
     assert!(
-        building_voxel_turret_visible(entity, true),
+        building_voxel_turret_visible(
+            crate::app::presentation::frame::PresentationFrame::capture(
+                &scene.runtime,
+                &Default::default()
+            )
+            .object(scene.id)
+            .unwrap(),
+            true
+        ),
         "native Artillary bypasses the construction visibility gate"
     );
     let last = scene.buildup_control[0] + scene.buildup_control[1] - 1;

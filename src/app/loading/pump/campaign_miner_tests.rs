@@ -89,6 +89,7 @@ fn load_campaign(
             assets,
             process.native_rules_mut_with_tile_cache().0,
             None,
+            None,
             &mut SilentProgress,
         )
         .unwrap();
@@ -96,8 +97,7 @@ fn load_campaign(
         request,
         initial,
         context,
-        #[cfg(feature = "ares")]
-            rules_prefix: mut prepared_rules_prefix,
+        rules_prefix: mut prepared_rules_prefix,
     } = request.prepare_initial(initial).unwrap();
     let dummy = process.shared_cell_dummy.clone();
     let (rules, cache, audio) = process.native_rules_mut_with_tile_cache();
@@ -112,7 +112,6 @@ fn load_campaign(
         8,
         false,
         rules.unwrap(),
-        #[cfg(feature = "ares")]
         &mut prepared_rules_prefix,
         audio,
         None,
@@ -128,7 +127,8 @@ fn load_campaign(
             rules: result.scenario.rules.take().unwrap(),
             overlay_registry: result.scenario.overlay_registry,
             terrain_template: result.scenario.resolved_terrain.take(),
-        },
+        }
+        .into(),
     }
 }
 

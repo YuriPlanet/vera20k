@@ -117,8 +117,7 @@ impl Simulation {
             .ok_or("Scatter lost its infantryman")?;
         // Ares InfantryClass_Scatter1004CC60 (hook51D0DD): a Deactivated
         // infantryman returns before the Doing test.
-        #[cfg(feature = "ares")]
-        if infantry.deactivated.is_offline() {
+        if rules.ares_form() && infantry.deactivated.is_offline() {
             return Ok(false);
         }
         let doing = infantry
@@ -352,7 +351,7 @@ impl Simulation {
 /// replays of oracles that answer the Walk Process slot (`0x0075AC80`) as
 /// not moving: while installed, each Process is recorded and its body does
 /// not run.
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 pub(crate) mod answered_process {
     use std::cell::RefCell;
 
@@ -867,6 +866,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "infantry_scatter_tests.rs"]
 mod tests;

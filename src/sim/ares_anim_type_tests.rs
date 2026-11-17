@@ -68,6 +68,7 @@ fn scene() -> (Simulation, RuleSet) {
 /// damage with the anim's own Warhead.
 #[test]
 fn ares_anim_damage_delay_and_weapon() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules) = scene();
     let (_, visits) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
         for _ in 0..9 {

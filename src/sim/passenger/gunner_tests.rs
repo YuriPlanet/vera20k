@@ -423,7 +423,6 @@ fn retail_vehicle_enter_keeps_live_transport_target() {
 // replaces it with SpawnSurvivors100464C0, which ejects each passenger through
 // EjectRandomly100445E0 instead of Scatter. Ares coverage:
 // `crew_survival_tests::ares_fatal_vehicle_returns_saved_captor_pilot_and_existing_passenger`.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_tanks_scatter_after_their_transport_is_destroyed() {
     use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags};
@@ -762,7 +761,7 @@ fn retail_empty_ifv_departure_resets_selection_without_a_passenger() {
             .entities
             .get_mut(ifv)
             .unwrap()
-            .set_gunner_weapon(initial.0, rules.object("FV").unwrap());
+            .set_gunner_weapon(initial.0, rules.object("FV").unwrap(), rules.ares());
         assert_selection(&sim, ifv, initial);
         assert_eq!(
             depart_cargo_head(

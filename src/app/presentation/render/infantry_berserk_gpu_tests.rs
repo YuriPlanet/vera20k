@@ -332,8 +332,8 @@ fn render_original_body_pixels(
         .set_infantry_doing_verified(int(&actor["doing"]))
         .unwrap();
     sim.entities_mut_for_test().insert(gi);
-    sim.submit_object_display_for_test(1, DisplayLayer::GROUND, Some(&rules));
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    sim.submit_object_display_for_test(1, DisplayLayer::GROUND);
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let resources = SimResources::new(rules);
     if production {
         let mut terrain = crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
@@ -355,7 +355,7 @@ fn render_original_body_pixels(
     }
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources,
+        resources: resources.into(),
     };
     let rules = &runtime.resources.rules;
     let mut light_grid = CellLightGrid::new();
@@ -495,6 +495,11 @@ fn render_original_body_pixels(
             gi.body_facing = FacingClass::new(int(&input["facing"]) as u16, 0);
             let sim = &runtime.simulation;
             let gi = sim.entities().get(1).unwrap();
+            let presented = crate::app::presentation::frame::PresentationFrame::capture(
+                &runtime,
+                &Default::default(),
+            );
+            let gi_record = presented.object(1).unwrap();
             let before = sim.state_hash();
             let rng_before = sim.rng_state();
             let dummy_before = sim.effective_shared_cell_dummy().snapshot();
@@ -528,14 +533,16 @@ fn render_original_body_pixels(
             let extra = body_extra_light(gi, &rules, &sim, None);
             let light = body_palette_light(&light_grid, (10, 20), extra);
             let (tint, light) = techno_effect_light(
-                gi,
+                gi_record,
                 [1.; 3],
                 light,
                 &sim,
                 None,
                 crate::app::presentation::lighting::TechnoDraw::Shape,
             );
-            let word = shp_colour_word(gi, &sim, &rules, || input["shrouded"].as_bool().unwrap());
+            let word = shp_colour_word(gi_record, &sim, &rules, || {
+                input["shrouded"].as_bool().unwrap()
+            });
             let light = light.with_colour_word(if parent.policy.ors_colour_word(entry.extended) {
                 word
             } else {
@@ -578,6 +585,7 @@ fn render_original_body_pixels(
                 build_shp_instances_from_inputs(
                     &ShpInputs {
                         runtime: &runtime,
+                        frame: &presented,
                         atlas: Some(&atlas),
                         overlay_atlas: None,
                         unit_atlas: None,

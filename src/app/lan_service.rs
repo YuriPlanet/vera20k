@@ -6,6 +6,7 @@
 //! explicit VERA transport adaptation; application messages remain the native
 //! 455-byte protocol from5DF9E0/5DFE00/5E00B0.
 
+use crate::app::match_runtime::sim_host::SimWrite;
 use std::net::{Ipv4Addr, SocketAddrV4};
 
 use super::AppState;
@@ -1114,7 +1115,13 @@ pub(super) fn verify_setup_agreement(state: &mut AppState) -> anyhow::Result<()>
         }
     };
     if expected != actual {
-        reject_setup_compatibility(state, &crate::i18n::tr("VERA:LanClientsDiffer"));
+        // VERA: with the same build, say what this game changes.
+        let message = if expected.version == actual.version {
+            super::shell_network_setup::agreement::rules_differ_text(state)
+        } else {
+            crate::i18n::tr("VERA:LanClientsDiffer")
+        };
+        reject_setup_compatibility(state, &message);
         anyhow::bail!("LAN selected-mode agreement mismatch");
     }
     Ok(())
@@ -1194,6 +1201,20 @@ fn direct(endpoint: SocketAddrV4) -> GlobalDestination {
     }
 }
 
+/// Android: close the lobby's sockets and open new ones on the network the
+/// process is bound to now, then show the emptied game and player lists. A
+/// failed open reports the ports as unavailable, as entering the lobby does.
+#[cfg(target_os = "android")]
+fn reopen_lobby_on_new_network(state: &mut AppState) {
+    close(state);
+    open(state);
+    if state.match_state.lan_service.is_some() {
+        project_games(state);
+        project_players(state);
+    }
+    log::info!("LAN network changed; announcing on the new Wi-Fi network");
+}
+
 pub(crate) fn open(state: &mut AppState) {
     // Deterministic hidden-window capture drivers own explicit service events.
     // Their existing request/response transcript must not race real sockets.
@@ -1270,8 +1291,11 @@ pub(crate) fn install_online_transport(
         transport.relay_ready(),
         "relay has not completed its UDP probe"
     );
+    // A watcher has no source of its own: it stands in the seat of the
+    // player it follows (relay README "Watchers").
     anyhow::ensure!(
-        transport.relay_source().map(usize::from) == Some(launch.local_player_index),
+        transport.relay_watch_delay().is_some()
+            || transport.relay_source().map(usize::from) == Some(launch.local_player_index),
         "relay identity differs from the admitted local participant"
     );
     for source in 0..launch.humans.len() {
@@ -1652,6 +1676,19 @@ pub(crate) fn poll(state: &mut AppState, now_ms: u64) {
     if !matches!(mode, Some(SessionMode::Lan | SessionMode::Wol)) {
         return;
     }
+    // Android: a Wi-Fi network that appeared, left or changed leaves the
+    // visit's sockets on a network that may be gone. Only the lobby list acts
+    // on it: a room, loading or a match keeps its transport, and the change
+    // waits until the player is back in the lobby.
+    #[cfg(target_os = "android")]
+    if mode == Some(SessionMode::Lan)
+        && state.match_state.live_network.is_none()
+        && state.frontend.shell_route == crate::app::shell_route::ShellRoute::LanLobby
+        && crate::util::lan_network::take_changed()
+    {
+        reopen_lobby_on_new_network(state);
+        return;
+    }
     let now = super::match_runtime::frame_pacer::frame_bucket(now_ms);
     if state.match_state.live_network.is_none()
         && state
@@ -1761,6 +1798,46 @@ fn accepts_online_application_packet(payload: &[u8], live: bool, loading: bool) 
                 .is_some_and(|kind| kind == LanMessageKind::Departure.raw().to_le_bytes()))
 }
 
+/// The chat packet `0x005DE360` sends to every other node. The lobby
+/// (`0x005DDEB9`) and both setup rooms (host `0x005DE800`, guest `0x005E1FD5`)
+/// pass it `[0x7EEF2C]`, the fixed `0x0000F0F0`, never the player's colour.
+/// The caller shows the sender's own echo.
+fn chat_packet(
+    name: &str,
+    game_name: &str,
+    text: &[u16],
+) -> Result<LanMessage, crate::net::lan_messages::ingame::InGameMessageError> {
+    LanMessage::in_game_chat(
+        name,
+        crate::ui::wol_chat::PUBLIC_COLOR,
+        game_name,
+        &String::from_utf16_lossy(text),
+    )
+}
+
+/// A received chat packet as `0x005E00B0` shows it (`0x005E14BB..0x005E1564`):
+/// `0x005E2700` draws `"[%s] %s"` (`0x0081B460`) in the packet's colour.
+/// `0x005DE360` never sends to its own node, but VERA broadcasts the lobby's
+/// chat and its own copy comes back; like the other reflections, it shows
+/// nothing. Residual: gamemd tells lobby entries apart by address, so two
+/// lobby players with the same name there still see each other's lines; here
+/// they do not. A setup room refuses a second player with the same name.
+fn chat_line(
+    local_name: &str,
+    message: &LanMessage,
+    chat: &crate::net::lan_messages::ingame::InGameChat<'_>,
+) -> Option<crate::ui::lan_shell::LanChatLine> {
+    if crate::net::lan_messages::wire_name_matches(local_name, message.name_bytes()) {
+        return None;
+    }
+    let mut text: Vec<u16> = format!("[{}] ", message.name()).encode_utf16().collect();
+    text.extend(chat.text_units());
+    Some(crate::ui::lan_shell::LanChatLine {
+        text,
+        color: chat.color,
+    })
+}
+
 fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::Result<()> {
     anyhow::ensure!(incoming.product_id == 0xaa04, "different LAN product");
     if state
@@ -1840,7 +1917,8 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
     {
         //48D7AA..48D7EF: no source or session check precedes the manager.
         let message = crate::net::lan_messages::ingame::BeaconMessage::decode(&incoming.payload)?;
-        if state.match_state.live_network.is_some() && state.match_state.sim_runtime.is_some() {
+        if state.match_state.live_network.is_some() && state.match_state.sim_runtime.is_installed()
+        {
             super::match_runtime::beacons::receive(state, message.record());
         }
         return Ok(());
@@ -1884,9 +1962,10 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
             //ProcessGlobalPackets48D81A uses the active private endpoint;
             //the packet name is irrelevant. This is not a synchronized EXIT.
             let matched = &mut state.match_state;
-            let destroyed = if let (Some(live), Some(runtime)) =
-                (matched.live_network.as_mut(), matched.sim_runtime.as_mut())
-            {
+            let destroyed = if let (Some(live), Some(runtime)) = (
+                matched.live_network.as_mut(),
+                matched.sim_runtime.write_sim(SimWrite::Network),
+            ) {
                 super::match_runtime::network_match::receive_departure(
                     &mut matched.session,
                     &mut runtime.simulation,
@@ -1915,7 +1994,19 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
             super::input::taunt::receive(state, taunt.byte);
             return Ok(());
         }
-        if let Some(runtime) = &state.match_state.sim_runtime
+        if let Some(text) = message.beacon_text_fields() {
+            //48D7F4..48D810: like 0x20/0x21, no source or session check.
+            if state.match_state.sim_runtime.is_installed() {
+                super::match_runtime::beacons::receive_text(
+                    state,
+                    text.house,
+                    text.slot,
+                    &text.text_units(),
+                );
+            }
+            return Ok(());
+        }
+        if let Some(runtime) = state.match_state.sim_runtime.runtime()
             && let Some(event) = super::match_runtime::network_match::decode_kick_proposal(
                 &state.match_state.session,
                 &runtime.simulation,
@@ -1955,20 +2046,14 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 "chat belongs to a different game"
             );
         }
-        let mut text: Vec<u16> = format!("{}: ", message.name()).encode_utf16().collect();
-        text.extend(chat.text_units());
-        super::shell_lan::append_chat(
-            state,
-            crate::ui::lan_shell::LanChatLine {
-                text,
-                color: chat.color,
-            },
-        );
-        let sound = state
-            .rules()
-            .and_then(|rules| rules.general.incoming_message_sound())
-            .map(str::to_owned);
-        super::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+        if let Some(line) = chat_line(&local_name(state), &message, &chat) {
+            super::shell_lan::append_chat(state, line);
+            let sound = state
+                .rules()
+                .and_then(|rules| rules.general.incoming_message_sound())
+                .map(str::to_owned);
+            super::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+        }
         return Ok(());
     }
     match message.kind() {
@@ -2105,11 +2190,18 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                     crate::skirmish_launch::LaunchStartPosition::Position(u8::try_from(values[2])?)
                 };
                 choices.team = crate::skirmish_launch::LaunchTeam::from_shell_value(values[3]);
-                let change = state.match_state.session.accept_lan_peer_choices(
+                // A guest's own seat and team pick keep to the room's teams.
+                let mut observer = values[0] == -3;
+                let refused = state.match_state.session.admit_network_team(
                     source,
-                    choices,
-                    values[0] == -3,
-                )?;
+                    &mut choices,
+                    &mut observer,
+                );
+                let mut change = state
+                    .match_state
+                    .session
+                    .accept_lan_peer_choices(source, choices, observer)?;
+                change.options |= refused;
                 // A VERA room's guest who starts or stops watching changes
                 // rows: the roster, then the options, as WOL's R arm.
                 let mut deferred = Vec::new();
@@ -2663,10 +2755,9 @@ fn lobby_request(
                 service.force_presence = true;
             }
         }
-        LanServiceRequest::Chat { text, color } => {
+        LanServiceRequest::Chat { text } => {
             let game = active_game_name(state).unwrap_or_default();
-            let message =
-                LanMessage::in_game_chat(&name, color, &game, &String::from_utf16_lossy(&text))?;
+            let message = chat_packet(&name, &game, &text)?;
             send(
                 state,
                 &message,
@@ -3273,7 +3364,7 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .ok_or_else(|| anyhow::anyhow!("LAN startup has no constructed world"))?
         .simulation;
     let timing = state
@@ -3407,7 +3498,7 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
     let sim = &mut state
         .match_state
         .sim_runtime
-        .as_mut()
+        .write_sim(SimWrite::Network)
         .expect("constructed world")
         .simulation;
     sim.network_command_queues().install_timing(
@@ -3601,7 +3692,7 @@ fn drain_match_requests(state: &mut AppState) {
                 }
             }
             NetworkLoadingRequest::ProposeKick { target_source } => {
-                if let Some(runtime) = &state.match_state.sim_runtime
+                if let Some(runtime) = state.match_state.sim_runtime.runtime()
                     && let Some(message) = super::match_runtime::network_match::encode_kick_proposal(
                         &state.match_state.session,
                         &runtime.simulation,
@@ -3623,7 +3714,7 @@ fn drain_match_requests(state: &mut AppState) {
                 }
             }
             NetworkLoadingRequest::Disconnect { source_index, .. } => {
-                if let Some(runtime) = &state.match_state.sim_runtime
+                if let Some(runtime) = state.match_state.sim_runtime.runtime()
                     && let Some(house) = super::match_runtime::network_match::source_house(
                         &state.match_state.session,
                         &runtime.simulation,
@@ -3668,6 +3759,17 @@ fn drain_match_requests(state: &mut AppState) {
             NetworkLoadingRequest::Beacon(record) => {
                 if let Ok(message) =
                     crate::net::lan_messages::ingame::BeaconMessage::new(&local_name(state), record)
+                {
+                    let peers: Vec<_> =
+                        super::match_runtime::network_match::nodes(&state.match_state.session)
+                            .into_iter()
+                            .skip(1)
+                            .collect();
+                    send_sources(state, message.as_bytes(), peers);
+                }
+            }
+            NetworkLoadingRequest::BeaconText { house, slot, text } => {
+                if let Ok(message) = LanMessage::beacon_text(&local_name(state), house, slot, &text)
                 {
                     let peers: Vec<_> =
                         super::match_runtime::network_match::nodes(&state.match_state.session)
@@ -3957,19 +4059,11 @@ fn setup_request(
             return Ok(true);
         }
         NetworkSetupRequest::RequestAcceptance => LanMessage::start_prompt(&local_name(state))?,
-        NetworkSetupRequest::Chat(text) => {
-            let color = state
-                .match_state
-                .session
-                .network_setup()
-                .map_or(-2, |launch| color_value(launch.local_player()));
-            LanMessage::in_game_chat(
-                &local_name(state),
-                color as u32,
-                &active_game_name(state).unwrap_or_default(),
-                &String::from_utf16_lossy(text),
-            )?
-        }
+        NetworkSetupRequest::Chat(text) => chat_packet(
+            &local_name(state),
+            &active_game_name(state).unwrap_or_default(),
+            text,
+        )?,
         NetworkSetupRequest::Leave => {
             let now = super::match_runtime::frame_pacer::frame_bucket(
                 super::match_runtime::frame_pacer::wall_clock_ms(),
@@ -4499,7 +4593,7 @@ pub(crate) fn loading_test_pair() -> (
     )
 }
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 mod tests {
     use super::*;
     use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext};
@@ -4605,6 +4699,29 @@ mod tests {
                 ..Default::default()
             },
             LOBBY_RETRY_TIMING,
+        );
+    }
+
+    /// Another player sees a room's line as gamemd draws it, `[name] text` in
+    /// the fixed `0x0000F0F0` whatever colour its sender plays, and the
+    /// sender's own broadcast copy shows nothing, a name the wire narrows too.
+    #[test]
+    fn chat_reaches_others_in_the_fixed_colour_and_skips_its_own_copy() {
+        let text: Vec<u16> = "hi".encode_utf16().collect();
+        let message = chat_packet("Guest", "Host's game", &text).unwrap();
+        let chat = message.in_game_chat_fields().unwrap();
+        assert_eq!(
+            chat_line("Host", &message, &chat),
+            Some(crate::ui::lan_shell::LanChatLine {
+                text: "[Guest] hi".encode_utf16().collect(),
+                color: 0x0000_F0F0,
+            })
+        );
+        assert_eq!(chat_line("guest", &message, &chat), None);
+        let own = chat_packet("玩家", "", &text).unwrap();
+        assert_eq!(
+            chat_line("玩家", &own, &own.in_game_chat_fields().unwrap()),
+            None
         );
     }
 
@@ -5907,7 +6024,7 @@ fn service_transport(state: &mut AppState, now: u32) -> bool {
         if let Some(service) = state.match_state.lan_service.as_mut() {
             LanService::flush_setup_queue(&mut service.pending_setup, &mut *live.global_mut());
         }
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Network) {
             live.service_pending_commands(&mut runtime.simulation.network_command_queues(), now);
         } else {
             live.service_transport(now);
@@ -5941,7 +6058,7 @@ fn advance_go(state: &mut AppState, now: u32, service_ok: bool) {
     {
         // A retired failed send is not proof that its final fragment or GO
         // arrived. Fail through the existing setup owner instead of loading.
-        super::shell_network_setup::fail_go_handoff(state);
+        super::shell_network_setup::fail_go_delivery(state);
         return;
     }
     let queued = observation.queued;

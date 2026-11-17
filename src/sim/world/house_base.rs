@@ -1136,7 +1136,7 @@ impl crate::sim::houses::Houses {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod tests {
     use super::*;
     use crate::sim::combat::Health;
@@ -1344,7 +1344,7 @@ mod tests {
                     zone["group"].as_u64().unwrap() as crate::sim::pathfinding::zone_map::ZoneId;
             }
         }
-        sim.zone_grid = Some(zones);
+        sim.zone_grid = Some(zones.into());
         // Zone construction can stamp the same Dummy. Native replay starts
         // its ordinary-return chain AFTER that constructor, with these fields.
         terrain.stamp_dummy_cell_requested_coord(-7, 1);
@@ -2081,6 +2081,6 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "house_edge_tests.rs"]
 mod edge_tests;

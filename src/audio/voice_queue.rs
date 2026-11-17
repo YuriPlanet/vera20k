@@ -146,7 +146,7 @@ impl VoiceQueue {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod tests {
     use super::*;
 

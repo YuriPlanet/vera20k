@@ -100,8 +100,9 @@ from the creator: 256 when a game has a password, which clients show as a lock a
 ask for before joining, otherwise 0. `max_users` (1–30) from `create` and the host's
 `advertise` is the room's join limit, never below its current members; a join past
 it fails with `room_full`. Games from 0.2.6 advertise the most people their room
-takes, players and spectators: the host's Max players, and with spectators off no
-more than its seats. Their host gives a newcomer a free seat, then the last AI's
+takes, players and spectators: the host's Max players, which current games' hosts also
+change in the room as Room size and advertise again, at most the room's thirty rows less
+its AI, and with spectators off no more than its seats. Their host gives a newcomer a free seat, then the last AI's
 seat, then a spectator's place, and their lobby lists each room as `users` over
 `max_users`. A host `kick` with `keep_out:true` keeps that player out of
 the room for five minutes, by account and by name without case: their `join` fails
@@ -133,6 +134,7 @@ Commands and their payloads:
 | `relay_ready` | `{match_id}` |
 | `latency_ready` | `{match_id,pings:[{source_index,round_trip_ms}]}` |
 | `renew_relay` | `{match_id}` |
+| `watch` / `renew_watch` / `unwatch` | `{match_id}` ([Watching](#watching)) |
 | `map_upload` | `{digest,byte_length,offset,data,resource?}` |
 | `chat` | `{text,to:[name],action}` |
 | `ping` | `{}` |
@@ -142,16 +144,51 @@ Commands and their payloads:
 | `add_buddy` / `remove_buddy` / `locate` | `{name}` |
 | `kick` | `{name,keep_out?}` |
 | `ladder` | `{names:[name]}` |
+| `balance` | `{}` |
 
 HostOptions is `{launch,map_metadata,vacancies,observer_row,cooperative_difficulty,seed}`.
+A slot's `color_index` is 0 to 7 for the original colours, 8 for an observer and 9 to 30
+for the game's [extra lobby colours](skirmish-colors.md); the lobby passes 0 to 255 on
+unchanged.
 Generated maps add `random_map:{start_staging,preview:{source_sha256,byte_length}}`.
 Cooperative rooms add `cooperative_campaign`, the host's campaign record as the game's
 `C0` text (at most 512 bytes, starting `C0,`); a guest applies it before the options
 that carry it. Other modes omit the field.
-`start_staging` is the canonical 37-number native `W` record, bounded to512bytes;
+`start_staging` is the canonical native `W` record: 37 numbers for up to eight starts,
+and for a random map of 9 to 30 players four more for each start past the eighth,
+bounded to 2048 bytes. A lobby from before those maps refuses a record past 37 numbers
+or 512 bytes with 400 `invalid_options`;
 `staging_digest` is its lowercase SHA-256, or the empty string for authored maps.
 `launch` is the existing serde representation of `SkirmishLaunchSession` (including
-its human rows, AI rows and launch options). `map_metadata` is
+its human rows, AI rows and launch options). `launch.options.teams`, a VERA room's
+Teams count, is an optional integer from 2 to 15 that the game leaves out while Teams
+is Off. A lobby from before it refuses options that carry
+it with 400 `invalid_options`; the host's game then turns Teams Off, says so in the
+room and sends its options again without it. Options that name a player no longer in
+the room return 409 `player_not_in_room` instead, which leaves Teams as it is. A game
+from before Teams cannot read a host's options while Teams is set and shows its
+invalid-update line, in a room that cannot start anyway, since its players' versions
+differ. `launch.options.auto_balance`, the Balance automatically setting of hosts on
+0.3.3 and 0.3.4, is `true` or left out while it is off; those games send it only with a Teams count,
+and current games never send it. `launch.options.queue`, a VERA room's join
+queue, lists by name the room's spectators (humans with the `Observer` role) who wait
+for a seat, first first, each once and at most 30; the game leaves it out while nobody
+waits, and the host's game seats the first when a seat frees. A lobby from before it
+refuses it in the same way; the host's game then stops queueing in that room, says so
+and sends its options again, before it turns Teams Off if the lobby still refuses. `launch.options.host_rules`, the rules a VERA room plays, is
+`{terrain_deformation?:true, superweapon_limit?:2..20, personal_rules?:<base64>}`: the host's
+Terrain Deformation and its Superweapon Limit. `personal_rules`, the host's `VERARULES.INI`
+in standard base64 of at most 8,192 bytes (10,924 characters), came from games before the
+file was retired; current games never send it and refuse a room that has it. The game leaves each part out while it is off, and
+the object while all are; every player's match plays them in place of the player's own. A
+lobby from before the Superweapon Limit refuses options that carry `superweapon_limit`; the host's
+game then turns it off, says so and sends its options again, keeping the other rules. A
+lobby from before the room's rules refuses them in the same way; the host's game then
+drops the room's rules, says so and sends its options again, before it stops queueing and
+then turns Teams Off if the lobby still refuses. `watching`, the room's Watching, is `off`,
+`delayed` or `live` ([Watching](#watching)). A lobby from before it refuses it in the same
+way; the host's game then turns Watching off, says so and sends its options again, before
+any of the others. `map_metadata` is
 `{display_name,player_capacity,official,byte_length,digest,source_sha256,effective_digest}`. The legacy
 INI `digest` remains distinct from lowercase SHA-256 over the physical map bytes;
 online `map_digest` agreements compare `source_sha256`. `effective_digest` and
@@ -161,11 +198,17 @@ of `open`, `closed`, `observer` or `waiting`. A receiver resolves its own
 `launch.local_player_index` from the authenticated player; it never uses the host's.
 `slot` uses `SkirmishLocalSlot` serde. Options are authored only by the room owner;
 the service increments `revision` and clears guest readiness on a material change.
-Starting requires at least one non-observer human and at least two playing
-participants, counting the actual `launch.opponents` AI rows. A host can select
-an AI opponent and start alone; `ai_player_count` without an AI row is insufficient.
-Games with observers cannot include AI players. `start.users` contains exactly
-the canonical human names, including observers, and never includes AI rows.
+Starting requires at least two playing participants, counting the actual
+`launch.opponents` AI rows. A host can select an AI opponent and start alone;
+`ai_player_count` without an AI row is insufficient. AI players may play while observers
+watch, and with two or more AI everyone in the room may watch. The map's
+`player_capacity` must cover every playing human and AI row, or with Teams set
+(`launch.options.teams`), where a team's players share its bases, one start for each
+team that has players or AI and one for each playing participant on no team. A lobby
+from before this refuses options past the map's capacity with `invalid_options`, and a
+start with both observers and AI with 409 `not_ready`; one from before AI-only games
+refuses a start where every human watches with 409 `not_ready`. `start.users` contains
+exactly the canonical human names, including observers, and never includes AI rows.
 
 Event kinds and payloads:
 
@@ -185,6 +228,8 @@ Event kinds and payloads:
 | `start_confirmed` | `{match_id}` |
 | `timing_confirmed` | `{match_id,pings:[integer],relay:<RelayGrant>,ranked?}` |
 | `relay_renewed` | `{match_id,relay:<RelayGrant>}` |
+| `watch_started` | `{match_id,revision,version,rules_digest,staging_digest,seed,tournament,quick_coop,users:[{name,flags,source_index}],options:<HostOptions>,pings:[integer],delay_seconds,playing_since,ranked?,relay:<WatchGrant>}` |
+| `watch_renewed` | `{match_id,relay:<WatchGrant>}` |
 | `map_available` | `{digest,byte_length,resource?}` |
 | `start_rejected` | `{message}` |
 | `locales` | `{locales:[{name,locale}]}` |
@@ -364,7 +409,7 @@ Generated maps transfer the `.SED` bytes as the map and the separate native PCX
 preview with `resource:"preview"` (512KiB maximum). Preview downloads use the
 selected seed's URL plus `&resource=preview`; response `digest` names the preview.
 Both resources use the same ownership, ordered chunk, hash and cleanup rules.
-Generated capacity equals the staged start count (2–8); observers consume only
+Generated capacity equals the staged start count (2–30); observers consume only
 transport slots. Start admission also compares the canonical staging digest, so clients cannot
 agree on seed bytes while using different generated start cells.
 
@@ -469,7 +514,7 @@ gets the same finish again without it.
 `{text}`: `text` translated into `target`, a language tag such as `en` or `zh-Hans`.
 A reply can start with a short bracketed note, in that language, naming the language
 it was translated from. It can also carry `source`, that language's tag, when it is one
-of the translation targets; clients hide a translation whose `source` the player reads.
+of the translation targets; clients hide a translation whose `source` is its `target`.
 `text` is non-blank and at most 2048 UTF-8 bytes, the chat limit. Clients translate
 received chat only after the player opts in, and always keep the original visible.
 A deployment without a translator, a failed model call or one taking over 10 seconds,
@@ -526,12 +571,70 @@ otherwise on the next public-channel join.
 A session that still joins a game room from another version, through a buddy's game or
 its name, makes every member hear a `chat` line from the notice sender naming both
 versions.
+The same line, with both full `version` agreement strings, goes to the room once when
+a member's `ready` or `map_status` names another build of the host's version, since
+such a room cannot start.
 
 Each `join` of the public channel gives the joining session one `chat` line from the
 notice sender after its `joined`. The line says how many players are online: in the
 public channel, in game rooms, playing, for sessions that play Quick Match searching on
 their version, and elsewhere. It also counts the game rooms the list leaves out for another
 version and, when the list holds none for the session, says how to start a game.
+
+## Watching
+
+A player in the lobby can watch a match being played. Their game runs it from its first
+frame from the relay's command stream, then follows it some time behind its players. A
+watcher is no part of the match: it has no source, sends nothing into it, and the
+players' games never learn it is there (relay README, "Watchers").
+
+`GET /v1/matches` returns
+`{matches:[{match_id,name,map,mode,players,observers,computers,since,names:[name],watchers,max_watchers,delay_seconds}]}`:
+the matches the caller may watch. These are matches in play between two or more humans,
+at least one of them playing (a watcher's game follows a player), with watching on, in a
+room without a password, on a relay that lets watchers in and on the caller's version
+(as `kind=41` lists rooms), that the caller plays no part in. Clan rooms, generated maps
+and co-op missions are never listed: a watcher's game cannot yet rebuild a start that
+splits players by squad, comes from the host's map seed or from a campaign. `name`
+is the room's; `map`, `mode`, `players`, `observers`, `computers` and `since` (when play
+began, Unix seconds) are as the dashboard shows a match; `names` are the playing humans;
+`watchers` counts who watches now, of at most `max_watchers` (10); and `delay_seconds` is
+how far behind its players a watcher sees it: 120, or 0 when the host chose `live`. Quick
+Match and ranked games are always 120 seconds behind; other rooms follow the host's
+`watching`, and options without it leave watching off. A lobby from before watching
+answers 404 `not_found`, and the game lists no running matches.
+
+`watch` replies `watch_started`: what every player's game got at the start (`revision`,
+`version`, `rules_digest`, `seed`, `users` without `player_id`, and that revision's
+`options`), the room's `staging_digest` (empty for an authored map) and `tournament`
+value, `quick_coop:true` for a Quick Co-op room (a paired room with tournament 0), the
+`pings` of `timing_confirmed`, the delay, `playing_since`, `ranked:true` for a ranked
+game, and a WatchGrant. It fails with 409 `unknown_match` when the caller may not watch that match,
+409 `match_active` while the caller plays one, and 409 `watchers_full` when the match has
+its 10 watchers. Watching the same match again, as after the game restarted, keeps the
+watcher's place. An account is always the same watcher of a match on a relay, its
+identity there an HMAC of the match and the player under the relay's ticket key, so a
+newer watch ticket replaces the relay session it had rather than taking another place.
+While the match plays, its watchers download its map as a
+room member does, naming it: `GET /v1/maps/<source_sha256>?offset=<n>&match_id=<id>`.
+
+WatchGrant is `{address,ticket,packet_key,payload_key,ordering_certificate}`. The relay is
+the nearest of the match's relays that serves the watcher, one relay even in a federated
+match. `payload_key` and `ordering_certificate` are the match's. The ticket is a version
+3 watch ticket (relay README, "Watchers"): match, expiry, nonce, the watcher's identity
+and the delay, signed with the relay's ticket key; `packet_key` is derived from it as a
+player's is. A grant lasts 300 seconds: `renew_watch` replies `watch_renewed` with a new
+one on the same relay for the same watcher, and the game renews at half its life. Once
+the match ends for its players `renew_watch` fails with 409 `unknown_match`, and the
+watcher plays on to the end of the stream with the grant it holds, which outlasts the
+delay. `unwatch` frees the watcher's place at once; a watcher that stops renewing frees it
+when its grant runs out. Watchers never join the match: `finish`, the players' grants and
+the end of the match are as without them.
+
+A game from before watching never asks for the list. Matches are listed only to their
+own version, and the relay compares a watcher's startup agreement with the players', so
+a watcher always runs the players' build. A relay from before watchers refuses a watch
+ticket, so the lobby lists only matches on relays it knows let watchers in.
 
 ## Quick Match
 
@@ -683,7 +786,9 @@ every 4 OS, from Corporal (32 points) at 18 to Five-Star General (1501) at 46, a
 Commander in Chief (2001) for the running season's number 1 from OS 46. Its `rank` is
 their place this season, 0 when unranked. One lookup fills both of the game's tables: its
 ladder table from `records`, and its high-score table, whose points pick each player's
-badge, from `high_scores`. Until the operator starts the first season no one has a rating,
+badge, from `high_scores`. The game draws those badges in the lobby's player list and
+beside each name in VERA's game rooms, and the help under the pointer on a name adds
+the rank and OS. Until the operator starts the first season no one has a rating,
 and `high_scores` gives every name asked for the Colonel's 251 points with `rank` 0; a
 lobby from before that sends none then. A lobby from before badges sends no `high_scores`, and the game
 then shows none; one from before `os` leaves it out, and the game shows the rounded OS.
@@ -725,10 +830,22 @@ notice sender each time it changes: each side's chance to win, such as
 `Team A 54%, Team B 46%. Ranked.` (a free-for-all names its players), or `Unranked:` and
 why. Quick Match and Cooperative rooms get none. In a game room the host's chat line
 `/balance` is a command, not chat.
-The room hears the two teams with the most even odds, weighing each player by their OS,
-keeping as many players on their teams as it can, and the host's game gets a `balance` event with
-every playing human's `team` (0 to 3 for A to D). The host's game moves each named player
-to that team, as their own team choice would, and publishes the options. A game that
-ignores the event leaves the teams to the host. The host alone hears why nothing moves:
-a Quick Match room, a mode without teams, AI players, fewer than two players, or teams
-already as even as they can be. Anyone else typing `/balance` hears that only the host can.
+The room hears its playing humans split into its Teams count (`launch.options.teams`),
+or into two teams without one, weighing each player by their OS, and the host's game gets
+a `balance` event with every playing human's `team` (0 for A, 1 for B and so on). Two
+teams get the most even odds, keeping as many players on their teams as it can. Three or
+more take loser picks: from the strongest player down, each joins the
+team with the least OS so far among those below the players over the teams, rounded up;
+each team then keeps the letter most of its players have, and teams as even as the picks
+stay as they are. The host's game moves each named player to that team, as their own team
+choice would, and publishes the options. A game that ignores the event leaves the teams
+to the host. The host alone hears why nothing moves: a Quick Match room, a mode without
+teams, AI players, fewer than two players, or teams already as even as they can be.
+Anyone else typing `/balance` hears that only the host can. The host's Balance button
+sends `/balance` in the room's chat. A 0.3.3 or 0.3.4 host with Balance automatically on sends
+the `balance` command 5 seconds after who plays or the Teams count last changed; the
+lobby balances as for `/balance` but says nothing when nothing moves, and refuses the
+command from anyone but the host with 403 `forbidden`. Current games never send it.
+The host can also move a player by hand: to another team, into a free seat or to the
+spectators. The host's game publishes the options as it does after `/balance`, with no new
+field, and the moved player's game tells them in chat.

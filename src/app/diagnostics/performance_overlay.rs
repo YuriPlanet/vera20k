@@ -26,6 +26,7 @@ use crate::render::bit_font::BitFont;
 use crate::render::gpu::GpuContext;
 
 use super::state::FrameTimer;
+use crate::app::match_runtime::sim_host::SimHost;
 use panel::{DOT, GREEN, HOT, PanelStats, Part, TRACK, WARM};
 
 /// The status line's top when the panel is hidden.
@@ -43,6 +44,8 @@ const ELLIPSIS: &str = "...";
 
 pub(crate) struct PerformanceOverlay {
     visible: bool,
+    /// Whether the panel also draws its Threads and Ticks rows.
+    thread_rows: bool,
     /// One white texel, tinted into the row boxes and the core bars.
     white: BatchTexture,
     camera_buffer: wgpu::Buffer,
@@ -121,7 +124,7 @@ pub(crate) fn observe_simulation(state: &crate::app::AppState, exact_capture: bo
             .match_state
             .presentation_paused(&state.frontend.screen)
         || state.focus_freeze_active();
-    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+    if let Some(runtime) = state.match_state.sim_runtime.runtime() {
         overlay.observe_simulation_frame(
             runtime.simulation.session().binary_frame(),
             crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
@@ -163,10 +166,12 @@ impl PanelPlacement {
     }
 }
 
-/// A match the panel reads its unit count and Most CPU areas from.
+/// A match the panel reads its unit count, Most CPU areas and tick counts
+/// from.
 pub(crate) struct MatchPanel<'a> {
     pub(crate) placement: PanelPlacement,
-    pub(crate) simulation: Option<&'a crate::sim::world::Simulation>,
+    pub(crate) host: &'a SimHost,
+    pub(crate) loop_counts: crate::app::match_runtime::frame_pacer::LoopCounts,
 }
 
 /// The panel over the battlefield of the match on screen, if one is.
@@ -187,11 +192,8 @@ pub(crate) fn match_panel(state: &crate::app::AppState) -> Option<MatchPanel<'_>
             width as f32 * scale,
             scale,
         ),
-        simulation: state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|runtime| &runtime.simulation),
+        host: &state.match_state.sim_runtime,
+        loop_counts: state.platform.frame_pacer.loop_counts(),
     })
 }
 
@@ -200,6 +202,7 @@ impl PerformanceOverlay {
         let (camera_buffer, camera_group) = batch.create_ui_camera(&gpu.device);
         Self {
             visible: false,
+            thread_rows: false,
             white: batch.create_texture(gpu, &[255; 4], 1, 1),
             camera_buffer,
             camera_group,
@@ -274,6 +277,14 @@ impl PerformanceOverlay {
         self.visible
     }
 
+    /// Ctrl+Alt+G: show or hide the panel's Threads and Ticks rows; returns
+    /// whether they are now shown. They draw with the panel, and like it
+    /// start hidden at every launch.
+    pub(crate) fn toggle_thread_rows(&mut self) -> bool {
+        self.thread_rows = !self.thread_rows;
+        self.thread_rows
+    }
+
     /// Where the match's message list starts, in frame pixels from the
     /// battlefield's top: below the shown panel, from its last drawn frame,
     /// and 0 while it is hidden.
@@ -314,8 +325,8 @@ impl PerformanceOverlay {
         }
         let size = [destination.width(), destination.height()];
         let over_battlefield = in_match.is_some();
-        let (placement, simulation) = match in_match {
-            Some(panel) => (panel.placement, panel.simulation),
+        let (placement, source) = match in_match {
+            Some(panel) => (panel.placement, Some((panel.host, panel.loop_counts))),
             // Loading and menu screens: the window's own pixels.
             None => (
                 PanelPlacement::top_left(0.0, 0.0, size[0] as f32, 1.0),
@@ -328,9 +339,9 @@ impl PerformanceOverlay {
             let gpu_ms = gpu.timer.take_frame_ms();
             frame
                 .stats
-                .close_window(now, frame_ms, tps, simulation.map(match_sample), gpu_ms);
+                .close_window(now, frame_ms, tps, source.and_then(match_sample), gpu_ms);
         }
-        let mut rows = panel::rows(&frame.stats.shown);
+        let mut rows = panel::rows(&frame.stats.shown, self.thread_rows);
         let mut instances = Vec::new();
         let mut glyphs = Vec::new();
         let bottom = layout_rows(font, &mut rows, placement, &mut instances, &mut glyphs);
@@ -493,15 +504,19 @@ impl PerformanceOverlay {
     }
 }
 
-fn match_sample(simulation: &crate::sim::world::Simulation) -> panel::MatchSample {
-    let entities = simulation.entities();
-    let structures = entities
-        .values_of_category(crate::map::entities::EntityCategory::Structure)
-        .count();
-    panel::MatchSample {
-        units: entities.len().saturating_sub(structures),
-        profile: simulation.frame_profile().totals_ns(),
-    }
+/// The figures of the match `host` holds. Its units are every object but the
+/// buildings, counted from the frame drawing reads: while a tick runs on the
+/// simulation thread, the world [`SimHost::runtime`] lends for reading is
+/// drawing's copy, which holds no objects (`Simulation::presentation_copy`).
+fn match_sample(
+    (host, loop_counts): (&SimHost, crate::app::match_runtime::frame_pacer::LoopCounts),
+) -> Option<panel::MatchSample> {
+    let frame = host.frame()?;
+    Some(panel::MatchSample {
+        units: frame.objects().len() - frame.structures().len(),
+        profile: host.runtime()?.simulation.frame_profile().totals_ns(),
+        loop_counts,
+    })
 }
 
 /// Lay `rows` out down from `placement.top` in reading order, each on its own
@@ -646,9 +661,57 @@ fn tint(rgb: [u8; 3]) -> [f32; 3] {
     rgb.map(|channel| f32::from(channel) / 255.0)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
+
+    /// The panel counts every object but the buildings, also while a tick
+    /// runs on the simulation thread: what the host lends for reading then
+    /// is drawing's world copy, which holds no objects.
+    #[test]
+    fn the_unit_count_holds_while_a_tick_is_lent() {
+        use crate::map::entities::EntityCategory;
+        use crate::sim::{combat::Health, game_entity::GameEntity, runtime::SimRuntime};
+
+        let mut sim = crate::sim::world::Simulation::new();
+        let owner = sim.intern("Americans");
+        let tank = sim.intern("GTNK");
+        let yard = sim.intern("GACNST");
+        for (id, kind, category) in [
+            (1, tank, EntityCategory::Unit),
+            (2, yard, EntityCategory::Structure),
+            (3, tank, EntityCategory::Unit),
+        ] {
+            sim.entities_mut_for_test()
+                .insert(GameEntity::new_at_frame_zero_for_test(
+                    id,
+                    10 + id as u16,
+                    10,
+                    0,
+                    0,
+                    owner,
+                    Health::new(100),
+                    kind,
+                    category,
+                    0,
+                    5,
+                    false,
+                ));
+        }
+        let mut host = SimHost::default();
+        host.install(Some(SimRuntime::from_simulation(sim)));
+        let units =
+            |host: &SimHost| match_sample((host, Default::default())).map(|sample| sample.units);
+        assert_eq!(units(&host), Some(2));
+        let (go, wait) = std::sync::mpsc::channel::<()>();
+        assert!(host.lend(Box::new(move |_| {
+            wait.recv().unwrap();
+            Box::new(())
+        })));
+        assert_eq!(units(&host), Some(2), "counted beside the lent tick");
+        go.send(()).unwrap();
+        assert!(host.take_job_result().is_some());
+    }
 
     #[test]
     fn simulation_rate_counts_logic_frames_not_draws() {

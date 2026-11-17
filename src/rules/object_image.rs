@@ -43,7 +43,6 @@ impl ImageTheater {
     /// The TheaterType ordinal FindTheater48DBE0 returns: Temperate0 to
     /// Lunar5, and -1 for an unknown name (Ares `Theater::FindIndex
     /// @ 1003DAE0` and `ScenarioClass+Theater`).
-    #[cfg(feature = "ares")]
     pub(crate) const fn native_index(self) -> i32 {
         match self {
             Self::Uninitialized => -1,
@@ -135,6 +134,8 @@ pub(crate) struct ObjectImageState {
     anim_bounds_loads: Option<Vec<ObjectImageLoad>>,
     anim_theater_bounds_loads: Option<Vec<ObjectImageLoad>>,
     voxel_load: Option<String>,
+    #[serde(default)]
+    pub(crate) model_slots: super::voxel_model_plan::ModelSlots,
 }
 
 impl ObjectImageState {
@@ -152,6 +153,7 @@ impl ObjectImageState {
             anim_bounds_loads: None,
             anim_theater_bounds_loads: None,
             voxel_load: None,
+            model_slots: Default::default(),
         }
     }
 

@@ -158,7 +158,7 @@ fn stock_flat_torpedo_pose_upload_and_surface_replay_match_original_pixels() {
                     "{name}"
                 );
                 let before = sim.state_hash();
-                let order = NativeDisplayOrder::from_display(sim.display_layers());
+                let order = NativeDisplayOrder::from_world(&sim, None);
                 let object = projectile_draw_instance(
                     sim.projectiles().get(id).unwrap(),
                     &kind,
@@ -453,18 +453,22 @@ fn kirov_voxel_pose_upload_and_retained_replay_survive_a_changed_second_frame() 
                     "the second frame must demand changed texels"
                 );
             }
-            let order = NativeDisplayOrder::from_display(sim.display_layers());
+            let order = NativeDisplayOrder::from_world(&sim, None);
             let object = crate::app::presentation::instances::projectile_draw_instance_for_frame(
                 sim.projectiles().get(id).unwrap(),
                 sim.session().binary_frame(),
+                // A voxel bullet takes no SHP frame.
+                false,
                 kind,
                 "BlimpBombP",
                 HouseColorIndex(8),
                 [1000; 3],
                 None,
                 sim.resolved_terrain().unwrap(),
-                cam,
-                size.map(|n| n as f32),
+                crate::app::presentation::instances::TacticalAdmission {
+                    corner: cam,
+                    size: size.map(|n| n as f32),
+                },
                 DepthAxis::NONE,
                 &order,
                 |image, matrix| {

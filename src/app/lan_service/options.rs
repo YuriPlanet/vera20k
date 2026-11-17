@@ -95,6 +95,18 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
                 .options
                 .room_options(),
         ),
+        teams: session
+            .network_setup()
+            .expect("projected setup")
+            .options
+            .teams,
+        queue: session.network_queue().to_vec(),
+        host_rules: session
+            .network_setup()
+            .expect("projected setup")
+            .options
+            .host_rules
+            .clone(),
     })?;
     let admitted = queue_payload(
         state,
@@ -130,6 +142,37 @@ struct ExtendedOptions {
     /// VERA's room options, which the native options text has no field for.
     #[serde(default)]
     room: Option<crate::skirmish_launch::RoomOptions>,
+    /// The room's Teams count, beside `room` ([`RoomOptions::teams`]).
+    ///
+    /// [`RoomOptions::teams`]: crate::skirmish_launch::RoomOptions::teams
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    teams: Option<u8>,
+    /// The room's join queue, beside `room`
+    /// ([`SkirmishLaunchOptions::queue`]). A guest whose game is older skips
+    /// it and shows no places.
+    ///
+    /// [`SkirmishLaunchOptions::queue`]: crate::skirmish_launch::SkirmishLaunchOptions::queue
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    queue: Vec<String>,
+    /// The room's rules, beside `room`
+    /// ([`SkirmishLaunchOptions::host_rules`]).
+    ///
+    /// [`SkirmishLaunchOptions::host_rules`]: crate::skirmish_launch::SkirmishLaunchOptions::host_rules
+    #[serde(
+        default,
+        skip_serializing_if = "crate::skirmish_launch::HostRules::is_empty"
+    )]
+    host_rules: crate::skirmish_launch::HostRules,
+}
+
+impl ExtendedOptions {
+    /// VERA's room options with the Teams count that travels beside them.
+    fn room_options(&self) -> Option<crate::skirmish_launch::RoomOptions> {
+        self.room.map(|room| crate::skirmish_launch::RoomOptions {
+            teams: self.teams,
+            ..room
+        })
+    }
 }
 
 /// Host-authored admission projection for native Type3 assembly, derived from
@@ -156,13 +199,16 @@ pub(super) fn reapply_received_options(state: &mut AppState) -> Result<()> {
     }) else {
         return Ok(());
     };
+    let room = options.room_options();
     receive_options_text(
         state,
         &options.text,
         options.source_sha256,
         options.effective_digest,
         options.selected_map_file,
-        options.room,
+        room,
+        options.queue,
+        options.host_rules,
     )
 }
 
@@ -231,6 +277,8 @@ fn receive_options_text(
     effective_digest: String,
     selected_map_file: String,
     room: Option<crate::skirmish_launch::RoomOptions>,
+    queue: Vec<String>,
+    host_rules: crate::skirmish_launch::HostRules,
 ) -> Result<()> {
     ensure!(
         source_sha256.is_empty() || crate::map::source::valid_source_sha256(&source_sha256),
@@ -250,6 +298,9 @@ fn receive_options_text(
     if let Some(room) = room {
         options.launch.options.set_room_options(room);
     }
+    // The text starts from this guest's own setup: an empty queue clears it.
+    options.launch.options.queue = queue;
+    options.launch.options.host_rules = host_rules;
     crate::app::shell_network_setup::service_event(state, NetworkSetupEvent::HostSetup(options))?;
     state
         .match_state
@@ -437,13 +488,16 @@ pub(super) fn receive_extended(
                 }
             }
             crate::app::shell_network_setup::invalidate_network_agreement(state)?;
+            let room = options.room_options();
             receive_options_text(
                 state,
                 &options.text,
                 options.source_sha256,
                 options.effective_digest,
                 options.selected_map_file,
-                options.room,
+                room,
+                options.queue,
+                options.host_rules,
             )?;
             super::maps::received_options(state, scope, options.random_map)
         }
@@ -562,6 +616,9 @@ fn projected_options(
         map_digest: metadata.digest.clone(),
         humans,
         ai,
+        // VERA's room seats AI past a small map's seats while it shares
+        // bases (`MatchSession::network_ai_seat`).
+        all_ai_rows: session.network_several_observers(),
     })
 }
 
@@ -623,7 +680,7 @@ fn parse_options(
         digest,
         ..map_metadata
     };
-    let mut fields = strtok(tail, &[',', ':']);
+    let mut fields = strtok(tail, &[',', ':']).peekable();
     loop {
         let name = fields
             .next()
@@ -664,11 +721,18 @@ fn parse_options(
         start: -2,
         team: -2,
     }; NETWORK_PLAYER_SLOT_COUNT];
-    for row in 0..if map_metadata.player_capacity > 8 {
+    // A map of up to eight players carries gamemd's eight AI rows; VERA's
+    // room carries all thirty on any map (`LanGameOptions::all_ai_rows`),
+    // so rows past the eighth follow while the text has them.
+    let required = if map_metadata.player_capacity > 8 {
         NETWORK_PLAYER_SLOT_COUNT as u8
     } else {
         8
-    } {
+    };
+    for row in 0..NETWORK_PLAYER_SLOT_COUNT as u8 {
+        if row >= required && fields.peek().is_none() {
+            break;
+        }
         let mut next_int = || {
             fields
                 .next()
@@ -860,7 +924,7 @@ fn parsed_roster(
     Ok(rows)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::app::match_runtime::session::{NetworkReturnContext, NetworkRowKind};
@@ -917,6 +981,34 @@ mod tests {
             )
             .unwrap();
         session
+    }
+
+    /// A VERA room's options carry an AI past the eighth row on a map of up
+    /// to eight players, where gamemd's text carries eight.
+    #[test]
+    fn a_vera_room_carries_ai_past_the_eighth_row_on_a_small_map() {
+        let (host, guest) = (fixture(true), fixture(false));
+        let mut options = projected_options(&host, 3, 0).unwrap();
+        options.ai[9] = LanOptionsAi {
+            difficulty: 2,
+            country: 0,
+            color: 3,
+            start: -2,
+            team: -2,
+        };
+        let modes = crate::skirmish_modes::stock_skirmish_modes();
+        let ai_rows = |options: &LanGameOptions<NETWORK_PLAYER_SLOT_COUNT>| {
+            let (options, _, _) = parse_options(&guest, &modes, &options.encode()).unwrap();
+            options
+                .launch
+                .opponents
+                .iter()
+                .map(|ai| (ai.raw_slot_index, ai.difficulty))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ai_rows(&options), []);
+        options.all_ai_rows = true;
+        assert_eq!(ai_rows(&options), [(9, AiDifficulty::Easy)]);
     }
 
     #[test]

@@ -54,7 +54,6 @@ pub(crate) fn press(
     if !view.can_fire || !view.can_afford || view.constraints_blocked {
         return SuperWeaponClick::Refused;
     }
-    #[cfg(feature = "ares")]
     if view.ares_refusal.is_some() {
         return SuperWeaponClick::Refused;
     }
@@ -69,6 +68,6 @@ pub(crate) fn press(
     SuperWeaponClick::Target
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "superweapon_cameo_tests.rs"]
 mod tests;

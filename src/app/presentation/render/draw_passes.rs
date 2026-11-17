@@ -360,7 +360,15 @@ pub(super) fn dispatch_draw_passes(
     view: &wgpu::TextureView,
     data: &DrawPassData<'_>,
 ) {
-    // The posed voxel images the world draws sample.
+    // The voxel pictures this frame drew on first use, and the posed voxel
+    // images the world draws sample.
+    if let Some(atlas) = state.match_state.match_presentation.unit_atlas.as_mut() {
+        atlas.upload(
+            &state.renderer.gpu.device,
+            &state.renderer.gpu.queue,
+            &state.renderer.batch_renderer,
+        );
+    }
     state.renderer.vxl_pose_frame_cache.borrow_mut().encode(
         &state.renderer.gpu.device,
         &state.renderer.gpu.queue,
@@ -526,6 +534,31 @@ pub(super) fn dispatch_draw_passes(
         pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
     }
 
+    let bracket_tex = state
+        .match_state
+        .match_presentation
+        .selection_overlay
+        .as_ref()
+        .map(|o| o.white_texture());
+    // VERA ground marks (the formation line's dots, the ferry's pick-up and
+    // drop circles) lie on the ground. They follow the kept terrain picture,
+    // so are never stored in it, and precede the fogged snapshots, the
+    // building bases and every object, which cover them. Surface stores: no
+    // Z read or write.
+    draw_pooled_surface_lines(
+        &mut pass,
+        &state.renderer.batch_renderer,
+        pool,
+        bracket_tex,
+        "ground_marks",
+    );
+    draw_pooled_surface_strokes(
+        &mut pass,
+        &state.renderer.batch_renderer,
+        pool,
+        "ground_strokes",
+    );
+
     // Cell::DrawOverlay_Shadow0047F510 uses native destination halving and
     // read/write Z after all overlay bodies. End the ordinary pass before the
     // shared renderer snapshots the same live color/depth attachments. Its
@@ -653,27 +686,21 @@ pub(super) fn dispatch_draw_passes(
         pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
     }
 
-    let bracket_tex = state
-        .match_state
-        .match_presentation
-        .selection_overlay
-        .as_ref()
-        .map(|o| o.white_texture());
     // Original6D4648 draws the first rally pass BEFORE the object loop at
     // 6D465F. Building bases have already primed Z; mobile bodies and Anim
     // slots can cover the line. The second pass follows effects and BandBox.
     // Both rally leaves bypass Z.
-    draw_pooled_surface_lines(
+    draw_pooled_surface_strokes(
         &mut pass,
         &state.renderer.batch_renderer,
         pool,
-        bracket_tex,
         "factory_rally_first",
     );
     // Original6D4656 IonBlast DrawAll moves terrain pixels after the first
     // rally pass and before the object loop at 6D465F (render::terrain_draw).
-    // Native draws the placement overlay (6D5030) before it; VERA draws the
-    // placement cells after the objects, so a ripple does not shift them.
+    // Native draws the placement cells (6D5030) at 0x006D4651, before it, and
+    // again at 0x006D46D8 after the objects; VERA draws only the second, which
+    // covers the first, so a ripple does not shift them.
     if state.renderer.terrain_draw_renderer.has_ion_blasts() {
         drop(pass);
         state
@@ -948,14 +975,15 @@ pub(super) fn dispatch_draw_passes(
     // Ares Tactical_Draw_FlyingStrings hooks 6D4684, right after the radial
     // indicators 6D467F and before BeaconManager 6D46B6, and draws the copied
     // signed credit labels (->10064430) with the shared GAME.FNT passthrough.
-    #[cfg(feature = "ares")]
-    draw_pooled_ui_passthrough(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        Some(state.renderer.bit_font.atlas()),
-        "bounty_text",
-    );
+    if state.rules().is_some_and(|rules| rules.ares()) {
+        draw_pooled_ui_passthrough(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            Some(state.renderer.bit_font.atlas()),
+            "bounty_text",
+        );
+    }
 
     // BeaconManager Draw 430AC0 (6D46B6) precedes BandBox. Its flags 600
     // bypass A and Z; each House row has its own Convert strip.
@@ -972,6 +1000,27 @@ pub(super) fn dispatch_draw_passes(
                 );
             }
         }
+    }
+    // BeaconClass::Draw 430250's label boxes (`beacon_labels`): black fill,
+    // House-colour outline, then GAME.FNT text.
+    let beacon_label_solid = state
+        .match_state
+        .match_presentation
+        .selection_overlay
+        .as_ref()
+        .map(|overlay| overlay.white_texture());
+    for (texture, key) in [
+        (beacon_label_solid, "beacon_label_fill"),
+        (beacon_label_solid, "beacon_label_outline"),
+        (Some(state.renderer.bit_font.atlas()), "beacon_label_text"),
+    ] {
+        draw_pooled_ui_passthrough(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            texture,
+            key,
+        );
     }
     // BandBox6DA180 is between the two rally passes (native6D46BD).
     // Wheel zoom defers its screen-pixel border until after resampling;
@@ -992,36 +1041,15 @@ pub(super) fn dispatch_draw_passes(
         );
     }
     // Tactical6D46CF redraws rally pixels whose ABuffer sample is zero.
-    draw_pooled_surface_lines(
+    draw_pooled_surface_strokes(
         &mut pass,
         &state.renderer.batch_renderer,
         pool,
-        bracket_tex,
         "factory_rally_second",
     );
-    // Original6D4750 and6D47BF/6D47F6 interleave action/control lines.
-    // The selected Techno's vt+438 (Foot4DC060) runs
-    // AFTER rally pass1 at6D46CF. Its solid surface stores do not read/write Z.
-    // See tools/procedural_drawing_oracle/rally-caller.instructions.json.
-    draw_pooled_surface_lines(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        bracket_tex,
-        "target_lines",
-    );
-    //6D4750..6D48F1: when Airstrike beams exist, the same ordered surface
-    // batch contains action rectangles and the beams between object visits.
-    if !data.tactical_lines.is_empty() {
-        drop(pass);
-        state.renderer.terrain_draw_renderer.draw_surface_lines(
-            encoder,
-            view,
-            &[data.tactical_lines],
-        );
-        pass = begin_main_load_pass(encoder, view, &world_depth);
-        pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
-    }
+    // BuildingPlacement_OverlayRenderer 0x006D5030(1) at 0x006D46D8 draws
+    // the PLACE cells after the second rally pass and before PlanMgr
+    // (0x006D46DD) and the line walk (0x006D4750), so lines cross over them.
     // Cell47EC90 flags20600 -> plain Convert/RLE4960A0: opaque stores,
     // world camera, neither A nor Z reads/writes. The shared neutral-A surface
     // binding and passthrough pipeline implement that material directly.
@@ -1072,6 +1100,28 @@ pub(super) fn dispatch_draw_passes(
         }
     }
 
+    // Original6D4750 and6D47BF/6D47F6 interleave action/control lines.
+    // The selected Techno's vt+438 (Foot4DC060) runs
+    // AFTER rally pass1 at6D46CF. Its solid surface stores do not read/write Z.
+    // See tools/procedural_drawing_oracle/rally-caller.instructions.json.
+    draw_pooled_surface_strokes(
+        &mut pass,
+        &state.renderer.batch_renderer,
+        pool,
+        "target_lines",
+    );
+    //6D4750..6D48F1: when Airstrike beams exist, the same ordered surface
+    // batch contains action rectangles and the beams between object visits.
+    if !data.tactical_lines.is_empty() {
+        drop(pass);
+        state.renderer.terrain_draw_renderer.draw_surface_lines(
+            encoder,
+            view,
+            &[data.tactical_lines],
+        );
+        pass = begin_main_load_pass(encoder, view, &world_depth);
+        pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
+    }
     // --- Step 10.5: PixelFX water/ore sparkles ---
     // gamemd writes these opaque one-pixel effects at the tactical tail, after
     // object/effect/status/action/placement drawing and before screen-fixed
@@ -1556,8 +1606,7 @@ fn composite_world_with_drag_rect(
     }
 }
 
-/// Native path/rally pixels belong to the world surface, before wheel zoom.
-/// Their dashed stores keep or skip each pixel by the live A on the GPU.
+/// VERA's ground marks: world-surface stores at neutral A, before wheel zoom.
 pub(super) fn draw_pooled_surface_lines<'a>(
     pass: &mut wgpu::RenderPass<'a>,
     batch: &'a BatchRenderer,
@@ -1567,6 +1616,20 @@ pub(super) fn draw_pooled_surface_lines<'a>(
 ) {
     if let (Some(t), Some((buf, count))) = (tex, pool.get(key)) {
         batch.draw_surface_stores(pass, t, buf, count);
+    }
+}
+
+/// Native path, rally and planning strokes belong to the world surface,
+/// before wheel zoom. Their dashed stores keep or skip each pixel by the
+/// live A on the GPU.
+pub(super) fn draw_pooled_surface_strokes<'a>(
+    pass: &mut wgpu::RenderPass<'a>,
+    batch: &'a BatchRenderer,
+    pool: &'a InstanceBufferPool,
+    key: &'static str,
+) {
+    if let Some((buf, count)) = pool.get(key) {
+        batch.draw_surface_strokes(pass, buf, count);
     }
 }
 
@@ -1693,7 +1756,7 @@ pub(crate) fn draw_bridge_shadows(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod tests {
     use super::{CellBodyAtlas, CellBodyDraw, RenderZPolicy, cell_body_runs};
     const SOURCE: &str = include_str!("draw_passes.rs");
@@ -1719,6 +1782,22 @@ mod tests {
             .expect("production source before tests")
             .find(needle)
             .unwrap_or_else(|| panic!("missing production draw anchor {needle:?}"))
+    }
+
+    #[test]
+    fn ground_marks_follow_the_kept_ground_and_precede_buildings_and_objects() {
+        let kept = source_offset(".keep(&state.renderer.gpu.device, encoder)");
+        let marks = source_offset("\"ground_marks\"");
+        let rings = source_offset("\"ground_strokes\"");
+        let fogged = source_offset("pool.get(\"fogged_objects\")");
+        let building_bases = source_offset("ObjectDrawPhase::BuildingBase");
+        let objects = source_offset("for layer in 0..=3 {");
+        assert!(kept < marks, "the kept ground must not store the marks");
+        assert!(
+            marks < rings,
+            "the ferry's circles follow the formation dots"
+        );
+        assert!(rings < fogged && rings < building_bases && rings < objects);
     }
 
     #[test]
@@ -1761,9 +1840,10 @@ mod tests {
         // each world blitter, so there is no final framebuffer multiply.
         assert!(first_rally < combat_lights);
         assert!(combat_lights < second_rally);
-        assert!(second_rally < target_lines);
+        // 0x006D46D8 draws the PLACE cells before the lines at 0x006D4750.
+        assert!(second_rally < placement);
+        assert!(placement < target_lines);
         assert!(target_lines < tactical_lines);
-        assert!(tactical_lines < placement);
         // Unit vt110 DrawExtras completes inside6D8DB0, before6D4664.
         assert!(status < combat_lights);
         assert!(status < placement);
@@ -1931,6 +2011,6 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 #[path = "tmp_clear_gpu_tests.rs"]
 mod tmp_clear_gpu_tests;

@@ -214,7 +214,7 @@ fn split_valid_coord(x: i32, y: i32) -> (u16, u16, SimFixed, SimFixed) {
     (rx, ry, sub_x, sub_y)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod tests {
     use super::*;
 

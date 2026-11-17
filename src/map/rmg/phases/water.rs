@@ -542,7 +542,7 @@ pub fn partition_grid(rng: &mut RmgRng, n: i32, rect: &[i32; 4]) -> Vec<[i32; 4]
     out
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::rmg::phases::shore::{SubTile, TileBlock, TileBlocks};

@@ -46,17 +46,7 @@ fn an_invisible_lamp_is_never_registered_for_the_click_or_the_band() {
         Some(beside)
     );
     let band = |order: &[u64]| {
-        band_rect_contains_drawn_object(
-            source,
-            order,
-            None,
-            None,
-            x - 1.,
-            y - 1.,
-            x + 1.,
-            y + 1.,
-            Some(sim.interner()),
-        )
+        band_rect_contains_drawn_object(source, order, x - 1., y - 1., x + 1., y + 1.)
     };
     assert!(!band(&[lamp]));
     assert!(band(&[lamp, beside]));

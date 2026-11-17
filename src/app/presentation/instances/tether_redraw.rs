@@ -1,11 +1,12 @@
 //! A building that unloads draws its tethered contacts in its own Display
 //! slot, and a Unit tethered to it draws only there.
 
+use crate::app::presentation::frame::PresentationFrame;
 use crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance;
 use crate::map::entities::EntityCategory;
+use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::MissionType;
-use crate::sim::world::Simulation;
 
 /// Mark the planned parents of this frame's tether draws.
 ///
@@ -29,41 +30,61 @@ use crate::sim::world::Simulation;
 /// the tactical admission did not plan is not drawn again, where native's
 /// DrawIt would still run. Its health bar and pips stay in its own slot,
 /// because `0x006D9789` draws Extras for every Display parent.
-pub(crate) fn assign_tether_redraws(sim: &Simulation, planned: &mut [PlannedObjectInstance]) {
-    let entities = sim.entities();
+pub(crate) fn assign_tether_redraws(
+    frame: &PresentationFrame,
+    planned: &mut [PlannedObjectInstance],
+) {
     for object in planned.iter_mut() {
-        let Some(entity) = entities.get(object.parent.id) else {
+        let Some(record) = frame.object(object.parent.id) else {
             continue;
         };
-        if entity.tether.partner().is_none() {
-            continue;
-        }
-        match entity.category() {
-            EntityCategory::Structure if gets_unload(entity) => {
-                object.tether_redraws = entity
-                    .radio_contacts
-                    .iter_live()
-                    .filter(|&contact| {
-                        entities.get(contact).is_some_and(|contact| {
-                            !contact.lifecycle.in_limbo()
-                                && contact.category() != EntityCategory::Structure
-                        })
+        object.tether_redraws = record.tether_draw.redraws.to_vec();
+        object.drawn_by_tether = record.tether_draw.drawn_by_tether;
+    }
+}
+
+/// One Display member's tether draws, as [`assign_tether_redraws`] hands
+/// them to its planned parent.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct TetherDraw {
+    /// A Structure's contacts drawn again in its slot.
+    pub(crate) redraws: Box<[u64]>,
+    /// A Unit drawn only in its building's slot.
+    pub(crate) drawn_by_tether: bool,
+}
+
+/// `entity`'s tether draws in the world of `entities`.
+pub(crate) fn tether_draw(entity: &GameEntity, entities: &EntityStore) -> TetherDraw {
+    if entity.tether.partner().is_none() {
+        return TetherDraw::default();
+    }
+    match entity.category() {
+        EntityCategory::Structure if gets_unload(entity) => TetherDraw {
+            redraws: entity
+                .radio_contacts
+                .iter_live()
+                .filter(|&contact| {
+                    entities.get(contact).is_some_and(|contact| {
+                        !contact.lifecycle.in_limbo()
+                            && contact.category() != EntityCategory::Structure
                     })
-                    .collect();
-            }
-            EntityCategory::Unit => {
-                object.drawn_by_tether = entity
-                    .radio_contacts
-                    .slot(0)
-                    .and_then(|contact| entities.get(contact))
-                    .is_some_and(|building| {
-                        building.category() == EntityCategory::Structure
-                            && (gets_unload(building)
-                                || building.mission.queued().known() == Some(MissionType::Unload))
-                    });
-            }
-            _ => {}
-        }
+                })
+                .collect(),
+            drawn_by_tether: false,
+        },
+        EntityCategory::Unit => TetherDraw {
+            redraws: Box::default(),
+            drawn_by_tether: entity
+                .radio_contacts
+                .slot(0)
+                .and_then(|contact| entities.get(contact))
+                .is_some_and(|building| {
+                    building.category() == EntityCategory::Structure
+                        && (gets_unload(building)
+                            || building.mission.queued().known() == Some(MissionType::Unload))
+                }),
+        },
+        _ => TetherDraw::default(),
     }
 }
 

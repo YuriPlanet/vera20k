@@ -13,14 +13,14 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("aircraft runtime absent")?
         .simulation;
     let mut objects = Vec::new();
     build_unit_instances(
         state,
         &mut objects,
-        &NativeDisplayOrder::from_display(sim.display_layers()),
+        &NativeDisplayOrder::from_world(sim, None),
     );
     let mut observations = Vec::new();
     let model_coverage = sim.entities().values()

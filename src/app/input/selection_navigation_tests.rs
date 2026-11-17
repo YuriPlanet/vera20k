@@ -179,7 +179,6 @@ struct CommandStep {
     modes: Modes,
     placement: bool,
     selection_mode: u32,
-    selection_across_map: bool,
     center_coord: Option<[i32; 3]>,
     redraw: Vec<u32>,
     call_order: Vec<String>,
@@ -2013,7 +2012,8 @@ fn execute_histories_match_selection_follow_modes_placement_and_camera() {
             unrepresented_modes.insert(row.id.as_str());
         }
         // Native fixture input B0FE54=3, B0FE58=1. Reach that state through
-        // the existing mode owner, then use its ordinary-selection reset.
+        // the existing mode owner, then use its ordinary-selection reset:
+        // 731D00 writes mode B0FE54 and submode B0FE58 but keeps scope B0FE64.
         let mut type_select = TypeSelectInputState::default();
         type_select.finish_category_navigation(CategoryNavigationKind::Health, true);
         type_select.across_map = true;
@@ -2052,7 +2052,7 @@ fn execute_histories_match_selection_follow_modes_placement_and_camera() {
                 ordered = effects.ordered;
                 follow = effects.follow_target;
                 pending = true;
-                type_select.reset_scope();
+                type_select.note_successful_selection_mutation(false);
                 let coords: Vec<_> = ordered
                     .iter()
                     .map(|id| {
@@ -2104,8 +2104,10 @@ fn execute_histories_match_selection_follow_modes_placement_and_camera() {
                 "{} step {index}: selection mode",
                 row.id
             );
-            assert_eq!(
-                type_select.across_map, expected.selection_across_map,
+            // The fixture's `selection_across_map` is the B0FE58 submode, not
+            // the scope byte; Select leaves B0FE64 as it was.
+            assert!(
+                type_select.across_map,
                 "{} step {index}: selection scope",
                 row.id
             );

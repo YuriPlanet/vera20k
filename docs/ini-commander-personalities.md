@@ -137,9 +137,13 @@ Assign.Computer1=Warren
 | `TroubleQuiet=` | `180` | Seconds of silence after an `InTrouble` clip whose entry names no `Timeout=`. |
 | `Assign.<house>=` | none | Names a personality for one launch slot — `Computer1`…`ComputerN`, the same names the startup log prints. The test seam until a selector exists; a slot's own `commander` field outranks it. |
 
-The player also has `[VERA] CommanderFeedback=` in their profile (default on),
-which switches the clips off without touching the data. It is presentation only:
-the personality and its strategy tilt stay.
+The player also has the Commander Clips box on the Gameplay page of Options
+(`[VERA] CommanderFeedback=`, default on), which silences the clips without
+touching the data. It is presentation only: the personality and its strategy
+tilt stay. It can change during a skirmish (an online match's menu leaves it
+out, as no clip plays there): unticked, the commanders keep watching and
+spend what they see unsaid, so ticking it again replays no greeting, taunt or
+defeat from the time it was off.
 
 Ways to say "no commander" for one house: `Assign.Computer2=none` (also `off` or
 `silent`), or the reserved personality `Standard` — no clips, no tilt, retail's

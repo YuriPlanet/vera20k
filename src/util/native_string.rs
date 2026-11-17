@@ -52,9 +52,13 @@ pub fn decode_widened_utf8(text: &str) -> Cow<'_, str> {
 }
 
 /// `f` applied to `text` with its ASCII letters upper-cased, as
-/// `str::to_ascii_uppercase` gives, built on the stack when it fits. For keys
+/// `str::to_ascii_uppercase` gives: borrowed when no letters need folding,
+/// otherwise built on the stack when it fits. For keys
 /// folded on every lookup, where a heap key per query showed in profiles.
 pub fn with_ascii_uppercase<R>(text: &str, f: impl FnOnce(&str) -> R) -> R {
+    if !text.bytes().any(|byte| byte.is_ascii_lowercase()) {
+        return f(text);
+    }
     let mut buffer = [0u8; 64];
     match buffer.get_mut(..text.len()) {
         Some(key) => {
@@ -126,6 +130,7 @@ pub fn acp_encode(text: &str) -> Vec<u8> {
     }
 }
 
+/// VERA: off Windows there is no code page; text is stored as UTF-8.
 #[cfg(not(windows))]
 pub fn acp_encode(text: &str) -> Vec<u8> {
     text.as_bytes().to_vec()
@@ -182,9 +187,13 @@ pub fn acp_decode(bytes: &[u8]) -> String {
     }
 }
 
+/// VERA: off Windows [`acp_encode`] writes UTF-8, so this reads UTF-8 back.
+/// Bytes that are not UTF-8, which another code page wrote, widen one to one,
+/// and a last character that a byte cut split is dropped
+/// ([`decode_widened_utf8`]).
 #[cfg(not(windows))]
 pub fn acp_decode(bytes: &[u8]) -> String {
-    widen_bytes(bytes)
+    decode_widened_utf8(&widen_bytes(bytes)).into_owned()
 }
 
 /// Round-trip edit-control text through the Windows active ANSI code page.
@@ -339,7 +348,7 @@ pub fn crt_wcstoul(units: &[u16], base: u32) -> u32 {
     crt_wcstoxl(units, base, true)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 
@@ -393,6 +402,14 @@ mod tests {
                 with_ascii_uppercase(text, str::to_owned),
                 text.to_ascii_uppercase()
             );
+        }
+    }
+
+    #[test]
+    fn ascii_uppercase_borrows_names_that_need_no_folding() {
+        let long = "T".repeat(65);
+        for text in ["TREE01", long.as_str()] {
+            with_ascii_uppercase(text, |key| assert!(std::ptr::eq(key, text)));
         }
     }
 }

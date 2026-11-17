@@ -800,7 +800,7 @@ fn naval_factory_spawn_uses_water_exit_and_defers_unload_only_without_contacts()
         }
         let yard = sim.substrate.entities.get(1).unwrap();
         let contacts_before = yard.radio_contacts.clone();
-        let mission_before = yard.mission;
+        let mission_before = yard.mission.clone();
         let produced = sim
             .construct_object_limbo_at_height(
                 "DEST",
@@ -1085,8 +1085,8 @@ fn naval_delivery_nonzero_canenter_refunds_without_trying_second_producer() {
             7,
         )
         .unwrap();
-    let selected_mission = sim.substrate.entities.get(1).unwrap().mission;
-    let other_mission = sim.substrate.entities.get(2).unwrap().mission;
+    let selected_mission = sim.substrate.entities.get(1).unwrap().mission.clone();
+    let other_mission = sim.substrate.entities.get(2).unwrap().mission.clone();
     let mut blocker =
         crate::sim::game_entity::GameEntity::test_default(50, "DEST", "Soviet", 12, 14);
     blocker.set_category_for_test(crate::map::entities::EntityCategory::Unit);

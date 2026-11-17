@@ -80,6 +80,7 @@ fn fire(
 
 #[test]
 fn battery_drains_by_its_ratio_lends_power_and_stops_when_drain_money_runs_out() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
         "[SuperWeaponTypes]\n0=Cell\n\
          [Cell]\nType=Battery\nRechargeTime=1\nIsPowered=no\nAction=Nuke\n\
@@ -161,6 +162,7 @@ fn battery_drains_by_its_ratio_lends_power_and_stops_when_drain_money_runs_out()
 
 #[test]
 fn always_granted_needs_no_provider_but_keeps_availability_gates() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
         "[SuperWeaponTypes]\n0=Strike\n1=Plain\n\
          [Strike]\nType=GenericWarhead\nSW.Warhead=Payload\nSW.AlwaysGranted=yes\n\
@@ -184,6 +186,7 @@ fn always_granted_needs_no_provider_but_keeps_availability_gates() {
 
 #[test]
 fn protect_curtains_its_rectangle_with_its_duration_and_affected_houses() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
         "[SuperWeaponTypes]\n0=Shield\n\
          [Shield]\nType=Protect\nRechargeTime=1\nIsPowered=no\nProtect.Duration=200\n\
@@ -235,6 +238,7 @@ fn protect_curtains_its_rectangle_with_its_duration_and_affected_houses() {
 
 #[test]
 fn sonar_pulse_marks_affected_enemies_in_range_and_whole_map_pulses_need_no_target() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
         "[SuperWeaponTypes]\n0=Sonar\n1=Wide\n\
          [Sonar]\nType=SonarPulse\nRechargeTime=1\nIsPowered=no\nSonarPulse.Delay=100\n\
@@ -272,6 +276,7 @@ fn sonar_pulse_marks_affected_enemies_in_range_and_whole_map_pulses_need_no_targ
             .entities
             .get(id)
             .unwrap()
+            .ares
             .sonar_timer
             .remaining(500)
     };
@@ -288,4 +293,40 @@ fn sonar_pulse_marks_affected_enemies_in_range_and_whole_map_pulses_need_no_targ
         .is_ready = true;
     assert!(fire(&mut sim, &rules, owner, wide, (0, 0)));
     assert_eq!(sonar(&sim, far), 0);
+}
+
+/// `SW.TimerVisibility` (10033370) through IsTimerVisible (10032E80, hook
+/// 0x6D49D1): the owner sees every timer, another player only those whose
+/// mask has the enemies bit, and an observer those with the allies bit.
+#[test]
+fn ares_timer_visibility_hides_an_owner_only_timer_from_other_players() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = rules(
+        "[SuperWeaponTypes]\n0=Mine\n1=Open\n2=Team\n\
+         [Mine]\nRechargeTime=1\nSW.TimerVisibility=owner\n\
+         [Open]\nRechargeTime=1\n\
+         [Team]\nRechargeTime=1\nSW.TimerVisibility=team\n",
+    );
+    let (mut sim, owner, mine) = scene(&rules, "Mine");
+    let open = sim.interner.get("Open").unwrap();
+    let team = sim.interner.get("Team").unwrap();
+    let enemy = sim.interner.get("Russians").unwrap();
+    let seen = |sim: &Simulation| {
+        [mine, open, team].map(|sw| {
+            ares_timer_visible(
+                sim,
+                &rules,
+                SuperTimerView::for_test(owner, sw, 0, false, 0, 0),
+            )
+        })
+    };
+    sim.session.set_current_house_for_test(Some(owner));
+    assert_eq!(seen(&sim), [true, true, true]);
+    sim.session.set_current_house_for_test(Some(enemy));
+    assert_eq!(seen(&sim), [false, true, false]);
+    sim.session.install_multiplayer_house_identity(
+        crate::skirmish_modes::MpModeClass::Battle,
+        vec![enemy],
+    );
+    assert_eq!(seen(&sim), [false, true, true]);
 }

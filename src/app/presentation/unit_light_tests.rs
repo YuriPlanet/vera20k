@@ -220,9 +220,9 @@ fn retail_mtnk_body_light_follows_bridge_arrival_and_ground_side_cell() {
 
 /// Ares UnitClass_DrawVXL_Deactivated1004CEA0 (hook73C143): the dim factors
 /// replace the stock halving, EMP first, then the operator test.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_deactivate_dims_replace_the_stock_unit_halving() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n0=TANK\n1=ROBO\n[ROBO]\nOperator=_ANY_\n\
          [AudioVisual]\nDeactivateDimPowered=.25\n",
@@ -250,8 +250,8 @@ fn ares_deactivate_dims_replace_the_stock_unit_halving() {
     }
     let light = crate::render::palette_light::PaletteLight::color_scheme([1000; 3], 1000);
     let level = |sim: &Simulation, id: u64| {
-        let unit = sim.entities().get(id).unwrap();
-        unit_voxel_effect_light(unit, [1.; 3], light, Some(&rules), sim, 0)
+        let unit = crate::app::presentation::frame::ObjectRecord::of_test_sim(sim, &rules, id);
+        unit_voxel_effect_light(&unit, [1.; 3], light, Some(&rules), sim, 0)
             .1
             .brightness()
     };

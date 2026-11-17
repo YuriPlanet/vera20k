@@ -61,11 +61,12 @@ mod native_cell;
 mod pavement;
 mod recalc_catalog;
 mod saved_terrain;
+mod terrain_cells;
 mod tubes;
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod damaged_radar_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod pavement_catalog_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod tests;
@@ -138,9 +139,8 @@ pub(crate) fn recalc_zone_type(
 /// Impassable (6, `0x00483D6B`). The stock arm's FirestormWall= branch
 /// needs `HouseClass::FirestormActive` (`+0x1FA`), which only Ares sets
 /// (its `Firestorm.Wall` sections take that branch: Ares 3.0 10014B70, hook
-/// 0x483D94), so default builds have no caller; the LaserFence branch is
-/// not ported (no retail type is a laser fence).
-#[cfg(feature = "ares")]
+/// 0x483D94), so only a game where Ares plays calls it; the LaserFence
+/// branch is not ported (no retail type is a laser fence).
 pub(crate) fn recalc_zone_type_with_buildings(
     outside: bool,
     overlay_zone_type: Option<u8>,
@@ -774,13 +774,14 @@ pub struct ResolvedTerrainGrid {
     /// type through the live `CellClass+0x44` identity (`OverlayGrid` for a
     /// real cell, the shared Dummy's own). Bound beside `land_speed_costs`
     /// from the same scenario's registry; empty when no registry was bound.
-    overlay_passability: Vec<OverlayPassability>,
+    overlay_passability: crate::util::synced::Synced<Vec<OverlayPassability>>,
     /// Pristine TMP dimensions used by Techno draw depth (0x547150/0x704350).
     /// Derived asset data, keyed by tile identity rather than mutable cell:
     /// never serialized or included in simulation hashes. Every drawn object
     /// asks it each frame and nothing walks it, so it takes the lookup hasher.
-    native_tmp_draw_heights: LookupMap<u16, PristineTmpHeader>,
-    cells: Vec<ResolvedTerrainCell>,
+    native_tmp_draw_heights: crate::util::synced::Synced<LookupMap<u16, PristineTmpHeader>>,
+    /// Synced in chunks into the presentation copy ([`terrain_cells::TerrainCells`]).
+    cells: terrain_cells::TerrainCells,
     /// Derived bound on the signed levels in `cells`, always holding 0 (the
     /// level presentation assumes for a cell the grid lacks). Every
     /// constructor computes it from `cells`; [`Self::set_cell_level`], the one
@@ -802,15 +803,17 @@ pub struct ResolvedTerrainGrid {
     mutation_epoch: u64,
     /// Production-only membership for native Size-diamond CellClass slots.
     /// `None` keeps synthetic/from_cells grids rectangular for focused tests.
-    native_allocated: Option<Vec<bool>>,
+    native_allocated: Option<crate::util::synced::Synced<Vec<bool>>>,
     /// Selected TMP subimage-pointer validity, aligned with `cells`. Black
     /// header RGB remains valid and therefore cannot be used as the sentinel.
-    radar_color_valid: Vec<bool>,
+    radar_color_valid: crate::util::synced::Synced<Vec<bool>>,
     /// Parsed first sibling TMP radar metadata for pristine cells whose
     /// subimage advertises damaged data. `None` means native VariantCount is
     /// below two (or the sibling could not be loaded), so bit 0x2000 wraps to
     /// the pristine chain head instead of inventing a damaged color.
-    damaged_radar_metadata: Vec<Option<Result<RadarColorMetadata, BridgeRecalcCatalogError>>>,
+    damaged_radar_metadata: crate::util::synced::Synced<
+        Vec<Option<Result<RadarColorMetadata, BridgeRecalcCatalogError>>>,
+    >,
     tube_facts: Vec<TubeFact>,
     /// Exact signed `CellClass+0x116` authority aligned with `cells`.
     native_tube_indices: Vec<NativeTubeCellIndex>,
@@ -1102,6 +1105,86 @@ fn overlay_passability_flags(registry: Option<&OverlayTypeRegistry>) -> Vec<Over
         .collect()
 }
 
+/// The parts of a [`ResolvedTerrainGrid`] its presentation copy takes only
+/// where they changed ([`ResolvedTerrainGrid::sync_into`]).
+#[derive(Default)]
+struct SyncedTerrain {
+    cells: terrain_cells::TerrainCells,
+    overlay_passability: crate::util::synced::Synced<Vec<OverlayPassability>>,
+    native_tmp_draw_heights: crate::util::synced::Synced<LookupMap<u16, PristineTmpHeader>>,
+    native_allocated: Option<crate::util::synced::Synced<Vec<bool>>>,
+    radar_color_valid: crate::util::synced::Synced<Vec<bool>>,
+    damaged_radar_metadata: crate::util::synced::Synced<
+        Vec<Option<Result<RadarColorMetadata, BridgeRecalcCatalogError>>>,
+    >,
+}
+
+impl ResolvedTerrainGrid {
+    fn take_synced(&mut self) -> SyncedTerrain {
+        SyncedTerrain {
+            cells: std::mem::take(&mut self.cells),
+            overlay_passability: std::mem::take(&mut self.overlay_passability),
+            native_tmp_draw_heights: std::mem::take(&mut self.native_tmp_draw_heights),
+            native_allocated: self.native_allocated.take(),
+            radar_color_valid: std::mem::take(&mut self.radar_color_valid),
+            damaged_radar_metadata: std::mem::take(&mut self.damaged_radar_metadata),
+        }
+    }
+
+    fn put_synced(&mut self, parts: SyncedTerrain) {
+        self.cells = parts.cells;
+        self.overlay_passability = parts.overlay_passability;
+        self.native_tmp_draw_heights = parts.native_tmp_draw_heights;
+        self.native_allocated = parts.native_allocated;
+        self.radar_color_valid = parts.radar_color_valid;
+        self.damaged_radar_metadata = parts.damaged_radar_metadata;
+    }
+
+    /// Bring `mirror`, the presentation copy of the live grid, up to this
+    /// one (docs/sim-thread.md): the cell chunks and per-cell tables written
+    /// since the last sync, and the rest whole. The copy keeps a Dummy of
+    /// its own, a copy of this grid's, which the simulation stamps.
+    pub(crate) fn sync_into(&mut self, mirror: &mut Self) {
+        let mut theirs = mirror.take_synced();
+        let mut mine = self.take_synced();
+        // The copy builds its own allocation caches and keeps its own copy
+        // of the bridge catalog: both are fixed once the terrain exists.
+        let caches = std::mem::take(&mut mirror.allocation_caches);
+        let catalog = mirror.bridge_recalc_catalog.take();
+        *mirror = self.clone();
+        mirror.allocation_caches = caches;
+        // A grid binds its catalog once, before its first sync.
+        mirror.bridge_recalc_catalog = match (catalog, self.bridge_recalc_catalog.as_ref()) {
+            (Some(own), Some(_)) => Some(own),
+            (_, live) => live.map(|live| Arc::new((**live).clone())),
+        };
+        mine.cells.sync_into(&mut theirs.cells);
+        mine.overlay_passability
+            .sync_into(&mut theirs.overlay_passability);
+        mine.native_tmp_draw_heights
+            .sync_into(&mut theirs.native_tmp_draw_heights);
+        theirs.native_allocated = match (mine.native_allocated.as_mut(), theirs.native_allocated) {
+            (Some(own), Some(mut copy)) => {
+                own.sync_into(&mut copy);
+                Some(copy)
+            }
+            (Some(own), None) => {
+                let mut copy = crate::util::synced::Synced::default();
+                own.sync_into(&mut copy);
+                Some(copy)
+            }
+            (None, _) => None,
+        };
+        mine.radar_color_valid
+            .sync_into(&mut theirs.radar_color_valid);
+        mine.damaged_radar_metadata
+            .sync_into(&mut theirs.damaged_radar_metadata);
+        self.put_synced(mine);
+        mirror.put_synced(theirs);
+        mirror.fork_cell_dummy();
+    }
+}
+
 impl ResolvedTerrainGrid {
     pub fn from_cells(width: u16, height: u16, cells: Vec<ResolvedTerrainCell>) -> Self {
         Self::from_cells_with_tubes(width, height, cells, Vec::new())
@@ -1123,7 +1206,7 @@ impl ResolvedTerrainGrid {
                     })
             })
             .collect();
-        let radar_color_valid = cells
+        let radar_color_valid: Vec<bool> = cells
             .iter()
             .map(|cell| cell.radar_left != [0, 0, 0] || cell.radar_right != [0, 0, 0])
             .collect();
@@ -1132,15 +1215,15 @@ impl ResolvedTerrainGrid {
             width,
             height,
             level_span: LevelSpan::of(cells.iter().map(|cell| cell.level)),
-            cells,
+            cells: terrain_cells::TerrainCells::new(cells),
             land_speed_costs: land_speed_cost_profiles(None),
-            overlay_passability: Vec::new(),
-            native_tmp_draw_heights: LookupMap::default(),
+            overlay_passability: Default::default(),
+            native_tmp_draw_heights: Default::default(),
             shared_cell_dummy: SharedCellDummy::fresh(),
             mutation_epoch: 0,
             native_allocated: None,
-            radar_color_valid,
-            damaged_radar_metadata,
+            radar_color_valid: radar_color_valid.into(),
+            damaged_radar_metadata: damaged_radar_metadata.into(),
             tube_facts,
             native_tube_indices,
             tube_native_ids,
@@ -1211,7 +1294,7 @@ impl ResolvedTerrainGrid {
 
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_overlay_types_for_test(&mut self, registry: &OverlayTypeRegistry) {
-        self.overlay_passability = overlay_passability_flags(Some(registry));
+        self.overlay_passability = overlay_passability_flags(Some(registry)).into();
     }
 
     /// Terrain animations to spawn once at map load, in native creation order.
@@ -1424,8 +1507,9 @@ impl ResolvedTerrainGrid {
     }
 
     /// Immutable cells in the grid's established storage order.
-    pub fn cells(&self) -> &[ResolvedTerrainCell] {
-        &self.cells
+    /// Synced in chunks into the presentation copy (see `terrain_cells`).
+    pub fn cells(&self) -> &crate::util::synced::ChunkedVec<ResolvedTerrainCell> {
+        self.cells.all()
     }
 
     /// Mutable cell access that moves `mutation_epoch`, private to this
@@ -1457,9 +1541,11 @@ impl ResolvedTerrainGrid {
     /// The cell storage, for fixtures that reshape a grid. Does not move
     /// `mutation_epoch`; widens the level span to [`LevelSpan::FULL`].
     #[cfg(any(test, feature = "test-support"))]
-    pub fn cells_mut_for_test(&mut self) -> &mut Vec<ResolvedTerrainCell> {
+    pub fn cells_mut_for_test(
+        &mut self,
+    ) -> &mut crate::util::synced::ChunkedVec<ResolvedTerrainCell> {
         self.level_span = LevelSpan::FULL;
-        &mut self.cells
+        self.cells.all_mut()
     }
 
     /// The one writer of a stored cell's level; keeps [`Self::level_span`].
@@ -1616,7 +1702,7 @@ impl ResolvedTerrainCell {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod mutation_epoch_tests {
     use super::*;
 
@@ -1647,7 +1733,7 @@ mod mutation_epoch_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod level_span_tests {
     use super::*;
 

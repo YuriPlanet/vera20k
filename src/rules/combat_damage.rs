@@ -46,7 +46,7 @@ pub struct CombatDamageDefaults {
     /// ground they explode on (see `docs/terrain-deformation.md`). gamemd
     /// still reads `Deform=` and `DeformThreshhold=` but nothing uses them,
     /// so retail warheads that set them stay inert unless this is on.
-    /// Default no; the Options page's Terrain Deformation box switches it on
+    /// Default no; the skirmish Game Options' Terrain Deformation box switches it on
     /// in each new scenario's root (`PersonalRules::scenario_root`).
     pub terrain_deformation: bool,
     /// VERA's `DeformLowestLevel=`: the lowest Level deformation lowers a
@@ -120,8 +120,8 @@ pub struct CombatDamageDefaults {
     /// `TiberiumExplosive=` (`RulesClass+0x17E5`, ReadBool over the current
     /// value at `0x0066CE7E`; constructor false). Stock UnitClass::
     /// Death_Explosion only sums a dead local with it; Ares 1004BD90 (hook
-    /// `0x738749`) turns it into the harvester's blast.
-    #[cfg(feature = "ares")]
+    /// `0x738749`) turns it into the harvester's blast, so only a read the
+    /// Ares way reads it.
     pub tiberium_explosive: bool,
     /// `IvanWarhead=` (`RulesClass+0xFC8`, ReadINI `0x0066C52A`; constructor
     /// null): the warhead of an Ivan bomb's blast (`BombClass::Detonate @
@@ -210,8 +210,8 @@ impl CombatDamageDefaults {
             drain_animation_type: None,
             falling_damage_multiplier: section.read_float("FallingDamageMultiplier", 1.0),
             current_strength_damage: section.read_bool("CurrentStrengthDamage", true),
-            #[cfg(feature = "ares")]
-            tiberium_explosive: section.read_bool("TiberiumExplosive", false),
+            tiberium_explosive: crate::rules::ares_switch::ares_way()
+                && section.read_bool("TiberiumExplosive", false),
             ivan_warhead: None,
             ivan_damage: section.read_int("IvanDamage", 100),
             ivan_timed_delay: section.read_int("IvanTimedDelay", 450),
@@ -253,7 +253,6 @@ impl Default for CombatDamageDefaults {
             drain_animation_type: None,
             falling_damage_multiplier: 1.0,
             current_strength_damage: true,
-            #[cfg(feature = "ares")]
             tiberium_explosive: false,
             ivan_warhead: None,
             ivan_damage: 100,
@@ -275,7 +274,7 @@ impl Default for CombatDamageDefaults {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

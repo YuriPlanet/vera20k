@@ -13,7 +13,7 @@
 // DIR/pN/events.jsonl. Exits 0 when every page played frames, ended its match
 // and exited.
 import { spawn } from 'node:child_process';
-import { appendFileSync, createReadStream, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { appendFileSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -48,6 +48,15 @@ const out = resolve(opts.out);
 const players = readdirSync(out).filter((name) => /^p\d+$/.test(name)).length;
 if (players < 2) throw new Error(`${out} holds no relay player directories`);
 const retail = files(resolve(opts.ra2));
+// A --threads package needs shared memory, so the pages are cross-origin
+// isolated (as tools/wasm/serve.py serves them) and start the worker pool.
+const threads = readFileSync(join(resolve(opts.dist), 'pkg', 'vera20k.js'), 'utf8').includes('initThreadPool');
+// SIM_THREAD=1|always, or one value per source (`always,0`): a --threads
+// page's simulation worker setting (set_simulation_thread); off by default.
+const simThreads = threads && process.env.SIM_THREAD ? process.env.SIM_THREAD.split(',') : [];
+const isolation = threads
+  ? { 'cross-origin-opener-policy': 'same-origin', 'cross-origin-embedder-policy': 'require-corp' }
+  : {};
 const done = new Map();
 const played = new Set();
 const log = (...args) => console.log(new Date().toISOString(), ...args);
@@ -57,7 +66,7 @@ function serve(response, path) {
     response.writeHead(404).end();
     return;
   }
-  response.writeHead(200, { 'content-type': TYPES[extname(path)] ?? 'application/octet-stream', 'cache-control': 'no-store' });
+  response.writeHead(200, { 'content-type': TYPES[extname(path)] ?? 'application/octet-stream', 'cache-control': 'no-store', ...isolation });
   createReadStream(path).pipe(response);
 }
 
@@ -88,14 +97,14 @@ const server = createServer((request, response) => {
     return;
   }
   if (url.pathname === '/e2e/host.html') {
-    response.writeHead(200, { 'content-type': 'text/html' });
+    response.writeHead(200, { 'content-type': 'text/html', ...isolation });
     response.end('<!doctype html><meta charset="utf-8"><title>VERA20k spawn e2e</title>'
       + '<canvas width="800" height="600"></canvas><script type="module" src="/e2e/host.js"></script>');
     return;
   }
   if (url.pathname === '/e2e/host.js') return serve(response, join(HERE, 'browser-host.js'));
   if (url.pathname === '/e2e/retail.json') {
-    response.writeHead(200, { 'content-type': 'application/json' });
+    response.writeHead(200, { 'content-type': 'application/json', ...isolation });
     response.end(JSON.stringify(retail));
     return;
   }
@@ -115,7 +124,7 @@ process.on('SIGINT', () => stop(130));
 process.on('SIGTERM', () => stop(143));
 
 server.listen(opts.port, '127.0.0.1', () => {
-  log(`serving ${opts.dist} and ${retail.length} retail files on http://localhost:${opts.port}`);
+  log(`serving ${opts.dist}${threads ? ' (threads)' : ''} and ${retail.length} retail files on http://localhost:${opts.port}`);
   for (let source = 0; source < players; source++) {
     const profile = join(out, `p${source}`, 'chrome-profile');
     rmSync(profile, { recursive: true, force: true });
@@ -130,7 +139,7 @@ server.listen(opts.port, '127.0.0.1', () => {
       '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required',
       '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
       '--disable-backgrounding-occluded-windows', '--window-size=800,600',
-      `http://localhost:${opts.port}/e2e/host.html?source=${source}&leave=${leave}`,
+      `http://localhost:${opts.port}/e2e/host.html?source=${source}&leave=${leave}${simThreads.length ? `&sim=${simThreads[source] ?? simThreads[0]}` : ''}`,
     ], { stdio: ['ignore', 'ignore', 'pipe'] });
     browser.stderr.on('data', (chunk) => appendFileSync(join(out, `p${source}`, 'chrome.log'), chunk));
     browsers.push(browser);

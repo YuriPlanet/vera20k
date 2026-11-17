@@ -752,15 +752,31 @@ impl TerrainDrawRenderer {
             camera.screen_size[0] as u32,
             camera.screen_size[1] as u32,
         ]);
-        // A surface drawn at whole surface pixels per camera pixel clips in
-        // camera pixels, then scales: each of its pieces covers the blocks.
-        let scale = surface.map_or(1, |surface| surface.scale);
-        let scaled = |rect: [u32; 4]| rect.map(|value| value * scale);
+        // A surface's pieces clip in camera pixels, then scale into its own
+        // pixels. A whole scale covers whole blocks; the sidebar's Large size
+        // (1.5) lays a camera pixel across a fractional span, so its
+        // rectangles round outward to keep every covered pixel inside.
+        let scale = surface.map_or(1.0, |surface| surface.scale);
         let size = surface
             .map(|surface| &surface.targets)
             .unwrap_or_else(|| self.targets.as_ref().expect("packed draw after prepare"))
             .source_color
             .size();
+        let scaled = |rect: [u32; 4]| {
+            if scale == 1.0 {
+                return rect;
+            }
+            let left = (rect[0] as f32 * scale).floor() as u32;
+            let top = (rect[1] as f32 * scale).floor() as u32;
+            let right = (((rect[0] + rect[2]) as f32 * scale).ceil() as u32).min(size.width);
+            let bottom = (((rect[1] + rect[3]) as f32 * scale).ceil() as u32).min(size.height);
+            [
+                left.min(right),
+                top.min(bottom),
+                right.saturating_sub(left),
+                bottom.saturating_sub(top),
+            ]
+        };
         let mut transactions = Vec::with_capacity(members.len());
         let mut pieces = 0;
         for member in members {
@@ -771,6 +787,14 @@ impl TerrainDrawRenderer {
                 continue;
             };
             pieces += member.pieces.len();
+            // A displaced blit's offset is in native pixels; a fractional
+            // scale cannot express it. The sidebar's packed layers (mask and
+            // gclock selectors) never displace, so they are the only ones
+            // drawn at one.
+            debug_assert!(
+                scale.fract() == 0.0 || effective_offset(first.instance, member.render_z) == 0,
+                "a displaced packed blit needs a whole surface scale"
+            );
             let params = Params {
                 rect,
                 surface_width: size.width,

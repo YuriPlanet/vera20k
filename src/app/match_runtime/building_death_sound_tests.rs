@@ -191,7 +191,7 @@ fn cue_matches_coordinate(event: &SimSoundEvent, expected: AnimWorldCoord) -> bo
 
 fn hostile_latch(entity: &crate::sim::game_entity::GameEntity) -> bool {
     // Read the canonical serialized owner, rather than widen a private core API.
-    serde_json::to_value(entity).unwrap()["ai_sell_repair"]["was_attacked_by_enemy"]
+    serde_json::to_value(entity).unwrap()["seldom"]["ai_sell_repair"]["was_attacked_by_enemy"]
         .as_bool()
         .expect("existing serialized hostile-hit byte")
 }
@@ -287,7 +287,7 @@ fn history(
         case.strength,
         "full constructor HP, no supplied damage prior"
     );
-    assert!(!hostile_latch(target) && !target.repairing.is_on());
+    assert!(!hostile_latch(target) && !target.building.repairing.is_on());
     assert!(
         target.lifecycle.object_alive() && target.lifecycle.cell_marked() && !target.in_limbo()
     );
@@ -350,9 +350,9 @@ fn history(
                 .art()
                 .anim_runtime_config(name)
                 .unwrap()
-                .report
+                .start_sound
                 .as_deref()
-                .is_some_and(|report| report.eq_ignore_ascii_case("Explosion14"))
+                .is_some_and(|sound| sound.eq_ignore_ascii_case("Explosion14"))
         );
     }
     assert_eq!(
@@ -434,7 +434,7 @@ fn history(
             before.mission.effective().known(),
             Some(MissionType::Selling)
         );
-        assert!(!before.repairing.is_on());
+        assert!(!before.building.repairing.is_on());
         if with_device && !observing && hp_before < case.strength / 4 {
             audio
                 .sfx_player

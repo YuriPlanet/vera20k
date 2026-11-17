@@ -37,7 +37,7 @@ pub fn browser_proxy_url() -> &'static str {
 use vera20k_relay_protocol::{ABSENT_MS, ClientSession, RelayError, ServerEvent};
 pub use vera20k_relay_protocol::{
     CertificatePacing, MAX_PEERS as RELAY_MAX_PEERS, OrderingCertificate, Ticket as RelayTicket,
-    peer_endpoint as relay_peer_endpoint,
+    WatchTicket as RelayWatchTicket, peer_endpoint as relay_peer_endpoint,
 };
 
 #[cfg(any(test, feature = "test-support"))]
@@ -606,6 +606,14 @@ impl LanUdpTransport {
     pub fn relay_expires(&self) -> Option<u64> {
         self.lock().relay_expires()
     }
+    /// A watcher's route (relay README "Watchers"): how far behind the
+    /// players its relay holds the stream. `None` for a player's route.
+    pub fn relay_watch_delay(&self) -> Option<u32> {
+        self.lock()
+            .relay
+            .as_ref()
+            .and_then(|route| route.session.watch_delay_seconds())
+    }
     /// The relay answered nothing for longer than it keeps a silent player's
     /// place, so the route was released: its match cannot be returned to.
     pub fn relay_absent(&self) -> bool {
@@ -623,7 +631,9 @@ impl LanUdpTransport {
             .ok_or_else(|| io::Error::other("no relay route"))?;
         let parsed = vera20k_relay_protocol::OrderingCertificate::parse(&certificate)
             .map_err(relay_io_error)?;
-        if parsed.sources_mask & (1 << route.session.source()) == 0 {
+        // A watcher has no source of its own (relay README "Watchers").
+        if !route.session.is_watching() && parsed.sources_mask & (1 << route.session.source()) == 0
+        {
             return Err(io::Error::other(
                 "ordering certificate excludes local source",
             ));
@@ -658,6 +668,20 @@ impl LanUdpTransport {
             route
                 .session
                 .configure_ordering_at(cert, agreement, now_ms, &mut route.encoded)
+        })
+    }
+
+    /// A watcher's Ready, resent by the caller until the start (relay README
+    /// "Watchers"); see `ClientSession::configure_watch_at`.
+    pub(super) fn configure_watch(&mut self, agreement: [u8; 32]) -> io::Result<()> {
+        self.send_ordering(|route, now_ms| {
+            let cert = route
+                .ordering_certificate
+                .as_ref()
+                .ok_or(RelayError::Unregistered)?;
+            route
+                .session
+                .configure_watch_at(cert, agreement, now_ms, &mut route.encoded)
         })
     }
 
@@ -2116,11 +2140,11 @@ impl LanUdpTransport {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 #[path = "udp_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 mod close_tests {
     use super::*;
     use crate::net::lan_messages::{LanMessage, LanMessageKind, LanNamedMessage};

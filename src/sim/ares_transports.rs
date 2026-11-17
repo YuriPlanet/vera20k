@@ -47,12 +47,13 @@ impl InitialPayloadState {
         !std::mem::replace(&mut self.created, true)
     }
 
-    /// Folded while still pending, so a placed object adds nothing. An
-    /// Infantry's state is never read (FootClass_Put skips Infantry and a
-    /// conversion keeps the class), so it is not folded.
+    /// Folded once created, so an object in a game without Ares (always
+    /// pending) adds nothing. An Infantry's state is never read
+    /// (FootClass_Put skips Infantry and a conversion keeps the class), so it
+    /// is not folded.
     pub(crate) fn hash_state(&self, category: EntityCategory, hasher: &mut impl std::hash::Hasher) {
-        if !self.created && category != EntityCategory::Infantry {
-            std::hash::Hash::hash(b"ares-initial-payload-pending-v1", hasher);
+        if self.created && category != EntityCategory::Infantry {
+            std::hash::Hash::hash(b"ares-initial-payload-created-v1", hasher);
         }
     }
 }
@@ -77,7 +78,7 @@ impl Simulation {
     ///     `ExtraPower=` is positive; any other first hears its HELLO
     ///     (RequestLink); then CargoClass AddPassenger and AbortMotion;
     ///   - a Foot takes the transport's Location (SetLocation vt+0x1B4), an
-    ///     `OpenTopped=` transport makes it a rider (EnteredOpenTopped
+    ///     `OpenTopped=` transport makes it a rider on Guard (EnteredOpenTopped
     ///     `0x00710470`), Transporter is the transport, and AddPassenger
     ///     (vt+0x394, a `Gunner=` transport's gunner included) runs with
     ///     VocClass::VoicesEnabled cleared, so no EnterTransportSound;
@@ -104,7 +105,7 @@ impl Simulation {
             .substrate
             .entities
             .get_mut(id)
-            .is_some_and(|entity| entity.ares_initial_payload.take())
+            .is_some_and(|entity| entity.ares.ares_initial_payload.take())
         {
             return;
         }
@@ -284,6 +285,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ares_transports_tests.rs"]
 mod tests;

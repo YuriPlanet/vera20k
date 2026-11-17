@@ -242,7 +242,9 @@ pub(crate) fn render_coop_score(
                 &chrome,
                 ControlPaint::Combo {
                     rect,
-                    swatch: item.swatch.map(|index| house_color_tint(&[], index)),
+                    swatch: item
+                        .swatch
+                        .map(|index| house_color_tint(state.rules(), index)),
                     open: false,
                     disabled: !enabled,
                 },

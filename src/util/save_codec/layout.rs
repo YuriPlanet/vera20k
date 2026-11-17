@@ -973,6 +973,6 @@ fn reach(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 #[path = "layout_tests.rs"]
 mod tests;

@@ -105,7 +105,6 @@ impl VisceroidScene {
 /// Can_Enter_Cell lets it into that cell (`0x0073F5B5`); gamemd never merges
 /// them, so both are still small visceroids, in one cell. Ares merges them
 /// (`1004C530`, hook `0x00739F21`).
-#[cfg(not(feature = "ares"))]
 #[test]
 fn small_visceroids_seek_each_other_and_stay_small() {
     let Some(mut scene) = two_small_visceroids() else {
@@ -131,9 +130,9 @@ fn small_visceroids_seek_each_other_and_stay_small() {
 /// Ares `UnitClass_UpdatePosition_Visceroid @ 1004C530` (hook `0x00739F21`):
 /// the seeker arriving on the other small visceroid leaves the game, and the
 /// other becomes a large visceroid at its full Strength.
-#[cfg(feature = "ares")]
 #[test]
 fn small_visceroids_merge_into_a_large_one() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(mut scene) = two_small_visceroids() else {
         return;
     };

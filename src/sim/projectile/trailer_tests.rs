@@ -175,18 +175,15 @@ fn projectile_trailer_header_matches_original_signed_cadence_and_wait_gates() {
             "{}",
             row["name"]
         );
-        let result = std::panic::catch_unwind(|| {
-            store.trailer(&head, &kind, supplied["frame"].as_i64().unwrap() as u32)
-        });
+        let result = store.trailer(&head, &kind, supplied["frame"].as_i64().unwrap() as u32);
         if row.get("divide_fault").is_some() {
             assert!(
-                result.is_err(),
-                "{}: native #DE has no silent cadence",
+                result.is_none(),
+                "{}: where native takes #DE, VERA spawns no trailer",
                 row["name"]
             );
         } else {
             let actual: Vec<_> = result
-                .unwrap()
                 .into_iter()
                 .map(|(name, p)| json!({"anim_type":name,"position":[p.x,p.y,p.z]}))
                 .collect();

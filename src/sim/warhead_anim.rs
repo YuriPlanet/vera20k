@@ -92,7 +92,7 @@ fn interval_allows(counter: &mut i32, interval: i32) -> bool {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests {
     use super::*;
 

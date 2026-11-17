@@ -820,9 +820,9 @@ fn a_removed_foot_controller_frees_its_captives() {
 
 /// Ares CaptureManagerClass_DecideUnitFate_BuildingFate (1005C680, hook
 /// 0x47243F): a computer's captured building queues Guard with no fate roll.
-#[cfg(feature = "ares")]
 #[test]
 fn a_computer_building_guards_without_a_fate_roll() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let mut sim = sim(1);
     let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
@@ -1147,7 +1147,7 @@ fn native_overload_update_corpus() {
             "{name}: constructor pip countdown"
         );
         let entity = sim.substrate.entities.get_mut(mind).unwrap();
-        entity.capture_manager = Some(manager);
+        entity.capture_manager = Some(Box::new(manager));
         if input.get("kill").is_some() {
             // Dies to the first damaging row, as the fixture's owner does.
             entity.health.set_for_test(50);
@@ -2038,6 +2038,7 @@ fn selling_a_psychic_tower_frees_its_captives() {
             .entities
             .get(tower)
             .unwrap()
+            .building
             .building_last_operational
             .is_operational()
     );

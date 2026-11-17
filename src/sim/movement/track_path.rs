@@ -678,7 +678,15 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let Some(actor) = self.substrate.entities.get_mut(id) else {
+        // A quiet unit is owed no setter (`world::quiet_units`).
+        if self.quiet(id) {
+            return;
+        }
+        let Some(actor) = self
+            .substrate
+            .entities
+            .get_mut_if(id, |actor| actor.navigation.destination_setter_owed())
+        else {
             return;
         };
         if !actor.navigation.take_destination_setter() {
@@ -967,8 +975,7 @@ impl Simulation {
                 .get(building)
                 .and_then(|building| self.entity_object_type(building, rules))
                 .is_some_and(|object| {
-                    #[cfg(feature = "ares")]
-                    if object.building_type_ext().tunnel.is_some() {
+                    if rules.ares_form() && object.building_type_ext().tunnel.is_some() {
                         return true;
                     }
                     object.unit_absorb

@@ -21,6 +21,7 @@ fn rules(source: &str) -> RuleSet {
 /// not convert where the original atoi stored 0.
 #[test]
 fn ares_rules_lists_read_long_values_and_skip_unknown_names() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(&format!(
         "[InfantryTypes]\n0=E1\n[VehicleTypes]\n0=MCV\n[BuildingTypes]\n0=YARD\n\
          [E1]\nStrength=100\n[MCV]\nStrength=100\n[YARD]\nStrength=100\n\
@@ -42,6 +43,7 @@ fn ares_rules_lists_read_long_values_and_skip_unknown_names() {
 /// type lists are Find-only and the debris maximums skip bad tokens.
 #[test]
 fn ares_type_lists_find_existing_types_only() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
         "[VehicleTypes]\n0=TANK\n[BuildingTypes]\n0=DEPOT\n[Animations]\n0=EXPA\n\
          [Warheads]\n0=HE\n\
@@ -64,6 +66,7 @@ fn ares_type_lists_find_existing_types_only() {
 /// hook 0x475107): a house named past 128 bytes still enters the mask.
 #[test]
 fn ares_house_lists_read_past_128_bytes() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(&format!(
         "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=TANK\n\
          [TANK]\nStrength=100\nRequiredHouses={},Russians\n",

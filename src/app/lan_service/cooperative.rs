@@ -302,7 +302,7 @@ fn round_options(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::skirmish_launch::AiDifficulty;

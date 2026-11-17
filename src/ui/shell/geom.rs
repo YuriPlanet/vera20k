@@ -198,6 +198,9 @@ pub const SHELL_BASE_H: i32 = 600;
 pub struct ShellScale {
     screen_w: i32,
     screen_h: i32,
+    /// The scaled shell stands at the window's right edge instead of its
+    /// centre ([`Self::anchored_right`]).
+    right: bool,
 }
 
 impl ShellScale {
@@ -207,10 +210,32 @@ impl ShellScale {
     pub const RETAIL: Self = Self {
         screen_w: SHELL_BASE_W,
         screen_h: SHELL_BASE_H,
+        right: false,
     };
 
     pub fn from_screen(screen_w: i32, screen_h: i32) -> Self {
-        Self { screen_w, screen_h }
+        Self {
+            screen_w,
+            screen_h,
+            right: false,
+        }
+    }
+
+    /// The same mapping with the scaled shell at the window's right edge, the
+    /// spare width all at its left: VERA's game room spreads into it.
+    pub fn anchored_right(self) -> Self {
+        Self {
+            right: true,
+            ..self
+        }
+    }
+
+    /// The same mapping with the scaled shell centred again.
+    pub fn centred(self) -> Self {
+        Self {
+            right: false,
+            ..self
+        }
     }
 
     /// The mapping the front-end shell takes in a window. Only the two sizes
@@ -240,7 +265,9 @@ impl ShellScale {
         let factor = self.factor();
         let w = (SHELL_BASE_W as f32 * factor).round() as i32;
         let h = (SHELL_BASE_H as f32 * factor).round() as i32;
-        RectPx::new((self.screen_w - w) / 2, (self.screen_h - h) / 2, w, h)
+        let spare = self.screen_w - w;
+        let x = if self.right { spare } else { spare / 2 };
+        RectPx::new(x, (self.screen_h - h) / 2, w, h)
     }
 
     /// The whole window this scale maps into. A layout's `screen` is this on
@@ -492,7 +519,7 @@ pub fn snap_button_biased_truncate(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

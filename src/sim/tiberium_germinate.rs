@@ -115,7 +115,7 @@ pub fn run_generated_final_cell_attributes(
     Ok(receipt)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests {
     use super::*;
     use crate::map::tiberium_cell::ORE_DENSITY_BY_NEIGHBOR_COUNT;

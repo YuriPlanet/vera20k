@@ -11,43 +11,43 @@ use crate::sim::mission::{MISSION_STUB_FRAMES, MissionId, MissionType};
 use crate::sim::world::FrameEffects;
 use crate::util::direction::DIRECTION_DELTAS;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "foot_mission_oracle_tests.rs"]
 pub(in crate::sim::world::techno_ai) mod foot_mission_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "deployed_guard_oracle_tests.rs"]
 mod deployed_guard_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "automatic_deploy_oracle_tests.rs"]
 mod automatic_deploy_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "infantry_move_oracle_tests.rs"]
 mod infantry_move_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "../infantry_fire_oracle_tests.rs"]
 mod infantry_fire_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "hover_attack_tests.rs"]
 mod hover_attack_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "guard_sabotage_tests.rs"]
 mod guard_sabotage_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "hunt_idle_tests.rs"]
 mod hunt_idle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "campaign_hunt_oracle_tests.rs"]
 mod campaign_hunt_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "area_guard_post_tests.rs"]
 mod area_guard_post_tests;
 
@@ -135,7 +135,9 @@ pub(crate) fn dispatch_foot_mission(
                     .try_resolve(entity.type_ref())
                     .and_then(|name| rules.object(name))
                     .is_some_and(|obj| {
-                        obj.deploy_fire && !deploy_shim_desolator(obj) && obj.undeploy_delay < 0
+                        obj.deploy_fire
+                            && !deploy_shim_desolator(obj, rules.ares())
+                            && obj.undeploy_delay < 0
                     }),
         }
     };
@@ -470,7 +472,7 @@ pub(crate) fn dispatch_foot_mission(
                 })
                 .is_some_and(|object| {
                     object.undeploy_delay >= 0
-                        || (object.deploy_fire && deploy_shim_desolator(object))
+                        || (object.deploy_fire && deploy_shim_desolator(object, rules.ares()))
                 }) =>
         {
             infantry_guard_handled = true;
@@ -981,14 +983,11 @@ impl MissionHandlerEvaluation {
 
 /// The deploy shim521320's desolator test, `ImmuneToRadiation=` (`+0xD37`)
 /// at `0x0052138C` and `0x005215F9`; Ares 3.0 tests `IsDesolator` there
-/// instead (Ares.dll 100497F0 and 100497C0).
-fn deploy_shim_desolator(object: &crate::rules::object_type::ObjectType) -> bool {
-    #[cfg(feature = "ares")]
-    {
+/// instead (Ares.dll 100497F0 and 100497C0) while Ares plays (`ares`).
+fn deploy_shim_desolator(object: &crate::rules::object_type::ObjectType, ares: bool) -> bool {
+    if ares {
         object.techno_combat().roles().is_desolator()
-    }
-    #[cfg(not(feature = "ares"))]
-    {
+    } else {
         object.immune_to_radiation
     }
 }
@@ -1053,7 +1052,7 @@ fn infantry_automatic_guard_delay(
             return -1;
         }
     }
-    if deploy_shim_desolator(object) {
+    if deploy_shim_desolator(object, rules.ares()) {
         return -1;
     }
     let Some(moving) = crate::sim::movement::motion_query::is_moving(actor) else {
@@ -1405,7 +1404,8 @@ pub(crate) fn foot_enter_idle_mode_selection(
 ///    movement-zone gate ON (`0x006F8EC4` computes the hunter's zone id and
 ///    `0x006F9D69` hands it to `Evaluate_Candidate`, which rejects any
 ///    candidate outside it at `0x006F7E9C`), so the hunter reaches the far side
-///    of the map but not the far side of a river.
+///    of the map but not the far side of a river, unless Phobos plays and its
+///    type's `TargetZoneScanType` lets it (`combat::greatest_threat::zone_admits`).
 /// 3. **The infantry arms**, taken only by an infantryman (`What_Am_I` 0xF,
 ///    `0x004D53A0..0x004D53B4`) whose scan came back with a target: the
 ///    engineer's, the C4 one, the VehicleThief's and the no-flag arm are
@@ -2937,7 +2937,7 @@ fn attack_target_is_stale(sim: &Simulation, id: u64) -> bool {
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 mod guard_rearm_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -3076,7 +3076,7 @@ mod guard_rearm_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 mod terrain_target_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

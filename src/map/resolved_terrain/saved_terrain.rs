@@ -4,7 +4,7 @@
 //! that path nor this value boundary runs authored Fill/Recalc, Tube or Anim
 //! constructors. Process identity and resident catalogs are supplied separately.
 
-use super::build::load_native_tmp_draw_heights;
+use super::build::{MAX_TMP_RAMP_TYPE, load_native_tmp_draw_heights};
 use super::cliffs::build_destroyable_cliff_catalog;
 use super::*;
 use crate::assets::asset_manager::AssetManager;
@@ -86,6 +86,8 @@ pub enum SavedTerrainError {
     },
     #[error("saved terrain cell {index} references missing Tube {tube}")]
     TubeReference { index: usize, tube: u16 },
+    #[error("saved terrain cell {index} has slope {slope}, past the slope tables")]
+    Slope { index: usize, slope: u8 },
     #[error("saved terrain animation {index} has no allocated cell at {cell:?}")]
     AnimationCell { index: usize, cell: (u16, u16) },
     #[error("saved terrain resident assets: {0}")]
@@ -133,7 +135,7 @@ impl SavedTerrainTemplate {
                 });
             }
         }
-        for (index, (cell, live)) in self.cells.iter_mut().zip(&live.cells).enumerate() {
+        for (index, (cell, live)) in self.cells.iter_mut().zip(live.cells.iter()).enumerate() {
             if self
                 .native_allocated
                 .as_ref()
@@ -249,6 +251,16 @@ impl SavedTerrainTemplate {
                     tube: tube.0,
                 });
             }
+            // Map building flattens a ramp past the 21-record slope tables
+            // (`merge_tmp_metadata`), so only a damaged save holds one; the
+            // Cell coordinate readers (`CellRef::center_coordinate`) expect
+            // one inside.
+            if cell.slope_type > MAX_TMP_RAMP_TYPE {
+                return Err(SavedTerrainError::Slope {
+                    index,
+                    slope: cell.slope_type,
+                });
+            }
         }
         // Raw signed Tube indices deliberately admit negative and out-of-range
         // values. ReadTubesINI728515 publishes source ordinals while its registry
@@ -284,15 +296,15 @@ impl SavedTerrainTemplate {
             width: self.width,
             height: self.height,
             level_span: LevelSpan::of(self.cells.iter().map(|cell| cell.level)),
-            cells: self.cells,
+            cells: super::terrain_cells::TerrainCells::new(self.cells),
             land_speed_costs: land_speed_cost_profiles(None),
-            overlay_passability: Vec::new(),
-            native_tmp_draw_heights: LookupMap::default(),
+            overlay_passability: Default::default(),
+            native_tmp_draw_heights: Default::default(),
             shared_cell_dummy,
             mutation_epoch: 0,
-            native_allocated: self.native_allocated,
-            radar_color_valid: self.radar_color_valid,
-            damaged_radar_metadata,
+            native_allocated: self.native_allocated.map(Into::into),
+            radar_color_valid: self.radar_color_valid.into(),
+            damaged_radar_metadata: damaged_radar_metadata.into(),
             tube_facts: self.tube_facts,
             native_tube_indices: self.native_tube_indices,
             tube_native_ids: self.tube_native_ids,
@@ -320,9 +332,9 @@ impl ResolvedTerrainGrid {
             land_role: SavedLandRole::Baseline,
             width: self.width,
             height: self.height,
-            cells: self.cells.clone(),
-            native_allocated: self.native_allocated.clone(),
-            radar_color_valid: self.radar_color_valid.clone(),
+            cells: self.cells.all().to_vec(),
+            native_allocated: self.native_allocated.as_deref().cloned(),
+            radar_color_valid: (*self.radar_color_valid).clone(),
             tube_facts: self.tube_facts.clone(),
             native_tube_indices: self.native_tube_indices.clone(),
             tube_native_ids: self.tube_native_ids.clone(),
@@ -405,7 +417,7 @@ impl ResolvedTerrainGrid {
         selector: TileVariantSelector,
     ) {
         self.land_speed_costs = land_speed_cost_profiles(rules);
-        self.overlay_passability = overlay_passability_flags(overlay_types);
+        self.overlay_passability = overlay_passability_flags(overlay_types).into();
         self.clear_tile_id = theater.and_then(|td| td.rmg_tiles.clear_tile).unwrap_or(0);
         self.water_tiles = theater.map_or_else(
             || crate::map::rmg::tiles::TileIds::from_keys(&Default::default()),
@@ -444,7 +456,7 @@ impl ResolvedTerrainGrid {
             self.bridge_recalc_catalog = None;
             return;
         }
-        self.native_tmp_draw_heights = load_native_tmp_draw_heights(theater, assets);
+        self.native_tmp_draw_heights = load_native_tmp_draw_heights(theater, assets).into();
         self.destroyable_cliff_catalog = build_destroyable_cliff_catalog(theater, assets, rules);
         self.deformation_catalog =
             super::deformation::build_deformation_catalog(theater, assets, rules);

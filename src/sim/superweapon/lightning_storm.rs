@@ -25,7 +25,7 @@
 //! computer house fires its own at its rally target unless one rages
 //! (`ai_fire.rs`).
 //!
-//! Ares builds redirect `Type=LightningStorm` to SW_LightningStorm, whose
+//! When Ares plays, `Type=LightningStorm` goes to SW_LightningStorm, whose
 //! Activate and hooks rewrite Start, Process, CreateCloudBolt and
 //! GroundStrike while its storm is current: the child module `ares`.
 //!
@@ -110,11 +110,8 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::{SimSoundEvent, Simulation};
 use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, GROUND_LEVEL_HEIGHT_LEPTONS};
 
-#[cfg(feature = "ares")]
 mod ares;
-#[cfg(feature = "ares")]
 pub(crate) use ares::bolt_explosion as ares_bolt_explosion;
-#[cfg(feature = "ares")]
 pub(super) use ares::{abort_fire as ares_abort_fire, launch as ares_launch};
 
 /// The empty cell `0x00A9F9F8`, `(0, 0)`: Start draws a cell for it, and the
@@ -132,8 +129,8 @@ const DEBRIS_LANDS: [i32; 4] = [1, 3, 4, 11];
 const DEBRIS_COUNT: (i32, i32) = (2, 4);
 
 /// The storm's globals. Owned here; the world hash folds the fields in
-/// declaration order.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+/// declaration order, the Ares ones only once set (the `Hash` impl below).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LightningStorm {
     /// `0x00A9FAB4` (`LightningStorm::IsActive @ 0x0053A100`): the storm
     /// rages.
@@ -160,14 +157,34 @@ pub struct LightningStorm {
     /// Super (owner, type) whose SWTypeExt the storm hooks read, from its
     /// Activate until the storm ends. Unset, the hooks keep the stock bodies
     /// (a trigger's storm).
-    #[cfg(feature = "ares")]
     #[serde(default)]
     ares_super: Option<(InternedId, InternedId)>,
     /// That type's `Light.*`, which UpdateLighting (hook 53C280) applies
     /// while the storm rages.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     ares_light: Option<crate::rules::superweapon_type::AresSuperWeaponLighting>,
+}
+
+/// The stock globals hash as the derived hash did, in declaration order; an
+/// Ares storm adds its own fold, so a game without one keeps its state
+/// hash's stream.
+impl std::hash::Hash for LightningStorm {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.active.hash(state);
+        self.time_to_end.hash(state);
+        self.deferment.hash(state);
+        self.duration.hash(state);
+        self.start_frame.hash(state);
+        self.cell.hash(state);
+        self.owner.hash(state);
+        self.clouds_present.hash(state);
+        self.clouds_manifesting.hash(state);
+        if self.ares_super.is_some() || self.ares_light.is_some() {
+            b"ares-lightning-storm-v1".hash(state);
+            self.ares_super.hash(state);
+            self.ares_light.hash(state);
+        }
+    }
 }
 
 /// The values `SuperWeaponEffects::ResetAll @ 0x00539760` leaves at each
@@ -185,9 +202,7 @@ impl Default for LightningStorm {
             owner: None,
             clouds_present: Vec::new(),
             clouds_manifesting: Vec::new(),
-            #[cfg(feature = "ares")]
             ares_super: None,
-            #[cfg(feature = "ares")]
             ares_light: None,
         }
     }
@@ -200,7 +215,6 @@ impl LightningStorm {
     }
 
     /// CurrentLightningStorm's `Light.*`, none without one.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_light(
         &self,
     ) -> Option<crate::rules::superweapon_type::AresSuperWeaponLighting> {
@@ -290,8 +304,9 @@ pub(crate) fn start(
     mut cell: (i16, i16),
     owner: Option<InternedId>,
 ) {
-    #[cfg(feature = "ares")]
-    if let Some(storm) = ares::current(sim, rules) {
+    if rules.ares_form()
+        && let Some(storm) = ares::current(sim, rules)
+    {
         ares::start(sim, rules, storm, duration, deferment, cell, owner);
         return;
     }
@@ -405,7 +420,7 @@ fn recheck_viewer_radar(sim: &mut Simulation) {
 ///    warns under `LightningPrintText=` (`0x0053AAE9`,
 ///    [`SimSoundEvent::LightningStormApproaching`]).
 ///
-/// In an Ares build the list work (steps 1 and 2) is always
+/// When Ares plays the list work (steps 1 and 2) is always
 /// [`ares::process_lists`], and an Ares storm's rest is [`ares::process`].
 ///
 /// Returns whether a strike changed a bridge.
@@ -415,15 +430,17 @@ pub(super) fn process(
     overlay_registry: Option<&OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) -> bool {
-    #[cfg(feature = "ares")]
-    let bridge_changed = ares::process_lists(sim, rules, overlay_registry, frame_effects);
-    #[cfg(feature = "ares")]
-    if let Some(storm) = ares::current(sim, rules) {
+    let bridge_changed = if rules.ares_form() {
+        ares::process_lists(sim, rules, overlay_registry, frame_effects)
+    } else {
+        process_lists(sim, rules, overlay_registry, frame_effects)
+    };
+    if rules.ares_form()
+        && let Some(storm) = ares::current(sim, rules)
+    {
         ares::process(sim, rules, storm);
         return bridge_changed;
     }
-    #[cfg(not(feature = "ares"))]
-    let bridge_changed = process_lists(sim, rules, overlay_registry, frame_effects);
 
     let frame = sim.session.binary_frame() as i32;
     let storm = &sim.lightning_storm;
@@ -458,8 +475,8 @@ pub(super) fn process(
     bridge_changed
 }
 
-/// Process's list work (`0x0053A74C..0x0053A8F8`), steps 1 and 2.
-#[cfg(not(feature = "ares"))]
+/// Process's list work (`0x0053A74C..0x0053A8F8`), steps 1 and 2, when Ares
+/// does not play.
 fn process_lists(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -606,8 +623,9 @@ impl StormCell {
 /// 0)` and listed as manifesting and present. (The coordinate is compared with
 /// the zero coordinate `0x00A9FA30` first, which a cell centre never is.)
 pub(crate) fn create_cloud_bolt(sim: &mut Simulation, rules: &RuleSet, cell: (i16, i16)) {
-    #[cfg(feature = "ares")]
-    if let Some(storm) = ares::current(sim, rules) {
+    if rules.ares_form()
+        && let Some(storm) = ares::current(sim, rules)
+    {
         ares::create_cloud_bolt(sim, rules, storm, cell);
         return;
     }
@@ -678,8 +696,9 @@ pub(super) fn ground_strike(
     [x, y, _]: [i32; 3],
     frame_effects: FrameEffects<'_>,
 ) -> bool {
-    #[cfg(feature = "ares")]
-    if let Some(storm) = ares::current(sim, rules) {
+    if rules.ares_form()
+        && let Some(storm) = ares::current(sim, rules)
+    {
         return ares::ground_strike(sim, rules, overlay_registry, storm, [x, y], frame_effects);
     }
     let general = &rules.general;

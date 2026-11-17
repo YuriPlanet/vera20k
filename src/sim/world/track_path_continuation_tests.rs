@@ -1105,7 +1105,7 @@ fn after_active_rows_gate_the_same_call_continuation() {
                 0,
             );
             miner.set_unload_active_for_test(true);
-            e.miner = Some(miner);
+            e.miner = Some(Box::new(miner));
         }
         e.navigation
             .set_nav_com_for_test(navcom.map(|(target, _)| target));

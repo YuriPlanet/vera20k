@@ -89,6 +89,6 @@ pub(crate) fn set_connected<H: PavementHost>(host: &mut H, requested: Coord, sta
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 #[path = "bridge_pavement_tests.rs"]
 mod tests;

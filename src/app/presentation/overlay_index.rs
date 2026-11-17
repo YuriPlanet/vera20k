@@ -138,7 +138,7 @@ fn cell_slots(entries: &[OverlayEntry]) -> BTreeSet<(u16, u16, usize)> {
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
 

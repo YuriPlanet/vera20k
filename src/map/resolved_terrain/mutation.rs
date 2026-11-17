@@ -30,6 +30,26 @@ impl ResolvedTerrainGrid {
         land_flags: Option<&OverlayTypeFlags>,
         cliff_back_rock: Option<&LandTypeSemantics>,
     ) -> bool {
+        // Like the cell recalc, an unchanged projection marks no chunk for
+        // the presentation copy to take (see `terrain_cells`).
+        let Some(index) = self.index(rx, ry) else {
+            return false;
+        };
+        self.cells.begin_shadow(index);
+        let changed =
+            self.apply_overlay_attributes_shadowed(rx, ry, flags, land_flags, cliff_back_rock);
+        self.cells.end_shadow();
+        changed
+    }
+
+    fn apply_overlay_attributes_shadowed(
+        &mut self,
+        rx: u16,
+        ry: u16,
+        flags: Option<&OverlayTypeFlags>,
+        land_flags: Option<&OverlayTypeFlags>,
+        cliff_back_rock: Option<&LandTypeSemantics>,
+    ) -> bool {
         let overlay_zone = overlay_reduced_zone_type(flags);
         let new_blocks = matches!(
             overlay_zone,
@@ -105,7 +125,6 @@ impl ResolvedTerrainGrid {
     /// unchanged, with the object list's building arm answered by the caller
     /// ([`super::recalc_zone_type_with_buildings`]). Answers whether the
     /// class changed.
-    #[cfg(feature = "ares")]
     pub(crate) fn recalc_zone_type_with_buildings_at(
         &mut self,
         (rx, ry): (u16, u16),

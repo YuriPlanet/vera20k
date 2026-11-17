@@ -22,10 +22,10 @@
 //!   leaves `[#include]` inert.
 //!
 //! VERA reads the current document before its included files; a later read
-//! overwrites earlier values. An Ares build loads each file into the root INI
-//! as `ReadCCFile` does, through `LoadFromStraw`'s merge arm and Ares's parser
-//! hooks (`IniFile::merge_load`). Other builds compose with `IniFile::merge`,
-//! where a reused key keeps its place instead of moving last.
+//! overwrites earlier values. A game read the Ares way loads each file into the
+//! root INI as `ReadCCFile` does, through `LoadFromStraw`'s merge arm and Ares's
+//! parser hooks (`IniFile::merge_load`). Other games compose with
+//! `IniFile::merge`, where a reused key keeps its place instead of moving last.
 //!
 //! RESIDUAL: Phobos re-walks the shared `$Include` section after each file,
 //! skipping saved names, and iterates its `EntryIndex`, gamemd's CRC lookup
@@ -113,13 +113,15 @@ impl Default for DirectiveOptions {
 }
 
 impl DirectiveOptions {
-    /// Dialects this binary can execute. Natively one launch runs one dialect:
-    /// Phobos `-Include` swaps `$Include` in for the Ares hooks. VERA has no
-    /// such switch, so a combined build keeps both, and a document that uses
+    /// Dialects this read can execute: Ares' on a thread that reads the Ares
+    /// way (`ares_switch::ares_way`: a game that ships `ares.mix`), Phobos'
+    /// in a build with it. Natively one launch runs one dialect: Phobos
+    /// `-Include` swaps `$Include` in for the Ares hooks. VERA has no such
+    /// switch, so a game with both keeps both, and a document that uses
     /// `$Include` takes over from its `[#include]`.
     pub fn production() -> Self {
         Self {
-            ares: crate::rules::ARES_ENABLED,
+            ares: crate::rules::ares_switch::ares_way(),
             phobos: crate::rules::PHOBOS_ENABLED,
             ..Self::default()
         }
@@ -470,18 +472,16 @@ fn include_work_limit(traversal: &Traversal<'_>) -> DirectiveDiagnostic {
 /// The INI the root's included files load into. Both dialects apply the
 /// current document first: a later read, meaning an included file or a later
 /// sibling, overwrites its values. Natively that INI is the root itself, as
-/// it stays in an Ares build; otherwise VERA composes the compatibility
-/// projection [`IniFile::merge`] builds.
+/// it stays on a thread that reads the Ares way; otherwise VERA composes the
+/// compatibility projection [`IniFile::merge`] builds.
 fn including_ini(root: IniFile) -> IniFile {
-    #[cfg(feature = "ares")]
-    let ini = root;
-    #[cfg(not(feature = "ares"))]
-    let ini = {
+    if crate::rules::ares_switch::ares_way() {
+        root
+    } else {
         let mut merged = IniFile::empty();
         merged.merge(&root);
         merged
-    };
-    ini
+    }
 }
 
 /// `ReadCCFile` reads an included file into the INI that lists it, through
@@ -492,15 +492,12 @@ fn load_included(
     bytes: &[u8],
     list: &str,
 ) -> Result<Option<IniSection>, crate::rules::error::RulesError> {
-    #[cfg(feature = "ares")]
-    let own = Some(merged.merge_load(bytes, list));
-    #[cfg(not(feature = "ares"))]
-    let own = {
-        let child = IniFile::from_bytes(bytes)?;
-        merged.merge(&child);
-        child.section(list).cloned()
-    };
-    Ok(own)
+    if crate::rules::ares_switch::ares_way() {
+        return Ok(Some(merged.merge_load(bytes, list)));
+    }
+    let child = IniFile::from_bytes(bytes)?;
+    merged.merge(&child);
+    Ok(child.section(list).cloned())
 }
 
 /// What [`read_include`] did with one listed name.
@@ -751,6 +748,6 @@ fn inherit(
     Ok(success)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ini_directives_tests.rs"]
 mod tests;

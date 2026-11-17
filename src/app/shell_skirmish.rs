@@ -1,6 +1,14 @@
 use super::*;
 use crate::ui::skirmish_shell::SkirmishShellDialog;
 
+/// The mouse event [`App::route_game_options_mouse`] hands the open box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GameOptionsMouse {
+    Down,
+    Up,
+    Move,
+}
+
 impl App {
     pub(super) fn native_skirmish_shell_active(state: &AppState) -> bool {
         state.frontend.screen == GameScreen::MainMenu && state.frontend.shell_route.skirmish()
@@ -9,22 +17,144 @@ impl App {
         crate::app::frontend::shell_layout::skirmish_layout(state)
     }
 
-    /// Whether the selected map has a setup for Load Setup.
-    pub(crate) fn skirmish_setup_saved(state: &AppState) -> bool {
-        state
-            .frontend
-            .multiplayer_shell_runtime
-            .saved_setup(
-                &state.frontend.skirmish_shell_state,
-                state.frontend.scenario_catalog.shell_maps(),
-            )
-            .is_some()
+    /// VERA's Team Starts in the game room: the start cells
+    /// of shell map `map` by start index. A map gives its start waypoints;
+    /// the random map gives the starts of the last Generate
+    /// (`0x0058B820`'s header), none before one.
+    pub(crate) fn map_start_cells(state: &AppState, map: usize) -> Vec<(i32, i32)> {
+        let Some(entry) = state.frontend.scenario_catalog.shell_maps().get(map) else {
+            return Vec::new();
+        };
+        if crate::app::frontend::skirmish_shell_render::is_random_map_sentinel_entry(entry) {
+            let header = state.frontend.random_map_retention.generated_header();
+            let count = usize::try_from(header.count).unwrap_or(0);
+            return header
+                .cells
+                .iter()
+                .take(count)
+                .map(|&(x, y)| (i32::from(x), i32::from(y)))
+                .collect();
+        }
+        // The Start column names a start by waypoint index, so only the
+        // leading unbroken run 0, 1, 2... can be given out by position.
+        entry
+            .multiplayer_start_waypoints
+            .iter()
+            .enumerate()
+            .take_while(|(position, waypoint)| waypoint.index as usize == *position)
+            .map(|(_, waypoint)| (i32::from(waypoint.rx), i32::from(waypoint.ry)))
+            .collect()
+    }
+
+    /// VERA's Team Starts: how far a ground unit drives between shell map
+    /// `map`'s `starts`, by start index, or `None` where the room cannot read
+    /// the map's terrain (the random map, or no resident assets or Rules) and
+    /// Team Starts measures straight lines. Each call reads the map file and
+    /// its theater, which makes that theater's archives the active ones until
+    /// a Generate or a match load picks its own.
+    pub(crate) fn map_drive_distances(
+        state: &mut AppState,
+        map: usize,
+        starts: &[(i32, i32)],
+    ) -> Option<Vec<Vec<Option<u32>>>> {
+        let entry = state.frontend.scenario_catalog.shell_maps().get(map)?;
+        if crate::app::frontend::skirmish_shell_render::is_random_map_sentinel_entry(entry) {
+            return None;
+        }
+        let file_name = entry.file_name.clone();
+        let cells = starts
+            .iter()
+            .map(|&(x, y)| Some((u16::try_from(x).ok()?, u16::try_from(y).ok()?)))
+            .collect::<Option<Vec<_>>>()?;
+        let ra2_dir = state.platform.game_config.as_ref()?.paths.ra2_dir.clone();
+        let (assets, rules, _) = state.process_assets.manager_and_rules_with_tile_cache();
+        let (assets, rules) = (assets?, rules?);
+        let map = match crate::map::source::load_map_by_name_or_path_with_assets(
+            &ra2_dir, &file_name, assets,
+        ) {
+            Ok(loaded) => loaded.map,
+            Err(error) => {
+                log::warn!("Team Starts measures straight lines: map {file_name}: {error}");
+                return None;
+            }
+        };
+        let Some(theater) = crate::map::theater::load_theater(assets, &map.header.theater) else {
+            log::warn!(
+                "Team Starts measures straight lines: theater {} unavailable",
+                map.header.theater
+            );
+            return None;
+        };
+        Some(
+            crate::sim::pathfinding::drive_distance::map_drive_distances(
+                &map,
+                &theater,
+                assets,
+                rules.selected_rules_root(),
+                rules.fixed_art(),
+                &cells,
+            ),
+        )
     }
 
     fn skirmish_choose_map_layout(
         state: &AppState,
     ) -> crate::ui::skirmish_shell::ChooseMapModalLayout {
         crate::app::frontend::shell_layout::choose_map_layout(state)
+    }
+
+    /// The Choose Map search line takes keys only while its page is active.
+    /// Its visible rectangle also anchors the platform's IME candidate UI.
+    pub(super) fn choose_map_search_ime_rect(
+        state: &AppState,
+    ) -> Option<crate::ui::shell::geom::RectPx> {
+        use crate::app::input::precedence::{InputLayer, ScreenPage};
+        if !matches!(
+            crate::app::input::precedence::input_layer(state),
+            InputLayer::Screen(ScreenPage::NetworkSetup | ScreenPage::Skirmish)
+        ) {
+            return None;
+        }
+        let modal = state
+            .frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .as_ref()
+            .filter(|modal| modal.message_box.is_none() && !modal.is_hidden())?;
+        let layout = Self::skirmish_choose_map_layout(state);
+        Some(
+            crate::app::frontend::skirmish_shell_render::choose_map_search_ime_area(
+                state,
+                &layout,
+                &modal.search,
+            ),
+        )
+    }
+
+    /// Apply committed input-method text to Choose Map through the modal's
+    /// search owner, matching the ordinary key path.
+    pub(super) fn choose_map_search_text(state: &mut AppState, text: &str) -> bool {
+        if Self::choose_map_search_ime_rect(state).is_none() {
+            return false;
+        }
+        let layout = Self::skirmish_choose_map_layout(state);
+        let frontend = &mut state.frontend;
+        let Some(modal) = frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .as_mut()
+            .filter(|modal| modal.message_box.is_none() && !modal.is_hidden())
+        else {
+            return false;
+        };
+        modal.append_search_text(
+            text,
+            &frontend.skirmish_modes,
+            frontend.scenario_catalog.records(),
+            &layout,
+        );
+        state.platform.window.request_redraw();
+        true
     }
 
     fn validation_modal_dialog_id() -> crate::ui::shell::descriptor::DialogId {
@@ -140,6 +270,7 @@ impl App {
         state.frontend.shell_first_paint_slide = None;
         state.frontend.skirmish_shell_state.choose_map_modal = None;
         state.frontend.skirmish_shell_state.validation_modal = None;
+        state.frontend.skirmish_shell_state.game_options = None;
         state.frontend.skirmish_shell_state.open_combo_dropdown = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_drag = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_press = None;
@@ -230,14 +361,18 @@ impl App {
             return false;
         };
 
-        #[cfg(feature = "ares")]
-        let extra_flags = state
-            .process_assets
-            .native_rules()
-            .map(|rules| rules.country_flag_files())
-            .unwrap_or_default();
-        #[cfg(not(feature = "ares"))]
-        let extra_flags = Vec::new();
+        // Ares' country flags join the atlas when Ares.dll is loaded (the
+        // game is read the Ares way).
+        let ares = state.process_assets.reads_ares_way();
+        let extra_flags = if ares {
+            state
+                .process_assets
+                .native_rules()
+                .map(|rules| rules.country_flag_files())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
         let dialog_background = state.frontend.shell_dialog_background.clone();
         state.frontend.skirmish_shell_chrome =
             crate::render::skirmish_shell_chrome::build_skirmish_shell_chrome_atlas(
@@ -283,26 +418,90 @@ impl App {
                     crate::app::frontend::shell_transition::ShellExitThen::SkirmishChooseMap,
                 );
             }
-            crate::ui::skirmish_shell::SkirmishShellAction::SaveSetup => {
-                state.frontend.multiplayer_shell_runtime.save_setup(
-                    &state.frontend.skirmish_shell_state,
-                    state.frontend.scenario_catalog.shell_maps(),
-                );
-            }
-            crate::ui::skirmish_shell::SkirmishShellAction::LoadSetup => {
-                let maps = state.frontend.scenario_catalog.shell_maps();
-                if let Some(setup) = state
-                    .frontend
-                    .multiplayer_shell_runtime
-                    .saved_setup(&state.frontend.skirmish_shell_state, maps)
-                {
-                    setup.apply(&mut state.frontend.skirmish_shell_state, maps);
-                }
+            crate::ui::skirmish_shell::SkirmishShellAction::GameOptions => {
+                Self::open_skirmish_game_options(state);
             }
             crate::ui::skirmish_shell::SkirmishShellAction::None
             | crate::ui::skirmish_shell::SkirmishShellAction::SelectColor(_)
             | crate::ui::skirmish_shell::SkirmishShellAction::SelectMap(_) => {}
         }
+    }
+
+    /// VERA's Game Options over `0x102`, on the rules the profile keeps.
+    fn open_skirmish_game_options(state: &mut AppState) {
+        use crate::ui::skirmish_shell::game_options::{GameOptionsBox, MatchRules};
+        let profile = &state.persistence.options_profile;
+        let rules = MatchRules {
+            superweapon_limit: profile.superweapon_limit,
+            terrain_deformation: profile.terrain_deformation,
+        };
+        state.frontend.skirmish_shell_state.game_options = Some(GameOptionsBox::new(rules));
+        state.platform.window.request_redraw();
+    }
+
+    /// OK, Enter or Esc on the Game Options box: it closes, and the next
+    /// game's rules and VERA.INI take what it shows.
+    pub(super) fn close_skirmish_game_options(state: &mut AppState) {
+        let Some(open) = state.frontend.skirmish_shell_state.game_options.take() else {
+            return;
+        };
+        let rules = open.rules;
+        let profile = &mut state.persistence.options_profile;
+        if (profile.superweapon_limit, profile.terrain_deformation)
+            != (rules.superweapon_limit, rules.terrain_deformation)
+        {
+            profile.superweapon_limit = rules.superweapon_limit;
+            profile.terrain_deformation = rules.terrain_deformation;
+            // The next offline game reads them, and a room's host starts
+            // its room with them.
+            state
+                .process_assets
+                .set_superweapon_limit(i32::from(rules.superweapon_limit));
+            state
+                .process_assets
+                .set_terrain_deformation(rules.terrain_deformation);
+            crate::app::persistence::options::persist_options_profile(state);
+        }
+        state.platform.window.request_redraw();
+    }
+
+    /// What a press, move or release in the open box asks of the page.
+    fn answer_game_options_outcome(
+        state: &mut AppState,
+        outcome: crate::ui::skirmish_shell::game_options::GameOptionsOutcome,
+    ) {
+        use crate::ui::skirmish_shell::game_options::GameOptionsOutcome;
+        match outcome {
+            GameOptionsOutcome::Stay => return,
+            GameOptionsOutcome::OkPressed => Self::play_main_menu_button_sound(state),
+            GameOptionsOutcome::Changed(sound) => Self::play_skirmish_shell_ui_sound(state, sound),
+            GameOptionsOutcome::Close => Self::close_skirmish_game_options(state),
+        }
+        state.platform.window.request_redraw();
+    }
+
+    /// The open Game Options box takes every press, release and move over
+    /// the page; returns whether it is open.
+    fn route_game_options_mouse(state: &mut AppState, event: GameOptionsMouse) -> bool {
+        if state.frontend.skirmish_shell_state.game_options.is_none() {
+            return false;
+        }
+        let page = Self::skirmish_shell_layout(state);
+        let layout = crate::ui::skirmish_shell::game_options::GameOptionsLayout::over(&page);
+        let (x, y) = state.match_state.input.cursor_px();
+        let Some(open) = state.frontend.skirmish_shell_state.game_options.as_mut() else {
+            return false;
+        };
+        let outcome = match event {
+            GameOptionsMouse::Down => open.mouse_down(&layout, x, y),
+            GameOptionsMouse::Up => open.mouse_up(&layout, x, y),
+            GameOptionsMouse::Move => open.mouse_move(&layout, x),
+        };
+        Self::answer_game_options_outcome(state, outcome);
+        if event != GameOptionsMouse::Down {
+            Self::update_skirmish_shell_status_help(state, &page, x, y);
+        }
+        true
     }
 
     /// Start Game on `0x102` (`0x006ACEE0` case `0x617`): validate and pack
@@ -466,16 +665,19 @@ impl App {
                 state.frontend.scenario_catalog.records(),
                 &layout,
             ));
-        // VERA: online rooms list the online map library under its own row.
-        if crate::app::map_library::listed_in_choose_map(state) {
-            let favorites = state.frontend.map_library.favorites().clone();
-            if let Some(modal) = state
-                .frontend
-                .skirmish_shell_state
-                .choose_map_modal
-                .as_mut()
-            {
-                modal.add_online_maps_row(favorites);
+        // VERA: the starred maps list under Favorites, and online rooms list
+        // the online map library under its own row.
+        let favorites = crate::app::map_library::read_favorites(state);
+        let online = crate::app::map_library::listed_in_choose_map(state);
+        if let Some(modal) = state
+            .frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .as_mut()
+        {
+            modal.add_favorites_row(favorites);
+            if online {
+                modal.add_online_maps_row();
             }
         }
         Self::list_cooperative_campaigns(state, false);
@@ -574,7 +776,7 @@ impl App {
             .as_ref()
             .map(|modal| {
                 (
-                    modal.selected_mode_id,
+                    modal.selected_mode.id,
                     modal.filtered_record_indices.clone(),
                 )
             })
@@ -676,7 +878,7 @@ impl App {
                 .and_then(|modal| modal.highlighted_filtered_index);
             return match crate::app::shell_network_setup::commit_map_selection(
                 state,
-                selection.mode_id,
+                selection.mode.id,
                 map_idx,
                 row,
             ) {
@@ -687,7 +889,7 @@ impl App {
                 }
             };
         }
-        state.frontend.skirmish_shell_state.selected_mode_id = selection.mode_id;
+        state.frontend.skirmish_shell_state.selected_mode = selection.mode;
         crate::ui::skirmish_shell::repair_teams_for_selected_mode(
             &mut state.frontend.skirmish_shell_state,
             &state.frontend.skirmish_modes,
@@ -849,22 +1051,20 @@ impl App {
             crate::ui::skirmish_shell::ChooseMapModalButton::Cancel0x5c0 => {
                 crate::app::frontend::shell_transition::ShellExitThen::ChooseMapCancel
             }
-            // Under Online Maps this button stars or unstars the map.
-            crate::ui::skirmish_shell::ChooseMapModalButton::CreateRandomMap0x583
-                if modal.online_maps_selected() =>
-            {
-                if let Some((sha256, starred)) = modal.toggle_favorite(
+            crate::ui::skirmish_shell::ChooseMapModalButton::CreateRandomMap0x583 => {
+                crate::app::frontend::shell_transition::ShellExitThen::ChooseMapRandomMap
+            }
+            // VERA: stars or unstars the highlighted map.
+            crate::ui::skirmish_shell::ChooseMapModalButton::Favorite => {
+                if let Some((key, starred)) = modal.toggle_favorite(
                     &state.frontend.skirmish_modes,
                     state.frontend.scenario_catalog.records(),
                     &layout,
                 ) {
-                    crate::app::map_library::set_favorite(state, sha256, starred);
+                    crate::app::map_library::set_favorite(state, key, starred);
                 }
                 state.platform.window.request_redraw();
                 return true;
-            }
-            crate::ui::skirmish_shell::ChooseMapModalButton::CreateRandomMap0x583 => {
-                crate::app::frontend::shell_transition::ShellExitThen::ChooseMapRandomMap
             }
         };
         Self::leave_shell_dialog(state, then);
@@ -1049,6 +1249,9 @@ impl App {
         if !event.state.is_pressed() {
             return false;
         }
+        if Self::choose_map_search_ime_rect(state).is_none() {
+            return false;
+        }
         let layout = Self::skirmish_choose_map_layout(state);
         let frontend = &mut state.frontend;
         let Some(modal) = frontend
@@ -1075,7 +1278,7 @@ impl App {
             if typed.is_empty() {
                 return false;
             }
-            text.push_str(&typed);
+            return Self::choose_map_search_text(state, &typed);
         }
         modal.set_search(
             text,
@@ -1088,12 +1291,13 @@ impl App {
     }
 
     /// VERA's Esc menu (`app::shell_menu`): Esc stays with the seed browser,
-    /// a validation box and a chooser's prompt, and does nothing while a
-    /// random map generates.
+    /// a validation box, the Game Options box and a chooser's prompt, and
+    /// does nothing while a random map generates.
     pub(super) fn skirmish_leaves_escape(state: &AppState) -> bool {
         let shell = &state.frontend.skirmish_shell_state;
         shell.saved_seed_browser.is_none()
             && shell.validation_modal.is_none()
+            && shell.game_options.is_none()
             && shell
                 .choose_map_modal
                 .as_ref()
@@ -1157,8 +1361,11 @@ impl App {
         };
         modal.hide();
         let previous = modal.cancel_selection();
-        #[cfg(feature = "ares")]
-        {
+        // Ares.dll is loaded when the game is read the Ares way: it reads
+        // the urban-areas setting, and the dialog lists Ares' entries and
+        // shows its Urban Areas box.
+        let ares = state.process_assets.reads_ares_way();
+        if ares {
             let settings = state
                 .process_assets
                 .manager()
@@ -1175,20 +1382,17 @@ impl App {
             .random_map_options_for_setup();
         let available = Self::random_map_dir(state)
             .is_some_and(|dir| crate::map::rmg::saved_seeds::saved_seeds_available(&dir));
-        // VERA extension: only offline Skirmish offers more than eight players
-        // and the larger sizes; LAN and online keep the original limits.
-        let extended = !matches!(
-            state.match_state.session_mode(),
-            crate::app::match_runtime::session::SessionMode::Lan
-                | crate::app::match_runtime::session::SessionMode::Wol
+        let mut modal = crate::ui::skirmish_shell::RandomMapSetupModalState::open(
+            options,
+            Some(previous),
+            available,
         );
-        state.frontend.skirmish_shell_state.random_map_setup_modal =
-            Some(crate::ui::skirmish_shell::RandomMapSetupModalState::open(
-                options,
-                Some(previous),
-                available,
-                extended,
-            ));
+        modal.ares = ares;
+        // VERA: the player's own presets, for the Presets button.
+        if let Some(dir) = Self::random_map_dir(state) {
+            modal.custom_presets = crate::app::shell_random_map::load_custom_presets(&dir, ares);
+        }
+        state.frontend.skirmish_shell_state.random_map_setup_modal = Some(modal);
     }
 
     fn sync_player_name_edit_scroll(state: &mut AppState) {
@@ -1228,7 +1432,10 @@ impl App {
     ) {
         // A trackbar holding the mouse keeps the dialog's hit test
         // (`WM_NCHITTEST`, `0x00622CCB`) from running until the release.
-        if state.frontend.skirmish_shell_state.trackbar_hold.is_some() {
+        let shell = &state.frontend.skirmish_shell_state;
+        if shell.trackbar_hold.is_some()
+            || shell.game_options.is_some_and(|open| open.hold.is_some())
+        {
             return;
         }
         let target = crate::ui::skirmish_shell::hovered_shell_control(
@@ -1270,10 +1477,8 @@ impl App {
     ) -> String {
         // Over a game-type row the help is the mode's description (`0x4E9`,
         // `0x005E6E44`).
-        if let crate::ui::skirmish_shell::ChooseMapHoverTarget::ModeListRow0x6eb { mode_id } =
-            target
-            && let Some(mode) =
-                crate::skirmish_modes::mode_by_id(&state.frontend.skirmish_modes, mode_id)
+        if let crate::ui::skirmish_shell::ChooseMapHoverTarget::ModeListRow0x6eb { mode } = target
+            && let Some(mode) = mode.resolve(&state.frontend.skirmish_modes)
             && !mode.tooltip_key.is_empty()
         {
             let text = Self::localized_status_help_text(state, &mode.tooltip_key);
@@ -1473,6 +1678,9 @@ impl App {
             }
             None => return,
         }
+        if Self::route_game_options_mouse(state, GameOptionsMouse::Down) {
+            return;
+        }
         let layout = Self::skirmish_shell_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
         if crate::ui::skirmish_shell::player_name_edit_rect_hit(&layout, x, y) {
@@ -1503,16 +1711,11 @@ impl App {
         if crate::app::frontend::preview_zoom::press_on_box(state, layout.map_preview) {
             return;
         }
-        // Load Setup stays disabled until the selected map has a saved setup.
-        let load_setup_enabled = Self::skirmish_setup_saved(state);
         state
             .frontend
             .skirmish_shell_state
             .pressed_owner_draw_button =
-            crate::ui::skirmish_shell::hit_test_owner_draw_button(&layout, x, y).filter(|button| {
-                *button != crate::ui::skirmish_shell::OwnerDrawButton::LoadSetup
-                    || load_setup_enabled
-            });
+            crate::ui::skirmish_shell::hit_test_owner_draw_button(&layout, x, y);
         if state
             .frontend
             .skirmish_shell_state
@@ -1553,6 +1756,9 @@ impl App {
                 return;
             }
             None => return,
+        }
+        if Self::route_game_options_mouse(state, GameOptionsMouse::Up) {
+            return;
         }
         let layout = Self::skirmish_shell_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
@@ -1637,6 +1843,9 @@ impl App {
             }
             return;
         }
+        if Self::route_game_options_mouse(state, GameOptionsMouse::Move) {
+            return;
+        }
         let layout = Self::skirmish_shell_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
         Self::update_skirmish_shell_status_help(state, &layout, x, y);
@@ -1675,6 +1884,7 @@ impl App {
             .skirmish_shell_state
             .validation_modal
             .is_some()
+            || state.frontend.skirmish_shell_state.game_options.is_some()
         {
             return true;
         }
@@ -1743,7 +1953,7 @@ impl App {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

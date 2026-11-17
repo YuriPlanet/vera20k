@@ -331,7 +331,7 @@ pub(crate) fn hotkey_pressed(state: &mut AppState) {
         return;
     };
     let orders = {
-        let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+        let Some(runtime) = state.match_state.sim_runtime.runtime() else {
             return;
         };
         let sim = &runtime.simulation;
@@ -354,6 +354,6 @@ pub(crate) fn hotkey_pressed(state: &mut AppState) {
     log::info!("VeraX AutoLoad: issued {count} enter orders");
 }
 
-#[cfg(all(test, feature = "verax"))]
+#[cfg(all(test, tests_app_input_a_c, feature = "verax"))]
 #[path = "autoload_tests.rs"]
 mod tests;

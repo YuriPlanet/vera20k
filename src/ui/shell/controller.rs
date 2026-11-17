@@ -236,7 +236,7 @@ impl DialogController {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     use crate::ui::shell::geom::RectPx;

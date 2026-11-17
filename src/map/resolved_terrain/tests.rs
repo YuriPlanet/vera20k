@@ -614,7 +614,7 @@ fn gsi_04_01_production_size_diamond_closes_exact_capacity_edge() {
         rejected
             .native_allocated
             .as_ref()
-            .is_some_and(Vec::is_empty)
+            .is_some_and(|v| v.is_empty())
     );
     assert_eq!(rejected_stats.fill_calls, 0);
     assert!(rejected.cell(0, 0).is_none());

@@ -59,7 +59,7 @@ pub fn sha1_bytes(bytes: &[u8]) -> [u8; 20] {
     digest
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::sha1_bytes;
 

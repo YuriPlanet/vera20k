@@ -66,7 +66,7 @@ pub(crate) fn submit_cell_body_sweep(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 mod tests {
     use super::*;
 

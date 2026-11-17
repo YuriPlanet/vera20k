@@ -104,10 +104,10 @@ offers one-click Continue on the next visit; other browsers ask for the folder a
 
 ## Multi-threaded build (experimental)
 
-`--threads` runs simulation work on a Rayon pool of Web Workers. It combines
-with `--network` and `--lan`, and needs a pinned nightly, because the standard
-library has to be rebuilt with Wasm atomics. Desktop and default browser builds
-stay on stable.
+`--threads` runs each tick on a simulation Web Worker beside the draw, and its
+parallel work on a Rayon pool of Web Workers. It combines with `--network` and
+`--lan`, and needs a pinned nightly, because the standard library has to be
+rebuilt with Wasm atomics. Desktop and default browser builds stay on stable.
 
 ```sh
 rustup toolchain install nightly-2026-10-15 --profile minimal --component rust-src --target wasm32-unknown-unknown
@@ -120,13 +120,25 @@ Shared memory requires cross-origin isolation, so the page must be served with
 `Cross-Origin-Embedder-Policy: require-corp`. `serve.py` sends both; a plain
 `http.server` does not, and the host page then reports the missing headers when the pool fails to start.
 Other hosts must send them too and await `initThreadPool(workers)` after
-`init()`; without that call the package runs simulation work serially.
+`init()`; without that call the package runs simulation work serially, on the
+main thread.
 
-Rendering, audio and input stay on the main thread, which spins while the pool
-works. It runs no engine code during that time, because waiting on a contended
-lock traps there. Results do not depend on the pool size. A panic on a worker
-aborts that worker and leaves the main thread spinning, so the tab freezes
-instead of reporting `engine-error`.
+Rendering, audio, input and the network session stay on the main thread, which
+never waits for another thread, because waiting there traps. A page can also run
+ticks on a simulation worker beside the draw, as the desktop simulation thread
+does ([The browser](sim-thread.md#the-browser)). It is off by default: call
+`set_simulation_thread("1")` before `start_game` or `start_spawn` (the supplied
+host takes `?simulation-thread=1`). A frame then goes to the worker when its tick
+costs more than publishing the frame; `"always"` lends every frame the worker can
+take and `"0"` keeps it off. While a tick
+runs, the page draws the last published frame and holds window events until the
+tick is back. Frames that tick on the main thread (all of them with the worker
+off; otherwise catch-up frames another follows, replays and network restores)
+spin while the pool works, running no engine code meanwhile. Results do not
+depend on the pool size or on where a tick ran. A panic or trap on the simulation
+worker, or a panic on a pool worker during its tick, is reported as
+`engine-error` at the next frame; one on a pool worker during a main-thread tick
+leaves the main thread spinning, so the tab freezes instead.
 
 ## Compatibility boundary
 
@@ -137,8 +149,9 @@ the desktop implementations. A browser build without `wasm` is rejected.
 - `util::time` re-exports the existing standard clocks on desktop and `web-time`
   in the browser; simulation tick and RNG algorithms remain unchanged.
 - `util::file_system` re-exports standard file operations on desktop. Browser
-  imports live under `/retail`, saves under `/saves`, and profiles under
-  `/saves/profile`; MIX archives share imported bytes instead of memory mapping.
+  imports live under `/retail`, mods under `/mods/<folder>`, saves under `/saves`,
+  and profiles under `/saves/profile`; MIX archives share imported bytes instead of
+  memory mapping.
 - Browser work runs serially through the existing parallel-work interface.
   Native Rayon and worker-thread paths stay selected on desktop.
 - GPU acquisition yields through the existing initialization jobs. Rendering
@@ -262,6 +275,32 @@ another launch can start. It stays false while a game runs, after `start_game`
 and after a panic, which all need a new page/instance. Linear memory never
 shrinks, so a host may also want a new page once `memory.buffer.byteLength`
 nears the 4 GiB limit.
+
+### Mods and imports in parts
+
+The browser build plays a mod as the desktop does (`app::mods`, docs/modding.md):
+its files read as if copied on top of the game folder. The page has no Mods folder
+of the player's own, so it brings the mod a launch plays:
+
+- `import_mod_file(folder, name, bytes)` puts one file of a mod at
+  `/mods/<folder>/<name>`. Between launches, as `import_spawn_file`.
+- `set_mod(folder)` chooses the mod the next `start_spawn`, `start_game` or
+  `probe` plays (`null` for none). It is config.toml's `[paths] mod` on the
+  desktop, so a missing folder or a `Needs=` above this version starts the
+  original game and says why. `probe` then reports the mod's rules digest and
+  campaigns.
+- `remove_mod(folder)` drops a mod's files from engine memory before another is
+  imported. Linear memory does not shrink, but the next import reuses it.
+- A page plays one mod in one game and another, or none, in the next. Each start
+  sets the mod's map folder anew (`map::source::set_mod_dir`). The desktop's
+  start record (`mod-start.txt`) is not kept: a start that dies ends the page.
+
+Any file can also arrive in parts, so a large one need not be held whole in the
+page as well as in the engine: `import_begin(kind, name, length)` sets the bytes
+aside in engine memory, with `kind` `"retail"`, `"spawn"` or `"mod:<folder>"`
+under the same rules as the three import calls; `import_part(bytes)` fills them in
+order and returns `true` once the last part has stored the file. A page can yield
+between parts, so its own progress display keeps drawing.
 
 Calling Start from a lifecycle callback is rejected. Callback exceptions do
 not prevent shutdown; returned Promises are not awaited by Rust.

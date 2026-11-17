@@ -65,32 +65,30 @@ fn ordinary_anim_damage_uses_optional_ares_warhead_and_owner() {
     );
     for target in targets {
         let health = sim.entities().get(target).unwrap().health.current();
-        #[cfg(feature = "ares")]
-        assert_eq!(
-            health, 1000,
-            "CUSTOM has zero effectiveness, unlike FALLBACK"
-        );
-        #[cfg(not(feature = "ares"))]
-        assert!(
-            health < 1000,
-            "stock AnimAI keeps its effective FlameDamage2"
-        );
+        if rules.ares_form() {
+            assert_eq!(
+                health, 1000,
+                "CUSTOM has zero effectiveness, unlike FALLBACK"
+            );
+        } else {
+            assert!(
+                health < 1000,
+                "stock AnimAI keeps its effective FlameDamage2"
+            );
+        }
     }
     for visit in visits {
         assert_eq!(
             visit["no_source"], true,
             "neither animation owner is an attacker"
         );
-        #[cfg(feature = "ares")]
-        {
+        if rules.ares_form() {
             assert_eq!(visit["warhead"], "CUSTOM");
             assert_eq!(
                 visit["no_source_house"], false,
                 "explicit and attached owners both propagate"
             );
-        }
-        #[cfg(not(feature = "ares"))]
-        {
+        } else {
             assert_eq!(visit["warhead"], "FALLBACK");
             assert_eq!(visit["no_source_house"], true);
         }
@@ -122,9 +120,7 @@ fn retail_scene(extra: &str) -> Option<Scene> {
         .unwrap()
         .into_parts();
     rules.install_art_data(crate::rules::retail_ini_fixture::art_registry(&art));
-    rules
-        .bind_authored_load_anim("FIRE3", &assets, ".sno", "SNOW")
-        .unwrap();
+    rules.bind_authored_load_anim("FIRE3", &assets, ".sno", "SNOW");
     let registry = rules.overlay_registry().clone();
     let mut sim = Simulation::with_seed(0x424647);
     sim.session.set_map_width_for_test(64);
@@ -230,6 +226,42 @@ fn retail_cell_anim_damage_reaches_terrain_only_after_the_due_timer_and_receiver
             "normal Anim cleanup must still run"
         );
     }
+}
+
+/// AnimClass::AI `0x00424538..0x0042455E`: an anim owned by a Terrain object
+/// (WhatAmI 0x24) adds five times its Damage per damage step (`0x007E3568` =
+/// 5.0).
+#[test]
+fn a_tree_owned_anim_adds_five_times_its_damage() {
+    let accumulator = |scene: &Scene| {
+        f64::from_bits(
+            scene
+                .sim
+                .anim(scene.anim)
+                .unwrap()
+                .damage_accumulator
+                .bits(),
+        )
+    };
+    let mut gained = Vec::new();
+    for attach in [false, true] {
+        let Some(mut scene) = retail_scene("") else {
+            return;
+        };
+        if attach {
+            assert!(
+                scene
+                    .sim
+                    .set_anim_owner_object(scene.anim, Some(scene.tree), &scene.rules)
+            );
+        }
+        scene.sim.substrate.set_anim_no_effects(scene.anim, true);
+        let before = accumulator(&scene);
+        advance(&mut scene, 3);
+        gained.push(accumulator(&scene) - before);
+    }
+    assert!(gained[0] > 0.0, "{gained:?}");
+    assert!((gained[1] - 5.0 * gained[0]).abs() < 1e-9, "{gained:?}");
 }
 
 #[test]
@@ -392,17 +424,17 @@ fn attached_heal_anim_weapon_never_damages_nearby_objects() {
     let mut registry = crate::rules::art_data::ArtRegistry::from_ini(&art);
     registry.bind_anim_frame_count_for_test("COMARING", 4);
     rules.install_art_data(registry);
-    #[cfg(feature = "ares")]
-    let cfg = rules.art().anim_runtime_config("COMARING").unwrap();
-    #[cfg(feature = "ares")]
-    assert_eq!(
-        cfg.ares_weapon.as_deref(),
-        Some("ComancheHeal"),
-        "the animation's Weapon= must survive rule processing"
-    );
+    if rules.ares_form() {
+        let cfg = rules.art().anim_runtime_config("COMARING").unwrap();
+        assert_eq!(
+            cfg.ares_weapon.as_deref(),
+            Some("ComancheHeal"),
+            "the animation's Weapon= must survive rule processing"
+        );
+    }
     assert_eq!(
         rules.weapon("ComancheHeal").is_some(),
-        cfg!(feature = "ares"),
+        rules.ares_form(),
         "only Ares reads the explicit WeaponTypes list"
     );
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
@@ -436,21 +468,18 @@ fn attached_heal_anim_weapon_never_damages_nearby_objects() {
     });
     let health = sim.entities().get(target).unwrap().health.current();
     let warheads: Vec<_> = visits.iter().map(|v| v["warhead"].clone()).collect();
-    #[cfg(feature = "ares")]
-    assert_eq!(
-        health, 1000,
-        "the healing aura must not damage nearby objects (warheads: {warheads:?})"
-    );
-    #[cfg(not(feature = "ares"))]
-    assert!(health < 1000, "stock animations use FlameDamage2");
-    #[cfg(feature = "ares")]
-    {
+    if rules.ares_form() {
+        assert_eq!(
+            health, 1000,
+            "the healing aura must not damage nearby objects (warheads: {warheads:?})"
+        );
         assert!(!warheads.is_empty(), "the aura must still fire its weapon");
         assert!(
             warheads.iter().all(|w| w == "ComancheHealWH"),
             "the healing warhead must be used, not the FlameDamage2 fallback: {warheads:?}"
         );
+    } else {
+        assert!(health < 1000, "stock animations use FlameDamage2");
+        assert!(warheads.iter().all(|warhead| warhead == "FALLBACK"));
     }
-    #[cfg(not(feature = "ares"))]
-    assert!(warheads.iter().all(|warhead| warhead == "FALLBACK"));
 }

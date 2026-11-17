@@ -16,7 +16,7 @@ use super::zone_build::projected_zone_record_index;
 use super::zone_map::{ZONE_INVALID, ZoneGrid, ZoneId};
 use crate::map::resolved_terrain::{ResolvedTerrainGrid, zone_class};
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 mod native_repair_tests {
     include!("base_zone_repair_native_tests.rs");
 }
@@ -142,7 +142,9 @@ pub(crate) fn repair_zone_cell(
     let height = zone_grid.height();
     //56D460/56D5A0 read retained attributes only. Publication belongs to the
     //preceding Recalc, not to repair; raw Cell changes may intentionally differ.
-    let base = zone_grid.base_topology_mut();
+    // The decision only reads the retained topology; the Adopt arm below
+    // takes the writable borrow.
+    let base = zone_grid.base_topology();
     let index = projected_zone_record_index(width, height, base.native_bridge_source_size, coord);
     let decision = if let Some(index) = index {
         decide_base_zone_repair(

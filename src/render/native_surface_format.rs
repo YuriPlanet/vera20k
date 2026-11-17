@@ -191,7 +191,7 @@ pub const ACTIVE_RETAIL_RGB565_PRESENTATION: NativeSurfacePresentationProfile =
         six_bit: OBSERVED_SIX_BIT,
     };
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use std::collections::BTreeSet;
 

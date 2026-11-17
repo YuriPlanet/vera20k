@@ -84,6 +84,6 @@ pub(crate) fn build_instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<Spr
     (vec![fill], texts)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "build_text_tests.rs"]
 mod tests;

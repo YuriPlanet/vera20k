@@ -320,7 +320,7 @@ pub(crate) fn current_weapon_is_omni_fire(
         .is_some_and(|weapon| weapon.omni_fire)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
 
@@ -328,33 +328,36 @@ mod tests {
     fn gunner_selection_controls_omni_fire_before_the_first_shot_and_after_reset() {
         use crate::rules::ini_parser::IniFile;
         use crate::sim::combat::TargetKind;
-        let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[VehicleTypes]\n0=FV\n[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            let rules = RuleSet::from_ini(&IniFile::from_str(
+                "[VehicleTypes]\n0=FV\n[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
              [FV]\nTurret=yes\nTurretCount=4\nGunner=yes\nWeaponCount=3\n\
              NormalTurretWeapon=0\nMachineGunTurretWeapon=2\n\
              Weapon1=Direct\nWeapon2=Direct\nWeapon3=Omni\n\
              [Direct]\nDamage=10\nROF=20\nRange=6\nWarhead=WH\n\
              [Omni]\nDamage=10\nROF=20\nRange=6\nWarhead=WH\nOmniFire=yes\n\
              [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
-        ))
-        .unwrap();
-        let object = rules.object("FV").unwrap();
-        let mut entity = GameEntity::test_default(1, "FV", "Americans", 5, 5);
-        entity.barrel_facing = Some(crate::sim::movement::FacingClass::new(0, 5));
-        entity
-            .attack_target
-            .set_for_test(Some(TargetKind::Cell(10, 5)));
-        let mut sim = crate::sim::world::Simulation::new();
-        sim.interner = crate::sim::intern::test_interner();
-        for (mode, turns) in [(0, true), (2, false), (0, true)] {
-            entity.set_gunner_weapon(mode, object);
-            assert_eq!(
-                facing_update(&entity, &sim, &rules, &sim.interner, 100)
-                    .turret_destination
-                    .is_some(),
-                turns,
-                "selected mode {mode} must govern facing without a previous shot",
-            );
+            ))
+            .unwrap();
+            let object = rules.object("FV").unwrap();
+            let mut entity = GameEntity::test_default(1, "FV", "Americans", 5, 5);
+            entity.barrel_facing = Some(crate::sim::movement::FacingClass::new(0, 5));
+            entity
+                .attack_target
+                .set_for_test(Some(TargetKind::Cell(10, 5)));
+            let mut sim = crate::sim::world::Simulation::new();
+            sim.interner = crate::sim::intern::test_interner();
+            for (mode, turns) in [(0, true), (2, false), (0, true)] {
+                entity.set_gunner_weapon(mode, object, ares_way);
+                assert_eq!(
+                    facing_update(&entity, &sim, &rules, &sim.interner, 100)
+                        .turret_destination
+                        .is_some(),
+                    turns,
+                    "selected mode {mode} must govern facing without a previous shot",
+                );
+            }
         }
     }
 

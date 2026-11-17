@@ -1,7 +1,7 @@
 # Optional Ares Building, House, Infantry and SWType hooks
 
-Build with `--features ares`. Default builds keep every stock path named
-below. This page covers the hooks of `Ext/Building/Hooks.cpp`,
+Every build takes these hooks when the game plays Ares ([Ares](ares.md));
+other games keep every stock path named below. This page covers the hooks of `Ext/Building/Hooks.cpp`,
 `Hooks.Foundation.cpp`, `Ext/House/*.cpp`, `Ext/HouseType/Hooks.cpp`,
 `Ext/Infantry/*.cpp` and `Ext/SWType/Hooks.cpp`. The table at the end gives
 each one's disposition; hooks other pages already describe show as "ported
@@ -79,14 +79,11 @@ cites each hook.
 
 - The storage pips (0x44D755, 0x709B4E; ares-tiberium.md). The storage
   itself is ported in `sim::ares_tiberium_storage`.
-- Per-docker airfield reload timers and `ReloadRate` (0x44C844).
 - An upgrade's ProduceCash timer is not started at Put (0x4409F4); the
   Update hook starts it one frame longer. The payout and
   `ProduceCashDisplay` are ported in `sim::credit_income`.
 - Ares serial AI queues (`AllowParallelAIQueues=no`, 0x4502F4, 0x4CA07A and
   the four KickOutUnit hooks); the default changes nothing.
-- ShouldDisableCameo's replacement (0x50B370): queue admission keeps the
-  stock CheckBuildLimit.
 - Doggie (0x51F628, 0x518CB3, 0x51ABD7,
   0x5200C1), `DeathAnims=` owners (0x51849A), Mission_Guard's SW gate
   (0x449716) and the ICBM crate's Ares Nuke type (0x6CEEB0): dormant on
@@ -94,7 +91,7 @@ cites each hook.
 - Presentation and input: `Message.SilosNeeded`
   (0x4F8C23), the ready-building and hotkey factory lookups (0x6A9822,
   0x6AB312, 0x535DB6, 0x535E76), the Money SW tooltip (0x6A932B),
-  `SW.TimerVisibility` (0x6D49D1), the observer strip (0x6AA0CA, 0x6AA164),
+  the observer strip (0x6AA0CA, 0x6AA164),
   the amphibious water sound (0x51D799), an Ivan entering an allied
   Grinder (0x51EB48) and the bullet anim's MakeInfantryOwner outside Phobos
   (0x469C4E).
@@ -125,7 +122,7 @@ DLL removed are not listed.
 | `4482BD` | BuildingClass_ChangeOwnership_ProduceCash | `10013D40` | ported: `credit_income::produce_cash_on_owner_change` |
 | `44840B` | BuildingClass_ChangeOwnership_Tech | `10013E40` | ported earlier |
 | `44BB1B` | BuildingClass_Mi_Repair_Promote | `10014170` | not applicable: null-trainee guard of the Armory promotion arm, which VERA does not port |
-| `44C844` | BuildingClass_MissionRepair_Reload | `10014190` | residual: per-docker reload timers and TechnoType `ReloadRate` at airfields; VERA keeps the stock dock reload |
+| `44C844` | BuildingClass_MissionRepair_Reload | `10014190` | ported: per-docker reload timers (BuildingExt DockReloadTimers) and TechnoType `ReloadRate` (`sim::docking::airfield_reload`); a slot Ares never wrote reads 0 |
 | `44D4CA` | BuildingClass_Mi_Missile_NoReport | `10014130` | ported earlier |
 | `44D755` | BuildingClass_GetPipFillLevel_Tiberium | `10013FD0` | residual: storage pips (ares-tiberium.md) |
 | `44D760` | BuildingClass_Destroyed_UnitLost | `10013F10` | ported: building `EVA.Lost` (`combat::ares_building_lost_event`) |
@@ -231,7 +228,7 @@ DLL removed are not listed.
 | `4502F4` | BuildingClass_Update_Factory | `10024E00` | residual: Ares serial AI queues (`AllowParallelAIQueues=no`); with the default the hook does nothing (`phobos_parallel_ai_queues`) |
 | `4CA07A` | FactoryClass_AbandonProduction | `10024EE0` | residual: serial AI queue bookkeeping (as 0x4502F4) |
 | `509140` | HouseClass_Update_Factories_Queues | `10025100` | ported: the BuildingType update also refreshes the Combat (defense) queue (`update_factory_queue`); the sidebar redraw flag is presentation |
-| `50B370` | HouseClass_ShouldDisableCameo | `10024F80` | residual: Ares' ShouldDisableCameo replacement (BuildLimitRemaining less the queue, the AirportBound limit also taking BuildLimit, a usable factory); VERA keeps the stock CheckBuildLimit for queue admission |
+| `50B370` | HouseClass_ShouldDisableCameo | `10024F80` | ported: replaces CheckBuildLimit for every caller (BuildLimitRemaining less the queue, the held object counted once, the AirportBound limit going on to BuildLimit, a usable factory) |
 | `535DB6` | SetStructureTabCommandClass_Execute_Power | `10025150` | residual: structure-tab hotkey asks a powered factory (input) |
 | `535E76` | SetDefenseTabCommandClass_Execute_Power | `10025130` | residual: defense-tab hotkey asks a powered factory (input) |
 | `6A9822` | StripClass_Draw_Power | `100251D0` | residual: a ready building shows ready only with a factory to place from (sidebar) |
@@ -291,7 +288,7 @@ DLL removed are not listed.
 | `553D06` | LoadProgressMgr_Draw_LSBrief | `1001DF70` | ported earlier |
 | `69B670` | HTExt_PickRandom_AI | `1001DD30` | equivalent: weighted AI random country |
 | `69B774` | HTExt_PickRandom_Human | `1001DD50` | equivalent: weighted human random country (`skirmish_session`) |
-| `6AA0CA` | StripClass_Draw_DrawObserverBackground | `1001E160` | residual: observer strip art (ares-country-presentation.md: no observer strip) |
+| `6AA0CA` | StripClass_Draw_DrawObserverBackground | `1001E160` | residual: observer strip art (ares-country-presentation.md: stock pictures only) |
 | `6AA164` | StripClass_Draw_DrawObserverFlag | `1001E1E0` | residual: observer strip flag (same) |
 | `72B690` | LoadScreenPal_Load | `1001E0E0` | ported earlier |
 | `752B70` | PlayTaunt | `1001E130` | ported earlier (File.Taunt) |
@@ -364,7 +361,7 @@ DLL removed are not listed.
 | `451132` | BuildingClass_ProcessAnims_SuperWeaponsB | `10034B60` | equivalent: skips the stock second pass |
 | `457630` | BuildingClass_SWAvailable | `10034BB0` | ported earlier |
 | `457690` | BuildingClass_SW2Available | `10034B70` | ported earlier |
-| `4AC20C` | DisplayClass_LeftMouseButtonUp | `10034BF0` | equivalent: VERA fires the selected Super type itself (`commands::launch_super_weapon_at_cell`) |
+| `4AC20C` | DisplayClass_LeftMouseButtonUp | `10034BF0` | ported: with the Ares superweapons on, an Ares action names the armed type, a stock action names it only when it is the armed type's `Action=`, and anything else names none (`commands::special_place_type`) |
 | `4F9004` | HouseClass_Update_TrySWFire | `10034CD0` | ported earlier |
 | `4FAE72` | HouseClass_SWFire_PreDependent | `10034C90` | ported earlier |
 | `4FAF2A` | HouseClass_SWDefendAgainst_Aborted | `10034C70` | ported: a still-charged Super alerts no house (`superweapon::fire`) |
@@ -390,4 +387,4 @@ DLL removed are not listed.
 | `6CEE96` | SuperWeaponTypeClass_FindIndex | `10035A20` | equivalent: custom SW `Type=` names resolve in the SuperWeaponType reader |
 | `6CEEB0` | SuperWeaponTypeClass_FindFirstOfAction | `100359A0` | residual: the ICBM crate also takes an Ares Nuke-type SW (dormant: retail NukeSpecial has Action=Nuke) |
 | `6CEF84` | SuperWeaponTypeClass_GetAction | `10035A40` | ported earlier |
-| `6D49D1` | TacticalClass_Draw_TimerVisibility | `10035A80` | residual: `SW.TimerVisibility` (superweapon chain key, unread) |
+| `6D49D1` | TacticalClass_Draw_TimerVisibility | `10035A80` | ported: `SW.TimerVisibility` (`AresSuperWeaponPresentation`) through IsTimerVisible `10032E80` (`sim::superweapon::ares_timer_visible`), asked before the timer lines (`app/presentation/super_timers.rs`) |

@@ -235,7 +235,7 @@ fn strip_row_padding(
     Ok(out)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
 

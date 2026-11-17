@@ -8,7 +8,11 @@ import '/lobby.js';
 import init, {
   fonts_ready, import_file, import_spawn_file, prepare_audio, set_lifecycle_callback, spawn_leave, start_spawn,
 } from '/pkg/vera20k.js';
+// Only a --threads package exports initThreadPool.
+import * as engine from '/pkg/vera20k.js';
 
+// A panic's console stack keeps the Rust frames below the panic machinery.
+Error.stackTraceLimit = 64;
 const params = new URLSearchParams(location.search);
 const source = params.get('source');
 const leaveAfter = Number(params.get('leave'));
@@ -48,6 +52,11 @@ function event(value) {
 
 try {
   await init();
+  if (engine.initThreadPool) {
+    if (params.get('sim')) engine.set_simulation_thread(params.get('sim'));
+    await engine.initThreadPool(Math.max(1, (navigator.hardwareConcurrency ?? 2) - 1));
+    note('info', [`host started the worker pool (cross-origin isolated: ${globalThis.crossOriginIsolated}, simulation thread: ${params.get('sim') ?? 'default'})`]);
+  }
   set_lifecycle_callback((value) => event(value));
   try { prepare_audio(); } catch (error) { note('warn', [`audio unavailable: ${error}`]); }
   const files = await (await fetch('/e2e/retail.json')).json();

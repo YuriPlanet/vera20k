@@ -794,7 +794,7 @@ fn destination_edit(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod tests {
     use super::super::draw_plan_lowering::{
         NativeDisplayOrder, ObjectPieceInstance, PlannedObjectInstance,
@@ -939,38 +939,38 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 #[path = "terrain_ground_gpu_tests.rs"]
 mod terrain_ground_gpu_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 #[path = "naval_sinking_gpu_tests.rs"]
 mod naval_sinking_gpu_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 #[path = "projectile_shape_gpu_tests.rs"]
 mod projectile_shape_gpu_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 #[path = "projectile_submission_gpu_tests.rs"]
 mod projectile_submission_gpu_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 #[path = "packed_material_gpu_tests.rs"]
 mod packed_material_gpu_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 #[path = "infantry_berserk_gpu_tests.rs"]
 mod infantry_berserk_gpu_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 #[path = "projectile_voxel_gpu_tests.rs"]
 mod projectile_voxel_gpu_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 #[path = "welding_gpu_tests.rs"]
 mod welding_gpu_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 #[path = "anim_shadow_gpu_tests.rs"]
 mod anim_shadow_gpu_tests;

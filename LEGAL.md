@@ -81,6 +81,15 @@ Parts of the optional Ares support are translated from
 
 This product includes software developed by the Ares Contributors.
 
+## Code from Phobos
+
+Parts of the optional Phobos support are ported from
+[Phobos](https://github.com/Phobos-developers/Phobos), which the
+[Phobos Developers](docs/phobos.md#original-project-and-authors) license under the GPLv3, like
+VERA20K. Keep their credit when you share them.
+
+This product includes software developed by the Phobos Developers.
+
 ## Game files
 
 VERA20K contains none of the game's files. They belong to Electronic Arts, and no VERA20K

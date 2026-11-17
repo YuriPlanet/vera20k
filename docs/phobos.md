@@ -3,16 +3,32 @@
 VERA20K can build in partial, Rust-native support for some Phobos extensions. It does not load the
 Phobos DLL and is not general mod support.
 
-Default builds use the retail readers and dispatch; an INI or client setting cannot enable omitted
-extensions. Build the supported extensions explicitly:
+## The Phobos switch
+
+Four of these extensions are in every build, the release build too, and play in a game whose rules,
+mode or map hold one of their keys. Such a key turns Phobos on for that game, as loading Phobos.dll
+would, and the game's log names it, e.g.
+`Phobos plays in this game: [GlobalControls] ForbidParallelAIQueues.Building is a Phobos key`.
+`AllowParallelAIQueues`, which Ares reads too, turns neither extension on. Retail data holds no
+such key, so a retail game plays as the original. A save, a replay and every player in an online
+match reach the same answer from the same rules, mode and map
+([Networking](Networking.md)). The four are:
+
+- [Parallel AI queue limits](phobos-parallel-ai-queues.md)
+- [Skirmish AI dehardcoding](phobos-ai-dehardcode.md)
+- [AI spare power](phobos-power-surplus.md)
+- [Target zone scan](phobos-target-zone.md)
+
+The rest needs a build with the `phobos` feature, which plays Phobos in every game:
 
 ```sh
 cargo run --release --bin vera20k --features phobos
 ```
 
-The capability is independent of Ares and NPatch: a Phobos build needs neither feature, and all
-three combine with `--features ares,phobos,npatch`. Every implemented Phobos chain must keep working
-when the other capabilities are compiled in — the compatibility rule and the pattern for two
+The capability is independent of Ares and NPatch: a Phobos build needs neither. Every build holds
+Ares, which a game's data switches on ([Ares](ares.md)), and Phobos combines with NPatch as
+`--features phobos,npatch`. Every implemented Phobos chain must keep working
+when Ares plays or the other capabilities are compiled in — the compatibility rule and the pattern for two
 extensions touching one native site are in
 [NPatch placeholder](npatch.md#cross-extension-compatibility).
 
@@ -46,6 +62,8 @@ Supported extensions:
 - [Building production queue](phobos-building-queue.md) (queue buildings and start the next after placement)
 - [Skirmish AI dehardcoding](phobos-ai-dehardcode.md) (last-legs sale/hunt switches and MCV deploy regroup)
 - [Parallel AI queue limits](phobos-parallel-ai-queues.md) (per-category and per-type AI clone forbids)
+- [AI spare power](phobos-power-surplus.md) (`[AI] EnablePowerSurplus` keeps `PowerSurplus` power spare in AI base planning)
+- [Target zone scan](phobos-target-zone.md) (`TargetZoneScanType` lets hunting units pick targets outside their movement zone)
 - [Unlimited skirmish colours](phobos-skirmish-unlimited-colors.md) (spawner colour indices address any `[Colors]` entry)
 - [Superweapon sidebar](phobos-superweapon-sidebar.md) (left-edge superweapon cameos, toggle and positional hotkeys)
 - [Prone movement speed](phobos-prone-speed.md) (`ProneSpeed` for crawling and non-crawling prone infantry)
@@ -69,8 +87,21 @@ VERA20K implements the behavior in Rust. It does not load `Phobos.dll`, import
 Phobos C++ source or redistribute Phobos binaries; the native identities cited
 by these pages are the Phobos sources named in each page.
 
-Phobos is developed by the Phobos Developers. The features ported here
-originate with:
+This product includes software developed by the Phobos Developers.
+
+Phobos was founded by **Belonit** (Gluk-v48) and **Kerbiter** (Metadorius) in
+2020 and is developed by the
+[Phobos Developers](https://github.com/Phobos-developers/Phobos#credits):
+
+- Maintainers: **Kerbiter** (lead), **Starkku** (co-lead), **CrimRecya**,
+  **ZivDero**, **Ollerus**, **NetsuNegi**, **TaranDahl** and **Noble_Fish**
+  (also documentation and triage).
+- Triage: **FlyStar** and **Fryone**.
+- Inactive maintainers: **Belonit** (past lead), **Uranusian** (also Chinese
+  community ambassador), **secsome**, **Otamaa**, **FS-21**, **Morton** and
+  **Trsdy**.
+
+The features ported here originate with:
 
 - Custom radiation types - **Otamaa**, who ported and fixed the **Ares
   developers**' unfinished RadTypes code.
@@ -102,6 +133,7 @@ originate with:
   **TaranDahl**.
 - Parallel AI queue forbids - **Trsdy**, **NetsuNegi** (by category),
   **Starkku** (by TechnoType).
+- Target evaluation map zone check (`TargetZoneScanType`) - **Starkku**.
 - Unlimited skirmish colours - **Morton**.
 - Superweapon sidebar - **NetsuNegi**, **CrimRecya**.
 - Prone speed customization - **TaranDahl**.
@@ -122,7 +154,7 @@ originate with:
 The Rust ports are individual VERA20K contributions; GitHub usernames name
 the merged pull requests that carried each chain:
 
-- **1372704087** — every Phobos chain listed above: shields, custom
+- **1372704087** — the Phobos chains named here: shields, custom
   radiation types, the three ore chains, superweapon techno gates, digital
   display, placement preview, sidebar GDI/NOD positions, infantry auto
   deploy, `FlyNoWobbles`, the centred pause-menu background, building

@@ -8,7 +8,6 @@
 //! - Part of rules/ — no dependencies on sim/, render/, ui/, etc.
 //! - References `ParticleTypeId` from `crate::rules::particle_type`.
 
-use glam::IVec3;
 use serde::{Deserialize, Serialize};
 
 use crate::rules::ini_parser::IniSection;
@@ -94,8 +93,9 @@ pub struct ParticleSystemType {
     pub spawn_frames: i32,
     /// Rate at which smoke particles decelerate (default 0.0).
     pub slowdown: NativeF32Bits,
-    /// Maximum particles this system can hold simultaneously (default 50).
-    pub particle_cap: u32,
+    /// Spark burst size and light divisor (default 50). Signed as stored:
+    /// ReadINI keeps whatever `ReadInteger` returns.
+    pub particle_cap: i32,
     /// Random radius for spawn position offset.
     pub spawn_radius: i32,
     /// Distance threshold to stop spawning new particles.
@@ -105,8 +105,9 @@ pub struct ParticleSystemType {
     /// System lifetime in frames. -1 = infinite (system stays alive until all
     /// particles die). Default -1 per constructor.
     pub lifetime: i32,
-    /// Direction vector for spawning (CoordStruct).
-    pub spawn_direction: IVec3,
+    /// The float vector `AI_Spark` adds to each spark's velocity
+    /// (`+0x2BC..+0x2C4`).
+    pub spawn_direction: [NativeF32Bits; 3],
 
     // ── Railgun-only: the exact `ReadDouble` doubles that
     // `ParticleSystemClass::AI_Railgun @ 0x0062F230` reads ─────────────
@@ -180,19 +181,15 @@ impl ParticleSystemType {
             spawn_frames: section.read_int("SpawnFrames", 1),
             // Float fields (`FSTP dword` at `0x0064439F..0x006443DD`).
             slowdown: section.read_double_to_float("Slowdown", NativeF32Bits::POSITIVE_ZERO),
-            particle_cap: section.read_int("ParticleCap", 50).max(0) as u32,
+            particle_cap: section.read_int("ParticleCap", 50),
             spawn_radius: section.read_int("SpawnRadius", 0),
             spawn_cutoff: section.read_double_to_float("SpawnCutoff", NativeF32Bits::POSITIVE_ZERO),
             spawn_translucency_cutoff: section
                 .read_double_to_float("SpawnTranslucencyCutoff", NativeF32Bits::POSITIVE_ZERO),
             lifetime: section.read_int("Lifetime", -1),
-            // A float vector natively; VERA keeps whole components for its
-            // integer velocity math. Retail sets no `SpawnDirection=`.
-            spawn_direction: IVec3::from_array(
-                section
-                    .read_float_tokens("SpawnDirection", [0.0; 3])
-                    .map(|component| component as i32),
-            ),
+            // ReadFloatTokens at `0x0064447B`. Retail sets no `SpawnDirection=`.
+            spawn_direction: section
+                .read_float_tokens("SpawnDirection", [NativeF32Bits::POSITIVE_ZERO; 3]),
 
             // Double fields (`FSTP qword` at `0x006444B0..0x00644555`).
             particles_per_coord: section
@@ -225,10 +222,24 @@ impl ParticleSystemType {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
+
+    /// ReadINI keeps `SpawnDirection=` as three floats (`0x0064447B`) and
+    /// `ParticleCap=` signed.
+    #[test]
+    fn spawn_direction_keeps_fractions_and_particle_cap_keeps_its_sign() {
+        let ini = IniFile::from_str("[Foo]\nSpawnDirection=0.5,-1.25,3\nParticleCap=-4\n");
+        let pst = ParticleSystemType::from_ini_section("Foo", ini.section("Foo").unwrap());
+        assert_eq!(
+            pst.spawn_direction
+                .map(|value| f32::from_bits(value.bits())),
+            [0.5, -1.25, 3.0]
+        );
+        assert_eq!(pst.particle_cap, -4);
+    }
 
     #[test]
     fn behaves_like_discriminants_match_binary() {
@@ -254,7 +265,7 @@ mod tests {
         assert_eq!(pst.spiral_radius.bits(), 0x4039_0000_0000_0000);
         assert_eq!(pst.slowdown, NativeF32Bits::POSITIVE_ZERO);
         assert_eq!(pst.spawn_radius, 0);
-        assert_eq!(pst.spawn_direction, IVec3::ZERO);
+        assert_eq!(pst.spawn_direction, [NativeF32Bits::POSITIVE_ZERO; 3]);
         assert!(!pst.spawns);
         assert!(!pst.laser);
         assert!(!pst.one_frame_light);

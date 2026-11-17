@@ -155,7 +155,7 @@ pub(crate) fn plan(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|runtime| &runtime.simulation)
     else {
         return (SwSidebarLayout::default(), Vec::new());
@@ -227,7 +227,7 @@ pub(crate) fn plan(
 /// Per-frame `can_fire`/progress/readiness refresh, matching `SWButtonClass::Draw`
 /// reading the live `SuperClass`.
 pub(crate) fn refresh_draw_state(state: &mut AppState) {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.presentation() else {
         return;
     };
     let Some(owner_name) = crate::app::input::commands::preferred_local_owner_name(state) else {
@@ -330,7 +330,7 @@ pub(crate) fn hovered_entry_rect(state: &AppState) -> Option<Rect> {
         .map(|entry| entry.rect)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -353,8 +353,8 @@ mod tests {
                 can_fire: false,
                 can_afford: false,
                 constraints_blocked: false,
-                #[cfg(feature = "ares")]
                 ares_refusal: None,
+                ready_shots: 0,
             },
         }
     }
@@ -405,8 +405,8 @@ mod tests {
                 can_fire: false,
                 can_afford: false,
                 constraints_blocked: false,
-                #[cfg(feature = "ares")]
                 ares_refusal: None,
+                ready_shots: 0,
             })
             .collect()
     }

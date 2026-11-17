@@ -557,9 +557,12 @@ fn in_scenario_load_retains_main_callback_draws_after_prepare_and_commit() {
     );
 
     // Commit moves them into the process cell, then drops the old Simulation
-    // while a playback capability remains.
+    // while a playback capability remains. The scenario continues from that
+    // cursor in a cell of its own (docs/sim-thread.md).
     prepared.install_fresh_process_main(&live.main_rng);
     assert_eq!(live.main_rng.logical_state(), reference.logical_state());
+    assert_eq!(prepared.main_rng.logical_state(), reference.logical_state());
+    let mut world = reference.clone();
     drop(live);
     let (callback, late_draw) = std::thread::spawn(move || {
         let draw = callback.ranged(0, 4);
@@ -568,13 +571,14 @@ fn in_scenario_load_retains_main_callback_draws_after_prepare_and_commit() {
     .join()
     .unwrap();
     assert_eq!(late_draw, reference.next_range_i32_inclusive(0, 4));
-    assert_eq!(prepared.main_rng.logical_state(), reference.logical_state());
     assert_eq!(callback.next_u32(), reference.next_u32());
+    // The app's draws leave the scenario's cell where it was.
+    assert_eq!(prepared.main_rng.logical_state(), world.logical_state());
     assert_eq!(
         prepared.presentation_main_draws().next_u32(),
-        reference.next_u32()
+        world.next_u32()
     );
-    assert_eq!(prepared.main_rng.logical_state(), reference.logical_state());
+    assert_eq!(prepared.main_rng.logical_state(), world.logical_state());
     assert_eq!(prepared.scenario_rng.logical_state(), scenario);
     assert_eq!(prepared.mapgen_rng.logical_state(), mapgen);
 }

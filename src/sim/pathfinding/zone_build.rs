@@ -922,7 +922,7 @@ pub(crate) use tests::{
     assert_native_hierarchy_graphs, hierarchy_native_bounds, hierarchy_native_fixture,
 };
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 mod tests {
     use super::hierarchy::*;
     use crate::sim::pathfinding::zone_hierarchy::{ZoneHierarchy, ZoneRecord};

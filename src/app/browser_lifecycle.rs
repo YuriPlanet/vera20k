@@ -17,7 +17,7 @@ impl App {
         let sim = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation);
         let outcome = sim.and_then(|sim| {
             state

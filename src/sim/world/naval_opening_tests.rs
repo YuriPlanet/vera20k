@@ -419,7 +419,7 @@ fn two_searches_and_event_birth_match_the_original_supplied_map_control() {
         actor.position.put_world_xy([1344, 1344]);
         sim.substrate.entities.insert(actor);
         sim.resolved_terrain = Some(terrain);
-        sim.zone_grid = Some(zones);
+        sim.zone_grid = Some(zones.into());
         sim.substrate.raw_cell_occupation = raw;
         sim.playfield_bounds = Some(bounds());
         sim.playfield_size_height = Some(8);

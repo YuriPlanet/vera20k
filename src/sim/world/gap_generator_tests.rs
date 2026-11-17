@@ -509,6 +509,7 @@ pub fn gap_operational_power_loss_views() -> Vec<(
             .entities
             .get(30)
             .unwrap()
+            .building
             .gap_generator
             .viewers()[&viewer]
             .active()
@@ -584,12 +585,19 @@ fn gap_operational_spy_sat_rechecks_live_candidates_per_viewer() {
     power(&mut sim, &rules); // newly low, before another Building turn
     insert(&mut sim, &rules, 2, a, "GASPYSAT", 1, 1);
     sim.reconcile_active_vision_structures(&rules);
-    let gap = &sim.substrate.entities.get(1).unwrap().gap_generator;
+    let gap = &sim
+        .substrate
+        .entities
+        .get(1)
+        .unwrap()
+        .building
+        .gap_generator;
     assert!(
         sim.substrate
             .entities
             .get(1)
             .unwrap()
+            .building
             .building_last_operational
             .is_operational()
     );
@@ -618,6 +626,7 @@ fn gap_operational_spy_sat_rechecks_live_candidates_per_viewer() {
             .entities
             .get(1)
             .unwrap()
+            .building
             .gap_generator
             .viewers()[&a]
             .active()
@@ -705,6 +714,7 @@ fn gap_operational_owner_change_reveals_sight_before_new_gap_and_death_removes()
         .entities
         .get(1)
         .unwrap()
+        .building
         .gap_generator
         .viewers()[&owner]
         .radius();
@@ -714,6 +724,7 @@ fn gap_operational_owner_change_reveals_sight_before_new_gap_and_death_removes()
             .entities
             .get(1)
             .unwrap()
+            .building
             .gap_generator
             .viewers()[&owner]
             .active()
@@ -723,6 +734,7 @@ fn gap_operational_owner_change_reveals_sight_before_new_gap_and_death_removes()
             .entities
             .get(1)
             .unwrap()
+            .building
             .gap_generator
             .viewers()[&owner]
             .radius(),
@@ -760,6 +772,7 @@ fn gap_operational_events_invalidate_map_reveal_latch_including_friendly_reentry
             .entities
             .get(1)
             .unwrap()
+            .building
             .gap_generator
             .viewers()[&viewer]
             .active()
@@ -789,6 +802,7 @@ fn gap_operational_events_invalidate_map_reveal_latch_including_friendly_reentry
             .entities
             .get(1)
             .unwrap()
+            .building
             .gap_generator
             .viewers()[&viewer]
             .active()
@@ -823,6 +837,7 @@ pub fn sustained_source_gap_limbo_views() -> Vec<(vision::FogState, InternedId, 
             .entities
             .get(gap)
             .unwrap()
+            .building
             .gap_generator
             .viewers()[&viewer]
             .active()
@@ -949,14 +964,23 @@ fn alliance_callbacks_recheck_gap_operation_without_overwriting_the_building_sam
     power(&mut sim, &rules);
     sim.visit_building_operational(1, &rules, None, FrameEffects::default());
     assert!(sim.fog.is_cell_gap_covered(player, 12, 12));
-    let sample = sim.entities().get(1).unwrap().building_last_operational;
+    let sample = sim
+        .entities()
+        .get(1)
+        .unwrap()
+        .building
+        .building_last_operational;
     let context = UninitContext::with_rules(&rules);
     sim.release_alliance_sight(context);
     assert!(!sim.fog.is_cell_gap_covered(player, 12, 12));
     sim.admit_alliance_sight(context);
     assert!(sim.fog.is_cell_gap_covered(player, 12, 12));
     assert_eq!(
-        sim.entities().get(1).unwrap().building_last_operational,
+        sim.entities()
+            .get(1)
+            .unwrap()
+            .building
+            .building_last_operational,
         sample
     );
 
@@ -965,7 +989,11 @@ fn alliance_callbacks_recheck_gap_operation_without_overwriting_the_building_sam
     sim.admit_alliance_sight(context);
     assert!(!sim.fog.is_cell_gap_covered(player, 12, 12));
     assert_eq!(
-        sim.entities().get(1).unwrap().building_last_operational,
+        sim.entities()
+            .get(1)
+            .unwrap()
+            .building
+            .building_last_operational,
         sample
     );
     assert!(sim.go_building_online(1, &rules, FrameEffects::default()));
@@ -975,7 +1003,11 @@ fn alliance_callbacks_recheck_gap_operation_without_overwriting_the_building_sam
     sim.admit_alliance_sight(context);
     assert!(sim.fog.is_cell_gap_covered(player, 12, 12));
     assert_eq!(
-        sim.entities().get(1).unwrap().building_last_operational,
+        sim.entities()
+            .get(1)
+            .unwrap()
+            .building
+            .building_last_operational,
         sample
     );
 }

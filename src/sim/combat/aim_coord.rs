@@ -123,7 +123,7 @@ pub fn led_target_coordinate(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod tests {
     use super::*;
 

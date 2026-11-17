@@ -3,9 +3,7 @@
 
 use super::geom::{RectPx, ShellScale};
 use super::list::{ListMetrics, ListScrollInteraction, ListScrollPart, ShellListGeometry};
-use crate::ui::skirmish_shell::{
-    DropdownMetrics, ScrollModel, combo_arrow_hit_rect, combo_dropdown_row_rect,
-};
+use crate::ui::skirmish_shell::{DropdownMetrics, ScrollModel, combo_arrow_hit_rect};
 use crate::util::time::Instant;
 
 /// What one mouse press does to an owner-draw combo or its open list.
@@ -90,6 +88,13 @@ impl ComboPopup {
             scale,
         }
     }
+    /// The same list on rows `row_height` tall, for a control drawn smaller
+    /// than the shell's own (VERA's roster).
+    pub(crate) fn with_row_height(mut self, row_height: i32) -> Self {
+        self.row_height = row_height.max(1);
+        self.rect.h = self.visible_rows as i32 * self.row_height;
+        self
+    }
     pub(crate) fn scrollbar(&self) -> Option<RectPx> {
         (self.total > self.visible_rows).then(|| {
             let width = DropdownMetrics::scaled(self.scale).scrollbar_w;
@@ -121,7 +126,7 @@ impl ComboPopup {
             visible_rows: self.visible_rows,
             max_top: self.total - self.visible_rows,
             metrics: ListMetrics {
-                row_h: metrics.row_h,
+                row_h: self.row_height,
                 scrollbar_w: metrics.scrollbar_w,
                 arrow_h: metrics.button_h,
                 min_thumb_h: metrics.min_thumb_h,
@@ -143,10 +148,12 @@ impl ComboPopup {
         if index < self.first || index >= self.first + self.visible_rows {
             return None;
         }
-        Some(combo_dropdown_row_rect(
-            self.content(),
-            self.scale,
-            index - self.first,
+        let content = self.content();
+        Some(RectPx::new(
+            content.x,
+            content.y + (index - self.first) as i32 * self.row_height,
+            content.w,
+            self.row_height,
         ))
     }
     pub(crate) fn row_at(&self, x: i32, y: i32) -> Option<usize> {
@@ -247,7 +254,7 @@ impl<Id: Copy> ComboPopupInteraction<Id> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

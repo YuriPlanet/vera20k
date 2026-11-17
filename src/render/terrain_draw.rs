@@ -190,8 +190,10 @@ struct ReadOnlyReduction {
 pub(crate) struct PackedSurface {
     targets: Targets,
     stencil: packed::Stencil,
-    /// Surface pixels per camera pixel, whole: each camera pixel is a block.
-    scale: u32,
+    /// Surface pixels per camera pixel. Whole for the sidebars drawn at a
+    /// whole multiple; the sidebar's Large size is 1.5, whose pieces straddle
+    /// fractional surface pixels, so their rectangles round outward.
+    scale: f32,
 }
 
 pub(crate) struct TerrainDrawRenderer {
@@ -795,12 +797,12 @@ impl TerrainDrawRenderer {
         device: &wgpu::Device,
         color: &wgpu::Texture,
         depth: &wgpu::TextureView,
-        scale: u32,
+        scale: f32,
     ) -> PackedSurface {
         PackedSurface {
             targets: self.create_targets(device, color, depth),
             stencil: self.packed.create_stencil(color.size()),
-            scale: scale.max(1),
+            scale: scale.max(1.0),
         }
     }
 
@@ -1896,11 +1898,11 @@ fn piece_scissor(
     (r > x && b > y).then_some([x as u32, y as u32, (r - x) as u32, (b - y) as u32])
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "projectile_draw_gpu_tests.rs"]
 mod projectile_gpu_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod webgl_shader_tests {
     use crate::render::{batch, tactical_shader, webgl::pad_camera_structs};
 
@@ -1927,6 +1929,10 @@ mod webgl_shader_tests {
             (
                 "voxel sprite",
                 pad_camera_structs(&tactical_shader::world_source(batch::VOXEL_SPRITE_SHADER)),
+            ),
+            (
+                "surface strokes",
+                pad_camera_structs(&tactical_shader::world_source(batch::SURFACE_STROKE_SHADER)),
             ),
             ("terrain snapshot", super::snapshot_source(true)),
             (
@@ -2087,5 +2093,49 @@ mod webgl_shader_tests {
             "GLSL ES 3.00 has no integer mix():\n{}",
             integer_mix.join("\n")
         );
+    }
+
+    /// WebGL2 links at most 16 vertex attributes, and the browser's GL layer
+    /// can give `gl_VertexID` and `gl_InstanceID` a slot of their own: the
+    /// voxel sprite shader, 16 instance inputs plus `vertex_index`, failed to
+    /// link in a browser with "Too many attributes (gl_VertexID)".
+    #[test]
+    fn webgl_fallback_vertex_inputs_fit_the_attribute_limit() {
+        let limit = wgpu::Limits::downlevel_webgl2_defaults().max_vertex_attributes as usize;
+        for (name, source) in fallback_sources() {
+            let module = naga::front::wgsl::parse_str(&source)
+                .unwrap_or_else(|error| panic!("{name}: {}", error.emit_to_string(&source)));
+            for entry in &module.entry_points {
+                if entry.stage != naga::ShaderStage::Vertex {
+                    continue;
+                }
+                let slots = entry
+                    .function
+                    .arguments
+                    .iter()
+                    .flat_map(|argument| match &module.types[argument.ty].inner {
+                        naga::TypeInner::Struct { members, .. } => members
+                            .iter()
+                            .filter_map(|member| member.binding.clone())
+                            .collect::<Vec<_>>(),
+                        _ => argument.binding.clone().into_iter().collect(),
+                    })
+                    .filter(|binding| {
+                        matches!(
+                            binding,
+                            naga::Binding::Location { .. }
+                                | naga::Binding::BuiltIn(
+                                    naga::BuiltIn::VertexIndex | naga::BuiltIn::InstanceIndex
+                                )
+                        )
+                    })
+                    .count();
+                assert!(
+                    slots <= limit,
+                    "{name} {}: {slots} vertex inputs, WebGL2 links at most {limit}",
+                    entry.name
+                );
+            }
+        }
     }
 }

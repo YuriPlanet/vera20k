@@ -60,7 +60,7 @@ pub fn parse_local_variables(ini: &IniFile) -> LocalVariableMap {
     locals
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

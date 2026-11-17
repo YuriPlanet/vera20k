@@ -1087,30 +1087,30 @@ impl TerrainDrawRenderer {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "line_trail_gpu_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "laser_tests.rs"]
 mod laser_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "electric_bolt_tests.rs"]
 mod electric_bolt_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "radiation_beam_gpu_tests.rs"]
 mod radiation_beam_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "radial_indicator_gpu_tests.rs"]
 mod radial_indicator_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "welding_gpu_tests.rs"]
 mod welding_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "spotlight_tests.rs"]
 mod spotlight_tests;

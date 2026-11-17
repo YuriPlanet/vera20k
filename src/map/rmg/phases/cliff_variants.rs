@@ -100,7 +100,7 @@ fn select_variant(tile: i32, cliff_base: i32, rng: &mut RmgRng) -> i32 {
     cliff_base.wrapping_add(selected)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     #[test]
     fn registered_variant_selection_matches_original_values_and_cursors() {

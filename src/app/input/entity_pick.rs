@@ -77,6 +77,13 @@ pub(crate) trait PickSource: Copy {
     fn owner_is_human_player(&self, _owner: InternedId) -> Option<bool> {
         None
     }
+    /// [`crate::sim::world::Simulation::house_controls_selection`], the
+    /// owner test of the T key's predicates (`0x00732580`, `0x00732770`,
+    /// `0x006DA770`). A bare EntityStore answers `None`; its fixtures keep
+    /// exact local-owner identity.
+    fn owner_controls_selection(&self, _owner: InternedId) -> Option<bool> {
+        None
+    }
 }
 impl PickSource for &EntityStore {
     fn entities(&self) -> &EntityStore {
@@ -86,6 +93,10 @@ impl PickSource for &EntityStore {
 
 pub(crate) trait PickWorld: PickSource {
     fn simulation(&self) -> &crate::sim::world::Simulation;
+    /// The rules the Ground draw order reads (`Simulation::ground_draw_order`).
+    fn rules(&self) -> Option<&RuleSet> {
+        None
+    }
 }
 impl PickSource for &crate::sim::world::Simulation {
     fn entities(&self) -> &EntityStore {
@@ -106,6 +117,9 @@ impl PickSource for &crate::sim::world::Simulation {
     }
     fn owner_is_human_player(&self, owner: InternedId) -> Option<bool> {
         Some(self.house_is_human_player(owner))
+    }
+    fn owner_controls_selection(&self, owner: InternedId) -> Option<bool> {
+        Some(self.house_controls_selection(owner))
     }
 }
 impl PickWorld for &crate::sim::world::Simulation {
@@ -149,16 +163,27 @@ impl PickSource for PresentedWorld<'_> {
     }
     fn conceals(&self, entity: &crate::sim::game_entity::GameEntity) -> bool {
         self.translucent_viewer.is_some_and(|viewer| {
-            crate::app::presentation::instances::translucent_fog_conceals(self.sim, viewer, entity)
+            crate::app::presentation::instances::translucent_fog_conceals(
+                self.sim,
+                viewer,
+                &entity.position,
+                entity.owner(),
+            )
         })
     }
     fn owner_is_human_player(&self, owner: InternedId) -> Option<bool> {
         Some(self.sim.house_is_human_player(owner))
     }
+    fn owner_controls_selection(&self, owner: InternedId) -> Option<bool> {
+        Some(self.sim.house_controls_selection(owner))
+    }
 }
 impl PickWorld for PresentedWorld<'_> {
     fn simulation(&self) -> &crate::sim::world::Simulation {
         self.sim
+    }
+    fn rules(&self) -> Option<&RuleSet> {
+        self.rules
     }
 }
 pub(crate) fn presented<'a>(
@@ -224,28 +249,90 @@ pub(crate) fn hover_object_at_point(
     local_owner: &str,
     ignore_visibility: bool,
 ) -> Option<HoverObject> {
-    let sim = source.simulation();
-    let fog = (!ignore_visibility).then_some(sim.fog());
-    let stable_id = match pick_object_at_point(
+    hover_object_in_frame(
         source,
-        sim.display_layers().ordered_ids(),
-        fog,
-        sim.interner().get(local_owner),
+        None,
         world_x,
         world_y,
-        sim.resolved_terrain(),
-    )? {
+        local_owner,
+        ignore_visibility,
+    )
+}
+
+/// [`hover_object_at_point`], scoring only the objects whose span in `frame`
+/// lies near the point ([`may_pick`]), without reading the others. `frame`
+/// is captured from `source`'s world; the pick finds the same object.
+fn hover_object_in_frame(
+    source: impl PickWorld,
+    frame: Option<&crate::app::presentation::frame::PresentationFrame>,
+    world_x: f32,
+    world_y: f32,
+    local_owner: &str,
+    ignore_visibility: bool,
+) -> Option<HoverObject> {
+    use crate::app::presentation::display_members::ObjectKind;
+    let sim = source.simulation();
+    let fog = (!ignore_visibility).then_some(sim.fog());
+    let pick = |order: &mut dyn Iterator<Item = &u64>| {
+        pick_object_at_point(
+            source,
+            order,
+            fog,
+            sim.interner().get(local_owner),
+            world_x,
+            world_y,
+            sim.resolved_terrain(),
+        )
+    };
+    let picked = match frame {
+        Some(frame) => {
+            let picked = pick(
+                &mut frame
+                    .display_members(sim)
+                    .objects()
+                    .iter()
+                    .filter(|member| match member.kind {
+                        ObjectKind::Record { span, .. } => may_pick(span, world_x, world_y),
+                        ObjectKind::Bullet | ObjectKind::Debris => false,
+                    })
+                    .map(|member| &member.id),
+            );
+            debug_assert_eq!(
+                picked,
+                pick(
+                    &mut crate::app::presentation::instances::display_draw_ids(sim, source.rules())
+                        .iter()
+                ),
+                "the pick's pre-filter passed by the object at {world_x}, {world_y}"
+            );
+            picked
+        }
+        None => pick(
+            &mut crate::app::presentation::instances::display_draw_ids(sim, source.rules()).iter(),
+        ),
+    };
+    let stable_id = match picked? {
         CellObjectMember::Entity(id) => id,
         CellObjectMember::Terrain(id) => return Some(HoverObject::Terrain(id)),
     };
     hover_object_by_id(sim, stable_id, local_owner)
 }
 
+/// Whether an object whose span is `span` can win the pick at `x`, `y`: its
+/// pick point lies in the span, and `dx² + 0.5·dy² < 200`
+/// ([`PICK_DISTANCE_THRESHOLD`]) needs `|dx|` under 14.2 and `|dy|` under 20.
+fn may_pick(span: crate::app::presentation::display_members::ScreenSpan, x: f32, y: f32) -> bool {
+    (span.x - x).abs() < 15.0 && y > span.top - 21.0 && y < span.bottom + 21.0
+}
+
 /// [`hover_object_at_point`] at the cursor for the local player: the one
 /// TacticalPick of a frame, whose target both the cursor's action and the
-/// hover health bar read.
+/// hover health bar read. With the world home the frame is the home
+/// world's, so the pick asks only the objects near the cursor.
 pub(crate) fn cursor_hover_object(state: &crate::app::AppState) -> Option<HoverObject> {
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let host = &state.match_state.sim_runtime;
+    let sim = &host.runtime()?.simulation;
+    let frame = (!host.is_lent()).then(|| host.frame()).flatten();
     let owner = crate::app::input::commands::preferred_local_owner_name(state)?;
     let (world_x, world_y) = crate::app::match_runtime::sim_tick::screen_point_to_world(
         state,
@@ -254,6 +341,7 @@ pub(crate) fn cursor_hover_object(state: &crate::app::AppState) -> Option<HoverO
     );
     tactical_hover_object_at_point(
         presented(state, sim),
+        frame,
         world_x,
         world_y,
         &owner,
@@ -271,6 +359,7 @@ pub(crate) fn cursor_hover_object(state: &crate::app::AppState) -> Option<HoverO
 /// its object's next AI visit; lock/pause transition timing remains a residual.
 fn tactical_hover_object_at_point(
     source: impl PickWorld,
+    frame: Option<&crate::app::presentation::frame::PresentationFrame>,
     world_x: f32,
     world_y: f32,
     local_owner: &str,
@@ -280,7 +369,14 @@ fn tactical_hover_object_at_point(
     if input_locked {
         return None;
     }
-    hover_object_at_point(source, world_x, world_y, local_owner, ignore_visibility)
+    hover_object_in_frame(
+        source,
+        frame,
+        world_x,
+        world_y,
+        local_owner,
+        ignore_visibility,
+    )
 }
 
 /// Classify an identity already picked by a retained input source (radar or
@@ -464,16 +560,8 @@ pub(crate) fn compute_click_selection_snapshot_with_playfield(
     // those keep the ordinary add/toggle rather than being forced down the
     // replace path. gamemd equivalent UNCHECKED because the state cannot arise —
     // both production call sites always pass a resolved owner and interner.
-    let owner_is_local = |entity: &crate::sim::game_entity::GameEntity| -> bool {
-        match (local_owner, interner) {
-            (Some(owner), Some(names)) => names.resolve(entity.owner()).eq_ignore_ascii_case(owner),
-            _ => true,
-        }
-    };
-    let selection_is_local = current_selection
-        .first()
-        .and_then(|id| entities.get(*id))
-        .is_some_and(owner_is_local);
+    let selection_is_local =
+        first_selected_is_players(source, current_selection, local_owner, interner);
 
     if !additive || current_selection.is_empty() || !selection_is_local {
         return Some(SelectionMutation {
@@ -495,6 +583,27 @@ pub(crate) fn compute_click_selection_snapshot_with_playfield(
     }
 }
 
+/// BandBox_LeftUp's toggle arm (action 8) runs only while the first selected
+/// object's House passes IsHumanPlayer (`0x004ABD35..0x004ABD57`,
+/// `0x0050B6F0`); otherwise the click becomes action 7, which unselects all
+/// (`0x004ABE4A`) before it selects, with or without T held (`0x004ABE67`).
+fn first_selected_is_players(
+    source: impl PickSource,
+    current_selection: &[u64],
+    local_owner: Option<&str>,
+    interner: Option<&crate::sim::intern::StringInterner>,
+) -> bool {
+    current_selection
+        .first()
+        .and_then(|id| source.entities().get(*id))
+        .is_some_and(|entity| match (local_owner, interner) {
+            (Some(owner), Some(names)) => source
+                .owner_is_human_player(entity.owner())
+                .unwrap_or_else(|| names.resolve(entity.owner()).eq_ignore_ascii_case(owner)),
+            _ => true,
+        })
+}
+
 /// Did the band box catch anything at all?
 ///
 /// gamemd asks this before it clears the selection, and the question is far
@@ -509,32 +618,28 @@ pub(crate) fn compute_click_selection_snapshot_with_playfield(
 /// filter: an object without map presence is never in the drawn-object list, so
 /// a passenger inside a transport cannot make a rectangle "non-empty".
 ///
-/// The list is **partly** visibility-filtered, and the asymmetry is native:
-/// mobile objects append themselves from inside their own draw routine, so an
-/// object the shroud hides is never registered, while buildings are appended in
-/// bulk from the whole building array with no visibility test at all. A building
-/// under unexplored shroud therefore does make a rectangle non-empty, and an
-/// enemy unit under it does not.
+/// The list is not shroud-filtered. Mobile objects append themselves from
+/// inside their own draw routine (`UnitClass::DrawIt` registers at
+/// `0x0073CF6B`), which the object loop `0x006D8DB0` reaches with no shroud
+/// test, the shroud only masking their pixels; buildings are appended in bulk
+/// from the whole building array. A rectangle over black shroud therefore
+/// catches an enemy beneath it and replaces the selection. The loop's FogOfWar
+/// test, `MapClass::IsFogged @ 0x005865E0`, always answers no, so FogOfWar
+/// changes nothing here.
 ///
-/// The registration helper has exactly four call sites, and every one of them is
-/// the same virtual — the per-class "draw extras" override — reached once from
-/// the vehicle version, twice from the infantry version (its two draw paths) and
-/// once from the aircraft version. Nothing outside a draw routine registers an
-/// object, so the shroud filter above is complete: there is no second, unfiltered
-/// path by which a hidden enemy could enter the list.
+/// The registration helper (`0x006D9EF0`) is called only from draw routines:
+/// `UnitClass::DrawIt`, `InfantryClass::DrawIt` (its two draw paths),
+/// `AircraftClass::Draw_It` and the VeinholeMonster's draw (`0x0074D558`,
+/// Tiberian Sun content). Nothing outside a draw routine registers an object.
 pub(crate) fn band_rect_contains_drawn_object(
     source: impl PickSource,
     encounter_order: &[u64],
-    fog: Option<(&FogState, &crate::map::houses::HouseAllianceMap)>,
-    local_owner: Option<&str>,
     min_x: f32,
     min_y: f32,
     max_x: f32,
     max_y: f32,
-    interner: Option<&crate::sim::intern::StringInterner>,
 ) -> bool {
     let entities = source.entities();
-    let local_owner_id = local_owner.and_then(|o| interner.and_then(|i| i.get(o)));
     encounter_order.iter().any(|id| {
         let Some(entity) = entities.get(*id) else {
             return false;
@@ -554,9 +659,7 @@ pub(crate) fn band_rect_contains_drawn_object(
             // FoggedObject still draws in both fog modes.
             return !source.invisible_in_game_building(entity);
         }
-        let owner_str = interner.map_or("", |i| i.resolve(entity.owner()));
         !source.conceals(entity)
-            && is_drawn_for_local_owner(fog, local_owner, owner_str, entity, local_owner_id)
     })
 }
 
@@ -689,17 +792,7 @@ pub(crate) fn compute_box_selection_snapshot_with_playfield(
     interner: Option<&crate::sim::intern::StringInterner>,
     require_playfield_membership: bool,
 ) -> Option<SelectionMutation> {
-    if !band_rect_contains_drawn_object(
-        source,
-        preflight_order,
-        fog,
-        local_owner,
-        min_x,
-        min_y,
-        max_x,
-        max_y,
-        interner,
-    ) {
+    if !band_rect_contains_drawn_object(source, preflight_order, min_x, min_y, max_x, max_y) {
         return None;
     }
     let candidates = entities_in_rect(
@@ -740,7 +833,7 @@ pub(crate) fn compute_box_selection_snapshot_with_playfield(
 }
 
 pub(crate) fn compute_type_select_tap_with_playfield(
-    entities: &EntityStore,
+    source: impl PickSource,
     screen_order: &[u64],
     map_order: &[u64],
     current_selection: &[u64],
@@ -751,13 +844,14 @@ pub(crate) fn compute_type_select_tap_with_playfield(
     across_map: bool,
     require_playfield_membership: bool,
 ) -> TypeSelectTapResult {
+    let entities = source.entities();
     let mut mutation = SelectionMutation::default();
     let mut selected = current_selection.to_vec();
     if selected.len() == 1 {
-        let nonlocal = entities.get(selected[0]).is_some_and(|entity| {
-            let owner = interner.map_or("", |i| i.resolve(entity.owner()));
-            local_owner.is_some_and(|local| !owner.eq_ignore_ascii_case(local))
-        });
+        // `Tactical::Unselect_If_Not_Owned @ 0x006DA770`.
+        let nonlocal = entities
+            .get(selected[0])
+            .is_some_and(|entity| !type_select_owner_admits(source, local_owner, entity, interner));
         if nonlocal {
             mutation.deselect.push(selected[0]);
             selected.clear();
@@ -815,7 +909,7 @@ pub(crate) fn compute_type_select_tap_with_playfield(
 
     if !across_map {
         let visible = type_select_candidates(
-            entities,
+            source,
             screen_order,
             &seeds,
             fog,
@@ -842,7 +936,7 @@ pub(crate) fn compute_type_select_tap_with_playfield(
     }
 
     let map_candidates = type_select_candidates(
-        entities,
+        source,
         map_order,
         &seeds,
         None,
@@ -878,16 +972,15 @@ fn type_selection_matches(
     rules: Option<&RuleSet>,
     interner: Option<&crate::sim::intern::StringInterner>,
 ) -> bool {
-    #[cfg(feature = "ares")]
-    if let (Some(rules), Some(interner)) = (rules, interner) {
+    if let (Some(rules), Some(interner)) = (rules, interner)
+        && rules.ares()
+    {
         return rules
             .type_selection_key(left.1.into(), interner.resolve(left.0))
             .eq_ignore_ascii_case(
                 rules.type_selection_key(right.1.into(), interner.resolve(right.0)),
             );
     }
-    #[cfg(not(feature = "ares"))]
-    let _ = (rules, interner);
     left.0 == right.0
 }
 
@@ -906,7 +999,7 @@ fn push_type_select_seed(
 }
 
 fn type_select_candidates(
-    entities: &EntityStore,
+    source: impl PickSource,
     source_order: &[u64],
     seeds: &[TypeSelectionSeed],
     fog: Option<(&FogState, &crate::map::houses::HouseAllianceMap)>,
@@ -916,6 +1009,7 @@ fn type_select_candidates(
     screen_only: bool,
     require_playfield_membership: bool,
 ) -> Vec<u64> {
+    let entities = source.entities();
     let local_owner_id = local_owner.and_then(|owner| interner.and_then(|i| i.get(owner)));
     source_order
         .iter()
@@ -924,7 +1018,7 @@ fn type_select_candidates(
             let owner = interner.map_or("", |i| i.resolve(entity.owner()));
             let type_id = interner.map_or("", |i| i.resolve(entity.type_ref()));
             if !entity.lifecycle.object_alive()
-                || local_owner.is_some_and(|local| !owner.eq_ignore_ascii_case(local))
+                || !type_select_owner_admits(source, local_owner, entity, interner)
                 || !seeds.iter().any(|&seed| {
                     type_selection_matches(
                         seed,
@@ -951,6 +1045,27 @@ fn type_select_candidates(
         .collect()
 }
 
+/// The owner arm of the T key's predicates, asked of the object's House
+/// ([`PickSource::owner_controls_selection`]). A world without a local player
+/// keeps every owner, as the headless fixtures always have; a source without
+/// a house table falls back to exact local-owner identity.
+fn type_select_owner_admits(
+    source: impl PickSource,
+    local_owner: Option<&str>,
+    entity: &crate::sim::game_entity::GameEntity,
+    interner: Option<&crate::sim::intern::StringInterner>,
+) -> bool {
+    local_owner.is_none_or(|local| {
+        source
+            .owner_controls_selection(entity.owner())
+            .unwrap_or_else(|| {
+                interner
+                    .map_or("", |i| i.resolve(entity.owner()))
+                    .eq_ignore_ascii_case(local)
+            })
+    })
+}
+
 fn type_select_final_admissions(
     entities: &EntityStore,
     candidates: &[u64],
@@ -971,7 +1086,7 @@ fn type_select_final_admissions(
 }
 
 pub(crate) fn compute_type_select_click_mutation_with_playfield(
-    entities: &EntityStore,
+    source: impl PickSource,
     scope_order: &[u64],
     current_selection: &[u64],
     clicked_id: u64,
@@ -981,14 +1096,17 @@ pub(crate) fn compute_type_select_click_mutation_with_playfield(
     interner: Option<&crate::sim::intern::StringInterner>,
     require_playfield_membership: bool,
 ) -> SelectionMutation {
-    let Some(clicked) = entities.get(clicked_id) else {
+    let Some(clicked) = source.entities().get(clicked_id) else {
         return SelectionMutation::default();
     };
     let clicked_type = (clicked.type_ref(), clicked.category());
+    let additive = additive
+        && (current_selection.is_empty()
+            || first_selected_is_players(source, current_selection, local_owner, interner));
     if additive && current_selection.contains(&clicked_id) {
         return SelectionMutation {
             deselect: matching_type_group(
-                entities,
+                source,
                 scope_order,
                 clicked_type,
                 local_owner,
@@ -1006,7 +1124,7 @@ pub(crate) fn compute_type_select_click_mutation_with_playfield(
     SelectionMutation {
         clear: !additive,
         select: matching_type_group(
-            entities,
+            source,
             scope_order,
             clicked_type,
             local_owner,
@@ -1062,7 +1180,7 @@ pub(crate) fn compute_type_select_box_mutation_with_playfield(
     let mut select = Vec::new();
     for type_ref in represented_types {
         select.extend(matching_type_group(
-            entities,
+            source,
             scope_order,
             type_ref,
             local_owner,
@@ -1081,7 +1199,7 @@ pub(crate) fn compute_type_select_box_mutation_with_playfield(
 }
 
 fn matching_type_group(
-    entities: &EntityStore,
+    source: impl PickSource,
     source_order: &[u64],
     type_ref: TypeSelectionSeed,
     local_owner: Option<&str>,
@@ -1093,8 +1211,7 @@ fn matching_type_group(
     source_order
         .iter()
         .filter_map(|id| {
-            let entity = entities.get(*id)?;
-            let owner = interner.map_or("", |i| i.resolve(entity.owner()));
+            let entity = source.entities().get(*id)?;
             let type_id = interner.map_or("", |i| i.resolve(entity.type_ref()));
             if !entity.lifecycle.object_alive()
                 || entity.lifecycle.in_limbo()
@@ -1104,7 +1221,7 @@ fn matching_type_group(
                     rules,
                     interner,
                 )
-                || local_owner.is_some_and(|local| !owner.eq_ignore_ascii_case(local))
+                || !type_select_owner_admits(source, local_owner, entity, interner)
                 || (selecting
                     && !static_selection_gate(entity, type_id, rules, require_playfield_membership))
             {
@@ -1365,18 +1482,18 @@ pub(crate) fn pick_object_at_point<'a>(
         let Some(entity) = entities.get(stable_id) else {
             continue;
         };
-        if !pick_admits_object(entity, fog, player)
-            || source.conceals(entity)
-            || source.invisible_in_game_building(entity)
-        {
-            continue;
-        }
         // Native6DA380 tests lifecycle/cloak after the clicked Cell gate;
         // it does not repeat a raw anchor-cell shroud or discovery test.
+        // VERA-only order: the distance test comes first, and only an
+        // object that would become the nearest asks the admission tests.
+        // They only read, so the winner is the same.
         let (sx, sy) = source.screen_position(entity);
         let distance = pick_distance_sq(sx - world_x, sy - world_y) as i32;
         if distance < PICK_DISTANCE_THRESHOLD as i32
             && best.is_none_or(|(_, best_distance)| distance < best_distance)
+            && pick_admits_object(entity, fog, player)
+            && !source.conceals(entity)
+            && !source.invisible_in_game_building(entity)
         {
             best = Some((entity.stable_id(), distance));
         }
@@ -1497,27 +1614,27 @@ fn is_local_band_candidate(
     }) && static_selection_gate(entity, entity_type, rules, require_playfield_membership)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "entity_pick_reveal_tests.rs"]
 mod reveal_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "entity_pick_building_type_select_tests.rs"]
 mod building_type_select_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "entity_pick_group_as_tests.rs"]
 mod group_as_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "entity_pick_invisible_tests.rs"]
 mod invisible_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "entity_pick_band_owner_tests.rs"]
 mod band_owner_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
 
@@ -1543,12 +1660,27 @@ mod tests {
         let second = sim
             .spawn_object("VISIBLE", "Player", 20, 20, 0, &rules)
             .unwrap();
+        // The frame's records answer for its local player.
+        let player = sim.interner().get("Player");
+        sim.session_mut_for_test()
+            .set_current_house_for_test(player);
+        let frame = |sim: &Simulation| {
+            crate::app::presentation::frame::PresentationFrame::of_test(sim, &rules)
+        };
         let point = |sim: &Simulation, id| {
             crate::render::locomotor_visual::screen_position(sim.entities().get(id).unwrap())
         };
         let pick = |sim: &Simulation, id| {
             let (x, y) = point(sim, id);
-            tactical_hover_object_at_point(sim, x, y, "Player", true, sim.session().input_locked())
+            tactical_hover_object_at_point(
+                sim,
+                Some(&frame(sim)),
+                x,
+                y,
+                "Player",
+                true,
+                sim.session().input_locked(),
+            )
         };
         assert_eq!(health_hover_target(pick(&sim, first)), Some(first));
         sim.session_mut_for_test().set_input_locked_for_test(true);
@@ -1560,10 +1692,10 @@ mod tests {
         );
         assert!(!health_bar_drawable(
             &sim,
-            sim.entities().get(second).unwrap(),
+            frame(&sim).object(second).unwrap(),
             health_hover_target(pick(&sim, second)),
             Some("Player"),
-            Some(&rules),
+            rules.ares(),
         ));
         sim.entities_mut_for_test()
             .get_mut(first)
@@ -1573,10 +1705,10 @@ mod tests {
         assert!(
             health_bar_drawable(
                 &sim,
-                sim.entities().get(first).unwrap(),
+                frame(&sim).object(first).unwrap(),
                 health_hover_target(pick(&sim, first)),
                 Some("Player"),
-                Some(&rules),
+                rules.ares(),
             ),
             "the lock removes hover, not selected health bars"
         );
@@ -1621,6 +1753,55 @@ mod tests {
         entity.lifecycle.set_in_limbo_for_test(false);
         entity.selection.set_selected_for_test(selected);
         entity
+    }
+
+    /// The pick asks its admission tests only of an object near enough to
+    /// win; an object far from the point costs only its distance.
+    #[test]
+    fn a_pick_asks_admission_only_near_the_point() {
+        use crate::sim::world::Simulation;
+
+        #[derive(Clone, Copy)]
+        struct Counting<'a> {
+            sim: &'a Simulation,
+            asked: &'a std::cell::Cell<u32>,
+        }
+        impl PickSource for Counting<'_> {
+            fn entities(&self) -> &EntityStore {
+                self.sim.entities()
+            }
+            fn conceals(&self, _entity: &GameEntity) -> bool {
+                self.asked.set(self.asked.get() + 1);
+                false
+            }
+        }
+
+        let mut sim = Simulation::new();
+        let viewer = sim.intern("viewer");
+        let typ = sim.intern("INIT");
+        for (id, rx) in [(1, 10), (2, 30), (3, 50)] {
+            sim.entities_mut_for_test().insert(item83_entity(
+                id,
+                rx,
+                10,
+                viewer,
+                typ,
+                EntityCategory::Infantry,
+                false,
+            ));
+        }
+        let asked = std::cell::Cell::new(0);
+        let source = Counting {
+            sim: &sim,
+            asked: &asked,
+        };
+        let (x, y) =
+            crate::render::locomotor_visual::screen_position(sim.entities().get(1).unwrap());
+        assert_eq!(
+            pick_object_at_point(source, &[1, 2, 3], None, None, x, y, None),
+            Some(CellObjectMember::Entity(1))
+        );
+        assert_eq!(asked.get(), 1);
     }
 
     #[test]
@@ -1722,7 +1903,7 @@ mod tests {
         *sim.fog_mut_for_test() = FogState::new(32, 32);
         sim.fog_mut_for_test().reveal_all_for_owner(viewer);
         let mut building = item83_entity(1, 10, 10, other, typ, EntityCategory::Structure, false);
-        building.cloak = Some(CloakRuntime::new(0));
+        building.cloak = Some(Box::new(CloakRuntime::new(0)));
         let (x, y) = crate::render::locomotor_visual::screen_position(&building);
         sim.entities_mut_for_test().insert(building);
         sim.occupancy_mut().add(
@@ -1855,13 +2036,10 @@ mod tests {
                     band_rect_contains_drawn_object(
                         source,
                         &[1],
-                        Some((sim.fog(), sim.house_alliances().as_map())),
-                        Some("viewer"),
                         bx - 1.,
                         by - 1.,
                         bx + 1.,
-                        by + 1.,
-                        Some(sim.interner()),
+                        by + 1.
                     ),
                     "{case} {translucent_viewer:?}"
                 );
@@ -1875,7 +2053,9 @@ mod tests {
     /// VERA's translucent fog with FogOfWar takes an enemy out of the draw
     /// plan, so no point pick, band preflight or type-select box finds it;
     /// the retail fog keeps it pickable, as native does
-    /// (`0x006924A4..0x006924FA`).
+    /// (`0x006924A4..0x006924FA`). A hostile gap hides an enemy from the point
+    /// pick only: AddSelectable (`0x006D9EF0`) tests no shroud, so the band
+    /// box and the type-select box still catch it.
     #[test]
     fn translucent_fog_hides_from_the_pickers_what_it_hides_from_the_draw_plan() {
         use crate::app::presentation::instances::{
@@ -1888,6 +2068,11 @@ mod tests {
         let ally = sim.intern("British");
         let enemy = sim.intern("Russians");
         let typ = sim.intern("MTNK");
+        // The viewer's House, whose objects the T key's owner test admits.
+        sim.houses_mut_for_test()
+            .register(crate::sim::house_state::HouseState::new(
+                viewer, 0, None, true, 0, 10,
+            ));
         sim.session_mut_for_test()
             .game_options_mut_for_test()
             .fog_of_war = true;
@@ -1932,26 +2117,30 @@ mod tests {
             sim.resubmit_entity_display_for_test(id);
         }
         let all: Vec<u64> = cases.iter().map(|case| case.0).collect();
-        for (id, _, owner, retail, translucent) in cases {
+        let frame = crate::app::presentation::frame::PresentationFrame::of_test(
+            &sim,
+            RuleSet::empty_for_test(),
+        );
+        for (id, _, _, retail, translucent) in cases {
             let entity = sim.entities().get(id).unwrap();
-            assert_eq!(!translucent_fog_conceals(&sim, viewer, entity), translucent);
+            assert_eq!(
+                !translucent_fog_conceals(&sim, viewer, &entity.position, entity.owner()),
+                translucent
+            );
             let screen_selected = tactical_entity_admission(
                 TacticalEntityPurpose::ScreenSelection,
-                entity,
-                sim.interner().resolve(owner),
-                Some("Americans"),
+                frame.object(id).unwrap(),
                 Some(viewer),
                 sim.fog(),
-                sim.house_alliances().as_map(),
                 false,
                 0,
                 0,
                 Default::default(),
             )
             .is_some();
-            assert_eq!(screen_selected, retail, "{id}");
-            let screen_order: &[u64] = if screen_selected { &[id] } else { &[] };
+            assert!(screen_selected, "{id}");
             for (translucent_viewer, shown) in [(None, retail), (Some(viewer), translucent)] {
+                let caught = translucent_viewer.is_none() || translucent;
                 let source = PresentedWorld {
                     sim: &sim,
                     rules: None,
@@ -1962,22 +2151,13 @@ mod tests {
                 let picked = hover_target_at_point(source, x, y, "Americans", false)
                     .map(|hover| hover.stable_id);
                 assert_eq!(picked, shown.then_some(id), "{case}");
-                let band = band_rect_contains_drawn_object(
-                    source,
-                    &[id],
-                    Some((sim.fog(), sim.house_alliances().as_map())),
-                    Some("Americans"),
-                    x - 1.,
-                    y - 1.,
-                    x + 1.,
-                    y + 1.,
-                    Some(sim.interner()),
-                );
-                assert_eq!(band, shown, "{case}");
+                let band =
+                    band_rect_contains_drawn_object(source, &[id], x - 1., y - 1., x + 1., y + 1.);
+                assert_eq!(band, caught, "{case}");
                 // An MTNK in the box selects the viewer's own MTNKs.
                 let typed = compute_type_select_box_mutation_with_playfield(
                     source,
-                    screen_order,
+                    &[id],
                     &all,
                     &[],
                     None,
@@ -1991,7 +2171,11 @@ mod tests {
                     Some(sim.interner()),
                     false,
                 );
-                assert_eq!(typed.select, if shown { vec![1] } else { vec![] }, "{case}");
+                assert_eq!(
+                    typed.select,
+                    if caught { vec![1] } else { vec![] },
+                    "{case}"
+                );
             }
         }
     }
@@ -2037,6 +2221,42 @@ mod tests {
             );
             assert_eq!(tap.outcome, crate::app::types::TypeSelectOutcome::Empty);
             assert!(tap.across_map, "selection {selection:?}");
+        }
+    }
+
+    /// Asked with its frame, the pick scores only the objects near the
+    /// point: one just inside the ellipse across or up and down is still
+    /// picked, and one just outside it is not, as without the frame.
+    #[test]
+    fn the_frame_pick_keeps_an_object_just_inside_the_ellipse() {
+        use crate::app::presentation::frame::PresentationFrame;
+        use crate::sim::world::Simulation;
+
+        let mut sim = Simulation::new();
+        let viewer = sim.intern("viewer");
+        let typ = sim.intern("HTNK");
+        let unit = item83_entity(1, 10, 10, viewer, typ, EntityCategory::Unit, false);
+        let (x, y) = crate::render::locomotor_visual::screen_position(&unit);
+        sim.entities_mut_for_test().insert(unit);
+        sim.resubmit_entity_display_for_test(1);
+        let frame = PresentationFrame::of_test(&sim, RuleSet::empty_for_test());
+        let picked = |frame, dx: f32, dy: f32| {
+            hover_object_in_frame(&sim, frame, x + dx, y + dy, "viewer", true)
+                .and_then(HoverObject::techno)
+                .map(|hover| hover.stable_id)
+        };
+        // 14.1² is 198.8 and 0.5·19.9² is 198.0, under 200; 14.2² is 201.6
+        // and 0.5·20² is 200.
+        for (dx, dy, found) in [
+            (14.1, 0., Some(1)),
+            (-14.1, 0., Some(1)),
+            (0., 19.9, Some(1)),
+            (0., -19.9, Some(1)),
+            (14.2, 0., None),
+            (0., -20., None),
+        ] {
+            assert_eq!(picked(Some(&frame), dx, dy), found, "{dx}, {dy}");
+            assert_eq!(picked(None, dx, dy), found, "{dx}, {dy}");
         }
     }
 
@@ -2145,11 +2365,12 @@ mod tests {
                 .set_owned_by_current_house_for_test(retained_owned);
             let mut cloak = CloakRuntime::new(0);
             cloak.set_state_for_test(cloak_state);
-            entity.cloak = Some(cloak);
-            let world = crate::app::presentation::instances::entity_screen_position(&entity);
+            entity.cloak = Some(Box::new(cloak));
+            let world = crate::render::locomotor_visual::screen_position(&entity);
             sim.entities_mut_for_test().insert(entity);
             sim.resubmit_entity_display_for_test(1);
-            let order = crate::app::presentation::instances::tactical_entity_encounter_order(&sim);
+            let order =
+                crate::app::presentation::instances::tactical_entity_encounter_order(&sim, None);
 
             let expected = admitted.then_some(1);
             assert_eq!(

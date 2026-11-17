@@ -140,6 +140,7 @@ impl Default for PhobosDrawGlobals {
 
 impl PhobosDrawGlobals {
     pub fn from_ini(ini: &IniFile) -> Self {
+        let _phobos = crate::rules::ares_switch::not_ares_reads();
         let mut globals = Self::default();
         let general = ini.section_or_empty("General");
         globals.enemy_insignia = general.read_ares_bool("EnemyInsignia", globals.enemy_insignia);
@@ -441,6 +442,6 @@ fn read_int_key(section: &IniSection, key: &str) -> Option<i32> {
     section.read_name(key, 2048).and_then(parse_ares_int)
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_rules_a_n, feature = "phobos"))]
 #[path = "insignia_type_tests.rs"]
 mod tests;

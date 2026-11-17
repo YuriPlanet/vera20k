@@ -263,7 +263,7 @@ impl crate::app::AppState {
         let tick = self
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map_or(0, |runtime| runtime.simulation.session().tick());
         self.diag.presentation_ms(tick)
     }
@@ -274,7 +274,7 @@ impl crate::app::AppState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

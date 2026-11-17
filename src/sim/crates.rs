@@ -35,12 +35,12 @@ mod runtime;
 mod speed;
 mod state;
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 pub(crate) use pickup::multiplayer_eligible_slot;
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 pub(crate) use speed::apply_speed_crate;
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 pub(crate) use effects::{Multiplier, apply_multiplier_crate};
 
 pub(crate) use effects::CrateMultipliers;
@@ -682,7 +682,7 @@ fn snap_to_passable(
     )
 }
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 pub(crate) mod tests {
     use super::*;
 

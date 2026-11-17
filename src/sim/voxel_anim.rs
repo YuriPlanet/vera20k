@@ -25,9 +25,11 @@ use std::collections::BTreeMap;
 use glam::IVec3;
 use serde::{Deserialize, Serialize};
 
+use crate::rules::particle_system_type::ParticleSystemTypeId;
 use crate::rules::voxel_anim_type::{VoxelAnimType, VoxelAnimTypeId};
 use crate::sim::bounce::BounceState;
 use crate::sim::intern::InternedId;
+use crate::sim::particles::spawn::AttachedParticleSystem;
 use crate::sim::rng::{SimRng, abs_before_modulo};
 use crate::sim::world::ObjectLifecycle;
 use crate::util::native_x87::{NativeF64Bits, NativeX87Error, X87Chop53};
@@ -57,6 +59,16 @@ pub struct VoxelAnimObject {
     lifecycle: ObjectLifecycle,
     /// The embedded `BounceClass` at `+0xB0`.
     bounce: BounceState,
+    /// `+0x108`: the type's `AttachedSystem=` (`+0x2FC`), which the
+    /// constructor's tail builds (`0x007498A5..0x007498BD`, NULL included).
+    /// The destructor (`0x00749A5F..0x00749A71`) then calls the system's
+    /// vt+0xF8, which only sets its done byte (`0x006301E0`); the expiry
+    /// announcement before it (`0x00749A11`) already did that through the
+    /// system's PointerExpired (`0x0062FE90`), so VERA has nothing more to do.
+    /// RESIDUAL: nothing clears `+0x108` when the system ends first, so
+    /// gamemd's destructor and CRC (`0x0074AA63`) then read a freed system;
+    /// VERA keeps the stale handle and reads nothing through it.
+    attached_system: AttachedParticleSystem,
     /// LogicClass membership, reconstructed from the serialized vector.
     #[serde(skip)]
     in_logic_vector: bool,
@@ -122,6 +134,16 @@ impl VoxelAnimObject {
         self.lifecycle
     }
 
+    /// The `+0x108` system handle, as the constructor stored it.
+    pub(crate) const fn attached_system(&self) -> Option<u64> {
+        self.attached_system.system()
+    }
+
+    /// The constructor's store of its AttachedSystem result.
+    pub(crate) fn bind_attached_system(&mut self, system: Option<u64>) {
+        self.attached_system.bind(system);
+    }
+
     /// Only the shared lifecycle owner writes the private Object bytes.
     pub(crate) fn lifecycle_mut(&mut self) -> &mut ObjectLifecycle {
         &mut self.lifecycle
@@ -181,7 +203,7 @@ pub(crate) enum VoxelAnimAiStep {
 /// Contact74A91B passes this field by address to each concrete receiver.
 /// The sparse values follow that type across pieces, save/load and scene
 /// retirement; the processed Rules owner resumes authority after transfer.
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(crate) struct VoxelTypeDamage {
     // Identity metadata follows the sole mutable value through retirement,
     // where the outgoing RuleSet is no longer available.
@@ -375,6 +397,7 @@ pub fn spawn_debris_piece(
             location: launch.start.to_array(),
             lifecycle: ObjectLifecycle::default(),
             bounce,
+            attached_system: AttachedParticleSystem::default(),
             in_logic_vector: false,
         });
     }
@@ -435,6 +458,7 @@ pub fn spawn_debris_piece(
         location: origin.to_array(),
         lifecycle: ObjectLifecycle::default(),
         bounce,
+        attached_system: AttachedParticleSystem::default(),
         in_logic_vector: false,
     })
 }
@@ -471,6 +495,10 @@ pub struct VoxelDebrisSpawn {
     /// The complete constructor result, including both assigned identities;
     /// delayed fixture delivery only registers it, never allocates again.
     pub object: VoxelAnimObject,
+    /// The type's `AttachedSystem=` and the constructor's input location
+    /// (`[ebp+0xC]`, `0x0074982A`), where the constructor's tail builds that
+    /// system. The meteor arm Unlimbos the anim at its launch start instead.
+    pub attached_system: Option<(ParticleSystemTypeId, IVec3)>,
 }
 
 /// One SHP debris selection retained by a numeric comparison fixture.
@@ -790,7 +818,7 @@ pub fn throw_death_debris(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests {
     use super::*;
     use crate::rules::voxel_anim_type::VoxelAnimType;
@@ -838,6 +866,7 @@ mod tests {
             IVec3::new(1280, 2560, 0),
             true,
             &mut deferred,
+            &crate::rules::ruleset::RuleSet::empty_for_test(),
         )
         .expect("in domain");
         assert!(deferred.is_empty());
@@ -903,7 +932,10 @@ mod tests {
                 origin,
                 self.rng,
             )?;
-            self.receipt.voxels.push(VoxelDebrisSpawn { object });
+            self.receipt.voxels.push(VoxelDebrisSpawn {
+                object,
+                attached_system: None,
+            });
             Ok(())
         }
     }

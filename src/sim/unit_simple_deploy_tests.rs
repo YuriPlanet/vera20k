@@ -174,14 +174,14 @@ fn allocated(events: &Value) -> bool {
 /// Ares UnitClass_SimpleDeploy_Height (1004C380, hook 0x739ADA) deploys an
 /// airborne non-DeployToLand deployer, where the native row refuses;
 /// `ares_airborne_deployer_without_deploy_to_land_deploys` holds it.
-fn ares_deploys_in_the_air(row: &Value) -> bool {
-    cfg!(feature = "ares") && row["input"]["name"] == "air_without_deploy_to_land"
+fn ares_deploys_in_the_air(rules: &RuleSet, row: &Value) -> bool {
+    rules.ares() && row["input"]["name"] == "air_without_deploy_to_land"
 }
 
 /// The native refusal row under Ares: the deploy animation begins in the air.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_airborne_deployer_without_deploy_to_land_deploys() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let row = corpus()["lifecycle"]
         .as_array()
         .unwrap()
@@ -203,10 +203,10 @@ fn updater_flags_stage_and_signed_boundaries_match_native_lifecycle() {
     let rows = data["lifecycle"].as_array().unwrap();
     assert_eq!(rows.len(), 100);
     for (index, row) in rows.iter().enumerate() {
-        if ares_deploys_in_the_air(row) {
+        let (mut sim, rules, id) = native_fixture(&row["input"], &row["before"]);
+        if ares_deploys_in_the_air(&rules, row) {
             continue;
         }
-        let (mut sim, rules, id) = native_fixture(&row["input"], &row["before"]);
         let rng = sim.rng_state();
         let deploying = row["input"]["entry"].as_u64().unwrap_or(0x739ac0) != 0x739cd0;
         sim.update_unit_simple_deploy(
@@ -236,10 +236,10 @@ fn updater_reads_the_height_on_any_layer() {
             continue;
         }
         airborne += 1;
-        if ares_deploys_in_the_air(row) {
+        let (mut sim, rules, id) = native_fixture(&row["input"], &row["before"]);
+        if ares_deploys_in_the_air(&rules, row) {
             continue;
         }
-        let (mut sim, rules, id) = native_fixture(&row["input"], &row["before"]);
         let entity = sim.substrate.entities.get_mut(id).unwrap();
         entity
             .locomotor
@@ -729,9 +729,9 @@ fn landing_and_attached_animation_survive_snapshot_and_continue_identically() {
 /// Ares 3.0 UnitClass_SimpleDeploy_Facing (1004C2D0, hook 0x739B8A): a
 /// deployer with a DeployingAnim that does not face `DeployDir` (east here)
 /// turns first and starts no deploy animation on that visit.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_simple_deployer_faces_deploy_dir_before_its_animation() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, id) = fixture(&json!({}));
     let frame = sim.session.binary_frame();
     sim.substrate
@@ -751,9 +751,9 @@ fn ares_simple_deployer_faces_deploy_dir_before_its_animation() {
 /// a simple deployer without a DeployingAnim deploys at once on its Unload
 /// visit, then converts in place to its `Convert.Deploy` type and is no
 /// longer deployed; the Unload queues Guard as usual.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_simple_deployer_converts_to_its_convert_deploy_type() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let ini = IniFile::from_str(
         "[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
          [VehicleTypes]\n0=SDEP\n1=SDEP2\n\

@@ -92,7 +92,6 @@ enum ReceiverDeathRecipe {
     /// 10025DE0): the killing warhead's `InfDeathAnim` in place of the
     /// table, owned by SetMakeInfOwner, then the anim arms' tail
     /// (`0x005185F1`) and UnInit.
-    #[cfg(feature = "ares")]
     AresInfDeathAnim(String),
 }
 
@@ -108,7 +107,6 @@ pub struct InfantryDeathPostlude {
     /// owner, else the receiver's house argument.
     house: Option<crate::sim::intern::InternedId>,
     /// The infantryman's owner, the victim house of an Ares `InfDeathAnim`.
-    #[cfg(feature = "ares")]
     victim_house: crate::sim::intern::InternedId,
     recipe: ReceiverDeathRecipe,
 }
@@ -134,9 +132,9 @@ impl InfantryDeathPostlude {
         effects: &mut crate::sim::combat::DeathEffects,
         uninit: Option<super::UninitContext<'_>>,
     ) {
-        #[cfg(feature = "ares")]
-        use crate::sim::combat::destruction_effects::AresMakeInfTail;
-        use crate::sim::combat::destruction_effects::{DeathAnimFollowUp, DeathAnimSpawn};
+        use crate::sim::combat::destruction_effects::{
+            AresMakeInfTail, DeathAnimFollowUp, DeathAnimSpawn,
+        };
         if matches!(self.recipe, ReceiverDeathRecipe::WaterSplash) {
             world.emit_death_anim(
                 rules,
@@ -190,7 +188,6 @@ impl InfantryDeathPostlude {
             ReceiverDeathRecipe::Sequence
             | ReceiverDeathRecipe::Cleanup
             | ReceiverDeathRecipe::WaterSplash => None,
-            #[cfg(feature = "ares")]
             ReceiverDeathRecipe::AresInfDeathAnim(_) => None,
         };
         // Ares replaces each anim arm's owner write with SetMakeInfOwner
@@ -200,25 +197,29 @@ impl InfantryDeathPostlude {
         // InfantryExplode, 0x5186F2 FlamingInfantry, 0x518755 the
         // electrocution anim, 0x5187BB InfantryHeadPop, 0x518821
         // InfantryNuked, 0x518B93 InfantryBrute) with none.
-        #[cfg(feature = "ares")]
-        let anim = anim.map(|(inf_death, _)| {
-            let (invoker, tail) = match inf_death {
-                VIRUS_INF_DEATH => (self.house, AresMakeInfTail::ClearInvokerRemap),
-                INFANTRY_MUTATE_INF_DEATH => (self.house, AresMakeInfTail::MarkCellOccupancy),
-                _ => (None, AresMakeInfTail::None),
-            };
-            (
-                inf_death,
-                Some(DeathAnimFollowUp::AresMakeInfOwner {
-                    invoker,
-                    victim: self.victim_house,
-                    killer: self.house,
-                    tail,
-                }),
-            )
-        });
-        #[cfg(feature = "ares")]
-        if let ReceiverDeathRecipe::AresInfDeathAnim(name) = &self.recipe {
+        let anim = if rules.ares() {
+            anim.map(|(inf_death, _)| {
+                let (invoker, tail) = match inf_death {
+                    VIRUS_INF_DEATH => (self.house, AresMakeInfTail::ClearInvokerRemap),
+                    INFANTRY_MUTATE_INF_DEATH => (self.house, AresMakeInfTail::MarkCellOccupancy),
+                    _ => (None, AresMakeInfTail::None),
+                };
+                (
+                    inf_death,
+                    Some(DeathAnimFollowUp::AresMakeInfOwner {
+                        invoker,
+                        victim: self.victim_house,
+                        killer: self.house,
+                        tail,
+                    }),
+                )
+            })
+        } else {
+            anim
+        };
+        if rules.ares()
+            && let ReceiverDeathRecipe::AresInfDeathAnim(name) = &self.recipe
+        {
             world.emit_death_anim(
                 rules,
                 &mut effects.explosion_effects,
@@ -247,10 +248,8 @@ impl InfantryDeathPostlude {
                 },
             );
         }
-        #[cfg(feature = "ares")]
-        let ares_anim = matches!(self.recipe, ReceiverDeathRecipe::AresInfDeathAnim(_));
-        #[cfg(not(feature = "ares"))]
-        let ares_anim = false;
+        let ares_anim =
+            rules.ares() && matches!(self.recipe, ReceiverDeathRecipe::AresInfDeathAnim(_));
         if ares_anim
             || matches!(
                 self.recipe,
@@ -322,8 +321,6 @@ impl Simulation {
         house: Option<crate::sim::intern::InternedId>,
         victim: crate::sim::intern::InternedId,
     ) {
-        #[cfg(not(feature = "ares"))]
-        let _ = (house, victim);
         let Some(name) = rules.general.infantry_death_anim(VIRUS_INF_DEATH) else {
             return;
         };
@@ -335,22 +332,21 @@ impl Simulation {
         ) else {
             return;
         };
-        #[cfg(feature = "ares")]
-        self.ares_set_make_inf_owner(anim, type_id, house, Some(victim), house, rules);
-        #[cfg(feature = "ares")]
-        let spawns_particle = self
-            .anim(anim)
-            .and_then(|anim| {
-                rules
-                    .art()
-                    .anim_runtime_config(self.interner.resolve(anim.type_id()))
-            })
-            .and_then(|config| config.spawns_particle.as_deref())
-            .and_then(|name| rules.p_type_id_by_name(name))
-            .is_some();
-        #[cfg(feature = "ares")]
-        if !spawns_particle {
-            return;
+        if rules.ares() {
+            self.ares_set_make_inf_owner(anim, type_id, house, Some(victim), house, rules);
+            let spawns_particle = self
+                .anim(anim)
+                .and_then(|anim| {
+                    rules
+                        .art()
+                        .anim_runtime_config(self.interner.resolve(anim.type_id()))
+                })
+                .and_then(|config| config.spawns_particle.as_deref())
+                .and_then(|name| rules.p_type_id_by_name(name))
+                .is_some();
+            if !spawns_particle {
+                return;
+            }
         }
         if let Some(kind) = self
             .anim(anim)
@@ -390,7 +386,12 @@ impl Simulation {
     /// on retail. An ignoreDefenses kill of a `Cyborg=` (`+0xEAC`)
     /// type raises a flag (`0x0051815B`) that takes the Die1, Die2,
     /// NotHuman and refused InfDeath 9 arms on to UnInit (`0x005185E5`); a
-    /// prone Cyborg builds InfantryExplode (`0x005182B4`). Retail sets no
+    /// prone Cyborg builds InfantryExplode (`0x005182B4`), and so does one
+    /// dropped as a bomb (`+0x8F`, `0x00518155..0x005181B0`). A Cyborg's
+    /// first lethal hit without ignoreDefenses never reaches here:
+    /// `ObjectClass::ReceiveDamage` (`0x005F5509..0x005F55E8`) builds
+    /// InfantryExplode, sets its health to a quarter of `Strength=` (at least
+    /// 1) and leaves it crawling with its legs gone (`+0x6DB`). Retail sets no
     /// `Cyborg=`. The preceding low DropAsBomb water arm is ported here
     /// (`0x005181B5..0x005182AF`; original `tools.native_inspect` instructions).
     ///
@@ -465,7 +466,15 @@ impl Simulation {
             ),
         };
         let on_bridge = entity.on_bridge();
-        Self::object_raw_receiver_at(substrate, path_grid, resolved_terrain, id, location, false);
+        Self::object_raw_receiver_at(
+            substrate,
+            path_grid,
+            resolved_terrain,
+            id,
+            location,
+            false,
+            rules.ares_form(),
+        );
         let (rx, ry) = ((x / 256) as u16, (y / 256) as u16);
         let building = substrate
             .occupancy
@@ -497,7 +506,15 @@ impl Simulation {
         {
             return false;
         }
-        Self::object_raw_receiver_at(substrate, path_grid, resolved_terrain, id, location, true);
+        Self::object_raw_receiver_at(
+            substrate,
+            path_grid,
+            resolved_terrain,
+            id,
+            location,
+            true,
+            rules.ares_form(),
+        );
         true
     }
 
@@ -589,18 +606,17 @@ impl Simulation {
         };
         let arm = self.infantry_death_arm(entity, inf_death, rules);
         let entity_owner = entity.owner();
-        #[cfg(feature = "ares")]
-        let victim_house = entity_owner;
-        #[cfg(feature = "ares")]
-        let ares_anim = inf_death_anim.filter(|_| {
-            matches!(arm, InfantryDeathArm::Table(_))
-                && crate::sim::movement::air_movement::current_fly_height(
-                    entity,
-                    self.resolved_terrain.as_ref(),
-                ) < 10
-        });
-        #[cfg(not(feature = "ares"))]
-        let _ = inf_death_anim;
+        let ares_anim = if rules.ares() {
+            inf_death_anim.filter(|_| {
+                matches!(arm, InfantryDeathArm::Table(_))
+                    && crate::sim::movement::air_movement::current_fly_height(
+                        entity,
+                        self.resolved_terrain.as_ref(),
+                    ) < 10
+            })
+        } else {
+            None
+        };
         if inf_death == VIRUS_INF_DEATH
             && matches!(arm, InfantryDeathArm::Table(PARADROP_INF_DEATH))
         {
@@ -625,7 +641,6 @@ impl Simulation {
                 }
                 ReceiverDeathRecipe::Sequence
             }
-            #[cfg(feature = "ares")]
             InfantryDeathArm::Table(_) if ares_anim.is_some() => {
                 ReceiverDeathRecipe::AresInfDeathAnim(ares_anim.unwrap_or_default().to_owned())
             }
@@ -665,8 +680,7 @@ impl Simulation {
             id,
             location,
             house,
-            #[cfg(feature = "ares")]
-            victim_house,
+            victim_house: entity_owner,
             recipe,
         }
     }
@@ -745,7 +759,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod corpse_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -951,7 +965,7 @@ mod corpse_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod dead_body_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

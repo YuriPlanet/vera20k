@@ -64,6 +64,10 @@ fn normalized_house_laser_rgb(rgb: [u8; 3]) -> [u8; 3] {
     if nonzero {
         channels = channels.map(|channel| if channel < 96.0 { 0.0 } else { channel });
     }
+    // RESIDUAL (invisible): a campaign map's laser colour takes this second
+    // pass through Normalize_Color_To_240 @ 0x0050B920 (0x00501058), which
+    // sums (r²+b²)+g². The house_color oracle matches every retail colour; a
+    // mod colour could land one step off in one channel.
     normalize(channels).0.map(|channel| channel as u8)
 }
 
@@ -294,7 +298,7 @@ pub(crate) fn native_fixtures() -> [NativePaletteFixture; 9] {
     ]
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
 
@@ -311,7 +315,11 @@ mod tests {
         assert_eq!(native["constructor_palette_index"], 16);
         let colors = native["colors"].as_array().unwrap();
         assert_eq!(colors.len(), 21);
-        assert_eq!(rules.color_schemes.len(), colors.len());
+        // VERA's built-in extra lobby colours follow the rules' own entries.
+        assert_eq!(
+            rules.color_schemes.len(),
+            colors.len() + crate::rules::skirmish_colors::MAX_EXTRA_COLORS
+        );
         for (index, row) in colors.iter().enumerate() {
             let scheme = &rules.color_schemes[index];
             assert_eq!(scheme.name, row["name"].as_str().unwrap());

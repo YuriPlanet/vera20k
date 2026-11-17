@@ -15,7 +15,7 @@ use crate::sim::mission::MissionType;
 use crate::sim::movement::ground_pose;
 use crate::sim::pathfinding::zone_map::ZoneQueryCell;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "foot_patrol_tests.rs"]
 mod tests;
 

@@ -154,7 +154,7 @@ impl GattlingState {
 
     /// `IncreaseGattlingStage(ticks) @ 0x0070DE70`.
     ///
-    /// `ares_cycle` is `None` for gamemd's body and, in Ares builds, the
+    /// `ares_cycle` is `None` for gamemd's body and, in an Ares game, the
     /// type's `Gattling.Cycle`: TechnoClass_UpdateGattling_Cycle (Ares.dll
     /// 1004B6C0, hook 0x70DEBA) replaces the cap test, so a cyclic type at
     /// the cap restarts at stage 0 with the loop hard-stopped (`0x405D40` on
@@ -414,9 +414,9 @@ impl crate::sim::world::Simulation {
                 StageCall::Update => self.gattling_update(id, rules, 1, effects),
             }
         }
-        if let Some(entity) = self.substrate.entities.get_mut(id)
-            && unit_turret_anim_advances(is_gattling, outcome, entity.gattling.value())
-        {
+        if let Some(entity) = self.substrate.entities.get_mut_if(id, |entity| {
+            unit_turret_anim_advances(is_gattling, outcome, entity.gattling.value())
+        }) {
             entity.turret_anim_frame.advance();
         }
     }
@@ -448,10 +448,7 @@ impl crate::sim::world::Simulation {
         // Share the process owner's draw capability without retaining its
         // mutex across Stop. The retained source locks output gate -> Main.
         let main_draws = self.main_rng.draws();
-        #[cfg(feature = "ares")]
-        let ares_cycle = Some(obj.techno_combat().gattling_cyclic());
-        #[cfg(not(feature = "ares"))]
-        let ares_cycle = None;
+        let ares_cycle = rules.ares().then(|| obj.techno_combat().gattling_cyclic());
         let effects = state.increase(
             &obj.gattling_stages,
             elite,
@@ -542,6 +539,6 @@ impl crate::sim::world::Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "gattling_tests.rs"]
 mod tests;

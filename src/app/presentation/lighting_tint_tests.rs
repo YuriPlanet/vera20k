@@ -441,14 +441,22 @@ fn attach_effect_tint_ors_colours_and_sums_intensities_by_viewer() {
     sim.session_mut_for_test()
         .set_current_house_for_test(Some(americans));
     assert_eq!(
-        attach_effect_tint(sim.entities().get(target).unwrap(), &sim, &rules),
+        attach_effect_tint(
+            &crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, target),
+            &sim,
+            &rules
+        ),
         (0xF800, 1000),
         "the owner sees RED only; enem-only and none stay out"
     );
     sim.session_mut_for_test()
         .set_current_house_for_test(Some(russians));
     assert_eq!(
-        attach_effect_tint(sim.entities().get(target).unwrap(), &sim, &rules),
+        attach_effect_tint(
+            &crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, target),
+            &sim,
+            &rules
+        ),
         (0xF800 | 0x001F, 1500),
         "an enemy also sees BLUE; HIDDEN never applies"
     );
@@ -484,14 +492,22 @@ fn cumulative_effect_tint_stacks_by_type_or_once() {
     // Base (10,20,30)/(0.5) stacked twice sums to (20,40,60)/1.0.
     let (sim, rules, target) = scene("");
     assert_eq!(
-        attach_effect_tint(sim.entities().get(target).unwrap(), &sim, &rules),
+        attach_effect_tint(
+            &crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, target),
+            &sim,
+            &rules
+        ),
         (0x1147, 1000),
         "the two instances of one type sum their tint"
     );
 
     let (sim, rules, target) = scene("Tint.Cumulative=no\n");
     assert_eq!(
-        attach_effect_tint(sim.entities().get(target).unwrap(), &sim, &rules),
+        attach_effect_tint(
+            &crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, target),
+            &sim,
+            &rules
+        ),
         (0x08A3, 500),
         "without Tint.Cumulative the type tints once"
     );

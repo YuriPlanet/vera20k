@@ -460,7 +460,6 @@ impl FlyRuntime {
     /// Ares 3.0 FlyLocomotionClass_UpdateLanding 1004D8A0 (hook 0x4CE85A):
     /// a HunterSeeker that found a target stops landing (+0x51) and climbs
     /// back to its type's flight level (+0x38).
-    #[cfg(feature = "ares")]
     pub(crate) fn resume_hunt(&mut self, flight_level: i32) {
         self.landing = false;
         self.target_height = flight_level;
@@ -468,7 +467,6 @@ impl FlyRuntime {
 
     /// Ares 3.0 1004DA90 (hook 0x4CD9C8): a HunterSeeker's
     /// MovingDestination (`+0x1C`) follows its Target every frame.
-    #[cfg(feature = "ares")]
     pub(crate) fn hunt_destination(&mut self, at: DriveCoord) {
         self.destination = [at.x, at.y, at.z];
     }
@@ -599,7 +597,6 @@ impl FlyRuntime {
             has_passenger,
             is_dropship,
             flight_level,
-            #[cfg(feature = "ares")]
             hunter_seeker,
         } = input;
         // Object GetHeight5F5F40 subtracts ground and its current OnBridge
@@ -619,8 +616,8 @@ impl FlyRuntime {
             // Ares 3.0 FlyLocomotionClass_sub_4CD600_HunterSeeker_Ascent
             // 1004D930 (hook 0x4CDE64): a HunterSeeker that is not a
             // Dropship climbs at its EmergeSpeed while taking off (+0x50),
-            // else at its AscentSpeed.
-            #[cfg(feature = "ares")]
+            // else at its AscentSpeed. `hunter_seeker` is `None` without
+            // Ares, which leaves the stock rate.
             let ordinary = hunter_seeker.map_or(ordinary, |climb| {
                 if self.taking_off {
                     climb.emerge
@@ -657,10 +654,7 @@ impl FlyRuntime {
                 // Ares 3.0 FlyLocomotionClass_sub_4CD600_HunterSeeker_Descent
                 // 1004DA20 (hook 0x4CDF54): a HunterSeeker descends at its
                 // DescentSpeed, at most the remaining distance (to 0x4CDF81).
-                #[cfg(feature = "ares")]
                 let hunter_descent = hunter_seeker.map(|climb| delta.min(climb.descent));
-                #[cfg(not(feature = "ares"))]
-                let hunter_descent = None;
                 hunter_descent.unwrap_or_else(|| delta.min(delta / 20).clamp(20, 50))
             };
             height = height.wrapping_sub(step);
@@ -697,8 +691,8 @@ pub(crate) struct HeightInput {
     pub has_passenger: bool,
     pub is_dropship: bool,
     pub flight_level: i32,
-    /// A `HunterSeeker=` type's climb and descent speeds.
-    #[cfg(feature = "ares")]
+    /// A `HunterSeeker=` type's climb and descent speeds when Ares plays,
+    /// else `None`.
     pub hunter_seeker: Option<crate::rules::ares_techno_type::HunterSeekerClimb>,
 }
 
@@ -719,7 +713,7 @@ impl HeightOutput {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
 
@@ -801,7 +795,6 @@ mod tests {
                 } else {
                     authored_level
                 },
-                #[cfg(feature = "ares")]
                 hunter_seeker: None,
             });
             assert_eq!(
@@ -821,9 +814,9 @@ mod tests {
     /// (1004DA20, hook 0x4CDF54): a HunterSeeker climbs at EmergeSpeed while
     /// taking off, else at AscentSpeed, and descends at DescentSpeed, each
     /// capped by the remaining distance; stock would step 20 each way.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_hunter_seeker_climbs_and_descends_at_its_speeds() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let climb = crate::rules::ares_techno_type::HunterSeekerClimb {
             ascent: 7,
             descent: 9,

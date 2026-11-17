@@ -36,6 +36,7 @@ impl CrewTypeRules {
         section: &IniSection,
         side_pilots: &[Option<Option<String>>],
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.pilots = section.read_ares_int("Survivor.Pilots", self.pilots);
         read_ranked_chances(section, "Pilot", &mut self.pilot_chances);
         read_ranked_chances(section, "Passenger", &mut self.passenger_chances);
@@ -82,6 +83,7 @@ impl CrewTypeRules {
 /// Installed Ares1003F750..1003F833 reads the unqualified key first,
 /// broadcasting a successful value, then Rookie, Veteran and Elite overrides.
 fn read_ranked_chances(section: &IniSection, kind: &str, chances: &mut [i32; 3]) {
+    let _ares = crate::rules::ares_switch::ares_reads();
     if let Some(base) = section.read_ares_nullable_int(&format!("Survivor.{kind}Chance"), None) {
         *chances = [base; 3];
     }

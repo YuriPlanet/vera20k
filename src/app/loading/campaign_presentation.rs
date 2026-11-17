@@ -119,7 +119,7 @@ impl CampaignLoadingPresentation {
     pub(crate) const BRIEFING_BACKING_PADDING: i32 = 4;
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::CampaignLoadingLayout;
     use crate::ui::shell::geom::RectPx;

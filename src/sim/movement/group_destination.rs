@@ -263,7 +263,7 @@ fn stored_f32_to_i16(value: NativeF32Bits) -> i16 {
     X87Chop53::ftol_i64(value).expect("candidate probe fits a signed integer") as i16
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
 

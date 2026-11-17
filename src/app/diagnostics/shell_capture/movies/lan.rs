@@ -8,6 +8,7 @@ use crate::app::input::multiplayer_setup as setup_input;
 use crate::app::match_runtime::session::{
     NetworkLoadingRequest, NetworkMapMetadata, NetworkVacancy, SessionMode,
 };
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::shell_lan::{self as lobby, LanJoinAcceptance, LanServiceEvent, LanServiceRequest};
 use crate::app::shell_network_setup::{self as setup, NetworkSetupEvent, NetworkSetupRequest};
 use crate::skirmish_launch::*;
@@ -87,6 +88,10 @@ pub enum LanTarget {
     /// both players to the kept room on the next stage, and the host starts it.
     OnlineCoopHost,
     OnlineCoopGuest,
+    /// A third account watches the host's running match from the lobby's
+    /// watch list, past its catch-up, follows the next player with Tab and
+    /// leaves with Escape.
+    OnlineWatch,
     LiveHost,
     LiveGuest,
     LiveTimeoutHost,
@@ -235,6 +240,7 @@ pub(crate) const LAN_CHECKPOINTS: &[(&str, LanTarget)] = &[
     ("online-live-failure-guest", LanTarget::OnlineFailureGuest),
     ("online-live-coop-host", LanTarget::OnlineCoopHost),
     ("online-live-coop-guest", LanTarget::OnlineCoopGuest),
+    ("online-live-watch", LanTarget::OnlineWatch),
     ("lan-live-host", LanTarget::LiveHost),
     ("lan-live-guest", LanTarget::LiveGuest),
     ("lan-live-timeout-host", LanTarget::LiveTimeoutHost),
@@ -346,6 +352,7 @@ impl LanTarget {
                 | Self::OnlineFailureGuest
                 | Self::OnlineCoopHost
                 | Self::OnlineCoopGuest
+                | Self::OnlineWatch
         )
     }
     pub(crate) fn online_failure(self) -> bool {
@@ -373,6 +380,7 @@ impl LanTarget {
                 | Self::OnlineFailureGuest
                 | Self::OnlineCoopHost
                 | Self::OnlineCoopGuest
+                | Self::OnlineWatch
                 | Self::LiveHost
                 | Self::LiveGuest
                 | Self::LiveTimeoutHost
@@ -1146,7 +1154,8 @@ impl LanCapture {
             num_players: 2,
             ..Default::default()
         };
-        let sed = options.to_sed_bytes();
+        let ares = state.process_assets.reads_ares_way();
+        let sed = options.to_sed_bytes(ares);
         // A path, as a bare name would be read from VERA's random-map folder.
         let sed_path = host_dir.join(crate::map::skirmish_scenarios::RANDMAP_SED);
         fs::write(&sed_path, &sed)?;
@@ -2962,7 +2971,7 @@ impl LanCapture {
                     let sim = &state
                         .match_state
                         .sim_runtime
-                        .as_ref()
+                        .runtime()
                         .context("installed timeout runtime")?
                         .simulation;
                     let owner = sim
@@ -3015,7 +3024,7 @@ impl LanCapture {
                 let sim = &state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("installed LAN runtime")?
                     .simulation;
                 ensure!(
@@ -3029,7 +3038,7 @@ impl LanCapture {
                     let runtime = state
                         .match_state
                         .sim_runtime
-                        .as_mut()
+                        .write_sim(SimWrite::Debug)
                         .context("installed co-op runtime")?;
                     let sim = &mut runtime.simulation;
                     let lose = self.target == LanTarget::CoopRetry;
@@ -3103,7 +3112,7 @@ impl LanCapture {
                     let runtime = state
                         .match_state
                         .sim_runtime
-                        .as_ref()
+                        .runtime()
                         .context("installed LAN runtime")?;
                     let map = runtime.simulation.session().map_name().to_string();
                     ensure!(
@@ -3209,7 +3218,7 @@ impl LanCapture {
                 let sim = &state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("Observe lost its installed runtime")?
                     .simulation;
                 ensure!(
@@ -3279,7 +3288,7 @@ impl LanCapture {
                 let sim = &state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("the peer's EXIT lost the runtime")?
                     .simulation;
                 ensure!(
@@ -3531,7 +3540,7 @@ impl LanCapture {
                     state.match_state.scenario_exit.is_none(),
                     "Quit Game started the EXIT teardown"
                 );
-                if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+                if let Some(runtime) = state.match_state.sim_runtime.runtime() {
                     ensure!(
                         !runtime.simulation.quit_requested()
                             && !runtime.simulation.pending_command_snapshot().iter().any(
@@ -3589,7 +3598,7 @@ impl LanCapture {
                 let sim = &state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("the kick lost the runtime")?
                     .simulation;
                 let peer = state
@@ -3863,7 +3872,7 @@ impl LanCapture {
                     let sim = &state
                         .match_state
                         .sim_runtime
-                        .as_ref()
+                        .runtime()
                         .context("EXIT runtime")?
                         .simulation;
                     ensure!(
@@ -3932,8 +3941,9 @@ impl LanCapture {
                     crate::map::source::random_map_dir(root)
                         .join(crate::map::skirmish_scenarios::RANDMAP_SED),
                 )?;
+                let ares = state.process_assets.reads_ares_way();
                 let mut options = crate::map::rmg::RmgOptions::default();
-                options.apply_sed(&crate::rules::ini_parser::IniFile::from_bytes(&sed)?);
+                options.apply_sed(&crate::rules::ini_parser::IniFile::from_bytes(&sed)?, ares);
                 ensure!(
                     metadata.digest == options.native_digest()
                         && metadata.official
@@ -3968,7 +3978,7 @@ impl LanCapture {
             let sim = &state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("running match")?
                 .simulation;
             let order = sim.houses().order();
@@ -4052,7 +4062,7 @@ impl LanCapture {
                 let sim = &state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("running match")?
                     .simulation;
                 let order = sim.houses().order().to_vec();
@@ -4224,6 +4234,28 @@ impl LanCapture {
                     }),
                     "no chat packet to the peer: {requests:?}"
                 );
+                // VERA's `/pause`: sent as chat like any line, then answered
+                // as a command; a LAN match has no shared pause.
+                line(state, Key::Character("\\".into()), "/pause", true);
+                let requests = state.match_state.session.take_network_loading_requests();
+                ensure!(
+                    requests.contains(&NetworkLoadingRequest::Chat {
+                        recipients: vec![1],
+                        text: "/pause ".into(),
+                    }),
+                    "/pause did not go out as chat: {requests:?}"
+                );
+                let shown = rows(state);
+                let echo = format!("{host}:/pause ");
+                let after = shown
+                    .iter()
+                    .rposition(|row| *row == echo)
+                    .map(|at| shown[at + 1..].concat().replace(' ', ""));
+                let answer = crate::i18n::tr("VERA:PauseNotAvailable").replace(' ', "");
+                ensure!(
+                    after == Some(answer),
+                    "/pause echo and answer rows: {shown:?}"
+                );
                 // Backspace: allies, left open for the frame.
                 line(state, Key::Named(NamedKey::Backspace), "typing", false);
                 let edit = state
@@ -4272,7 +4304,7 @@ impl LanCapture {
         match step {
             0 => {
                 let country = {
-                    let runtime = state.match_state.sim_runtime.as_ref().context("match")?;
+                    let runtime = state.match_state.sim_runtime.runtime().context("match")?;
                     let sim = &runtime.simulation;
                     let local = sim.session().current_house().context("local House")?;
                     let name = sim
@@ -4541,7 +4573,7 @@ fn click_cooperative_mode(state: &mut AppState) -> Result<Vec<String>> {
     let row = modal
         .mode_rows()
         .iter()
-        .position(|id| *id == mode_id)
+        .position(|mode| mode.id == mode_id)
         .context("Cooperative listed on the network")?;
     let point = list_row_point(modal.mode_geometry(&layout), row, modal.mode_top_index);
     chooser_press(state, point);
@@ -4552,7 +4584,7 @@ fn click_cooperative_mode(state: &mut AppState) -> Result<Vec<String>> {
         .as_ref()
         .context("chooser")?;
     ensure!(
-        modal.selected_mode_id == mode_id,
+        modal.selected_mode.id == mode_id,
         "the game-type click missed Cooperative"
     );
     let labels = modal.row_labels.clone().context("Cooperative rows")?;
@@ -4677,8 +4709,8 @@ impl RandomMapInput {
                 if self.phase == 1 {
                     if let Some(players) = self.players {
                         ensure!(
-                            (2..=8).contains(&players),
-                            "random maps support two to eight starts"
+                            (2..=crate::map::rmg::MAX_PLAYERS as usize).contains(&players),
+                            "random maps support two to thirty starts"
                         );
                         let layout =
                             crate::app::frontend::shell_layout::random_map_setup_layout(state);
@@ -4840,10 +4872,10 @@ fn setup_button(state: &mut AppState, id: u16) -> Result<()> {
 
 fn offline_selection(state: &AppState) -> (i32, usize) {
     let dialog = &state.frontend.skirmish_shell_state;
-    (dialog.selected_mode_id, dialog.selected_map_idx)
+    (dialog.selected_mode.id, dialog.selected_map_idx)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 
@@ -5008,7 +5040,7 @@ fn sim_tick(state: &AppState) -> Result<u64> {
     Ok(state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("installed LAN runtime")?
         .simulation
         .session()

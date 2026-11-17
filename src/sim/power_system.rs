@@ -37,10 +37,15 @@ impl PowerHealthSample {
         self.0
     }
 
+    /// Whether [`Self::sample`] of `current` changes the sample.
+    pub(crate) const fn differs(self, current: i32) -> bool {
+        self.0 != current
+    }
+
     /// Sample `current`: answers whether it changed, which invalidates the
     /// owning House's power.
     pub(crate) fn sample(&mut self, current: i32) -> bool {
-        if self.0 == current {
+        if !self.differs(current) {
             return false;
         }
         self.0 = current;
@@ -83,8 +88,8 @@ pub struct PowerState {
     power_dirty: bool,
     radar_dirty: bool,
     /// House+2B0/+2B8, the radar outage `CreateRadarOutage @ 0x0050BCD0`
-    /// starts (the Lightning Storm; the trigger action RadarBlackout
-    /// `0x006E3B56` is not ported). The constructor seeds it like the
+    /// starts (the Lightning Storm, and trigger action 139 RadarBlackout
+    /// `0x006E3B40` in `sim::trigger_runtime`). The constructor seeds it like the
     /// blackout timer (`0x004F5843..0x004F584F`).
     radar_outage_timer: crate::sim::timer::CdTimer,
     /// VERA-derived per-owner projection of508DF0's client-local radar
@@ -94,9 +99,14 @@ pub struct PowerState {
     /// House+5779 receiver.
     radar_available: bool,
     /// Ares HouseExt power the Battery super weapon lends.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     ares: AresHousePower,
+    /// The drain Phobos last worked the spare power out from, kept only
+    /// while the spare power scales with drain ([`Self::power_surplus`]).
+    /// Zero is the House constructor's drain (`0x004F59A4`), which Phobos'
+    /// constructor hook (`0x004F6532`) works from.
+    #[serde(default)]
+    surplus_drain: i32,
 }
 
 /// Ares HouseExt's battery fields (`src/Ext/House/Body.h`): AuxPower
@@ -106,7 +116,6 @@ pub struct PowerState {
 /// active battery's BuildingType. Trigger action 0x92 also adds AuxPower
 /// ([`PowerState::add_aux_power`]); script action 0x41 does natively but is
 /// not ported.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AresHousePower {
     aux_power: i32,
@@ -133,8 +142,8 @@ impl Default for PowerState {
             radar_dirty: true,
             radar_outage_timer: crate::sim::timer::CdTimer::started(0, 0),
             radar_available: false,
-            #[cfg(feature = "ares")]
             ares: AresHousePower::default(),
+            surplus_drain: 0,
         }
     }
 }
@@ -161,6 +170,29 @@ impl PowerState {
     /// House+577B.
     pub fn has_drained_power_source(&self) -> bool {
         self.has_drained_power_source
+    }
+
+    /// House+0x160B4, the spare power `AI_Choose_Building` keeps before it
+    /// puts a power plant first (`0x004FE6FC..0x004FE71D`). Stock only
+    /// zeroes it, in the constructor (`0x004F5DC6`). Under `[AI]
+    /// EnablePowerSurplus=yes`, Phobos' `HouseExt::CalculatePowerSurplus`
+    /// (src/Ext/House/Body.cpp at c783774a) writes `[AI] PowerSurplus` there
+    /// when the house is made (hook `0x004F6532`) and after each count of its
+    /// buildings (hook `0x00508D8D`); with `PowerSurplus.ScaleToDrainAmount`
+    /// above 0, that times the counted drain over the amount.
+    pub(crate) fn power_surplus(&self, rules: &RuleSet) -> i32 {
+        let general = &rules.general;
+        if !rules.phobos() || !general.enable_power_surplus {
+            return 0;
+        }
+        let Some(scale) = surplus_drain_scale(rules) else {
+            return general.power_surplus;
+        };
+        // One IEEE double divide and multiply, as Phobos' SSE2 build
+        // (`Phobos.props`) does them, so every platform gets its bits; `as`
+        // truncates and saturates like its clamp to int and `static_cast<int>`.
+        let factor = f64::from(self.surplus_drain) / f64::from(scale);
+        (f64::from(general.power_surplus) * factor) as i32
     }
 
     /// The retained low-power flag, without the trainer's override
@@ -289,15 +321,18 @@ impl PowerState {
             self.radar_outage_timer.hash(hasher);
         }
         // Likewise a House no battery ever reached.
-        #[cfg(feature = "ares")]
         if self.ares != AresHousePower::default() {
             b"ares-house-power-v1".hash(hasher);
             self.ares.hash(hasher);
         }
+        // And one whose spare power never scaled with its drain.
+        if self.surplus_drain != 0 {
+            b"phobos-surplus-drain-v1".hash(hasher);
+            self.surplus_drain.hash(hasher);
+        }
     }
 
     /// SW_Battery::Activate1006EBD0's House writes, then RecheckPower.
-    #[cfg(feature = "ares")]
     pub(crate) fn activate_battery(
         &mut self,
         power: i32,
@@ -314,7 +349,6 @@ impl PowerState {
     /// Ares trigger action 0x92 (TActionExt::Execute 100396C0, hook
     /// 0x6DD8D7): HouseExt AuxPower += the action's Value2, then
     /// RecheckPower (House+5778).
-    #[cfg(feature = "ares")]
     pub(crate) fn add_aux_power(&mut self, power: i32) {
         self.ares.aux_power = self.ares.aux_power.wrapping_add(power);
         self.invalidate(false);
@@ -322,7 +356,6 @@ impl PowerState {
 
     /// SW_Battery::Deactivate1006EC40: the reverse writes; each list item
     /// erases its first equal entry (1006EB70), then RecheckPower.
-    #[cfg(feature = "ares")]
     pub(crate) fn deactivate_battery(
         &mut self,
         power: i32,
@@ -345,13 +378,11 @@ impl PowerState {
     }
 
     /// HouseExt BatteryCount > 0: the radar hook508E66 (Ares.dll 10024780).
-    #[cfg(feature = "ares")]
     pub(crate) fn has_battery(&self) -> bool {
         self.ares.battery_count > 0
     }
 
     /// BatteryKeepOnline holds this BuildingType (hook4555D5, 100140B0).
-    #[cfg(feature = "ares")]
     pub(crate) fn keeps_online(&self, building_type: &str) -> bool {
         self.ares
             .keep_online
@@ -360,7 +391,6 @@ impl PowerState {
     }
 
     /// BatteryOverpower holds this BuildingType (hook44019D, 10014690).
-    #[cfg(feature = "ares")]
     pub(crate) fn overpowers(&self, building_type: &str) -> bool {
         self.ares
             .overpower
@@ -527,7 +557,7 @@ pub(crate) fn building_power_drain(
         return 0;
     };
     let mut drain = native_building_power_drain(object.power);
-    if entity.gap_generator.supercharged() {
+    if entity.building.gap_generator.supercharged() {
         drain = drain.wrapping_add(object.extra_power.drain());
     }
     let upgrades = entity.building_upgrades();
@@ -719,13 +749,15 @@ fn recalculate_power_for_owner(
     // Ares HouseClass_UpdatePower_Auxiliary10024650 (hook 508C7F) starts
     // the counters from HouseExt AuxPower: positive as output, negative as
     // drain (the 32-bit negation wraps).
-    #[cfg(feature = "ares")]
-    let (mut produced, mut drained) = (
-        state.ares.aux_power.max(0),
-        state.ares.aux_power.wrapping_neg().max(0),
-    );
-    #[cfg(not(feature = "ares"))]
-    let (mut produced, mut drained): (i32, i32) = (0, 0);
+    let ares = rules.ares_form();
+    let (mut produced, mut drained): (i32, i32) = if ares {
+        (
+            state.ares.aux_power.max(0),
+            state.ares.aux_power.wrapping_neg().max(0),
+        )
+    } else {
+        (0, 0)
+    };
     let mut has_drained_power_source = false;
     // Phobos `HouseExt::PowerPlantEnhancers`: this owner's active registered
     // enhancer buildings. The list is derived from the same building order the
@@ -840,8 +872,8 @@ fn recalculate_power_for_owner(
         // 0x0044E855): an EMP'd plant (`+0x504` > 0) skips the positive sum
         // to 0x0044E873 and outputs nothing; Ares EMP leaves its online latch
         // set. Phobos' replacement above already zeroes it.
-        #[cfg(all(feature = "ares", not(feature = "phobos")))]
-        let (power, extra_power) = if entity.emp_remaining() > 0 {
+        #[cfg(not(feature = "phobos"))]
+        let (power, extra_power) = if ares && entity.emp_remaining() > 0 {
             (0, 0)
         } else {
             (power, extra_power)
@@ -871,8 +903,7 @@ fn recalculate_power_for_owner(
                 // limited by the drainer's and then the plant's
                 // `Drain.Amount` (a non-positive amount n: at least -n), in
                 // place of zeroing the whole House output.
-                #[cfg(feature = "ares")]
-                let local = {
+                let local: Option<i32> = if ares {
                     let drainer = entities
                         .get(drainer)
                         .filter(|drainer| interner.try_resolve(drainer.type_ref()).is_some())
@@ -889,10 +920,7 @@ fn recalculate_power_for_owner(
                         };
                         limit(limit(output, drainer.1), plant.1)
                     })
-                };
-                #[cfg(not(feature = "ares"))]
-                let local: Option<i32> = {
-                    let _ = drainer;
+                } else {
                     None
                 };
                 match local {
@@ -912,8 +940,7 @@ fn recalculate_power_for_owner(
     // either the outage timer or a drained positive-output contributor.
     // Ares 3.0 10024760 (hook 0x508D4A) first raises a negative total, which
     // only a local drain leaves, to zero.
-    #[cfg(feature = "ares")]
-    {
+    if ares {
         produced = produced.max(0);
     }
     state.has_drained_power_source = has_drained_power_source;
@@ -924,6 +951,21 @@ fn recalculate_power_for_owner(
     state.total_output = produced;
     state.total_drain = drained;
     state.is_low_power = !state.retained_full_power();
+    // Phobos `HouseClass_UpdatePower_AfterBuildings` (hook 0x00508D8D, past
+    // the zeroing at 0x00508D79) works the spare power out again from this
+    // drain. Without Phobos' `AI.Power` and unit power keys, which VERA does
+    // not port, its `UpdateAIPower` drain is this one.
+    if surplus_drain_scale(rules).is_some() {
+        state.surplus_drain = drained;
+    }
+}
+
+/// `PowerSurplus.ScaleToDrainAmount` when Phobos' spare power scales with
+/// the house's drain in this game ([`PowerState::power_surplus`]).
+fn surplus_drain_scale(rules: &RuleSet) -> Option<i32> {
+    let general = &rules.general;
+    let scale = general.power_surplus_scale_to_drain_amount;
+    (rules.phobos() && general.enable_power_surplus && scale > 0).then_some(scale)
 }
 
 /// Fixture-only assessment of supplied buildings. Production visits each
@@ -1041,10 +1083,8 @@ fn radar_provider_available(
 ) -> bool {
     // Ares HouseClass_UpdateRadar_Battery10024780 (hook 508E66): on low
     // power the radar buildings are checked only while a battery is active.
-    #[cfg(feature = "ares")]
-    let low_power_blocks = !state.has_battery();
-    #[cfg(not(feature = "ares"))]
-    let low_power_blocks = true;
+    let ares = rules.ares_form();
+    let low_power_blocks = if ares { !state.has_battery() } else { true };
     if state.low_power() && low_power_blocks {
         return false;
     }
@@ -1057,6 +1097,8 @@ fn radar_provider_available(
         if entity.owner() != owner
             || entity.lifecycle.in_limbo()
             || !entity.lifecycle.cell_marked()
+            // VERA-only: 508E9D..508F06 has no dying test. Invisible: UnInit
+            // already puts a dead building in limbo.
             || entity.death.is_dying()
             || !entity.building_online()
             || (require_discovery && !entity.discovery.discovered_by_current_house())
@@ -1071,9 +1113,8 @@ fn radar_provider_available(
         // Ares Radar_Update_CheckEligible10024550 (hook508EBC) skips a
         // jammed or EMPed (+504 > 0) radar to the next one; a remaining
         // nonzero counter still ends the scan as508F12 does.
-        #[cfg(feature = "ares")]
-        {
-            if entity.radar_jam.is_jammed() || entity.emp_remaining() > 0 {
+        if ares {
+            if entity.ares.radar_jam.is_jammed() || entity.emp_remaining() > 0 {
                 continue;
             }
             if entity.emp_remaining() != 0 {
@@ -1161,7 +1202,7 @@ pub fn has_active_radar(
         .is_some_and(|state| state.radar_available)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -1223,7 +1264,7 @@ mod tests {
             tick_power_states(&mut states, &mut entities, &rules, &interner, 0);
             assert_eq!(
                 states[&owner].total_output,
-                ares_power_output(row["output"].as_i64().unwrap() as i32),
+                ares_power_output(&rules, row["output"].as_i64().unwrap() as i32),
                 "{row}"
             );
             assert_eq!(
@@ -1246,9 +1287,9 @@ mod tests {
     /// hooks 0x508D32/0x508D4A): a `Drain.Local` plant gives up its output
     /// limited by `Drain.Amount` (a positive cap, a non-positive floor)
     /// instead of zeroing the House, and the total never stays negative.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_local_drain_takes_the_drained_amount() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         for (amount, output) in [(50, 150), (0, 0), (-300, 0)] {
             let rules = rules_from_ini(&format!(
                 "[BuildingTypes]\n0=B\n[B]\nPower=200\nStrength=100\n\
@@ -1266,6 +1307,35 @@ mod tests {
             assert_eq!(states[&owner].total_output, output, "Drain.Amount={amount}");
             assert!(!states[&owner].has_drained_power_source);
         }
+    }
+
+    /// Phobos `PowerSurplus.ScaleToDrainAmount`: the spare power is
+    /// `PowerSurplus` times the drain the house's last count found over the
+    /// amount (`HouseExt::CalculatePowerSurplus` from hook 0x00508D8D), not
+    /// the drain a placement added since (`0x005018DD`). A house no count has
+    /// reached keeps none (hook 0x004F6532, drain 0).
+    #[test]
+    fn phobos_spare_power_scales_with_the_counted_drain() {
+        let rules = rules_from_ini(
+            "[BuildingTypes]\n0=C\n[C]\nPower=-100\n[AI]\nEnablePowerSurplus=yes\n\
+             PowerSurplus=50\nPowerSurplus.ScaleToDrainAmount=200\n",
+        );
+        let consumer = make_building(1, "C", "A", 100);
+        let owner = consumer.owner();
+        let mut entities = EntityStore::default();
+        entities.insert(consumer);
+        let mut states =
+            PowerStates::from_map_for_test(BTreeMap::from([(owner, PowerState::default())]));
+        assert_eq!(states[&owner].power_surplus(&rules), 0);
+        tick_power_states(&mut states, &mut entities, &rules, &test_interner(), 0);
+        assert_eq!(states[&owner].power_surplus(&rules), 25);
+        states.house_mut(owner).add_building_drain(100);
+        assert_eq!(states[&owner].total_drain(), 200);
+        assert_eq!(
+            states[&owner].power_surplus(&rules),
+            25,
+            "until the next count"
+        );
     }
 
     /// The radar outage (`House+0x2B0`) against
@@ -1327,10 +1397,10 @@ mod tests {
         intern::test_interner()
     }
 
-    /// A stock total as an Ares build stores it: HouseClass_UpdatePower_
+    /// A stock total as it is stored when Ares plays: HouseClass_UpdatePower_
     /// LocalDrain2 (10024760, hook 0x508D4A) raises a negative one to zero.
-    fn ares_power_output(native: i32) -> i32 {
-        if cfg!(feature = "ares") {
+    fn ares_power_output(rules: &RuleSet, native: i32) -> i32 {
+        if rules.ares_form() {
             native.max(0)
         } else {
             native
@@ -1457,7 +1527,10 @@ BuildSpeed=0.02
             let state = &states[&owner];
             assert_eq!(
                 state.total_output,
-                ares_power_output(row["output"]["total_output"].as_i64().unwrap() as i32),
+                ares_power_output(
+                    &rules,
+                    row["output"]["total_output"].as_i64().unwrap() as i32,
+                ),
                 "{row}"
             );
             assert_eq!(
@@ -1649,7 +1722,6 @@ BuildSpeed=0.02
 
     // -------- ExtraPower (Yuri Bio-Reactor) bonus tests -----------------
 
-    #[cfg(any(feature = "phobos", feature = "ares"))]
     fn building_at(id: u64, type_ref: &str, owner: &str, rx: u16, ry: u16, hp: i32) -> GameEntity {
         let mut e = GameEntity::test_default_of_category(
             id,
@@ -1666,7 +1738,6 @@ BuildSpeed=0.02
         e
     }
 
-    #[cfg(any(feature = "phobos", feature = "ares"))]
     fn output_for(rules: &RuleSet, buildings: Vec<GameEntity>) -> i32 {
         let interner = test_interner();
         let owner = buildings[0].owner();
@@ -1681,9 +1752,9 @@ BuildSpeed=0.02
 
     /// Ares 10014440 (hook 0x44E855): a plant under EMP keeps its online
     /// latch but outputs nothing.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_emp_power_plant_outputs_nothing() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = rules_from_ini("[BuildingTypes]\n0=PLANT\n[PLANT]\nPower=100\nStrength=100\n");
         let plant = || building_at(1, "PLANT", "A", 10, 10, 100);
         assert_eq!(output_for(&rules, vec![plant()]), 100);

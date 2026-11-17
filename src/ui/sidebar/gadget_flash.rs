@@ -132,8 +132,8 @@ pub fn shape_button_frame(
 
 /// Persistent flash + mode state for the in-game sidebar gadgets.
 ///
-/// Lives on `AppState` (one instance per app session). Ticked once per sim
-/// tick by `sidebar_gadgets::update_sidebar_gadget_state`. Read by the
+/// Lives on `AppState` (one instance per app session). Ticked on every pass
+/// by `sidebar_gadgets::update_sidebar_gadget_state`. Read by the
 /// per-frame `SidebarView` builder to populate gadget `frame_index` fields.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SidebarGadgetState {
@@ -160,8 +160,9 @@ pub struct SidebarGadgetState {
     /// changes clear it (4AC916, 4AC6BB).
     pub place_beacon_mode_on: bool,
 
-    /// Last sim tick the orchestrator processed; used to advance per
-    /// sim-tick delta (catch-up safe).
+    /// Last sim tick the orchestrator processed: offline, the frames since
+    /// it are this pass's Sidebar Action visits
+    /// (`app::presentation::sidebar_gadgets::sidebar_action_visits`).
     pub last_sim_tick: u64,
 
     /// Transient pressed bits (+0x2C) of the buttons whose frame shows them:
@@ -174,6 +175,10 @@ pub struct SidebarGadgetState {
     pub top_pressed: [bool; 2],
     /// Native constructor6CFE20 starts the bottom bar open.
     pub command_bar_closed: bool,
+    /// The bar was open when the local player lost (global 824410, written
+    /// only at 4FC1DE/4FC1E7): a match that is over reopens it (4FC591). Like
+    /// the global, nothing clears it at a new match.
+    pub command_bar_open_at_defeat: bool,
     pub command_pressed: [bool; 11],
     pub command_thumb_pressed: bool,
 }
@@ -185,6 +190,25 @@ pub(crate) enum SelectionMode {
 }
 
 impl SidebarGadgetState {
+    /// MPlayer_Defeated's local branch closes an open command bar without a
+    /// sound and remembers it (`0x004FC1CB..0x004FC1E7`, CloseCommandBar
+    /// 0x006D1660).
+    pub(crate) fn close_command_bar_at_local_defeat(&mut self) {
+        self.command_bar_open_at_defeat = !self.command_bar_closed;
+        self.command_bar_closed = true;
+    }
+
+    /// Any House's MPlayer_Defeated that finds the match over reopens the bar
+    /// the local loss closed (`0x004FC591..0x004FC59F`, OpenCommandBar
+    /// 0x006D1610). While the match goes on (`0x004FC57C..0x004FC58B`) a
+    /// defeated player watches without it, and SidebarInput refuses to reopen
+    /// it (0x006D08F5).
+    pub(crate) fn reopen_command_bar_at_match_end(&mut self, match_decided: bool) {
+        if match_decided && self.command_bar_open_at_defeat {
+            self.command_bar_closed = false;
+        }
+    }
+
     /// Display SetRepairMode4AC8C0 / SetSellMode4AC660 (-1). A pending
     /// placement TYPE refuses the entire transition. Both toggles clear the
     /// competing mode and the beacon byte (4AC916 / 4AC6BB), and entry needs
@@ -212,13 +236,22 @@ impl SidebarGadgetState {
         enabled
     }
 
-    /// Advance existing pulses through missed ticks, then perform the current
-    /// frame's poll followed by FlashAI, as Sidebar Action6A77CD/6A7A8C does.
-    /// A newly ready item starts at this frame, rather than consuming ticks
-    /// that passed before it was observed. Repeated renders do not tick again.
-    pub(crate) fn update_tab_flashes(&mut self, tick: u64, frame: i32, ready: [bool; 4]) {
-        let delta = tick.saturating_sub(self.last_sim_tick);
-        for _ in 1..delta {
+    /// Residual: a load keeps the running pulses, where SidebarClass Init
+    /// 6A5310 stops them and the next StripAI restarts them on a ten-frame
+    /// boundary; the blink phase can differ by up to ten frames once, which
+    /// a player cannot see.
+    ///
+    /// This pass's Sidebar Action `visits` (6A77CD/6A7A8C): each polls the
+    /// tabs in StripAI, then runs FlashAI 69E010, whose countdown moves once
+    /// per call. The earlier visits only tick existing pulses; the last one
+    /// polls, so a newly ready item starts at this frame rather than consuming
+    /// visits that passed before it was observed. A pass without a visit
+    /// neither polls nor ticks.
+    pub(crate) fn update_tab_flashes(&mut self, visits: u64, frame: i32, ready: [bool; 4]) {
+        if visits == 0 {
+            return;
+        }
+        for _ in 1..visits {
             for flash in &mut self.tab_flashes {
                 flash.tick();
             }
@@ -230,12 +263,9 @@ impl SidebarGadgetState {
                 flash.stop();
             }
         }
-        if delta != 0 {
-            for flash in &mut self.tab_flashes {
-                flash.tick();
-            }
+        for flash in &mut self.tab_flashes {
+            flash.tick();
         }
-        self.last_sim_tick = tick;
     }
 
     /// Display4AC8C0(0)/4AC660(0): a pending building placement refuses mode
@@ -253,9 +283,9 @@ impl SidebarGadgetState {
 
     /// SetRepairMode(0) and SetSellMode(0), then the direct Power, Planning
     /// and Beacon byte clears (+0x11B2..+0x11B4) that Begin_Building_Placement
-    /// (4FB883..4FB8A2), SelectClass::Action (6AAF6D..6AAF8B) and the input
-    /// locks (6DEDB2..6DEDD0, 6E268A..6E26A6) share. Only the first two are
-    /// refused while a placement is pending. SetTogglePowerMode (4AC87B) and
+    /// (4FB883..4FB8A2), SelectClass::Action (6AAF6D..6AAF8B) and TAction46's
+    /// lock (6DEDB2..6DEDD0, 6E268A..6E26A6) share. Only the first two are
+    /// refused while a placement type is set; TAction46 nulls it first. SetTogglePowerMode (4AC87B) and
     /// SetWaypointMode (4AC756) also clear the beacon byte, and
     /// SetPlaceBeaconMode clears +0x11B2/+0x11B3; VERA has no owner for the
     /// Power or Planning-waypoint modes, so neither path exists here.
@@ -321,7 +351,7 @@ impl SidebarGadgetState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 
@@ -504,21 +534,44 @@ fn native_tab_flash_phase_and_timer_controls() {
 fn tab_flash_catchup_starts_new_ready_state_at_current_frame() {
     let mut caught_up = SidebarGadgetState::default();
     let mut stepped = SidebarGadgetState::default();
-    caught_up.update_tab_flashes(0, 0, [false; 4]);
-    for tick in 0..=100 {
-        stepped.update_tab_flashes(tick, tick as i32, [tick == 100, false, false, false]);
+    for tick in 1..=100 {
+        stepped.update_tab_flashes(1, tick, [tick == 100, false, false, false]);
     }
     caught_up.update_tab_flashes(100, 100, [true, false, false, false]);
     assert_eq!(caught_up.tab_flashes[0].countdown, 19);
     for tick in 101..=200 {
-        stepped.update_tab_flashes(tick, tick as i32, [true, false, false, false]);
+        stepped.update_tab_flashes(1, tick, [true, false, false, false]);
     }
-    caught_up.update_tab_flashes(200, 200, [true, false, false, false]);
+    caught_up.update_tab_flashes(100, 200, [true, false, false, false]);
     let flash = caught_up.tab_flashes[0];
     assert_eq!(flash.state, stepped.tab_flashes[0].state);
     assert_eq!(flash.countdown, stepped.tab_flashes[0].countdown);
-    caught_up.update_tab_flashes(200, 200, [true, false, false, false]);
-    assert_eq!(caught_up.tab_flashes[0].countdown, flash.countdown);
-    caught_up.update_tab_flashes(201, 201, [false; 4]);
+    // A pass without a Sidebar Action visit (no frame offline, or the menu
+    // or a deactivated window online) neither ticks nor stops the pulse.
+    caught_up.update_tab_flashes(0, 200, [false; 4]);
+    assert_eq!(caught_up.tab_flashes[0], flash);
+    caught_up.update_tab_flashes(1, 201, [false; 4]);
     assert!(!caught_up.tab_flashes[0].is_active());
+}
+
+#[test]
+fn a_local_loss_closes_the_command_bar_until_the_match_is_over() {
+    let mut open = SidebarGadgetState::default();
+    open.close_command_bar_at_local_defeat();
+    assert!(open.command_bar_closed);
+    open.reopen_command_bar_at_match_end(false);
+    assert!(open.command_bar_closed, "the match goes on");
+    open.reopen_command_bar_at_match_end(true);
+    assert!(!open.command_bar_closed);
+
+    let mut closed = SidebarGadgetState {
+        command_bar_closed: true,
+        ..SidebarGadgetState::default()
+    };
+    closed.close_command_bar_at_local_defeat();
+    closed.reopen_command_bar_at_match_end(true);
+    assert!(
+        closed.command_bar_closed,
+        "a bar the player closed stays closed"
+    );
 }

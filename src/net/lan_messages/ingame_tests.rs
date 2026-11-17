@@ -212,3 +212,26 @@ fn scoped_loading_rejects_a_prior_match_and_prior_final_options() {
     );
     assert!(LoadingProgressMessage::decode_scoped(progress.as_bytes(), scope).is_err());
 }
+
+#[test]
+fn beacon_text_carries_slot_house_and_text_at_native_offsets() {
+    let text: Vec<u16> = "Go 北".encode_utf16().collect();
+    let made = LanMessage::beacon_text("Host", 3, 2, &text).unwrap();
+    let bytes = made.as_bytes();
+    assert_eq!(bytes.len(), 0x1c7);
+    assert_eq!(&bytes[..4], &0x22u32.to_le_bytes());
+    assert_eq!(&bytes[4..9], b"Host\0");
+    assert_eq!((bytes[0x2f], bytes[0x30]), (2, 3));
+    assert_eq!(&bytes[0x31..0x33], &u16::from(b'G').to_le_bytes());
+    assert_eq!(&bytes[0x37..0x39], &0x5317u16.to_le_bytes());
+    let fields = LanMessage::decode(bytes).unwrap();
+    let fields = fields.beacon_text_fields().unwrap();
+    assert_eq!((fields.house, fields.slot), (3, 2));
+    assert_eq!(fields.text_units(), text);
+    // wcsncpy(.., 0x80) copies 128 units at most.
+    let long = vec![u16::from(b'a'); 200];
+    let made = LanMessage::beacon_text("Host", -1, -1, &long).unwrap();
+    let fields = made.beacon_text_fields().unwrap();
+    assert_eq!((fields.house, fields.slot), (-1, -1));
+    assert_eq!(fields.text_units().len(), 128);
+}

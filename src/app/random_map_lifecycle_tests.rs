@@ -93,7 +93,7 @@ fn start_production_worker(
         prepared.settings,
         prepared.resolved_inputs,
         prepared.blocks,
-        super::shell_random_map::RandomMapObjects::tech(prepared.tech_types),
+        super::shell_random_map::RandomMapObjects::tech(prepared.tech_types, prepared.ares),
         shared_cell_dummy.clone(),
         decision,
     )
@@ -171,18 +171,23 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         vegetation: 30,
         urban_presence: 40,
         urban_enabled: false,
+        fair_starts: false,
         seed: 4242,
         description: "Unit 2 lifecycle".into(),
         ..Default::default()
     };
-    std::fs::write(seed_dir.join(seed_name), options.to_sed_bytes()).expect("write lifecycle .SED");
+    std::fs::write(
+        seed_dir.join(seed_name),
+        options.to_sed_bytes(native_rules.reads_ares_way()),
+    )
+    .expect("write lifecycle .SED");
     const MATCH_SEED: u32 = 0x0412_0419;
 
     // U2-02: collect cross-thread receipts from the production worker. Every
     // Generate enters the real generator once; accepting a valid preview adds
     // no run, while accepting an empty setup adds exactly one.
     let previous_selection = ChooseMapSelection {
-        mode_id: 1,
+        mode: 1.into(),
         record_index: Some(7),
     };
     let mut runtime = MultiplayerShellRuntime::initialize(
@@ -203,7 +208,6 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         options.clone(),
         Some(previous_selection),
         false,
-        true,
     ));
     generated_modal
         .as_mut()
@@ -292,13 +296,16 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
     assert_eq!(generation_entries, 2, "valid preview adds no worker run");
     assert!(randmap_img.is_file());
     assert!(!randmap_sed.exists(), "accepted caller follows teardown");
-    std::fs::write(&randmap_sed, committed.to_sed_bytes()).expect("accepted caller writes .SED");
+    std::fs::write(
+        &randmap_sed,
+        committed.to_sed_bytes(native_rules.reads_ares_way()),
+    )
+    .expect("accepted caller writes .SED");
 
     let mut empty_modal = Some(RandomMapSetupModalState::open(
         options.clone(),
         Some(previous_selection),
         false,
-        true,
     ));
     assert_eq!(
         empty_modal.as_ref().expect("empty modal").accept(),
@@ -350,7 +357,6 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         options.clone(),
         Some(previous_selection),
         false,
-        true,
     ));
     cancel_modal
         .as_mut()
@@ -422,7 +428,6 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         runtime.random_map_options_for_setup(),
         Some(previous_selection),
         false,
-        true,
     );
     assert_eq!(reopened.options, options);
     assert_eq!(reopened.previous_selection, Some(previous_selection));
@@ -476,6 +481,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         start_waypoints: accepted_start_waypoints.clone(),
         stages_run: Vec::new(),
         unfilled_start_slots: 0,
+        fairness: None,
     };
     let mut retention = RandomMapGenerationRetention::default();
     retention.finish_generation(poison);
@@ -512,6 +518,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         start_waypoints: accepted_start_waypoints.clone(),
         stages_run: Vec::new(),
         unfilled_start_slots: 0,
+        fairness: None,
     };
     let mut direct_retention = RandomMapGenerationRetention::default();
     direct_retention.finish_generation(direct_preview);

@@ -95,7 +95,7 @@ pub fn run(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::rmg::phases::shore::{SubTile, TileBlock};

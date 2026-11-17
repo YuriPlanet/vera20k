@@ -420,15 +420,18 @@ impl GpuContext {
 
         // Configure the surface with our chosen format and the window's current size.
         let window_size: winit::dpi::PhysicalSize<u32> = window.inner_size();
+        let (present_mode, desired_maximum_frame_latency) = present_settings(true);
         let config: wgpu::SurfaceConfiguration = wgpu::SurfaceConfiguration {
             usage: required_surface_usages,
             format: surface_format,
             width: window_size.width.max(1), // wgpu panics on 0-sized surfaces
             height: window_size.height.max(1),
-            present_mode: wgpu::PresentMode::Fifo,
+            // `App::sync_present_mode` applies the Options page's VSync box
+            // once the profile is loaded.
+            present_mode,
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
-            desired_maximum_frame_latency: 2,
+            desired_maximum_frame_latency,
             // wgpu 30 selects an HDR colour space per surface format; Auto keeps
             // the pre-30 sRGB behaviour for every desktop and WebGL2 backend.
             color_space: wgpu::SurfaceColorSpace::Auto,
@@ -521,6 +524,17 @@ impl GpuContext {
         GpuAdapterObservation::from(&self.adapter_info)
     }
 
+    /// The adapter's name when it is the system's software renderer, which
+    /// draws with the processor: Windows' Microsoft Basic Render Driver or
+    /// Mesa's llvmpipe. wgpu keeps it as the last choice when no graphics card
+    /// and driver qualify (`request_adapter` sorts `DeviceType::Cpu` last
+    /// instead of leaving it out); Metal never offers one.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    pub(crate) fn software_renderer(&self) -> Option<&str> {
+        (self.adapter_info.device_type == wgpu::DeviceType::Cpu)
+            .then_some(self.adapter_info.name.as_str())
+    }
+
     /// Whether the window currently owns a render surface.
     #[cfg(target_os = "android")]
     pub(crate) fn has_surface(&self) -> bool {
@@ -609,6 +623,31 @@ impl GpuContext {
             ));
         }
         log::debug!("Surface resized to {}x{}", width, height);
+    }
+
+    /// Present in step with the display (`Fifo`), or as soon as a frame is
+    /// drawn: `AutoNoVsync` takes `Immediate`, else `Mailbox`, else `Fifo`, so
+    /// a surface without the first two keeps syncing. The Options page's
+    /// VSync box (`[VERA] VSync=`).
+    /// https://docs.rs/wgpu/30.0.1/wgpu/enum.PresentMode.html
+    pub fn set_vsync(&mut self, vsync: bool) {
+        let (mode, latency) = present_settings(vsync);
+        if self.config.present_mode == mode && self.config.desired_maximum_frame_latency == latency
+        {
+            return;
+        }
+        // Configuring a surface needs its last frame presented.
+        self.handoff.waiter().wait();
+        self.config.present_mode = mode;
+        self.config.desired_maximum_frame_latency = latency;
+        if let Some(surface) = self
+            .surface
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner)
+        {
+            surface.configure(&self.device, &self.config);
+        }
+        log::info!("Surface present mode: {mode:?}");
     }
 
     /// Take the window's next frame to draw into, or `None` when there is none
@@ -765,7 +804,26 @@ pub fn block_on<F: Future>(future: F) -> F::Output {
     }
 }
 
-#[cfg(test)]
+/// The present mode and queued pictures for the VSync box: `Fifo` in step
+/// with the display, else `AutoNoVsync` (`Immediate`, else `Mailbox`, else
+/// `Fifo`).
+///
+/// VSync keeps wgpu's default two pictures queued, as every build before the
+/// box did. With one, the CPU and GPU no longer overlap: a picture whose work
+/// takes longer than one refresh waits for the next, and since a lent tick
+/// starts once per picture, the game itself slows to half speed. Without VSync
+/// a present never waits for the screen, so one queued picture only cuts the
+/// input delay.
+/// https://docs.rs/wgpu/30.0.1/wgpu/struct.SurfaceConfiguration.html#structfield.desired_maximum_frame_latency
+fn present_settings(vsync: bool) -> (wgpu::PresentMode, u32) {
+    if vsync {
+        (wgpu::PresentMode::Fifo, 2)
+    } else {
+        (wgpu::PresentMode::AutoNoVsync, 1)
+    }
+}
+
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -773,7 +831,17 @@ mod tests {
 
     use wgpu::CurrentSurfaceTexture::{Lost, Occluded, Outdated, Timeout, Validation};
 
-    use super::{CaptureTarget, SurfaceRecovery, acquire_with_recovery, block_on};
+    use super::{
+        CaptureTarget, SurfaceRecovery, acquire_with_recovery, block_on, present_settings,
+    };
+
+    /// With VSync a picture over one refresh must not wait a whole refresh
+    /// more: two pictures stay queued. Without it, one keeps input delay low.
+    #[test]
+    fn vsync_keeps_two_pictures_queued() {
+        assert_eq!(present_settings(true), (wgpu::PresentMode::Fifo, 2));
+        assert_eq!(present_settings(false), (wgpu::PresentMode::AutoNoVsync, 1));
+    }
 
     /// Run one acquisition over `results`, the acquire answers in call order;
     /// returns its outcome and recovery requests. Real frame presentation is

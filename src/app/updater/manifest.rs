@@ -295,7 +295,7 @@ fn decode_sha256(text: &str) -> Option<[u8; 32]> {
     Some(digest)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

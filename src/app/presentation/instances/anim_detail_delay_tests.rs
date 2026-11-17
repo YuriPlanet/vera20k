@@ -29,6 +29,7 @@ fn render(
     build_display_effect_instances(
         &DisplayEffectInputs {
             sim,
+            frame: &crate::app::presentation::frame::PresentationFrame::of_test(sim, rules),
             rules,
             camera: [center.0 - 80., center.1 - 60.],
             render_size: [160, 120],
@@ -47,7 +48,7 @@ fn render(
             observe_particles: false,
         },
         &mut parents,
-        &NativeDisplayOrder::from_display(sim.display_layers()),
+        &NativeDisplayOrder::from_world(&sim, None),
         Default::default(),
     );
     assert_eq!((sim.state_hash(), sim.rng_state()), before);

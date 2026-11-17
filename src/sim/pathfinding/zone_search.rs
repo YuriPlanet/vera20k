@@ -606,6 +606,6 @@ fn find_layered_path_after_entry(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 #[path = "zone_search_tests.rs"]
 mod zone_search_tests;

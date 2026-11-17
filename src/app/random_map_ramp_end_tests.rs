@@ -24,6 +24,7 @@ fn ordinary_recipe(seed: i32, map_type: i32) -> RmgOptions {
         vegetation: 30,
         urban_presence: 40,
         urban_enabled: false,
+        fair_starts: false,
         seed,
         ..Default::default()
     }
@@ -160,7 +161,7 @@ fn generated_connector_uses_native_slope_piece_tileset() {
         &prepared.settings,
         &prepared.resolved_inputs,
         &prepared.blocks,
-        &crate::map::rmg::build::GenerationObjects::tech(&prepared.tech_types),
+        &crate::map::rmg::build::GenerationObjects::tech(&prepared.tech_types, prepared.ares),
         &mut |view| match view.point() {
             GenerationPoint::After(Stage::Regions) => {
                 before_islands = Some(
@@ -230,7 +231,7 @@ fn generated_connector_uses_native_slope_piece_tileset() {
         })
         .expect("a generated native ramp end survives later stages into the emitted playable map");
     let main_rng = crate::sim::rng::MainRng::new(0x0401_599d);
-    let mut main = crate::app::state::process_main_draws(None, &main_rng);
+    let mut main = crate::app::state::process_main_draws(&main_rng);
     let mut selector = crate::map::tile_variant_selector::TileVariantSelectorCache::default();
     let resolved = build_random_map_preview_grid(
         &generated.map_file,
@@ -264,7 +265,7 @@ fn generated_connector_uses_native_slope_piece_tileset() {
     // identity belongs to the consumed buffer even if the file later changes.
     let seed_dir = crate::map::source::test_support::TestDirectory::new("ramp-end");
     let seed_name = "CellRamp11.SED";
-    let seed_bytes = options.to_sed_bytes();
+    let seed_bytes = options.to_sed_bytes(prepared.ares);
     seed_dir.write(seed_name, &seed_bytes);
     struct SilentProgress;
     impl crate::app::loading::pump::LoadingProgressSink for SilentProgress {
@@ -364,7 +365,7 @@ fn generated_raised_ridge_materializes_native_cliff_faces() {
         &prepared.settings,
         &prepared.resolved_inputs,
         &prepared.blocks,
-        &crate::map::rmg::build::GenerationObjects::tech(&prepared.tech_types),
+        &crate::map::rmg::build::GenerationObjects::tech(&prepared.tech_types, prepared.ares),
         &mut |view| {
             if view.point() == GenerationPoint::After(Stage::Regions) {
                 let cells = view.snapshot().map_file.cells;

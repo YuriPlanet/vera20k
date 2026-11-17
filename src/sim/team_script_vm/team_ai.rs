@@ -34,11 +34,11 @@ use crate::sim::intern::StringInterner;
 /// instead of `+0x171C`) for Regroup and Coordinate_Move.
 const RELAXED_STRAY_ACTIONS: [i32; 2] = [0x35, 0x36];
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "guard_slower_tests.rs"]
 mod guard_slower_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "retreat_tests.rs"]
 mod retreat_tests;
 
@@ -101,6 +101,7 @@ pub(super) fn center_sample(
 pub(super) fn center_of(
     samples: &[CenterSample],
     focus: Option<[i32; 2]>,
+    ares: bool,
 ) -> Option<([i32; 2], Option<u64>)> {
     let mut sum = [0i32; 2];
     let mut count = 0i32;
@@ -116,7 +117,7 @@ pub(super) fn center_of(
             continue;
         }
         let distance = focus.map_or(0, |focus| {
-            crate::util::native_coord::squared_xy_distance(sample.xy, focus)
+            crate::util::native_coord::squared_xy_distance(sample.xy, focus, ares)
         });
         if closest_distance == 0 || distance < closest_distance {
             closest_distance = distance;
@@ -261,7 +262,7 @@ impl Simulation {
     /// `0x006E9227..0x006E9299`: a team still forming, or a `Reinforce=`
     /// team below full strength, recruits for each short TaskForce entry,
     /// unless its house is human and it has been full.
-    fn team_recruit_short_entries(
+    pub(super) fn team_recruit_short_entries(
         &mut self,
         team_id: u64,
         rules: &RuleSet,
@@ -280,6 +281,7 @@ impl Simulation {
         {
             return;
         }
+        let mut walks = super::membership::RecruitWalks::default();
         let mut slot = 0;
         loop {
             let vm = &self.team_script_vm;
@@ -291,7 +293,7 @@ impl Simulation {
                 return;
             };
             if super::membership::entry_short(entry.count, team.slot_counts[slot]) {
-                self.team_recruit(team_id, slot, rules, registry, frame_effects);
+                self.team_recruit(team_id, slot, &mut walks, rules, registry, frame_effects);
             }
             slot += 1;
         }
@@ -421,7 +423,7 @@ impl Simulation {
             })
             .collect();
         let head = team.members.first().map(|member| member.id);
-        let (zone, closest) = match center_of(&samples, focus) {
+        let (zone, closest) = match center_of(&samples, focus, rules.ares()) {
             None => (None, None),
             Some((mean, closest)) => {
                 // CalcCenter6EB331 selects Map565730's Cell before CanEnter.
@@ -694,8 +696,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) {
-        #[cfg(not(feature = "ares"))]
-        let _ = registry;
+        let ares = rules.ares_form();
         let Some(source) = source else {
             return;
         };
@@ -733,8 +734,9 @@ impl Simulation {
                 .and_then(|id| vm.team_type_ini.get(&id))
                 .is_some_and(|metadata| metadata.annoyance);
             if !annoyance {
-                #[cfg(feature = "ares")]
-                self.ares_team_retaliate(team_id, source, rules, registry);
+                if ares {
+                    self.ares_team_retaliate(team_id, source, rules, registry);
+                }
                 return;
             }
         }
@@ -742,8 +744,7 @@ impl Simulation {
             team.zone = None;
             team.reforming = true;
         }
-        #[cfg(feature = "ares")]
-        if formed {
+        if ares && formed {
             self.ares_team_retaliate(team_id, source, rules, registry);
         }
     }
@@ -757,7 +758,6 @@ impl Simulation {
     /// against that cell. Otherwise an attacker that is no Aircraft, of no
     /// House the team's owner is allied with (IsAlliedWith, inlined) and, for
     /// a Foot, neither in limbo nor `ConsideredAircraft=` becomes the focus.
-    #[cfg(feature = "ares")]
     fn ares_team_retaliate(
         &mut self,
         team_id: u64,
@@ -946,7 +946,7 @@ impl crate::sim::team_script_vm::TeamScriptVm {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests {
     use super::TeamTarget;
 
@@ -978,9 +978,9 @@ mod tests {
     /// Ares TeamClass_AttackedBy_Retaliate (1003A180, hook 0x6EB432): with
     /// `[General] TeamRetaliate=yes` a formed team without a focus takes an
     /// enemy attacker as its focus; with the stock tail it keeps none.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_team_retaliate_focuses_an_enemy_attacker() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         for retaliate in [false, true] {
             let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
                 "[General]\nTeamRetaliate={}\n\

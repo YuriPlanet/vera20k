@@ -95,10 +95,8 @@ enum Status {
 }
 
 /// The Dominator's globals. Owned here; the world hash folds the fields in
-/// declaration order.
-#[derive(
-    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
-)]
+/// declaration order, the Ares ones only once set (the `Hash` impl below).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PsychicDominatorState {
     /// `0x00A9FAC0`.
     status: Status,
@@ -112,25 +110,43 @@ pub struct PsychicDominatorState {
     anim: Option<AnimId>,
     /// Ares: SW_PsychicDominator::CurrentPsyDom's type (`100C1C88`), held
     /// from Activate until the state machine's end.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     ares_super: Option<InternedId>,
     /// Ares PsychicDominatorStateMachine's Deferment (`+0x1C`), and whether
     /// the machine is registered (its clock not yet zeroed).
-    #[cfg(feature = "ares")]
     #[serde(default)]
     ares_deferment: i32,
-    #[cfg(feature = "ares")]
     #[serde(default)]
     ares_machine: bool,
     /// CurrentPsyDom's `Light.*`, which UpdateLighting (hook 53C280) reads
     /// while the Dominator tints the scenario.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     ares_light: Option<crate::rules::superweapon_type::AresSuperWeaponLighting>,
 }
 
-#[cfg(feature = "ares")]
+/// The stock globals hash as the derived hash did, in declaration order; an
+/// Ares Dominator adds its own fold, so a game without one keeps its state
+/// hash's stream.
+impl std::hash::Hash for PsychicDominatorState {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.status.hash(state);
+        self.cell.hash(state);
+        self.owner.hash(state);
+        self.anim.hash(state);
+        if self.ares_super.is_some()
+            || self.ares_deferment != 0
+            || self.ares_machine
+            || self.ares_light.is_some()
+        {
+            b"ares-psychic-dominator-v1".hash(state);
+            self.ares_super.hash(state);
+            self.ares_deferment.hash(state);
+            self.ares_machine.hash(state);
+            self.ares_light.hash(state);
+        }
+    }
+}
+
 impl PsychicDominatorState {
     /// CurrentPsyDom's `Light.*`, none without one.
     pub(crate) fn ares_light(
@@ -231,9 +247,9 @@ pub(super) fn process(
     frame_effects: FrameEffects<'_>,
 ) -> bool {
     // Ares hook 53AF40 (10037B40) skips the stock Process; its state
-    // machine (10070BA0) runs in its place.
-    if cfg!(feature = "ares") {
-        #[cfg(feature = "ares")]
+    // machine (10070BA0) runs in its place. On the switch like the Ares
+    // launch and AbortFire in `fire.rs` that start this state.
+    if rules.ares_form() {
         return ares_process(sim, rules, overlay_registry, frame_effects);
     }
     match sim.psychic_dominator.status {
@@ -463,7 +479,6 @@ pub(crate) fn fires_for_test(stage: i32, frames: i32, percent: i32) -> bool {
 /// the type's `SW.Deferment` (else 0); PsyDom's status becomes 1, its owner
 /// the Super's, its cell `cell` and its anim none. Reports activation even
 /// when uncharged.
-#[cfg(feature = "ares")]
 pub(super) fn ares_launch(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -493,7 +508,6 @@ pub(super) fn ares_launch(
 /// SW_PsychicDominator::AbortFire (Ares 3.0 `10070780`), from ClickFire
 /// (10035130): a Dominator already active (PsyDom::Active) refuses the
 /// launch; the owner's client prints `Message.Abort`.
-#[cfg(feature = "ares")]
 pub(super) fn ares_abort_fire(
     sim: &mut Simulation,
     owner: InternedId,
@@ -524,7 +538,6 @@ pub(super) fn ares_abort_fire(
 ///   UpdateLighting, and the machine ends.
 ///
 /// A missing anim passes each wait. Returns whether Fire changed a bridge.
-#[cfg(feature = "ares")]
 fn ares_process(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -665,7 +678,6 @@ fn ares_process(
 ///    PSIONICSIMMUNE) one only with `.CaptureImmuneToPsionics`; captured
 ///    ([`Simulation::ares_dominate`]); a computer owner then sends each captured
 ///    Foot to Hunt, first to last.
-#[cfg(feature = "ares")]
 fn ares_fire(
     sim: &mut Simulation,
     rules: &RuleSet,

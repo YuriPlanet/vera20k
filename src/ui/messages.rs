@@ -123,6 +123,9 @@ struct MessageEdit {
     rgb: [f32; 3],
     /// `+0x18`: split an overfull line instead of refusing the unit.
     overflow: bool,
+    /// The edit label's `+0x40`, which TextLabel vt+0x6C (`0x0072A4A8`)
+    /// reads as "draw nothing".
+    hidden: bool,
 }
 
 /// One key as Input `0x005D4510` decodes it.
@@ -165,6 +168,8 @@ pub struct EditLine {
     pub text: String,
     pub rgb: [f32; 3],
     pub y: i32,
+    /// Open but not drawn: the beacon label edit.
+    pub hidden: bool,
 }
 
 /// MessageListClass, the session's one list at `0x00A8BC60`. Its rows are
@@ -258,7 +263,22 @@ impl MessageList {
             text: String::from_utf16_lossy(&edit.buffer),
             rgb: edit.rgb,
             y: self.y,
+            hidden: edit.hidden,
         })
+    }
+
+    /// The open edit's typed units, past the prefix: what GetEditBuffer
+    /// `0x005D4400` points at while the edit is open.
+    pub fn edit_typed(&self) -> Option<&[u16]> {
+        self.edit.as_ref().map(|edit| &edit.buffer[edit.start..])
+    }
+
+    /// The beacon branch's `[label + 0x40] = 1` after AddEdit
+    /// (`0x0055E5C1`): the edit stays open and takes keys, unseen.
+    pub fn hide_edit(&mut self) {
+        if let Some(edit) = self.edit.as_mut() {
+            edit.hidden = true;
+        }
     }
 
     /// AddEdit `0x005D4210`: refused while an edit is open. Evicts the
@@ -278,6 +298,7 @@ impl MessageList {
             buffer,
             rgb,
             overflow,
+            hidden: false,
         });
         self.restack();
         self.max_visible = self.max_visible.saturating_sub(1);
@@ -566,7 +587,7 @@ fn count_fitting_units(
     fitted
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

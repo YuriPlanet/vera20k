@@ -241,7 +241,7 @@ fn unit_to_signed(rng: &mut RmgRng, one: TruncF64) -> TruncF64 {
     unit.add(unit).sub(one)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

@@ -94,7 +94,11 @@ fn mark_all_occupation_bits_matches_original_head_and_raw_plane_controls() {
             sim.mapgen_rng.state(),
         );
 
-        sim.locomotor_mark_all_occupation_bits(1, int(&input["mode"]) != 0);
+        sim.locomotor_mark_all_occupation_bits(
+            1,
+            int(&input["mode"]) != 0,
+            crate::rules::ruleset::RuleSet::empty_for_test().ares_form(),
+        );
 
         let entity = sim.substrate.entities.get(1).unwrap();
         let hover = entity.locomotor.as_ref().unwrap().hover_runtime().unwrap();
@@ -269,6 +273,31 @@ fn request_and_ramp_match_original_speed_update() {
         rows += 1;
     }
     assert_eq!(rows, 336);
+}
+
+/// `HoverAcceleration=0` and `HoverBrake=0` divide to infinity in gamemd
+/// (0x0051617F, 0x005161B7), which its compares turn into the target speed
+/// and a full stop.
+#[test]
+fn zero_hover_time_keys_reach_the_target_at_once() {
+    let rows = vectors();
+    let row = rows
+        .iter()
+        .find(|row| row["input"]["kind"] == "speed")
+        .unwrap();
+    let mut rules = oracle_rules(row["input"]["rules"].as_str().unwrap());
+    rules.general.hover_acceleration = NativeF64Bits::from_bits(0);
+    rules.general.hover_brake = NativeF64Bits::from_bits(0);
+    let mut hover = HoverRuntime {
+        speed_request: NativeF64Bits::ONE,
+        speed_mult: NativeF64Bits::ONE,
+        ..HoverRuntime::default()
+    };
+    hover.ramp_speed(true, &rules);
+    assert_eq!(hover.speed_current, NativeF64Bits::ONE);
+    hover.speed_request = NativeF64Bits::from_bits(0);
+    hover.ramp_speed(true, &rules);
+    assert_eq!(hover.speed_current, NativeF64Bits::from_bits(0));
 }
 
 /// The altitude controller: SetHeight's argument and the spring offset. The

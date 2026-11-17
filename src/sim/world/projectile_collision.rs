@@ -24,7 +24,6 @@ pub(super) struct ProjectileCollisionWorld<'a> {
     pub rules: &'a RuleSet,
     pub map_size: Option<(i32, i32)>,
     /// The Houses whose Ares firestorm is up (`sim::ares_firestorm`).
-    #[cfg(feature = "ares")]
     pub ares_firestorm: &'a crate::sim::ares_firestorm::FirestormHouses,
 }
 
@@ -145,7 +144,6 @@ impl ProjectileCollisionWorld<'_> {
                     self.impact_ladder(projectile, candidate),
                 ))
             }
-            #[cfg(feature = "ares")]
             ProjectileCollisionPhase::AresFirestorm => self
                 .ares_firestorm(projectile, candidate)
                 .then_some(ProjectileCollisionResponse::AresFirestorm),
@@ -157,13 +155,12 @@ impl ProjectileCollisionWorld<'_> {
     /// burns at `candidate` when its cell's building (MapClass::GetCellAt,
     /// CellClass::GetBuilding) is an active firestorm wall not of its
     /// firer's House.
-    #[cfg(feature = "ares")]
     fn ares_firestorm(&self, projectile: &Projectile, candidate: ProjectileCoord) -> bool {
         if !self.ares_firestorm.any_active()
             || projectile
                 .payload()
                 .projectile_type()
-                .and_then(|id| self.rules.projectile(self.interner.resolve(id)))
+                .and_then(|id| self.interner.projectile_type(id, self.rules))
                 .is_some_and(|kind| kind.bullet_type_ext.ignores_firestorm)
         {
             return false;
@@ -193,8 +190,8 @@ impl ProjectileCollisionWorld<'_> {
         location: ProjectileCoord,
     ) -> ImpactLadderWorld {
         let em_effect = self
-            .rules
-            .warhead(self.interner.resolve(projectile.payload().warhead))
+            .interner
+            .warhead_type(projectile.payload().warhead, self.rules)
             .is_some_and(|warhead| warhead.em_effect);
         let target = match projectile.target() {
             ProjectileTarget::Entity(id) => self.entities.get(id).map(|target| {
@@ -334,6 +331,7 @@ impl ProjectileCollisionWorld<'_> {
                             self.overlay(&cell).0.map_or(-1, i32::from),
                             -1,
                             self.overlay_registry,
+                            self.rules.ares_form(),
                         ),
                         crate::sim::cell_kernel::WallConnectionStep::Return(true)
                     );
@@ -374,12 +372,18 @@ impl ProjectileCollisionWorld<'_> {
                         CellRef::Real(c) => c.slope_type,
                         CellRef::Dummy { cell } => cell.snapshot().slope_type,
                     };
-                    motion.velocity = crate::sim::projectile::projectile_slope_reflect_double(
+                    // The reflection refuses a result its f32 store cannot
+                    // hold (an `Elasticity=` near 1e36 or not finite, which
+                    // only a mod sets; native `0x00467666..0x00467778` just
+                    // stores it). The bullet then impacts with its velocity
+                    // as it was.
+                    if let Some(reflected) = crate::sim::projectile::projectile_slope_reflect_double(
                         motion.velocity,
                         slope,
                         projectile.collision().elasticity_bits,
-                    )
-                    .expect("supported native Bullet slope matrix");
+                    ) {
+                        motion.velocity = reflected;
+                    }
                     impact = true;
                 } else if crossing != ProjectileBridgeCrossing::None {
                     candidate_z = f64::from(if crossing == ProjectileBridgeCrossing::Down {
@@ -503,10 +507,7 @@ impl ProjectileCollisionWorld<'_> {
         // Ares BulletClass_ShouldDetonate_Obstacle 1001AB10 (hook 0x468BE2)
         // adds SubjectToBuildings to the gate and passes the bullet's owner
         // and target to GetObstacle 1006E540.
-        #[cfg(feature = "ares")]
-        let solid = projectile.collision().subject_to_solid;
-        #[cfg(not(feature = "ares"))]
-        let solid = false;
+        let solid = self.rules.ares() && projectile.collision().subject_to_solid;
         if (projectile.collision().subject_to_cliffs
             || projectile.collision().subject_to_walls
             || solid)
@@ -617,7 +618,8 @@ impl ProjectileCollisionWorld<'_> {
             overlay_grid: self.overlays,
             overlay_registry: self.overlay_registry,
             alliances: Some(self.alliances),
-            #[cfg(feature = "ares")]
+            // The walk itself answers on the switch; a game without Ares
+            // never asks a cell for its buildings.
             buildings: Some(crate::sim::combat::line_of_fire::CellBuildings {
                 occupancy: self.occupancy,
                 entities: self.entities,
@@ -637,14 +639,11 @@ impl ProjectileCollisionWorld<'_> {
                 shot: LineOfFireShot {
                     subject_to_cliffs: projectile.collision().subject_to_cliffs,
                     subject_to_walls: projectile.collision().subject_to_walls,
-                    #[cfg(feature = "ares")]
                     subject_to_solid: projectile.collision().subject_to_solid,
                     parties: LineOfFireParties {
                         firing_house: owner.map(|source| source.owner()),
                         // The bullet's Owner (+0xB0) and Target (+0x10C).
-                        #[cfg(feature = "ares")]
                         source_object: owner.map(|source| source.stable_id()),
-                        #[cfg(feature = "ares")]
                         target_object: match projectile.target() {
                             ProjectileTarget::Entity(id) => Some(id),
                             _ => None,
@@ -745,14 +744,13 @@ fn map_size_contains((width, height): (i32, i32), x: i32, y: i32) -> bool {
 impl Simulation {
     /// `MapClass::CoordinatesLegal @ 0x00568350` for a lepton coordinate; a
     /// world without a map Size admits every coordinate.
-    #[cfg(feature = "ares")]
     pub(crate) fn map_coordinates_legal(&self, x: i32, y: i32) -> bool {
         self.map_size_diamond()
             .is_none_or(|map_size| map_size_contains(map_size, x, y))
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod tests {
     use super::super::lifecycle_tests::{
         gsi_05_02_projectile, insert_entity, install_common_raw_terrain,
@@ -775,7 +773,6 @@ mod tests {
             overlay_registry: None,
             rules: crate::rules::ruleset::RuleSet::empty_for_test(),
             map_size: Some((2, 3)),
-            #[cfg(feature = "ares")]
             ares_firestorm: &sim.ares_firestorm,
         }
     }
@@ -1227,7 +1224,6 @@ mod tests {
     /// of 4CC360's anchor bit 0x80); its own tests are
     /// `ares_shared_probe_stops_at_a_solid_building_except_its_target` here
     /// and `line_of_fire::tests::ares_cliff_counts_the_bridge_bit`.
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn shared_probe_matches_original_bodies_and_receivers() {
         use crate::rules::ini_parser::IniFile;
@@ -1403,8 +1399,8 @@ mod tests {
 
     /// A flat 8x8 map with building 2 (`SolidHeight=1`) on cell (4, 2), and
     /// the `SubjectToBuildings=` projectile `PROBE`.
-    #[cfg(feature = "ares")]
     fn solid_building_scene() -> (Simulation, RuleSet) {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::ini_parser::IniFile;
         let rules = RuleSet::from_ini_with_fixed_art_for_test(
             &IniFile::from_str(
@@ -1445,9 +1441,9 @@ mod tests {
     /// a `SubjectToBuildings=` bullet detonates in a cell whose building's
     /// `SolidHeight=` reaches it (`GetObstacle 1006E540`), but not over its
     /// own target building, nor above that height.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_shared_probe_stops_at_a_solid_building_except_its_target() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let (sim, rules) = solid_building_scene();
         let detonates = |target, z| {
             let mut spawn = gsi_05_02_projectile(1, None);
@@ -1474,9 +1470,9 @@ mod tests {
     /// Ares `BulletClass_SetMovement_Obstacle 1001A940` (hook 0x4688BD): an
     /// Inviso bullet stands on the first obstacle between its launch and its
     /// placement, at that cell's vt+0x48 (`FindFirstObstacle 1006E2B0`).
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_inviso_bullet_stands_on_the_first_solid_building() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let (mut sim, rules) = solid_building_scene();
         let placement = ProjectileCoord::new(7 * 256 + 128, 2 * 256 + 128, 0);
         let mut admit = |id, projectile_type: &str| {
@@ -1738,8 +1734,8 @@ mod tests {
             );
             admit_existing(&mut sim, shot);
             let mut runtime = SimRuntime::from_simulation(sim);
-            runtime.resources.rules = RuleSet::from_ini(&ini).unwrap();
-            runtime.resources.overlay_registry =
+            runtime.resources_mut().rules = RuleSet::from_ini(&ini).unwrap();
+            runtime.resources_mut().overlay_registry =
                 crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, Some(&art));
             let _ = runtime
                 .advance_frame(
@@ -1831,8 +1827,8 @@ mod tests {
             let id = sim.substrate.allocate_stable_id();
             sim.admit_projectile(id, shot);
             let mut runtime = SimRuntime::from_simulation(sim);
-            runtime.resources.rules = make_rules();
-            runtime.resources.overlay_registry =
+            runtime.resources_mut().rules = make_rules();
+            runtime.resources_mut().overlay_registry =
                 crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, Some(&art));
             let _ = runtime
                 .advance_frame(
@@ -1916,8 +1912,8 @@ mod tests {
                 )
                 .unwrap();
             let mut resumed = SimRuntime::from_simulation(restored);
-            resumed.resources.rules = make_rules();
-            resumed.resources.overlay_registry =
+            resumed.resources_mut().rules = make_rules();
+            resumed.resources_mut().overlay_registry =
                 crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, Some(&art));
             let _ = runtime
                 .advance_frame(
@@ -2055,7 +2051,7 @@ mod tests {
                     .set_for_test(Some(TargetKind::Entity(target)));
                 sim.session.set_binary_frame_for_test(100);
                 let mut runtime = SimRuntime::from_simulation(sim);
-                runtime.resources.rules = RuleSet::from_ini(&ini).unwrap();
+                runtime.resources_mut().rules = RuleSet::from_ini(&ini).unwrap();
                 let output = runtime
                     .advance_frame(
                         &[],
@@ -2159,7 +2155,7 @@ mod tests {
                 .attack_target
                 .set_for_test(Some(TargetKind::Entity(target)));
             let mut runtime = SimRuntime::from_simulation(sim);
-            runtime.resources.rules = make_rules();
+            runtime.resources_mut().rules = make_rules();
             let inputs = &native["inputs"];
             let rules = &runtime.resources.rules;
             assert_eq!(rules.weapon("GUN").unwrap().speed, inputs["stored_speed"]);
@@ -2280,12 +2276,12 @@ mod tests {
                 )
                 .unwrap();
             let mut resumed = SimRuntime::from_simulation(restored);
-            resumed.resources.rules = make_rules();
+            resumed.resources_mut().rules = make_rules();
             let row = motion;
             for frame in 0..3 {
                 if frame != 0 {
                     for runtime in [&mut runtime, &mut resumed] {
-                        runtime.resources.rules.general.gravity =
+                        runtime.resources_mut().rules.general.gravity =
                             row["gravity_sequence"][frame].as_i64().unwrap() as i32;
                         let _ = runtime
                             .advance_frame(

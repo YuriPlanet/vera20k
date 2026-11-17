@@ -74,10 +74,10 @@ fn fixture(rules: &RuleSet, producer: &str, backup: bool) -> (SimRuntime, Intern
     (
         SimRuntime {
             simulation: sim,
-            resources: SimResources {
+            resources: std::sync::Arc::new(SimResources {
                 rules: rules.clone(),
                 ..SimResources::empty()
-            },
+            }),
         },
         owner,
         factory,
@@ -366,6 +366,7 @@ fn retail_mobile_promotion_uses_offline_held_start_and_online_backup() {
                 &mut runtime.simulation.houses,
                 &mut runtime.simulation.power_states,
                 attacker,
+                rules.ares_form(),
             );
             for _ in 0..3 {
                 frame(&mut runtime, owner, &[]);

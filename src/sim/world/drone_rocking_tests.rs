@@ -767,10 +767,10 @@ fn stock_drone_monotonic_bites_match_native_state_rng_spark_births_and_flh() {
     assert_eq!(initial["model_input"]["joined_is_voxel_al"], 1);
     let mtnk = scene.rules.type_handle("MTNK").unwrap();
     assert!(scene.rules.object_has_loaded_voxel(mtnk));
-    let (body, _) =
-        crate::rules::voxel_asset_catalog::load_main_voxel(&assets, "MTNK", Some(&scene.rules))
+    let model =
+        crate::rules::voxel_asset_catalog::load_voxel_model(&assets, "MTNK", Some(&scene.rules))
             .unwrap();
-    let section = &body.vxl().limbs[0];
+    let section = &model.main().unwrap().vxl().limbs[0];
     assert_eq!(
         json!([section.size_x, section.size_y, section.size_z]),
         initial["model_input"]["first_section_size"]

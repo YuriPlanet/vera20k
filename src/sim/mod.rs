@@ -21,7 +21,6 @@
 //!   consumes state without becoming a gameplay authority.
 
 // --- Core types: entity storage, components, commands, RNG, interning ---
-#[cfg(feature = "ares")]
 pub(crate) mod abduction; // Ares Abductor= weapons (conductAbduction 10054A80)
 pub(crate) mod ai_base_building;
 pub(crate) mod ai_base_defense;
@@ -30,33 +29,21 @@ pub mod ammo;
 pub mod anim_class;
 #[cfg(any(test, feature = "test-support"))]
 pub mod arena_fixture;
-#[cfg(feature = "ares")]
 pub(crate) mod ares_degrade; // Ares low-power degrading (DamageDelay 100247A0)
-#[cfg(feature = "ares")]
 pub(crate) mod ares_firestorm; // Ares firestorm walls (UpdateFirewall 10013280)
-#[cfg(feature = "ares")]
 pub(crate) mod ares_garrison; // Ares urban combat and raidable garrisons
-#[cfg(feature = "ares")]
 pub(crate) mod ares_make_stuff_up; // Ares CanMakeStuffUp (100677B0, 100680F0)
-#[cfg(feature = "ares")]
 pub(crate) mod ares_rubble; // Ares advanced rubble (SwitchRubble 1000F2B0)
-#[cfg(feature = "ares")]
 pub(crate) mod ares_tiberium; // Ares tiberium damage and heal (10049280, 10014BA0)
-#[cfg(feature = "ares")]
 pub(crate) mod ares_tiberium_storage; // Ares refinery storage (GiveTiberium 10024290)
-#[cfg(feature = "ares")]
 pub(crate) mod ares_toggle_power; // Ares computer power balancing (100228A0)
-#[cfg(feature = "ares")]
 pub(crate) mod ares_transports; // Ares InitialPayload (10043C10), Hospital eviction (10012920)
-#[cfg(feature = "ares")]
 pub(crate) mod ares_tunnel; // Ares building tunnels (TunnelTypes.cpp, 100097D0)
-#[cfg(feature = "ares")]
 pub(crate) mod ares_veterancy; // Ares UpdateVeterancy 10046AF0 and academies
 pub mod attach_effect;
 pub(crate) mod base_plan;
 pub(crate) mod base_plan_generation;
 pub mod bomb;
-#[cfg(feature = "ares")]
 pub mod bounty;
 pub mod build_site;
 pub mod building_art;
@@ -83,7 +70,6 @@ pub mod dirty_cells;
 pub mod economy; // per-house wallet/storage/statistics value-type (production+economy substrate)
 pub mod entity_store;
 pub(crate) mod estimated_health;
-#[cfg(feature = "ares")]
 pub(crate) mod factory_owners;
 pub(crate) mod flashing;
 pub mod frame_profile;
@@ -100,16 +86,12 @@ pub(crate) mod locomotor_lift; // the Magnetron's IsLocomotor= lift (ImbueLocomo
 pub mod multiplayer_checksum;
 pub mod native_identity;
 pub(crate) mod object_fall;
-#[cfg(feature = "ares")]
 pub(crate) mod powered_by; // Ares PoweredBy= power sources (PoweredUnitClass 1006A6F0)
 pub(crate) mod powered_unit; // Robot Tanks offline without a PowersUnit= building (Deactivate 0x0070FC90)
-#[cfg(feature = "ares")]
 pub(crate) mod radar_jammer; // Ares RadarJamRadius= jammers (JammerClass 10068500)
-#[cfg(feature = "ares")]
 pub(crate) mod reverse_engineering; // Ares grinder reverse engineering (10022360)
 #[cfg(feature = "telemetry")]
 pub mod telemetry;
-#[cfg(feature = "ares")]
 pub(crate) mod vehicle_theft;
 // A wasm build has no threads (the browser package, the headless WASI run)
 // unless the browser package opts into its Web Worker pool.
@@ -117,8 +99,8 @@ pub(crate) mod vehicle_theft;
     all(target_arch = "wasm32", not(feature = "wasm-threads")),
     path = "parallel_web.rs"
 )]
-pub(crate) mod parallel; // order-preserving work over scoped threads
-#[cfg(all(test, feature = "wasm", not(target_arch = "wasm32")))]
+pub mod parallel; // order-preserving work over scoped threads
+#[cfg(all(test, tests_sim_p_s, feature = "wasm", not(target_arch = "wasm32")))]
 #[path = "parallel_web.rs"]
 mod parallel_web_tests;
 pub mod rng;
@@ -136,7 +118,7 @@ pub mod temporal;
 pub(crate) mod tesla_charging;
 pub mod timer; // signed frame-anchored countdown primitive
 pub(crate) mod touch_log; // which stored objects were handed out mutably, per reader
-pub use touch_log::live_read_check_enabled;
+pub use touch_log::{Touched, live_read_check_enabled};
 pub mod type_handle_table; // InternedId -> TypeHandle, one-hop entity->type resolution
 
 // --- Pure read-only deterministic engine-data services (gamemd-exact lookup tables) ---
@@ -231,7 +213,6 @@ pub mod ore_growth;
 pub(crate) mod ore_twinkle;
 pub mod radar;
 pub mod rocking;
-#[cfg(feature = "ares")]
 pub(crate) mod terrain_fire; // Ares terrain fire (Catch_Fire 0x71C5B0, 1004F530)
 pub mod terrain_object;
 pub mod terrain_spawn;
@@ -257,30 +238,38 @@ pub(crate) mod ai_team_creation;
 pub(crate) mod ai_unit_choice;
 pub(crate) mod naval_base_placement;
 pub mod replay;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod replay_determinism_tests;
 pub mod runtime;
 pub mod selection;
 
 // --- Snapshot serialization (mid-match save/load) ---
 pub mod snapshot;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod stable_identity_tests;
 
 // --- Particle systems (visual + damage particle effects: smoke, gas, fire) ---
 pub mod particles;
 
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(
+        tests_sim_c_g,
+        tests_sim_h_o,
+        tests_sim_world_techno,
+        tests_sim_world_t_z
+    )
+))]
 #[path = "deploy_tests.rs"]
 mod deploy_tests;
 // Ares 3.0 Misc/Bugfixes.cpp gameplay fixes through their owners.
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_sim_a_b))]
 mod ares_bugfixes_tests;
 // Ares 3.0 Misc/Bugfixes.Buffer.cpp list reads.
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_sim_a_b))]
 mod ares_bugfixes_buffer_tests;
 // Ares 3.0 AnimTypeExt damage.
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_sim_a_b))]
 mod ares_anim_type_tests;
 
 pub(crate) mod airstrike;

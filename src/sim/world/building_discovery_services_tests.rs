@@ -295,3 +295,51 @@ fn mapped_retained_objects_promote_silently_in_ordinary_ai_and_action40() {
     assert!(!sim.power_states()[&remote].radar_recheck_for_test());
     assert!(!sim.houses[&remote].spy_sat_active());
 }
+
+/// `ObjectClass::Unlimbo @ 0x005F4EC0` puts the object in Display
+/// (`0x005F4FE2`) and Logic (`0x005F5040`) before the Building tail, so a
+/// building its own Unlimbo discovery (`0x00440D61`) destroys is taken out of
+/// both by its Limbo and stays out.
+#[test]
+fn building_destroyed_by_its_unlimbo_discovery_stays_out_of_display_and_logic() {
+    let Some((mut sim, rules, _)) = campaign_fixture(
+        "[Triggers]\nDIE=Americans,<none>,Die,0,1,1,1,0\n\
+         [Events]\nDIE=1,4,0,0\n\
+         [Actions]\nDIE=1,32,0,0,0,0,0,0,A\n\
+         [Tags]\nDIE_TAG=0,Die,DIE\n",
+    ) else {
+        return;
+    };
+    let player = sim.session.current_house().unwrap();
+    let id = sim
+        .construct_object_limbo_at_height(
+            "GAPOWR",
+            "Remote",
+            8,
+            8,
+            0,
+            0,
+            &rules,
+            FrameEffects::default(),
+        )
+        .unwrap();
+    sim.attach_object_trigger_tag(id, Some("DIE_TAG"));
+    // Open but unmapped ground (`Cell+0x12C` = 0x10): CellPUT's discovery
+    // passes the building over, and Unlimbo's own call is its first.
+    sim.fog.set_ground_bits_for_test(player, 8, 8, 0x10);
+    sim.reveal_constructed_object_at_height(
+        id,
+        8,
+        8,
+        0,
+        0,
+        PlacementEvidence::MarkSucceeded,
+        &rules,
+        FrameEffects::default(),
+    );
+    let building = sim.entities().get(id).unwrap();
+    assert!(building.discovery.discovered_by_current_house());
+    assert!(!building.is_object_alive(), "event 4 destroyed it");
+    assert!(!sim.live_object_order_snapshot().contains(&id));
+    assert_eq!(sim.substrate.display.layer_of(id), None);
+}

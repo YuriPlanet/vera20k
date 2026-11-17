@@ -131,6 +131,7 @@ fn land(sim: &mut Simulation, rules: &RuleSet, ids: &[u64]) -> Vec<(u16, u16)> {
 /// on that cell, out of limbo.
 #[test]
 fn drop_pod_lands_its_units_on_the_target_and_a_neighbour() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("");
     let mut sim = world(&rules);
     fire(&mut sim, &rules, (12, 10));
@@ -174,6 +175,7 @@ fn drop_pod_lands_its_units_on_the_target_and_a_neighbour() {
 /// 0x4B5F9E) skips the sound instead of dividing by zero.
 #[test]
 fn drop_pod_weapon_strafes_around_the_destination() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
         "[General]\nDropPodWeapon=PodGun\n[Drop]\nDropPod.Minimum=1\nDropPod.Maximum=1\n\
          [PodGun]\nDamage=10\nWarhead=PodWH\n[Warheads]\n0=PodWH\n\
@@ -207,6 +209,7 @@ fn drop_pod_weapon_strafes_around_the_destination() {
 /// AI finds no target and drops nothing.
 #[test]
 fn drop_pod_ai_targets_a_cell_in_a_zone_around_its_base() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("");
     let mut sim = world(&rules);
     let russians = sim.interner.get("Russians").unwrap();

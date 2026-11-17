@@ -14,6 +14,7 @@ use vera20k::asset_tools::{
     verb_find, verb_info, verb_ini, verb_ini_expand, verb_ls, verb_palette, verb_parse_check,
     verb_scan, verb_sound,
 };
+use vera20k::assets::asset_manager::ArchiveFamily;
 
 const EXIT_FAILED: i32 = 1;
 const EXIT_USAGE: i32 = 2;
@@ -61,11 +62,14 @@ fn run(cli: Cli) -> Result<(), ErrorReport> {
         cli.verb,
         Verb::IniGet { .. } | Verb::IniType { .. } | Verb::IniRoots
     ) {
-        root::open_ini_manager(&ra2_dir, cli.all_mixes, cli.ini_roots.as_ref())
-    } else if let Some(config) = &cli.ini_roots {
-        root::open_profile_manager(&ra2_dir, cli.all_mixes, config.profile)
+        root::open_ini_manager(&ra2_dir, cli.all_mixes, cli.ini_roots.as_ref(), cli.ares)
     } else {
-        root::open_manager(&ra2_dir, cli.all_mixes)
+        // Archive verbs never read the host [ini]; an explicit --ini-profile
+        // mounts the archive names the game mounts for that profile.
+        let family = cli.ini_roots.as_ref().map_or(ArchiveFamily::Yr, |config| {
+            ArchiveFamily::for_ini_profile(config.profile)
+        });
+        root::open_manager(&ra2_dir, cli.all_mixes, cli.ares, family)
     };
     let mut manager = manager.map_err(|error| ErrorReport {
         error,

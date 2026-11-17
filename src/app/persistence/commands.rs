@@ -1,6 +1,7 @@
 //! User save/load requests; input and dialogs only select the operation.
 
 use crate::app::AppState;
+use crate::app::match_runtime::sim_host::SimWrite;
 
 use std::path::{Path, PathBuf};
 
@@ -59,7 +60,7 @@ pub(crate) fn prepare_initial_campaign_save<'a>(
     let campaign = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_some_and(|runtime| !runtime.simulation.session().game_mode_nonzero());
     state
         .persistence
@@ -124,7 +125,7 @@ fn save(
         &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .ok_or(SaveCommandError::MissingSimulation)?
             .simulation,
         &state.persistence.repository,
@@ -161,7 +162,7 @@ fn prepare_save<'a>(
     let runtime = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .ok_or(SaveCommandError::MissingSimulation)?;
     let map_hash = state
         .match_state
@@ -179,11 +180,12 @@ fn prepare_save<'a>(
         .borrow()
         .saved();
     sinking_waterlines.retain(|(id, _)| sim.entities().contains(*id));
-    let sidebar_order = state
-        .match_state
-        .match_presentation
+    let presentation = &state.match_state.match_presentation;
+    let active_tab = saved_active_tab(presentation.active_sidebar_tab);
+    let sidebar_order = presentation
         .sidebar_projection
-        .saved_order();
+        .saved_order()
+        .map(|order| order.with_active_tab(active_tab));
     // Phobos keeps `SWSidebar_Enable` in the scenario extension, so it rides
     // the local presentation envelope rather than the simulation hash.
     #[cfg(feature = "phobos")]
@@ -217,6 +219,12 @@ fn prepare_save<'a>(
         &presentation.sidebar_gadget_state,
     )?;
     local_view.set_power_bar(presentation.power_bar_anim.saved());
+    local_view.set_radar_housing(
+        presentation
+            .radar_anim
+            .as_ref()
+            .map(crate::render::radar::anim::RadarAnimState::saved_housing),
+    );
     local_view.set_credits_counter(
         state
             .match_state
@@ -279,6 +287,14 @@ fn prepare_save<'a>(
         local_view,
         resources,
     })
+}
+
+/// Mouse Save 5BE6D0 writes the open tab (ActiveTab, +0x539C) beside the
+/// strips; every save path carries it ([`SavedSidebarOrder::active_tab`]).
+///
+/// [`SavedSidebarOrder::active_tab`]: crate::sim::snapshot::SavedSidebarOrder::active_tab
+pub(crate) fn saved_active_tab(tab: crate::ui::sidebar::SidebarTab) -> u8 {
+    tab.tab_index() as u8
 }
 
 impl PreparedSave<'_> {
@@ -497,9 +513,10 @@ fn restore_save_file(
     if state.match_state.live_network.is_some() {
         return Err(crate::app::persistence::PreparedLoadError::NetworkMatch);
     }
-    // UI559DBC->69BB40->5BF450 precedes the lower load, including failure.
+    // UI559DBC->69BB40->5BF450 precedes the lower load, including failure;
+    // a failed load leaves the radar to wind its clip down itself.
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-    crate::app::radar_movie::retire(state, wall_ms);
+    crate::app::radar_movie::retire_for_load(state, wall_ms);
     crate::app::chrono_screen::retire(state, wall_ms);
     use crate::app::persistence::{PreparedLoadError, PreparedSavedGame, SavedGamePreparationView};
     let from_menu = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu;
@@ -524,7 +541,7 @@ fn restore_save_file(
                 current_simulation: state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .map(|runtime| &runtime.simulation),
                 frontend_main: &state.frontend.frontend_main_rng,
                 rules_owner,
@@ -558,7 +575,7 @@ fn restore_save_file(
         state
             .match_state
             .sim_runtime
-            .as_mut()
+            .write_sim(SimWrite::Lifecycle)
             .expect("saved world committed")
             .simulation
             .initialize_random_number_system(seed.value);
@@ -605,7 +622,7 @@ fn log_prepared_load_error(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod save_name_tests {
     use super::sanitize_save_name;
     use crate::sim::snapshot::GameSnapshot;
@@ -644,7 +661,7 @@ mod save_name_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod pending_load_tests {
     use super::PendingSavedGameLoad;
     use std::path::PathBuf;
@@ -665,7 +682,7 @@ mod pending_load_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod initial_save_tests {
     use super::initial_campaign_filename;
 

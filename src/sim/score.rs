@@ -175,10 +175,14 @@ impl Simulation {
         if terminal_score_snapshot.snapshot().is_some() {
             return false;
         }
-        // GameExit's co-op arm (mode vt+8, `0x00685851..0x0068586A`) draws
-        // the empty backdrop instead of the score dialog, so Cooperative
-        // makes none of its draws.
-        if session.multiplayer_mode_class() == Some(crate::skirmish_modes::MpModeClass::Cooperative)
+        // GameExit's co-op arm (`0x00685843..0x0068586A`): in a LAN or WOL
+        // game (GameMode 3 or 4) mode vt+8 draws the empty backdrop instead
+        // of the score dialog, so such a mode makes none of its draws there.
+        // A skirmish in the mode gets the dialog.
+        if session.game_mode().is_network()
+            && session
+                .multiplayer_mode_class()
+                .is_some_and(|class| class.policy().skips_network_score_dialog)
         {
             return false;
         }
@@ -227,7 +231,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
     use crate::sim::house_state::{HouseOutcomeKind, HouseState};
@@ -737,36 +741,49 @@ mod tests {
         assert_ne!(base, hash_with_score_row(|row, _| row.score += 1));
     }
 
+    /// GameExit takes Cooperative's no-score arm only in a LAN or WOL game
+    /// (`0x0068584F..0x00685856`); a skirmish in the mode gets the dialog.
     #[test]
-    fn cooperative_terminal_frame_makes_no_score_draw() {
-        let mut sim = Simulation::with_seed(0x5C4E_F000);
-        sim.session.install_multiplayer_house_identity(
-            crate::skirmish_modes::MpModeClass::Cooperative,
-            Vec::new(),
-        );
-        insert_house(
-            &mut sim,
-            HouseFixture {
-                name: "Alpha",
-                defeated: false,
-                passive: false,
-                score: 100,
-                units_killed: 0,
-                buildings_killed: 0,
-                units_lost: 0,
-                buildings_lost: 0,
-                built: 0,
-            },
-        );
-        let before = sim.clone_scenario_rng().state();
-        assert!(!Simulation::finalize_terminal_score_snapshot(
-            &sim.session,
-            &mut sim.scenario_rng,
-            &mut sim.terminal_score_snapshot,
-            &sim.houses
-        ));
-        assert!(sim.terminal_score_snapshot().is_none());
-        assert_eq!(sim.clone_scenario_rng().state(), before);
+    fn cooperative_skips_the_score_draws_only_online() {
+        use crate::sim::scenario_session::ScenarioGameMode;
+        for (game_mode, scored) in [
+            (ScenarioGameMode::Lan, false),
+            (ScenarioGameMode::Skirmish, true),
+        ] {
+            let mut sim = Simulation::with_seed(0x5C4E_F000);
+            sim.session.set_game_mode(game_mode);
+            sim.session.install_multiplayer_house_identity(
+                crate::skirmish_modes::MpModeClass::Cooperative,
+                Vec::new(),
+            );
+            insert_house(
+                &mut sim,
+                HouseFixture {
+                    name: "Alpha",
+                    defeated: false,
+                    passive: false,
+                    score: 100,
+                    units_killed: 0,
+                    buildings_killed: 0,
+                    units_lost: 0,
+                    buildings_lost: 0,
+                    built: 0,
+                },
+            );
+            let before = sim.clone_scenario_rng().state();
+            assert_eq!(
+                Simulation::finalize_terminal_score_snapshot(
+                    &sim.session,
+                    &mut sim.scenario_rng,
+                    &mut sim.terminal_score_snapshot,
+                    &sim.houses
+                ),
+                scored,
+                "{game_mode:?}"
+            );
+            assert_eq!(sim.terminal_score_snapshot().is_some(), scored);
+            assert_eq!(sim.clone_scenario_rng().state() != before, scored);
+        }
     }
 
     #[test]

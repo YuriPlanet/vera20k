@@ -899,11 +899,7 @@ impl crate::sim::world::Simulation {
     /// zone grids, the playfield, the radius cap from the map's Size
     /// ([`map_owned_radius_cap`]) and the current frame for the no-target
     /// pick. `None` when nothing passes or the map size is unknown.
-    pub fn nearby_passable_cell(
-        &self,
-        seed: (i32, i32),
-        args: NearbyArgs,
-    ) -> Option<(u16, u16)> {
+    pub fn nearby_passable_cell(&self, seed: (i32, i32), args: NearbyArgs) -> Option<(u16, u16)> {
         #[cfg(test)]
         if let Some(answer) =
             crate::sim::movement::fresh_oracle_seam::supplied_nearby_cell(seed, args)
@@ -1052,7 +1048,7 @@ impl crate::sim::world::Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::map::bridge_facts::{BRIDGE_FLAG_FORWARD_SIDE, BRIDGE_FLAG_STRUCTURAL};

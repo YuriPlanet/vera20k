@@ -638,7 +638,7 @@ fn basename_eq(name: &str, target: &str) -> bool {
     base.eq_ignore_ascii_case(target)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
 

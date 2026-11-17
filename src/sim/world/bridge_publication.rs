@@ -41,11 +41,11 @@ pub(in crate::sim::world) use ordinary_publication::tests::{
     ready_engineer, ready_repair_fixture, repair_frame,
 };
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "bridge_pavement_publication_tests.rs"]
 mod pavement_tests;
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "bridge_publication_tests.rs"]
 mod tests;
 

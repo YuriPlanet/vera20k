@@ -53,11 +53,11 @@ use crate::util::native_x87::NativeF32Bits;
 #[path = "spy_infiltration_tests.rs"]
 pub mod spy_infiltration_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "spy_infiltration_retail_tests.rs"]
 mod retail_tests;
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "spy_infiltration_ares_tests.rs"]
 mod ares_tests;
 
@@ -78,13 +78,11 @@ pub enum InfiltrationEffect {
     /// No arm applied.
     None,
     /// The Ares arms of a `SpyEffect.Custom=` type.
-    #[cfg(feature = "ares")]
     Ares(AresInfiltrationArms),
 }
 
 /// The arms `BuildingExt::ExtData::InfiltratedBy @ 10012000` took, which
 /// pick its EVA lines (`eva_producers::infiltration_eva_events`).
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AresInfiltrationArms {
     /// `SpyEffect.ResetRadar`; the owner's Spy Satellite (`+0x577A`) after
@@ -133,12 +131,10 @@ pub struct AresInfiltrationArms {
 /// player's HouseType index (`Type+0x34`), which Ares' house-index bits
 /// match only where the two indices agree; VERA leaves that arm out, so a
 /// spied building's pips stay hidden. Presentation only.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub(crate) struct DisplayProductionTo(std::collections::BTreeSet<InternedId>);
 
-#[cfg(feature = "ares")]
 impl DisplayProductionTo {
     pub(crate) fn contains(&self, house: InternedId) -> bool {
         self.0.contains(&house)
@@ -189,12 +185,13 @@ impl Simulation {
             return;
         };
         let owner = building.owner();
+        let ares = rules.ares_form();
         // Ares 3.0 10012000 (hook 0x004571E0): the spy's house answers
         // IsAlliedWith for the owner first, its own house included.
-        #[cfg(feature = "ares")]
-        if self
-            .house_alliances
-            .is_allied(&self.interner, infiltrator, owner)
+        if ares
+            && self
+                .house_alliances
+                .is_allied(&self.interner, infiltrator, owner)
         {
             return;
         }
@@ -211,8 +208,7 @@ impl Simulation {
         let Some(object) = self.object_type(building.type_ref(), rules) else {
             return;
         };
-        #[cfg(feature = "ares")]
-        if object.infiltration_rules().custom {
+        if ares && object.infiltration_rules().custom {
             let arms = self.ares_infiltrated_by(building_id, owner, infiltrator, object, rules);
             self.announce_infiltration(owner, infiltrator, InfiltrationEffect::Ares(arms), radar);
             return;
@@ -334,7 +330,6 @@ impl Simulation {
     ///
     /// No arm draws random numbers or detaches anything; the power outage,
     /// the Super's timers and the C4 fuse are its timer writes.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_infiltrated_by(
         &mut self,
         building_id: u64,
@@ -401,6 +396,7 @@ impl Simulation {
                 && let Some(building) = self.substrate.entities.get_mut(building_id)
             {
                 building
+                    .building
                     .pending_c4_detonation
                     .arm_sabotage(frame as i32, delay);
             }
@@ -443,7 +439,7 @@ impl Simulation {
         if (spy.reveal_production || spy.reveal_radar)
             && let Some(building) = self.substrate.entities.get_mut(building_id)
         {
-            building.display_production_to.add(infiltrator);
+            building.ares.display_production_to.add(infiltrator);
         }
         arms
     }
@@ -451,7 +447,6 @@ impl Simulation {
     /// `SpyEffect.ResetSuperweapons`: [`crate::sim::superweapon::reset_super`]
     /// of each Super of the building's type and its upgrade slots (`+0x5EC`)
     /// that `owner` has available. Answers whether one was reset.
-    #[cfg(feature = "ares")]
     fn reset_infiltrated_supers(
         &mut self,
         building_id: u64,

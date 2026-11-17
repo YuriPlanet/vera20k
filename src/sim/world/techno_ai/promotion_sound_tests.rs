@@ -37,9 +37,9 @@ fn scene_rules(sounds: &str) -> (NativeRulesProcessOwner, RuleSet) {
     (owner, rules)
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn promotion_sound_overrides_retain_layers_silence_save_and_bound_catalog_identity() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (owner, rules) = scene_rules(SOUNDS);
     let hero = rules.object("HERO").unwrap();
     assert_eq!(
@@ -124,7 +124,7 @@ fn promotion_sound_ai_selects_overrides_silence_and_stock_fallback() {
         } else {
             "GlobalVeteran"
         };
-        let expected = if cfg!(feature = "ares") {
+        let expected = if rules.ares() {
             vec![
                 Some(if elite { "HeroElite" } else { "HeroVeteran" }.to_owned()),
                 if elite { Some(global.to_owned()) } else { None },

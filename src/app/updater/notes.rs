@@ -224,7 +224,7 @@ pub(super) fn poll_scroll(state: &mut AppState) -> Option<Instant> {
     next
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

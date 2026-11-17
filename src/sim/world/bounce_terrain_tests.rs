@@ -180,7 +180,7 @@ fn native_bounce_ground_deck_contacts_match_original_update() {
         // 0x480534) answers the any-wall query by `Wall=`, which the retail
         // GASAND has: the sandbag cell then takes the update the native wall
         // case (same cell, GAWALL) records.
-        let expected = if cfg!(feature = "ares") && case["name"] == "sandbag" {
+        let expected = if rules.ares() && case["name"] == "sandbag" {
             native_case("wall")
         } else {
             case
@@ -359,8 +359,16 @@ fn voxel_anim_logic_visit_delivers_native_deck_height_and_low_bridge_selection()
             .find(|c| c["name"] == name)
             .unwrap();
         let mut sim = fixture(case);
-        sim.emit_debris_voxel(type_id, kind, None, IVec3::ZERO, true, &mut Vec::new())
-            .unwrap();
+        sim.emit_debris_voxel(
+            type_id,
+            kind,
+            None,
+            IVec3::ZERO,
+            true,
+            &mut Vec::new(),
+            &rules,
+        )
+        .unwrap();
         let id = sim.substrate.voxel_anims.ids()[0];
         // This terrain-consumer fixture supplies the independently captured
         // Bounce body after the ordinary constructor has admitted the object.

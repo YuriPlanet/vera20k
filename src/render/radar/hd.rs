@@ -9,8 +9,8 @@
 //! - Terrain: the native sampler (`GenerateTerrainSurface @ 0x006547C0`) at
 //!   the larger size, kept beside the native surface by [`super::terrain`].
 //! - Shroud and fog: each HD pixel takes the cell the native inverse
-//!   (`RenderCellPixel @ 0x00655CB8`) names for it at the larger zoom, under
-//!   the same rule as the native pixels.
+//!   (`RenderCellPixel @ 0x00655CB8`) names for it at the larger zoom, raised
+//!   and tested under the same rule as the native pixels.
 //! - Objects, radar events and beacons keep their native pixels and are drawn
 //!   over the terrain as blocks, so they cover the cells they always did.
 //! - A click takes the cell under its HD pixel ([`super::interaction`]).
@@ -45,6 +45,7 @@ impl HdRadar {
         batch: &BatchRenderer,
         native: NativeRadarSurfaceGeometry,
         scale: u32,
+        shroud_cells: &[[u32; 2]],
         (words, revision): (&[u16], u64),
     ) -> Self {
         let geometry = native.subdivided(scale);
@@ -59,13 +60,7 @@ impl HdRadar {
                 MINIMAP_HEIGHT * scale,
                 PICTURE_FORMAT,
             ),
-            textures: SurfaceTextures::new(
-                device,
-                queue,
-                (width, height),
-                &geometry.visibility_cells(),
-                words,
-            ),
+            textures: SurfaceTextures::new(device, queue, (width, height), shroud_cells, words),
             revision,
             origin: [offset.0.max(0) * scaled, offset.1.max(0) * scaled],
             size: [width, height],

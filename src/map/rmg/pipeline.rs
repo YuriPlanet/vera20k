@@ -19,7 +19,7 @@
 use super::grid::RmgGrid;
 use super::phases::blob::BlobCtx;
 use super::phases::carve::CarveCtx;
-use super::phases::carve_driver::{self, ConnectorRegion};
+use super::phases::carve_driver;
 use super::phases::hills::{HillsArgs, HillsCtx};
 use super::phases::island_passes;
 use super::phases::lat_patches::PatchCtx;
@@ -49,6 +49,16 @@ pub const LAND_TYPES: usize = super::phases::zones::LAND_TYPES;
 
 /// The generator's default ground level (`MapSeed+0x30C` = 4).
 const DEFAULT_LEVEL: u8 = 4;
+
+/// Mixed into the map seed for an ore or town variant's own stream.
+const ORE_VARIANT_SALT: u16 = 0x0E57;
+const TOWN_VARIANT_SALT: u16 = 0x70A1;
+
+/// The seed of variant `variant` (1 and up) of a stage: the map seed with a
+/// multiple of the stage's salt, so each variant draws its own stream.
+fn variant_seed(seed: u16, salt: u16, variant: u8) -> u16 {
+    seed ^ salt.wrapping_mul(u16::from(variant))
+}
 
 /// Pre-resolved inputs for one generation run.
 pub struct PipelineInputs<'a> {
@@ -96,6 +106,24 @@ pub struct PipelineInputs<'a> {
     pub width: i32,
     /// `MaxTrees` (`MapSeed+0x2FC`; 0 disables trees).
     pub max_trees: i32,
+    /// VERA extension: Fair Starts evens the ore near each start after the
+    /// last stage and measures the result; `seed` starts its own stream.
+    pub fair_starts: bool,
+    pub seed: u16,
+    /// VERA extension (`Extra::OreVariant`, `Extra::TownVariant`): not 0
+    /// draws the ore fields, or VERA's towns, from a stream of their own.
+    /// The stage first runs on copies with the map's stream, which leaves
+    /// that stream where the seed's own ore or towns would, so every other
+    /// stage draws what it drew before.
+    pub ore_variant: u8,
+    pub town_variant: u8,
+    /// VERA extension: the Extras that add to the finished map
+    /// (`embellish`), VERA's catalogue for their buildings, and the two the
+    /// fairness report's score follows (`Extra::SeaAccess`,
+    /// `Extra::BaseRoom`).
+    pub embellish: super::embellish::EmbellishArgs<'a>,
+    pub vera_catalog: &'a urban_areas::UrbanCatalog,
+    pub sea_access: bool,
     /// The presence the urban pass reads (`MapSeed+0x60`).
     pub urban_presence: i32,
     /// VERA extension: the opted-in Buildings value the urban pass fills the
@@ -108,6 +136,9 @@ pub struct PipelineInputs<'a> {
     /// The urban pass (Ares hook 0x598FB8, or VERA's opted-in Urban
     /// Presence), present when it runs; it reads `urban_presence` too.
     pub urban_areas: Option<&'a urban_areas::UrbanInputs<'a>>,
+    /// Ares.dll is loaded for this generation: the game is read the Ares way
+    /// (`GenerationObjects::ares`). The low-bridge decks follow it.
+    pub ares: bool,
 }
 
 /// Watches the grid between stages, for callers that draw the map as it builds.
@@ -138,6 +169,8 @@ pub struct PipelineOutput {
     pub unfilled_start_slots: usize,
     /// Urban buildings and foots, emitted after `structures`.
     pub urban_areas: Vec<urban_areas::UrbanObject>,
+    /// VERA extension: what the map offers each start, under Fair Starts.
+    pub fairness: Option<super::fairness::FairnessReport>,
 }
 
 /// Run the whole deterministic pipeline in place over `grid`/`scratch`, drawing
@@ -262,6 +295,7 @@ pub fn run_pipeline(
             blocks: inputs.blocks,
             rng: &mut *rng,
             playfield: &playfield,
+            ares: inputs.ares,
         };
         carve_driver::connect_regions(
             &mut ctx,
@@ -422,16 +456,30 @@ pub fn run_pipeline(
             map_w,
             local_rect,
         };
-        let mut ctx = TiberiumCtx {
-            grid: &mut *grid,
-            scratch: &mut *scratch,
-            ids: inputs.ids,
-            rng: &mut *rng,
-            gauss: &mut *gauss,
-            regions: &regions,
-            waypoints: &outcome.waypoints,
+        let run = |grid: &mut RmgGrid,
+                   scratch: &mut RmgScratch,
+                   rng: &mut RmgRng,
+                   gauss: &mut Gaussian| {
+            let mut ctx = TiberiumCtx {
+                grid,
+                scratch,
+                ids: inputs.ids,
+                rng,
+                gauss,
+                regions: &regions,
+                waypoints: &outcome.waypoints,
+            };
+            tiberium::run(&mut ctx, &args)
         };
-        tiberium::run(&mut ctx, &args)
+        match inputs.ore_variant {
+            0 => run(grid, scratch, rng, gauss),
+            variant => {
+                let (mut dry_grid, mut dry_scratch) = (grid.clone(), scratch.clone());
+                run(&mut dry_grid, &mut dry_scratch, rng, gauss);
+                let mut own_rng = RmgRng::new(variant_seed(inputs.seed, ORE_VARIANT_SALT, variant));
+                run(grid, scratch, &mut own_rng, &mut Gaussian::default())
+            }
+        }
     };
     terrain.extend(tiberium.trees);
     observe(Stage::Tiberium, grid, &waypoints, &terrain);
@@ -450,17 +498,6 @@ pub fn run_pipeline(
             local_rect[2],
             local_rect[3],
         );
-        let mut ctx = urban_areas::UrbanCtx {
-            grid: &mut *grid,
-            scratch: &mut *scratch,
-            ids: inputs.ids,
-            blocks: inputs.blocks,
-            rng: &mut *rng,
-            gauss: &mut *gauss,
-            playfield: &playfield,
-            recalc_rock,
-            inputs: urban_inputs,
-        };
         let args = urban_areas::UrbanArgs {
             urban_presence: inputs.urban_presence,
             map_w,
@@ -468,12 +505,68 @@ pub fn run_pipeline(
             stride: stride as i32,
             vera_fill: inputs.urban_fill,
         };
-        let mut output = urban_areas::UrbanOutput {
-            objects: &mut urban_area_objects,
-            trace: &mut construction_trace,
-            entity_base: structures.len() + tech_placements.len(),
+        let entity_base = structures.len() + tech_placements.len();
+        let run = |grid: &mut RmgGrid,
+                   scratch: &mut RmgScratch,
+                   rng: &mut RmgRng,
+                   gauss: &mut Gaussian,
+                   objects: &mut Vec<urban_areas::UrbanObject>,
+                   trace: &mut RmgConstructionTrace,
+                   trees: &mut Vec<(String, i16, i16)>| {
+            let mut ctx = urban_areas::UrbanCtx {
+                grid,
+                scratch,
+                ids: inputs.ids,
+                blocks: inputs.blocks,
+                rng,
+                gauss,
+                playfield: &playfield,
+                recalc_rock,
+                inputs: urban_inputs,
+            };
+            let mut output = urban_areas::UrbanOutput {
+                objects,
+                trace,
+                entity_base,
+                trees,
+            };
+            urban_areas::run(&mut ctx, &args, &mut output);
         };
-        urban_areas::run(&mut ctx, &args, &mut output);
+        // The variant is VERA's towns only: Ares' pass keeps the map's stream.
+        match inputs.town_variant {
+            variant if variant != 0 && inputs.urban_fill.is_some() => {
+                let (mut dry_grid, mut dry_scratch) = (grid.clone(), scratch.clone());
+                run(
+                    &mut dry_grid,
+                    &mut dry_scratch,
+                    rng,
+                    gauss,
+                    &mut Vec::new(),
+                    &mut construction_trace.clone(),
+                    &mut Vec::new(),
+                );
+                let mut own_rng =
+                    RmgRng::new(variant_seed(inputs.seed, TOWN_VARIANT_SALT, variant));
+                run(
+                    grid,
+                    scratch,
+                    &mut own_rng,
+                    &mut Gaussian::default(),
+                    &mut urban_area_objects,
+                    &mut construction_trace,
+                    &mut terrain,
+                );
+            }
+            _ => run(
+                grid,
+                scratch,
+                rng,
+                gauss,
+                &mut urban_area_objects,
+                &mut construction_trace,
+                &mut terrain,
+            ),
+        }
     }
     observe(Stage::UrbanAreas, grid, &waypoints, &terrain);
     lat_fixup::run(grid, inputs.ids);
@@ -558,6 +651,62 @@ pub fn run_pipeline(
     lat_fixup::run(grid, inputs.ids);
     observe(Stage::RecalcFinal, grid, &waypoints, &terrain);
 
+    // ---- VERA: Extras and fairness, after every native stage and draw -----
+    // The Extras that add to the map come first, each from its own stream.
+    // Then every map is measured (the dialog shows the report; measuring
+    // draws nothing and changes nothing); only Fair Starts evens the ore
+    // before that.
+    let starts: Vec<(i32, i32)> = waypoints
+        .iter()
+        .map(|&(_, x, y)| (i32::from(x), i32::from(y)))
+        .collect();
+    if inputs.embellish.any() {
+        let mut ctx = super::fairness::FairCtx {
+            grid: &mut *grid,
+            scratch: &*scratch,
+            ids: inputs.ids,
+            map_w,
+            local_rect,
+        };
+        let mut out = super::embellish::EmbellishOutput {
+            objects: &mut urban_area_objects,
+            trace: &mut construction_trace,
+            entity_base: structures.len() + tech_placements.len(),
+            terrain: &mut terrain,
+        };
+        let paved = super::embellish::run(
+            &mut ctx,
+            &inputs.embellish,
+            &starts,
+            inputs.vera_catalog,
+            inputs.tech_types,
+            &mut out,
+        );
+        // The recalc every stage that paves is followed by (`0x0047CA80`).
+        if paved {
+            lat_fixup::run(grid, inputs.ids);
+        }
+    }
+    let fairness = {
+        let mut ctx = super::fairness::FairCtx {
+            grid: &mut *grid,
+            scratch: &*scratch,
+            ids: inputs.ids,
+            map_w,
+            local_rect,
+        };
+        if inputs.fair_starts {
+            super::fairness::equalize_ore(&mut ctx, &starts, inputs.seed);
+        }
+        Some(super::fairness::measure(
+            &ctx,
+            &starts,
+            inputs.num_players,
+            unfilled_start_slots,
+            (inputs.sea_access, inputs.embellish.base_room != 0),
+        ))
+    };
+
     // ---- Collect outputs for the emitter ----------------------------------
     structures.extend(
         tech_placements
@@ -572,15 +721,17 @@ pub fn run_pipeline(
         construction_trace,
         unfilled_start_slots,
         urban_areas: urban_area_objects,
+        fairness,
     }
 }
 
 // A stock oracle: Ares' bridge end hooks (0x58FBDD..0x5900F7) skip the end
-// coins and shift every later draw.
-#[cfg(all(test, not(feature = "ares")))]
+// coins and shift every later draw, so it runs without Ares.dll.
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::rmg::options::RmgOptions;
+    use crate::map::rmg::phases::carve_driver::ConnectorRegion;
     use crate::map::rmg::phases::shore::{SubTile, TileBlock};
     use crate::map::rmg::{RmgConstructionOutcome, RmgConstructionPhase};
     use crate::map::theater::TheaterCliffRanges;
@@ -712,6 +863,7 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
+                ares: false,
             };
             assert!(carve_driver::carve_connectors_for_region(
                 &mut ctx,

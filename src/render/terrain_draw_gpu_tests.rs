@@ -480,6 +480,55 @@ pub(crate) fn clear(
         multiview_mask: None,
     });
 }
+/// Draw `strokes` through the production stroke draw over the loaded
+/// `color` and `depth`.
+pub(crate) fn draw_strokes(
+    gpu: &Gpu,
+    batch: &crate::render::batch::BatchRenderer,
+    encoder: &mut wgpu::CommandEncoder,
+    color: &wgpu::TextureView,
+    depth: &wgpu::TextureView,
+    strokes: &[crate::render::surface_line::SurfaceStroke],
+) {
+    use wgpu::util::DeviceExt;
+    let mut pieces = Vec::new();
+    crate::render::batch::stroke_pieces(strokes, &mut pieces);
+    if pieces.is_empty() {
+        return;
+    }
+    let buffer = gpu
+        .device
+        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Surface stroke pieces"),
+            contents: bytemuck::cast_slice(&pieces),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("Surface strokes"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: color,
+            depth_slice: None,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+            view: depth,
+            depth_ops: Some(wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            }),
+            stencil_ops: None,
+        }),
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    });
+    batch.draw_surface_strokes(&mut pass, &buffer, pieces.len() as u32);
+}
+
 pub(crate) fn sprite(position: [f32; 2], size: [f32; 2], z_adjust: f32) -> SpriteInstance {
     SpriteInstance {
         position,
@@ -597,7 +646,7 @@ fn production_no_z_mask_exhausts_words_and_preserves_depth() {
         let cv = color.create_view(&Default::default());
         let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
         let dv = depth.create_view(&Default::default());
-        let surface = renderer.create_packed_surface(&gpu.device, &color, &dv, 1);
+        let surface = renderer.create_packed_surface(&gpu.device, &color, &dv, 1.0);
         let offset = [137.25, -31.5];
         let ui = CameraUniform {
             camera_pos: offset,
@@ -723,7 +772,7 @@ fn production_no_z_ui_half_blend_matches_native_controls() {
     let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
     let dv = depth.create_view(&Default::default());
     renderer.prepare(&gpu.device, &color, &dv, camera(size));
-    let surface = renderer.create_packed_surface(&gpu.device, &color, &dv, 1);
+    let surface = renderer.create_packed_surface(&gpu.device, &color, &dv, 1.0);
     let bytes: Vec<_> = rows
         .iter()
         .flat_map(|row| encoded(row["raw"].as_u64().unwrap() as u16, format))
@@ -1762,166 +1811,6 @@ fn production_replayed_wave_edits_match_one_pass_each() {
             waves[0] * 4 < waves[2] && waves[1] * 4 < waves[2],
             "waves {waves:?}"
         );
-    }
-}
-
-#[test]
-#[ignore = "bounded GPU/CPU timing; close other renderers before uncontended measurements"]
-fn production_tree_piece_workload_timing() {
-    let gpu = Gpu::with_features(wgpu::Features::TIMESTAMP_QUERY);
-    let format = wgpu::TextureFormat::Bgra8UnormSrgb;
-    let size = [800, 600];
-    let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-    batch.write_camera(&gpu.queue, camera(size));
-    let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
-    let color = gpu.target(size, format);
-    let cv = color.create_view(&Default::default());
-    let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
-    let dv = depth.create_view(&Default::default());
-    terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
-    let atlas = batch.create_texture_on_device(
-        &gpu.device,
-        &gpu.queue,
-        &[80, 180, 80, 255],
-        1,
-        1,
-        Some(&[1]),
-    );
-    let timer = GpuFrameTimer::new(&gpu);
-    let mut results = Vec::new();
-    // Original frozen800x600 workloads remain literal. The added32-pair
-    // disjoint grids fit this target;512 full-size disjoint pairs cannot.
-    // Pixel-disjoint rectangles share dependency tiles but not waves.
-    for count in [1usize, 32, 128, 512] {
-        for layout in ["dispersed", "repeated", "pixel_disjoint", "tile_disjoint"] {
-            if layout.ends_with("disjoint") && count != 32 {
-                continue;
-            }
-            let instances = (0..count)
-                .flat_map(|i| {
-                    let [x, y] = match layout {
-                        "repeated" => [350.0, 250.0],
-                        "pixel_disjoint" => {
-                            [10.0 + (i % 8) as f32 * 96.0, 10.0 + (i / 8) as f32 * 80.0]
-                        }
-                        "tile_disjoint" => {
-                            [4.0 + (i % 6) as f32 * 128.0, 4.0 + (i / 6) as f32 * 96.0]
-                        }
-                        _ => [
-                            10.0 + (i % 10) as f32 * 70.0,
-                            10.0 + ((i / 10) % 6) as f32 * 80.0,
-                        ],
-                    };
-                    [
-                        SpriteInstance {
-                            z_gradient: 2,
-                            ..sprite([x, y], [33.0, 78.0], -12.0 - i as f32)
-                        },
-                        sprite([x + 18.0, y + 42.0], [74.0, 36.0], -3.0 - i as f32),
-                    ]
-                })
-                .collect::<Vec<_>>();
-            let buffer = gpu
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Tree workload instances"),
-                    contents: bytemuck::cast_slice(&instances),
-                    usage: wgpu::BufferUsages::VERTEX,
-                });
-            for batched in [false, true] {
-                eprintln!("TREE timing begins: pairs={count}, layout={layout}, batched={batched}");
-                for sample in 0..4 {
-                    // Exactly one application frame per submission preserves
-                    // the established command-buffer-memory measurement bound.
-                    let (stats, encode_ms, gpu_ms) = timer.measure(&gpu, |encoder| {
-                        clear(
-                            encoder,
-                            &cv,
-                            &dv,
-                            65535,
-                            wgpu::LoadOp::Clear(wgpu::Color::WHITE),
-                        );
-                        let kind = |i| {
-                            if i % 2 == 0 {
-                                TerrainPiece::Body
-                            } else {
-                                TerrainPiece::Shadow
-                            }
-                        };
-                        let stats = if batched {
-                            terrain.draw_span(
-                                encoder,
-                                &cv,
-                                &dv,
-                                &batch,
-                                |_| Some(&atlas),
-                                &buffer,
-                                &instances,
-                                (0..instances.len()).map(|i| terrain_command(i as u32, kind(i))),
-                                [0, 0, 800, 600],
-                            )
-                        } else {
-                            for (i, instance) in instances.iter().enumerate() {
-                                terrain.draw_piece(
-                                    encoder,
-                                    &cv,
-                                    &dv,
-                                    &batch,
-                                    &atlas,
-                                    &buffer,
-                                    instance,
-                                    terrain_command(i as u32, kind(i)),
-                                    [0, 0, 800, 600],
-                                );
-                            }
-                            super::terrain_draw::TerrainBatchStats {
-                                pieces: instances.len(),
-                                waves: instances.len(),
-                                passes: instances.len() * 2,
-                                tile_dependencies: 0,
-                            }
-                        };
-                        stats
-                    });
-                    if batched {
-                        let expected_waves = match layout {
-                            "repeated" => 2 * count,
-                            "pixel_disjoint" => 2,
-                            "tile_disjoint" => 2,
-                            _ => match count {
-                                1 => 2,
-                                32 => 20,
-                                128 => 23,
-                                512 => 54,
-                                _ => unreachable!(),
-                            },
-                        };
-                        assert_eq!(
-                            stats.waves, expected_waves,
-                            "independent scheduling prototype"
-                        );
-                    }
-                    assert_eq!(stats.pieces, count * 2);
-                    if sample > 0 {
-                        eprintln!(
-                            "TREE timing sample: pairs={count}, layout={layout}, batched={batched}, sample={sample}, waves={}, passes={}, tile_dependencies={}, gpu_ms={gpu_ms}, cpu_prepare_encode_ms={encode_ms}",
-                            stats.waves, stats.passes, stats.tile_dependencies
-                        );
-                        results.push(serde_json::json!({"tree_pairs":count,"layout":layout,"overlap":layout=="repeated","batched":batched,"sample":sample,
-                            "frames":1,"pieces":stats.pieces,"waves":stats.waves,"passes":stats.passes,"tile_dependencies":stats.tile_dependencies,
-                            "gpu_ms_per_frame":gpu_ms,"cpu_prepare_encode_ms_per_frame":encode_ms}));
-                    }
-                }
-            }
-        }
-    }
-    let report = serde_json::json!({"target":[800,600],"color_format":"Bgra8UnormSrgb",
-        "source":"frozen original opaque TREE01-sized workload positions plus32 pixel-disjoint and tile-disjoint pairs; actual sequential and batched snapshot/edit owner",
-        "interval":"GPU includes frame clears, every snapshot/edit and the final one-workgroup timestamp marker. CPU includes scheduler reset/preparation, encoder construction and commands, excludes finish/submit/wait. Setup excluded. tile_dependencies counts covered tiles per command, each queried then updated.",
-        "samples":results});
-    eprintln!("{}", serde_json::to_string_pretty(&report).unwrap());
-    if let Some(path) = std::env::var_os("VERA20K_TERRAIN_PERF_OUTPUT") {
-        std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
     }
 }
 

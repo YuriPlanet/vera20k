@@ -374,7 +374,7 @@ fn main() -> Result<(), String> {
 
     let mut runtime = SimRuntime {
         simulation: build_world(args.seed, args.per_category, args.structures),
-        resources: SimResources::empty(),
+        resources: SimResources::empty().into(),
     };
     let spawned = runtime.simulation.telemetry_snapshot();
     println!(

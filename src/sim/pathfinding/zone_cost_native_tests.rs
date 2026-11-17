@@ -263,7 +263,7 @@ fn simulation() -> (Simulation, RuleSet, u64) {
     sim.session.set_map_height_for_test(WIDTH);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.zone_grid = Some(zones);
+    sim.zone_grid = Some(zones.into());
     sim.install_resolved_terrain_for_new_map(terrain);
     let id = sim.substrate.allocate_stable_id();
     let mut actor =

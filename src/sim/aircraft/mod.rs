@@ -22,7 +22,7 @@ pub(crate) use idle_entry::record_idle_calls_for_test;
 pub(crate) use idle_entry::{enter_idle_mode_after_attack, enter_idle_mode_for};
 pub(crate) mod landing_base;
 mod leave_map;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod leave_map_tests;
 pub(crate) mod move_mission;
 pub mod paradrop_mission;
@@ -31,15 +31,15 @@ mod retreat_mission;
 pub(crate) mod spyplane_mission;
 mod trailer;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod ai_head_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod dock_cycle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod release_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod team_strike_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod trailer_tests;
 
 use crate::map::entities::EntityCategory;

@@ -2,10 +2,11 @@
 
 An Ares launch hooks gamemd's INI text reader, `INIClass::LoadFromStraw` (`0x525A60`), so
 every INI it loads gets three extensions: `+=` keys, `[Child]:[Base]` sections and
-later-wins repeated keys. With `--features ares` VERA adds them where the reader is
+later-wins repeated keys. In a game read the Ares way ([Ares](ares.md)), as a selected
+mod that ships `ares.mix` makes it, every build adds them where the reader is
 ported: `IniFile::from_str` / `from_bytes` ([`ini_ares_syntax.rs`](../src/rules/ini_ares_syntax.rs)).
 Rules, art, AI, mode, map, sound, EVA, theme, UI and settings INIs all load through it.
-Default builds keep the native reader.
+Other games keep the native reader.
 
 ```ini
 [VehicleTypes]
@@ -22,9 +23,9 @@ Sight=10         ; the later Sight wins
 load builds each section and links it once it ends. Loading into an INI that has sections
 (`0x525BFA`) writes every entry with `INIClass::PutString` (`0x528660`), which replaces a
 key and lists it last. `ReadCCFile` loads every Ares `[#include]` and Phobos `$Include`
-file this way into the INI that lists it, so an Ares build now loads included files into
-the root INI (`IniFile::merge_load`) instead of composing them with `IniFile::merge`.
-That holds in `ares,phobos` too. Phobos-only builds keep `merge`. A file's `[#include]`
+file this way into the INI that lists it, so a game read the Ares way loads included files
+into the root INI (`IniFile::merge_load`) instead of composing them with `IniFile::merge`.
+That holds in a `phobos` build too, which keeps `merge` for a game read the stock way. A file's `[#include]`
 entries join the root's, so the include walk reads them next. Those entries include an
 unterminated last line, which this arm loads.
 

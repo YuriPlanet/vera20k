@@ -13,7 +13,7 @@ use super::can_build::{
 };
 use super::production_types::*;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "construction_options_tests.rs"]
 mod construction_options_tests;
 
@@ -77,10 +77,7 @@ fn append_construction_options(
     // Ares 3.0 BuildingClass_UpdateConstructionOptions_ExcludeDisabled
     // (10053D80, hook 0x4456E5) adds IsUnderEMP (vt+0x37C, Building's is
     // Techno 0x0070EFD0: +0x504 > 0) to the limbo test.
-    #[cfg(feature = "ares")]
-    let disabled = building.emp_remaining() > 0;
-    #[cfg(not(feature = "ares"))]
-    let disabled = false;
+    let disabled = rules.ares_form() && building.emp_remaining() > 0;
     if sim.session.current_house() != Some(building.owner())
         || building.lifecycle.in_limbo()
         || disabled
@@ -308,6 +305,29 @@ pub fn all_build_options_for_owner(
     out
 }
 
+/// [`all_build_options_for_owner`] for `types` alone, by category: what the
+/// player's sidebar asks, as `StripClass::Recalculate @ 0x006AA600` and
+/// `StripClass::Draw @ 0x006A9540` ask only the strip's entries and AddCameo
+/// only its candidate. A type no rules list builds has none.
+pub fn build_options_for_types(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: &str,
+    types: impl IntoIterator<Item = InternedId>,
+) -> Vec<BuildOption> {
+    let owner = sim.interner.get(owner);
+    let factories = owner.and_then(|owner| FactoryRoster::of(sim, rules, owner));
+    let mut out: Vec<BuildOption> = types
+        .into_iter()
+        .filter_map(|id| {
+            let name = sim.interner.try_resolve(id)?;
+            build_option_among(sim, rules, owner, factories.as_ref(), name)
+        })
+        .collect();
+    out.sort_by_key(|opt| opt.queue_category);
+    out
+}
+
 pub(super) fn production_category_for_object(
     obj: &crate::rules::object_type::ObjectType,
 ) -> ProductionCategory {
@@ -459,7 +479,7 @@ pub fn building_movement_blocking_cells(
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod footprint_tests {
     use super::*;
 

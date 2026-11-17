@@ -24,6 +24,7 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
         vegetation: 30,
         urban_presence: 40,
         urban_enabled: false,
+        fair_starts: false,
         seed: 4242,
         ..Default::default()
     };
@@ -42,7 +43,7 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
         prepared.settings,
         prepared.resolved_inputs,
         prepared.blocks,
-        RandomMapObjects::tech(prepared.tech_types),
+        RandomMapObjects::tech(prepared.tech_types, prepared.ares),
         crate::map::resolved_terrain::SharedCellDummy::fresh(),
         decision,
     )
@@ -88,7 +89,7 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
     );
     let format = crate::render::native_surface_format::RGB565;
     let rng = crate::sim::rng::MainRng::new(0x0401_599d);
-    let mut main = crate::app::state::process_main_draws(None, &rng);
+    let mut main = crate::app::state::process_main_draws(&rng);
     let mut selectors = crate::map::tile_variant_selector::TileVariantSelectorCache::default();
     let mut selected = None;
     let mut final_colors = Vec::new();
@@ -181,7 +182,7 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
     let preview = crate::map::rmg::preview::render_preview(&final_colors, &[]).unwrap();
     let directory = crate::map::source::test_support::TestDirectory::new("terrain-preview");
     let mut modal = Some(crate::ui::skirmish_shell::RandomMapSetupModalState::open(
-        options, None, false, true,
+        options, None, false,
     ));
     modal
         .as_mut()

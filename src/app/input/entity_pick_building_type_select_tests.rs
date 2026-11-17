@@ -107,9 +107,10 @@ fn an_undeploysinto_building_stays_admissible() {
     );
 }
 
-#[cfg(all(feature = "phobos", feature = "ares"))]
+#[cfg(feature = "phobos")]
 #[test]
 fn the_switch_admits_every_building() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (sim, order) = two_buildings("GAPOWR");
     let rules = rules("BuildingTypeSelectable=yes\n");
     assert!(rules.structure_type_selectable("GAPOWR"));
@@ -119,9 +120,10 @@ fn the_switch_admits_every_building() {
     );
 }
 
-#[cfg(all(feature = "phobos", feature = "ares"))]
+#[cfg(feature = "phobos")]
 #[test]
 fn the_switch_is_read_from_the_general_section() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     // Absent key keeps the retail gate.
     assert!(!rules("").structure_type_selectable("GAPOWR"));
     // `no` is the same as absent.

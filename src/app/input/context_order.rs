@@ -15,6 +15,7 @@ use crate::app::input::dispatch::{
     is_alt_held, is_ctrl_held, is_shift_held, selected_stable_ids_in_order,
 };
 use crate::app::input::entity_pick::{HoverObject, HoverTargetKindWithId, hover_object_at_point};
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::types::{HoverTargetKind, OrderMode};
 use crate::map::entities::EntityCategory;
 use crate::sim::combat::TargetKind;
@@ -446,14 +447,13 @@ pub(crate) fn attack_action(
     // (0x00700D10, 74041B..74042E) admits it, and is 0 otherwise. That test
     // refuses a Unit in a tube (Foot +0x684 >= 0) whose vt+0x4E4
     // (0x00736D50) answers yes, and a Unit whose vt+0x37C (0x00746C90)
-    // answers yes: one under EMP (+0x504 > 0) or one counting down art
-    // `DeathFrames=` (+0x6D8 != -1, set at 0x00737DBF only when UnitType
-    // +0xE20 > 0). Not ported. EMP is UNREACHABLE: EMPulseClass::Apply
-    // (0x004C5718) is reached only from the unreferenced constructor
-    // 0x004C52B0. Neither `DeathFrames=` nor `DeployToFire=` appears in
-    // retail ARTMD/RULESMD, and for a human's Unit CanDeployNow needs
-    // DeployToFire= (its TickTank branch is computer-only), so both other
-    // arms are DORMANT.
+    // answers yes (`GameEntity::is_under_emp`): one under EMP or one counting
+    // down art `DeathFrames=`. Not ported. Stock EMP is UNREACHABLE:
+    // EMPulseClass::Apply (0x004C5718) is reached only from the unreferenced
+    // constructor 0x004C52B0. A death-counting Unit has Health 0 and cannot be
+    // selected (0x006F32D3). `DeployToFire=` is not in retail RULESMD, and
+    // for a human's Unit CanDeployNow needs it (its TickTank branch is
+    // computer-only), so that arm is DORMANT.
     if action == AttackAction::Attack
         && matches!(
             actor.category(),
@@ -843,7 +843,6 @@ pub(crate) fn resolved_unit_in_range(
                 overlay_grid: sim.overlay_grid(),
                 overlay_registry,
                 alliances: Some(sim.house_alliances()),
-                #[cfg(feature = "ares")]
                 buildings: Some(crate::sim::combat::line_of_fire::CellBuildings::of(sim)),
             },
             selection_target,
@@ -910,6 +909,59 @@ struct AttackDispatch {
     select_fallback: bool,
 }
 
+/// The keys a healer's object action reads ([`crate::sim::world::HealArmKeys`]):
+/// Alt, the ForceMove binding (held for Ctrl+Alt too), and the admitted
+/// Ctrl+Alt GuardArea base action ([`object_key_action`]).
+pub(super) fn heal_arm_keys(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor: u64,
+    target: u64,
+    modifier: OrderModifier,
+    force_move_key: bool,
+) -> crate::sim::world::HealArmKeys {
+    crate::sim::world::HealArmKeys {
+        force_move: matches!(
+            modifier,
+            OrderModifier::ForceMove | OrderModifier::GuardArea
+        ) || (modifier == OrderModifier::AttackMove && force_move_key),
+        guard_area: object_key_action(
+            sim,
+            rules,
+            actor,
+            target,
+            Some(target),
+            modifier,
+            force_move_key,
+        ) == Some(ObjectKeyAction::GuardArea),
+    }
+}
+
+/// A healer's object action: a Unit's repair arm
+/// ([`crate::sim::world::Simulation::unit_repair_action`]) or, with `ares`,
+/// an Infantryman's Heal (`ares_infantry_heal_action`), which its
+/// ClickedAction (`0x0051F190`) sends as the same Attack.
+pub(super) fn healer_object_action(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor: u64,
+    target: u64,
+    issuing_house: InternedId,
+    keys: crate::sim::world::HealArmKeys,
+) -> Option<crate::sim::world::UnitRepairAction> {
+    if rules.ares()
+        && sim
+            .entities()
+            .get(actor)
+            .is_some_and(|actor| actor.category() == EntityCategory::Infantry)
+    {
+        return sim
+            .ares_infantry_heal_action(actor, target, issuing_house, keys, rules)
+            .map(|_| crate::sim::world::UnitRepairAction::Repair);
+    }
+    sim.unit_repair_action(actor, target, issuing_house, keys, rules)
+}
+
 /// Unit73FD7C's post-processing precedes the generic friendly selection and
 /// Ctrl attack paths. Selection/keyboard and mission promotion stay with their
 /// existing owners. Shift and one selected object's self action precede
@@ -950,14 +1002,17 @@ fn unit_repair_branch_orders(
     if friendly
         && matches!(modifier, OrderModifier::Normal | OrderModifier::AttackMove)
         && !cursor_owner(sim, rules, current_objects, target.stable_id).is_some_and(|id| {
-            sim.unit_repair_action(id, target.stable_id, issuing_house, rules)
+            let keys = heal_arm_keys(sim, rules, id, target.stable_id, modifier, force_move_key);
+            healer_object_action(sim, rules, id, target.stable_id, issuing_house, keys)
                 == Some(UnitRepairAction::Repair)
         })
     {
         return output;
     }
     for &id in receivers {
-        let Some(action) = sim.unit_repair_action(id, target.stable_id, issuing_house, rules)
+        let keys = heal_arm_keys(sim, rules, id, target.stable_id, modifier, force_move_key);
+        let Some(action) =
+            healer_object_action(sim, rules, id, target.stable_id, issuing_house, keys)
         else {
             continue;
         };
@@ -1368,7 +1423,7 @@ fn emit_entity_order_voice(
     target: Option<TargetKind>,
 ) {
     if voice_field == "VoiceDeploy" {
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut()
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
             && let Some(event) = crate::app::match_runtime::sound_dispatch::deploy_order_voice_event(
                 &mut runtime.simulation,
                 &runtime.resources.rules,
@@ -1381,7 +1436,7 @@ fn emit_entity_order_voice(
         return;
     }
     if voice_field == "VoiceSpecialAttack" {
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut()
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
             && let Some(event) =
                 crate::app::match_runtime::sound_dispatch::default_order_voice_event(
                     &mut runtime.simulation,
@@ -1394,7 +1449,7 @@ fn emit_entity_order_voice(
         }
         return;
     }
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     let Some(id) = runtime.simulation.order_voice_request(
@@ -1446,7 +1501,7 @@ fn finish_order(
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .map(|rt| &rt.simulation),
             state.rules(),
             &state.match_state.input.selection_order,
@@ -1462,7 +1517,7 @@ fn finish_order(
                 state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .map(|rt| &rt.simulation),
                 state.rules(),
                 &state.match_state.input.selection_order,
@@ -1474,7 +1529,7 @@ fn finish_order(
         let (encoded, feedback): (Vec<_>, Vec<_>) = if let Some(sim) = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
         {
             queued
@@ -1495,7 +1550,7 @@ fn finish_order(
             if let Some(sim) = state
                 .match_state
                 .sim_runtime
-                .as_mut()
+                .write_sim(SimWrite::Command)
                 .map(|rt| &mut rt.simulation)
             {
                 accepted = sim.issue_local_commands(encoded);
@@ -1529,7 +1584,7 @@ fn finish_order(
         && let Some(frame) = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| rt.simulation.session().binary_frame())
     {
         state
@@ -1712,14 +1767,14 @@ pub(super) fn guard_area_admitted(
 /// whether `actor_id` answers GuardArea (0x1A) on `cell`, ahead of the move
 /// rungs, as `viewer` sees it. The class wrappers then keep it, except:
 /// - over a shrouded Cell centre a Foot's wrapper turns it into Move or
-///   NoMove (`0x004DDE64..0x004DDEBE`, the bridge-raised test of
-///   [`Simulation::clicked_cell_is_shrouded`]), as the move rungs answer there;
+///   NoMove ([`Simulation::foot_cell_shroud_action`]), as the move rungs
+///   answer there;
 /// - a Building with a rally line turns it into Move (`0x0044774B`); any
 ///   other Building's wrapper (`0x00447540`) keeps it, shroud or not.
 ///
 /// The hover, the Foot click and the Building click all ask this.
 ///
-/// [`Simulation::clicked_cell_is_shrouded`]: crate::sim::world::Simulation::clicked_cell_is_shrouded
+/// [`Simulation::foot_cell_shroud_action`]: crate::sim::world::Simulation::foot_cell_shroud_action
 pub(super) fn cell_guard_area_action(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -1735,7 +1790,10 @@ pub(super) fn cell_guard_area_action(
             .object_type(actor.type_ref(), rules)
             .is_some_and(|object| object.has_rally_line())
     } else {
-        viewer.is_some_and(|viewer| sim.clicked_cell_is_shrouded(viewer, cell) == Ok(true))
+        viewer.is_some_and(|viewer| {
+            sim.foot_cell_shroud_action(viewer, actor_id, cell, rules)
+                .is_some()
+        })
     };
     !rewritten && guard_area_admitted(sim, rules, actor_id, None)
 }
@@ -2086,8 +2144,13 @@ fn berserk_selection_click(
     let action = if action_zero {
         ReleaseAction::Zero
     } else if hover.is_some_and(|target| {
-        sim.unit_repair_action(best_id, target.stable_id, issuing_house, rules)
-            == Some(crate::sim::world::UnitRepairAction::Select)
+        sim.unit_repair_action(
+            best_id,
+            target.stable_id,
+            issuing_house,
+            crate::sim::world::HealArmKeys::default(),
+            rules,
+        ) == Some(crate::sim::world::UnitRepairAction::Select)
     }) {
         ReleaseAction::Select
     } else {
@@ -2114,7 +2177,7 @@ pub(crate) fn try_queue_context_order(
     target: ContextOrderTarget,
     select_friendly_clicks: bool,
 ) -> bool {
-    if state.match_state.sim_runtime.is_none() {
+    if !state.match_state.sim_runtime.is_installed() {
         return false;
     }
     let (target_rx, target_ry) = match target {
@@ -2148,11 +2211,11 @@ pub(crate) fn try_queue_context_order(
     let owner_id: InternedId = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)
         .and_then(|s| s.interner().get(&owner))
         .unwrap_or_default();
-    let translucent_viewer = state.match_state.sim_runtime.as_ref().and_then(|rt| {
+    let translucent_viewer = state.match_state.sim_runtime.runtime().and_then(|rt| {
         crate::app::presentation::instances::translucent_fog_viewer(state, &rt.simulation)
     });
 
@@ -2164,7 +2227,7 @@ pub(crate) fn try_queue_context_order(
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.rules(),
         &state.match_state.input.selection_order,
@@ -2177,7 +2240,7 @@ pub(crate) fn try_queue_context_order(
     let mut planning_cell = None;
     let planning = state.match_state.input.planning.active();
 
-    if let Some(rt) = state.match_state.sim_runtime.as_mut() {
+    if let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command) {
         let resources = &rt.resources;
         let sim = &mut rt.simulation;
         let execute_tick = sim.session().tick();
@@ -2189,7 +2252,7 @@ pub(crate) fn try_queue_context_order(
         // selection's size see every selected object. Orders go only to the
         // objects whose ClickedAction can still send one.
         let current_objects = selected_ids;
-        let selected_ids = sim.click_order_receivers(&current_objects);
+        let selected_ids = sim.click_order_receivers(&current_objects, resources.rules.ares());
 
         let mut selected_units: Vec<u64> = Vec::new();
 
@@ -2250,15 +2313,18 @@ pub(crate) fn try_queue_context_order(
         // receiver's What_Action and ClickedAction see it. Object hit-testing
         // above keeps the raw screen-derived world point.
         let (target_rx, target_ry) = sim.clamped_click_cell((target_rx, target_ry));
-        let cell_is_shrouded = crate::app::presentation::instances::cell_visibility_for_local_owner(
-            Some(owner_id),
-            Some(sim.fog()),
-            target_rx,
-            target_ry,
-            state.match_state.sandbox_full_visibility,
-            sim.resolved_terrain(),
-        )
-            == crate::app::presentation::instances::CellVisibilityState::Shrouded;
+        // Foot's Cell wrapper (`0x004DDDE0`): over the clicked Cell's centre,
+        // raised to a bridge deck, that the player's map shrouds, a Foot's
+        // Attack becomes Move or NoMove, which the Move rungs below answer; a
+        // Building keeps it (`0x00447540`). Nothing is shrouded under the
+        // sandbox's full visibility, as for the cursor.
+        let full_visibility = state.match_state.sandbox_full_visibility;
+        let foot_shrouded = |id: u64| {
+            !full_visibility
+                && sim
+                    .foot_cell_shroud_action(owner_id, id, (target_rx, target_ry), &resources.rules)
+                    .is_some()
+        };
         // The chord test fails — and the order resolves normally — unless every
         // selected object can accept an attack-move order. The walk covers the
         // whole selection, so a selected building or aircraft kills the chord.
@@ -2314,6 +2380,32 @@ pub(crate) fn try_queue_context_order(
             _ => order_mode,
         };
 
+        if let Some(release) = ares_deactivated_selection_click(
+            sim,
+            &resources.rules,
+            &current_objects,
+            hover.as_ref(),
+            (target_rx, target_ry),
+        ) {
+            return match release {
+                // Detonate passes the ClickedAction refusal (0x4D74EC).
+                Err(bombed) => {
+                    if let Some(record) = sim.encode_detonate_record(bombed) {
+                        queued.push(CommandEnvelope::new(
+                            owner_id,
+                            execute_tick,
+                            Command::SynchronizedRecord { record },
+                        ));
+                    }
+                    finish_order(state, queued, None, rally_announce, None)
+                }
+                Ok(LeftRelease::Dispatch) => {
+                    finish_order(state, queued, speaker_id, rally_announce, None)
+                }
+                Ok(LeftRelease::Nothing) => true,
+                Ok(LeftRelease::Select) => false,
+            };
+        }
         if selected_ids.is_empty() {
             return match berserk_selection_click(
                 sim,
@@ -2436,7 +2528,6 @@ pub(crate) fn try_queue_context_order(
             }
         }
 
-        #[cfg(feature = "ares")]
         if let Some(target) = hover.as_ref() {
             let mut consumed = false;
             selected_units.retain(|&id| {
@@ -2525,25 +2616,17 @@ pub(crate) fn try_queue_context_order(
                 HoverTargetKind::EnemyUnit | HoverTargetKind::EnemyStructure
             )
         });
-        let cell_hidden =
-            force_fire && matches!(attack_target, TargetKind::Cell(..)) && cell_is_shrouded;
+        let cell_shot = force_fire && matches!(attack_target, TargetKind::Cell(..));
         let attack_dispatch = if force_fire
             || terrain_target.is_some()
             || (enemy_object && context_actions_enabled)
         {
-            // Foot's shroud wrapper (0x004DDE64..0x004DDEBE) takes a
-            // Foot's forced shot at a shrouded Cell back; the Building
-            // wrapper keeps it (0x00447540 passes the Attack through).
+            // Foot's shroud wrapper takes a Foot's forced shot at a shrouded
+            // Cell back.
             let receivers: Vec<u64> = selected_ids
                 .iter()
                 .copied()
-                .filter(|&id| {
-                    !cell_hidden
-                        || sim
-                            .entities()
-                            .get(id)
-                            .is_some_and(|entity| entity.category() == EntityCategory::Structure)
-                })
+                .filter(|&id| !(cell_shot && foot_shrouded(id)))
                 .collect();
             attack_branch_orders(
                 sim,
@@ -2562,18 +2645,12 @@ pub(crate) fn try_queue_context_order(
             // unforced Attack rung on its own (0x004AE750's object loop);
             // its tail is the forced shot's (Attack, a healing Unit's
             // AttackSupport, or Infantry's GuardArea). Other answers keep the
-            // object on its Move rungs below. Foot's shroud wrapper
-            // (0x004DDE64..0x004DDEBE) takes a Foot's Attack back over a
-            // shrouded Cell; the Building wrapper keeps it.
+            // object on its Move rungs below, as does Foot's shroud wrapper.
             let rung: Vec<u64> = selected_ids
                 .iter()
                 .copied()
                 .filter(|&id| {
-                    (!cell_is_shrouded
-                        || sim
-                            .entities()
-                            .get(id)
-                            .is_some_and(|entity| entity.category() == EntityCategory::Structure))
+                    !foot_shrouded(id)
                         && sim.cell_attack_rung_admits(
                             id,
                             (rx, ry),
@@ -3160,7 +3237,7 @@ pub(crate) fn try_queue_context_order(
                     // The receiver's own Cell action; under Ctrl too once it
                     // has no weapon to force-fire (`0x007008C5`).
                     order
-                } else if force_fire && !cell_is_shrouded {
+                } else if force_fire && !foot_shrouded(stable_id) {
                     // Unarmed Cell-click fall-through resolves the original
                     // clicked Cell before committing its Move event.
                     push_move_flash(
@@ -3278,8 +3355,9 @@ fn formation_units(
     sim: &crate::sim::world::Simulation,
     current_objects: &[u64],
     place: impl Fn(&crate::sim::game_entity::GameEntity) -> (i32, i32),
+    ares: bool,
 ) -> Vec<(u64, (i32, i32))> {
-    sim.click_order_receivers(current_objects)
+    sim.click_order_receivers(current_objects, ares)
         .into_iter()
         .filter_map(|id| {
             let entity = sim.entities().get(id)?;
@@ -3291,7 +3369,7 @@ fn formation_units(
 /// How many of the selection's units a VERA formation line or block would
 /// order: one dot each.
 pub(crate) fn formation_unit_count(state: &AppState) -> usize {
-    let Some(rt) = state.match_state.sim_runtime.as_ref() else {
+    let Some(rt) = state.match_state.sim_runtime.runtime() else {
         return 0;
     };
     let current_objects = selected_stable_ids_in_order(
@@ -3300,7 +3378,13 @@ pub(crate) fn formation_unit_count(state: &AppState) -> usize {
         &state.match_state.input.selection_order,
         state.match_state.input.selection_order_pending,
     );
-    formation_units(&rt.simulation, &current_objects, standing_cell).len()
+    formation_units(
+        &rt.simulation,
+        &current_objects,
+        standing_cell,
+        rt.resources.rules.ares(),
+    )
+    .len()
 }
 
 /// The cell a unit stands on.
@@ -3352,7 +3436,7 @@ pub(crate) fn queue_formation_line(
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.rules(),
         &state.match_state.input.selection_order,
@@ -3361,14 +3445,14 @@ pub(crate) fn queue_formation_line(
     if state.match_state.input.planning.active() {
         return false;
     }
-    let Some(rt) = state.match_state.sim_runtime.as_ref() else {
+    let Some(rt) = state.match_state.sim_runtime.runtime() else {
         return false;
     };
     let resources = &rt.resources;
     let sim = &rt.simulation;
     let owner_id: InternedId = sim.interner().get(&owner).unwrap_or_default();
     let execute_tick = sim.session().tick();
-    let units = formation_units(sim, &current_objects, standing_cell);
+    let units = formation_units(sim, &current_objects, standing_cell, resources.rules.ares());
     if units.len() < 2 {
         return false;
     }
@@ -3447,17 +3531,22 @@ pub(crate) fn toggle_formation_lock(state: &mut AppState) {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.rules(),
         &state.match_state.input.selection_order,
         state.match_state.input.selection_order_pending,
     );
-    let Some(rt) = state.match_state.sim_runtime.as_ref() else {
+    let Some(rt) = state.match_state.sim_runtime.runtime() else {
         return;
     };
     let sim = &rt.simulation;
-    let units = formation_units(sim, &current_objects, heading_cell);
+    let units = formation_units(
+        sim,
+        &current_objects,
+        heading_cell,
+        rt.resources.rules.ares(),
+    );
     let ids: Vec<u64> = units.iter().map(|&(id, _)| id).collect();
     let locks = &mut state.match_state.input.formation_locks;
     locks.retain(|id| sim.entities().get(id).is_some());
@@ -3630,7 +3719,7 @@ pub(super) fn self_detonates(
     // let Detonate through (0x51F1D8, 0x7388EB, 0x4D74EC: 10056BF0,
     // 10056DA0, 1004CBC0).
     let exits = |entity: &crate::sim::game_entity::GameEntity| {
-        !cfg!(feature = "ares") && (entity.berserk.is_active() || entity.is_warped_out())
+        !rules.ares() && (entity.berserk.is_active() || entity.is_warped_out())
     };
     selected_ids == [target]
         && sim.entities().get(target).is_some_and(|entity| {
@@ -3640,6 +3729,102 @@ pub(super) fn self_detonates(
             ) && !exits(entity)
         })
         && sim.bomb_detonate_action(target, rules)
+}
+
+/// What a Deactivated (`+0x1C8`) object answers over an object.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum AresDeactivatedAction {
+    Detonate,
+    Select,
+    None,
+}
+
+/// Ares hooks at the head of each class What_Action over an object (Unit
+/// `0x73FD5A`, Infantry `0x51E440`, Aircraft `0x417CCB`, Building
+/// `0x447218`; Ares.dll `1004CF50`, `1004CC30`, `1004CB00`, `1004CB70`):
+/// a Deactivated `actor` answers `TechnoExt::GetDeactivatedAction @
+/// 10044AD0` alone, None when it is not Deactivated. Detonate over itself as
+/// the lone selection when its bomb may be set off ([`self_detonates`]),
+/// Select over an allied (`HouseClass::IsAlliedWith`) selectable object,
+/// else 0. None without Ares.
+pub(super) fn ares_deactivated_action(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    selected: &[u64],
+    actor: u64,
+    target: u64,
+) -> Option<AresDeactivatedAction> {
+    if !rules.ares() {
+        return None;
+    }
+    let actor = sim
+        .entities()
+        .get(actor)
+        .filter(|actor| actor.deactivated.is_offline())?;
+    Some(if self_detonates(sim, rules, selected, target) {
+        AresDeactivatedAction::Detonate
+    } else if sim.entities().get(target).is_some_and(|target| {
+        sim.house_alliances()
+            .is_allied(sim.interner(), actor.owner(), target.owner())
+    }) && sim.object_is_selectable(target, rules)
+    {
+        AresDeactivatedAction::Select
+    } else {
+        AresDeactivatedAction::None
+    })
+}
+
+/// The left release when the selection's cursor owner
+/// ([`crate::app::input::cursor::select_best_for_action`]) is Deactivated:
+/// DetermineAction takes its action for the whole selection (`0x00692634`,
+/// `0x00692655`), which is [`ares_deactivated_action`] over an object and 0
+/// over a Cell (`Simulation::cell_move_action`). Detonate is the caller's;
+/// the other two reach [`left_release`], so no object receives an order.
+/// None without Ares.
+fn ares_deactivated_selection_click(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    current_objects: &[u64],
+    hover: Option<&HoverTargetKindWithId>,
+    cell: (u16, u16),
+) -> Option<Result<LeftRelease, u64>> {
+    use crate::app::input::cursor::ActionDistanceTarget;
+    if !rules.ares() {
+        return None;
+    }
+    let target = hover.map_or(ActionDistanceTarget::CellCentre(cell.0, cell.1), |target| {
+        ActionDistanceTarget::Object(target.stable_id)
+    });
+    let best = crate::app::input::cursor::select_best_for_action(
+        sim,
+        current_objects,
+        target,
+        Some(rules),
+    )?;
+    let Some(target) = hover else {
+        return sim
+            .entities()
+            .get(best)
+            .is_some_and(|best| best.deactivated.is_offline())
+            .then_some(Ok(LeftRelease::Nothing));
+    };
+    Some(
+        match ares_deactivated_action(sim, rules, current_objects, best, target.stable_id)? {
+            AresDeactivatedAction::Detonate => Err(target.stable_id),
+            AresDeactivatedAction::Select => Ok(left_release(
+                sim,
+                rules,
+                ReleaseAction::Select,
+                Some(target.stable_id),
+            )),
+            AresDeactivatedAction::None => Ok(left_release(
+                sim,
+                rules,
+                ReleaseAction::Zero,
+                Some(target.stable_id),
+            )),
+        },
+    )
 }
 
 /// The command a click on the one selected object issues when it clicks
@@ -3680,6 +3865,18 @@ pub(super) fn self_click_command(
     let target = hover?;
     if planning_refuses_self(sim, local_owner, selected_ids, target, planning)
         || self_is_warped_out(sim, target)
+    {
+        return None;
+    }
+    // Ares hooks 0x73FD5A, 0x51E440, 0x417CCB and 0x447218 answer a
+    // Deactivated object's What_Action over itself with GetDeactivatedAction
+    // 10044AD0 (Detonate or Select), never Self, so it neither deploys nor
+    // repacks.
+    if rules.ares()
+        && sim
+            .entities()
+            .get(target.stable_id)
+            .is_some_and(|entity| entity.deactivated.is_offline())
     {
         return None;
     }
@@ -3893,8 +4090,8 @@ fn self_action(
         });
     }
     // Ares 3.0 100173A0 (hook 0x44731C): a tunnel entrance with its
-    // owner's network loaded offers the unload action.
-    #[cfg(feature = "ares")]
+    // owner's network loaded offers the unload action. Only the Ares-form sim
+    // fills a network, so this runs in every game.
     if sim.ares_tunnel_offers_unload(target.stable_id, rules) {
         return Some(Command::UnloadPassengers {
             transport_id: target.stable_id,
@@ -4185,7 +4382,8 @@ fn entry_orders(
     consumed.then_some(orders)
 }
 
-#[cfg(feature = "ares")]
+/// Ares 3.0 `10049690` (hook `0x51E7BF`): whether `actor` captures the
+/// vehicle `target`, for the cursor and the click alike, while Ares plays.
 pub(super) fn vehicle_capture_action(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -4195,18 +4393,20 @@ pub(super) fn vehicle_capture_action(
     force_move_key: bool,
 ) -> bool {
     // Shift and the admitted Ctrl+Alt GuardArea return before51E7A6.
-    !matches!(
-        object_key_action(
-            sim,
-            rules,
-            actor,
-            target,
-            Some(target),
-            modifier,
-            force_move_key
-        ),
-        Some(ObjectKeyAction::ToggleSelect | ObjectKeyAction::GuardArea)
-    ) && sim.ares_vehicle_capture_action(actor, target, rules)
+    rules.ares()
+        && !matches!(
+            object_key_action(
+                sim,
+                rules,
+                actor,
+                target,
+                Some(target),
+                modifier,
+                force_move_key
+            ),
+            Some(ObjectKeyAction::ToggleSelect | ObjectKeyAction::GuardArea)
+        )
+        && sim.ares_vehicle_capture_action(actor, target, rules)
 }
 
 /// Engineer object actions before event enqueue. No duplicate geometry query.
@@ -4749,14 +4949,10 @@ fn shot_is_illegal(
         .is_some_and(|(infantry, building)| {
             // Ares 3.0 100261F0 (hook 0x007004AD): any action of the shared
             // classification keeps the rung.
-            #[cfg(feature = "ares")]
-            {
-                let _ = (infantry, building);
+            if rules.ares() {
                 sim.infiltrate_action(actor_id, target_id, rules)
                     != crate::sim::world::InfiltrateAction::None
-            }
-            #[cfg(not(feature = "ares"))]
-            {
+            } else {
                 (if infantry.agent {
                     building.spyable
                 } else {
@@ -5082,7 +5278,6 @@ fn building_object_orders(
         // the building is the trench Enter (100171B0, hook 0x44725F) raises
         // TrenchRedirectClick (0x60, RaiseTrenchRedirectClick 1006A170)
         // with that building's Cell, and sends nothing else.
-        #[cfg(feature = "ares")]
         if ares_trench_enter(sim, rules, id, target) {
             if let Some(record) = sim.encode_ares_trench_redirect_record(id, cell) {
                 orders.push(Command::SynchronizedRecord { record });
@@ -5132,22 +5327,14 @@ fn building_object_orders(
 /// Ares 3.0 BuildingClass_GetActionOnObject_TargetABuilding (`100171B0`,
 /// hook `0x44725F`): the building `id` answers Enter over the building
 /// `target` when its occupants may traverse there (canTraverseTo
-/// `10011690`). Default builds have no such action.
-fn ares_trench_enter(
+/// `10011690`), while Ares plays. The cursor asks it too.
+pub(super) fn ares_trench_enter(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     id: u64,
     target: u64,
 ) -> bool {
-    #[cfg(feature = "ares")]
-    {
-        sim.ares_can_traverse_to(id, target, rules)
-    }
-    #[cfg(not(feature = "ares"))]
-    {
-        let _ = (sim, rules, id, target);
-        false
-    }
+    rules.ares() && sim.ares_can_traverse_to(id, target, rules)
 }
 
 fn selected_rally_producer_ids(
@@ -5167,11 +5354,11 @@ fn selected_rally_producer_ids(
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "building_redeploy_tests.rs"]
 mod building_redeploy_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 mod tests {
     use super::*;
     use crate::sim::combat::Health;
@@ -8676,7 +8863,7 @@ mod tests {
                 sim.entities_mut_for_test()
                     .get_mut(engineer)
                     .unwrap()
-                    .spawn_manager = Some(SpawnManagerState::for_test(spawn_type, slots));
+                    .spawn_manager = Some(Box::new(SpawnManagerState::for_test(spawn_type, slots)));
             }
             let before = sim.state_hash();
             let actor = serde_json::to_value(sim.entities().get(engineer).unwrap()).unwrap();
@@ -8805,55 +8992,62 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_selection_tests.rs"]
 mod selection_dispatch_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_move_flash_tests.rs"]
 mod move_flash_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_retail_bridge_tests.rs"]
 mod retail_bridge_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_retail_engineer_tests.rs"]
 mod retail_engineer_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_retail_garrison_tests.rs"]
 mod retail_garrison_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_retail_entry_tests.rs"]
 mod retail_entry_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "disguise_cursor_tests.rs"]
 mod disguise_cursor_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_retail_terrain_tests.rs"]
 mod retail_terrain_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_retail_inactive_unit_tests.rs"]
 mod retail_inactive_unit_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_retail_self_deploy_tests.rs"]
 mod retail_self_deploy_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "building_bunker_self_click_tests.rs"]
 mod building_bunker_self_click_tests;
 
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(
+        tests_app_input_a_c,
+        tests_app_presentation_instances,
+        tests_app_presentation_render
+    )
+))]
 #[path = "context_order_retail_ifv_repair_tests.rs"]
 pub(in crate::app) mod retail_ifv_repair_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 mod stationary_attack_dispatch_tests {
     use super::*;
     use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -8998,22 +9192,22 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "allied_object_action_tests.rs"]
 mod allied_object_action_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_cursor_contract_tests.rs"]
 mod cursor_contract_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "engineer_special_entry_tests.rs"]
 mod engineer_special_entry_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "foot_unarmed_ctrl_tests.rs"]
 mod foot_unarmed_ctrl_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "infantry_healer_cell_tests.rs"]
 mod infantry_healer_cell_tests;

@@ -576,7 +576,7 @@ fn c_string(bytes: &[u8]) -> &[u8] {
         .unwrap_or(bytes.len())]
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 #[path = "lan_messages_tests.rs"]
 mod tests;
 

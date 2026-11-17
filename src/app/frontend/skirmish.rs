@@ -57,7 +57,8 @@ pub(crate) fn house_color_map_for_launch_session(
         // `slot.color_index` is the colour priority gamemd hands
         // `Game_GetLinkedColor` (0x69A310); resolve it to a `[Colors]` entry
         // index. The vanilla build divides the priority table's odd index by
-        // two; Phobos SkirmishUnlimitedColors makes the index itself the entry.
+        // two, VERA's extra lobby colours name their entry, and Phobos
+        // SkirmishUnlimitedColors makes the index itself the entry.
         let entry = skirmish_colors.entry_for_priority(slot.color_index as i32) as u8;
         colors.insert(slot.owner_name, HouseColorIndex(entry));
     }
@@ -245,7 +246,7 @@ pub(crate) fn build_overlay_presentation(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;
@@ -1812,6 +1813,27 @@ mod tests {
         assert_eq!(rng.logical_state(), before);
     }
 
+    /// VERA: where players share bases, as in a room with Teams set, a House
+    /// whose start a later House also asked for starts there too, beside
+    /// it, with no draw. The table keeps the last owner.
+    #[test]
+    fn a_house_sharing_bases_starts_beside_the_later_one() {
+        let mut session = test_session();
+        session.options.teams = Some(2);
+        session.local_slot_mut().start_position = LaunchStartPosition::Position(0);
+        session.opponents[0].start_position = LaunchStartPosition::Position(0);
+        let all_starts = test_launch_starts();
+        let starts = &all_starts[..3];
+        let mut rng = SimRng::new(8);
+        let before = rng.logical_state();
+
+        let assignment = native_assign_launch_starts(&session, starts, &mut rng);
+
+        assert_eq!(assignment.placements, vec![(0, starts[0]), (1, starts[0])]);
+        assert_eq!(assignment.start_table, vec![Some(1), None, None]);
+        assert_eq!(rng.logical_state(), before);
+    }
+
     #[test]
     fn gsi_04_16_standard_three_auto_houses_consume_only_first_draw() {
         let mut session = test_session();
@@ -1853,6 +1875,7 @@ mod tests {
         let starts = test_launch_starts();
         let map = test_map_with_starts(&starts);
         let rules = test_standard_launch_rules();
+        let ares = rules.ares();
         let roster = roster_with_neutral_and_playable();
 
         for (country, expected_theme) in [
@@ -1886,8 +1909,9 @@ mod tests {
             let side = crate::app::presentation::sidebar_render::project_sidebar_side(
                 Some(&sim),
                 Some(owner),
+                ares,
             );
-            let actual = crate::render::sidebar_chrome::sidebar_theme_for_side(side);
+            let actual = crate::render::sidebar_chrome::sidebar_theme_for_side(side, ares);
             assert_eq!(
                 actual, expected_theme,
                 "{country:?} launch owner must reach its live side theme"
@@ -1907,14 +1931,11 @@ mod tests {
             let selected = crate::app::presentation::sidebar_render::project_sidebar_side(
                 Some(&sim),
                 Some(owner),
+                ares,
             );
             assert_eq!(
                 selected,
-                if cfg!(feature = "ares") {
-                    3
-                } else {
-                    expected_side
-                },
+                if ares { 3 } else { expected_side },
                 "actual Scenario.Side and development owner have separate authority"
             );
         }
@@ -2235,7 +2256,6 @@ mod tests {
 
     // The stock budget: Ares 3.0 MPGameModeClass_CreateStartingUnits_UnitCost
     // (1001EE10, hook 0x5D6D9A) averages a type set without BaseUnit.
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn skirmish_positive_unit_count_spawns_extra_starting_units() {
         let mut sim = Simulation::new();
@@ -2390,7 +2410,6 @@ mod tests {
     /// balance that already includes the credited leftover budget.
     // The stock budget: Ares 3.0 MPGameModeClass_CreateStartingUnits_UnitCost
     // (1001EE10, hook 0x5D6D9A) averages a type set without BaseUnit.
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn gsi_09_01_ai_grant_multiplies_post_leftover_balance() {
         let mut sim = Simulation::new();

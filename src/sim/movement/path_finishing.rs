@@ -189,6 +189,6 @@ pub(super) fn finish(
     Ok((coords, layers))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "path_finishing_identity_tests.rs"]
 mod identity_tests;

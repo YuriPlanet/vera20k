@@ -5,8 +5,10 @@
 //! into a surface 168 pixels wide, the bar into one 32 pixels tall.
 //! `SidebarClass::BlitToScreen` (`6A70E0`) puts the finished sidebar in the
 //! frame's right-hand column; here that copy, and the bar's into the bottom
-//! strip, also scale by the player's Sidebar size, sharp at the whole sizes.
-//! At Normal they are 1:1.
+//! strip, also scale by the player's Sidebar size. Normal and Extra Large
+//! copy 1:1 or in whole blocks; Large draws at its frame's 1.5 pixels and
+//! copies 1:1, so a cameo its columns shrank is rasterized at the size it
+//! shows rather than in a smaller cell scaled up afterwards.
 //!
 //! Drawing into the surfaces also keeps the sidebar's depth there: the frame's
 //! column keeps the cleared depth, so the tooltips and the software cursor
@@ -225,7 +227,7 @@ impl SidebarSurface {
         quad: &crate::render::batch::SpriteInstance,
     ) -> Option<[u32; 4]> {
         let origin = self.column_camera.camera_pos;
-        let scale = self.frame.draw_scale() as f32;
+        let scale = self.frame.draw_scale();
         let left = (quad.position[0] - origin[0]) * scale;
         let top = (quad.position[1] - origin[1]) * scale;
         let (width, height) = self.frame.surface_draw_size();
@@ -319,7 +321,7 @@ impl SidebarSurface {
     /// [`Self::camera`], or one at the surface's own pixels while they are
     /// finer than the sidebar's ([`column_text`]).
     pub(crate) fn text_camera(&self) -> &wgpu::BindGroup {
-        if self.frame.draw_scale() > 1 {
+        if self.frame.draw_scale() > 1.0 {
             &self.text_camera
         } else {
             &self.column.camera
@@ -598,8 +600,8 @@ fn place_column_text(
     let camera = [camera_x + frame.layout_left(), camera_y];
     if frame.draws_window_pixels() {
         let scale = frame.draw_scale();
-        return ColumnText::Surface((scale > 1).then_some(TextRaster {
-            scale: scale as f32,
+        return ColumnText::Surface((scale > 1.0).then_some(TextRaster {
+            scale,
             origin: [0.0; 2],
             camera,
         }));
@@ -678,7 +680,7 @@ pub(crate) fn draw_window_copy(
     );
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
     use crate::render::gpu::block_on;
@@ -820,24 +822,22 @@ mod tests {
         pixels[at..at + 4].try_into().unwrap()
     }
 
-    /// The column's text goes over the copy where the copy would resample
-    /// it, landing where the copy puts the column; whole steps keep it in
-    /// the surface.
+    /// The column's text draws in the surface where the surface pixels are the
+    /// shown pixels (Large's 1:1 copy, the whole steps), and over the copy
+    /// where it would be resampled.
     #[test]
-    fn column_text_goes_over_a_resampling_copy() {
+    fn column_text_goes_where_its_pixels_are_shown() {
         let camera = [64.0, 32.0];
-        // Large unzoomed at 1080p: over the frame's copy, 1.5 frame pixels
-        // per sidebar pixel from the column's corner (1668, 0).
+        // Large unzoomed at 1080p copies 1:1, so the surface holds the text
+        // at its 1.5x pixels.
         let large = SidebarFrame::new(1920, 1080, 150).in_window(100, true);
-        let ColumnText::Frame(raster) = place_column_text(large, camera, None) else {
-            panic!("Large keeps its text in the surface");
+        let ColumnText::Surface(Some(raster)) = place_column_text(large, camera, None) else {
+            panic!("Large's 1:1 copy keeps its text in the surface");
         };
+        assert_eq!(raster.scale, 1.5);
         let corner = [camera[0] + large.layout_left(), camera[1]];
-        assert_eq!(raster.point(corner), [64.0 + 1668.0, 32.0]);
-        assert_eq!(
-            raster.point([corner[0] + 10.0, 36.0]),
-            [64.0 + 1683.0, 38.0]
-        );
+        assert_eq!(raster.point(corner), [0.0, 0.0]);
+        assert_eq!(raster.point([corner[0] + 10.0, 36.0]), [15.0, 6.0]);
         // Normal zoomed 150%: over the window copy, where the zoom puts it.
         let window = TextRaster {
             scale: 1.5,
@@ -1357,6 +1357,82 @@ mod tests {
             assert!(surface.packed.is_none());
             surface.prepare_packed(&gpu.device, &renderer);
             assert!(surface.packed.is_some());
+        }
+    }
+
+    /// At Large the column surface holds 1.5 pixels per sidebar pixel, so a
+    /// packed mask must cover the 1.5x pixels its cell shows, through the 1:1
+    /// copy. A whole-scale packed rectangle would leave the mask's right and
+    /// bottom thirds unmasked.
+    #[test]
+    #[ignore = "requires a wgpu adapter; executes the production sidebar packed drawing at Large"]
+    fn a_large_packed_mask_covers_its_shown_cell() {
+        use crate::app::presentation::sidebar_build::build_darken_instance;
+        use crate::render::sidebar_chrome::SidebarDarkenMask;
+        use crate::ui::sidebar::Rect;
+        const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
+        let gpu = gpu();
+        let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, FORMAT);
+        let frame = SidebarFrame::new(400, 300, 150).in_window(100, false);
+        assert_eq!(frame.surface_draw_size(), (252, 300));
+        let mut renderer = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, FORMAT, &batch);
+        let mut surface = SidebarSurface::new(&gpu.device, &gpu.queue, FORMAT, &batch, frame);
+        surface.write_cameras(&gpu.queue, batch.ui_camera_uniform());
+        surface.prepare_packed(&gpu.device, &renderer);
+        let indices = vec![3u8; 60 * 48];
+        let mask = SidebarDarkenMask {
+            texture: batch.create_texture_on_device(
+                &gpu.device,
+                &gpu.queue,
+                &vec![255; 60 * 48 * 4],
+                60,
+                48,
+                Some(&indices),
+            ),
+            frame_origin: [0.0; 2],
+        };
+        let slot = Rect {
+            x: frame.layout_left() + 24.0,
+            y: 100.0,
+            w: 60.0,
+            h: 48.0,
+        };
+        let instance = build_darken_instance(&mask, slot, [0.0; 2], 1).unwrap();
+        let buffer = gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::bytes_of(&instance),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        let pixels = composite(&gpu, &surface, FORMAT, (400, 300), |encoder| {
+            drop(surface.begin_pass(SidebarPart::Column, encoder, wgpu::Color::WHITE));
+            surface.draw_packed_layer(
+                &mut renderer,
+                encoder,
+                &batch,
+                &buffer,
+                &[instance],
+                &mask.texture,
+                PackedSpriteKind::IndexMask,
+            );
+        });
+        // The cell (24, 100)-(84, 148) in sidebar pixels covers
+        // (36, 150)-(126, 222) on the 1.5x surface, copied 1:1 at the column.
+        let column_x = frame.column().0;
+        let white = [255u8; 4];
+        assert_ne!(
+            pixel(&pixels, 400, column_x + 36 + 45, 150 + 36),
+            white,
+            "the cell's middle is masked"
+        );
+        for (x, y) in [
+            (column_x + 35, 150 + 36),
+            (column_x + 36 + 90, 150 + 36),
+            (column_x + 36 + 45, 149),
+            (column_x + 36 + 45, 150 + 72),
+        ] {
+            assert_eq!(pixel(&pixels, 400, x, y), white, "({x}, {y}) is outside");
         }
     }
 

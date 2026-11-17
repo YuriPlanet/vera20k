@@ -179,7 +179,7 @@ fn append_scaled(
     });
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
     use crate::render::sidebar_chrome::CommandBarArt;

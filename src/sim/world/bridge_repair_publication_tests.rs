@@ -1131,11 +1131,11 @@ fn repair_receiver_failure_stops_runtime_before_consumption_or_frame_commit() {
         .nav_com();
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources {
+        resources: std::sync::Arc::new(SimResources {
             rules,
             overlay_registry: registry,
             ..SimResources::empty()
-        },
+        }),
     };
     let error = runtime
         .advance_frame(

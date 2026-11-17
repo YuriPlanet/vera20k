@@ -10,6 +10,7 @@
 //! refresh shows the same values up to 250 ms earlier.
 
 use crate::app::match_runtime::session::SessionMode;
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::presentation::house_ui::HouseUiSources;
 use crate::app::{App, AppState};
 use crate::rules::ruleset::RuleSet;
@@ -56,7 +57,8 @@ pub(crate) fn requested_state(
         DiplomacyRequest::SidebarButton
             if !mode.is_nonzero()
                 || (mode.is_network()
-                    && mode_class.is_some_and(MpModeClass::restates_mission_for_diplomacy)) =>
+                    && mode_class
+                        .is_some_and(|class| class.policy().restates_mission_for_diplomacy)) =>
         {
             RequestedState::MissionBriefing
         }
@@ -69,7 +71,7 @@ pub(crate) fn open(state: &mut AppState, request: DiplomacyRequest) {
     let mode_class = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .and_then(|runtime| runtime.simulation.session().multiplayer_mode_class());
     match requested_state(request, state.match_state.session_mode(), mode_class) {
         RequestedState::Nothing => {}
@@ -238,7 +240,8 @@ pub(crate) fn resolve_rows(
                 insignia,
                 name: sources.ui_name(sim, house, state.country(), &country_name),
                 rgb,
-                // Σ of the two per-victim kill tables (+0x53E4, +0x5438), `%d`.
+                // Σ of the two 20-entry per-victim kill tables (+0x53E4,
+                // +0x5438), `%d`.
                 kills: Some(state.stats().kills() as i32),
                 // 0x00658330 hides a defeated House's box; nothing re-shows it.
                 allies: allies.filter(|_| !state.is_defeated()),
@@ -266,7 +269,7 @@ pub(crate) fn view(state: &AppState) -> DiplomacyView {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|runtime| &runtime.simulation),
         state.rules(),
     ) else {
@@ -428,7 +431,7 @@ fn press_allies_box(state: &mut AppState, row: usize) {
     if !allies.enabled {
         return;
     }
-    let Some(house) = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+    let Some(house) = state.match_state.sim_runtime.runtime().and_then(|runtime| {
         let sim = &runtime.simulation;
         let player = sim.houses().index_of(sim.session().current_house()?)?;
         sim.houses()
@@ -459,7 +462,7 @@ pub(crate) fn ally(state: &mut AppState, house: InternedId) {
     let Some(local) = crate::app::input::commands::preferred_local_owner_name(state) else {
         return;
     };
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     let rules = &runtime.resources.rules;
@@ -492,7 +495,7 @@ pub(crate) fn toggle_alliance_hotkey(state: &mut AppState) {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|runtime| &runtime.simulation),
         state.rules(),
         &state.match_state.input.selection_order,
@@ -500,7 +503,7 @@ pub(crate) fn toggle_alliance_hotkey(state: &mut AppState) {
     )
     .first()
     .copied();
-    let Some(owner) = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+    let Some(owner) = state.match_state.sim_runtime.runtime().and_then(|runtime| {
         let sim = &runtime.simulation;
         let local = sim.session().current_house()?;
         if sim.houses().get(&local)?.is_defeated() {
@@ -527,7 +530,7 @@ fn toggle_chat_box(state: &mut AppState, row: usize) {
     if !chat.enabled {
         return;
     }
-    let Some(index) = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+    let Some(index) = state.match_state.sim_runtime.runtime().and_then(|runtime| {
         let sim = &runtime.simulation;
         let player = sim.houses().index_of(sim.session().current_house()?)?;
         // The writer maps the slot the same way (0x006582B5..0x006582BF).
@@ -576,6 +579,6 @@ fn toggle_taunts_box(state: &mut AppState) {
     App::play_shell_ui_sound_by_id(state, sound.as_deref());
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "diplomacy_tests.rs"]
 mod tests;

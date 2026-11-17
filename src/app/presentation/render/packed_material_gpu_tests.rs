@@ -3,6 +3,7 @@ use super::super::draw_plan_lowering::{
     ObjectPieceInstance, PlannedObjectInstance, lower_object_instances,
 };
 use super::*;
+use crate::app::presentation::frame::ObjectRecord;
 use crate::render::batch::{InstanceBufferPool, SpriteInstance};
 use crate::render::draw_state::{DrawState, FX_CLOAK};
 use crate::render::palette_light::PaletteLight;
@@ -548,7 +549,7 @@ fn retained_stock_grizzly_berserk_material_matches_original_pixels() {
             let light = PaletteLight::color_scheme([1000; 3], int(&arm["intensity"]))
                 .with_colour_word(int(&arm["word"]) as u16);
             let (tint, light) = techno_effect_light(
-                &unit,
+                &ObjectRecord::of_test(&unit),
                 [1.; 3],
                 light,
                 &sim,
@@ -556,7 +557,7 @@ fn retained_stock_grizzly_berserk_material_matches_original_pixels() {
                 crate::app::presentation::lighting::TechnoDraw::Voxel,
             );
             let (tint, light) = unit_voxel_effect_light(
-                &unit,
+                &ObjectRecord::of_test(&unit),
                 tint,
                 light,
                 Some(&rules_by_selector[&(int(&arm["iron_color"]), int(&arm["berserk_color"]))]),
@@ -865,127 +866,5 @@ fn retained_packed_high_resolution_dispatch_preserves_native_pixels() {
         }
         let middle = ((size[1] / 2 * size[0] + size[0] / 2) * 4) as usize;
         assert_eq!(&output[0][middle..middle + 4], &[0, 0, 0, 255]);
-    }
-}
-
-/// Production replay cost, including continuation submissions. This reports
-/// encode and completed wall time, not ordinary gameplay FPS or GPU timestamps.
-#[test]
-#[ignore = "requires GPU; packed replay workload at 1,000 and 20,000 parents"]
-fn retained_packed_workload_timing() {
-    let gpu = Gpu::new();
-    let size = [1280, 720];
-    let format = wgpu::TextureFormat::Bgra8UnormSrgb;
-    let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-    batch.write_camera(&gpu.queue, camera(size));
-    let fog = ShroudBuffer::fixture(
-        &gpu.device,
-        &gpu.queue,
-        size,
-        [0.0; 2],
-        &vec![0; (size[0] * size[1]) as usize],
-    );
-    batch.bind_shroud(&gpu.device, Some(&fog));
-    let shp = SpriteAtlas::from_test_pages(vec![crate::render::sprite_atlas::SpriteAtlasPage {
-        texture: batch.create_texture_on_device(
-            &gpu.device,
-            &gpu.queue,
-            &[200, 100, 50, 255],
-            1,
-            1,
-            Some(&[1]),
-        ),
-    }]);
-    let color = gpu.target(size, format);
-    let cv = color.create_view(&Default::default());
-    let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
-    let dv = depth.create_view(&Default::default());
-    let mut terrain = crate::render::terrain_draw::TerrainDrawRenderer::new(
-        &gpu.device,
-        &gpu.queue,
-        format,
-        &batch,
-    );
-    for count in [1_000u32, 20_000] {
-        let parents = (0..count)
-            .map(|i| {
-                PlannedObjectInstance::object(
-                    ObjectDraw {
-                        id: u64::from(i),
-                        layer: TacticalLayer(3),
-                        display_order: u64::from(i),
-                        policy: BlitPolicy::z_read(SpriteEncoding::Plain),
-                    },
-                    vec![ObjectPieceInstance {
-                        target: ObjectTexture::ShpPage(0),
-                        render_z: RenderZPolicy::ReadOnly,
-                        instance: SpriteInstance {
-                            position: [(i % 80 * 16) as f32, ((i / 80) % 45 * 16) as f32],
-                            size: [16.0; 2],
-                            uv_size: [1.0; 2],
-                            tint: [1.0; 3],
-                            alpha: 1.0,
-                            palette_light: PaletteLight::plain(1, 1000),
-                            draw_state: DrawState {
-                                fx_flags: FX_CLOAK,
-                                fx_params: [0.5, 4.0, 1.0, 0.0],
-                                ..Default::default()
-                            },
-                            ..Default::default()
-                        },
-                    }],
-                )
-            })
-            .collect();
-        let layers = lower_object_instances(parents);
-        let layer = &layers[3];
-        let mut pool = InstanceBufferPool::new();
-        pool.upload_on_device(&gpu.device, &gpu.queue, "packed_workload", &layer.instances);
-        terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
-        let start = std::time::Instant::now();
-        let mut encoder = gpu.device.create_command_encoder(&Default::default());
-        clear(
-            &mut encoder,
-            &cv,
-            &dv,
-            65535,
-            wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-        );
-        let stats = draw_native_object_pass(
-            &mut encoder,
-            crate::app::render::merge_passes::ObjectDrawPhase::Display,
-            &cv,
-            &dv,
-            &mut terrain,
-            [0, 0, size[0], size[1]],
-            &batch,
-            pool.get("packed_workload"),
-            layer,
-            None,
-            None,
-            None,
-            Some(&shp),
-            None,
-            batch.default_zshape_bind_group(),
-            None,
-            None,
-        );
-        let command = encoder.finish();
-        let encode_ms = start.elapsed().as_secs_f64() * 1000.0;
-        let submission = gpu.queue.submit([command]);
-        gpu.device
-            .poll(wgpu::PollType::Wait {
-                submission_index: Some(submission),
-                timeout: Some(std::time::Duration::from_secs(60)),
-            })
-            .unwrap();
-        eprintln!(
-            "PACKED_WORKLOAD count={count} encode_ms={encode_ms:.3} completed_wall_ms={:.3} waves={} passes={} debug_assertions={}",
-            start.elapsed().as_secs_f64() * 1000.0,
-            stats.waves,
-            stats.passes,
-            cfg!(debug_assertions),
-        );
-        assert_eq!(stats.pieces, count as usize);
     }
 }

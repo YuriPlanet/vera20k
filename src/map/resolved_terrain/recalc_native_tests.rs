@@ -27,7 +27,8 @@ pub fn bridge_constructor_terrain() -> ResolvedTerrainGrid {
     grid.native_allocated = Some(
         (0..33)
             .flat_map(|y| (0..33).map(move |x| (12..=20).contains(&x) && (12..=20).contains(&y)))
-            .collect(),
+            .collect::<Vec<_>>()
+            .into(),
     );
     grid.bridge_recalc_catalog = Some(Arc::new(BridgeRecalcCatalog::for_tiles(
         &theater,
@@ -868,4 +869,21 @@ fn repair_tile_queries_use_registered_names_and_live_index_validity() {
     assert!(grid.tile_allows_morph_placement(-1).unwrap());
     assert!(grid.tile_allows_morph_placement(1).unwrap());
     assert!(grid.tile_allows_morph_placement(0xffff).unwrap());
+}
+
+/// A save can cache a variant this session registered no TMP file for. Both
+/// save-load readers keep the save and use the pristine file.
+#[test]
+fn saved_variant_beyond_registered_files_restores_with_first_file() {
+    let mut grid = bridge_constructor_terrain();
+    let index = grid.index(16, 16).unwrap();
+    grid.cells[index].variant = 3;
+    grid.refresh_saved_cell_presentation(index)
+        .expect("the saved cell restores");
+    assert_eq!(grid.cells[index].variant, 0);
+
+    grid.cells[index].variant = 3;
+    let catalog = grid.bridge_recalc_catalog.clone().unwrap();
+    grid.bind_saved_damaged_radar(&catalog)
+        .expect("the saved baseline binds");
 }

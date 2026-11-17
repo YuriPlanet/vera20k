@@ -171,12 +171,7 @@ fn physical_repair_and_particle_readers_match_original_layers_and_constructor_de
             ),
             (
                 "spawn_direction_bits",
-                json!(
-                    system
-                        .spawn_direction
-                        .to_array()
-                        .map(|value| (value as f32).to_bits())
-                ),
+                json!(system.spawn_direction.map(|value| value.bits())),
             ),
         ] {
             assert_eq!(
@@ -609,6 +604,8 @@ fn assert_logical_state(sim: &Simulation, roles: &Roles, id: u64, expected: &Val
     );
 }
 
+// Ares simulates this Spark system itself (hooks 0x62DF05, 0x62FD60) and
+// builds no ParticleClass children.
 #[test]
 fn original_welding_live_logic_boundaries_match_rng_ids_children_and_same_pass_link_expiry() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
@@ -735,6 +732,8 @@ fn original_welding_live_logic_boundaries_match_rng_ids_children_and_same_pass_l
 
 /// Rust persistence regression, separate from the original executable's
 /// queue/AI comparison above. Native in-scenario load owns RNG reseeding.
+// Ares simulates this Spark system itself (hooks 0x62DF05, 0x62FD60) and
+// builds no ParticleClass children.
 #[test]
 fn detached_particle_snapshot_keeps_bodies_and_queue_until_the_common_drain() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
@@ -812,6 +811,8 @@ fn detached_particle_snapshot_keeps_bodies_and_queue_until_the_common_drain() {
 
 /// SystemPointerExpired62FEA4..62FEE2 removes a reference, independently
 /// of UnInit. Its stable vector erase must not destroy the allocated body.
+// Ares simulates this Spark system itself (hooks 0x62DF05, 0x62FD60) and
+// builds no ParticleClass children.
 #[test]
 fn system_child_reference_expiry_retains_the_live_body_until_common_uninit() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
@@ -860,6 +861,22 @@ fn system_child_reference_expiry_retains_the_live_body_until_common_uninit() {
         sim.particle_systems()
             .display_particles()
             .any(|(system, particle)| { system.is_none() && particle.stable_id() == child_id })
+    );
+    // Each Display particle, in a system or detached, is found again at its
+    // place, in the same order.
+    let store = sim.particle_systems();
+    let listed = |found: Option<(Option<&ParticleSystem>, &crate::sim::particles::Particle)>| {
+        found.map(|(system, particle)| (system.is_some(), particle.stable_id()))
+    };
+    assert_eq!(
+        store
+            .display_particle_places()
+            .map(|(id, place)| listed(store.display_particle_at(id, place)))
+            .collect::<Vec<_>>(),
+        store
+            .display_particles()
+            .map(|found| listed(Some(found)))
+            .collect::<Vec<_>>()
     );
     sim.scenario_rng = SimRng::new(0);
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "welding-detached", 0);

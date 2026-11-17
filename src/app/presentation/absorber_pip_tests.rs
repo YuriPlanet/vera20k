@@ -19,10 +19,17 @@ fn frames(sim: &Simulation, rules: &RuleSet, reactor: u64, hover: Option<u64>) -
             .cargo()
             .map(|cargo| (cargo.passengers().to_vec(), cargo.total_size())),
     );
-    let result = super::ui_overlays::scale_pip_draws(sim, entity, hover, Some(OWNER), rules)
-        .into_iter()
-        .map(|pip| pip.frame)
-        .collect();
+    let frame = crate::app::presentation::frame::PresentationFrame::of_test(sim, rules);
+    let result = super::ui_overlays::scale_pip_draws(
+        sim,
+        frame.object(reactor).unwrap(),
+        hover,
+        sim.interner().get(OWNER),
+        rules,
+    )
+    .into_iter()
+    .map(|pip| pip.frame)
+    .collect();
     assert_eq!(
         before,
         (
@@ -93,154 +100,161 @@ fn advance(sim: &mut Simulation, rules: &RuleSet) {
 
 #[test]
 fn stock_bio_reactor_pips_follow_boarding_cargo_head_departure_and_selection() {
-    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
-    else {
-        return;
-    };
-    let rules = &retail.rules;
-    let expected: BTreeMap<Vec<&str>, Vec<usize>> = [
-        (vec![], native_frames(&[])),
-        (vec!["INIT"], native_frames(&["INIT"])),
-        (
-            vec!["YENGINEER", "INIT"],
-            native_frames(&["YENGINEER", "INIT"]),
-        ),
-    ]
-    .into();
-    let empty = &expected[&Vec::<&str>::new()];
-    let mut sim = Simulation::with_seed(1);
-    crate::sim::arena_fixture::flat_arena(&mut sim, rules);
-    for (name, human) in [(OWNER, true), ("Americans", false)] {
-        let owner = sim.intern(name);
-        sim.houses_mut_for_test()
-            .register(crate::sim::house_state::HouseState::new(
-                owner, 0, None, human, 0, 10,
-            ));
-    }
-    sim.intern_rule_type_ids(rules);
-    sim.resolve_type_handles(rules);
-    let owner = sim.interner().get(OWNER).unwrap();
-    sim.fog_mut_for_test().reveal_all_for_owner(owner);
-    let reactor = sim
-        .spawn_object("YAPOWR", OWNER, 16, 16, 64, rules)
-        .unwrap();
-    let initiate = sim.spawn_object("INIT", OWNER, 12, 16, 64, rules).unwrap();
-    let engineer = sim
-        .spawn_object("YENGINEER", OWNER, 12, 18, 64, rules)
-        .unwrap();
-    sim.spawn_object("GAPOWR", "Americans", 25, 25, 64, rules)
-        .unwrap();
-    assert!(sim.apply_command(
-        OWNER,
-        &Command::Select {
-            entity_ids: vec![reactor],
-            additive: false
-        },
-        Some(rules),
-    ));
-    assert_eq!(
-        rules.object("YAPOWR").unwrap().pip_max(rules) as usize,
-        empty.len()
-    );
-    assert_eq!(&frames(&sim, rules, reactor, None), empty);
-
-    for (passenger, types) in [
-        (initiate, vec!["INIT"]),
-        (engineer, vec!["YENGINEER", "INIT"]),
-    ] {
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let Some(retail) =
+            crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+        else {
+            return;
+        };
+        let rules = &retail.rules;
+        // Ares GetPassengerPips (10044C90, hook 0x709D38) gives the cargo tail
+        // the first pip, where the stock absorber arm starts at the head.
+        let mut two = native_frames(&["YENGINEER", "INIT"]);
+        if ares_way {
+            two[..2].reverse();
+        }
+        let expected: BTreeMap<Vec<&str>, Vec<usize>> = [
+            (vec![], native_frames(&[])),
+            (vec!["INIT"], native_frames(&["INIT"])),
+            (vec!["YENGINEER", "INIT"], two),
+        ]
+        .into();
+        let empty = &expected[&Vec::<&str>::new()];
+        let mut sim = Simulation::with_seed(1);
+        crate::sim::arena_fixture::flat_arena(&mut sim, rules);
+        for (name, human) in [(OWNER, true), ("Americans", false)] {
+            let owner = sim.intern(name);
+            sim.houses_mut_for_test()
+                .register(crate::sim::house_state::HouseState::new(
+                    owner, 0, None, human, 0, 10,
+                ));
+        }
+        sim.intern_rule_type_ids(rules);
+        sim.resolve_type_handles(rules);
+        let owner = sim.interner().get(OWNER).unwrap();
+        sim.fog_mut_for_test().reveal_all_for_owner(owner);
+        let reactor = sim
+            .spawn_object("YAPOWR", OWNER, 16, 16, 64, rules)
+            .unwrap();
+        let initiate = sim.spawn_object("INIT", OWNER, 12, 16, 64, rules).unwrap();
+        let engineer = sim
+            .spawn_object("YENGINEER", OWNER, 12, 18, 64, rules)
+            .unwrap();
+        sim.spawn_object("GAPOWR", "Americans", 25, 25, 64, rules)
+            .unwrap();
         assert!(sim.apply_command(
             OWNER,
-            &Command::clicked_mission(
-                passenger,
-                crate::sim::mission::MissionType::Enter,
-                crate::sim::combat::TargetKind::Entity(reactor)
-            ),
+            &Command::Select {
+                entity_ids: vec![reactor],
+                additive: false
+            },
+            Some(rules),
+        ));
+        assert_eq!(
+            rules.object("YAPOWR").unwrap().pip_max(rules) as usize,
+            empty.len()
+        );
+        assert_eq!(&frames(&sim, rules, reactor, None), empty);
+
+        for (passenger, types) in [
+            (initiate, vec!["INIT"]),
+            (engineer, vec!["YENGINEER", "INIT"]),
+        ] {
+            assert!(sim.apply_command(
+                OWNER,
+                &Command::clicked_mission(
+                    passenger,
+                    crate::sim::mission::MissionType::Enter,
+                    crate::sim::combat::TargetKind::Entity(reactor)
+                ),
+                Some(rules),
+            ));
+            for _ in 0..480 {
+                advance(&mut sim, rules);
+                if sim
+                    .entities()
+                    .get(passenger)
+                    .unwrap()
+                    .passenger_role
+                    .is_inside_transport()
+                {
+                    break;
+                }
+            }
+            let rider = sim.entities().get(passenger).unwrap();
+            assert_eq!(rider.passenger_role.inside_transport_id(), Some(reactor));
+            assert!(rider.lifecycle.in_limbo());
+            assert_eq!(&frames(&sim, rules, reactor, None), &expected[&types]);
+        }
+        assert_eq!(
+            sim.entities()
+                .get(reactor)
+                .unwrap()
+                .passenger_role
+                .cargo()
+                .unwrap()
+                .passengers(),
+            [engineer, initiate],
+            "the shared CargoClass owner prepends each admitted passenger"
+        );
+        assert_eq!(
+            &frames(&sim, rules, reactor, None),
+            &expected[&vec!["YENGINEER", "INIT"]]
+        );
+        assert!(sim.apply_command(
+            OWNER,
+            &Command::UnloadPassengers {
+                transport_id: reactor
+            },
             Some(rules),
         ));
         for _ in 0..480 {
             advance(&mut sim, rules);
-            if sim
+            let cargo = sim
                 .entities()
-                .get(passenger)
+                .get(reactor)
                 .unwrap()
                 .passenger_role
-                .is_inside_transport()
-            {
+                .cargo()
+                .unwrap();
+            let types: Vec<_> = cargo
+                .passengers()
+                .iter()
+                .map(|id| {
+                    sim.interner()
+                        .resolve(sim.entities().get(*id).unwrap().type_ref())
+                })
+                .collect();
+            assert_eq!(&frames(&sim, rules, reactor, None), &expected[&types]);
+            if cargo.is_empty() {
                 break;
             }
         }
-        let rider = sim.entities().get(passenger).unwrap();
-        assert_eq!(rider.passenger_role.inside_transport_id(), Some(reactor));
-        assert!(rider.lifecycle.in_limbo());
-        assert_eq!(&frames(&sim, rules, reactor, None), &expected[&types]);
-    }
-    assert_eq!(
-        sim.entities()
-            .get(reactor)
-            .unwrap()
-            .passenger_role
-            .cargo()
-            .unwrap()
-            .passengers(),
-        [engineer, initiate],
-        "the shared CargoClass owner prepends each admitted passenger"
-    );
-    assert_eq!(
-        &frames(&sim, rules, reactor, None),
-        &expected[&vec!["YENGINEER", "INIT"]]
-    );
-    assert!(sim.apply_command(
-        OWNER,
-        &Command::UnloadPassengers {
-            transport_id: reactor
-        },
-        Some(rules),
-    ));
-    for _ in 0..480 {
-        advance(&mut sim, rules);
-        let cargo = sim
-            .entities()
-            .get(reactor)
-            .unwrap()
-            .passenger_role
-            .cargo()
-            .unwrap();
-        let types: Vec<_> = cargo
-            .passengers()
-            .iter()
-            .map(|id| {
-                sim.interner()
-                    .resolve(sim.entities().get(*id).unwrap().type_ref())
-            })
-            .collect();
-        assert_eq!(&frames(&sim, rules, reactor, None), &expected[&types]);
-        if cargo.is_empty() {
-            break;
+        assert!(
+            sim.entities()
+                .get(reactor)
+                .unwrap()
+                .passenger_role
+                .cargo()
+                .unwrap()
+                .is_empty()
+        );
+        for passenger in [engineer, initiate] {
+            let rider = sim.entities().get(passenger).unwrap();
+            assert!(!rider.passenger_role.is_inside_transport());
+            assert!(!rider.lifecycle.in_limbo());
         }
+        assert_eq!(&frames(&sim, rules, reactor, None), empty);
+        assert!(sim.apply_command(
+            OWNER,
+            &Command::Select {
+                entity_ids: vec![],
+                additive: false
+            },
+            Some(rules),
+        ));
+        assert!(frames(&sim, rules, reactor, None).is_empty());
+        assert_eq!(&frames(&sim, rules, reactor, Some(reactor)), empty);
     }
-    assert!(
-        sim.entities()
-            .get(reactor)
-            .unwrap()
-            .passenger_role
-            .cargo()
-            .unwrap()
-            .is_empty()
-    );
-    for passenger in [engineer, initiate] {
-        let rider = sim.entities().get(passenger).unwrap();
-        assert!(!rider.passenger_role.is_inside_transport());
-        assert!(!rider.lifecycle.in_limbo());
-    }
-    assert_eq!(&frames(&sim, rules, reactor, None), empty);
-    assert!(sim.apply_command(
-        OWNER,
-        &Command::Select {
-            entity_ids: vec![],
-            additive: false
-        },
-        Some(rules),
-    ));
-    assert!(frames(&sim, rules, reactor, None).is_empty());
-    assert_eq!(&frames(&sim, rules, reactor, Some(reactor)), empty);
 }

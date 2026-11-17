@@ -253,7 +253,8 @@ fn walk_tick(sim: &mut Simulation, terrain: &ResolvedTerrainGrid, grid: &PathGri
             width,
             height,
             Some((i32::from(width), i32::from(height))),
-        ),
+        )
+        .into(),
     );
     crate::sim::arena_fixture::supply_native_map(sim);
     sim.install_fixture_path_grid(Some(grid));

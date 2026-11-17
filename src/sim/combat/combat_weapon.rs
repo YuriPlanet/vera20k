@@ -840,8 +840,8 @@ fn techno_what_weapon_should_i_use<'r>(
     // Ares TechnoClass_SelectWeapon_NoAmmoWeapon (Ares.dll 10047AE0, hook
     // 0x6F3410, before H): a type with `Ammo= >= 0` fires `NoAmmoWeapon`
     // once its count is at or below `NoAmmoAmount`.
-    #[cfg(feature = "ares")]
-    if obj.ammo >= 0
+    if rules.ares()
+        && obj.ammo >= 0
         && let Some(slot) = obj.techno_combat().ammo().no_ammo_weapon(attacker.ammo)
     {
         return slot;
@@ -1076,7 +1076,7 @@ pub fn attacker_facts(entity: &GameEntity, obj: &ObjectType) -> AttackerFacts {
         drain_target_active: entity.drain.target().is_some(),
         // `MissionClass::GetCurrentMission @ 0x005B3040`: current, else queued.
         mission_is_unload: entity.mission.effective().known() == Some(MissionType::Unload),
-        is_overpowered_building: entity.tesla_charge.is_overpowered(),
+        is_overpowered_building: entity.building.tesla_charge.is_overpowered(),
         aircraft_spawn_collision: false,
         ammo: entity.ammo().map_or(-1, |ammo| ammo.current()),
     }
@@ -1408,7 +1408,7 @@ pub(crate) fn get_weapon_record<'r>(
     weapon_for_index(obj, entity.veterancy.rank(), index)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -1689,35 +1689,38 @@ mod tests {
 
     #[test]
     fn slot_zero_warhead_flag_reads_the_exact_medium_and_wood_verses_at_the_live_tier() {
-        for medium in ["0%", "0.1%", "0.001"] {
-            let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
-                "[InfantryTypes]\n0=DOG\n[DOG]\nPrimary=BITE\nSecondary=SCANNER\nElitePrimary=ELITEBITE\n\
-                 [WeaponTypes]\n0=BITE\n1=SCANNER\n2=ELITEBITE\n\
-                 [BITE]\nProjectile=AG\nWarhead=SOFT\n[ELITEBITE]\nProjectile=AG\nWarhead=FULL\n\
-                 [SCANNER]\nProjectile=AA\nWarhead=FULL\n[AG]\nAA=no\nAG=yes\n[AA]\nAA=yes\nAG=yes\n\
-                 [SOFT]\nVerses=100%,100%,100%,100%,{medium},100%,0%,100%,100%,100%,100%\n\
-                 [FULL]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
-            ))).unwrap();
-            let obj = rules.object("DOG").unwrap();
-            let mut dog = GameEntity::test_default(1, "DOG", "Americans", 5, 5);
-            dog.set_category_for_test(EntityCategory::Infantry);
-            let entities = EntityStore::new();
-            let interner = crate::sim::intern::test_interner();
-            assert_eq!(
-                passive_scan_class_bits(&rules, obj, attacker_facts(&dog, obj), |index| {
-                    get_weapon(&dog, obj, index, &entities, &rules, &interner)
-                }),
-                0xBC,
-                "slot 0 AG and slot 1 AA+AG"
-            );
-            assert_eq!(
-                primary_warhead_spares_medium_and_wood(&rules, obj, 0),
-                !crate::rules::ARES_ENABLED && medium != "0.001"
-            );
-            assert!(
-                !primary_warhead_spares_medium_and_wood(&rules, obj, 200),
-                "elite primary is resolved first"
-            );
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            for medium in ["0%", "0.1%", "0.001"] {
+                let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+                    "[InfantryTypes]\n0=DOG\n[DOG]\nPrimary=BITE\nSecondary=SCANNER\nElitePrimary=ELITEBITE\n\
+                     [WeaponTypes]\n0=BITE\n1=SCANNER\n2=ELITEBITE\n\
+                     [BITE]\nProjectile=AG\nWarhead=SOFT\n[ELITEBITE]\nProjectile=AG\nWarhead=FULL\n\
+                     [SCANNER]\nProjectile=AA\nWarhead=FULL\n[AG]\nAA=no\nAG=yes\n[AA]\nAA=yes\nAG=yes\n\
+                     [SOFT]\nVerses=100%,100%,100%,100%,{medium},100%,0%,100%,100%,100%,100%\n\
+                     [FULL]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+                ))).unwrap();
+                let obj = rules.object("DOG").unwrap();
+                let mut dog = GameEntity::test_default(1, "DOG", "Americans", 5, 5);
+                dog.set_category_for_test(EntityCategory::Infantry);
+                let entities = EntityStore::new();
+                let interner = crate::sim::intern::test_interner();
+                assert_eq!(
+                    passive_scan_class_bits(&rules, obj, attacker_facts(&dog, obj), |index| {
+                        get_weapon(&dog, obj, index, &entities, &rules, &interner)
+                    }),
+                    0xBC,
+                    "slot 0 AG and slot 1 AA+AG"
+                );
+                assert_eq!(
+                    primary_warhead_spares_medium_and_wood(&rules, obj, 0),
+                    !ares_way && medium != "0.001"
+                );
+                assert!(
+                    !primary_warhead_spares_medium_and_wood(&rules, obj, 200),
+                    "elite primary is resolved first"
+                );
+            }
         }
     }
 
@@ -1971,9 +1974,9 @@ mod tests {
     /// Ares NoAmmoWeapon (Ares.dll 10047AE0, hook 0x6F3410): once Ammo is
     /// at or below `NoAmmoAmount` the ladder answers `NoAmmoWeapon` right
     /// after the open-topped arm; above it the ladder runs on to slot 0.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_no_ammo_weapon_answers_at_low_ammo() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[VehicleTypes]\n0=LAUNCH\n1=TGT\n[LAUNCH]\nStrength=100\nAmmo=4\n\
              NoAmmoAmount=1\nNoAmmoWeapon=1\nPrimary=W0\nSecondary=W1\n\

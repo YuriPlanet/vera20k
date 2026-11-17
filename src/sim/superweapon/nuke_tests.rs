@@ -482,9 +482,8 @@ fn flash_matches_native() {
 }
 
 /// Installed Ares's Process head (`10037330`, hook `0x53A6CF`) steps only a
-/// nonnegative flash duration: one below -1 never fades out there (stock's
-/// `!= -1` test fades it at once).
-#[cfg(feature = "ares")]
+/// nonnegative flash duration: one below -1, which only Ares stores, never
+/// fades out there (stock's `!= -1` test would fade it at once).
 #[test]
 fn ares_flash_with_a_negative_duration_never_steps() {
     let mut lighting = ScenarioLightingState::default();

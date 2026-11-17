@@ -386,5 +386,7 @@ fn retail_all01_return_programs_bind_script37_and_their_locomotor_types() {
         rules.object("ZEP").unwrap().locomotor,
         LocomotorKind::Jumpjet
     );
-    assert!(action_is_ported(37));
+    for ares_way in [false, true] {
+        assert!(action_is_ported(37, ares_way));
+    }
 }

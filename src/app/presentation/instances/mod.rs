@@ -19,10 +19,10 @@
 mod helpers;
 pub(crate) use helpers::*;
 mod anim_draw;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 mod anim_translucency_tests;
-mod foot_depth;
-#[cfg(test)]
+pub(crate) mod foot_depth;
+#[cfg(all(test, tests_app_presentation_instances))]
 mod parachute_scene_tests;
 
 mod units;

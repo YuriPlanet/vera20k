@@ -101,15 +101,23 @@ const CAMERA_COMMANDS: [CommandMetadata; 4] = [
 
 /// VERA's built-in keys, with their default keys in the binding owner
 /// (`hotkeys::VERA_DEFAULT_KEYS`). Each name is the Options page's label for
-/// the same setting, but Ferry's and the two Formation commands', which have
-/// none; each category literal is [`VERA_CATEGORY_KEY`].
-const SHORTCUT_COMMANDS: [CommandMetadata; 8] = [
+/// the same setting, but Thread Stats', Ferry's, Relation Colours' and the two
+/// Formation commands', which have none; each category literal is [`VERA_CATEGORY_KEY`].
+const SHORTCUT_COMMANDS: [CommandMetadata; 12] = [
     command!(
         HotkeyCommand::PerformanceStats,
         "PerformanceStats",
         "VERA:PerformanceStats",
         "VERA:HotkeyCategory",
         "VERA:PerformanceStatsDesc",
+        None
+    ),
+    command!(
+        HotkeyCommand::ThreadStats,
+        "ThreadStats",
+        "VERA:ThreadStats",
+        "VERA:HotkeyCategory",
+        "VERA:ThreadStatsDesc",
         None
     ),
     command!(
@@ -145,6 +153,14 @@ const SHORTCUT_COMMANDS: [CommandMetadata; 8] = [
         None
     ),
     command!(
+        HotkeyCommand::SuperweaponTimers,
+        "SuperweaponTimers",
+        "VERA:SuperweaponBuildingTimers",
+        "VERA:HotkeyCategory",
+        "VERA:SuperweaponBuildingTimersHelp",
+        None
+    ),
+    command!(
         HotkeyCommand::FormationLine,
         "FormationLine",
         "VERA:FormationLine",
@@ -166,6 +182,22 @@ const SHORTCUT_COMMANDS: [CommandMetadata; 8] = [
         "VERA:Ferry",
         "VERA:HotkeyCategory",
         "VERA:FerryDesc",
+        None
+    ),
+    command!(
+        HotkeyCommand::RotatePrimary,
+        "RotatePrimary",
+        "VERA:RotatePrimary",
+        "VERA:HotkeyCategory",
+        "VERA:RotatePrimaryDesc",
+        None
+    ),
+    command!(
+        HotkeyCommand::RelationColors,
+        "RelationColors",
+        "VERA:RelationColors",
+        "VERA:HotkeyCategory",
+        "VERA:RelationColorsDesc",
         None
     ),
 ];

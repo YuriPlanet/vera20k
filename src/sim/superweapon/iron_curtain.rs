@@ -36,9 +36,6 @@
 //! `world_orders_c4_tests::c4_iron_curtain_application_cancels_pending_detonation`.
 //!
 //! RESIDUALS:
-//! - The EVA line is skipped natively while `0x00A8B538` is set
-//!   (`HouseClass::MPlayer_Defeated @ 0x004FC205`), on every client after
-//!   the local player's multiplayer defeat; VERA always plays it.
 //! - A null `IronCurtainInvokeAnim=` hands AnimClass a null type natively;
 //!   VERA constructs nothing. Retail sets `IRONBLST`.
 //! TAction109 (`0x006E36E0`) shares the receiver overrides below, but its
@@ -58,7 +55,7 @@
 //!   sim/combat, sim/radar, sim/game_entity, sim/world.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "iron_curtain_tests.rs"]
 mod tests;
 
@@ -210,8 +207,9 @@ pub(crate) fn at_waypoint(
         i32::from(cell.0),
         i32::from(cell.1),
     )
-    .center_coordinate()
-    .expect("IronCurtain waypoint requires a supported Cell slope");
+    // A slope byte past the table (a saved map) reads Z 0, as every cell
+    // looked up by coordinate does, rather than stopping the game.
+    .get_coords();
     super::spawn_super_anim(
         sim,
         rules,
@@ -303,6 +301,7 @@ pub(crate) fn curtain_object(
                                 frame,
                                 duration,
                                 InvulnKind::IronCurtain,
+                                rules.ares(),
                             );
                         }
                     }
@@ -339,7 +338,14 @@ pub(crate) fn curtain_object(
             let frame = sim.session.binary_frame();
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 let object = sim.interner.object_type(entity.type_ref(), rules);
-                techno_iron_curtain(entity, object, frame, duration, InvulnKind::IronCurtain);
+                techno_iron_curtain(
+                    entity,
+                    object,
+                    frame,
+                    duration,
+                    InvulnKind::IronCurtain,
+                    rules.ares(),
+                );
             }
         }
     }
@@ -436,7 +442,14 @@ fn foot_iron_curtain(
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.parasite.end_paralysis(frame);
         let object = sim.interner.object_type(entity.type_ref(), rules);
-        techno_iron_curtain(entity, object, frame, duration, InvulnKind::IronCurtain);
+        techno_iron_curtain(
+            entity,
+            object,
+            frame,
+            duration,
+            InvulnKind::IronCurtain,
+            rules.ares(),
+        );
     }
 }
 

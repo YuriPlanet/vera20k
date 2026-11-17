@@ -1,6 +1,7 @@
 //! `HoverLocomotionClass::Draw_Matrix @ 0x00513F40` and its Shadow_Matrix
 //! (`0x005142A0`) through the production Unit draw selectors.
 use super::*;
+use crate::app::presentation::frame::ObjectRecord;
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::sim::components::DriveCoord;
@@ -42,6 +43,15 @@ fn hover_on_ramp(terrain: &ResolvedTerrainGrid, type_id: &str, height: i32) -> G
     entity
 }
 
+/// `entity`'s record on `terrain`'s map.
+fn on(terrain: &ResolvedTerrainGrid, entity: &GameEntity) -> ObjectRecord {
+    ObjectRecord::of_test_in(
+        entity,
+        Some(terrain),
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+    )
+}
+
 fn body_slope(
     terrain: &ResolvedTerrainGrid,
     entity: &GameEntity,
@@ -50,7 +60,7 @@ fn body_slope(
     unit_render_slope_state(
         Some(terrain),
         Some(&NativeCellQuery::isolated(terrain)),
-        entity,
+        &on(terrain, entity),
         0,
         EntityDrawBand::Ground,
         angles,
@@ -59,7 +69,9 @@ fn body_slope(
 
 /// The slope [`lifted_unit_shadow_pose`] lays a Hover's shadow on.
 fn shadow_slope(terrain: &ResolvedTerrainGrid, entity: &GameEntity) -> u8 {
-    lifted_unit_shadow_pose(entity, terrain, 0).unwrap().slope
+    lifted_unit_shadow_pose(&on(terrain, entity), terrain, 0)
+        .unwrap()
+        .slope
 }
 
 /// Teleport keeps the base Draw_Matrix (`0x0055A730`, vtable slot
@@ -75,7 +87,10 @@ fn a_teleporter_draws_level_on_a_ramp_and_its_shadow_lies_on_it() {
         UnitRenderSlopeState::Stable(0)
     );
     assert_eq!(
-        unit_shadow_slope(Some(&NativeCellQuery::isolated(&terrain)), &miner),
+        unit_shadow_slope(
+            Some(&NativeCellQuery::isolated(&terrain)),
+            &ObjectRecord::of_test(&miner)
+        ),
         RAMP
     );
 }
@@ -106,8 +121,11 @@ fn a_powered_hover_draws_level_and_only_an_unpowered_one_takes_its_cell_slope() 
         .unwrap()
         .slope_type = 4;
     assert_eq!(shadow_slope(&replacement, &resting), 4);
-    assert!(ground_pose_with_angles(&resting, slope, 0, [0.; 2]).is_none());
-    assert!(turret_images_cached(&resting, slope));
+    assert!(ground_pose_with_angles(&ObjectRecord::of_test(&resting), slope, 0, [0.; 2]).is_none());
+    assert!(turret_images_cached(
+        &ObjectRecord::of_test(&resting),
+        slope
+    ));
 
     let mut aloft = hover_on_ramp(&terrain, "SAPC", 1);
     aloft.locomotor.as_mut().unwrap().power_off();
@@ -133,8 +151,8 @@ fn a_powered_hover_draws_level_and_only_an_unpowered_one_takes_its_cell_slope() 
 fn a_floating_hover_draws_its_shadow_on_the_ground_below_its_body() {
     let terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
     let hover = hover_on_ramp(&terrain, "LCRF", 80);
-    assert!(has_lifted_unit_shadow(&hover));
-    let pose = lifted_unit_shadow_pose(&hover, &terrain, 0).unwrap();
+    assert!(has_lifted_unit_shadow(&ObjectRecord::of_test(&hover)));
+    let pose = lifted_unit_shadow_pose(&on(&terrain, &hover), &terrain, 0).unwrap();
     let (x, y) = crate::render::locomotor_visual::screen_position(&hover);
     let drop = crate::util::native_x87::adjust_for_z_standard(80);
     assert!(drop > 0);
@@ -150,10 +168,10 @@ fn a_falling_vehicle_draws_its_shadow_on_the_ground_below_its_body() {
     let terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
     let mut tank = hover_on_ramp(&terrain, "MTNK", 80);
     tank.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
-    assert!(!has_lifted_unit_shadow(&tank));
+    assert!(!has_lifted_unit_shadow(&ObjectRecord::of_test(&tank)));
     tank.set_falling_down_for_test(true);
-    assert!(has_lifted_unit_shadow(&tank));
-    let pose = lifted_unit_shadow_pose(&tank, &terrain, 0).unwrap();
+    assert!(has_lifted_unit_shadow(&ObjectRecord::of_test(&tank)));
+    let pose = lifted_unit_shadow_pose(&on(&terrain, &tank), &terrain, 0).unwrap();
     let (x, y) = crate::render::locomotor_visual::screen_position(&tank);
     let drop = crate::util::native_x87::adjust_for_z_standard(80);
     assert_eq!(pose.anchor, [x, y + drop as f32]);
@@ -177,9 +195,13 @@ fn a_rocking_hover_tilts_its_level_facing_matrix_through_the_ground_pose() {
         rocking.set_angles_native_for_test(angles);
         hover.rocking = Some(rocking);
         let slope = body_slope(&terrain, &hover, angles);
-        let pose = ground_pose_with_angles(&hover, slope, 0, angles);
+        let pose = ground_pose_with_angles(&ObjectRecord::of_test(&hover), slope, 0, angles);
         assert_eq!(pose.is_some(), tilted, "{angles:?}");
-        assert_eq!(turret_images_cached(&hover, slope), !tilted, "{angles:?}");
+        assert_eq!(
+            turret_images_cached(&ObjectRecord::of_test(&hover), slope),
+            !tilted,
+            "{angles:?}"
+        );
         assert_eq!(shadow_slope(&terrain, &hover), RAMP);
         if let Some(pose) = pose {
             assert_eq!(slope, UnitRenderSlopeState::Stable(0), "{angles:?}");

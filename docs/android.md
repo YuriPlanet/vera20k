@@ -120,6 +120,40 @@ reloads its list, and a shortcut pinned before the switch keeps the old
 component's icon (the launcher owns pinned shortcuts, not the app). The app
 switcher's entry updates at once from the task description.
 
+## LAN play on Android
+
+LAN play between devices needs all of the following, and a missing one looks
+exactly like a discovery bug:
+
+- both peers on one subnet and one access point, with the access point's client
+  isolation off;
+- both on the same band when the router gives 2.4 and 5 GHz different subnets;
+- a desktop peer's firewall allowing UDP 1234 inbound.
+
+The LAN lobby binds the app to Wi-Fi while it is open
+(`ConnectivityManager.bindProcessToNetwork`, `util::lan_network`), so its
+broadcasts leave by Wi-Fi even when cellular is up or the Wi-Fi has no
+internet. A Wi-Fi change while the lobby list shows reopens the lobby's sockets
+on the new network; a change during a room or a match waits for the lobby.
+
+Two more conditions come from the game, and both look like "the other player
+does not exist":
+
+- **One build, one feature set.** The join proof carries the version,
+  `VERA20K_NETWORK_BUILD` and the extension flags, and `VERA20K_NETWORK_BUILD`
+  hashes the multiplayer sources plus every enabled Cargo feature. The APK is
+  built with `--no-default-features`, so a desktop peer must be too, or the
+  host refuses the join as a version mismatch.
+- **Player names are the LAN identity.** A player discards advertisements whose
+  name matches its own, so two peers left at the default `[New Player]` never
+  see each other's games. Android has no text input yet, so the activity
+  appends the last three hex digits of the Android ID: a fresh install enters
+  the lobby as `[New Player]-1A2` (`util::device_identity`). The ID survives
+  reinstall and an app-data clear and changes only on a factory reset. Every
+  other platform keeps the stock name.
+
+A guest also needs the host's map in its own map library.
+
 ## Deliberate choices
 
 - **`NativeActivity`, not `GameActivity`.** Smallest M0. It has no IME, so text

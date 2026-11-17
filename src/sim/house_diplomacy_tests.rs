@@ -106,9 +106,26 @@ fn computer_paranoid_allies_the_computers_against_the_human() {
     assert_eq!(sim.houses[&ids[1]].grudge_scores().get(&player), Some(&2));
 }
 
-/// The gate (`0x00501640..0x00501675`): Rules `AlliesAllowed=`, and no
-/// computer slot with a team, which `Create_Houses` records
-/// (`0x006881F5..0x00688209`).
+/// VERA `[General] AINearestEnemy=`: the computers stay apart and none is
+/// turned on the human.
+#[test]
+fn ai_nearest_enemy_keeps_the_computers_from_banding_against_the_human() {
+    let mut rules = rules();
+    rules.general.ai_nearest_enemy = true;
+    let houses = [
+        ("Player", "Americans", true),
+        ("Computer1", "Russians", false),
+        ("Computer2", "Russians", false),
+    ];
+    let (mut sim, ids) = sim_with(&rules, &houses);
+    paranoid(&mut sim, &rules);
+    assert!(sim.house_alliances.as_map().is_empty());
+    assert!(sim.houses[&ids[1]].grudge_scores().is_empty());
+}
+
+/// The gate (`0x00501640..0x00501675`): the mode's vt+4 (Cooperative only)
+/// or Rules `AlliesAllowed=`, and no computer slot with a team, which
+/// `Create_Houses` records (`0x006881F5..0x00688209`).
 #[test]
 fn computer_paranoid_needs_allies_allowed_and_no_computer_team() {
     let mut rules = rules();
@@ -163,6 +180,42 @@ fn computer_paranoid_needs_allies_allowed_and_no_computer_team() {
             allies(&sim, "Computer1") == set(&["Computer2"]),
             paranoid_runs,
             "human team {human_team:?}, computer team {computer_team:?}"
+        );
+    }
+}
+
+/// Cooperative's vt+4 (`0x005C4EE0`) answers true, so its computers turn
+/// paranoid although retail MPCoopMD sets `AlliesAllowed=no` (`0x00501659`);
+/// FreeForAll's (`0x005C0E30`) answers false, like every other mode's.
+#[test]
+fn cooperative_computers_turn_paranoid_without_allies_allowed() {
+    use crate::skirmish_modes::MpModeClass;
+    let mut rules = rules();
+    rules.general.allies_allowed = false;
+    for (mode, paranoid_runs) in [
+        (MpModeClass::Cooperative, true),
+        (MpModeClass::FreeForAll, false),
+    ] {
+        let (mut sim, ids) = sim_with(
+            &rules,
+            &[
+                ("Player", "Americans", true),
+                ("Computer1", "Russians", false),
+                ("Computer2", "Russians", false),
+            ],
+        );
+        sim.session
+            .install_multiplayer_house_identity(mode, Vec::new());
+        paranoid(&mut sim, &rules);
+        assert_eq!(
+            allies(&sim, "Computer1") == set(&["Computer2"]),
+            paranoid_runs,
+            "{mode:?}"
+        );
+        assert_eq!(
+            !sim.houses[&ids[1]].grudge_scores().is_empty(),
+            paranoid_runs,
+            "{mode:?}"
         );
     }
 }

@@ -33,11 +33,18 @@ const _: () = assert!(RETAIL_SIDE.is_power_of_two() && SIDE.is_power_of_two());
 pub(crate) struct CellMap<V> {
     /// Dense cells per side: [`RETAIL_SIDE`], or [`SIDE`] once grown.
     side: usize,
+    /// One column each; the presentation copy takes only the columns written
+    /// since its last sync ([`Self::sync_into`], docs/sim-thread.md).
     strips: Vec<Option<Box<[Option<V>]>>>,
     /// One bit per slot, set while the slot holds a value.
     filled: Vec<u64>,
     filled_count: usize,
     outside: BTreeMap<(u16, u16), V>,
+    /// One bit per strip written since the last sync.
+    changed: Vec<u64>,
+    /// The layout or `outside` changed since the last sync.
+    reshaped: bool,
+    mark: crate::util::synced::SyncMark,
 }
 
 impl<V> Default for CellMap<V> {
@@ -48,8 +55,21 @@ impl<V> Default for CellMap<V> {
             filled: Vec::new(),
             filled_count: 0,
             outside: BTreeMap::new(),
+            changed: Vec::new(),
+            reshaped: true,
+            mark: crate::util::synced::SyncMark::new(),
         }
     }
+}
+
+/// Mark strip `strip` written since the last sync.
+#[inline]
+fn note_strip(changed: &mut Vec<u64>, strip: usize) {
+    let word = strip / 64;
+    if word >= changed.len() {
+        changed.resize(word + 1, 0);
+    }
+    changed[word] |= 1 << (strip % 64);
 }
 
 /// Whether `key` lies in the largest dense array rather than `outside`.
@@ -71,7 +91,7 @@ fn merge_by_key<T>(
     })
 }
 
-impl<V> CellMap<V> {
+impl<V: Clone> CellMap<V> {
     pub(crate) fn new() -> Self {
         Self::default()
     }
@@ -80,9 +100,10 @@ impl<V> CellMap<V> {
         self.filled_count + self.outside.len()
     }
 
-    /// Slots per strip: eight columns of the dense array.
+    /// Slots per strip: one column of the dense array, so a sync copies only
+    /// the columns written since the last.
     fn strip_slots(&self) -> usize {
-        8 * self.side
+        self.side
     }
 
     /// The dense slot of `key`; `None` when it lies outside the current side.
@@ -106,7 +127,7 @@ impl<V> CellMap<V> {
     /// `slot`'s strip and its offset there: the slot over, and modulo,
     /// [`Self::strip_slots`].
     fn strip_and_offset(&self, slot: usize) -> (usize, usize) {
-        let shift = self.side_shift() + 3;
+        let shift = self.side_shift();
         (slot >> shift, slot & ((1 << shift) - 1))
     }
 
@@ -118,13 +139,40 @@ impl<V> CellMap<V> {
 
     fn slot_mut(&mut self, slot: usize) -> Option<&mut Option<V>> {
         let (strip, offset) = self.strip_and_offset(slot);
-        let strip = self.strips.get_mut(strip)?.as_deref_mut()?;
-        Some(&mut strip[offset])
+        let slots = self.strips.get_mut(strip)?.as_mut()?;
+        note_strip(&mut self.changed, strip);
+        Some(&mut slots[offset])
+    }
+
+    /// Bring `mirror`, the presentation copy, up to this map: the strips
+    /// written since the last sync into it, or all of it when it is another
+    /// copy or the layout changed.
+    pub(crate) fn sync_into(&mut self, mirror: &mut Self) {
+        if self.reshaped || !self.mark.knows(&mirror.mark) {
+            mirror.side = self.side;
+            mirror.strips.clone_from(&self.strips);
+            mirror.outside.clone_from(&self.outside);
+        } else {
+            for (word, bits) in self.changed.iter().enumerate() {
+                let mut bits = *bits;
+                while bits != 0 {
+                    let strip = word * 64 + bits.trailing_zeros() as usize;
+                    bits &= bits - 1;
+                    mirror.strips[strip].clone_from(&self.strips[strip]);
+                }
+            }
+        }
+        mirror.filled.clone_from(&self.filled);
+        mirror.filled_count = self.filled_count;
+        self.changed.iter_mut().for_each(|word| *word = 0);
+        self.reshaped = false;
+        self.mark.synced(&mirror.mark);
     }
 
     /// Relay the dense storage out at the largest side. Runs once, on the
     /// first key of an extended map's array beyond the retail side.
     fn grow(&mut self) {
+        self.reshaped = true;
         let old_side = std::mem::replace(&mut self.side, SIDE);
         let old_strips = std::mem::take(&mut self.strips);
         self.filled = Vec::new();
@@ -132,11 +180,12 @@ impl<V> CellMap<V> {
         for (strip, slots) in old_strips.into_iter().enumerate() {
             for (offset, value) in slots
                 .into_iter()
-                .flat_map(|slots| slots.into_vec())
+                .flat_map(|slots| slots.to_vec())
                 .enumerate()
             {
                 if let Some(value) = value {
-                    let slot = strip * 8 * old_side + offset;
+                    // One column per strip at the old side.
+                    let slot = strip * old_side + offset;
                     let key = ((slot / old_side) as u16, (slot % old_side) as u16);
                     self.get_or_insert_with(key, || value);
                 }
@@ -167,6 +216,7 @@ impl<V> CellMap<V> {
         make: impl FnOnce() -> V,
     ) -> &mut V {
         if !is_dense(key) {
+            self.reshaped = true;
             return self.outside.entry(key).or_insert_with(make);
         }
         if self.slot_of(key).is_none() {
@@ -176,9 +226,11 @@ impl<V> CellMap<V> {
         let strip_slots = self.strip_slots();
         let (strip, offset) = self.strip_and_offset(slot);
         if self.strips.is_empty() {
-            self.strips.resize_with(self.side / 8, || None);
+            self.strips.resize_with(self.side, || None);
             self.filled = vec![0; self.side * self.side / 64];
+            self.reshaped = true;
         }
+        note_strip(&mut self.changed, strip);
         let strip =
             self.strips[strip].get_or_insert_with(|| (0..strip_slots).map(|_| None).collect());
         let value = &mut strip[offset];
@@ -202,6 +254,7 @@ impl<V> CellMap<V> {
             return if is_dense(*key) {
                 None
             } else {
+                self.reshaped = true;
                 self.outside.remove(key)
             };
         };
@@ -231,11 +284,12 @@ impl<V> CellMap<V> {
     /// Mutable entries in ascending `(x, y)` order.
     fn iter_mut(&mut self) -> impl Iterator<Item = ((u16, u16), &mut V)> + '_ {
         let (side, side_shift, strip_slots) = (self.side, self.side_shift(), self.strip_slots());
+        self.reshaped = true;
         let inside = self
             .strips
             .iter_mut()
             .enumerate()
-            .filter_map(|(strip, slots)| Some((strip, slots.as_deref_mut()?)))
+            .filter_map(|(strip, slots)| Some((strip, &mut **slots.as_mut()?)))
             .flat_map(move |(strip, slots)| {
                 slots
                     .iter_mut()
@@ -276,21 +330,21 @@ impl Iterator for SetBits {
     }
 }
 
-impl<V: PartialEq> PartialEq for CellMap<V> {
+impl<V: Clone + PartialEq> PartialEq for CellMap<V> {
     fn eq(&self, other: &Self) -> bool {
         self.len() == other.len() && self.iter().eq(other.iter())
     }
 }
 
-impl<V: Eq> Eq for CellMap<V> {}
+impl<V: Clone + Eq> Eq for CellMap<V> {}
 
-impl<V: fmt::Debug> fmt::Debug for CellMap<V> {
+impl<V: Clone + fmt::Debug> fmt::Debug for CellMap<V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_map().entries(self.iter()).finish()
     }
 }
 
-impl<V: Serialize> Serialize for CellMap<V> {
+impl<V: Clone + Serialize> Serialize for CellMap<V> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut map = serializer.serialize_map(Some(self.len()))?;
         for (key, value) in self.iter() {
@@ -300,11 +354,11 @@ impl<V: Serialize> Serialize for CellMap<V> {
     }
 }
 
-impl<'de, V: Deserialize<'de>> Deserialize<'de> for CellMap<V> {
+impl<'de, V: Clone + Deserialize<'de>> Deserialize<'de> for CellMap<V> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct CellMapVisitor<V>(PhantomData<V>);
 
-        impl<'de, V: Deserialize<'de>> Visitor<'de> for CellMapVisitor<V> {
+        impl<'de, V: Clone + Deserialize<'de>> Visitor<'de> for CellMapVisitor<V> {
             type Value = CellMap<V>;
 
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -324,7 +378,7 @@ impl<'de, V: Deserialize<'de>> Deserialize<'de> for CellMap<V> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::CellMap;
     use std::collections::BTreeMap;

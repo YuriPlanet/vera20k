@@ -172,9 +172,64 @@ pub fn build_sidebar_chrome_instances_for_layout(
                 // SIDE2's loaded canvas height. SIDE3 and ADDON follow the
                 // last actual tile.
                 let cx = layout.strip_x;
-                for row in 0..layout.side2_tile_count {
-                    let y = layout.cameo_grid_top + row as f32 * atlas.side2.pixel_size[1];
-                    push_chrome(&mut inst, atlas.side2, cx, y, d, camera_offset);
+                if spec.columns() <= 2 {
+                    for row in 0..layout.side2_tile_count {
+                        let y = layout.cameo_grid_top + row as f32 * atlas.side2.pixel_size[1];
+                        push_chrome(&mut inst, atlas.side2, cx, y, d, camera_offset);
+                    }
+                } else {
+                    // VERA's columns: SIDE2 paints the original's two button
+                    // frames, so a row of three to five repeats one of them
+                    // per cell, scaled with the cameo it holds, instead of
+                    // stretching the painted pair out of shape. The panel's
+                    // own edges keep their width, so the border runs unbroken
+                    // down the strip.
+                    let art = atlas.side2.pixel_size;
+                    let row_h = spec.cameo_row_height.max(1.0);
+                    let inset = spec.cameo_inset_x;
+                    let pitch = spec.cameo_column_pitch.max(1.0);
+                    let cell = spec
+                        .cameo_cell_source_width
+                        .min((art[0] - inset).max(1.0))
+                        .max(1.0);
+                    let rail = (art[0] - inset - 2.0 * cell).max(0.0);
+                    let cell_art = atlas.side2.columns(inset, cell);
+                    let left_edge = atlas.side2.columns(0.0, inset);
+                    let right_edge = atlas.side2.columns(art[0] - rail, rail);
+                    for row in 0..layout.side2_tile_count {
+                        let y = layout.cameo_grid_top + row as f32 * row_h;
+                        for col in 0..spec.columns() {
+                            push_chrome_sized(
+                                &mut inst,
+                                cell_art,
+                                cx + inset + col as f32 * pitch,
+                                y,
+                                [pitch, row_h],
+                                d,
+                                camera_offset,
+                            );
+                        }
+                        push_chrome_sized(
+                            &mut inst,
+                            left_edge,
+                            cx,
+                            y,
+                            [inset, row_h],
+                            d,
+                            camera_offset,
+                        );
+                        if rail > 0.0 {
+                            push_chrome_sized(
+                                &mut inst,
+                                right_edge,
+                                cx + art[0] - rail,
+                                y,
+                                [rail, row_h],
+                                d,
+                                camera_offset,
+                            );
+                        }
+                    }
                 }
                 push_chrome(&mut inst, atlas.side3, cx, layout.side3_y, d, camera_offset);
                 if let Some(addon) = atlas.unknown_top_housing {
@@ -222,14 +277,14 @@ pub fn build_sidebar_chrome_instances_for_layout(
 
 /// Render the vertical power bar meter by stacking powerp.shp strip tiles.
 ///
-/// Draws segments from top to bottom matching the original PowerClass::Draw_It:
-///   Empty (top)  = unused bar space (frame 0)
-///   Red          = deficit segments (frame 3)
-///   Yellow       = balance indicator (frame 2)
-///   Green        = surplus / consumed power (frame 1, with frame 4 blink)
+/// Draws segments from top to bottom as PowerClass::Draw 63FB20 does
+/// ([`PowerBarAnimState::visit_draw_segments`]): empty space (frame 0), the
+/// blink (frame 4) in place of the first lit segment, then the surplus over
+/// 100 (frame 1, +152C), the spare up to 100 (frame 2, +1530) and the drain
+/// (frame 3, +1534).
 ///
-/// Segment counts come from `PowerBarAnimState` which animates them
-/// one-at-a-time toward their targets for a smooth sliding effect.
+/// Segment counts come from `PowerBarAnimState`, which moves them one at a
+/// time toward their targets.
 fn render_power_bar(
     inst: &mut Vec<SpriteInstance>,
     atlas: &SidebarChromeAtlas,
@@ -310,7 +365,6 @@ fn push_chrome_sized(
 // ---------------------------------------------------------------------------
 // Cameo icon instances
 // ---------------------------------------------------------------------------
-
 /// Horizontal padding around the ready text (each side, in native pixels).
 pub(crate) const READY_PAD_X: f32 = 2.0;
 /// Vertical padding around the ready text (each side, in native pixels).
@@ -345,19 +399,18 @@ pub(crate) struct CameoStatusLabels<'a> {
     pub hold: &'a str,
     pub charging: &'a str,
     pub active: &'a str,
-    /// Ares: each type's localized `Text.*` labels ([`ares_status_texts`]).
-    #[cfg(feature = "ares")]
+    /// Ares: each type's localized `Text.*` labels ([`ares_status_texts`]);
+    /// `None` unless Ares plays in the game (`RuleSet::ares`).
     pub ares: Option<&'a AresStatusTexts>,
 }
 
 /// Each SuperWeaponType's localized NameReadiness texts, keyed by its
 /// upper-case section: Preparing, Hold, Ready, Charging, Active; an empty
 /// label resolves to no text.
-#[cfg(feature = "ares")]
 pub(crate) type AresStatusTexts = std::collections::HashMap<String, [String; 5]>;
 
-/// Resolve every type's Ares `Text.*` labels through the shared CSF owner.
-#[cfg(feature = "ares")]
+/// Resolve every type's Ares `Text.*` labels through the shared CSF owner,
+/// once per match (`install_world_presentation`).
 pub(crate) fn ares_status_texts(
     rules: &crate::rules::ruleset::RuleSet,
     text: impl Fn(&str) -> String,
@@ -390,6 +443,7 @@ pub(crate) fn ares_status_texts(
 
 /// `SuperClass::NameReadiness6CC2B0` status label; `None` while it has no
 /// status text. Shared by the right cameo strip and the left sidebar button.
+/// When Ares plays in the game (`RuleSet::ares`, carried by `labels.ares`),
 /// Ares's replacement (hook 6CC2B0, Ares.dll 100356A0) returns the type's
 /// `Text.*` label, `Text.Preparing` without a status, and nothing for an
 /// empty label.
@@ -399,7 +453,6 @@ pub(crate) fn superweapon_status_label<'a>(
     labels: CameoStatusLabels<'a>,
 ) -> Option<&'a str> {
     use crate::sim::superweapon::SuperWeaponStatus;
-    #[cfg(feature = "ares")]
     if let (Some(texts), Some(section)) = (labels.ares, section)
         && let Some(texts) = texts.get(&section.to_ascii_uppercase())
     {
@@ -412,8 +465,6 @@ pub(crate) fn superweapon_status_label<'a>(
         }];
         return (!text.is_empty()).then_some(text.as_str());
     }
-    #[cfg(not(feature = "ares"))]
-    let _ = section;
     display.status.map(|status| match status {
         SuperWeaponStatus::Hold => labels.hold,
         SuperWeaponStatus::Ready => labels.ready,
@@ -453,8 +504,10 @@ fn status_text_precedes_clock(item: &crate::ui::sidebar::SidebarItem) -> bool {
 /// Whether a Building or Defense cameo may draw a queue count at all.
 ///
 /// gamemd's badge path resolves the requested type's House Factory with a
-/// hard-coded `BuildCat` (`StripClass::Draw`, `0x006A9C48..0x006A9CC3`), so a
-/// structure entry never finds its own Factory and never counts. Phobos'
+/// hard-coded `BuildCat` 0 (`StripClass::Draw`, push at `0x006A9C52`, then
+/// Fetch_Factory `0x00500510`): every structure gets the Buildings Factory. A
+/// Building entry finds its own, which holds one build at a time, so its count
+/// is at most the held copy; a Defense entry never counts. Phobos'
 /// `StripClass_DrawStrip_FindFactoryDehardCode @ 0x006A9C54`
 /// (`src/Ext/Building/Hooks.cpp`) replaces that `BuildCat` with the building
 /// type's own, unconditionally — it is not gated on
@@ -463,6 +516,11 @@ fn status_text_precedes_clock(item: &crate::ui::sidebar::SidebarItem) -> bool {
 const STRUCTURE_QUEUE_BADGES: bool = cfg!(feature = "phobos");
 
 fn shows_queue_badge(item: &crate::ui::sidebar::SidebarItem, structure_badges: bool) -> bool {
+    // VERA's Superweapon Limit: a superweapon cameo counts its charged shots
+    // once more than one waits. gamemd's has no count.
+    if item.is_superweapon {
+        return item.queued_count > 1;
+    }
     let counts = !matches!(
         item.queue_category,
         crate::sim::production::ProductionCategory::Building
@@ -861,6 +919,15 @@ pub(crate) fn build_sidebar_cameo_instances(
             });
         }
     }
+    // StripDraw's empty-slot path (6A99BE -> 6A9B4B) paints the same flash
+    // darkening on a lit empty record.
+    if let Some(mask) = chrome.and_then(|atlas| atlas.darken.as_ref()) {
+        flash.extend(
+            view.flash_empty_slots
+                .iter()
+                .filter_map(|&slot| build_darken_instance(mask, slot, co, 4)),
+        );
+    }
     SidebarCameoInstances {
         cameo: instances,
         hover,
@@ -871,6 +938,66 @@ pub(crate) fn build_sidebar_cameo_instances(
         label_overlay,
         overlay: overlay_instances,
     }
+}
+
+/// The observer strip's pictures, from the chrome atlas: each listed House's
+/// side background at its row pair, its flag 70 pixels right and down
+/// (`0x006AA0F1..0x006AA154`, `0x006AA1E3..0x006AA2C9`).
+pub(crate) fn build_observer_strip_instances(
+    state: &AppState,
+    view: &SidebarView,
+) -> Vec<SpriteInstance> {
+    let (Some(houses), Some(atlas)) = (view.observer.as_deref(), current_sidebar_chrome(state))
+    else {
+        return Vec::new();
+    };
+    let co = [
+        state.match_state.input.camera_x,
+        state.match_state.input.camera_y,
+    ];
+    let art = &atlas.observer_art;
+    let mut out = Vec::new();
+    for house in houses {
+        let [x, y] = house.origin;
+        if let Some(&background) = art.background(house.side) {
+            push_chrome(&mut out, background, x, y, OBSERVER_BACKGROUND_DEPTH, co);
+        }
+        if let Some(&flag) = art.flag(house.country) {
+            push_chrome(&mut out, flag, x + 70.0, y + 70.0, OBSERVER_FLAG_DEPTH, co);
+        }
+    }
+    out
+}
+
+/// Over the strip's SIDE2 tiles, under its text.
+const OBSERVER_BACKGROUND_DEPTH: f32 = 0.00045;
+const OBSERVER_FLAG_DEPTH: f32 = 0.000449;
+
+/// The observer strip's texts in each House's colour (Fancy_Text_Print
+/// `0x004A61C0`, style `0x42`): the name at 8, 4 into the row pair, each
+/// line 17 pixels below the last (`0x006AA373..0x006AA583`).
+fn observer_strip_text(
+    font: &BitFont,
+    houses: &[crate::ui::sidebar::ObserverEntry],
+    co: [f32; 2],
+) -> Vec<SpriteInstance> {
+    let mut out = Vec::new();
+    for house in houses {
+        let tint = house.rgb.map(|c| f32::from(c) / 255.0);
+        let [x, y] = [house.origin[0] + 8.0, house.origin[1] + 4.0];
+        for (line, text) in std::iter::once(&house.name).chain(&house.lines).enumerate() {
+            out.extend(font.build_text(
+                text,
+                x,
+                y + line as f32 * 17.0,
+                1.0,
+                crate::render::sidebar_text::CREDITS_DEPTH,
+                tint,
+                co,
+            ));
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -920,6 +1047,8 @@ pub(crate) fn build_sidebar_text_instances(
                 .flatten();
             let fit = status_label_fit(font, status_text, slot.w, badge.as_deref());
             let text_w = font.fitted(fit, |font| font.text_width(status_text)) as f32;
+            // Residual: native truncates this halving; the float half
+            // places odd widths up to 1 px apart, which a player cannot see.
             let text_x = if shifts_left {
                 slot.x + READY_PAD_X
             } else {
@@ -954,6 +1083,9 @@ pub(crate) fn build_sidebar_text_instances(
             );
         }
     }
+    if let Some(houses) = view.observer.as_deref() {
+        instances.extend(observer_strip_text(&state.renderer.bit_font, houses, co));
+    }
     SidebarTextInstances {
         status: instances,
         queue,
@@ -961,7 +1093,7 @@ pub(crate) fn build_sidebar_text_instances(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::{
         build_gclock_instance, hovered_cameo_slot, place_canvas_crop_in_slot, push_rect_outline,
@@ -1111,8 +1243,8 @@ mod tests {
                 can_fire: online,
                 can_afford: true,
                 constraints_blocked: false,
-                #[cfg(feature = "ares")]
                 ares_refusal: None,
+                ready_shots: 0,
                 display,
             }];
             let cameos = sidebar::cameo_order::CameoStrips::layout_fixture(&[], &[], &supers);
@@ -1148,7 +1280,6 @@ mod tests {
             hold: "On Hold",
             charging: "Charging",
             active: "Firestorm On",
-            #[cfg(feature = "ares")]
             ares: None,
         };
         let display = SuperWeaponDisplay {
@@ -1241,11 +1372,11 @@ mod tests {
     /// this, a held or unaffordable item looked identical to an idle one.
     /// Ares NameReadiness (hook 6CC2B0, 100356A0): per-type `Text.*`,
     /// Text.Preparing without a status, nothing for an empty label.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_status_label_reads_the_type_texts() {
         use super::{CameoStatusLabels, ares_status_texts, superweapon_status_label};
         use crate::sim::superweapon::{SuperWeaponDisplay, SuperWeaponStatus as S};
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules =
             crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
                 "[SuperWeaponTypes]\n0=Sonar\n[Sonar]\nText.Preparing=TXT_WAIT\n\
@@ -1290,7 +1421,6 @@ mod tests {
             hold: "On Hold",
             charging: "Charging",
             active: "Active",
-            #[cfg(feature = "ares")]
             ares: None,
         };
 
@@ -1501,7 +1631,7 @@ mod tests {
     }
 
     /// A count of one is the held product rather than a queued copy whenever the
-    /// linked Factory holds this entry's type, whether that product is finished
+    /// primary Factory holds this entry's type, whether that product is finished
     /// or on hold: gamemd compares `Factory+0x58`'s type with the requested one
     /// at `0x006A9CBF..0x006A9CC3` and draws nothing. Reading the building flag
     /// instead left a bare `1` on a placement-ready structure.

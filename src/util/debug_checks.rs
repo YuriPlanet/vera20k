@@ -2,8 +2,7 @@
 //! every layer's derived caches can read them.
 
 /// Whether debug builds compare each read of a kept product (the movement
-/// pass's derived inputs, the kept Ground sort keys, the pointer-expiry
-/// listeners, a path batch's entry facts, the sidebar's derived inputs, the
+/// pass's derived inputs, the pointer-expiry listeners, a path batch's entry facts, the sidebar's derived inputs, the
 /// rules' projected house masks) with a fresh derivation.
 /// Never in release. On in debug unless `VERA20K_SKIP_LIVE_READ_CHECK` is set,
 /// which scale instruments use to time without the rebuilds the checks cost.

@@ -22,6 +22,7 @@ fn house(has_enemy: bool, offensive_cell: (u16, u16)) -> HouseTargetingObservati
 
 #[test]
 fn handler_mode_row_supplies_constraints_until_a_pass_reads_some() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     // MultiMissile's Initialize (100733BC) selects mode 1, whose row needs an
     // enemy; an unknown token keeps it and a comma-only list stores none.
     let nuke = read_passes("MultiMissile", &["", "SW.AITargeting.Constraints=bogus\n"]);
@@ -44,6 +45,7 @@ fn handler_mode_row_supplies_constraints_until_a_pass_reads_some() {
 
 #[test]
 fn manual_fire_reads_the_offensive_cell_and_skips_ai_only_constraints() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let state = read_passes(
         "GenericWarhead",
         &["SW.AITargeting.Constraints=offensive_cell_set,lowpower,attacked\n"],
@@ -83,6 +85,7 @@ fn site(center: (i32, i32), eligible: bool) -> LaunchSite {
 
 #[test]
 fn mono_requires_target_uses_land_water_semantics() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (requirement, water, accepted) in [
         (TargetMask::LAND, false, true),
         (TargetMask::LAND, true, false),
@@ -109,6 +112,7 @@ fn mono_requires_target_uses_land_water_semantics() {
 
 #[test]
 fn mono_content_mask_distinguishes_empty_aircraft_and_building() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let empty = requirements(TargetMask::EMPTY, HouseMask::NONE);
     assert!(evaluate_target(&input(&empty)).is_ok());
     let units = requirements(TargetMask::UNIT, HouseMask::ENEMIES);
@@ -133,6 +137,7 @@ fn mono_content_mask_distinguishes_empty_aircraft_and_building() {
 
 #[test]
 fn mono_target_kind_and_house_must_match_same_candidate() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let requirements = requirements(TargetMask::UNIT, HouseMask::ENEMIES);
     let mut input = input(&requirements);
     input.contents = &[
@@ -153,12 +158,14 @@ fn mono_target_kind_and_house_must_match_same_candidate() {
 
 #[test]
 fn mono_house_requirement_alone_does_not_reject_empty_cell() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let requirements = requirements(TargetMask::NONE, HouseMask::ENEMIES);
     assert!(evaluate_target(&input(&requirements)).is_ok());
 }
 
 #[test]
 fn mono_fire_into_shroud_rejects_only_never_explored_shroud() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let requirements = requirements(TargetMask::NONE, HouseMask::NONE);
     let mut input = input(&requirements);
     input.fire_into_shroud = false;
@@ -170,6 +177,7 @@ fn mono_fire_into_shroud_rejects_only_never_explored_shroud() {
 
 #[test]
 fn mono_range_boundary_is_inclusive_for_any_eligible_launcher() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let requirements = requirements(TargetMask::NONE, HouseMask::NONE);
     let mut input = input(&requirements);
     input.range = (5.0, 10.0);
@@ -187,6 +195,7 @@ fn mono_range_boundary_is_inclusive_for_any_eligible_launcher() {
 
 #[test]
 fn mono_range_rejects_when_only_inactive_launcher_is_in_range() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let requirements = requirements(TargetMask::NONE, HouseMask::NONE);
     let mut input = input(&requirements);
     input.target_cell = Some((5, 0));
@@ -201,6 +210,7 @@ fn mono_range_rejects_when_only_inactive_launcher_is_in_range() {
 
 #[test]
 fn mono_range_uses_each_launchers_effective_range() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let requirements = requirements(TargetMask::NONE, HouseMask::NONE);
     let mut input = input(&requirements);
     input.target_cell = Some((18, 0));
@@ -221,6 +231,7 @@ fn mono_range_uses_each_launchers_effective_range() {
 
 #[test]
 fn mono_range_or_required_site_without_launcher_fails_closed() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let requirements = requirements(TargetMask::NONE, HouseMask::NONE);
     let mut input = input(&requirements);
     input.range = (-1.0, 8.0);
@@ -241,6 +252,7 @@ fn mono_range_or_required_site_without_launcher_fails_closed() {
 
 #[test]
 fn mono_invalid_range_and_missing_target_are_rejected() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let requirements = requirements(TargetMask::NONE, HouseMask::NONE);
     let mut input = input(&requirements);
     for range in [(8.0, 2.0), (f64::INFINITY, 5.0), (f64::NAN, -1.0)] {

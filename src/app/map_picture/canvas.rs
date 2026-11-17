@@ -408,7 +408,7 @@ impl Picture {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::map::preview::PreviewStartPoint;

@@ -167,6 +167,7 @@ fn scene(row: &Value) -> (Simulation, RuleSet, InternedId) {
     );
     if boolean(&before["c4"]) {
         building
+            .building
             .pending_c4_detonation
             .set_for_test(Some(PendingC4Detonation::new(
                 crate::sim::timer::CdTimer::started(now as i32, 100),
@@ -195,7 +196,7 @@ fn state(sim: &Simulation, rules: &RuleSet, new_owner: InternedId) -> Value {
         "queued": building.mission.queued().raw(),
         "status": building.mission.handler_state(),
         "buildup": rules.has_buildup(sim.interner.resolve(building.type_ref())),
-        "c4": building.pending_c4_detonation.pending().is_some(),
+        "c4": building.building.pending_c4_detonation.pending().is_some(),
         "upgrade_count": building.building_upgrades().count(),
         "upgrade_slots": building.building_upgrades().types().map(|kind|
             kind.map(|kind| sim.interner.resolve(kind))),

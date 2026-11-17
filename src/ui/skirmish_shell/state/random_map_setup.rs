@@ -6,11 +6,9 @@
 
 use crate::map::rmg::options::RmgOptions;
 use crate::map::rmg::preview::PreviewImage;
-#[cfg(not(feature = "ares"))]
-use crate::map::rmg::randomize::randomize;
-#[cfg(feature = "ares")]
-use crate::map::rmg::randomize::randomize_from_combos;
-use crate::map::rmg::randomize::{RandomRanged, derive_from_map_type};
+use crate::map::rmg::randomize::{
+    RandomRanged, derive_from_map_type, randomize, randomize_from_combos,
+};
 use crate::map::rmg::settings::RmgSettings;
 use crate::ui::shell::combobox::ComboPress;
 use crate::ui::shell::geom::{RectPx, ShellScale};
@@ -31,7 +29,6 @@ impl RandomRanged for MainRngRanged {
         self.0.ranged(min, max)
     }
 
-    #[cfg(feature = "ares")]
     fn next_u32(&mut self) -> u32 {
         self.0.next_u32()
     }
@@ -112,12 +109,9 @@ const fn item(key: &'static str, fallback: &'static str, value: i32) -> SetupCom
 
 /// Landform entries. The original lists values 1..4 only: archipelago (0)
 /// is absent, though the generator builds it and the string table names it.
-/// VERA lists it last in an offline Skirmish dialog, as it does the larger
-/// sizes, so the original four keep their rows; network dialogs keep four.
-#[cfg(not(feature = "ares"))]
-const NATIVE_MAP_TYPE_ITEMS: usize = 4;
-#[cfg(not(feature = "ares"))]
-const MAP_TYPE_ITEMS: [SetupComboItem; 5] = [
+/// VERA lists it last, as it does the larger sizes, so the original four keep
+/// their rows.
+const STOCK_MAP_TYPE_ITEMS: [SetupComboItem; 5] = [
     item("TXT_MAP_CONTINENT", "Continent", 1),
     item("TXT_MAP_TEAM_CONTINENTS", "Team Continents", 2),
     item("TXT_MAP_INLAND", "Inland", 3),
@@ -126,11 +120,9 @@ const MAP_TYPE_ITEMS: [SetupComboItem; 5] = [
 ];
 /// Ares' RMG_EnableArchipelago (Ares.dll 1006ACF0, hook 0x596FFE -> 0x597008)
 /// starts the fill at the table's first label with item data 0, so every
-/// dialog lists archipelago first.
-#[cfg(feature = "ares")]
-const NATIVE_MAP_TYPE_ITEMS: usize = 5;
-#[cfg(feature = "ares")]
-const MAP_TYPE_ITEMS: [SetupComboItem; 5] = [
+/// dialog lists archipelago first when Ares.dll is loaded (the game is read
+/// the Ares way).
+const ARES_MAP_TYPE_ITEMS: [SetupComboItem; 5] = [
     item("TXT_MAP_ARCHIPELAGO", "Archipelago", 0),
     item("TXT_MAP_CONTINENT", "Continent", 1),
     item("TXT_MAP_TEAM_CONTINENTS", "Team Continents", 2),
@@ -149,24 +141,18 @@ const TIME_ITEMS: [SetupComboItem; 4] = [
 /// name strings rather than the dialog's string list. VERA also offers the
 /// generator's URBAN and DESERT (`rmg::emit::theater_name` 2 and 3), which
 /// the string table names. LUNAR is not offered: it authors no water, shore,
-/// cliff or road tiles for the generator to place. Like the larger sizes,
-/// the added theaters are offered only in an offline Skirmish dialog.
-#[cfg(not(feature = "ares"))]
-const NATIVE_THEATER_ITEMS: usize = 2;
-#[cfg(not(feature = "ares"))]
-const THEATER_ITEMS: [SetupComboItem; 4] = [
+/// cliff or road tiles for the generator to place.
+const STOCK_THEATER_ITEMS: [SetupComboItem; 4] = [
     item("Name:Temperate", "Temperate", 0),
     item("Name:Snow", "Snow", 1),
     item("Name:Urban", "Urban", 2),
     item("TXT_BIOME_DESERT", "Desert", 3),
 ];
 /// Ares' RMG_EnableDesert (Ares.dll 1006AD10, hook 0x5970EA) adds
-/// `Name:Desert` with item data 3 after the two native entries, in every
-/// dialog; the offline Skirmish dialog adds URBAN after it.
-#[cfg(feature = "ares")]
-const NATIVE_THEATER_ITEMS: usize = 3;
-#[cfg(feature = "ares")]
-const THEATER_ITEMS: [SetupComboItem; 4] = [
+/// `Name:Desert` with item data 3 after the two native entries; VERA adds
+/// URBAN after it. Listed when Ares.dll is loaded (the game is read the Ares
+/// way).
+const ARES_THEATER_ITEMS: [SetupComboItem; 4] = [
     item("Name:Temperate", "Temperate", 0),
     item("Name:Snow", "Snow", 1),
     item("Name:Desert", "Desert", 3),
@@ -192,17 +178,28 @@ const RESOURCE_ITEMS: [SetupComboItem; 4] = [
     item("TXT_RESOURCE_EXTREME", "Extreme", 3),
 ];
 
-/// The entries a combo is filled with, in list order. Size lists VERA's larger
-/// maps only for an `extended` (offline Skirmish) dialog.
-pub fn setup_combo_items(combo: SetupCombo, extended: bool) -> &'static [SetupComboItem] {
+/// The entries a combo is filled with, in list order: the original's, then
+/// VERA's, in Skirmish, LAN and online dialogs alike. `ares`: Ares.dll is
+/// loaded (the game is read the Ares way), which lists its landform and
+/// theater orders.
+pub fn setup_combo_items(combo: SetupCombo, ares: bool) -> &'static [SetupComboItem] {
     match combo {
-        SetupCombo::MapType if extended => &MAP_TYPE_ITEMS,
-        SetupCombo::MapType => &MAP_TYPE_ITEMS[..NATIVE_MAP_TYPE_ITEMS],
+        SetupCombo::MapType => {
+            if ares {
+                &ARES_MAP_TYPE_ITEMS
+            } else {
+                &STOCK_MAP_TYPE_ITEMS
+            }
+        }
         SetupCombo::Time => &TIME_ITEMS,
-        SetupCombo::Theater if extended => &THEATER_ITEMS,
-        SetupCombo::Theater => &THEATER_ITEMS[..NATIVE_THEATER_ITEMS],
-        SetupCombo::Size if extended => &SIZE_ITEMS,
-        SetupCombo::Size => &SIZE_ITEMS[..=crate::map::rmg::NATIVE_MAX_SIZE_OPTION as usize],
+        SetupCombo::Theater => {
+            if ares {
+                &ARES_THEATER_ITEMS
+            } else {
+                &STOCK_THEATER_ITEMS
+            }
+        }
+        SetupCombo::Size => &SIZE_ITEMS,
         SetupCombo::Resources => &RESOURCE_ITEMS,
     }
 }
@@ -216,13 +213,76 @@ pub enum AcceptOutcome {
     NeedsGenerate,
 }
 
-/// The Players slider's range, 2..8 in steps of 1 (`TBM_SETRANGE` at
-/// `0x0059722C`; no `0x4AB`).
-pub const PLAYERS_RANGE: TrackbarRange =
-    TrackbarRange::new(2, crate::map::rmg::NATIVE_MAX_PLAYERS, 1);
-/// VERA extension: an offline Skirmish dialog's slider runs to thirty players.
-pub const EXTENDED_PLAYERS_RANGE: TrackbarRange =
-    TrackbarRange::new(2, crate::map::rmg::MAX_PLAYERS, 1);
+/// The Players slider's range in steps of 1. The original runs 2..8
+/// (`TBM_SETRANGE` at `0x0059722C`; no `0x4AB`); VERA's runs to thirty in
+/// every dialog.
+pub const PLAYERS_RANGE: TrackbarRange = TrackbarRange::new(2, crate::map::rmg::MAX_PLAYERS, 1);
+
+/// VERA extension: a ready-made option set the Presets button applies in one
+/// press. Each sets the players, landform, size, resources, the seven
+/// Advanced values (`advanced`, by [`AdvancedField::row`]) and Fair Starts;
+/// the theater changes only where the preset is about it. The seed, time
+/// and description stay the player's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RandomMapPreset {
+    /// Two players on open inland ground with matched starts.
+    Duel,
+    /// Thirty players on the largest size, little water.
+    Brawl,
+    /// Four players in a city that covers the map.
+    CityWar,
+    /// Four players across an archipelago.
+    Islands,
+    /// Eight players on Team Continents, the landform that gives each team
+    /// a continent.
+    Teams,
+    /// One of the player's own, by slot from 0: the options the Extras
+    /// view's My Preset tool saved (`custom_presets`), all but the seed and
+    /// the description.
+    Mine(u8),
+}
+
+/// The player's own presets a dialog keeps (`RandomMapPreset::Mine`).
+pub const CUSTOM_PRESET_SLOTS: usize = 5;
+
+impl RandomMapPreset {
+    /// The ready-made ones, in the order the button steps through them; the
+    /// player's own follow.
+    pub const ALL: [Self; 5] = [
+        Self::Duel,
+        Self::Brawl,
+        Self::CityWar,
+        Self::Islands,
+        Self::Teams,
+    ];
+
+    /// The button caption while this preset stands. One of the player's own
+    /// is "My Preset" with its number, which the caption's drawer fills in.
+    pub const fn label(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Duel => ("VERA:RandomMapPresetDuel", "1v1 Duel"),
+            Self::Brawl => ("VERA:RandomMapPresetBrawl", "30-Player Brawl"),
+            Self::CityWar => ("VERA:RandomMapPresetCity", "City War"),
+            Self::Islands => ("VERA:RandomMapPresetIslands", "Islands"),
+            Self::Teams => ("VERA:RandomMapPresetTeams", "Team Battle"),
+            Self::Mine(_) => ("VERA:RandomMapPresetMine", "My Preset {number}"),
+        }
+    }
+
+    /// A ready-made preset's players, landform (`map_type`), size, resources,
+    /// theater and Advanced values: water, hills, buildings, vegetation, ore
+    /// fields, plateau size, accessibility. None for one of the player's own.
+    const fn values(self) -> Option<(i32, i32, i32, i32, Option<i32>, [i32; 7])> {
+        Some(match self {
+            Self::Duel => (2, 3, 1, 1, None, [10, 25, 0, 40, 60, 50, 80]),
+            Self::Brawl => (30, 3, 7, 2, None, [5, 20, 0, 30, 70, 50, 90]),
+            Self::CityWar => (4, 3, 2, 1, Some(2), [5, 10, 100, 20, 50, 60, 90]),
+            Self::Islands => (4, 0, 2, 2, Some(0), [60, 20, 0, 50, 60, 50, 50]),
+            Self::Teams => (8, 2, 4, 2, None, [35, 25, 0, 40, 60, 50, 70]),
+            Self::Mine(_) => return None,
+        })
+    }
+}
 
 /// The Create Random Map dialog.
 #[derive(Debug, Clone)]
@@ -253,12 +313,8 @@ pub struct RandomMapSetupModalState {
     /// Heading `0x694` and status line `0x695`, alive while the seed browser
     /// hides the dialog.
     pub(crate) statics: DialogStatics,
-    /// VERA extension: offline Skirmish offers more than eight players and the
-    /// sizes past Very Large. A LAN or online dialog keeps the original limits,
-    /// which every peer and the lobby accept.
-    pub extended: bool,
-    /// VERA extension (offline Skirmish): the option rows show the Advanced
-    /// sliders instead of the original controls.
+    /// VERA extension: the option rows show the Advanced sliders instead of
+    /// the original controls.
     pub advanced: bool,
     /// VERA extension: the Advanced values the player set, by
     /// [`AdvancedField::row`]. `None` until a slider moves; Surprise Me clears
@@ -267,7 +323,41 @@ pub struct RandomMapSetupModalState {
     pub advanced_values: Option<[i32; 7]>,
     /// An Advanced slider holding the mouse since a press on it.
     pub advanced_hold: Option<TrackbarHold<AdvancedField>>,
+    /// VERA extension: the generated map on show was written as a map file;
+    /// Export Map rests until the next Generate.
+    pub exported: bool,
+    /// VERA extension: where the last export wrote the map, as the player
+    /// reads it, shown where the progress text goes while `exported` holds.
+    pub exported_to: Option<String>,
+    /// VERA extension: the preset the options still stand at; any edit of
+    /// theirs clears it.
+    pub preset: Option<RandomMapPreset>,
+    /// VERA extension: the Extras page on show (`random_map_extras`), in
+    /// place of the Advanced sliders; `advanced` is set with it.
+    pub extras_page: Option<usize>,
+    /// VERA extension: what the last Extras tool did, shown where the
+    /// progress text goes until the next press: a string-table key and its
+    /// English.
+    pub extras_note: Option<(&'static str, &'static str)>,
+    /// VERA extension: what the generated map on show offers each start
+    /// (`rmg::fairness`), for the readout under the options.
+    pub fairness: Option<crate::map::rmg::fairness::FairnessReport>,
+    /// VERA extension: the options of the maps generated since the dialog
+    /// opened, oldest first, the one on show last ([`Self::step_back`]).
+    pub history: Vec<RmgOptions>,
+    /// VERA extension: the player's own presets, by slot
+    /// ([`RandomMapPreset::Mine`]); the app loads and saves their files.
+    pub custom_presets: Vec<RmgOptions>,
+    /// The slot [`Self::save_custom_preset`] takes once every slot is taken.
+    pub next_custom_slot: usize,
+    /// Ares.dll is loaded (the game is read the Ares way): the combos list
+    /// Ares' entries, Surprise Me draws from them, and the Urban Areas box
+    /// shows. The shell sets it when it opens the dialog; never saved.
+    pub ares: bool,
 }
+
+/// Maps [`RandomMapSetupModalState::history`] remembers.
+const HISTORY_MAPS: usize = 12;
 
 /// The Advanced sliders' range, the fields' own clamp (`RmgOptions::normalize`).
 pub const ADVANCED_RANGE: TrackbarRange = TrackbarRange::new(0, 100, 1);
@@ -307,7 +397,6 @@ impl RandomMapSetupModalState {
         options: RmgOptions,
         previous_selection: Option<ChooseMapSelection>,
         saved_seeds_available: bool,
-        extended: bool,
     ) -> Self {
         assert_ne!(
             options.seed, -1,
@@ -325,51 +414,39 @@ impl RandomMapSetupModalState {
             preview_generation: 0,
             previous_selection,
             statics: DialogStatics::default(),
-            extended,
             advanced: false,
             advanced_values: None,
             advanced_hold: None,
+            exported: false,
+            preset: None,
+            extras_page: None,
+            extras_note: None,
+            exported_to: None,
+            fairness: None,
+            history: Vec::new(),
+            custom_presets: Vec::new(),
+            next_custom_slot: 0,
+            ares: false,
         };
-        modal.normalize_options();
+        modal.options.normalize();
         modal
     }
 
-    /// [`RmgOptions::normalize`], then the original 8-player and Very Large
-    /// ceilings unless the dialog is `extended`.
-    fn normalize_options(&mut self) {
-        self.options.normalize();
-        if !self.extended {
-            use crate::map::rmg::{NATIVE_MAX_PLAYERS, NATIVE_MAX_SIZE_OPTION};
-            self.options.num_players = self.options.num_players.min(NATIVE_MAX_PLAYERS);
-            self.options.width = self.options.width.min(NATIVE_MAX_SIZE_OPTION);
-            self.options.height = self.options.height.min(NATIVE_MAX_SIZE_OPTION);
-            // The options record is shared with offline Skirmish, so a theater
-            // only that dialog offers falls back to the first native entry.
-            let theater = self.options.theater;
-            if theater >= 2
-                && !THEATER_ITEMS[..NATIVE_THEATER_ITEMS]
-                    .iter()
-                    .any(|item| item.value == theater)
-            {
-                self.options.theater = 0;
-            }
-            // VERA's towns are offline-only, like the Advanced view.
-            self.options.urban_enabled = false;
-        }
+    /// An option edit made by the Extras view.
+    pub(super) fn note_option_edit(&mut self) {
+        self.on_option_changed();
     }
 
-    /// The Players slider's range for this dialog.
-    pub const fn players_range(&self) -> TrackbarRange {
-        if self.extended {
-            EXTENDED_PLAYERS_RANGE
-        } else {
-            PLAYERS_RANGE
-        }
+    /// Hold every Advanced value at what the options hold, as if the player
+    /// had set each slider.
+    pub(super) fn pin_advanced_values(&mut self) {
+        self.advanced_values =
+            Some(AdvancedField::ALL.map(|field| advanced_field(&self.options, field)));
     }
 
     /// The entries `combo` lists in this dialog.
     pub fn combo_items(&self, combo: SetupCombo) -> &'static [SetupComboItem] {
-        setup_combo_items(combo, self.extended)
+        setup_combo_items(combo, self.ares)
     }
 
     /// Whether a control is currently interactive. Every control is inert
@@ -385,10 +462,9 @@ impl RandomMapSetupModalState {
             C::Load0x6c2 | C::Delete0x6c4 => self.saved_seed_buttons_enabled,
             // Plateau size reaches only the generator's plateau split, which
             // runs for Inland and Mountainous (`SplitOversizedRegions`).
-            C::Advanced(AdvancedField::PlateauSize) => {
-                self.extended && matches!(self.options.map_type, 3 | 4)
-            }
-            C::AdvancedToggle | C::Advanced(_) => self.extended,
+            C::Advanced(AdvancedField::PlateauSize) => matches!(self.options.map_type, 3 | 4),
+            C::ExtrasRow(row) => self.extras_row(row).is_some(),
+            C::ExportMap => self.generated && !self.exported,
             _ => true,
         }
     }
@@ -431,9 +507,7 @@ impl RandomMapSetupModalState {
     /// the value changed; the slider then clicks (GenericClick, `0x0061E6DD`),
     /// since `0x105` never turns its cue off (`0x4AE`).
     pub fn press_players(&mut self, x: i32, y: i32, window: RectPx, scale: ShellScale) -> bool {
-        let press = self
-            .players_range()
-            .press_in(self.options.num_players, x, y, window, scale);
+        let press = PLAYERS_RANGE.press_in(self.options.num_players, x, y, window, scale);
         self.players_hold = press.hold(());
         match press {
             TrackbarPress::Jump(value) => self.change_num_players(value),
@@ -445,7 +519,7 @@ impl RandomMapSetupModalState {
     /// device `x`. Returns whether the value changed.
     pub fn drag_players(&mut self, x: i32, window: RectPx, scale: ShellScale) -> bool {
         self.players_hold.is_some_and(|hold| hold.dragging)
-            && self.change_num_players(self.players_range().value_at_in(x, window, scale))
+            && self.change_num_players(PLAYERS_RANGE.value_at_in(x, window, scale))
     }
 
     /// The slider notifies (`WM_HSCROLL`, case `0x00596B04`) only when its
@@ -521,7 +595,7 @@ impl RandomMapSetupModalState {
                 // VERA: the Advanced view hides the combos.
                 return None;
             }
-            let combo = super::super::layout::random_map_setup_control_at(layout, x, y)
+            let combo = super::super::layout::random_map_setup_control_at(layout, x, y, self.ares)
                 .and_then(SetupCombo::from_control)
                 .filter(|combo| self.is_enabled(combo.control()))?;
             let face = layout.control_rects[combo.row()];
@@ -535,19 +609,109 @@ impl RandomMapSetupModalState {
     }
 
     fn on_option_changed(&mut self) {
-        self.normalize_options();
+        self.options.normalize();
         self.generated = false;
         self.generated_preview = None;
+        self.preset = None;
+        self.fairness = None;
+    }
+
+    /// VERA extension: apply the preset after the one that stands (the first
+    /// when none does), as one option edit. The Advanced values are set as
+    /// the player's own, so Generate keeps them over the landform's rolls.
+    pub fn cycle_preset(&mut self) {
+        // The ready-made ones, then the player's own.
+        let presets: Vec<RandomMapPreset> = RandomMapPreset::ALL
+            .into_iter()
+            .chain((0..self.custom_presets.len()).map(|slot| RandomMapPreset::Mine(slot as u8)))
+            .collect();
+        let next = match self.preset {
+            Some(current) => {
+                let at = presets
+                    .iter()
+                    .position(|preset| *preset == current)
+                    .unwrap_or(0);
+                presets[(at + 1) % presets.len()]
+            }
+            None => presets[0],
+        };
+        match (next, next.values()) {
+            (_, Some((players, map_type, size, resources, theater, advanced))) => {
+                self.options.num_players = players;
+                self.options.map_type = map_type;
+                self.options.width = size;
+                self.options.height = size;
+                self.options.resources = resources;
+                if let Some(theater) = theater {
+                    self.options.theater = theater;
+                }
+                for field in AdvancedField::ALL {
+                    *advanced_field_mut(&mut self.options, field) = advanced[field.row()];
+                }
+                self.advanced_values = Some(advanced);
+                self.options.urban_enabled = advanced[AdvancedField::Buildings.row()] > 0;
+                self.options.fair_starts = true;
+            }
+            (RandomMapPreset::Mine(slot), _) => {
+                let Some(saved) = self.custom_presets.get(usize::from(slot)) else {
+                    return;
+                };
+                self.options = RmgOptions {
+                    seed: self.options.seed,
+                    description: self.options.description.clone(),
+                    ..saved.clone()
+                };
+                self.pin_advanced_values();
+            }
+            _ => return,
+        }
+        self.open_combo = None;
+        self.on_option_changed();
+        self.preset = Some(next);
+    }
+
+    /// VERA extension: keep the options as one of the player's own presets
+    /// and return its slot: the next free one, or the first again once all
+    /// are taken (the oldest goes). The app writes the slot's file.
+    pub fn save_custom_preset(&mut self) -> usize {
+        let slot = if self.custom_presets.len() < CUSTOM_PRESET_SLOTS {
+            self.custom_presets.push(self.options.clone());
+            self.custom_presets.len() - 1
+        } else {
+            let slot = self.next_custom_slot % CUSTOM_PRESET_SLOTS;
+            self.custom_presets[slot] = self.options.clone();
+            slot
+        };
+        self.next_custom_slot = (slot + 1) % CUSTOM_PRESET_SLOTS;
+        self.preset = Some(RandomMapPreset::Mine(slot as u8));
+        slot
+    }
+
+    /// VERA extension: go back to the map generated before the one on show:
+    /// its options return, with their seed, for the app to generate without
+    /// Generate's rolls. False when there is none to go back to.
+    pub fn step_back(&mut self) -> bool {
+        if self.history.len() < 2 {
+            return false;
+        }
+        self.history.pop();
+        let Some(previous) = self.history.last().cloned() else {
+            return false;
+        };
+        self.options = previous;
+        self.pin_advanced_values();
+        self.on_option_changed();
+        true
     }
 
     /// VERA: Load hands its seed over. The sliders let go of the values the
-    /// player set, so they show the seed's, and a LAN or online dialog holds
-    /// the seed to its own limits, towns off.
+    /// player set, so they show the seed's.
     pub fn adopt_saved_seed(&mut self, options: RmgOptions) {
         self.options = options;
-        self.normalize_options();
+        self.options.normalize();
         self.advanced_values = None;
         self.advanced_hold = None;
+        self.preset = None;
     }
 
     /// Surprise Me: randomize the option subset and invalidate the result.
@@ -561,10 +725,8 @@ impl RandomMapSetupModalState {
         // fields are random again.
         self.advanced_values = None;
         self.options.urban_enabled = false;
-        #[cfg(not(feature = "ares"))]
-        randomize(&mut self.options, settings, rng, description);
-        #[cfg(feature = "ares")]
-        {
+        self.preset = None;
+        if self.ares {
             let values = |combo| {
                 self.combo_items(combo)
                     .iter()
@@ -580,6 +742,8 @@ impl RandomMapSetupModalState {
                 &map_types,
                 &theaters,
             );
+        } else {
+            randomize(&mut self.options, settings, rng, description);
         }
         self.generated = false;
         self.generated_preview = None;
@@ -590,8 +754,8 @@ impl RandomMapSetupModalState {
     /// `RMG::UrbanAreas` itself: Ares copies it in at SyncOptionsFromControls
     /// (MapSeedClass_DialogFunc_GetData, Ares.dll 1006A940, hook 0x596C81) and
     /// out at SyncControlsFromOptions (_SetData 1006A980, hook 0x5971EA). A
-    /// click alone neither rerolls nor invalidates the generated map.
-    #[cfg(feature = "ares")]
+    /// click alone neither rerolls nor invalidates the generated map. The box
+    /// shows only when Ares.dll is loaded ([`Self::ares`]).
     pub fn toggle_urban_areas(&mut self) {
         self.options.urban_areas = !self.options.urban_areas;
     }
@@ -613,10 +777,24 @@ impl RandomMapSetupModalState {
         }
     }
 
-    /// Switch the option rows between the original controls and the
-    /// Advanced sliders. Any open list or held slider lets go.
+    /// VERA extension: switch Fair Starts. Like any option edit it makes the
+    /// generated result stale.
+    pub fn toggle_fair_starts(&mut self) {
+        self.options.fair_starts = !self.options.fair_starts;
+        self.generated = false;
+        self.preset = None;
+    }
+
+    /// Step the option rows to their next view: the original controls, the
+    /// Advanced sliders, then the Extras, whose first page shows. Any open
+    /// list or held slider lets go.
     pub fn toggle_advanced(&mut self) {
-        self.advanced = !self.advanced;
+        (self.advanced, self.extras_page) = match (self.advanced, self.extras_page) {
+            (false, _) => (true, None),
+            (true, None) => (true, Some(0)),
+            (true, Some(_)) => (false, None),
+        };
+        self.extras_note = None;
         self.open_combo = None;
         self.players_hold = None;
         self.advanced_hold = None;
@@ -718,11 +896,20 @@ impl RandomMapSetupModalState {
     pub fn finish_generate(&mut self, preview: Option<PreviewImage>) {
         self.generating = false;
         self.generated = true;
+        self.exported = false;
+        self.exported_to = None;
         self.saved_seed_buttons_enabled = true;
         if preview.is_some() {
             self.preview_generation = self.preview_generation.wrapping_add(1);
         }
         self.generated_preview = preview;
+        // VERA: remember the map's options, for the Extras view's way back.
+        if self.history.last() != Some(&self.options) {
+            if self.history.len() == HISTORY_MAPS {
+                self.history.remove(0);
+            }
+            self.history.push(self.options.clone());
+        }
     }
 
     /// Accept. The original generates first when nothing has been generated
@@ -743,7 +930,7 @@ impl RandomMapSetupModalState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 
@@ -754,7 +941,6 @@ mod tests {
             max
         }
 
-        #[cfg(feature = "ares")]
         fn next_u32(&mut self) -> u32 {
             u32::MAX
         }
@@ -768,14 +954,12 @@ mod tests {
             },
             None,
             false,
-            true,
         )
     }
 
-    /// VERA: a loaded seed takes over the sliders, and a LAN or online dialog
-    /// holds it to its own limits, towns off.
+    /// VERA: a loaded seed takes over the sliders.
     #[test]
-    fn a_loaded_seed_resets_the_sliders_and_obeys_the_dialog() {
+    fn a_loaded_seed_resets_the_sliders() {
         let saved = RmgOptions {
             seed: 0x1234,
             urban_enabled: true,
@@ -785,26 +969,10 @@ mod tests {
         };
         let mut offline = opened();
         assert!(offline.change_advanced(AdvancedField::Water, 77));
-        offline.adopt_saved_seed(saved.clone());
+        offline.adopt_saved_seed(saved);
         assert_eq!(offline.advanced_values, None);
         assert_eq!(offline.advanced_value(AdvancedField::Buildings), 30);
         assert_eq!(offline.options.num_players, crate::map::rmg::MAX_PLAYERS);
-
-        let mut network = RandomMapSetupModalState::open(
-            RmgOptions {
-                seed: 0x1234,
-                ..Default::default()
-            },
-            None,
-            true,
-            false,
-        );
-        network.adopt_saved_seed(saved);
-        assert!(!network.options.urban_enabled);
-        assert_eq!(
-            network.options.num_players,
-            crate::map::rmg::NATIVE_MAX_PLAYERS
-        );
     }
 
     /// VERA: Advanced values survive Generate's re-roll, which still draws as
@@ -819,7 +987,6 @@ mod tests {
                 min
             }
 
-            #[cfg(feature = "ares")]
             fn next_u32(&mut self) -> u32 {
                 0
             }
@@ -866,19 +1033,40 @@ mod tests {
     }
 
     #[test]
-    fn the_advanced_toggle_is_offline_skirmish_only() {
-        let mut network = RandomMapSetupModalState::open(
-            RmgOptions {
-                seed: 0x1234,
-                ..Default::default()
-            },
-            None,
-            false,
-            false,
-        );
-        assert!(!network.is_enabled(RandomMapSetupControl::AdvancedToggle));
+    fn fair_starts_and_presets_edit_the_options() {
         let mut offline = opened();
         assert!(offline.is_enabled(RandomMapSetupControl::AdvancedToggle));
+        offline.generated = true;
+        offline.toggle_fair_starts();
+        assert!(offline.options.fair_starts);
+        assert!(!offline.generated, "the shown map no longer matches");
+
+        // Presets: one press sets the whole option set, the presses go round,
+        // and a player's own edit lets the preset go.
+        offline.cycle_preset();
+        assert_eq!(offline.preset, Some(RandomMapPreset::Duel));
+        assert_eq!(offline.options.num_players, 2);
+        offline.cycle_preset();
+        offline.cycle_preset();
+        assert_eq!(offline.preset, Some(RandomMapPreset::CityWar));
+        assert!(offline.options.urban_enabled && offline.options.fair_starts);
+        assert_eq!(
+            (offline.options.urban_presence, offline.options.theater),
+            (100, 2)
+        );
+        assert_eq!(offline.advanced_value(AdvancedField::Buildings), 100);
+        offline.cycle_preset();
+        offline.cycle_preset();
+        assert_eq!(offline.preset, Some(RandomMapPreset::Teams));
+        assert_eq!(
+            (offline.options.num_players, offline.options.map_type),
+            (8, 2)
+        );
+        offline.cycle_preset();
+        assert_eq!(offline.preset, Some(RandomMapPreset::Duel), "round again");
+        assert!(!offline.options.urban_enabled);
+        offline.set_num_players(3);
+        assert_eq!(offline.preset, None);
         let plateau = RandomMapSetupControl::Advanced(AdvancedField::PlateauSize);
         offline.set_map_type(1);
         assert!(
@@ -889,8 +1077,100 @@ mod tests {
         assert!(offline.is_enabled(plateau));
         offline.toggle_advanced();
         assert!(offline.advanced);
-        network.toggle_advanced();
-        let _ = network;
+    }
+
+    /// VERA's Extras view: the toggle steps Basic, Advanced, Extras; a
+    /// variant row steps its value as an option edit and asks for its map at
+    /// once; a share code brings another dialog's options, seed included.
+    #[test]
+    fn the_extras_view_steps_choices_and_takes_share_codes() {
+        use super::super::random_map_extras::{ExtrasAction, ExtrasOutcome, ExtrasRow};
+        use crate::map::rmg::extras::Extra;
+        let mut dialog = opened();
+        assert!(dialog.extras_rows().is_empty(), "no rows outside the view");
+        dialog.toggle_advanced();
+        dialog.toggle_advanced();
+        assert_eq!((dialog.advanced, dialog.extras_page), (true, Some(0)));
+        let rows = dialog.extras_rows();
+        let ore = rows
+            .iter()
+            .position(|row| *row == ExtrasRow::Choice(Extra::OreVariant))
+            .expect("the first page lists the ore variant");
+        dialog.generated = true;
+        assert_eq!(
+            dialog.release_extras_row(ore),
+            Some(ExtrasOutcome::Regenerate),
+            "Generate's seed roll would make another map"
+        );
+        assert_eq!(dialog.options.extras.get(Extra::OreVariant), 1);
+        assert!(!dialog.generated, "a choice is an option edit");
+        let copy = rows
+            .iter()
+            .position(|row| *row == ExtrasRow::Action(ExtrasAction::CopyCode))
+            .expect("the first page has the share tools");
+        assert_eq!(
+            dialog.release_extras_row(copy),
+            Some(ExtrasOutcome::Tool(ExtrasAction::CopyCode))
+        );
+        assert_eq!(dialog.release_extras_row(EXTRAS_ROWS_PAST), None);
+
+        // The receiver takes the sender's options whole and shows the
+        // sender's slider values.
+        dialog.change_advanced(AdvancedField::Water, 37);
+        let code = dialog.options.share_code(dialog.ares);
+        let mut receiver = opened();
+        assert_eq!(receiver.adopt_share_code("not a code"), None);
+        assert_eq!(
+            receiver.adopt_share_code(&code),
+            Some(crate::map::rmg::options::ShareVersion::this_build())
+        );
+        assert_eq!(receiver.options.extras.get(Extra::OreVariant), 1);
+        assert_eq!(receiver.options.seed, dialog.options.seed);
+        assert_eq!(receiver.advanced_value(AdvancedField::Water), 37);
+
+        dialog.toggle_advanced();
+        assert_eq!((dialog.advanced, dialog.extras_page), (false, None));
+    }
+
+    /// A row past the view's last.
+    const EXTRAS_ROWS_PAST: usize = 99;
+
+    /// VERA: the way back returns the options of the map before the one on
+    /// show, seed and all; a preset of the player's own keeps the options
+    /// but not the seed, follows the ready-made ones on the button, and the
+    /// sixth saved takes the first slot again.
+    #[test]
+    fn the_way_back_and_the_players_own_presets() {
+        let mut dialog = opened();
+        assert!(!dialog.step_back(), "nothing generated yet");
+        dialog.set_num_players(3);
+        dialog.options.seed = 111;
+        dialog.finish_generate(None);
+        dialog.set_num_players(5);
+        dialog.options.seed = 222;
+        dialog.finish_generate(None);
+        assert!(dialog.step_back());
+        assert_eq!((dialog.options.num_players, dialog.options.seed), (3, 111));
+        assert!(!dialog.generated, "the app generates the earlier map again");
+        dialog.finish_generate(None);
+        assert!(!dialog.step_back(), "the first map has none before it");
+
+        dialog.set_num_players(6);
+        assert_eq!(dialog.save_custom_preset(), 0);
+        assert_eq!(dialog.preset, Some(RandomMapPreset::Mine(0)));
+        dialog.set_num_players(2);
+        dialog.options.seed = 333;
+        // Past the four ready-made presets comes the player's own.
+        for _ in 0..RandomMapPreset::ALL.len() + 1 {
+            dialog.cycle_preset();
+        }
+        assert_eq!(dialog.preset, Some(RandomMapPreset::Mine(0)));
+        assert_eq!((dialog.options.num_players, dialog.options.seed), (6, 333));
+        let slots: Vec<usize> = (0..CUSTOM_PRESET_SLOTS + 1)
+            .map(|_| dialog.save_custom_preset())
+            .collect();
+        assert_eq!(slots, [1, 2, 3, 4, 0, 1]);
+        assert_eq!(dialog.custom_presets.len(), CUSTOM_PRESET_SLOTS);
     }
 
     #[test]
@@ -909,7 +1189,6 @@ mod tests {
             },
             None,
             false,
-            true,
         );
         assert_eq!(process_main.logical_state(), reference_main.logical_state());
 
@@ -950,48 +1229,37 @@ mod tests {
             },
             None,
             true,
-            true,
         );
         assert!(some.is_enabled(RandomMapSetupControl::Load0x6c2));
         assert!(some.is_enabled(RandomMapSetupControl::Delete0x6c4));
     }
 
-    /// VERA extension: only an offline Skirmish dialog offers more than eight
-    /// players and the sizes past Very Large.
+    /// VERA extension: every dialog, LAN and online too, keeps thirty
+    /// players, the sizes past Very Large, the added theaters and VERA's
+    /// switches, and offers their controls.
     #[test]
-    fn only_a_skirmish_dialog_offers_thirty_players_and_large_sizes() {
-        let options = RmgOptions {
+    fn every_dialog_offers_thirty_players_large_sizes_and_vera_switches() {
+        let mut options = RmgOptions {
             seed: 1,
             num_players: 30,
             width: 7,
             height: 7,
             theater: 3,
+            urban_enabled: true,
+            fair_starts: true,
             ..Default::default()
         };
-        let mut network = RandomMapSetupModalState::open(options.clone(), None, false, false);
-        assert_eq!(
-            (
-                network.options.num_players,
-                network.options.width,
-                network.options.theater
-            ),
-            // Ares lists Desert (3) in every dialog (hook 0x5970EA).
-            (8, 3, if cfg!(feature = "ares") { 3 } else { 0 })
-        );
-        assert_eq!(network.combo_items(SetupCombo::Size).len(), 4);
-        network.set_num_players(12);
-        assert_eq!(network.options.num_players, 8);
-
-        let skirmish = RandomMapSetupModalState::open(options, None, false, true);
-        assert_eq!(
-            (
-                skirmish.options.num_players,
-                skirmish.options.width,
-                skirmish.options.theater
-            ),
-            (30, 7, 3)
-        );
-        assert_eq!(skirmish.combo_items(SetupCombo::Size).len(), 8);
+        options
+            .extras
+            .set(crate::map::rmg::extras::Extra::ALL[0], 1);
+        options.normalize();
+        let mut modal = RandomMapSetupModalState::open(options.clone(), None, false);
+        assert_eq!(modal.options, options);
+        assert_eq!(modal.combo_items(SetupCombo::Size).len(), 8);
+        assert!(modal.is_enabled(RandomMapSetupControl::AdvancedToggle));
+        assert!(modal.is_enabled(RandomMapSetupControl::PresetCycle));
+        modal.set_num_players(12);
+        assert_eq!(modal.options.num_players, 12);
     }
 
     #[test]
@@ -1116,19 +1384,6 @@ mod tests {
         }
     }
 
-    // Stock lists; Ares' hooks 0x596FFE/0x5970EA change them.
-    #[cfg(not(feature = "ares"))]
-    #[test]
-    fn map_type_entries_outside_offline_skirmish_start_at_one_and_omit_archipelago() {
-        let items = setup_combo_items(SetupCombo::MapType, false);
-        assert_eq!(items.len(), 4);
-        assert_eq!(
-            items.iter().map(|entry| entry.value).collect::<Vec<_>>(),
-            [1, 2, 3, 4]
-        );
-    }
-
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn every_map_type_selects_its_entry_once_archipelago_is_listed() {
         let mut state = opened();
@@ -1149,58 +1404,43 @@ mod tests {
     }
 
     /// Ares RMG_EnableArchipelago (hook 0x596FFE) and RMG_EnableDesert (hook
-    /// 0x5970EA): archipelago leads and Desert follows Snow in every dialog;
+    /// 0x5970EA): archipelago leads and Desert follows Snow;
     /// Surprise Me draws the map type, then the theater, from those entries
     /// and takes the Urban Areas box from a raw draw's low bit (hook
     /// 0x596786).
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_lists_archipelago_and_desert_and_surprise_me_draws_from_them() {
-        let values = |combo, extended| {
-            setup_combo_items(combo, extended)
+        let values = |combo| {
+            setup_combo_items(combo, true)
                 .iter()
                 .map(|item| item.value)
                 .collect::<Vec<_>>()
         };
-        assert_eq!(values(SetupCombo::MapType, false), [0, 1, 2, 3, 4]);
-        assert_eq!(values(SetupCombo::Theater, false), [0, 1, 3]);
-        assert_eq!(values(SetupCombo::Theater, true), [0, 1, 3, 2]);
+        assert_eq!(values(SetupCombo::MapType), [0, 1, 2, 3, 4]);
+        assert_eq!(values(SetupCombo::Theater), [0, 1, 3, 2]);
 
-        let mut network = RandomMapSetupModalState::open(
-            RmgOptions {
-                seed: 1,
-                ..Default::default()
-            },
-            None,
-            false,
-            false,
-        );
-        network.randomize_options(&RmgSettings::default(), &mut MaxRng, "Random Map");
-        assert_eq!(network.options.map_type, 4, "the last map-type entry");
-        assert_eq!(network.options.theater, 3, "the last theater entry");
-        assert!(network.options.urban_areas, "u32::MAX has its low bit set");
-        network.generated = true;
-        network.toggle_urban_areas();
-        assert!(!network.options.urban_areas);
-        assert!(network.generated, "the box alone keeps the generated map");
+        let mut modal = opened();
+        modal.ares = true;
+        modal.randomize_options(&RmgSettings::default(), &mut MaxRng, "Random Map");
+        assert_eq!(modal.options.map_type, 4, "the last map-type entry");
+        assert_eq!(modal.options.theater, 2, "the last theater entry");
+        assert!(modal.options.urban_areas, "u32::MAX has its low bit set");
+        modal.generated = true;
+        modal.toggle_urban_areas();
+        assert!(!modal.options.urban_areas);
+        assert!(modal.generated, "the box alone keeps the generated map");
     }
 
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn archipelago_and_the_added_theaters_are_listed_after_the_original_entries() {
-        let values = |combo, extended| {
-            setup_combo_items(combo, extended)
+        let values = |combo| {
+            setup_combo_items(combo, false)
                 .iter()
                 .map(|item| item.value)
                 .collect::<Vec<_>>()
         };
-        assert_eq!(values(SetupCombo::MapType, true), [1, 2, 3, 4, 0]);
-        assert_eq!(values(SetupCombo::Theater, true), [0, 1, 2, 3]);
-        assert_eq!(
-            values(SetupCombo::Theater, false),
-            [0, 1],
-            "network dialogs"
-        );
+        assert_eq!(values(SetupCombo::MapType), [1, 2, 3, 4, 0]);
+        assert_eq!(values(SetupCombo::Theater), [0, 1, 2, 3]);
     }
 
     #[test]
@@ -1245,7 +1485,7 @@ mod tests {
         let list = super::super::super::layout::random_map_setup_dropdown_rect(
             &layout,
             SetupCombo::Time.row(),
-            setup_combo_items(SetupCombo::Time, true).len(),
+            setup_combo_items(SetupCombo::Time, false).len(),
         );
         let dusk_row = list.y + list.h * 5 / 8;
         assert_eq!(

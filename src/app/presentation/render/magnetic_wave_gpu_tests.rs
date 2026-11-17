@@ -80,6 +80,7 @@ fn draw(value: &Value) -> WaveDraw {
             other => panic!("unknown native clip branch {other}"),
         },
         blend: crate::render::wave_geometry::WaveBlend::Native,
+        ares: false,
     }
 }
 
@@ -218,6 +219,7 @@ fn original_pixel_linear_aliases_and_initialized_adjacent_window_are_consumed() 
             direction: integer(&input["direction"]).try_into().unwrap(),
             clip_path: WaveClipPath::Fast,
             blend: crate::render::wave_geometry::WaveBlend::Native,
+            ares: false,
         };
         let pixel = wave
             .pixel_operation(
@@ -440,7 +442,7 @@ fn wave_pixels_reach_retained_display_and_shared_gpu_with_immutable_z_and_a() {
                 // Opposite storage/ID order cannot replace native Air append order.
                 let ids = (1..=waves.len() as u64).rev().collect::<Vec<_>>();
                 for &id in &ids {
-                    assert!(display.submit(id, Some(DisplayLayer::AIR), &|_| 0));
+                    assert!(display.submit(id, Some(DisplayLayer::AIR)));
                 }
                 let order = NativeDisplayOrder::from_display(&display);
                 let mut parents = waves

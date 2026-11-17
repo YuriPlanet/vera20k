@@ -22,7 +22,10 @@ use crate::app::presentation::ui_overlays::{
 use crate::map::terrain::TilePlacement;
 use crate::map::theater::TileKey;
 use crate::render::batch::SpriteInstance;
+use crate::render::surface_line::SurfaceStroke;
 use crate::ui::sidebar::SidebarView;
+#[path = "ferry_lines.rs"]
+mod ferry_lines;
 #[path = "planning_lines.rs"]
 mod planning_lines;
 
@@ -71,14 +74,19 @@ pub(super) struct UiInstances {
     /// The frame `software_cursor` was built from, whose texture draws it.
     pub software_cursor_draw: Option<crate::app::presentation::ui_overlays::SoftwareCursorDraw>,
     pub drag: Vec<SpriteInstance>,
+    /// World-surface stores that lie on the ground: drawn before the
+    /// buildings and objects, which cover them. The VERA formation line's
+    /// dots, then the ferry's circles.
+    pub ground_marks: Vec<SpriteInstance>,
+    pub ground_strokes: Vec<SurfaceStroke>,
     pub placement: Vec<SpriteInstance>,
     /// Phobos placement preview artwork, drawn after the PLACE cells.
     #[cfg(feature = "phobos")]
     pub placement_ghost: Vec<SpriteInstance>,
-    pub target_line: Vec<SpriteInstance>,
+    pub target_line: Vec<SurfaceStroke>,
     pub tactical_line_calls: Vec<crate::app::presentation::airstrike_lines::TacticalLineCall>,
-    pub factory_rally_first: Vec<SpriteInstance>,
-    pub factory_rally_second: Vec<SpriteInstance>,
+    pub factory_rally_first: Vec<SurfaceStroke>,
+    pub factory_rally_second: Vec<SurfaceStroke>,
     /// One stream per beacon row: each row has its own House Convert strip.
     pub beacons: Vec<Vec<SpriteInstance>>,
 }
@@ -160,8 +168,9 @@ pub(super) fn build_world_instances(
     sw: f32,
     sh: f32,
     bracket_palette: Option<[u16; 2]>,
-    hover: Option<crate::app::input::entity_pick::HoverObject>,
+    cursor: &crate::app::input::cursor::CursorTargets,
 ) -> WorldInstances {
+    let hover = cursor.hover;
     // The draw before hands its tile list back (`render_game`).
     let terrain_buffer = std::mem::take(
         &mut state
@@ -204,7 +213,7 @@ pub(super) fn build_world_instances(
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .presentation()
                 .and_then(|rt| rt.view().resolved_terrain()),
             terrain_buffer,
         )
@@ -217,14 +226,28 @@ pub(super) fn build_world_instances(
     // Map overlays and walls remain in the fixed per-cell draw plan. Terrain
     // objects join live Ground registrations below; low bridges (LOBRDG*) ride
     // in `overlay`, while high bridge bodies use instances::bridges.
-    let display_order = state
-        .match_state
-        .sim_runtime
-        .as_ref()
-        .map(|rt| {
-            super::draw_plan_lowering::NativeDisplayOrder::from_display(rt.view().display_layers())
-        })
-        .unwrap_or_default();
+    // The frame keeps the order for all its draws; without a frame it is
+    // built for this one.
+    let own_order;
+    let display_order = match state.match_state.sim_runtime.presentation() {
+        Some(rt) => {
+            let world = rt.view().simulation();
+            match state.match_state.sim_runtime.frame() {
+                Some(frame) => frame.display_order(world),
+                None => {
+                    own_order = super::draw_plan_lowering::NativeDisplayOrder::from_world(
+                        world,
+                        Some(&rt.resources.rules),
+                    );
+                    &own_order
+                }
+            }
+        }
+        None => {
+            own_order = super::draw_plan_lowering::NativeDisplayOrder::default();
+            &own_order
+        }
+    };
     let mut planned_objects = Vec::new();
     let mut bodies = Vec::new();
     instances::build_overlay_instances(
@@ -233,7 +256,7 @@ pub(super) fn build_world_instances(
         sh,
         &mut bodies,
         &mut planned_objects,
-        &display_order,
+        display_order,
     );
     // High-bridge bodies read live CellClass bridge fields post-tick (NOT
     // OverlayGrid), then join the ordinary bodies in one native sweep.
@@ -268,31 +291,66 @@ pub(super) fn build_world_instances(
     // building or infantry, or Bullet. A building's voxel turret remains
     // owned by the building display call, in the same contiguous Ground
     // parent instead of an atlas-level tie.
-    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+    if let (Some(runtime), Some(frame)) = (
+        state.match_state.sim_runtime.presentation(),
+        state.match_state.sim_runtime.frame(),
+    ) {
         let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
         let shp_inputs = instances::shp_inputs(state, local_owner.as_deref());
-        let mut units = instances::unit_visitor(state, &display_order);
-        let mut debris = instances::voxel_anim_visitor(state, &display_order);
+        let mut units = instances::unit_visitor(state, display_order);
+        let mut debris = instances::voxel_anim_visitor(state, display_order);
         let mut shp = shp_inputs
             .as_ref()
-            .map(|input| instances::shp_visitor(input, &display_order));
-        let mut bullets = instances::projectile_visitor(state, &display_order);
-        let view = runtime.view();
-        for (layer, id) in view.display_layers().members_in_order() {
+            .map(|input| instances::shp_visitor(input, display_order));
+        let mut bullets = instances::projectile_visitor(state, display_order);
+        // A record far off the view is passed by on its span, before its
+        // large record is read: neither visitor would plan it.
+        let window = instances::PassByWindow::of(
+            state,
+            shp_inputs.as_ref().map(|input| input.building_viewport),
+        );
+        use crate::app::presentation::display_members::ObjectKind;
+        for member in frame.display_members(&runtime.simulation).objects() {
             let objects = &mut planned_objects;
-            // Every object store shares one ID namespace
-            // (`Simulation::allocate_stable_id`): a member found here is
-            // neither debris nor a Bullet.
-            let Some(entity) = view.entities().get(id) else {
-                if let Some(visit) = debris.as_mut() {
-                    visit(objects, id);
+            let slot = match member.kind {
+                ObjectKind::Record { slot, span } if window.reaches(span) => slot,
+                ObjectKind::Record { slot, .. } => {
+                    debug_assert!(
+                        frame
+                            .record_at(slot)
+                            .zip(instances::layer_draw_band(member.layer))
+                            .is_none_or(|(entity, band)| {
+                                let mut scratch = Vec::new();
+                                if let Some(visit) = units.as_mut() {
+                                    visit(&mut scratch, entity, band);
+                                }
+                                if let Some(visit) = shp.as_mut() {
+                                    visit(&mut scratch, entity);
+                                }
+                                scratch.is_empty()
+                            }),
+                        "object {} was passed by but draws",
+                        member.id
+                    );
+                    continue;
                 }
-                if let Some(visit) = bullets.as_mut() {
-                    visit(objects, id);
+                ObjectKind::Debris => {
+                    if let Some(visit) = debris.as_mut() {
+                        visit(objects, member.id);
+                    }
+                    continue;
                 }
-                continue;
+                ObjectKind::Bullet => {
+                    if let Some(visit) = bullets.as_mut() {
+                        visit(objects, member.id);
+                    }
+                    continue;
+                }
             };
-            let Some(band) = instances::layer_draw_band(layer) else {
+            let (Some(entity), Some(band)) = (
+                frame.record_at(slot),
+                instances::layer_draw_band(member.layer),
+            ) else {
                 continue;
             };
             if let Some(visit) = units.as_mut() {
@@ -304,34 +362,40 @@ pub(super) fn build_world_instances(
         }
     }
     let mut particle_draws = state.diagnostic_presentation_ms().map(|_| Vec::new());
-    let display_inputs = state.match_state.sim_runtime.as_ref().map(|runtime| {
-        let presentation = &state.match_state.match_presentation;
-        let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
-        let local_owner = crate::app::input::commands::preferred_local_owner_name(state)
-            .and_then(|name| runtime.simulation.interner().get(&name));
-        instances::DisplayEffectInputs {
-            sim: &runtime.simulation,
-            rules: &runtime.resources.rules,
-            camera: [
-                state.match_state.input.camera_x,
-                state.match_state.input.camera_y,
-            ],
-            render_size: [state.render_width(), state.render_height()],
-            tactical: [x, y, width, height],
-            zoom: state.match_state.input.zoom_level,
-            axis: instances::depth_axis(state),
-            atlas: presentation.sprite_atlas.as_ref(),
-            detail: &presentation.detail,
-            detail_level: presentation.in_game_options.detail_level,
-            lighting: presentation.lighting.grid(),
-            retained_anim_intensities: Some(presentation.lighting.anim_intensities()),
-            house_colors: &presentation.house_color_map,
-            hidden_super_anims: &presentation.hidden_super_anims,
-            show_hidden: presentation.in_game_options.show_hidden,
-            local_owner,
-            observe_particles: state.diagnostic_presentation_ms().is_some(),
-        }
-    });
+    let display_inputs = state
+        .match_state
+        .sim_runtime
+        .presentation()
+        .zip(state.match_state.sim_runtime.frame())
+        .map(|(runtime, frame)| {
+            let presentation = &state.match_state.match_presentation;
+            let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+            let local_owner = crate::app::input::commands::preferred_local_owner_name(state)
+                .and_then(|name| runtime.simulation.interner().get(&name));
+            instances::DisplayEffectInputs {
+                sim: &runtime.simulation,
+                frame,
+                rules: &runtime.resources.rules,
+                camera: [
+                    state.match_state.input.camera_x,
+                    state.match_state.input.camera_y,
+                ],
+                render_size: [state.render_width(), state.render_height()],
+                tactical: [x, y, width, height],
+                zoom: state.match_state.input.zoom_level,
+                axis: instances::depth_axis(state),
+                atlas: presentation.sprite_atlas.as_ref(),
+                detail: &presentation.detail,
+                detail_level: presentation.in_game_options.detail_level,
+                lighting: presentation.lighting.grid(),
+                retained_anim_intensities: Some(presentation.lighting.anim_intensities()),
+                house_colors: presentation.effective_house_color_map(),
+                hidden_super_anims: &presentation.hidden_super_anims,
+                show_hidden: presentation.in_game_options.show_hidden,
+                local_owner,
+                observe_particles: state.diagnostic_presentation_ms().is_some(),
+            }
+        });
     if let Some(input) = display_inputs.as_ref() {
         // Prepare slot binding/light pieces without querying the shared FPS
         // latch. Each Anim's retained Display encounter admits and appends its
@@ -339,10 +403,9 @@ pub(super) fn build_world_instances(
         let mut building_anim_instances = Vec::new();
         instances::build_building_anim_instances(
             state,
-            input.camera,
-            input.projection_viewport(),
+            input.tactical_admission(),
             &mut building_anim_instances,
-            &display_order,
+            display_order,
         );
         let prepared_building_anims = building_anim_instances
             .into_iter()
@@ -351,7 +414,7 @@ pub(super) fn build_world_instances(
         particle_draws = instances::build_display_effect_instances(
             input,
             &mut planned_objects,
-            &display_order,
+            display_order,
             prepared_building_anims,
         );
     }
@@ -384,12 +447,13 @@ pub(super) fn build_world_instances(
     let hovered = crate::app::presentation::ui_overlays::health_hover_target(hover);
     let mut group_labels =
         build_control_group_status_instances(state, local_owner.as_deref(), hovered, sw, sh);
-    if let (Some(sim), Some(overlay)) = (
+    if let (Some(sim), Some(frame), Some(overlay)) = (
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .presentation()
             .map(|rt| &rt.simulation),
+        state.match_state.sim_runtime.frame(),
         state
             .match_state
             .match_presentation
@@ -398,7 +462,7 @@ pub(super) fn build_world_instances(
     ) {
         let speech_wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         for parent in &mut planned_objects {
-            parent.status = sim.entities().get(parent.parent.id).map(|entity| {
+            parent.status = frame.object(parent.parent.id).map(|entity| {
                 let mut status = crate::app::presentation::ui_overlays::techno_extras_for_parent(
                     sim,
                     entity,
@@ -457,10 +521,7 @@ pub(super) fn build_world_instances(
                             .frame_for(entity.stable_id(), speech_wall_ms),
                         overlay.talk_bubble(),
                     ) {
-                        let coord = crate::sim::movement::ground_pose::object_get_coords(
-                            entity,
-                            sim.resolved_terrain(),
-                        );
+                        let coord = entity.hud.get_coords;
                         let point = crate::util::lepton::absolute_leptons_to_screen(
                             coord.x, coord.y, coord.z,
                         );
@@ -476,41 +537,39 @@ pub(super) fn build_world_instances(
             });
         }
     }
-    instances::build_weapon_wave_instances(state, &mut planned_objects, &display_order);
-    if let Some(rt) = state.match_state.sim_runtime.as_ref() {
-        instances::assign_tether_redraws(&rt.simulation, &mut planned_objects);
+    instances::build_weapon_wave_instances(state, &mut planned_objects, display_order);
+    if let Some(frame) = state.match_state.sim_runtime.frame() {
+        instances::assign_tether_redraws(frame, &mut planned_objects);
     }
     // VERA's translucent fog lifts the A buffer's near-black concealment, so
     // live enemy objects the local viewer cannot see leave the draw plan fully
     // (body, shadow, attached anim parts and extras) instead of showing through
     // the fog. Terrain, overlays and revealed map art stay visible.
-    if let Some(rt) = state.match_state.sim_runtime.as_ref() {
+    if let (Some(rt), Some(frame)) = (
+        state.match_state.sim_runtime.presentation(),
+        state.match_state.sim_runtime.frame(),
+    ) {
         let sim = &rt.simulation;
         if let Some(viewer) = instances::translucent_fog_viewer(state, sim) {
             let rules = &rt.resources.rules;
             let fog_of_war = sim.session().game_options().fog_of_war;
-            let concealed = |entity: &crate::sim::game_entity::GameEntity| {
-                instances::translucent_fog_conceals(sim, viewer, entity)
+            let concealed = |entity: &crate::app::presentation::frame::ObjectRecord| {
+                instances::translucent_fog_conceals(sim, viewer, &entity.position, entity.owner())
             };
-            // Particles owned by an object follow it out of the fog.
-            let particle_owners: std::collections::BTreeMap<u64, Option<u64>> = sim
-                .particle_systems()
-                .display_particles()
-                .map(|(system, particle)| {
-                    (
-                        particle.stable_id(),
-                        system.and_then(|system| system.owner_entity()),
-                    )
-                })
-                .collect();
+            let members = frame.display_members(sim);
             planned_objects.retain(|parent| {
                 let id = parent.parent.id;
-                if let Some(entity) = sim.entities().get(id) {
+                if let Some(entity) = frame.object(id) {
                     return !concealed(entity);
                 }
-                if let Some(owner) = particle_owners.get(&id) {
+                // Particles owned by an object follow it out of the fog.
+                if let Some(place) = members.particle_place(id) {
+                    let owner = sim
+                        .particle_systems()
+                        .display_particle_at(id, place)
+                        .and_then(|(system, _)| system?.owner_entity());
                     return owner.is_none_or(|owner_id| {
-                        sim.entities().get(owner_id).is_none_or(|e| !concealed(e))
+                        frame.object(owner_id).is_none_or(|e| !concealed(e))
                     });
                 }
                 let Some(anim) = sim.anim(id) else {
@@ -523,9 +582,8 @@ pub(super) fn build_world_instances(
                     .owner_entity()
                     .or_else(|| anim.building_slot().map(|(owner, _)| owner))
                 {
-                    return sim
-                        .entities()
-                        .get(owner_id)
+                    return frame
+                        .object(owner_id)
                         .is_none_or(|entity| !concealed(entity));
                 }
                 // Standalone effect (explosion, fire, smoke): hidden over an
@@ -534,7 +592,7 @@ pub(super) fn build_world_instances(
                 if instances::is_superweapon_effect_anim(name, &rules.general) {
                     return true;
                 }
-                let Some(coord) = sim.anim_absolute_coord(id) else {
+                let Some(coord) = frame.anim_coord(id) else {
                     return true;
                 };
                 let cell = instances::lepton_cell(coord.x, coord.y);
@@ -628,18 +686,30 @@ fn build_pixel_fx_sparkle_instances(state: &AppState, sw: f32, sh: f32) -> Vec<S
     let Some(overlays) = sim.overlay_grid() else {
         return Vec::new();
     };
+    let Some(map_size) = sim.map_size_diamond() else {
+        return Vec::new();
+    };
 
     // gamemd-derived: the `DAT_00A8EB78 != 0` PixelFX gate is the process
     // `[Options] DetailLevel` field (`OptionsClass + 0x18`). The in-game state
     // is the live projection of that retained profile value, so config.toml is
     // not a second interactive authority for the same retail option.
-    let enable_extra_animations = pixel_fx_enabled_for_detail_level(
-        state
-            .match_state
-            .match_presentation
-            .in_game_options
-            .detail_level,
-    );
+    // `DrawPixelFXSparkles @ 0x006D7840` first asks `Game__GetMinFrameRate
+    // @ 0x0055AF60` (`0x006D7847`, the latch Anim and LaserDraw share) and
+    // draws nothing while the published rate is below it (`0x006D784C`).
+    let frame_rate_holds = {
+        let mut detail = state.match_state.match_presentation.detail.borrow_mut();
+        let minimum = detail.minimum_frame_rate();
+        minimum <= detail.frame_rate()
+    };
+    let enable_extra_animations = frame_rate_holds
+        && pixel_fx_enabled_for_detail_level(
+            state
+                .match_state
+                .match_presentation
+                .in_game_options
+                .detail_level,
+        );
 
     let local_owner_name = crate::app::input::commands::preferred_local_owner_name(state);
     let local_owner_id = match (state.match_state.sandbox_full_visibility, &local_owner_name) {
@@ -648,7 +718,7 @@ fn build_pixel_fx_sparkle_instances(state: &AppState, sw: f32, sh: f32) -> Vec<S
     };
 
     let input = SparkleInput {
-        clock_ms: sim.session().total_sim_ms(),
+        wall_ms: crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
         enable_extra_animations,
         local_owner_id,
         sandbox_full_visibility: state.match_state.sandbox_full_visibility,
@@ -661,12 +731,14 @@ fn build_pixel_fx_sparkle_instances(state: &AppState, sw: f32, sh: f32) -> Vec<S
         camera_y: state.match_state.input.camera_y,
         viewport_w: sw,
         viewport_h: sh,
-        map_w: resolved.width(),
-        map_h: resolved.height(),
+        map_size,
         white_uv_origin: [0.0, 0.0],
         white_uv_size: [1.0, 1.0],
     };
-    build_sparkle_instances(&input)
+    build_sparkle_instances(
+        &input,
+        &mut state.match_state.match_presentation.pixel_fx.borrow_mut(),
+    )
 }
 
 /// Build static smudge decal instances for the current frame.
@@ -684,7 +756,7 @@ fn build_smudge_instances(state: &AppState, sw: f32, sh: f32) -> Vec<SpriteInsta
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .presentation()
             .map(|rt| &rt.simulation),
         state.rules(),
     ) {
@@ -805,7 +877,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
             state.overlay_registry(),
             state.rules(),
         );
-        let runtime = state.match_state.sim_runtime.as_ref();
+        let runtime = state.match_state.sim_runtime.presentation();
         let presentation = &mut state.match_state.match_presentation;
         if let (Some(minimap), Some(grid)) = (
             presentation.minimap.as_mut(),
@@ -824,8 +896,13 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
         }
     }
 
-    // VERA's HD radar draws at the sidebar's whole scale while it is on.
-    let hd_scale = state.hd_radar().then(|| state.sidebar_frame().draw_scale());
+    // VERA's HD radar draws at the sidebar's whole scale while it is on; a
+    // fractional surface has none (a 1.5x radar has no whole pixel grid).
+    let hd_scale = state
+        .hd_radar()
+        .then(|| state.sidebar_frame().draw_scale())
+        .filter(|scale| scale.fract() == 0.0)
+        .map(|scale| scale as u32);
     if let Some(minimap) = state.match_state.match_presentation.minimap.as_mut() {
         minimap.set_hd_scale(
             &state.renderer.gpu.device,
@@ -838,9 +915,10 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
     let full_visibility = state.match_state.sandbox_full_visibility;
     let beacon_draws = crate::app::match_runtime::beacons::draws(state);
     let presentation = &mut state.match_state.match_presentation;
-    if let (Some(minimap), Some(runtime)) = (
+    if let (Some(minimap), Some(runtime), Some(frame)) = (
         presentation.minimap.as_mut(),
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.presentation(),
+        state.match_state.sim_runtime.frame(),
     ) {
         let transaction = super::minimap_transaction::present_minimap_frame(minimap, |minimap| {
             // F10 cone: render-feed reads go through SimView getters. The
@@ -851,10 +929,13 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
                 minimap.update_unit_dots(
                     &state.renderer.gpu.device,
                     &state.renderer.gpu.queue,
-                    view.entities(),
+                    frame,
                     view.logic_order(),
                     view.houses(),
-                    &presentation.house_color_map,
+                    presentation
+                        .relation_color_map
+                        .as_ref()
+                        .unwrap_or(&presentation.house_color_map),
                     view.session().tick(),
                     view.session().binary_frame(),
                     local_owner
@@ -874,6 +955,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
                         .beacon_art
                         .as_ref()
                         .map(|art| (art, beacon_draws.as_slice())),
+                    presentation.relation_color_generation,
                 ),
             )
         });
@@ -895,7 +977,7 @@ pub(super) fn build_ui_instances(
     cursor: &crate::app::input::cursor::CursorTargets,
 ) -> UiInstances {
     let (software_cursor, software_cursor_draw) = build_software_cursor_instances(state, cursor);
-    let mut drag = match &state.match_state.match_presentation.selection_overlay {
+    let drag = match &state.match_state.match_presentation.selection_overlay {
         Some(o) => o.build_drag_rect(
             &state.match_state.input.selection_state,
             state.match_state.input.camera_x,
@@ -903,56 +985,24 @@ pub(super) fn build_ui_instances(
         ),
         None => Vec::new(),
     };
-    // VERA formation line: its dots, from world pixels back to the screen
-    // (the inverse of `sim_tick::screen_point_to_world`), in the Move action
-    // line's colour from the palette those lines read.
-    if let (Some(overlay), Some(path), Some(palette)) = (
-        &state.match_state.match_presentation.selection_overlay,
+    // VERA formation line: its dots, in world pixels, in the Move action
+    // line's colour from the palette those lines read. They lie on the
+    // ground, with the ferry's circles.
+    let mut ground_marks = Vec::new();
+    if let (Some(path), Some(palette)) = (
         state.match_state.input.formation_line.path(),
         state
             .match_state
             .match_presentation
             .surface_palette(state.process_assets.manager()),
     ) {
-        let input = &state.match_state.input;
-        let screen: Vec<(f32, f32)> = path
-            .dots()
-            .into_iter()
-            .map(|(x, y)| {
-                (
-                    (x - input.camera_x) * input.zoom_level,
-                    (y - input.camera_y) * input.zoom_level,
-                )
-            })
-            .collect();
-        drag.extend(overlay.build_formation_dots(
-            &screen,
-            crate::app::presentation::target_lines::move_action_line_color(palette),
-            input.camera_x,
-            input.camera_y,
-        ));
+        ground_marks.extend(
+            crate::render::selection_overlay::SelectionOverlay::build_formation_dots(
+                &path.dots(),
+                crate::app::presentation::target_lines::move_action_line_color(palette),
+            ),
+        );
     }
-    // VERA ferry: the routes' dots, from world pixels back to the screen (the
-    // inverse of `sim_tick::screen_point_to_world`), kept to the battlefield
-    // so none is drawn over the sidebar.
-    if let Some(overlay) = &state.match_state.match_presentation.selection_overlay {
-        let input = &state.match_state.input;
-        let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(state);
-        let (left, top) = (left as f32, top as f32);
-        let (right, bottom) = (left + width as f32, top + height as f32);
-        let screen: Vec<(f32, f32)> = crate::app::input::ferry::marks(state)
-            .into_iter()
-            .map(|(x, y)| {
-                (
-                    (x - input.camera_x) * input.zoom_level,
-                    (y - input.camera_y) * input.zoom_level,
-                )
-            })
-            .filter(|&(x, y)| (left..right).contains(&x) && (top..bottom).contains(&y))
-            .collect();
-        drag.extend(overlay.build_ferry_dots(&screen, input.camera_x, input.camera_y));
-    }
-
     let placement_preview = build_placement_preview(state);
 
     let input = &state.match_state.input;
@@ -972,22 +1022,23 @@ pub(super) fn build_ui_instances(
     // attachment, distorting dash spacing and node borders at fractional zoom.
     let mut designations = std::collections::HashMap::new();
     if !state.match_state.input.planning.active()
-        && let Some(runtime) = state.match_state.sim_runtime.as_ref()
+        && let (Some(runtime), Some(frame)) = (
+            state.match_state.sim_runtime.presentation(),
+            state.match_state.sim_runtime.frame(),
+        )
     {
-        let sim = &runtime.simulation;
-        for (id, entity) in sim.entities().iter_sorted() {
-            if entity.health.current() != 0
-                && entity.airstrike.links_to(id)
-                && let Some(coords) =
-                    sim.airstrike_designation_coordinates(id, &runtime.resources.rules)
-            {
+        // Health 0 skips only the CaptureManager links (`0x006D47A4` jumps
+        // to the airstrike check at `0x006D47FB`).
+        for entity in frame.line_sources() {
+            if let Some(designation) = entity.place.airstrike_designation {
+                let _ = runtime;
                 let style = crate::app::presentation::airstrike_lines::FlareStyle {
                     #[cfg(feature = "phobos")]
-                    color: sim.airstrike_line_color(id, &runtime.resources.rules),
+                    color: designation.color,
                     #[cfg(feature = "phobos")]
                     z_adjust: runtime.resources.rules.general.airstrike_line_z_adjust,
                 };
-                designations.insert(id, (coords, style));
+                designations.insert(entity.stable_id(), (designation.coords, style));
             }
         }
     }
@@ -999,22 +1050,25 @@ pub(super) fn build_ui_instances(
         camera[1] - input.camera_y.floor() as i32,
     ];
     let mut tactical_line_calls = Vec::new();
-    let mut after_entity = |id, instances: &mut Vec<SpriteInstance>| {
+    let mut after_entity = |id, strokes: &mut Vec<SurfaceStroke>| {
         use crate::app::presentation::airstrike_lines::{TacticalLineCall, drain_opaque};
-        drain_opaque(&mut tactical_line_calls, instances, camera, a_offset);
+        drain_opaque(&mut tactical_line_calls, strokes, camera, a_offset);
         if let Some((coords, style)) = designations.remove(&id) {
             tactical_line_calls.push(TacticalLineCall::Designation { id, coords, style });
         }
     };
+    let ground_strokes = ferry_lines::build_rings(state, view);
     let (mut target_line, planning_highlights) = planning_lines::build(state, view, wall_ms);
-    let action_lines = crate::app::presentation::target_lines::build_target_line_instances(
+    target_line.extend(ferry_lines::build_paths(state, view, wall_ms));
+    let action_lines = crate::app::presentation::target_lines::build_target_line_strokes(
         &state.match_state.match_presentation.target_lines,
         state.match_state.input.planning.active(),
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .presentation()
             .map(|rt| &rt.simulation),
+        state.match_state.sim_runtime.frame(),
         state.rules(),
         state
             .match_state
@@ -1032,12 +1086,13 @@ pub(super) fn build_ui_instances(
     target_line.extend(action_lines);
     target_line.extend(planning_highlights);
     let [factory_rally_first, factory_rally_second] =
-        crate::app::presentation::target_lines::build_factory_rally_line_instances(
+        crate::app::presentation::target_lines::build_factory_rally_line_strokes(
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .presentation()
                 .map(|rt| &rt.simulation),
+            state.match_state.sim_runtime.frame(),
             state.rules(),
             &cursor.selected,
             &state.match_state.match_presentation.house_color_map,
@@ -1049,6 +1104,8 @@ pub(super) fn build_ui_instances(
         software_cursor,
         software_cursor_draw,
         drag,
+        ground_marks,
+        ground_strokes,
         placement: placement_preview.cells,
         #[cfg(feature = "phobos")]
         placement_ghost: placement_preview.ghost,
@@ -1079,7 +1136,6 @@ pub(crate) fn tactical_world_viewport(
             camera[1].round() as i32 + clip[1],
         ],
         clip: [0, 0, clip[2], clip[3]],
-        zoom: 1.,
     }
 }
 
@@ -1088,7 +1144,7 @@ pub(crate) fn tactical_world_viewport(
 fn build_beacon_instances(state: &AppState) -> Vec<Vec<SpriteInstance>> {
     let (Some(art), Some(runtime)) = (
         state.match_state.match_presentation.beacon_art.as_ref(),
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.presentation(),
     ) else {
         return Vec::new();
     };
@@ -1112,18 +1168,23 @@ struct PlacementPreviewInstances {
     ghost: Vec<SpriteInstance>,
 }
 
-/// Active PLACE cells. Tactical6D5030 suppresses the building ghost outside
-/// the map editor; Cell47EC90 supplies frame0 or slope+2. Keep one ordered
-/// stream rather than regrouping overlapping cells by admitted color.
+/// The current and pending PLACE cells. Tactical6D5030 suppresses the
+/// building ghost outside the map editor; Cell47EC90 supplies frame0, slope+2
+/// or the pending frame1. Keep one ordered stream rather than regrouping
+/// overlapping cells by admitted color.
 fn build_placement_preview(state: &AppState) -> PlacementPreviewInstances {
     let mut out = PlacementPreviewInstances {
         cells: Vec::new(),
         #[cfg(feature = "phobos")]
         ghost: Vec::new(),
     };
-    let Some(preview) = &state.match_state.input.building_placement_preview else {
-        return out;
-    };
+    let current = state.match_state.input.building_placement_preview.as_ref();
+    let cursor_in = crate::app::input::camera::cursor_over_battlefield(state);
+    let draws = crate::render::selection_overlay::placement_cell_draws(
+        current,
+        state.match_state.input.pending_building_placement_preview(),
+        cursor_in,
+    );
     let shape = state
         .match_state
         .match_presentation
@@ -1147,10 +1208,12 @@ fn build_placement_preview(state: &AppState) -> PlacementPreviewInstances {
     #[cfg(not(feature = "phobos"))]
     let alpha = 1.0;
     if let Some(shape) = shape {
-        out.cells = shape.build_building_preview(preview, alpha);
+        out.cells = shape.build_building_preview(&draws, alpha);
     }
+    // The ghost (`0x6D528A`) follows the current grid, inside the same
+    // tactical-rect gate.
     #[cfg(feature = "phobos")]
-    {
+    if let Some(preview) = current.filter(|_| cursor_in) {
         out.ghost = build_placement_ghost(state, preview);
     }
     out
@@ -1190,13 +1253,15 @@ fn build_placement_ghost(
         return Vec::new();
     };
     let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+    // The placement ghost is a building of the local player's, so it follows
+    // the relation colours like the finished building will.
     let remap_house = local_owner
         .as_deref()
         .and_then(|owner| {
             state
                 .match_state
                 .match_presentation
-                .house_color_map
+                .effective_house_color_map()
                 .get(owner)
         })
         .copied();
@@ -1313,6 +1378,12 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
             state.match_state.input.camera_y,
         ],
     ));
+    // The observer's strip draws over the strip's tiles from the same atlas.
+    if let Some(v) = view.as_ref() {
+        chrome.extend(
+            crate::app::presentation::sidebar_build::build_observer_strip_instances(state, v),
+        );
+    }
     // The bottom bar draws into a surface of its own.
     let mut command_bar = view
         .as_ref()
@@ -1352,23 +1423,19 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         .as_ref()
         .map(|csf| csf.text("TXT_FIRESTORM_ON"))
         .unwrap_or_else(|| std::borrow::Cow::Borrowed("Firestorm On"));
-    #[cfg(feature = "ares")]
-    let ares_texts = state.rules().map(|rules| {
-        crate::app::presentation::sidebar_build::ares_status_texts(rules, |label| {
-            state
-                .process_assets
-                .csf
-                .as_ref()
-                .map_or_else(|| label.to_owned(), |csf| csf.text(label).into_owned())
-        })
-    });
+    // Ares hook 6CC2B0 labels, resolved once per match
+    // (`install_world_presentation`), only when Ares plays in the game.
+    let ares_texts = state
+        .match_state
+        .match_presentation
+        .ares_status_texts
+        .as_ref();
     let status_labels = crate::app::presentation::sidebar_build::CameoStatusLabels {
         ready: ready_text.as_ref(),
         hold: hold_text.as_ref(),
         charging: charging_text.as_ref(),
         active: active_text.as_ref(),
-        #[cfg(feature = "ares")]
-        ares: ares_texts.as_ref(),
+        ares: ares_texts,
     };
     // StripClass::Draw packs the B0FA1C side colour into the 16-bit surface
     // format before drawing its labels (6A9BF3..6A9C46).
@@ -1415,6 +1482,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
                 crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
                     .and_then(|atlas| atlas.top_strip_thin)
                     .map_or(layout_spec.sidebar_width, |plate| plate.pixel_size[0]),
+                &crate::app::frontend::shell_pass::resolve_csf(state, "TXT_TIME_FORMAT_HOURS"),
                 crate::app::presentation::sidebar_text::credits_tint(theme),
                 [
                     state.match_state.input.camera_x,
@@ -1538,7 +1606,7 @@ fn build_radar_anim_instance(state: &AppState) -> Vec<SpriteInstance> {
     }]
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod tests {
     use super::*;
 

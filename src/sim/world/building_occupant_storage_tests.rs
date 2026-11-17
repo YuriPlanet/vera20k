@@ -60,11 +60,11 @@ impl Scene {
         let terrain_template = sim.resolved_terrain().cloned();
         let mut scene = Self(SimRuntime {
             simulation: sim,
-            resources: SimResources {
+            resources: std::sync::Arc::new(SimResources {
                 rules,
                 overlay_registry: registry,
                 terrain_template,
-            },
+            }),
         });
         scene.spawn("GAPOWR", "Americans", (4, 24));
         scene.spawn("NAPOWR", "Russians", (28, 28));

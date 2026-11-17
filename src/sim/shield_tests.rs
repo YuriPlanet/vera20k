@@ -290,6 +290,7 @@ fn temporal_freeze_preserves_recovery_time_until_the_object_resumes() {
         &mut sim.houses,
         &mut sim.power_states,
         warper,
+        rules.ares_form(),
     );
     sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
     sim.session.set_binary_frame_for_test(359);
@@ -621,7 +622,7 @@ fn phobos_shield_damage_decloaks_only_when_the_warhead_allows_it() {
         let (mut sim, _) = scene(rules);
         let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
         cloak.establish_unlimbo_fully_cloaked();
-        sim.substrate.entities.get_mut(1).unwrap().cloak = Some(cloak);
+        sim.substrate.entities.get_mut(1).unwrap().cloak = Some(Box::new(cloak));
         hit(&mut sim, rules, 40);
         assert_eq!(shield(&sim).hp(), 60, "the shield owns the hit");
         assert_eq!(health(&sim), 200, "no hull damage reaches the receiver");

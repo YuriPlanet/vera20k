@@ -527,8 +527,7 @@ fn eject_head_passenger(
             // Ares UnitClass_Mi_Unload_Decactivated1004CF80 (hook73DBF9): a
             // Deactivated passenger's locomotor is powered off, and an
             // unpowered one only reaches its placement cell.
-            #[cfg(feature = "ares")]
-            let dest = {
+            let dest = if rules.ares_form() {
                 if sim
                     .substrate
                     .entities
@@ -554,6 +553,8 @@ fn eject_head_passenger(
                 } else {
                     dest
                 }
+            } else {
+                dest
             };
             if let Err(cause) = sim.assign_destination_represented(
                 pax_id,
@@ -823,7 +824,6 @@ pub(crate) fn building_mission_unload_absorber(
 /// owner's network of its type holds a Foot unloads one
 /// ([`ares_tunnel_unload_one`]) and returns the Unload epilogue
 /// (`0x0044DC84`), whatever the unload did. `None` takes the stock arms.
-#[cfg(feature = "ares")]
 pub(crate) fn ares_tunnel_mission_unload(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -871,7 +871,6 @@ pub(crate) fn ares_tunnel_mission_unload(
 /// search fails, and drops a member whose Put fails; VERA keeps that
 /// member in the network. Trigger: no free cell for its SpeedType, or a
 /// refused Unlimbo. Frequency: rare.
-#[cfg(feature = "ares")]
 #[allow(clippy::too_many_arguments)]
 fn ares_tunnel_unload_one(
     sim: &mut Simulation,
@@ -1098,7 +1097,7 @@ pub(crate) fn unit_mission_unload(
                 let turreted = sim
                     .object_type(entity.type_ref(), rules)
                     .is_some_and(|obj| {
-                        if crate::rules::ARES_ENABLED {
+                        if rules.ares() {
                             obj.gunner
                         } else {
                             obj.turret_count > 0
@@ -1315,9 +1314,10 @@ pub(crate) fn mission_unload(
                     // Ares 3.0 AircraftClass_Mi_Unload_Blocked (10048B30,
                     // hook 0x415544) clears Transporter (`+0x11C`) too. Its
                     // refusal arm re-adds the passenger and enters idle mode,
-                    // as VERA's escape below does in every build.
-                    #[cfg(feature = "ares")]
-                    pax.passenger_role.clear_transporter();
+                    // as VERA's escape below does in every game.
+                    if rules.ares_form() {
+                        pax.passenger_role.clear_transporter();
+                    }
                 }
                 // `0x0041556A..0x00415587`: a passenger that kept a team joins
                 // the aircraft's (`TeamClass::Add_Member(passenger, 0)`).
@@ -1540,5 +1540,5 @@ fn eject_from_aircraft(
     passenger.filter(|_| ejected)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests;

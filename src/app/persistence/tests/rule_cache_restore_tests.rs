@@ -53,9 +53,9 @@ fn restore_into_differently_interned_world(label: &str) -> crate::sim::runtime::
         saved.interner().get("EXP_A")
     );
     let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(current);
-    runtime.resources.rules = rules;
-    runtime.resources.overlay_registry = OverlayTypeRegistry::empty();
-    runtime.resources.terrain_template = Some(load_fixture_terrain());
+    runtime.resources_mut().rules = rules;
+    runtime.resources_mut().overlay_registry = OverlayTypeRegistry::empty();
+    runtime.resources_mut().terrain_template = Some(load_fixture_terrain());
     let directory = isolated_directory(label);
     let repository = SaveRepository::at(&directory);
     let path = repository

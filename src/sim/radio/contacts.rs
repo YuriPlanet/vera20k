@@ -5,8 +5,8 @@
 //! slot in place (no compaction, so slot positions are stable). A HELLO sender
 //! with no free slot first sends OVER_OUT to slot 0 and then reuses it
 //! (`0x0065AA1F..0x0065AA34`). Capacity is `max(NumberOfDocks, 1)` for
-//! buildings, else 1. Navigation uses the contact slot index to select a
-//! docking offset; admission queries actual slots through `has_free_or`. Sparse slot
+//! buildings, up to VERA's `DOCK_CONTACT_LIMIT`, else 1. Navigation uses the
+//! contact slot index to select a docking offset; admission queries actual slots through `has_free_or`. Sparse slot
 //! positions are therefore hash-relevant.
 //! sim/ only — never render/ui/audio/net.
 use serde::{Deserialize, Serialize};
@@ -137,7 +137,7 @@ impl Contacts {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
 

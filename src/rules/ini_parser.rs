@@ -34,7 +34,6 @@ pub mod directives;
 
 /// Ares's `+` keys, `[Child]:[Base]` sections and later-wins keys, which an
 /// Ares launch adds to every INI text load.
-#[cfg(feature = "ares")]
 #[path = "ini_ares_syntax.rs"]
 mod ares_syntax;
 
@@ -304,11 +303,22 @@ impl IniSection {
         self.entries.get(key).map(String::as_str)
     }
 
+    /// A reader's lookup: the stored text of an exact-case key, noted for the
+    /// per-game Ares switch (`rules::ares_switch`). The store's own merges
+    /// and walks use [`Self::get`] and are not reads.
+    fn value(&self, key: &str) -> Option<&str> {
+        let value = self.get(key);
+        if value.is_some() {
+            crate::rules::ares_switch::note_found(&self.name, key);
+        }
+        value
+    }
+
     /// Raw text for a reader whose native default depends on a later asset
     /// binding step. The caller must pass the returned value through the
     /// matching `ini_value` reader rather than interpreting it directly.
     pub(crate) fn raw_value(&self, key: &str) -> Option<&str> {
-        self.get(key)
+        self.value(key)
     }
 
     /// Test builds only: the raw stored text, for tests that inspect storage.
@@ -319,11 +329,17 @@ impl IniSection {
 
     /// Whether the section's reader can find the key, whatever its value.
     pub fn is_present(&self, key: &str) -> bool {
-        self.get(key).is_some()
+        self.value(key).is_some()
     }
 
+    /// The values successive Rules passes gave `key`, for a reader (noted as
+    /// [`Self::value`] notes them).
     fn projected_values(&self, key: &str) -> Option<&[String]> {
-        self.projected_values.get(key).map(Vec::as_slice)
+        let values = self.projected_values.get(key).map(Vec::as_slice);
+        if values.is_some() {
+            crate::rules::ares_switch::note_found(&self.name, key);
+        }
+        values
     }
 
     /// The type IDs of a registry section `native_processing` rewrote with
@@ -371,7 +387,6 @@ pub struct IniFile {
     fresh_section_index: Option<Vec<(i32, usize)>>,
     /// The next Ares `+` key number. Only loads read it, so a saved INI,
     /// which nothing loads into again, does not keep it.
-    #[cfg(feature = "ares")]
     #[serde(skip)]
     next_iterator_key: i32,
 }
@@ -391,7 +406,6 @@ impl<'de> serde::Deserialize<'de> for IniFile {
             sections: saved.sections,
             first_section,
             fresh_section_index: None,
-            #[cfg(feature = "ares")]
             next_iterator_key: 0,
         })
     }
@@ -403,7 +417,6 @@ impl IniFile {
             sections: Vec::new(),
             first_section: HashMap::new(),
             fresh_section_index: None,
-            #[cfg(feature = "ares")]
             next_iterator_key: 0,
         }
     }
@@ -434,8 +447,8 @@ impl IniFile {
     /// on that call: a last line without a line feed is not loaded.
     /// Executed controls: tools/storage_oracle/ini_crc (`unterminated_last_*`).
     /// Loading into an INI that already holds sections (the `0x00525BFA` arm)
-    /// puts that last entry before testing the flag. An Ares build loads its
-    /// included files that way (`IniFile::merge_load`). RESIDUAL: loose
+    /// puts that last entry before testing the flag. A game read the Ares way
+    /// loads its included files that way (`IniFile::merge_load`). RESIDUAL: loose
     /// `*.PKT` map catalogs merge that way too (`0x00699B58`); VERA reads them
     /// as fresh files.
     pub fn from_bytes(data: &[u8]) -> Result<Self, RulesError> {
@@ -448,21 +461,21 @@ impl IniFile {
     }
 
     /// `LoadFromStraw` (`0x00525A60`) into an empty INI. An Ares launch
-    /// hooks this reader for every INI it loads, so an Ares build adds
+    /// hooks this reader for every INI it loads, so a thread that reads the
+    /// Ares way (`ares_switch::ares_way`: a game that ships `ares.mix`) adds
     /// Ares's syntax here.
     #[expect(
         clippy::should_implement_trait,
         reason = "infallible constructor; FromStr would force a Result on every caller"
     )]
     pub fn from_str(text: &str) -> Self {
-        #[cfg(feature = "ares")]
-        let ini = ares_syntax::load_fresh(text);
-        #[cfg(not(feature = "ares"))]
-        let ini = Self::load_fresh(text);
-        ini
+        if crate::rules::ares_switch::ares_way() {
+            ares_syntax::load_fresh(text)
+        } else {
+            Self::load_fresh(text)
+        }
     }
 
-    #[cfg(not(feature = "ares"))]
     fn load_fresh(text: &str) -> Self {
         let mut ini = Self::empty();
         let mut current_section = None;
@@ -504,12 +517,10 @@ impl IniFile {
     /// `ReadCCFile` of an Ares `[#include]` or Phobos `$Include` file into
     /// the INI that lists it: `LoadFromStraw`'s merge arm, with an Ares
     /// launch's parser hooks. Returns the file's own entries of section `list`.
-    #[cfg(feature = "ares")]
     fn merge_load(&mut self, data: &[u8], list: &str) -> IniSection {
         ares_syntax::load_into(self, data, list)
     }
 
-    #[cfg(any(not(feature = "ares"), test, feature = "test-support"))]
     fn discard_entryless_sections(&mut self) {
         self.fresh_section_index = None;
         self.sections.retain(|section| section.entry_count() != 0);
@@ -660,7 +671,7 @@ impl IniFile {
 
     /// Compatibility overlay: later exact keys replace earlier ones. Without
     /// Ares this is also the include extension's policy, not native
-    /// PutString528660 parity; an Ares build loads includes through
+    /// PutString528660 parity; a game read the Ares way loads includes through
     /// `IniFile::merge_load`.
     /// Residual: overlapping loose PKT files (699B58) can retain a cached
     /// duplicate pair across insertion, then change selection on a later sort.
@@ -845,7 +856,6 @@ enum NativeLine<'a> {
     /// `[name]`, and the text after that first `]`, where Ares reads a base.
     Header {
         name: &'a str,
-        #[cfg(feature = "ares")]
         tail: &'a str,
     },
     Entry {
@@ -903,7 +913,6 @@ fn lex_line(raw_line: &str) -> Option<NativeLine<'_>> {
     {
         return Some(NativeLine::Header {
             name: &line[1..end],
-            #[cfg(feature = "ares")]
             tail: &line[end + 1..],
         });
     }
@@ -979,6 +988,6 @@ pub(crate) fn is_native_none_type_name(value: &str) -> bool {
     value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("<none>")
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ini_parser_tests.rs"]
 mod tests;

@@ -20,32 +20,32 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod anim_translucency_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod bridge_shadow_gpu_tests;
 mod build_instances;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod building_bracket_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod building_shadow_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod building_slot_native_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod building_viewport_bounds_tests;
 mod draw_passes;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod magnetic_wave_gpu_tests;
 mod object_extras;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod parachute_native_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod parachute_owner_color_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod placement_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod status_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod target_laser_gpu_tests;
 pub(crate) use draw_passes::draw_software_cursor;
 #[cfg(test)]
@@ -54,7 +54,7 @@ pub(crate) mod draw_plan_lowering;
 mod merge_passes;
 pub(crate) mod minimap_transaction;
 mod object_stages;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod object_stages_gpu_tests;
 pub(crate) mod terrain_picture;
 
@@ -204,22 +204,19 @@ pub(crate) fn render_game(
     // Most CPU row. One clock read per phase boundary; the spans are handed
     // back on `GameRenderOutput` and never written into the world here.
     let render_started = render_phases_wanted(state).then(Instant::now);
-    // RadarClass::Draw 653100 consumes timeGetTime buckets. The frame owner
-    // supplies wall time normally, or the map diagnostic's recorded OS input.
-    let housing_settled = state
-        .match_state
-        .match_presentation
-        .radar_anim
-        .as_mut()
-        .is_some_and(|radar| radar.tick(times.radar_ms));
-    if housing_settled {
-        crate::app::radar_movie::end_radar_sound_loop(state);
-    }
     let (sw, sh) = (state.render_width() as f32, state.render_height() as f32);
+    // What this picture draws of the world (`presentation::frame`).
+    state.match_state.sim_runtime.ensure_frame();
 
     // Trigger action 0x28 mutates scroll/radar authority inside the committed
     // sim frame. Install and clamp it before constructing any world instances,
     // so contraction/expansion is visible in this very presentation frame.
+    // RESIDUAL: gamemd does not clamp here. ResizePlayerView 0x006E21E0 only
+    // rewrites LocalSize, and Tactical__AI 0x006D2540 clamps (0x006D8640) only
+    // while a pan runs or the requested view moves. Retail maps grow LocalSize
+    // around the view (ALL06, SOV03) or jump the camera in the same trigger
+    // (SOV01 SP3.6, action 112); only SOV01's SP4.5b and base-gained shrinks
+    // can leave the view outside, until the player scrolls. VERA moves it at once.
     crate::app::input::camera::clamp_camera_to_playable_area(state, sw, sh);
     // Publish the final view once: world instances, CPU A admission and GPU
     // palette sampling must use this frame's clamped camera and zoom.
@@ -268,17 +265,31 @@ pub(crate) fn render_game(
     }
     let world_camera = state.renderer.batch_renderer.camera_uniform();
 
-    let selected_building = state
-        .match_state
-        .sim_runtime
-        .as_ref()
-        .is_some_and(|runtime| {
-            runtime
-                .simulation
-                .entities()
-                .values_of_category(crate::map::entities::EntityCategory::Structure)
-                .any(|entity| entity.selection.is_selected())
-        });
+    // Phase 1: Build game-world instances (terrain, overlays, entities).
+    let phase1_started = render_started.map(|_| Instant::now());
+    // The selection in order and the cursor's pick each walk every object;
+    // the draw reads them once (TacticalPick 6DA380 runs once per frame).
+    let cursor_targets = crate::app::input::cursor::CursorTargets::read(state);
+    // A selected building is in the selection, so only its few members are
+    // asked, not every record of the frame.
+    let selected_building = state.match_state.sim_runtime.frame().is_some_and(|frame| {
+        let selected_structure = |entity: &crate::app::presentation::frame::ObjectRecord| {
+            entity.category() == crate::map::entities::EntityCategory::Structure
+                && entity.selection.is_selected()
+        };
+        let found = cursor_targets
+            .selected
+            .iter()
+            .any(|&id| frame.object(id).is_some_and(selected_structure));
+        // A pending selection lists input's order before the frame has
+        // selected it, so only a committed one must agree with the records.
+        debug_assert!(
+            state.match_state.input.selection_order_pending
+                || found == frame.objects().any(selected_structure),
+            "a selected building is missing from the selection"
+        );
+        found
+    });
     // FileSystem52BE61..52BFCE's PALETTE.PAL plain N53 Convert is shared
     // by Bolt and the selected Building's15/12 bracket colors.
     let surface_palette = (selected_building
@@ -306,18 +317,8 @@ pub(crate) fn render_game(
             )
         })
     });
-    // Phase 1: Build game-world instances (terrain, overlays, entities).
-    let phase1_started = render_started.map(|_| Instant::now());
-    // The selection in order and the cursor's pick each walk every object;
-    // the draw reads them once (TacticalPick 6DA380 runs once per frame).
-    let cursor_targets = crate::app::input::cursor::CursorTargets::read(state);
-    let mut world = build_instances::build_world_instances(
-        state,
-        vsw,
-        vsh,
-        bracket_palette,
-        cursor_targets.hover,
-    );
+    let mut world =
+        build_instances::build_world_instances(state, vsw, vsh, bracket_palette, &cursor_targets);
     for layer in &mut world.object_layers {
         object_extras::defer_health_to_frame(layer, world_camera.camera_pos, z);
     }
@@ -337,7 +338,8 @@ pub(crate) fn render_game(
     // the runtime directly for split borrows.
     if let Some(ref mut shroud_buf) = state.match_state.match_presentation.shroud_buffer
         && !state.match_state.sandbox_full_visibility
-        && let (Some(rt), Some(owner)) = (state.match_state.sim_runtime.as_ref(), &local_owner)
+        && let (Some(rt), Some(owner)) =
+            (state.match_state.sim_runtime.presentation(), &local_owner)
     {
         let view = rt.view();
         let owner_id = view.interner().get(owner).unwrap_or_default();
@@ -406,9 +408,21 @@ pub(crate) fn render_game(
     let tactical_composite = &mut state.match_state.match_presentation.tactical_composite;
     let steps = tactical_composite.begin_draw(cadence, times.radar_ms, chrono_holds);
     let clock_ms = tactical_composite.clock_ms();
+    // RadarClass::Draw 653100 runs in the composite and consumes timeGetTime
+    // buckets. The frame owner supplies wall time normally, or the map
+    // diagnostic's recorded OS input.
+    let housing_settled = state
+        .match_state
+        .match_presentation
+        .radar_anim
+        .as_mut()
+        .is_some_and(|radar| radar.tick(steps, times.radar_ms));
+    if housing_settled {
+        crate::app::radar_movie::end_radar_sound_loop(state);
+    }
     // Ares DisplayCredits ages its labels in the same composite, unless the
-    // chrono screen's 4F4480 interception suppresses it.
-    #[cfg(feature = "ares")]
+    // chrono screen's 4F4480 interception suppresses it. Empty unless the
+    // sim emitted Ares bounty text, so this runs in every game.
     if !chrono_holds {
         let credits = state
             .match_state
@@ -456,7 +470,7 @@ pub(crate) fn render_game(
         );
     }
     let persistent_lights = persistent_light_start..combat_lights.len();
-    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+    if let Some(runtime) = state.match_state.sim_runtime.presentation() {
         state.renderer.combat_light_renderer.set_spotlight_radius(
             &state.renderer.gpu.queue,
             runtime.resources.rules.general.spotlight.radius,
@@ -526,7 +540,7 @@ pub(crate) fn render_game(
             state.match_state.input.cursor_y,
         )
     });
-    let sim_runtime = state.match_state.sim_runtime.as_ref();
+    let sim_runtime = state.match_state.sim_runtime.presentation();
     let simulation = sim_runtime.map(|runtime| &runtime.simulation);
     let rules = sim_runtime
         .map(|runtime| &runtime.resources.rules)
@@ -548,6 +562,7 @@ pub(crate) fn render_game(
     let match_presentation = &mut state.match_state.match_presentation;
     let radials = crate::app::presentation::radial_indicators::build(
         simulation,
+        state.match_state.sim_runtime.frame(),
         rules,
         &cursor_targets.selected,
         armed_super_weapon.as_deref(),
@@ -566,7 +581,7 @@ pub(crate) fn render_game(
     // once per composite; the owner reads take no Main draw, so they run
     // ahead of the borrow.
     if steps > 0
-        && let Some(runtime) = state.match_state.sim_runtime.as_ref()
+        && let Some(runtime) = state.match_state.sim_runtime.presentation()
     {
         let sim = runtime.view().simulation();
         let rules = &runtime.resources.rules;
@@ -585,14 +600,11 @@ pub(crate) fn render_game(
     // Tactical6D4669 LaserDraw550240 precedes6D466E EBolt, then6D4673
     // trails, even when this composite ran no Logic. Their shared process
     // Main requests happen here once; GPU uploads only read resolved colors.
-    let mut main = crate::app::state::process_main_draws(
-        state.match_state.sim_runtime.as_ref(),
-        &state.frontend.frontend_main_rng,
-    );
+    let mut main = crate::app::state::process_main_draws(&state.frontend.frontend_main_rng);
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|runtime| runtime.view().simulation());
     let viewer = local_owner
         .as_deref()
@@ -638,9 +650,13 @@ pub(crate) fn render_game(
                 let Some(sim) = sim else {
                     return true;
                 };
-                if let Some(bullet) = owner.and_then(|id| sim.projectiles().get(id)) {
+                if let (Some(bullet), Some(frame)) = (
+                    owner.and_then(|id| sim.projectiles().get(id)),
+                    state.match_state.sim_runtime.frame(),
+                ) {
                     return !crate::app::presentation::instances::translucent_fog_conceals_bullet(
                         sim,
+                        frame,
                         bullet,
                         [coord.x, coord.y, coord.z],
                         local_owner.as_deref(),
@@ -667,7 +683,7 @@ pub(crate) fn render_game(
         || !ui.tactical_line_calls.is_empty()
         || !ui.target_line.is_empty()
         || !radials.draws.is_empty();
-    #[cfg(feature = "ares")]
+    // Empty unless the sim emitted Ares bounty text, so this runs in every game.
     let animated = animated || !presentation.flying_credits.get_mut().is_empty();
     presentation.tactical_composite.record_contents(animated);
     let bolt_lines = presentation.electric_bolts.shown(viewport.camera);
@@ -986,8 +1002,14 @@ fn upload_to_gpu(
             None => ui.software_cursor.as_slice().into(),
         };
 
-    #[cfg(feature = "ares")]
-    let bounty_text = {
+    // BeaconClass::Draw's label boxes (`beacon_labels`), in frame pixels.
+    let (beacon_label_fill, beacon_label_outline, beacon_label_text) =
+        crate::app::presentation::beacon_labels::instances(state);
+
+    // Ares DisplayCredits' labels draw when Ares plays, the answer under
+    // which the sim pays a bounty (`sim::combat::record_kill`).
+    let ares = state.rules().is_some_and(|rules| rules.ares());
+    let bounty_text = if ares {
         let presentation = &state.match_state.match_presentation;
         if presentation.chrono_screen.overrides_tactical_draw() {
             Vec::new()
@@ -1003,6 +1025,8 @@ fn upload_to_gpu(
                 [left, top, width, height],
             )
         }
+    } else {
+        Vec::new()
     };
 
     // The sidebar's streams scroll with the UI camera, and its text with it
@@ -1057,21 +1081,27 @@ fn upload_to_gpu(
     pool.upload("super_timer_text", &super_timer_text);
     pool.upload("build_text_fill", &build_text_fill);
     pool.upload("build_text_text", &build_text_text);
-    #[cfg(feature = "ares")]
-    pool.upload("bounty_text", &bounty_text);
+    if ares {
+        pool.upload("bounty_text", &bounty_text);
+    }
 
     // UI overlays
     for (house, beacons) in ui.beacons.iter().enumerate() {
         pool.upload_page("beacons", house, beacons);
     }
+    pool.upload("beacon_label_fill", &beacon_label_fill);
+    pool.upload("beacon_label_outline", &beacon_label_outline);
+    pool.upload("beacon_label_text", &beacon_label_text);
     pool.upload("drag", &ui.drag);
+    pool.upload("ground_marks", &ui.ground_marks);
+    pool.upload_strokes("ground_strokes", &ui.ground_strokes);
     pool.upload("software_cursor", &software_cursor);
     pool.upload("placement", &ui.placement);
     #[cfg(feature = "phobos")]
     pool.upload("placement_ghost", &ui.placement_ghost);
-    pool.upload("factory_rally_first", &ui.factory_rally_first);
-    pool.upload("target_lines", &ui.target_line);
-    pool.upload("factory_rally_second", &ui.factory_rally_second);
+    pool.upload_strokes("factory_rally_first", &ui.factory_rally_first);
+    pool.upload_strokes("target_lines", &ui.target_line);
+    pool.upload_strokes("factory_rally_second", &ui.factory_rally_second);
 
     // Sidebar + minimap
     pool.upload_following("minimap", &sidebar.minimap, ui_camera);
@@ -1113,7 +1143,7 @@ fn upload_to_gpu(
     pool.upload("tooltip_text", &tooltip_text);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod tests {
     include!("../render_tests.rs");
 }

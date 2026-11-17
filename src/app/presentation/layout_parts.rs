@@ -64,7 +64,7 @@ fn value_text(state: &AppState, value: TextValue) -> String {
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|runtime| &runtime.simulation);
     let house = || {
         let sim = sim?;
@@ -359,7 +359,7 @@ pub(crate) fn instances(
     (boxes, texts)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
 

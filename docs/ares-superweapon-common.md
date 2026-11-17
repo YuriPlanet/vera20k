@@ -1,7 +1,7 @@
 # Optional Ares superweapon common keys, Battery, Protect and SonarPulse
 
-Requires an explicit `--features ares` build. Default builds do not read or execute
-these extensions; see [build capability](ares.md).
+A game that ships `ares.mix` reads and plays these keys in every build ([Ares](ares.md));
+other games keep the original superweapons.
 
 ```ini
 [SuperWeaponTypes]
@@ -37,7 +37,7 @@ reader `0x10033370` and its hooks); no Ares DLL is loaded.
 
 - `SW.ChargeToDrainRatio` replaces `[General] ChargeToDrainRatio=` for the type in
   the charge-drain ClickFire (`0x10035130`) and the cameo AnimStage (`0x10035420`).
-  Ares builds also clamp the stage at 54 (`0x100354C0`) and let computer Houses
+  Ares games also clamp the stage at 54 (`0x100354C0`) and let computer Houses
   toggle a drain like human ones.
 - `Money.DrainAmount` / `Money.DrainDelay` transact while a drain runs, every
   `DrainDelay` frames left on its timer; an unaffordable amount ends the drain
@@ -47,6 +47,11 @@ reader `0x10033370` and its hooks); no Ares DLL is loaded.
 - `SW.AlwaysGranted` grants an available type without a provider building
   (`0x10038F10`); the availability gates still apply. Grants under low power hold
   only `IsPowered=yes` types.
+- The House Super pass is Ares's (hook `0x50AF10`, `0x10039450`): a provider
+  powers its Supers only online, not under EMP and operated, and charges them
+  only when also not warped out and not building up or selling (`0x10038F10`).
+  An `IsPowered=yes` type is held without a powering provider or on low power,
+  any other type without a charging one, which the stock pass never holds.
 - `SW.CreateRadarEvent` adds the type-13 radar event to a new type's launch
   (`0x10032ED0`).
 - `SW.Group` selects the types Ares's script action 55 fires (`0x10039EF0`): the

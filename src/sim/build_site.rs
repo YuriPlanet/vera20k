@@ -40,9 +40,9 @@ const FLAG_BRIDGE_BODY: u32 = 0x400;
 const OCCUPATION_INFANTRY_OR_VEHICLE: u8 = 0x3F;
 /// Overlay indices the wall arms compare (`0x0047C8B1`, `0x0047C903`):
 /// GASAND 0, GAWALL 2 and NAWALL 0x1A in the stock `[OverlayTypes]` list.
-const OVERLAY_GASAND: u8 = 0;
-const OVERLAY_GAWALL: u8 = 2;
-const OVERLAY_NAWALL: u8 = 0x1A;
+pub(crate) const OVERLAY_GASAND: u8 = 0;
+pub(crate) const OVERLAY_GAWALL: u8 = 2;
+pub(crate) const OVERLAY_NAWALL: u8 = 0x1A;
 /// The laser fence overlay a `LaserFence=` type may stand on (`0x0047C961`).
 const OVERLAY_LASER_FENCE: u8 = 0x7E;
 /// The overlay data a wall reaches once damaged (`0x0047C8D4`, `0x0047C926`):
@@ -451,23 +451,24 @@ fn overlay_admits(
     flags: u32,
     slope: u8,
 ) -> bool {
-    #[cfg(feature = "ares")]
-    if ares_gate_on_wall(
-        rules,
-        registry,
-        overlay_id,
-        overlay_data,
-        wall_owner,
-        ty,
-        house,
-    ) {
+    let ares = rules.ares_form();
+    if ares
+        && ares_gate_on_wall(
+            rules,
+            registry,
+            overlay_id,
+            overlay_data,
+            wall_owner,
+            ty,
+            house,
+        )
+    {
         return true;
     }
     let Some(ty) = ty else {
         return false;
     };
-    #[cfg(not(feature = "ares"))]
-    {
+    if !ares {
         let damaged = || own_damaged_wall(registry, ty, overlay_id, overlay_data);
         let gates = &rules.general.building_types;
         if matches!(overlay_id, OVERLAY_GASAND | OVERLAY_GAWALL)
@@ -529,7 +530,6 @@ fn own_damaged_wall(
 /// decide, compared as Rules pointers: a null `ty` (a TerrainType's test)
 /// matches an unset `[General]` entry. A refusal continues at the laser
 /// fence arm (`0x0047C94F`).
-#[cfg(feature = "ares")]
 fn ares_gate_on_wall(
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
@@ -582,6 +582,6 @@ pub(crate) fn resolved_to_tile(terrain: &ResolvedTerrainGrid, ty: &ObjectType) -
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "build_site_tests.rs"]
 mod tests;

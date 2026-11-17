@@ -955,7 +955,6 @@ fn a_computer_team_waits_on_its_charging_iron_curtain() {
 // Stock case 4 forces a Unit's track to its destination; installed Ares's
 // SW_ChronoWarp lambda (1006F4D0) forces it to the Unit's own coordinates,
 // which leaves the Drive's destination at the source block after the warp.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn a_computer_team_chronoshifts_onto_the_enemy_power_plant() {
     let (mut sim, rules, team_id, members, [_, bigger]) = super_team_fixture("0=57,9\n1=49,0");
@@ -1003,9 +1002,9 @@ fn a_computer_team_chronoshifts_onto_the_enemy_power_plant() {
 /// (1003A270, hook 0x6EF8A1) gathers its argument plus `AISafeDistance`
 /// from the enemy's base: each lands where the same total distance alone
 /// does, and not where `AISafeDistance` alone does.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_gather_actions_add_their_argument_to_the_distance() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let target = |general: &str, script: &str| {
         let (mut sim, rules, team_id, _, _) = team_fixture(
             &format!(

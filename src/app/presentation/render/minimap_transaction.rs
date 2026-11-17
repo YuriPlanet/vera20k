@@ -34,7 +34,7 @@ pub(crate) fn present_minimap_frame<T: AsMut<RadarTerrainBacklog>, E>(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod tests {
     use super::*;
     use crate::sim::runtime::SimRuntime;

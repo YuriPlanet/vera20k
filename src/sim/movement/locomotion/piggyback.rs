@@ -237,7 +237,6 @@ impl StashedLocomotor {
 
     /// Rebind the Foot's derived type caches without resuming the suspended
     /// controller or exposing its private mutable state.
-    #[cfg(feature = "ares")]
     pub(in crate::sim::movement) fn change_type_binding(
         &mut self,
         old_type_kind: LocomotorKind,
@@ -335,7 +334,7 @@ pub fn suspend_effect_for_test(
     effect
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
     use crate::rules::locomotor_type::SpeedType;

@@ -104,7 +104,17 @@ fn rules_for_history(retail: &IniFile, physical_art: &IniFile, row: &Value) -> R
             row["next_art"]["name"].as_str().unwrap(),
         );
     }
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(retail, &art).unwrap();
+    // Retail SOUNDMD knows every sound the tested art names.
+    let sounds: Vec<&str> = [&row["art"], &row["next_art"]]
+        .into_iter()
+        .filter_map(|native| art.section(native["name"].as_str()?))
+        .flat_map(|section| {
+            ["StartSound", "Report", "StopSound"].map(|key| section.get_for_test(key))
+        })
+        .flatten()
+        .collect();
+    let mut rules =
+        RuleSet::from_ini_with_fixed_art_and_sounds_for_test(retail, &art, &sounds).unwrap();
     let mut registry = crate::rules::retail_ini_fixture::art_registry(&art);
     for native in [&row["art"], &row["next_art"]]
         .into_iter()
@@ -370,9 +380,7 @@ fn a_network_drop_zone_flare_reveals_for_every_human_whoever_is_local() {
         return;
     };
     let mut rules = retail.rules;
-    rules
-        .bind_scheduler_anim_assets(&["BEACON".to_owned()], &assets, "TEM", "TEMPERATE")
-        .unwrap();
+    rules.bind_scheduler_anim_assets(&["BEACON".to_owned()], &assets, "TEM", "TEMPERATE");
     let flare = |local: &str| {
         let mut sim = Simulation::with_seed(31);
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);

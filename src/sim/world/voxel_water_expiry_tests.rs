@@ -37,11 +37,11 @@ fn shoreline_runtime(loaded: &crate::headless_scenario::HeadlessScenario) -> Sim
     assert!(sim.rebuild_dynamic_navigation(rules));
     SimRuntime {
         simulation: sim,
-        resources: SimResources {
+        resources: std::sync::Arc::new(SimResources {
             overlay_registry: loaded.runtime.resources.overlay_registry.clone(),
             terrain_template: Some(terrain.clone()),
             rules: rules.clone(),
-        },
+        }),
     }
 }
 
@@ -327,7 +327,7 @@ fn retail_gastank_natural_dry_expiry_constructs_twlt036_damages_and_retires() {
         i32::from(source.1) * 256 + 128,
         launch_z,
     );
-    sim.emit_debris_voxel(kind_id, kind, None, origin, true, &mut Vec::new())
+    sim.emit_debris_voxel(kind_id, kind, None, origin, true, &mut Vec::new(), rules)
         .unwrap();
     let piece_id = sim.voxel_anims().ids()[0];
     let piece = sim.voxel_anims().get(piece_id).unwrap();

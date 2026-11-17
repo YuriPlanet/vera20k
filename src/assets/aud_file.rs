@@ -226,7 +226,7 @@ fn decode_ws_compressed_chunk(data: &[u8], out: &mut Vec<i16>) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod tests {
     use super::*;
 

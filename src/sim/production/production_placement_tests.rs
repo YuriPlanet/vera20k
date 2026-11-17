@@ -165,6 +165,7 @@ fn gap_operational_actual_placement_waits_for_build_up_and_next_building_turn() 
             .entities
             .get(id)
             .unwrap()
+            .building
             .building_last_operational
             .is_operational()
     );
@@ -366,7 +367,8 @@ fn install_refinery_test_terrain_on(
             &[],
             64,
             64,
-        ),
+        )
+        .into(),
     );
     sim.resolved_terrain = Some(terrain);
 }
@@ -1455,9 +1457,9 @@ fn stock_refinery_free_unit_spawns_on_building_up_completion_once() {
 
 /// Ares 10014390 (hook 0x446E9F): a FreeUnit without `Harvester=` is born
 /// on Area_Guard instead of Harvest.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_non_harvester_free_unit_is_born_guarding_the_area() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let ini = IniFile::from_str(
         "[Countries]\n0=Americans\n[VehicleTypes]\n0=TANK\n\
          [BuildingTypes]\n0=GACNST\n1=GAREFN\n\
@@ -1485,9 +1487,9 @@ fn ares_non_harvester_free_unit_is_born_guarding_the_area() {
 /// Ares 3.0 BuildingClass_Place_SkipFreeUnits (10036860, hook 0x446AAF): a
 /// refinery opened again, as ChronoWarp puts one back with +6E4 clear,
 /// delivers no second FreeUnit.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_free_unit_comes_from_the_first_opening_only() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut sim = placement_sim();
     let rules = stock_refinery_completion_rules();
     let mut grid = PathGrid::new(64, 64);
@@ -3573,7 +3575,7 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
         let mut sim = scene(&rules, "GAFWLL");
         // Ares' hook 0x449518 (10014A20) asks `Firestorm.Wall` instead of
         // `FirestormWall=`; Sell_Back keeps the stock flag.
-        assert_eq!(can_sell_building(&sim, &rules, 1), !cfg!(feature = "ares"));
+        assert_eq!(can_sell_building(&sim, &rules, 1), !rules.ares_form());
         assert!(
             sell_back(
                 &mut sim,
@@ -3657,6 +3659,7 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
         .entities
         .get_mut(1)
         .unwrap()
+        .building
         .pending_c4_detonation
         .set_for_test(Some(PendingC4Detonation::new(
             crate::sim::timer::CdTimer::started(0, 100),
@@ -4268,7 +4271,6 @@ fn stock_yuri_cloning_vat_duplicates_a_successfully_placed_infantry() {
 /// infantry remains in limbo rather than being deleted or refunded.
 // Ares KickOutClones100127C0 deletes a refused clone instead
 // (`ares_kick_out_clones_follow_cloneable_cloned_as_and_delete_refusals`).
-#[cfg(not(feature = "ares"))]
 #[test]
 fn cloning_vat_keeps_a_refused_copy_in_limbo() {
     let scenario = IniFile::from_str("[NACLON]\nFactory=InfantryType\n");
@@ -4649,9 +4651,9 @@ fn an_airfield_puts_each_aircraft_it_builds_on_its_own_pad() {
 /// Ares KickOutClones (`100127C0`) at the stock Yuri barracks: a product
 /// without `Cloneable` makes no copy, `ClonedAs` swaps the copy's type, and
 /// a copy the vat refuses (a `Factory=` vat whose radio is full) is deleted.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_kick_out_clones_follow_cloneable_cloned_as_and_delete_refusals() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (scenario, refuse, expected_e1, expected_init) in [
         ("[E1]\nCloneable=no\n", false, 1, 0),
         ("[E1]\nClonedAs=INIT\n", false, 1, 1),

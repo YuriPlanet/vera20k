@@ -1,7 +1,8 @@
 # Ares combat and simulation hooks
 
-Build with `--features ares`. These are the Ares 3.0 combat, simulation and
-INI hooks of the 2026-11-08 hook pass that no earlier chain had cited. Each
+These are the Ares 3.0 combat, simulation and INI hooks of the 2026-11-08 hook
+pass that no earlier chain had cited; every build takes them when the game plays
+Ares ([Ares](ares.md)). Each
 row gives the gamemd hook, the Ares.dll function, and what VERA20K does with
 it: ported (the Rust cites both addresses next to the code), equivalent
 (the engine already behaves as the hook does), not applicable, or residual
@@ -46,6 +47,9 @@ it: ported (the Rust cites both addresses next to the code), equivalent
 | `0x760BC2` | `10057000` | WaveClass_Draw2 | `render::terrain_surface_lines` (a laser pixel in mode 11) |
 | `0x760DE2` | `10057040` | WaveClass_Draw3 | same |
 | `0x7609E3` | `10057120` | WaveClass_Draw_NodLaser_Details | `app::presentation::fire_effects::build_weapon_wave_draws` (every laser is drawn) |
+| `0x686D7F` | `1002F680` | INIClass_ReadScenario_CacheSP | `CampaignLoadingMetadata::load_text_color` (MISSIONMD `LoadScreenText.Color`, default by the file name's `SOV`/`YUR`/`TUT` prefix); without a MISSIONMD the static keeps an earlier scenario's colour in Ares, the stock one in VERA |
+| `0x642B36` | `1002F870` | ProgressScreenClass_GetLoadTextColor | `app::loading::pump`: the campaign title and briefing take that scheme when it exists |
+| `0x642B91` | `1002F870` | ProgressScreenClass_GetSideColor | `NativeLoadingScreenState::resolve_player_colors`: the Country's `LoadScreenText.Color` (early `0x6847B7` read) after the observer LightGrey test |
 
 - Area damage walks Ares' `CellSpreadEnumerator` over the stock band
   `ftol(CellSpread + 0.99)`, capped at 0x100. For bands 1..10 the cells are
@@ -135,6 +139,8 @@ it: ported (the Rust cites both addresses next to the code), equivalent
 | `0x523932` | `10041890` | InfantryTypeClass_CTOR_Initialize | zeroes the sequence sound fields the stock constructor left unset; Rust sequences start zeroed |
 | `0x72FA1A` | `1002FA50` | Sides_MixFileYuriFiles1 | `Sidebar.YuriFileNames` picks RADARY/BKGD*Y in `render::sidebar_chrome` (`SidebarArtNames::for_yuri`, with siblings `1002FA60`/`1002FA70`) |
 | `0x6FFF9E` | `10056D70` | TechnoClass_GetActionOnObject_IvanBombsB | skips stock's self-detonate rung; `Simulation::bomb_detonate_action` answers the Ares predicate in its place |
+| `0x643BB9` | `1002F890` | ProgressScreenClass_UpdateSingleProgressBar | the campaign meter row shows no colour scheme: DrawFill `0x643400` draws through the SPLDBR convert at `+0x74`, `+0x71` draws no outline in mode 0, and the label is empty (`app::loading::pump::render`) |
+| `0x55403D` | `1002F850` | LoadProgressMgr_Draw_SkipShadowOnNullString3 | the loading text draw adds its backing only behind laid-out glyphs, in every build (`app::loading::pump::render`); stock blends a box under an empty `GUI:LoadingEx` |
 
 ## Not applicable
 
@@ -153,7 +159,6 @@ it: ported (the Rust cites both addresses next to the code), equivalent
 |---|---|---|---|
 | `0x5227A3` | `1002F9C0` | Sides_Disguise | the PermaDisguise arm of `InfantryClass::ClearDisguise` (`0x522780`) has no Rust caller (the damage reveal admits only non-PermaDisguise types); the construction arm `0x6F422F` of the same function is ported |
 | `0x715320` | `10041DC0` | TechnoTypeClass_LoadFromINI_EarlyReader | reads `WaterImage` (unread), whose only consumer swaps a vehicle's draw image on water (presentation) |
-| `0x686D7F` | `1002F680` | INIClass_ReadScenario_CacheSP | campaign load-screen text colour (`LoadScreenText.Color` of the scenario); client presentation |
 | `0x4016F0` | `1005AF20` | IDXContainer_LoadSample | Ares loose-WAV samples and extra audio bags (`Misc/Audio.cpp`); the client audio has neither |
 
 Notes on the mechanisms ported in the 2026-11-08 follow-up pass:
@@ -225,9 +230,9 @@ The laser waves have
 
 The Ares airburst has `ares_airburst_sends_one_child_to_each_cell_within_the_spread`
 and `ares_splits_send_cluster_children_to_nearby_technos_or_random_cells`
-(`sim::combat::airburst`), replacing the old check that Ares builds run no
-tail. Ares builds replace two stock native comparisons: the band-11 cell-spread
-oracle and the busy-factory redirect rows run only in stock builds, and the
+(`sim::combat::airburst`), replacing the old check that Ares runs no
+tail. Ares replaces two stock native comparisons: the band-11 cell-spread
+oracle and the busy-factory redirect rows run only without Ares, and the
 laser-birth corpus skips its width and support checks under Ares. The Ares
 behaviour has its own tests next to them (`ares_area_damage_walks_the_cell_spread_enumerator_ring_order`,
 `ares_busy_factory_exit_takes_another_type_that_can_build_the_product`,

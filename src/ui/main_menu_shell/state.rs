@@ -134,7 +134,7 @@ pub fn tooltip_csf_key_for_control(id: MainMenuControlId) -> &'static str {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     use crate::ui::main_menu_shell::compute_layout;

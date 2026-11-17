@@ -1161,7 +1161,7 @@ fn reservation_mask(reservation_arg: i32) -> u32 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "cell_rect_clamp_tests.rs"]
 mod clamp_tests;
 
@@ -1225,7 +1225,7 @@ pub fn cell_spread_offsets(spread: usize) -> Vec<(i16, i16)> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use std::collections::BTreeMap;
 

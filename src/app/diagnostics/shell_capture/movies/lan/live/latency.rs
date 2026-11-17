@@ -377,7 +377,7 @@ impl LatencyCapture {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("latency simulation")?
             .simulation;
         let frame = sim.session().binary_frame();
@@ -469,7 +469,7 @@ impl LatencyCapture {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("latency simulation")?
             .simulation;
         if let Some(entity) = self.actor.and_then(|actor| sim.entities().get(actor)) {
@@ -738,7 +738,7 @@ impl LatencyCapture {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("latency simulation")?
             .simulation;
         let entity = sim.entities().get(actor).context("latency actor")?;
@@ -1014,7 +1014,7 @@ fn action_gpu_complete(action: &Action) -> bool {
         .is_some_and(|response| response.gpu_completed_at().is_some())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::sim::command::{CommandRecord, IDLE_OPCODE};

@@ -398,10 +398,72 @@ const ZOOM_STEP: f32 = 1.15;
 // 16 ms: the interval of GameSpeed 1, whose offline scroll speed is the one every
 // speed now has. Only movement left the game frame; Main_Tick's poll still writes
 // the right-drag latch.
+//
+// A step is still sampled once per radar-timer unit, with gamemd's distance, but
+// its distance is spread over the unit: each pass moves the view by the share of
+// the unit that passed since the last pass. A picture then shows the view where
+// its own moment puts it, so the scroll looks even at every picture rate, where a
+// whole step per unit made one picture in 25 jump two steps at 60 Hz and left
+// some pictures of a faster screen with none.
 
 /// The most scroll steps one pass may owe, 128 ms of scrolling: enough to hold
 /// the speed through slow frames, while a stall cannot jump the view far.
 const MAX_SCROLL_CATCH_UP_STEPS: u32 = 8;
+
+/// One scroll step in microseconds: a radar-timer unit.
+const SCROLL_STEP_US: u64 = 1_000 << RADAR_TIMER_MS_SHIFT;
+
+/// The scrolling one pass owes, in scroll steps.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum ScrollSteps {
+    /// The pass may not scroll, or no time has passed.
+    None,
+    /// One whole step sampled now and moved at once: a game frame's own step
+    /// under a held view, an exact poll, or a clock's first pass.
+    Whole,
+    /// The time since the last pass, as points on the scroll clock in steps.
+    Span { from: f64, to: f64 },
+}
+
+impl ScrollSteps {
+    /// The steps owed, whole and part.
+    pub(crate) fn owed(self) -> f32 {
+        match self {
+            Self::None => 0.0,
+            Self::Whole => 1.0,
+            Self::Span { from, to } => (to - from) as f32,
+        }
+    }
+
+    /// Each radar-timer unit a span touches, oldest first, with the share of
+    /// the unit inside the span.
+    fn shares(self) -> impl Iterator<Item = (u32, f32)> {
+        let (from, to) = match self {
+            Self::Span { from, to } if to > from => (from, to),
+            _ => (0.0, 0.0),
+        };
+        (from.floor() as u64..to.ceil() as u64).map(move |unit| {
+            let start = (unit as f64).max(from);
+            let end = ((unit + 1) as f64).min(to);
+            (unit as u32, (end - start) as f32)
+        })
+    }
+}
+
+/// The whole window pixels of `movement` plus what earlier passes left, the
+/// nearest; the rest waits in `carry`. The view then stays on whole window
+/// pixels, as whole steps kept it, and loses no distance. A pass that does not
+/// scroll drops the rest.
+fn whole_window_pixels(carry: &mut (f32, f32), movement: (f32, f32)) -> (f32, f32) {
+    if movement == (0.0, 0.0) {
+        *carry = (0.0, 0.0);
+        return movement;
+    }
+    let total = (carry.0 + movement.0, carry.1 + movement.1);
+    let whole = (total.0.round(), total.1.round());
+    *carry = (total.0 - whole.0, total.1 - whole.1);
+    whole
+}
 
 // ---------------------------------------------------------------------------
 // Edge auto-scroll — gamemd's CoastLevel ramp.
@@ -467,8 +529,19 @@ pub(crate) struct EdgeScrollState {
     /// Radar-timer stamp of the last coast change. `None` matches gamemd's
     /// zero-delay start, where the very first step is allowed immediately.
     last_coast_change: Option<u32>,
-    /// Radar-timer stamp of the last pass that settled its scroll steps.
-    last_scroll_step: Option<u32>,
+    /// When the last pass settled its scroll steps, in microseconds on the
+    /// scroll clock.
+    last_scroll_pass: Option<u64>,
+    /// The mouse's step for one radar-timer unit, in world pixels: sampled
+    /// once, then shared by the passes inside the unit.
+    mouse_step: Option<(u32, (f32, f32))>,
+    /// Mouse and arrow-key scrolling under one window pixel, waiting for the
+    /// next pass ([`whole_window_pixels`]).
+    mouse_carry: (f32, f32),
+    key_carry: (f32, f32),
+    /// Radar-timer stamp of the last pass the mouse or the arrow keys
+    /// scrolled in.
+    last_scrolled: Option<u32>,
 }
 
 impl Default for EdgeScrollState {
@@ -478,40 +551,65 @@ impl Default for EdgeScrollState {
             coast_level: 0,
             octant: 0,
             last_coast_change: None,
-            last_scroll_step: None,
+            last_scroll_pass: None,
+            mouse_step: None,
+            mouse_carry: (0.0, 0.0),
+            key_carry: (0.0, 0.0),
+            last_scrolled: None,
         }
     }
 }
 
 impl EdgeScrollState {
-    /// Current radar-timer reading (16 ms units).
-    pub(crate) fn radar_timer(&self) -> u32 {
-        (self.epoch.elapsed().as_millis() as u32) >> RADAR_TIMER_MS_SHIFT
+    /// The scroll clock, in microseconds.
+    fn clock_us(&self) -> u64 {
+        self.epoch.elapsed().as_micros() as u64
     }
 
-    /// Take the scroll steps a pass at `now` owes: one per radar-timer unit
-    /// since the last pass. Every pass stamps the clock, so time the camera
-    /// could not move is never owed. While `view_held`, each game frame
-    /// rewrites the view, so a step between frames would draw and then snap
-    /// back; only the frame's own step runs, as in gamemd.
+    /// Current radar-timer reading (16 ms units).
+    pub(crate) fn radar_timer(&self) -> u32 {
+        (self.clock_us() / SCROLL_STEP_US) as u32
+    }
+
+    /// Take the scroll steps a pass at `now_us` on the scroll clock owes: the
+    /// time since the last pass. Every pass stamps the clock, so time the
+    /// camera could not move is never owed. While `view_held`, each game
+    /// frame rewrites the view, so a step between frames would draw and then
+    /// snap back; only the frame's own step runs, as in gamemd.
     pub(crate) fn take_scroll_steps(
         &mut self,
-        now: u32,
+        now_us: u64,
         admitted: bool,
         view_held: bool,
         game_frame: bool,
-    ) -> u32 {
-        let elapsed = self
-            .last_scroll_step
-            .replace(now)
-            .map_or(1, |stamp| now.wrapping_sub(stamp));
+    ) -> ScrollSteps {
+        let last = self.last_scroll_pass.replace(now_us);
         if !admitted {
-            0
-        } else if view_held {
-            u32::from(game_frame)
-        } else {
-            elapsed.min(MAX_SCROLL_CATCH_UP_STEPS)
+            return ScrollSteps::None;
         }
+        if view_held {
+            return if game_frame {
+                ScrollSteps::Whole
+            } else {
+                ScrollSteps::None
+            };
+        }
+        let Some(last) = last else {
+            return ScrollSteps::Whole;
+        };
+        let to = now_us as f64 / SCROLL_STEP_US as f64;
+        let from =
+            (last as f64 / SCROLL_STEP_US as f64).max(to - f64::from(MAX_SCROLL_CATCH_UP_STEPS));
+        if to > from {
+            ScrollSteps::Span { from, to }
+        } else {
+            ScrollSteps::None
+        }
+    }
+
+    /// Note a pass that scrolled, for [`scrolling`].
+    fn note_scrolled(&mut self) {
+        self.last_scrolled = Some(self.radar_timer());
     }
 
     fn timer_expired(&self, now: u32) -> bool {
@@ -684,14 +782,14 @@ fn edge_scroll_step_with_context(
         .clamp(0, EDGE_SCROLL_SPEED_TABLE.len() as i32 - 1);
     state.coast_level = 8 - base_index;
 
-    if active_direction.is_some() && !movement_allowed {
-        // A blocked active edge returns after the cap but before direction,
-        // timer, or ramp state changes.
-        return (0.0, 0.0);
-    }
-
     if let Some(direction) = active_direction {
+        // 0x00692C19..0x00692D4D store the direction (B0565C) before the
+        // one-pixel preflight at 0x00692DEB, so a blocked active edge still
+        // turns a later coast; it returns before the timer and ramp change.
         state.octant = scroll_dir_octant(direction);
+        if !movement_allowed {
+            return (0.0, 0.0);
+        }
     } else if state.coast_level == 0 {
         // Idle: nothing moves, but the decay timer is still serviced.
         state.decay(now);
@@ -832,11 +930,18 @@ pub(crate) fn set_view_bookmark(state: &mut AppState, slot: usize) {
 }
 
 /// `View<slot+1>` — jump the camera to a bookmark.
+/// With a building armed, its foundation follows the cursor's new Cell
+/// (the View1..View4 commands, `0x005373C3`, `0x005374B3`, `0x005375A3`,
+/// `0x00537693`).
 pub(crate) fn recall_view_bookmark(state: &mut AppState, slot: usize) {
     let Some((rx, ry)) = state.match_state.input.view_bookmarks.get(slot) else {
         return;
     };
     center_camera_on_cell(state, rx, ry);
+    crate::app::match_runtime::sim_tick::update_building_placement_preview(
+        state,
+        crate::app::match_runtime::sim_tick::FoundationCentre::Cursor,
+    );
 }
 
 /// Seed all four bookmarks with the cell the view is currently centred on.
@@ -1139,6 +1244,11 @@ impl TacticalMouseState {
 /// One right-drag pan step, in world pixels, for `ScrollMethod = 0` (the stock
 /// value — the two cursor-warping methods have no in-game UI and ship disabled).
 ///
+/// RESIDUAL (dormant, RA2MD.INI `ScrollMethod=` is 0 unless edited by hand):
+/// `0x00693440` picks the method through `0x005FBF70`; methods 1 (`0x006936D3`) and
+/// 2 (`0x0069362C`, inverted) move 12/(rate+1) per pixel and warp the cursor back to
+/// the anchor. VERA reads and saves the key but always pans with method 0.
+///
 /// The displacement is measured from the **anchor**, not from the previous
 /// step, so the gesture behaves like a joystick: the further the cursor sits
 /// from the press point, the faster the map slides, every step the button is
@@ -1271,7 +1381,7 @@ fn keyboard_scroll_distance(state: &AppState) -> f32 {
         let cells = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
             .map_or(0u32, |sim| {
                 u32::from(sim.fog().width().max(sim.fog().height()))
@@ -1288,15 +1398,16 @@ fn scroll_input_locked(state: &AppState) -> bool {
         && state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .is_some_and(|runtime| runtime.simulation.session().input_locked())
 }
 
-/// One scroll step of the arrow keys. Main_Tick's keyboard requests run after
-/// logic (0x55DD42..0x55DD96), and remain pending until the next Tactical__AI
-/// commit with that frame's mouse.
-pub(crate) fn queue_keyboard_scroll(state: &mut AppState) {
-    if scroll_input_locked(state) {
+/// The arrow keys' scrolling over `steps`. Main_Tick's keyboard requests run
+/// after logic (0x55DD42..0x55DD96), and remain pending until the next
+/// Tactical__AI commit with that frame's mouse.
+pub(crate) fn queue_keyboard_scroll(state: &mut AppState, steps: ScrollSteps) {
+    let owed = steps.owed();
+    if owed == 0.0 || scroll_input_locked(state) {
         return;
     }
     let held = |arrow| {
@@ -1307,26 +1418,31 @@ pub(crate) fn queue_keyboard_scroll(state: &mut AppState) {
                 .camera_scroll_keys
                 .held(&state.match_state.input.keys_held, arrow)
     };
-    let key_distance = keyboard_scroll_distance(state);
+    // In window pixels: the steps owed at one step's distance.
+    let key_distance = keyboard_scroll_distance(state) * owed;
     let mut movement = (0.0, 0.0);
     if held(winit::keyboard::KeyCode::ArrowLeft) {
-        movement.0 -= key_distance / state.match_state.input.zoom_level;
+        movement.0 -= key_distance;
     }
     if held(winit::keyboard::KeyCode::ArrowRight) {
-        movement.0 += key_distance / state.match_state.input.zoom_level;
+        movement.0 += key_distance;
     }
     if held(winit::keyboard::KeyCode::ArrowUp) {
-        movement.1 -= key_distance / state.match_state.input.zoom_level;
+        movement.1 -= key_distance;
     }
     if held(winit::keyboard::KeyCode::ArrowDown) {
-        movement.1 += key_distance / state.match_state.input.zoom_level;
+        movement.1 += key_distance;
     }
-
-    state
-        .match_state
-        .input
+    let input = &mut state.match_state.input;
+    if movement != (0.0, 0.0) {
+        input.edge_scroll.note_scrolled();
+    }
+    if steps != ScrollSteps::Whole {
+        movement = whole_window_pixels(&mut input.edge_scroll.key_carry, movement);
+    }
+    input
         .pending_camera_scroll
-        .request(movement);
+        .request((movement.0 / input.zoom_level, movement.1 / input.zoom_level));
 }
 
 /// The scroll steps this pass owes (see the scroll clock above). `admitted` is
@@ -1337,45 +1453,83 @@ pub(crate) fn take_scroll_steps(
     admitted: bool,
     frames_running: bool,
     game_frame: bool,
-) -> u32 {
+) -> ScrollSteps {
     let view_held = frames_running
         && (input.follow_target.is_some() || input.pending_camera_scroll.focus_running());
-    let now = input.edge_scroll.radar_timer();
+    let now_us = input.edge_scroll.clock_us();
     input
         .edge_scroll
-        .take_scroll_steps(now, admitted, view_held, game_frame)
+        .take_scroll_steps(now_us, admitted, view_held, game_frame)
 }
 
-/// The radar-timer reading of each of the `steps` steps a pass at `now` owes,
-/// oldest first, so the coast ramps once per step as it would over that time.
-fn owed_step_stamps(now: u32, steps: u32) -> impl Iterator<Item = u32> {
-    (0..steps).rev().map(move |back| now.wrapping_sub(back))
+/// Whether the mouse or the arrow keys scrolled the view in the last pass or
+/// the one before: while they do, each picture shows the view somewhere new.
+pub(crate) fn scrolling(input: &crate::app::input::state::MatchInputState) -> bool {
+    let clock = &input.edge_scroll;
+    clock
+        .last_scrolled
+        .is_some_and(|at| clock.radar_timer().wrapping_sub(at) <= 1)
 }
 
 /// Sample this pass's mouse scrolling, returning world-pixel movement without
 /// committing the view: Main_Tick's input poll (0x55D8AB) writes the right-drag
-/// latch when `input_poll` says this pass is one, then `steps` scroll steps
-/// accumulate. `None` means no step was owed.
+/// latch when `input_poll` says this pass is one, then the mouse's step of each
+/// radar-timer unit in `steps` counts by its share. `None` means no step was
+/// owed.
 pub(crate) fn sample_mouse_scroll(
     state: &mut AppState,
     input_poll: bool,
-    steps: u32,
+    steps: ScrollSteps,
 ) -> Option<(f32, f32)> {
     if input_poll && !scroll_input_locked(state) {
         latch_right_drag(state);
     }
-    (steps > 0).then(|| {
-        let now = state.match_state.input.edge_scroll.radar_timer();
-        owed_step_stamps(now, steps).fold((0.0, 0.0), |request, stamp| {
-            let step = mouse_scroll_step(state, stamp);
-            (request.0 + step.0, request.1 + step.1)
-        })
-    })
+    let movement = match steps {
+        ScrollSteps::None => return None,
+        ScrollSteps::Whole => {
+            let now = state.match_state.input.edge_scroll.radar_timer();
+            unit_mouse_step(state, now, true)
+        }
+        // Oldest first, so the coast ramps once per unit as it would over
+        // that time.
+        ScrollSteps::Span { .. } => steps.shares().fold((0.0, 0.0), |sum, (unit, share)| {
+            let step = unit_mouse_step(state, unit, false);
+            (sum.0 + step.0 * share, sum.1 + step.1 * share)
+        }),
+    };
+    let input = &mut state.match_state.input;
+    if movement != (0.0, 0.0) {
+        input.edge_scroll.note_scrolled();
+    }
+    if steps == ScrollSteps::Whole {
+        return Some(movement);
+    }
+    // The carry is in window pixels; the steps are in world pixels.
+    let zoom = input.zoom_level;
+    let whole = whole_window_pixels(
+        &mut input.edge_scroll.mouse_carry,
+        (movement.0 * zoom, movement.1 * zoom),
+    );
+    Some((whole.0 / zoom, whole.1 / zoom))
+}
+
+/// The mouse's scroll step for radar-timer unit `unit`, in world pixels. A
+/// unit is sampled once and its later passes share that step; `fresh` samples
+/// it again, for a whole step taken at once.
+fn unit_mouse_step(state: &mut AppState, unit: u32, fresh: bool) -> (f32, f32) {
+    match state.match_state.input.edge_scroll.mouse_step {
+        Some((sampled, step)) if sampled == unit && !fresh => step,
+        _ => {
+            let step = mouse_scroll_step(state, unit);
+            state.match_state.input.edge_scroll.mouse_step = Some((unit, step));
+            step
+        }
+    }
 }
 
 /// One native mouse input poll taken as one scroll step.
 pub(crate) fn poll_mouse_scroll(state: &mut AppState) -> (f32, f32) {
-    sample_mouse_scroll(state, true, 1).unwrap_or_default()
+    sample_mouse_scroll(state, true, ScrollSteps::Whole).unwrap_or_default()
 }
 
 /// One scroll step of the mouse at radar-timer reading `now`, in world pixels.
@@ -1388,6 +1542,9 @@ fn mouse_scroll_step(state: &mut AppState, now: u32) -> (f32, f32) {
     let sw = state.render_width() as f32;
     let sh = state.render_height() as f32;
 
+    // RESIDUAL: UpdateMouseScrolling (0x00692F30) also returns at 0x00692F7F
+    // while PlanMgr's hover test 0x0063AB60 finds a planning node under the
+    // mouse, so a node in the one-pixel edge band holds the view; VERA scrolls.
     // gamemd's edge scroll early-returns while any tactical mouse button holds
     // the capture, so the map is frozen for the whole of a band-box or
     // right-drag gesture. The minimap-drag inhibit is VERA-internal: gamemd's
@@ -1480,7 +1637,7 @@ pub(crate) fn advance_camera_ai(state: &mut AppState, mouse: (f32, f32), frame: 
             && state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .is_some_and(|runtime| runtime.simulation.session().started()),
         // The ordinary app currently admits the offline session route with
         // native replay flags0. Native playback bit2 is covered by the shared
@@ -1987,7 +2144,10 @@ pub(crate) fn apply_home_camera(state: &mut AppState, coord: Option<[i32; 3]>) {
     if let Some([x, y, z]) = coord {
         center_camera_on_lepton_point(state, x, y, z);
     }
-    crate::app::match_runtime::sim_tick::update_building_placement_preview(state);
+    crate::app::match_runtime::sim_tick::update_building_placement_preview(
+        state,
+        crate::app::match_runtime::sim_tick::FoundationCentre::Cursor,
+    );
     state.match_state.input.follow_target = None;
 }
 
@@ -1998,7 +2158,7 @@ pub(crate) fn center_view_on_selection(state: &mut AppState) {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.rules(),
         &state.match_state.input.selection_order,
@@ -2008,7 +2168,7 @@ pub(crate) fn center_view_on_selection(state: &mut AppState) {
         let Some(sim) = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
         else {
             return;
@@ -2038,7 +2198,7 @@ pub(crate) fn toggle_follow_target(state: &mut AppState) {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.rules(),
         &state.match_state.input.selection_order,
@@ -2082,7 +2242,7 @@ pub(crate) fn update_follow_camera(
     let coord = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)
         .and_then(|sim| {
             sim.entities()
@@ -2172,7 +2332,7 @@ pub(crate) fn playfield_presentation_authority(
     state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map_or((None, 0), |runtime| runtime.view().playfield_authority())
 }
 
@@ -2197,7 +2357,7 @@ fn clamp_camera_point_for_state(
     let origin = (origin_x as f32 / zoom, origin_y as f32 / zoom);
     let point = (point.0 + origin.0, point.1 + origin.1);
     let to_camera = |corner: (f32, f32)| (corner.0 - origin.0, corner.1 - origin.1);
-    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+    if let Some(runtime) = state.match_state.sim_runtime.runtime() {
         // The radar rectangle enumerates mode-zero cells. Tactical6D8640
         // instead reads the five final MapClass LocalSize fields directly,
         // including its northern headroom. These are distinct consumers of
@@ -2283,7 +2443,7 @@ fn shown_world_rect(area: (f32, f32, f32, f32)) -> (f32, f32, f32, f32) {
 /// has its LocalSize. Pictures of whole maps (`app::map_picture`) are framed
 /// by it.
 pub(crate) fn tactical_view_area(state: &AppState) -> Option<(f32, f32, f32, f32)> {
-    let runtime = state.match_state.sim_runtime.as_ref()?;
+    let runtime = state.match_state.sim_runtime.runtime()?;
     let bounds = runtime.view().playfield_authority().0?;
     Some(shown_world_rect(tactical_scroll_rect(bounds)))
 }
@@ -2440,6 +2600,9 @@ pub(crate) fn touch_owns_pointer(input: &crate::app::input::state::MatchInputSta
 
 /// Active edge intent plus whether the tactical clamp removes all requested
 /// components. Cursor feedback and motion both use this exact probe.
+/// RESIDUAL: native also shows the coast direction's arrow while the view
+/// coasts off the edge (0x00692D52 reaches the cursor calls at 0x00692DFF and
+/// 0x00692E0F); VERA shows it only at the edge, a fraction of a second less.
 pub(crate) fn edge_scroll_cursor_state(state: &AppState) -> Option<(ScrollDir, bool)> {
     // The band is inhibited for motion (`poll_mouse_scroll`), so it must not
     // light its arrow either.
@@ -2462,7 +2625,7 @@ pub(crate) fn edge_scroll_cursor_state(state: &AppState) -> Option<(ScrollDir, b
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 mod tests {
     use super::*;
 
@@ -2701,31 +2864,55 @@ mod tests {
         assert_eq!(peaks, vec![26.0, 22.0, 17.0, 13.0, 8.0, 4.0, 2.0]);
     }
 
-    /// A slow pass owes the steps it missed up to the cap, time the camera
+    /// A slow pass owes the time it missed up to the cap, time the camera
     /// could not move is not owed, and a view follow or a cinematic pan holds
     /// moves only with the game frame.
     #[test]
     fn scroll_steps_owe_slow_passes_but_not_time_out_of_play() {
         let mut clock = EdgeScrollState::default();
-        assert_eq!(clock.take_scroll_steps(100, true, false, false), 1);
-        assert_eq!(clock.take_scroll_steps(100, true, false, true), 0);
-        assert_eq!(clock.take_scroll_steps(103, true, false, false), 3);
+        let mut take = |units: f64, admitted, view_held, game_frame| {
+            let now_us = (units * SCROLL_STEP_US as f64) as u64;
+            clock.take_scroll_steps(now_us, admitted, view_held, game_frame)
+        };
+        assert_eq!(take(100.0, true, false, false), ScrollSteps::Whole);
+        assert_eq!(take(100.0, true, false, true), ScrollSteps::None);
+        assert_eq!(take(102.5, true, false, false).owed(), 2.5);
         assert_eq!(
-            clock.take_scroll_steps(112, true, false, false),
-            8,
+            take(112.0, true, false, false).owed(),
+            8.0,
             "the speed holds past the cap"
         );
-        assert_eq!(clock.take_scroll_steps(200, false, false, false), 0);
+        assert_eq!(take(200.0, false, false, false), ScrollSteps::None);
         assert_eq!(
-            clock.take_scroll_steps(201, true, false, false),
-            1,
+            take(201.0, true, false, false).owed(),
+            1.0,
             "time in a menu is not owed"
         );
-        assert_eq!(clock.take_scroll_steps(202, true, true, false), 0);
-        assert_eq!(clock.take_scroll_steps(203, true, true, true), 1);
+        assert_eq!(take(202.0, true, true, false), ScrollSteps::None);
+        assert_eq!(take(203.0, true, true, true), ScrollSteps::Whole);
     }
 
-    /// The steps a slow pass owes ramp the coast as they would over as many
+    /// Passes a 144 Hz refresh apart each move their share of a 13-pixel
+    /// step, in whole pixels, and together lose none of it. Whole steps moved
+    /// such a pass 0 or 13 pixels.
+    #[test]
+    fn passes_inside_a_unit_share_its_step_by_time() {
+        let mut clock = EdgeScrollState::default();
+        clock.take_scroll_steps(0, true, false, false);
+        let mut carry = (0.0, 0.0);
+        let moved: Vec<f32> = (1..=144_u64)
+            .map(|pass| {
+                let steps = clock.take_scroll_steps(pass * 6_944, true, false, false);
+                let step = steps.shares().map(|(_, share)| 13.0 * share).sum();
+                whole_window_pixels(&mut carry, (step, 0.0)).0
+            })
+            .collect();
+        assert!(moved.iter().all(|px| [5.0, 6.0].contains(px)), "{moved:?}");
+        // 999,936 microseconds are 62.496 steps: 812.4 pixels.
+        assert_eq!(moved.iter().sum::<f32>(), 812.0);
+    }
+
+    /// The units a slow pass owes ramp the coast as they would over as many
     /// short passes.
     #[test]
     fn owed_steps_ramp_the_coast_like_short_passes() {
@@ -2734,8 +2921,9 @@ mod tests {
         };
         let (mut short, mut slow) = (state(), state());
         let short_passes: Vec<f32> = (0..8).map(|tick| step(&mut short, tick)).collect();
-        let slow_pass: Vec<f32> = owed_step_stamps(7, 8)
-            .map(|stamp| step(&mut slow, stamp))
+        let slow_pass: Vec<f32> = ScrollSteps::Span { from: 0.0, to: 8.0 }
+            .shares()
+            .map(|(unit, share)| step(&mut slow, unit) * share)
             .collect();
         assert_eq!(slow_pass, short_passes);
     }
@@ -2760,8 +2948,16 @@ mod tests {
                 }
                 take_scroll_steps(&mut input, true, frames_running, false)
             };
-            assert_eq!(steps(true), 0, "held between frames, follow={follow}");
-            assert_eq!(steps(false), 1, "no frame to rewrite it, follow={follow}");
+            assert_eq!(
+                steps(true),
+                ScrollSteps::None,
+                "held between frames, follow={follow}"
+            );
+            assert_eq!(
+                steps(false),
+                ScrollSteps::Whole,
+                "no frame to rewrite it, follow={follow}"
+            );
         }
     }
 
@@ -2848,12 +3044,11 @@ mod tests {
     }
 
     #[test]
-    fn item82_blocked_active_edge_caps_coast_without_changing_direction_or_timer() {
+    fn item82_blocked_active_edge_caps_coast_and_turns_it_without_the_timer() {
         let mut st = state();
         st.coast_level = 5;
         st.octant = 3;
         st.last_coast_change = Some(2);
-        let before = (st.octant, st.last_coast_change);
         assert_eq!(
             edge_scroll_step_with_context(
                 &mut st,
@@ -2869,7 +3064,10 @@ mod tests {
             (0.0, 0.0),
         );
         assert_eq!(st.coast_level, 4, "ScrollRate cap still applies");
-        assert_eq!((st.octant, st.last_coast_change), before);
+        // B0565C is written at 0x00692D4D, before the preflight fails.
+        let west = edge_scroll_intent((0.0, 300.0), VIEW_W, VIEW_H).unwrap();
+        assert_eq!(st.octant, scroll_dir_octant(west));
+        assert_eq!(st.last_coast_change, Some(2));
     }
 
     #[test]
@@ -3200,11 +3398,11 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "fast_scroll_tests.rs"]
 mod fast_scroll_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "camera_bounds_tests.rs"]
 mod camera_bounds_tests;
 

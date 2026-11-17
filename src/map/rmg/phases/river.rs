@@ -614,7 +614,7 @@ pub fn carries_a_river(water_percent: i32) -> bool {
     water_percent > super::lake::RIVER_GATE
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::rmg::grid::RmgGrid as Grid;

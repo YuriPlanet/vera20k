@@ -79,7 +79,7 @@ pub fn ra2_speed_to_leptons_per_second(raw_speed: i32) -> SimFixed {
 // Tests
 // ---------------------------------------------------------------------------
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

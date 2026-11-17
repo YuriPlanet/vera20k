@@ -142,7 +142,11 @@ pub(super) fn overfly(
 fn give_up(sim: &mut Simulation, id: u64, rules: &RuleSet, frame_effects: FrameEffects<'_>) {
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.mission_leaf.set_aircraft_action_latch(false);
-        crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
+        crate::sim::mission::concrete_effects::represented_assign_target(
+            entity,
+            None,
+            rules.ares_form(),
+        );
     }
     sim.assign_aircraft_destination(id, None, rules, frame_effects);
     super::queue_mission(&mut sim.substrate, id, MissionType::Retreat);

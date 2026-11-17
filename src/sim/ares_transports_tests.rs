@@ -10,6 +10,7 @@ const RULES: &str = "\
 2=E2
 [VehicleTypes]
 0=TRNS
+1=OPENT
 [BuildingTypes]
 0=NABNKR
 1=ARMORY
@@ -33,6 +34,13 @@ Speed=6
 Passengers=3
 InitialPayload.Types=E1,E2
 InitialPayload.Nums=2
+Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}
+[OPENT]
+Strength=300
+Speed=6
+Passengers=1
+OpenTopped=yes
+InitialPayload.Types=E1
 Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}
 [NABNKR]
 Strength=500
@@ -95,6 +103,7 @@ fn kinds(sim: &Simulation, ids: &[u64]) -> Vec<String> {
 /// infantry.
 #[test]
 fn initial_payload_fills_a_transport_once_and_garrisons_infantry_only() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let mut sim = arena(&rules);
     let transport = spawn(&mut sim, &rules, "TRNS", "Americans", 10, 10);
@@ -134,12 +143,39 @@ fn initial_payload_fills_a_transport_once_and_garrisons_infantry_only() {
     assert_eq!(kinds(&sim, &occupants), ["E1"; 4]);
 }
 
+/// CreateInitialPayload's Foot arm makes an `OpenTopped=` transport's
+/// payload a rider through EnteredOpenTopped (Ares.dll 10043E65 ->
+/// 10044880 -> 0x00710470), whose ResetOrdersToGuard (vt+0x3D0 at
+/// 0x00710484) gives it Guard before it boards.
+#[test]
+fn an_open_topped_transport_payload_rides_on_guard() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = rules();
+    let mut sim = arena(&rules);
+    let transport = spawn(&mut sim, &rules, "OPENT", "Americans", 10, 10);
+    let rider = sim
+        .substrate
+        .entities
+        .get(transport)
+        .unwrap()
+        .passenger_role
+        .cargo()
+        .unwrap()
+        .passengers()[0];
+    let mission = &sim.substrate.entities.get(rider).unwrap().mission;
+    assert_eq!(
+        mission.current().known(),
+        Some(crate::sim::mission::MissionType::Guard)
+    );
+}
+
 /// BuildingExt::KickOutHospitalArmory (10012920): a capture (ChangeOwner,
 /// 100163B0, hook 0x448277) and then a sale order (Sell_Back, 10016970,
 /// hook 0x447113) each kick one trainee out of an `Armory=` building, the
 /// head of its cargo first.
 #[test]
 fn armory_capture_and_sale_each_kick_out_one_trainee() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let mut sim = arena(&rules);
     let armory = spawn(&mut sim, &rules, "ARMORY", "Americans", 16, 10);

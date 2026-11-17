@@ -74,7 +74,7 @@ fn player_load_restarts_the_paid_depot_repair_interval() {
     resources.terrain_template = sim.resolved_terrain().cloned();
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources,
+        resources: resources.into(),
     };
 
     // Capture an actual completed frame immediately before the second paid

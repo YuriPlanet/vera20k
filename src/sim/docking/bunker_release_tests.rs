@@ -310,7 +310,10 @@ fn normal_release_clears_unit_first_and_assigns_destination_without_teleport() {
         building.mission.queued(),
         MissionId::from_known(MissionType::Guard)
     );
-    assert_eq!(building.bunker_runtime.unwrap().state(), BunkerState::Idle);
+    assert_eq!(
+        building.building.bunker_runtime.unwrap().state(),
+        BunkerState::Idle
+    );
 }
 
 #[test]
@@ -461,7 +464,7 @@ fn nonunit_link_does_not_release_or_reset_bunker() {
         let building = sim.substrate.entities.get(2).unwrap();
         assert_eq!(building.bunker.occupant(), Some(1));
         assert_eq!(
-            building.bunker_runtime.unwrap().state(),
+            building.building.bunker_runtime.unwrap().state(),
             BunkerState::Occupied
         );
     }

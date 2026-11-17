@@ -473,7 +473,7 @@ fn step(cell: (u16, u16), direction: u8) -> Option<(u16, u16)> {
     Some((rx as u16, ry as u16))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::rules::overlay_types::is_bridge_overlay_index;

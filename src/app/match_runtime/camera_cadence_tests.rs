@@ -36,7 +36,7 @@ fn scroll_steps_are_the_same_at_every_game_speed() {
     ] {
         let mut pacer = LocalFramePacer::new();
         let mut clock = EdgeScrollState::default();
-        let mut steps = 0;
+        let mut steps = 0.0;
         // One pass per service wake, as a battlefield between draws runs them.
         for now_ms in (0..=1000).step_by(8) {
             let admitted = pacer.should_admit(now_ms, game_speed, None, false);
@@ -44,20 +44,23 @@ fn scroll_steps_are_the_same_at_every_game_speed() {
             if decision.run_sim {
                 pacer.record_admitted_frame(now_ms);
             }
-            let due = clock.take_scroll_steps(
-                (now_ms >> 4) as u32,
-                decision.camera_scroll,
-                false,
-                decision.run_sim,
-            );
+            let due = clock
+                .take_scroll_steps(
+                    now_ms * 1_000,
+                    decision.camera_scroll,
+                    false,
+                    decision.run_sim,
+                )
+                .owed();
             assert!(
-                due <= 1,
+                due <= 1.0,
                 "steps waited for a game frame: {mode:?} {game_speed}"
             );
             steps += due;
         }
-        // One step per 16 ms bucket touched: buckets 0..=62.
-        assert_eq!(steps, 63, "{mode:?}, GameSpeed={game_speed}");
+        // The clock's first pass is a whole step; the second after it is
+        // 62.5 steps of 16 ms.
+        assert_eq!(steps, 63.5, "{mode:?}, GameSpeed={game_speed}");
     }
 }
 

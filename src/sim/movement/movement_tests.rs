@@ -82,7 +82,7 @@ fn ordinary_drive_retires_selector_before_entering_an_explicit_tube() {
     );
     assert!(committed_track_head(accepted).is_none());
     sim.resolved_terrain = Some(terrain.clone());
-    sim.zone_grid = Some(zones.clone());
+    sim.zone_grid = Some(zones.clone().into());
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     let rules = drive_type_rules();
     sim.process_ground_locomotor_for_test(1, Some(&rules), Some(&grid), None)

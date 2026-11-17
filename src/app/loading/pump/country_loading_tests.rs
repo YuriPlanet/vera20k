@@ -86,6 +86,7 @@ fn bind(session: &mut LoadingSession, assets: &ProcessAssets) -> anyhow::Result<
 
 #[test]
 fn ares_country_loading_attempt_freezes_early_palette_color_and_binds_late_text() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (_dir, mut assets, mut session) = fixture();
     bind(&mut session, &assets).unwrap();
     let early = session
@@ -164,6 +165,7 @@ fn ares_country_loading_attempt_freezes_early_palette_color_and_binds_late_text(
 
 #[test]
 fn ares_country_loading_attempt_freezes_absent_palette_without_aborting_prefix() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for malformed in [false, true] {
         let (dir, mut assets, mut session) = fixture();
         if malformed {
@@ -203,6 +205,7 @@ fn ares_country_loading_attempt_freezes_absent_palette_without_aborting_prefix()
 
 #[test]
 fn ares_country_loading_attempt_failures_cancel_pending_prefix_and_preserve_actual_registry() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for failed_attempt in [false, true] {
         let (_dir, mut assets, mut session) = fixture();
         let country = crate::rules::ruleset::CountryIdx(1);
@@ -249,6 +252,7 @@ fn ares_country_loading_attempt_failures_cancel_pending_prefix_and_preserve_actu
 
 #[test]
 fn ares_country_loading_attempt_keeps_observer_random_map_and_campaign_on_existing_routes() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (_dir, mut assets, mut session) = fixture();
     let LoadingStage::Selected(request) = &mut session.stage else {
         panic!("selected");

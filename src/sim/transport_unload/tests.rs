@@ -142,7 +142,8 @@ impl Fixture {
                 &[],
                 MAP,
                 MAP,
-            ),
+            )
+            .into(),
         );
         Self { sim, rules, grid }
     }
@@ -429,7 +430,6 @@ fn check_vehicle_transport_trip(mut fx: Fixture, carrier_type: &str, passenger_t
 /// without claiming native equivalence of the whole transport mission.
 /// Stock only: Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook
 /// `0x0056BC54`) moves the nine slots this publication writes.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn vehicle_unload_republishes_threat_and_foot_coefficient_before_movement() {
     use crate::sim::house_state::HouseState;
@@ -776,7 +776,7 @@ fn ejection_keeps_the_passengers_target_unless_it_leaves_another_houses_open_tra
             assert!(!pax.passive_scan.acquired(), "{case}");
             assert_eq!(
                 pax.weapon_burst.index(),
-                i32::from(cfg!(feature = "ares")),
+                i32::from(fx.rules.ares_form()),
                 "{case}"
             );
         }
@@ -785,9 +785,9 @@ fn ejection_keeps_the_passengers_target_unless_it_leaves_another_houses_open_tra
 
 /// Ares UnitClass_Mi_Unload_LastPassenger (1005D5B0, hook 0x73D81E) reads
 /// `Gunner=`: a turreted transport that is no gunner unloads everyone.
-#[cfg(feature = "ares")]
 #[test]
 fn a_turreted_transport_that_is_no_gunner_unloads_everyone() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut fx = Fixture::new(|_, _| false);
     fx.rules = rules_with_patch("[FV]\nGunner=no\n");
     let fv = fx.spawn("FV", 20, 20, 0);
@@ -1485,7 +1485,7 @@ fn aircraft_unload_keeps_the_transporter_until_the_aircraft_goes() {
         fx.tick();
     }
     assert!(fx.revealed(soldier), "the soldier left the aircraft");
-    if cfg!(feature = "ares") {
+    if fx.rules.ares_form() {
         assert_eq!(transporter(&fx), None, "Ares clears it on the way out");
         return;
     }
@@ -1525,7 +1525,7 @@ fn ifv_keeps_gunner_weapon_when_every_exit_is_refused() {
         .entities
         .get_mut(fv)
         .expect("ifv")
-        .set_gunner_weapon(1, fx.rules.object("FV").unwrap());
+        .set_gunner_weapon(1, fx.rules.object("FV").unwrap(), fx.rules.ares());
     assert!(fx.apply(Command::UnloadPassengers { transport_id: fv }));
 
     let mut reached_eject = false;

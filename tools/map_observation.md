@@ -2626,15 +2626,18 @@ and native/GPU checks do not replace that production coverage.
 The final rendered frame records `render.unit_atlas` in the v6 child manifest;
 the validated wrapper retains it as `capture.unit_atlas` in `run.json`. The
 `UnitAtlas` owner reads actual wgpu texture descriptors and resident entries.
-It reports resident sprite count, the last actual build's rasterized sprite count,
-and each page's extent, format, dimensions, mip/sample counts and texel payload
-bytes, plus their total. Page count is the length of `pages`.
+It reports resident sprite count, the count of sprites rasterized since the atlas
+was made (`last_build_rasterized_sprite_count`), and each page's extent, format,
+dimensions, mip/sample counts and texel payload bytes, plus their total. Page
+count is the length of `pages`. Pictures are drawn the first time a frame asks for
+them, so both counts cover what the captured frames drew, not every picture the
+map's voxel models could draw.
 
 Pages are currently single-layer, single-mip, single-sample D2 `R8Uint`, so the
 payload is width × height bytes, including unused page space. Unsupported
 descriptors fail observation rather than retaining stale byte arithmetic. The
-last-build count includes rasterized shadow sprites, can differ from admitted
-resident entries, and stays unchanged on a no-op refresh.
+rasterized count includes shadow sprites and can differ from resident entries,
+since a sprite too large for a page is counted but not kept.
 
 This is resident UnitAtlas texture payload for the captured scenario. It excludes
 CPU caches, `VxlPoseFrameCache`, other atlases, palettes,

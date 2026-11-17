@@ -101,7 +101,6 @@ pub(super) fn launch(
 /// RESIDUALS: an unknown `SpyPlane.Type` (index -1) indexes the type array
 /// out of range natively; VERA sends nothing. An off-map cell targets the
 /// shared dummy cell natively; VERA targets the requested cell.
-#[cfg(feature = "ares")]
 pub(super) fn ares_launch(
     sim: &mut Simulation,
     rules: &RuleSet,

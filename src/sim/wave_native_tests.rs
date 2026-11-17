@@ -352,7 +352,6 @@ fn sonic_damage_request_uses_the_native_b4_bridge_plane() {
 }
 
 // Ares CreateWave swaps the constructor's coordinates (ares_wave tests).
-#[cfg(not(feature = "ares"))]
 #[test]
 fn original_fire_at_births_match_the_production_magnetic_commit() {
     // Each row is one original FireAt tail (0x006FF5F5..0x006FF656) for the

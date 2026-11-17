@@ -4,6 +4,7 @@
 //! `building_colour_word`, `anim_colour_word`, `blit_pickers` and `blitters`.
 
 use super::*;
+use crate::app::presentation::frame::{ObjectRecord, PresentationFrame};
 use crate::map::entities::EntityCategory;
 use crate::render::palette_light::PaletteLight;
 use crate::render::tactical_draw_plan::{BlitPolicy, SpriteEncoding};
@@ -60,8 +61,14 @@ fn curtained(row: &Value) -> GameEntity {
 /// shielded, as the Iron Curtain's 0 does).
 #[cfg(not(feature = "phobos"))]
 fn shielded(row: &Value) -> GameEntity {
-    let mut entity = GameEntity::test_default(1, "GAPOWR", "Americans", 10, 10);
-    entity.set_category_for_test(EntityCategory::Structure);
+    let mut entity = GameEntity::test_default_of_category(
+        1,
+        "GAPOWR",
+        "Americans",
+        10,
+        10,
+        EntityCategory::Structure,
+    );
     let kind = if int(&row["shielded"]) == 1 {
         InvulnKind::ForceShield
     } else {
@@ -119,7 +126,7 @@ fn building_voxel_shield_intensity_precedes_the_curtain_without_changing_shp() {
     let original = row(1000);
     let with_custom = row(1500);
     let custom = int(&with_custom["intensity"]) - int(&original["intensity"]);
-    let building = curtained(original);
+    let building = ObjectRecord::of_test(&curtained(original));
     let draw = |kind| {
         techno_effect_light_at(
             &building,
@@ -152,7 +159,7 @@ fn assert_curtain_arm_matches(section: &str) {
         sim.session_mut_for_test()
             .set_binary_frame_for_test(int(&row["frame"]) as u32);
         let (tint, light) = techno_effect_light_at(
-            &curtained(row),
+            &ObjectRecord::of_test(&curtained(row)),
             TINT,
             PaletteLight::color_scheme([1000; 3], intensity),
             sim.session().binary_frame(),
@@ -204,7 +211,7 @@ fn the_building_anim_light_matches_native() {
             row["airstrike"] == "self",
         );
         let (_, light) = building_anim_light(
-            &building,
+            &ObjectRecord::of_test(&building),
             TINT,
             PaletteLight::color_scheme([1000; 3], int(&row["intensity"])),
             &sim,
@@ -239,7 +246,7 @@ fn the_building_colour_word_matches_native() {
         sim.session_mut_for_test()
             .set_binary_frame_for_test(int(&row["frame"]) as u32);
         let word = shp_colour_word(
-            &shielded(row),
+            &ObjectRecord::of_test(&shielded(row)),
             &sim,
             &rules(int(&row["force_color"])),
             || row["shrouded"].as_bool().unwrap(),
@@ -293,6 +300,7 @@ fn infantry_shp_material_matches_original_gi_draws() {
         gi.berserk
             .set_active_for_test(row["input"]["berserk"].as_bool().unwrap());
         let light = body_palette_light(&grid, (10, 20), body_extra_light(&gi, rules, &sim, None));
+        let gi = ObjectRecord::of_test(&gi);
         let (_, light) = techno_effect_light(&gi, [1.; 3], light, &sim, None, TechnoDraw::Shape);
         assert_eq!(
             light.brightness(),
@@ -376,7 +384,12 @@ fn ordinary_stock_gas_refresh_and_expiry_reach_the_infantry_shp_material() {
         let mut transitions = Vec::new();
         let mut active = false;
         assert_eq!(
-            shp_colour_word(sim.entities().get(gi).unwrap(), &sim, &rules, || false),
+            shp_colour_word(
+                PresentationFrame::of_test(&sim, &rules).object(gi).unwrap(),
+                &sim,
+                &rules,
+                || false
+            ),
             0
         );
         for step in 1..=800 {
@@ -421,8 +434,9 @@ fn ordinary_stock_gas_refresh_and_expiry_reach_the_infantry_shp_material() {
                 transitions.push((step, now));
                 active = now;
             }
+            let presentation = PresentationFrame::of_test(&sim, &rules);
             assert_eq!(
-                shp_colour_word(entity, &sim, &rules, || false),
+                shp_colour_word(presentation.object(gi).unwrap(), &sim, &rules, || false),
                 if now { active_word } else { 0 },
                 "Move{move_step}, step{step}: retained state reaches the draw material",
             );
@@ -468,7 +482,7 @@ fn the_anim_colour_word_matches_native() {
             sim.session_mut_for_test()
                 .set_binary_frame_for_test(int(&row["frame"]) as u32);
             let word = shp_colour_word(
-                &shielded(row),
+                &ObjectRecord::of_test(&shielded(row)),
                 &sim,
                 &rules(int(&row["force_color"])),
                 || row["shrouded"].as_bool().unwrap(),
@@ -611,9 +625,10 @@ fn building_animation_retains_the_pre_techno_airstrike_sample() {
     let mut sim = Simulation::new();
     sim.session_mut_for_test().set_binary_frame_for_test(1011);
     let input = PaletteLight::color_scheme([1000; 3], 500);
-    let (_, retained) = building_anim_light(&building, TINT, input, &sim, None);
+    let record = ObjectRecord::of_test(&building);
+    let (_, retained) = building_anim_light(&record, TINT, input, &sim, None);
     let (_, body) =
-        techno_effect_light_at(&building, TINT, input, 1010, true, 0, 0, TechnoDraw::Shape);
+        techno_effect_light_at(&record, TINT, input, 1010, true, 0, 0, TechnoDraw::Shape);
     assert_eq!(retained.brightness(), 1000);
     let native: Value =
         serde_json::from_str(crate::test_fixture::text("tools/airstrike_tint.json")).unwrap();
@@ -628,7 +643,7 @@ fn building_animation_retains_the_pre_techno_airstrike_sample() {
     let serialized = serde_json::to_value(&building.building_art).unwrap();
     building.building_art = serde_json::from_value(serialized).unwrap();
     assert_eq!(
-        building_anim_light(&building, TINT, input, &sim, None)
+        building_anim_light(&ObjectRecord::of_test(&building), TINT, input, &sim, None)
             .1
             .brightness(),
         retained.brightness()
@@ -667,8 +682,14 @@ fn airstrike_tint_uses_the_strike_owner_types_laser_target_color() {
     target.airstrike.set_test_link(Some(1));
     sim.entities_mut_for_test().insert(owner);
     sim.entities_mut_for_test().insert(target);
-    let word =
-        |sim: &Simulation| shp_colour_word(sim.entities().get(2).unwrap(), sim, &rules, || false);
+    let word = |sim: &Simulation| {
+        shp_colour_word(
+            &crate::app::presentation::frame::ObjectRecord::of_test_sim(sim, &rules, 2),
+            sim,
+            &rules,
+            || false,
+        )
+    };
     assert_eq!(word(&sim), 0xF800);
     sim.entities_mut_for_test()
         .get_mut(1)

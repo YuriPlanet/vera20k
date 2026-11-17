@@ -205,7 +205,7 @@ pub(crate) fn build_bridge_body_instances(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|rt| &rt.simulation)
     else {
         return;
@@ -442,7 +442,7 @@ pub(crate) fn build_bridge_shadow_instances(state: &AppState, out: &mut Vec<Spri
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|rt| &rt.simulation)
     else {
         return;
@@ -539,7 +539,7 @@ pub(crate) fn build_bridge_shadow_instances(state: &AppState, out: &mut Vec<Spri
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 mod tests {
     use super::*;
 

@@ -15,7 +15,8 @@ ordinary click.
   A group of more than 128 is cut into pieces together with the line, the
   units nearest each stretch of line taking that stretch, and each piece is
   matched the same way.
-- The dots are in the colour of the green line a Move order draws.
+- The dots are in the colour of the green line a Move order draws. They lie
+  on the ground: buildings, units and trees standing on them cover them.
 - Buildings in the selection take no point.
 - With fewer than two units selected the key does nothing and the drag is the
   usual selection box.

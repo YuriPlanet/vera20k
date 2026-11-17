@@ -389,7 +389,7 @@ fn pack_bridge_sprites(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use std::fmt::Write as _;
 

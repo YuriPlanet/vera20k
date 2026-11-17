@@ -263,7 +263,7 @@ fn connect(
     Ok(socket)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use std::net::TcpListener;

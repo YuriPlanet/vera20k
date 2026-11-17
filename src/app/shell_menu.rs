@@ -58,6 +58,7 @@ impl App {
             | ScreenPage::SinglePlayer
             | ScreenPage::MoviesAndCredits
             | ScreenPage::MovieList
+            | ScreenPage::Mods
             | ScreenPage::Campaign => true,
             ScreenPage::LoadSavedGame => Self::load_saved_game_leaves_escape(state),
             ScreenPage::LanLobby => crate::app::shell_lan::leaves_escape(state),

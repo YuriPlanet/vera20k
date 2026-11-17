@@ -135,6 +135,22 @@ fn observer_defeat_waits_for_hostile_players_then_finishes_without_loss_voice() 
             .set_for_test(i32::from(index >= 2), &[], (0, 0, 0), &[]);
     }
     sim.check_defeat(None, None);
+    // MPlayer_Defeated's local branch (0x004FC1B0) runs for an observer's
+    // PlayerPtr too: the app closes its command bar from this output.
+    let defeats = |sim: &mut Simulation| -> Vec<_> {
+        sim.lifecycle_outputs
+            .take()
+            .into_iter()
+            .filter_map(|output| match output {
+                crate::sim::world::LifecycleOutput::MultiplayerHouseDefeated {
+                    owner,
+                    match_decided,
+                } => Some((owner, match_decided)),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(defeats(&mut sim), [(owners[0], false), (owners[1], false)]);
     for observer in &owners[..2] {
         assert!(sim.houses[observer].is_defeated());
         assert!(
@@ -154,6 +170,7 @@ fn observer_defeat_waits_for_hostile_players_then_finishes_without_loss_voice() 
         .tracking_mut()
         .set_for_test(0, &[], (0, 0, 0), &[]);
     sim.check_defeat(None, None);
+    assert_eq!(defeats(&mut sim), [(owners[2], true)]);
     assert!(sim.houses[&owners[0]].has_lost());
     assert_eq!(
         sim.houses[&owners[0]].outcome_timer(),
@@ -323,6 +340,62 @@ fn network_match_winners_are_the_humans_the_completion_flags_to_win() {
         .set_for_test(0, &[], (0, 0, 0), &[]);
     sim.check_defeat(Some(&rules), None);
     assert_eq!(sim.network_match_winners(), Some(vec![owners[0]]));
+}
+
+/// VERA's match where only AI play (`Simulation::network_ai_alone`): the
+/// spectators' defeat decides nothing, a fallen computer turns none of the
+/// three left paranoid (two of them would gang up on the third: Can_Ally
+/// refuses only an alliance that leaves no enemy), and the match ends when
+/// one AI is left.
+#[test]
+fn a_match_only_ai_play_runs_until_one_ai_is_left() {
+    let mut rules = rules(3);
+    rules.general.paranoid = true;
+    rules.general.allies_allowed = true;
+    let (mut sim, owners) = sim_with_houses(&[0, 1, 2, 2, 2, 2]);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
+    sim.session.install_network_timing(10);
+    sim.session.set_current_house_for_test(Some(owners[0]));
+    sim.session.install_multiplayer_house_identity(
+        crate::skirmish_modes::MpModeClass::Battle,
+        vec![owners[0], owners[1]],
+    );
+    for (index, owner) in owners.iter().enumerate() {
+        let house = sim.houses.get_mut(owner).unwrap();
+        house.set_is_human_for_test(index < 2);
+        house.set_current_iq_for_test(rules.general.max_iq_levels);
+        house
+            .tracking_mut()
+            .set_for_test(i32::from(index >= 2), &[], (0, 0, 0), &[]);
+    }
+    let defeat = |sim: &mut Simulation, owner: InternedId| {
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .tracking_mut()
+            .set_for_test(0, &[], (0, 0, 0), &[]);
+        sim.check_defeat(Some(&rules), None);
+    };
+    sim.check_defeat(Some(&rules), None);
+    assert!(
+        owners[..2]
+            .iter()
+            .all(|owner| sim.houses[owner].is_defeated())
+    );
+    assert_eq!(sim.network_match_winners(), None);
+    defeat(&mut sim, owners[2]);
+    assert!(
+        sim.house_alliances()
+            .as_map()
+            .values()
+            .all(|allies| allies.is_empty())
+    );
+    assert_eq!(sim.network_match_winners(), None);
+    defeat(&mut sim, owners[3]);
+    assert_eq!(sim.network_match_winners(), None);
+    defeat(&mut sim, owners[4]);
+    assert_eq!(sim.network_match_winners(), Some(Vec::new()));
 }
 
 #[test]
@@ -570,7 +643,6 @@ fn native_house_result_zero_and_allow_win_heads() {
 }
 
 #[derive(serde::Deserialize)]
-#[cfg(not(feature = "ares"))]
 struct NativeGateCase {
     input: serde_json::Value,
     events: Vec<String>,
@@ -584,7 +656,6 @@ struct NativeGateCase {
 /// (a cancelling sum defeats; BuildRefinery's third type counts only when
 /// set).
 #[test]
-#[cfg(not(feature = "ares"))]
 fn native_defeat_gate_corpus() {
     let cases: Vec<NativeGateCase> = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/house_defeat_gate.json",
@@ -673,11 +744,8 @@ fn fourth_base_unit_survival_reaches_the_production_defeat_gate() {
         .spawn_object_limbo_at_height("TANK", "house0", 10, 10, 0, 0, &rules)
         .unwrap();
     sim.check_defeat(Some(&rules), None);
-    assert_eq!(
-        sim.houses[&owner].is_defeated(),
-        !crate::rules::ARES_ENABLED
-    );
-    if crate::rules::ARES_ENABLED {
+    assert_eq!(sim.houses[&owner].is_defeated(), !rules.ares());
+    if rules.ares() {
         sim.uninit_with_rules(extra_mcv, &rules);
         sim.flush_pending_delete();
         sim.check_defeat(Some(&rules), None);
@@ -699,19 +767,16 @@ fn explicit_keep_alive_false_reaches_both_production_mode_arms() {
         sim.spawn_object_limbo_at_height("MARKER", "house0", 10, 10, 0, 0, &rules)
             .unwrap();
         sim.check_defeat(Some(&rules), None);
-        assert_eq!(
-            sim.houses[&houses[0]].is_defeated(),
-            crate::rules::ARES_ENABLED
-        );
+        assert_eq!(sim.houses[&houses[0]].is_defeated(), rules.ares());
     }
 }
 
 /// Rebuild only the native gate's supplied counter/object boundary, then use
 /// the real World presence query and House rung. Parasite input is an allocated
 /// class, not a victim/eater link; this is not a whole parasite lifecycle test.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_normal_defeat_gate_matches_executed_object_array_controls() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let corpus = crate::test_fixture::json("tools/spatial_oracle/ares_house_survival.json");
     for row in corpus["survival_cases"].as_array().unwrap() {
         let input = &row["input"];
@@ -856,7 +921,8 @@ fn native_blowup_subsets_corpus() {
                     .entities
                     .get_mut(controller)
                     .unwrap()
-                    .capture_manager = Some(CaptureManagerState::with_nodes_for_test(&nodes));
+                    .capture_manager =
+                    Some(Box::new(CaptureManagerState::with_nodes_for_test(&nodes)));
             }
         }
         let subset = match input["subset"].as_str().unwrap() {
@@ -978,7 +1044,8 @@ fn native_blowup_all_corpus() {
                     .entities
                     .get_mut(controller)
                     .unwrap()
-                    .capture_manager = Some(CaptureManagerState::with_nodes_for_test(&nodes));
+                    .capture_manager =
+                    Some(Box::new(CaptureManagerState::with_nodes_for_test(&nodes)));
             }
         }
         let mut warpers = Vec::new();
@@ -1387,9 +1454,9 @@ fn garrisonable_civilian_buildings_share_one_house_walk_in_a_pass() {
 /// tech building captured from a passive house goes back to it, without its
 /// engineer and disabled, instead of dying with its holder's Blowup_All;
 /// `Returnable=no` keeps the original death.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_blowup_returns_a_captured_tech_building_to_its_passive_owner() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (returnable, returned) in [("", true), ("Returnable=no\n", false)] {
         let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
             "[General]\nReturnStructures=yes\n[CombatDamage]\nC4Warhead=Super\n\
@@ -1412,6 +1479,7 @@ fn ares_blowup_returns_a_captured_tech_building_to_its_passive_owner() {
                 .entities
                 .get(oil)
                 .unwrap()
+                .building
                 .building_has_engineer
                 .is_set()
         );
@@ -1432,7 +1500,7 @@ fn ares_blowup_returns_a_captured_tech_building_to_its_passive_owner() {
         if let Some(building) = building {
             assert_eq!(building.owner(), houses[1]);
             assert_eq!(building.health.current(), 1000);
-            assert!(!building.building_has_engineer.is_set());
+            assert!(!building.building.building_has_engineer.is_set());
             assert!(!building.building_art.stuff_enabled());
         }
     }

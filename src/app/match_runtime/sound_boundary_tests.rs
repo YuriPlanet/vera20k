@@ -305,9 +305,13 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
                     _ => continue,
                 };
                 if matches!(sound_id.as_str(), "PillboxAttack" | "ConscriptDie") {
-                    let muzzle_exists = sim.anims().any(|(_, anim)| {
-                        sim.interner().resolve(anim.type_id()).starts_with("MGUN")
-                    });
+                    // A picture-only flash such as MGUN runs as a presentation
+                    // anim, outside `anims()`.
+                    let muzzle_exists = sim
+                        .anims()
+                        .map(|(_, anim)| anim)
+                        .chain(sim.presentation_anims().filter_map(|(id, _)| sim.anim(id)))
+                        .any(|anim| sim.interner().resolve(anim.type_id()).starts_with("MGUN"));
                     self.heard
                         .borrow_mut()
                         .push((sound_id.clone(), muzzle_exists));
@@ -329,9 +333,7 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
     let flashes = rules.weapon("Vulcan2").unwrap().anim.clone();
     assert!(!flashes.is_empty());
     for flash in flashes {
-        rules
-            .bind_authored_load_anim(&flash, &assets, "tem", "TEMPERATE")
-            .unwrap();
+        rules.bind_authored_load_anim(&flash, &assets, "tem", "TEMPERATE");
     }
     let mut sim = Simulation::new();
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);

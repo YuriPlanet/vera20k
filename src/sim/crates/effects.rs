@@ -42,24 +42,17 @@ pub(crate) enum Multiplier {
 /// separately from derived Techno+158/+160. The constructor seeds both baselines
 /// to 1.0; only the Armor and Firepower arms ([`apply_multiplier_crate`]) write
 /// these permanent baselines. Each arm skips a baseline that is not exactly 1.0.
-/// The attachment owner separately recomputes effective values. The receiver's
-/// damage build reads the armor multiplier;
-/// `FireAt`'s damage build folds in the firepower one
-/// (`0x006FE33D..0x006FE34D`).
+/// The attachment owner separately recomputes effective values, which live in
+/// the object's Ares part. The receiver's damage build reads the effective
+/// armor multiplier (`GameEntity::armor_multiplier`); `FireAt`'s damage build
+/// folds in the firepower one (`GameEntity::firepower_multiplier`,
+/// `0x006FE33D..0x006FE34D`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct CrateMultipliers {
     #[serde(default = "one")]
     armor: NativeF64Bits,
     #[serde(default = "one")]
     firepower: NativeF64Bits,
-    /// Ares derived Techno+160; None retains the permanent Ext+80 baseline.
-    #[cfg(feature = "ares")]
-    #[serde(default)]
-    attached_firepower: Option<NativeF64Bits>,
-    /// Ares derived Techno+158; None retains the permanent Ext+88 baseline.
-    #[cfg(feature = "ares")]
-    #[serde(default)]
-    attached_armor: Option<NativeF64Bits>,
 }
 
 fn one() -> NativeF64Bits {
@@ -72,71 +65,33 @@ impl Default for CrateMultipliers {
         Self {
             armor: NativeF64Bits::ONE,
             firepower: NativeF64Bits::ONE,
-            #[cfg(feature = "ares")]
-            attached_firepower: None,
-            #[cfg(feature = "ares")]
-            attached_armor: None,
         }
     }
 }
 
 impl CrateMultipliers {
-    /// `Techno+0x158`.
-    pub(crate) const fn armor(self) -> NativeF64Bits {
-        #[cfg(feature = "ares")]
-        if let Some(value) = self.attached_armor {
-            return value;
-        }
-        self.armor
-    }
-
-    /// Permanent armor crate baseline (Ares Ext+88), never an AE product.
+    /// Permanent armor crate baseline (Ares Ext+88), never an AE product:
+    /// `Techno+0x158` itself in a game Ares doesn't play in.
     pub(crate) const fn crate_armor(self) -> NativeF64Bits {
         self.armor
     }
 
-    #[cfg(feature = "ares")]
-    pub(crate) fn set_attached_armor(&mut self, value: NativeF64Bits) {
-        self.attached_armor = (value != self.armor).then_some(value);
-    }
-
-    /// Effective Techno+160, read by both FireAt and EstimateDamage.
-    pub(crate) const fn firepower(self) -> NativeF64Bits {
-        #[cfg(feature = "ares")]
-        if let Some(value) = self.attached_firepower {
-            return value;
-        }
-        self.firepower
-    }
-
-    /// Permanent firepower crate baseline (Ares Ext+80), never an AE product.
+    /// Permanent firepower crate baseline (Ares Ext+80), never an AE product:
+    /// `Techno+0x160` itself in a game Ares doesn't play in.
     pub(crate) const fn crate_firepower(self) -> NativeF64Bits {
         self.firepower
-    }
-
-    #[cfg(feature = "ares")]
-    pub(crate) fn set_attached_firepower(&mut self, value: NativeF64Bits) {
-        self.attached_firepower = (value != self.firepower).then_some(value);
     }
 
     /// Install a fixture's armor multiplier.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_armor_multiplier_for_test(&mut self, value: NativeF64Bits) {
         self.armor = value;
-        #[cfg(feature = "ares")]
-        {
-            self.attached_armor = None;
-        }
     }
 
     /// Install a fixture's firepower multiplier.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_firepower_multiplier_for_test(&mut self, value: NativeF64Bits) {
         self.firepower = value;
-        #[cfg(feature = "ares")]
-        {
-            self.attached_firepower = None;
-        }
     }
 }
 
@@ -174,14 +129,14 @@ pub(crate) fn apply_cloak_crate(
     center: DriveCoord,
     radius: i32,
 ) {
-    #[cfg(not(feature = "ares"))]
-    let _ = (rules, interner);
+    let ares = rules.ares_form();
     for id in ground_members_in_radius(substrate, center, radius) {
         if let Some(entity) = substrate.entities.get_mut(id) {
             entity.stealth_ability.grant();
             // Installed Cloak2@1005F920 writes permanent Ext+98 then aggregates.
-            #[cfg(feature = "ares")]
-            entity.recompute_ares_attached_stats(rules, interner);
+            if ares {
+                entity.recompute_ares_attached_stats(rules, interner);
+            }
         }
     }
 }
@@ -189,7 +144,8 @@ pub(crate) fn apply_cloak_crate(
 /// The Armor and Firepower arms: every Techno within the radius whose
 /// multiplier is exactly 1.0 takes `multiplier * magnitude` (x87 double
 /// multiply, `0x00482E6D..0x00482E79`). Returns the owners of the changed
-/// objects, in native visit order; the arm announces when one of them is the
+/// objects, in the Ground set's order rather than gamemd's sorted vector's
+/// (`DisplayLayers::submit`); the arm announces when one of them is the
 /// local player (`vt+0x3C` then `0x0050B6F0`, `0x00482E7F..0x00482E8D`).
 pub(crate) fn apply_multiplier_crate(
     substrate: &mut ObjectSubstrate,
@@ -200,8 +156,7 @@ pub(crate) fn apply_multiplier_crate(
     magnitude: NativeF64Bits,
     which: Multiplier,
 ) -> Vec<InternedId> {
-    #[cfg(not(feature = "ares"))]
-    let _ = (rules, interner);
+    let ares = rules.ares_form();
     let mut changed_owners = Vec::new();
     for id in ground_members_in_radius(substrate, center, radius) {
         let Some(entity) = substrate.entities.get_mut(id) else {
@@ -221,8 +176,9 @@ pub(crate) fn apply_multiplier_crate(
         // Ext+80 at 1005F997. Both store the magnitude into a 1.0 slot, the
         // product above, and aggregate before the recipient callback/next
         // actor (Ares Crates.cpp).
-        #[cfg(feature = "ares")]
-        entity.recompute_ares_attached_stats(rules, interner);
+        if ares {
+            entity.recompute_ares_attached_stats(rules, interner);
+        }
         let owner = entity.owner();
         if !changed_owners.contains(&owner) {
             changed_owners.push(owner);
@@ -359,14 +315,12 @@ pub(super) fn money_crate_amount(
     let base = magnitude_amount(magnitude);
     // Ares 3.0 1002C8A0 (hook 0x48248D): `base + RandomRanged(0,
     // [CrateRules] RandomCrateMoney)`; its default 900 draws the same span.
-    #[cfg(feature = "ares")]
-    return base
-        .wrapping_add(scenario_rng.next_range_i32_inclusive(0, rules.ares_random_crate_money()));
-    #[cfg(not(feature = "ares"))]
-    {
-        let _ = rules;
-        scenario_rng.next_range_i32_inclusive(base, base.wrapping_add(900))
+    if rules.ares_form() {
+        return base.wrapping_add(
+            scenario_rng.next_range_i32_inclusive(0, rules.ares_random_crate_money()),
+        );
     }
+    scenario_rng.next_range_i32_inclusive(base, base.wrapping_add(900))
 }
 
 /// `Math__ftol` of one `[Powerups]` magnitude double, the damage base the Gas

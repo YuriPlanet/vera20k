@@ -36,8 +36,6 @@
 //! - The House dirty tail also refreshes local building construction options
 //!   (vt+0x4E0) and sidebar strips (`0x006A7D20`); those presentation
 //!   consumers are outside the simulation's revoke/grant migration.
-//! - The launch-mute global `0x00A8B538` that skips the EVA line
-//!   (`0x006CDDEE`) is not modeled: the line always plays.
 //! - A `NUKEBALL` VERA cannot construct (a type without its SHP, as in lib
 //!   tests) holds no anim, and the bullet detonates at its next AI; retail
 //!   binds `NUKEBALL.SHP`.
@@ -87,8 +85,9 @@ pub(crate) fn impact(sim: &mut Simulation, rules: &RuleSet, impact: ProjectileNu
     // Ares hook 467E59 (10036960): the superweapon's radar event, then the
     // flash for its duration (the manual FadeIn and ChangeLighting), then
     // the wait on the warhead's PreImpactAnim.
-    #[cfg(feature = "ares")]
-    if let Some(ball) = impact.ares() {
+    if rules.ares_form()
+        && let Some(ball) = impact.ares()
+    {
         if ball.radar {
             sim.sound_events.emit(SimSoundEvent::RadarEvent { radar });
         }
@@ -97,14 +96,16 @@ pub(crate) fn impact(sim: &mut Simulation, rules: &RuleSet, impact: ProjectileNu
                 .lighting_mut()
                 .start_nuke_flash_for(frame, duration);
             // SWTypeExt::ChangeLighting(NukeSW): the type's Light.* overrides.
-            let light = ball
-                .nuke_sw
-                .and_then(|sw| rules.super_weapon_metadata(sim.interner.resolve(sw)))
-                .map(|metadata| metadata.launch().lighting());
-            sim.session.lighting_mut().select_ares(
-                crate::sim::scenario_session::ScenarioLightingProfile::Nuke,
-                light,
-            );
+            {
+                let light = ball
+                    .nuke_sw
+                    .and_then(|sw| rules.super_weapon_metadata(sim.interner.resolve(sw)))
+                    .map(|metadata| metadata.launch().lighting());
+                sim.session.lighting_mut().select_ares(
+                    crate::sim::scenario_session::ScenarioLightingProfile::Nuke,
+                    light,
+                );
+            }
             sim.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::from_scenario(
                 sim.session.lighting(),
             ));
@@ -112,7 +113,7 @@ pub(crate) fn impact(sim: &mut Simulation, rules: &RuleSet, impact: ProjectileNu
         let anim = sim
             .projectiles
             .get(impact.projectile_id())
-            .and_then(|bullet| rules.warhead(sim.interner.resolve(bullet.payload().warhead)))
+            .and_then(|bullet| sim.interner.warhead_type(bullet.payload().warhead, rules))
             .and_then(|warhead| warhead.ares_rules())
             .and_then(|ares| ares.combat().pre_impact_anim())
             .map(str::to_owned);
@@ -163,14 +164,13 @@ fn await_impact_anim(
 /// Ares's impact hook (467E59, 10036960) for a bullet of `warhead` whose
 /// BulletExt NukeSW is `nuke_sw`: see [`crate::sim::projectile::AresNukeBall`].
 /// The flash's `Light.Enabled` gate is the superweapon type's.
-#[cfg(feature = "ares")]
 pub(crate) fn ares_nuke_ball(
     rules: &RuleSet,
     interner: &crate::sim::intern::StringInterner,
     warhead: InternedId,
     nuke_sw: Option<InternedId>,
 ) -> crate::sim::projectile::AresNukeBall {
-    let warhead = rules.warhead(interner.resolve(warhead));
+    let warhead = interner.warhead_type(warhead, rules);
     let combat = warhead
         .and_then(|warhead| warhead.ares_rules())
         .map(|ares| ares.combat());
@@ -267,14 +267,30 @@ pub(super) fn launch(
                 })
     };
     let ids = rules.type_array_ids(ObjectCategory::Building);
-    let Some(silo_type) = (0..ids.len())
-        .find(|&slot| rules.building_type_at(slot as i32).is_some_and(fires))
-        .and_then(|slot| sim.interner.get(&ids[slot]))
+    let Some((silo_type, silo_object)) = (0..ids.len())
+        .find_map(|slot| {
+            rules
+                .building_type_at(slot as i32)
+                .filter(|object| fires(object))
+                .map(|object| (slot, object))
+        })
+        .and_then(|(slot, object)| Some((sim.interner.get(&ids[slot])?, object)))
     else {
         sim.houses.request_house_tech_tree_recheck(owner);
         return false;
     };
-    let Some(silo) = find_building_of_type(sim, owner, silo_type) else {
+    // VERA's Superweapon Limit: each `SuperWeaponPerBuilding=` silo fires its
+    // own shot, so a launch takes the silo whose charge the ready shot is and
+    // gives it its own target; gamemd's first silo and NukeTarget otherwise.
+    let per_building = silo_object.super_weapon_per_building;
+    let silo = if per_building {
+        find_charged_silo(sim, owner, sw_type_id, silo_type)
+            .or_else(|| find_idle_silo(sim, owner, silo_type))
+            .or_else(|| find_building_of_type(sim, owner, silo_type))
+    } else {
+        find_building_of_type(sim, owner, silo_type)
+    };
+    let Some(silo) = silo else {
         sim.houses.request_house_tech_tree_recheck(owner);
         return false;
     };
@@ -286,6 +302,9 @@ pub(super) fn launch(
         entity
             .mission_leaf
             .set_building_firing_super_weapon(sw.kind.native_index());
+        if per_building {
+            entity.mission_leaf.set_building_own_nuke_target(cell);
+        }
     }
     // `0x006CDD62..0x006CDDE9`: the cell centre at Map578080's ground height,
     // no deck. At its centre that is the cell's own GetCoords (`0x00486840`).
@@ -324,12 +343,76 @@ fn find_building_of_type(sim: &Simulation, owner: InternedId, type_id: InternedI
         })
 }
 
+/// Superweapon Limit: the silo the House's ready shot belongs to. The Super
+/// keeps one native timer, which is one building's charge
+/// ([`SuperWeaponInstance::charge_owner`]) and the one whose `SuperAnim` opens;
+/// the missile has to leave that building, not the first silo in building
+/// order. Falls back to the most charged idle silo when the holder is gone or
+/// already firing.
+pub(super) fn find_charged_silo(
+    sim: &Simulation,
+    owner: InternedId,
+    sw_type: InternedId,
+    type_id: InternedId,
+) -> Option<u64> {
+    let instance = sim.super_weapons.get(&owner)?.get(&sw_type)?;
+    let idle = |id: u64| {
+        sim.substrate.entities.get(id).is_some_and(|building| {
+            !building.lifecycle.in_limbo()
+                && building.type_ref() == type_id
+                && building.mission.current().known() != Some(MissionType::Missile)
+        })
+    };
+    if let Some(holder) = instance.charge_owner()
+        && idle(holder)
+    {
+        return Some(holder);
+    }
+    let frame = sim.session.binary_frame() as i32;
+    sim.houses
+        .get(&owner)?
+        .base_projection()
+        .buildings()
+        .iter()
+        .copied()
+        .filter(|&id| idle(id))
+        .min_by_key(|&id| {
+            (
+                instance
+                    .building_charge_remaining(id, frame)
+                    .unwrap_or(i32::MAX),
+                id,
+            )
+        })
+}
+
+/// Superweapon Limit: the house's first silo of `type_id`, as
+/// [`find_building_of_type`] orders them, whose mission is not Missile.
+pub(super) fn find_idle_silo(
+    sim: &Simulation,
+    owner: InternedId,
+    type_id: InternedId,
+) -> Option<u64> {
+    let house = sim.houses.get(&owner)?;
+    house
+        .base_projection()
+        .buildings()
+        .iter()
+        .copied()
+        .find(|&id| {
+            sim.substrate.entities.get(id).is_some_and(|building| {
+                !building.lifecycle.in_limbo()
+                    && building.type_ref() == type_id
+                    && building.mission.current().known() != Some(MissionType::Missile)
+            })
+        })
+}
+
 /// SW_NuclearMissile::GetWarhead (Ares 3.0 `10073320`) and GetDamage
 /// (`100732F0`) with the type's `Nuke.Payload`: the payload weapon, the
 /// type's non-null `SW.Warhead` else the payload's warhead, and its
 /// nonnegative `SW.Damage` else the payload's damage. `None` without a
 /// payload.
-#[cfg(feature = "ares")]
 pub(crate) fn ares_payload_hit<'r>(
     rules: &'r RuleSet,
     sw: &SuperWeaponType,
@@ -373,7 +456,6 @@ pub(crate) fn ares_payload_hit<'r>(
 ///    owner's tech-tree recheck.
 ///
 /// Returns whether it fired; Launch otherwise runs the stock case.
-#[cfg(feature = "ares")]
 pub(super) fn ares_launch(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -452,7 +534,6 @@ pub(super) fn ares_launch(
 
 /// Step 2 of [`ares_launch`]: CreateBullet (`0x0046B050`) over the
 /// payload's BulletType, then SetWeaponType, PsiWarn and MoveTo.
-#[cfg(feature = "ares")]
 #[allow(clippy::too_many_arguments)]
 fn drop_payload(
     sim: &mut Simulation,

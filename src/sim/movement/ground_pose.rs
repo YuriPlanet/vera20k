@@ -482,8 +482,9 @@ pub(crate) fn foot_set_location(
         // Ares 3.0 FootClass_SetLocation_Parasite (1005CA50, hook 0x4DB87E),
         // ahead of the riders: the parasite eating this Foot takes the new
         // Location through its own SetLocation.
-        #[cfg(feature = "ares")]
-        if let Some(eater) = entities.get(id).and_then(|victim| victim.parasite.eater()) {
+        if rules.ares_form()
+            && let Some(eater) = entities.get(id).and_then(|victim| victim.parasite.eater())
+        {
             foot_set_location(entities, eater, coord, rules, interner);
         }
         crate::sim::passenger::open_topped_riders_follow(entities, id, rules, interner);
@@ -665,8 +666,18 @@ pub fn target_get_coords(
                 ))
             } else {
                 // Terrain7F522C+48 inherits Object5F65A0: its constructor's
-                // retained Location survives ground changes and expiry.
-                let coord = world.terrain_objects.objects().get(&id)?.world_coord();
+                // retained Location survives ground changes and expiry. So
+                // does VoxelAnim7F6318+48, an AttachedSystem's owner
+                // (`0x007498A5`): only its flight tail moves Location.
+                if let Some(terrain) = world.terrain_objects.objects().get(&id) {
+                    let coord = terrain.world_coord();
+                    return Some(DriveCoord {
+                        x: coord.x,
+                        y: coord.y,
+                        z: coord.z,
+                    });
+                }
+                let coord = world.substrate.voxel_anims.get(id)?.world_coord();
                 Some(DriveCoord {
                     x: coord.x,
                     y: coord.y,

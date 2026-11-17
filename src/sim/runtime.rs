@@ -54,9 +54,14 @@ impl SimResources {
 }
 
 /// The runtime owner: one deterministic simulation plus its bound resources.
+/// Not `Clone`: drawing reads a copy without the objects
+/// ([`SimRuntime::presentation_copy`]), never a whole one.
 pub struct SimRuntime {
     pub simulation: Simulation,
-    pub resources: SimResources,
+    /// Immutable once a match is loaded: the presentation copy of the world
+    /// holds them too (docs/sim-thread.md); writes go through
+    /// [`Self::resources_mut`].
+    pub resources: std::sync::Arc<SimResources>,
 }
 
 // docs/sim-thread.md moves the runtime onto its own thread; it must stay Send.
@@ -66,12 +71,34 @@ const _: () = {
 };
 
 impl SimRuntime {
+    /// The bound resources for a write. Only the presentation copy of the
+    /// world holds them too, and the host drops it before any such write.
+    pub fn resources_mut(&mut self) -> &mut SimResources {
+        std::sync::Arc::get_mut(&mut self.resources)
+            .expect("resources are shared only with a presentation frame the host drops first")
+    }
+
     /// Test adapter for an existing simulation with empty resource inputs.
     #[cfg(any(test, feature = "test-support"))]
     pub fn from_simulation(simulation: Simulation) -> Self {
         Self {
             simulation,
-            resources: SimResources::empty(),
+            resources: std::sync::Arc::new(SimResources::empty()),
+        }
+    }
+
+    /// The world without its objects, for drawing while this runtime ticks
+    /// elsewhere ([`Simulation::presentation_copy`], `reuse` the last one).
+    /// It holds the same immutable resources: the rules and the terrain
+    /// template, which nothing writes once a match is loaded.
+    pub fn presentation_copy(
+        &mut self,
+        viewer: Option<crate::sim::intern::InternedId>,
+        reuse: Option<Simulation>,
+    ) -> SimRuntime {
+        SimRuntime {
+            simulation: self.simulation.presentation_copy(viewer, reuse),
+            resources: self.resources.clone(),
         }
     }
 
@@ -149,6 +176,11 @@ impl<'a> SimView<'a> {
 }
 
 impl SimRuntime {
+    /// Whether [`Self::take_radar_terrain_dirty`] would hand any cell over.
+    pub fn has_radar_terrain_dirty(&self) -> bool {
+        !self.simulation.dirty_cells.radar().is_empty()
+    }
+
     /// Take the pending radar-terrain batch for the client's minimap backlog
     /// ([`DirtyCells::take_radar`](crate::sim::dirty_cells::DirtyCells::take_radar)).
     /// The marks are presentation handoff state, not saved or hashed, so
@@ -274,7 +306,7 @@ impl SimRuntime {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
 
@@ -323,10 +355,13 @@ mod tests {
                 .expect("bound production frame")
                 .trigger_effects
         };
-        let expected = vec![TriggerEffect::InputLockChanged {
-            locked: true,
-            was_locked: false,
-        }];
+        let expected = vec![
+            TriggerEffect::CancelPlacementModes,
+            TriggerEffect::InputLockChanged {
+                locked: true,
+                was_locked: false,
+            },
+        ];
         assert_eq!(run(&mut runtime), expected);
         let after_first_frame = GameSnapshot::save(&runtime.simulation, 0, 0, "trigger_owner", 0);
 
@@ -415,7 +450,7 @@ mod tests {
         saved.session.install_waypoints(&waypoints);
         let mut original = SimRuntime {
             simulation: Simulation::new(),
-            resources: SimResources::empty(),
+            resources: std::sync::Arc::new(SimResources::empty()),
         };
 
         original.replace_simulation(saved);
@@ -460,7 +495,7 @@ mod tests {
         resources.overlay_registry = crate_registry();
         let mut runtime = SimRuntime {
             simulation,
-            resources,
+            resources: std::sync::Arc::new(resources),
         };
 
         let _ = runtime
@@ -1438,10 +1473,12 @@ pub fn finalize_constructed_scenario(
     // is only the fallback for callers that never populated one.
     let mut overlay_grid = sim.take_overlay_grid_for_load().unwrap_or(overlay_grid);
     // Read_INI_Basic @ 0x00689E90 reads TiberiumDeathToVisceroid over the
-    // fresh Set_Defaults true (0x00683610); Ares' visceroid reads it.
-    #[cfg(feature = "ares")]
-    sim.session
-        .read_map_tiberium_death_to_visceroid(map_data.basic.tiberium_death_to_visceroid);
+    // fresh Set_Defaults true (0x00683610); only Ares' visceroid reads it,
+    // so a game without Ares keeps the default.
+    if rules.ares() {
+        sim.session
+            .read_map_tiberium_death_to_visceroid(map_data.basic.tiberium_death_to_visceroid);
+    }
     // Attach the TIBTRE ore-spawner animation index to the terrain objects
     // constructed ahead of the map entities. Its authoritative raw SHP count
     // is rules-owned; presentation atlases retain only body-frame ranges.

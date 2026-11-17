@@ -18,6 +18,7 @@
 
 use super::*;
 use crate::app::diagnostics::shell_capture::movies::abort_return::AbortReturnInput;
+use crate::app::match_runtime::sim_host::SimWrite;
 
 /// Both players open the menu at this committed frame, so each B6 still
 /// counts two live humans and offers Observe.
@@ -504,7 +505,7 @@ impl CooperativeRun {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("simulation after BC6")?
             .simulation;
         let mut receipt = json!({"first_map":self.first_map,"result":self.result,
@@ -539,7 +540,7 @@ fn committed_frame(state: &AppState) -> Result<u32> {
     Ok(state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("live simulation")?
         .simulation
         .session()
@@ -554,7 +555,7 @@ fn flag_humans_won(state: &mut AppState) -> Result<()> {
     let runtime = state
         .match_state
         .sim_runtime
-        .as_mut()
+        .write_sim(SimWrite::Debug)
         .context("live simulation")?;
     ensure!(
         runtime.simulation.dev_trigger_current_house_outcome(

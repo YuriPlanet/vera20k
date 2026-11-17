@@ -226,15 +226,15 @@ impl Simulation {
         // RTTI is read after the synchronous tail calls at 0x004DECA2.
         // Ares FootClass_Crash_Spin (Ares.dll 10049050, hook 0x4DECAE):
         // `CrashSpin=no` skips the spin and its draws.
-        #[cfg(feature = "ares")]
-        let crash_spin = self
-            .substrate
-            .entities
-            .get(id)
-            .and_then(|entity| self.object_type(entity.type_ref(), rules))
-            .is_none_or(|object| object.techno_combat().movement().crash_spin());
-        #[cfg(not(feature = "ares"))]
-        let crash_spin = true;
+        let crash_spin = if rules.ares() {
+            self.substrate
+                .entities
+                .get(id)
+                .and_then(|entity| self.object_type(entity.type_ref(), rules))
+                .is_none_or(|object| object.techno_combat().movement().crash_spin())
+        } else {
+            true
+        };
         if self
             .substrate
             .entities
@@ -278,8 +278,9 @@ impl Simulation {
     ///
     /// RESIDUAL: the same block drops an unpowered living Fly by three a frame
     /// and its impact (`0x004CD8A9..0x004CD9C0`) kills it with the C4 warhead,
-    /// an explosion anim and area damage. Nothing in VERA powers an aircraft
-    /// off (native: `Power_Off`, reached by EMP), so the arm is dormant.
+    /// an explosion anim and area damage. Stock play never powers an
+    /// aircraft off, and Ares EMP crashes a flying one before it deactivates
+    /// (`emp.rs`), so the arm is dormant.
     ///
     /// A falling wreck is still alive for its class AI, so one that drifts
     /// past the playfield or `In_Bounds` meets `AircraftClass::AI`'s removal
@@ -333,7 +334,6 @@ impl Simulation {
             self.mark_entity_put(id, context);
             Self::submit_entity_display(
                 &self.interner,
-                &self.terrain_objects,
                 &mut self.substrate,
                 &self.resolved_terrain,
                 id,
@@ -779,20 +779,22 @@ impl Simulation {
         // Ares AircraftClass_Update_DamageSmoke (Ares.dll 10047B60, hook
         // 0x415085) puffs the type's `Smoke.Anim` (null: no draw) under its
         // `Smoke.ChanceRed`/`Smoke.ChanceDead`.
-        #[cfg(feature = "ares")]
-        let Some((anim, threshold)) = object
-            .techno_combat()
-            .damage()
-            .smoke(entity.health.current() > 0)
-        else {
-            return;
+        let (anim, threshold) = if rules.ares() {
+            let Some(smoke) = object
+                .techno_combat()
+                .damage()
+                .smoke(entity.health.current() > 0)
+            else {
+                return;
+            };
+            smoke
+        } else {
+            (
+                // `0x004150EF..0x00415102`: `AnimTypeClass::Find` of the literal.
+                crate::rules::effect_asset_catalog::AIRCRAFT_SMOKE_ANIM,
+                if entity.health.current() != 0 { 10 } else { 80 },
+            )
         };
-        #[cfg(not(feature = "ares"))]
-        let (anim, threshold) = (
-            // `0x004150EF..0x00415102`: `AnimTypeClass::Find` of the literal.
-            crate::rules::effect_asset_catalog::AIRCRAFT_SMOKE_ANIM,
-            if entity.health.current() != 0 { 10 } else { 80 },
-        );
         let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
         if self.scenario_rng.next_range_i32_inclusive(0, 99) >= threshold {
             return;
@@ -838,7 +840,6 @@ impl Simulation {
     /// passenger's own cargo dies with the same (here no) killer. Its
     /// Building arm, the occupants first, is reached only by the building
     /// chronoshift VERA does not port.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_kill_cargo(&mut self, transport: u64, context: UninitContext<'_>) {
         self.kill_cargo_passengers(transport, None, false, context);
     }

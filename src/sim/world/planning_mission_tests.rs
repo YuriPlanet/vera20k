@@ -308,7 +308,7 @@ fn retail_rate_one_plans_replay_with_the_same_publication_order_and_state() {
         Some((
             SimRuntime {
                 simulation: sim,
-                resources,
+                resources: std::sync::Arc::new(resources),
             },
             owner,
         ))
@@ -453,6 +453,7 @@ fn retail_planned_tanya_plants_c4_and_continues_to_the_next_waypoint() {
         sim.entities()
             .get(target)
             .unwrap()
+            .building
             .pending_c4_detonation
             .pending()
             .is_none()
@@ -476,7 +477,7 @@ fn retail_planned_tanya_plants_c4_and_continues_to_the_next_waypoint() {
         if let Some(charge) = sim
             .entities()
             .get(target)
-            .and_then(|entity| entity.pending_c4_detonation.pending())
+            .and_then(|entity| entity.building.pending_c4_detonation.pending())
         {
             assert_eq!(charge.source_entity_id(), Some(tanya));
             planted = true;
@@ -830,7 +831,7 @@ fn retail_planned_and_ordinary_harvest_extracts_ore_after_walking() {
                 harvest_dispatched,
                 "Harvest must reach the mission owner, planning={planning}"
             );
-            let harvests = dock_owner == Some("Americans") || crate::rules::ARES_ENABLED;
+            let harvests = dock_owner == Some("Americans") || rules.ares();
             assert_eq!(
                 !actor.miner.as_ref().unwrap().cargo().is_empty(),
                 harvests,

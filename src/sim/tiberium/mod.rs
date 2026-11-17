@@ -113,7 +113,10 @@ pub struct TiberiumPlacementObjectContext<'a> {
     /// Live `CellClass+0x124`/`+0x128` occupation planes, read by
     /// `CellClass::CheckCellPassability @ 0x004834A0` when
     /// `OverlayClass::Mark` admits the new Overlay (called at `0x005FD00C`;
-    /// `0x005FD04F` for TIB01).
+    /// `0x005FD04F` for TIB01). Production Marks read the simulation's own
+    /// planes; only the test harness that builds a world from this context
+    /// copies these.
+    #[cfg_attr(not(any(test, feature = "test-support")), allow(dead_code))]
     raw_occupation: &'a RawCellOccupationGrid,
     rules: &'a RuleSet,
     interner: &'a StringInterner,
@@ -377,10 +380,10 @@ pub(crate) fn place_tiberium(
     amount: u8,
     effects: FrameEffects<'_>,
 ) -> Result<Option<TiberiumPlacement>, RuntimeOverlayError> {
-    let ty = rules
-        .tiberium_types
-        .get(type_id)
-        .ok_or(TiberiumImageError::MissingType(type_id))?;
+    // An absent index or an entry without a usable Image= places nothing.
+    let Some(ty) = rules.tiberium_types.live(type_id) else {
+        return Ok(None);
+    };
     //4871B6 tests the retained E4 before any image dereference or placement draw.
     if i32::from(amount) >= ty.image().density_levels() {
         return Ok(None);
@@ -448,10 +451,9 @@ pub(crate) fn place_new_tiberium(
     amount: u8,
     effects: FrameEffects<'_>,
 ) -> Result<Option<TiberiumPlacement>, RuntimeOverlayError> {
-    let ty = rules
-        .tiberium_types
-        .get(type_id)
-        .ok_or(TiberiumImageError::MissingType(type_id))?;
+    let Some(ty) = rules.tiberium_types.live(type_id) else {
+        return Ok(None);
+    };
     let admitted = placement_admission(sim, rules).and_then(|admission| {
         admit_new_tiberium_target(
             sim.overlay_grid.as_ref()?,
@@ -465,7 +467,20 @@ pub(crate) fn place_new_tiberium(
     };
     //487252..487286: one literal flat draw before the selected pointer access.
     let variant = sim.scenario_rng.next_range_u32(12);
-    let overlay_id = registry.tiberium_placement_overlay_id(ty, variant)?;
+    // An `[OverlayTypes]` list shorter than the image run leaves the drawn
+    // slot absent (gamemd reads past its array at 487286): keep the draw,
+    // place nothing.
+    let Ok(overlay_id) = registry.tiberium_placement_overlay_id(ty, variant) else {
+        static REPORTED: std::sync::Once = std::sync::Once::new();
+        REPORTED.call_once(|| {
+            log::warn!(
+                "Tiberium {} image slot {variant} is past the end of [OverlayTypes]; \
+                 nothing placed",
+                ty.section
+            );
+        });
+        return Ok(None);
+    };
     // Reuse the sole runtime Overlay5FC380 owner, including the constructor ID
     // BEFORE a nested CellAnim's ID, all Mark arms, refusal and deferred cleanup.
     crate::sim::crates::construct_runtime_overlay(
@@ -625,10 +640,10 @@ fn spawner_cell_spread(
     spawner: SpawnerSpread,
     effects: FrameEffects<'_>,
 ) -> Result<Option<TiberiumPlacement>, RuntimeOverlayError> {
-    let ty = rules
-        .tiberium_types
-        .get(type_id)
-        .ok_or(TiberiumImageError::MissingType(type_id))?;
+    // `SpawnsTiberium.Type=` naming an absent or image-less entry: no spread.
+    let Some(ty) = rules.tiberium_types.live(type_id) else {
+        return Ok(None);
+    };
     let density = ty.image().density_levels();
     if density <= 0 {
         return Err(TiberiumImageError::InvalidDivisor {
@@ -845,7 +860,7 @@ pub fn reduce_tiberium(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests {
     use super::*;
     use std::collections::{BTreeMap, BTreeSet};
@@ -1092,14 +1107,22 @@ mod tests {
             "cold E4=0 rejects amount0 before any RNG"
         );
 
-        //48738A's growth flag precedes classification; an earlier null type
-        //must stay untouched while disabled, then stop the reached lookup.
+        //48738A's growth flag precedes classification. The earlier entry has
+        //no Image=, so it is inert and the lookup finds no Tiberium.
         let cold = crate::rules::tiberium_type::with_tiberium_image_slots(&IniFile::from_str(
             "[Tiberiums]\n0=Cold\n1=Bound\n[Cold]\nValue=1\n[Bound]\nImage=1\n\
              [Animations]\n0=FIRE01\n[OverlayTypes]\n0=ORE\n\
              [ORE]\nTiberium=yes\nLand=Road\nCellAnim=FIRE01\n",
         ));
-        let mut cold = RuleSet::from_ini_with_fixed_art_for_test(&cold, &art).unwrap();
+        // FIRE01's Start plays its StartSound only when SOUNDMD knows it.
+        let sounds =
+            crate::rules::sound_ini::SoundRegistry::from_ini(&retail_ini("soundmd.ini").unwrap());
+        let mut cold = RuleSet::from_processed_rules(
+            &RulesLayerStack::new(cold)
+                .process_with_fixed_art_and_sounds(&art, &sounds)
+                .unwrap(),
+        )
+        .unwrap();
         cold.install_art_data(crate::rules::retail_ini_fixture::art_registry(&art));
         assert_eq!(
             cold.bind_anim_class_assets(&["FIRE01".into()], &assets, "TEM", "TEMPERATE"),
@@ -1135,7 +1158,7 @@ mod tests {
         );
         blocked.ore_growth_config =
             crate::sim::ore_growth::OreGrowthConfig::for_test(true, true, false);
-        assert!(matches!(
+        assert!(
             super::place_tiberium(
                 &mut blocked,
                 &cold,
@@ -1144,18 +1167,18 @@ mod tests {
                 TiberiumTypeId(1),
                 1,
                 FrameEffects::default()
-            ),
-            Err(RuntimeOverlayError::Tiberium(
-                TiberiumImageError::UnboundImage(TiberiumTypeId(0))
-            ))
-        ));
+            )
+            .unwrap()
+            .is_none(),
+            "slot0 is inert, so the stored overlay is no Tiberium"
+        );
 
         // Mark5FD1AE constructs the CellAnim (delay0 -> Start424CE0)
-        // BEFORE GetTiberiumType5FD1BB reaches the earlier null binding.
+        // BEFORE GetTiberiumType5FD1BB; the inert entry does not stop Mark.
         // ReadINI5FE8C9..5FE8E7 coerces Tiberium + Land=Clear to Tiberium
         // land. Road avoids that independent, earlier germination lookup.
         blocked.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(5000));
-        assert!(matches!(
+        assert!(
             crate::sim::crates::construct_runtime_overlay(
                 &mut blocked,
                 &cold.crate_rules,
@@ -1165,15 +1188,13 @@ mod tests {
                 0,
                 OverlayRecalc::Immediate,
                 FrameEffects::default(),
-            ),
-            Err(RuntimeOverlayError::Tiberium(
-                TiberiumImageError::UnboundImage(TiberiumTypeId(0))
-            ))
-        ));
+            )
+            .is_ok()
+        );
         let (&child_id, child) = blocked
             .anims()
             .next()
-            .expect("CellAnim allocation must precede the failed Tiberium lookup");
+            .expect("CellAnim allocation must precede the Tiberium lookup");
         let overlays: Vec<_> = blocked.load_objects.retained_overlay_ids().collect();
         assert_eq!(overlays.len(), 1);
         let overlay = blocked
@@ -1197,8 +1218,37 @@ mod tests {
                         && sound_id == "BUILDINGFIREBIG"
                         && *world == child.world_coord()
             )),
-            "retail FIRE01 Start must emit its sound before classification fails"
+            "retail FIRE01 Start must emit its sound before classification"
         );
+    }
+
+    /// `SpawnsTiberium.Type=` may name a `[Tiberiums]` entry without `Image=`
+    /// (`TiberiumClass::ReadINI @ 0x00721C3F`, default -1): nothing is placed.
+    #[test]
+    fn spawner_spread_from_an_entry_without_image_places_nothing() {
+        let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&IniFile::from_str(
+            "[Tiberiums]\n0=Bound\n1=NoImage\n[Bound]\nImage=1\n[NoImage]\nValue=5\n",
+        ));
+        let rules = RuleSet::from_ini(&ini).unwrap();
+        let mut sim = Simulation::new();
+        sim.overlay_grid = Some(OverlayGrid::new(8, 8));
+        sim.resolved_terrain = Some(test_support::flat_terrain(8, 8));
+        let spawner = SpawnerSpread {
+            tiberium_type: 1,
+            range: 1,
+            growth_stage: crate::rules::ini_value::PartialIntPair::single(3),
+        };
+        let placed = super::spread_tiberium(
+            &mut sim,
+            &rules,
+            rules.overlay_registry(),
+            (4, 4),
+            true,
+            Some(spawner),
+            FrameEffects::default(),
+        )
+        .expect("an entry without Image= must not stop the frame");
+        assert!(placed.is_none());
     }
 
     /// `NativeCellObjectView` is the Rust read of `Cell+0xE4 FirstObject != 0`:

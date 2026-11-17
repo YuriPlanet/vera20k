@@ -68,6 +68,7 @@ const TIP_LABEL_SHADOW: &str = "TXT_SHADOW";
 /// leave the region. Both halves are VERA-local: the native placement branches
 /// on a descriptor byte and its math is undecoded (plan deferred item), so this
 /// offset is a tuned constant, not a gamemd value.
+#[cfg(test)]
 pub(crate) const TIP_CURSOR_OFFSET: [i32; 2] = [
     crate::ui::field_layout::TooltipPlace::ORIGINAL.x,
     crate::ui::field_layout::TooltipPlace::ORIGINAL.y,
@@ -237,7 +238,7 @@ fn tactical_world_tip_text(
     world: (f32, f32),
     cursor_coordinates: bool,
 ) -> String {
-    tactical_world_tip_text_for_viewer(view, rules, csf, world, cursor_coordinates, None)
+    tactical_world_tip_text_for_viewer(view, rules, csf, world, cursor_coordinates, None, None)
 }
 
 fn tactical_world_tip_text_for_viewer(
@@ -247,6 +248,7 @@ fn tactical_world_tip_text_for_viewer(
     world: (f32, f32),
     cursor_coordinates: bool,
     translucent_viewer: Option<crate::sim::intern::InternedId>,
+    frame: Option<&crate::app::presentation::frame::PresentationFrame>,
 ) -> String {
     let Some((terrain, viewer)) = view.resolved_terrain().zip(view.session().current_house())
     else {
@@ -265,17 +267,26 @@ fn tactical_world_tip_text_for_viewer(
     ) {
         return text;
     }
-    // ProcessClickCoords692300 uses TacticalPick6DA380's retained Display
-    // registrations. Share the normal click owner, including live admission
-    // and foundation fallback, instead of keeping a tooltip object pointer.
+    // ProcessClickCoords692300 uses TacticalPick6DA380's Display
+    // registrations, in the frame's draw order. Share the normal click owner,
+    // including live admission and foundation fallback, instead of keeping a
+    // tooltip object pointer.
     let sim = view.simulation();
+    let own_order;
+    let order = match frame {
+        Some(frame) => frame.display_order(sim).ordered(),
+        None => {
+            own_order = sim.display_draw_order(Some(rules));
+            &own_order
+        }
+    };
     let picked = crate::app::input::entity_pick::pick_entity_at_point(
         crate::app::input::entity_pick::PresentedWorld {
             sim,
             rules: Some(rules),
             translucent_viewer,
         },
-        sim.display_layers().ordered_ids(),
+        order.iter().map(|(_, id)| id),
         Some(view.fog()),
         Some(view.interner().resolve(viewer)),
         world.0,
@@ -283,6 +294,12 @@ fn tactical_world_tip_text_for_viewer(
         Some(view.interner()),
         Some(terrain),
     );
+    // RESIDUAL (dormant: retail Tiberiums set no UIName): a non-Techno pick,
+    // a tree, sends Display::GetTooltipText 0x004AE4F0 to CellClass::GetUIName
+    // 0x00484FF0 (call 0x004AE68A), the clicked cell's Tiberium UIName.
+    // AbstractTypeClass::ReadINI 0x00410A60 leaves it the empty string without
+    // a UIName key, so no tip shows either way. A mod's Tiberium UIName would
+    // show over a tree on ore; VERA shows none and does not read that key.
     let Some(entity) = picked.and_then(|id| view.entities().get(id)) else {
         return String::new();
     };
@@ -297,6 +314,7 @@ fn tactical_world_tip_text_for_viewer(
     if !entity.discovery.owned_by_current_house() && object.invisible {
         return String::new();
     }
+    let ares = rules.ares();
     match entity.category() {
         // InfantryClass::GetUIName @0x0051F2C0: the shared crew marker
         // takes precedence over disguise. Type.Nominal alone does not.
@@ -326,13 +344,13 @@ fn tactical_world_tip_text_for_viewer(
                     crate::assets::csf_file::type_ui_name(disguise.ui_name.as_deref(), csf)
                 });
         }
-        // BuildingClass::GetUIName @459ED0 returns actual Type+60. Ares
-        // BuildingClass_GetUIName (10015DA0, hook 0x459ED0) shows a player
-        // its owner does not count as an ally the type's EnemyUIName, unless
-        // the building's DisplayProductionTo holds that player.
-        #[cfg(feature = "ares")]
+        // BuildingClass::GetUIName @459ED0 returns actual Type+60. When Ares
+        // plays in the game (`RuleSet::ares`), Ares BuildingClass_GetUIName
+        // (10015DA0, hook 0x459ED0) shows a player its owner does not count as
+        // an ally the type's EnemyUIName, unless the building's
+        // DisplayProductionTo holds that player.
         EntityCategory::Structure
-            if let Some(label) = ares_enemy_ui_name(sim, entity, object, viewer) =>
+            if ares && let Some(label) = ares_enemy_ui_name(sim, entity, object, viewer) =>
         {
             return crate::assets::csf_file::type_ui_name(Some(label), csf);
         }
@@ -378,7 +396,6 @@ fn tactical_world_tip_text_for_viewer(
 /// `EnemyUIName` for a `viewer` the building's owner does not count as an
 /// ally, unless its DisplayProductionTo holds the viewer; `None` keeps the
 /// type's own name.
-#[cfg(feature = "ares")]
 fn ares_enemy_ui_name<'r>(
     sim: &crate::sim::world::Simulation,
     entity: &crate::sim::game_entity::GameEntity,
@@ -410,12 +427,14 @@ fn unit_turret_tip_text(
     object: &crate::rules::object_type::ObjectType,
     csf: Option<&crate::assets::csf_file::CsfFile>,
 ) -> String {
-    // Ares UnitGetUIName746B89 ->1004BF20 returns the configured full
-    // weapon-mode name before the original passenger/turret formatter.
-    #[cfg(feature = "ares")]
-    if let Some(label) = object
-        .gunner_turrets
-        .weapon_ui_name(entity.current_weapon_number())
+    // When Ares plays in the game (`RuleSet::ares`), Ares
+    // UnitGetUIName746B89 ->1004BF20 returns the configured full weapon-mode
+    // name before the original passenger/turret formatter.
+    let ares = rules.ares();
+    if ares
+        && let Some(label) = object
+            .gunner_turrets
+            .weapon_ui_name(entity.current_weapon_number())
     {
         return crate::assets::csf_file::type_ui_name(Some(label), csf);
     }
@@ -440,8 +459,7 @@ fn unit_turret_tip_text(
         None => tip("Tip:Rocket"),
     };
     let own = crate::assets::csf_file::type_ui_name(object.ui_name.as_deref(), csf);
-    #[cfg(feature = "ares")]
-    {
+    if ares {
         // Ares spacing hook746C55 ->1004BF90 separates nonempty pieces only.
         if word.is_empty() {
             return own;
@@ -482,6 +500,7 @@ fn tactical_tip_text(state: &AppState) -> String {
         world,
         input.cursor_coordinates,
         translucent_viewer,
+        state.match_state.sim_runtime.frame(),
     )
 }
 
@@ -557,6 +576,8 @@ fn sidebar_button_tip_text(
 /// StripClass::GetCameoTooltip 6A92E0, which returns a super weapon's bare
 /// name. Its `TXT_MONEY_FORMAT_1` branch and DrawCameoText 6AC480 need
 /// ShowCameoNames (+0x53A4), which only the constructor 6A4E60 writes (0).
+/// Its `EntryCount < 75` guard has no counterpart here; no strip reaches 75
+/// entries with retail rules.
 fn cameo_tip_text(money_format: Option<&str>, name: &str, cost: Option<i64>) -> String {
     let formatted = match (money_format, cost) {
         (Some(fmt), Some(cost)) => format_csf(fmt, &[CsfArg::Str(name), CsfArg::Int(cost)]),
@@ -803,7 +824,7 @@ pub(crate) fn build_tooltip_instances(
     let tint = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .and_then(|runtime| {
             runtime
                 .resources
@@ -984,7 +1005,7 @@ pub(crate) fn size_tip_box(
     (layout, [box_w, box_h])
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
     use crate::render::bit_font::tests::make_test_font;
@@ -995,10 +1016,10 @@ mod tests {
     /// Ares BuildingClass_GetUIName (10015DA0, hook 0x459ED0): the owner
     /// reads the type's name, a player it does not count as an ally the
     /// type's `EnemyUIName`.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_enemy_ui_name_shows_to_a_non_allied_player() {
         use crate::rules::ruleset::RuleSet;
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
             "[BuildingTypes]\n0=POWR\n1=PLAIN\n[POWR]\nStrength=1\nEnemyUIName=NAME:Fake\n\
              [PLAIN]\nStrength=1\n",
@@ -1495,11 +1516,12 @@ mod tests {
                 .as_ref()
                 .is_some_and(|cloak| cloak.is_fully_cloaked())
         );
-        let world = crate::app::presentation::instances::entity_screen_position(
+        let world = crate::render::locomotor_visual::screen_position(
             sim.entities().get(entity_id).unwrap(),
         );
 
-        let order = crate::app::presentation::instances::tactical_entity_encounter_order(&sim);
+        let order =
+            crate::app::presentation::instances::tactical_entity_encounter_order(&sim, None);
         assert_eq!(
             crate::app::input::entity_pick::pick_entity_at_point(
                 sim.entities(),
@@ -1515,7 +1537,7 @@ mod tests {
             "fixture must reach the same ordinary picker before testing the text"
         );
         let mut runtime = SimRuntime::from_simulation(sim);
-        runtime.resources.rules = rules;
+        runtime.resources_mut().rules = rules;
         Some(MappedTipFixture {
             runtime,
 

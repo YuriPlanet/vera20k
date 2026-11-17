@@ -387,6 +387,7 @@ fn retail_hills_tanya_charge_collapses_under_an_ordinary_incoming_tank() {
             .entities()
             .get(hut)
             .unwrap()
+            .building
             .pending_c4_detonation
             .pending();
         if let Some(charge) = pending {
@@ -467,7 +468,7 @@ fn retail_hills_tanya_charge_collapses_under_an_ordinary_incoming_tank() {
                 health,
                 "hut C4 expiry preserves the hut"
             );
-            assert!(hut.pending_c4_detonation.pending().is_none());
+            assert!(hut.building.pending_c4_detonation.pending().is_none());
             assert_eq!(sim.pending_bridge_collapses.at(0), None);
             return;
         }

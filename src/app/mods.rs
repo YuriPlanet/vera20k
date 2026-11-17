@@ -4,12 +4,18 @@
 //! mod is a subfolder of `Mods` in the settings folder (docs/modding.md), and
 //! the one in use reads as if its files had been copied on top of the game
 //! folder ([`AssetManager::with_mod`], `map::source::set_mod_dir`). With no
-//! mod in use nothing here changes what the game reads.
+//! mod in use the asset manager skips an installed `ares.mix`, so the
+//! original game does not depend on whether the installation also has Ares.
 //!
 //! This module decides which mod a launch uses: the `--mod <folder>` or
 //! `--no-mod` switch, else config.toml's `[paths] mod`. A choice that cannot
 //! be used never stops the game: the launch plays the original and the main
 //! menu says why.
+//!
+//! The Mods page (`app::shell_mods`) shows what `Mods` holds ([`installed`])
+//! and writes that line for the next start ([`Mods::keep_choice`]); the game
+//! then starts again (`app::restart`). The pre-match check compares a mod's files
+//! (`app::mod_files`), so players start a match only with the same ones.
 //!
 //! A mod that stops start-up would leave the player no menu to leave it from.
 //! So a start with a mod writes the mod's name to `mod-start.txt` in the
@@ -107,12 +113,24 @@ pub(crate) struct Mods {
     /// Why the mod asked for is not in use, or did not load: shown once the
     /// main menu is at rest.
     notice: Option<String>,
+    /// What a start says of the retired VERARULES.INI
+    /// (`persistence::rules_profile`), shown after [`Self::notice`]. Never a
+    /// refusal: a launch by another program plays on.
+    rules_file_notice: Option<String>,
     /// `mod-start.txt`, held while this run's start with a mod has yet to
     /// pass or fail. Never held by a run the game starts for itself (a map
     /// picture, a capture), which leaves the record to the player's own run.
     record: Option<StartRecord>,
     /// When [`poll`] first saw the main menu at rest, this time it is.
     menu_rest_since: Option<Instant>,
+    /// The folder config.toml asks for, as written there, whatever this run
+    /// plays: a switch, a missing folder or a start that died can differ.
+    kept: Option<String>,
+    /// The Mods page while it is open (`App::open_mods_page`): what `Mods`
+    /// held when it opened, and the row picked.
+    pub(crate) page: Option<crate::ui::shell::list::ListBoxState<Listed>>,
+    /// The page's Check Files, from its button to its last box.
+    pub(crate) files_check: Option<crate::app::mod_files::PageCheck>,
 }
 
 impl Mods {
@@ -132,25 +150,85 @@ impl Mods {
             .args()
     }
 
+    /// What the main menu says of the retired VERARULES.INI once it is at
+    /// rest, after the mod's own notice (`persistence::rules_profile`).
+    pub(crate) fn add_rules_file_notice(&mut self, text: String) {
+        self.rules_file_notice = Some(text);
+    }
+
     /// Why the mod this launch asked for is not in use, while the player has
     /// not been told. A launch by another program has no menu to say it in
     /// and ends on it (`App::start_spawn_session`).
     pub(crate) fn refusal(&self) -> Option<&str> {
         self.notice.as_deref()
     }
+
+    /// Whether `row` is what this run plays: its mod, or the original game.
+    pub(crate) fn in_use(&self, row: &Listed) -> bool {
+        row.folder.as_deref() == self.active.as_ref().map(|active| active.folder.as_str())
+    }
+
+    /// Whether `row` is what config.toml asks the next start for.
+    fn kept_is(&self, row: &Listed) -> bool {
+        match (row.folder.as_deref(), self.kept.as_deref()) {
+            (None, None) => true,
+            (Some(folder), Some(kept)) => folder.eq_ignore_ascii_case(kept),
+            _ => false,
+        }
+    }
+
+    /// The Mods page's selected row, when Use This Mod has something to do:
+    /// nothing this version cannot play, and not the row that this run plays
+    /// and the next start would pick anyway. The row in use still counts
+    /// while config.toml asks for another, so No mod takes back a choice
+    /// that could not be loaded.
+    pub(crate) fn switch_to(&self) -> Option<&Listed> {
+        let page = self.page.as_ref()?;
+        let row = page.rows.get(page.selected?)?;
+        let settled = self.in_use(row) && self.kept_is(row);
+        (row.needs.is_none() && !settled).then_some(row)
+    }
+
+    /// Whether the Mods page's selected row is a mod, which has files for
+    /// Check Files to read; the original game's row has none.
+    pub(crate) fn picked_is_mod(&self) -> bool {
+        self.page
+            .as_ref()
+            .and_then(|page| page.rows.get(page.selected?))
+            .is_some_and(|row| row.folder.is_some())
+    }
+
+    /// That mod: the name its row shows, and its folder while it is still
+    /// in `Mods`.
+    pub(crate) fn picked_mod(&self, paths: &PathsConfig) -> Option<(String, Option<PathBuf>)> {
+        let page = self.page.as_ref()?;
+        let row = page.rows.get(page.selected?)?;
+        let dir = find_folder(&paths.mods_dir(), row.folder.as_deref()?).map(|(_, dir)| dir);
+        Some((row.title().into_owned(), dir))
+    }
 }
 
 /// What `mod.ini` says. VERA's own file, in UTF-8: `[Mod]` with `Name=`,
-/// `Version=` and `Needs=`, every key optional, as the file is. Not read with
-/// gamemd's INI reader, which takes bytes as Latin-1 and drops a last line
-/// that has no line end.
+/// `Version=`, `Author=`, `About=`, `Terms=` and `Needs=`, every key
+/// optional, as the file is. Not read with gamemd's INI reader, which takes
+/// bytes as Latin-1 and drops a last line that has no line end.
 #[derive(Debug, Default, PartialEq, Eq)]
 struct ModInfo {
     name: Option<String>,
     version: Option<String>,
+    /// Who made the mod.
+    author: Option<String>,
+    /// What the mod is, in a line or two.
+    about: Option<String>,
+    /// What its maker lets others do with it.
+    terms: Option<String>,
     /// The lowest VERA20K version that can play the mod.
     needs: Option<String>,
 }
+
+/// The most of one `mod.ini` value that is kept: the Mods screen's boxes hold
+/// less.
+const VALUE_LIMIT: usize = 300;
 
 impl ModInfo {
     /// The mod's own account of itself, when its folder has a `mod.ini` that
@@ -191,14 +269,24 @@ impl ModInfo {
             let slot = match key.trim().to_ascii_lowercase().as_str() {
                 "name" => &mut info.name,
                 "version" => &mut info.version,
+                "author" => &mut info.author,
+                "about" => &mut info.about,
+                "terms" => &mut info.terms,
                 "needs" => &mut info.needs,
                 _ => continue,
             };
-            *slot = Some(value.trim().to_owned()).filter(|value| !value.is_empty());
+            let value: String = value.trim().chars().take(VALUE_LIMIT).collect();
+            *slot = Some(value).filter(|value| !value.is_empty());
         }
         // A file saved in another encoding would show as boxes; the folder's
         // name, which the file system gives as Unicode, shows as it is.
-        for shown in [&mut info.name, &mut info.version] {
+        for shown in [
+            &mut info.name,
+            &mut info.version,
+            &mut info.author,
+            &mut info.about,
+            &mut info.terms,
+        ] {
             if shown.as_ref().is_some_and(|text| text.contains('\u{fffd}')) {
                 *shown = None;
             }
@@ -262,8 +350,12 @@ fn find_folder(mods_dir: &Path, name: &str) -> Option<(String, PathBuf)> {
     Some((folder, dir))
 }
 
-/// The browser build has no folder a player can put files in.
-const SUPPORTED: bool = !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
+/// Whether the player has a Mods folder of their own. The browser build has
+/// none: its page imports the mod a launch plays (web.rs `import_mod_file`)
+/// into the in-memory Mods folder (`PathsConfig::mods_dir`), so there is no
+/// README to write, and a start that dies ends the page, so no start record
+/// is kept either.
+const HAS_FOLDER: bool = !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
 
 /// The mod that `wanted` names in `Mods`, or why it cannot be used, said in
 /// the player's language. Reads the folder and its `mod.ini`; writes nothing.
@@ -312,8 +404,168 @@ fn wanted<'a>(
 /// probe (`spawn_probe`), which reports what a launch reads without being
 /// one, so it leaves `mod-start.txt` alone.
 pub(crate) fn launch_dir(paths: &PathsConfig, switch: Option<&ModSwitch>) -> Option<PathBuf> {
-    let wanted = wanted(paths, switch, true).filter(|_| SUPPORTED)?;
+    let wanted = wanted(paths, switch, true)?;
     resolve(paths, wanted).ok().map(|active| active.dir)
+}
+
+/// One line of the Mods screen: a folder in `Mods`, or the original game.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Listed {
+    /// The folder's name in `Mods`; `None` is the original game.
+    pub(crate) folder: Option<String>,
+    /// `mod.ini`'s `Name=` and `Version=`, else the folder's name. Empty for
+    /// the original game: [`Listed::title`] names it in the language in use.
+    title: String,
+    pub(crate) author: Option<String>,
+    about: Option<String>,
+    pub(crate) terms: Option<String>,
+    /// The VERA20K version the mod needs, when this one is older and so
+    /// cannot play it.
+    pub(crate) needs: Option<String>,
+}
+
+impl Listed {
+    /// The name the row shows.
+    pub(crate) fn title(&self) -> std::borrow::Cow<'_, str> {
+        match self.folder {
+            Some(_) => self.title.as_str().into(),
+            None => crate::i18n::tr("VERA:NoMod").into(),
+        }
+    }
+
+    /// What the mod is, in its maker's words, or the game's for the original.
+    pub(crate) fn about(&self) -> Option<std::borrow::Cow<'_, str>> {
+        match self.folder {
+            Some(_) => self.about.as_deref().map(Into::into),
+            None => Some(crate::i18n::tr("VERA:NoModAbout").into()),
+        }
+    }
+}
+
+/// What the Mods screen lists: the original game, then every folder in `Mods`
+/// by the name it shows, each read as a start would read it.
+pub(crate) fn installed(paths: &PathsConfig) -> Vec<Listed> {
+    let folders = crate::util::case_insensitive_path::native_listing(&paths.mods_dir());
+    let mut mods: Vec<Listed> = folders
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|path| file_system::is_dir(path))
+        .filter_map(|dir| {
+            // A name that is not Unicode text cannot be written to config.toml.
+            let folder = dir.file_name()?.to_str()?.to_owned();
+            if left_by_a_system(&folder) {
+                return None;
+            }
+            let info = ModInfo::read(&dir);
+            Some(Listed {
+                title: info.title(&folder),
+                folder: Some(folder),
+                author: info.author,
+                about: info.about,
+                terms: info.terms,
+                needs: info
+                    .needs
+                    .filter(|needs| !version_serves(env!("CARGO_PKG_VERSION"), needs)),
+            })
+        })
+        .collect();
+    // Folders of one name keep the listing's order.
+    mods.sort_by_cached_key(|listed| listed.title.to_lowercase());
+    let original = Listed {
+        folder: None,
+        title: String::new(),
+        author: None,
+        about: None,
+        terms: None,
+        needs: None,
+    };
+    std::iter::once(original).chain(mods).collect()
+}
+
+/// What the Mods page says under its one row while `Mods` holds no mod: where
+/// a mod goes. On Windows also the Start menu shortcut to the folder that the
+/// installer makes (`.github/release/windows/vera20k.iss`).
+pub(crate) fn none_installed_hint(rows: &[Listed]) -> Option<String> {
+    if rows.iter().any(|row| row.folder.is_some()) {
+        return None;
+    }
+    let mut text = crate::i18n::tr("VERA:ModsNoneYet");
+    if cfg!(windows) {
+        text.push(' ');
+        text.push_str(&crate::i18n::tr("VERA:ModsNoneYetStartMenu"));
+    }
+    Some(text)
+}
+
+/// Show the `Mods` folder in the system's file manager, made first if it has
+/// gone. Where no file manager could be started, the folder's path, for the
+/// player to find it by hand.
+pub(crate) fn open_folder(paths: &PathsConfig) -> Result<(), PathBuf> {
+    let mods_dir = paths.mods_dir();
+    prepare_folder(&mods_dir);
+    if crate::app::web_link::open_folder(&mods_dir) {
+        Ok(())
+    } else {
+        Err(mods_dir)
+    }
+}
+
+/// A name that file managers and tools leave in folders, never a mod's own.
+pub(crate) fn left_by_a_system(name: &str) -> bool {
+    name.starts_with('.')
+        // `__MACOSX`: what a zip made on a Mac leaves when Windows unpacks it.
+        || ["Thumbs.db", "desktop.ini", "__MACOSX"]
+            .iter()
+            .any(|left| name.eq_ignore_ascii_case(left))
+}
+
+impl Mods {
+    /// Keep the Mods screen's choice for the next start: `folder`, or the
+    /// original game, as `[paths] mod` in the config.toml this process reads
+    /// ([`write_choice`]).
+    pub(crate) fn keep_choice(
+        &mut self,
+        paths: &PathsConfig,
+        folder: Option<&str>,
+    ) -> std::io::Result<()> {
+        let config = crate::util::config::GameConfig::path()
+            .ok_or_else(|| std::io::Error::other("config.toml has no place"))?;
+        self.keep_choice_in(&config, paths, folder)
+    }
+
+    fn keep_choice_in(
+        &mut self,
+        config: &Path,
+        paths: &PathsConfig,
+        folder: Option<&str>,
+    ) -> std::io::Result<()> {
+        write_choice(config, paths, folder)?;
+        self.kept = folder.map(str::to_owned);
+        Ok(())
+    }
+}
+
+/// `folder`, or the original game, as `[paths] mod` in `config`. The rest of
+/// the file stays as it is.
+fn write_choice(config: &Path, paths: &PathsConfig, folder: Option<&str>) -> std::io::Result<()> {
+    use crate::util::config::set_paths_key;
+    let text = match file_system::read_to_string(config) {
+        Ok(text) => text,
+        // A game run from the game folder has no config.toml; a new one must
+        // name that folder to be read at all.
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let ra2_dir = paths.ra2_dir.to_str().ok_or_else(|| {
+                std::io::Error::other("the game folder's path is not Unicode text")
+            })?;
+            set_paths_key("", "ra2_dir", ra2_dir)
+        }
+        Err(error) => return Err(error),
+    };
+    // A blank name is no mod (`PathsConfig::mod_name`).
+    file_system::write(
+        config,
+        set_paths_key(&text, "mod", folder.unwrap_or_default()),
+    )
 }
 
 /// A run's hold on `mod-start.txt`: the file names the mod being started and
@@ -380,14 +632,14 @@ fn claim(path: &Path, folder: &str) -> std::io::Result<Claim> {
 /// Decide this launch's mod.
 ///
 /// `hidden` is a run with a sealed set-up (a capture, a map picture): it
-/// reads no choice from config.toml, as it reads no VERA.INI or VERARULES.INI,
-/// and uses a mod only when a switch names one.
+/// reads no choice from config.toml, as it reads no VERA.INI, and uses a mod
+/// only when a switch names one.
 pub(crate) fn begin(paths: &PathsConfig, switch: Option<&ModSwitch>, hidden: bool) -> Mods {
-    let mut mods = Mods::default();
-    if !SUPPORTED {
-        return mods;
-    }
-    if !hidden {
+    let mut mods = Mods {
+        kept: paths.mod_name().map(str::to_owned),
+        ..Mods::default()
+    };
+    if !hidden && HAS_FOLDER {
         prepare_folder(&paths.mods_dir());
     }
     let Some(wanted) = wanted(paths, switch, !hidden) else {
@@ -400,7 +652,7 @@ pub(crate) fn begin(paths: &PathsConfig, switch: Option<&ModSwitch>, hidden: boo
             return mods;
         }
     };
-    if !hidden {
+    if !hidden && HAS_FOLDER {
         let record = paths.settings_dir().join(START_RECORD);
         match claim(&record, &active.folder) {
             Ok(Claim::Held(held)) => mods.record = Some(held),
@@ -512,11 +764,12 @@ pub(crate) fn start_failed_text(title: &str) -> String {
 }
 
 /// Once the main menu has been at rest for [`MENU_SETTLE`]: a start with a
-/// mod has passed, and a mod that is not in use is explained. Returns when to
+/// mod has passed, and a mod that is not in use, or a VERARULES.INI that is
+/// no longer read, is explained. Returns when to
 /// look again while that is still to come.
 pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     let mods = &state.frontend.mods;
-    if mods.record.is_none() && mods.notice.is_none() {
+    if mods.record.is_none() && mods.notice.is_none() && mods.rules_file_notice.is_none() {
         return None;
     }
     if !state.main_menu_at_rest() {
@@ -529,7 +782,12 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
         return Some(due);
     }
     started(state);
-    if let Some(text) = state.frontend.mods.notice.take() {
+    let mods = &mut state.frontend.mods;
+    let text = match (mods.notice.take(), mods.rules_file_notice.take()) {
+        (Some(first), Some(second)) => Some(format!("{first}\n\n{second}")),
+        (first, second) => first.or(second),
+    };
+    if let Some(text) = text {
         crate::app::App::open_shell_notice(state, text);
     }
     None
@@ -537,7 +795,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
 
 /// Make `Mods` and its README. The folder is the player's: nothing else in
 /// it is touched, and a failure only goes to the log.
-fn prepare_folder(mods_dir: &Path) {
+pub(crate) fn prepare_folder(mods_dir: &Path) {
     let mut text = crate::i18n::tr("VERA:ModsFolderReadme");
     if cfg!(windows) {
         // Notepad before Windows 10 1809 needs both to show the text.
@@ -556,7 +814,7 @@ fn prepare_folder(mods_dir: &Path) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 
@@ -688,6 +946,138 @@ mod tests {
             begin(&paths, Some(&told), true).active.unwrap().title,
             "Winter War 1.2"
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn the_mods_screen_lists_the_original_game_then_each_folder_by_its_shown_name() {
+        let (root, paths) = settings("listed");
+        let mods = root.join("Mods");
+        std::fs::write(
+            mods.join("Winter War").join("mod.ini"),
+            "[Mod]\nName=Zebra\nVersion=2\nAuthor=Frostbyte\nAbout=Snow units.\nTerms=Ask first.\n",
+        )
+        .unwrap();
+        // No mod.ini: listed by its folder's name. One that needs a later
+        // version is listed too, with what it needs.
+        std::fs::create_dir_all(mods.join("alpha")).unwrap();
+        std::fs::create_dir_all(mods.join("Later")).unwrap();
+        std::fs::write(mods.join("Later").join("mod.ini"), "[Mod]\nNeeds=999999\n").unwrap();
+        // Not mods: a file, and what a system leaves behind.
+        std::fs::write(mods.join("notes.txt"), "x").unwrap();
+        std::fs::create_dir_all(mods.join(".git")).unwrap();
+
+        let listed = installed(&paths);
+        let shown: Vec<_> = listed
+            .iter()
+            .map(|row| (row.folder.as_deref(), row.title()))
+            .collect();
+        assert_eq!(shown[0].0, None);
+        assert_eq!(
+            shown[1..],
+            [
+                (Some("alpha"), "alpha".into()),
+                (Some("Later"), "Later".into()),
+                (Some("Winter War"), "Zebra 2".into())
+            ]
+        );
+        assert_eq!(listed[2].needs.as_deref(), Some("999999"));
+        let zebra = &listed[3];
+        assert_eq!(
+            (
+                zebra.author.as_deref(),
+                zebra.about().as_deref(),
+                zebra.terms.as_deref()
+            ),
+            (Some("Frostbyte"), Some("Snow units."), Some("Ask first."))
+        );
+
+        // Use This Mod changes to the picked row, unless this version cannot
+        // play it, or this run plays it and config.toml asks for it too.
+        let page = |selected| {
+            Some(crate::ui::shell::list::ListBoxState::new(
+                listed.clone(),
+                selected,
+            ))
+        };
+        let told = ModSwitch::Use("WINTER WAR".into());
+        let mut run = begin(&paths, Some(&told), true);
+        run.page = page(Some(3));
+        assert!(run.in_use(&listed[3]) && run.switch_to().is_none());
+        run.page = page(Some(2));
+        assert!(run.switch_to().is_none(), "needs a later version");
+        run.page = page(None);
+        assert!(run.switch_to().is_none());
+        run.page = page(Some(0));
+        assert_eq!(run.switch_to().map(|row| row.folder.as_deref()), Some(None));
+        run.page = page(Some(1));
+        assert_eq!(run.switch_to().map(|row| row.title()), Some("alpha".into()));
+
+        // config.toml asks for Winter War and this run plays the original
+        // (a switch, a missing folder, a start that died): No mod, though in
+        // use, still takes the kept choice back.
+        let mut original = begin(&paths, Some(&ModSwitch::NoMod), true);
+        original.page = page(Some(0));
+        assert!(original.in_use(&listed[0]));
+        assert_eq!(
+            original.switch_to().map(|row| row.folder.as_deref()),
+            Some(None)
+        );
+        // Kept, there is nothing left for the button to do.
+        original
+            .keep_choice_in(&root.join("config.toml"), &paths, None)
+            .unwrap();
+        assert!(original.switch_to().is_none());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A Mods folder with only its README and what a system leaves there
+    /// tells the player where a mod goes; one mod in it, and it says nothing.
+    #[test]
+    fn an_empty_mods_folder_says_where_a_mod_goes() {
+        let (root, paths) = settings("empty");
+        let mods = root.join("Mods");
+        std::fs::remove_dir_all(mods.join("Winter War")).unwrap();
+        prepare_folder(&mods);
+        std::fs::create_dir_all(mods.join("__MACOSX")).unwrap();
+        let hint = none_installed_hint(&installed(&paths)).expect("an empty Mods folder");
+        assert!(hint.starts_with("No mods yet."), "{hint}");
+        assert_eq!(hint.contains("Start menu"), cfg!(windows), "{hint}");
+        std::fs::create_dir_all(mods.join("Winter War")).unwrap();
+        assert_eq!(none_installed_hint(&installed(&paths)), None);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn the_menus_choice_is_kept_where_the_next_start_reads_it() {
+        let (root, paths) = settings("choice");
+        let config = root.join("config.toml");
+        let load = || {
+            crate::util::config::GameConfig::load_from(&root, &root.join("vera20k"))
+                .unwrap()
+                .paths
+        };
+        write_choice(&config, &paths, Some("Summer \"1\"")).unwrap();
+        assert_eq!(load().mod_name(), Some("Summer \"1\""));
+        // The original game is a blank name; the rest of the file stays.
+        write_choice(&config, &paths, None).unwrap();
+        assert_eq!(load().mod_name(), None);
+        assert_eq!(load().ra2_dir, paths.ra2_dir);
+        assert_eq!(
+            std::fs::read_to_string(&config)
+                .unwrap()
+                .matches("mod =")
+                .count(),
+            1
+        );
+
+        // A game run from its game folder has no config.toml: the new one
+        // names that folder, so the next start still finds the game.
+        std::fs::remove_file(&config).unwrap();
+        write_choice(&config, &paths, Some("Winter War")).unwrap();
+        let loaded = load();
+        assert_eq!(loaded.mod_name(), Some("Winter War"));
+        assert_eq!(loaded.ra2_dir, paths.ra2_dir);
         std::fs::remove_dir_all(root).unwrap();
     }
 

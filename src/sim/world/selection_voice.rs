@@ -20,11 +20,11 @@
 use super::Simulation;
 use crate::rules::ruleset::RuleSet;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "selection_voice_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "order_voice_tests.rs"]
 mod order_tests;
 
@@ -177,9 +177,13 @@ impl Simulation {
             Some(&self.house_alliances),
         )?;
         // GetWeapon(-1) returns a NULL slot, which7090C0 dereferences before
-        // any voice or draw. A valid slot containing a NULL weapon is distinct
-        // and continues to the ordinary override/list logic.
-        assert_ne!(index, -1, "VoiceAttack7090C0 dereferences GetWeapon(-1)");
+        // any voice or draw (`DeployFireWeapon=-1` on a deployed unit reaches
+        // it). VERA plays no attack voice there. A valid slot containing a
+        // NULL weapon is distinct and continues to the ordinary override/list
+        // logic.
+        if index == -1 {
+            return None;
+        }
         let weapon = combat_weapon::get_weapon(
             entity,
             object,
@@ -193,8 +197,7 @@ impl Simulation {
         // `FV` VoiceIFVRepair; then the rank's slot override, an elite one
         // falling back to the rookie one; then a `RandomRanged(0, n - 1)`
         // Main draw over VoiceAttack. Each unset tier falls through.
-        #[cfg(feature = "ares")]
-        {
+        if rules.ares() {
             let set = |voice: Option<&'a str>| voice.filter(|voice| !voice.is_empty());
             let repair = weapon.is_some_and(|weapon| weapon.damage < 0);
             let voice = repair
@@ -228,7 +231,6 @@ impl Simulation {
                 human_player,
             );
         }
-        #[cfg(not(feature = "ares"))]
         let scalar = if weapon.is_some_and(|weapon| weapon.damage < 0)
             && object.id.eq_ignore_ascii_case("FV")
         {
@@ -238,13 +240,11 @@ impl Simulation {
         } else {
             object.voice_attack_override(index, veterancy::raw_is_elite(entity.veterancy.raw()))
         };
-        #[cfg(not(feature = "ares"))]
         if let Some(sound) = scalar {
             return Self::queue_voice_request(Some(sound), voices_enabled, human_player);
         }
         //70918D..7091C4: unsigned raw draw/modulo, including a singleton.
-        #[cfg(not(feature = "ares"))]
-        return self.voice_request_from_list(object.voice_attack(), voices_enabled, human_player);
+        self.voice_request_from_list(object.voice_attack(), voices_enabled, human_player)
     }
 
     /// QueueVoice708D90's sole admission predicate. The caller owns any list

@@ -1,18 +1,16 @@
-//! `SkirmishSetups.ini` beside the profile: VERA's per-map Skirmish setups
-//! ([`SkirmishSavedSetup`]); gamemd has no such file. One section per map
-//! file, named by the file name in lower case with `%XX` for every byte
-//! outside `a-z`, `0-9`, `.`, `_` and `-`, so no bracket, semicolon or space
-//! reaches a section line. Rows hold the `[Skirmish] SlotNN` codes, then a
-//! start and a team: `Player=side,colour,start,team`, and
-//! `Slot01=type,side,colour,start,team` for each computer row the map shows,
-//! -2 standing for Random and for no team. The options keep their
-//! `[Skirmish]` key names.
+//! `SkirmishSetups.ini` beside the profile: VERA's last Skirmish setup
+//! ([`SkirmishSavedSetup`]); gamemd has no such file. `[Last Setup]` holds the
+//! page the player last left Skirmish from, and the next visit puts it back.
+//! `Map=` names its map by file name, in lower case with `%XX` for every byte
+//! outside `a-z`, `0-9`, `.`, `_` and `-`, so no semicolon or space reaches
+//! the line. Rows hold the `[Skirmish] SlotNN` codes, then a start and a team:
+//! `Player=side,colour,start,team`, and `Slot01=type,side,colour,start,team`
+//! for each computer row the map shows, -2 standing for Random and for no
+//! team. The options keep their `[Skirmish]` key names.
 //!
-//! `[Last Setup]` holds the page the player last left Skirmish from, with
-//! `Map=` naming its map's section; the page puts it back on the next visit
-//! to that map. No map's section has a space, so none can take it.
+//! A file from an older VERA can also hold a section per map from its Save
+//! Setup; writing `[Last Setup]` leaves them as they are.
 
-use std::collections::HashMap;
 use std::fmt::Write as _;
 
 use crate::rules::ini_parser::{IniFile, IniSection};
@@ -40,8 +38,8 @@ pub(super) struct LastSetup {
     pub(super) setup: SkirmishSavedSetup,
 }
 
-/// The section that holds a map's setup.
-pub(super) fn section_name(map_file: &str) -> String {
+/// How `Map=` names a map file.
+pub(super) fn map_key(map_file: &str) -> String {
     let mut name = String::with_capacity(map_file.len());
     for byte in map_file.to_ascii_lowercase().bytes() {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-') {
@@ -53,33 +51,14 @@ pub(super) fn section_name(map_file: &str) -> String {
     name
 }
 
-/// Every map's setup in the file, by section, and the last setup. A section
-/// without `Player` is none.
-pub(super) fn read_setups(
-    bytes: &[u8],
-) -> (HashMap<String, SkirmishSavedSetup>, Option<LastSetup>) {
-    let Ok(ini) = IniFile::from_bytes(bytes) else {
-        return Default::default();
-    };
-    let last = ini.section(LAST_SETUP_SECTION).and_then(|section| {
-        Some(LastSetup {
-            map: section.read_string("Map", "", 0x400),
-            setup: read_setup(section)?,
-        })
-    });
-    let setups = ini
-        .section_names()
-        .into_iter()
-        .filter(|name| !name.eq_ignore_ascii_case(LAST_SETUP_SECTION))
-        .filter_map(|name| Some((name.to_owned(), read_setup(ini.section(name)?)?)))
-        .collect();
-    (setups, last)
-}
-
-/// The file with the map's section holding `setup` and every other section
-/// kept.
-pub(super) fn write_setup(file: &[u8], section: &str, setup: &SkirmishSavedSetup) -> Vec<u8> {
-    replace_section(file, section, setup_values(setup))
+/// The file's last setup; one without `Player` is none.
+pub(super) fn read_last_setup(bytes: &[u8]) -> Option<LastSetup> {
+    let ini = IniFile::from_bytes(bytes).ok()?;
+    let section = ini.section(LAST_SETUP_SECTION)?;
+    Some(LastSetup {
+        map: section.read_string("Map", "", 0x400),
+        setup: read_setup(section)?,
+    })
 }
 
 /// The file with `[Last Setup]` holding `last` and every other section kept.
@@ -188,103 +167,71 @@ fn seat_value(seat: SkirmishSetupSeat) -> String {
     format!("{country},{color},{start},{}", seat.team)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use crate::skirmish_launch::LaunchCountry;
     use crate::ui::skirmish_shell::SkirmishAiRowType;
 
+    /// The last setup reads back with its map and every row. Writing it again
+    /// replaces `[Last Setup]`, and an older file's map sections stay.
     #[test]
-    fn a_setup_reads_back_from_its_map_section_beside_the_others() {
+    fn the_last_setup_reads_back_beside_older_map_sections() {
         let seat = |country, color, start, team| SkirmishSetupSeat {
             country,
             color,
             start,
             team,
         };
-        let setup = SkirmishSavedSetup {
-            player: seat(
-                SkirmishCountryChoice::Country(LaunchCountry::from_country_index(8)),
-                Some(2),
-                LaunchStartPosition::Position(1),
-                0,
-            ),
-            computers: vec![
-                SkirmishSetupComputer {
-                    row_type: SkirmishAiRowType::Hard,
-                    seat: seat(
-                        SkirmishCountryChoice::Random,
-                        None,
-                        LaunchStartPosition::Auto,
-                        -2,
-                    ),
-                },
-                SkirmishSetupComputer {
-                    row_type: SkirmishAiRowType::None,
-                    seat: seat(
-                        SkirmishCountryChoice::Random,
-                        None,
-                        LaunchStartPosition::Auto,
-                        3,
-                    ),
-                },
-            ],
-            game_speed: 2,
-            credits: 7500,
-            unit_count: 4,
-            short_game: false,
-            super_weapons: false,
-            build_off_ally: true,
-            crates: false,
-            mcv_redeploy: true,
-        };
-        // A bracket, a semicolon or a space would end the section line early.
-        let map = "[TW] Death Trap;2.MAP";
-        let section = section_name(map);
-        assert_eq!(section, "%5Btw%5D%20death%20trap%3B2.map");
-
-        let other = b"[xmp27t8.map]\r\nPlayer=-2,-2,-2,-2\r\n";
-        let file = write_setup(other, &section, &setup);
-        let (setups, _) = read_setups(&file);
-        assert_eq!(setups.get(&section), Some(&setup));
-        assert!(setups.contains_key("xmp27t8.map"), "{setups:?}");
-
-        // Saving again replaces the map's section rather than adding one.
-        let file = write_setup(&file, &section, &setup);
-        let text = String::from_utf8(file).unwrap();
-        assert_eq!(text.matches(&format!("[{section}]")).count(), 1, "{text}");
-    }
-
-    /// The last setup reads back on its own, never as a map's setup for Load
-    /// Setup, even beside a map whose file has its name.
-    #[test]
-    fn the_last_setup_reads_back_apart_from_the_map_setups() {
-        let setup = |credits| SkirmishSavedSetup {
-            player: SkirmishSetupSeat {
-                country: SkirmishCountryChoice::Random,
-                color: None,
-                start: LaunchStartPosition::Position(2),
-                team: 1,
-            },
-            computers: Vec::new(),
-            game_speed: 3,
-            credits,
-            unit_count: 10,
-            short_game: true,
-            super_weapons: true,
-            build_off_ally: true,
-            crates: true,
-            mcv_redeploy: true,
-        };
-        let map = section_name("Last Setup");
         let last = LastSetup {
-            map: map.clone(),
-            setup: setup(9000),
+            map: map_key("[TW] Death Trap;2.MAP"),
+            setup: SkirmishSavedSetup {
+                player: seat(
+                    SkirmishCountryChoice::Country(LaunchCountry::from_country_index(8)),
+                    Some(2),
+                    LaunchStartPosition::Position(1),
+                    0,
+                ),
+                computers: vec![
+                    SkirmishSetupComputer {
+                        row_type: SkirmishAiRowType::Hard,
+                        seat: seat(
+                            SkirmishCountryChoice::Random,
+                            None,
+                            LaunchStartPosition::Auto,
+                            -2,
+                        ),
+                    },
+                    SkirmishSetupComputer {
+                        row_type: SkirmishAiRowType::None,
+                        seat: seat(
+                            SkirmishCountryChoice::Random,
+                            None,
+                            LaunchStartPosition::Auto,
+                            3,
+                        ),
+                    },
+                ],
+                game_speed: 2,
+                credits: 7500,
+                unit_count: 4,
+                short_game: false,
+                super_weapons: false,
+                build_off_ally: true,
+                crates: false,
+                mcv_redeploy: true,
+            },
         };
-        let file = write_last_setup(&write_setup(b"", &map, &setup(5000)), &last);
-        let (setups, read) = read_setups(&file);
-        assert_eq!(read, Some(last));
-        assert_eq!(setups.len(), 1, "{setups:?}");
-        assert_eq!(setups.get(&map), Some(&setup(5000)));
+        // Older files name maps this way; a semicolon would end the line.
+        assert_eq!(last.map, "%5Btw%5D%20death%20trap%3B2.map");
+
+        let older = b"[xmp27t8.map]\r\nPlayer=-2,-2,-2,-2\r\n";
+        let file = write_last_setup(older, &last);
+        assert_eq!(read_last_setup(&file), Some(last.clone()));
+
+        let file = write_last_setup(&file, &last);
+        let text = String::from_utf8(file).unwrap();
+        assert_eq!(text.matches("[Last Setup]").count(), 1, "{text}");
+        assert!(text.contains("[xmp27t8.map]"), "{text}");
     }
 }

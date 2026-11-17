@@ -66,7 +66,7 @@ fn authored_signed_group_queues_guard_across_houses() {
     }
     assert_ne!(sim.entities().get(ids[1]).unwrap().owner(), human);
 
-    let before = ids.map(|id| sim.entities().get(id).unwrap().mission);
+    let before = ids.map(|id| sim.entities().get(id).unwrap().mission.clone());
     assert_eq!(before[0].current().known(), Some(MissionType::Sleep));
     assert_eq!(before[1].current().known(), Some(MissionType::Harmless));
     let rng = sim.rng_state();
@@ -79,7 +79,7 @@ fn authored_signed_group_queues_guard_across_houses() {
         FrameEffects::default(),
     );
     for (index, id) in ids.into_iter().enumerate() {
-        let mission = sim.entities().get(id).unwrap().mission;
+        let mission = sim.entities().get(id).unwrap().mission.clone();
         if index < 2 {
             assert_eq!(mission.queued().known(), Some(MissionType::Guard));
             assert_eq!(mission.current(), before[index].current());

@@ -5,7 +5,9 @@
 //! inclusive sorted ranged draws, and rejection sampling.
 
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use crate::util::sync::Mutex;
 
 use crate::rng_continuation::MapGenRngContinuation;
 use crate::util::native_random;
@@ -118,12 +120,24 @@ pub struct SimRng {
     state: Vec<u32>,
 }
 
-/// Owner of process Main886B88. Simulation, frontend and retained playback
-/// capabilities address the same cell; sharing never copies its cursor.
-/// Main remains outside Scenario saves and the deterministic world hash.
+/// Owner of process Main886B88. The frontend and retained playback
+/// capabilities address the app's cell; a scenario's simulation draws its own
+/// cell, seeded from the app's at install, so the simulation thread and the
+/// app share no RNG (docs/sim-thread.md). Main remains outside Scenario saves
+/// and the deterministic world hash.
 #[derive(Debug)]
 pub struct MainRng {
     state: Arc<Mutex<SimRng>>,
+}
+
+/// A copy shares the one process cell, as every Main owner does: the
+/// presentation frame of a world draws the same cursor as the world.
+impl Clone for MainRng {
+    fn clone(&self) -> Self {
+        Self {
+            state: Arc::clone(&self.state),
+        }
+    }
 }
 
 impl MainRng {
@@ -144,6 +158,14 @@ impl MainRng {
         Self {
             state: Arc::clone(&self.state),
         }
+    }
+
+    /// A cell of its own at this cursor, sharing nothing with this one: the
+    /// presentation copy of the world's (docs/sim-thread.md), and the
+    /// simulation's own cell at a scenario install
+    /// ([`crate::sim::world::Simulation::install_fresh_process_main`]).
+    pub(crate) fn detached_copy(&self) -> Self {
+        self.staged_copy()
     }
 
     /// Stage a transactional saved-load candidate. Draws made while the load
@@ -412,6 +434,22 @@ impl SimRng {
         }
     }
 
+    /// A stream whose next draws are `draws`, in order: the lead cursor starts
+    /// at word 0 and the lagged one at word 125, over zeros. For a test that
+    /// needs a draw no seed reaches, such as `i32::MIN`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_next_draws_for_test(draws: &[u32]) -> Self {
+        assert!(draws.len() <= 125, "the lagged words must stay zero");
+        let mut state = vec![0; RNG_TABLE_LEN];
+        state[..draws.len()].copy_from_slice(draws);
+        Self {
+            disabled: 0,
+            index_a: 0,
+            index_b: 125,
+            state,
+        }
+    }
+
     /// Copy every logical field into immutable boundary evidence.
     pub fn logical_state(&self) -> SimRngLogicalState {
         let mut words = [0; RNG_TABLE_LEN];
@@ -586,17 +624,20 @@ impl SimRng {
     /// the cursor a variable amount and desyncs every later consumer that tick.
     /// Returns 0 for `n == 0` (the original would divide-by-zero here; callers
     /// guard with `.max(1)`, so this branch never fires on stock systems).
+    /// A raw `i32::MIN` over `n == u32::MAX` (a divisor of -1, as `MaxEC=-1`
+    /// gives) overflows gamemd's IDIV; this returns the true remainder, 0.
     ///
-    /// RESIDUAL: Gas drift (`0x0062BDD3..0x0062BE05`) and the Spark burst
-    /// size (`0x0062E8C2..0x0062E8CC`) take the absolute value first
-    /// (`CDQ; XOR; SUB; CDQ; IDIV`). That differs only for a raw `i32::MIN`,
-    /// whose `NEG` overflows and leaves the remainder negative; this method
-    /// returns its positive twin there. One raw draw in 2^32.
+    /// Draws that take the absolute value first (`CDQ; XOR; SUB; CDQ; IDIV`),
+    /// such as Gas drift and the Spark burst size and Z velocity, use
+    /// [`abs_before_modulo`] instead: for a raw `i32::MIN` its remainder stays
+    /// negative.
     pub fn next_raw_abs_modulo(&mut self, n: u32) -> u32 {
         if n == 0 {
             return 0;
         }
-        ((self.next_u32() as i32) % n as i32).unsigned_abs()
+        (self.next_u32() as i32)
+            .wrapping_rem(n as i32)
+            .unsigned_abs()
     }
 
     /// Raw signed remainder draw: `(next_u32() as i32) % n`, one draw, may be
@@ -606,12 +647,13 @@ impl SimRng {
     /// no absolute value): a negative remainder yields a negative offset, so the
     /// output spans `-(n-1)..=n-1`. Same single-draw cursor advance as
     /// `next_raw_abs_modulo`; the only difference is the sign is preserved.
-    /// Returns 0 for `n == 0`.
+    /// Returns 0 for `n == 0`, and the true remainder 0 where gamemd's IDIV
+    /// overflows (a raw `i32::MIN` over a divisor of -1).
     pub fn next_raw_modulo_signed(&mut self, n: u32) -> i32 {
         if n == 0 {
             return 0;
         }
-        (self.next_u32() as i32) % n as i32
+        (self.next_u32() as i32).wrapping_rem(n as i32)
     }
 
     /// `Randomizer::RandomDouble` (YRpp `Helpers/Randomizer.h`):
@@ -623,7 +665,7 @@ impl SimRng {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::{MainRng, SimRng, trace_draws};
 
@@ -837,6 +879,25 @@ mod tests {
         let mut reference = SimRng::new(1);
         reference.next_u32();
         assert_eq!(a.state(), reference.state());
+    }
+
+    /// A raw `i32::MIN` over a divisor of -1 (`MaxEC=-1`) overflows gamemd's
+    /// IDIV; both helpers return the true remainder, 0, after their one draw.
+    #[test]
+    fn raw_modulo_of_min_by_minus_one_is_zero() {
+        for signed in [false, true] {
+            let mut rng = SimRng::new(1);
+            let (a, b) = (rng.index_a as usize, rng.index_b as usize);
+            rng.state[a] = rng.state[b] ^ 0x8000_0000;
+            let mut twin = rng.clone();
+            if signed {
+                assert_eq!(rng.next_raw_modulo_signed(u32::MAX), 0);
+            } else {
+                assert_eq!(rng.next_raw_abs_modulo(u32::MAX), 0);
+            }
+            assert_eq!(twin.next_u32(), 0x8000_0000);
+            assert_eq!(rng.state(), twin.state());
+        }
     }
 
     #[test]

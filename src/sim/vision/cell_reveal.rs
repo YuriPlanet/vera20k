@@ -13,7 +13,7 @@ use crate::map::resolved_terrain::{NativeCellQuery, ROW_NEIGHBORS};
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "cell_reveal_tests.rs"]
 pub(crate) mod tests;
 
@@ -380,14 +380,31 @@ impl OwnerVisibility {
             return;
         };
         if self.shroud_knowledge[index].leave_reshrouded() {
-            self.set_ground_bits(
-                index,
-                self.ground_flags[index] & !(GROUND_VISIBLE | GROUND_OPEN),
-            );
-            self.set_cell_initialized(VisibilityCell::Real(index), false);
-            self.map_cell_edge_cache[index].fog_open = false;
+            self.clear_mapped_ground(index);
         }
         self.publish_knowledge(index);
+    }
+
+    /// `MapClass::Reset_Shroud @ 0x00577BB0`'s per-cell store
+    /// (`0x00577C2E..0x00577C48`): Cell `+0x12C &= ~0x18` and Cell
+    /// `+0x140 &= ~3` on every cell, leaving the shroud and gap counters
+    /// (`+0x130`/`+0x134`) as they are.
+    pub(super) fn store_cleared_map_cell(&mut self, cell: (u16, u16)) {
+        let Some(index) = self.index(cell.0, cell.1) else {
+            return;
+        };
+        self.shroud_knowledge[index].clear_mapped();
+        self.clear_mapped_ground(index);
+        self.publish_knowledge(index);
+    }
+
+    fn clear_mapped_ground(&mut self, index: usize) {
+        self.set_ground_bits(
+            index,
+            self.ground_flags[index] & !(GROUND_VISIBLE | GROUND_OPEN),
+        );
+        self.set_cell_initialized(VisibilityCell::Real(index), false);
+        self.map_cell_edge_cache[index].fog_open = false;
     }
 
     /// Original bulk577D90/577AB0 stores, including Cell12C bits18 and
@@ -533,7 +550,7 @@ impl OwnerVisibility {
         let inputs = self.edge_inputs_cache.get_or_init(|| {
             self.ground_flags
                 .iter()
-                .zip(&self.map_cell_edge_cache)
+                .zip(self.map_cell_edge_cache.iter())
                 .map(|(&ground, &cache)| packed_edge_input(ground, cache))
                 .collect()
         });
@@ -852,8 +869,9 @@ impl OwnerVisibility {
     pub(crate) fn hash_map_cell_edge_cache(&self, hasher: &mut impl Hasher) {
         // Every cell's fields, initialized or not: the reveal and edge-frame
         // readers consult `frames` and `fog_open` of uninitialized cells too.
-        crate::util::state_hasher::hash_records(
-            &self.map_cell_edge_cache,
+        crate::util::state_hasher::hash_record_iter(
+            self.map_cell_edge_cache.len(),
+            self.map_cell_edge_cache.iter(),
             hasher,
             MapCellEdgeCache::hash_record,
         );

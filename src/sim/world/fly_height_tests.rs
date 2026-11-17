@@ -913,7 +913,6 @@ fn fly_takeoff_phase_matches_native_display_reordering_and_gates() {
         other.locomotor = loco;
         Simulation::submit_entity_display(
             &sim.interner,
-            &sim.terrain_objects,
             &mut sim.substrate,
             &sim.resolved_terrain,
             1,
@@ -922,7 +921,6 @@ fn fly_takeoff_phase_matches_native_display_reordering_and_gates() {
         );
         Simulation::submit_entity_display(
             &sim.interner,
-            &sim.terrain_objects,
             &mut sim.substrate,
             &sim.resolved_terrain,
             peer,
@@ -995,7 +993,6 @@ fn fly_nonlandable_phase_matches_native_without_display_resubmission() {
         other.locomotor = loco;
         Simulation::submit_entity_display(
             &sim.interner,
-            &sim.terrain_objects,
             &mut sim.substrate,
             &sim.resolved_terrain,
             1,
@@ -1004,7 +1001,6 @@ fn fly_nonlandable_phase_matches_native_without_display_resubmission() {
         );
         Simulation::submit_entity_display(
             &sim.interner,
-            &sim.terrain_objects,
             &mut sim.substrate,
             &sim.resolved_terrain,
             peer,
@@ -1068,7 +1064,6 @@ fn fly_nonlandable_production_tick_replaces_landing_target_and_restores() {
     let (mut sim, rules) = takeoff_fixture(&row);
     Simulation::submit_entity_display(
         &sim.interner,
-        &sim.terrain_objects,
         &mut sim.substrate,
         &sim.resolved_terrain,
         1,
@@ -1260,7 +1255,7 @@ fn fly_production_process_resets_enter_mode_using_native_mission_precedence() {
     for row in rows {
         let (mut sim, rules) = fixture(&serde_json::json!({"input":{"z":900,"target":900}}));
         let entity = sim.substrate.entities.get_mut(1).unwrap();
-        let mut mission = serde_json::to_value(entity.mission).unwrap();
+        let mut mission = serde_json::to_value(entity.mission.clone()).unwrap();
         mission["current"] = row["current"].clone();
         mission["queued"] = row["queued"].clone();
         entity.mission = serde_json::from_value(mission).unwrap();

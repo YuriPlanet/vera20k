@@ -20,6 +20,8 @@ fn facts(cell: (u16, u16), idle: bool, passengers: u32) -> TransportFacts {
         passengers,
         full: false,
         boarding: false,
+        heading: None,
+        reach: 2,
     }
 }
 
@@ -78,6 +80,80 @@ fn a_round_trip_unloads_and_returns_and_a_detour_ends_it() {
     // Back at the pick-up spot it loads again and the next full hold leaves.
     assert_eq!(route.step(&facts(PICKUP, true, 0), 108), FerryAction::None);
     assert_eq!(route.step(&full, 116), FerryAction::MoveTo(DROP));
+
+    // Passengers left aboard after an unload: cross again, to find them room.
+    let mut stuck = FerryRoute::new(7, PICKUP, DROP, 4, 0);
+    assert_eq!(stuck.step(&full, 8), FerryAction::MoveTo(DROP));
+    assert_eq!(stuck.step(&facts((9, 5), false, 4), 16), FerryAction::None);
+    assert_eq!(stuck.step(&facts(DROP, true, 4), 24), FerryAction::Unload);
+    assert_eq!(
+        stuck.step(&facts(DROP, true, 1), 24 + RESEND_TICKS),
+        FerryAction::MoveTo(DROP)
+    );
+
+    // Through a waypoint: sent on as it comes near, never told to stop
+    // there, and back through it on the return.
+    let mut detour = FerryRoute::new(7, PICKUP, DROP, 4, 0).with_via(vec![(8, 12)]);
+    assert_eq!(detour.step(&full, 8), FerryAction::MoveVia((8, 12)));
+    assert_eq!(detour.step(&facts((6, 9), false, 4), 16), FerryAction::None);
+    assert_eq!(
+        detour.step(&facts((8, 11), false, 4), 24),
+        FerryAction::MoveTo(DROP)
+    );
+    assert_eq!(detour.step(&facts(DROP, true, 4), 200), FerryAction::Unload);
+    assert_eq!(
+        detour.step(&facts(DROP, true, 0), 200 + RESEND_TICKS),
+        FerryAction::MoveVia((8, 12))
+    );
+    assert_eq!(
+        detour.step(&facts((8, 12), false, 0), 400),
+        FerryAction::MoveTo(PICKUP)
+    );
+
+    // Three ways past a waypoint that the transport never comes within two
+    // cells of. Sent there with others, its Move was given a cell beside the
+    // waypoint, and that cell counts.
+    let beside = |cell, idle| TransportFacts {
+        heading: Some((8, 16)),
+        ..facts(cell, idle, 4)
+    };
+    let mut spread = FerryRoute::new(7, PICKUP, DROP, 4, 0).with_via(vec![(8, 12)]);
+    assert_eq!(spread.step(&full, 8), FerryAction::MoveVia((8, 12)));
+    assert_eq!(spread.step(&beside((8, 19), false), 16), FerryAction::None);
+    assert_eq!(
+        spread.step(&beside((8, 15), false), 24),
+        FerryAction::MoveTo(DROP)
+    );
+    // Stopped as near as its Move took it: it carries on, not ends.
+    let mut stopped = FerryRoute::new(7, PICKUP, DROP, 4, 0).with_via(vec![(8, 12)]);
+    assert_eq!(stopped.step(&full, 8), FerryAction::MoveVia((8, 12)));
+    assert_eq!(
+        stopped.step(&facts((8, 16), false, 4), 16),
+        FerryAction::None
+    );
+    assert_eq!(
+        stopped.step(&facts((8, 16), true, 4), 100),
+        FerryAction::MoveTo(DROP)
+    );
+    // An aircraft is sent on from farther out, before it slows to land.
+    let flying = TransportFacts {
+        reach: 4,
+        ..facts((8, 16), false, 4)
+    };
+    let mut air = FerryRoute::new(7, PICKUP, DROP, 4, 0).with_via(vec![(8, 12)]);
+    assert_eq!(air.step(&full, 8), FerryAction::MoveVia((8, 12)));
+    assert_eq!(air.step(&flying, 16), FerryAction::MoveTo(DROP));
+    // Stopped far from the waypoint, it was sent elsewhere: the ferry ends.
+    let mut elsewhere = FerryRoute::new(7, PICKUP, DROP, 4, 0).with_via(vec![(8, 12)]);
+    assert_eq!(elsewhere.step(&full, 8), FerryAction::MoveVia((8, 12)));
+    assert_eq!(
+        elsewhere.step(&facts((20, 30), false, 4), 16),
+        FerryAction::None
+    );
+    assert_eq!(
+        elsewhere.step(&facts((20, 30), true, 4), 100),
+        FerryAction::End
+    );
 
     // Moving, then stopped away from the drop spot: the ferry is over.
     assert_eq!(route.step(&facts((6, 9), false, 4), 124), FerryAction::None);

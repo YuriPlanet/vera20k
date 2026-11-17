@@ -1,6 +1,7 @@
 # Ares paradrop overrides
 
-Build with `--features ares`. Ares hands both paradrop Types (`ParaDrop`,
+A game that ships `ares.mix` reads these keys in every build ([Ares](ares.md)).
+Ares hands both paradrop Types (`ParaDrop`,
 `AmerParaDrop`) to its SW_ParaDrop handler, which reads planes of its own per
 superweapon and falls back to a paradrop block for every country, in front of
 the SideExt values, so a house that sets these keys paradrops its own list,
@@ -53,6 +54,17 @@ which the superweapon metadata hashes.
 
 ## Consumers
 
+`[TechnoType] Parachute.Anim=` selects a falling infantry, vehicle or aircraft's
+own canopy before the country and side. TechnoTypeExt's constructor initializes
+the pointer to null (`1003C884`), and its per-layer reader (`1003E385`,
+`Valueable::Read1000EB20`) retains absent, empty and unknown names. `none` or
+`<none>` clears the pointer and restores the country/side fallback. The
+`ObjectClass_SpawnParachuted_Animation` hook (`5F5ADD`, Ares.dll `10047C60`)
+replaces the stock Rules+BBC load and resumes at `5F5AE3` with this selection.
+The shared canopy asset closure binds all three layers for simulation and drawing.
+The type-level key also enables its reader and Ares behavior when supplied by
+itself in a rules or map layer.
+
 - `sim::superweapon::paradrop::ares_launch` (SW_ParaDrop::Activate
   `0x10073CD0`, through the Ares redirect in `superweapon::fire`) resolves the
   superweapon's planes over the acting house's country, side and `[General]`
@@ -61,7 +73,7 @@ which the superweapon metadata hashes.
   of the cell under the plane (AircraftClass_Paradrop_Units `0x10048BA0`, hook
   `0x415CA6`).
 - `sim::movement::parachute_descent::attach_parachute_anim` answers the canopy
-  name through that same country → side → rules order.
+  name through the type → country → side → rules order.
 
 ## Residuals
 

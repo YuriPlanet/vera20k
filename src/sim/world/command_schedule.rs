@@ -30,10 +30,10 @@ impl Simulation {
     /// Foot's cell click constructs MoveFlash before it issues the unit order
     /// (4D7EB5..4D8065), outside EventClass. In LAN/WOL the native flash joins
     /// a local unsynced list (4D7F28..4D8062). Keep that local action off the
-    /// packet FIFO while using the existing ingress and animation owners.
-    /// `spawn_move_flash` still declines network animation construction until
-    /// that local visual owner exists. Offline flashes retain their established
-    /// tail timing, including animation identities and any constructor RNG.
+    /// packet FIFO while using the existing ingress and animation owners:
+    /// `spawn_move_flash` makes the network flash a local anim. Offline
+    /// flashes retain their established tail timing, including animation
+    /// identities and any constructor RNG.
     fn command_uses_frame_ingress(command: &Command, is_network: bool) -> bool {
         command.uses_frame_ingress() || is_network && matches!(command, Command::MoveFlash { .. })
     }
@@ -407,6 +407,31 @@ impl Simulation {
     /// next ingress without retaining a second membership list.
     /// Native731060 stores parameter-1; digit0 registers parameter10.
     pub fn projected_control_groups(&self) -> [Vec<u64>; 10] {
+        self.project_control_groups(
+            self.substrate
+                .entities
+                .iter_sorted()
+                .map(|(_, entity)| entity),
+        )
+    }
+
+    /// [`Self::projected_control_groups`] of the stored objects among `ids`
+    /// alone, for a reader that only ever asks about those: each object's
+    /// group follows from its own state and the queue, not from the others.
+    pub fn projected_control_groups_of(
+        &self,
+        ids: impl IntoIterator<Item = u64>,
+    ) -> [Vec<u64>; 10] {
+        self.project_control_groups(
+            ids.into_iter()
+                .filter_map(|id| self.substrate.entities.get(id)),
+        )
+    }
+
+    fn project_control_groups<'a>(
+        &'a self,
+        entities: impl Iterator<Item = &'a crate::sim::game_entity::GameEntity>,
+    ) -> [Vec<u64>; 10] {
         // The queued assignments, in queue order; usually none. Each object's
         // group follows from its own stored group and these alone.
         let assignments: Vec<(i32, std::collections::HashSet<u64>)> = self
@@ -419,7 +444,7 @@ impl Simulation {
             })
             .collect();
         let mut slots = std::array::from_fn(|_| Vec::new());
-        for (_, entity) in self.substrate.entities.iter_sorted() {
+        for entity in entities {
             let group =
                 assignments
                     .iter()
@@ -526,9 +551,20 @@ impl Simulation {
         projected
     }
 
+    /// Whether an executed EXIT command's terminal edge waits to be taken.
+    pub fn executed_exit_owner_pending(&self) -> bool {
+        self.executed_exit_owner.is_some()
+    }
+
     /// Consume the terminal edge raised by one executed EXIT command.
     pub fn take_executed_exit_owner(&mut self) -> Option<InternedId> {
         self.executed_exit_owner.take()
+    }
+
+    /// Whether [`Self::take_departed_senders`] would hand any over, read
+    /// without taking the world for writing.
+    pub fn has_departed_senders(&self) -> bool {
+        !self.departed_senders.is_empty()
     }
 
     /// Drain the remote EXIT senders the executor recorded.
@@ -926,17 +962,27 @@ impl Simulation {
     /// non-megamission scan, immediately before staged command execution.
     /// The group spread `0x0064CDA0` per run (`0x0064CB0A..0x0064CB60`): each Foot
     /// member's coordinates (Location) and source cell.
+    ///
+    /// VERA-only: in a LAN or WOL game a member whose order the network
+    /// ownership rule will refuse (`Simulation::network_actor_foreign`) is
+    /// left out, and a run left with fewer than two orders keeps its clicked
+    /// cells, as if `sender` had not ordered that member. Retail's member loop
+    /// (`0x0064CE59..0x0064CEDF`) tests only Foot and tube (`+0x684`), never
+    /// the owner, and `Execute_DoList` spreads every run of two or more
+    /// (`0x0064CBA4..0x0064CBDB`). Fixtures that skip the rule pass `None`.
     pub(super) fn adjust_staged_megamission_destinations(
         &self,
         commands: &mut [impl FormationCommand],
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        sender: Option<InternedId>,
     ) {
         let (Some(terrain), Some(zones)) =
             (self.resolved_terrain.as_ref(), self.zone_grid.as_ref())
         else {
             return;
         };
+        let sender = sender.map(|owner| self.interner.resolve(owner));
         let mut run_start = 0;
         while run_start < commands.len() {
             let Some(key) = Self::formation_key(&commands[run_start]) else {
@@ -947,7 +993,8 @@ impl Simulation {
             while run_end < commands.len() && Self::formation_key(&commands[run_end]) == Some(key) {
                 run_end += 1;
             }
-            if run_end - run_start > 1 {
+            let mut orders = run_end - run_start;
+            if orders > 1 {
                 let clicked_target = (key.1 as i16, key.2 as i16);
                 //64CDE9 resolves the Cell;64CDF6 returns for the shared
                 // dummy before member collection or destination rewrites.
@@ -965,6 +1012,10 @@ impl Simulation {
                     let Some(entity) = self.substrate.entities.get(entity_id) else {
                         continue;
                     };
+                    if sender.is_some_and(|owner| self.network_actor_foreign(owner, entity_id)) {
+                        orders -= 1;
+                        continue;
+                    }
                     if !matches!(
                         entity.category(),
                         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
@@ -991,6 +1042,10 @@ impl Simulation {
                             crate::util::lepton::lepton_to_cell(navigation.y),
                         ),
                     });
+                }
+                if orders < 2 {
+                    run_start = run_end;
+                    continue;
                 }
                 let mut member_target: Option<GroupMemberTarget> = None;
                 let mut assignments = group_destination::distribute_group_destinations(
@@ -1056,8 +1111,7 @@ impl Simulation {
             };
             let jumpjet = self.substrate.entities.get(id).is_some_and(|entity| {
                 entity.locomotor.as_ref().is_some_and(|locomotor| {
-                    locomotor.active_kind()
-                        == crate::rules::locomotor_type::LocomotorKind::Jumpjet
+                    locomotor.active_kind() == crate::rules::locomotor_type::LocomotorKind::Jumpjet
                 })
             });
             if !jumpjet {
@@ -1079,8 +1133,12 @@ impl Simulation {
                 }
                 cells.sort_unstable();
                 let free = cells.into_iter().find_map(|(_, dy, dx)| {
-                    let x = i16::try_from(i32::from(from.0) + dx).ok().filter(|x| *x >= 0)?;
-                    let y = i16::try_from(i32::from(from.1) + dy).ok().filter(|y| *y >= 0)?;
+                    let x = i16::try_from(i32::from(from.0) + dx)
+                        .ok()
+                        .filter(|x| *x >= 0)?;
+                    let y = i16::try_from(i32::from(from.1) + dy)
+                        .ok()
+                        .filter(|y| *y >= 0)?;
                     let clear = self
                         .mover_can_enter(
                             id,
@@ -1216,16 +1274,19 @@ impl Simulation {
         // One scan per command sender, in sender order. A sender is its
         // House's index, as in gamemd's House scan, unless players share
         // Houses (VERA): each of them then gets its own scan of that House.
+        // A watcher sends nothing, so no sender is its current player.
         let local_source = self.session.local_shared_house_source();
+        let watcher = self.session.watcher();
         let mut houses: Vec<_> = self
             .session
             .network_sources(self.houses.order().len())
             .filter_map(|(source, house)| {
                 let owner = *self.houses.order().get(house)?;
-                let current_player = match local_source {
-                    Some(local) => local == source,
-                    None => self.session.current_house() == Some(owner),
-                };
+                let current_player = !watcher
+                    && match local_source {
+                        Some(local) => local == source,
+                        None => self.session.current_house() == Some(owner),
+                    };
                 Some(
                     CommandDispatchHouse::new(owner, source, true)
                         .with_current_player(current_player),
@@ -1399,9 +1460,13 @@ impl DoListHost<QueuedCommand> for WorldCommandHost<'_, '_, '_> {
             .compare_frame_info(record, self.sim.session.binary_frame() as i32)
     }
 
-    fn adjust_megamissions(&mut self, _house: CommandDispatchHouse, entries: &mut [QueuedCommand]) {
-        self.sim
-            .adjust_staged_megamission_destinations(entries, self.rules, self.overlay_registry);
+    fn adjust_megamissions(&mut self, house: CommandDispatchHouse, entries: &mut [QueuedCommand]) {
+        self.sim.adjust_staged_megamission_destinations(
+            entries,
+            self.rules,
+            self.overlay_registry,
+            Some(house.owner),
+        );
     }
 
     fn execute(
@@ -1481,18 +1546,18 @@ fn within_spread_band(target_height: i32, candidate_height: i32) -> bool {
     (candidate_height - target_height).abs() <= 2
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "group_spread_gate_tests.rs"]
 mod group_spread_gate_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "command_admission_tests.rs"]
 mod command_admission_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "move_flash_ingress_tests.rs"]
 mod move_flash_ingress_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "control_group_ingress_tests.rs"]
 mod control_group_ingress_tests;

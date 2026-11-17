@@ -428,13 +428,16 @@ fn saved_superweapon_targeting_survives_roundtrip_without_charge_admission() {
     assert_eq!(outgoing.targeting_mode, source.targeting_mode);
 }
 
-/// The swizzled placement product/type and House index +11AC, and the
-/// Repair/Sell bytes, come back as saved; the preview is recomputed later.
+/// The swizzled placement product/type and House index +11AC, the
+/// foundation latch +0x1174/+0x1181, and the Repair/Sell bytes, come back as
+/// saved; the preview is recomputed later.
 #[test]
 fn saved_placement_and_sell_mode_survive_roundtrip() {
     let (sim, rules, mut source) = fixture();
     let owner = sim.session().current_house().unwrap();
     assert!(source.begin_building_placement("UNIT", 1, owner));
+    source.foundation_latch =
+        crate::app::input::state::FoundationLatch::from_saved(Some(((8, 4), false)));
     let saved = serialized_capture(&source, &sim, &rules);
     let mut outgoing = MatchInputState::new(Default::default());
     commit(
@@ -444,6 +447,7 @@ fn saved_placement_and_sell_mode_survive_roundtrip() {
     assert_eq!(outgoing.targeting_mode, source.targeting_mode);
     assert_eq!(outgoing.building_placement_issuer(), Some(owner));
     assert!(outgoing.building_placement_preview.is_none());
+    assert_eq!(outgoing.foundation_latch, source.foundation_latch);
 
     let (_, _, idle) = fixture();
     let mut selling = SidebarGadgetState::new();

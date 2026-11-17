@@ -46,7 +46,7 @@ pub fn button_rects(anchor: RectPx) -> [RectPx; 2] {
     ]
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

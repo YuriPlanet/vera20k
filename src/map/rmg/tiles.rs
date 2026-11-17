@@ -130,6 +130,15 @@ impl TileIds {
         tile == 0 || tile == TILE_UNASSIGNED
     }
 
+    /// VERA extension: open ground, clear or one of the rough, sand and
+    /// green patches the LAT stage lays over it.
+    pub fn is_open_ground(&self, tile: i32) -> bool {
+        self.is_clear(tile)
+            || base_or_lat(tile, self.rough, self.rough_lat)
+            || base_or_lat(tile, self.sand, self.sand_lat)
+            || base_or_lat(tile, self.green, self.green_lat)
+    }
+
     /// Green-terrain membership: the green base tile or its LAT range.
     pub fn is_green_lat(&self, tile: i32) -> bool {
         base_or_lat(tile, self.green, self.green_lat)
@@ -200,7 +209,7 @@ fn tile_in_native_window(tile: i32, base: i32, span: i32) -> bool {
     tile >= base && tile < base.wrapping_add(span)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::theater::{RmgTileKeys, parse_tileset_ini};

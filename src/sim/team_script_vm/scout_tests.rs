@@ -181,7 +181,7 @@ pub(super) fn campaign_scene(
     sim.session.publish_started();
     let runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources::new(rules),
+        resources: std::sync::Arc::new(SimResources::new(rules)),
     };
     Some((runtime, member, ty))
 }

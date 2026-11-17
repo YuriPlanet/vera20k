@@ -49,7 +49,6 @@ impl OutcomeBannerArt {
     /// and the draw resolves each slot through `0x1002DF10` / `0x1002DF00`,
     /// which answer InitGame's literal surface whenever that slot is unset or
     /// never loaded. Each slot therefore falls back on its own.
-    #[cfg(feature = "ares")]
     pub(crate) fn build_for_side(
         gpu: &GpuContext,
         batch: &BatchRenderer,
@@ -263,7 +262,7 @@ fn router_verdict(state: &AppState) -> Option<HouseOutcomeKind> {
 /// stays on screen through the clip until the score page takes the picture.
 fn local_outcome(state: &AppState) -> Option<HouseOutcomeKind> {
     router_verdict(state)
-        .or_else(|| sim_outcome(&state.match_state.sim_runtime.as_ref()?.simulation))
+        .or_else(|| sim_outcome(&state.match_state.sim_runtime.presentation()?.simulation))
 }
 
 /// The local House's result as the simulation holds it: the one it published,
@@ -291,7 +290,7 @@ pub(crate) fn active_art(state: &AppState) -> Option<&OutcomeBannerArt> {
     if !state
         .match_state
         .sim_runtime
-        .as_ref()?
+        .presentation()?
         .simulation
         .session()
         .game_mode_nonzero()
@@ -381,7 +380,7 @@ pub(crate) fn instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteIns
     let campaign = !state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .is_some_and(|runtime| runtime.simulation.session().game_mode_nonzero());
     let (frame, label) = result_view(outcome_kind, campaign);
     use crate::app::presentation::field_parts;
@@ -433,7 +432,7 @@ pub(crate) fn instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteIns
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
 

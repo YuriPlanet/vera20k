@@ -14,8 +14,9 @@ pub(super) fn spawn(
     warhead: InternedId,
     entry_foundation: &Foundation,
 ) {
-    let sparky = rules
-        .warhead(world.interner.resolve(warhead))
+    let sparky = world
+        .interner
+        .warhead_type(warhead, rules)
         .is_some_and(|warhead| warhead.sparky);
     for (dx, dy) in entry_foundation.cell_offsets() {
         let Some(target) = world.substrate.entities.get(building) else {

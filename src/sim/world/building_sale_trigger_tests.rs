@@ -140,9 +140,7 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         &rules,
         &map.actions,
     ));
-    rules
-        .bind_scheduler_anim_assets(&roots, &assets, theater.extension, &map.header.theater)
-        .expect("physical scheduler animation assets");
+    rules.bind_scheduler_anim_assets(&roots, &assets, theater.extension, &map.header.theater);
     let tolerant = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&rules);
     rules.bind_anim_class_assets(&tolerant, &assets, theater.extension, &map.header.theater);
     rules.populate_anim_frame_dims(&assets, theater.extension, &map.header.theater);
@@ -210,11 +208,11 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         },
         runtime: crate::sim::runtime::SimRuntime {
             simulation: sim,
-            resources: crate::sim::runtime::SimResources {
+            resources: std::sync::Arc::new(crate::sim::runtime::SimResources {
                 overlay_registry: overlays,
                 terrain_template: None,
                 rules,
-            },
+            }),
         },
         map,
     }

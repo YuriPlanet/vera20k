@@ -12,7 +12,6 @@ use crate::sim::game_entity::GameEntity;
 /// ILocomotion+60, dispatched by Ares TechnoUpdate1004B49B. Hover516C70
 /// uses its existing height-aware owner; the other active families use the
 /// retained base power owner, rather than the object's Deactivated byte.
-#[cfg(feature = "ares")]
 pub(crate) fn is_powered(
     entity: &GameEntity,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
@@ -130,6 +129,6 @@ pub(crate) fn is_really_moving_now(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_movement, tests_sim_world_c_o)))]
 #[path = "motion_query_tests.rs"]
 pub(crate) mod tests;

@@ -31,7 +31,8 @@ pub(crate) fn terrain_unlimbo_overlay_fields(
 /// TiberiumClass, otherwise `TiberiumClass+0xB8 (Value) * (OverlayData + 1)`
 /// in native signed 32-bit arithmetic.
 ///
-/// A reached invalid native Image is a failure, distinct from no resource.
+/// An inert `[Tiberiums]` entry (no usable `Image=`) owns no overlay, so its
+/// cells are no resource; the error is an invariant failure, not a data one.
 pub(crate) fn tiberium_value(
     overlay_id: Option<u8>,
     overlay_data: u8,

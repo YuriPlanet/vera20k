@@ -251,16 +251,16 @@ impl ResolvedTerrainGrid {
             let mut grid = Self {
                 width: 0,
                 height: 0,
-                cells: Vec::new(),
+                cells: super::terrain_cells::TerrainCells::default(),
                 level_span: LevelSpan::of([]),
                 land_speed_costs: land_speed_cost_profiles(None),
-                overlay_passability: Vec::new(),
-                native_tmp_draw_heights: LookupMap::default(),
+                overlay_passability: Default::default(),
+                native_tmp_draw_heights: Default::default(),
                 shared_cell_dummy,
                 mutation_epoch: 0,
-                native_allocated: materialized_size_diamond.then(Vec::new),
-                radar_color_valid: Vec::new(),
-                damaged_radar_metadata: Vec::new(),
+                native_allocated: materialized_size_diamond.then(|| Vec::new().into()),
+                radar_color_valid: Default::default(),
+                damaged_radar_metadata: Default::default(),
                 tube_facts: Vec::new(),
                 native_tube_indices: Vec::new(),
                 tube_native_ids: Vec::new(),
@@ -962,15 +962,15 @@ impl ResolvedTerrainGrid {
             width,
             height,
             level_span: LevelSpan::of(cells.iter().map(|cell| cell.level)),
-            cells,
+            cells: super::terrain_cells::TerrainCells::new(cells),
             land_speed_costs: land_speed_cost_profiles(None),
-            overlay_passability: Vec::new(),
-            native_tmp_draw_heights: LookupMap::default(),
+            overlay_passability: Default::default(),
+            native_tmp_draw_heights: Default::default(),
             shared_cell_dummy,
             mutation_epoch: 0,
-            native_allocated,
-            radar_color_valid,
-            damaged_radar_metadata,
+            native_allocated: native_allocated.map(Into::into),
+            radar_color_valid: radar_color_valid.into(),
+            damaged_radar_metadata: damaged_radar_metadata.into(),
             tube_facts,
             native_tube_indices,
             tube_native_ids,
@@ -1480,7 +1480,7 @@ pub(super) fn height_in_pixels_from_tmp(tile_height: u32, relative_extra_y: i32)
 }
 
 /// The last record of the 21-row ground slope tables.
-const MAX_TMP_RAMP_TYPE: u8 = 20;
+pub(super) const MAX_TMP_RAMP_TYPE: u8 = 20;
 
 pub(super) fn merge_tmp_metadata(metadata: &mut TileMetadata, tile: &TmpTile) {
     metadata.subtile_entry_valid = Some(true);

@@ -1113,7 +1113,7 @@ impl MapClock {
         let session = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("clock simulation absent")?
             .simulation
             .session();
@@ -1139,7 +1139,7 @@ fn sound_state(state: &AppState, profile: &MapCaptureProfile) -> Result<Value> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("sound observation simulation absent")?
         .simulation;
     let rng = sim.rng_views();
@@ -1457,7 +1457,7 @@ impl MapInputObservation {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("gesture observation requires a simulation")?
             .simulation;
         let lines = &state.match_state.match_presentation.target_lines;
@@ -1773,7 +1773,7 @@ impl MapCommandBarThumbState {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("thumb observation requires a simulation")?
             .simulation;
         let owner = sim.session().current_house();
@@ -2138,19 +2138,20 @@ fn disguise_inputs(
     let runtime = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("disguise simulation absent")?;
     let sim = &runtime.simulation;
     let draw = if entity.category() == crate::map::entities::EntityCategory::Unit {
-        let local = crate::app::input::commands::preferred_local_owner_name(state);
-        let local_id = local.as_deref().and_then(|name| sim.interner().get(name));
-        let mut observer = instances::observer_draw_context(
-            sim,
-            entity,
-            local.as_deref(),
-            local_id,
-            state.rules(),
-        );
+        // The record the draw reads (`presentation::frame`).
+        let frame = state
+            .match_state
+            .sim_runtime
+            .frame()
+            .context("presentation frame absent")?;
+        let entity = frame
+            .object(entity.stable_id())
+            .context("disguised object has no record")?;
+        let mut observer = entity.seen.observer;
         let chosen = instances::drawn_model_id(
             entity,
             sim.interner(),
@@ -2162,15 +2163,7 @@ fn disguise_inputs(
             instances::drawn_type_uses_voxel(entity, &chosen, sim.interner(), state.rules());
         observer.drawn_voxel = Some(voxel);
         let frame = (!voxel)
-            .then(|| {
-                instances::resolve_object_shp_frame(
-                    state,
-                    &chosen,
-                    entity,
-                    sim.session().binary_frame(),
-                    None,
-                )
-            })
+            .then(|| instances::resolve_object_shp_frame(state, &chosen, entity, None))
             .flatten();
         let terrain_pair = frame.is_some_and(|frame| {
             state
@@ -2217,6 +2210,7 @@ fn prism_observation(entity: &crate::sim::game_entity::GameEntity, frame: i32) -
         return Value::Null;
     }
     let pending = entity
+        .building
         .pending_building_fire
         .pending()
         .map(|pending| match pending.fire() {
@@ -2225,7 +2219,7 @@ fn prism_observation(entity: &crate::sim::game_entity::GameEntity, frame: i32) -
             DelayedFire::SupportBeam { to } => json!({"mode": 2,
             "payload": {"to": [to.x, to.y, to.z]}, "remaining": pending.remaining_ticks()}),
         });
-    json!({"support_count": entity.prism_support_count, "pending": pending,
+    json!({"support_count": entity.building.prism_support_count, "pending": pending,
         "rearm": {"start": entity.rearm_timer.start_frame(),
                   "duration": entity.rearm_timer.duration(),
                   "remaining": entity.rearm_timer.remaining(frame)}})
@@ -2339,7 +2333,7 @@ impl MapLaserObservation {
         let runtime = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("laser observation simulation absent")?;
         let sim = &runtime.simulation;
         let presentation = &state.match_state.match_presentation;
@@ -2452,7 +2446,7 @@ impl MapElectricBoltObservation {
         let runtime = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("electric observation simulation absent")?;
         let sim = &runtime.simulation;
         let rules = &runtime.resources.rules;
@@ -2736,7 +2730,7 @@ fn terrain_render_observation(state: &AppState, rx: u16, ry: u16) -> Value {
     let grid = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .and_then(|runtime| runtime.view().resolved_terrain());
     let cell = grid.and_then(|grid| grid.cell(rx, ry));
     let tactical_variant = grid.and_then(|grid| grid.tactical_draw_variant(rx, ry));
@@ -3271,7 +3265,7 @@ impl TacticalCaptureSession {
             let sim = &state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("simulation absent")?
                 .simulation;
             ensure!(
@@ -3514,7 +3508,7 @@ impl TacticalCaptureSession {
             let issued_tick = state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("command simulation absent")?
                 .simulation
                 .session()
@@ -3528,7 +3522,7 @@ impl TacticalCaptureSession {
             let sim = &state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("command simulation absent")?
                 .simulation;
             let rules = state.rules().context("command rules absent")?;
@@ -3604,7 +3598,7 @@ impl TacticalCaptureSession {
             let sim = &state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("gesture simulation absent")?
                 .simulation;
             let issued_simulation_tick = sim.session().tick();
@@ -3910,7 +3904,7 @@ impl TacticalCaptureSession {
             let sim = &state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("gesture simulation disappeared")?
                 .simulation;
             ensure!(
@@ -3995,7 +3989,7 @@ impl TacticalCaptureSession {
         let runtime = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("observation simulation absent")?;
         let sim = &runtime.simulation;
         let grid = runtime.view().resolved_terrain();
@@ -4153,7 +4147,7 @@ impl TacticalCaptureSession {
                     "construction_control": entity.building_construction_control(),
                     "stage": entity.native_stage(), "ready_latch": entity.building_ready_latch(),
                     "actually_placed": entity.building_art.actually_placed(),
-                    "last_operational": entity.building_last_operational,
+                    "last_operational": entity.building.building_last_operational,
                     "animation_slots": slots,
                     "voxel_gun": {
                         "facing": entity.body_facing_current(sim.session().binary_frame()),
@@ -4491,7 +4485,7 @@ impl TacticalCaptureSession {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("map simulation absent")?
             .simulation;
         let step = self.exact_step_receipts.len() as u64;
@@ -4609,7 +4603,7 @@ impl TacticalCaptureSession {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("simulation absent")?
             .simulation;
         Ok(json!(FinalFingerprint {
@@ -4796,7 +4790,7 @@ fn unit_atlas_statistics(
     atlas.map_or_else(|| Ok(Default::default()), |atlas| atlas.statistics())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 
@@ -5277,7 +5271,7 @@ mod tests {
         let hash = sim.state_hash();
         let rng = sim.rng_state();
         let actor = sim.entities().get(sub).unwrap();
-        let cloak = actor.cloak.as_ref().unwrap();
+        let cloak = actor.cloak.as_deref().unwrap();
         let retained = *cloak;
         assert!(actor.in_playfield());
         assert_eq!(
@@ -5415,7 +5409,7 @@ mod tests {
         manager.set_rates_for_test(600, 150);
         manager.set_update_timer_for_test(CdTimer::from_raw(i32::MIN, 10));
         manager.set_target(Some(TargetKind::Entity(42)));
-        entity.spawn_manager = Some(manager.clone());
+        entity.spawn_manager = Some(Box::new(manager.clone()));
         let hash = sim.state_hash();
         let rng = sim.rng_state();
         let snapshot = spawn_observation(&sim, &entity, &rules).unwrap();
@@ -5448,7 +5442,7 @@ mod tests {
             assert_eq!(snapshot["slots"][index]["is_missile"], index == 3);
         }
         assert_eq!(spawn_sample_count(&snapshot), 8);
-        assert_eq!(entity.spawn_manager.as_ref(), Some(&manager));
+        assert_eq!(entity.spawn_manager.as_deref(), Some(&manager));
         assert_eq!(sim.state_hash(), hash);
         assert_eq!(sim.rng_state(), rng);
     }

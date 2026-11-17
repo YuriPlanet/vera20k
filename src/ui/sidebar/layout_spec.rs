@@ -132,11 +132,10 @@ pub struct SidebarChromeLayoutSpec {
     pub radar_housing_x: f32,
     pub radar_housing_y: f32,
     /// Radar aperture, from the housing's top-left corner, and its size.
-    /// Radar One_Time `0x00652CF0`: the aperture is the radar source frame
-    /// (stock 140x108). `Init_For_House` moves the two top buttons by
-    /// `(3, 1)` between its GDI and NOD arms and nothing else, so the
-    /// verified GDI aperture keeps its position and the NOD table adds that
-    /// delta.
+    /// `RadarClass::One_Time @ 0x00652CF0` sets MapAreaY 49 (housing at
+    /// RadarShapeY 48) and the 140x108 area; `Init_For_House @ 0x00652E90`
+    /// writes MapAreaX 16 in both its GDI and NOD arms (`0x00652ECF`,
+    /// `0x00652F13`), which differ only in the two top buttons.
     pub radar_x: f32,
     pub radar_y: f32,
     pub radar_width: f32,
@@ -167,6 +166,13 @@ pub struct SidebarChromeLayoutSpec {
     pub cameo_columns: f32,
     /// From one cameo column to the next (`0x006A5090`: 0x3F or 0x40).
     pub cameo_column_pitch: f32,
+    /// One cell of SIDE2's own art, in its pixels: the button frame plus the
+    /// gap that follows it (0x3F, or 0x40 on the Soviet table). SIDE2 paints
+    /// two of these side by side, so a strip of more columns repeats this one
+    /// cut-out per cell instead of stretching the painted pair. It never
+    /// changes once the table is built: it is a source rectangle, not a
+    /// layout span.
+    pub cameo_cell_source_width: f32,
     pub cameo_width: f32,
     pub cameo_height: f32,
     /// From one cameo row to the next, and the height that decides how many
@@ -231,8 +237,8 @@ impl SidebarChromeLayoutSpec {
             },
             radar_housing_x: 0.0,
             radar_housing_y: 48.0,
-            radar_x: if allied { 16.0 } else { 19.0 },
-            radar_y: if allied { 1.0 } else { 2.0 },
+            radar_x: 16.0,
+            radar_y: 1.0,
             radar_width: 140.0,
             radar_height: 108.0,
             side1_x: 0.0,
@@ -250,6 +256,7 @@ impl SidebarChromeLayoutSpec {
             cameo_inset_y: 1.0,
             cameo_columns: 2.0,
             cameo_column_pitch: if allied { 63.0 } else { 64.0 },
+            cameo_cell_source_width: if allied { 63.0 } else { 64.0 },
             cameo_width: 60.0,
             cameo_height: 48.0,
             cameo_row_height: 50.0,
@@ -265,6 +272,14 @@ impl SidebarChromeLayoutSpec {
 }
 
 impl SidebarChromeLayoutSpec {
+    /// Where a radar movie's top-left corner sits in the radar housing:
+    /// the enqueue `0x005BF390` places the clip at (MapAreaX - 3,
+    /// MapAreaY - 1) on the sidebar (`0x005BF3D0..0x005BF3E5`), the housing's
+    /// own corner being (ShapeX, RadarShapeY).
+    pub fn radar_movie_origin(&self) -> [f32; 2] {
+        [self.radar_x - 3.0, self.radar_y - 1.0]
+    }
+
     /// Layout-space x of the sidebar's left edge on a layout screen
     /// `screen_w` wide: flush with the edge the layout puts it on.
     pub fn sidebar_x(&self, screen_w: f32) -> f32 {
@@ -289,6 +304,32 @@ impl SidebarChromeLayoutSpec {
         (self.cameo_columns as usize).max(1)
     }
 
+    /// VERA's own: the player's cameo columns, kept inside the sidebar's own
+    /// width. The two original columns keep the span they take (2 *
+    /// `cameo_column_pitch`, 126 in the allied table); each further column
+    /// takes an equal share of it, and the cameo and its row shrink by the
+    /// same factor, so a strip of 3 to 5 columns neither overlaps nor draws
+    /// past the column. 2 leaves the original's numbers alone.
+    ///
+    /// Call it once, on the numbers the side's layout starts from: a second
+    /// call would measure the span from the already shrunk pitch.
+    pub fn apply_player_columns(&mut self, columns: usize) {
+        let columns = columns.clamp(2, 5);
+        if columns == 2 {
+            return;
+        }
+        let span = 2.0 * self.cameo_column_pitch;
+        let gap = (self.cameo_column_pitch - self.cameo_width).max(0.0);
+        let pitch = span / columns as f32;
+        let width = (pitch - gap).max(1.0);
+        let scale = width / self.cameo_width.max(1.0);
+        self.cameo_columns = columns as f32;
+        self.cameo_column_pitch = pitch;
+        self.cameo_width = width;
+        self.cameo_height = (self.cameo_height * scale).max(1.0);
+        self.cameo_row_height = (self.cameo_row_height * scale).max(1.0);
+    }
+
     /// Whether the layout has this part.
     pub fn shows(&self, part: SidebarPart) -> bool {
         self.parts.contains(&Some(part))
@@ -306,7 +347,7 @@ impl Default for SidebarChromeLayoutSpec {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 
@@ -333,6 +374,43 @@ mod tests {
         assert_eq!(allied_nod.tab_pitch, 32.0);
         assert_eq!(allied_nod.cameo_column_pitch, 64.0);
         assert_eq!(allied_nod.power_bar_x, 0.0);
-        assert_eq!((allied_nod.radar_x, allied_nod.radar_y), (19.0, 2.0));
+        // Both arms of Init_For_House write MapAreaX 16 (`0x00652F13`).
+        assert_eq!((allied_nod.radar_x, allied_nod.radar_y), (16.0, 1.0));
+        // The 140-wide clip starts 13 px into the 168-wide housing, not
+        // centred at 14.
+        assert_eq!(allied_nod.radar_movie_origin(), [13.0, 0.0]);
+    }
+
+    #[test]
+    fn player_columns_share_the_original_span_without_overlapping() {
+        let stock = SidebarChromeLayoutSpec::stock();
+        let span = 2.0 * stock.cameo_column_pitch;
+        for columns in 3..=5 {
+            let mut spec = stock;
+            spec.apply_player_columns(columns);
+            assert_eq!(spec.columns(), columns);
+            // The sidebar's own width never changes: only the cells inside it.
+            assert_eq!(spec.sidebar_width, stock.sidebar_width);
+            // The strip still ends where the original's two columns ended.
+            let right = spec.cameo_inset_x + columns as f32 * spec.cameo_column_pitch;
+            assert!((right - (stock.cameo_inset_x + span)).abs() < 0.01);
+            // A cameo fits its pitch, so neighbours never overlap.
+            assert!(spec.cameo_width < spec.cameo_column_pitch);
+            assert!(spec.cameo_height < spec.cameo_row_height);
+            // SIDE2 paints one cell per column from this source cut, and that
+            // cut is the art's own, so it must not follow the pitch.
+            assert_eq!(spec.cameo_cell_source_width, stock.cameo_cell_source_width);
+            // The picture keeps its shape.
+            let ratio = spec.cameo_height / spec.cameo_width;
+            assert!((ratio - 48.0 / 60.0).abs() < 0.001);
+        }
+    }
+
+    #[test]
+    fn two_columns_leave_the_original_numbers_alone() {
+        let stock = SidebarChromeLayoutSpec::stock();
+        let mut spec = stock;
+        spec.apply_player_columns(2);
+        assert_eq!(spec, stock);
     }
 }

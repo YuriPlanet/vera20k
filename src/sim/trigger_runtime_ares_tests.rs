@@ -40,6 +40,7 @@ fn locals(sim: &Simulation, count: u32) -> Vec<bool> {
 /// 0x7032B0), compared by House index.
 #[test]
 fn damage_and_kill_events_compare_the_attacking_house() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, overlays, houses) = event_ingress_fixture_with_rules("");
     let victim = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (15, 15));
     let attacker = spawn_event_ingress_unit(&mut sim, &rules, houses[1], (17, 15));
@@ -77,6 +78,7 @@ fn damage_and_kill_events_compare_the_attacking_house() {
 /// array. 81/82 ask the Trigger's House, 86 and the replaced 60/61 everyone.
 #[test]
 fn owned_type_events_count_the_houses_objects() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, _overlays, houses) = event_ingress_fixture_with_rules(
         "[BuildingTypes]\n1=TAGPOST\n[TAGPOST]\nStrength=100\nInsignificant=yes\n",
     );
@@ -129,6 +131,7 @@ fn owned_type_events_count_the_houses_objects() {
 /// stock body answers true.
 #[test]
 fn house_value_events_resolve_player_slots_and_keep_alive_counts() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, _overlays, houses) = event_ingress_fixture_with_rules(
         "[BuildingTypes]\n1=TAGHQ\n[TAGHQ]\nStrength=1000\n\
          [InfantryTypes]\n2=KEEPER\n[KEEPER]\nStrength=100\nSpeed=4\nSpeedType=Foot\n\
@@ -187,6 +190,7 @@ fn house_value_events_resolve_player_slots_and_keep_alive_counts() {
 /// (Deactivate 100325D0).
 #[test]
 fn superweapon_launch_and_deactivation_spring_the_owner_house_tags() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, overlays, houses) = event_ingress_fixture_with_rules(
         "[SuperWeaponTypes]\n0=Cell\n1=Other\n\
          [Cell]\nType=Battery\nRechargeTime=1\nIsPowered=no\nSW.AlwaysGranted=yes\n\
@@ -253,6 +257,7 @@ fn superweapon_launch_and_deactivation_spring_the_owner_house_tags() {
 /// (conductAbduction 10054A80).
 #[test]
 fn an_abduction_raises_its_events_on_both_objects() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     // The ingress fixture's Houses, with an abductor among its VehicleTypes.
     let mut text = String::from("[Countries]\n");
     for index in 0..8 {
@@ -332,6 +337,7 @@ fn an_abduction_raises_its_events_on_both_objects() {
 /// them to the House Value names).
 #[test]
 fn ares_actions_write_power_group_voice_and_drivers() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, overlays, houses) = event_ingress_fixture_with_rules("");
     let actor = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (15, 15));
     let other = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (17, 15));
@@ -373,6 +379,7 @@ fn ares_actions_write_power_group_voice_and_drivers() {
 /// when some waypoint is defined.
 #[test]
 fn random_waypoint_sound_without_waypoints_draws_nothing() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, _overlays, _houses) = event_ingress_fixture_with_rules("");
     sim.session
         .install_waypoints(&std::collections::HashMap::new());

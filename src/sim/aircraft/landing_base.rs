@@ -100,7 +100,7 @@ pub(crate) fn landing_direction(
     pose_dir
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

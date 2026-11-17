@@ -108,9 +108,11 @@ fn since(at: Option<u64>, now_ms: u64) -> u64 {
 }
 
 impl ClientSession {
-    /// Whether this session may send UPLINKs: ready, started, not left.
+    /// Whether this session may send UPLINKs: ready, started, not left, and
+    /// a player's: a watcher only pulls (README "Watchers").
     fn uplink_open(&self) -> bool {
         self.ready
+            && !self.is_watching()
             && self
                 .ordering
                 .as_ref()
@@ -522,7 +524,11 @@ impl ClientSession {
     /// `seal_ordering_batch`'s body.
     pub(crate) fn seal_next_batch(&mut self, plaintext: &[u8]) -> Result<u64, RelayError> {
         let ordering = self.ordering.as_ref().ok_or(RelayError::Unregistered)?;
-        if !ordering.link.schedule.started || ordering.restoring || ordering.leave.is_some() {
+        if !ordering.link.schedule.started
+            || ordering.restoring
+            || ordering.leave.is_some()
+            || self.is_watching()
+        {
             return Err(RelayError::Unregistered);
         }
         let id = ordering.next_batch;

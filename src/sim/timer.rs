@@ -114,7 +114,6 @@ impl CdTimer {
 /// (the larger of it and `current`), with cap 0 stacks freely, else stacks up
 /// to the cap without lowering `current`; a non-positive one adds, capped
 /// when the cap is not negative. The signed 32-bit addition wraps.
-#[cfg(feature = "ares")]
 pub(crate) fn ares_capped_duration(current: i32, duration: i32, cap: i32) -> i32 {
     let proposed = current.wrapping_add(duration);
     if duration > 0 {
@@ -132,7 +131,7 @@ pub(crate) fn ares_capped_duration(current: i32, duration: i32, cap: i32) -> i32
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests {
     use super::*;
 

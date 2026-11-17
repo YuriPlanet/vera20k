@@ -53,6 +53,46 @@ pub struct SavedRadarEvent {
     pub phase_started_frame: Option<u64>,
 }
 
+/// The radar housing and its movie mode as a load reads them back:
+/// `RadarClass::Load @ 0x006568A0` reads Mode, State, PendingMode and
+/// MovieStage, and `MouseClass::Load @ 0x005BDF70` reads the Display body,
+/// AnimFrame, its timer words and TacticalMapAvailable included, at
+/// `0x005BE092`. The render owner validates and hydrates this record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedRadarHousing {
+    pub phase: SavedRadarPhase,
+    pub frame: u8,
+    /// The housing timer's raw words: the start bucket and its duration.
+    pub timer: [i32; 2],
+    pub movie: Option<SavedRadarMovie>,
+    /// TacticalMapAvailable, which Mode 3 and 4 also hold as PendingMode.
+    pub available: bool,
+}
+
+/// Native housing State 0..5.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SavedRadarPhase {
+    Offline,
+    Opening,
+    Online,
+    Closing,
+    MovieOpening,
+    MovieRestoring,
+}
+
+/// Mode 4's MovieStage 1 and 2, then Mode 3. Stage 0 never lasts past the
+/// pass that admits the clip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SavedRadarMovie {
+    WaitAnnouncement,
+    WaitStreams,
+    Playback,
+}
+
+/// RESIDUAL: `MouseClass::Load @ 0x005BDF70` reads the whole 0x556C-byte Display
+/// body at `0x005BE092`, ScrollClass's and MouseClass's own fields with it; VERA keeps
+/// none of those, and the one difference a player could meet is that an edge-scroll
+/// glide under way at the save does not carry on after the load.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SavedLocalView {
     /// Raw signed CellStruct words preserved in the app's u16 bit-pattern form.
@@ -67,6 +107,8 @@ pub struct SavedLocalView {
     /// input owner supplies its own facts. App loads require this payload.
     power_bar: Option<SavedPowerBar>,
     radar_events: Option<SavedRadarEvents>,
+    /// Absent when no radar housing was built.
+    radar_housing: Option<SavedRadarHousing>,
     /// MouseClass::Save5BE6D0 (5BE715) / Load5BDF70 (5BE092) retain
     /// CreditsClass+4 (Mouse+5520).
     /// None preserves the client's not-yet-observed counter, rather than
@@ -81,6 +123,11 @@ pub struct SavedLocalView {
 /// body at 5BE083 and swizzles the placement product and type at
 /// 5BE101/5BE112, so Repair +11B0, Sell +11B1, the selected Super +11B8 and
 /// the placement +11A4/+11A8/+11AC all survive a load.
+///
+/// RESIDUAL (kept by the maintainer): beacon mode (+11B4, owned by
+/// `app::input::beacon`) is in the same body and survives a native load too;
+/// VERA saves no beacon field, so a save made while placing a beacon loads with
+/// the mode off. Saving it would change this layout and refuse older saves.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SavedCursorModes {
     pub repair: bool,
@@ -95,6 +142,11 @@ pub struct SavedCursorModes {
     /// ToggleSidebar 6D04F0 keep it, so a load shows the bar as saved.
     #[serde(default)]
     pub command_bar_closed: bool,
+    /// UpdateFoundationCenter's latch in the same Display body: the
+    /// foundation's top-left Cell (+0x1174) and whether the whole foundation
+    /// was visible there (+0x1181). `None` is the constructor's null Cell.
+    #[serde(default)]
+    pub foundation: Option<((u16, u16), bool)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -144,6 +196,7 @@ impl SavedLocalView {
             modes,
             power_bar: None,
             radar_events: None,
+            radar_housing: None,
             credits_counter: None,
             lighting: None,
         };
@@ -198,6 +251,14 @@ impl SavedLocalView {
 
     pub fn take_radar_events(&mut self) -> Option<SavedRadarEvents> {
         self.radar_events.take()
+    }
+
+    pub fn set_radar_housing(&mut self, housing: Option<SavedRadarHousing>) {
+        self.radar_housing = housing;
+    }
+
+    pub fn take_radar_housing(&mut self) -> Option<SavedRadarHousing> {
+        self.radar_housing.take()
     }
 
     pub fn set_credits_counter(&mut self, displayed: Option<i32>) {

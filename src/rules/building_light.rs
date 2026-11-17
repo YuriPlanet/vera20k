@@ -71,7 +71,7 @@ fn read_units(section: &IniSection, key: &str, current: i32) -> i32 {
     )))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

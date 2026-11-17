@@ -259,7 +259,7 @@ impl App {
             && state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .is_some_and(|runtime| runtime.simulation.session().game_mode_nonzero())
         {
             return;

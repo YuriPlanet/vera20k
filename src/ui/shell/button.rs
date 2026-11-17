@@ -72,7 +72,7 @@ pub fn owner_button_frame(pressed: bool, highlighted: bool) -> usize {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 
