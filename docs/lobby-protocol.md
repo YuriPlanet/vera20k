@@ -16,11 +16,7 @@ persistent state is created.
 text the game prints in the chat lobby, one line per `\n`. Without it the game prints no welcome.
 `features` lists what the lobby offers beyond protocol 4, and a game offers only what it
 lists: `visit_lobby` ([Visiting the lobby](#visiting-the-lobby)).
-A client names its player's language in `Vera-Language: <tag>`, a BCP 47 tag of two or
-three letters and at most three subtags such as `zh-CN`; the operator's welcome, notice
-and maintenance message then come in that language when the operator wrote it: the
-translation for that tag, else for its language alone (`zh`), else for another region of
-that language, else the operator's `text`. A missing or malformed tag gets `text`.
+A game says what it is and what it can do in [sign-in headers](#sign-in-headers).
 Each entry receives a fresh random player
 UUID and bearer token. `expires_at` is a Unix timestamp in seconds by the lobby's clock,
 which alone decides expiry; games before 0.3.6 need the field and refuse a session their
@@ -71,9 +67,8 @@ refused request records nothing. Responses and
 `GET /v1/events?after=<cursor>` return `{events:[{sequence,kind,payload}],cursor}`.
 Sequences increase within a session. An event appears once logically even when
 responses are repeated. `GET /v1/channels?kind=0|41` returns `{kind,channels}`. The
-`kind=41` list leaves out game rooms whose host's `User-Agent` named another version than
-the caller's, since those could never start together (two sessions that do not both name a
-version see each other's rooms).
+`kind=41` list leaves out game rooms whose host's game is on another version than the
+caller's ([sign-in headers](#sign-in-headers)).
 Clients poll at most once per second. Responses contain at most 256 events and
 256 KiB of UTF-8 JSON.
 `GET /v1/events/stream?after=<cursor>` with a WebSocket upgrade and the bearer (protocol 4
@@ -635,8 +630,8 @@ per-address limits on the named address. Without a `GATEWAY_KEY` of at least 32
 characters, or with another key, the named address is ignored and the request's own
 address counts. A gateway refuses to start with a key shorter than 32 characters.
 
-Released clients sign in with `User-Agent: VERA20k/<MAJOR.MINOR.PATCH> multiplayer-client`.
-A client that names a version older than 0.2.7 is refused at sign-in with 426
+A client that names a version ([sign-in headers](#sign-in-headers)) older than 0.2.7 is
+refused at sign-in with 426
 `upgrade_required`, since clients before it cannot play through the relays'
 adaptive transport (UPLINK, `services/relay/README.md`); one that names no
 version is not. Relay compatibility plays every release from this floor, which
@@ -650,10 +645,10 @@ otherwise on the next public-channel join. Its phrase key `NewRelease` makes a g
 check for updates again, as a 426 does.
 A session that still joins a game room from another version, through a buddy's game or
 its name, makes every member hear a `chat` line from the notice sender naming both
-versions.
-The same line, with both full `version` agreement strings, goes to the room once when
-a member's `ready` or `map_status` names another build of the host's version, since
-such a room cannot start.
+versions, or both builds when the versions are the same.
+Where the join could not tell, since one of the games names no build, the same line
+with both agreement `version` strings goes to the room once when a member's `ready` or
+`map_status` names another one than the host's, since such a room cannot start.
 A member on the host's build whose `rules_digest` differs from the host's makes the room
 hear one line naming them (`LobbyRulesMismatch`, which has only `name`). Rules are judged
 once every member has sent `ready` or `map_status` and everyone on the host's build has
@@ -671,6 +666,33 @@ notice sender after its `joined`. The line says how many players are online: in 
 public channel, in game rooms, playing, for sessions that play Quick Match searching on
 their version, and elsewhere. It also counts the game rooms the list leaves out for another
 version and, when the list holds none for the session, says how to start a game.
+
+## Sign-in headers
+
+A game says what it is and what it can do in headers on `POST /v1/sessions`, each
+optional: the lobby ignores a missing or malformed one, and an older lobby one it does
+not know.
+
+- `Vera-Version: <MAJOR.MINOR.PATCH>`: its version. Released games name it in
+  `User-Agent: VERA20k/<version> multiplayer-client`, which the lobby reads when this
+  header is absent; a browser cannot set its User-Agent.
+- `Vera-Build: <build>`: the agreement `version` its `ready` and `map_status` carry,
+  1–128 characters of `0-9A-Za-z.:_+-`, which two builds of one version (two nightlies,
+  or a nightly and the release) do not share.
+- `Vera-Language: <tag>`: its player's language, a BCP 47 tag of two or three letters
+  and at most three subtags such as `zh-CN`. The operator's welcome, notice and
+  maintenance message come in that language when the operator wrote it: the translation
+  for that tag, else for its language alone (`zh`), else for another region of that
+  language, else the operator's `text`, which a missing or malformed tag gets.
+- `Vera-Quick-Match: 1` ([Quick Match](#quick-match)), `Vera-Host-Handover: 1` (host
+  handover), `Vera-Watch-AI: 1` ([Watching](#watching)) and `Vera-Relay-Federation: 1`
+  (a RelayGrant's `federation`): what it can do. A browser game sends every header but
+  this last one, since its gateway reaches one fixed relay.
+
+Two games compare their builds when both name one, else their versions. They are on
+another version when both name what they compare and it differs: they could never start
+a match together, so neither sees the other's game room or match to watch. Quick Match
+pairs only games whose compared values are equal, where two that name nothing are equal.
 
 ## Visiting the lobby
 
@@ -755,7 +777,7 @@ ticket, so the lobby lists only matches on relays it knows let watchers in.
 ## Quick Match
 
 1v1, ranked while a season runs ([Ranked games](#ranked-games)); Quick Co-op (`Lob_39_`) has no lobby. Games that play it send
-`Vera-Quick-Match: 1` on `POST /v1/sessions`, beside `Vera-Relay-Federation: 1`. Only
+`Vera-Quick-Match: 1` on `POST /v1/sessions` ([sign-in headers](#sign-in-headers)). Only
 those sessions see `GET /v1/channels?kind=0` list, after `Lob_41_2`, the chat channel
 `{id:"quick-match",kind:0,name:"Lob_40_0",max_users:<lobby cap>,users,tournament:0,flags:0,game_flags:0,ping:-1,ex_info:""}`
 or may `join` it (any key); to others it is an unknown channel. Its members are its
@@ -771,7 +793,7 @@ request, which keeps the player's place; a public `Pool <n>` whenever the number
 changes; and on a pairing a private `Start <seed>:<host>,0,0,0,0,0,0,0,<guest>,0,0,0,0,0,0,0`
 to both players with `quick_match:{seed,host:{name,country,color},guest:{name,country,color}}`,
 a fresh random u32 seed and each player's COU and COL as sent. Pairing joins two players
-whose `User-Agent` names the same version (two unknown versions may pair): a searcher pairs
+on the same version ([sign-in headers](#sign-in-headers)): a searcher pairs
 with the waiting player who makes the most even game, weighing each by their OS
 ([Ranked games](#ranked-games)), one a season would rank them with before one it would not,
 as long as the favorite's chance to win is at most 60%, a limit that widens with the longer
