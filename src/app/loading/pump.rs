@@ -1108,10 +1108,15 @@ impl LoadingJob {
 fn ordinary_country_loading_index(
     startup: &LoadingStartup,
 ) -> Option<crate::rules::ruleset::CountryIdx> {
-    if matches!(
-        startup,
-        LoadingStartup::Network(_) | LoadingStartup::Campaign(_) | LoadingStartup::Generic { .. }
-    ) || crate::map::rmg::is_seed_selection(startup.selected_map_file())
+    // A replay of a network game has the same cold Rules boundary as a live
+    // match. An ordinary Country prefix would transfer the old world's writes
+    // into that rebuilt registry after the initial map load.
+    if startup.session_mode().is_network()
+        || matches!(
+            startup,
+            LoadingStartup::Campaign(_) | LoadingStartup::Generic { .. }
+        )
+        || crate::map::rmg::is_seed_selection(startup.selected_map_file())
     {
         return None;
     }
