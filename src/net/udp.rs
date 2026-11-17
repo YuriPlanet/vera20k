@@ -734,6 +734,16 @@ impl LanUdpTransport {
             .map_err(relay_io_error)
     }
 
+    /// See `ClientSession::ordering_accepted_through`.
+    pub(super) fn ordering_accepted_through(&self) -> Option<u64> {
+        self.lock()
+            .relay
+            .as_ref()
+            .filter(|route| route.retiring.is_none())?
+            .session
+            .ordering_accepted_through()
+    }
+
     /// See `ClientSession::queue_ordering_checksums`.
     pub fn queue_ordering_checksums(&mut self, samples: &[(u32, u32)]) -> io::Result<()> {
         let mut io = self.lock();

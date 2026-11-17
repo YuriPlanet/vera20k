@@ -456,8 +456,8 @@ pub(super) struct ClientOrdering {
     certificate: Vec<u8>,
     agreement: [u8; 32],
     // The four most recently sealed batches retain their exact bytes.
-    // Accepted entries stay cached until a new batch needs the slot, so a
-    // delayed app-side acceptance receipt can still retry immutable bytes.
+    // Accepted entries stay cached until a new batch needs the slot, so this
+    // source's batches in the stream are checked against what it sealed.
     pub(super) sealed: VecDeque<SealedBatch>,
     pub(super) next_batch: u64,
     pub(super) accepted_through: u64,
@@ -677,6 +677,16 @@ impl ClientSession {
 
     pub fn ordering_is_configured(&self) -> bool {
         self.ordering.is_some()
+    }
+
+    /// The last of this source's batches the relay has accepted, from its
+    /// ACK, BatchGap and this source's own BATCH records (spec §6.1, §6.4);
+    /// while restoring, the replaced process's. `None` before ordering is
+    /// configured.
+    pub fn ordering_accepted_through(&self) -> Option<u64> {
+        self.ordering
+            .as_ref()
+            .map(|ordering| ordering.accepted_through)
     }
 
     pub(super) fn accepts_ordering_leave_ack(&self, sequence: u64) -> bool {

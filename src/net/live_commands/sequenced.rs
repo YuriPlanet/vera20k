@@ -115,7 +115,8 @@ impl Failure {
 #[derive(Debug, Clone, Copy)]
 pub struct CommandDeliveryTrace {
     pub batch_id: u64,
-    pub sent_at: Option<Instant>,
+    /// When the relay session sealed it, to go out with its next UPLINK.
+    pub sent_at: Instant,
     pub assigned: Option<(u32, Instant)>,
     pub frame_received_at: Option<Instant>,
 }
@@ -291,16 +292,6 @@ struct ReceivedEntry {
     received_at: Instant,
 }
 
-fn trace_mut(
-    traces: &mut VecDeque<CommandDeliveryTrace>,
-    batch_id: u64,
-) -> Option<&mut CommandDeliveryTrace> {
-    traces
-        .iter_mut()
-        .rev()
-        .find(|trace| trace.batch_id == batch_id)
-}
-
 /// How long a running match's ordered stream may stand still before the
 /// client shows Reconnecting (and Quit leaves without the stream).
 const STALL_MS: u32 = 5_000;
@@ -398,13 +389,21 @@ impl SequencedError {
     }
 }
 
+/// A local batch whose records stay in OutList until the relay accepts it.
 #[derive(Debug)]
 struct Submission {
-    id: u64,
     records: Vec<CommandRecord>,
-    bytes: Vec<u8>,
-    // Handed to the relay session, which schedules its UPLINKs (spec §6).
-    sealed: bool,
+    batch: SubmissionBatch,
+}
+
+/// The relay session numbers a sealed batch, keeps its bytes, schedules its
+/// UPLINKs and decides when the relay accepted it (spec §6.1-§6.4).
+#[derive(Debug)]
+enum SubmissionBatch {
+    /// Encoded; the route could not take it yet.
+    Unsealed(Vec<u8>),
+    /// The ID the relay session sealed it as.
+    Sealed(u64),
 }
 
 /// The relay's DESYNC record: the sampled frame and the outlier's and the
@@ -496,12 +495,10 @@ pub(super) struct SequencedSession {
     // Sources whose batch could not be read; each departed at that batch's
     // frame and the rest of its stream is ignored.
     refused: u32,
-    next_batch: u64,
     // This process replaces one that left a match under way. Its batch counter
     // lies in the history it is reading, so it submits nothing until caught up.
     restoring: bool,
     last_restore_log: Option<u32>,
-    accepted_batch: u64,
     submissions: VecDeque<Submission>,
     sample_sent: Option<u32>,
     // Derived checksum samples from immutable post-Logic contexts, evicted in
@@ -627,10 +624,8 @@ impl SequencedSession {
             frames: VecDeque::new(),
             last_batch: [0; 30],
             refused: 0,
-            next_batch: 1,
             restoring: false,
             last_restore_log: None,
-            accepted_batch: 0,
             submissions: VecDeque::new(),
             sample_sent: None,
             samples: VecDeque::new(),
@@ -696,22 +691,19 @@ impl SequencedSession {
 
     /// Ends a restore once the world at `frame` has reached the shared one.
     /// A status can only postdate the last batch the departed process sent,
-    /// so history read past that status holds this source's final batch ID.
-    fn settle_restore(&mut self, frame: u32) -> Result<(), SequencedError> {
+    /// so history read past that status holds this source's final batch ID,
+    /// which the restoring relay session took as its counter.
+    fn settle_restore(&mut self, frame: u32) {
         if self.statuses > 0
             && self.next_sequence >= self.remote_next_sequence
             && self.head_frame.saturating_sub(frame) <= u32::from(self.pace_fps) / 2
         {
-            let last = self.last_batch[usize::from(self.local_source)];
-            self.next_batch = last.checked_add(1).ok_or(SequencedError::InvalidTimeline)?;
-            self.accepted_batch = last;
             self.restoring = false;
             log::info!(
-                "Rejoined the match at frame {frame}; next batch {}",
-                self.next_batch
+                "Rejoined the match at frame {frame} after batch {}",
+                self.last_batch[usize::from(self.local_source)]
             );
         }
-        Ok(())
     }
 
     /// Remote Houses whose connection the relay ended in dispatched frames.
@@ -806,7 +798,12 @@ impl SequencedSession {
     }
 
     fn trace_assignment(&mut self, batch_id: u64, frame: u32, received_at: Instant) {
-        if let Some(trace) = trace_mut(&mut self.command_traces, batch_id) {
+        if let Some(trace) = self
+            .command_traces
+            .iter_mut()
+            .rev()
+            .find(|trace| trace.batch_id == batch_id)
+        {
             trace.assigned.get_or_insert((frame, received_at));
         }
     }
@@ -931,10 +928,7 @@ impl SequencedSession {
         }
         self.service_pause(transport, now);
         self.service_pace(transport, now);
-        if let Err(error) = self.seal_submissions(transport) {
-            self.fail(error);
-            return;
-        }
+        self.seal_submissions(transport);
         // The relay session decides every UPLINK (spec §6.3); this layer only
         // hands over its stream position.
         let gap = self.ordering_gap();
@@ -1012,24 +1006,25 @@ impl SequencedSession {
     /// Seals each local batch with the relay session in order; it retries
     /// them until acknowledged (spec §6.1-§6.3). An unready route seals on a
     /// later service.
-    fn seal_submissions(&mut self, transport: &mut LanUdpTransport) -> Result<(), SequencedError> {
-        for pending in self
-            .submissions
-            .iter_mut()
-            .filter(|pending| !pending.sealed)
-        {
-            let Ok(id) = transport.seal_ordering_batch(&pending.bytes) else {
+    fn seal_submissions(&mut self, transport: &mut LanUdpTransport) {
+        for pending in &mut self.submissions {
+            let SubmissionBatch::Unsealed(bytes) = &pending.batch else {
+                continue;
+            };
+            let Ok(id) = transport.seal_ordering_batch(bytes) else {
                 break;
             };
-            if id != pending.id {
-                return Err(SequencedError::InvalidTimeline);
+            pending.batch = SubmissionBatch::Sealed(id);
+            if self.command_traces.len() == COMMAND_TRACE_HISTORY {
+                self.command_traces.pop_front();
             }
-            pending.sealed = true;
-            if let Some(trace) = trace_mut(&mut self.command_traces, pending.id) {
-                trace.sent_at.get_or_insert_with(Instant::now);
-            }
+            self.command_traces.push_back(CommandDeliveryTrace {
+                batch_id: id,
+                sent_at: Instant::now(),
+                assigned: None,
+                frame_received_at: None,
+            });
         }
-        Ok(())
     }
 
     /// The gap the uplink scheduler acts on (spec §6.3 row 2), while the
@@ -1149,14 +1144,6 @@ impl SequencedSession {
                     .is_some_and(|(seq, _)| *seq > self.next_sequence))
     }
 
-    fn accept_through(&mut self, id: u64) -> Result<(), SequencedError> {
-        if id >= self.next_batch {
-            return Err(SequencedError::InvalidTimeline);
-        }
-        self.accepted_batch = self.accepted_batch.max(id);
-        Ok(())
-    }
-
     fn receive(&mut self, event: OrderEvent, received_at: Instant) -> Result<(), SequencedError> {
         match event {
             OrderEvent::Left => return Err(SequencedError::InvalidTimeline),
@@ -1221,15 +1208,10 @@ impl SequencedSession {
                 }
                 self.finish_pause_request();
             }
+            // The relay session took its acceptance (spec §6.4).
             OrderEvent::Ack {
                 batch_id, frame, ..
-            } => {
-                if batch_id == 0 {
-                    return Err(SequencedError::InvalidTimeline);
-                }
-                self.accept_through(batch_id)?;
-                self.trace_assignment(batch_id, frame, received_at);
-            }
+            } => self.trace_assignment(batch_id, frame, received_at),
             OrderEvent::Entry(entry) => {
                 let sequence = match &entry {
                     OrderEntry::Batch {
@@ -1243,7 +1225,6 @@ impl SequencedSession {
                         // the process it replaces; a watcher's is the player
                         // it follows.
                         if *source == self.local_source && !self.restoring && self.watch.is_none() {
-                            self.accept_through(*batch_id)?;
                             self.trace_assignment(*batch_id, *frame, received_at);
                         }
                         *sequence
@@ -1262,21 +1243,14 @@ impl SequencedSession {
                         .or_insert(ReceivedEntry { entry, received_at });
                 }
             }
-            OrderEvent::Error { code, expected } => match code {
+            OrderEvent::Error { code, .. } => match code {
                 OrderError::NotConfigured => {
                     self.started = false;
                     self.last_control = None;
                 }
-                OrderError::NotStarted | OrderError::Backpressure => {}
-                OrderError::BatchGap => {
-                    let accepted = expected
-                        .checked_sub(1)
-                        .ok_or(SequencedError::InvalidTimeline)?;
-                    // The relay's authenticated prefix receipt never moves
-                    // backwards. It resets no batch: the session's RTO
-                    // resends them (spec §6.4).
-                    self.accept_through(accepted)?;
-                }
+                // The relay session takes BatchGap's acceptance and resends
+                // the rest by its RTO (spec §6.4).
+                OrderError::NotStarted | OrderError::Backpressure | OrderError::BatchGap => {}
                 OrderError::HistoryGap => return Err(SequencedError::HistoryExpired),
                 // Only a match that never started: a restored session has not
                 // heard from the relay yet, and its match did start.
@@ -1478,14 +1452,13 @@ impl SequencedSession {
                             && trace.frame_received_at.is_none()
                         {
                             trace.frame_received_at = Some(received_at);
-                            if let Some(sent_at) = trace.sent_at {
-                                let ms = received_at.saturating_duration_since(sent_at).as_millis()
-                                    as u64;
-                                self.delivery.round_trips += 1;
-                                self.delivery.round_trip_total_ms += ms;
-                                self.delivery.round_trip_max_ms =
-                                    self.delivery.round_trip_max_ms.max(ms);
-                            }
+                            let ms = received_at
+                                .saturating_duration_since(trace.sent_at)
+                                .as_millis() as u64;
+                            self.delivery.round_trips += 1;
+                            self.delivery.round_trip_total_ms += ms;
+                            self.delivery.round_trip_max_ms =
+                                self.delivery.round_trip_max_ms.max(ms);
                         }
                     }
                     self.latest_frame_receipt = Some(SequencedTiming {
@@ -1715,7 +1688,7 @@ impl SequencedSession {
         now: u32,
     ) -> Result<(), LiveCommandError> {
         if self.restoring {
-            self.settle_restore(context.frame)?;
+            self.settle_restore(context.frame);
             if !self.restoring {
                 transport.set_ordering_restore(false);
             }
@@ -1735,11 +1708,11 @@ impl SequencedSession {
                 .map_err(super::CommandExchangeError::from)?;
             return Ok(());
         }
-        while self
-            .submissions
-            .front()
-            .is_some_and(|pending| pending.id <= self.accepted_batch)
-        {
+        // An accepted batch leaves OutList; its records come back in its frame.
+        let accepted = transport.ordering_accepted_through().unwrap_or(0);
+        while self.submissions.front().is_some_and(
+            |pending| matches!(pending.batch, SubmissionBatch::Sealed(id) if id <= accepted),
+        ) {
             let pending = self.submissions.pop_front().unwrap();
             queues
                 .commit_local_submission(&pending.records)
@@ -1798,27 +1771,12 @@ impl SequencedSession {
                 if encoded.mirrors.is_empty() {
                     return Err(SequencedError::InvalidTimeline.into());
                 }
-                let bytes = encoded.bytes[EVENT_PACKET_HEADER_LEN..].to_vec();
-                let next_batch = self
-                    .next_batch
-                    .checked_add(1)
-                    .ok_or(SequencedError::InvalidTimeline)?;
-                if self.command_traces.len() == COMMAND_TRACE_HISTORY {
-                    self.command_traces.pop_front();
-                }
-                self.command_traces.push_back(CommandDeliveryTrace {
-                    batch_id: self.next_batch,
-                    sent_at: None,
-                    assigned: None,
-                    frame_received_at: None,
-                });
                 self.submissions.push_back(Submission {
-                    id: self.next_batch,
                     records: encoded.mirrors,
-                    bytes,
-                    sealed: false,
+                    batch: SubmissionBatch::Unsealed(
+                        encoded.bytes[EVENT_PACKET_HEADER_LEN..].to_vec(),
+                    ),
                 });
-                self.next_batch = next_batch;
                 self.service(transport, now);
             }
         }
@@ -2165,31 +2123,29 @@ mod restore_tests {
         );
     }
 
-    /// The counter the departed process reached comes from the history: its
-    /// own first ID would make the relay end this client's match (`BatchGap`).
+    /// The counter the departed process reached comes from the history, so
+    /// a restore ends only once the world has read and caught up with it.
     #[test]
-    fn resumes_the_batch_counter_only_once_the_world_caught_up() {
+    fn ends_a_restore_only_once_the_world_caught_up() {
         let mut houses = [None; 30];
         houses[..2].copy_from_slice(&[Some(0), Some(1)]);
         let mut session = SequencedSession::with_roster(houses, 0, [7; 32], 30);
         session.begin_restore();
-        session.last_batch[0] = 41;
         session.next_sequence = 500;
 
         // Nothing is known of the relay yet.
-        session.settle_restore(0).unwrap();
+        session.settle_restore(0);
         assert!(session.restoring());
         session.receive(status(900, 1000), Instant::now()).unwrap();
         // History still to read, then a world still far behind it.
-        session.settle_restore(1000).unwrap();
+        session.settle_restore(1000);
         assert!(session.restoring());
         session.next_sequence = 900;
-        session.settle_restore(900).unwrap();
+        session.settle_restore(900);
         assert!(session.restoring());
 
-        session.settle_restore(990).unwrap();
+        session.settle_restore(990);
         assert!(!session.restoring());
-        assert_eq!((session.next_batch, session.accepted_batch), (42, 41));
     }
 }
 
@@ -2312,7 +2268,7 @@ mod delivery_counter_tests {
         let sent = Instant::now();
         session.command_traces.push_back(CommandDeliveryTrace {
             batch_id: 1,
-            sent_at: Some(sent),
+            sent_at: sent,
             assigned: Some((1, sent)),
             frame_received_at: None,
         });
@@ -2833,26 +2789,12 @@ mod watch_tests {
     }
 
     /// A watcher stands in the place of the player it follows: that
-    /// player's batches are the stream's like any other's, its loss gets a
-    /// line, and the match is over once every player left and their frames
-    /// ran.
+    /// player's loss gets a line, and the match is over once every player
+    /// left and their frames ran.
     #[test]
     fn a_watcher_reads_its_players_stream_to_the_end() {
         let mut houses = [None; 30];
         houses[..2].copy_from_slice(&[Some(0), Some(1)]);
-        let batch = || {
-            OrderEvent::Entry(OrderEntry::Batch {
-                sequence: 1,
-                frame: 1,
-                source: 0,
-                batch_id: 1,
-                bytes: vec![0],
-            })
-        };
-        let mut player = SequencedSession::with_roster(houses, 0, [0; 32], 30);
-        assert!(player.receive(batch(), Instant::now()).is_err());
-        assert!(watcher(houses).receive(batch(), Instant::now()).is_ok());
-
         let mut session = watcher(houses);
         let departure = |sequence, source, lost| {
             OrderEvent::Entry(OrderEntry::Departure {
