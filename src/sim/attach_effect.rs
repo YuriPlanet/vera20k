@@ -2843,7 +2843,11 @@ impl Simulation {
     /// `MapClass::GetTotalDamage(input, WH, target armor, distance)` reaching
     /// the target's health leaves `Health` and `EstimatedHealth` at 1 and the
     /// receiver packet at 0. Either the AttachEffect flag or a false
-    /// `WarheadType CanKill` opens the arm. Returns whether it applied.
+    /// `WarheadType CanKill` opens the arm.
+    ///
+    /// The arm sits inside `if (!args->IgnoreDefenses)` (`:141`), so a forced
+    /// hit — C4 damage, a scripted kill — never leaves 1 HP, not even on an
+    /// `Unkillable` carrier. Returns whether it applied.
     pub(crate) fn apply_unkillable_clamp(
         &mut self,
         target_id: u64,
@@ -2857,6 +2861,10 @@ impl Simulation {
         let Some(warhead) = rules.warhead(self.interner.resolve(event.warhead_ref)) else {
             return false;
         };
+        // `:141` guards the whole shield block this arm lives in.
+        if event.receiver_flags.ignore_defenses {
+            return false;
+        }
         if !(target.phobos_unkillable() || !warhead.can_kill)
             || target.health.current() <= 0
             || input == 0

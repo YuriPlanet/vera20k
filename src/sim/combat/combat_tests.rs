@@ -13833,3 +13833,169 @@ fn phobos_can_c4_allow_zero_damage_replaces_the_building_minimum() {
         "the replaced body does not floor negative packets"
     );
 }
+
+/// `[WarheadType] CanKill` through the production receiver
+/// (`Ext/Techno/Hooks.ReceiveDamage.cpp:178-188`): `NOKILL` carries
+/// `CanKill=no`, `HIT` leaves it unset and therefore keeps the native `true`
+/// default (`Ext/WarheadType/Body.cpp:369`).
+#[cfg(feature = "phobos")]
+fn can_kill_scene() -> (crate::sim::world::Simulation, RuleSet, u64, u64) {
+    const VERSES: &str = "Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n";
+    let ini = IniFile::from_str(&format!(
+        "[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+         [VehicleTypes]\n0=MTNK\n\
+         [Warheads]\n0=HIT\n1=NOKILL\n\
+         [MTNK]\nStrength=100\nSpeed=6\nArmor=heavy\n\
+         [HIT]\n{VERSES}\
+         [NOKILL]\nCanKill=no\n{VERSES}"
+    ));
+    let rules = RuleSet::from_ini(&ini).expect("the CanKill fixture parses");
+    let mut sim = crate::sim::world::Simulation::with_seed(0x88CA_0057);
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    let victim = sim
+        .spawn_object("MTNK", "Americans", 4, 4, 0, &rules)
+        .expect("the victim spawns");
+    let attacker = sim
+        .spawn_object("MTNK", "Russians", 5, 4, 0, &rules)
+        .expect("the attacker spawns");
+    (sim, rules, victim, attacker)
+}
+
+/// One 100-damage hit on the victim through `commit_entities`; `forced` sets
+/// `args->IgnoreDefenses`, the branch that skips the whole shield block.
+#[cfg(feature = "phobos")]
+fn can_kill_hit(
+    sim: &mut crate::sim::world::Simulation,
+    rules: &RuleSet,
+    victim: u64,
+    attacker: u64,
+    warhead: &str,
+    forced: bool,
+) {
+    let source_house = sim
+        .substrate
+        .entities
+        .get(attacker)
+        .map(|attacker| attacker.owner());
+    let warhead = sim.interner.intern(warhead);
+    let event = if forced {
+        EntityDamageEvent::direct_receiver(
+            victim,
+            100,
+            0,
+            attacker,
+            source_house,
+            warhead,
+            crate::sim::combat::ReceiverCallFlags {
+                ignore_defenses: true,
+                arg6: false,
+            },
+        )
+    } else {
+        EntityDamageEvent::area(victim, 100, 0, attacker, source_house, warhead)
+    };
+    crate::sim::combat::world_receiver::commit_entities(
+        sim,
+        &mut crate::sim::combat::world_receiver::ReceiverRun::default(),
+        &[event],
+        None,
+        rules,
+        None,
+    );
+}
+
+#[cfg(feature = "phobos")]
+fn can_kill_victim_alive(sim: &crate::sim::world::Simulation, id: u64) -> bool {
+    sim.substrate
+        .entities
+        .get(id)
+        .is_some_and(|entity| entity.lifecycle.object_alive())
+}
+
+/// `:184-187` with the warhead half of `:178`: a lethal packet from a
+/// `CanKill=no` warhead leaves `Health` and `EstimatedHealth` at 1 and the
+/// receiver packet at 0, which the replaced `SkipLowDamageCheck` lets through
+/// untouched, so the victim keeps living. The same packet from the default
+/// warhead kills.
+#[cfg(feature = "phobos")]
+#[test]
+fn can_kill_no_leaves_one_health_and_skips_the_low_damage_check() {
+    for (warhead, survives) in [("NOKILL", true), ("HIT", false)] {
+        let (mut sim, rules, victim, attacker) = can_kill_scene();
+        sim.substrate
+            .entities
+            .get_mut(victim)
+            .unwrap()
+            .health
+            .set(50);
+        can_kill_hit(&mut sim, &rules, victim, attacker, warhead, false);
+        if survives {
+            let entity = sim
+                .substrate
+                .entities
+                .get(victim)
+                .expect("the clamped victim stays in the world");
+            assert_eq!(entity.health.current(), 1, "{warhead}: 1 HP, not 0");
+            assert_eq!(
+                entity.estimated_health.get(),
+                1,
+                "{warhead}: the estimate is written with the health"
+            );
+            assert!(
+                entity.lifecycle.object_alive(),
+                "{warhead}: no kill is consumed"
+            );
+        } else {
+            assert!(
+                !can_kill_victim_alive(&sim, victim),
+                "{warhead}: the unset key keeps the lethal hit"
+            );
+        }
+    }
+}
+
+/// `:181`: the clamp needs the warhead's total damage to reach the target's
+/// health, so a packet that would not kill applies in full.
+#[cfg(feature = "phobos")]
+#[test]
+fn can_kill_no_still_lets_a_nonlethal_hit_through() {
+    let (mut sim, rules, victim, attacker) = can_kill_scene();
+    sim.substrate
+        .entities
+        .get_mut(victim)
+        .unwrap()
+        .health
+        .set(300);
+    can_kill_hit(&mut sim, &rules, victim, attacker, "NOKILL", false);
+    let entity = sim
+        .substrate
+        .entities
+        .get(victim)
+        .expect("the nonlethal victim stays");
+    assert_eq!(
+        entity.health.current(),
+        200,
+        "100 damage against 300 health lands in full"
+    );
+    assert!(entity.lifecycle.object_alive());
+}
+
+/// `:141`: the shield block this arm lives in is skipped when
+/// `args->IgnoreDefenses` is set, so a forced hit is never clamped — C4
+/// damage still kills an `Unkillable` carrier.
+#[cfg(feature = "phobos")]
+#[test]
+fn an_ignore_defenses_hit_bypasses_the_can_kill_clamp() {
+    let (mut sim, rules, victim, attacker) = can_kill_scene();
+    sim.substrate
+        .entities
+        .get_mut(victim)
+        .unwrap()
+        .health
+        .set(50);
+    can_kill_hit(&mut sim, &rules, victim, attacker, "NOKILL", true);
+    assert!(
+        !can_kill_victim_alive(&sim, victim),
+        "a forced hit bypasses the clamp"
+    );
+}
