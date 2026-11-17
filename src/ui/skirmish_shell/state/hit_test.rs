@@ -235,7 +235,7 @@ pub fn hovered_choose_map_modal_control(
                 .mode_geometry(layout)
                 .row_at(rows.len(), modal.mode_top_index, x, y)
         {
-            return Some(ChooseMapHoverTarget::ModeListRow0x6eb { mode_id: rows[row] });
+            return Some(ChooseMapHoverTarget::ModeListRow0x6eb { mode: rows[row] });
         }
         return Some(ChooseMapHoverTarget::ModeList0x6eb);
     }

@@ -187,7 +187,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
     // Generate enters the real generator once; accepting a valid preview adds
     // no run, while accepting an empty setup adds exactly one.
     let previous_selection = ChooseMapSelection {
-        mode_id: 1,
+        mode: 1.into(),
         record_index: Some(7),
     };
     let mut runtime = MultiplayerShellRuntime::initialize(

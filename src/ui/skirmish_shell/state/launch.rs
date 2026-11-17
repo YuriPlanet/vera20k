@@ -6,7 +6,7 @@ use crate::skirmish_launch::{
     PreFillHouseRoster, SkirmishAiSlot, SkirmishLaunchMode, SkirmishLaunchSession,
     SkirmishLocalSlot,
 };
-use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
+use crate::skirmish_modes::SkirmishGameMode;
 
 use super::SkirmishShellState;
 
@@ -113,9 +113,12 @@ pub fn pack_launch_session_without_start_validation(
         .get(state.selected_map_idx)
         .ok_or(LaunchValidationError::NoSelectedMap)?;
     let selected_mode =
-        mode_by_id(modes, state.selected_mode_id).ok_or(LaunchValidationError::NoSelectedMode {
-            mode_id: state.selected_mode_id,
-        })?;
+        state
+            .selected_mode
+            .resolve(modes)
+            .ok_or(LaunchValidationError::NoSelectedMode {
+                mode_id: state.selected_mode.id,
+            })?;
 
     let local = SkirmishLocalSlot {
         country: state.player_country,

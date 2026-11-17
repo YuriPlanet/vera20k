@@ -1111,10 +1111,9 @@ impl MultiplayerShellRuntime {
         // SkirmishDialog__OnSetup reads Session+0x18C (`[0xA8B3C4]`,
         // 0x006AEAC5), the `[Skirmish] GameMode` 0x00697F10 stores there
         // (called at 0x00698451), not `[MultiPlayer] GameMode` (Session+4).
-        state.selected_mode_id = mode_by_id(modes, self.snapshot.game_mode)
+        state.selected_mode = mode_by_id(modes, self.snapshot.game_mode)
             .or_else(|| modes.first())
-            .map(|mode| mode.id)
-            .unwrap_or(state.selected_mode_id);
+            .map_or(state.selected_mode, |mode| mode.id.into());
         state.selected_map_idx = usize::try_from(self.snapshot.scenario_index)
             .ok()
             .filter(|index| *index < maps.len())
@@ -1756,7 +1755,9 @@ fn pack_snapshot_selection(
     maps: &[MapMenuEntry],
     modes: &[SkirmishGameMode],
 ) {
-    snapshot.game_mode = mode_by_id(modes, state.selected_mode_id)
+    snapshot.game_mode = state
+        .selected_mode
+        .resolve(modes)
         .or_else(|| modes.first())
         .map(|mode| mode.id)
         .unwrap_or(0);
@@ -1806,7 +1807,7 @@ fn pack_snapshot_options(snapshot: &mut MultiplayerSetupSnapshot, state: &Skirmi
 
 pub(crate) fn skirmish_global_defaults(state: &SkirmishShellState) -> SkirmishGlobalDefaults {
     SkirmishGlobalDefaults {
-        game_mode: state.selected_mode_id,
+        game_mode: state.selected_mode.id,
         scenario_index: i32::try_from(state.selected_map_idx).unwrap_or(0),
         game_speed: state.game_speed,
         credits: state.credits(),
@@ -3534,7 +3535,7 @@ WOLTaunts=junk
         let mut shell = SkirmishShellState::default();
         runtime.hydrate_shell(&mut shell, &[map()], &[mode_9.clone(), mode()]);
         assert_eq!(
-            shell.selected_mode_id, 9,
+            shell.selected_mode.id, 9,
             "Skirmish OnSetup restores Session+0x18C ([Skirmish] GameMode), not Session+4"
         );
 
@@ -3553,7 +3554,7 @@ WOLTaunts=junk
 
         runtime.snapshot.game_mode = 999;
         runtime.hydrate_shell(&mut shell, &[map()], &[mode_9, mode()]);
-        assert_eq!(shell.selected_mode_id, 9, "unknown mode falls to first row");
+        assert_eq!(shell.selected_mode.id, 9, "unknown mode falls to first row");
     }
 
     #[test]
@@ -3777,7 +3778,7 @@ WOLTaunts=junk
         let runtime = runtime(snapshot.clone(), 0x5678);
         let rng_before = runtime.scenario_rng_state();
         let mut shell = SkirmishShellState {
-            selected_mode_id: mode().id,
+            selected_mode: mode().id.into(),
             ..Default::default()
         };
         for opponent in &mut shell.opponents {
@@ -3899,7 +3900,7 @@ WOLTaunts=junk
 
         runtime.hydrate_shell(&mut shell, &[map()], &[mode()]);
 
-        assert_eq!(shell.selected_mode_id, 1);
+        assert_eq!(shell.selected_mode.id, 1);
         assert_eq!(shell.selected_map_idx, 0);
     }
 
