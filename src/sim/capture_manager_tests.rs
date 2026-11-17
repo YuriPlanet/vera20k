@@ -1375,7 +1375,7 @@ fn native_joined_overload_preserves_constructor_rng_ids_and_rate_words() {
     assert_eq!(json!(object.primary().unwrap()), initial["type"]["primary"]);
     assert_eq!(json!(weapon.damage), initial["type"]["primary_damage"]);
     assert_eq!(
-        format!("{:016x}", object.weight.to_num::<f64>().to_bits()),
+        format!("{:016x}", object.weight.bits()),
         initial["type"]["weight_bits"].as_str().unwrap()
     );
     assert_eq!(

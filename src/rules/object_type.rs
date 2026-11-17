@@ -721,8 +721,10 @@ pub struct ObjectType {
     /// ReadINI7124CF..7124EA passes the current double as each pass's default.
     /// Used as the divisor in rocker-impulse force scaling: heavier units rock
     /// proportionally less per equivalent impulse. Retail range: 0.5 (lightest
-    /// vehicles) to 5 (Aircraft Carrier).
-    pub weight: SimFixed,
+    /// vehicles) to 5 (Aircraft Carrier). The field is the native double
+    /// (`+0x2F8`): a mod may author any finite value (`Weight=2147483647` in
+    /// the shipped `rules_FX.ini`), so it is stored as binary64, not quantized.
+    pub weight: NativeF64Bits,
     /// Fraction of max speed gained per tick during acceleration (AccelerationFactor=).
     /// Default 0.03: `TechnoTypeClass` ctor `0x00710BD0`/`0x00710BDA` writes the
     /// double `0x3F9EB851EB851EB8` to `+0x308`, and `ReadINI 0x007124C4` passes
@@ -6705,8 +6707,9 @@ impl ObjectType {
             // (the live consumer executes IDIV without a zero guard).
             walk_rate: section.read_int("WalkRate", 1),
             idle_rate: section.read_int("IdleRate", 0),
-            // Double fields (`0x007124A3..0x007124E5`).
-            weight: SimFixed::from_num(section.read_double("Weight", 1.0) as f32),
+            // Double fields (`0x007124A3..0x007124E5`): the read stores the
+            // key's binary64 straight into the type, so no SIMD-side clamp.
+            weight: section.read_double_bits("Weight", NativeF64Bits::ONE),
             accel_factor: section.read_double_bits(
                 "AccelerationFactor",
                 NativeF64Bits::from_bits(0x3f9e_b851_eb85_1eb8),
@@ -10074,7 +10077,27 @@ mod tests {
             ini.section("MTNK").expect("MTNK section"),
             ObjectCategory::Vehicle,
         );
-        assert_eq!(mtnk.weight, SimFixed::ONE);
+        assert_eq!(mtnk.weight, NativeF64Bits::ONE);
+    }
+
+    #[test]
+    fn a_huge_authored_weight_keeps_the_native_double() {
+        // `rules_FX.ini` ships `Weight=2147483647` on two vehicles. ReadDouble
+        // is `sscanf "%f"` (`0x005283D0`), so the scanned value is single
+        // precision widened to binary64, and 0x007124C4 stores it straight into
+        // +0x2F8: the reader must not quantize it into the I16F16 range, which
+        // used to abort the whole rules load.
+        let ini = IniFile::from_str("[MTNK]\nStrength=300\nWeight=2147483647\n");
+        let mtnk = ObjectType::from_ini_section(
+            "MTNK",
+            ini.section("MTNK").expect("MTNK section"),
+            ObjectCategory::Vehicle,
+        );
+        assert_eq!(
+            mtnk.weight.bits(),
+            f64::from(2147483647.0_f32).to_bits(),
+            "'%f' widens 2147483647 to 2147483648"
+        );
     }
 
     /// Retail `rulesmd.ini`, read from the gitignored `ini/` corpus.

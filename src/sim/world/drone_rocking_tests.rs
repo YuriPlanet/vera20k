@@ -780,7 +780,7 @@ fn stock_drone_monotonic_bites_match_native_state_rng_spark_births_and_flh() {
         let object = scene.rules.object(name).unwrap();
         assert_eq!(json!(object.strength), expected["strength"]);
         assert_eq!(
-            format!("{:016x}", object.weight.to_num::<f64>().to_bits()),
+            format!("{:016x}", object.weight.bits()),
             expected["weight_bits"].as_str().unwrap()
         );
         let flh = object.weapon_flh(0, false);

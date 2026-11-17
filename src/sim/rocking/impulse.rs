@@ -4,7 +4,6 @@
 //! absence and existing state. Native controls: unit_rocker_impulse.json.
 
 use super::{RockingState, absolute, double, load, store};
-use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::{
     MaskedX87Chop53 as M, MaskedX87Ordering, NativeF32Bits, NativeF64Bits, X87Chop53 as X,
     X87Ordering, sqrt_approx_f32,
@@ -17,9 +16,10 @@ pub struct RockerImpulse {
     pub origin: [i32; 3],
     pub body_facing: u16,
     pub force: NativeF32Bits,
-    /// Existing rules precision boundary. Stock1/3.5 and the retained0/-1
-    /// controls are exact; arbitrary authored doubles retain I16F16 tuning.
-    pub weight: SimFixed,
+    /// The type's `Weight=` double, taken unchanged from the rules: native
+    /// `0x70B390..0x70B3BE` divides by the loaded binary64, so an authored
+    /// value beyond the I16F16 range still divides correctly.
+    pub weight: NativeF64Bits,
     pub no_dampen: bool,
     pub has_loaded_voxel: bool,
 }
@@ -61,7 +61,7 @@ pub fn apply_rocker_impulse(state: &mut Option<RockingState>, request: RockerImp
         ),
         load(request.force),
     );
-    let weight = NativeF64Bits::from_bits(request.weight.to_num::<f64>().to_bits());
+    let weight = request.weight;
     let mut scaled = M::store_f32_masked_chop(M::div(
         M::load_f64(X::store_f64(numerator).unwrap()),
         M::load_f64(weight),

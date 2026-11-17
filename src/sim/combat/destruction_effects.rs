@@ -78,6 +78,18 @@ use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 
 use super::{ExplosionEffect, SmudgeSpawnRequest};
 
+/// `0x00737DE2..0x00737E16`: `FCOMP` on the type's `Weight=` double and
+/// `[General] ShipSinkingWeight` skips the sinking arm on "less" and on
+/// "unordered", so only an ordered greater-or-equal admits. Doubles compare
+/// exactly in extended precision, and `f64`'s partial order already reports
+/// NaN as neither side, so the native test is the plain comparison.
+fn weight_at_least(
+    weight: crate::util::native_x87::NativeF64Bits,
+    minimum: crate::util::native_x87::NativeF64Bits,
+) -> bool {
+    f64::from_bits(weight.bits()) >= f64::from_bits(minimum.bits())
+}
+
 /// `AnimClass` constructor `drawFlags` shared by death and SHP debris producers
 /// (`0x0073871E`, `0x00738854`, `0x00416660`, `0x00441A04`, `0x00441D01`,
 /// `0x00469E94`).
@@ -540,7 +552,7 @@ impl Simulation {
         object.naval
             && !object.underwater
             && !object.organic
-            && object.weight >= rules.general.ship_sinking_weight
+            && weight_at_least(object.weight, rules.general.ship_sinking_weight)
             && water_and_not_warping
     }
 

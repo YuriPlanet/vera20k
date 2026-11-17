@@ -4,7 +4,7 @@
 use super::rocking_system::{RockingUpdateInputs, advance_state};
 use super::{RockerImpulse, RockingState, apply_rocker_impulse};
 use crate::util::fixed_math::SimFixed;
-use crate::util::native_x87::NativeF32Bits;
+use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 use serde_json::Value;
 
 fn word(value: &Value) -> NativeF32Bits {
@@ -115,7 +115,7 @@ fn rocker_impulses_and_monotonic_update_history_match_native() {
                 input["name"]
             );
             let request = &impulse["input"];
-            let weight = f64::from_bits(
+            let weight = NativeF64Bits::from_bits(
                 u64::from_str_radix(input["weight_bits"].as_str().unwrap(), 16).unwrap(),
             );
             let assigned = apply_rocker_impulse(
@@ -127,7 +127,7 @@ fn rocker_impulses_and_monotonic_update_history_match_native() {
                     origin: std::array::from_fn(|i| request["origin"][i].as_i64().unwrap() as i32),
                     body_facing: input["facing"].as_u64().unwrap() as u16,
                     force: NativeF32Bits::from_bits(request["force_bits"].as_u64().unwrap() as u32),
-                    weight: SimFixed::from_num(weight),
+                    weight,
                     no_dampen: request["no_dampen"].as_u64().unwrap() != 0,
                     has_loaded_voxel: true,
                 },
@@ -178,7 +178,7 @@ fn rejected_loaded_model_gate_preserves_sparse_state_and_existing_rates() {
         origin: [2432, 2178, 0],
         body_facing: 0,
         force: NativeF32Bits::from_bits(0x3fc0_0000),
-        weight: SimFixed::ONE,
+        weight: NativeF64Bits::ONE,
         no_dampen: false,
         has_loaded_voxel: false,
     };

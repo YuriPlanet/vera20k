@@ -269,12 +269,7 @@ mod tests {
             );
         }
         assert_eq!(
-            rules
-                .object("MTNK")
-                .unwrap()
-                .weight
-                .to_num::<f64>()
-                .to_bits(),
+            rules.object("MTNK").unwrap().weight.bits(),
             u64::from_str_radix(
                 corpus["initial"]["type_input"]["weight_bits"]
                     .as_str()

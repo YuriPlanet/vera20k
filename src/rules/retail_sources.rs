@@ -15,6 +15,7 @@ use crate::rules::personal_rules::PersonalRules;
 use crate::rules::process_owner::{NativeLangRuleSource, NativeRulesProcessOwner};
 use crate::rules::ruleset::RuleSet;
 use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
+use crate::util::native_x87::NativeF64Bits;
 use crate::util::sha256::sha256_hex;
 
 const MAX_INCLUDED_SOURCE_BYTES: usize = 32 * 1024 * 1024;
@@ -739,15 +740,15 @@ mod tests {
 
         assert_eq!(
             rules.object("APOC").expect("retail APOC").weight,
-            SimFixed::lit("3.5")
+            NativeF64Bits::from_bits(3.5_f64.to_bits())
         );
         assert_eq!(
             rules.object("MTNK").expect("retail MTNK").weight,
-            SimFixed::ONE
+            NativeF64Bits::ONE
         );
         assert_eq!(
             rules.object("DEST").expect("retail DEST").weight,
-            SimFixed::lit("3")
+            NativeF64Bits::from_bits(3.0_f64.to_bits())
         );
         assert_eq!(
             rules.general.direct_rocking_coefficient,

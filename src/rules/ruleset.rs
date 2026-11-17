@@ -2029,9 +2029,9 @@ pub struct GeneralRules {
     /// `ShipSinkingWeight=` (Rules `+0x630`, `ReadDouble` at `0x0066F174`;
     /// constructor default 3.0 at `0x00665EE8`). A surface naval unit at
     /// least this `Weight=` sinks on water instead of exploding
-    /// (`0x00737E00..0x00737E16`). Parsed like `Weight=` so the two compare
-    /// as native doubles do on stock values (3.0 against 1..5).
-    pub ship_sinking_weight: SimFixed,
+    /// (`0x00737E00..0x00737E16`). Both sides stay binary64, as native
+    /// compares them, so an authored value beyond I16F16 is not truncated.
+    pub ship_sinking_weight: crate::util::native_x87::NativeF64Bits,
 
     // -- Cliff/slope movement coefficients ([General]) --
     // Rules +0x768/+0x770/+0x778/+0x780, each `ReadDouble` over its current
@@ -3085,7 +3085,9 @@ impl Default for GeneralRules {
                 0x3fe0_0000_0000_0000,
             ),
             vein_damage: 0,
-            ship_sinking_weight: SimFixed::lit("3.0"),
+            ship_sinking_weight: crate::util::native_x87::NativeF64Bits::from_bits(
+                0x4008_0000_0000_0000,
+            ),
             // RulesClass constructor 0x6660BE..0x6660ED.
             tracked_uphill: NativeF64Bits::ONE,
             tracked_downhill: NativeF64Bits::ONE,
@@ -4428,10 +4430,8 @@ impl GeneralRules {
                     .to_bits(),
             ),
             vein_damage: general.read_int("VeinDamage", defaults.vein_damage),
-            ship_sinking_weight: SimFixed::from_num(
-                general.read_double("ShipSinkingWeight", defaults.ship_sinking_weight.to_num())
-                    as f32,
-            ),
+            ship_sinking_weight: general
+                .read_double_bits("ShipSinkingWeight", defaults.ship_sinking_weight),
             tracked_uphill: general.read_double_bits("TrackedUphill", defaults.tracked_uphill),
             tracked_downhill: general
                 .read_double_bits("TrackedDownhill", defaults.tracked_downhill),
@@ -18095,14 +18095,16 @@ Projectile=Invisible
         let mut layers = RulesLayerStack::new(IniFile::from_str(
             "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\n",
         ));
+        let weight =
+            |value: f64| crate::util::native_x87::NativeF64Bits::from_bits(value.to_bits());
         for (text, expected) in [
-            ("[MTNK]\nArmor=heavy\n", SimFixed::ONE),
-            ("[MTNK]\nWeight=3.5\n", SimFixed::lit("3.5")),
-            ("[MTNK]\nSpeed=6\n", SimFixed::lit("3.5")),
+            ("[MTNK]\nArmor=heavy\n", weight(1.0)),
+            ("[MTNK]\nWeight=3.5\n", weight(3.5)),
+            ("[MTNK]\nSpeed=6\n", weight(3.5)),
             // Native ReadDouble scans malformed authored text as zero; only
             // an absent key retains the current field.
-            ("[MTNK]\nWeight=invalid\n", SimFixed::ZERO),
-            ("[MTNK]\nSpeed=7\n", SimFixed::ZERO),
+            ("[MTNK]\nWeight=invalid\n", weight(0.0)),
+            ("[MTNK]\nSpeed=7\n", weight(0.0)),
         ] {
             layers.push(RulesLayerKind::Scenario, IniFile::from_str(text));
             let rules = RuleSet::from_rules_layers(&layers).unwrap();

@@ -637,7 +637,7 @@ fn retail_hornet_launch_move_ignores_an_unmarked_sinking_aegis() {
     assert!(aircraft.spawned && !aircraft.airport_bound && !aircraft.carryall);
     let hull = rules.object("AEGIS").unwrap();
     assert!(hull.naval && !hull.organic && hull.spawns.is_none());
-    assert_eq!(hull.weight, 4.0);
+    assert_eq!(hull.weight.bits(), 4.0_f64.to_bits());
 
     let mut sim = Simulation::with_seed(91);
     sim.session.set_map_width_for_test(128);
