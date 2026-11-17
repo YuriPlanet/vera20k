@@ -1119,6 +1119,7 @@ fn alternate_global_receive_also_sends_ack_from_primary() {
 /// Winsock reports the ICMP port-unreachable an earlier send drew as
 /// WSAECONNRESET on a later read; the datagram behind it arrives in the same
 /// pass. Other platforms report nothing on an unconnected socket.
+#[cfg(windows)]
 #[test]
 fn port_unreachable_from_an_earlier_send_does_not_end_the_receive_pass() {
     let mut receiver = transport();
@@ -1132,10 +1133,8 @@ fn port_unreachable_from_an_earlier_send_does_not_end_the_receive_pass() {
         .unwrap();
     std::thread::sleep(Duration::from_millis(50));
     let report = receiver.service(1);
-    if cfg!(windows) {
-        let failure = report.first_io_error.as_ref().expect("WSAECONNRESET");
-        assert_eq!(failure.error.raw_os_error(), Some(10054));
-    }
+    let failure = report.first_io_error.as_ref().expect("WSAECONNRESET");
+    assert_eq!(failure.error.raw_os_error(), Some(10054));
     assert_eq!(
         receiver.pop_global_received().unwrap().payload,
         b"after reset"
