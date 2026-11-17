@@ -5175,7 +5175,7 @@ fn a_running_match_its_relay_lost_is_not_startup_pending() {
 }
 
 /// The session that ends a match keeps it ended: poll reports the error once,
-/// and the session still reads as failed after it.
+/// and the match still reads as failed after it.
 #[test]
 fn a_reported_relay_failure_stays_with_its_session() {
     use vera20k_relay_protocol::{OrderError, OrderEvent};
@@ -5197,7 +5197,7 @@ fn a_reported_relay_failure_stays_with_its_session() {
         reported,
         Err(LiveCommandError::Sequenced(SequencedError::HistoryExpired))
     ));
-    assert!(live.sequenced.as_ref().unwrap().failed());
+    assert!(live.has_terminal_network_error());
     let again = live.poll(&mut queues, context, 10, 2, 32, 0, 30);
     assert!(matches!(again, Err(LiveCommandError::Failed)));
     assert_eq!(

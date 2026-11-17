@@ -96,6 +96,19 @@ struct Failure {
     unreported: Option<LiveCommandError>,
 }
 
+impl Failure {
+    fn new(error: LiveCommandError) -> Self {
+        let code = match &error {
+            LiveCommandError::Sequenced(error) => error.code(),
+            _ => "local_error",
+        };
+        Self {
+            code,
+            unreported: Some(error),
+        }
+    }
+}
+
 /// App diagnostics for one local command batch: its first transmission, the
 /// relay's frame assignment and the contiguous receipt of that sealed frame.
 /// Socket receipt times; this never enters simulation or delivery decisions.
@@ -754,18 +767,9 @@ impl SequencedSession {
 
     /// Ends this match here. The first error is the one it ended with.
     fn fail(&mut self, error: impl Into<LiveCommandError>) {
-        if self.failure.is_some() {
-            return;
+        if self.failure.is_none() {
+            self.failure = Some(Failure::new(error.into()));
         }
-        let error = error.into();
-        let code = match &error {
-            LiveCommandError::Sequenced(error) => error.code(),
-            _ => "local_error",
-        };
-        self.failure = Some(Failure {
-            code,
-            unreported: Some(error),
-        });
     }
     pub(super) fn record_tick_cost(&mut self, micros: u32) {
         self.pace_meter.record_tick_cost(micros);
@@ -1834,7 +1838,10 @@ impl SequencedSession {
         if !self.failed() {
             match self.poll_frame(transport, queues, context, now) {
                 Ok(pass) => return Ok(pass),
-                Err(error) => self.fail(error),
+                // The frame's own error (a desync, a full queue) is the one
+                // that ends the match, even when its flush's service recorded
+                // a relay error earlier in this call.
+                Err(error) => self.failure = Some(Failure::new(error)),
             }
         }
         Err(self
