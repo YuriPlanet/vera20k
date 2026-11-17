@@ -3424,7 +3424,8 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
     };
     // The loading wait may already have retired a source684596. Initialize
     // timing from MatchSession's accepted connected roster before the first
-    // shared frame; private transport cleanup is drained by its existing owner.
+    // shared frame; `gameplay_connections` built the private connections from
+    // the same roster.
     let source_houses = state
         .match_state
         .session
@@ -3727,18 +3728,6 @@ fn drain_match_requests(state: &mut AppState) {
                         .filter(|source| Some(*source) != local)
                         .collect();
                     send_sources(state, &message, sources);
-                }
-            }
-            NetworkLoadingRequest::Disconnect { source_index, .. } => {
-                if let Some(runtime) = state.match_state.sim_runtime.runtime()
-                    && let Some(house) = super::match_runtime::network_match::source_house(
-                        &state.match_state.session,
-                        &runtime.simulation,
-                        source_index,
-                    )
-                    && let Some(live) = state.match_state.live_network.as_mut()
-                {
-                    live.remove_peer(house as i8);
                 }
             }
             NetworkLoadingRequest::Chat { recipients, text } => {

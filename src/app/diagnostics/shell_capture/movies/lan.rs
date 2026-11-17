@@ -1537,9 +1537,12 @@ impl LanCapture {
                 );
             }
             ensure!(
-                !requests
-                    .iter()
-                    .any(|request| matches!(request, NetworkLoadingRequest::Disconnect { .. })),
+                state
+                    .match_state
+                    .session
+                    .network_connected_source_indices()
+                    .len()
+                    == 2,
                 "timeout disconnect preceded installed runtime"
             );
         }
@@ -2947,7 +2950,6 @@ impl LanCapture {
                         elapsed >= Duration::from_secs(57),
                         "peer wait returned before the native initial timeout"
                     );
-                    let requests = state.match_state.session.take_network_loading_requests();
                     let launch = state
                         .match_state
                         .session
@@ -2963,20 +2965,6 @@ impl LanCapture {
                     let peer = (0..launch.humans.len())
                         .find(|index| *index != local)
                         .context("remote source")?;
-                    let disconnects = requests
-                        .iter()
-                        .filter_map(|request| match request {
-                            NetworkLoadingRequest::Disconnect {
-                                source_index,
-                                reason,
-                            } => Some((*source_index, *reason)),
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>();
-                    ensure!(
-                        disconnects == vec![(peer, 1)],
-                        "timeout omitted or duplicated actual reason1 Disconnect"
-                    );
                     let slots = crate::sim::scenario_bootstrap::normalized_launch_slots(launch);
                     let peer_slot = slots
                         .iter()
@@ -3036,7 +3024,6 @@ impl LanCapture {
                         "elapsed_since_observed_local100_ms":elapsed.as_millis(),"historical_sources":launch.humans.len(),
                         "connected_sources":state.match_state.session.network_connected_source_indices(),
                         "disconnected_source":peer,"mapped_house":peer_slot.owner_name,"pending_flag_to_die":true,
-                        "requests":requests.iter().map(|request|format!("{request:?}")).collect::<Vec<_>>(),
                         "message_rows":state.match_state.match_presentation.message_list.messages().iter().map(|message|&message.text).collect::<Vec<_>>()}));
                 }
                 let sim = &state

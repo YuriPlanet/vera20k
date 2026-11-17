@@ -275,14 +275,8 @@ enum NetworkPhase {
 pub(crate) enum NetworkLoadingRequest {
     ///69AE90's effective display percent; random-map milestones are already halved.
     ReportProgress(i32),
-    Disconnect {
-        source_index: usize,
-        reason: i32,
-    },
     /// The kick proposal packet `0x1C` (0x0064AAE0) to every other node.
-    ProposeKick {
-        target_source: usize,
-    },
+    ProposeKick { target_source: usize },
     /// The in-battle chat packet `0x0C` (`0x0055EDBF..0x0055F04E`) to these
     /// participants. The packet's name and colour are the local player's.
     Chat {
@@ -291,19 +285,12 @@ pub(crate) enum NetworkLoadingRequest {
     },
     /// The taunt packet `0x1D` (`0x00536350`) to these participants; `byte`
     /// is `(country << 4) | n` at packet `+0x30`.
-    Taunt {
-        recipients: Vec<usize>,
-        byte: u8,
-    },
+    Taunt { recipients: Vec<usize>, byte: u8 },
     /// A beacon record `0x20`/`0x21` to every other node
     /// (`0x00430E0C..0x00430E4E`, `0x004313C2..0x004313F5`).
     Beacon(crate::net::lan_messages::ingame::BeaconRecord),
     /// A beacon label `0x22` to every other node (`0x0043165E..0x00431678`).
-    BeaconText {
-        house: i8,
-        slot: i8,
-        text: Vec<u16>,
-    },
+    BeaconText { house: i8, slot: i8, text: Vec<u16> },
     /// BC6's `0x26` to every node.
     CooperativeReady,
     /// BC6's `0x24` (Quit) to every node.
@@ -3487,15 +3474,12 @@ impl MatchSession {
             })
     }
 
-    /// `IPXManager::Delete_Connection 0x00540F00` and the node removal of
-    /// DestroyConnection (`0x005DAA8A`, `--[0xA8B54C]`): the participant
-    /// leaves the live membership and the transport is asked to drop it.
-    /// False when it is the local player or no longer connected.
-    pub(crate) fn disconnect_network_participant(
-        &mut self,
-        source_index: usize,
-        reason: i32,
-    ) -> bool {
+    /// DestroyConnection's node removal (`0x005DAA8A`, `--[0xA8B54C]`): the
+    /// participant leaves the live membership. Its private connection
+    /// (`IPXManager::Delete_Connection 0x00540F00`, called at `0x005DA85D`)
+    /// is removed by `network_match::destroy_connection`. False when it is
+    /// the local player or no longer connected.
+    pub(crate) fn disconnect_network_participant(&mut self, source_index: usize) -> bool {
         let Some(network) = self.network.as_mut() else {
             return false;
         };
@@ -3509,12 +3493,6 @@ impl MatchSession {
             return false;
         };
         connected.remove(position);
-        network
-            .loading_requests
-            .push(NetworkLoadingRequest::Disconnect {
-                source_index,
-                reason,
-            });
         true
     }
 
@@ -4733,12 +4711,12 @@ mod tests {
             assert_eq!(session.network_connected_source_indices(), &[0, 1]);
             session.report_network_loading_progress(100);
             assert!(
-                !session.disconnect_network_participant(1, 1),
+                !session.disconnect_network_participant(1),
                 "local cannot time out itself"
             );
-            assert!(session.disconnect_network_participant(0, 1));
+            assert!(session.disconnect_network_participant(0));
             assert!(
-                !session.disconnect_network_participant(0, 1),
+                !session.disconnect_network_participant(0),
                 "disconnect is one-shot"
             );
             assert_eq!(session.network_connected_source_indices(), &[1]);
@@ -4749,13 +4727,7 @@ mod tests {
             );
             assert_eq!(
                 session.take_network_loading_requests(),
-                vec![
-                    super::NetworkLoadingRequest::ReportProgress(100),
-                    super::NetworkLoadingRequest::Disconnect {
-                        source_index: 0,
-                        reason: 1
-                    },
-                ]
+                vec![super::NetworkLoadingRequest::ReportProgress(100)]
             );
             session.assert_network_start(prepared);
             assert_eq!(prepared.seed.value, 0x1234abcd);
