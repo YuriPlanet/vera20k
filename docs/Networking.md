@@ -272,6 +272,20 @@ names silent players in each player's status (relay README "Silence"). A
 released game ignores the names. An older relay names nobody, so a game on it
 shows no such line; in a match spread over several relays, players homed on an
 older relay are never named.
+A game's network thread keeps the relay hearing from it through a long frame or
+loading step (its keepalive, and the UPLINK heartbeat of spec §6.6), but not
+for a game that is gone: it stops once the game crashes, from the moment the
+crash box shows, or once the game thread has not serviced the connection for
+60 seconds. The others then read "<name> is not responding." 10 seconds later
+and the ten-minute limit below starts, as for a closed game. A frozen game that
+recovers is heard again; no Leave goes out, so the launcher can still resume
+the match. A crash also silences a LAN match's sockets. From admission until
+the match starts, the game services the connection only while its window draws,
+so a window kept minimised or covered that long can fall silent too (a Quick
+Match found while the player is in another window); the relay then drops that
+player 60 seconds later, if that comes before the 3-minute limit.
+The relay and the packets are unchanged. Released games keep sending for a
+crashed or frozen game, so in a mixed room an older game is still never named.
 After ten minutes of silence the relay removes the player
 through the same stream. A game that has had no answer from the relay for that
 long, and 15 seconds more, releases its relay route and sends it nothing more:
