@@ -2916,4 +2916,192 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             "the tree stays on the map"
         );
     }
+
+    fn terrain_at(rx: u16, ry: u16, name: &str) -> crate::map::overlay::TerrainObject {
+        crate::map::overlay::TerrainObject {
+            rx,
+            ry,
+            name: name.to_string(),
+        }
+    }
+
+    /// Phobos `TerrainClass_TakeDamage_SetContext` (`0x71B965`) and
+    /// `TerrainClass_TakeDamage_RefreshDamageFrame` (`0x71B98B`,
+    /// `Ext/TerrainType/Hooks.cpp:259-283`): a non-lethal hit that carries a
+    /// non-animated `HasDamagedFrames=` type across `ConditionYellow`
+    /// downward latches `IsCrumbling` (the forced redraw) and joins Logic; the
+    /// next `TerrainClass_AI_Crumbling` (`0x71C812`) visit clears it while
+    /// Health is above zero. An upward crossing, an already-damaged ratio, an
+    /// animated type and a type without damaged frames all refuse.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn a_nonlethal_hit_across_condition_yellow_latches_crumbling_for_one_frame() {
+        let ini = IniFile::from_str(
+            "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+             [AudioVisual]\nConditionYellow=0.5\n\
+             [TerrainTypes]\n0=TREE\n1=ANIM\n2=PLAIN\n\
+             [Warheads]\n0=WH\n\
+             [TREE]\nStrength=100\nIsAnimated=no\nSpawnsTiberium=no\nHasDamagedFrames=yes\n\
+             [ANIM]\nStrength=100\nIsAnimated=yes\nSpawnsTiberium=no\nHasDamagedFrames=yes\n\
+             [PLAIN]\nStrength=100\nIsAnimated=no\nSpawnsTiberium=no\n\
+             [WH]\nWood=yes\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        );
+        let mut rules = RuleSet::from_ini(&ini).expect("latch rules");
+        rules.set_terrain_spawner_frame_count_for_test("ANIM", 8);
+
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.install_resolved_terrain_for_new_map(resolved_grid(8, 8));
+        construct_terrain_objects(
+            &mut sim,
+            &[
+                terrain_at(4, 4, "TREE"),
+                terrain_at(5, 4, "TREE"),
+                terrain_at(6, 4, "TREE"),
+                terrain_at(4, 6, "ANIM"),
+                terrain_at(6, 6, "PLAIN"),
+            ],
+            &rules,
+            false,
+        );
+        let id_at = |sim: &crate::sim::world::Simulation, cell| {
+            sim.terrain_objects.id_at(cell).expect("constructed tree")
+        };
+        let crossing = id_at(&sim, (4, 4));
+        let already_damaged = id_at(&sim, (5, 4));
+        let stays_above = id_at(&sim, (6, 4));
+        let animated = id_at(&sim, (4, 6));
+        let plain = id_at(&sim, (6, 6));
+        // `0x71B965` stores the pre-hit ratio; 40 is already below the line.
+        sim.terrain_objects
+            .objects_mut_for_test()
+            .get_mut(&already_damaged)
+            .expect("damaged tree")
+            .set_health_for_test(40);
+        assert!(
+            !sim.terrain_objects.get(crossing).unwrap().in_logic_vector(),
+            "a plain damaged-frames tree does not join Logic at construction"
+        );
+
+        sim.resolve_type_handles(&rules);
+        let warhead = rules.warhead("WH").expect("warhead").clone();
+        let warhead_ref = sim.interner.intern("WH");
+        for (cell, damage) in [
+            ((4, 4), 60),
+            ((5, 4), 10),
+            ((6, 4), 45),
+            ((4, 6), 60),
+            ((6, 6), 60),
+        ] {
+            crate::sim::combat::world_receiver::apply_area_damage(
+                &mut sim,
+                &rules,
+                None,
+                crate::sim::projectile::ProjectileCoord::new(
+                    i32::from(cell.0) * 256 + 128,
+                    i32::from(cell.1) * 256 + 128,
+                    0,
+                ),
+                damage,
+                &warhead,
+                false,
+                (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
+                FrameEffects::default(),
+            );
+        }
+
+        assert_eq!(
+            sim.terrain_objects.get(crossing).unwrap().health(),
+            40,
+            "100 -> 40 crosses 0.5"
+        );
+        assert!(sim.terrain_objects.is_crumbling(crossing));
+        assert!(
+            sim.terrain_objects.get(crossing).unwrap().in_logic_vector(),
+            "the latch joins Logic for the forced redraw"
+        );
+        for (id, reason) in [
+            (already_damaged, "prior 40 was already below the line"),
+            (stays_above, "100 -> 55 stays above the line"),
+            (animated, "an animated type never latches"),
+            (plain, "a type without HasDamagedFrames never latches"),
+        ] {
+            assert!(
+                !sim.terrain_objects.is_crumbling(id),
+                "{reason}: 100 -> {}",
+                sim.terrain_objects.get(id).unwrap().health()
+            );
+        }
+
+        // `0x71C812`: the next AI visit clears the latch while Health > 0, and
+        // a type that is neither animated nor flammable leaves Logic with it.
+        sim.session.set_binary_frame_for_test(0);
+        tick_terrain_object_ai(&mut sim, crossing, &rules, None, FrameEffects::default())
+            .expect("terrain AI");
+        assert!(!sim.terrain_objects.is_crumbling(crossing));
+        assert!(
+            !sim.terrain_objects.get(crossing).unwrap().in_logic_vector(),
+            "the cleared latch leaves Logic"
+        );
+        assert_eq!(
+            sim.terrain_objects.get(crossing).unwrap().health(),
+            40,
+            "the latch never writes Health"
+        );
+    }
+
+    /// `Ext/Rules/Body.cpp` `ConditionYellow_Terrain` (`[AudioVisual]
+    /// ConditionYellow.Terrain=`): the override replaces the base
+    /// `ConditionYellow` for `TerrainClass_Draw_PickFrame @ 0x71C1FE`
+    /// (`Ext/TerrainType/Hooks.cpp:106`) and for the `0x71B98B` latch (`:274`).
+    /// One `RuleSet` owner answers both, so a ratio that crosses the override
+    /// but not the base line still latches.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn condition_yellow_terrain_overrides_the_base_threshold_in_sim_and_draw() {
+        let ini = IniFile::from_str(
+            "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+             [AudioVisual]\nConditionYellow=0.5\nConditionYellow.Terrain=0.7\n\
+             [TerrainTypes]\n0=TREE\n\
+             [Warheads]\n0=WH\n\
+             [TREE]\nStrength=100\nIsAnimated=no\nSpawnsTiberium=no\nHasDamagedFrames=yes\n\
+             [WH]\nWood=yes\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        );
+        let rules = RuleSet::from_ini(&ini).expect("override rules");
+        assert_eq!(rules.general.condition_yellow, 0.5);
+        assert_eq!(
+            rules.terrain_condition_yellow(),
+            f64::from(0.7f32),
+            "the Phobos Parser<double> widening"
+        );
+
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.install_resolved_terrain_for_new_map(resolved_grid(8, 8));
+        construct_terrain_objects(&mut sim, &[terrain_at(3, 3, "TREE")], &rules, false);
+        let tree = sim.terrain_objects.id_at((3, 3)).expect("tree");
+        sim.resolve_type_handles(&rules);
+        let warhead = rules.warhead("WH").expect("warhead").clone();
+        let warhead_ref = sim.interner.intern("WH");
+        crate::sim::combat::world_receiver::apply_area_damage(
+            &mut sim,
+            &rules,
+            None,
+            crate::sim::projectile::ProjectileCoord::new(3 * 256 + 128, 3 * 256 + 128, 0),
+            35,
+            &warhead,
+            false,
+            (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
+            FrameEffects::default(),
+        );
+        assert_eq!(
+            sim.terrain_objects.get(tree).unwrap().health(),
+            65,
+            "100 -> 65"
+        );
+        assert!(
+            sim.terrain_objects.is_crumbling(tree),
+            "0.65 crosses the 0.7 override but not the 0.5 base line"
+        );
+    }
 }

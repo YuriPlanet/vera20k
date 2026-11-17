@@ -3465,6 +3465,18 @@ impl Simulation {
         true
     }
 
+    /// Phobos `TerrainClass_TakeDamage_RefreshDamageFrame` (`0x71B98B`,
+    /// `Ext/TerrainType/Hooks.cpp:268-283`): the "dirty hack" latch that forces
+    /// the next draw through the crumbling arm. Unlike `terrain_start_crumble`
+    /// (`0x71BB2C`) it neither restarts the Stage nor plays `CrumblingSound`;
+    /// `TerrainClass_AI_Crumbling` (`0x71C812`) clears it while Health is above
+    /// zero, so it lasts exactly one AI visit.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn terrain_latch_damaged_frame(&mut self, stable_id: u64) {
+        self.terrain_objects.set_crumbling(stable_id, true);
+        self.register_logic_object(stable_id);
+    }
+
     /// gamemd-derived: active YR `LogicClass__UnregisterObject @ 0x0055BAE0`
     /// gates removal on the object's membership flag, performs the first-match
     /// stable erase, then repairs that flag.

@@ -185,6 +185,11 @@ fn phobos_terrain_condition_yellow_reads_and_switches_the_damaged_frame() {
         f64::from(0.4f32),
         "the shared ConditionYellow remains binary32-widened"
     );
+    assert_eq!(
+        terrain_condition_yellow(&rules),
+        rules.terrain_condition_yellow(),
+        "the draw reads the rules owner the 0x71B98B damage latch also asks"
+    );
 
     let frame = |rules: &RuleSet, health| {
         terrain_draw_frame(

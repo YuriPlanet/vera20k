@@ -1270,6 +1270,47 @@ fn area_record_dispatches(world: &Simulation, rules: &RuleSet, event: &EntityDam
         })
 }
 
+/// Phobos `TerrainClass_TakeDamage_RefreshDamageFrame` (`0x71B98B`,
+/// `Ext/TerrainType/Hooks.cpp:268-283`): a non-animated `HasDamagedFrames=`
+/// type whose ratio crosses `ConditionYellow.Terrain` downward on a non-lethal
+/// hit latches `IsCrumbling` (native's own comment calls the flag a dirty hack
+/// that forces the next draw through the crumbling arm) and joins Logic. This
+/// arm restarts no Stage and plays no `CrumblingSound`: only `0x71BB2C` starts
+/// a real crumble.
+#[cfg(feature = "phobos")]
+fn refresh_terrain_damage_frame(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    stable_id: u64,
+    prior_health: i32,
+    remaining: i32,
+) {
+    use crate::sim::combat::Health;
+    use crate::util::native_x87::MaskedX87Ordering::Greater;
+
+    let Some(type_ref) = world
+        .terrain_objects
+        .get(stable_id)
+        .map(|terrain| terrain.type_ref())
+    else {
+        return;
+    };
+    let name = world.interner.resolve(type_ref).to_string();
+    let Some(terrain_type) = rules.terrain_object_type_case_insensitive(&name) else {
+        return;
+    };
+    if terrain_type.is_animated || !terrain_type.has_damaged_frames {
+        return;
+    }
+    let condition_yellow = rules.terrain_condition_yellow();
+    let strength = terrain_type.strength;
+    let was_above = Health::new(prior_health).compare_ratio(strength, condition_yellow) == Greater;
+    let at_or_below = Health::new(remaining).compare_ratio(strength, condition_yellow) != Greater;
+    if was_above && at_or_below && !world.terrain_objects.is_crumbling(stable_id) {
+        world.terrain_latch_damaged_frame(stable_id);
+    }
+}
+
 /// Complete one TerrainClass receiver, including its nested C4 and removal.
 /// Direct bridge calls use ignore_defenses=true; ordinary area calls retain
 /// their damage kernel and perform the area-wide IC gate before entering here.
@@ -1286,6 +1327,14 @@ pub(crate) fn commit_terrain(
     let Some(warhead) = rules.warhead(world.interner.resolve(event.warhead_ref)) else {
         return (effects, under_attack_events);
     };
+    // Phobos `TerrainClass_TakeDamage_SetContext` (`0x71B965`,
+    // `Ext/TerrainType/Hooks.cpp:259-266`) stores the Health ratio its
+    // `0x71B98B` refresh compares against, before the Health write.
+    #[cfg(feature = "phobos")]
+    let prior_health = world
+        .terrain_objects
+        .get(event.stable_id)
+        .map(|terrain| terrain.health());
     let mut packet = event.damage;
     let receive = world.terrain_objects.receive_damage(
         &mut run.finalizing_terrain,
@@ -1314,6 +1363,14 @@ pub(crate) fn commit_terrain(
             .get(event.stable_id)
             .is_some_and(|terrain| !terrain.on_fire());
     let TerrainAreaReceiveResult::Lethal(lethal) = receive else {
+        // Phobos `TerrainClass_TakeDamage_RefreshDamageFrame` (`0x71B98B`)
+        // runs inside ReceiveDamage, before the Ares `0x71B99E` ignite hook.
+        #[cfg(feature = "phobos")]
+        if let TerrainAreaReceiveResult::Damaged { remaining } = receive
+            && let Some(prior_health) = prior_health
+        {
+            refresh_terrain_damage_frame(world, rules, event.stable_id, prior_health, remaining);
+        }
         #[cfg(feature = "ares")]
         if ignites {
             world.terrain_catch_fire(event.stable_id, rules);

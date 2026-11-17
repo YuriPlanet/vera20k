@@ -377,9 +377,10 @@ pub struct PhobosGlobals {
     /// `[AudioVisual] ConditionYellow.Terrain=`, `Nullable<double>`
     /// (`Ext/Rules/Body.cpp:147`, constructed unset `Body.h:70`): the health
     /// ratio at or below which a `HasDamagedFrames` terrain object shows its
-    /// damaged frame (`Ext/TerrainType/Hooks.cpp:96-120`). The `0x71B98B`
-    /// redraw hack (`:268-283`) is unnecessary here because the frame is
-    /// re-derived each draw; unset keeps `[AudioVisual] ConditionYellow`.
+    /// damaged frame (`Ext/TerrainType/Hooks.cpp:96-120`). `RuleSet
+    /// ::terrain_condition_yellow` is its one reader, shared by the draw and
+    /// the `0x71B98B` damage latch; unset keeps `[AudioVisual]
+    /// ConditionYellow`.
     #[serde(default)]
     pub condition_yellow_terrain: Option<NativeF64Bits>,
     /// `[CombatDamage] AdjacentWallDamage=`, default `200`
