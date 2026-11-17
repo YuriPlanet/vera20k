@@ -574,6 +574,12 @@ versions.
 The same line, with both full `version` agreement strings, goes to the room once when
 a member's `ready` or `map_status` names another build of the host's version, since
 such a room cannot start.
+A member on the host's build whose `rules_digest` differs from the host's makes the room
+hear one line naming them (`LobbyRulesMismatch`, which has only `name`), once both have
+reported `map_status` 1, as `start` compares them: before it, a generated map's game
+names the rules without the map's. It comes again only after that member's rules have
+matched the host's, or after they left the room and joined it again. Games without the
+key show its English `text`.
 
 Each `join` of the public channel gives the joining session one `chat` line from the
 notice sender after its `joined`. The line says how many players are online: in the
