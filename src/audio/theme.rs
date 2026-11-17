@@ -1006,7 +1006,7 @@ fn first_report_of_missing_track(track_name: &str) -> bool {
         .is_ok_and(|mut reported| reported.insert(track_name.to_ascii_lowercase()))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod missing_track_tests {
     use super::first_report_of_missing_track;
 

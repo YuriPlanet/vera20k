@@ -353,7 +353,8 @@ pub(crate) fn post_speed_changes(state: &mut AppState) {
 
 /// VERA: other players' shared pauses and resumes in frames dispatched so
 /// far, one line each naming who asked. A line without a name would say no
-/// more than the status line, so there is none.
+/// more than the pause's own notice (`messages::show_status_notices`), so
+/// there is none.
 pub(crate) fn post_pause_changes(state: &mut AppState) {
     let changes = state
         .match_state
@@ -398,6 +399,41 @@ pub(crate) fn post_connection_changes(state: &mut AppState) {
         let text = crate::i18n::tr_fill(key, &[("name", &name)]);
         crate::app::input::messages::post_relay_notice(state, &text);
     }
+}
+
+/// VERA: the label of what this game's connection to the game server is
+/// going through, if anything: reconnecting, or catching up with the
+/// relay's frames, which a returning game does as it rejoins.
+/// `messages::show_status_notices` shows it as a message row.
+pub(crate) fn recovery_notice(state: &AppState) -> Option<&'static str> {
+    use crate::net::live_commands::NetworkRecoveryStatus;
+    let live = state.match_state.live_network.as_ref()?;
+    let frame = state
+        .match_state
+        .sim_runtime
+        .runtime()?
+        .simulation
+        .session()
+        .binary_frame();
+    let now = super::frame_pacer::wall_clock_ms() as u32;
+    Some(match live.recovery_status(now, frame)? {
+        NetworkRecoveryStatus::Reconnecting => {
+            // The relay drops a lapsed pass, which only the lobby can renew:
+            // then waiting cannot help.
+            let lapsed = live.relay_expires().is_some_and(|expires| {
+                crate::util::time::SystemTime::now()
+                    .duration_since(crate::util::time::UNIX_EPOCH)
+                    .is_ok_and(|now| now.as_secs() >= expires)
+            });
+            if lapsed {
+                "VERA:ReconnectPassLapsed"
+            } else {
+                "VERA:Reconnecting"
+            }
+        }
+        NetworkRecoveryStatus::CatchingUp { .. } if live.restoring_match() => "VERA:Rejoining",
+        NetworkRecoveryStatus::CatchingUp { .. } => "VERA:CatchingUp",
+    })
 }
 
 /// The name of the player whose House is `house`, when it has one.

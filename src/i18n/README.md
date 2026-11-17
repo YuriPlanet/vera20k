@@ -27,8 +27,8 @@ Name=Deutsch
 
 [Strings]
 VERA:ChooseMap=Karte wählen
-VERA:CatchingUp[one]=Holt auf - {count} Frame zurück
-VERA:CatchingUp[other]=Holt auf - {count} Frames zurück
+VERA:LobbyInGameRooms[one]={count} in einem Raum
+VERA:LobbyInGameRooms[other]={count} in Räumen
 ```
 
 | You see | What to do |

@@ -873,14 +873,9 @@ pub(crate) fn post_cooperative_save_result(state: &mut AppState, saved: bool) {
     post_grey_row(state, key, true, false);
 }
 
-/// A row in `GadgetClass::GetColorScheme` (`0x004E12D0`, "Grey"), flags
-/// 0x16, `MessageDelay * 900`; `text` is a CSF key when `localize`.
-fn post_grey_row(state: &mut AppState, text: &str, localize: bool, silent: bool) {
-    let Some(rules) = state.rules() else {
-        return;
-    };
-    let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
-    let rgb = crate::rules::color_scheme::scheme_entry_by_name(&rules.color_schemes, "Grey")
+/// `GadgetClass::GetColorScheme`'s "Grey" (`0x004E12D0`) as a row colour.
+fn grey_rgb(rules: &crate::rules::ruleset::RuleSet) -> [f32; 3] {
+    crate::rules::color_scheme::scheme_entry_by_name(&rules.color_schemes, "Grey")
         .and_then(|entry| u8::try_from(entry).ok())
         .map_or(MESSAGE_RGB_SYSTEM, |entry| {
             crate::rules::house_colors::house_text_rgb(
@@ -888,7 +883,17 @@ fn post_grey_row(state: &mut AppState, text: &str, localize: bool, silent: bool)
                 crate::rules::house_colors::HouseColorIndex(entry),
             )
             .map(|channel| f32::from(channel) / 255.0)
-        });
+        })
+}
+
+/// A row in `GadgetClass::GetColorScheme` (`0x004E12D0`, "Grey"), flags
+/// 0x16, `MessageDelay * 900`; `text` is a CSF key when `localize`.
+fn post_grey_row(state: &mut AppState, text: &str, localize: bool, silent: bool) {
+    let Some(rules) = state.rules() else {
+        return;
+    };
+    let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
+    let rgb = grey_rgb(rules);
     post_message(
         state,
         &crate::ui::messages::MessagePost {
@@ -913,6 +918,56 @@ pub(crate) fn post_relay_notice(state: &mut AppState, text: &str) {
 /// (`pause_menu::chat_command`); `text` is VERA's own, not a CSF key.
 pub(crate) fn post_chat_command_answer(state: &mut AppState, text: &str) {
     post_grey_row(state, text, false, false);
+}
+
+/// VERA: what online play and a replay are doing, as silent Grey rows
+/// ([`crate::ui::messages::MessageList::show_notice`]): the game server
+/// connection, the shared pause and the replay. Each frame of a match brings
+/// them up to date, also while a pause holds Main_Tick and the rows' expiry.
+/// A replay's hint expires as any row does; the other notices stay while
+/// their state lasts. gamemd has none of these, so the texts are VERA's own.
+pub(crate) fn show_status_notices(state: &mut AppState) {
+    use crate::ui::messages::NoticeSlot;
+    if state.frontend.screen != GameScreen::InGame {
+        return;
+    }
+    let Some(rules) = state.rules() else {
+        return;
+    };
+    let rgb = grey_rgb(rules);
+    let delay_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
+    let network =
+        crate::app::match_runtime::network_match::recovery_notice(state).map(crate::i18n::tr);
+    let pause = crate::app::input::pause_menu::multiplayer_control(state)
+        .and_then(|control| control.status)
+        .map(crate::i18n::tr);
+    let diagnostics = &state.match_state.match_diagnostics;
+    let replay_ms = if diagnostics.playback_playing() {
+        delay_ms
+    } else {
+        None
+    };
+    let replay = diagnostics.playback_status();
+    sync_view(state);
+    let now = message_now_ms(state);
+    let font = &state.renderer.bit_font;
+    let list = &mut state.match_state.match_presentation.message_list;
+    for (slot, text, timeout_ms) in [
+        (NoticeSlot::Network, network, None),
+        (NoticeSlot::Pause, pause, None),
+        (NoticeSlot::Replay, replay, replay_ms),
+    ] {
+        let post = text
+            .as_deref()
+            .map(|text| crate::ui::messages::MessagePost {
+                prefix: None,
+                text,
+                rgb,
+                timeout_ms,
+                silent: true,
+            });
+        list.show_notice(slot, post.as_ref(), now, &|s| font.text_width(s) as i32);
+    }
 }
 
 /// VERA: a match whose `veraui.ini` had lines the game could not use says so

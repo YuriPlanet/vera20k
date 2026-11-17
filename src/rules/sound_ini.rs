@@ -32,6 +32,46 @@
 //! - Part of rules/ — depends on rules/ini_parser and the assets audio index
 //!   (`Sounds=` admission). No sim/render dependencies.
 
+/// A map's playback operand, independent of the local audio catalog. Network
+/// triggers retain names or literal slots until the audio owner consumes them;
+/// gameplay operands still use Read6DD5B0's resolved numeric value.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum SoundReference {
+    Name(String),
+    Index(i32),
+}
+
+impl SoundReference {
+    pub fn sound<'a>(&'a self, registry: &'a SoundRegistry) -> Option<&'a str> {
+        match self {
+            Self::Name(name) => registry.get(name),
+            Self::Index(index) => registry.entry_by_index(*index),
+        }
+        .map(|entry| entry.id.as_str())
+    }
+
+    pub fn eva_index(&self, registry: &EvaRegistry) -> Option<i32> {
+        match self {
+            Self::Name(name) => registry.index_of(name),
+            Self::Index(index) => registry.entry_by_index(*index).map(|_| *index),
+        }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn name(&self) -> Option<&str> {
+        match self {
+            Self::Name(name) => Some(name),
+            Self::Index(_) => None,
+        }
+    }
+}
+
+impl From<String> for SoundReference {
+    fn from(name: String) -> Self {
+        Self::Name(name)
+    }
+}
+
 use std::collections::HashMap;
 
 use crate::assets::audio_bag::AudioIndex;

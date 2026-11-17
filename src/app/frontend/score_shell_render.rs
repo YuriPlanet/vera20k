@@ -27,7 +27,7 @@ use crate::render::shell_paint::{
 use crate::render::shell_text::ShellAlign;
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::ui::score_shell::{CONTINUE_BUTTON, SCORE_PAGE, ScoreAlign};
-use crate::ui::shell::geom::{RectPx, centred_in_window, dialog_origin};
+use crate::ui::shell::geom::{centred_in_window, dialog_origin};
 
 /// The shaded part of the art sits over the art.
 const SHADE_DEPTH: f32 = PARENT_BACKGROUND_DEPTH - 0.00001;
@@ -303,9 +303,6 @@ pub(crate) fn render_score_page(
                 path_a_reveal: None,
             });
         }
-        let rect = layout
-            .paging_button(crate::ui::score_shell::PREVIOUS_PAGE)
-            .expect("paging button");
         labels.push(PaintLabel {
             text: crate::i18n::tr_fill(
                 "VERA:PageOf",
@@ -315,7 +312,7 @@ pub(crate) fn render_score_page(
                 ],
             )
             .into(),
-            rect: RectPx::new(rect.x, rect.y - 24, rect.w, 20),
+            rect: layout.page_label(),
             align: ShellAlign::H_CENTER,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: None,

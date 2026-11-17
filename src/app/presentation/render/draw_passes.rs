@@ -1606,6 +1606,36 @@ fn composite_world_with_drag_rect(
     }
 }
 
+/// The wheel-zoomed world, resampled once from world pixels into the window
+/// after the Options zoom scaled the frame there (`app::frame`), instead of
+/// only through the frame. VERA-only: stock YR has no world zoom. Whatever the
+/// frame drew over the battlefield keeps showing at the frame's pixels
+/// (`WorldZoomPass::draw_window_copy`); the battlefield's window-pixel text and
+/// the cursor go over this (`window_ui`). It draws only when the frame's
+/// `set_view` kept a window copy (`render::mod`).
+pub(crate) fn draw_world_window_copy(
+    state: &AppState,
+    encoder: &mut wgpu::CommandEncoder,
+    view: &wgpu::TextureView,
+) {
+    let (Some(zoom), Some(world)) = (
+        state.tactical_zoom(),
+        state.renderer.world_zoom_pass.as_ref(),
+    ) else {
+        return;
+    };
+    let gpu = &state.renderer.gpu;
+    world.draw_window_copy(
+        &gpu.device,
+        &gpu.queue,
+        encoder,
+        view,
+        state.renderer.combat_light_renderer.composition_texture(),
+        zoom,
+        crate::app::input::camera::tactical_viewport_px(state),
+    );
+}
+
 /// VERA's ground marks: world-surface stores at neutral A, before wheel zoom.
 pub(super) fn draw_pooled_surface_lines<'a>(
     pass: &mut wgpu::RenderPass<'a>,

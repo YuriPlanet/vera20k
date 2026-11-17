@@ -20,8 +20,8 @@
 //!
 //! [Strings]
 //! VERA:ChooseMap=Karte wählen
-//! VERA:CatchingUp[one]=Holt auf - {count} Frame zurück
-//! VERA:CatchingUp[other]=Holt auf - {count} Frames zurück
+//! VERA:LobbyInGameRooms[one]={count} in einem Raum
+//! VERA:LobbyInGameRooms[other]={count} in Räumen
 //! ; One of the game's own labels.
 //! GUI:Ok=OK
 //! ```
@@ -1584,7 +1584,7 @@ mod tests {
 
     #[test]
     fn the_check_lists_untranslated_texts_missing_forms_and_values() {
-        let file = "[Language]\nName=Русский\n[Strings]\nVERA:CatchingUp[one]=Догоняем\nVERA:PlayersOnline=Игроки\nVERA:Bogus=?\nNoEquals\n";
+        let file = "[Language]\nName=Русский\n[Strings]\nVERA:LobbyInGameRooms[one]={count} в комнате\nVERA:PlayersOnline=Игроки\nVERA:Bogus=?\nNoEquals\n";
         assert!(!check("russian.ini", file).complete());
         let report = check("vera20k.ru.ini", file);
         assert!(!report.complete());
@@ -1597,7 +1597,7 @@ mod tests {
         assert!(
             report
                 .missing_forms
-                .contains(&"VERA:CatchingUp[few]".to_owned())
+                .contains(&"VERA:LobbyInGameRooms[few]".to_owned())
         );
         assert!(
             report

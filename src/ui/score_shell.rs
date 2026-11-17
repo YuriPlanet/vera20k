@@ -343,13 +343,33 @@ pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> ScoreLayout {
 }
 
 impl ScoreLayout {
+    /// VERA's Previous or Next, placed above Continue on the 800x600 page and
+    /// scaled with it.
     pub fn paging_button(&self, id: u16) -> Option<RectPx> {
-        let rows = crate::ui::shell::paging::button_rects(self.continue_button());
-        match id {
-            PREVIOUS_PAGE => Some(rows[0]),
-            NEXT_PAGE => Some(rows[1]),
-            _ => None,
-        }
+        let slot = match id {
+            PREVIOUS_PAGE => 0,
+            NEXT_PAGE => 1,
+            _ => return None,
+        };
+        Some(
+            self.page
+                .scale
+                .derive_rect(self.continue_button(), |continue_button| {
+                    crate::ui::shell::paging::button_rects(continue_button)[slot]
+                }),
+        )
+    }
+
+    /// VERA's "Page n of m" caption, 24 pixels above Previous on the 800x600
+    /// page and scaled with it: its text scales with the page and is clipped
+    /// to this rect.
+    pub fn page_label(&self) -> RectPx {
+        self.page
+            .scale
+            .derive_rect(self.continue_button(), |continue_button| {
+                let previous = crate::ui::shell::paging::button_rects(continue_button)[0];
+                RectPx::new(previous.x, previous.y - 24, previous.w, 20)
+            })
     }
 
     pub fn continue_button(&self) -> RectPx {
@@ -665,6 +685,22 @@ mod tests {
                 assert_eq!(row.cells(), ids.map(&at), "{w}x{h}");
             }
             assert_eq!(table.bands, BANDS.map(at), "{w}x{h}");
+        }
+    }
+
+    #[test]
+    fn paging_controls_and_page_caption_scale_with_the_page() {
+        // At 1600x1200 the 800x600 page doubles; the caption's text does too,
+        // and it is clipped to its rect.
+        let base = compute_layout(800, 600);
+        let scaled = compute_responsive_layout(1600, 1200);
+        let doubled = |r: RectPx| RectPx::new(2 * r.x, 2 * r.y, 2 * r.w, 2 * r.h);
+        assert_eq!(scaled.page_label(), doubled(base.page_label()));
+        for id in [PREVIOUS_PAGE, NEXT_PAGE] {
+            assert_eq!(
+                scaled.paging_button(id),
+                base.paging_button(id).map(doubled)
+            );
         }
     }
 

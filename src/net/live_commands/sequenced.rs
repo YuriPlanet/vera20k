@@ -1269,7 +1269,7 @@ impl SequencedSession {
     }
 
     /// How far this game is behind the relay's head, when that is more than
-    /// half a second of frames: the Catching up status line.
+    /// half a second of frames: the Catching up message row.
     fn catching_up_frames(&self, current_frame: u32) -> Option<u32> {
         let frames = self.head_frame.saturating_sub(current_frame);
         // A watcher's frames come a pull or a second at a time and wait

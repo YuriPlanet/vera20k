@@ -31,6 +31,13 @@ Games with two or more human players number their objects from one agreed start,
 a player whose game already ran the random-map dialog or an earlier match numbers
 them as one just opened does; nothing new is exchanged, and older builds are
 refused by the build check.
+Fresh LAN and online matches also initialize local trigger variables from the
+incoming map only. Unassigned values cannot carry over from a player's previous
+match, including on generated maps with no local assignments. Network replay and
+rejoin reconstruction use the same fresh state; loading a save keeps its saved
+variables. Offline skirmish and campaign loads retain the original game's local
+variable carryover. This changes no packets: mixed builds are refused by the
+existing build check, and a rollback restores the earlier carryover behavior.
 Whether Ares plays in a match is decided from that same data: the rules, mode
 and map, whether the selected mod loads `ares.mix`, and the player's
 [Ares setting](ares.md#the-ares-setting), which the rules agreement covers. With
@@ -93,6 +100,16 @@ status page says the games differ (`VERA:MatchStartMismatch`), the log records b
 hashes, and the search goes on after the stage timeout; the host only times out. This
 adds nothing to what game, lobby and relay exchange.
 
+Network trigger playback keeps the map's sound/EVA name or numeric sound slot until
+local audio consumes it. Different local audio catalogs and optional music therefore
+do not change startup hashes or the scheduling of an object's custom sound. A missing
+local cue is silent. Gameplay actions that use an audio-catalog ordinal as a number
+(such as a timer with a sound-name parameter) still retain and hash that number, so
+real gameplay differences are refused. This changes no messages: older builds are
+refused by the existing build check. Saved custom sound references use a new automatic
+snapshot layout; older layouts are refused. A rollback uses its earlier audio resolution
+and save layout.
+
 The online lobby's Options page has a Translate Chat Into list: Off, or one of 14
 languages, saved as `[VERA] TranslateChat=`, and under it a Translate in Matches box, on
 by default and saved as `[VERA] TranslateMatches=`. With a language chosen, other
@@ -123,6 +140,16 @@ finishes loading must agree to the initial world before it starts. A player who
 never finishes loading leaves in the first frame once silent for 60 seconds, or 3
 minutes after the first client was ready; the native loading timeout leaves that
 departure to the relay. A match spread over several relays is cancelled instead.
+If ready players on different relays report different initial worlds, updated
+relays refuse the start as soon as those authenticated reports arrive, using the
+existing agreement-mismatch error. A relay whose players have not sent Ready is
+still loading, not a mismatch. The refusal remains available to retries after
+the empty match journal is removed. No client or federation packet changes:
+released clients already understand the error. Relay upgrades can be gradual;
+an older relay may still report ordinary cancellation or wait for its loading
+timeout, but cannot start a match with different agreements. Rolling the relay
+back restores that older reporting. Deploying the relay change is separate from
+publishing a new game build.
 At each deadline, missing input is empty; a command joins the next unsealed
 frame. The sender also waits for that commit.
 Frames use the existing Event codec and simulation queues, with a fresh compression
@@ -162,7 +189,9 @@ while simulation ticks are stopped. Both markers use the normal ordered
 history and replay recovery, and each names the player who asked: once a
 client's world reaches one, the other players and watchers read "<name> paused
 the game." or "<name> resumed the game." A rejoining game shows only those its
-world reaches after catching up. Connections, chat and ticket renewal keep
+world reaches after catching up. Each game also keeps a message row while its
+own request waits for the relay and while the match is paused for all players.
+Connections, chat and ticket renewal keep
 running; accepted gameplay inputs wait for their assigned frames after resume.
 Opening Options alone remains local. After a resume nobody can pause again for
 30 seconds. Confirming Leave resumes as needed until the queued EXIT executes.
@@ -208,10 +237,13 @@ slowest player (ProcessNetwork `0x00647BF4..0x00647E6D`).
 The relay keeps a bounded RAM cache and the full match journal on disk. The
 journal is not encrypted: it holds plain commands and relies on file permissions. Temporary connection loss keeps the player's identity, units, input cursor
 and world in the match; the client renews its ticket and reads missed frames when
-connectivity returns. The UI shows Reconnecting or Catching up while healthy
-clients continue. Once the relay has heard nothing from a player of a started
-match for 10 seconds, the other players read "<name> is not responding.", and
-"<name> is back." when it hears them again; watchers read neither. The relay
+connectivity returns. The game shows Reconnecting or Catching up as a message
+row while healthy clients continue. Such a row, and the shared pause's, stays
+in the message list while its state lasts; it comes and goes only once the
+state has held for a second, so a short dip adds no row. Once the relay has
+heard nothing from a player of a started match for 10 seconds, the other
+players read "<name> is not responding.", and "<name> is back." when it hears
+them again; watchers read neither. The relay
 names silent players in each player's status (relay README "Silence"). A
 released game ignores the names. An older relay names nobody, so a game on it
 shows no such line; in a match spread over several relays, players homed on an
@@ -257,6 +289,15 @@ so it refuses a match played with one as a rules mismatch.
 Replay version 4 regenerates shared planning events through the simulation at
 their original frame phases. Earlier JSON logs remain readable for inspection;
 playback requires the current version to avoid executing old internal events twice.
+
+Fresh LAN and online games also seed the bridge-repair MapGen RNG from the
+agreed match seed, instead of retaining each player's earlier random-map or
+bridge-repair history. Its cursor participates in network state checks, so a
+difference is detected before another repair writes different bridge overlays.
+Rejoining and watching rebuild this same start before replaying the relay's
+history. Offline games keep the native process-cursor retention. This adds no
+packet fields; older builds are refused by the existing build check, and a
+rollback restores that build's earlier retention and checksums.
 
 | Responsibility | Authoritative owner |
 |---|---|

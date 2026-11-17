@@ -30,7 +30,7 @@
 use crate::app::AppState;
 use crate::render::batch::{BatchRenderer, CameraUniform};
 use crate::render::bit_font::TextRaster;
-use crate::render::scaled_copy::{MaskedCopy, ScaledSurface};
+use crate::render::scaled_copy::{MaskSource, MaskedCopy, ScaledSurface, WindowMask};
 use crate::render::terrain_draw::{
     PackedCompositePiece, PackedSpriteKind, PackedSurface, TerrainDrawRenderer,
 };
@@ -136,7 +136,7 @@ impl SidebarSurface {
         batch: &BatchRenderer,
         frame: SidebarFrame,
     ) -> Self {
-        let window = MaskedCopy::new(device, "Sidebar Window Copy", format);
+        let window = MaskedCopy::new(device, "Sidebar Window Copy", format, WindowMask::Depth);
         let part = |label, size| {
             let (camera_buffer, camera) = batch.create_ui_camera(device);
             PartSurface {
@@ -531,10 +531,10 @@ impl SidebarSurface {
             self.window.draw(
                 device,
                 &mut pass,
-                &part.surface,
+                part.surface.color_view(),
                 &part.window_placement,
-                frame_depth,
-                window_rect(zoom, rect),
+                MaskSource::Depth(frame_depth),
+                zoom.window_rect(rect),
             );
         }
     }
@@ -621,24 +621,6 @@ fn place_column_text(
             camera,
         }),
     }
-}
-
-/// The window pixels wholly inside frame rect `(x, y, width, height)` once
-/// `zoom` scales it: one it shares with a neighbour keeps the zoom's blend.
-fn window_rect(zoom: ZoomGeometry, (x, y, width, height): (u32, u32, u32, u32)) -> [u32; 4] {
-    let (left, top) = zoom.source_to_window(x as f32, y as f32);
-    let (right, bottom) = zoom.source_to_window((x + width) as f32, (y + height) as f32);
-    let (frame_width, frame_height) = zoom.frame_size();
-    let left = left.ceil() as u32;
-    let top = top.ceil() as u32;
-    let right = (right.floor() as u32).min(zoom.origin.0 + frame_width);
-    let bottom = (bottom.floor() as u32).min(zoom.origin.1 + frame_height);
-    [
-        left,
-        top,
-        right.saturating_sub(left),
-        bottom.saturating_sub(top),
-    ]
 }
 
 /// The window copy for this frame, after the zoom pass scaled the match frame
@@ -1094,12 +1076,12 @@ mod tests {
             (zoom.src_width, zoom.src_height, zoom.origin),
             (400, 300, (0, 0))
         );
-        assert_eq!(window_rect(zoom, (233, 0, 167, 300)), [583, 0, 417, 750]);
-        assert_eq!(window_rect(zoom, (0, 268, 233, 32)), [0, 670, 582, 80]);
+        assert_eq!(zoom.window_rect((233, 0, 167, 300)), [583, 0, 417, 750]);
+        assert_eq!(zoom.window_rect((0, 268, 233, 32)), [0, 670, 582, 80]);
         // At a whole zoom it is the frame rect's blocks, inside the border.
         let whole = ZoomGeometry::new(1202, 901, 300, FrameShape::Window);
         assert_eq!(whole.origin, (1, 0));
-        assert_eq!(window_rect(whole, (232, 0, 168, 300)), [697, 0, 504, 900]);
+        assert_eq!(whole.window_rect((232, 0, 168, 300)), [697, 0, 504, 900]);
     }
 
     #[test]

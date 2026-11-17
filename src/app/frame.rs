@@ -1003,6 +1003,7 @@ impl App {
         let message_ms = if state.focus_freeze_active() {
             None
         } else {
+            crate::app::input::messages::show_status_notices(state);
             crate::app::input::messages::update(
                 state,
                 runtime_pass.main_tick_admitted || hidden_run.is_some(),
@@ -1492,6 +1493,7 @@ impl App {
                         .as_ref()
                         .unwrap()
                         .draw(&mut encoder, &view);
+                    render::draw_world_window_copy(state, &mut encoder, &view);
                     crate::app::presentation::sidebar_surface::draw_window_copy(
                         state,
                         &mut encoder,
@@ -1587,64 +1589,6 @@ impl App {
             &state.renderer.bit_font,
             crate::app::diagnostics::performance_overlay::match_panel(state),
         );
-        if state.frontend.screen == GameScreen::InGame {
-            let status = state
-                .match_state
-                .match_diagnostics
-                .playback_status()
-                .or_else(|| {
-                    let live = state.match_state.live_network.as_ref()?;
-                    let frame = state
-                        .match_state
-                        .sim_runtime
-                        .runtime()?
-                        .simulation
-                        .session()
-                        .binary_frame();
-                    match live.recovery_status(
-                        crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
-                        frame,
-                    )? {
-                        crate::net::live_commands::NetworkRecoveryStatus::Reconnecting => {
-                            // The relay drops a lapsed pass, which only the
-                            // lobby can renew: then waiting cannot help.
-                            let lapsed = live.relay_expires().is_some_and(|expires| {
-                                crate::util::time::SystemTime::now()
-                                    .duration_since(crate::util::time::UNIX_EPOCH)
-                                    .is_ok_and(|now| now.as_secs() >= expires)
-                            });
-                            Some(crate::i18n::tr(if lapsed {
-                                "VERA:ReconnectPassLapsed"
-                            } else {
-                                "VERA:Reconnecting"
-                            }))
-                        }
-                        crate::net::live_commands::NetworkRecoveryStatus::CatchingUp { frames } => {
-                            let key = if live.restoring_match() {
-                                "VERA:Rejoining"
-                            } else {
-                                "VERA:CatchingUp"
-                            };
-                            Some(crate::i18n::tr_count(key, frames, &[]))
-                        }
-                    }
-                })
-                .or_else(|| {
-                    crate::app::input::pause_menu::multiplayer_control(state)?
-                        .status
-                        .map(crate::i18n::tr)
-                });
-            if let Some(status) = status {
-                state.renderer.performance_overlay.encode_status(
-                    &state.renderer.gpu,
-                    &state.renderer.batch_renderer,
-                    &mut encoder,
-                    &output.texture,
-                    &state.renderer.bit_font,
-                    &status,
-                );
-            }
-        }
         if state.frontend.screen == GameScreen::InGame
             && let Some(offset_px) = runtime_pass.screen_shake_offset
         {
@@ -1729,7 +1673,10 @@ impl App {
             std::mem::take(&mut state.match_state.input.retail_screenshot_requested);
         let screenshot_central_rect = shake_central_rect(state, &output.texture);
         // Text drawn in the window (`window_ui`) is not in the frame the
-        // screenshot retains: this frame's goes over its copy.
+        // screenshot retains, and neither is the wheel-zoomed battlefield's
+        // window copy: this frame's go over its copy, the battlefield only
+        // when this frame drew it (not under an in-game menu). A zoomed frame
+        // is always copied, being smaller than the window.
         let window_text = state.renderer.window_ui.drew_text();
         let previous_composition = state
             .renderer
@@ -1747,12 +1694,20 @@ impl App {
         if let Some(copy) = previous_composition
             .as_ref()
             .and_then(|previous| previous.copy())
-            .filter(|_| window_text)
         {
-            state
-                .renderer
-                .window_ui
-                .draw_screenshot_text(state, &mut encoder, copy);
+            if game_render_output.is_some() {
+                render::draw_world_window_copy(
+                    state,
+                    &mut encoder,
+                    &copy.create_view(&Default::default()),
+                );
+            }
+            if window_text {
+                state
+                    .renderer
+                    .window_ui
+                    .draw_screenshot_text(state, &mut encoder, copy);
+            }
         }
         let pending_retail_screenshot = previous_composition
             .map(|previous| {
