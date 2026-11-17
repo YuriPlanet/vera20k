@@ -31,15 +31,20 @@ use crate::sim::world::{FrameEffects, Simulation, UninitContext};
 impl Simulation {
     /// `TechnoExt::CheckDeathConditions`, called from
     /// `TechnoExt::OnEarlyUpdate` (`Ext/Techno/Body.Update.cpp:26`) after
-    /// `ApplyMindControlRangeLimit` and before `ApplyInterceptor`.
+    /// `ApplyMindControlRangeLimit` and before `:29` `ApplyInterceptor`.
     ///
-    /// Native's `if (CheckDeathConditions()) return;` aborts `OnEarlyUpdate`,
-    /// whose only remaining step is the unported `ApplyInterceptor`; the
-    /// caller therefore continues the AI visit instead of unwinding. Native
-    /// likewise keeps running the rest of `TechnoClass_AI` on the object
-    /// `ReceiveDamage` already erased, and VERA's later steps carry the same
-    /// "entity gone" guards. Returns whether a self-kill was issued so a
-    /// future `ApplyInterceptor` port can honour the early return.
+    /// Native's `if (CheckDeathConditions()) return;` aborts `OnEarlyUpdate`, so
+    /// the `ApplyInterceptor` on the next line never scans on a visit that just
+    /// killed its object. Every arm that answers true (`:161`, `:168`, `:181`,
+    /// `:218`, `:231`, `:241`, `:252` in `:138-259`) called `KillSelf`, so the
+    /// skip only covers an object that is already gone, or the Building `Sell`
+    /// arm whose `Selling` mission `ApplyInterceptor`'s own `:60-61` guard
+    /// refuses anyway. Native likewise keeps running the rest of
+    /// `TechnoClass_AI` on the object `ReceiveDamage` already erased, and
+    /// VERA's later steps carry the same "entity gone" guards. The return value
+    /// is that gate: `world/techno_ai.rs` skips `apply_interceptor` when it is
+    /// true, and the limbo sweep (`Ext/Scenario/Body.cpp:101-110`) never runs
+    /// the interceptor at all.
     #[cfg(feature = "phobos")]
     pub(crate) fn check_auto_death(
         &mut self,
@@ -527,6 +532,15 @@ impl Simulation {
     /// house, then the bunker unload, `KillPassengers(pThis)` (the object is
     /// its own killer), `Stun`, `Limbo`, `RegisterKill(pThis->Owner)` and
     /// `UnInit`.
+    ///
+    /// `:773` is `AnimExt::CreateRandomAnim(pVanishAnimation,
+    /// pThis->GetCoords(), pThis, nullptr, true)`: five arguments, so `invoker`
+    /// is true and `ownedObject` keeps its `Ext/Anim/Body.h:122` default
+    /// `false`. The animation records the dying object as
+    /// `Invoker`/`InvokerHouse` and its house as owner house but gets no owner
+    /// object, because `AnimClass::SetOwnerObject @ 0x00424B50` runs only under
+    /// `if (ownedObject)` (`Ext/Anim/Body.cpp:420-421`). The `None` below is
+    /// that absent owner object.
     fn vanish_self(
         &mut self,
         id: u64,
