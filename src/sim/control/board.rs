@@ -281,7 +281,7 @@ impl ControlBoard {
         }
         for intent in out.intents {
             let command = intent.command();
-            self.admit(sim, &owner_name, &command, &mut pending);
+            self.admit(sim, rules, &owner_name, &command, &mut pending);
         }
         // Objects the brain hands to a managed routine. Consumed before the
         // orders below, because a routine is its object's only issuer: the
@@ -309,7 +309,7 @@ impl ControlBoard {
             }
         }
         for command in &out.commands {
-            self.admit(sim, &owner_name, command, &mut pending);
+            self.admit(sim, rules, &owner_name, command, &mut pending);
         }
         // The orders that never left. A brain keeps its own record of what it
         // has told each object, and an order dropped here — by the per-frame
@@ -350,6 +350,7 @@ impl ControlBoard {
             if finished {
                 self.admit(
                     sim,
+                    rules,
                     &owner_name,
                     &Command::PlaceProducedMobile { category },
                     &mut pending,
@@ -483,7 +484,7 @@ impl ControlBoard {
         let funnel = Funnel::new(sim, rules, self.owner);
         match funnel.prepare(actor, goal) {
             Ok(command) => {
-                if self.admit(sim, owner_name, &command, pending) {
+                if self.admit(sim, rules, owner_name, &command, pending) {
                     ApplyOutcome::Queued
                 } else {
                     ApplyOutcome::Rejected
@@ -505,6 +506,7 @@ impl ControlBoard {
     fn admit(
         &mut self,
         sim: &Simulation,
+        rules: &RuleSet,
         owner_name: &str,
         command: &Command,
         pending: &mut Vec<Command>,
@@ -521,6 +523,16 @@ impl ControlBoard {
             self.rejected += 1;
             return false;
         }
+        // Objects the player never had: `Spawned=yes` units ("created by
+        // another object and therefore not player controllable",
+        // rulesmd.ini) and `Selectable=no` ones. A click cannot reach them, so
+        // neither may auto play — the paradrop transport is the type this is
+        // named for.
+        if actor_of(command).is_some_and(|actor| !player_controllable(sim, rules, actor)) {
+            log::debug!("auto play: refused, not the player's to command {command:?}");
+            self.rejected += 1;
+            return false;
+        }
         if !self.budget.try_command() {
             log::debug!("auto play: refused, the frame budget is spent {command:?}");
             self.rejected += 1;
@@ -528,6 +540,23 @@ impl ControlBoard {
         }
         pending.push(command.clone());
         true
+    }
+}
+
+/// Whether a click could have reached this object: the player's to command.
+///
+/// `Spawned=` is the retail rules' own word for it — "created by another
+/// object and therefore not player controllable" — and `Selectable=no` is the
+/// other half, the object that can never join a selection. A type the rules do
+/// not name stays controllable, because a missing key is not a refusal.
+fn player_controllable(sim: &Simulation, rules: &RuleSet, entity: u64) -> bool {
+    let Some(actor) = sim.entities().get(entity) else {
+        return false;
+    };
+    let name = sim.interner().resolve(actor.type_ref());
+    match rules.object(name) {
+        Some(object) => !object.spawned && object.selectable,
+        None => true,
     }
 }
 
@@ -634,6 +663,42 @@ mod tests {
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         Some((sim, rules))
+    }
+
+    /// The wish list's own example of an object no click can reach: the paradrop
+    /// transport. Retail marks it `Spawned=yes` ("created by another object and
+    /// therefore not player controllable") and `Selectable=no`, so auto play
+    /// must leave it alone while still driving the house's own units.
+    #[test]
+    fn a_spawned_object_is_not_the_players_to_command() {
+        let (mut sim, rules) = arena().expect("retail rules");
+        let owner = sim
+            .houses()
+            .keys()
+            .next()
+            .map(|owner| sim.interner().resolve(*owner).to_owned())
+            .expect("a house");
+
+        let plane = sim
+            .spawn_object("PDPLANE", &owner, 20, 20, 0, &rules)
+            .expect("the paradrop transport spawns");
+        assert!(
+            !player_controllable(&sim, &rules, plane),
+            "Spawned=yes and Selectable=no: not the player's"
+        );
+
+        let tank = sim
+            .spawn_object("MTNK", &owner, 21, 21, 0, &rules)
+            .expect("a tank spawns");
+        assert!(
+            player_controllable(&sim, &rules, tank),
+            "a player's own tank is the player's"
+        );
+
+        assert!(
+            !player_controllable(&sim, &rules, 999_999),
+            "an absent object cannot be commanded either"
+        );
     }
 
     /// The three switches own three kinds of order, and the abilities switch
