@@ -1517,6 +1517,17 @@ pub struct Simulation {
     #[cfg(feature = "phobos")]
     #[serde(skip, default)]
     pub(crate) phobos_falling_down: Vec<u64>,
+    /// Phobos `ScenarioExt::AutoDeathObjects`
+    /// (`Ext/Scenario/Body.cpp:101-134`): Technos whose type sets
+    /// `AutoDeath.Behavior=` and which Ares creates into limbo, in
+    /// `RegisterAutoDeath` order. The entries are ids, not pointers: native
+    /// holds the TechnoExt, which VERA has no separate object for. Saved with
+    /// the scenario (`:181`) and hashed; the per-frame sweep
+    /// (`UpdateAutoDeathObjectsInLimbo`) is the only visit a limboed object
+    /// gets. See `sim::auto_death`.
+    #[cfg(feature = "phobos")]
+    #[serde(default)]
+    pub(crate) auto_death_objects: Vec<u64>,
     /// Ares CanMakeStuffUp's RulesClass writes (100677B0, hook 0x687C16),
     /// drawn once at scenario start; saved and hashed. See
     /// `sim::ares_make_stuff_up`.
@@ -4898,6 +4909,8 @@ impl Simulation {
             reflected_warhead: None,
             #[cfg(feature = "phobos")]
             phobos_falling_down: Vec::new(),
+            #[cfg(feature = "phobos")]
+            auto_death_objects: Vec::new(),
             #[cfg(feature = "ares")]
             ares_made_up_rules: None,
             scenario_rng: SimRng::new(seed),

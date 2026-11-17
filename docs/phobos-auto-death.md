@@ -3,8 +3,9 @@
 A Techno type that destroys itself when a condition holds. The ported arms are
 `AutoDeath.Behavior=kill|vanish|sell` with `OnAmmoDepletion`, `AfterDelay`,
 `PlayerPowerState`, `PlayerMoney.Max/Min`, `TechnosDontExist` and
-`TechnosExist`, and the `AutoDeath.VanishAnimation` list; the residuals below
-list what is still open.
+`TechnosExist`, and the `AutoDeath.VanishAnimation` list, plus `AllowLimboed`
+(kill a limboed object through the scenario-level `AutoDeathObjects` sweep), and
+`KillSelf`'s limbo arm; the residuals below list what is still open.
 
 ## Keys
 
@@ -83,6 +84,34 @@ Selling mission unless it is already selling; anything else — a non-building o
 a type without a Buildup SHP — falls through to the `Kill` arm, as the native
 developer warning does.
 
+A limboed object — an Ares initial payload, or a passenger a building absorbed —
+is not in the Logic vector, so the ordinary AI walk never reaches it. Phobos
+instead keeps `ScenarioExt::AutoDeathObjects`
+(`Ext/Scenario/Body.cpp:101-134`) and visits every entry that is not in Logic but
+still alive, once per frame, from `LogicClass_Update_BeforeAll`
+(`DEFINE_HOOK(0x55B4E1, …, 0x5)` at `:293-301`), ahead of the transport reloaders
+and before the object pass. VERA sweeps the same way from the `BombList` step,
+which already owns that hook. Only three Ares admissions register: the Unit and
+Aircraft payload (`Misc/Hooks.Ares.cpp:31-36`), the building payload (`:38-42`)
+and the last occupant of a placed building (`:44-57`). Ordinary boarding, a
+Chrono limbo and a sell/repair limbo never register, so those objects keep no
+`AutoDeath` visits at all — `AutoDeath.AllowLimboed` is not a permission to be
+visited, only whether a visit may kill. VERA registers at its one Ares payload
+owner, which covers the first two; its map loader authors no building occupants,
+so the third has no separate admission.
+
+`KillSelf`'s limbo arm (`:721-766`) ignores `AutoDeath.Behavior=`: `isInLimbo`
+returns from that arm before the `kill`/`vanish`/`sell` dispatch, so every
+behavior takes it. In order it exits a parasite from its victim, drops a limboed
+building's `AddToLimboTracking` entry (its `!Insignificant && !DontScore` gate
+means the type never entered the count), dirties the transporter owner's power
+when the object is `Absorbed` (Techno `+0x439`), registers the kill as
+`RegisterKill(pThis->Owner)` — the owner house, not an attacking Techno —
+uninits, and then settles a `Gunner=` transport: `RemoveGunner(nullptr)` followed
+by `ReceiveGunner` on the **last** remaining passenger (native walks the cargo
+list to its tail, where `Detonate.cpp:887-913` takes the head). Nothing is
+played, stunned, limboed again or sold: no vanish animation, no corpse, no C4 hit.
+
 The low-power arm is written
 `(Full && !isLowPower) || (Low && isLowPower) && !isFirstFrame`. `&&` binds
 tighter than `||`, so the first-frame guard applies to the `Low` arm only and a
@@ -139,9 +168,6 @@ clock has a zero maximum, which the renderer skips.
   owner object, which VERA still leaves empty (`ownedObject` stays at its
   `false` default). Trigger: a reader of the vanish anim's owner object.
   Frequency: authored mods. Risk: low.
-- `AutoDeath.AllowLimboed` is read for the owner-change transporter gate, but
-  `KillSelf`'s limbo arm (`:721-766`) is unported, so a limboed object still
-  never dies here and the object-level limbo gate refuses regardless of the key.
 - Ares `SpawnSurvivors` before the fatal hit (`Ext/Techno/Body.Update.cpp:810-816`)
   is not ported. The hit ignores defenses, and VERA's death path then refuses its
   own survivor release and marks the transport handled, so an `AutoDeath`-killed
@@ -149,8 +175,5 @@ clock has a zero maximum, which the renderer skips.
   Reproducing Phobos' pre-call needs VERA's survivor owner taught the
   pre-damage context (it currently assumes the unit is already lifted), which is
   its own chain.
-- The scenario-level `AutoDeathObjects` collection
-  (`Ext/Scenario/Body.cpp:101-131`) tracks limboed objects for the limbo arm and
-  is not ported with it.
 - Native's early `return` from `OnEarlyUpdate` only skips the unported
   `ApplyInterceptor`; VERA continues the visit either way.
