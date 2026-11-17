@@ -56,6 +56,25 @@ pub fn json(path: &'static str) -> &'static serde_json::Value {
     })
 }
 
+/// Asserts that `value`, something this game sends, equals the JSON fixture at
+/// `path`: a copy another program's tests check, such as the lobby's
+/// (`tests/fixtures/lobby/`). `VERA20K_UPDATE_FIXTURES=1` writes `value` there
+/// instead; the diff is then a change that program has to accept.
+pub fn assert_sent_json(path: &'static str, value: &serde_json::Value) {
+    if std::env::var_os("VERA20K_UPDATE_FIXTURES").is_some_and(|flag| flag == "1") {
+        let full = checkout_root().join(path);
+        let text = serde_json::to_string_pretty(value).expect("a JSON value prints") + "\n";
+        std::fs::write(&full, text)
+            .unwrap_or_else(|error| panic!("cannot write {}: {error}", full.display()));
+        return;
+    }
+    assert!(
+        json(path) == value,
+        "{path} differs from what the game sends; rerun with VERA20K_UPDATE_FIXTURES=1 \
+         and change the programs that read it to accept the diff"
+    );
+}
+
 fn expand_shared_rng_states(path: &str, document: &mut serde_json::Value) {
     fn expand(value: &mut serde_json::Value, table: &[serde_json::Value], path: &str) {
         let reference = match &*value {
