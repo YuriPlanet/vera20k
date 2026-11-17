@@ -138,7 +138,7 @@ Supported extensions:
 - [AreaFire.Target](phobos-area-fire-target.md) (`AreaFire=` weapons pick the firer (`self`) or one drawn eligible adjacent cell (`random`) instead of the stock cell under the firer; 1 key)
 - [Wall weapon selection](phobos-wall-weapon-select.md) (`AllowWeaponSelectAgainstWalls` per type and globally lets the wall checks at `0x51C1F1`/`0x73F495`/`0x70095A` fall back to a secondary wall-breaker; 2 keys)
 - [Projectile gravity](phobos-projectile-gravity.md) (`[Projectile] Gravity=` per projectile type)
-- [Projectile AU](phobos-projectile-au.md) (`[Projectile] AU=yes` admits underground auto-target candidates)
+- [Projectile AU](phobos-projectile-au.md) (`[Projectile] AU=yes` admits underground targets in the auto-target scan, `CanFire` and the `0x6F37EB` weapon-selection arm)
 - [Cylinder rangefinding](phobos-cylinder-rangefinding.md) (`CylinderRangefinding` per weapon and globally: direct range uses `dx²+dy²`)
 - [Ambient damage warhead](phobos-ambient-damage.md) (`AmbientDamage.Warhead` / `.IgnoreTarget` per weapon plus the `[General]` fallback: railgun and blast-wave ambient damage use an override warhead and can skip the primary target; 3 keys)
 - [Warhead decloaking](phobos-decloak-damaged-targets.md) (`DecloakDamagedTargets` per warhead and globally)

@@ -191,6 +191,21 @@ impl TargetFlight<'_> {
             Self::Supplied { high } => high,
         }
     }
+
+    /// `pTargetTechno->InWhichLayer() == Layer::Underground` in the selection
+    /// arms (`Ext/Techno/Hooks.Firing.cpp:151`, `:188`, `:223`). The cached
+    /// locomotor layer is the only input, so this needs no terrain and stays
+    /// lazy like the flight queries above.
+    #[cfg(feature = "phobos")]
+    fn underground(self) -> bool {
+        match self {
+            Self::Live { entity, .. } | Self::InQuery { entity, .. } => {
+                crate::sim::world::entity_is_underground(entity)
+            }
+            #[cfg(any(test, feature = "test-support"))]
+            Self::Supplied { .. } => false,
+        }
+    }
 }
 
 /// Target-side facts read by the ladder.
@@ -795,6 +810,16 @@ fn projectile_aa(rules: &RuleSet, weapon: &WeaponType) -> bool {
         .is_some_and(|projectile| projectile.aa)
 }
 
+/// Phobos `BulletTypeExt::AU` (`Ext/BulletType/Body.cpp:83`, declared
+/// `Body.h:88`): this projectile admits Underground targets. Read by the
+/// `0x6F37EB` selection arm, next to [`projectile_aa`].
+#[cfg(feature = "phobos")]
+fn projectile_au(rules: &RuleSet, weapon: &WeaponType) -> bool {
+    rules
+        .weapon_projectile(weapon)
+        .is_some_and(|projectile| projectile.au)
+}
+
 /// `TechnoExt::CanFireNoAmmoWeapon` (`Ext/Techno/WeaponHelpers.cpp:107-118`):
 /// a type with `Ammo=0` never runs out; with Ares extension data the count and
 /// `NoAmmoWeapon` slot decide, otherwise the constructor values
@@ -1186,6 +1211,15 @@ fn techno_what_weapon_should_i_use<'r>(
     }
     // V @ 0x006F37E7: unconditional AA-secondary against a high-flying target.
     if secondary_aa && flight.high() {
+        return 1;
+    }
+    // Phobos `TechnoClass_WhatWeaponShouldIUse_AntiAir` (`0x6F37EB`,
+    // `Ext/Techno/Hooks.Firing.cpp:167-194`) adds a second arm to the stock
+    // `0x6F37E7` AA answer above: a burrowed target takes the secondary when
+    // only the secondary projectile has `AU=yes`. The hook sits right after
+    // `0x6F37E7`, so the arm keeps that slot.
+    #[cfg(feature = "phobos")]
+    if flight.underground() && projectile_au(rules, secondary) && !projectile_au(rules, primary) {
         return 1;
     }
     0

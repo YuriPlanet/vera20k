@@ -155,6 +155,9 @@ fn weapon(slot: &Value, input: &Value) -> Option<WeaponFacts> {
         projectile: ProjectileFacts {
             aa: flag(&projectile["aa"]),
             ag: flag(&projectile["ag"]),
+            // The corpus is stock gamemd output: there is no `AU` field.
+            #[cfg(feature = "phobos")]
+            au: false,
             rot: int(&projectile["rot"]),
         },
         #[cfg(feature = "phobos")]
