@@ -391,17 +391,8 @@ impl LanService {
         })
     }
 
-    /// The proof names this setup session, at any options revision, and this
-    /// build.
-    fn in_room(&self, proof: &LanSessionProof) -> bool {
-        self.setup_scope
-            .is_some_and(|scope| scope.epoch == proof.scope.epoch)
-            && proof.version == super::shell_network_setup::agreement::version()
-    }
-
-    /// [`Self::in_room`] at exactly the current options revision.
     fn validate_scope(&self, proof: &LanSessionProof) -> bool {
-        self.in_room(proof) && self.setup_scope == Some(proof.scope)
+        self.setup_scope == Some(proof.scope) && self.in_room(proof)
     }
 
     fn accepts_join_reply(&self, source: SocketAddrV4, proof: &LanSessionProof) -> bool {
@@ -420,6 +411,13 @@ impl LanService {
                 .setup_agreement
                 .as_ref()
                 .is_some_and(|expected| expected.rules_digest == proof.rules_digest)
+    }
+
+    /// The proof names this room at any options revision and uses its build.
+    fn in_room(&self, proof: &LanSessionProof) -> bool {
+        self.setup_scope
+            .is_some_and(|scope| scope.epoch == proof.scope.epoch)
+            && proof.version == super::shell_network_setup::agreement::version()
     }
 
     pub(super) fn queued_setup_count(&self) -> usize {
@@ -870,6 +868,8 @@ impl LanService {
         Ok(())
     }
 
+    /// Direct launcher participants use this lease without a room join.
+    /// Keep their epoch and build checks distinct at the lease boundary.
     fn accept_setup_keepalive(
         &mut self,
         session: &super::match_runtime::session::MatchSession,
@@ -882,7 +882,10 @@ impl LanService {
             .ok_or_else(|| anyhow::anyhow!("LAN keepalive has no confirmed proof"))?;
         if message.kind() != LanMessageKind::Keepalive
             || self.departure.is_some()
-            || !self.in_room(&proof)
+            || !self
+                .setup_scope
+                .is_some_and(|scope| scope.epoch == proof.scope.epoch)
+            || proof.version != super::shell_network_setup::agreement::version()
             || if session.host() {
                 !self.peer_admission_matches(incoming.source, &proof)
             } else {
