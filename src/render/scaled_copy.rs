@@ -504,18 +504,48 @@ fn create_pipeline(
 mod tests {
     use super::*;
 
+    /// Both variants validate, and the browser's (`webgl`) translates every
+    /// entry point to WebGL2's GLSL ES 3.00 as wgpu's GL backend does.
     #[test]
     fn scaled_copy_shader_compiles() {
-        use wgpu::naga;
-        for source in [shader_source(false), shader_source(true)] {
+        for webgl in [false, true] {
+            let source = shader_source(webgl);
             let module =
                 naga::front::wgsl::parse_str(&source).expect("the scaled-copy shader parses");
-            naga::valid::Validator::new(
+            let info = naga::valid::Validator::new(
                 naga::valid::ValidationFlags::all(),
                 naga::valid::Capabilities::empty(),
             )
             .validate(&module)
             .expect("the scaled-copy shader validates");
+            if !webgl {
+                continue;
+            }
+            for entry in &module.entry_points {
+                let options = naga::back::glsl::Options {
+                    version: naga::back::glsl::Version::Embedded {
+                        version: 300,
+                        is_webgl: true,
+                    },
+                    ..Default::default()
+                };
+                let pipeline = naga::back::glsl::PipelineOptions {
+                    shader_stage: entry.stage,
+                    entry_point: entry.name.clone(),
+                    multiview: None,
+                };
+                let mut glsl = String::new();
+                naga::back::glsl::Writer::new(
+                    &mut glsl,
+                    &module,
+                    &info,
+                    &options,
+                    &pipeline,
+                    naga::proc::BoundsCheckPolicies::default(),
+                )
+                .and_then(|mut writer| writer.write().map(drop))
+                .unwrap_or_else(|error| panic!("{}: {error}", entry.name));
+            }
         }
     }
 }
