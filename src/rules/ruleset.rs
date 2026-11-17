@@ -7293,7 +7293,14 @@ impl RuleSet {
         // and `[JumpjetControls]` key; the type loop below needs two of its
         // seeds. Native reads `[JumpjetControls]` before the type registries.
         #[cfg(feature = "phobos")]
-        let phobos_globals = crate::rules::phobos_globals::PhobosGlobals::from_ini(ini);
+        let phobos_globals = {
+            let mut globals = crate::rules::phobos_globals::PhobosGlobals::from_ini(ini);
+            // `ValueableIdx::Read` keeps the index a pass resolved when a later
+            // pass names an unknown type, so the projected last string is not
+            // always the live one (`Ext/Rules/Body.h:41-42`).
+            globals.resolve_ai_chrono_super_names(ini);
+            globals
+        };
         // Phobos `TechnoTypeClass_CTOR_JumpjetControls` (`0x7115AE`): the
         // constructor block every techno type starts from.
         #[cfg(feature = "phobos")]

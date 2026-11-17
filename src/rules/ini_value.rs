@@ -924,10 +924,12 @@ impl IniSection {
     ///
     /// VERA keeps the authored type name and takes the index where it is used
     /// ([`crate::rules::ruleset::RuleSet::super_weapon_index]` and the other
-    /// type-index lookups), the same split as `DefaultLandingAnim`. The two
-    /// differ only if a layer names a type that does not exist while an earlier
-    /// layer named a real one: natively the earlier index survives, here the
-    /// broken name resolves to unfound.
+    /// type-index lookups), the same split as `DefaultLandingAnim`. The one
+    /// cross-pass difference — a layer naming a type that does not exist while
+    /// an earlier layer named a real one — is settled for the AI Chronoshift
+    /// supers by
+    /// [`PhobosGlobals::resolve_ai_chrono_super_names`](crate::rules::phobos_globals::PhobosGlobals::resolve_ai_chrono_super_names),
+    /// which folds the per-pass history this reader sees only as one string.
     #[cfg(feature = "phobos")]
     pub fn read_phobos_type_name(&self, key: &str, current: &str) -> String {
         let Some(name) = self.read_name(key, 2048) else {

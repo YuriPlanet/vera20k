@@ -2275,7 +2275,92 @@ impl Default for PhobosGlobals {
     }
 }
 
+/// One `[General]` key of [`PhobosGlobals::resolve_ai_chrono_super_names`]: the
+/// name whose `SuperWeaponTypeClass` index survives every Rules pass.
+#[cfg(feature = "phobos")]
+fn valueable_idx_name(
+    section: &IniSection,
+    key: &str,
+    super_types: &[&str],
+    projected: &str,
+) -> String {
+    let single;
+    let values: &[String] = match section.projected_values(key) {
+        Some(values) => values,
+        None => {
+            // A single-file section has no pass history; its one value is the
+            // whole read.
+            if !section.is_present(key) {
+                return projected.to_owned();
+            }
+            single = [section.get(key).unwrap_or_default().to_owned()];
+            &single
+        }
+    };
+    // The constructor leaves the unset index -1, which no name spells.
+    let mut living = String::new();
+    for raw in values {
+        // `INI_EX::ReadString` copies through the shared 2048-byte buffer; the
+        // trim is the part a name can actually differ by.
+        let copy = crate::rules::ini_value::strtrim_ascii(
+            crate::rules::ini_value::truncate_native_bytes(raw, 2047),
+        );
+        if copy.is_empty() {
+            continue;
+        }
+        if crate::rules::ini_parser::is_native_none_type_name(copy) {
+            living.clear();
+            continue;
+        }
+        if let Some(name) = super_types
+            .iter()
+            .find(|name| name.eq_ignore_ascii_case(copy))
+        {
+            living = (*name).to_owned();
+        }
+        // An unknown non-blank name is `INIParseFailed`: the index stays.
+    }
+    living
+}
+
 impl PhobosGlobals {
+    /// `ValueableIdx<SuperWeaponTypeClass>::Read`
+    /// (`Utilities/TemplateDef.h:1815-1827`) replayed over every Rules pass. A
+    /// failed `ReadString` or an all-blank copy keeps the current index,
+    /// `none`/`<none>` stores the unset -1, a name `FindIndex` knows stores its
+    /// index, and any other non-blank value is an `INIParseFailed` that keeps
+    /// the current index.
+    ///
+    /// [`Self::from_ini`] keeps the last authored string, so a pass that names
+    /// a type `FindIndex` cannot find would otherwise replace the earlier
+    /// pass's index. This folds [`IniSection::projected_values`] instead, the
+    /// same per-pass history `read_name` uses.
+    ///
+    /// Residual: `FindIndex` runs against the `SuperWeaponTypeClass` array of
+    /// the pass that reads the key; this resolves against the union of every
+    /// layer's `[SuperWeaponTypes]`, which answers the same index unless a
+    /// pass names a type a later pass introduces.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn resolve_ai_chrono_super_names(&mut self, ini: &IniFile) {
+        let general = ini.section_or_empty("General");
+        let super_types: Vec<&str> = ini
+            .section("SuperWeaponTypes")
+            .map(|section| section.registry_ids())
+            .unwrap_or_default();
+        self.ai_chrono_sphere_sw = valueable_idx_name(
+            &general,
+            "AIChronoSphereSW",
+            &super_types,
+            &self.ai_chrono_sphere_sw,
+        );
+        self.ai_chrono_warp_sw = valueable_idx_name(
+            &general,
+            "AIChronoWarpSW",
+            &super_types,
+            &self.ai_chrono_warp_sw,
+        );
+    }
+
     pub fn from_ini(ini: &IniFile) -> Self {
         let mut globals = section_settings(ini.section_or_empty("CombatDamage"));
         // `Ext/Rules/Body.cpp:443`: the adjacent wall damage.
