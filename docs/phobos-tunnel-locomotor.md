@@ -62,12 +62,18 @@ The layer answer is what the package-93 `AU` chain consumes:
 
 - The dig and dig-out **animations** (`0x1c8`-byte Anim, ctor `0x421EA0`,
   `0x600` flags) are not created; only the timers that gate them are ported.
-- `ProcessPreDigOut 0x7298F0` raises Z to the cell's ground height (`0x578080`)
-  by `max(5, round(rate * frame_scale))` and arms the dig-out timer with
-  `round(64.0 / Speed)` at `0x729A54`. VERA samples the entry cell's ground
-  height before the first sink frame and uses it for the floor
-  (`ground + 0xFFFFFF00`) and the surface; a ramp whose destination cell sits
-  at a different height than the entry cell is the remaining difference.
+- `ProcessPreDigOut 0x7298F0` raises Z to the cell's ground height
+  (`MapClass::0x578080` at `0x72991D`, every frame) by
+  `max(5, round(rate * frame_scale))` and arms the dig-out timer with
+  `round(64.0 / Speed)` at `0x729A54`. VERA passes the same canonical cell
+  query the other movers build and re-asks it each frame, so a tunnel that
+  travels under a ramp surfaces on the destination cell's ground; the
+  dig-in sample survives only as the answer when the caller has no terrain.
+- `ProcessDugIn` (inline at `0x728F86`) reads no ground at all: the entry
+  guard compares the Location Z against `0xFFFFFF00` (`0x728FC4`,
+  `jle 0x729021`) and the step clamp writes the same constant
+  (`0x729001`), so every tunnel sinks to one shared plane whatever ground it
+  dug in from.
 - `Can_Enter_Cell 0x72A090` answers 7 only when `0x486FF0` rejects the cell —
   that body tests `0x578540` (map validity), the overlay table `+0x305` and the
   flags at `+0x11c`/`+0x140`, i.e. a void cell, not terrain, walls or
