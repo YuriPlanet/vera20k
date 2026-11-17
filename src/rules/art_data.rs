@@ -673,17 +673,26 @@ pub struct AnimTypeRuntimeConfig {
     /// starts on the draw point and falls by `height` per tile.
     #[cfg(feature = "phobos")]
     pub phobos_tiled_align_to_center: bool,
-    /// Raw art.ini `Translucency=` value; zero when omitted.
+    /// Raw art.ini `Translucency=` value; zero when omitted. The Phobos draw
+    /// arm reads the keyframe track below; this stays the stock integer read
+    /// for a build without Phobos.
     pub translucency: i32,
-    /// Phobos `Translucency.Cloaked=` (`Ext/AnimType/Body.cpp:114`,
-    /// `Animatable<TranslucencyLevel>`; plain value at
-    /// `Ext/AnimType/Body.h:69`): while the anim's Techno owner is Cloaking or
-    /// Cloaked this level replaces `Translucency` in
-    /// `AnimClass_DrawIt_Translucency` (`0x423183`,
-    /// `Ext/Anim/Hooks.cpp:573-615`). Unset (or an unparsed value) keeps the
-    /// plain key.
+    /// Phobos `Translucency=` as `Animatable<TranslucencyLevel>`
+    /// (`Ext/AnimType/Body.cpp:113`, `Utilities/Template.h:560-594`): the
+    /// keyframe track `AnimClass_DrawIt_Translucency` (`0x423183`,
+    /// `Ext/Anim/Hooks.cpp:573-615`) queries at `currentFrame / End`. Always
+    /// carries at least the plain key's `0.0` entry, whose level is
+    /// `BlitterFlags::None` when the key is absent or not one of
+    /// `0/25/50/75`.
     #[cfg(feature = "phobos")]
-    pub phobos_translucency_cloaked: Option<i32>,
+    pub phobos_translucency: crate::rules::phobos_translucency_track::TranslucencyTrack,
+    /// Phobos `Translucency.Cloaked=` as `Animatable<TranslucencyLevel>`
+    /// (`Ext/AnimType/Body.cpp:114`, read with `requireParsedFallback`): while
+    /// the anim's Techno owner is Cloaking or Cloaked this track answers
+    /// instead of `phobos_translucency`. An empty track means the key is
+    /// absent or its value did not parse, and the plain track keeps answering.
+    #[cfg(feature = "phobos")]
+    pub phobos_translucency_cloaked: crate::rules::phobos_translucency_track::TranslucencyTrack,
     /// Raw art.ini `TranslucencyDetailLevel=` value; zero when omitted.
     pub translucency_detail_level: i32,
     pub translucent: bool,
@@ -986,6 +995,10 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
     let explicit_loop_end = section
         .is_present("LoopEnd")
         .then(|| section.read_int("LoopEnd", 0));
+    // `AnimTypeExt::LoadFromINIFile` reads both translucency tracks with
+    // `absoluteLength = OwnerObject()->End` (`Ext/AnimType/Body.cpp:113-114`):
+    // the `End` this INI read produced, before asset binding replaces it.
+    let anim_end = explicit_end.unwrap_or(0);
     AnimTypeRuntimeConfig {
         art_body_read: true,
         image: section.read_string("Image", &section.name, 0x19),
@@ -993,7 +1006,7 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         start: section.read_int("Start", 0),
         loop_start: section.read_int("LoopStart", 0),
         loop_end: explicit_loop_end.unwrap_or(0),
-        end: explicit_end.unwrap_or(0),
+        end: anim_end,
         explicit_end,
         explicit_loop_end,
         raw_shp_frame_count: None,
@@ -1195,8 +1208,20 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         phobos_tiled_align_to_center: section.read_bool("Tiled.AlignToCenter", false),
         translucency: section.read_int("Translucency", 0),
         #[cfg(feature = "phobos")]
-        phobos_translucency_cloaked: section
-            .read_phobos_nullable_int("Translucency.Cloaked", None),
+        phobos_translucency: crate::rules::phobos_translucency_track::TranslucencyTrack::read(
+            section,
+            "Translucency",
+            anim_end,
+            false,
+        ),
+        #[cfg(feature = "phobos")]
+        phobos_translucency_cloaked:
+            crate::rules::phobos_translucency_track::TranslucencyTrack::read(
+                section,
+                "Translucency.Cloaked",
+                anim_end,
+                true,
+            ),
         translucency_detail_level: section.read_int("TranslucencyDetailLevel", 0),
         translucent: section.read_bool("Translucent", false),
         alt_palette: section.read_bool("AltPalette", false),

@@ -1755,20 +1755,15 @@ fn gsi_13_08_warpout_keeps_all_frames_and_drives_the_progressive_alpha_ladder() 
         (20, 0.25),
     ] {
         let selection = crate::sim::anim_class::anim_translucency_selection(
-            crate::sim::anim_class::AnimTranslucencyInput {
-                base_flags: 0,
-                forced_translucent: false,
-                double_thick: false,
-                translucency_detail_level: warpout.translucency_detail_level,
-                game_detail_level: 2,
-                translucent_ramp: warpout.translucent,
-                current_frame: frame,
-                end_frame: warpout.loaded_end(i32::from(frame_count)),
-                explicit_translucency: warpout.translucency,
-                cloaked_translucency: None,
-                owner_cloaked: false,
-                instance_ramp: 0,
-            },
+            crate::sim::anim_class::AnimTranslucencyInput::new(
+                Some(warpout),
+                0,
+                frame,
+                i32::from(frame_count),
+                2,
+                crate::sim::anim_class::AnimDrawRuntime::default(),
+                false,
+            ),
         );
         assert!(selection.draw);
         assert_eq!(

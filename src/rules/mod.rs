@@ -308,6 +308,8 @@ pub mod phobos_trajectory;
 #[cfg(feature = "phobos")]
 pub mod phobos_transact_money;
 #[cfg(feature = "phobos")]
+pub mod phobos_translucency_track;
+#[cfg(feature = "phobos")]
 pub mod phobos_turret_anim;
 #[cfg(feature = "phobos")]
 pub mod phobos_turret_barrel;
@@ -393,6 +395,9 @@ pub(crate) mod ares_warhead;
 pub mod ares_weapon;
 pub mod armor;
 pub mod art_data;
+#[cfg(all(test, feature = "phobos"))]
+#[path = "art_data_translucency_tests.rs"]
+mod art_data_translucency_tests;
 pub mod bridge_warheads;
 pub mod building_extra_power;
 pub mod building_light;
