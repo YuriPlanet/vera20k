@@ -276,11 +276,10 @@ impl TunnelRuntime {
         true
     }
 
-    /// `ProcessPreDigOut 0x7298F0`: raise Z back to the surface the same
-    /// `max(5, round(Speed * frame_scale))` way, entering `DiggingOut` at 0.
-    ///
-    /// RESIDUAL: the native re-arm of `DigTimer` inside this body is unread,
-    /// so the dig-out timer reuses the dig-in duration formula.
+    /// `ProcessPreDigOut 0x7298F0`: raise Z by `max(5, round(rate *
+    /// frame_scale))` up to the cell's ground height, then arm the dig-out
+    /// timer the same `round(64.0 / Speed)` way (`0x729A54`) and enter
+    /// `DiggingOut`.
     fn pre_dig_out(
         &mut self,
         position: &mut crate::sim::movement::ground_pose::Position,
@@ -389,16 +388,27 @@ pub(crate) fn process(entity: &mut GameEntity, speed: i32, frame: u32) -> bool {
 }
 
 /// `Move_To 0x728AF0`'s stored coordinate: the destination cell's centre.
-/// `Stop_Moving 0x728C00`: the native body switches on `state-1` through
-/// `0x728E08`; aborting an armed or in-progress dig returns the object to Idle
-/// and leaves the Foot on the layer its state implies.
+/// `Stop_Moving 0x728C00`: its jump table `0x728E08` maps states 1/5/6/7 to
+/// `0x728DE0`, state 2 to `0x728DD9`, state 3 to `0x728DD0` and state 4 to
+/// `0x728C1E`, whose body measures the object's location against the stored
+/// coordinate — a travelling unit surfaces where it is instead of popping up.
 pub(crate) fn stop_moving(entity: &mut GameEntity) {
     if let Some(runtime) = entity
         .locomotor
         .as_mut()
         .and_then(|loco| loco.tunnel_runtime_mut())
     {
-        runtime.state = TunnelState::Idle;
+        runtime.state = match runtime.state {
+            // An armed or in-progress dig never started, so it aborts to Idle.
+            TunnelState::PreDigIn | TunnelState::DiggingIn | TunnelState::DugIn => {
+                TunnelState::Idle
+            }
+            // Underground, the stop raises the object where it stands
+            // (`0x728C1E` -> `PreDigOut`).
+            TunnelState::Digging => TunnelState::PreDigOut,
+            // A surfacing unit finishes surfacing; 0x728DE0 leaves it alone.
+            state => state,
+        };
     }
 }
 

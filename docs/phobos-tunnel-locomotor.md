@@ -62,12 +62,16 @@ The layer answer is what the package-93 `AU` chain consumes:
 
 - The dig and dig-out **animations** (`0x1c8`-byte Anim, ctor `0x421EA0`,
   `0x600` flags) are not created; only the timers that gate them are ported.
-- `ProcessPreDigOut 0x7298F0`'s `DigTimer` re-arm is unread, so the dig-out
-  timer reuses the dig-in duration formula.
+- `ProcessPreDigOut 0x7298F0` raises Z to the cell's ground height (`0x578080`)
+  by `max(5, round(rate * frame_scale))` and arms the dig-out timer with
+  `round(64.0 / Speed)` at `0x729A54`. VERA treats the surface as Z 0; a ramp
+  cell's own ground height is not queried.
 - `Can_Enter_Cell 0x72A090` (`0x486FF0` cell test) and `Z_Adjust 0x729E50`
   are read only far enough to confirm they do not change the state chain.
-- `Stop_Moving 0x728C00`'s state jump table `0x728E08` is ported as "abort to
-  Idle"; its per-state bodies are unread.
+- `Stop_Moving 0x728C00`'s table `0x728E08` is ported by its targets: states
+  1/2/3 abort the dig to Idle, state 4 (`0x728C1E`) surfaces in place, states
+  5/6/7 finish surfacing. The bodies at `0x728DD0`, `0x728DD9` and `0x728DE0`
+  are unread.
 - `Is_Moving_Now 0x728A60` (state 1 only) is not reported by
   `ready_producer::ready_state_for`, which answers `None` for Tunnel.
 - `[General] TunnelSpeed` is **not** this class's input: the class travels at

@@ -144,8 +144,60 @@ fn a_digging_tunnel_neither_fires_nor_casts_a_shadow() {
     );
 }
 
-/// `Stop_Moving 0x728C00`'s abort: an armed dig returns to Idle without
-/// travelling.
+/// `Stop_Moving 0x728C00` state 4 -> `0x728C1E`: a travelling unit surfaces
+/// where it stands instead of staying underground.
+#[test]
+fn stopping_while_underground_surfaces_in_place() {
+    let mut runtime = TunnelRuntime::constructed();
+    let mut position = test_position();
+    let mut facing = crate::sim::movement::FacingClass::new(0, 0);
+    let from = position_world(&position);
+    let destination = Some(DriveCoord {
+        x: from.x,
+        y: from.y - 300,
+        z: UNDERGROUND_Z,
+    });
+
+    runtime.move_to(false);
+    let mut frame = 0u32;
+    while runtime.state() != TunnelState::Digging && frame < 500 {
+        frame += 1;
+        runtime.process(&mut position, &mut facing, destination, 5, frame);
+    }
+    assert_eq!(runtime.state(), TunnelState::Digging);
+    let sunk = position_world(&position);
+    assert_eq!(sunk.z, UNDERGROUND_Z);
+    // The first `Digging` frame is the one that entered the state; travel
+    // starts on the frame after it.
+    for _ in 0..2 {
+        frame += 1;
+        runtime.process(&mut position, &mut facing, destination, 5, frame);
+    }
+    let underground = position_world(&position);
+    let travelled = underground.y - sunk.y;
+    assert!(
+        travelled < 0,
+        "the unit did not travel toward its destination"
+    );
+
+    // state 4 -> 0x728C1E, then `PreDigOut` raises it where it stands.
+    runtime.state = TunnelState::PreDigOut;
+    for _ in 0..500 {
+        frame += 1;
+        runtime.process(&mut position, &mut facing, destination, 5, frame);
+        if runtime.state() == TunnelState::Idle {
+            break;
+        }
+    }
+    let end = position_world(&position);
+    assert_eq!(runtime.state(), TunnelState::Idle);
+    assert_eq!(end.z, 0, "the abort did not reach the surface");
+    assert_eq!(
+        (end.x, end.y),
+        (underground.x, underground.y),
+        "the surfacing moved the object away from where it stopped"
+    );
+}
 #[test]
 fn stopping_an_armed_dig_returns_to_idle() {
     let mut runtime = TunnelRuntime::constructed();
