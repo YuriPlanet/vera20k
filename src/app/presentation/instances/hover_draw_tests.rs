@@ -59,7 +59,9 @@ fn body_slope(
 
 /// The slope [`lifted_unit_shadow_pose`] lays a Hover's shadow on.
 fn shadow_slope(terrain: &ResolvedTerrainGrid, entity: &GameEntity) -> u8 {
-    lifted_unit_shadow_pose(entity, terrain, 0).unwrap().slope
+    lifted_unit_shadow_pose(entity, terrain, 0, None)
+        .unwrap()
+        .slope
 }
 
 /// Is_Powered (`0x00516C70`) holds through the powered byte or any height,
@@ -116,7 +118,7 @@ fn a_floating_hover_draws_its_shadow_on_the_ground_below_its_body() {
     let terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
     let hover = hover_on_ramp(&terrain, "LCRF", 80);
     assert!(has_lifted_unit_shadow(&hover));
-    let pose = lifted_unit_shadow_pose(&hover, &terrain, 0).unwrap();
+    let pose = lifted_unit_shadow_pose(&hover, &terrain, 0, None).unwrap();
     let (x, y) = crate::render::locomotor_visual::screen_position(&hover);
     let drop = crate::util::native_x87::adjust_for_z_standard(80);
     assert!(drop > 0);

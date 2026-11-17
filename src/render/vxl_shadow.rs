@@ -56,11 +56,16 @@ fn draw_rotation(vxl: &VxlFile, params: &VxlRenderParams) -> Option<super::Mat4>
     if !supported(vxl, params) {
         return None;
     }
-    Some(super::voxel_draw_rotation_for_state(
-        params.slope_type,
-        None,
-        super::voxel_facing_step(params.facing),
-    ))
+    let step = super::voxel_facing_step(params.facing);
+    // Phobos `UnitClass_DrawAsVXL_Shadow` (hook `0x73C47A`,
+    // `Ext/TechnoType/Hooks.MatrixOp.cpp:729-773`): the shadow matrix inherits
+    // the body's airborne `JumpjetTilt` roll/pitch, the same crash yaw/X/Y
+    // product the body arm draws through. The other tilt arms keep the stock
+    // slope/facing stencil matrix.
+    Some(match params.body_tilt {
+        Some(super::BodyTilt::JumpjetTilt(angles)) => super::voxel_crash_rotation(step, angles),
+        _ => super::voxel_draw_rotation_for_state(params.slope_type, None, step),
+    })
 }
 
 /// `*pMat * hva->Matrixes[section + LayerCount * ChooseFrame()]`
