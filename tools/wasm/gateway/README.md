@@ -3,23 +3,27 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 This optional service forwards `/game/primary` and `/game/alternate` binary
-WebSocket messages to a fixed UDP relay. One message is one unchanged datagram,
-and each WebSocket owns a separate connected UDP socket. It does not interpret
-game packets, issue credentials, acknowledge commands or implement retries.
-The original lobby, relay and desktop clients require no changes.
+WebSocket messages to the UDP relay each browser's grant names, when that relay
+is on its list. One message is one unchanged datagram, and each WebSocket owns a
+separate connected UDP socket. It does not interpret game packets, issue
+credentials, acknowledge commands or implement retries. The original lobby, relay
+and desktop clients require no changes.
 
 Use Node.js 22 or newer. Dependencies are private to this directory:
 
 ```sh
 cd tools/wasm/gateway
 npm ci
-VERA_RELAY_HOST=relay.example.com VERA_RELAY_PORT=5000 \
+VERA_RELAYS=203.0.113.1:5000,198.51.100.2:5000 \
   VERA_WEB_ORIGIN=https://game.example.com npm start
 ```
 
-`VERA_RELAY_HOST` is required. `VERA_RELAY_PORT` defaults to 5000. Configure the
-relay corresponding to the lobby's `RelayGrant.address`; the gateway cannot
-substitute a different relay's credentials. Browsers cannot select the upstream.
+`VERA_RELAYS` is required: every relay address the lobby grants, as
+comma-separated IPv4:port. Each game WebSocket names its grant's relay in its
+path (`/game/primary/203.0.113.1:5000`), and the gateway forwards it there only
+when that relay is listed; any other path is refused with 403, so browsers cannot
+reach other destinations. List a relay the lobby adds in the same deploy, or its
+browser players never pass relay admission.
 `VERA_LOBBY_URL` defaults to `https://lobby.vera20k.org`. It must be an HTTPS
 origin. `/v1/*` forwards the existing method, path, Authorization and body without
 JSON conversion, following redirects or replaying requests. It preserves the
@@ -29,21 +33,22 @@ Authorization/Content-Type headers. Ambient cookies are not forwarded.
 The lobby keys its per-network limits on the requesting address, which for
 proxied requests is the gateway's. To give each browser player its own limits,
 set `VERA_GATEWAY_KEY` to the lobby Worker's `GATEWAY_KEY` secret, a random string
-of at least 32 characters (`openssl rand -hex 32`). The gateway then sends that key
-and the player's address (the socket peer, or `VERA_CLIENT_IP_HEADER`) with each
-`/v1/*` request; the lobby ignores an address named without the key. Unset, every
+of at least 32 characters (`openssl rand -hex 32`). The gateway then names each
+player's address (the socket peer, or `VERA_CLIENT_IP_HEADER`) with the headers
+[the lobby protocol](../../../docs/lobby-protocol.md) defines for it. Unset, every
 browser player shares the gateway's address and limits.
 
 The browser's `WS_PROXY_URL` is compiled into its `wasm-net` build, defaulting to
 `wss://wss.vera20k.com`. An external launch overrides it for its match with
-`[Relay] GatewayUrl` in `spawn.ini`. This is a client setting, separate from the
-server's UDP target, so a gateway must forward to the relay of the grants its
-clients hold. Deploy a TLS reverse proxy at that origin and forward `/game/*` with
-WebSocket Upgrade and `/v1/*` to this process. Set `VERA_CLIENT_IP_HEADER` to the
-header that proxy writes with the browser's address (for example
-`cf-connecting-ip`, or `x-forwarded-for`, whose last entry is used); never set it
-when clients can reach the gateway directly. Preserve the browser Origin header;
-allow at least 70 seconds before an idle WebSocket timeout. The Node server binds
+`[Relay] GatewayUrl` in `spawn.ini`. Either way the relay comes from the match's
+grant, so that gateway must list it. Deploy a TLS reverse proxy at that origin and
+forward `/game/*` with WebSocket Upgrade and `/v1/*` to this process. Set
+`VERA_CLIENT_IP_HEADER` to the header that proxy writes with the browser's address
+(for example `cf-connecting-ip`, or `x-forwarded-for`, whose last entry is used);
+never set it when clients can reach the gateway directly. Behind a proxy on
+another host it is required: without it every player counts as the proxy's
+network for the limits below. Preserve the browser Origin header; allow at least
+70 seconds before an idle WebSocket timeout. The Node server binds
 `127.0.0.1:8788` by default (`HOST` and `PORT` can override it). It serves no static
 game files. The static site and gateway may be hosted separately.
 
@@ -67,17 +72,24 @@ requires both `VERA_ALLOW_LOCAL_HTTP=1` and a loopback lobby origin, for example
 `VERA_LOBBY_URL=http://127.0.0.1:8790`. Remote HTTP is rejected. The browser must be
 compiled with a matching local `ws://localhost:8788` proxy origin for this setup.
 
-All game payloads remain encrypted, but the HTTP proxy handles the lobby bearer
-and key-bearing responses. Treat the gateway as trusted lobby infrastructure;
-do not log headers, bodies, tickets or payload keys. It needs no relay signing key
-and no retail resources. WS Origin checks supplement existing relay authentication;
-they do not authenticate arbitrary non-browser clients.
+Game datagrams are authenticated per hop but not encrypted: the gateway carries
+players' commands in plain text, and its HTTP proxy handles the lobby bearer and
+responses holding tickets and packet keys. Treat the gateway as trusted lobby
+infrastructure; do not log headers, bodies, tickets, keys or relayed datagrams.
+It needs no relay signing key and no retail resources. WS Origin checks supplement
+existing relay authentication; they do not authenticate arbitrary non-browser
+clients.
 
 Transport limits are defined together in `server.mjs`: 256 WebSockets, 128 pending
 HTTP exchanges, 64 KiB request and 1 MiB response bodies, 2048-byte messages,
-256 queued UDP packets / 256 KiB, and 1 MiB pending WS output. Each connection
-may pass up to 2048 combined incoming/outgoing datagrams per second from a
-16384/second aggregate shared max-min fairly: each one-second window reserves for
+256 queued UDP packets / 256 KiB, and 1 MiB pending WS output. One network (an
+IPv4 address, or the IPv6 /48 around one, as the lobby counts its shares) holds at
+most a tenth of the WebSockets and HTTP exchanges: 25 and 12; past them an upgrade
+gets 403 and a request 503. With `VERA_CLIENT_IP_HEADER` set, a request without
+that header is refused (403); without it, a loopback peer (a proxy on this host,
+or local tests) is not counted. Each connection may pass up to 2048 combined
+incoming/outgoing datagrams per second from a 16384/second aggregate shared
+max-min fairly: each one-second window reserves for
 every connection what it attempted in the previous window, up to an equal share,
 and traffic past a reservation uses only unreserved budget. A datagram over budget
 or behind a full queue is dropped, as UDP would lose it; the connection stays open

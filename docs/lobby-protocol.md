@@ -48,9 +48,9 @@ session out first.
 The HTTP paths retain `/v1`; `protocol:4` is the required client capability.
 Older/missing capabilities cannot enter new games. Existing v3 sessions may poll, renew an active lease and finish/leave/logout; their active match is preserved.
 Lobby capability4 adds the signed fixed-clock ordering capability.
-Relay tickets and encrypted datagrams retain wire version2; lobby capability and
-relay wire versions are independent. Unsupported sessions retire through ordinary
-room/match cleanup and cannot renew grants.
+Relay tickets keep wire version 2 and relay datagrams use envelope version 3; lobby
+capability and relay wire versions are independent. Unsupported sessions retire
+through ordinary room/match cleanup and cannot renew grants.
 `GET /health` reports `protocol:4`.
 `GET /v1/stats` needs no bearer and returns `{online,in_game,open_games,games_24h,games_total}`:
 active sessions, those in a playing match, joinable game rooms, and games whose play
@@ -556,6 +556,13 @@ sets the welcome that sign-in responses carry as `motd`: non-blank text of at mo
 Both return `{welcome}`, the text or `null`. `POST /v1/admin/maintenance` takes the same
 bearer: `{text}`, one line of at most 160 characters with optional `translations` of the
 same kind, closes sign-ins, and `{text:null}` opens them.
+
+A browser gateway (`tools/wasm/gateway`) sends its players' requests from its own
+address. It may name the player's address in `Vera-Client-Address` together with
+`Vera-Gateway-Key`, the deployment's `GATEWAY_KEY`; the lobby then keys that request's
+per-address limits on the named address. Without a `GATEWAY_KEY` of at least 32
+characters, or with another key, the named address is ignored and the request's own
+address counts. A gateway refuses to start with a key shorter than 32 characters.
 
 Released clients sign in with `User-Agent: VERA20k/<MAJOR.MINOR.PATCH> multiplayer-client`.
 A client that names a version older than 0.2.7 is refused at sign-in with 426
