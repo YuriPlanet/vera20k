@@ -249,6 +249,7 @@ pub(in crate::sim) mod voxel_meteor_tests;
 mod voxel_water_expiry_tests;
 
 pub(crate) use crash::CrashLatch;
+pub(crate) use display_registry::entity_is_underground;
 pub(crate) use display_registry::entity_layer;
 pub use lifecycle::LifecycleOutput;
 pub(crate) use lifecycle::object_get_coords_cell;

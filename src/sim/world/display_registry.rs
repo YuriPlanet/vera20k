@@ -16,8 +16,27 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::StringInterner;
 use crate::sim::movement::ground_pose::{building_render_order_parts, position_world_coord};
+use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::terrain_object::TerrainObjectStore;
 use crate::sim::world::ObjectSubstrate;
+
+/// `ILocomotion::In_Which_Layer`'s Underground answer, cached on the active
+/// locomotor (`MovementLayer::Underground`, which VERA's `LocomotorState`
+/// stores; native's Tunnel locomotor returns it from its process calls). A
+/// techno riding it answers `Layer::Underground` (0) whatever its height,
+/// which is the layer Phobos reads from `pTargetTechno->InWhichLayer()` in
+/// `Ext/Techno/Hooks.Firing.cpp:151`, `:188`, `:223` and `:549`.
+///
+/// VERA does not port the Tunnel locomotor, so no retail type reaches this
+/// branch; it exists so the layer answer (and its AU consumers) is wired for
+/// the fixtures that set the cached layer, and for that locomotor when it
+/// lands.
+pub(crate) fn entity_is_underground(entity: &GameEntity) -> bool {
+    entity
+        .locomotor
+        .as_ref()
+        .is_some_and(|locomotor| locomotor.layer() == MovementLayer::Underground)
+}
 
 /// Foot4DB7E0 / Aircraft41ADC0 dispatch to the active locomotor. Fly4CFCF0
 /// reads physical GetHeight, Jumpjet54B8D0 additionally reads structural
@@ -32,6 +51,11 @@ pub(crate) fn entity_layer(
     rules: Option<(&RuleSet, &crate::sim::intern::StringInterner)>,
 ) -> DisplayLayer {
     let kind = entity.locomotor.as_ref().map(|l| l.active_kind());
+    // The Tunnel locomotor answers `In_Which_Layer` before any height query,
+    // so a burrowed techno never falls through to the Ground answer below.
+    if entity_is_underground(entity) {
+        return DisplayLayer::UNDERGROUND;
+    }
     if entity.category() != EntityCategory::Structure {
         // Rocket In_Which_Layer (`0x00663460`) answers the Air layer.
         if kind == Some(LocomotorKind::Rocket) {

@@ -29,7 +29,7 @@ Classification rule used here:
 | 1 | Buildings | Destroyable pathfinding obstacles | `[BuildingType] IsDestroyableObstacle` (bool, default no; the section body's `IsDestroyableBlockage` spelling is wrong). Read `Ext/BuildingType/Body.cpp:221`, declared `Body.h:66`. An obstacle building answers `IsBlockage` to `CellClass::CheckPassability` (`Ext/Building/Hooks.cpp:568`, `0x483D8E`) and recalculates zones/sub-zones on unlimbo/limbo (`:533` `0x440D01`, `:543` `0x445D87`); only `MovementZone` rows that pass the blockage class (Destroyer / AmphibiousDestroyer / InfantryDestroyer) may path into it. | Key absent. VERA owns building-footprint blocking (`sim/pathfinding/core.rs:1910`) and the `MovementZone` class rows incl. the three Destroyer rows (`rules/locomotor_type.rs:346-400`), but no building ever reports a destroyable blockage and no path terminates at an obstacle to be shot. | key-missed | `Ext/BuildingType/Body.cpp:221` + `Ext/Building/Hooks.cpp:568` → key absent; owner `sim/pathfinding/core.rs:1910`, `rules/locomotor_type.rs:377-390` |
 | 2 | Infantry | Customizable FLH when infantry is prone or deployed | `[InfantryType] PronePrimaryFireFLH`, `ProneSecondaryFireFLH`, `DeployedPrimaryFireFLH`, `DeployedSecondaryFireFLH` (`[art]` layer, `Nullable<CoordStruct>`). Read `Ext/InfantryType/Body.cpp:34-37`, declared `Body.h:21-24`; consumed by `InfantryExt::GetSimpleFLH` (`Ext/Infantry/Body.cpp:19-30`, deployed first then prone, per weapon slot), composed with the burst-row offsets. | Read as `Deployed{Primary,Secondary}FireFLH` / `Prone{Primary,Secondary}FireFLH` in `rules/weapon_offsets.rs:280-300`; `state_flh` picks the deployed row, then the prone row. Wired through `sim/combat/fire_coord.rs` `infantry_flh_states` (`sim/combat/laser.rs:394`) with tests in `sim/combat/infantry_flh_tests.rs`. | implemented | `Ext/InfantryType/Body.cpp:34-37`, `Ext/Infantry/Body.cpp:19-30` → `rules/weapon_offsets.rs:287-296`, `sim/combat/infantry_flh_tests.rs:127-144` |
 | 3 | Infantry | Random death animation for NotHuman infantry | `[General] NotHuman.RandomDeathSequence` (bool, default no) read `Ext/Rules/Body.cpp:621`; `[InfantryType] NotHuman.RandomDeathSequence` (`Nullable<bool>`, falls back to `[General]`) read `Ext/InfantryType/Body.cpp:20`. Consumer `Ext/Techno/Hooks.ReceiveDamage.cpp:330`: a `NotHuman=` infantry draws one `Die1..Die5` sequence instead of the hardcoded `Die1`. | `[General]` global in `rules/phobos_globals.rs:116-119`, read `:734-737`; type override `rules/object_type.rs:1007-1012`, read `:5185-5186`; consumed at death in `sim/world/infantry_death.rs:621-622` (global fallback), one RNG draw. | implemented | `Ext/Techno/Hooks.ReceiveDamage.cpp:330` → `sim/world/infantry_death.rs:621-622`, `rules/phobos_globals.rs:734` |
-| 4 | Projectiles | Attack technos underground | `[Projectile] AU` (bool, default no; two-character key, which is why the scanner lost it). Read `Ext/BulletType/Body.cpp:83`, declared `Body.h:88`. Consumed by the fire gate (`Ext/Techno/Hooks.cpp:1510`), the underground auto-target gate (`:1542`, `:1649` — candidate height `>= -20` **or** `AU`), and the weapon-selection arms (`Ext/Techno/Hooks.Firing.cpp:151`, `186`, `229`, `550`). Damaging underground technos still needs the warhead key in row 28. | Key read as `au` (`rules/projectile_type.rs:582`, Phobos-gated) but never consumed. VERA ports the native underground candidate gate (`0x006F7E11..0x006F7E1E`, height `< -20` refuses) at `sim/combat/greatest_threat.rs:2401-2410`, and has `Layer::Underground`/burrowed locomotor state (`sim/movement/locomotor.rs:30`), but no per-projectile admission flag and no fire-time underground arm. | partial | `Ext/BulletType/Body.cpp:83`, `Ext/Techno/Hooks.cpp:1649` → key absent; owner `sim/combat/greatest_threat.rs:2410` |
+| 4 | Projectiles | Attack technos underground | `[Projectile] AU` (bool, default no; two-character key, which is why the scanner lost it). Read `Ext/BulletType/Body.cpp:83`, declared `Body.h:88`. Consumed by the `What_Action` cursor gate (`Ext/Techno/Hooks.cpp:1510`, `TechnoClass_MouseOverObject_AttackUnderGround`), the underground auto-target gate (`:1542`, `:1649` — candidate height `>= -20` **or** `AU`), and the weapon-selection arms (`Ext/Techno/Hooks.Firing.cpp:151`, `186`, `229`, `550`). Damaging underground technos still needs the warhead key in row 28. | Key read twice more: the `CanFire` arm (`sim/combat/fire_error.rs`, `TechnoClass_CanFire_AntiUnderground` `0x6FC749` in its slot between T39 `0x006FC73C` and T40 `0x006FC76A`, over the projectile facts `sim/combat/fire_error_world.rs`) and the `0x6F37EB` selection arm (`sim/combat/combat_weapon.rs`, after the stock `0x6F37E7` AA arm, via `projectile_au`). Both read `InWhichLayer`'s Underground answer from `sim/world/display_registry.rs::entity_is_underground`, the cached locomotor layer that `entity_layer` now answers as `DisplayLayer::UNDERGROUND`. The auto-target half stays at `sim/combat/greatest_threat.rs:2506-2533`. Tests `sim::combat::phobos_au_underground_tests::a_weapon_without_au_refuses_an_underground_target` and `…::au_yes_makes_the_selection_prefer_the_underground_weapon`. Two arms stay open: the `What_Action` cursor gate `TechnoClass_MouseOverObject_AttackUnderGround` (`0x70023B`, `Ext/Techno/Hooks.cpp:1497-1511`), whose VERA port is `src/app/input` and is not reached by this package, and the gattling hook `0x6F3432` (`Ext/Techno/Hooks.Firing.cpp:196-272`), whose whole `isWeaponValid` block (AA, shield `CanBeTargeted`, Verses 0) is unported, so porting only its AU row would drop the other three. No Tunnel locomotor, so the layer is dormant in play. | implemented | `Ext/Techno/Hooks.Firing.cpp:535`, `:186` → `sim/combat/fire_error.rs`, `sim/combat/combat_weapon.rs`; layer owner `sim/world/display_registry.rs` |
 | 5 | Super Weapons | AI Superweapon delay timer | `[General] AISuperWeaponDelay` (`Nullable<int>` game frames, unset = vanilla) read `Ext/Rules/Body.cpp:127`, declared `Ext/Rules/Body.h:45`. Hooks: `0x4FD77C` skips the vanilla strategy-side SW processing when the key is set (`Ext/House/Hooks.cpp:512-516`), `0x4F9038` runs `AI_TryFireSW` behind a per-house `CDTimerClass` (`Ext/House/Body.h:47`, `Ext/House/Hooks.cpp:519-540`); `<= 0` fires on every frame. | Ported. `phobos_globals.ai_superweapon_delay` (`rules/phobos_globals.rs:1228`, read `:3206`); hook A is `strategy_side_sw` in `sim/house_strategy.rs:240-252`, hook B is `sim/house_strategy.rs:105-151 update_ai_superweapon_delay` over the per-house `CdTimer` (`sim/house_state.rs:917-919`, accessors `:1271-1282`), called for each house from `sim/world/house_defeat.rs:319-328` immediately after `update_strategy`, in native's `HouseClass::Update` order. A non-positive delay skips the `Start` block, so every frame reaches the call. Tests `sim::house_strategy::house_strategy_tests::an_unset_key_keeps_the_vanilla_strategy_timer`, `…a_set_key_runs_ai_sw_on_its_own_timer_and_skips_the_vanilla_step`, `…a_nonpositive_key_fires_every_frame`, `…ai_superweapon_delay_gates_the_per_frame_try`. Stock's per-frame call stays unported (see the doc's residual). | implemented | `Ext/Rules/Body.cpp:127`, `Ext/House/Hooks.cpp:512`, `:519` → `rules/phobos_globals.rs:3206`, `sim/house_strategy.rs:105`, `:241` |
 | 6 | Technos | Attack move — without weapon | `[General] AttackMove.IgnoreWeaponCheck` (bool, default no) read `Ext/Rules/Body.cpp:423`. Hook `0x00711E90` drops only the `Primary != null` test of `TechnoTypeClass::CanAttackMove` (`Ext/Techno/Hooks.cpp:1259-1264`), so the attack-move cursor stays enabled for a mixed selection. | `[General]` global `rules/phobos_globals.rs:236`, read `:777-780`; `ObjectType::can_attack_move_with` (`rules/object_type.rs:4642-4650`); consumed by `Simulation::techno_can_attack_move` (`sim/mission/mega_mission.rs:140-160`). | implemented | `Ext/Rules/Body.cpp:423`, `Ext/Techno/Hooks.cpp:1263` → `sim/mission/mega_mission.rs:146-156`, `rules/object_type.rs:4643` |
 | 7 | Technos | Attack non-threatening structures (Techno) | `[General] AutoTarget.NoThreatBuildings` (default no, human houses), `[General] AutoTargetAI.NoThreatBuildings` (default **yes**, AI houses) read `Ext/Rules/Body.cpp:517-518`; `[WeaponType] AttackNoThreatBuildings` (`Nullable<bool>`) read `Ext/WeaponType/Body.cpp:206`. Hook `0x6F85CF` (`Ext/Techno/Hooks.cpp:1848-1863`) bypasses the unarmed/non-threatening building reject and jumps to `0x6F8604`. | All three keys absent. VERA ports the reject itself (`0x006F85AB..0x006F8601`, `sim/combat/greatest_threat.rs:2735-2748`) and the `AttackMove.Aggressive` bypass of it (`:2186-2196`), but no `AutoTarget*` global, no `attack_no_threat_buildings` weapon field. | key-missed | `Ext/Techno/Hooks.cpp:1848-1863`, `Ext/Rules/Body.cpp:517` → absent; owner `sim/combat/greatest_threat.rs:2735` |
@@ -100,12 +100,11 @@ is fully ported at `rules/phobos_spawns_crate.rs:29` and
 - 39 Radiation enhancements: `[RadType] RadBuildingDamageMaxCount` (read, not
   enforced; every other key in the section is ported and consumed).
 
-### Key-missed — the scanner should extract these keys (17)
+### Key-missed — the scanner should extract these keys (16)
 
 | # | Keys to extract |
 |---|-----------------|
 | 1 | `[BuildingType] IsDestroyableObstacle` |
-| 4 | `[Projectile] AU` |
 | 7 | `[General] AutoTarget.NoThreatBuildings`, `AutoTargetAI.NoThreatBuildings`; `[WeaponType] AttackNoThreatBuildings` |
 | 10 | `[AudioVisual] RevealHouses`; `[Country] RevealHouses`; `[TechnoType] RevealHouses` |
 | 13 | `[TechnoType] InitialSpawnsNumber` |
@@ -159,17 +158,30 @@ is fully ported at `rules/phobos_spawns_crate.rs:29` and
   `HouseState` `CdTimer` are all in the base. This pass adds the three
   requested boundary rows (unset schedule, cadence 40 with the skip control,
   `0`/`-1`) and moves the row to `implemented`.
+- Row 4's "read only" was stale for two of its consumer families: the auto-target
+  half (`0x772AB3` → `0x6F8DF0`, `sim/combat/greatest_threat.rs:2527`) was
+  already in the base. What was missing is what this pass adds — the `CanFire`
+  arm (`0x6FC749`, `sim/combat/fire_error.rs`, between T39 and T40), the
+  `0x6F37EB` selection arm (`sim/combat/combat_weapon.rs`, after the stock
+  `0x6F37E7` AA answer), and the layer answer both read
+  (`sim/world/display_registry.rs::entity_is_underground`, which `entity_layer`
+  now answers as `DisplayLayer::UNDERGROUND`). Two arms deliberately stay
+  unported: the `What_Action` cursor gate `0x70023B` (owner `src/app/input`,
+  outside this package) and the gattling hook `0x6F3432`, whose whole
+  `isWeaponValid` block is missing, so its AU row alone would skip AA, the
+  shield and the Verses-0 test.
 
 ## Re-scan 2026-11-17: the extraction list is stale
 
 A pass over the 17 rows still listed under Key-missed found a live reader in
 `src/rules` for every one of them, and a consumer outside `src/rules` for all
-but row 4:
+of them once row 4's fire gate and selection arm landed (see the premise note
+below):
 
 | # | Reader | Consumer |
 |---|--------|----------|
 | 1 | `object_type.rs:6487` | `sim/lifecycle.rs:2410`, `sim/navigation.rs:70` |
-| 4 | `projectile_type.rs:582` (`au`) | none found — read only |
+| 4 | `projectile_type.rs:582` (`au`) | `sim/combat/greatest_threat.rs:2527` (auto-target), `sim/combat/fire_error.rs` (CanFire), `sim/combat/combat_weapon.rs` (`0x6F37EB` arm) |
 | 7 | `phobos_weapon_extras.rs:137` | `sim/combat/greatest_threat.rs:2904` |
 | 10 | `object_type.rs:6479`, `phobos_globals.rs:2535` | `sim/world/shroud_refresh.rs:2082` |
 | 13 | `object_type.rs:7295` | `sim/spawn_manager.rs:542` |
@@ -204,7 +216,7 @@ The same pass over the rows the table marks `partial`, `behaviour-only` or
   auto-base `BuildConst` anchor honours it (`sim/world/house_base.rs:477`), but
   no start-position scan over technos exists, so the row moves to `partial`.
 
-Three rows stay open: 4 (`[Projectile] AU` is read with no consumer), 26 (no
+Two rows stay open: 26 (no
 `<name>TUR.SHP` load and no SHP turret file path in the tree) and 39
 (`RadBuildingDamageMaxCount` is read and never enforced, so the per-site cap
 still does nothing).

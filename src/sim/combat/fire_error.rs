@@ -243,6 +243,11 @@ pub(crate) struct WarheadFacts {
 pub(crate) struct ProjectileFacts {
     pub aa: bool, // +0x2A4
     pub ag: bool, // +0x2A5
+    /// Phobos `BulletTypeExt::AU` (`Ext/BulletType/Body.h:88`, read
+    /// `Ext/BulletType/Body.cpp:83`): a `[Projectile]` extension field, not a
+    /// stock `BulletTypeClass` offset.
+    #[cfg(feature = "phobos")]
+    pub au: bool,
     pub rot: i32, // +0x2DC
 }
 
@@ -1321,8 +1326,24 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
         return Illegal;
     }
     // T39 `0x006FC73C`.
-    if kind.is_foot() && query.target_layer() != 2 && !weapon.projectile.aa {
-        return Illegal;
+    if kind.is_foot() {
+        let layer = query.target_layer();
+        if layer != 2 && !weapon.projectile.aa {
+            return Illegal;
+        }
+        // Phobos `TechnoClass_CanFire_AntiUnderground` (`0x6FC749`,
+        // `Ext/Techno/Hooks.Firing.cpp:535-558`), in the hook's slot between
+        // T39 and T40. Its `switch (layer)` answers `Layer::Underground` (0)
+        // with ILLEGAL unless the projectile has `AU=yes`; only a Foot rides
+        // the Tunnel locomotor, so the arm stays inside T39's Foot branch and
+        // reuses the layer it already read. The hook's Air/Top arms repeat
+        // T38's `AA` requirement and add nothing here.
+        #[cfg(feature = "phobos")]
+        if layer == i32::from(crate::sim::world::display_layers::DisplayLayer::UNDERGROUND.index())
+            && !weapon.projectile.au
+        {
+            return Illegal;
+        }
     }
     if kind.is_techno() {
         // T40 `0x006FC76A..0x006FC7E9`: water or beach under a ground

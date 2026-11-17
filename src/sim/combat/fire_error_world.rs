@@ -265,11 +265,15 @@ impl<'a> FireSubject<'a> {
                 ProjectileFacts {
                     aa: false,
                     ag: true,
+                    #[cfg(feature = "phobos")]
+                    au: false,
                     rot: 0,
                 },
                 |projectile| ProjectileFacts {
                     aa: projectile.aa,
                     ag: projectile.ag,
+                    #[cfg(feature = "phobos")]
+                    au: projectile.au,
                     rot: projectile.rot,
                 },
             ),
