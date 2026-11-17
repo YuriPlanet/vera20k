@@ -21,8 +21,9 @@ when `ArtImageSwap=yes`, otherwise the type's own image
 | --- | --- | --- |
 | `0x747A2E` | `UnitTypeClass_ReadINI_TurretShape` | For `!Voxel && Turret` only: build `"%sTUR.SHP"` from the ART section's `Image=` when `ArtImageSwap`, else from the type's `ImageFile`; `FileSystem::LoadSHPFile` installs it as `UnitTypeExt::TurretShape`. `Ext/TechnoType/Hooks.cpp:142-168`. |
 | `0x73C7AC` | `UnitClass_DrawAsSHP_DrawTurret_TintFix` | Draws the turret at `SecondaryFacing`; `StartFrame = TurretShape ? 0 : WalkFrames * Facings`, and the shape switches to `TurretShape` when present. `Ext/Unit/Hooks.DrawIt.cpp:21-52`. |
+| `0x73CCE1` | `UnitClass_DrawAsSHP_TurretShape` (`Ext/TechnoType/Hooks.MatrixOp.cpp:307`) | The matrix-op sibling of the same `StartFrame` choice: `TurretShape` substitutes frame 0 for the body block. |
 | `0x73CCF4` | `UnitClass_DrawSHP_FacingsB_TurretShape` | Same `StartFrame` rule on the second SHP draw path (`:57-69`). |
-| `Phobos.INI.cpp:262` | `ArtImageSwap` | `[General]` bool, default `no`; gates whether the ART `Image=` redirect replaces the turret base. |
+| `0x52D21F` | `Phobos.INI.cpp:256-262` | `Phobos::Config::ArtImageSwap = pINI_RULESMD->ReadBool([General], "ArtImageSwap", false)` — a rulesmd `[General]` key, not a client-INI one. |
 
 ## Where VERA20K owns it
 
@@ -38,9 +39,16 @@ when `ArtImageSwap=yes`, otherwise the type's own image
   `facing_multiplier = 1`.
 - `sim::animation::resolve_shp_vehicle_turret_frame` resolves the turret
   image: frame 0 when the turret shape is bound, otherwise the body block.
-- `render::sprite_atlas` probes `<image>TUR.SHP` at atlas build for each
-  non-voxel turreted UnitType, decodes it and inserts its frames under the
-  derived stem; an absent file binds nothing. It also requests the body's
+- `rules::shp_vehicle_sequence::shp_vehicle_turret_shape_file` is the single
+  resolution owner: it takes [`RuleSet::unit_turret_shp_file`]'s name (type
+  gate, `ArtImageSwap` redirect) and answers only when
+  `AssetManager::contains` — the `CCFileClass__IsAvailable_MixThenRaw` port
+  (`assets/asset_manager.rs:1144`), i.e. registered MIX then startup loose
+  catalog — finds the file. That is native `FileSystem::LoadSHPFile` returning
+  a shape; nothing else decides whether a type has a turret file.
+- `render::sprite_atlas` calls that owner per non-voxel turreted UnitType,
+  decodes the file it answers and inserts its frames under the derived stem;
+  an absent file binds nothing. It also requests the body's
   `WalkFrames * Facings` turret block explicitly (`shp_vehicle_turret`), which
   need not overlap a `Stand`/`Walk` sequence when `StandingFrames=0`.
 - `rules::art_data::ArtData::turret_offset` is the full `[X, Y, Z]` triple,
@@ -67,6 +75,15 @@ redirected file while the turret probes `<ImageFile>TUR.SHP`. Native behaves the
 same way at `0x747A2E`; the body side's `ArtImageSwap` handling is a separate,
 pre-existing gap (see residuals).
 
+## Key location (`[General]`, not a client INI key)
+
+Some task write-ups name `ArtImageSwap` as a `[Phobos]` client-INI option. The
+native reader is `0x52D21F` (`Phobos.INI.cpp:256-262`), and it reads
+`pINI_RULESMD`'s `[General] ArtImageSwap` with default `false`. VERA already
+reads exactly that value through `PhobosGlobals::art_image_swap`
+(`rules/phobos_globals.rs:777`, read `:2977`), so this chain adds no second
+reader — a second owner for one bool would only fork the decision.
+
 ## Phobos quirks kept
 
 - Only a non-voxel `Vehicle` with `Turret=yes` gets a turret file; voxel units
@@ -78,8 +95,9 @@ pre-existing gap (see residuals).
   source and the body and turret share one SHP.
 - `[General] ArtImageSwap` is a `Valueable<bool>` (default no), so a later
   layer can turn it off again.
-- Detection is asset-gated: rules only derive the name; the atlas binds it
-  when the file exists, and an absent file falls back to the body slice.
+- Detection is asset-gated: rules only derive the name;
+  `shp_vehicle_turret_shape_file` adds the `AssetManager::contains` test and the
+  atlas binds what it answers, so an absent file falls back to the body slice.
 - VERA previously drew no separate SHP unit turret at all; this chain adds
   the native body-slice turret piece for every non-voxel `Turret=yes` Unit,
   so existing SHP turret types gain the turret the original engine draws.
@@ -112,6 +130,14 @@ None; file probing and frame selection read no RNG.
 - **Aircraft.** The native hook is `UnitTypeClass` only; aircraft are
   excluded by the `Vehicle` category gate even though the shared SHP sequence
   builder serves them.
-- **Draw-path coverage.** The resolver/sequence/naming tests run without
-  assets; the atlas binding and turret draw are compiled but not verified
-  against retail SHP art in this checkout (no `ini/`).
+- **Draw path reads the atlas, not the owner.** `ShpInputs` / `SimResources`
+  carry no `AssetManager`, so the draw code cannot call
+  `shp_vehicle_turret_shape_file` itself. It asks whether the atlas bound the
+  stem (`turret_shape_present`) and hands that answer to
+  `resolve_shp_vehicle_turret_frame`. Trigger: every SHP turret draw.
+  Frequency: always. Risk: the two can only disagree when the atlas skipped the
+  type, and then the draw falls back to the body slice either way.
+- **Draw-path coverage.** The name, existence and frame tests stage a loose
+  `<image>TUR.SHP` and run without retail art; the atlas binding and the turret
+  draw are compiled but not verified against retail SHP art in this checkout
+  (no `ini/`).

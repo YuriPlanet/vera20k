@@ -10,14 +10,17 @@
 //! layout. Original reader/postpass controls are in `mirage_disguise.json`.
 //!
 //! ## Dependency rules
-//! - Part of rules/ — depends only on rules/art_data, sim/animation.
+//! - Part of rules/ — depends only on rules/art_data, assets/asset_manager,
+//!   sim/animation.
 //! - Does NOT depend on sim/ game logic, render/, or any game module.
 
+use crate::assets::asset_manager::AssetManager;
 use crate::rules::animation_sequence::{
     FacingSlots, FootBodyCadence, LoopMode, SequenceDef, SequenceKind, SequenceSet,
 };
 use crate::rules::art_data::ArtEntry;
 use crate::rules::ini_parser::IniSection;
+use crate::rules::ruleset::RuleSet;
 
 /// UnitType7470D0/747620's retained ART layout, owned by the process-resident
 /// UnitType registry. ART is fixed, but Image/Turret and current reader defaults
@@ -300,6 +303,27 @@ pub(crate) fn build_shp_vehicle_sequences(
     }
 
     set
+}
+
+/// Phobos `UnitTypeClass_ReadINI_TurretShape @ 0x747A2E`
+/// (`Ext/TechnoType/Hooks.cpp:142-168`): a non-voxel `Turret=yes`
+/// `VehicleType` takes its turret from the separate shape only when
+/// `FileSystem::LoadSHPFile` finds `<name>TUR.SHP`; an absent file keeps the
+/// body shape's `WalkFrames * Facings` turret block (`0x73C7AC`,
+/// `Ext/Unit/Hooks.DrawIt.cpp:29-33`).
+///
+/// `<name>` and the type gate are [`RuleSet::unit_turret_shp_file`]'s answer
+/// (the ART `Image=` redirect only with `[General] ArtImageSwap`,
+/// `Phobos.INI.cpp:262`, default no); this is the single place the file
+/// existence decision is made. `render::sprite_atlas` binds the frames under
+/// the same stem and the SHP vehicle draw reads that binding.
+pub fn shp_vehicle_turret_shape_file(
+    rules: &RuleSet,
+    assets: &AssetManager,
+    type_id: &str,
+) -> Option<String> {
+    let file = rules.unit_turret_shp_file(type_id)?;
+    assets.contains(&file).then_some(file)
 }
 
 #[cfg(test)]
@@ -623,6 +647,7 @@ mod tests {
 mod turret_shape_tests {
     use super::tests::{TEST_CADENCE, make_art_entry};
     use super::*;
+    use crate::assets::asset_manager::test_support::TestDirectory;
     use crate::rules::ini_parser::IniFile;
     use crate::rules::native_processing::RulesLayerStack;
     use crate::rules::ruleset::RuleSet;
@@ -718,5 +743,107 @@ mod turret_shape_tests {
         assert_eq!(turret.start_frame, 24);
         assert_eq!(turret.frame_count, 6);
         assert_eq!(turret.facings, 6);
+    }
+
+    /// One loose root holding the named shapes. `FileSystem::LoadSHPFile`
+    /// decides on the file's presence alone, so the bytes are never decoded
+    /// here.
+    fn stage(root: &TestDirectory, names: &[&str]) -> AssetManager {
+        for name in names {
+            std::fs::write(root.path().join(*name), [0_u8; 8]).expect("stage turret SHP");
+        }
+        AssetManager::from_loose_root_for_test(root.path())
+    }
+
+    /// Phobos `UnitTypeClass_ReadINI_TurretShape` (`0x747A2E`,
+    /// `Ext/TechnoType/Hooks.cpp:142-168`) with the file present: the turret
+    /// image comes from the separate shape's frame 0, while the body keeps
+    /// the start of its own `Walk` block.
+    #[test]
+    fn a_vehicle_with_a_turret_file_draws_frame_zero() {
+        let root = TestDirectory::new("phobos-turret-shape-present");
+        let assets = stage(&root, &["TANKTUR.SHP"]);
+        let rules = rules("");
+        let shape = shp_vehicle_turret_shape_file(&rules, &assets, "TANK");
+        assert_eq!(shape.as_deref(), Some("TANKTUR.SHP"));
+
+        let set = turret_set(5, 8, false, true);
+        assert_eq!(
+            set.shp_vehicle_turret().expect("turret layout").start_frame,
+            40
+        );
+        // The body keeps drawing its own Walk block, whose 40-frame extent
+        // ends where the body-slice turret block starts.
+        assert_eq!(
+            set.get(&SequenceKind::Walk)
+                .expect("walk block")
+                .start_frame,
+            0
+        );
+        let body_frame =
+            crate::sim::animation::resolve_shp_vehicle_body_frame(&set, 0, 0, -1, true, false)
+                .expect("body image");
+        assert!(
+            body_frame < 40,
+            "the body stays inside its Walk block: {body_frame}"
+        );
+        let turret_frame =
+            crate::sim::animation::resolve_shp_vehicle_turret_frame(&set, 64, shape.is_some())
+                .expect("turret image");
+        assert!(
+            turret_frame < 8,
+            "the separate shape's eight-frame block: {turret_frame}"
+        );
+        assert_eq!(
+            crate::sim::animation::resolve_shp_vehicle_turret_frame(&set, 64, false),
+            Some(40 + turret_frame),
+            "the body slice would hold the same facing at WalkFrames * Facings"
+        );
+    }
+
+    /// Without the file the type keeps drawing the body shape's
+    /// `WalkFrames * Facings` turret block (`0x73C7AC`).
+    #[test]
+    fn a_vehicle_without_a_turret_file_keeps_the_body_slice() {
+        let root = TestDirectory::new("phobos-turret-shape-absent");
+        let assets = stage(&root, &[]);
+        let rules = rules("");
+        assert_eq!(shp_vehicle_turret_shape_file(&rules, &assets, "TANK"), None);
+
+        let set = turret_set(5, 8, false, true);
+        let turret = set.shp_vehicle_turret().expect("turret layout");
+        assert_eq!(turret.start_frame, 40);
+        let body_slice = crate::sim::animation::resolve_shp_vehicle_turret_frame(&set, 64, false)
+            .expect("body turret image");
+        assert_eq!(
+            body_slice,
+            40 + crate::sim::animation::resolve_shp_vehicle_turret_frame(&set, 64, true)
+                .expect("frame-0 block"),
+            "one image per body facing past the body's WalkFrames * Facings"
+        );
+    }
+
+    /// `[General] ArtImageSwap` (`Phobos.INI.cpp:262`, `0x52D21F`, default no)
+    /// moves the looked-up stem to the ART `Image=` redirect.
+    #[test]
+    fn art_image_swap_moves_the_looked_up_name() {
+        let root = TestDirectory::new("phobos-turret-shape-swap");
+        let assets = stage(&root, &["TANKTUR.SHP", "HULLTUR.SHP"]);
+        assert_eq!(
+            shp_vehicle_turret_shape_file(&rules(""), &assets, "TANK").as_deref(),
+            Some("TANKTUR.SHP")
+        );
+        assert_eq!(
+            shp_vehicle_turret_shape_file(&rules("ArtImageSwap=yes"), &assets, "TANK").as_deref(),
+            Some("HULLTUR.SHP")
+        );
+
+        // Only the type's own stem exists: the swap-enabled lookup misses.
+        let body_root = TestDirectory::new("phobos-turret-shape-swap-miss");
+        let body_assets = stage(&body_root, &["TANKTUR.SHP"]);
+        assert_eq!(
+            shp_vehicle_turret_shape_file(&rules("ArtImageSwap=yes"), &body_assets, "TANK"),
+            None
+        );
     }
 }
