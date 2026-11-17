@@ -190,8 +190,10 @@ struct ReadOnlyReduction {
 pub(crate) struct PackedSurface {
     targets: Targets,
     stencil: packed::Stencil,
-    /// Surface pixels per camera pixel, whole: each camera pixel is a block.
-    scale: u32,
+    /// Surface pixels per camera pixel. Whole for the sidebars drawn at a
+    /// whole multiple; the sidebar's Large size is 1.5, whose pieces straddle
+    /// fractional surface pixels, so their rectangles round outward.
+    scale: f32,
 }
 
 pub(crate) struct TerrainDrawRenderer {
@@ -795,12 +797,12 @@ impl TerrainDrawRenderer {
         device: &wgpu::Device,
         color: &wgpu::Texture,
         depth: &wgpu::TextureView,
-        scale: u32,
+        scale: f32,
     ) -> PackedSurface {
         PackedSurface {
             targets: self.create_targets(device, color, depth),
             stencil: self.packed.create_stencil(color.size()),
-            scale: scale.max(1),
+            scale: scale.max(1.0),
         }
     }
 

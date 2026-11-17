@@ -52,6 +52,12 @@ the pictures and the price line still read; at five columns a picture is 22x18
 and the Ready label has no room, so pick the count you can actually aim at.
 Hover outlines, clicks, tooltips and clocks follow the smaller cells.
 
+At the Large Sidebar size the sidebar draws at its own 1.5x pixels and copies
+them 1:1, so a cell is drawn at the size the frame shows it: a three-column
+cameo is a 58.5-pixel cell, not a 39-pixel one blown up afterwards. The
+pictures stay as sharp as the Sidebar size allows instead of going through a
+second resample.
+
 ## With `veraui.ini`
 
 A mod's `[Layout.Cameos] Columns=` still sets the grid; the player's choice is
