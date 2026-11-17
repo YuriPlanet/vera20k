@@ -52,8 +52,8 @@ impl UnitDeliveryState {
 
     /// Saved pending deliveries load only into a game Ares plays in (`ares`,
     /// [`RuleSet::ares`]), like the entity's delivery base override
-    /// (`GameEntity::validate_ares_build_compatibility`).
-    pub(crate) fn validate_ares_build_compatibility(&self, ares: bool) -> Result<(), &'static str> {
+    /// (`GameEntity::validate_ares_compatibility`).
+    pub(crate) fn validate_ares_compatibility(&self, ares: bool) -> Result<(), &'static str> {
         if !ares && !self.pending.is_empty() {
             return Err("pending deliveries require a game Ares plays in");
         }
@@ -86,7 +86,7 @@ fn a_game_without_ares_rejects_pending_unit_delivery_state() {
             owner, 0, None, true, 0, 10,
         ));
     let mut state = UnitDeliveryState::default();
-    assert!(state.validate_ares_build_compatibility(false).is_ok());
+    assert!(state.validate_ares_compatibility(false).is_ok());
     state.pending.push(PendingDelivery {
         sw_type,
         owner,
@@ -101,10 +101,10 @@ fn a_game_without_ares_rejects_pending_unit_delivery_state() {
         activation_sound: None,
     });
     assert_eq!(
-        state.validate_ares_build_compatibility(false),
+        state.validate_ares_compatibility(false),
         Err("pending deliveries require a game Ares plays in")
     );
-    assert!(state.validate_ares_build_compatibility(true).is_ok());
+    assert!(state.validate_ares_compatibility(true).is_ok());
     assert!(state.validate(&sim).is_ok());
 }
 

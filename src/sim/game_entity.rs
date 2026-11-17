@@ -1165,7 +1165,7 @@ mod voxel_recoil;
 
 #[cfg(test)]
 #[test]
-fn default_build_rejects_saved_delivery_base_override_and_keeps_base_space() {
+fn a_stock_game_rejects_saved_delivery_base_override_and_keeps_base_space() {
     let mut entity = GameEntity::test_default_of_category(
         1,
         "YARD",
@@ -1174,11 +1174,11 @@ fn default_build_rejects_saved_delivery_base_override_and_keeps_base_space() {
         20,
         EntityCategory::Structure,
     );
-    assert!(entity.validate_ares_build_compatibility(false).is_ok());
+    assert!(entity.validate_ares_compatibility(false).is_ok());
     assert!(entity.unit_delivery_provides_base_space());
     entity.unit_delivery_no_base = true;
     assert_eq!(
-        entity.validate_ares_build_compatibility(false),
+        entity.validate_ares_compatibility(false),
         Err("delivery base overrides require a game Ares plays in")
     );
 }
@@ -1297,7 +1297,7 @@ impl GameEntity {
     /// Keep the raw delivery override private to its entity owner.
     ///
     /// [`RuleSet::ares`]: crate::rules::ruleset::RuleSet::ares
-    pub(crate) fn validate_ares_build_compatibility(&self, ares: bool) -> Result<(), &'static str> {
+    pub(crate) fn validate_ares_compatibility(&self, ares: bool) -> Result<(), &'static str> {
         if !ares && self.unit_delivery_no_base {
             return Err("delivery base overrides require a game Ares plays in");
         }
