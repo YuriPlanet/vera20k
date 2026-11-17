@@ -42,6 +42,14 @@ longer carries its locals either. Loading a save keeps its saved variables. Offl
 the original game's local variable carryover. This changes no packets: mixed builds
 are refused by the existing build check, and a rollback restores the earlier
 carryover behavior.
+
+Each new LAN or online match also rebuilds mutable Rules from the frozen startup
+sources and the room's current options. This includes the country/color choices
+shown before loading and the Rules used for random-map agreement and generation.
+A previous map's scalars or extra Types cannot become defaults for the next room.
+Offline loads keep the original retaining reset. No packet changes are required;
+mixed builds use the existing refusal, and a rollback restores the earlier retention.
+
 Whether Ares plays in a match is decided from that same data: the rules, mode
 and map, whether the selected mod loads `ares.mix`, and the player's
 [Ares setting](ares.md#the-ares-setting), which the rules agreement covers. With
@@ -115,6 +123,11 @@ still points to the GitHub releases. Nothing exchanged changes: a released game
 shows only the text with its link, and a rollback does the same.
 
 When an online start fails, each player's game says whose side failed and logs why.
+If the lobby announces a match whose start this game cannot accept (for example,
+its map or rules differ), the game finishes that specific pending match. Its
+player sees the local reason, and the lobby tells the others the start was
+cancelled. An older game that refuses locally still leaves everyone waiting for
+the admission timeout. No packets or lobby changes are needed.
 A start whose 30-second relay admission runs out tells a player whose `relay_ready` the
 lobby took that another player's game could not reach the game server, a player whose
 relay answered but whose `relay_ready` the lobby never took that the lobby is busy or not
@@ -195,6 +208,10 @@ later player's Ready: the others wait until that player leaves, which cancels
 the start, or for up to 3 minutes, then start without it (a match on several
 relays is cancelled instead).
 Deploying the relay change is separate from publishing a new game build.
+Relays of one match must also speak one relay-to-relay link version: a relay
+that hears another version cancels the startup at once, and one too old to know
+this cancels at its loading limit, so players get the cancelled-start message
+instead of a frozen match. Game and lobby traffic do not change.
 At each deadline, missing input is empty; a command joins the next unsealed
 frame. The sender also waits for that commit.
 Frames use the existing Event codec and simulation queues, with a fresh compression
@@ -327,8 +344,10 @@ match on the same relay, or the match's final frame after 24 hours of play ends
 membership. The relay
 remains required for progress.
 
-A process that left a match without Leave (a closed window or browser tab, a crash)
-can be replaced within that silence limit. The launcher receives a fresh `[Relay]`
+A closed desktop game first sends the relay its Leave and the lobby its `finish`,
+waiting up to three seconds for them. A process that left a match without Leave (a
+crash, a closed browser tab, or a closed game whose Leave did not arrive in time) can
+be replaced within that silence limit. The launcher receives a fresh `[Relay]`
 section with `ResumePings`, the timing vector every client started with, and
 `ResumeCursor`, the end of the lobby events that process already consumed. The new
 process skips the start barriers, loads the same world without reporting progress to
@@ -777,6 +796,25 @@ directory, and the bind/peer endpoints exchanged. The output manifest's
 `lan.rounds[n].runtime.native_checksums` records per-frame checksums for each
 round. The live targets drive real Move/Stop input, results, a rematch in the
 host's reopened room and Main Menu return across two games.
+For a process-state comparison, give both peers `--lan-isolation-seed 73`
+and the host `--lan-map XMP03T4.MAP`. This fixes the seed, countries, colors and
+start positions across both rounds and skips the separate observer-seat exercise. Compare
+the accepted launch, startup receipt and committed frame checksums; any input
+timing differences still need to be reconciled before attributing a difference
+to retained state.
+The host can add `--lan-prior-map <history-map>` to play a different first map.
+The second round still uses `--lan-map`. Each round records `setup_catalog`
+before loading and `gameplay_rules` afterward, so the comparison can confirm
+that the history changed the first world and that its choices were then cleared.
+
+`sim-bench --state-isolation-report <new.json> --map XMP03T4.MAP --seed 73
+--client-timing --isolation-mode wol --isolation-humans 1 --computers 1`
+provides the complementary headless comparison. Run it in separate processes,
+first without a history, then with one or more `--prior-map <map>` arguments.
+Equal `target` values cover the Rules owner, world construction and every
+recorded simulation frame for that fixture. This does not cover app input or
+the network transport.
+
 The `lan-live-timeout-host` and `lan-live-quit-host` targets pair with
 `lan-live-failure-guest` on the same endpoints. That guest plays the shared 300-frame
 prefix and then exits without leaving, so the host meets a real peer disappearance

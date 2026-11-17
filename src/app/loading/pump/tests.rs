@@ -2397,7 +2397,6 @@ fn held_network_sink_sends_rmg_display_progress_and_services_the_same_source_row
             .progress_row
             .total_fraction(&host_native.progress),
     );
-    host_session.request_kick_proposal(1);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     loop {
         for (service, session, native, raw) in [
@@ -2446,15 +2445,6 @@ fn held_network_sink_sends_rmg_display_progress_and_services_the_same_source_row
         host_native.progress_row.participants[0]
             .remote_progress
             .is_none()
-    );
-    assert_eq!(
-        host_session.take_network_loading_requests(),
-        vec![
-            crate::app::match_runtime::session::NetworkLoadingRequest::ProposeKick {
-                target_source: 1
-            },
-        ],
-        "the synchronous report drain cannot steal another owner's request"
     );
     let fraction = host_native
         .progress_row

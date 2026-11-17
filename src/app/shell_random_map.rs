@@ -753,7 +753,10 @@ impl PreparedRandomMapGeneration {
 /// Actual dialog generation mutates the one Rules owner at the native cache
 /// boundary. Network agreement only inspects prospective generation inputs.
 pub(super) enum RandomMapRulesPreparation<'a> {
+    #[cfg(test)]
     ReadOnly(Option<&'a crate::rules::process_owner::NativeRulesProcessOwner>),
+    NetworkAgreement(Option<&'a crate::rules::process_owner::NativeRulesProcessOwner>),
+    NetworkGeneration(Option<&'a mut crate::rules::process_owner::NativeRulesProcessOwner>),
     Generation {
         owner: Option<&'a mut crate::rules::process_owner::NativeRulesProcessOwner>,
         reinitialize: bool,
@@ -773,15 +776,36 @@ pub(super) fn prepare_random_map_generation(
         return None;
     };
     let prospective_rules = match &preparation {
+        #[cfg(test)]
         RandomMapRulesPreparation::ReadOnly(Some(owner)) => Some(
             owner
                 .random_map_preview_projection(mode_rules_override, theater_name)
                 .ok()?,
         ),
+        RandomMapRulesPreparation::NetworkAgreement(Some(owner)) => Some(
+            owner
+                .network_random_map_preview_projection(mode_rules_override, theater_name)
+                .ok()?,
+        ),
         _ => None,
     };
     let native_rules = match preparation {
+        #[cfg(test)]
         RandomMapRulesPreparation::ReadOnly(owner) => owner,
+        RandomMapRulesPreparation::NetworkAgreement(owner) => owner,
+        RandomMapRulesPreparation::NetworkGeneration(owner) => {
+            if let Some(owner) = owner {
+                if let Err(error) =
+                    owner.prepare_network_random_map_preview(mode_rules_override, theater_name)
+                {
+                    log::warn!("Network random-map Rules preparation failed: {error}");
+                    return None;
+                }
+                Some(&*owner)
+            } else {
+                None
+            }
+        }
         RandomMapRulesPreparation::Generation {
             owner,
             reinitialize,
@@ -1302,7 +1326,8 @@ impl App {
         );
         // Reset668B8E reads the committed Session mode. ChooseMap only
         // commits its draft after UseMap5E7367; RMG runs before that call.
-        let mode_file = if state.frontend.shell_route.network_setup() {
+        let network = state.frontend.shell_route.network_setup();
+        let mode_file = if network {
             state
                 .match_state
                 .session
@@ -1316,6 +1341,11 @@ impl App {
                 .resolve(&state.frontend.skirmish_modes)
                 .map(|mode| mode.override_file.clone())
         };
+        if network {
+            // A network preview must not reuse the preceding match's Rules
+            // generation or MapClass storage state (native599B8E cache gate).
+            state.frontend.random_map_retention.destroy_map_storage();
+        }
         let map_storage_decision = state
             .frontend
             .random_map_retention
@@ -1343,12 +1373,14 @@ impl App {
             // Drain its live Rules writes before59A0F0 destroys those Types;
             // a later Full_Init must not replay them onto the preview registry.
             runtime.simulation.retire_scenario_started();
-            if let Err(error) = crate::app::process_assets::transfer_outgoing_simulation_rules(
-                owner,
-                &mut runtime.simulation,
-            ) {
-                log::warn!("Random-map outgoing Rules transfer failed: {error}");
-                return false;
+            if !network {
+                if let Err(error) = crate::app::process_assets::transfer_outgoing_simulation_rules(
+                    owner,
+                    &mut runtime.simulation,
+                ) {
+                    log::warn!("Random-map outgoing Rules transfer failed: {error}");
+                    return false;
+                }
             }
         }
         let Some(PreparedRandomMapGeneration {
@@ -1364,9 +1396,13 @@ impl App {
         }) = prepare_random_map_generation(
             asset_manager,
             options,
-            RandomMapRulesPreparation::Generation {
-                owner: native_rules,
-                reinitialize: map_storage_decision.reinitialize,
+            if network {
+                RandomMapRulesPreparation::NetworkGeneration(native_rules)
+            } else {
+                RandomMapRulesPreparation::Generation {
+                    owner: native_rules,
+                    reinitialize: map_storage_decision.reinitialize,
+                }
             },
             mode_rules.as_ref(),
         )
@@ -2235,6 +2271,14 @@ mod tests {
         )
         .unwrap()
         .multiplayer_digest();
+        let network_original = prepare_random_map_generation(
+            &mut assets,
+            &options,
+            RandomMapRulesPreparation::NetworkAgreement(Some(&owner)),
+            None,
+        )
+        .unwrap()
+        .multiplayer_digest();
         owner
             .load_scenario(
                 crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
@@ -2256,8 +2300,26 @@ mod tests {
             original, after_history,
             "same sources do not erase Powerups history"
         );
+        let network_after_history = prepare_random_map_generation(
+            &mut assets,
+            &options,
+            RandomMapRulesPreparation::NetworkAgreement(Some(&owner)),
+            None,
+        )
+        .unwrap()
+        .multiplayer_digest();
+        assert_eq!(network_original, network_after_history);
         assert_eq!(owner.saved_scenario_rules().unwrap().powerups(), &live);
         assert!(owner.prepared_random_map_rules().is_none());
+        let generated = prepare_random_map_generation(
+            &mut assets,
+            &options,
+            RandomMapRulesPreparation::NetworkGeneration(Some(&mut owner)),
+            None,
+        )
+        .unwrap()
+        .multiplayer_digest();
+        assert_eq!(generated, network_original);
     }
 
     #[test]

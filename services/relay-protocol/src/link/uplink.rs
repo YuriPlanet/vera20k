@@ -531,9 +531,7 @@ impl ClientSession {
         {
             return Err(RelayError::Unregistered);
         }
-        let id = ordering.next_batch;
-        self.seal_batch(id, plaintext)?;
-        Ok(id)
+        self.seal_batch(plaintext)
     }
 
     /// `queue_ordering_checksums`'s body.
@@ -710,15 +708,23 @@ impl ClientSession {
         Ok(())
     }
 
-    /// Test support for the removed SUBMIT: seals or re-checks batch `id`
-    /// and sends it alone in an UPLINK.
+    /// Test support for the removed SUBMIT: seals `plaintext` as batch `id`,
+    /// or resends batch `id` while it is retained, alone in an UPLINK.
     pub(crate) fn test_submit(
         &mut self,
         id: u64,
         plaintext: &[u8],
         out: &mut Vec<u8>,
     ) -> Result<(), RelayError> {
-        self.seal_batch(id, plaintext)?;
+        let retained = self
+            .ordering
+            .as_ref()
+            .and_then(|ordering| ordering.sealed.iter().find(|batch| batch.id == id))
+            .map(|batch| batch.opaque.clone());
+        match retained {
+            Some(opaque) => assert_eq!(opaque, plaintext, "a retry resends the sealed bytes"),
+            None => assert_eq!(self.seal_batch(plaintext)?, id, "batch IDs are consecutive"),
+        }
         self.test_uplink(Some(id), self.clock_ms, out)
     }
 }

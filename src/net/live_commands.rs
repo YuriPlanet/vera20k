@@ -603,32 +603,6 @@ impl LiveCommandSession {
         self.transport.response_time()
     }
 
-    /// MainTick55D5A4..55D7C2 adds10ms at each quarter-window lag
-    /// threshold in WOL. Peer lag comes from Receive64A3F4/652110, not a
-    /// new clock or independently maintained progress table.
-    pub fn pacing_delay_millis(&self, max_ahead: i32) -> u32 {
-        if self.uses_sequenced_lockstep() {
-            return 0;
-        }
-        if self.mode != LiveCommandMode::Wol || max_ahead <= 30 {
-            return 0;
-        }
-        let lag = self
-            .exchange
-            .peers()
-            .iter()
-            .map(|peer| peer.lag_frames())
-            .fold(0, i32::max);
-        if lag == 0 {
-            return 0;
-        }
-        [max_ahead / 4, max_ahead / 2, max_ahead.wrapping_mul(3) / 4]
-            .into_iter()
-            .filter(|threshold| lag >= *threshold)
-            .count() as u32
-            * 10
-    }
-
     pub fn configure_precalculated_timing(&mut self, max_ahead: i32, frames_per_second: i32) {
         self.timing
             .configure_precalculated(max_ahead, frames_per_second);
@@ -789,7 +763,6 @@ impl LiveCommandSession {
         now_wall_bucket: u32,
         now_millis: u32,
         latency_fudge: i32,
-        logic_frame_rate: u32,
     ) -> Result<NetworkQueuePass, LiveCommandError> {
         self.last_service = None;
         if let Some(session) = &mut self.sequenced {
@@ -815,7 +788,6 @@ impl LiveCommandSession {
             now_wall_bucket,
             now_millis,
             latency_fudge,
-            logic_frame_rate,
         );
         if result.is_err()
             && let Some(current) = &mut self.current
@@ -833,7 +805,6 @@ impl LiveCommandSession {
         now: u32,
         now_millis: u32,
         latency_fudge: i32,
-        logic_frame_rate: u32,
     ) -> Result<NetworkQueuePass, LiveCommandError> {
         if self.startup.failed() {
             return Err(StartupError::Aborted.into());
@@ -908,7 +879,7 @@ impl LiveCommandSession {
                         };
                         self.send_probe(context.frame, max_ahead)?;
                     }
-                    self.service_and_receive(now, queues, logic_frame_rate)?;
+                    self.service_and_receive(now, queues)?;
                     self.flush_startup();
                     if !self.startup.complete() || !self.exchange.initial_ready() {
                         return Ok(NetworkQueuePass::Waiting);
@@ -972,7 +943,7 @@ impl LiveCommandSession {
                                 };
                                 self.send_probe(context.frame, max_ahead)?;
                             }
-                            self.service_and_receive(now, queues, logic_frame_rate)?;
+                            self.service_and_receive(now, queues)?;
                             return Ok(NetworkQueuePass::Waiting);
                         }
                         SendPoll::OffCadence => {
@@ -1009,7 +980,7 @@ impl LiveCommandSession {
                         };
                         self.send_probe(context.frame, max_ahead)?;
                     }
-                    self.service_and_receive(now, queues, logic_frame_rate)?;
+                    self.service_and_receive(now, queues)?;
                     return if self
                         .exchange
                         .frame_wait(context.frame as i32, max_ahead)
@@ -1145,7 +1116,6 @@ impl LiveCommandSession {
         &mut self,
         now: u32,
         queues: &mut NetworkCommandQueues<'_>,
-        logic_frame_rate: u32,
     ) -> Result<(), LiveCommandError> {
         //648B94 and649518 ignore the manager's failure return and continue
         //receiving/checking progress. Neither retry exhaustion nor a socket
@@ -1163,27 +1133,14 @@ impl LiveCommandSession {
             let control = self
                 .startup
                 .receive(source_house, &message.payload, message.delivery)?;
-            let advanced = if control {
-                false
-            } else {
+            if !control {
                 self.exchange.receive(
                     source_house,
                     &message.payload,
                     self.initial_seed,
                     queues,
                     elapsed,
-                )?
-            };
-            if advanced && self.mode == LiveCommandMode::Wol {
-                self.exchange.record_peer_lag(
-                    source_house,
-                    self.current.expect("active frame").context.frame,
-                    logic_frame_rate,
-                    self.transport
-                        .connections()
-                        .mean_response_time(i32::from(source_house))
-                        .unwrap_or(0),
-                );
+                )?;
             }
             //649514..649518 services again after each private message. The
             //64-message budget still bounds this wait visit.
