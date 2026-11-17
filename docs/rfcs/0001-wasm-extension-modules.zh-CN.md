@@ -90,25 +90,23 @@ API 一旦被 mod 依赖就无法收回，所以它必须公开设计、以带�
 
 ```
 Mods/MyMod/
-  mod.ini        ; Needs= and the other mod.ini keys; no module keys
-  rulesmd.ini    ; [VeraWasm] API version, budgets, map policy; binds tags to types
-  rules.wasm     ; simulation module
-  ui.wasm        ; interface module
+  mod.ini        ; Needs= 和其他 mod.ini 键；不含模块键
+  rulesmd.ini    ; [VeraWasm]：API 版本、额度、地图政策；把标签绑定到类型
+  rules.wasm     ; 模拟模块
+  ui.wasm        ; 界面模块
 ```
-
-代码注释说明：`mod.ini` 放 `Needs=` 和其他 mod.ini 键，不含模块键；`rulesmd.ini` 的 `[VeraWasm]` 放 API 版本、额度和地图政策，并把标签绑定到类型；`rules.wasm` 是模拟模块，`ui.wasm` 是界面模块。
 
 地图以文本形式携带模块，方式和现在携带 `IsoMapPack5` 一样：压缩、base64 编码、按编号分行。
 
 ```ini
 [Basic]
-VeraMinVersion=0.9.0     ; example; older releases refuse the map with a message (section 11)
+VeraMinVersion=0.9.0     ; 示例；更旧的版本拒绝这张地图并给出提示（第 11 节）
 
 [VeraWasm]
-Api=1.0                  ; major.minor of the API the modules need (section 12)
-RulesSize=48213          ; decoded size, checked on load
+Api=1.0                  ; 模块需要的 API 主版本.次版本（第 12 节）
+RulesSize=48213          ; 解码后的字节数，加载时校验
 UISize=9120
-StorageId=MyCampaign     ; the client store (section 10); default: the map's file name
+StorageId=MyCampaign     ; 客户端存储（第 10 节）；默认为地图的文件名
 
 [VeraWasmRulesPack]
 1=eJzt3XlcVOX+B...
@@ -118,29 +116,25 @@ StorageId=MyCampaign     ; the client store (section 10); default: the map's fil
 1=...
 ```
 
-代码注释说明：`VeraMinVersion` 是示例，更旧的版本会拒绝这张地图并给出提示（第 11 节）；`Api` 是模块需要的 API 主版本.次版本（第 12 节）；`RulesSize` 是解码后的字节数，加载时校验；`StorageId` 是客户端存储（第 10 节），默认为地图的文件名。
-
 `asset` 工具增加命令：把模块嵌入地图、从地图中取出模块，以及运行和游戏相同的加载检查。
 
 ### 把触发器绑定到类型
 
 ```ini
-; rulesmd.ini in the mod
+; mod 里的 rulesmd.ini
 [E1]
-Wasm.Tags=GIPanicTag     ; every E1 receives this tag's triggers
+Wasm.Tags=GIPanicTag     ; 每个 E1 都接收这个标签的触发器
 
 [GIPanicTag]
 Trigger=GIPanic
 
 [GIPanic]
 Event=TakeDamage
-Where1=Subject.HealthPercent<30      ; filter clauses, AND-ed (section 6a)
+Where1=Subject.HealthPercent<30      ; 筛选子句，全部成立才触发（第 6a 节）
 Where2=Var(Subject,Panicked)=0
-Action=Wasm:giPanic      ; runs the module action giPanic of the mod's rules.wasm (section 2)
+Action=Wasm:giPanic      ; 运行 mod 的 rules.wasm 中的模块动作 giPanic（第 2 节）
 Repeat=yes
 ```
-
-代码注释说明：这是 mod 里的 rulesmd.ini；每个 E1 都接收这个标签的触发器；`Where1`、`Where2` 是筛选子句，全部成立才触发（第 6a 节）；`Action=Wasm:giPanic` 运行 mod 的 rules.wasm 的模块动作 giPanic（第 2 节）。
 
 每个 E1 都以自己的实例运行 `GIPanic`（第 7 节）。只有生命低于 30% 且变量 `Panicked` 为 0 的 E1 才会把记录投递给模块，其他 E1 的伤害在引擎内就被筛掉。键名和具体的节格式尚未确定（待定问题 4）。在 FinalAlert2 里编辑的地图触发器，也可以通过新动作调用模块函数。
 
@@ -149,38 +143,38 @@ Repeat=yes
 引擎只看到编译好的模块，源码和编译器都在作者自己的工具里。同一个模块分别用两套官方 SDK 写，INI 触发器和代码里创建的触发器做同样的事：
 
 ```ts
-// TypeScript (AssemblyScript-compatible)
+// TypeScript（兼容 AssemblyScript）
 import { Trigger, Event, Prop, Op, Techno, Mission, Var, Scope, Rules,
          EventRecord, namedAction, onScenarioStart, onFrame, Every } from "@vera20k/sdk";
 
-const PANICKED = Var.id("Panicked");   // top level: runs once in vera_init (section 3); declared in the project's variable list
+const PANICKED = Var.id("Panicked");   // 顶层代码：在 vera_init 中只运行一次（第 3 节）；变量声明在项目的变量列表中，构建时写入 vera.vars
 
 function giPanic(e: EventRecord): void {
-  Techno.setMission(e.subject, Mission.Hunt);   // one host call: set(subject, Mission, Hunt)
+  Techno.setMission(e.subject, Mission.Hunt);   // 一次宿主调用：set(subject, Mission, Hunt)
   Var.set(e.subject, PANICKED, 1);
 }
-namedAction("giPanic", giPanic);       // listed in vera.actions, so INI can name it
+namedAction("giPanic", giPanic);       // 列入 vera.actions，INI 才能引用这个名字
 
 onScenarioStart((): void => {
   Trigger.on(Event.TakeDamage)
-    .bind(Rules.technoType("E1"))                  // every E1 runs its own instance (section 7)
+    .bind(Rules.technoType("E1"))                  // 每个 E1 运行自己的实例（第 7 节）
     .where(Prop.HealthPercent, Op.Lt, 30)
     .whereVar(Scope.Subject, PANICKED, Op.Eq, 0)
-    .action(giPanic);                              // trigger_create + trigger_bind
+    .action(giPanic);                              // 调用 trigger_create 和 trigger_bind
 });
 
 onFrame(new Every(15), (): void => {
-  if (Var.get(Var.GLOBAL, Var.local(3)) != 0) {    // RA2 local variable 3
+  if (Var.get(Var.GLOBAL, Var.local(3)) != 0) {    // 红警 2 局部变量 3
     // ...
   }
 });
 ```
 
 ```rust
-// Rust SDK
+// Rust SDK 写法
 use vera20k_sdk::prelude::*;
 
-static PANICKED: VarRef = var!("Panicked");   // resolved in vera_init
+static PANICKED: VarRef = var!("Panicked");   // 在 vera_init 中解析
 
 fn gi_panic(e: &EventRecord) {
     e.subject().set_mission(Mission::Hunt);
@@ -204,8 +198,6 @@ fn check_waves() {
 }
 ```
 
-代码注释说明：顶层代码在 `vera_init` 中只运行一次（第 3 节）；变量 `Panicked` 声明在项目的变量列表中，构建时写入 `vera.vars`；`Techno.setMission` 只是一次 `set` 宿主调用；`namedAction` 把名字列入 `vera.actions`，INI 才能引用它；构建器最后调用 `trigger_create` 和 `trigger_bind`；`Var.local(3)` 是红警 2 局部变量 3。
-
 每套 SDK 都用一条命令构建出 `rules.wasm` 或 `ui.wasm`。SDK 的函数（`Techno.setMission`、`Trigger.on`）都由附录的表生成，每个包装函数恰好对应一次宿主调用（第 5a 节）。包名只是占位。
 
 ### 示例：第一个单位开火时扔核弹
@@ -213,27 +205,25 @@ fn check_waves() {
 把一个 `Fire` 触发器绑定到全场第一个单位（按创建序号），它开火时，在模块动作中向它的目标格子扔一颗核弹：
 
 ```ts
-// TypeScript (AssemblyScript-compatible)
+// TypeScript（兼容 AssemblyScript）
 import { Trigger, Event, Find, Prop, Op, Category, Techno, Action, EventRecord,
          NO_HANDLE, onScenarioStart } from "@vera20k/sdk";
 
 function nukeAtTarget(e: EventRecord): void {
-  const cell = e.other != NO_HANDLE ? Techno.cell(e.other) : e.cell;   // target object, or the ground target
-  Action.nukeStrike(cell);                                             // original action 95; one action() call
+  const cell = e.other != NO_HANDLE ? Techno.cell(e.other) : e.cell;   // 目标对象所在的格子，否则为地面目标格子
+  Action.nukeStrike(cell);                                             // 原版动作 95；一次 action() 调用
 }
 
 onScenarioStart((): void => {
   const first = Find.objects()
     .where(Prop.Category, Op.Ne, Category.Building)
     .where(Prop.Category, Op.Ne, Category.Projectile)
-    .first();                                    // lowest creation serial; NO_HANDLE when none
+    .first();                                    // 一次 find：创建序号最小的单位；没有时为 NO_HANDLE
   if (first != NO_HANDLE) {
     Trigger.on(Event.Fire).bind(first).once().action(nukeAtTarget);
   }
 });
 ```
-
-代码注释说明：目标是对象时取它所在的格子，否则取记录中的地面目标格子；`Action.nukeStrike` 是原版动作 95，只发起一次 `action` 调用；`Find.objects().first()` 用一次 `find` 调用取创建序号最小的单位，没有时为 `NO_HANDLE`。
 
 - 只有这个单位开火时才投递记录：其他单位开火时，事件触发点只检查一次自己的标志位就返回（第 15 节）。
 - `.once()` 让触发器不重复，只触发一次；去掉它就每次开火都扔。
@@ -273,16 +263,14 @@ mod 和地图使用同一套 API 和同一套 SDK，区别在于引擎授予它�
 mod 在它的 `rulesmd.ini` 的 `[VeraWasm]` 节中控制地图模块能做什么：
 
 ```ini
-; rulesmd.ini in the mod
+; mod 里的 rulesmd.ini
 [VeraWasm]
-Api=1.0              ; major.minor of the API the mod's modules need
-Budget=200000        ; the mod module's base budget per frame, capped by the engine
-MapBudget=50000      ; the base budget a map's module may use under this mod
-MapWasm=yes          ; no: a map with modules cannot start under this mod
-MapUI=overlay        ; overlay, full or no
+Api=1.0              ; mod 的模块需要的 API 主版本.次版本
+Budget=200000        ; mod 模块每帧的基础额度，引擎设上限
+MapBudget=50000      ; 这个 mod 下地图模块可用的基础额度
+MapWasm=yes          ; no：带模块的地图在这个 mod 下不能开局
+MapUI=overlay        ; overlay、full 或 no
 ```
-
-代码注释说明：`Api` 是 mod 的模块需要的 API 主版本.次版本；`Budget` 是 mod 模块每帧的基础额度，引擎设上限；`MapBudget` 是在这个 mod 下地图模块可用的基础额度；`MapWasm=no` 时，带模块的地图在这个 mod 下不能开局；`MapUI` 取 overlay、full 或 no。
 
 - 这些键放在 `rulesmd.ini` 里，因为 mod 摘要包含这个文件而不包含 `mod.ini`，所以房间里的每个玩家都会比对它们（第 11 节）。
 - 每个 `[VeraWasm]` 节都从各自的文件读取，从不层叠：mod 的在任何其他层之前从 mod 的 `rulesmd.ini` 读取，地图的从地图读取。地图无法改变 mod 的键。地图自己的 `[VeraWasm]` 只放它的嵌入键、它的 `Api=` 和它的 `StorageId=`。
@@ -487,11 +475,9 @@ MapUI=overlay        ; overlay, full or no
 - 对于武器事件（携带抛射体句柄的 `Fire`、`HitTarget` 和 `Detonated`），还包括使用绑定了该触发器的武器、弹头或抛射体类型的任何对象。武器绑定对使用这把武器的所有射手生效，不论射手是什么类型，射手就是主体：
 
   ```ini
-  [RedEye2]                   ; a weapon
-  Wasm.Tags=MissileFiredTag   ; every shooter of RedEye2 raises its Fire triggers
+  [RedEye2]                   ; 一把武器
+  Wasm.Tags=MissileFiredTag   ; 每个使用 RedEye2 的射手开火时都引发其 Fire 触发器
   ```
-
-  代码注释说明：`[RedEye2]` 是一把武器；所有使用 RedEye2 的射手开火时都会触发其 Fire 触发器。
 
 - 高频事件（伤害、开火、命中、抛射体引爆、碾压、移动失败）没有“所有对象”的订阅。真的需要全部对象时，SDK 的 `bindAllTypes` 把触发器逐个绑定到每个类型上，开销因此在代码里是明的。
 - 和对象无关的全局事件（所属方事件、逻辑事件、`Timer`、`SuperWeaponLaunched`）不需要绑定。
@@ -517,20 +503,18 @@ MapUI=overlay        ; overlay, full or no
 **动作**可以是原版触发器动作、原子动作、AI 动作（第 6b 节）或模块动作。模块动作是模块收到普通事件的唯一途径。
 
 ```ts
-// TypeScript (AssemblyScript-compatible)
-const PANICKED = Var.id("Panicked");   // top level: runs once in vera_init (section 3)
+// TypeScript（兼容 AssemblyScript）
+const PANICKED = Var.id("Panicked");   // 顶层代码：在 vera_init 中只运行一次（第 3 节）
 
 onScenarioStart((): void => {
   Trigger.on(Event.TakeDamage)
-    .bind(Rules.technoType("E1"))                  // every E1 runs its own instance (section 7)
+    .bind(Rules.technoType("E1"))                  // 每个 E1 运行自己的实例（第 7 节）
     .where(Prop.HealthPercent, Op.Lt, 30)
     .whereVar(Scope.Subject, PANICKED, Op.Eq, 0)
-    .act(ActionDef.setVar(Target.Subject, PANICKED, 1))   // an atomic action, runs when the trigger springs
-    .action(giPanic);                                  // a module action, queued
+    .act(ActionDef.setVar(Target.Subject, PANICKED, 1))   // 原子动作，在触发器触发时执行
+    .action(giPanic);                                  // 模块动作，排队到模块阶段
 });
 ```
-
-代码注释说明：顶层代码在 `vera_init` 中只运行一次（第 3 节）；绑定后每个 E1 运行自己的实例（第 7 节）；`.act` 加入一个原子动作，在触发器触发时执行；`.action` 加入一个模块动作，排队到模块阶段。
 
 版本 1 的候选连同各自的记录字段列在附录中：投递型事件见 [4.3](0001-wasm-extension-modules-api.zh-CN.md#43-新的投递型事件)（`TakeDamage`、`HitByWarhead`、`AttackedBy`、`FatalDamage`、`Killed`、`Fire`、`SpawnFire`、`HitTarget`、`Detonated`、`TargetChanged`、`ProjectileIncoming`、`Birth`、`TransportEntered`、`TransportExited`、`PassengerAdded`、`PassengerRemoved`、`Crushed`、`HouseTransfer`、`HouseTransferred`、`ModifierStart`、`ModifierStacks`、`ModifierExpire`、`Timer`、`SuperWeaponLaunched`），轮询型事件见 [4.4](0001-wasm-extension-modules-api.zh-CN.md#44-新的轮询型事件)（生命、弹药、乘客数、运载空间、载矿量、任务、是否移动、地形类型、所属方金钱、所属方电力、修饰器数量、距离、变量），只可决定的事件见 [4.5](0001-wasm-extension-modules-api.zh-CN.md#45-只可决定的事件)。哪些进入版本 1 是待定问题 12。
 
@@ -648,19 +632,17 @@ onScenarioStart((): void => {
 模块按地图的同一模型创建触发器：
 
 ```ts
-// TypeScript (AssemblyScript-compatible), inside a module action (e: EventRecord):
+// TypeScript（兼容 AssemblyScript），写在一个模块动作 (e: EventRecord) 内部：
 const t = Trigger.on(Event.Killed)
   .house(House.byName("Americans"))
-  .bind(e.subject)                      // object binding: this convoy truck only
-  .action(onConvoyLost);                // commits: trigger_create + trigger_bind
-Trigger.setEnabled(t, false);           // the trigger's Enabled property
-Trigger.bind(t, Cell.at(40, 52));       // a cell binding, as a CellTag would
+  .bind(e.subject)                      // 对象绑定：只作用于这辆运输车
+  .action(onConvoyLost);                // 结束构建：trigger_create + trigger_bind
+Trigger.setEnabled(t, false);           // 写触发器的 Enabled 属性
+Trigger.bind(t, Cell.at(40, 52));       // 绑定到格子，效果同 CellTag
 Trigger.setEnabled(t, true);
 
-Trigger.on(Event.TakeDamage).bind(Rules.technoType("E1")).action(giPanic);   // as Wasm.Tags=: every E1 runs its own instance
+Trigger.on(Event.TakeDamage).bind(Rules.technoType("E1")).action(giPanic);   // 同 Wasm.Tags=：每个 E1 运行自己的实例
 ```
-
-代码注释说明：这段代码写在一个模块动作 `(e: EventRecord)` 内部；`.bind(e.subject)` 是对象绑定，只作用于这辆运输车；`.action` 结束构建，调用 `trigger_create` 和 `trigger_bind`；`Trigger.setEnabled` 写触发器的 `Enabled` 属性；绑定到格子和 CellTag 的效果相同；绑定到类型和 `Wasm.Tags=` 一样，让每个 E1 运行自己的实例。
 
 - 新建的触发器放进现有触发器运行时的列表，和地图里的放在一起，不另存一份。它们使用确定性的编号，不会和地图里的编号冲突，并随触发器运行时一起存档和计入哈希。
 - 绑定（INI 中的 `Wasm.Tags`、代码中的 `trigger_bind`）不占用对象的标签槽位，而是作为独立的订阅另外记录。所以地图上预先放置、自带标签的对象保留它的标签，同时也接收绑定的触发器。代码中的类型绑定立即作用于该类型的每个对象，mod 和地图的模块都可以使用。
@@ -732,19 +714,17 @@ Parts=ObjTitle,ObjList
 
 [Mission.ObjTitle]
 Type=Text
-Label=TXT_OBJECTIVES    ; new for Text: a string-table line, follows the game language
+Label=TXT_OBJECTIVES    ; Text 新增的键：字符串表中的一行，跟随游戏语言
 
 [Mission.ObjList]
-Type=List               ; new part type
+Type=List               ; 新增的部件类型
 ```
 
-代码注释说明：`Label=TXT_OBJECTIVES` 是 `Text` 新增的键，取字符串表中的一行，跟随游戏语言；`Type=List` 是新增的部件类型。
-
 ```ts
-// TypeScript (AssemblyScript-compatible)
+// TypeScript（兼容 AssemblyScript）
 onStart((): void => {
   Node.setItems(Ui.find("ObjList"), ["TXT_OBJ_RADAR", "TXT_OBJ_CONVOY"]);   // client_node_find + client_set_bytes
-  const wave = Ui.create(NodeKind.Column, 0);                               // client_node_create; 0: a top-level node
+  const wave = Ui.create(NodeKind.Column, 0);                               // client_node_create；0 表示顶层节点
   Node.setHold(wave, Hold.BottomLeft);
   Node.setLabel(Ui.create(NodeKind.Text, wave), "TXT_WAVE");
 });
@@ -795,39 +775,37 @@ React 或 JSX 风格的库可以放在 SDK 里：它在模块内部计算差异�
 一个完整的来回：玩家点击按钮，界面发出消息，模拟校验后写入一个所属方变量，界面读这个变量来更新按钮：
 
 ```ts
-// ui.wasm — TypeScript (AssemblyScript-compatible)
-const BOUGHT = Var.id("ReinforcementsBought");   // house scope, private visibility (vera.vars of rules.wasm)
-const BUY_MESSAGE = new Uint8Array(1);           // message kind 1: buy
+// ui.wasm — TypeScript（兼容 AssemblyScript）
+const BOUGHT = Var.id("ReinforcementsBought");   // 所属方作用域、私有可见度（声明在 rules.wasm 的 vera.vars 中）
+const BUY_MESSAGE = new Uint8Array(1);           // 消息类型 1：购买
 BUY_MESSAGE[0] = 1;
 let buy: Node = 0;
 
 onStart((): void => {
-  buy = Ui.find("BuyReinforcements");            // a Button in veraui.ini
+  buy = Ui.find("BuyReinforcements");            // veraui.ini 中的一个按钮
   Node.setClickable(buy, true);
 });
 onClientEvent(ClientEvent.Click, (e: ClientEventRecord): void => {
   if (e.node == buy) Client.sendMessage(BUY_MESSAGE);   // client_send_message
 });
 onRender((dt: f32, alpha: f32): void => {
-  Node.setVisible(buy, Var.get(Client.viewer(), BOUGHT) == 0);   // client_var_get: own house, private is fine
+  Node.setVisible(buy, Var.get(Client.viewer(), BOUGHT) == 0);   // client_var_get：读本玩家自己所属方的私有变量是允许的
 });
 ```
 
 ```ts
-// rules.wasm — TypeScript (AssemblyScript-compatible)
+// rules.wasm — TypeScript（兼容 AssemblyScript）
 const BOUGHT = Var.id("ReinforcementsBought");
 const HTNK = Rules.technoType("HTNK");
 
 onMessage((sender: House, data: Uint8Array): void => {
-  if (data.length != 1 || data[0] != 1) return;                         // untrusted: validate everything
+  if (data.length != 1 || data[0] != 1) return;                         // 消息不可信：全部要校验
   if (Var.get(sender, BOUGHT) != 0 || House.money(sender) < 2000) return;
   Action.addMoney(sender, -2000);
   Action.createObject(Waypoint.cell(3), HTNK, sender);
-  Var.set(sender, BOUGHT, 1);                                           // the client sees it on its next read
+  Var.set(sender, BOUGHT, 1);                                           // 客户端下一次读取时就能看到
 });
 ```
-
-代码注释说明：界面模块中，`BOUGHT` 是所属方作用域、私有可见度的变量，声明在 `rules.wasm` 的 `vera.vars` 中；`BuyReinforcements` 是 `veraui.ini` 中的按钮；消息类型 1 表示购买；`client_var_get` 读本玩家自己所属方的私有变量是允许的。模拟模块中，消息不可信，全部要校验；`Var.set` 之后，客户端在下一次读取时就能看到。
 
 ### 11. 联机
 
