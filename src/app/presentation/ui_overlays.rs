@@ -929,12 +929,12 @@ pub(crate) fn build_building_status_render_instances(
     let mut labels = BuildingStatusTextInstances::default();
     let current_house = sim.interner().resolve(current_house_id);
     // `current_house_id` is the frame's local player, whom its records answer
-    // for. The sweep is BuildingClass::Array (every retained building, in
-    // stable-id order), not the frame's body plan: VERA's countdown is
-    // permanent text and must not blink out on frames where a building's
-    // pieces were not planned. The selected label keeps the native
-    // body-opportunity test through `body_opportunities`.
-    let mine = crate::map::houses::ally_test(sim.house_alliances().as_map(), current_house);
+    // for, and whose view decides the allies' labels' colour. The sweep is
+    // BuildingClass::Array (every retained building, in stable-id order), not
+    // the frame's body plan: VERA's countdown is permanent text and must not
+    // blink out on frames where a building's pieces were not planned. The
+    // selected label keeps the native body-opportunity test through
+    // `body_opportunities`.
     for entity in frame.structures() {
         //6D944D/9458 tests Mark+74 and body-opportunity+99.43E7C7
         if !entity.lifecycle.cell_marked() {
@@ -946,19 +946,26 @@ pub(crate) fn build_building_status_render_instances(
             owner_name,
             current_house,
         );
-        // The player's own view of the alliance: an AI House that names the
-        // player its ally does not get its super weapons counted down.
-        let ours = mine(owner_name);
         let Some(object) = sim.interner().object_type(entity.type_ref(), rules) else {
             continue;
         };
         let primary = sim.production().is_primary_factory(entity.stable_id());
         // VERA's Super Weapon Building Timers (the hotkey switch): one line
-        // per Super this building provides, on the player's and its allies'
-        // buildings whether or not they are selected. The lines were captured
-        // with the frame, so this pass reads no simulation state.
+        // per Super this building provides, on every House's buildings whether
+        // or not they are selected — an enemy's silo counting down is what
+        // says an attack is coming, and the tint already says whose it is. A
+        // building the player cannot see draws none: a timer over the shroud
+        // would give away a silo scouting has not found. The lines were
+        // captured with the frame, so this pass reads no simulation state.
+        let visible = crate::app::presentation::instances::cell_shows_objects(
+            current_house_id,
+            sim.fog(),
+            entity.position.rx(),
+            entity.position.ry(),
+            sim.session().game_options().fog_of_war,
+        );
         let lines: &[crate::sim::superweapon::SuperChargeLine] =
-            if superweapon_building_timers && ours {
+            if superweapon_building_timers && visible {
                 entity.hud.super_charges()
             } else {
                 &[]

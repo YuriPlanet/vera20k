@@ -18,9 +18,8 @@ missile flying to its own target. Each building's charge animations follow its o
 twenty silos only the ones near ready open, and only the one that fired closes.
 
 **Super Weapon Building Timers** draws the same information above the buildings themselves: every
-provider of yours and your allies' shows the countdowns of the superweapons it gives, in the minutes
-and seconds the timer list uses, so the next one to fire and the one that just fired are both visible
-at a glance.
+provider in sight shows the countdowns of the superweapons it gives, in the minutes and seconds the
+timer list uses, so the next one to fire and the one that just fired are both visible at a glance.
 
 It is a hotkey, not an Options box: **Ctrl+Alt+T** shows and hides it, and the key is rebindable on
 Options' Keyboard page under VERA's own category. The choice is saved in `[VERA]
@@ -34,12 +33,13 @@ radar's paradrop, spy plane or psychic reveal is; every provider of it shows the
 they all point at the same timer. A building that gives several superweapons stacks one line per
 superweapon, in its type's own order (`SuperWeapon=`, `SuperWeapon2=`, then Ares' `SuperWeapons=`).
 
-Only the player's own side counts: a house reads as an ally when the local player names it one, so an
-AI's own alliance bits cannot put its silos on the list. The labels are drawn for every structure the
-frame retains, whether or not the building's body was planned that frame, and the countdowns are
-captured with the frame rather than read from the simulation while drawing, so a countdown neither
-blinks out nor disagrees with the timer list. It is a display setting only: it changes nothing in the
-match, and it needs no agreement between players.
+Every House is drawn, enemies included: an enemy silo counting down is what says an attack is
+coming, and each line takes its building's own tint, so whose it is stays visible. One under the
+shroud draws none — a timer there would give away a silo scouting has not found. The labels are drawn
+for every structure the frame retains, whether or not the building's body was planned that frame, and
+the countdowns are captured with the frame rather than read from the simulation while drawing, so a
+countdown neither blinks out nor disagrees with the timer list. It is a display setting only: it
+changes nothing in the match, and it needs no agreement between players.
 
 ## Rules keys
 
