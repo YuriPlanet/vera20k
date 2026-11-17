@@ -1194,13 +1194,16 @@ fn ares_chrono_warp_put_back(
 /// to every contact, the warping House (`+0x42C`) and the destination setter
 /// at the destination cell (vt+0x480(cell, 1)).
 ///
-/// Unlike case 4's, this Force_Track leaves a Drive or Ship heading for its
-/// source: Force_Track (`0x004B0C40`) stores the coordinates as head and
-/// destination, nothing in the Teleport states (`0x007192F0`), their
-/// Update_Position, PostWarpValidation and Stop_Moving, Teleport's END
-/// (`0x00719EE0`) or the Foot AI tail resets the stashed locomotor, and its
-/// next Process (`0x004B0500`, Process_Movement `0x004B2630`) asks Find_Path
-/// for the source cell: the Unit drives back unless it cannot reach it.
+/// Unlike case 4's, this Force_Track leaves a Drive or Ship holding its
+/// source until Teleport's END (`0x00719EE0`) restores it: Force_Track
+/// (`0x004B0C40`, `0x006A2E50`) stores the coordinates as both HeadTo
+/// (`+0x40`, `0x004B0CFE`) and Destination (`+0x34`, `0x004B0D43`), so on
+/// its next Process (`0x004B0500` -> `0x004B2630`) `Find_Path` (`0x004D3920`
+/// -> `Run_AStar` `0x004CBBA0`) starts at `vt+0x4C` (`0x004DBDF0` ->
+/// `Head_To_Coord` `0x004AFCC0`) with `start == goal` (`AStar`
+/// `0x00429BF3..0x00429C0A` -> `NULL`), and `Find_Path`'s failure arm
+/// (`0x004D4044`) calls `Stop_Driver` (`0x004D55C0` -> `Stop_Moving`
+/// `0x004AFE00`), clearing Destination so the Unit stays at its landing.
 fn ares_arm_chrono_warp(
     sim: &mut Simulation,
     rules: &RuleSet,

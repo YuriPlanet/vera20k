@@ -138,7 +138,7 @@ fn choose_map_modal_open_filters_and_highlights_current_record() {
         &layout,
     );
 
-    assert_eq!(modal.selected_mode_id, 1);
+    assert_eq!(modal.selected_mode.id, 1);
     assert_eq!(modal.filtered_record_indices, vec![0, 1]);
     assert_eq!(modal.highlighted_filtered_index, Some(1));
     assert_eq!(modal.selected_record_index(), Some(1));
@@ -165,7 +165,7 @@ fn choose_map_modal_select_mode_rebuilds_map_list_by_filter() {
 
     assert!(modal.select_mode(9, &modes, &records, &layout));
 
-    assert_eq!(modal.selected_mode_id, 9);
+    assert_eq!(modal.selected_mode.id, 9);
     assert_eq!(modal.filtered_record_indices, vec![1]);
     assert_eq!(modal.selected_record_index(), Some(1));
     assert_eq!(modal.map_top_index, 0);
@@ -193,14 +193,14 @@ fn choose_map_modal_cancel_restores_saved_selection_accept_uses_highlight() {
     assert_eq!(
         modal.accept_selection(),
         Some(ChooseMapSelection {
-            mode_id: 1,
+            mode: 1.into(),
             record_index: Some(1),
         })
     );
     assert_eq!(
         modal.cancel_selection(),
         ChooseMapSelection {
-            mode_id: 1,
+            mode: 1.into(),
             record_index: Some(0),
         }
     );
@@ -553,7 +553,7 @@ fn skirmish_status_help_includes_flag_and_right_panel_static_targets() {
 fn a_downloaded_map_waits_for_ok_before_use_map_goes_on() {
     let prompt = |kind| ChooseMapPrompt {
         selection: ChooseMapSelection {
-            mode_id: 1,
+            mode: 1.into(),
             record_index: Some(0),
         },
         pressed: None,
@@ -748,7 +748,7 @@ fn hovered_choose_map_modal_control_resolves_0x6b_status_targets() {
             layout.mode_list.x + 1,
             layout.mode_list.y + 1
         ),
-        Some(ChooseMapHoverTarget::ModeListRow0x6eb { mode_id: 1 })
+        Some(ChooseMapHoverTarget::ModeListRow0x6eb { mode: 1.into() })
     );
     assert_eq!(
         hovered_choose_map_modal_control(
@@ -1013,7 +1013,7 @@ fn launch_session_forces_the_dialogs_fixed_session_options() {
 #[test]
 fn launch_session_preserves_selected_team_game_mode_id() {
     let mut shell = SkirmishShellState {
-        selected_mode_id: 9,
+        selected_mode: 9.into(),
         ..Default::default()
     };
     let maps = [test_map_entry("team.yrm")];
@@ -1030,7 +1030,7 @@ fn launch_session_preserves_selected_team_game_mode_id() {
 #[test]
 fn launch_session_does_not_synthesize_unknown_mode() {
     let shell = SkirmishShellState {
-        selected_mode_id: 99,
+        selected_mode: 99.into(),
         ..Default::default()
     };
     let maps = [test_map_entry("map.mmx")];
@@ -1263,7 +1263,7 @@ fn launch_session_rejects_same_explicit_team() {
 #[test]
 fn team_game_must_ally_omits_team_none_combo_item() {
     let mut shell = SkirmishShellState {
-        selected_mode_id: 9,
+        selected_mode: 9.into(),
         ..Default::default()
     };
     repair_teams_for_selected_mode(&mut shell, &stock_skirmish_modes());
@@ -1283,7 +1283,7 @@ fn team_game_must_ally_omits_team_none_combo_item() {
 #[test]
 fn ffa_combo_keeps_explicit_teams_despite_allies_disabled() {
     let mut shell = SkirmishShellState {
-        selected_mode_id: 2,
+        selected_mode: 2.into(),
         ..Default::default()
     };
     repair_teams_for_selected_mode(&mut shell, &stock_skirmish_modes());
@@ -1536,7 +1536,7 @@ fn ai_type_none_applies_inactive_combo_defaults() {
 #[test]
 fn ai_type_none_uses_ffa_inactive_team_default() {
     let mut shell = SkirmishShellState {
-        selected_mode_id: 2,
+        selected_mode: 2.into(),
         ..Default::default()
     };
     repair_teams_for_selected_mode(&mut shell, &stock_skirmish_modes());
@@ -1556,7 +1556,7 @@ fn ai_type_none_uses_ffa_inactive_team_default() {
 #[test]
 fn mode_refresh_reselects_native_local_and_ai_team_defaults() {
     let mut shell = SkirmishShellState {
-        selected_mode_id: 9,
+        selected_mode: 9.into(),
         player_team: 1,
         ..Default::default()
     };
@@ -1567,7 +1567,7 @@ fn mode_refresh_reselects_native_local_and_ai_team_defaults() {
     assert_eq!(shell.player_team, 0);
     assert_eq!(shell.opponents[0].team, 3);
 
-    shell.selected_mode_id = 2;
+    shell.selected_mode = 2.into();
     shell.player_team = 2;
     repair_teams_for_selected_mode(&mut shell, &stock_skirmish_modes());
 
@@ -1578,7 +1578,7 @@ fn mode_refresh_reselects_native_local_and_ai_team_defaults() {
 #[test]
 fn ffa_mode_refresh_defaults_every_ai_team_to_none_and_disables_the_team_column() {
     let mut shell = SkirmishShellState {
-        selected_mode_id: 2,
+        selected_mode: 2.into(),
         ..Default::default()
     };
     for opponent in &mut shell.opponents {
@@ -1608,7 +1608,7 @@ fn ffa_mode_refresh_defaults_every_ai_team_to_none_and_disables_the_team_column(
 #[test]
 fn battle_mode_enables_the_team_column_for_local_and_active_rows_only() {
     let mut shell = SkirmishShellState {
-        selected_mode_id: 1,
+        selected_mode: 1.into(),
         ..Default::default()
     };
     shell.opponents[0].row_type = SkirmishAiRowType::Easy;
@@ -1629,7 +1629,7 @@ fn battle_mode_enables_the_team_column_for_local_and_active_rows_only() {
 fn disabled_team_combo_cannot_be_opened_or_reselected_in_free_for_all() {
     let layout = compute_layout(800, 600);
     let mut shell = SkirmishShellState {
-        selected_mode_id: 2,
+        selected_mode: 2.into(),
         ..Default::default()
     };
     shell.opponents[0].row_type = SkirmishAiRowType::Easy;

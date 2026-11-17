@@ -6058,7 +6058,7 @@ fn advance_go(state: &mut AppState, now: u32, service_ok: bool) {
     {
         // A retired failed send is not proof that its final fragment or GO
         // arrived. Fail through the existing setup owner instead of loading.
-        super::shell_network_setup::fail_go_handoff(state);
+        super::shell_network_setup::fail_go_delivery(state);
         return;
     }
     let queued = observation.queued;

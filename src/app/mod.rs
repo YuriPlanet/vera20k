@@ -93,7 +93,6 @@ pub(crate) mod persistence;
 pub(crate) mod os_clipboard;
 pub(crate) mod phobos_version;
 pub(crate) mod presentation;
-pub(crate) mod process_affinity;
 pub(crate) mod process_assets;
 #[cfg(feature = "telemetry-dashboard")]
 pub(crate) mod process_stats;

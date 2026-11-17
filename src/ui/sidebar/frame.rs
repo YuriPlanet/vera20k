@@ -6,7 +6,9 @@
 //! sidebar pixels, rounded up. The frame shows the sidebar's column flush with
 //! its top and right edges, and the bar's strip flush with its bottom edge and
 //! the column, each scaled by the Sidebar size; the battlefield takes the
-//! rest. At Normal it is all the frame's own pixels.
+//! rest. At Normal it is all the frame's own pixels; Large draws the surfaces
+//! at its 1.5 frame pixels and copies them 1:1, so nothing is rasterized
+//! smaller than it shows.
 //!
 //! Layout space is that frame in sidebar pixels: the column's left edge at
 //! `layout width - column width` (168 in the original; a layout may give
@@ -71,7 +73,7 @@ impl Default for PanelPlaces {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SidebarFrame {
     frame_width: u32,
     frame_height: u32,
@@ -85,8 +87,10 @@ pub struct SidebarFrame {
     band_height: u32,
     /// Where the side's layout puts the column and the bar.
     places: PanelPlaces,
-    /// Surface pixels per sidebar pixel (`in_window`): 1 unless zoomed.
-    draw_scale: u32,
+    /// Surface pixels per sidebar pixel (`in_window`): 1 unless zoomed or
+    /// enlarged. Large draws at 1.5, so a surface pixel is not always a whole
+    /// block of frame pixels.
+    draw_scale: f32,
     /// Window pixels per 100 frame pixels: the match zoom, 100 unzoomed.
     zoom_percent: u32,
 }
@@ -100,7 +104,7 @@ impl SidebarFrame {
             column_width: SIDEBAR_WIDTH_PX,
             band_height: SIDEBAR_WIDTH_PX,
             places: PanelPlaces::default(),
-            draw_scale: 1,
+            draw_scale: 1.0,
             zoom_percent: 100,
         }
     }
@@ -180,15 +184,19 @@ impl SidebarFrame {
 
     /// This frame as a window shows it at `zoom_percent`: the surfaces draw
     /// with as many whole window pixels per sidebar pixel as the zoom and the
-    /// size give, at least one. Large keeps its own pixels unless `sharpen`
-    /// (the HD radar or the smooth sidebar, which draw at the window's): in
-    /// the window's, the seams it blends between pixels would turn sharp.
+    /// size give, at least one. Large draws at its frame's own pixels instead
+    /// (1.5), so its copy is 1:1: a cell the cameo columns shrank would
+    /// otherwise be drawn smaller than it shows and resampled again by the
+    /// copy. `sharpen` (the HD radar or the smooth sidebar) draws Large at the
+    /// window's whole pixels as well, never below the frame's.
     pub fn in_window(self, zoom_percent: u32, sharpen: bool) -> Self {
         let zoom_percent = zoom_percent.max(100);
+        let window_pixels = (self.percent * zoom_percent) as f32 / 10_000.0;
+        let frame_scale = self.scale();
         let draw_scale = if self.is_sharp() || sharpen {
-            (self.percent * zoom_percent / 10_000).max(1)
+            window_pixels.floor().max(1.0).max(frame_scale)
         } else {
-            1
+            frame_scale
         };
         Self {
             draw_scale,
@@ -352,54 +360,62 @@ impl SidebarFrame {
     }
 
     /// Surface pixels per sidebar pixel.
-    pub fn draw_scale(self) -> u32 {
+    pub fn draw_scale(self) -> f32 {
         self.draw_scale
     }
 
     /// [`Self::surface_size`] in surface pixels: what the sidebar draws into.
     pub fn surface_draw_size(self) -> (u32, u32) {
         let (width, height) = self.surface_size();
-        (width * self.draw_scale, height * self.draw_scale)
+        (
+            (width as f32 * self.draw_scale).round().max(1.0) as u32,
+            (height as f32 * self.draw_scale).round().max(1.0) as u32,
+        )
     }
 
     /// [`Self::bar_surface_size`] in surface pixels.
     pub fn bar_draw_size(self) -> (u32, u32) {
         let (width, height) = self.bar_surface_size();
-        (width * self.draw_scale, height * self.draw_scale)
+        (
+            (width as f32 * self.draw_scale).round().max(1.0) as u32,
+            (height as f32 * self.draw_scale).round().max(1.0) as u32,
+        )
     }
 
     /// The copy into the frame: frame pixels per surface pixel, below one
     /// when the surfaces draw at the window's pixels.
     pub fn copy_scale(self) -> f32 {
-        self.percent as f32 / (100 * self.draw_scale) as f32
+        self.percent as f32 / (100.0 * self.draw_scale)
     }
 
     /// Whether every surface pixel is a whole block of frame pixels.
     pub fn copy_is_sharp(self) -> bool {
-        self.percent.is_multiple_of(100 * self.draw_scale)
+        let scale = self.copy_scale();
+        scale >= 1.0 && (scale - scale.round()).abs() < 1e-3
     }
 
     /// Whether the surfaces hold more pixels than the frame shows of them:
     /// then the window copy shows them over the zoomed frame.
     pub fn has_window_copy(self) -> bool {
-        100 * self.draw_scale > self.percent
+        100.0 * self.draw_scale > self.percent as f32
     }
 
     /// The window copy: window pixels per surface pixel, 1 when the size
     /// and the zoom give whole window pixels per sidebar pixel.
     pub fn window_copy_scale(self) -> f32 {
-        (self.percent * self.zoom_percent) as f32 / (10_000 * self.draw_scale) as f32
+        (self.percent * self.zoom_percent) as f32 / (10_000.0 * self.draw_scale)
     }
 
     /// Whether every surface pixel is a whole block of window pixels.
     pub fn window_copy_is_sharp(self) -> bool {
-        (self.percent * self.zoom_percent).is_multiple_of(10_000 * self.draw_scale)
+        let scale = self.window_copy_scale();
+        scale >= 1.0 && (scale - scale.round()).abs() < 1e-3
     }
 
     /// Whether every surface pixel shows as one window pixel: what the
     /// surfaces draw is at the window's pixels.
     pub fn draws_window_pixels(self) -> bool {
-        self.percent * self.zoom_percent == 10_000 * self.draw_scale
+        ((self.percent * self.zoom_percent) as f32 - 10_000.0 * self.draw_scale).abs() < 0.5
     }
 
     /// The sidebar's left edge in frame pixels; left of the frame when the
@@ -732,12 +748,13 @@ mod tests {
     }
 
     /// Zoomed frames draw the sidebar in whole window pixels per sidebar
-    /// pixel and shrink it into the frame; Large keeps its blended look.
+    /// pixel and shrink it into the frame; Large draws at its frame's own 1.5
+    /// pixels, so its copy is 1:1.
     #[test]
     fn zoomed_frames_draw_the_surfaces_at_the_window_pixels() {
         // Normal at 4K Auto (300%): 3x3 window pixels per sidebar pixel.
         let normal = SidebarFrame::new(1280, 720, 100).in_window(300, false);
-        assert_eq!(normal.draw_scale(), 3);
+        assert_eq!(normal.draw_scale(), 3.0);
         assert_eq!(normal.surface_draw_size(), (504, 2160));
         assert_eq!(normal.bar_draw_size(), (3336, 96));
         assert_eq!(normal.copy_scale(), 1.0 / 3.0);
@@ -748,21 +765,31 @@ mod tests {
         let between = SidebarFrame::new(1024, 576, 100).in_window(250, false);
         assert_eq!(
             (between.draw_scale(), between.window_copy_scale()),
-            (2, 1.25)
+            (2.0, 1.25)
         );
         assert!(!between.window_copy_is_sharp() && !between.draws_window_pixels());
         // Unzoomed XL draws 2x and copies 1:1; nothing more to show.
         let xl = SidebarFrame::new(1920, 1080, 200).in_window(100, false);
-        assert_eq!((xl.draw_scale(), xl.copy_scale()), (2, 1.0));
+        assert_eq!((xl.draw_scale(), xl.copy_scale()), (2.0, 1.0));
         assert!(xl.copy_is_sharp() && !xl.has_window_copy() && xl.draws_window_pixels());
-        // Large keeps its own pixels, unless asked to sharpen.
+        // Large draws at the frame's own 1.5 pixels and copies 1:1.
         let large = SidebarFrame::new(1280, 720, 150);
-        assert_eq!(large.in_window(200, false).draw_scale(), 1);
+        let unzoomed = large.in_window(100, false);
+        assert_eq!((unzoomed.draw_scale(), unzoomed.copy_scale()), (1.5, 1.0));
+        assert_eq!(unzoomed.surface_draw_size(), (252, 720));
+        assert!(unzoomed.copy_is_sharp());
+        assert!(
+            unzoomed.draws_window_pixels() && !unzoomed.has_window_copy(),
+            "a 1:1 copy shows the surface's own pixels"
+        );
+        // Zooming leaves the frame copy at the frame's pixels: the zoom pass
+        // scales the rest. Sharpening asks for the window's whole pixels.
+        assert_eq!(large.in_window(200, false).draw_scale(), 1.5);
         assert!(!large.in_window(200, false).has_window_copy());
         assert!(!large.in_window(200, false).draws_window_pixels());
-        assert!(!large.in_window(100, true).draws_window_pixels());
+        assert!(large.in_window(100, true).draws_window_pixels());
         let sharp = large.in_window(200, true);
-        assert_eq!((sharp.draw_scale(), sharp.copy_scale()), (3, 0.5));
+        assert_eq!((sharp.draw_scale(), sharp.copy_scale()), (3.0, 0.5));
         assert!(sharp.window_copy_is_sharp() && sharp.draws_window_pixels());
         // Layout stays in sidebar pixels.
         assert_eq!(
@@ -770,6 +797,27 @@ mod tests {
             SidebarFrame::native(1280, 720).layout_size()
         );
         assert_eq!(normal.surface_size(), (168, 720));
+    }
+
+    /// A cameo cell the player's columns shrank is drawn into the surface at
+    /// least as large as the frame shows it: the copy is 1:1, so the 60x48
+    /// art is sampled once. At 1x, three columns' 39-pixel cell showed as
+    /// 58.5 frame pixels but was drawn 39 wide, losing detail to the second
+    /// resample.
+    #[test]
+    fn a_shrunk_cameo_cell_is_drawn_at_the_size_the_frame_shows_it() {
+        for columns in [3, 4, 5] {
+            let mut spec = crate::ui::sidebar::SidebarChromeLayoutSpec::stock();
+            spec.apply_player_columns(columns);
+            let frame = SidebarFrame::new(1920, 1080, 150).in_window(100, false);
+            let shown = spec.cameo_width * frame.scale();
+            let drawn = spec.cameo_width * frame.draw_scale();
+            assert!(
+                drawn >= shown - 1e-3,
+                "{columns} columns draw a {drawn} px cameo cell that shows as {shown} px"
+            );
+            assert_eq!(frame.copy_scale(), 1.0);
+        }
     }
 
     #[test]

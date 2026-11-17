@@ -3745,24 +3745,38 @@ impl ObjectType {
         self.vehicle_thief = flags.vehicle_thief.unwrap_or(self.vehicle_thief);
     }
 
-    /// TechnoType GetPipMax716290, virtual+74. Signed configuration capacity;
-    /// callers own allocation/fill bounds. Uses the live bound base weapon0,
-    /// not a capture manager's retained admission capacity or elite weapon.
+    /// GetPipMax, virtual+74: BuildingType's override (0x0045ECE0) for a
+    /// Building, else TechnoType's (0x00716290). Signed configuration
+    /// capacity; callers own allocation/fill bounds. Uses the live bound base
+    /// weapon0, not a capture manager's retained admission capacity or elite
+    /// weapon.
     pub fn pip_max(&self, rules: &crate::rules::ruleset::RuleSet) -> i32 {
-        // Ares 3.0 BuildingTypeClass_GetMaxPips 10010150 (hook 0x45ECE0): a
-        // building on a custom foundation answers its `Foundation.X` width
-        // for every PipScale. (VERA lacks the stock BuildingType override
-        // 0x0045ECE0 itself, which sizes Tiberium and Power pips by the
-        // foundation width; buildings take the TechnoType answer below.)
-        // Only a Rules read the Ares way installs a custom foundation.
-        if self.category == ObjectCategory::Building
-            && matches!(
-                self.foundation,
-                crate::rules::foundation::Foundation::Custom(_)
-            )
-        {
-            return i32::from(self.foundation.dimensions().0);
+        // BuildingTypeClass::GetPipMax 0x0045ECE0: the foundation width
+        // (table 0x008192B8) times 60, divided by 8 toward zero
+        // (0x0045ECED..0x0045ED02), caps Tiberium pips at `Storage=`, or a
+        // Weeder's at `[General] WeedCapacity=`, a negative one answering 0;
+        // Power answers the cap, every other scale TechnoType's. Ares
+        // BuildingTypeClass_GetMaxPips (Ares.dll 10010150, hook 0x45ECE0)
+        // only loads a custom foundation's `Foundation.X` as that width and
+        // resumes at 0x0045ECED. Stock buildings draw no Tiberium pips
+        // (DrawPipScalePips 0x00709B61), so the Tiberium arm shows only with
+        // Ares' storage pips (docs/ares-tiberium.md).
+        if self.category == ObjectCategory::Building {
+            let cap = i32::from(self.foundation.dimensions().0) * 60 / 8;
+            match self.pip_scale {
+                PipScale::Tiberium => {
+                    let held = if self.weeder {
+                        rules.general.weed_capacity
+                    } else {
+                        self.storage
+                    };
+                    return if held < 0 { 0 } else { held.min(cap) };
+                }
+                PipScale::Power => return cap,
+                _ => {}
+            }
         }
+        // TechnoTypeClass::GetPipMax 0x00716290.
         match self.pip_scale {
             PipScale::None => 0,
             PipScale::Ammo => self.ammo,
@@ -5657,6 +5671,10 @@ mod ammo_pip_tests;
 #[cfg(all(test, tests_rules_o_z))]
 #[path = "absorber_pip_tests.rs"]
 mod absorber_pip_tests;
+
+#[cfg(all(test, tests_rules_o_z))]
+#[path = "building_pip_tests.rs"]
+mod building_pip_tests;
 
 #[cfg(all(test, tests_rules_o_z))]
 mod tests {

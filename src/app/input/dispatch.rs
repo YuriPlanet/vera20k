@@ -2281,6 +2281,26 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         // VERA: the mouse drags the interface's parts until Save, or until
         // the key comes again and puts them back.
         HotkeyCommand::LayoutEdit => crate::app::input::layout_edit::toggle(state),
+        // VERA: show or hide the countdown above every provider building.
+        // Presentation only, and saved under the same `[VERA]` key the old
+        // Options box wrote, so a match's choice seeds the next scenario.
+        HotkeyCommand::SuperweaponTimers => {
+            let timers = &mut state
+                .match_state
+                .match_presentation
+                .superweapon_building_timers;
+            *timers = !*timers;
+            let on = *timers;
+            state
+                .persistence
+                .options_profile
+                .superweapon_building_timers = on;
+            crate::app::persistence::options::persist_options_profile(state);
+            log::info!(
+                "Super weapon building timers: {}",
+                if on { "shown" } else { "hidden" }
+            );
+        }
         // A held key: `input::keyboard::in_game_key_edge` tracks it.
         HotkeyCommand::FormationLine => {}
         HotkeyCommand::FormationLock => {

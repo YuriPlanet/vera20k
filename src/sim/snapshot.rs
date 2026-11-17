@@ -1826,11 +1826,11 @@ impl Simulation {
     pub fn validate_ares_state_for_load(&self, ares: bool) -> Result<(), SnapshotRestoreError> {
         for (_, entity) in self.substrate.entities.iter_sorted() {
             entity
-                .validate_ares_build_compatibility(ares)
+                .validate_ares_compatibility(ares)
                 .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
         }
         self.unit_deliveries
-            .validate_ares_build_compatibility(ares)
+            .validate_ares_compatibility(ares)
             .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
         self.validate_paid_super_weapon_selections_for_load(ares)
             .map_err(SnapshotRestoreError::InvalidPaidSuperWeaponSelection)?;

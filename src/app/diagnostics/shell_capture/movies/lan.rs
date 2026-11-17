@@ -4573,7 +4573,7 @@ fn click_cooperative_mode(state: &mut AppState) -> Result<Vec<String>> {
     let row = modal
         .mode_rows()
         .iter()
-        .position(|id| *id == mode_id)
+        .position(|mode| mode.id == mode_id)
         .context("Cooperative listed on the network")?;
     let point = list_row_point(modal.mode_geometry(&layout), row, modal.mode_top_index);
     chooser_press(state, point);
@@ -4584,7 +4584,7 @@ fn click_cooperative_mode(state: &mut AppState) -> Result<Vec<String>> {
         .as_ref()
         .context("chooser")?;
     ensure!(
-        modal.selected_mode_id == mode_id,
+        modal.selected_mode.id == mode_id,
         "the game-type click missed Cooperative"
     );
     let labels = modal.row_labels.clone().context("Cooperative rows")?;
@@ -4872,7 +4872,7 @@ fn setup_button(state: &mut AppState, id: u16) -> Result<()> {
 
 fn offline_selection(state: &AppState) -> (i32, usize) {
     let dialog = &state.frontend.skirmish_shell_state;
-    (dialog.selected_mode_id, dialog.selected_map_idx)
+    (dialog.selected_mode.id, dialog.selected_map_idx)
 }
 
 #[cfg(all(test, tests_app))]

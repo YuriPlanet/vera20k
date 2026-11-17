@@ -501,7 +501,7 @@ fn peer_mode_cooperative(state: &AppState) -> bool {
         .choose_map_modal
         .as_ref()
     {
-        Some(modal) => modal.selected_mode_id,
+        Some(modal) => modal.selected_mode.id,
         None => match state.match_state.session.network_setup() {
             Some(launch) => launch.mode.id,
             None => return false,

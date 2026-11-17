@@ -776,7 +776,7 @@ impl App {
             .as_ref()
             .map(|modal| {
                 (
-                    modal.selected_mode_id,
+                    modal.selected_mode.id,
                     modal.filtered_record_indices.clone(),
                 )
             })
@@ -878,7 +878,7 @@ impl App {
                 .and_then(|modal| modal.highlighted_filtered_index);
             return match crate::app::shell_network_setup::commit_map_selection(
                 state,
-                selection.mode_id,
+                selection.mode.id,
                 map_idx,
                 row,
             ) {
@@ -889,7 +889,7 @@ impl App {
                 }
             };
         }
-        state.frontend.skirmish_shell_state.selected_mode_id = selection.mode_id;
+        state.frontend.skirmish_shell_state.selected_mode = selection.mode;
         crate::ui::skirmish_shell::repair_teams_for_selected_mode(
             &mut state.frontend.skirmish_shell_state,
             &state.frontend.skirmish_modes,
@@ -1477,10 +1477,8 @@ impl App {
     ) -> String {
         // Over a game-type row the help is the mode's description (`0x4E9`,
         // `0x005E6E44`).
-        if let crate::ui::skirmish_shell::ChooseMapHoverTarget::ModeListRow0x6eb { mode_id } =
-            target
-            && let Some(mode) =
-                crate::skirmish_modes::mode_by_id(&state.frontend.skirmish_modes, mode_id)
+        if let crate::ui::skirmish_shell::ChooseMapHoverTarget::ModeListRow0x6eb { mode } = target
+            && let Some(mode) = mode.resolve(&state.frontend.skirmish_modes)
             && !mode.tooltip_key.is_empty()
         {
             let text = Self::localized_status_help_text(state, &mode.tooltip_key);

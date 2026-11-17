@@ -319,6 +319,16 @@ pub(crate) fn install_world_presentation(
     // VERA relation colours start each scenario off, in the player colours.
     state.match_state.match_presentation.relation_colors = false;
     state.match_state.match_presentation.relation_color_map = None;
+    // VERA's Super Weapon Building Timers start from the saved switch; a
+    // match's own hotkey flips it from there.
+    let saved_timers = state
+        .persistence
+        .options_profile
+        .superweapon_building_timers;
+    state
+        .match_state
+        .match_presentation
+        .superweapon_building_timers = saved_timers;
     state.match_state.match_presentation.house_roster = map.house_roster;
     state.process_assets.csf = assets.csf;
     state.match_state.match_presentation.theater_name = map.theater_name;
@@ -587,8 +597,6 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         sfx.stop_all();
     }
     if incoming.is_some() {
-        // A match starts: a launcher has long set any pin to one processor.
-        crate::app::process_affinity::undo_single_core_pin();
         // The inactive load has inherited this process cursor. Only a world
         // actually installed here retires cold MapGen transport; failed and
         // cancelled attempts retain it in RandomMapGenerationRetention.
