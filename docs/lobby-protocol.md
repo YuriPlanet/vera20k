@@ -256,6 +256,16 @@ its language gives that number. The keys and their English are the `VERA:Lobby` 
 Operator notices carry no `phrases`: they come in the session's language when the
 operator translated them.
 
+`start_rejected`'s `message` is English and carries no `phrases`. Current games match
+the four messages the lobby sends: `A player left before the game started.`,
+`A player cancelled the game start.`, `A player could not connect to the gameplay relay.`
+and `A player could not complete the peer latency check.`, and show each in the player's
+language; for the relay message a game whose own relay admission finished says another
+player's game could not reach the server, and one whose admission did not says its own
+could not. Any other message, including a reworded one, shows the general line that the
+match could not start, so a change to these messages needs the game's
+`LiveService::start_rejected_line` changed with it.
+
 RelayGrant is `{address,ticket,packet_key,payload_key,source_index,ordering_certificate,federation?}`. Address is `IPv4:port`
 of the user's relay in the match. The service chooses it at start and every later grant for that match names it;
 ticket is the signed relay protocol ticket encoded base64url without padding and
