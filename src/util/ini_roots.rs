@@ -1,5 +1,6 @@
 //! One root-file choice for Rules, fixed Art and standalone AI, plus optional
-//! SOUNDMD/EVAMD roots and the theater control-file suffix.
+//! SOUNDMD/EVAMD roots, the theater control-file suffix and the profile's
+//! fixed THEMEMD, BATTLEMD, MISSIONMD and MAPSELMD names.
 //!
 //! Adapted from my ra2-mono GameConfig/GameIniLoader file selection. VERA
 //! keeps one root per family and its existing native layer processing; this
@@ -10,6 +11,10 @@
 //! missing file keeps the tolerant empty audio catalog instead of failing the
 //! root selection. The theater suffix is optional for every profile too and is
 //! never probed: the theater loader reports its own missing INI.
+//!
+//! The theme and campaign names (THEMEMD, BATTLEMD, MISSIONMD, MAPSELMD) come
+//! only from the preset: they have no config key, are never probed and have no
+//! stock fallback. Each reader treats a missing file as gamemd does.
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -66,6 +71,10 @@ pub struct IniRoots {
     sound: String,
     eva: String,
     theater_suffix: String,
+    theme: String,
+    battle: String,
+    mission: String,
+    mapsel: String,
 }
 
 impl Default for IniRoots {
@@ -76,25 +85,34 @@ impl Default for IniRoots {
 
 impl IniRoots {
     fn preset(profile: IniProfile) -> Self {
-        let (rules, art, ai, sound, eva, theater_suffix) = match profile {
-            IniProfile::Yr => (
-                "rulesmd.ini",
-                "artmd.ini",
-                "aimd.ini",
-                "soundmd.ini",
-                "evamd.ini",
-                "md",
-            ),
-            IniProfile::Mo => (
-                "rulesmo.ini",
-                "artmo.ini",
-                "aimo.ini",
-                "soundmo.ini",
-                "evamo.ini",
-                "mo",
-            ),
-            _ => unreachable!("only concrete built-in profiles have presets"),
-        };
+        let (rules, art, ai, sound, eva, theater_suffix, theme, battle, mission, mapsel) =
+            match profile {
+                IniProfile::Yr => (
+                    "rulesmd.ini",
+                    "artmd.ini",
+                    "aimd.ini",
+                    "soundmd.ini",
+                    "evamd.ini",
+                    "md",
+                    "thememd.ini",
+                    "BATTLEMD.INI",
+                    "MISSIONMD.INI",
+                    "MAPSELMD.INI",
+                ),
+                IniProfile::Mo => (
+                    "rulesmo.ini",
+                    "artmo.ini",
+                    "aimo.ini",
+                    "soundmo.ini",
+                    "evamo.ini",
+                    "mo",
+                    "thememo.ini",
+                    "BATTLEMO.INI",
+                    "MISSIONMO.INI",
+                    "MAPSELMO.INI",
+                ),
+                _ => unreachable!("only concrete built-in profiles have presets"),
+            };
         Self {
             profile,
             rules: rules.into(),
@@ -103,6 +121,10 @@ impl IniRoots {
             sound: sound.into(),
             eva: eva.into(),
             theater_suffix: theater_suffix.into(),
+            theme: theme.into(),
+            battle: battle.into(),
+            mission: mission.into(),
+            mapsel: mapsel.into(),
         }
     }
 
@@ -134,6 +156,34 @@ impl IniRoots {
     /// suffix in place of `MD`.
     pub fn theater_ini(&self, control_name: &str) -> String {
         format!("{control_name}{}.ini", self.theater_suffix)
+    }
+
+    // The four names below are gamemd's literals under YR and custom. Under
+    // MO they take the spelling MO's spawner patches over those literals
+    // (contributor-reported from the spawner's patch table, not native
+    // evidence).
+
+    /// The Theme catalog: `THEMEMD.INI` (`0x00825D94`), pushed by Init_Game at
+    /// `0x0052C8B9` for `ThemeClass::ReadINI` (`0x00720590`); MO `thememo.ini`.
+    pub fn theme(&self) -> &str {
+        &self.theme
+    }
+    /// The campaign catalog: `BATTLEMD.INI` (`0x00826198`), read by
+    /// Load_Campaigns (`0x0052CB90`) at `0x0052CC4E`/`0x0052CCCD`; MO
+    /// `BATTLEMO.INI`.
+    pub fn battle(&self) -> &str {
+        &self.battle
+    }
+    /// Mission metadata: `MISSIONMD.INI` (`0x00839724`), read by
+    /// InitializeScenarioFromINI (`0x00686D46`) and, through `[0x00839710]`,
+    /// by ShowMissionRestateBriefing at `0x0065F57F`; MO `MISSIONMO.INI`.
+    pub fn mission(&self) -> &str {
+        &self.mission
+    }
+    /// The map-select stages: `MAPSELMD.INI` (`0x00830370`), read by
+    /// MapSelect__LoadStagesFromINI (`0x005CEF62`); MO `MAPSELMO.INI`.
+    pub fn mapsel(&self) -> &str {
+        &self.mapsel
     }
 
     pub fn names(&self) -> [&str; 3] {
