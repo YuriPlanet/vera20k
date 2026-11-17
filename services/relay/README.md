@@ -78,10 +78,11 @@ Build from the repository root:
 python -m tools.cargo_run -- build --release -p vera20k-relay
 ```
 
-A deploy reaches players who have not updated. On a PR that touches the relay,
-the Relay compatibility workflow (`tools/relay_compat.py`) plays the latest
-stable release's and the newest dev build's client code against it, including a
-player the relay removes for silence.
+A deploy reaches every version the lobby admits. On a PR that touches the relay,
+the Relay compatibility workflow (`tools/relay_compat.py`) builds a compat client
+against the protocol crate of each stable release from `OLDEST_ADMITTED` (the
+lobby's lowest admitted version) on and of the newest dev build, and plays each
+against it, including a player the relay removes for silence.
 
 Clients from v0.2.4 read a Status, PauseStatus, Ready, Ack or Error
 longer than they know by its known prefix, and an unknown error code as an
@@ -90,13 +91,15 @@ that read it differently would desync. A client that cannot read the record at
 its cursor, or before the start any Status, for about 5 seconds ends the match
 and asks for a newer VERA20k; v0.2.3 and older stall instead. Extend replies
 only by appending fields, and add a record kind, departure reason or entry field
-only after clients that read it have shipped. A new error code counts as
+only after every admitted release reads it. A new error code counts as
 unreadable too, so one the relay repeats while a client's cursor waits ends that
 client's match the same way. The turn-based transport (packed entries, turns,
 relay checksums; below) replaced the one-entry datagrams outright: clients and
 relays from before it cannot play together. So did the adaptive transport
 (UPLINK, below): its relay and clients ship together, and the lobby's lowest
-admitted version rises with it.
+admitted version rose with it. A change that breaks admitted releases on purpose
+raises `OLDEST_ADMITTED` past them, the lobby raises its floor to match before
+the relay deploys, and the PR carries the `relay-compat-break` label.
 
 Install the executable as `/usr/local/bin/vera20k-relay`, create the unprivileged
 `vera20k-relay` user, and install `vera20k-relay.service`. Allow UDP port 5000 in

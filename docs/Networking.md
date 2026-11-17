@@ -114,6 +114,13 @@ names vera20k.org (`web_link::DOWNLOAD_PAGE`), but a release signed by a new key
 still points to the GitHub releases. Nothing exchanged changes: a released game
 shows only the text with its link, and a rollback does the same.
 
+A relay deploy reaches every version the lobby admits, from `OLDEST_ADMITTED` in
+`tools/relay_compat.py` on. Before a relay change merges, the Relay compatibility
+workflow plays a client built on the relay protocol crate of each of those releases,
+and of the newest dev build, against it. A change that breaks one of them raises that
+floor, so the lobby refuses the release at sign-in with 426 instead of its matches
+ending under it.
+
 When an online start fails, each player's game says whose side failed and logs why.
 A start whose 30-second relay admission runs out tells a player whose `relay_ready` the
 lobby took that another player's game could not reach the game server, a player whose

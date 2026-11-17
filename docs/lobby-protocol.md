@@ -611,7 +611,8 @@ Released clients sign in with `User-Agent: VERA20k/<MAJOR.MINOR.PATCH> multiplay
 A client that names a version older than 0.2.7 is refused at sign-in with 426
 `upgrade_required`, since clients before it cannot play through the relays'
 adaptive transport (UPLINK, `services/relay/README.md`); one that names no
-version is not.
+version is not. Relay compatibility plays every release from this floor, which
+`OLDEST_ADMITTED` in `tools/relay_compat.py` must equal.
 A session whose version is older than `version` in
 `https://downloads.vera20k.org/latest.json`, which the lobby reads at most every
 10 minutes, receives one such chat line per newer release, naming both versions,
