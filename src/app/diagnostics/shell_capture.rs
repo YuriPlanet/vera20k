@@ -1715,11 +1715,13 @@ where
 
     // The settled main menu also captures in any larger window, to compare
     // its scaled drawing, with the pointer resting at the window's centre.
-    // So does VERA's game room with teams, which spreads over a wider window.
+    // VERA's room and its Create Game form also follow the window scale.
     let scaled = (checkpoint == ShellCaptureCheckpoint::MainMenu0xE2Steady
         || matches!(
             checkpoint.movies_target(),
-            Some(movies::MoviesTarget::Wol(movies::WolTarget::ModernTeams))
+            Some(movies::MoviesTarget::Wol(
+                movies::WolTarget::ModernCreate | movies::WolTarget::ModernTeams
+            ))
         ))
         && (width, height) != (EXPECTED_WIDTH, EXPECTED_HEIGHT)
         && width >= 640
