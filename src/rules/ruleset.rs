@@ -7721,11 +7721,14 @@ impl RuleSet {
         self.voxel_assets.projectile_model(type_id)
     }
 
-    /// [`Self::building_gun_model`] for the VoxelAnim type `id`.
+    /// The declared model the VoxelAnim type `id` draws in place of its VXL:
+    /// its own `Image=` art's, or the part it shares of a `ShareSource=`
+    /// type's ([`crate::rules::voxel_asset_catalog::DebrisModel`]). None
+    /// for the VXL path; a refused model draws nothing.
     pub fn voxel_anim_declared_model(
         &self,
         id: VoxelAnimTypeId,
-    ) -> Option<Option<&std::sync::Arc<crate::rules::voxel_asset_catalog::DeclaredModel>>> {
+    ) -> Option<&crate::rules::voxel_asset_catalog::DebrisModel> {
         self.voxel_assets.voxel_anim_declared_model(id.0 as usize)
     }
 

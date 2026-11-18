@@ -20,8 +20,10 @@ struct Draw {
     emissive: vec4<f32>,
     // xyz: the voxel world light in the camera's space; w: the Mask cutoff.
     light: vec4<f32>,
-    // x: 1 when `normal_texture` is a normal map; z: alpha mode (0 opaque,
-    // 1 mask, 2 blend); w: 1 when `ramp` is the owner's house colour.
+    // x: 1 when `normal_texture` is a normal map; y: 1 for the diffuse
+    // light of a projectile or debris piece (0x00753C80), 0 for a unit's;
+    // z: alpha mode (0 opaque, 1 mask, 2 blend); w: 1 when `ramp` is the
+    // owner's house colour.
     flags: vec4<u32>,
     // The owner's ramp, palette indices 16..31, linear colour.
     ramp: array<vec4<f32>, 16>,
@@ -135,7 +137,11 @@ fn fs_main(in: VertexOut) -> FragmentOut {
     if lit {
         // The voxel light (render::vxl_normals::blinn_phong_pages): diffuse
         // plus the Schlick term of the halfway vector to the +Z viewer at
-        // strength 3, where a page of 16 is the colour as it is.
+        // strength 3, where a page of 16 is the colour as it is. A
+        // projectile or debris piece takes the diffuse term alone
+        // (render::vxl_normals::diffuse_pages, 0x00758670: page
+        // 16 * dot(n, l), 0 where the dot is negative). Neither quantises
+        // to whole pages: a model's normals are not the 244 table normals.
         let size = max(length(in.normal), 1e-6);
         var n = in.normal / size;
         if draw.flags.x != 0u {
@@ -145,7 +151,7 @@ fn fs_main(in: VertexOut) -> FragmentOut {
         let diffuse = max(dot(n, l), 0.0);
         let half_vector = normalize(l + vec3<f32>(0.0, 0.0, 1.0));
         let h = dot(half_vector, n);
-        let specular = max(h / (3.0 - 2.0 * h), 0.0);
+        let specular = select(max(h / (3.0 - 2.0 * h), 0.0), 0.0, draw.flags.y != 0u);
         color = min(color * min(diffuse + specular, 2.0), vec3<f32>(1.0));
         out.index = 1u;
     } else {

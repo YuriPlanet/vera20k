@@ -37,7 +37,7 @@ use crate::assets::model_file::{Model, ModelPart};
 use crate::map::voxel_pose::VxlSlopeBlend;
 use crate::render::batch::SpriteInstance;
 use crate::render::draw_state::DrawState;
-use crate::render::model_draw::{ModelPose, ModelShadow};
+use crate::render::model_draw::{ModelLight, ModelNodes, ModelPose, ModelShadow};
 use crate::render::native_z::{
     VoxelDepthRegion, ZGradient, pack_voxel_z_gradient, pack_z_gradient, voxel_depth_region,
 };
@@ -81,12 +81,7 @@ fn model_frames(
     model: &Model,
     gun: Option<u32>,
 ) -> [u32; 2] {
-    let frames = |part| {
-        model
-            .part_clip(part)
-            .and_then(|clip| model.animations.get(clip))
-            .map(|animation| animation.frame_count())
-    };
+    let frames = |part| super::model_art::part_frame_count(model, part);
     let (body, turret) =
         animation_frames_with(entity, frames(ModelPart::Body).unwrap_or(1), || {
             frames(ModelPart::Turret(gun.unwrap_or(0)))
@@ -253,6 +248,7 @@ pub(super) fn emit_model_unit(
         gun: pose.gun,
         ramp,
         frames: model_frames(draw.entity, &declared.model, pose.gun),
+        light: ModelLight::Unit,
     };
     let Some(image) = state.renderer.model_frame.borrow_mut().request(request) else {
         return;
@@ -339,6 +335,7 @@ fn emit_model_shadow(
             ..VxlRenderParams::default()
         }),
         considered_aircraft: shadow.considered_aircraft,
+        nodes: ModelNodes::Unit,
     };
     let Some(image) = state
         .renderer

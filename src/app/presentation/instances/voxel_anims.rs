@@ -190,10 +190,11 @@ pub(crate) fn voxel_anim_visitor<'a>(
         };
         let kind = rules.voxel_anim_type(piece.type_id());
         // VERA-only, experimental (docs/picture-model-art.md): a type whose
-        // own `Image=` art declares `Model=` draws the model and has no VXL;
-        // a refused model draws nothing.
-        if let Some(declared) = rules.voxel_anim_declared_model(piece.type_id()) {
-            let Some(declared) = declared else {
+        // own `Image=` art declares `Model=`, or that shares a part of a
+        // type whose art does, draws the model and its shadow and has no
+        // VXL; a refused model draws nothing.
+        if let Some(debris) = rules.voxel_anim_declared_model(piece.type_id()) {
+            let Some(declared) = debris.model.as_ref() else {
                 return;
             };
             let palette = piece_palette(
@@ -206,15 +207,15 @@ pub(crate) fn voxel_anim_visitor<'a>(
             let remap_row = palette.0;
             if let Some(object) =
                 voxel_anim_draw_on(id, piece, kind, palette, &view, order, |section, matrix| {
-                    let body = super::model_art::voxel_anim_model_entry(
+                    super::model_art::voxel_anim_model_entry(
                         &state.renderer.model_frame,
                         rules,
                         declared,
+                        debris.shared,
                         section,
                         matrix,
                         remap_row,
-                    )?;
-                    Some((body, None))
+                    )
                 })
             {
                 objects.push(object);
@@ -292,7 +293,7 @@ fn voxel_anim_draw_instance(
 }
 
 /// A body (and shadow) image on the texture it was placed on.
-type PieceImage = (ObjectTexture, UnitSpriteEntry);
+type PieceImage = super::model_art::DebrisImage;
 
 /// [`voxel_anim_draw_instance`] whose `render` places the body and shadow on
 /// textures of its choosing: the pose page for a VXL, the model page for a
@@ -320,11 +321,17 @@ fn voxel_anim_draw_on(
         view.axis.origin_y,
         view.axis.world_height,
     );
-    let shadow = shadow.map(|shadow| {
-        // `0x2001`: the shadow blitter darkens what lies beneath.
-        let draw_state = DrawState {
-            fx_flags: FX_SHADOW,
-            ..DrawState::default()
+    let mut pieces = Vec::with_capacity(2);
+    if let Some(shadow) = shadow {
+        // `0x2001`: the shadow blitter darkens what lies beneath. A model's
+        // shadow mask is an SHP shadow edit, whose darkening is its target's
+        // (docs/picture-model-art.md).
+        let draw_state = match shadow.0 {
+            ObjectTexture::SpriteAtlasEdit(..) => DrawState::default(),
+            _ => DrawState {
+                fx_flags: FX_SHADOW,
+                ..DrawState::default()
+            },
         };
         pose_piece(
             shadow,
@@ -366,7 +373,7 @@ fn pose_piece(
 ) -> ObjectPieceInstance {
     // A model page is RGBA: the blitters' RGBA source mode reads it.
     let source_palette = match target {
-        ObjectTexture::ShpPage(_) => 0,
+        ObjectTexture::ShpPage(_) | ObjectTexture::SpriteAtlasEdit(..) => 0,
         _ => source_palette,
     };
     ObjectPieceInstance {

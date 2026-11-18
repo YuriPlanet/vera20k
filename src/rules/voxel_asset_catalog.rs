@@ -361,6 +361,99 @@ fn building_gun_model_decl<'a>(
     }
 }
 
+/// VERA-only, experimental (`docs/picture-model-art.md`): the declared
+/// model a debris type (`[VoxelAnims]`) draws in place of its VXL.
+#[derive(Debug, Clone)]
+pub struct DebrisModel {
+    /// None when the model was refused: the piece draws nothing.
+    pub model: Option<Arc<DeclaredModel>>,
+    /// The part a `ShareSource=` type draws from its source's model (`body`,
+    /// `turret` or `barrel`, as `ShareBodyData=`, `ShareTurretData=` or
+    /// `ShareBarrelData=` selects, VoxelAnim `74B4D0`); None draws the
+    /// `VoxelIndex=`th mesh node of the type's own model.
+    pub shared: Option<crate::assets::model_file::ModelPart>,
+}
+
+/// What a debris type that shares another's data (`+0x296`, [`super::voxel_anim_type::VoxelAnimType::shares_data`])
+/// draws: VoxelAnim ReadINI `74B4D0..74B55B` copies the `ShareSource=`
+/// type's B0 (`ShareBodyData=`), else B8 (`ShareTurretData=`), else C0
+/// pair into its own B0, found among Infantry, Vehicle, Aircraft and
+/// Building types in that order; a restored game reloads the type's own
+/// image instead (`74B8BB`). The type's main slot tells which: None when it
+/// holds its own image's load, so the type draws as one that shares
+/// nothing; `Some(None)` when it holds the source's pair and the source
+/// declares no model for that part (the shared VXL draws), or holds nothing;
+/// else the source's model and the part that stands in for the pair (a
+/// building's guns: `body` for B8, `barrel` for C0, as
+/// [`building_gun_model_decl`] maps them).
+fn shared_debris_model(
+    rules: &RuleSet,
+    kind: &super::voxel_anim_type::VoxelAnimType,
+    declared: &BTreeMap<(ObjectCategory, String), Option<Arc<DeclaredModel>>>,
+    building_guns: &BTreeMap<String, Option<Arc<DeclaredModel>>>,
+) -> Option<Option<DebrisModel>> {
+    use crate::assets::model_file::ModelPart;
+    if !kind.shares_data() {
+        return None;
+    }
+    let main = kind.model_slots.main;
+    let source = kind.share_source.as_deref().and_then(|name| {
+        [
+            ObjectCategory::Infantry,
+            ObjectCategory::Vehicle,
+            ObjectCategory::Aircraft,
+            ObjectCategory::Building,
+        ]
+        .into_iter()
+        .find_map(|category| {
+            rules
+                .all_objects()
+                .find(|object| object.category == category && object.id.eq_ignore_ascii_case(name))
+        })
+    });
+    let Some(source) = source else {
+        // No source: the copied pair is null (74B555) and nothing draws; a
+        // restored game holds its own image.
+        return (main == ModelPair::default()).then_some(None);
+    };
+    let slots = &source.voxel_model_slots;
+    let (pair, slot) = if kind.share_body_data {
+        (slots.main, 0)
+    } else if kind.share_turret_data {
+        (slots.auxiliary, 1)
+    } else {
+        (slots.barrel, 2)
+    };
+    if main != pair {
+        return None;
+    }
+    let id = source.id.to_ascii_uppercase();
+    let found = match (source.category, slot) {
+        (ObjectCategory::Building, 1 | 2) => building_guns.get(&id).map(|model| {
+            (
+                model,
+                if slot == 1 {
+                    ModelPart::Body
+                } else {
+                    ModelPart::Barrel(0)
+                },
+            )
+        }),
+        _ => declared.get(&(source.category, id)).map(|model| {
+            let part = match slot {
+                0 => ModelPart::Body,
+                1 => ModelPart::Turret(0),
+                _ => ModelPart::Barrel(0),
+            };
+            (model, part)
+        }),
+    };
+    Some(found.map(|(model, part)| DebrisModel {
+        model: model.clone(),
+        shared: Some(part),
+    }))
+}
+
 /// The catalog-hash entry of a declared model: its file, `ModelSize=` and
 /// byte digest, so a machine with another file hashes differently.
 fn model_identity(declared: &DeclaredModel) -> Option<(String, Option<String>)> {
@@ -479,9 +572,9 @@ pub(crate) struct VoxelAssetCatalog {
     /// name, outside the plan, so nothing here is hashed.
     projectiles: BTreeMap<String, Option<Arc<DeclaredModel>>>,
     /// The same for VoxelAnim types, by registry index, whose own `Image=`
-    /// art declares `Model=`. A type that shares another's data
-    /// (`ShareSource=`) keeps the shared VXL.
-    voxel_anim_models: BTreeMap<usize, Option<Arc<DeclaredModel>>>,
+    /// art declares `Model=`, or that share a part of a type whose art
+    /// declares one ([`shared_debris_model`]).
+    voxel_anim_models: BTreeMap<usize, DebrisModel>,
 }
 impl PartialEq for VoxelAssetCatalog {
     fn eq(&self, other: &Self) -> bool {
@@ -526,7 +619,11 @@ impl VoxelAssetCatalog {
             .collect();
         result.extend(self.voxel_anims.iter().enumerate().map(|(i, p)| {
             let mut parts = vec![part(p.as_ref())];
-            if let Some(Some(declared)) = self.voxel_anim_models.get(&i) {
+            if let Some(declared) = self
+                .voxel_anim_models
+                .get(&i)
+                .and_then(|d| d.model.as_ref())
+            {
                 parts.push(model_identity(declared));
             }
             (format!("VoxelAnim:{i}"), parts)
@@ -565,17 +662,34 @@ impl VoxelAssetCatalog {
                 admitted.map(Arc::new),
             );
         }
-        let mut voxel_anim_models: BTreeMap<usize, Option<Arc<DeclaredModel>>> = BTreeMap::new();
+        let mut voxel_anim_models: BTreeMap<usize, DebrisModel> = BTreeMap::new();
         for (index, kind) in rules.voxel_anim_types_iter().enumerate() {
+            let own = rules.art().resolve_declared_model(&kind.name, &kind.image);
             if kind.shares_data() {
-                continue;
+                // A type that shares a part draws the source's model of it,
+                // or keeps the shared VXL (`Some(None)`). Only a declared
+                // model anywhere makes it look for its source, so retail
+                // art walks nothing here.
+                let any = own.is_some() || !declared.is_empty() || !building_guns.is_empty();
+                match any.then(|| shared_debris_model(rules, kind, &declared, &building_guns)) {
+                    Some(None) => {}
+                    Some(Some(Some(shared))) => {
+                        voxel_anim_models.insert(index, shared);
+                        continue;
+                    }
+                    None | Some(Some(None)) => continue,
+                }
             }
-            if let Some((section, decl)) =
-                rules.art().resolve_declared_model(&kind.name, &kind.image)
-            {
+            if let Some((section, decl)) = own {
                 let admitted =
                     admit_section_model(section, decl, &mut by_section, &mut decoded, assets);
-                voxel_anim_models.insert(index, admitted);
+                voxel_anim_models.insert(
+                    index,
+                    DebrisModel {
+                        model: admitted,
+                        shared: None,
+                    },
+                );
             }
         }
         let mut projectiles: BTreeMap<String, Option<Arc<DeclaredModel>>> = BTreeMap::new();
@@ -751,7 +865,7 @@ impl VoxelAssetCatalog {
             || building_guns
                 .values()
                 .chain(projectiles.values())
-                .chain(voxel_anim_models.values())
+                .chain(voxel_anim_models.values().map(|debris| &debris.model))
                 .any(Option::is_some);
         Self {
             bound: true,
@@ -801,12 +915,10 @@ impl VoxelAssetCatalog {
             self.projectiles.get(key).map(Option::as_ref)
         })
     }
-    /// [`Self::building_gun_model`] for the VoxelAnim type at `index`.
-    pub(crate) fn voxel_anim_declared_model(
-        &self,
-        index: usize,
-    ) -> Option<Option<&Arc<DeclaredModel>>> {
-        self.voxel_anim_models.get(&index).map(Option::as_ref)
+    /// The declared model the VoxelAnim type at `index` draws in place of
+    /// its VXL, and what of it ([`DebrisModel`]); None for the VXL path.
+    pub(crate) fn voxel_anim_declared_model(&self, index: usize) -> Option<&DebrisModel> {
+        self.voxel_anim_models.get(&index)
     }
     pub(crate) fn contains(&self, object: TypeHandle) -> bool {
         self.by_handle
@@ -968,11 +1080,12 @@ mod tests {
         assert!(!loaded(&rules, "GUNBLD"), "the guns are not a main model");
         let anim = |name| rules.voxel_anim_type_id_by_name(name).unwrap();
         let chunk = rules.voxel_anim_declared_model(anim("CHUNK")).unwrap();
-        assert_eq!(chunk.unwrap().decl.size, 60);
+        assert_eq!(chunk.model.as_ref().unwrap().decl.size, 60);
+        assert!(chunk.shared.is_none());
         assert!(rules.voxel_anim_model(anim("CHUNK")).is_none());
         assert!(matches!(
             rules.voxel_anim_declared_model(anim("LOST")),
-            Some(None)
+            Some(DebrisModel { model: None, .. })
         ));
         assert!(rules.voxel_anim_declared_model(anim("PLAIN")).is_none());
         assert!(rules.declares_models());
@@ -981,6 +1094,47 @@ mod tests {
             bind(3.0).simulation_config_hash(),
             "another file is another identity"
         );
+    }
+
+    /// A debris type that shares a part (`ShareTurretData=`, VoxelAnim
+    /// `74B4D0`) of a type whose art declares `Model=` draws that part of
+    /// the model, and its copied VXL pair is not loaded; one sharing a type
+    /// without a model keeps the shared VXL path (docs/picture-model-art.md).
+    #[test]
+    fn a_sharing_debris_type_draws_its_source_models_part() {
+        let directory = crate::map::source::test_support::TestDirectory::new("shared-debris-model");
+        let glb = crate::assets::model_file::test_glb::box_model(1.0, 1.0, 2.0, &["turret"]);
+        std::fs::write(directory.path().join("src.glb"), &glb).unwrap();
+        let assets = AssetManager::from_loose_root_for_test(directory.path());
+        let art = IniFile::from_str(
+            "[SRC]\nVoxel=yes\nModel=src.glb\nModelSize=100\n[PLAIN]\nVoxel=yes\n",
+        );
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[VehicleTypes]\n0=SRC\n1=PLAIN\n\
+                 [SRC]\nTurret=yes\nStrength=300\n[PLAIN]\nTurret=yes\nStrength=300\n\
+                 [VoxelAnims]\n0=SHARD\n1=OTHER\n\
+                 [SHARD]\nShareTurretData=yes\nShareSource=SRC\n\
+                 [OTHER]\nShareTurretData=yes\nShareSource=PLAIN\n",
+            ),
+            &art,
+        )
+        .unwrap();
+        rules.install_art_fixture(ArtRegistry::from_ini(&art));
+        rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
+        let anim = |name| rules.voxel_anim_type_id_by_name(name).unwrap();
+        let shard = rules.voxel_anim_declared_model(anim("SHARD")).unwrap();
+        let source = rules
+            .loaded_voxel_model("SRC")
+            .and_then(LoadedVoxelModel::declared_model)
+            .unwrap();
+        assert!(Arc::ptr_eq(shard.model.as_ref().unwrap(), source));
+        assert_eq!(
+            shard.shared,
+            Some(crate::assets::model_file::ModelPart::Turret(0))
+        );
+        assert!(rules.voxel_anim_model(anim("SHARD")).is_none());
+        assert!(rules.voxel_anim_declared_model(anim("OTHER")).is_none());
     }
 
     #[test]

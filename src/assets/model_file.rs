@@ -398,7 +398,7 @@ impl ModelAnimation {
 /// A named part of a model (`docs/picture-model-art.md`, "Model: NAME.glb").
 /// `turret` and `turret0` are both `Turret(0)`; `turretN` stands in for
 /// `TURN.VXL`, `barrelN` for `BARLN.VXL`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ModelPart {
     Body,
     Turret(u32),

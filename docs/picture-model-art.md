@@ -65,16 +65,24 @@ The voxel art that is not a unit body takes `Model=` from these sections:
   model's `body` stands in for the turret VXL and its `barrel` for the barrel
   VXL; a building without a turret VXL (no `TUR` in `TurretAnim=`) draws only
   `barrel`. `TurretOffset=`, `TurretAnimX/Y/ZAdjust=`, recoil and the facing
-  place them as they place the VXLs. The building does not become a voxel
-  type.
+  place them as they place the VXLs, and they animate at the HVA frames the
+  VXLs take. The building does not become a voxel type. A
+  `BarrelAnimIsVoxel=` building without `TurretAnimIsVoxel=` draws no gun,
+  model or VXL (see [Known residuals](#known-residuals)).
 - **Voxel projectiles** (`Voxel=yes` BulletTypes): the `Image=` art section;
   the `body` draws in its rest pose, turned along the velocity as the VXL is.
   `Color=` colours the mask's red; `Flat=` keeps its blit.
 - **Debris** (`[VoxelAnims]`): the type's own `Image=` art section.
   `VoxelIndex=` picks the mesh node it draws: the Nth node with a mesh, in
   file order, from 0, that node's own meshes only, as it picks a VXL section.
-  A type that shares another's model (`ShareSource=` with a `Share*Data=`)
-  keeps the shared VXL.
+  A type that shares another's part (`ShareSource=` with
+  `ShareBodyData=`, `ShareTurretData=` or `ShareBarrelData=`) draws that
+  part of the source type's model when the source's art declares `Model=`:
+  `body`, `turret` or `barrel` (a building source's guns: `body` for the
+  turret, `barrel` for the barrel), whole, whatever `VoxelIndex=` (a
+  negative one draws nothing, as for the VXL); else the shared VXL. A
+  restored game reloads such a type's own image (`74B8BB`), so it then draws
+  as a type that shares nothing.
 
 Each still needs a `body` node: its length is the model's scale
 (`ModelSize=`).
@@ -112,9 +120,16 @@ not change. Without a mask the picture has no house colour and no unlit pixels.
   voxel parts' (`Foot+0x538` modulo the body's count; the turret's own
   `Techno+0x148` modulo its count while the body's frame is 0; the barrel the
   body's). A shadow draws at frame 0, as `0x00707280` samples HVA frame 0.
+  A building's guns take the frames of its `Techno+0x148` counter, as
+  Building draw `43DA80` takes them (`43E2FA`): `body` (the turret) modulo
+  its count, `barrel` modulo its own without a turret, else frame 0. A
+  projectile draws frame 0 (Bullet draw `46B0C0`); a debris piece, and its
+  shadow, the rest pose, as VoxelAnim draw `749DCE` draws no HVA.
 - Materials: the base colour texture or factor, the normal texture, the emissive
   texture or factor (emissive parts are unlit), `alphaMode`. Metallic and
-  roughness are ignored; light follows the game's voxel light.
+  roughness are ignored; light follows the game's voxel light: a unit's and
+  a building gun's Blinn-Phong form, a projectile's and a debris piece's
+  diffuse form (`753C80`).
 - The house-colour mask: `NAME.mask.png` beside the model, in the base colour
   texture's UV space, else none.
 - Sidecar files beside the model replace embedded images:
@@ -192,7 +207,10 @@ so it sorts, shades and shadows by the same rules:
   the rectangle a voxel draw of that pose takes
   (`native_draw_bounds_from_extents`), onto one RGBA page of the sprite
   atlas held for the purpose. Light is the voxel world light with the
-  Blinn-Phong form of `vxl_normals`; the mask's red takes the owner's ramp by
+  Blinn-Phong form of `vxl_normals` (`blinn_phong_pages`), or for a
+  projectile or a debris piece its diffuse form (`diffuse_pages`,
+  `0x00753C80`: the diffuse term alone), a flag of the pose
+  (`ModelLight`); the mask's red takes the owner's ramp by
   brightness as a picture's does; the mask's green and emissive texels are
   unlit (index 240). The unit's piece draws that page through the SHP
   blitters' RGBA source mode with the unit's Z-read policy, its Z from the
@@ -217,6 +235,11 @@ so it sorts, shades and shadows by the same rules:
   sort depth and Z adjustment: an aircraft's (`0x004148A0`), a lifted
   Unit's (`0x0073C1D2..0x0073C5C4`) and a ground Unit's (`0x0073C5C4`). It
   draws before the body, which covers it as the native body mask does.
+  A debris piece's shadow is cast the same way from the nodes it draws (its
+  `VoxelIndex=` mesh node, or its shared part) at rest, through its bounce
+  matrix, as its VXL section's bottom-face stencil is (VoxelAnim DrawIt
+  `0x00749CBE`), at the floor point and Z argument the VXL shadow takes
+  (`0x00749C0E..0x00749C60`, `0x00749D2A`).
 - **Model space.** glTF +Y is up, +Z forward, +X left. The model draws with
   +Z along the voxel hull's X, X along its Y and +Y along its Z, scaled so
   the `body` length is `ModelSize=` leptons in voxel units (one voxel is one
@@ -289,6 +312,15 @@ against this list.
   `instances::voxel_anims` take a texture with the body image
   (`projectile_draw_instance_on`, `voxel_anim_draw_on`) so a declared model
   places it on the model page.
+- Models, chain 5 residuals: `instances::shp` shares the gun frame rule
+  (`building_gun_frames`, split out of `emit_building_turret_vxl`
+  unchanged) and passes the `+0x148` counter to the model's guns;
+  `instances::voxel_anims::voxel_anim_draw_on` draws a shadow placed on an
+  SHP shadow edit target (`SpriteAtlasEdit`) with the default draw state and
+  the RGBA source mode; `VoxelAssetCatalog::bind` resolves a sharing debris
+  type's part (`shared_debris_model`) and `RuleSet::voxel_anim_declared_model`
+  answers a `DebrisModel`; `ModelPart` is hashable; `model_units` passes
+  `ModelLight::Unit` and `ModelNodes::Unit` to its pose and shadow.
 
 ## Verification
 
@@ -312,6 +344,28 @@ Per chain, one to three regression tests through production code, for example:
 an APNG with an SHP's frame count gives an AnimType the same End, LoopEnd and
 Middle as that SHP; a building with a Buildup picture can be sold. Then one
 production run on a real map with converted art.
+
+## Known residuals
+
+- BibShape and factory door art are atlas files shared by name. When a
+  building that declares `Picture=` and one that does not name the same file,
+  both draw it from the picture. Retail data declares no picture, so this needs
+  a mod that mixes both on one name.
+- A `BarrelAnimIsVoxel=` building without `TurretAnimIsVoxel=`: Building
+  draw `43DA80` has an arm for it (`0x0043E5D9..0x0043E795`) that draws the
+  C0 barrel VXL at the `0x00458810` matrix chain (the
+  `VoxelBarrelOffsetTo*` pivots, the `+0x388` facing) with the building's
+  slot-9 anim drawn before or after it by facing. VERA's VXL path ports
+  neither, so such a building draws no gun; its model draws none either,
+  matching VERA's VXL path, not native. No retail rules layer sets the key.
+- A projectile's and a debris piece's model light is the continuous diffuse
+  term; the VXL path truncates it to whole VPL pages (`ftol(16 * dot)`).
+  A unit's model light likewise skips the page truncation.
+- A sharing debris type draws its source's model part only while its main
+  slot holds the pair it copied (`74B4D0`). A later rules layer that re-reads
+  the source but not the debris type leaves the debris an earlier copy; it
+  then draws as a type that shares nothing (its own `Image=` art's model if
+  declared, else the VXL path).
 
 ## Status
 
@@ -419,10 +473,9 @@ current: say what was done, what was not, and what comes next.
   normal maps (`NAME.normals.png`), the bridge split of a model's depth
   rectangle, and the `NoSpawnAlt` `WO` model.
 - Chain 5, written, not yet compiled or run: building voxel guns, voxel
-  projectiles and debris draw declared models on the model page. Not yet:
-  a debris model's ground shadow (the VXL path's bottom-quad stencil; none
-  draws), node animations for the guns (the HVA frame counter; the rest pose
-  draws), a `ShareSource=` debris type from a declared model, and the guns of
-  a `BarrelAnimIsVoxel=` building without `TurretAnimIsVoxel=`, which no path
-  draws. Projectile and debris models take the model light, where their VXLs
-  light diffusely (`753C80`).
+  projectiles and debris draw declared models on the model page; the guns
+  animate at the building's HVA frame counter; a debris model casts its
+  ground shadow; a `ShareSource=` debris type draws its source model's
+  part; projectiles and debris take the diffuse voxel light. The guns of a
+  `BarrelAnimIsVoxel=` building without `TurretAnimIsVoxel=` draw in
+  neither path ([Known residuals](#known-residuals)).
