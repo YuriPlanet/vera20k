@@ -139,6 +139,13 @@ pub struct DeclaredModel {
     /// FNV-1a of the file's bytes: the catalog hashes it with the file name,
     /// so a machine with another file is refused online.
     digest: u64,
+    /// The model drawn where the VXL path draws `%sWO` (`NoSpawnAlt=`, its
+    /// spawns away): `NAMEWO.glb` beside `Model=NAME.glb`, scaled so its own
+    /// body is `ModelSize=` long. None when the type has no `NoSpawnAlt=` or
+    /// the file is missing or unreadable; the main model then draws.
+    /// Drawing only: the simulation takes nothing from it, so it is not
+    /// hashed.
+    pub no_spawn_alt: Option<Arc<DeclaredModel>>,
 }
 
 impl DeclaredModel {
@@ -158,6 +165,7 @@ impl DeclaredModel {
             model,
             half_sizes,
             digest: 0,
+            no_spawn_alt: None,
         }
     }
 }
@@ -232,12 +240,70 @@ fn admit_declared_model(
             return None;
         }
     }
+    let no_spawn_alt = (object.category == ObjectCategory::Vehicle && object.no_spawn_alt)
+        .then(|| no_spawn_alt_model(section, decl, half_sizes, assets))
+        .flatten()
+        .map(Arc::new);
     Some(DeclaredModel {
         section: section.to_owned(),
         decl: decl.clone(),
         model,
         half_sizes,
         digest,
+        no_spawn_alt,
+    })
+}
+
+/// VERA-only, experimental (`docs/picture-model-art.md`): the `NoSpawnAlt=`
+/// model of `decl`, `NAMEWO.glb` beside `Model=NAME.glb`, standing in for
+/// the `%sWO` VXL the stock loader reads (`0x005F8277`). Read only for a
+/// unit with `NoSpawnAlt=yes` whose art declares `Model=`. A missing file is
+/// no fault, as a missing WO pair is not to the stock loader; an unreadable
+/// one, or one without a `body` node, is told and the main model draws.
+fn no_spawn_alt_model(
+    section: &str,
+    decl: &crate::rules::art_data::ModelDecl,
+    half_sizes: [f32; 2],
+    assets: &AssetManager,
+) -> Option<DeclaredModel> {
+    let file = match decl.file.rsplit_once('.') {
+        Some((stem, extension)) => format!("{stem}WO.{extension}"),
+        None => format!("{}WO", decl.file),
+    };
+    let bytes = assets.get_ref(&file)?;
+    let model = match crate::assets::model_file::Model::from_glb(bytes) {
+        Ok(model) if model.body_bounds().is_some() => model,
+        Ok(_) => {
+            log::warn!("[{section}] {file} has no body node; the main model draws");
+            crate::rules::art_problems::report(
+                section,
+                &file,
+                "has no body node",
+                "the main model draws",
+            );
+            return None;
+        }
+        Err(error) => {
+            log::warn!("[{section}] {file} cannot be read ({error}); the main model draws");
+            crate::rules::art_problems::report(
+                section,
+                &file,
+                &format!("cannot be read ({error})"),
+                "the main model draws",
+            );
+            return None;
+        }
+    };
+    Some(DeclaredModel {
+        section: section.to_owned(),
+        decl: crate::rules::art_data::ModelDecl {
+            file,
+            size: decl.size,
+        },
+        model: Arc::new(model),
+        half_sizes,
+        digest: fnv1a64(bytes),
+        no_spawn_alt: None,
     })
 }
 

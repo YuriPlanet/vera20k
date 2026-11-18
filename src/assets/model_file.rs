@@ -360,6 +360,41 @@ pub struct ModelAnimation {
     pub duration: f32,
 }
 
+impl ModelAnimation {
+    /// The frames the clip holds in place of an HVA's: the key count of its
+    /// channel with the most keys, at least 1. Frame `k` is that channel's
+    /// key `k` ([`Self::frame_time`]), so a modder exports one key per HVA
+    /// frame.
+    pub fn frame_count(&self) -> u32 {
+        let keys = self
+            .channels
+            .iter()
+            .map(|channel| channel.times.len())
+            .max()
+            .unwrap_or(0);
+        u32::try_from(keys).unwrap_or(u32::MAX).max(1)
+    }
+
+    /// The time in seconds of HVA frame `frame`: the key time of frame
+    /// `frame % `[`Self::frame_count`] on the channel with the most keys (the
+    /// first such channel); 0 for a clip without keys.
+    pub fn frame_time(&self, frame: u32) -> f32 {
+        let Some(channel) = self
+            .channels
+            .iter()
+            .rev()
+            .max_by_key(|channel| channel.times.len())
+        else {
+            return 0.0;
+        };
+        let count = channel.times.len();
+        if count == 0 {
+            return 0.0;
+        }
+        channel.times[frame as usize % count]
+    }
+}
+
 /// A named part of a model (`docs/picture-model-art.md`, "Model: NAME.glb").
 /// `turret` and `turret0` are both `Turret(0)`; `turretN` stands in for
 /// `TURN.VXL`, `barrelN` for `BARLN.VXL`.
@@ -415,6 +450,13 @@ impl Model {
 
     /// The node's rest-pose transform from its space to the model's.
     pub fn rest_world_matrix(&self, node: usize) -> [f32; 16] {
+        self.world_matrix_at(node, None)
+    }
+
+    /// The node's transform from its space to the model's with every node of
+    /// its chain posed at `(animation, time)` ([`Self::sample_node`]), or at
+    /// rest for `None`. A node given as a matrix keeps its matrix.
+    pub fn world_matrix_at(&self, node: usize, pose: Option<(usize, f32)>) -> [f32; 16] {
         let mut chain = Vec::new();
         let mut current = Some(node);
         // The tree was checked acyclic at load; the bound guards it anyway.
@@ -425,7 +467,8 @@ impl Model {
             let Some(found) = self.nodes.get(index) else {
                 break;
             };
-            chain.push(found.transform.matrix());
+            let posed = pose.and_then(|(animation, time)| self.sample_node(animation, index, time));
+            chain.push(posed.map_or_else(|| found.transform.matrix(), |trs| trs.matrix()));
             current = self.parents.get(index).copied().flatten();
         }
         let mut world = Trs::default().matrix();
@@ -482,6 +525,46 @@ impl Model {
     /// The `body` node's rest-pose bounds in model space.
     pub fn body_bounds(&self) -> Option<ModelBounds> {
         self.part_bounds(self.part(ModelPart::Body)?)
+    }
+
+    /// The bounds of mesh `mesh`'s vertices in its node's own space; `None`
+    /// for a mesh without vertices.
+    pub fn mesh_bounds(&self, mesh: usize) -> Option<ModelBounds> {
+        let mut bounds: Option<ModelBounds> = None;
+        for &point in self
+            .meshes
+            .get(mesh)?
+            .primitives
+            .iter()
+            .flat_map(|p| &p.positions)
+        {
+            let next = bounds.get_or_insert(ModelBounds {
+                min: point,
+                max: point,
+            });
+            for axis in 0..3 {
+                next.min[axis] = next.min[axis].min(point[axis]);
+                next.max[axis] = next.max[axis].max(point[axis]);
+            }
+        }
+        bounds
+    }
+
+    /// The clip `part` animates by in place of its HVA: the animation named
+    /// for the part (`body`, `turret`/`turretN`, `barrel`/`barrelN`,
+    /// `shadow`, ignoring ASCII case), else the first animation not named
+    /// for any part; `None` when there is neither (the part draws at rest).
+    pub fn part_clip(&self, part: ModelPart) -> Option<usize> {
+        let named =
+            |animation: &ModelAnimation| animation.name.as_deref().and_then(ModelPart::from_name);
+        self.animations
+            .iter()
+            .position(|animation| named(animation) == Some(part))
+            .or_else(|| {
+                self.animations
+                    .iter()
+                    .position(|animation| named(animation).is_none())
+            })
     }
 
     /// `node`'s local TRS at `time` seconds of `animation`: its rest TRS with
@@ -1448,6 +1531,46 @@ mod tests {
             model.sample_node(0, 0, 9.0).unwrap().translation,
             [4.0, -2.0, 0.0]
         );
+    }
+
+    /// A clip's frames are its keys: frame `k` samples key `k % count` of the
+    /// channel with the most keys, and a part takes the clip named for it,
+    /// else the first clip named for no part.
+    #[test]
+    fn animation_frames_map_to_their_key_times() {
+        let mut builder = GlbBuilder::default();
+        let times = builder.floats(&[0.0, 0.5, 2.0], "SCALAR", 1);
+        let values = builder.floats(&[0.0; 9], "VEC3", 3);
+        let short = builder.floats(&[0.0, 1.0], "SCALAR", 1);
+        let short_values = builder.floats(&[0.0; 6], "VEC3", 3);
+        let sampler = |input, output| json!({ "input": input, "output": output });
+        let glb = builder.build(json!({
+            "nodes": [{ "name": "body" }, { "name": "turret" }],
+            "animations": [
+                {
+                    "name": "Turret",
+                    "channels": [{ "sampler": 0, "target": { "node": 1, "path": "translation" } }],
+                    "samplers": [sampler(short, short_values)]
+                },
+                {
+                    "name": "drive",
+                    "channels": [
+                        { "sampler": 0, "target": { "node": 0, "path": "translation" } },
+                        { "sampler": 1, "target": { "node": 0, "path": "scale" } }
+                    ],
+                    "samplers": [sampler(short, short_values), sampler(times, values)]
+                }
+            ]
+        }));
+        let model = Model::from_glb(&glb).unwrap();
+        assert_eq!(model.part_clip(ModelPart::Turret(0)), Some(0));
+        assert_eq!(model.part_clip(ModelPart::Body), Some(1));
+        let drive = &model.animations[1];
+        assert_eq!(drive.frame_count(), 3);
+        assert_eq!(drive.frame_time(1), 0.5);
+        // Frame 4 of 3 is frame 1.
+        assert_eq!(drive.frame_time(4), 0.5);
+        assert_eq!(model.animations[0].frame_count(), 2);
     }
 
     #[test]
