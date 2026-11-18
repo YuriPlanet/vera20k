@@ -209,7 +209,7 @@ impl Simulation {
                 rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
                 registry,
                 true,
-                crate::sim::world::FrameEffects::default(),
+                crate::sim::world::FrameEffects::default().with_overlay_registry(registry),
                 None,
             )
             .expect("headless House wait completes immediately");
@@ -224,6 +224,7 @@ impl Simulation {
         &mut self,
         owner: InternedId,
         rules: &RuleSet,
+        effects: FrameEffects<'_>,
     ) -> Vec<crate::sim::command::CommandEnvelope> {
         let mut generated = Vec::new();
         // House4F927C/4F92ED clears1FC before either pass; a status
@@ -250,7 +251,7 @@ impl Simulation {
                     self, rules, owner,
                 ));
             }
-            crate::sim::superweapon::update_owned_supers(self, rules, owner);
+            crate::sim::superweapon::update_owned_supers(self, rules, owner, effects);
             crate::sim::superweapon::grant_provided_supers(self, rules, owner);
         }
         generated
@@ -350,7 +351,12 @@ impl Simulation {
                 self.ares_degrade_buildings(owner, rules, registry, frame_effects);
             }
             crate::sim::house_eva::update_house_eva(self, rules, owner);
-            crate::sim::superweapon::tick_house_superweapon_instances(self, rules, owner);
+            crate::sim::superweapon::tick_house_superweapon_instances(
+                self,
+                rules,
+                owner,
+                frame_effects,
+            );
             if defeat_gate && self.house_holds_nothing(owner, rules) {
                 self.house_blowup(
                     owner,
@@ -373,7 +379,7 @@ impl Simulation {
                 frame_effects,
             );
             crate::sim::ai_base_building::update_production_choices(self, rules, owner, registry);
-            generated.extend(self.recheck_house_tech_tree(owner, rules));
+            generated.extend(self.recheck_house_tech_tree(owner, rules, frame_effects));
             if let Some(house) = self.houses.get_mut(&owner) {
                 house.release_repair_latch(self.session.binary_frame());
             }

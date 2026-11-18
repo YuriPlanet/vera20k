@@ -91,7 +91,7 @@ fn world(rules: &RuleSet) -> (Simulation, InternedId, InternedId, InternedId, u6
     sim.spawn_object("TARGET", "Russians", 20, 20, 0, rules)
         .unwrap();
     sim.assess_power_for_test(rules);
-    sim.recheck_house_tech_tree(local, rules);
+    sim.recheck_house_tech_tree(local, rules, Default::default());
     let id = sim.interner.get(SHIELD).unwrap();
     (sim, local, remote, id, provider)
 }

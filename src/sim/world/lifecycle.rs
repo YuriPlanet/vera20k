@@ -7239,7 +7239,7 @@ impl Simulation {
                     })
                     .map(|entity| entity.owner())
             {
-                crate::sim::superweapon::update_owned_supers(self, rules, owner);
+                crate::sim::superweapon::update_owned_supers(self, rules, owner, context.effects());
             }
             // Active-frame Building43BEF5..43BF11 compares Health+6C with
             // the retained AI sample+544 after its slot/fire destructors.

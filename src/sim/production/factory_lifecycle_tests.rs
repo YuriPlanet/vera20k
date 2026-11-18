@@ -3023,9 +3023,11 @@ pub(crate) fn prerequisite_loss_cancellation_fixture(
     receiver.session.set_current_house_for_test(Some(other));
     let held = held_id(&sender, owner, ProductionCategory::Vehicle);
     let rng = sender.rng_state();
-    let events = sender.recheck_house_tech_tree(owner, &rules);
+    let events = sender.recheck_house_tech_tree(owner, &rules, Default::default());
     assert!(
-        receiver.recheck_house_tech_tree(owner, &rules).is_empty(),
+        receiver
+            .recheck_house_tech_tree(owner, &rules, Default::default())
+            .is_empty(),
         "a remote human clears its recheck without publishing another strip"
     );
     assert!(!sender.houses[&owner].tech_recheck_pending());
