@@ -14,12 +14,12 @@
 //! SpawnShrapnel's draws.
 //!
 //! RESIDUALS:
-//! - Of `PossibleCellSpreadDetonate`'s members VERA reads only the
-//!   AttachEffect lists. A warhead that sets only an unread member
-//!   (`RemoveDisguise`, `Taunt`, ...) skips the two buffer draws native
-//!   makes per detonation, shifting the scenario stream; the members' own
-//!   effects are not ported. `Convert.*` and `ReturnWarhead` are ported and
-//!   count in the gate below.
+//! - `PossibleCellSpreadDetonate` is reproduced member-for-member (see the gate
+//!   in [`detonate`]), so a warhead setting only a member whose effect is not
+//!   ported still draws the two buffers. Those unported arms are
+//!   `IvanBomb.Detonate`'s fused-bomb detonation, `RemoveMindControl`'s silent
+//!   flag, the shield respawn/self-healing timers and `BuildingSell`'s refund;
+//!   the remaining members are ported and applied.
 //! - `Detonate`'s `InterceptBullets` arm is not ported, so a warhead that
 //!   sets it misses that arm. The other earlier per-house arms run here:
 //!   `CreateGap` (`Simulation::apply_warhead_create_gap`), `Reveal`
@@ -229,9 +229,17 @@ pub(crate) fn detonate(
         run.effects(),
     );
     let chance = get_crit_chance(world, rules, warhead, source_id);
-    // `PossibleCellSpreadDetonate` (`WarheadType/Body.cpp:495..516`), of which
-    // VERA reads the AttachEffect lists, the PenetratesTransport level and the
-    // shield attach/remove/break/respawn/self-healing members.
+    // `PossibleCellSpreadDetonate` (`Ext/WarheadType/Body.cpp`'s
+    // "List all Warheads here that respect CellSpread", read by
+    // `WarheadTypeExt::Detonate`): `RemoveDisguise`, `RemoveMindControl`,
+    // `Shield.Break`/`Respawn.Duration`/`SelfHealing.Duration`/
+    // `AttachTypes`/`RemoveTypes`/`RemoveAll`, `Convert.*`, the AttachEffect
+    // lists, `ChangeOwner`, `BuildingSell`, `BuildingUndeploy`,
+    // `ReverseEngineer`, `ReturnWarhead`, `PenetratesTransport.Level`,
+    // `Taunt`, `Ammo` and `IvanBomb.Detonate`. That list, or a live
+    // `Crit_CurrentChance`, is the only way into `DetonateOnOneUnit` and thus
+    // into the pass's two buffer draws: a warhead whose every member is off
+    // draws nothing.
     let attach = !warhead.attach_effect.is_empty();
     let penetrates = warhead.phobos_penetrates_transport.level > 0;
     let shield_modifiers = warhead.shield.has_per_target_modifier();
@@ -251,16 +259,17 @@ pub(crate) fn detonate(
     let change_owner = warhead.phobos_change_owner;
     #[cfg(not(feature = "phobos"))]
     let change_owner = false;
-    // `PossibleCellSpreadDetonate` (`Ext/WarheadType/Body.cpp:495-516`):
-    // the RemoveMindControl/sell/undeploy extras and the per-target arms
-    // below. CanKill and the Prevent*Escape arms are not members: they run in
+    // The remaining members. `IvanBomb.Detonate` is one: its fused bombs are
+    // not ported, but the member still draws the two buffers native makes.
+    // `CanKill` and the `Prevent*Escape` arms are not members — they run in
     // ReceiveDamage and the death arms, so they never force this loop.
     #[cfg(feature = "phobos")]
     let warhead_extras = warhead.phobos_extras.has_per_target_effect()
         || warhead.ammo != 0
         || warhead.remove_disguise
         || warhead.reverse_engineer
-        || warhead.taunt;
+        || warhead.taunt
+        || warhead.phobos_ivan_bomb_detonate;
     #[cfg(not(feature = "phobos"))]
     let warhead_extras = false;
     if !(attach

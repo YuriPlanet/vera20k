@@ -1164,6 +1164,31 @@ fn detonate_prefix_draws_both_buffers_for_crit_or_attach_effect_warheads() {
     );
 }
 
+/// `PossibleCellSpreadDetonate` lists `IvanBomb.Detonate`
+/// (`Ext/WarheadType/Body.cpp`'s "List all Warheads here that respect
+/// CellSpread", read by `WarheadTypeExt::Detonate`): a warhead whose only
+/// member is the fused-bomb detonation still starts the per-target pass and
+/// draws both buffers. A warhead with every member off draws nothing, so the
+/// member is what keeps the scenario stream aligned.
+#[test]
+fn ivan_bomb_detonate_is_a_possible_cell_spread_member() {
+    let draws = |wh_ini: &str| {
+        let (mut sim, rules, firer, target) = scene("", wh_ini, "", "", "Russians");
+        detonate_once(&mut sim, &rules, firer, target, None);
+        sim.scenario_rng.logical_state()
+    };
+    assert_eq!(
+        draws("IvanBomb.Detonate=yes\n"),
+        after_doubles(2),
+        "the crit buffer and the ReturnWarhead buffer"
+    );
+    assert_eq!(
+        draws(""),
+        after_doubles(0),
+        "no member and no chance, no draws"
+    );
+}
+
 /// `CanCrit` does not read `Crit.Chance`: a firer's AttachEffect
 /// `Crit.ExtraChance` crits a warhead that leaves the chance unset.
 #[test]
