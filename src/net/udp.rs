@@ -1,11 +1,14 @@
-//! Direct IPv4 LAN socket owner for UDPInterfaceClass (`0x007B30B0`,
-//! `0x007B3450`, `0x007B3AA0`). Reliable queues and endpoint identity stay in
-//! `LanConnections`; this owner queues raw datagram attempts and adds/checks
-//! their four-byte UDP checksum.
+//! The IPv4 socket pair of UDPInterfaceClass (`0x007B30B0`, `0x007B3450`,
+//! `0x007B3AA0`): it queues raw datagram attempts and adds/checks their
+//! four-byte UDP checksum. On LAN they go straight to peers; online they go
+//! through the client relay route (`RelayRoute`: the relay session, its
+//! renewal, Leave retries, the absence release, the ordering inbox and peer
+//! probes). Reliable queues and endpoint identity stay in `LanConnections`,
+//! global messages in `GlobalChannel`.
 //!
 //! Global messages admit unknown sources; private messages require an admitted
-//! peer roster. Router/localhost rewriting, native self-source filtering, spare sockets and
-//! platform socket-buffer tuning remain outside this direct-peer owner.
+//! peer roster. Residual: router/localhost rewriting, native self-source
+//! filtering, spare sockets and platform socket-buffer tuning are not ported.
 
 use std::collections::VecDeque;
 use std::io;

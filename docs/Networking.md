@@ -451,13 +451,14 @@ rollback restores that build's earlier retention and checksums.
 | Packet construction, cumulative counts and peer frame progress | `net::command_exchange` |
 | Shared reliable send queue, retransmission and response-time history | `net::reliable` |
 | Global application message admission, acknowledgements and retirement | `net::global` |
-| UDP sockets, datagram checksum and retained raw send attempts | `net::udp` |
-| Startup agreement, native send cadence and command wait | `net::live_commands` |
+| UDP sockets, datagram checksum, retained raw send attempts and the client relay route (session, renewal, Leave, absence release, ordering inbox) | `net::udp` |
+| Startup agreement, native send cadence and command wait; online, the relay timeline's assembly, its departure records and the checks that end the match | `net::live_commands` |
 | Certified online clock, immutable command history and bounded push/replay delivery | `vera20k-relay-protocol` |
 | Local adaptive playout and bounded catch-up presentation | `app::match_runtime::frame_pacer` |
-| LAN packet layouts and options parsing | `net::lan_messages` |
-| Participant membership, admitted endpoints, launch state and checksum history | `app::match_runtime::session::MatchSession` |
-| Discovery projection and physical LAN lobby/setup service | `app::lan_service` |
+| LAN packet layouts and options-text encoding | `net::lan_messages` |
+| Participant membership, admitted endpoints and launch state | `app::match_runtime::session::MatchSession` |
+| Multiplayer frame-checksum history (`B04474`) and its comparison gate | `sim::command_queue::FrameChecksumState`, held by `app::match_runtime::sim_host::SimHost` |
+| Discovery projection, options parsing and physical LAN lobby/setup service | `app::lan_service` |
 | Online session, lobby and relay-admission adapter | `app::shell_wol::live_service` |
 | Shared map source, generated staging and verified transfer admission | `map::source`, `app::shell_network_setup::maps` |
 | Setup UI, map admission and pending handoff | `app::shell_network_setup` |
@@ -690,7 +691,18 @@ any its host sends, and the lobby refuses them there. A launcher's network game
 `ExpectedRulesDigest` compares, and the start barrier compares again. So the room's
 door, the native rules hash (LAN's join check, online the room's `ex_info`), leaves
 the switches out, while the rules
-digest compares the ones each game plays. When the door
+digest compares the ones each game plays.
+The two checks also read different files, so they can disagree either way. The door
+(`rules::native_ini_hash`, `0x00679D90`/`0x00679ED0`/`0x00679EC0`, compared on LAN at
+`0x005E1711..0x005E174D` and online at `0x0079BB16..0x0079BBAE`) hashes the rules root,
+every mode's INI, CoopCampMD, AIMD and ARTMD whatever mode the room plays, but no
+LANGRULE, theater INI, theater tile or other file of a mod. The digest
+(`ProcessAssets::multiplayer_rules_digest`) covers only the mode played, and adds
+LANGRULE, the theater INIs, the changed tiles, the switches and a mod's other files.
+So a player whose only change is another mode's INI is refused at the join though the
+match would agree, and one whose theater INI or tiles differ is let in and refused at
+the start. This is kept on purpose: the door is gamemd's admission check, which
+released games rely on. When the door
 still refuses a join because the rules files differ, or the digest a start, each game
 says what it changes from the original game, its mod, `config.toml`'s INI roots and
 changed game files, or that it plays the original (`agreement::rules_differ_text`);
@@ -820,8 +832,9 @@ matches to end before rolling back the lobby or relay.
 
 ## Native behavior and deliberate bounds
 
-The following native scheduling/reliability details apply to LAN and legacy routing;
-modern online ordering above is an intentional adaptation.
+The following native scheduling/reliability details apply to LAN and to the native
+reliable messages online play sends through the relay as DATA; the relay-ordered
+command stream above is an intentional adaptation.
 
 - Event packets use the native layouts and persistent compression caches from
   `64B4D0`, `64B660` and `64BDD0`. The packet boundary rejects a semantic event
@@ -922,6 +935,24 @@ and either lets the connection time out or Quits from the wait dialog.
 This loopback example alone does not establish separate-machine or scale coverage.
 Normal players do not need these diagnostic flags. Validation results belong in
 the task's validation records, not the tree.
+
+The `online-live-host` and `online-live-guest` targets play a match in a VERA room on
+the deployed lobby and relay (`VERA20K_LOBBY_URL` names another HTTPS lobby, such as a
+staging one), with the offline test service off. They take the LAN pair's window,
+cursor and output flags and isolated copies, but no `--lan-*` option. The host takes
+`--online-account <host>`, a name that leaves room for `'s_game` in a 24-character
+room name; the guest takes `--online-account <guest> --online-host <host>`. They play
+two players for 7,200 frames, and `--online-frames N` changes the count. More than two
+players (`--online-players N` on every process, one guest process for each further
+account) also needs `--online-simple-input` or `--online-mass-input`.
+`online-live-timeout-host` and `online-live-quit-host` pair with
+`online-live-failure-guest` as their LAN namesakes do. `lan-live-desync-host` with
+`lan-live-desync-guest` expects the desync box once the `lan-fault-proxy` tool between
+them damages a FRAMEINFO checksum past the shared 300-frame prefix. The parser's
+errors give each target's option rules. A launcher's
+match (`vera20k -SPAWN`) on loopback, played directly, through a local relay or with
+browser players, runs from `tools/spawn/run.sh direct|relay|browser`
+([its README](../tools/spawn/README.md)).
 
 The `lan-battle-host` and `lan-battle-guest` targets use the same isolated setup
 and endpoints. Both select Americans through setup, deploy their AMCV (host D

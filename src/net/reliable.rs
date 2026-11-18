@@ -1,4 +1,5 @@
-//! Shared byte delivery for direct protocol-2 LAN connections.
+//! Shared byte delivery for protocol-2 connections, direct on LAN and relayed
+//! online.
 //!
 //! The active UDP interface still uses ConnectionClass (`0x0048BF40` through
 //! `0x0048C5A0`) and IPXManagerClass's private peer ordering (`0x005414C0`,
