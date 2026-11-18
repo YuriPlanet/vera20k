@@ -4,7 +4,7 @@
 use super::chrome::*;
 use super::controls::{
     ControlPaint, dropdown_scroll_part, house_color_tint, list_controls, paint_control,
-    push_new_edit, push_popup_instances,
+    push_new_edit, push_popup_instances, team_caption_tint,
 };
 use super::in_game_shell::{
     self, InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
@@ -336,7 +336,7 @@ pub(crate) fn render_multiplayer_setup(
                     crate::ui::skirmish_shell::combo_text_rect(layout.combos[row][0], scale)
                 },
                 ShellAlign::V_CENTER,
-                label_rgb,
+                team_caption_tint(state.rules(), &header.member_colors).unwrap_or(label_rgb),
                 SHELL_CONTROL_TEXT_DEPTH,
                 roster_size,
             ));

@@ -138,15 +138,12 @@ pub(crate) struct RoomListing {
     roster_scroll: (usize, usize),
 }
 impl RoomListing {
-    /// The row on the page at `visible`: in VERA's room, the entry its
-    /// roster shows there.
-    fn shown(&self, visible: usize) -> Option<Listed> {
+    /// Index in the full listing, including for a team's pinned header.
+    fn shown_index(&self, visible: usize) -> Option<usize> {
         if self.roster_scroll.0 > 0 {
-            self.places
-                .get(visible)
-                .and_then(|place| self.row_at(place.item))
+            self.places.get(visible).map(|place| place.item)
         } else {
-            self.row_at(self.first_row + visible)
+            Some(self.first_row + visible)
         }
     }
     fn row_at(&self, position: usize) -> Option<Listed> {
@@ -308,7 +305,6 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     // With Teams Off a room with teams is free-for-all and nobody is on a
     // team, so, as in a clan room, it has no Team lists.
     let no_team_lists = clan_room || grouped && teams.is_none();
-    let shown = |visible: usize| listing.shown(visible);
     // The local player's Join and Watch on the headers: a seated player
     // joins another team, a guest watching takes a free seat on any, or
     // with none free joins the queue for the next.
@@ -336,7 +332,10 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let mut row_icons = std::array::from_fn(|_| None);
     let mut headers = std::array::from_fn(|_| None);
     for visible_row in 0..rows {
-        let row = match shown(visible_row) {
+        let Some(index) = listing.shown_index(visible_row) else {
+            break;
+        };
+        let row = match listing.row_at(index) {
             None => break,
             Some(Listed::Blank) => continue,
             Some(Listed::Row(row)) => row,
@@ -381,8 +380,26 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                         },
                     ),
                 };
+                // Team members follow their header in the full listing; the
+                // visible page may begin or end halfway through them.
+                let member_colors = if matches!(group, SetupGroup::Team(_)) {
+                    listing
+                        .listed
+                        .iter()
+                        .skip(index + 1)
+                        .take(count)
+                        .filter_map(|item| {
+                            let Listed::Row(row) = *item else { return None };
+                            let slot = session.network_row_choices(row)?;
+                            (!slot.color_random).then_some(slot.color_index)
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
                 headers[visible_row] = Some(SetupHeader {
                     group,
+                    member_colors,
                     caption,
                     join_enabled: button.as_ref().is_some_and(|(_, enabled)| *enabled) && !starting,
                     join: button.map(|(label, _)| label),
@@ -833,7 +850,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     // 7A0E50 from 5EA3E0: rows without a node show no ping image.
     let ping_icons = std::array::from_fn(|position| {
         (dialog.wol() && position < rows).then_some(())?;
-        let Listed::Row(row) = shown(position)? else {
+        let Listed::Row(row) = listing.row_at(listing.shown_index(position)?)? else {
             return None;
         };
         let human = launch

@@ -2880,13 +2880,13 @@ impl WolCapture {
                         );
                     }
                     let picks = [
-                        ("Natasha", 1),
-                        ("Boris", 0),
-                        ("Ivan", 1),
-                        ("Sofia", 0),
-                        ("Lena", 1),
+                        ("Natasha", 1, None),
+                        ("Boris", 0, Some(2)),
+                        ("Ivan", 1, Some(1)),
+                        ("Sofia", 0, None),
+                        ("Lena", 1, None),
                     ];
-                    for (name, team) in picks {
+                    for (name, team, color) in picks {
                         let human = state
                             .match_state
                             .session
@@ -2897,6 +2897,10 @@ impl WolCapture {
                             .context("a guest")?;
                         let mut slot = human.slot.clone();
                         slot.team = crate::skirmish_launch::LaunchTeam::Team(team);
+                        if let Some(color) = color {
+                            slot.color_random = false;
+                            slot.color_index = color;
+                        }
                         crate::app::shell_wol::service_event(
                             state,
                             WolServiceEvent::PlayerChoices {
@@ -3047,6 +3051,17 @@ impl WolCapture {
                         host(state)
                     );
                     self.event(frame, json!({"Host": "watches, plays and watches again"}));
+                    // The watching host's orange and the random seats no
+                    // longer vote. Boris supplies A's blue, Ivan B's red.
+                    let view = setup_view(state)?;
+                    for (team, color) in [(0, 2), (1, 1)] {
+                        ensure!(
+                            view.headers.iter().flatten().any(|header| header.group
+                                == crate::ui::multiplayer_setup::SetupGroup::Team(team)
+                                && header.member_colors == [color]),
+                            "the team caption did not follow its seated players' colours"
+                        );
+                    }
                 }
                 MoviesCapture::restore_neutral_pointer(state);
                 crate::app::input::multiplayer_setup::cursor_moved(state);
