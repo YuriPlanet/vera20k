@@ -74,9 +74,16 @@ the stock one.
   existing sample count, which has not been compared against that bound.
 - After the scan, the same hook runs the spawner's position search (`:239-252`):
   a null result with `SpawnManager`, the Foot bit and `!IsInAir()` moves the
-  firer's `Location` to the source coordinate, asks `0x703B10` (an elevated bridge
-  nearby) and turns a true answer into the source cell as the obstacle. Neither
-  `0x703B10` nor that substitution is ported.
+  firer's `Location` to the source coordinate, asks `0x703B10`
+  (`TechnoClass::IsOnBridge_ForFiring`) and turns a `true` answer into the
+  source cell as the obstacle. **Ported**: `in_range::phobos_spawner_obstacle`
+  gates on VERA's own `spawn_manager` state, the Foot category bit and
+  [`entity_layer`]'s AIR answer, then asks
+  `in_range::is_on_bridge_for_firing_at` at the shot's *source* coordinate —
+  the native predicate is coordinate-based because `OnBridge` (`+0x8C`) does
+  not follow `Location`, so no entity is mutated. The two cheap gates run
+  before any cell read, so an ordinary shooter adds no lookups to the traced
+  query order.
 - The bullet's own flight arm (`0x468C86` `BulletClass_ShouldExplode_Obstacles`,
   `:130-160`) calls `GetObstacle` with `isTargetingCheck = false`, where
   `.Detonate` decides between exploding and flying on. **Ported for the two
@@ -110,6 +117,10 @@ the stock one.
   `SubjectToLand=yes, SubjectToLand.Detonate=no` shot flies through a land cell
   on the flight arm (`isTargetingCheck = false`), still blocks on the range
   arm, and the unset companion defaults to detonating.
+- `src/sim/combat/in_range.rs` —
+  `only_a_spawner_foot_asks_the_source_coordinate_for_a_bridge`: the carrier
+  arm holds only with a `SpawnManager`, the Foot bit and no AIR layer, and it
+  probes the shot's source cell — a span one cell away does not answer.
 - `src/util/flh_transform.rs` — `phobos_source_tests`: an axis-aligned target
   leaves the raw translate (Y negated), `Burst > 1` centres the lateral term,
   a +Y target turns the forward term, and the turret pivot rides the predicted

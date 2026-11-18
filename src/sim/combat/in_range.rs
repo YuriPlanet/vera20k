@@ -827,7 +827,7 @@ fn line_of_fire_clear(
     );
     #[cfg(not(feature = "phobos"))]
     let phobos = None;
-    line_of_fire::line_of_fire_blocking_cell(
+    let blocked = line_of_fire::line_of_fire_blocking_cell(
         src,
         target_xyz,
         weapon,
@@ -847,7 +847,69 @@ fn line_of_fire_clear(
         los,
         phobos,
     )
-    .is_none()
+    .is_some();
+    // Phobos's last arm (`Ext/Bullet/Hooks.Obstacles.cpp:239-252`) runs only
+    // when the scan found nothing: an aircraft carrier asking for a launch
+    // position blocks on its own source cell when that coordinate sits on,
+    // beside or under an elevated bridge (`0x703B10`).
+    #[cfg(feature = "phobos")]
+    let blocked = blocked || phobos_spawner_obstacle(attacker, src, rules, interner, cells);
+    !blocked
+}
+
+/// Phobos `TechnoClass_InRange_Obstacles`'s carrier arm
+/// (`Ext/Bullet/Hooks.Obstacles.cpp:239-252`): with no obstacle from the scan,
+/// a firer that owns a `SpawnManager`, is a Foot and is not `IsInAir()` is
+/// parked on the shot's source coordinate, asked `0x703B10`
+/// ([`is_on_bridge_for_firing_at`]) and — on a `true` answer — refused through
+/// its own source cell. Native mutates and restores `Location`, so the probe is
+/// coordinate-based here instead.
+#[cfg(feature = "phobos")]
+fn phobos_spawner_obstacle(
+    attacker: &GameEntity,
+    src: (i64, i64, i64),
+    rules: &RuleSet,
+    interner: &StringInterner,
+    cells: &NativeCellQuery<'_>,
+) -> bool {
+    // The two cheap gates come first: `entity_layer` and the bridge probe both
+    // read cells, and this arm must stay inert for ordinary shooters.
+    if attacker.spawn_manager.is_none() || !attacker.category().is_foot() {
+        return false;
+    }
+    let in_air =
+        crate::sim::world::entity_layer(attacker, Some(cells.terrain()), Some((rules, interner)))
+            == crate::sim::world::display_layers::DisplayLayer::AIR;
+    phobos_spawner_obstacle_at(
+        true,
+        true,
+        in_air,
+        attacker.on_bridge(),
+        src,
+        cells.terrain(),
+    )
+}
+
+/// The gate set and coordinate probe of the carrier arm, without the entity.
+#[cfg(feature = "phobos")]
+pub(crate) fn phobos_spawner_obstacle_at(
+    has_spawn_manager: bool,
+    foot: bool,
+    in_air: bool,
+    on_bridge: bool,
+    src: (i64, i64, i64),
+    terrain: &ResolvedTerrainGrid,
+) -> bool {
+    if !has_spawn_manager || !foot || in_air {
+        return false;
+    }
+    // `CoordsToCell` truncation, as `IsOnBridge_ForFiring`'s own lookup.
+    let rx = u16::try_from((src.0 / 256) as i64).ok();
+    let ry = u16::try_from((src.1 / 256) as i64).ok();
+    let (Some(rx), Some(ry)) = (rx, ry) else {
+        return false;
+    };
+    is_on_bridge_for_firing_at(on_bridge, rx, ry, terrain)
 }
 
 /// Phobos `TechnoClass_InRange_Obstacles`'s ground arm
@@ -1190,10 +1252,29 @@ pub(crate) fn fire_source_for_target(
 /// ([`crate::map::bridge_facts::near_bridge`], shared with the render depth
 /// fudge). A missing cell (off the map) answers nothing.
 pub(crate) fn is_on_bridge_for_firing(entity: &GameEntity, terrain: &ResolvedTerrainGrid) -> bool {
-    if entity.on_bridge() {
+    is_on_bridge_for_firing_at(
+        entity.on_bridge(),
+        entity.position.rx(),
+        entity.position.ry(),
+        terrain,
+    )
+}
+
+/// The same `0x00703B10` verdict for a coordinate that is not the object's
+/// own. Phobos borrows it that way
+/// (`Ext/Bullet/Hooks.Obstacles.cpp:239-252`): it parks `pTechno->Location` on
+/// the shot's source coordinate, asks the native predicate, and restores the
+/// location. The `OnBridge` bit (`+0x8C`) is a field, not a function of
+/// `Location`, so only the cell reads move.
+pub(crate) fn is_on_bridge_for_firing_at(
+    on_bridge: bool,
+    rx: u16,
+    ry: u16,
+    terrain: &ResolvedTerrainGrid,
+) -> bool {
+    if on_bridge {
         return false;
     }
-    let (rx, ry) = (entity.position.rx(), entity.position.ry());
     let flags = |dx: i32, dy: i32| {
         let x = u16::try_from(i32::from(rx) + dx).ok()?;
         let y = u16::try_from(i32::from(ry) + dy).ok()?;
@@ -2891,6 +2972,76 @@ mod tests {
             ),
             "ground target below the deck top is reachable"
         );
+    }
+
+    /// Phobos's carrier arm (`Ext/Bullet/Hooks.Obstacles.cpp:239-252`): all
+    /// three entity gates must hold, and then the shot's source coordinate —
+    /// not the carrier's own position — is put through `0x703B10`.
+    #[test]
+    fn only_a_spawner_foot_asks_the_source_coordinate_for_a_bridge() {
+        use crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
+        let with = |flags: Option<((u16, u16), u32)>| {
+            let mut terrain = flat_terrain(16, 16);
+            if let Some(((rx, ry), flags)) = flags {
+                terrain.cells_mut_for_test()[ry as usize * 16 + rx as usize]
+                    .bridge_facts
+                    .raw_flags = flags;
+            }
+            terrain
+        };
+        let span_at_source = with(Some(((4, 4), BRIDGE_FLAG_STRUCTURAL)));
+        let source = (4 * 256 + 128, 4 * 256 + 128, 0);
+        assert!(phobos_spawner_obstacle_at(
+            true,
+            true,
+            false,
+            false,
+            source,
+            &span_at_source
+        ));
+        // Native's movement test reads the carrier's own `Location`, so a
+        // bridge elsewhere does not help.
+        assert!(!phobos_spawner_obstacle_at(
+            true,
+            true,
+            false,
+            false,
+            source,
+            &with(Some(((4, 5), BRIDGE_FLAG_STRUCTURAL)))
+        ));
+        assert!(!phobos_spawner_obstacle_at(
+            false,
+            true,
+            false,
+            false,
+            source,
+            &span_at_source
+        ));
+        assert!(!phobos_spawner_obstacle_at(
+            true,
+            false,
+            false,
+            false,
+            source,
+            &span_at_source
+        ));
+        assert!(!phobos_spawner_obstacle_at(
+            true,
+            true,
+            true,
+            false,
+            source,
+            &span_at_source
+        ));
+        // `IsOnBridge_ForFiring` exempts an object that is already on a deck.
+        assert!(!phobos_spawner_obstacle_at(
+            true,
+            true,
+            false,
+            true,
+            source,
+            &span_at_source
+        ));
     }
 
     /// `IsOnBridge_ForFiring @ 0x00703B10` over its five cells: the own cell
