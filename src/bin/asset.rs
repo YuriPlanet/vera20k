@@ -225,6 +225,12 @@ fn run(cli: Cli) -> Result<(), RunError> {
             println!("{}", to_json(&report));
         }
 
+        Verb::ExportPicture { name } => {
+            let report =
+                vera20k::asset_tools::verb_export_picture::run(&manager, &name, &cli.render)?;
+            println!("{}", to_json(&report));
+        }
+
         Verb::CsfGet { key } => {
             let report = verb_csf::get(&manager, &key, &cli.csf)?;
             println!("{}", to_json(&report));

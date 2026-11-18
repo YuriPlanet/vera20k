@@ -201,6 +201,29 @@ impl PictureHeader {
     }
 }
 
+/// Encode `frames`, each `width * height * 4` straight RGBA bytes, as a PNG
+/// (one frame) or an APNG of whole-canvas frames that replace the canvas.
+pub fn encode_frames(
+    width: u32,
+    height: u32,
+    frames: &[Vec<u8>],
+) -> Result<Vec<u8>, png::EncodingError> {
+    let mut bytes = Vec::new();
+    let mut encoder = png::Encoder::new(&mut bytes, width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    if frames.len() > 1 {
+        let count = u32::try_from(frames.len()).unwrap_or(u32::MAX);
+        encoder.set_animated(count, 0)?;
+    }
+    let mut writer = encoder.write_header()?;
+    for frame in frames {
+        writer.write_image_data(frame)?;
+    }
+    writer.finish()?;
+    Ok(bytes)
+}
+
 /// An RGBA PNG of `width` x `height`, with `frames` APNG frames when some,
 /// for tests of picture readers.
 #[cfg(test)]

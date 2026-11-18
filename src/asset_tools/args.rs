@@ -32,6 +32,7 @@ pub enum Verb {
     PaletteFor { name: String },
     Archives,
     Extract { name: String },
+    ExportPicture { name: String },
     CsfGet { key: String },
     CsfGrep { text: String },
     Sound { name: String },
@@ -111,6 +112,8 @@ VERBS
   palette-for <NAME>   Which palette applies, and the full reasoning chain.
   archives             Every mounted archive, with lookup reachability marked.
   extract <NAME>       Write an asset's raw bytes to disk.
+  export-picture <NAME>  Write an SHP as picture art (APNG and mask) for
+                       Picture= (docs/picture-model-art.md). --palette, --out.
   csf-get <KEY>        One string-table entry, with its normalisation flagged.
   csf-grep <TEXT>      Search keys and values of the string table.
   sound <NAME>         One audio-bag entry; --wav decodes it.
@@ -337,6 +340,9 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
         "archives" => Verb::Archives,
         "extract" => Verb::Extract {
             name: require_target(target, "extract", "<NAME>")?,
+        },
+        "export-picture" => Verb::ExportPicture {
+            name: require_target(target, "export-picture", "<NAME>")?,
         },
         "csf-get" => Verb::CsfGet {
             key: require_target(target, "csf-get", "<KEY>")?,
@@ -676,6 +682,7 @@ fn flag_not_valid(flag: &str, verb: &Verb) -> String {
         Verb::PaletteFor { .. } => "palette-for",
         Verb::Archives => "archives",
         Verb::Extract { .. } => "extract",
+        Verb::ExportPicture { .. } => "export-picture",
         Verb::CsfGet { .. } => "csf-get",
         Verb::CsfGrep { .. } => "csf-grep",
         Verb::Sound { .. } => "sound",
