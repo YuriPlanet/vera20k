@@ -505,11 +505,13 @@ each AI there starts in its own House beside them, its units on the cells nearby
 Turning Teams Off, or picking a map or mode with fewer seats, makes the people past the
 seats watch rather than leave the room, and the AI there leave. Nothing new travels: the
 host's options carry each player's row and start as before, and a room of mixed versions
-cannot start. Online the lobby checks the map's starts against the bases the room needs
-([lobby protocol](lobby-protocol.md)). A lobby from before that refuses the host's options
-once more people play than the map has seats; the host's game then turns Teams Off, says
-so and sends its options again, and the people past the seats watch. A rollback seats no
-more players than the map has starts.
+cannot start. Online the lobby checks the map's starts against the bases the room needs,
+and the host's game checks the same count before it publishes and says the map is too
+small ([lobby protocol](lobby-protocol.md)). A lobby rolled back past this is from before
+Watching as well, and refuses the host's options once more people and AI play than the
+map has seats; the host's game then drops the Superweapon Limit, the host rules and the
+queue, then Teams, one at a time and saying so each time, after which the people past the
+seats watch. A rollback of the game seats no more players than the map has starts.
 
 AI play in a VERA room while people watch, unlike in gamemd's room (`0x5EC9F0`'s
 TXT_NO_AI_WITH_OBSERVER, and WOL's TXT_NO_AI_OBSERVATION at Start Game): the host keeps

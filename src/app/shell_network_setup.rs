@@ -782,7 +782,6 @@ pub(crate) fn install_watch_setup(
     Ok(())
 }
 
-/// The setup dialog the admitted session shows: GameMode4 is WOL C2/C9.
 /// A white (0xFFFFFFFF) CSF line in the setup chat log: Start refusals and
 /// WOL chat notices.
 fn chat_notice(state: &mut AppState, key: &str, args: &[crate::assets::csf_file::CsfArg]) {
@@ -796,6 +795,7 @@ fn chat_notice(state: &mut AppState, key: &str, args: &[crate::assets::csf_file:
     );
 }
 
+/// The setup dialog the admitted session shows: GameMode4 is WOL C2/C9.
 pub(crate) fn dialog(state: &AppState) -> SetupDialog {
     let flavor = if state.match_state.session_mode() == SessionMode::Wol {
         SetupFlavor::Wol
