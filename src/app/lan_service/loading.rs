@@ -63,31 +63,24 @@ impl<'a> LoadingNetworkService<'a> {
         };
         service.drain_loading_reports(self.session)?;
         let now = loading_bucket();
-        #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
-        {
-            self.pump(rows, now)?;
-            self.service
-                .as_deref_mut()
-                .unwrap()
-                .defer_loading_drain(now);
-            return Ok(());
-        }
+        self.pump(rows, now)?;
+        self.service
+            .as_deref_mut()
+            .unwrap()
+            .defer_loading_drain(now);
+        // The browser cannot block its event loop: the loading pump calls
+        // `resume` on later turns in place of these 20 ms waits (69B05E).
         #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
+        while !self
+            .service
+            .as_deref_mut()
+            .unwrap()
+            .finish_loading_drain(loading_bucket())
         {
-            let drain = crate::sim::timer::CdTimer::started(now as i32, 240);
-            loop {
-                self.pump(rows, loading_bucket())?;
-                if self.service.as_deref().unwrap().queued_setup_count() <= 5
-                    || drain.expired(loading_bucket() as i32)
-                {
-                    break;
-                }
-                //69B015..69B079 services ACK/retry traffic while the existing
-                //global queue exceeds5, bounded by240 wall buckets with20ms waits.
-                std::thread::sleep(std::time::Duration::from_millis(20));
-            }
-            Ok(())
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            self.pump(rows, loading_bucket())?;
         }
+        Ok(())
     }
 
     /// Resume the same bounded ACK wait after the browser has delivered events.
@@ -269,22 +262,19 @@ fn progress_packets(
 }
 
 impl LanService {
-    #[cfg(any(
-        test,
-        all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")
-    ))]
+    /// LoadingCallback 0x0069AE90 waits for ACKs when its pump leaves more
+    /// than five messages queued (69B015..69B027), for at most 240 wall
+    /// buckets from the timer it starts before reporting (69AF21,
+    /// 69B033..69B058). Only the browser reaches a later callback during a
+    /// wait; that callback keeps the first deadline.
     fn defer_loading_drain(&mut self, now: u32) {
         if self.queued_setup_count() > 5 && self.loading_drain.is_none() {
-            // LoadingCallback69AE90's 240-bucket bound; only the wait scheduling
-            // changes on the browser, not the reliable queue or its retry timers.
             self.loading_drain = Some(crate::sim::timer::CdTimer::started(now as i32, 240));
         }
     }
 
-    #[cfg(any(
-        test,
-        all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")
-    ))]
+    /// The wait's test after each later pump (69B062..69B079): it ends once
+    /// five or fewer messages are queued or the deadline has passed.
     fn finish_loading_drain(&mut self, now: u32) -> bool {
         if self
             .loading_drain
