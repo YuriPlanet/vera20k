@@ -204,10 +204,12 @@ pub(crate) enum WolServiceRequest {
         matchbot: String,
         request: super::quick_match::MatchRequest,
     },
-    /// VERA's chat translation of a received line into the chosen language;
-    /// [`super::translation`] shows the reply.
+    /// VERA's chat translation of a received line into `target`, the
+    /// language chosen when it arrived; [`super::translation`] shows the
+    /// reply.
     Translate {
         text: Vec<u16>,
+        target: crate::ui::chat_translation::ChatLanguage,
         line: super::translation::TranslatedLine,
     },
     /// VERA online: the running matches the player can watch, asked with
@@ -329,6 +331,8 @@ pub(crate) enum WolServiceEvent {
     VisitMessage {
         from: WolMember,
         text: Vec<u16>,
+        /// As for [`Self::Message`].
+        localized: bool,
         private: bool,
         action: bool,
         sent_at: Option<u64>,
@@ -397,6 +401,9 @@ pub(crate) enum WolServiceEvent {
     Message {
         from: WolMember,
         text: Vec<u16>,
+        /// VERA: the lobby's own line, `text` from its phrases in the
+        /// interface language.
+        localized: bool,
         private: bool,
         action: bool,
         ansi: bool,
@@ -988,6 +995,7 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
         WolServiceEvent::Message {
             from,
             text,
+            localized,
             private,
             action,
             ansi,
@@ -999,6 +1007,7 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                 super::lobby::ReceivedMessage {
                     from,
                     text,
+                    localized,
                     private,
                     action,
                     ansi,
@@ -1012,6 +1021,7 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
         WolServiceEvent::VisitMessage {
             from,
             text,
+            localized,
             private,
             action,
             sent_at,
@@ -1021,6 +1031,7 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                 super::lobby::ReceivedMessage {
                     from,
                     text,
+                    localized,
                     private,
                     action,
                     ansi: false,
