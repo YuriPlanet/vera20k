@@ -1,19 +1,25 @@
 use super::*;
 
 pub(super) fn client(key: &SecretKey, source: u8) -> ClientSession {
-    let ticket = Ticket {
-        room: [5; 16],
-        source,
-        expires: 1200,
-        nonce: [source + 1; 16],
-        player: [source + 1; 16],
-        generation: 1,
-    }
-    .sign(key)
-    .unwrap();
+    client_for(
+        key,
+        Ticket {
+            room: [5; 16],
+            source,
+            expires: 1200,
+            nonce: [source + 1; 16],
+            player: [source + 1; 16],
+            generation: 1,
+        },
+    )
+}
+
+/// A session on `ticket`, signed by the relay's `key`.
+fn client_for(key: &SecretKey, ticket: Ticket) -> ClientSession {
+    let signed = ticket.sign(key).unwrap();
     ClientSession::new(
-        &ticket,
-        *derive_packet_key(key, &ticket).expose_for_https(),
+        &signed,
+        *derive_packet_key(key, &signed).expose_for_https(),
         [89; 32],
     )
     .unwrap()
@@ -1973,20 +1979,15 @@ fn cancelled_start_reclaims_the_empty_archive_without_reopening_stale_tickets() 
     let directory = TestDirectory::new();
     let key = SecretKey::new([73; 32]);
     let mut server = RelayServer::with_journal(key.clone(), 16, &directory.0).unwrap();
-    // Nine quick cancellations each free their archive reservation
-    // without waiting for any tombstone's short-ticket grace to elapse.
-    for attempt in 1..=9 {
+    // Each cancellation frees its archive reservation at once, without
+    // waiting for its tombstone's short-ticket grace to elapse. The first
+    // loses its Ready; the second is a plain cancellation.
+    for attempt in 1..=2 {
         let now_ms = u64::from(attempt) * 1000;
         let mut ticket = client(&key, 0).ticket;
         ticket.room = [attempt; 16];
         ticket.generation = u64::from(attempt);
-        let signed = ticket.sign(&key).unwrap();
-        let mut participant = ClientSession::new(
-            &signed,
-            *derive_packet_key(&key, &signed).expose_for_https(),
-            [89; 32],
-        )
-        .unwrap();
+        let mut participant = client_for(&key, ticket);
         connect(&mut server, &mut participant, now_ms);
         let cert = OrderingCertificate {
             room: ticket.room,
@@ -2007,13 +2008,7 @@ fn cancelled_start_reclaims_the_empty_archive_without_reopening_stale_tickets() 
                 .unwrap();
             let mut peer_ticket = client(&key, 1).ticket;
             peer_ticket.room = ticket.room;
-            let signed = peer_ticket.sign(&key).unwrap();
-            let mut peer = ClientSession::new(
-                &signed,
-                *derive_packet_key(&key, &signed).expose_for_https(),
-                [89; 32],
-            )
-            .unwrap();
+            let mut peer = client_for(&key, peer_ticket);
             connect(&mut server, &mut peer, now_ms);
             let ready = configure(&mut server, &mut peer, &cert, now_ms);
             assert!(
@@ -2054,41 +2049,32 @@ fn cancelled_start_reclaims_the_empty_archive_without_reopening_stale_tickets() 
     }
     assert_eq!(
         server.room_count(),
-        9,
+        2,
         "inactive tombstones retain their grace"
     );
+}
+
+#[test]
+fn a_newer_admission_cancels_the_unstarted_room_whose_leave_was_lost() {
+    let directory = TestDirectory::new();
+    let key = SecretKey::new([73; 32]);
+    let mut server = RelayServer::with_journal(key.clone(), 2, &directory.0).unwrap();
     // An HTTP cancellation can lose its final UDP Leave. A newer admission
-    // of the same player cancels the unstarted room until the loading
+    // of the same player cancels the unstarted room before the loading
     // timeout starts it without the peer that never arrived.
-    let mut ticket = client(&key, 0).ticket;
-    ticket.room = [10; 16];
-    ticket.generation = 10;
-    let signed = ticket.sign(&key).unwrap();
-    let mut abandoned = ClientSession::new(
-        &signed,
-        *derive_packet_key(&key, &signed).expose_for_https(),
-        [89; 32],
-    )
-    .unwrap();
-    connect(&mut server, &mut abandoned, 10_000);
-    let mut cert = OrderingCertificate::parse(&certificate(&key, 3, 2000)).unwrap();
-    cert.room = ticket.room;
-    let abandoned_cert = cert.sign(&key).unwrap();
-    configure(&mut server, &mut abandoned, &abandoned_cert, 10_000);
-    let abandoned_path = directory.0.join("0a".repeat(16));
-    let superseded = 10_000 + LOADING_SILENCE_MS - 1;
+    let mut abandoned = client(&key, 0);
+    connect(&mut server, &mut abandoned, 0);
+    let abandoned_cert = certificate(&key, 3, 2000);
+    configure(&mut server, &mut abandoned, &abandoned_cert, 0);
+    let abandoned_path = directory.0.join("05".repeat(16));
+    let superseded = LOADING_SILENCE_MS - 1;
     server.advance_clock(superseded, unix(superseded));
     assert!(abandoned_path.exists());
-    ticket.room = [11; 16];
-    ticket.generation = 11;
+    let mut ticket = abandoned.ticket;
+    ticket.room = [6; 16];
+    ticket.generation = 2;
     ticket.expires = unix(superseded) + 200;
-    let signed = ticket.sign(&key).unwrap();
-    let mut next = ClientSession::new(
-        &signed,
-        *derive_packet_key(&key, &signed).expose_for_https(),
-        [89; 32],
-    )
-    .unwrap();
+    let mut next = client_for(&key, ticket);
     connect(&mut server, &mut next, superseded);
     assert!(
         !abandoned_path.exists(),
@@ -2105,6 +2091,7 @@ fn cancelled_start_reclaims_the_empty_archive_without_reopening_stale_tickets() 
         Err(RelayError::Unregistered)
     ));
     assert!(!abandoned_path.exists());
+    let mut cert = OrderingCertificate::parse(&abandoned_cert).unwrap();
     cert.room = ticket.room;
     assert!(
         configure(
@@ -2763,22 +2750,17 @@ fn flooding_matches_cannot_take_the_ordering_output_another_match_steadily_uses(
         .sign(&key)
         .unwrap();
         for source in 0..sources {
-            let ticket = Ticket {
-                room: [room; 16],
-                source,
-                expires: 1200,
-                nonce: [room; 16],
-                player: [room * 16 + source; 16],
-                generation: 1,
-            }
-            .sign(&key)
-            .unwrap();
-            let mut player = ClientSession::new(
-                &ticket,
-                *derive_packet_key(&key, &ticket).expose_for_https(),
-                [89; 32],
-            )
-            .unwrap();
+            let mut player = client_for(
+                &key,
+                Ticket {
+                    room: [room; 16],
+                    source,
+                    expires: 1200,
+                    nonce: [room; 16],
+                    player: [room * 16 + source; 16],
+                    generation: 1,
+                },
+            );
             connect(&mut server, &mut player, 0);
             if room < 4 {
                 configure(&mut server, &mut player, &cert, 0);
@@ -2846,13 +2828,7 @@ fn newer_admission_departs_the_player_from_an_older_started_match() {
     let mut ticket = first.ticket;
     ticket.room = [6; 16];
     ticket.generation = 2;
-    let signed = ticket.sign(&key).unwrap();
-    let mut next = ClientSession::new(
-        &signed,
-        *derive_packet_key(&key, &signed).expose_for_https(),
-        [89; 32],
-    )
-    .unwrap();
+    let mut next = client_for(&key, ticket);
     connect(&mut server, &mut next, 300);
     server.advance_clock(400, unix(400));
     let departed: Vec<_> = pull(&mut server, &mut second, 1, 400)
@@ -2866,17 +2842,10 @@ fn newer_admission_departs_the_player_from_an_older_started_match() {
 }
 
 #[test]
-fn archive_authentication_tamper_and_storage_failure_preserve_the_committed_stream() {
-    let directory = TestDirectory::new();
+fn ready_refuses_a_source_outside_the_certificate_and_a_forged_certificate() {
     let key = SecretKey::new([73; 32]);
-    let mut server = RelayServer::with_journal(key.clone(), 2, &directory.0).unwrap();
-    let (mut first, mut second) = (client(&key, 0), client(&key, 1));
-    for client in [&mut first, &mut second] {
-        connect(&mut server, client, 0);
-    }
+    let mut server = RelayServer::new(key.clone(), 2);
     let cert = certificate(&key, 3, 1300);
-    let mut forged = cert.clone();
-    forged[34] ^= 1;
     let mut bytes = Vec::new();
     // A registered source outside the signed manifest cannot join the
     // ready quorum even with a legitimate hop ticket for this room.
@@ -2886,6 +2855,10 @@ fn archive_authentication_tamper_and_storage_failure_preserve_the_committed_stre
         outsider.configure_ordering(&cert, [7; 32], &mut bytes),
         Err(RelayError::Authentication)
     ));
+    let mut first = client(&key, 0);
+    connect(&mut server, &mut first, 0);
+    let mut forged = cert.clone();
+    forged[34] ^= 1;
     first
         .configure_ordering(&forged, [7; 32], &mut bytes)
         .unwrap();
@@ -2901,9 +2874,15 @@ fn archive_authentication_tamper_and_storage_failure_preserve_the_committed_stre
         .sign(&key)
         .is_err()
     );
-    first.ordering = None;
-    configure(&mut server, &mut first, &cert, 0);
-    configure(&mut server, &mut second, &cert, 0);
+}
+
+#[test]
+fn archive_restart_and_storage_failure_preserve_the_committed_stream() {
+    let directory = TestDirectory::new();
+    let (mut server, mut first, mut second) = started_journal_room(&directory);
+    let key = server.key.clone();
+    let cert = certificate(&key, 3, 1300);
+    let mut bytes = Vec::new();
     first
         .test_submit(1, b"authenticated plaintext", &mut bytes)
         .unwrap();
@@ -3310,13 +3289,7 @@ fn a_leave_before_any_ready_keeps_the_start_closed_once_its_room_is_gone() {
     // The other player arrives later on a renewed ticket.
     let mut ticket = client(&key, 1).ticket;
     ticket.expires = unix(expired) + 200;
-    let signed = ticket.sign(&key).unwrap();
-    let mut late = ClientSession::new(
-        &signed,
-        *derive_packet_key(&key, &signed).expose_for_https(),
-        [89; 32],
-    )
-    .unwrap();
+    let mut late = client_for(&key, ticket);
     connect(&mut server, &mut late, expired);
     assert!(matches!(
         configure(&mut server, &mut late, &cert, expired).as_slice(),
@@ -3346,18 +3319,17 @@ fn a_late_returner_cannot_restart_a_cleaned_up_match_under_its_id() {
     server.advance_clock(cleaned, unix(cleaned));
     assert!(!directory.0.join("05".repeat(16)).exists());
     // The first player returns with a fresh ticket and its certificate.
-    let ticket = Ticket {
-        room: [5; 16],
-        source: 0,
-        expires: unix(cleaned) + 200,
-        nonce: [9; 16],
-        player: [1; 16],
-        generation: 1,
-    }
-    .sign(&key)
-    .unwrap();
-    let packet_key = *derive_packet_key(&key, &ticket).expose_for_https();
-    let mut returner = ClientSession::new(&ticket, packet_key, [89; 32]).unwrap();
+    let mut returner = client_for(
+        &key,
+        Ticket {
+            room: [5; 16],
+            source: 0,
+            expires: unix(cleaned) + 200,
+            nonce: [9; 16],
+            player: [1; 16],
+            generation: 1,
+        },
+    );
     connect(&mut server, &mut returner, cleaned);
     assert!(matches!(
         configure(&mut server, &mut returner, &cert, cleaned).as_slice(),
