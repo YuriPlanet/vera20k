@@ -914,6 +914,24 @@ They require isolated mutable copies of the retail game directory, each with a
 followed by a newline. Set each process's `RA2_DIR` to its own copy and keep its
 own `config.toml`.
 
+The single-process `lan-*` targets (listed in
+`src/app/diagnostics/shell_capture/movies/lan.rs`) enter Main Menu Network and the
+real BB/BC/BD handlers; declared service events stand in for the remote side:
+discovery, admission, host options, readiness, map reports and completion. They
+write LAN and MultiPlayer preferences, so give them an isolated `RA2_DIR` and a
+`[paths] settings_dir` outside it, never a player's profile. The WOL persona
+targets (`wolinfoMD.ini`) and `lan-guest-random-map` (the received `RandMap.Sed`
+and `RandMap.img`) write into that settings directory only when it holds the same
+marker. `lan-transfer-loading-first` writes the original `XMP29U2.MAP` as
+`CONTROLLED.MAP` into the marked game copy and checks the production parser's
+name, length and SHA-256; it refuses an existing file and removes only the
+unchanged file it created. The `lan-*-loading-first` targets stop at the network
+loading boundary, while `lan-host-abort-return` and `lan-guest-abort-return` go on
+through pause, Abort and the queued EXIT back to the LAN lobby.
+`lan-0xbb-join-denied` and `lan-0xbb-join-denied-return` answer a real Join with
+reason 1; `lan-0xbb-join-timeout-return` sends no answer and waits out the normal
+600 × 16 ms join timer.
+
 After building the normal app with `--profile fast`, run the host with
 `--shell-capture lan-live-host --width 800 --height 600 --cursor-x 400
 --cursor-y 300 --output <new-host-directory> --lan-bind 127.0.0.1:32100
