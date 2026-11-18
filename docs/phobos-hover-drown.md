@@ -70,10 +70,12 @@ Two halves, both on the same flag.
      packet is `Strength * ratio` (the default `1.0` packets the whole
      `Strength`), `Health * |ratio|` for a negative ratio, and `.Water` on a
      bridge-less water/beach cell. Regression test
-     `a_non_drowning_hover_shutdown_takes_the_falling_down_ratio`. Native
-     *also* packets the whole `Health` when the landing cell is not
-     `IsClearToMove` (`:1043-1055`); VERA has no such pre-check yet (see
-     Residuals).
+     `a_non_drowning_hover_shutdown_takes_the_falling_down_ratio`. Before the
+     ratio block, native packets the whole `Health` when the landing cell is not
+     `IsClearToMove` (`:1043-1055`); VERA's `landing_cell_clear` reads the cell's
+     reduced `ZoneType` against the mover's `MovementZone` and the `LandType`
+     row's speed for its `SpeedType`, so a blocked landing dies before any ratio
+     applies (test `a_blocked_landing_cell_takes_the_whole_health_packet`).
 
    The flag is hashed while set (`src/sim/world/world_hash.rs`) because it
    gates that amount; a cleared flag leaves the idle hash untouched.
@@ -95,15 +97,18 @@ Two halves, both on the same flag.
   cover the type value, the global fallback, `.Water`, the negative ratio, the
   `AllowEMP=no` arm and the hover-shutdown fall-through. No residual on the
   ratio itself: a rules set that lowers it lowers the packet.
-- **No `IsClearToMove` landing pre-check.** Native first packets the whole
-  `Health` when the landing cell is not clear to move for the type
-  (`Ext/Techno/Hooks.cpp:1043-1055`), before the ratio tiers run. VERA has no
-  movement-zone passability query for the landing cell, so a blocked landing
-  still takes the ratio packet. Trigger: a falling unit lands on a cell its
-  `SpeedType`/`MovementZone` cannot enter. Impact: it survives where native
-  kills it. Frequency: rare (the drop flattens onto whatever cell it reaches).
-  Risk: low; the owner would be the movement zone's `Can_Enter_Cell`, not
-  this arm.
+- **`IsClearToMove` landing pre-check is ported, reduced to two arms**
+  (`Ext/Techno/Hooks.cpp:1043-1055`). `Simulation::landing_cell_clear` answers
+  false when the cell is outside the playfield, when
+  `MOVEMENT_ZONE_PASSABILITY[zone_type]` rejects the mover's `MovementZone`, or
+  when the `LandType` row gives its `SpeedType` a zero speed; the whole current
+  `Health` then goes before the ratio block. An unknown cell, type, `SpeedType`
+  or an unbound land row answers clear, keeping the previous packet.
+  Residual: native passes `onBridge` and reads the bridge deck's land/zone
+  bytes; VERA has no separate deck row, so a landing on a deck reads the cell's
+  stored bytes as they are. Trigger: a fall onto a bridge deck. Impact: the
+  deck's own land type decides instead of the deck's row. Frequency: rare.
+  Risk: low.
 - **`HoverDrownable=no` still kills at the default rules**, because the
   default ratio is `1.0` and that packets the whole `Strength`. The key is a
   dependency of `FallingDownDamage`; it only prevents death once that ratio is
@@ -131,3 +136,7 @@ Two halves, both on the same flag.
   `a_non_drowning_hover_shutdown_takes_the_falling_down_ratio`: with
   `HoverDrownable=no` and `FallingDownDamage=0.25` the landing packet is
   `Strength * 0.25` (the unit survives), while the default ratio still kills.
+- `src/sim/movement/parachute_descent.rs` —
+  `a_blocked_landing_cell_takes_the_whole_health_packet`: a Water-column cell
+  under `MovementZone Normal` kills outright even with `FallingDownDamage.Water`
+  at `0.1`, while a ground-classed cell takes that ratio.

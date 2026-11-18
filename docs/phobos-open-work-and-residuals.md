@@ -223,9 +223,12 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   现在走 `FallingDownDamage` 的 ratio 模型
   （`sim/movement/parachute_descent.rs:145-156`，回归测试
   `a_non_drowning_hover_shutdown_takes_the_falling_down_ratio`），不再固定整
-  `Strength`。残余只剩 native 的 `IsClearToMove` 前置整血包
-  （`Ext/Techno/Hooks.cpp:1043-1055`）：VERA 没有落点格的移动区通行查询，属移动侧
-  的 owner，不是这条臂。
+  `Strength`。落点前的 `IsClearToMove`（`Ext/Techno/Hooks.cpp:1043-1055`）也已接线：
+  `Simulation::landing_cell_clear` 用 cell 的 reduced `ZoneType`（
+  `MOVEMENT_ZONE_PASSABILITY`）加 `LandType` 行对 `SpeedType` 的零速判定，
+  被挡的落点直接整血包（测试 `a_blocked_landing_cell_takes_the_whole_health_packet`）。
+  残余：native 传 `onBridge` 走桥面行，VERA 没有独立桥面行，落在桥面时按 cell
+  自存的 land/zone 字节判定。
 - **飞机等级光照与风暴/支配者同时存在的顺序**：无残渣；飞机 `DrawIt` 臂改走
   `Simulation::lighting_aircraft_profile`（Dominator→核闪→Ion），与 Phobos
   `Ext/Techno/Hooks.Tint.cpp:320-338` 一致；jumpjet 臂保持 cell-lighting 的
