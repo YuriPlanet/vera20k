@@ -148,8 +148,7 @@ struct ExtendedOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     teams: Option<u8>,
     /// The room's join queue, beside `room`
-    /// ([`SkirmishLaunchOptions::queue`]). A guest whose game is older skips
-    /// it and shows no places.
+    /// ([`SkirmishLaunchOptions::queue`]).
     ///
     /// [`SkirmishLaunchOptions::queue`]: crate::skirmish_launch::SkirmishLaunchOptions::queue
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -581,7 +580,7 @@ fn projected_options(
     let ai = std::array::from_fn(|row| {
         let raw = session
             .network_ai_options(row as u8)
-            .expect("eight setup rows");
+            .expect("admitted setup row");
         LanOptionsAi {
             difficulty: raw.difficulty,
             country: raw.country,
@@ -754,7 +753,9 @@ fn parse_options(
         if country == -1 {
             continue;
         }
-        let old = session.network_row_choices(row).expect("eight setup rows");
+        let old = session
+            .network_row_choices(row)
+            .expect("admitted setup row");
         let choices = decoded_choices(&old, country, color, start, team)?;
         opponents.push(SkirmishAiSlot {
             raw_slot_index: row,
