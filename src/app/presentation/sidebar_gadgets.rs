@@ -156,8 +156,10 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState, visits: u64) {
 /// 0x006CE1A0 for each Defense-strip Super and stops only when no entry passes.
 /// This is the single Rust update step combining that result with ready
 /// buildings before the shared SidebarGadgetState advances its flash phase.
-/// The house's active views are exactly the Defense strip's Super candidates,
-/// so polling them equals polling the strip below its 75-entry cap.
+/// The house's active views that keep a cameo
+/// ([`crate::sim::superweapon::SuperWeaponView::ares_show_cameo`]) are exactly
+/// the Defense strip's Super candidates, so polling them equals polling the
+/// strip below its 75-entry cap.
 fn update_tab_flashes_for_owner(
     gadgets: &mut SidebarGadgetState,
     ready_building_tabs: [bool; 2],
@@ -165,7 +167,9 @@ fn update_tab_flashes_for_owner(
     visits: u64,
     frame: i32,
 ) {
-    let has_flash_eligible_super = superweapon_views.iter().any(|sw| sw.should_flash_tab);
+    let has_flash_eligible_super = superweapon_views
+        .iter()
+        .any(|sw| sw.ares_show_cameo && sw.should_flash_tab);
     gadgets.update_tab_flashes(
         visits,
         frame,

@@ -112,6 +112,28 @@ fn defense_tab_flash_expires_by_ready_frame_and_keeps_other_eligible_supers() {
     assert!(gadgets.tab_flashes[1].is_active());
 }
 
+/// Ares adds no cameo for an `SW.AutoFire=yes`, `SW.ShowCameo=no` Super
+/// (`0x10039617..0x1003965F`), so StripClass::AI never polls it: a ready one
+/// leaves the Defense tab still.
+#[test]
+fn hidden_auto_fire_super_does_not_flash_the_defense_tab() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=Americans\n[Sides]\nGDI=Americans\n\
+         [Americans]\nSide=GDI\n[SuperWeaponTypes]\n0=GuardSpecial\n\
+         [GuardSpecial]\nType=SpyPlane\nSW.AutoFire=yes\nSW.ShowCameo=no\n",
+    );
+    let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
+    let mut sim = Simulation::with_seed(0x006A_8B30);
+    sim.intern_rule_type_ids(&rules);
+    let owner = sim.intern("Americans");
+    add_flash_super(&mut sim, owner, "GuardSpecial", 0, true);
+
+    let mut gadgets = SidebarGadgetState::default();
+    update_flash(&mut gadgets, &sim, &rules);
+    assert!(!gadgets.tab_flashes[1].is_active());
+}
+
 fn update_flash(
     gadgets: &mut SidebarGadgetState,
     sim: &Simulation,

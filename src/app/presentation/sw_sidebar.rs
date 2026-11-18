@@ -355,6 +355,7 @@ mod tests {
                 constraints_blocked: false,
                 ares_refusal: None,
                 ready_shots: 0,
+                ares_show_cameo: true,
             },
         }
     }
@@ -407,6 +408,7 @@ mod tests {
                 constraints_blocked: false,
                 ares_refusal: None,
                 ready_shots: 0,
+                ares_show_cameo: true,
             })
             .collect()
     }
