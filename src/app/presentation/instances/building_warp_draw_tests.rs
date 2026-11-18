@@ -53,8 +53,7 @@ fn an_erased_double_thick_building_draws_at_seventy_five_percent() {
     };
     assert_eq!((selector(&sim, vats), selector(&sim, reactor)), (0, 0));
     for id in [vats, reactor] {
-        sim.entities_mut_for_test()
-            .get_mut(id)
+        sim.entity_mut_for_test(id)
             .unwrap()
             .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(id));
     }

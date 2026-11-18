@@ -40,7 +40,7 @@ fn pack_voice_requests_match_native_slots_suppression_and_pending_owner() {
                 crate::rules::terrain_rules::LandType::Tiberium.as_index();
         }
         sim.install_resolved_terrain_for_new_map(terrain);
-        let entity = sim.entities_mut_for_test().get_mut(1).unwrap();
+        let entity = sim.entity_mut_for_test(1).unwrap();
         if input["archive_cell"] == true {
             entity.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(10, 10)));
         }

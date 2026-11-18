@@ -1174,8 +1174,7 @@ mod tests {
         );
         runtime
             .simulation
-            .entities_mut_for_test()
-            .get_mut(entity_id)
+            .entity_mut_for_test(entity_id)
             .unwrap()
             .mark_nominal_survivor_for_test();
         let hash = runtime.simulation.state_hash();
@@ -1262,8 +1261,7 @@ mod tests {
         let sim = &mut fixture.runtime.simulation;
         let worn = sim.intern("E2");
         let viewer = sim.intern("British");
-        sim.entities_mut_for_test()
-            .get_mut(fixture.entity_id)
+        sim.entity_mut_for_test(fixture.entity_id)
             .unwrap()
             .disguise
             .as_mut()
@@ -1312,8 +1310,7 @@ mod tests {
             fixture
                 .runtime
                 .simulation
-                .entities_mut_for_test()
-                .get_mut(fixture.entity_id)
+                .entity_mut_for_test(fixture.entity_id)
                 .unwrap()
                 .disguise
                 .get_or_insert_with(|| crate::sim::cloak_disguise::DisguiseRuntime::new(0))

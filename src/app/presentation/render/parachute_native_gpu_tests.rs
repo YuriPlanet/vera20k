@@ -100,8 +100,7 @@ impl Scene {
         // than measuring Infantry Unlimbo's subcell choice. Match that input
         // boundary through the Location owner; the complete ordinary producer
         // and its subcell admission remain covered by the lifecycle test.
-        sim.entities_mut_for_test()
-            .get_mut(body)
+        sim.entity_mut_for_test(body)
             .unwrap()
             .position
             .put_location(DriveCoord {

@@ -478,7 +478,7 @@ pub struct ObjectSubstrate {
     pub(crate) base_reservations: CellReservationGrid,
     /// Plain-struct entity storage (dense, in stable_id order, + infantry registry).
     /// The authoritative object store — serialized verbatim (NOT skipped).
-    pub(crate) entities: EntityStore,
+    pub(in crate::sim) entities: EntityStore,
     /// Synchronous Phobos limbo hook controls; stable saves restore enabled/idle.
     #[cfg(feature = "phobos")]
     #[serde(skip)]

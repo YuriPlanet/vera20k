@@ -2632,8 +2632,8 @@ impl GameEntity {
     }
 
     /// Paradrop5F5AF1 publishes the new canopy at Object+88, through
-    /// [`EntityStore::write_held_anim`](crate::sim::entity_store::EntityStore::write_held_anim).
-    pub(crate) fn hold_parachute_animation(
+    /// [`EntityStore::hold_parachute_animation`](crate::sim::entity_store::EntityStore::hold_parachute_animation).
+    pub(in crate::sim) fn hold_parachute_animation(
         &mut self,
         animation: u64,
         _: crate::sim::entity_store::AnimHolderAuthority,
@@ -2656,8 +2656,7 @@ impl GameEntity {
     /// attached-effect Anims (10058770) and its ParasiteClass's grapple Anim
     /// (Anim4's holder announcement725A16..725A4C, PointerExpired
     /// 62A484..62A490). A field one of those callbacks compares must be
-    /// named here, and stored only through
-    /// [`EntityStore::write_held_anim`](crate::sim::entity_store::EntityStore::write_held_anim).
+    /// named here and registered by [`EntityStore`](crate::sim::entity_store::EntityStore).
     pub(crate) fn held_anims(&self) -> impl Iterator<Item = u64> + '_ {
         [
             self.parachute_animation(),

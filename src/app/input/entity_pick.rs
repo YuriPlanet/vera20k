@@ -1697,8 +1697,7 @@ mod tests {
             Some("Player"),
             rules.ares(),
         ));
-        sim.entities_mut_for_test()
-            .get_mut(first)
+        sim.entity_mut_for_test(first)
             .unwrap()
             .selection
             .set_selected_for_test(true);
@@ -1919,8 +1918,7 @@ mod tests {
         // ProcessClickCoords692529..69257F repeats the cloak gate after the
         // chosen fallback; sharing the picker must preserve hover's refusal.
         for (cloak_state, expected) in [(0, Some(1)), (2, None)] {
-            sim.entities_mut_for_test()
-                .get_mut(1)
+            sim.entity_mut_for_test(1)
                 .unwrap()
                 .cloak
                 .as_mut()
@@ -2494,13 +2492,11 @@ mod tests {
             EntityCategory::Unit,
             &serde_json::json!([4352, 2816, 312]),
         );
-        sim.entities_mut_for_test()
-            .get_mut(1)
+        sim.entity_mut_for_test(1)
             .unwrap()
             .bunker
             .set_bunker_link_for_test(BunkerLink::Installed(2));
-        sim.entities_mut_for_test()
-            .get_mut(2)
+        sim.entity_mut_for_test(2)
             .unwrap()
             .bunker
             .set_bunker_occupant_for_test(Some(1));
@@ -2525,8 +2521,7 @@ mod tests {
         let point =
             crate::render::locomotor_visual::screen_position(sim.entities().get(1).unwrap());
         assert_eq!(pick(&sim, point), Some(1));
-        sim.entities_mut_for_test().get_mut(1).unwrap().position =
-            sim.entities().get(2).unwrap().position;
+        sim.entity_mut_for_test(1).unwrap().position = sim.entities().get(2).unwrap().position;
         let old_point =
             crate::render::locomotor_visual::screen_position(sim.entities().get(1).unwrap());
         assert_eq!(
@@ -2534,7 +2529,7 @@ mod tests {
             Some(2),
             "raw-location overlap reproduces the wrong pick"
         );
-        sim.entities_mut_for_test().get_mut(1).unwrap().position = native_position;
+        sim.entity_mut_for_test(1).unwrap().position = native_position;
         let selection = compute_click_selection_snapshot_with_playfield(
             sim.entities(),
             &[2, 1],

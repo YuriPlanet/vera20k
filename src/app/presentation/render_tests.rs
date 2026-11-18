@@ -197,7 +197,7 @@ fn test_box_skips_a_miner_docked_on_a_refinery() {
     // gate is the dock flag AND a building in that cell, so both halves hold.
     spawn_structure(&mut store, 3, 11, 10, "GAREFN", "Americans");
     store
-        .get_mut(2)
+        .get_mut_for_test(2)
         .expect("miner")
         .tether
         .set_for_test(Some(3));
@@ -217,7 +217,7 @@ fn test_box_keeps_a_vehicle_that_drove_clear_of_its_factory() {
     // vehicle would drop out of a box for the whole exit sequence.
     spawn_structure(&mut store, 3, 11, 11, "GAWEAP", "Americans");
     store
-        .get_mut(2)
+        .get_mut_for_test(2)
         .expect("vehicle")
         .tether
         .set_for_test(Some(3));

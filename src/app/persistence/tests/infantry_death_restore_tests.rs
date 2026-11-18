@@ -164,8 +164,7 @@ fn infantry_prepared_load_preserves_death_sequence_progress_and_cleanup_visit() 
             .spawn_object_at_height("E1", "Americans", 1, 1, 0, 0, &rules)
             .unwrap();
         saved
-            .entities_mut_for_test()
-            .get_mut(victim)
+            .entity_mut_for_test(victim)
             .unwrap()
             .health
             .set_for_test(0);

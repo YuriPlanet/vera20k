@@ -274,7 +274,7 @@ fn high_terrain_building_slots_keep_their_offsets_and_depth() {
     let order = NativeDisplayOrder::from_world(&sim, None);
     let flat = emit(&sim, &rules, building, &atlas, &order);
     assert!(!flat.is_empty());
-    let entity = sim.entities_mut_for_test().get_mut(building).unwrap();
+    let entity = sim.entity_mut_for_test(building).unwrap();
     entity.position.set_z_for_test(36);
     entity.position.set_exact_z_leptons_for_test(Some(3744));
     let slots = *entity.building_art.anim_slots();
@@ -732,8 +732,7 @@ fn bunker_migration_keeps_active_anim_offsets_start_and_independent_membership()
         assert_eq!(before[0].pieces[0].instance.source_palette, 1);
         // The retained Anim coordinate is the owner. A changed body coordinate
         // cannot silently recalculate its child's location in presentation.
-        sim.entities_mut_for_test()
-            .get_mut(building)
+        sim.entity_mut_for_test(building)
             .unwrap()
             .position
             .set_rx_for_test(2);
