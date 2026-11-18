@@ -4161,7 +4161,7 @@ fn admit_relay_start(
     let grant = start.grant;
     let connections = LanConnections::new(
         LanConnectionConfig {
-            max_peers: 29,
+            max_peers: crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT - 1,
             ..Default::default()
         },
         RetryTiming {

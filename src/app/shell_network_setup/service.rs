@@ -68,9 +68,6 @@ pub(crate) enum NetworkSetupEvent {
     GoAcknowledged {
         source_index: usize,
     },
-    GoMapRequested {
-        source_index: usize,
-    },
     MapTransferStarted,
     MapTransferProgress {
         completed: u32,
@@ -172,7 +169,6 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                     | NetworkSetupEvent::GoCompleted
                     | NetworkSetupEvent::ControlledGoCompleted
                     | NetworkSetupEvent::GoAcknowledged { .. }
-                    | NetworkSetupEvent::GoMapRequested { .. }
                     | NetworkSetupEvent::MapTransferStarted
                     | NetworkSetupEvent::MapTransferProgress { .. }
                     | NetworkSetupEvent::MapTransferFinished { .. }
@@ -713,22 +709,6 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 .expect("setup");
             if let Some(phase) = protocol.lan_go.as_mut() {
                 phase.acknowledge(source_index);
-            }
-        }
-        NetworkSetupEvent::GoMapRequested { source_index } => {
-            let required = state
-                .frontend
-                .network_setup_protocol
-                .as_ref()
-                .and_then(|protocol| protocol.lan_go.as_ref())
-                .is_some_and(|phase| {
-                    matches!(phase, LanGoWait::HostReplies { pending, .. }
-                    if pending.contains(&source_index))
-                });
-            if required {
-                // Native5DD6F8 records a file requester. This bounded local-map
-                // path cannot serve that file; retain an explicit failure.
-                fail_go_handoff(state);
             }
         }
         NetworkSetupEvent::GoCompleted => {

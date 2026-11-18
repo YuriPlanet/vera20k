@@ -72,16 +72,9 @@ class PacketMachine(Machine):
 
 def setup_packets():
     m = PacketMachine()
-    for address in (0xAC119C, 0xAC11A0, 0xAC11B0, 0xAC11A4, 0xAC11A8, 0xAC11AC, 0xAC11B4):
-        m.w32(address, m.alloc(128))
-    slots = [m.node] + [m.r32(a) for a in (0xAC119C, 0xAC11A0, 0xAC11B0, 0xAC11A4, 0xAC11A8, 0xAC11AC, 0xAC11B4)]
-    for index, pointer in enumerate(slots):
-        m.w32(0xA8DA90 + index * 4, pointer)
-    rows = [m.packet('roster', 0x5DEAC7)]
-    m = PacketMachine()
     text = m.alloc(16)
     m.uc.mem_write(text, b'K1\0')
-    rows.append(m.packet('options_status', 0x5E3765, edx=text))
+    rows = [m.packet('options_status', 0x5E3765, edx=text)]
     m = PacketMachine()
     m.stubs[0x4068E0] = lambda: m.ret(0)
     host, text = m.alloc(32), m.alloc(64)
@@ -330,7 +323,7 @@ def metadata():
             'Denial5 executes the no-active-roster producer. Departure/keepalive slices use declared source-vector entries only to reach the firstsend; this does not establish validation, retries, or membership lifecycle.',
             'Kick control executes the complete5DB600 producer with a supplied destination node. Its455-byte payload has type8 at0 and reason4 at2F; original zeroing leaves all other byteszero. The send stops at5410F0 before admission.',
             'Game query selected node at [A8DA60+AC0260*4] contains A/U0100/B and executes original7350C0 narrowing and C-string copy; low-byte NUL terminates the copied name. Separate complete5DAC00 controls cover empty/mixed-case/high-unit/surrogate-pair/embeddedNUL names in the startup C locale; no hash result is supplied.',
-            'Setup controls execute original full455-byte zero/copy stores for roster16 (all seven original sentinel names and one supplied human), options17 K1, GO0B MaxAhead27, Ready13 and LAN start-prompt28. Original5E8DC0 formats all eight wide comma-terminated roster slots.',
+            'Setup controls execute original full455-byte zero/copy stores for options17 K1, GO0B MaxAhead27, Ready13 and LAN start-prompt28.',
             'Player choices execute complete5E3850 LAN branch with host name and R-2,6,-2,-2 text. Original color/hash stores hit global receive bufferA8D7F7/A8D7FB, not the outgoing local packet, whose final8 bytes stayzero. Only DebugLog4068E0 is a sink.',
             'Full5DBB60 reads declared globals, human nodes and eight AI rows. Original getters,7B82E0 packed description and CRT sprintf execute. Two controls exercise signed fields, resolved selections, AIcountry-3 normalization and wide/narrow name differences. Only DebugLog4068E0 is a sink.',
             'GO branch controls execute5DD5E5..63E and5DD950..97F. Queue counts, wall-clock reads and541820 return are explicit boundary inputs; Network_ServiceLoop consumes one pending entry. Host1200 gate is inverted: fresh timer skips service; expired timer services. Guest waits only while queue>0 and541820 succeeds.',
@@ -341,7 +334,7 @@ def metadata():
         entry_points=dict(discovery=0x5DFB6A, query=0x5DFC47, presence=0x5DFD34,
                           advertisement=0x5DFE94, participant=0x5DFF6E, join=0x5DF6F5,
                           acceptance=0x5E1A8F, denial=0x5E157B, kick=0x5DB600, departure=0x5E09CD,
-                          keepalive=0x5DB91D, output=0x5410F0, game_name_hash=0x5DAC00, roster=0x5DEAC7,
+                          keepalive=0x5DB91D, output=0x5410F0, game_name_hash=0x5DAC00,
                           options=0x5E3765, go=0x5DD57B, ready=0x5DD916,
                           start_prompt=0x5E3630, options_format=0x5DBB60,
                           player_choices=0x5E3850, go_host_drain=0x5DD5E5,
