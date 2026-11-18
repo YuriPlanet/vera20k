@@ -24,8 +24,7 @@ fn retail_inactive_gi_refuses_object_attack_but_keeps_cell_attack() {
     let enemy = sim
         .spawn_object("E1", "Russians", 17, 16, 0, rules)
         .unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(gi)
+    sim.entity_mut_for_test(gi)
         .unwrap()
         .deactivated
         .set_for_test(true);
@@ -70,8 +69,7 @@ fn retail_inactive_gi_refuses_object_attack_but_keeps_cell_attack() {
             target_ry: 16
         }]
     );
-    sim.entities_mut_for_test()
-        .get_mut(gi)
+    sim.entity_mut_for_test(gi)
         .unwrap()
         .deactivated
         .set_for_test(false);
@@ -182,8 +180,7 @@ fn retail_inactive_robot_tank_crushes_or_selects_instead_of_attacking() {
             &registry,
         );
         assert!(!fire.commands.is_empty());
-        sim.entities_mut_for_test()
-            .get_mut(robot)
+        sim.entity_mut_for_test(robot)
             .unwrap()
             .deactivated
             .set_for_test(true);
@@ -262,8 +259,7 @@ fn ares_deactivated_robot_tank_only_selects_and_takes_no_click() {
         sim.cell_move_action(viewer, robot, (18, 18), query, rules, Some(&registry)),
         Ok(crate::sim::world::MoveAction::Move)
     );
-    sim.entities_mut_for_test()
-        .get_mut(robot)
+    sim.entity_mut_for_test(robot)
         .unwrap()
         .deactivated
         .set_for_test(true);
@@ -318,8 +314,7 @@ fn ares_deactivated_cursor_owner_decides_the_release_for_the_selection() {
         ares_deactivated_selection_click(sim, rules, &selection, hover, (18, 18))
     };
     assert_eq!(release(&sim, None), None, "an active robot");
-    sim.entities_mut_for_test()
-        .get_mut(robot)
+    sim.entity_mut_for_test(robot)
         .unwrap()
         .deactivated
         .set_for_test(true);
@@ -328,8 +323,7 @@ fn ares_deactivated_cursor_owner_decides_the_release_for_the_selection() {
         release(&sim, Some(&over_tank)),
         Some(Ok(LeftRelease::Select))
     );
-    sim.entities_mut_for_test()
-        .get_mut(robot)
+    sim.entity_mut_for_test(robot)
         .unwrap()
         .set_emp_remaining_for_test(30);
     assert_eq!(release(&sim, None), None, "the engineer owns the cursor");
@@ -365,8 +359,7 @@ fn retail_tank_being_warped_out_neither_attacks_nor_fires() {
         AttackAction::Attack
     );
     assert_eq!(action(&sim, TargetKind::Cell(18, 18)), AttackAction::Attack);
-    sim.entities_mut_for_test()
-        .get_mut(tank)
+    sim.entity_mut_for_test(tank)
         .unwrap()
         .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(99));
     assert!(sim.entities().get(tank).unwrap().is_warped_out());
@@ -386,8 +379,7 @@ fn retail_tank_being_warped_out_neither_attacks_nor_fires() {
     // The warp arm precedes Shift's Select and the self rung: Select over
     // the own tank, which is not selected, and the arrow over itself, which
     // is.
-    sim.entities_mut_for_test()
-        .get_mut(tank)
+    sim.entity_mut_for_test(tank)
         .unwrap()
         .selection
         .set_selected_for_test(true);
@@ -432,8 +424,7 @@ fn retail_mcv_being_warped_out_does_not_deploy() {
     let mcv = sim
         .spawn_object("AMCV", "Americans", 16, 16, 0, rules)
         .expect("mcv");
-    sim.entities_mut_for_test()
-        .get_mut(mcv)
+    sim.entity_mut_for_test(mcv)
         .unwrap()
         .selection
         .set_selected_for_test(true);
@@ -466,8 +457,7 @@ fn retail_mcv_being_warped_out_does_not_deploy() {
     };
     assert!(deploys(&sim).is_some());
     assert_eq!(self_cursor(&sim), Some(CursorId::Deploy));
-    sim.entities_mut_for_test()
-        .get_mut(mcv)
+    sim.entity_mut_for_test(mcv)
         .unwrap()
         .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(99));
     assert_eq!(deploys(&sim), None);

@@ -309,7 +309,7 @@ fn a_selected_mobile_shield_background_keeps_its_pipbrd_binding() {
             crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
-    let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+    let entity = sim.entity_mut_for_test(id).unwrap();
     entity.lifecycle.set_in_limbo_for_test(false);
     entity.discovery.set_owned_by_current_house_for_test(true);
     entity.selection.set_selected_for_test(true);
@@ -454,7 +454,7 @@ fn bracket_delta_moves_the_health_bar_but_not_the_scale_pips() {
                 crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
-        let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+        let entity = sim.entity_mut_for_test(id).unwrap();
         entity.lifecycle.set_in_limbo_for_test(false);
         entity.discovery.set_owned_by_current_house_for_test(true);
         entity.selection.set_selected_for_test(true);

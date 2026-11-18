@@ -1321,7 +1321,7 @@ mod tests {
                 "submit" => sim.submit_object_display_for_test(id.unwrap(), DisplayLayer::GROUND),
                 "coordinates" => {
                     moved = true;
-                    let entity = sim.entities_mut_for_test().get_mut(id.unwrap()).unwrap();
+                    let entity = sim.entity_mut_for_test(id.unwrap()).unwrap();
                     entity.position.set_sub_x_for_test(SimFixed::from_num(
                         step["xyz"][0].as_i64().unwrap() - 2560,
                     ));

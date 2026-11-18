@@ -538,8 +538,7 @@ mod tests {
                 1,
                 true,
             );
-            sim.entities_mut_for_test()
-                .get_mut(id)
+            sim.entity_mut_for_test(id)
                 .unwrap()
                 .selection
                 .set_selected_for_test(true);

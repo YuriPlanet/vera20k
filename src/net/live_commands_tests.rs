@@ -2767,8 +2767,7 @@ fn three_udp_clients_recover_a_retained_frontier_across_a_timing_shrink() {
         );
         assert!(
             worlds[index]
-                .substrate
-                .entities
+                .entities()
                 .get(actor)
                 .unwrap()
                 .navigation
@@ -2795,9 +2794,7 @@ fn two_udp_clients_execute_the_delayed_stop_through_the_production_frame_boundar
     for frame in 0..=10 {
         if frame == 10 {
             for sim in [&mut a, &mut b] {
-                sim.substrate
-                    .entities
-                    .get_mut(actor)
+                sim.entity_mut_for_test(actor)
                     .unwrap()
                     .navigation
                     .set_nav_list_for_test(
@@ -2836,8 +2833,7 @@ fn two_udp_clients_execute_the_delayed_stop_through_the_production_frame_boundar
     }
     for sim in [&a, &b] {
         assert!(
-            sim.substrate
-                .entities
+            sim.entities()
                 .get(actor)
                 .unwrap()
                 .navigation
@@ -3085,8 +3081,7 @@ fn real_udp_mass_order_survives_backpressure_and_executes_one_shared_frame() {
             actors.iter().copied().collect()
         );
         assert!(actors.iter().all(|id| {
-            sim.substrate
-                .entities
+            sim.entities()
                 .get(*id)
                 .unwrap()
                 .navigation

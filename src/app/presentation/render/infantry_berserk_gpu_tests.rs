@@ -485,11 +485,7 @@ fn render_original_body_pixels(
                 ];
                 batch.write_camera(&gpu.queue, view);
             }
-            let gi = runtime
-                .simulation
-                .entities_mut_for_test()
-                .get_mut(1)
-                .unwrap();
+            let gi = runtime.simulation.entity_mut_for_test(1).unwrap();
             gi.berserk
                 .set_active_for_test(input["berserk"].as_bool().unwrap());
             gi.body_facing = FacingClass::new(int(&input["facing"]) as u16, 0);

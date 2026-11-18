@@ -95,8 +95,7 @@ pub(crate) fn launched_stock_submarine_torpedo(
         .spawn_object("LCRF", "Russians", 16, 10, 0, &rules)
         .expect("hostile stock landing craft enters through legal Water Unlimbo");
     if elite {
-        sim.entities_mut_for_test()
-            .get_mut(source)
+        sim.entity_mut_for_test(source)
             .unwrap()
             .veterancy
             .set_elite();

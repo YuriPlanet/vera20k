@@ -81,17 +81,13 @@ fn water_voxel_draw_switches_live_cell_model_and_preserves_bridge_dispatch() {
     let (model, body) = draw(&sim);
     assert_eq!(model, "MTNK");
     assert!(matches!(body, BodyDraw::Turret { .. }));
-    sim.entities_mut_for_test()
-        .get_mut(id)
+    sim.entity_mut_for_test(id)
         .unwrap()
         .set_unit_simple_deploy_for_test(true, false, false);
     assert_eq!(draw(&sim).0, "MTNK", "water wins over deployed art");
-    sim.entities_mut_for_test()
-        .get_mut(id)
-        .unwrap()
-        .set_on_bridge(true);
+    sim.entity_mut_for_test(id).unwrap().set_on_bridge(true);
     assert_eq!(draw(&sim).0, "HTNK");
-    let unit = sim.entities_mut_for_test().get_mut(id).unwrap();
+    let unit = sim.entity_mut_for_test(id).unwrap();
     unit.set_on_bridge(false);
     unit.set_unit_simple_deploy_for_test(false, false, false);
     unit.position.set_rx_for_test(11);
@@ -112,7 +108,7 @@ fn normal_fly_pose_uses_strict_pitch_speed_gate_and_secondary_turn_sign() {
     let id = sim
         .spawn_object_limbo_at_height("SPYP", "Americans", 10, 10, 0, 0x40, &retail.rules)
         .expect("construct stock Fly");
-    let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+    let entity = sim.entity_mut_for_test(id).unwrap();
     entity
         .locomotor
         .as_mut()
@@ -162,8 +158,7 @@ fn normal_fly_pose_uses_strict_pitch_speed_gate_and_secondary_turn_sign() {
     assert_eq!(tilt, None);
 
     let locomotor = sim
-        .entities_mut_for_test()
-        .get_mut(id)
+        .entity_mut_for_test(id)
         .unwrap()
         .locomotor
         .as_mut()
@@ -185,7 +180,7 @@ fn normal_fly_pose_uses_strict_pitch_speed_gate_and_secondary_turn_sign() {
         matches!(pose, crate::render::unit_atlas::PoseTilt::FlyNormal { pitch: 0.0, roll } if (roll - 30.0_f32.to_radians()).abs() < 1.0e-6)
     );
 
-    let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+    let entity = sim.entity_mut_for_test(id).unwrap();
     let mut secondary = FacingClass::new(0, 4);
     assert!(secondary.set(0xC000, 0));
     entity.barrel_facing = Some(secondary);
@@ -196,7 +191,7 @@ fn normal_fly_pose_uses_strict_pitch_speed_gate_and_secondary_turn_sign() {
         matches!(pose, crate::render::unit_atlas::PoseTilt::FlyNormal { pitch: 0.0, roll } if (roll + 30.0_f32.to_radians()).abs() < 1.0e-6)
     );
 
-    let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+    let entity = sim.entity_mut_for_test(id).unwrap();
     entity.barrel_facing.as_mut().unwrap().snap(0xC000, 0);
     let (_, direction, pose) = production_pose(&sim);
     assert_eq!(direction, None);
@@ -258,8 +253,7 @@ fn body_draw_against_seed(
 /// The dock latch's presentation write (`refinery_dock::set_unload_latch`).
 fn latch_unloading_image(sim: &mut Simulation, id: u64, image: &str) {
     let image = sim.intern(image);
-    sim.entities_mut_for_test()
-        .get_mut(id)
+    sim.entity_mut_for_test(id)
         .expect("the object was just built")
         .display_type_override
         .set_for_test(Some(image));
@@ -389,8 +383,7 @@ fn retail_siege_chopper_draws_schd_only_after_deployment_completes() {
         .spawn_object_limbo_at_height("SCHP", "Americans", 10, 10, 0, 0, rules)
         .expect("retail Siege Chopper builds");
     assert!(sim.entities().get(id).unwrap().is_voxel());
-    sim.entities_mut_for_test()
-        .get_mut(id)
+    sim.entity_mut_for_test(id)
         .unwrap()
         .body_frame_counter
         .set_for_test(1);
@@ -405,8 +398,7 @@ fn retail_siege_chopper_draws_schd_only_after_deployment_completes() {
         (true, false, true, None),
         (false, false, false, Some(("SCHP", true))),
     ] {
-        sim.entities_mut_for_test()
-            .get_mut(id)
+        sim.entity_mut_for_test(id)
             .unwrap()
             .set_unit_simple_deploy_for_test(deployed, begin, reverse);
         assert_eq!(
@@ -896,7 +888,7 @@ fn deployed_model_overrides_disguise_no_spawn_alt_and_miner_display_hints() {
     let disguise = sim.intern("DECOY");
     latch_unloading_image(&mut sim, id, "MINERHINT");
     {
-        let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+        let entity = sim.entity_mut_for_test(id).unwrap();
         entity
             .spawn_manager
             .as_mut()
@@ -923,32 +915,28 @@ fn deployed_model_overrides_disguise_no_spawn_alt_and_miner_display_hints() {
     };
     latch_unloading_image(&mut sim, hinted, "MINERHINT");
     assert_eq!(model(&sim, hinted), "MINERHINT");
-    sim.entities_mut_for_test()
-        .get_mut(hinted)
+    sim.entity_mut_for_test(hinted)
         .unwrap()
         .set_unit_simple_deploy_for_test(true, false, false);
     assert_eq!(model(&sim, hinted), "GUNNED");
     assert_eq!(model(&sim, id), "DECOY");
-    sim.entities_mut_for_test()
-        .get_mut(id)
+    sim.entity_mut_for_test(id)
         .unwrap()
         .set_unit_simple_deploy_for_test(true, false, false);
     assert_eq!(model(&sim, id), "GUNNED");
-    sim.entities_mut_for_test()
-        .get_mut(id)
+    sim.entity_mut_for_test(id)
         .unwrap()
         .disguise
         .as_mut()
         .unwrap()
         .clear_unit();
     assert_eq!(model(&sim, id), "GUNNED");
-    sim.entities_mut_for_test()
-        .get_mut(id)
+    sim.entity_mut_for_test(id)
         .unwrap()
         .set_unit_simple_deploy_for_test(false, false, false);
     assert_eq!(model(&sim, id), "HELIWO");
 
-    let entity = sim.entities_mut_for_test().get_mut(no_model).unwrap();
+    let entity = sim.entity_mut_for_test(no_model).unwrap();
     entity
         .disguise
         .get_or_insert_with(Default::default)
@@ -1115,7 +1103,7 @@ fn retail_mirage_unit_route_matches_original_observer_dispatch() {
             // DrawState's original-byte test covers that supplied input leaf.
             continue;
         }
-        let actor = sim.entities_mut_for_test().get_mut(id).unwrap();
+        let actor = sim.entity_mut_for_test(id).unwrap();
         let disguise = actor.disguise.as_mut().unwrap();
         if input["raw_disguised"].as_bool().unwrap() {
             disguise.acquire(

@@ -236,8 +236,7 @@ fn ctrl_over_shroud_keeps_a_buildings_attack() {
     let pillbox = spawn(&mut sim, &rules, "GAPILL", (12, 5));
     let tank = spawn(&mut sim, &rules, "MTNK", (4, 6));
     let deactivated = spawn(&mut sim, &rules, "MTNK", (12, 6));
-    sim.entities_mut_for_test()
-        .get_mut(deactivated)
+    sim.entity_mut_for_test(deactivated)
         .unwrap()
         .deactivated
         .set_for_test(true);

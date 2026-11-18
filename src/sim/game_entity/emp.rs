@@ -50,8 +50,8 @@ impl GameEntity {
         self.emp.sparkle
     }
     /// UpdateSparkle10062FE0 holds its new sparkle, through
-    /// [`EntityStore::write_held_anim`](crate::sim::entity_store::EntityStore::write_held_anim).
-    pub(crate) fn hold_emp_sparkle(
+    /// [`EntityStore::hold_emp_sparkle`](crate::sim::entity_store::EntityStore::hold_emp_sparkle).
+    pub(in crate::sim) fn hold_emp_sparkle(
         &mut self,
         anim: u64,
         _: crate::sim::entity_store::AnimHolderAuthority,
@@ -1019,11 +1019,7 @@ mod receiver {
                 if building {
                     self.substrate.set_anim_z_adjust(anim, -1024);
                 }
-                self.substrate
-                    .entities
-                    .write_held_anim(target, |entity, authority| {
-                        entity.hold_emp_sparkle(anim, authority)
-                    });
+                self.substrate.entities.hold_emp_sparkle(target, anim);
             }
         }
         /// Installed BuildingClass_Mi_Selling_EMPDuration10053D60 (hook
@@ -3091,9 +3087,7 @@ mod receiver {
             );
             sim.substrate
                 .entities
-                .write_held_anim(target, |victim, authority| {
-                    victim.hold_emp_sparkle(held, authority)
-                })
+                .hold_emp_sparkle(target, held)
                 .unwrap();
             let victim = sim.substrate.entities.get_mut(target).unwrap();
             victim.emp_anim_pointer_expired(held + 1);

@@ -1538,7 +1538,7 @@ pub struct Simulation {
     /// enter-order counters. The single owner the lifecycle contract
     /// (reveal/conceal/unlimbo/uninit) mutates; entity storage and the
     /// occupancy grid migrate here in later stages.
-    pub(crate) substrate: ObjectSubstrate,
+    pub(in crate::sim) substrate: ObjectSubstrate,
     /// Ordered release-visible handoffs produced by lifecycle transactions.
     /// The app drains these without feeding them back into simulation.
     #[serde(skip)]
@@ -5019,9 +5019,23 @@ impl Simulation {
         &mut self.substrate.entities
     }
 
+    #[cfg(test)]
+    pub(crate) fn ground_occupation_bits_for_test(&self, rx: u16, ry: u16) -> u8 {
+        self.substrate.raw_cell_occupation.ground_bits(rx, ry)
+    }
+
+    /// Borrow one fixture actor, recording the same touch as a simulation writer.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn entity_mut_for_test(
+        &mut self,
+        stable_id: u64,
+    ) -> Option<&mut crate::sim::game_entity::GameEntity> {
+        self.substrate.entities.get_mut(stable_id)
+    }
+
     /// Disjoint access to the entity store (mutable) and the interner (shared)
     /// for callers that need both at once.
-    pub(crate) fn entities_mut_and_interner(
+    pub(in crate::sim) fn entities_mut_and_interner(
         &mut self,
     ) -> (&mut EntityStore, &crate::sim::intern::StringInterner) {
         (&mut self.substrate.entities, &self.interner)
@@ -6242,7 +6256,7 @@ impl Simulation {
 
     /// Apply `house_tracking`'s Add_Tracking or Remove_Tracking for an object
     /// on its owner's house.
-    pub(crate) fn update_house_tracking(
+    pub(in crate::sim) fn update_house_tracking(
         substrate: &mut ObjectSubstrate,
         houses: &mut Houses,
         stable_id: u64,

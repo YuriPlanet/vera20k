@@ -1006,7 +1006,7 @@ mod tests {
             "the exact tracker GetCoords cell is the immediate camera centre"
         );
 
-        let edge = simulation.entities_mut_for_test().get_mut(2).unwrap();
+        let edge = simulation.entity_mut_for_test(2).unwrap();
         edge.position.set_rx_for_test(u16::MAX);
         edge.position.set_ry_for_test(u16::MAX);
         assert_eq!(
