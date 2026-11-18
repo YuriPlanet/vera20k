@@ -30,7 +30,11 @@ const MAX_HISTORY_ENTRIES: usize = 4096;
 const ROOM_HISTORY_BYTES: usize = 2 * 1024 * 1024;
 const GLOBAL_ORDERING_BYTES: usize = 64 * 1024 * 1024;
 const MAX_SOURCE_PENDING: usize = 8;
-const MAX_FRAME_BATCHES: usize = 32;
+/// Each relay of a match seals at most this many of its own sources' batches
+/// into one frame; a federated frame merges up to `MAX_FEDERATED_RELAYS`
+/// times as many. Games size their frame buffers from both, so raising either
+/// raises `OLDEST_ADMITTED` (tools/relay_compat.py).
+pub const MAX_FRAME_BATCHES: usize = 32;
 // A loading source that sends nothing this long departs in the first frame,
 // and the others start without it.
 const LOADING_SILENCE_MS: u64 = 60_000;
@@ -86,6 +90,8 @@ pub(super) const DESYNC_BATCH: u64 = u64::MAX - 1;
 const FRAME_RATES: [u16; 8] = [90, 60, 45, 30, 20, 15, 12, 10];
 // A player's report counts this long; a silent client slows nobody.
 const PACE_REPORT_MS: u64 = 3_000;
+// Clients report every `PACE_INTERVAL_MS`, so a report on time never lapses.
+const _: () = assert!(PACE_INTERVAL_MS < PACE_REPORT_MS);
 // The share of each second a reporter's simulation may take at a rate it
 // can hold; the rest draws and catches up.
 const SUSTAIN_PERCENT: u32 = 80;

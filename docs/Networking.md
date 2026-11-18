@@ -250,6 +250,12 @@ Players of one build agree as before, also after a rollback, and nothing new is
 exchanged.
 At each deadline, missing input is empty; a command joins the next unsealed
 frame. The sender also waits for that commit.
+Each relay seals at most 32 batches of its own players into a frame
+(`MAX_FRAME_BATCHES`), and a federated match's frame merges those of up to six
+relays (`MAX_FEDERATED_RELAYS`); a game takes every record such a frame can hold.
+Earlier games end the match on a frame of more than 4,096 records (`QueueFull`),
+what 32 full batches hold. Raising either limit in the relays ends busy matches
+that way for the games built before it, so it raises `OLDEST_ADMITTED` too.
 Frames use the existing Event codec and simulation queues, with a fresh compression
 cache per self-contained batch. Batches travel in plain text: the relay can read
 them, and only the per-hop MAC authenticates them. A batch's Event packet header

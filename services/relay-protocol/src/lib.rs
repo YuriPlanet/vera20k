@@ -38,14 +38,16 @@ pub use sequenced::watch::{
     MAX_ROOM_WATCHERS, MAX_WATCH_DELAY_SECONDS, WATCH_MARK_MS, WATCH_TICKET_VERSION, WatchTicket,
 };
 pub use sequenced::{
-    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY, OrderEntry,
-    OrderError, OrderEvent, OrderPace, OrderStatus, OrderingCertificate, paced_rates, turn_frames,
-    turn_ms,
+    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, MAX_FRAME_BATCHES, ORDERING_BATCH_CAPACITY,
+    OrderEntry, OrderError, OrderEvent, OrderPace, OrderStatus, OrderingCertificate, paced_rates,
+    turn_frames, turn_ms,
 };
 
 type HmacSha256 = Hmac<Sha256>;
 
 pub const MAX_PEERS: u8 = 30;
+// Relay, wire and client source masks are u32 with one bit per source.
+const _: () = assert!(MAX_PEERS as u32 <= u32::BITS);
 pub const BROADCAST: u8 = 255;
 /// The largest DATA message a client relays.
 pub const MAX_PAYLOAD: usize = 640;
