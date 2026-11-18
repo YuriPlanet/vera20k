@@ -828,4 +828,31 @@ mod tests {
             .unwrap();
         assert_eq!(&transfer.bytes[MAP_CHUNK_BYTES..], &[2, 3]);
     }
+
+    /// The lobby keeps its own copies of a room's speeds, the rate it signs
+    /// for each and the map chunk size; this file is what its tests compare.
+    #[test]
+    fn the_lobby_reads_the_games_speeds_rates_and_map_chunk() {
+        let game_speeds: Vec<_> = (0..=u8::MAX)
+            .filter(|&speed| crate::sim::game_options::is_selectable_game_speed(speed))
+            .map(|speed| {
+                // The lobby signs, as `tick_hz`, the PreCalcFrameRate the host
+                // (the channel owner) sets for its speed.
+                let timing = crate::net::lockstep::wol_start_timing(i32::from(speed), [0], true);
+                serde_json::json!({"game_speed": speed, "tick_hz": timing.precalc_frame_rate})
+            })
+            .collect();
+        crate::test_fixture::assert_sent_json(
+            "tests/fixtures/lobby/game_contract.json",
+            &serde_json::json!({
+                "about": "Each Game Speed a room can select (`launch.options.game_speed`) \
+                    with the rate a match at that speed runs at, which the lobby signs \
+                    as the ordering certificate's `tick_hz`, and the map transfer's \
+                    chunk size (docs/lobby-protocol.md). The game's test in \
+                    src/app/shell_wol/live_service/maps.rs writes this file.",
+                "game_speeds": game_speeds,
+                "map_chunk_bytes": MAP_CHUNK_BYTES,
+            }),
+        );
+    }
 }
