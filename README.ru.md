@@ -125,6 +125,7 @@ Command & Conquer и Red Alert — товарные знаки Electronic Arts I
 VERA20K не связан с Electronic Arts и не одобрен компанией.
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **Прочитай [юридическое уведомление](LEGAL.md), прежде чем распространять, продавать или форкать VERA20K.**

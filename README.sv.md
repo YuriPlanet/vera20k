@@ -124,6 +124,7 @@ appikonen, Red Alert 2:s röda stjärna, visar spelgrafik som ägs av Electronic
 ingen koppling till och stöds inte av Electronic Arts.
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **Läs [den juridiska informationen](LEGAL.md) innan du delar, säljer eller forkar VERA20K.**

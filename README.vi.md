@@ -124,6 +124,7 @@ thể hiện hình ảnh trò chơi thuộc sở hữu của Electronic Arts. VE
 Arts và không được Electronic Arts chứng thực.
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **Hãy đọc [thông báo pháp lý](LEGAL.md) trước khi chia sẻ, bán hoặc fork VERA20K.**

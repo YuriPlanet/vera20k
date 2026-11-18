@@ -127,6 +127,7 @@ VERA20K steht in keiner Verbindung zu Electronic Arts und wird nicht von Electro
 unterstützt.
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **Lies den [rechtlichen Hinweis](LEGAL.md), bevor du VERA20K weitergibst, verkaufst oder forkst.**
