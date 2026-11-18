@@ -1728,6 +1728,37 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_long_range_mod_weapon_reaches_across_a_large_map() {
+        let rules = rules_with_weapon("Damage=1\nROF=20\nRange=300\nWarhead=WH", "", "");
+        let weapon = rules.weapon("GUN").unwrap();
+        // Two playable cells on a 350 by 350 map using extended coordinates.
+        let terrain = ResolvedTerrainGrid::from_cells(
+            700,
+            700,
+            [(150, 250), (440, 250)]
+                .map(|(x, y)| crate::map::resolved_terrain::test_filled_smudge_cell(x, y))
+                .into(),
+        );
+        let attacker = ground_attacker(150, 250, 0, "ATKR");
+        let mut entities = Simulation::new();
+        entities
+            .substrate
+            .entities
+            .insert(ground_target(440, 250, 0, "TGT"));
+        assert!(compute_in_range(
+            &attacker,
+            src_at_cell(150, 250, 0),
+            &TargetKind::Entity(200),
+            weapon,
+            &rules,
+            &test_interner(),
+            &entities,
+            &terrain,
+            &LineOfFireInputs::terrain_only(),
+        ));
+    }
+
     // Test 2: Boundary inclusive max
     #[test]
     fn max_range_inclusive_at_exact_boundary() {

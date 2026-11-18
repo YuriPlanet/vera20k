@@ -96,7 +96,9 @@ use super::combat_weapon::{
 };
 use super::threat_mask::{self, InfantryScanner};
 use super::threat_range::{ScanRange, scan_range};
-use crate::map::cell_index::{NativeCellIdentity, square_ring_cells};
+use crate::map::cell_index::{
+    MAX_CELL_SIDE, NativeCellIdentity, square_ring_cells, square_rings_covering_rect,
+};
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::locomotor_type::SpeedType;
@@ -582,25 +584,6 @@ fn finish_score(score: i32) -> Option<i32> {
 /// candidate (`0x006F9AE2..0x006F9B0A`; both divides truncate toward zero).
 fn is_early_return_ring(ring: i32, radius: i32) -> bool {
     ring == radius / 4 || ring == radius / 2
-}
-
-/// VERA: the rings of a `radius` walk around `centre` that can hold a cell
-/// of Size's diamond. No later ring holds one, so the walk's answer is the
-/// one the remaining empty rings would leave, and a range far past the map
-/// (up to [`crate::rules::ini_value::RANGE_LIMIT_LEPTONS`]) walks only the
-/// map's rings. Rings would wrap the 16-bit cell coordinates back onto the
-/// map only tens of thousands of cells out, beyond any range VERA reads.
-fn map_ring_bound(radius: i32, centre: (i32, i32), width: i32, height: i32) -> i32 {
-    let last = crate::map::playfield::size_diamond_extent(width, height);
-    let reach = [centre.0, centre.1]
-        .into_iter()
-        .map(|at| {
-            let at = i64::from(at);
-            (at - 1).abs().max((last - at).abs())
-        })
-        .max()
-        .unwrap_or(0);
-    radius.min(i32::try_from(reach.saturating_add(1)).unwrap_or(i32::MAX))
 }
 
 /// Walk bound in cells, `iStack_34` in `Greatest_Threat`.
@@ -1593,11 +1576,15 @@ pub(crate) fn greatest_threat(
     // `[ESP+0x30]`/`[ESP+0x34]` (`0x006F93A1..0x006F93B3`): the best wall
     // cell's score starts at 0, so a wall must score above it.
     let mut wall: Option<((i16, i16), i32)> = None;
-    let rings = fire_world
-        .and_then(|world| world.map_size_diamond())
-        .map_or(radius, |(width, height)| {
-            map_ring_bound(radius, (cx, cy), width, height)
-        });
+    // Map568300 rejects every cell past MapRect. Keep the authored radius
+    // for the native early returns below and visit all in-bounds rings in order.
+    let rings = radius.min(
+        fire_world
+            .and_then(|world| world.map_rect())
+            .map_or(i32::from(MAX_CELL_SIDE), |rect| {
+                square_rings_covering_rect((cx, cy), rect)
+            }),
+    );
     for ring in 0..rings {
         for (x, y) in square_ring_cells((cx, cy), ring) {
             // Native ring coordinates cross the packed CellStruct seam before
@@ -3044,6 +3031,11 @@ fn threat_avoidance(ctx: &ScanContext<'_>, candidate: &GameEntity, score: i32) -
             rows.contains(&y) && if x < cx { x >= left } else { x < columns.end }
         }
     };
+    // Beyond MapRect none of the side tests above admits a cell.
+    let rings = rings.min(square_rings_covering_rect(
+        (cx, cy),
+        [left, top, width, height],
+    ));
     let halvings = (1..rings)
         .flat_map(|ring| square_ring_cells((cx, cy), ring).map(move |cell| (cell, ring)))
         .filter(|&(cell, ring)| inside(cell, ring) && allied_building(cell.0, cell.1))
@@ -3191,32 +3183,19 @@ mod tests {
     use crate::sim::combat::threat_posed::live_threat_posed;
     use crate::sim::intern::test_interner;
 
-    /// A hostile radius walks every ring holding a cell `In_Bounds` admits
-    /// and stops within a ring or two of the farthest one; a smaller radius
-    /// is left as it is.
+    /// On a 350 by 350 map the last included ring still reaches the eastern tip.
     #[test]
-    fn the_ring_walk_stops_past_the_maps_farthest_cell() {
-        let (width, height) = (80, 40);
-        for centre in [(70, 20), (41, 40), (100, 40)] {
-            let farthest = (0..=300)
-                .flat_map(|x| (0..=300).map(move |y| (x, y)))
-                .filter(|&(x, y)| {
-                    crate::map::playfield::size_diamond_contains(width, height, (x, y))
-                })
-                .map(|(x, y)| {
-                    (i32::from(x) - centre.0)
-                        .abs()
-                        .max((i32::from(y) - centre.1).abs())
-                })
-                .max()
-                .unwrap();
-            let rings = map_ring_bound(i32::MAX / 256, centre, width, height);
-            assert!(
-                farthest < rings && rings <= farthest + 2,
-                "centre {centre:?}"
-            );
-            assert_eq!(map_ring_bound(12, centre, width, height), 12);
-        }
+    fn the_ring_walk_includes_the_large_map_corner() {
+        let centre = (150, 250);
+        let corner = (699, 350);
+        assert!(crate::map::playfield::size_diamond_contains(
+            350, 350, corner
+        ));
+        let rings = square_rings_covering_rect(centre, [1, 1, 699, 699]);
+        assert!(
+            square_ring_cells(centre, rings - 1)
+                .any(|cell| cell == (i32::from(corner.0), i32::from(corner.1)))
+        );
     }
 
     /// A Hunt's flat walk loads and scores only the objects its id and owner

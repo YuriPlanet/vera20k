@@ -152,14 +152,6 @@ impl PlayfieldBounds {
     }
 }
 
-/// VERA: the highest coordinate a [`size_diamond_contains`] cell takes on
-/// either axis. Its cells have `width < x + y <= width + 2 * height` (that
-/// sum wrapping as the test's does) and `|x - y| < width`, so both lie in
-/// `1..=(sum + width) / 2`.
-pub const fn size_diamond_extent(width: i32, height: i32) -> i64 {
-    (width.wrapping_add(height.wrapping_mul(2)) as i64 + width as i64) / 2
-}
-
 /// `MapClass::In_Bounds @ 0x00568300`: the diamond of the map `Size=` width
 /// (`MapClass+0xF4`) and height (`+0xF8`), in wrapping signed arithmetic.
 pub const fn size_diamond_contains(width: i32, height: i32, cell: (i16, i16)) -> bool {

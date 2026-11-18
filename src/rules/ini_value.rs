@@ -64,10 +64,6 @@ use super::{IniSection, is_native_none_type_name};
 use crate::rules::locomotor_type::SpeedType;
 use crate::util::native_x87::{MaskedX87Chop53, NativeF32Bits, NativeF64Bits};
 
-/// VERA's bound on a [`IniSection::read_range`] value's magnitude: 256 cells
-/// in leptons, over five times retail's longest (48 cells).
-pub const RANGE_LIMIT_LEPTONS: i32 = 256 * 256;
-
 /// 0x20 = ASCII space; gamemd `strtrim` strips bytes <= 0x20 (space + all ASCII
 /// control) at BOTH ends — NOT Unicode whitespace.
 const STRTRIM_MAX: u8 = 0x20;
@@ -1436,12 +1432,6 @@ impl IniSection {
     /// host's `Range=2147483647` (2^31 cells after the binary32 scan) is
     /// therefore 0 leptons, as in gamemd, not a range over the whole map.
     ///
-    /// VERA then bounds the leptons to [`RANGE_LIMIT_LEPTONS`] either way.
-    /// Searches step through a range a cell at a time (the candidate rings of
-    /// `FootClass::Approach_Target @ 0x004D5690`, Greatest_Threat's rings), so
-    /// a range of millions of cells (up to 8388607 does not wrap) freezes the
-    /// match.
-    ///
     /// One residual, out of reach of any data:
     ///
     /// * A NaN never reaches `ftol` at all: `FCOM` against `-1.0` sets C3 for
@@ -1463,7 +1453,6 @@ impl IniSection {
                 current
             } else {
                 crate::util::native_x87::X87Chop53::ftol_f64_low_masked(parsed * 256.0)
-                    .clamp(-RANGE_LIMIT_LEPTONS, RANGE_LIMIT_LEPTONS)
             }
         })
     }
@@ -2121,7 +2110,7 @@ fn leading_float_token(s: &str) -> Option<&str> {
 
 #[cfg(all(test, tests_rules_a_n))]
 mod tests {
-    use super::{RANGE_LIMIT_LEPTONS, crt_atoi, parse_leading_f32, strtok, truncate_native_bytes};
+    use super::{crt_atoi, parse_leading_f32, strtok, truncate_native_bytes};
     use crate::rules::ini_parser::{IniFile, IniSection};
     use crate::util::native_x87::NativeF32Bits;
 
@@ -2664,17 +2653,13 @@ mod tests {
         assert_eq!(s.read_range("MISSING", 7), 7); // absent -> default (sentinel -1.0)
     }
 
-    /// `Math__ftol` keeps the low dword of its `FISTP qword`: a host's
-    /// 2147483647 (2^31 cells after the binary32 scan) or `1e999` (infinity)
-    /// is 0, and the largest range that does not wrap stops at VERA's bound.
+    /// `Math__ftol` keeps only the low dword of the qword conversion.
     #[test]
-    fn a_huge_range_wraps_as_ftol_does_then_stops_at_the_range_bound() {
-        let ini = sec("[S]\nA=2147483647\nB=1e999\nC=8388607\nD=-8388607\n");
+    fn read_range_keeps_the_native_low_dword() {
+        let ini = sec("[S]\nA=2147483647\nB=1e999\n");
         let s = ini.section("S").unwrap();
         assert_eq!(s.read_range("A", -1), 0);
         assert_eq!(s.read_range("B", -1), 0);
-        assert_eq!(s.read_range("C", -1), RANGE_LIMIT_LEPTONS);
-        assert_eq!(s.read_range("D", -1), -RANGE_LIMIT_LEPTONS);
     }
 
     /// The scratch seed is the section name's CRCEngine hash; these are the

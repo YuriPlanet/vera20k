@@ -735,6 +735,18 @@ impl Simulation {
             in_range::resolve_target_coords_3d(&target, self, rules, &self.interner, &cells)
         }
         .ok_or("Approach target surface failed")?;
+        // VERA: preserve every native ring (including CloseRange infantry spot RNG)
+        // for any range that can span a supported map. Beyond that, start the
+        // search at the farthest corner's Manhattan distance from the target,
+        // rounding up for subcell positions and keeping the ring sequence.
+        // This omits unplayable outer rings, their Dummy accesses and spot draws.
+        let full_map_span = 2 * i32::from(crate::map::cell_index::MAX_CELL_SIDE);
+        if radius / 256 > full_map_span {
+            let (x, y) = (i32::from(target_cell.0), i32::from(target_cell.1));
+            let dx = x.abs().max((i32::from(terrain.width()) - x).abs());
+            let dy = y.abs().max((i32::from(terrain.height()) - y).abs());
+            radius = radius.min((dx + dy + 2) * 256 + radius % 256);
+        }
         let mut retained_candidate = target_cell;
         //4D5FE0: after the CloseRange= arm's spot the destination is the
         // Target's own cell, without the search (4D6892 -> 4D689A).
