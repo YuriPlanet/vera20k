@@ -65,10 +65,27 @@ impl Default for ChatTranslation {
 }
 
 impl ChatTranslation {
-    /// Whether a received line goes to the translator; `in_match` says it
-    /// was said in a match.
-    pub(crate) fn sends(self, text: &[u16], in_match: bool) -> bool {
-        (self.in_matches || !in_match) && self.language.is_some_and(|language| language.needs(text))
+    /// The language a received line is translated into, when it goes to the
+    /// translator: `in_match` says it was said in a match, and `shown_in`
+    /// names the language VERA already shows it in, as the lobby's own lines
+    /// from their phrases. A line already in the chosen language stays.
+    pub(crate) fn target(
+        self,
+        text: &[u16],
+        in_match: bool,
+        shown_in: Option<ChatLanguage>,
+    ) -> Option<ChatLanguage> {
+        self.language.filter(|&language| {
+            (self.in_matches || !in_match) && shown_in != Some(language) && language.needs(text)
+        })
+    }
+
+    /// Whether a reply asked for in `target` reaches the chat: only while
+    /// `target` is still the chosen language, and not when the translator
+    /// says the line was already in it. A service that doesn't say still
+    /// translates.
+    pub(crate) fn shows(self, target: ChatLanguage, reply: &ChatReply) -> bool {
+        self.language == Some(target) && reply.source != Some(target)
     }
 }
 
@@ -96,25 +113,30 @@ pub(crate) fn without_note(text: &str) -> &str {
         .map_or(text, |(_, translation)| translation)
 }
 
+/// The language whose script alone writes `ch`. Latin and Han letters are
+/// shared, so they say nothing.
+fn script_language(ch: char) -> Option<ChatLanguage> {
+    match u32::from(ch) {
+        0x3040..=0x30FF | 0x31F0..=0x31FF | 0xFF66..=0xFF9D => Some(ChatLanguage::Japanese),
+        0x1100..=0x11FF | 0x3130..=0x318F | 0xA960..=0xA97F | 0xAC00..=0xD7FF => {
+            Some(ChatLanguage::Korean)
+        }
+        0x0400..=0x052F => Some(ChatLanguage::Russian),
+        0x0E00..=0x0E7F => Some(ChatLanguage::Thai),
+        0x0600..=0x06FF | 0x0750..=0x077F | 0x0870..=0x08FF | 0xFB50..=0xFDFF | 0xFE70..=0xFEFF => {
+            Some(ChatLanguage::Arabic)
+        }
+        _ => None,
+    }
+}
+
 /// The language a line's script alone gives away: the first letter only one
-/// listed language writes. Latin and Han letters are shared, so they say
-/// nothing.
+/// listed language writes.
 fn distinct_language(text: &[u16]) -> Option<ChatLanguage> {
     char::decode_utf16(text.iter().copied())
         .filter_map(Result::ok)
         .filter(|ch| ch.is_alphabetic())
-        .find_map(|ch| match u32::from(ch) {
-            0x3040..=0x30FF | 0x31F0..=0x31FF | 0xFF66..=0xFF9D => Some(ChatLanguage::Japanese),
-            0x1100..=0x11FF | 0x3130..=0x318F | 0xA960..=0xA97F | 0xAC00..=0xD7FF => {
-                Some(ChatLanguage::Korean)
-            }
-            0x0400..=0x052F => Some(ChatLanguage::Russian),
-            0x0E00..=0x0E7F => Some(ChatLanguage::Thai),
-            0x0600..=0x06FF | 0x0750..=0x077F | 0xFB50..=0xFDFF | 0xFE70..=0xFEFF => {
-                Some(ChatLanguage::Arabic)
-            }
-            _ => None,
-        })
+        .find_map(script_language)
 }
 
 /// Whether a reply only repeats the line it translates: the model leaves `gg`
@@ -151,19 +173,21 @@ impl ChatLanguage {
         self.entry().2
     }
 
-    /// A stored tag, ASCII case-insensitively; `zh`/`zh-cn` and
-    /// `zh-tw`/`zh-hk` name the two Chinese scripts.
+    /// A stored `[VERA] TranslateChat=` or reported translator `source` tag,
+    /// ASCII case-insensitively.
     pub(crate) fn from_tag(text: &str) -> Option<Self> {
-        let text = text.to_ascii_lowercase();
-        match text.as_str() {
-            "zh" | "zh-cn" => return Some(Self::SimplifiedChinese),
-            "zh-tw" | "zh-hk" => return Some(Self::TraditionalChinese),
-            _ => {}
-        }
         LANGUAGES
             .into_iter()
-            .find(|(_, tag, _)| tag.eq_ignore_ascii_case(&text))
+            .find(|(_, tag, _)| tag.eq_ignore_ascii_case(text))
             .map(|(language, ..)| language)
+    }
+
+    /// The language of VERA's interface language `tag` ([`crate::i18n`]),
+    /// such as `pt-BR` or `zh-CN`, when it is one of these: the closest by
+    /// language, then script.
+    pub(crate) fn of_interface(tag: &str) -> Option<Self> {
+        let tags = LANGUAGES.map(|(_, tag, _)| tag);
+        crate::i18n::best_match(&tags, std::iter::once(tag)).map(|index| LANGUAGES[index].0)
     }
 
     /// Whether a received line needs translating into this language. Latin-1
@@ -173,8 +197,8 @@ impl ChatLanguage {
     /// their own script's: a Russian line naming a `GI` is still Russian.
     /// A reader whose script another listed language shares also gets the
     /// lines in it that may be that other language; the reply says if one
-    /// wasn't ([`Self::shows`]). English readers don't: nearly every Latin line
-    /// would cost a model call only to be hidden.
+    /// wasn't ([`ChatTranslation::shows`]). English readers don't: nearly
+    /// every Latin line would cost a model call only to be hidden.
     pub(crate) fn needs(self, text: &[u16]) -> bool {
         let (own, other) = char::decode_utf16(text.iter().copied())
             .filter_map(Result::ok)
@@ -197,13 +221,6 @@ impl ChatLanguage {
         }
     }
 
-    /// Whether a reply reaches the chat: not when the translator says the
-    /// line was already in this language. A service that doesn't say still
-    /// translates.
-    pub(crate) fn shows(self, reply: &ChatReply) -> bool {
-        reply.source != Some(self)
-    }
-
     /// Whether `ch` is a letter of this language's script. Turkish alone of
     /// the Latin-script languages here has letters past Latin-1.
     fn writes(self, ch: char) -> bool {
@@ -219,9 +236,7 @@ impl ChatLanguage {
             Self::SimplifiedChinese | Self::TraditionalChinese | Self::Japanese | Self::Korean => {
                 crate::i18n::is_cjk_sized(code)
             }
-            Self::Russian => matches!(code, 0x0400..=0x052F),
-            Self::Arabic => crate::i18n::is_right_to_left_letter(ch),
-            Self::Thai => matches!(code, 0x0E00..=0x0E7F),
+            Self::Russian | Self::Arabic | Self::Thai => script_language(ch) == Some(self),
         }
     }
 }
@@ -251,20 +266,48 @@ mod tests {
         assert!(Russian.needs(&w("rush his ore miners")));
         assert!(!Russian.needs(&w("раш на руду, GI рядом")));
         assert!(!Thai.needs(&w("บุกฐานเลย gg")));
+        // Hebrew is right to left too, but not Arabic.
+        assert!(Arabic.needs(&w("תקפו את הבסיס")));
     }
 
     #[test]
     fn match_chat_is_sent_only_while_translate_in_matches_is_on() {
         let line = w("rush his ore miners");
+        let german = Some(ChatLanguage::German);
         let mut chat = ChatTranslation {
-            language: Some(ChatLanguage::German),
+            language: german,
             ..ChatTranslation::default()
         };
-        assert!(chat.sends(&line, true));
+        assert_eq!(chat.target(&line, true, None), german);
         chat.in_matches = false;
-        assert!(!chat.sends(&line, true));
-        assert!(chat.sends(&line, false));
-        assert!(!ChatTranslation::default().sends(&line, false));
+        assert_eq!(chat.target(&line, true, None), None);
+        assert_eq!(chat.target(&line, false, None), german);
+        assert_eq!(ChatTranslation::default().target(&line, false, None), None);
+    }
+
+    #[test]
+    fn a_lobby_line_shown_in_the_chosen_language_is_not_sent() {
+        use ChatLanguage::*;
+        let chat = |language| ChatTranslation {
+            language: Some(language),
+            ..ChatTranslation::default()
+        };
+        let interface = ChatLanguage::of_interface;
+        let german = w("12 Spieler sind online");
+        assert_eq!(chat(German).target(&german, false, interface("de")), None);
+        let portuguese = w("12 jogadores online");
+        assert_eq!(
+            chat(Portuguese).target(&portuguese, false, interface("pt-BR")),
+            None
+        );
+        // VERA has no French file: a French reader sees the lobby's English.
+        let english = w("12 players online");
+        assert_eq!(
+            chat(French).target(&english, false, interface("en")),
+            Some(French)
+        );
+        assert_eq!(interface("zh-CN"), Some(SimplifiedChinese));
+        assert_eq!(interface("vi"), None);
     }
 
     #[test]
@@ -277,14 +320,21 @@ mod tests {
     }
 
     #[test]
-    fn a_reply_in_the_reader_s_own_language_is_hidden() {
+    fn a_reply_shows_only_in_its_chosen_target_and_not_from_it() {
+        use ChatLanguage::*;
         let reply = |source| ChatReply {
             text: "[Übersetzt aus dem Englischen] Angriff".into(),
             source,
         };
-        let german = ChatLanguage::German;
-        assert!(!german.shows(&reply(Some(german))));
-        assert!(german.shows(&reply(Some(ChatLanguage::English))));
-        assert!(german.shows(&reply(None)));
+        let chat = |language| ChatTranslation {
+            language,
+            ..ChatTranslation::default()
+        };
+        assert!(chat(Some(German)).shows(German, &reply(Some(English))));
+        assert!(chat(Some(German)).shows(German, &reply(None)));
+        assert!(!chat(Some(German)).shows(German, &reply(Some(German))));
+        // French was chosen, or translation turned off, while it was asked.
+        assert!(!chat(Some(French)).shows(German, &reply(Some(English))));
+        assert!(!chat(None).shows(German, &reply(Some(English))));
     }
 }

@@ -186,9 +186,11 @@ matches is sent to the lobby's translation service when it needs it: for a Latin
 language a line with any letter outside it, for any other language a line with none of
 its letters. A reader whose script another listed language shares, English readers
 excepted, also sends the lines in that script, since they may be another language. The
-original stays; its translation follows as a line from the same sender marked `»`,
+lobby's own lines that VERA shows from their phrases in the chosen language are not sent.
+The original stays; its translation follows as a line from the same sender marked `»`,
 without the service's bracketed note naming the source language, unless it only repeats
-the original or the service says it was already in the chosen language.
+the original, the service says it was already in the chosen language, or the player chose
+another language while it was asked.
 
 The app services reliable messages and intermediate progress while loading, and
 continues servicing transport during frame waits. Gameplay uses the same

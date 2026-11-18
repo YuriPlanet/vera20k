@@ -30,7 +30,7 @@ use crate::app::shell_network_setup::{NetworkSetupEvent, NetworkSetupRequest};
 use crate::i18n::tr;
 use crate::net::reliable::{LanConnectionConfig, LanConnections, RetryTiming};
 use crate::net::udp::{LanUdpTransport, UdpBindConfig};
-use crate::ui::chat_translation::{ChatReply, only_repeats, without_note};
+use crate::ui::chat_translation::{ChatLanguage, ChatReply, only_repeats, without_note};
 use crate::ui::wol_account::AccountRequest;
 use crate::ui::wol_chat::WolChatLine;
 
@@ -538,11 +538,11 @@ const MAX_PENDING_TRANSLATIONS: usize = 4;
 const TRANSLATION_PAUSE: Duration = Duration::from_secs(60);
 
 /// Received chat lines waiting for `POST /v1/translate`, by request id: where
-/// each one shows, and its text.
+/// each one shows, its text and the language it was asked for.
 #[derive(Default)]
 struct Translations {
     next: u64,
-    pending: BTreeMap<u64, (super::translation::TranslatedLine, String)>,
+    pending: BTreeMap<u64, (super::translation::TranslatedLine, String, ChatLanguage)>,
     paused_until: Option<Instant>,
 }
 
@@ -551,7 +551,7 @@ impl Translations {
         &mut self,
         requests: &Sender<http::Request>,
         text: &[u16],
-        target: crate::ui::chat_translation::ChatLanguage,
+        target: ChatLanguage,
         line: super::translation::TranslatedLine,
         now: Instant,
     ) {
@@ -564,14 +564,13 @@ impl Translations {
         }
         let id = self.next;
         self.next = self.next.wrapping_add(1);
-        let target = target.tag();
         let request = http::Request::Translate {
             id,
             text: text.clone(),
-            target,
+            target: target.tag(),
         };
         if requests.send(request).is_ok() {
-            self.pending.insert(id, (line, text));
+            self.pending.insert(id, (line, text, target));
         }
     }
 
@@ -580,11 +579,11 @@ impl Translations {
         id: u64,
         outcome: Result<ChatReply, http::TranslateFailure>,
         now: Instant,
-    ) -> Option<(super::translation::TranslatedLine, ChatReply)> {
-        let (line, original) = self.pending.remove(&id)?;
+    ) -> Option<(super::translation::TranslatedLine, ChatLanguage, ChatReply)> {
+        let (line, original, target) = self.pending.remove(&id)?;
         match outcome {
             Ok(reply) if only_repeats(&original, without_note(&reply.text)) => None,
-            Ok(reply) => Some((line, reply)),
+            Ok(reply) => Some((line, target, reply)),
             Err(failure) => {
                 if failure == http::TranslateFailure::Unavailable {
                     self.paused_until = Some(now + TRANSLATION_PAUSE);
@@ -2079,16 +2078,10 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
         WolServiceRequest::RequestMatch { matchbot, request } => {
             request_match(service, matchbot, &request)
         }
-        WolServiceRequest::Translate { text, line } => {
-            if let Some(target) = state.persistence.options_profile.chat_translation.language {
-                service.translations.request(
-                    &service.requests,
-                    &text,
-                    target,
-                    line,
-                    Instant::now(),
-                );
-            }
+        WolServiceRequest::Translate { text, target, line } => {
+            service
+                .translations
+                .request(&service.requests, &text, target, line, Instant::now());
         }
     }
 }
@@ -2853,8 +2846,10 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             _ => notice(state, &tr("VERA:OnlineRequestRefused")),
         },
         http::Response::Translated { id, outcome } => {
-            if let Some((line, reply)) = service.translations.reply(id, outcome, Instant::now()) {
-                super::translation::show(state, line, &reply);
+            if let Some((line, target, reply)) =
+                service.translations.reply(id, outcome, Instant::now())
+            {
+                super::translation::show(state, line, target, &reply);
             }
         }
         http::Response::AccountAnswered { attempt, answer } => {
@@ -2959,21 +2954,23 @@ struct Chat {
 
 impl Chat {
     /// The line in the language in use when the lobby said it as phrases
-    /// that VERA's language files hold, else the lobby's `text`. A matchbot
-    /// reply's phrases say what follows its first word, the reply's kind,
-    /// which its Quick Match runner reads (`Info`).
-    fn shown_text(&self) -> String {
+    /// that VERA's language files hold, else the lobby's `text`, and whether
+    /// it is the former. A matchbot reply's phrases say what follows its
+    /// first word, the reply's kind, which its Quick Match runner reads
+    /// (`Info`).
+    fn shown_text(&self) -> (Vec<u16>, bool) {
         let Some(said) =
             serde_json::from_value::<Vec<super::lobby_phrases::Phrase>>(self.phrases.clone())
                 .ok()
                 .and_then(|phrases| super::lobby_phrases::localized(&phrases))
         else {
-            return self.text.clone();
+            return (self.text.encode_utf16().collect(), false);
         };
-        match self.text.split_once(' ') {
+        let said = match self.text.split_once(' ') {
             Some((kind, _)) if self.ansi => format!("{kind} {said}"),
             _ => said,
-        }
+        };
+        (said.encode_utf16().collect(), true)
     }
 
     /// The lobby's line that a newer release is out (`NewRelease`), which a
@@ -3542,11 +3539,13 @@ fn apply_event(
         }
         "chat" => {
             let p: Chat = decode(payload)?;
+            let (text, localized) = p.shown_text();
             if p.visit {
                 service_event(
                     state,
                     WolServiceEvent::VisitMessage {
-                        text: p.shown_text().encode_utf16().collect(),
+                        text,
+                        localized,
                         from: p.from.into_member(&local),
                         private: p.private,
                         action: p.action,
@@ -3561,12 +3560,12 @@ fn apply_event(
             if p.announces_release() {
                 lobby_says_outdated(state);
             }
-            let text = p.shown_text().encode_utf16().collect();
             service_event(
                 state,
                 WolServiceEvent::Message {
                     from: p.from.into_member(&local),
                     text,
+                    localized,
                     private: p.private,
                     action: p.action,
                     ansi: p.ansi,
@@ -4813,6 +4812,31 @@ mod completion_tests {
         assert!(!line("VERA20k", json!([{"key": "OnlyPlayerOnline"}])).announces_release());
     }
 
+    /// Only a line shown from the lobby's phrases counts as localized, which
+    /// is what keeps it from translation into the interface language; a
+    /// player's line, or phrases this game cannot show, keep the text.
+    #[test]
+    fn only_a_line_shown_from_the_lobbys_phrases_is_localized() {
+        let line = |phrases: Value| -> (String, bool) {
+            let chat: Chat = decode(json!({
+                "from": {"player_id": "p", "name": "VERA20k", "flags": 1},
+                "text": "the lobby's text",
+                "phrases": phrases,
+            }))
+            .unwrap();
+            let (text, localized) = chat.shown_text();
+            (String::from_utf16(&text).unwrap(), localized)
+        };
+        let hidden = "1 game is hidden because it runs another VERA20k version.";
+        assert_eq!(
+            line(json!([{"key": "GamesHidden", "values": {"count": 1}}])),
+            (hidden.to_owned(), true)
+        );
+        let text = ("the lobby's text".to_owned(), false);
+        assert_eq!(line(Value::Null), text);
+        assert_eq!(line(json!([{"key": "NotYetKnown"}])), text);
+    }
+
     #[test]
     fn lobby_upgrade_notice_names_the_download_once_per_sign_in() {
         let (mut service, _input, _output) = control_service(None);
@@ -5278,7 +5302,6 @@ mod completion_tests {
     #[test]
     fn translations_stay_bounded_and_pause_after_an_unavailable_translator() {
         use super::super::translation::TranslatedLine;
-        use crate::ui::chat_translation::ChatLanguage;
         let (requests, input) = mpsc::channel();
         let mut translations = Translations::default();
         let now = Instant::now();
@@ -5315,7 +5338,9 @@ mod completion_tests {
             }),
             now,
         );
-        assert!(shown.is_some_and(|(shown, reply)| shown == line("A") && reply.text == "冲"));
+        assert!(shown.is_some_and(|(shown, target, reply)| {
+            shown == line("A") && target == ChatLanguage::SimplifiedChinese && reply.text == "冲"
+        }));
         let failed = translations.reply(1, Err(http::TranslateFailure::Unavailable), now);
         assert!(failed.is_none());
         let mut ask = |name, at| {
@@ -5337,7 +5362,6 @@ mod completion_tests {
     #[test]
     fn a_reply_that_only_repeats_its_line_shows_nothing() {
         use super::super::translation::TranslatedLine;
-        use crate::ui::chat_translation::ChatLanguage;
         let (requests, _input) = mpsc::channel();
         let mut translations = Translations::default();
         let now = Instant::now();

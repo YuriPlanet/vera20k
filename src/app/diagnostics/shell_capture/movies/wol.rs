@@ -1926,6 +1926,7 @@ impl WolCapture {
                     WolServiceEvent::Message {
                         from: member("Hotel", MEMBER_OPERATOR, ""),
                         text: "mid-match".encode_utf16().collect(),
+                        localized: false,
                         private: false,
                         action: false,
                         ansi: false,
@@ -3411,6 +3412,7 @@ impl WolCapture {
                 WolServiceEvent::VisitMessage {
                     from,
                     text,
+                    localized: false,
                     private: false,
                     action: false,
                     sent_at: None,
@@ -3419,6 +3421,7 @@ impl WolCapture {
                 WolServiceEvent::Message {
                     from,
                     text,
+                    localized: false,
                     private: false,
                     action: false,
                     ansi: false,
@@ -3862,6 +3865,7 @@ impl WolCapture {
             WolServiceEvent::Message {
                 from: member(PEER, 0, ""),
                 text: "\u{4f60}\u{597d}".encode_utf16().collect(),
+                localized: false,
                 private: false,
                 action: false,
                 ansi: false,
@@ -4306,6 +4310,7 @@ impl WolCapture {
                         WolServiceEvent::Message {
                             from: member(name, flags, ""),
                             text: text.encode_utf16().collect(),
+                            localized: false,
                             private,
                             action,
                             ansi: false,
@@ -4342,6 +4347,7 @@ impl WolCapture {
                         WolServiceEvent::Message {
                             from: member(name, flags, tag),
                             text: text.encode_utf16().collect(),
+                            localized: false,
                             private: false,
                             action: false,
                             ansi: false,
