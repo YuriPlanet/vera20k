@@ -194,6 +194,33 @@ test('each socket reaches the listed relay its grant names; others are refused',
   }
 });
 
+test('a named legacy relay takes the bare channel paths of an older bundle', { timeout: 10000 }, async t => {
+  const other = dgram.createSocket('udp4');
+  other.bind(0, '127.0.0.1');
+  await once(other, 'listening');
+  t.after(() => other.close());
+  const second = `127.0.0.1:${other.address().port}`;
+  const { udp, relay, options, connect } = await fixture(t, { otherRelays: [second], legacyRelay: second });
+  assert.equal(gatewayOptionsFromEnv({ VERA_LEGACY_RELAY: ` ${second} ` }).legacyRelay, second);
+  assert.equal(gatewayOptionsFromEnv({ VERA_LEGACY_RELAY: '' }).legacyRelay, undefined);
+  for (const legacyRelay of ['127.0.0.1:9', 'relay.example:5000']) {
+    assert.throws(() => createGateway({ ...options, legacyRelay }), /VERA_LEGACY_RELAY/);
+  }
+  const seen = [[], []];
+  udp.on('message', data => seen[0].push(data[0]));
+  other.on('message', data => seen[1].push(data[0]));
+  const primary = connect('/game/primary');
+  const alternate = connect('/game/alternate');
+  await Promise.all([once(primary, 'open'), once(alternate, 'open')]);
+  primary.send(Buffer.from([1]));
+  alternate.send(Buffer.from([2]));
+  await until(other, () => seen[1].length === 2, 2000);
+  assert.deepEqual([seen[0], seen[1].sort()], [[], [1, 2]]);
+  for (const path of ['/game/primary/', '/game/other', `/game/primary?target=${relay}`]) {
+    await refused(connect(path));
+  }
+});
+
 test('one network holds at most a tenth of the game sockets and of the lobby exchanges', { timeout: 10000 }, async t => {
   const { base, relay, held, connect, socket, serverSockets } = await fixture(t, { clientIpHeader: 'x-forwarded-for' });
   const from = address => ({ 'x-forwarded-for': address });
