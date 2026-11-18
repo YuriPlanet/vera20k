@@ -658,7 +658,13 @@ fn walk_arm<'a>(
     };
     let mut previous = source.clone();
     let mut offset = [0i32; 3];
-    for _ in 0..steps {
+    // Phobos `FindFirstObstacle`'s loop (`Ext/Bullet/Hooks.Obstacles.cpp:64`)
+    // runs `maxDelta + isTargetingCheck` times, and its only VERA caller is
+    // `InRange`, which passes `true` — so the Phobos pass also visits the
+    // target cell, and a same-cell shot still takes one sample at the source.
+    // The stock walk (`0x004CC100`) stops one short, at `maxDelta`.
+    let samples = steps + i32::from(matches!(arm, WalkArm::Phobos));
+    for _ in 0..samples {
         let sample = std::array::from_fn::<_, 3, _>(|i| src[i].wrapping_add(offset[i]));
         #[cfg(any(test, feature = "test-support"))]
         LINE_SAMPLES.with_borrow_mut(|trace| {
@@ -991,6 +997,61 @@ mod tests {
             })),
             Some((1, 1)),
             "the predicted source is below the floor"
+        );
+    }
+
+    /// Phobos `FindFirstObstacle` samples `maxDelta + isTargetingCheck` points
+    /// (`Ext/Bullet/Hooks.Obstacles.cpp:64`) and `InRange` passes `true`
+    /// (`:236`), so the pass also lands on the target cell — and a shot whose
+    /// source and target share a cell still takes one sample. The stock walk
+    /// stays at `maxDelta`.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn the_phobos_pass_walks_into_the_target_cell() {
+        let walk = |target: (i64, i64, i64), water: Option<bool>, terrain: &mut _| {
+            let query = NativeCellQuery::canonical(terrain);
+            walk_line_for_blocking_cell(
+                (384, 384, 0),
+                target,
+                LineOfFireShot {
+                    phobos_subject_to_water: water,
+                    ..Default::default()
+                },
+                RuleSet::empty_for_test(),
+                &query,
+                &StringInterner::new(),
+                &LineOfFireInputs::default(),
+                None,
+            )
+            .map(|cell| match cell {
+                CellRef::Real(cell) => (cell.rx, cell.ry),
+                CellRef::Dummy { .. } => (0xFFFF, 0xFFFF),
+            })
+        };
+        let mut terrain = crate::map::resolved_terrain::test_grid(
+            8,
+            8,
+            crate::map::resolved_terrain::test_flat_cell,
+        );
+        // Only the target cell is water, so the last sample is the only hit.
+        terrain.cell_mut_for_test(7, 1).unwrap().land_type =
+            crate::rules::terrain_rules::LandType::Water.as_index();
+        assert_eq!(
+            walk((7 * 256 + 128, 384, 0), Some(true), &mut terrain),
+            Some((7, 1))
+        );
+        assert_eq!(walk((7 * 256 + 128, 384, 0), None, &mut terrain), None);
+
+        let mut same_cell = crate::map::resolved_terrain::test_grid(
+            8,
+            8,
+            crate::map::resolved_terrain::test_flat_cell,
+        );
+        same_cell.cell_mut_for_test(1, 1).unwrap().land_type =
+            crate::rules::terrain_rules::LandType::Water.as_index();
+        assert_eq!(
+            walk((384, 384, 0), Some(true), &mut same_cell),
+            Some((1, 1))
         );
     }
 

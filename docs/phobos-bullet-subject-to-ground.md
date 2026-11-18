@@ -70,8 +70,10 @@ the stock one.
   `GetWeapon(SelectWeapon(target))->FLH`), and the `TurretOffset` pivot is the
   art triple without a building's installed-upgrade `HasTurret`.
 - `FindFirstObstacle` samples `maxDelta + isTargetingCheck` points (`:64`), so
-  `InRange` also tests the target's own cell; VERA's walk stops at its
-  existing sample count, which has not been compared against that bound.
+  `InRange` also tests the target's own cell. **Ported for this call site**:
+  `line_of_fire::walk_arm` adds that one sample on the Phobos pass only
+  (`samples = steps + 1`), which also gives a same-cell shot its single sample
+  at the source. The stock walk (`0x004CC100`) keeps `maxDelta`.
 - After the scan, the same hook runs the spawner's position search (`:239-252`):
   a null result with `SpawnManager`, the Foot bit and `!IsInAir()` moves the
   firer's `Location` to the source coordinate, asks `0x703B10`
@@ -117,6 +119,9 @@ the stock one.
   `SubjectToLand=yes, SubjectToLand.Detonate=no` shot flies through a land cell
   on the flight arm (`isTargetingCheck = false`), still blocks on the range
   arm, and the unset companion defaults to detonating.
+- `src/sim/combat/line_of_fire.rs` —
+  `the_phobos_pass_walks_into_the_target_cell`: a water-only target cell blocks
+  on the last sample, and a same-cell shot takes its one sample at the source.
 - `src/sim/combat/in_range.rs` —
   `only_a_spawner_foot_asks_the_source_coordinate_for_a_bridge`: the carrier
   arm holds only with a `SpawnManager`, the Foot bit and no AIR layer, and it
