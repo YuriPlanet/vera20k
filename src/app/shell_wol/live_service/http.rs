@@ -168,9 +168,8 @@ fn account_call(request: &crate::ui::wol_account::AccountRequest) -> (&'static s
 }
 
 impl Request {
-    /// The periodic requests a waiting copy already covers: the host's 5 s
-    /// `ping` and the 10 s retry of a player's `renew_relay` and a watcher's
-    /// `renew_watch`.
+    /// The periodic requests a waiting copy already covers: the 10 s retry
+    /// of a player's `renew_relay` and a watcher's `renew_watch`.
     fn repeats(&self, other: &Self) -> bool {
         match (self, other) {
             (
@@ -183,7 +182,7 @@ impl Request {
                     ..
                 },
             ) => {
-                matches!(*operation, "ping" | "renew_relay" | "renew_watch")
+                matches!(*operation, "renew_relay" | "renew_watch")
                     && operation == other_operation
                     && payload == other_payload
             }
