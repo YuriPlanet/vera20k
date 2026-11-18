@@ -214,6 +214,15 @@ impl OrderingCertificate {
         self.sources_mask.count_ones() > 1 || self.ordered_alone
     }
 
+    /// A renewed certificate can name a later expiry. All other fields identify
+    /// the match whose clock and roster the relay admitted.
+    fn same_match(&self, other: &Self) -> bool {
+        Self {
+            expires: other.expires,
+            ..*self
+        } == *other
+    }
+
     /// The HTTPS lobby signs this public manifest separately from hop tickets.
     /// Layout: VO1C, room16, LE mask32, LE Hz16, LE expiry64, domain HMAC32;
     /// VO2C adds a flags byte (bit 0: pacing off, bit 1: ordered alone) before
@@ -544,14 +553,8 @@ impl ClientSession {
         }
         let certificate = certificate.to_vec();
         if let Some(current) = &mut self.ordering {
-            // A renewal changes only the expiry.
             let old = OrderingCertificate::parse(&current.certificate)?;
-            if (OrderingCertificate {
-                expires: parsed.expires,
-                ..old
-            }) != parsed
-                || current.agreement != agreement
-            {
+            if !old.same_match(&parsed) || current.agreement != agreement {
                 return Err(RelayError::Authentication);
             }
             if parsed.expires > old.expires {
@@ -5575,6 +5578,43 @@ mod tests {
     }
 
     #[test]
+    fn ready_accepts_a_renewed_expiry_and_refuses_a_different_pacing() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 2);
+        let (mut first, mut second) = (client(&key, 0), client(&key, 1));
+        connect(&mut server, &mut first, 0);
+        connect(&mut server, &mut second, 0);
+        let cert = OrderingCertificate {
+            pacing: CertificatePacing::On,
+            ..OrderingCertificate::parse(&certificate(&key, 3, 2000)).unwrap()
+        };
+        configure(&mut server, &mut first, &cert.sign(&key).unwrap(), 1000);
+        let renewed = OrderingCertificate {
+            expires: 2100,
+            ..cert
+        };
+        let retry = configure(&mut server, &mut first, &renewed.sign(&key).unwrap(), 1500);
+        assert!(matches!(retry.first(), Some(OrderEvent::Ready { .. })));
+        let different = OrderingCertificate {
+            pacing: CertificatePacing::Off,
+            ..renewed
+        };
+        let reply = configure(
+            &mut server,
+            &mut second,
+            &different.sign(&key).unwrap(),
+            2000,
+        );
+        assert!(matches!(
+            reply.as_slice(),
+            [OrderEvent::Error {
+                code: OrderError::AgreementMismatch,
+                ..
+            }]
+        ));
+    }
+
+    #[test]
     fn a_loading_players_different_ready_refuses_the_start_for_everyone() {
         let key = SecretKey::new([73; 32]);
         let mut server = RelayServer::new(key.clone(), 2);
@@ -6314,13 +6354,11 @@ impl RelayServer {
             } else if ordering.storage_failed {
                 error(OrderError::StorageUnavailable, ordering.next_seq)
             } else if ordering.agreement_mismatch
-                || ordering.certificate.room != certificate.room
-                || ordering.certificate.sources_mask != certificate.sources_mask
-                || ordering.certificate.tick_hz != certificate.tick_hz
+                || !ordering.certificate.same_match(&certificate)
                 || ordering.agreement != agreement
             {
-                // VERA: a loading player's Ready proves a world the first
-                // Ready players cannot start with. Cancel the start for
+                // VERA: a loading player's Ready disagrees on the signed match
+                // settings or the initial world. Cancel the start for
                 // everyone now, as its Leave could, instead of letting its
                 // keepalives hold the others until the loading limit drops it
                 // and they start without it. A ready source's agreement
