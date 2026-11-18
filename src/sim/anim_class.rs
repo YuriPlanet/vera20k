@@ -5159,6 +5159,7 @@ impl Simulation {
         let mut target = coord;
         if distance > 0 {
             let jittered = crate::sim::projectile::launch::random_coords_near(
+                self.cell_grid(),
                 crate::sim::projectile::ProjectileCoord {
                     x: coord.x,
                     y: coord.y,

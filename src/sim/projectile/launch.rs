@@ -504,18 +504,27 @@ fn scatter_delta(
     offset_along(point, angle, magnitude, trig)
 }
 
-/// `MapClass::GetRandomCoordsNear`'s direction draw for a distance already
-/// chosen: one raw angle draw through the retail table. The native helper is
-/// not ported in VERA; the StraightTrajectory `Inaccurate=` arm uses this
-/// closest existing form (recorded as a residual).
+/// `MapClass::GetRandomCoordsNear` (`0x0049F420`) for a distance already chosen:
+/// one raw Scenario draw, its low byte through the two retail table samples, the
+/// 512-cell fallback and Z preserved. The owner is
+/// [`inviso_scatter::random_direction_coord`]; this wrapper only carries the
+/// projectile coordinate shape, so the four Phobos callers below share the
+/// impact-animation owner instead of a second angle formula.
 pub(crate) fn random_coords_near(
+    grid: crate::map::cell_index::CellGrid,
     point: ProjectileCoord,
     magnitude: i32,
     rng: &mut SimRng,
 ) -> ProjectileCoord {
-    let raw = rng.next_range_i32_inclusive(0, 0x7fff_fffe);
-    let trig = TrigTable::embedded();
-    scatter_delta(point, magnitude, raw, &trig)
+    let (x, y) = super::super::combat::inviso_scatter::random_direction_coord(
+        grid,
+        rng,
+        point.x,
+        point.y,
+        magnitude,
+        super::super::combat::inviso_scatter::RandomDirectionSnap::Preserve,
+    );
+    ProjectileCoord::new(x, y, point.z)
 }
 
 /// The pitch both nuclear missiles leave at, pushed as an immediate
@@ -1502,5 +1511,48 @@ mod arcing_fix_tests {
             "the lobber speed mult"
         );
         assert!(lobbed[2] > flat[2], "the lobber branch lofts higher");
+    }
+}
+
+#[cfg(all(test, feature = "phobos"))]
+mod random_coords_near_tests {
+    use super::random_coords_near;
+    use crate::sim::combat::inviso_scatter::{
+        RandomDirectionSnap, random_direction_coord_for_byte,
+    };
+    use crate::sim::projectile::ProjectileCoord;
+    use crate::sim::rng::SimRng;
+
+    /// `MapClass::GetRandomCoordsNear` (`0x0049F420`) via the wrapper: exactly
+    /// one raw Scenario draw, its low byte into the shared owner's tables, Z
+    /// carried through unchanged.
+    #[test]
+    fn one_raw_draw_and_the_shared_owner_set_the_point() {
+        let grid = crate::map::cell_index::CellGrid::Retail;
+        let point = ProjectileCoord::new(12_000, 40_000, -128);
+        let magnitude = 0x140;
+
+        let mut wrapper_rng = SimRng::new(7);
+        let actual = random_coords_near(grid, point, magnitude, &mut wrapper_rng);
+
+        let mut draw_rng = SimRng::new(7);
+        let raw = draw_rng.next_u32();
+        assert_eq!(
+            wrapper_rng.native_state_hex(),
+            draw_rng.native_state_hex(),
+            "the helper consumes one raw draw"
+        );
+        let expected = random_direction_coord_for_byte(
+            grid,
+            (raw & 0xff) as u8,
+            point.x,
+            point.y,
+            magnitude,
+            RandomDirectionSnap::Preserve,
+        );
+        assert_eq!(
+            actual,
+            ProjectileCoord::new(expected.0, expected.1, point.z)
+        );
     }
 }

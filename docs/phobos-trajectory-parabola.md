@@ -70,8 +70,10 @@ when the geometry has no solution. The bounce ladder is
 
 ## RNG draws
 
-- `PrepareForOpenFire`'s `Inaccurate=` scatter uses the shared retail-table
-  polar draw. The solve, bounce and cliff probes draw nothing.
+- `PrepareForOpenFire`'s `Inaccurate=` scatter draws the `RandomRanged` lane
+  magnitude and then one raw direction draw through the `0x0049F420` owner
+  (low byte into the retail samples). The solve, bounce and cliff probes draw
+  nothing.
 
 ## Residuals (trigger · impact · frequency · risk)
 

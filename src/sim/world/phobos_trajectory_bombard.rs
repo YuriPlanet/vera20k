@@ -383,6 +383,7 @@ impl Simulation {
                 .scenario_rng
                 .next_range_i32_inclusive(offset_min, offset_max);
             target_coords = crate::sim::projectile::launch::random_coords_near(
+                self.cell_grid(),
                 target_coords,
                 offset_distance,
                 &mut self.scenario_rng,

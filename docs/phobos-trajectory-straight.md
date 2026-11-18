@@ -92,8 +92,9 @@ and the `GetCellsInRectangle` proximity scan.
 ## RNG draws this chain passes
 
 - `PrepareForOpenFire`'s `Inaccurate=` scatter: one `RandomRanged(offsetMin,
-  offsetMax)` magnitude draw, then one raw direction draw through the retail
-  angle table.
+  offsetMax)` magnitude draw, then one raw direction draw through the
+  `0x0049F420` owner — its low byte indexes the retail sine/cosine samples,
+  with the 512-cell fallback and Z preserved.
 - The pass-through, proximity and last-check warhead detonations draw only
   what the warhead impact itself draws (the shared combat owner).
 - `OnAI`'s checks, the velocity check and the rectangle scan draw nothing.
@@ -117,11 +118,13 @@ and the `GetCellsInRectangle` proximity scan.
 
 ## Residuals (trigger · impact · frequency · risk)
 
-- **`GetRandomCoordsNear` direction draw.** The native helper is not ported;
-  the `Inaccurate=` scatter uses the existing retail-table polar draw
-  (`random_coords_near`). Trigger: an `Inaccurate=` bullet with a trajectory.
-  Impact: the scatter direction may differ by one table step. Frequency:
-  inaccurate shots only. Risk: determinism/aim, bounded by `BallisticScatter`.
+- **`GetRandomCoordsNear`.** Ported by the impact-animation owner
+  (`src/sim/combat/inviso_scatter.rs::random_direction_coord`, `0x0049F420`):
+  one raw Scenario draw, its low byte into the retail sine/cosine samples, the
+  512-cell fallback and Z preserved. The `Inaccurate=` scatter reaches it
+  through `random_coords_near`, so every Phobos consumer shares that formula.
+  No residual remains on this arm; `BallisticScatter` magnitudes still decide
+  the distance that feeds it.
 - **`BallisticScatter.Min/Max` source.** Native reads Ares' BulletTypeExt; a
   Phobos-only build uses `0` and `[CombatDamage] BallisticScatter=`. Trigger:
   Ares keys on a Phobos-only build. Frequency: Ares-authored data. Risk: low.

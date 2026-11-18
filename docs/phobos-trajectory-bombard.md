@@ -72,7 +72,8 @@ for `FreeFallOnTarget`, `NoLaunch` and the straight fall speed.
 1. Unlimbo: `RandomRanged(0, int(200 * FallPercentShift))`.
 2. Middle coordinates: `RandomRanged(FallScatter.Min, Max)` and then one
    `RandomDouble` (radial) or one `RandomRanged(0, 1)` (linear).
-3. `Inaccurate=` scatter: the shared retail-table polar draw.
+3. `Inaccurate=` scatter: `RandomRanged` handled above, then one raw direction
+   draw through the `0x0049F420` owner (low byte into the retail samples).
 
 `TurningPointAnims` picks one resolvable name with the native
 `RandomRanged(0, size - 1)` draw and constructs it at the turning point

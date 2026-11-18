@@ -50,10 +50,12 @@ hands the same coordinate to the bolt and to its spark particle system.
 
 ## Residuals
 
-- `MapClass::GetRandomCoordsNear` is not ported. `random_coords_near`
-  (`src/sim/projectile/launch.rs`) is the closest existing form — one raw
-  angle draw through the retail trig table — and is the same approximation the
-  `Inaccurate=` trajectory arm already records.
+- `MapClass::GetRandomCoordsNear` (`0x0049F420`) is the impact-animation owner
+  `src/sim/combat/inviso_scatter.rs::random_direction_coord`: one raw Scenario
+  draw, its low byte into the retail sine/cosine samples, the 512-cell
+  fallback, Z preserved. `random_coords_near`
+  (`src/sim/projectile/launch.rs`) now only carries the projectile coordinate
+  shape into it, so this arm and the three trajectory arms share one formula.
 - `RBeam` (`0x6FD70D`) has no VERA counterpart: the railgun's line damage and
   its particle aim exist (`src/sim/combat/railgun.rs`), but no beam is drawn,
   so there is nothing to scatter. A future railgun beam must hook the same
