@@ -8035,12 +8035,12 @@ fn wave_walks_nonbuilding_terrain_building_order_and_terrain_owns_wood_gate() {
                  [BuildingTypes]\n0=BLDG\n\
                  [TerrainTypes]\n0=TREE01\n\
                  [UNIT]\nStrength=100\nArmor=none\n\
-                 [BLDG]\nStrength=100\nArmor=wood\n\
+                 [BLDG]\nStrength=100\nArmor=none\n\
                  [FIRER]\nStrength=100\nArmor=light\nPrimary=SONIC\n\
                  [TREE01]\nStrength=100\nArmor=wood\nImmune=no\n\
                  [SONIC]\nDamage=4\nAmbientDamage=10\nWarhead=WH\nIsSonic=yes\n\
                  [WH]\nWood={}\nCellSpread=0\nPercentAtMax=1\n\
-                 Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+                 Verses=100%,100%,100%,100%,100%,100%,50%,100%,100%,100%,100%\n",
                 if wood { "yes" } else { "no" },
             )),
         )
@@ -8145,8 +8145,8 @@ fn wave_walks_nonbuilding_terrain_building_order_and_terrain_owns_wood_gate() {
         "one-cell order is nonbuilding, Terrain, then Building",
     );
     assert_eq!(unit_health, 90);
-    assert_eq!(tree_health, 90);
-    assert_eq!(building_health, 90);
+    assert_eq!(tree_health, 95);
+    assert_eq!(building_health, 95, "the tree passes its five-point damage to the building");
 
     let (_, unit_health, tree_health, building_health) = run(false);
     assert_eq!(unit_health, 90);

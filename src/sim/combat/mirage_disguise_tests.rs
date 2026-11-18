@@ -236,6 +236,10 @@ fn damage_receiver_matches_original_packet_result_and_disguise_consequence() {
         .expect("physical MGTK/AP receiver resolves");
         let receipt = receiver_health::commit_receiver_health(
             &event,
+            &mut crate::sim::combat::receiver_call::ReceiverDamage::new(
+                event.damage,
+                event.damage_writeback,
+            ),
             &mut world,
             &rules,
             None,
