@@ -2385,6 +2385,13 @@ impl ArtRegistry {
         bound.loop_end = loaded_loop_end;
     }
 
+    /// Whether art section `section` declares `Picture=`, so its frames are
+    /// the picture's and its SHP is never opened (docs/picture-model-art.md).
+    pub fn declares_picture(&self, section: &str) -> bool {
+        self.get(section)
+            .is_some_and(|entry| entry.picture.is_some())
+    }
+
     /// The files `decl`, declared in art section `section`, may load in
     /// `theater_name`, the first found winning: with the section's
     /// `NewTheater=yes`, the name with the theater's and then the generic

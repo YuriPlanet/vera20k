@@ -110,28 +110,32 @@ saves and replays.
 
 ## Drawing
 
-The new art has its own drawing path. It shares no atlas page, shader, bind
-group layout, palette, VXL geometry or VPL with the SHP and voxel paths, which
-stay as they are on `main`.
+The new art never reads an SHP, VXL, HVA, palette or VPL. It reaches the
+screen through the blitters every SHP and voxel image already uses, unchanged,
+so it sorts, shades and shadows by the same rules:
 
-- **Pictures** go on picture pages: RGBA at the picture's own resolution with
-  mipmaps, plus the mask. One copy per frame serves every house.
-- **Models** are drawn by the GPU every frame from their meshes into a
-  transient per-frame page, then placed like a voxel image. No pose cache and no
-  CPU raster.
-- **Composition.** The new path writes into the same frame by the same rules
-  the old path follows, so the two sort and shade together:
-  - native Z from the drawn rectangle (the row walker's gradient), not 3D depth;
-  - the same draw order, in the parent's slot (`ObjectTexture` variant);
-  - shadows as the per-pixel darkening count, not blended black;
-  - `PaletteLight` tint and brightness, unlit pixels kept;
-  - translucency as the native 25/50/75 % word blends;
-  - house colour by brightness onto the owner's ramp (the mask's red).
-- **Size.** At 1x a picture is drawn at `PictureSize` and a model at the size
-  `ModelSize` gives, shrunk from their own resolution. With the view magnified
-  (wheel zoom or the Options zoom), objects drawn from picture or model pages
-  are drawn again after the magnification at window resolution, depth-tested
-  against the battlefield's depth read in their shader. Known residual: such an
+- **Pictures** become RGBA source pages of the sprite atlas, beside its
+  palette-index pages: the blitters' existing RGBA source mode
+  (`sprite_source.wgsl`, `source_palette` 0) with an index plane. Each frame is
+  shrunk to `PictureSize=` game pixels (a game pixel is drawn when half its
+  picture pixels are; its colour is their mean), cropped to its drawn pixels
+  like a stored SHP frame, and centred on the canvas the same way. The index
+  plane holds 0 for holes, 1 for lit pixels and 240 for the mask's unlit
+  pixels, so `PaletteLight` leaves those alone. House-colour pixels take the
+  owner's ramp by brightness before upload, one copy per house only for frames
+  that have such pixels. The atlas entries are keyed and drawn as an SHP
+  frame's: native Z from the drawn rectangle, Display order, `Shadow=` frames,
+  darkening counts and translucency all follow without new code.
+- **Models** are drawn by the GPU every frame from their meshes into transient
+  RGBA images placed the way a voxel image is (chain 4 settles the details).
+- **Hooks.** The atlas does not register SHP keys for a type that declares
+  `Picture=`; it appends the picture pages and entries instead
+  (`render::picture_atlas`). No shader, pipeline, bind group layout or draw
+  pass changes.
+- **Zoomed.** At 1x a picture draws at `PictureSize`. With the view magnified
+  (wheel zoom or the Options zoom), chain 6 draws picture and model objects
+  again after the magnification at the art's own resolution, depth-tested
+  against the battlefield's depth in their shader. Known residual: such an
   object then draws over smoke and explosions in front of it.
 
 ## Implementation chains
@@ -159,9 +163,10 @@ against this list.
 - Each fact owner in the table above: one branch, "the section declares the new
   art", taking the value from the picture or model; the existing arm unchanged.
 - Asset lookup: no new probes; a picture or model is opened only by its key.
-- Drawing: one new `ObjectTexture` variant and its pass, appended where the
-  parent's draw is lowered; existing shaders, pipelines and layouts untouched.
-- The world zoom pass: one call that draws the new pages after magnification.
+- The sprite atlas: no SHP keys for a type with `Picture=`; picture pages and
+  entries appended. Existing shaders, pipelines, layouts and passes untouched.
+- The world zoom pass (chain 6): one call that draws the new art after
+  magnification.
 
 ## Verification
 

@@ -106,6 +106,8 @@ fn empty_upload(initial: bool) -> ShpAtlasUpload {
         new_objects: HashSet::new(),
         new_remaps: HashSet::new(),
         load_harvest_overlay: false,
+        pictures: Vec::new(),
+        picture_unrenderable: Vec::new(),
     }
 }
 

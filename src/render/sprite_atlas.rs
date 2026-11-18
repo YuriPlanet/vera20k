@@ -709,6 +709,9 @@ pub struct SpriteAtlas {
     growth_indices: HashMap<usize, wgpu::Texture>,
     /// The palettes every page's indices resolve through.
     palettes: ShpPalettes,
+    /// VERA-only, experimental: the RGBA picture pages among `pages`
+    /// (`render::picture_atlas`), which bind no palette rows.
+    picture_pages: HashSet<usize>,
 }
 
 fn push_effect_name(effect_names: &mut Vec<String>, name: &str) {
@@ -784,6 +787,66 @@ impl SpriteAtlas {
             growth: None,
             growth_indices: HashMap::new(),
             palettes,
+            picture_pages: HashSet::new(),
+        }
+    }
+
+    /// VERA-only, experimental (`docs/picture-model-art.md`): add `pictures`
+    /// on RGBA source pages of their own, keyed and placed as SHP frames.
+    pub(crate) fn append_pictures(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        pictures: Vec<crate::render::picture_atlas::PlacedPicture>,
+    ) {
+        if pictures.is_empty() {
+            return;
+        }
+        let max_side = device.limits().max_texture_dimension_2d;
+        for page in crate::render::picture_atlas::pack_picture_pages(pictures, max_side) {
+            let index = self.pages.len();
+            let Ok(page_byte) = u8::try_from(index) else {
+                log::warn!(
+                    "Sprite atlas: no page left for {} picture sprites",
+                    page.sprites.len()
+                );
+                return;
+            };
+            let texture = batch.create_texture_on_device(
+                device,
+                queue,
+                &page.rgba,
+                page.size[0],
+                page.size[1],
+                Some(&page.indices),
+            );
+            self.pages.push(SpriteAtlasPage { texture });
+            self.picture_pages.insert(index);
+            let [width, height] = page.size.map(|side| side as f32);
+            for (picture, [x, y]) in page.sprites {
+                let [w, h] = picture.sprite.size.map(|side| side as f32);
+                self.entries.insert(
+                    picture.key,
+                    ShpSpriteEntry {
+                        uv_origin: [x as f32 / width, y as f32 / height],
+                        uv_size: [w / width, h / height],
+                        pixel_size: [w, h],
+                        offset_x: picture.offset[0],
+                        offset_y: picture.offset[1],
+                        canvas_rect: picture.canvas_rect,
+                        extended: false,
+                        page: page_byte,
+                        // The blitters' RGBA source mode (`sprite_source.wgsl`).
+                        source_palette: 0,
+                    },
+                );
+            }
+            log::info!(
+                "Sprite atlas picture page {index} ({}x{})",
+                page.size[0],
+                page.size[1]
+            );
         }
     }
 
@@ -996,8 +1059,10 @@ impl SpriteAtlas {
         {
             // All resident pages keep their index planes/row IDs and bind the
             // replacement palette texture. Nothing needs repacking.
-            for page in &mut self.pages {
-                batch.rebind_indexed_palette(device, &mut page.texture, &palette_rows);
+            for (index, page) in self.pages.iter_mut().enumerate() {
+                if !self.picture_pages.contains(&index) {
+                    batch.rebind_indexed_palette(device, &mut page.texture, &palette_rows);
+                }
             }
         }
         let (pages, growth_indices) = (&mut self.pages, &mut self.growth_indices);
@@ -2838,8 +2903,23 @@ pub(crate) fn prepare_sprite_atlas(
         };
         let required_cell_drawer = *kind == ShpImageKind::Animation
             && cell_drawer_type_ids.contains(&name.to_ascii_uppercase());
-        match find_shp(asset_manager, &candidates) {
-            Some((file, data)) => match ShpFile::frame_count_from_bytes(&data) {
+        // VERA-only, experimental (docs/picture-model-art.md): a type that
+        // declares Picture= counts the frames rules binding read from its
+        // picture, and its SHP is never opened.
+        let picture =
+            *kind == ShpImageKind::Animation && art.is_some_and(|art| art.declares_picture(name));
+        let found = if picture {
+            art.and_then(|art| art.anim_runtime_config(name))
+                .and_then(|config| config.raw_shp_frame_count)
+                .and_then(|count| u16::try_from(count).ok())
+                .filter(|&count| count > 0)
+                .map(|count| (None, Ok(count)))
+        } else {
+            find_shp(asset_manager, &candidates)
+                .map(|(file, data)| (Some(file), ShpFile::frame_count_from_bytes(&data)))
+        };
+        match found {
+            Some((file, counted)) => match counted {
                 Ok(raw_count) => {
                     let name_upper = name.to_ascii_uppercase();
                     let scheduler_owned = *kind == ShpImageKind::Animation
@@ -2870,8 +2950,10 @@ pub(crate) fn prepare_sprite_atlas(
                             .insert(name_upper.clone(), (name.clone(), raw_count));
                         registered_effects.type_ids.insert(name.clone());
                     }
-                    shp_files.insert((*kind, name_upper), file.to_string());
-                    log::debug!("Effect anim SHP {}: {} frames from {}", name, count, file);
+                    if let Some(file) = file {
+                        shp_files.insert((*kind, name_upper), file.to_string());
+                    }
+                    log::debug!("Effect anim {}: {} frames from {:?}", name, count, file);
                 }
                 Err(error) if required_cell_drawer => {
                     return PreparedSpriteAtlas::Abandoned(format!(
@@ -3164,7 +3246,37 @@ pub(crate) fn prepare_sprite_atlas(
         (SpritePaletteChoice, &str, Option<HouseColorIndex>),
         usize,
     > = HashMap::new();
+    let mut pictures = crate::render::picture_atlas::PictureSources::default();
+    let mut placed_pictures = Vec::new();
+    let mut picture_unrenderable = Vec::new();
+    let default_ramps = HouseColorRamps::default();
     for (key, palette_choice) in new_keys.into_iter().zip(palette_choices) {
+        // VERA-only, experimental (docs/picture-model-art.md): a type that
+        // declares Picture= draws from its picture, never from an SHP.
+        if key.palette_context.image_kind() == ShpImageKind::Animation
+            && let Some(art) = art.filter(|art| art.declares_picture(&key.type_id))
+        {
+            let ramp = (key_house_remap(&key, palette_choice)
+                && key.house_color != crate::rules::house_colors::NO_REMAP)
+                .then(|| {
+                    rules
+                        .map_or(&default_ramps, |rules| &rules.house_color_ramps)
+                        .ramp(key.house_color)
+                });
+            let placed = pictures.place(
+                &key,
+                art,
+                asset_manager,
+                theater_name,
+                art.draw_offsets(&key.type_id),
+                ramp,
+            );
+            match placed {
+                Some(placed) => placed_pictures.push(placed),
+                None => picture_unrenderable.push(key),
+            }
+            continue;
+        }
         let projectile = key.palette_context.is_projectile();
         let kind = key.palette_context.image_kind();
         let same_source = raster.keys.last().is_some_and(|last| {
@@ -3236,15 +3348,7 @@ pub(crate) fn prepare_sprite_atlas(
                 (palette, name)
             }
         };
-        // 0x00627590 builds each scheme with ColorScheme's constructor
-        // (0x0068C710), which writes the colour's ramp over indices 16..31.
-        let house_remap = match key.palette_context {
-            ShpPaletteContext::Legacy => palette_choice != SpritePaletteChoice::CellIso,
-            _ => matches!(
-                palette_choice,
-                SpritePaletteChoice::Unit | SpritePaletteChoice::ExtraBuilding
-            ),
-        };
+        let house_remap = key_house_remap(&key, palette_choice);
         let remap = (house_remap && key.house_color != crate::rules::house_colors::NO_REMAP)
             .then_some(key.house_color);
         let palette = *render_palette_rows
@@ -3288,8 +3392,23 @@ pub(crate) fn prepare_sprite_atlas(
             new_objects,
             new_remaps,
             load_harvest_overlay,
+            pictures: placed_pictures,
+            picture_unrenderable,
         },
     )
+}
+
+/// Whether `key`'s frames take its house colour through `palette_choice`.
+/// 0x00627590 builds each scheme with ColorScheme's constructor (0x0068C710),
+/// which writes the colour's ramp over indices 16..31.
+fn key_house_remap(key: &ShpSpriteKey, palette_choice: SpritePaletteChoice) -> bool {
+    match key.palette_context {
+        ShpPaletteContext::Legacy => palette_choice != SpritePaletteChoice::CellIso,
+        _ => matches!(
+            palette_choice,
+            SpritePaletteChoice::Unit | SpritePaletteChoice::ExtraBuilding
+        ),
+    }
 }
 
 /// Prepared draw metadata owns shared physical source files. It borrows no
@@ -3504,6 +3623,10 @@ pub(crate) struct ShpAtlasUpload {
     new_objects: HashSet<(String, HouseColorIndex)>,
     new_remaps: HashSet<AnimRemapKey>,
     load_harvest_overlay: bool,
+    /// VERA-only, experimental: the frames drawn from declared pictures
+    /// ([`SpriteAtlas::append_pictures`]), and their keys with nothing to draw.
+    pictures: Vec<crate::render::picture_atlas::PlacedPicture>,
+    picture_unrenderable: Vec<ShpSpriteKey>,
 }
 
 impl ShpAtlasUpload {
@@ -3520,25 +3643,12 @@ impl ShpAtlasUpload {
         output: ShpRasterOutput,
         atlas: &mut Option<SpriteAtlas>,
     ) -> bool {
-        match self.drawn(output) {
-            Ok(drawn) => self.finish_drawn(device, queue, batch, drawn, atlas),
-            Err(failure) => {
-                keep_previous_sprite_atlas(&failure);
-                false
-            }
-        }
-    }
-
-    /// [`Self::finish`] once the frames are drawn.
-    fn finish_drawn(
-        self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        batch: &BatchRenderer,
-        (rendered, unrenderable, rows): DrawnShpSprites,
-        atlas: &mut Option<SpriteAtlas>,
-    ) -> bool {
-        let added = rendered.len();
+        let Some((rendered, unrenderable, rows)) = self.drawn(output) else {
+            return false;
+        };
+        let mut upload = self;
+        let pictures = upload.take_pictures();
+        let added = rendered.len() + pictures.len();
         let atlas = match atlas {
             Some(atlas) => {
                 atlas.append_sprites(device, queue, batch, rendered, rows);
@@ -3550,13 +3660,23 @@ impl ShpAtlasUpload {
             }
             None => atlas.insert(pack_sprites(device, queue, batch, rendered, rows)),
         };
-        self.publish(atlas, added, unrenderable);
+        atlas.append_pictures(device, queue, batch, pictures);
+        upload.publish(atlas, added, unrenderable);
         true
     }
 
-    /// The drawn frames, unrenderable keys and palette rows, or why the
-    /// raster abandoned them.
-    fn drawn(&self, output: ShpRasterOutput) -> Result<DrawnShpSprites, String> {
+    /// The frames drawn from declared pictures, for
+    /// [`SpriteAtlas::append_pictures`].
+    pub(crate) fn take_pictures(&mut self) -> Vec<crate::render::picture_atlas::PlacedPicture> {
+        std::mem::take(&mut self.pictures)
+    }
+
+    /// The drawn frames, unrenderable keys and palette rows, or None once an
+    /// abandoned refresh is reported.
+    fn drawn(
+        &self,
+        output: ShpRasterOutput,
+    ) -> Option<(Vec<RenderedShpSprite>, Vec<ShpSpriteKey>, ShpPalettes)> {
         match output.0 {
             ShpRaster::Drawn {
                 rendered,
@@ -3584,11 +3704,14 @@ impl ShpAtlasUpload {
             new_objects,
             new_remaps,
             load_harvest_overlay,
+            pictures: _,
+            picture_unrenderable,
         } = self;
         if initial {
             atlas.effects = registered_effects;
         }
         atlas.unrenderable.extend(unrenderable);
+        atlas.unrenderable.extend(picture_unrenderable);
         atlas.make_frame_counts = make_frame_counts;
         atlas.active_anim_frame_counts = active_anim_frame_counts;
         atlas.object_shp_frame_counts = object_shp_frame_counts;
