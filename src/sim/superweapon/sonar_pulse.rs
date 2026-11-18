@@ -38,10 +38,7 @@ pub(super) fn launch(
     };
     let launch = metadata.launch();
     let targeting = metadata.targeting();
-    let range = match launch.range() {
-        (width, height) if width < 0.0 && height < 0 => (10.0, -1),
-        range => range,
-    };
+    let range = launch.range_or_radius(10);
     let technos: Vec<u64> = if range.0 < 0.0 {
         let entities = &sim.substrate.entities;
         (0..entities.techno_registry_len())

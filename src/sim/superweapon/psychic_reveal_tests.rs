@@ -9,7 +9,7 @@ use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::superweapon::chronosphere_tests::{
     charge_super, click, retail_rules_binding, world_with,
 };
-use crate::sim::world::SimSoundEvent;
+use crate::sim::world::{SimSoundEvent, Simulation};
 use serde_json::Value;
 use std::collections::BTreeSet;
 
@@ -192,4 +192,59 @@ fn a_launch_maps_the_native_cells_for_its_house_and_allies() {
     assert_eq!(revealed(americans), native);
     assert!(revealed(russians).is_empty(), "a computer ally has no map");
     assert!(revealed(yuri).is_empty());
+}
+
+fn ares_scene(range: &str) -> (RuleSet, Simulation, crate::sim::intern::InternedId) {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let ini = IniFile::from_str(&format!(
+        "[AudioVisual]\nPsychicRevealActivateSound=RevealCue\n[CombatDamage]\nPsychicRevealRadius=2\n[SuperWeaponTypes]\n0={REVEAL}\n\
+         [{REVEAL}]\nType=PsychicReveal\nAction=None\nSW.Range={range}\n",
+    ));
+    let rules = RuleSet::from_ini_with_fixed_art_and_sounds_for_test(
+        &ini,
+        &IniFile::empty(),
+        &["RevealCue"],
+    )
+    .unwrap();
+    let (rules, mut sim, owner) = world_with(rules, 64, &[]);
+    sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
+        base: 24,
+        off_fc: -64,
+        off_100: -64,
+        off_104: 128,
+        off_108: 128,
+    }));
+    sim.set_playfield_size_height_for_test(Some(24));
+    charge_super(&mut sim, owner, REVEAL);
+    (rules, sim, owner)
+}
+
+#[test]
+fn ares_whole_map_launch_from_the_cameo_explores_the_playable_diamond() {
+    let (rules, mut sim, owner) = ares_scene("-1");
+    assert!(rules.super_weapon(REVEAL).unwrap().action.is_none());
+    click(&mut sim, &rules, owner, REVEAL, (0, 0));
+    assert!(sim.sound_events.iter().any(|event| matches!(event, SimSoundEvent::VocAtCoord { sound_id, .. } if sound_id == "RevealCue")));
+    assert!(sim.fog.is_cell_revealed(owner, 40, 25));
+    assert!(sim.fog.is_cell_revealed(owner, 12, 18));
+    assert!(!sim.fog.is_cell_revealed(owner, 3, 3));
+}
+
+#[test]
+fn ares_authored_radius_and_rectangle_reveal_only_their_cells() {
+    let target = (25, 25);
+    let (rules, mut sim, owner) = ares_scene("12");
+    click(&mut sim, &rules, owner, REVEAL, target);
+    assert!(sim.fog.is_cell_revealed(owner, 36, 25));
+    assert!(!sim.fog.is_cell_revealed(owner, 37, 25));
+
+    let (rules, mut sim, owner) = ares_scene("6,2");
+    click(&mut sim, &rules, owner, REVEAL, target);
+    assert!(sim.fog.is_cell_revealed(owner, 22, 24));
+    assert!(!sim.fog.is_cell_revealed(owner, 25, 26));
+
+    // A positive range beyond the grid still visits only stored cells.
+    let (rules, mut sim, owner) = ares_scene("1e38");
+    click(&mut sim, &rules, owner, REVEAL, target);
+    assert!(sim.fog.is_cell_revealed(owner, 40, 25));
 }

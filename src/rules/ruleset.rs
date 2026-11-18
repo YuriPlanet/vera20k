@@ -6220,12 +6220,6 @@ impl RuleSet {
             }
         }
         if crate::rules::ares_switch::ares_way() {
-            rules.ares_super_weapon_metadata.clear();
-            for (name, metadata) in processed.super_weapon_availability_states() {
-                rules
-                    .ares_super_weapon_metadata
-                    .insert(name.to_ascii_uppercase(), metadata);
-            }
             for (name, presentation) in processed.super_weapon_presentation_states() {
                 if let Some(sw) = rules
                     .super_weapons
@@ -7193,12 +7187,27 @@ impl RuleSet {
         log::info!("Factory map: {} entries", factory_map.len());
 
         // Step 6: Parse superweapon type registry.
+        let ares_super_weapon_metadata: BTreeMap<_, _> = if crate::rules::ares_switch::ares_way() {
+            processed
+                .super_weapon_availability_states()
+                .map(|(name, metadata)| (name.to_ascii_uppercase(), metadata))
+                .collect()
+        } else {
+            BTreeMap::new()
+        };
         let mut super_weapons: HashMap<String, SuperWeaponType> = HashMap::new();
         let sw_ids: Vec<String> = parse_registry(ini, "SuperWeaponTypes");
         let super_weapon_order: Vec<String> = sw_ids.clone();
         for sw_id in &sw_ids {
             if let Some(section) = ini.section(sw_id) {
-                let sw = SuperWeaponType::from_ini_section(sw_id, section);
+                let sw = SuperWeaponType::from_ini_section_with_range(
+                    sw_id,
+                    section,
+                    ares_super_weapon_metadata
+                        .get(&sw_id.to_ascii_uppercase())
+                        .map(|ext| ext.launch().range()),
+                    general.psychic_reveal_radius,
+                );
                 super_weapons.insert(sw_id.clone(), sw);
             } else {
                 log::trace!(
@@ -7412,7 +7421,7 @@ impl RuleSet {
                 .ares_super_weapon_cursor_states()
                 .map(|(name, cursors)| (name.to_ascii_uppercase(), cursors))
                 .collect(),
-            ares_super_weapon_metadata: BTreeMap::new(),
+            ares_super_weapon_metadata,
             #[cfg(feature = "phobos")]
             phobos_super_weapon_metadata: BTreeMap::new(),
             parallel_ai_queues:
