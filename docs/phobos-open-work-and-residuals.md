@@ -210,6 +210,16 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
    `IvanBomb.Detonate=yes` 的 warhead；影响：没有炸弹被提前引爆；零售数据与
    Phobos 默认值都是 no，须 mod 显式开启。回归测试
    `crit_tests::ivan_bomb_detonate_is_a_possible_cell_spread_member`。
+8. **`[General] TunnelSpeed` 的读取点（本链，结论：休眠遗留，无消费者）**：
+   `find-bytes` 定位字符串 VA `0x0083CA34`（在 `HoverDampen 0x0083CA28` 与
+   `CrewEscape 0x0083CA40` 之间），其唯一 `imm32` 引用是 `push 0x83CA34` @
+   `0x0066EDA1`，随后 `call 0x5283D0`（`CCINIClass::ReadDouble` 形态，
+   `ini` 指针来自 `[0x7F0C9C]`）把 binary64 写回 `[esi+0x20]`（`0x0066EDAE`），
+   即 `[General]` 规则块一次性读取。`.text` 内没有对该字段的消费者，`Tunnel`
+   locomotor 以固定 `19.0`（`0x7F5B20`）行进，零售 `TunnelSpeed=1`
+   （`rulesmd.ini:365`）属 TS 遗留。VERA 的 `RuleSet::general.tunnel_speed`
+   同样只读不用，与原生一致，故本项关闭（详见
+   `docs/phobos-tunnel-locomotor.md:120-131`）。
 
 ### 全局已知残渣（早前链条，仍需实机抽查）
 - **BuildLimitGroup 的 `RemoveProduction`**（`docs/phobos-build-limit-group.md`）：
