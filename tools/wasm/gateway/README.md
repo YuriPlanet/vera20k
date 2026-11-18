@@ -24,11 +24,6 @@ path (`/game/primary/203.0.113.1:5000`), and the gateway forwards it there only
 when that relay is listed; any other path is refused with 403, so browsers cannot
 reach other destinations. List a relay the lobby adds in the same deploy, or its
 browser players never pass relay admission.
-A browser bundle from before relay paths opens `/game/primary` and
-`/game/alternate` alone. To keep pages loaded before an upgrade playing, set
-`VERA_LEGACY_RELAY` to the one listed relay those bundles were served by; the
-gateway then forwards the bare paths there. Unset, they get 403. Remove it once
-no such page can still be open.
 `VERA_LOBBY_URL` defaults to `https://lobby.vera20k.org`. It must be an HTTPS
 origin. `/v1/*` forwards the existing method, path, Authorization and body without
 JSON conversion, following redirects or replaying requests. It preserves the
