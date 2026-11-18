@@ -768,9 +768,11 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 Some(flag) => Some(flag),
                 None => flag_pcx_for_side_item_data(country).map(str::to_owned),
             };
-            // RESIDUAL: C2/C9's ping image (7A0E50 from 5EA3E0, 007A0EA0)
-            // and the host's ping timer 0x14AF8 that fills it are not ported:
-            // the lobby carries no per-user latency to the room.
+            // RESIDUAL: C2/C9's ping image (7A0E50 from 5EA3E0, 007A0EA0),
+            // the latency tooltip 0078F5C0 (TXT_LATENCY_ICON_TOOLTIP_*) that
+            // reads the same table, and the host's ping timer 0x14AF8 that
+            // fills it are not ported: the lobby carries no per-user latency
+            // to the room.
             row_icons[visible_row] = Some(SetupRowIcon {
                 country: flag,
                 // 0x5EA3E0: wolhost.pcx on the human row named [0xA8D610];
