@@ -725,6 +725,49 @@ impl ProjectileCollisionWorld<'_> {
             }),
         };
         let owner = self.entities.get(projectile.source_id());
+        // Phobos `BulletClass_ShouldExplode_Obstacles` (`0x468C86`,
+        // `Ext/Bullet/Hooks.Obstacles.cpp:130-160`) runs
+        // `BulletObstacleHelper::GetObstacle` with `isTargetingCheck = false`,
+        // where the land/water keys answer their `.Detonate=` companions and a
+        // `false` lets the bullet fly through. The `Level` floor branch of that
+        // same helper is stock behaviour VERA already answers below
+        // (`projectile.collision().level`), so it stays there.
+        let projectile_type = projectile
+            .payload()
+            .projectile_type()
+            .and_then(|id| self.rules.projectile(self.interner.resolve(id)));
+        let shot = LineOfFireShot {
+            subject_to_cliffs: projectile.collision().subject_to_cliffs,
+            subject_to_walls: projectile.collision().subject_to_walls,
+            // Phobos `BulletType SubjectToGround=` lives on the type, which the
+            // collision policy does not carry.
+            subject_to_ground: projectile_type.is_some_and(|kind| kind.phobos_subject_to_ground()),
+            phobos_level: projectile_type.is_some_and(|kind| kind.level),
+            phobos_subject_to_land: projectile_type
+                .and_then(|kind| kind.phobos_subject_to_terrain.subject_to_land),
+            phobos_subject_to_water: projectile_type
+                .and_then(|kind| kind.phobos_subject_to_terrain.subject_to_water),
+            phobos_subject_to_land_detonate: projectile_type
+                .is_none_or(|kind| kind.phobos_subject_to_terrain.subject_to_land_detonate),
+            phobos_subject_to_water_detonate: projectile_type
+                .is_none_or(|kind| kind.phobos_subject_to_terrain.subject_to_water_detonate),
+            #[cfg(feature = "ares")]
+            subject_to_solid: projectile.collision().subject_to_solid,
+            parties: LineOfFireParties {
+                firing_house: owner.map(|source| source.owner()),
+                // The bullet's Owner (+0xB0) and Target (+0x10C).
+                #[cfg(feature = "ares")]
+                source_object: owner.map(|source| source.stable_id()),
+                #[cfg(feature = "ares")]
+                target_object: match projectile.target() {
+                    ProjectileTarget::Entity(id) => Some(id),
+                    _ => None,
+                },
+            },
+        };
+        if shot.phobos_terrain_blocks(&self.cell(candidate), false) {
+            return true;
+        }
         cell_blocks_line_of_fire(
             CellObstructionProbe {
                 source,
@@ -735,38 +778,7 @@ impl ProjectileCollisionWorld<'_> {
                     y: candidate.y,
                     z: candidate.z,
                 },
-                shot: LineOfFireShot {
-                    subject_to_cliffs: projectile.collision().subject_to_cliffs,
-                    subject_to_walls: projectile.collision().subject_to_walls,
-                    // Phobos `BulletType SubjectToGround=` lives on the type,
-                    // which the collision policy does not carry.
-                    subject_to_ground: projectile
-                        .payload()
-                        .projectile_type()
-                        .and_then(|id| self.rules.projectile(self.interner.resolve(id)))
-                        .is_some_and(|kind| kind.phobos_subject_to_ground()),
-                    // The in-flight `GetObstacle` arm (`0x468C86`) is its own
-                    // native call site with `isTargetingCheck = false`, where
-                    // `.Detonate` decides whether the bullet explodes or flies
-                    // on. This probe answers only the stock cell verdict, so the
-                    // terrain keys stay unset here (recorded residual).
-                    phobos_level: false,
-                    phobos_subject_to_land: None,
-                    phobos_subject_to_water: None,
-                    #[cfg(feature = "ares")]
-                    subject_to_solid: projectile.collision().subject_to_solid,
-                    parties: LineOfFireParties {
-                        firing_house: owner.map(|source| source.owner()),
-                        // The bullet's Owner (+0xB0) and Target (+0x10C).
-                        #[cfg(feature = "ares")]
-                        source_object: owner.map(|source| source.stable_id()),
-                        #[cfg(feature = "ares")]
-                        target_object: match projectile.target() {
-                            ProjectileTarget::Entity(id) => Some(id),
-                            _ => None,
-                        },
-                    },
-                },
+                shot,
             },
             self.interner,
             self.rules,

@@ -79,9 +79,16 @@ the stock one.
   `0x703B10` nor that substitution is ported.
 - The bullet's own flight arm (`0x468C86` `BulletClass_ShouldExplode_Obstacles`,
   `:130-160`) calls `GetObstacle` with `isTargetingCheck = false`, where
-  `.Detonate` decides between exploding and flying on. VERA's in-flight probe
-  still answers only the stock cell verdict, so the four terrain keys are inert
-  there (recorded, not a silent default).
+  `.Detonate` decides between exploding and flying on. **Ported for the two
+  nullable keys**: the in-flight probe
+  (`sim::world::projectile_collision::cliff_wall`) now feeds the type's four
+  keys into `LineOfFireShot` and asks `phobos_terrain_blocks(&cell, false)`
+  before the stock cell verdict, so `SubjectToLand`/`SubjectToWater` detonate
+  mid-flight and `.Detonate=no` lets the bullet fly through the cell it matches
+  (`line_of_fire.rs::the_flight_arm_reads_detonate_and_the_range_arm_does_not`).
+  The helper's `Level` floor branch (`Level && IsOnFloor()`, `:97-102`) is not
+  duplicated here: VERA's stock `projectile.collision().level` arm in the same
+  `shared()` already answers it.
 - The scan feeds only `InRange`, as natively; the bullet's own flight is
   governed by the trajectory keys.
 
@@ -98,6 +105,11 @@ the stock one.
   `the_phobos_pass_walks_from_the_predicted_source`: the second pass starts at
   the given source, so a shot level with the floor from the raw coordinate
   stops on the first sample when handed a source below it.
+- `src/sim/combat/line_of_fire.rs` —
+  `the_flight_arm_reads_detonate_and_the_range_arm_does_not`: a
+  `SubjectToLand=yes, SubjectToLand.Detonate=no` shot flies through a land cell
+  on the flight arm (`isTargetingCheck = false`), still blocks on the range
+  arm, and the unset companion defaults to detonating.
 - `src/util/flh_transform.rs` — `phobos_source_tests`: an axis-aligned target
   leaves the raw translate (Y negated), `Burst > 1` centres the lateral term,
   a +Y target turns the forward term, and the turret pivot rides the predicted
