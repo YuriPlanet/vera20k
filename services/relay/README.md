@@ -308,8 +308,9 @@ packet that goes out twice, and is retained until acknowledged; it is sent
 again only after going unacknowledged for the measured round trip plus 100 ms.
 A relay that misses a packet ignores later ones until then. A
 frame is emitted once every relay sealed it, in the same canonical order, so
-every relay delivers the same stream and sequence numbers. Player DATA to a remote source crosses one link to its relay. The
-first roster relay picks the start time from measured link round trips; the
+every relay delivers the same stream and sequence numbers. Player DATA to a remote source
+crosses one link to its relay. Both paths forward to addressed peers other than the
+sender, through 30 seconds since each peer was last heard from. The first roster relay picks the start time from measured link round trips; the
 others follow its clock offset. It alone cancels a startup for an ordinary
 reason: another relay's Leave before the start asks it to, and becomes a
 frame-1 departure if the start was already on its way. A relay that proves an
@@ -345,7 +346,10 @@ know this drops the packet and cancels at its 3-minute loading limit. Relays of
 different link versions therefore never start a match together.
 
 The RAM hot cache retains4,096 entries/2 MiB per room under a64 MiB global
-budget. Eviction from this cache does not evict match history: every complete
+budget. Across rooms, the relay evicts the oldest cached entry by its estimated
+frame due time. After a speed change, that estimate follows the same start clock
+as sealing, including a follower's clock corrections. Eviction from this cache
+does not evict match history: every complete
 canonical frame first appends to the full-match disk journal. The data
 file uses a length prefix per entry and the separate offset index is also on
 disk; no full-match index grows in RAM. Push and Pull share one reader for the
@@ -361,7 +365,8 @@ the match). Before the start, a
 source that never sent Ready departs in frame 1 after 60 seconds of silence,
 counted from its last packet even before the room existed, or once the room is 3
 minutes old, and the others start without it; a Ready source waits. A Ready
-whose agreement, roster or rate differs from the room's first gets
+whose agreement or signed match settings (including pacing) differ from the
+room's first gets
 `AgreementMismatch`. From a source still loading, it proves the others cannot
 start with it: the relay cancels the startup for every source at once, as that
 source's Leave could, and answers every later Ready, and the ready sources'

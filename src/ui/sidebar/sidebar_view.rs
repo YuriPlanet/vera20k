@@ -631,6 +631,9 @@ fn collect_build_entries(
     let mut sw_entries: Vec<BuildEntry> = Vec::new();
     if category == ProductionCategory::Defense {
         for sw in sw_views {
+            if !sw.ares_show_cameo {
+                continue;
+            }
             // The existing type identity selects its own atlas namespace. An
             // image filename cannot identify two types with different fallbacks.
             let type_id = interner.map_or_else(
@@ -762,6 +765,7 @@ mod tests {
                 constraints_blocked: false,
                 ares_refusal: None,
                 ready_shots: 0,
+                ares_show_cameo: true,
             }];
             let entries = super::collect_build_entries(
                 ProductionCategory::Defense,

@@ -260,6 +260,24 @@ fn best_in_rings(
     let (x, y) = (i32::from(own.0), i32::from(own.1));
     let mut best_value = -1;
     let mut best = None;
+    // Ordinary scans keep their visits (including native Dummy lookups).
+    // A radius larger than any supported grid cannot find additional ore.
+    let range = if range > i32::from(crate::map::cell_index::MAX_CELL_SIDE) {
+        let (width, height) = sim.resolved_terrain.as_ref().map_or_else(
+            || {
+                sim.overlay_grid
+                    .as_ref()
+                    .map_or((0, 0), |grid| (grid.width(), grid.height()))
+            },
+            |terrain| (terrain.width(), terrain.height()),
+        );
+        range.min(crate::map::cell_index::square_rings_covering_rect(
+            (x, y),
+            [0, 0, i32::from(width), i32::from(height)],
+        ))
+    } else {
+        range
+    };
     for r in 1..range {
         for i in -r..=r {
             for candidate in [

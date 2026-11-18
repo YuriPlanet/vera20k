@@ -7236,7 +7236,7 @@ impl Simulation {
                     .entities
                     .get(stable_id)
                     .filter(|entity| {
-                        crate::sim::superweapon::provided_supers(self, rules, entity)
+                        crate::sim::superweapon::provided_supers(self, rules, entity, false)
                             .next()
                             .is_some()
                     })

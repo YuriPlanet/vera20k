@@ -1715,6 +1715,16 @@ pub struct SuperWeaponView {
     /// The shots charged and waiting ([`SuperWeaponInstance::ready_shots`]):
     /// more than one only with Superweapon Limit, when the cameo counts them.
     pub ready_shots: usize,
+    /// Whether the right-sidebar strip shows this super's cameo. Ares
+    /// replaces `HouseClass::UpdateSuperWeaponsUnavailable` (hook
+    /// `0x0050B1D0`, `10039580`): when it grants the player's House a super
+    /// it adds the cameo when `SW.ShowCameo` holds and skips it when
+    /// `SW.AutoFire` does, else adds it (`0x10039617..0x1003965F`). Always
+    /// true without Ares; Mental Omega's Iron Guard is such a hidden
+    /// auto-fire super. Residual: Ares's spy-infiltration grant adds the
+    /// cameo without this test (`0x100123C7`); VERA hides the type on every
+    /// grant path.
+    pub ares_show_cameo: bool,
 }
 
 impl SuperWeaponView {
@@ -1809,6 +1819,11 @@ pub fn superweapon_views_for_owner(
                 None
             },
             ready_shots: inst.ready_shots(),
+            ares_show_cameo: !ares
+                || sw_type.sw_show_cameo
+                || !rules
+                    .super_weapon_target_policy(type_id_str)
+                    .is_some_and(|policy| policy.auto_fire()),
         });
     }
     views
@@ -2316,28 +2331,44 @@ fn owned_techno_present(sim: &Simulation, rules: &RuleSet, owner: InternedId, id
     })
 }
 
-/// The Supers `building` provides: its type's `SuperWeapon=` and
-/// `SuperWeapon2=` (`BuildingClass @ 0x00457630`, `0x00457690`), each only
-/// while its owner meets the Super's native and optional Ares building gates
-/// ([`super_weapon_available`]). The grant pass, the hold pass and the
-/// building destructor (`0x0043BE47..0x0043BEEA`) share it.
-///
-/// RESIDUAL: the passes also count the `SuperWeapon=`/`SuperWeapon2=` of a
-/// building's upgrades (`+0x5EC`; `0x0050B242..0x0050B267`,
-/// `0x0050AFF2..0x0050B02A`), without the `AuxBuilding=` test. Retail has
-/// no upgrade building (`PowersUpBuilding=`), so it never decides.
+/// Base type first, then installed upgrades in slot order when the caller
+/// includes them (Ares HasSuperWeapon 10011E60, GetSuperWeaponStatuses
+/// 10039032..10039085). Each type uses its primary, secondary and extra Supers.
+fn building_super_weapon_definitions<'r>(
+    sim: &'r Simulation,
+    rules: &'r RuleSet,
+    building: &'r crate::sim::game_entity::GameEntity,
+    with_upgrades: bool,
+) -> impl Iterator<Item = &'r str> {
+    use crate::rules::object_type::ObjectCategory;
+    let upgrades: &[Option<InternedId>] = if with_upgrades {
+        building.building_upgrades().types()
+    } else {
+        &[]
+    };
+    sim.object_type(building.type_ref(), rules)
+        .into_iter()
+        .chain(upgrades.iter().flatten().filter_map(move |&id| {
+            sim.interner
+                .object_type_in_category(id, ObjectCategory::Building, rules)
+        }))
+        .flat_map(type_super_weapons)
+}
+
+/// Supers available to the building's owner. Ares includes its upgrades in
+/// the House grant/hold pass (100390DE checks availability for each type).
+/// The destructor checks only the base type (Ares hook 43BE50, 10034980).
+/// RESIDUAL: stock grant/hold also counts upgrade Supers without testing
+/// AuxBuilding (50B242..50B267, 50AFF2..50B02A). Retail has no upgrades.
 pub(crate) fn provided_supers<'r>(
     sim: &'r Simulation,
     rules: &'r RuleSet,
-    building: &crate::sim::game_entity::GameEntity,
-) -> impl Iterator<Item = &'r str> + use<'r> {
-    let object = sim.object_type(building.type_ref(), rules);
+    building: &'r crate::sim::game_entity::GameEntity,
+    with_upgrades: bool,
+) -> impl Iterator<Item = &'r str> {
     let owner = building.owner();
-    let provides = move |sw_id: &str| super_weapon_available(sim, rules, owner, sw_id);
-    object
-        .into_iter()
-        .flat_map(type_super_weapons)
-        .filter(move |name| provides(name))
+    building_super_weapon_definitions(sim, rules, building, with_upgrades)
+        .filter(move |name| super_weapon_available(sim, rules, owner, name))
 }
 
 /// One countdown line a building draws above itself (VERA's Super Weapon
@@ -2440,6 +2471,20 @@ pub(crate) fn type_super_weapons(
     primary.chain(object.additional_super_weapons().iter().map(String::as_str))
 }
 
+/// Ares BuildingExt::HasSuperWeapon (10011E60) with upgrades, as called by
+/// PickTarget (100389FC) and IsLaunchSite (1006DA11). A matching definition
+/// still needs to be available to this building's owner (10011F12).
+fn building_has_super_weapon(
+    sim: &Simulation,
+    rules: &RuleSet,
+    building: &crate::sim::game_entity::GameEntity,
+    sw_id: &str,
+) -> bool {
+    building_super_weapon_definitions(sim, rules, building, true)
+        .any(|name| name.eq_ignore_ascii_case(sw_id))
+        && super_weapon_available(sim, rules, building.owner(), sw_id)
+}
+
 /// BuildingTypeExt::GetSuperWeapon1000D610: primary, secondary and additional
 /// definitions, first available instance; no granted/charge admission and no
 /// second Super store. The House constructor owns every retained instance.
@@ -2448,7 +2493,7 @@ pub(crate) fn first_available_building_super<'a>(
     rules: &RuleSet,
     building: &crate::sim::game_entity::GameEntity,
 ) -> Option<&'a SuperWeaponInstance> {
-    let name = provided_supers(sim, rules, building).next()?;
+    let name = provided_supers(sim, rules, building, false).next()?;
     let id = sim.interner.get(name)?;
     sim.super_weapons.get(&building.owner())?.get(&id)
 }
@@ -2625,7 +2670,7 @@ fn provider_supers(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Supe
             .iter()
             .any(|mission| matches!(mission, Some(Construction | Selling)))
         };
-        for name in provided_supers(sim, rules, building) {
+        for name in provided_supers(sim, rules, building, ares) {
             if let Some(id) = sim.interner.get(name) {
                 providers.provided.insert(id);
                 if powered {
@@ -2751,7 +2796,7 @@ fn sync_building_charges(sim: &mut Simulation, rules: &RuleSet, owner: InternedI
         {
             continue;
         }
-        for name in provided_supers(sim, rules, building) {
+        for name in provided_supers(sim, rules, building, false) {
             if let Some(id) = sim.interner.get(name) {
                 buildings.entry(id).or_default().push(building.stable_id());
             }

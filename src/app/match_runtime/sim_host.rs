@@ -767,7 +767,7 @@ const _: () = {
 #[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
-    use crate::net::lockstep::{ChecksumMismatch, FrameInfo, FrameInfoCompareGate};
+    use crate::sim::command_queue::{ChecksumMismatch, FrameInfo, FrameInfoCompareGate};
     use crate::sim::world::Simulation;
 
     #[test]
