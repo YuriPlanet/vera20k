@@ -303,10 +303,16 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
     `LandingCellVerdict{clear,on_bridge}`）决定：拒绝 → `begin_bomb_fall()`
     （`:778` 摔死）；通过或 `TryGetCellAt` 无格 → `OnBridge`/`store_ground_layer`
     + `mark_on_parachuted()`（`:782-785`）。
-  测试 `sim/game_entity/type_conversion_in_air_tests.rs`（5 条，去掉调用后 4 条红）。
-  残余：①`:787-791` 步兵的 `PlayAnim(Sequence::Paradrop)` 未播——VERA 的步兵
-  序列 owner 由 `Doing`/部署与开火闩选择序列，没有逐对象一次性序列覆盖；仅表现，
-  落地与 `OnParachuted` 不受影响。②已核实为等价（2026-11-19）：YRpp
+  测试 `sim/game_entity/type_conversion_in_air_tests.rs`（7 条，去掉调用后 6 条红）。
+  ①`:787-791` 步兵的 `PlayAnim(Sequence::Paradrop)` 已实现（2026-11-19）：该调用在
+  原生就是 `InfantryClass::Do_Action @ 0x0051D6F0`（`ret 0xc`，写 `SequenceAnim`
+  `+0x6C4`），VERA 已有同一 owner（`infantry_action::infantry_do_action`，含
+  `0x0051D70F` 零帧拒绝、`0x0051D919..0x0051D92E` 准入、Doing 写入与 stage 重启），
+  故空中臂在两个落地分支之后按 `EntityCategory::Infantry` 调
+  `infantry_do_action(id, DO_PARADROP, true, rules, effects)`；SHP 通道从
+  `infantry_sprite_pose()` 的 Doing 读到 Paradrop 记录。残余：本调用传
+  `randomStartFrame = false`，故 `0x0051DA4A..0x0051DA84` 的随机首帧（Scenario
+  抽取）不触发——与原生调用一致。②已核实为等价（2026-11-19）：YRpp
   `CellClass.h` 的 `GetLevel()` 返回 `Level + (ContainsBridge() ? BridgeLevels(4) : 0)`，
   而原生 `0x004834E1..0x00483507` 取 `groundLevel == +0x11B` 走地面臂、取
   `+0x11B + 4`（带 `has_bridge`）走桥面臂；`-1` 在 `0x00483529..0x0048353C` 同样落到

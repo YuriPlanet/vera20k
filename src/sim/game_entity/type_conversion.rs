@@ -262,7 +262,7 @@ impl Simulation {
         // by `TechnoExt::ConvertToType` once the instance is rebound
         // (`Ext/Techno/Body.cpp:353` under Ares, `:455` otherwise).
         #[cfg(feature = "phobos")]
-        self.phobos_update_type_data_in_air(id, destination, rules);
+        self.phobos_update_type_data_in_air(id, destination, rules, effects);
         true
     }
 
@@ -280,6 +280,7 @@ impl Simulation {
         id: u64,
         destination: &crate::rules::object_type::ObjectType,
         rules: &RuleSet,
+        effects: FrameEffects<'_>,
     ) {
         if destination.category == ObjectCategory::Aircraft
             || matches!(
@@ -375,13 +376,26 @@ impl Simulation {
                 }
             }
         }
-        // RESIDUAL: `:787-791` also plays `Sequence::Paradrop` on an Infantry
-        // (`PlayAnim(Sequence::Paradrop, true, false)`). VERA's infantry
-        // sequencer picks a sequence from `Doing`/the deploy and fire latches
-        // and owns no per-object one-shot override, so the man falls without
-        // that sequence. Trigger: an Infantry converting type in the air. Effect:
-        // presentation only — the fall, the landing and `OnParachuted` are
-        // unaffected. Frequency: a Phobos `Convert.*` on an airborne infantry.
+        // `:787-791` runs after both landing arms: an Infantry that changed to
+        // parachute status force-arms `Sequence::Paradrop` with a deterministic
+        // first frame. `0x0051D6F0` is the same `Do_Action` the rest of the
+        // class uses, so its own refusals apply (an unchanged `Doing` answers
+        // false, `0x0051D70F` refuses a record without frames).
+        if self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|actor| actor.category() == EntityCategory::Infantry)
+            && let Err(cause) = self.infantry_do_action(
+                id,
+                crate::sim::movement::infantry_action::DO_PARADROP,
+                true,
+                rules,
+                effects,
+            )
+        {
+            log::debug!("infantry {id} Paradrop PlayAnim: {cause}");
+        }
     }
 
     /// Phobos `FootExt::HealthAutoConvertActions` (`Ext/Foot/Body.cpp:909-927`),
