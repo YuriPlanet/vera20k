@@ -50,9 +50,9 @@ pub const MEGAMISSION_STAGE_CAPACITY: usize = 0x100;
 /// only the first 256 opcode-4 events into its secondary ring. Overflow is
 /// consumed by the caller without execution (`0x0064CAA8`); it is not deferred
 /// to another frame. Each House drains its stage before the next House starts
-/// (`0x0064CBF4..0x0064CC3D`). This admission owner serves both the production
-/// semantic dispatcher and the synchronized byte queue. Local OutList admission
-/// is a separate boundary. Source: original gamemd.exe instructions.
+/// (`0x0064CBF4..0x0064CC3D`). `DoList::dispatch` stages native and semantic
+/// entries alike through this owner. Local OutList admission is a separate
+/// boundary. Source: original gamemd.exe instructions.
 pub(crate) fn stage_megamission<T: Clone>(
     stage: &mut Vec<T>,
     command: &T,

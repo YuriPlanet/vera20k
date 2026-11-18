@@ -148,7 +148,7 @@ Commands and their payloads:
 | `watch` / `renew_watch` / `unwatch` | `{match_id}` ([Watching](#watching)) |
 | `map_upload` | `{digest,byte_length,offset,data,resource?}` |
 | `chat` | `{text,to:[name],action,visit?}` |
-| `ping` | `{}` |
+| `ping` | `{}` (accepted and ignored) |
 | `locales` | `{names:[name]}` |
 | `set_locale` | `{locale}` |
 | `buddies` | `{}` |
@@ -371,11 +371,11 @@ not receive source indices or relay credentials. Such a match runs its commands
 locally: its grant still carries an ordering certificate, which released clients
 require, but the relay refuses a one-source certificate. The one exception is one
 person who watches AI play: when its room has watching on, its game signed in with
-`Vera-Watch-AI: 1` on `POST /v1/sessions` and its relay lets watchers in, the
-certificate carries VO2C flags bit 1. The relay then
-orders the match from that one source, and the game plays it through the relay so
-that others can watch it ([Watching](#watching)). Deploy the relays that admit bit 1
-before a lobby that sets it: an older relay refuses the certificate.
+`Vera-Watch-AI: 1` on `POST /v1/sessions` and the selected relay is configured
+with both `watch: true` and `ordered_alone: true`, the certificate carries VO2C flags
+bit 1. The relay orders that one source so others can watch ([Watching](#watching)).
+The optional `ordered_alone` flag defaults to false. Enable it after upgrading the
+relay. Host and watcher renewals keep the decision made at match start.
 Only then does game loading start. Each barrier has a 30-second timeout. Within it,
 clients resend `relay_ready` and `latency_ready` under the same request ID after a
 429, a 5xx or no answer, and a UDP I/O error alone does not end admission.
@@ -511,11 +511,10 @@ stays joined through the match, and its `finish` sets `back_to_room: true`. When
 the last player finishes, the players still in the room who asked for it get it
 back: `room_reopened` (owner first) and then `options` with the host's settings
 and every readiness cleared. Players who finished without asking are dropped from
-it silently. If the owner is not among them, the room comes back to the next host
-(below), its flags naming them; without one, or once a newer room took its name, the
-room closes for them with `error` `host_left` and `channel_left`; an expired match
-closes it with `channel_left`. Each rematch is a fresh match with fresh relay
-credentials.
+it silently. If the owner is absent, the next eligible host (below) gets the
+room. If there is no eligible host or another open room took its name, the lobby
+sends each remaining player `channel_left`. An expired match closes its room with
+the same event. Each rematch is a fresh match with fresh relay credentials.
 
 Host handover: when a game room's owner leaves before start (Leave, sign-out or an
 expired session), the player who has been in the room longest becomes its owner,
@@ -527,9 +526,10 @@ for the old one, and clears every readiness; a room named as games name rooms
 then on the room is listed to the new owner's version, and it stays ranked or unranked
 as it was created. The room's options, map upload and advertisement stay until the new
 owner's game publishes its own. A Quick Match room, or one with a game that did not send
-the header, closes with `error` `host_left` and `channel_left` as before. A lobby from
-before handover closes every such room that way. Membership,
-authorization, readiness, sequence history and idle expiration are server-owned.
+the header, closes with `channel_left`. Earlier lobbies also sent `error` with
+code `host_left` before the close, which released games displayed as a refused
+request. A lobby from before handover closes every room whose host leaves.
+Membership, authorization, readiness, sequence history and idle expiration are server-owned.
 Idle lobby visits expire after 120 seconds. An unfinished v4 playing membership
 survives that idle interval while another unfinished player of the match is online
 (a request or stream ack in the last 120 seconds), and otherwise through 10 minutes of silence, until
@@ -682,9 +682,9 @@ visitor marked `visit:true`, and their `chat` with `visit:true` goes to the lobb
 instead of the room. `end_visit` leaves the lobby (`member_left` there, nothing to the
 visitor); so do leaving the room, joining or creating another, signing out, an expired
 session and the room's `start`, before its `game_started`. A kick (`kicked`) or the room
-closing (`channel_left`, after `error` when it says why) leaves the visitor in the
-public lobby as their channel, with no `channel_left` for the lobby; a visitor the lobby
-no longer lists gets `channel_left` after `kicked` and is in no channel. A repeated
+closing (`channel_left`) leaves the visitor in the public lobby as their channel.
+The close event belongs to the room. A visitor the lobby no longer lists gets
+`channel_left` after `kicked` and is in no channel. A repeated
 `visit_lobby` answers `joined` again; a Quick Match room, also after its first start, or
 one past its lobby phase refuses it (409 `room_busy`). A lobby from before it lists no
 `visit_lobby` in the sign-in's `features` and refuses the command as unknown. `locate`

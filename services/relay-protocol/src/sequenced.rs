@@ -214,6 +214,15 @@ impl OrderingCertificate {
         self.sources_mask.count_ones() > 1 || self.ordered_alone
     }
 
+    /// A renewed certificate can name a later expiry. All other fields identify
+    /// the match whose clock and roster the relay admitted.
+    fn same_match(&self, other: &Self) -> bool {
+        Self {
+            expires: other.expires,
+            ..*self
+        } == *other
+    }
+
     /// The HTTPS lobby signs this public manifest separately from hop tickets.
     /// Layout: VO1C, room16, LE mask32, LE Hz16, LE expiry64, domain HMAC32;
     /// VO2C adds a flags byte (bit 0: pacing off, bit 1: ordered alone) before
@@ -544,14 +553,8 @@ impl ClientSession {
         }
         let certificate = certificate.to_vec();
         if let Some(current) = &mut self.ordering {
-            // A renewal changes only the expiry.
             let old = OrderingCertificate::parse(&current.certificate)?;
-            if (OrderingCertificate {
-                expires: parsed.expires,
-                ..old
-            }) != parsed
-                || current.agreement != agreement
-            {
+            if !old.same_match(&parsed) || current.agreement != agreement {
                 return Err(RelayError::Authentication);
             }
             if parsed.expires > old.expires {
@@ -1039,8 +1042,8 @@ struct Source {
 /// here it slows at most two Game Speed rows and tries to speed up again.
 struct Pace {
     rate: u16,
-    // The head at the last rate change, and when. Pauses displace these
-    // times like the start.
+    // The last rate change's frame and due time, in milliseconds from the
+    // match start. A pause or a follower's clock correction moves both together.
     anchor: Option<(u32, u64)>,
     raised_at: Option<u64>,
     raise_wait: u64,
@@ -1050,9 +1053,6 @@ struct Pace {
     // report.
     slowdowns: u32,
     raises: u32,
-    // Federated: the frame from which the last rate change applies and its
-    // due time as an offset from the start, so the start's slew moves it too.
-    federated_anchor: Option<(u32, u64)>,
     // Federated: the coordinator's rate changes for frames after these,
     // `(frame, rate, source)`, in order, each until its due time passes. A
     // healed link can deliver several at once.
@@ -1060,10 +1060,12 @@ struct Pace {
 }
 
 impl Pace {
+    fn anchor_at(&self, start_ms: u64) -> Option<(u32, u64)> {
+        self.anchor
+            .map(|(frame, offset)| (frame, start_ms.saturating_add(offset)))
+    }
+
     fn displace(&mut self, paused_for: u64) {
-        if let Some((_, at)) = self.anchor.as_mut() {
-            *at = at.saturating_add(paused_for);
-        }
         if let Some(at) = self.raised_at.as_mut() {
             *at = at.saturating_add(paused_for);
         }
@@ -1165,7 +1167,6 @@ impl OrderingRoom {
                 lagging_at: 0,
                 slowdowns: 0,
                 raises: 0,
-                federated_anchor: None,
                 scheduled: VecDeque::new(),
             },
             head: 0,
@@ -1387,7 +1388,7 @@ impl OrderingRoom {
     /// reported, so no client meets a marker it cannot read. Each change is a
     /// marker after the head's frame end; later frames are due at the new
     /// rate from its append time.
-    fn adjust_pace(&mut self, now_ms: u64, federated: bool) {
+    fn adjust_pace(&mut self, now_ms: u64, start_ms: u64, federated: bool) {
         if self.certificate.pacing == CertificatePacing::Off || !self.pace.scheduled.is_empty() {
             return;
         }
@@ -1439,7 +1440,7 @@ impl OrderingRoom {
         if lagging {
             self.pace.lagging_at = now_ms;
         }
-        let changed_at = self.pace.anchor.map_or(0, |(_, at)| at);
+        let changed_at = self.pace.anchor_at(start_ms).map_or(0, |(_, at)| at);
         if self.pace.anchor.is_some() && now_ms.saturating_sub(changed_at) < PACE_STEP_MS {
             return;
         }
@@ -1502,7 +1503,7 @@ impl OrderingRoom {
         }
         if !federated {
             pace.rate = rate;
-            pace.anchor = Some((self.head, now_ms));
+            pace.anchor = Some((self.head, now_ms - start_ms));
         }
     }
 
@@ -1511,15 +1512,14 @@ impl OrderingRoom {
     /// schedule counts from the start, so every relay derives the same one.
     fn apply_scheduled_rate(&mut self, now_ms: u64, start: u64) {
         while let Some(&(frame, rate, _)) = self.pace.scheduled.front() {
-            let (anchor, offset) = self.pace.federated_anchor.unwrap_or((0, 0));
+            let (anchor, offset) = self.pace.anchor.unwrap_or((0, 0));
             let due =
                 offset + u64::from(frame.saturating_sub(anchor)) * 1000 / u64::from(self.pace.rate);
             if now_ms < start + due {
                 return;
             }
             self.pace.rate = rate;
-            self.pace.federated_anchor = Some((frame, due));
-            self.pace.anchor = Some((frame, start + due));
+            self.pace.anchor = Some((frame, due));
             self.pace.scheduled.pop_front();
         }
     }
@@ -1527,14 +1527,14 @@ impl OrderingRoom {
     /// About when `frame` was due: exact from the last rate change on, at
     /// the certificate's rate from the start before it.
     fn frame_due_ms(&self, frame: u32) -> u64 {
-        match self.pace.anchor {
+        let start = self.starts_at.unwrap_or(0);
+        match self.pace.anchor_at(start) {
             Some((anchor, at)) if frame >= anchor => {
                 at.saturating_add(u64::from(frame - anchor) * 1000 / u64::from(self.pace.rate))
             }
-            _ => self
-                .starts_at
-                .unwrap_or(0)
-                .saturating_add(u64::from(frame) * 1000 / u64::from(self.certificate.tick_hz)),
+            _ => {
+                start.saturating_add(u64::from(frame) * 1000 / u64::from(self.certificate.tick_hz))
+            }
         }
     }
 
@@ -1996,13 +1996,7 @@ impl OrderingRoom {
         if federated {
             self.apply_scheduled_rate(now_ms, start);
         }
-        let (anchor, anchor_ms) = if federated {
-            self.pace
-                .federated_anchor
-                .map_or((0, start), |(frame, offset)| (frame, start + offset))
-        } else {
-            self.pace.anchor.unwrap_or((0, start))
-        };
+        let (anchor, anchor_ms) = self.pace.anchor_at(start).unwrap_or((0, start));
         // Frames are sealed a turn at a time, in whole turns from the anchor,
         // so every federated relay seals the same turns. The final frame
         // closes the match whatever its turn.
@@ -2168,7 +2162,7 @@ impl OrderingRoom {
         // A federated match's coordinator decides its rate from every
         // relay's reports; the others follow its rate entries.
         if coordinator && self.active != 0 && start <= now_ms && self.head < final_frame {
-            self.adjust_pace(now_ms, federated);
+            self.adjust_pace(now_ms, start, federated);
         }
         // Every source has departed, by Leave, silence past its limit or the
         // agreed full-match lifetime; the archive ends after its replay grace.
@@ -3107,12 +3101,12 @@ mod tests {
         // 90 frames at 45 Hz are due 2 s in; 90 more at 30 Hz, 3 s later.
         ordering.apply_scheduled_rate(start + 4_999, start);
         assert_eq!(
-            (ordering.pace.rate, ordering.pace.federated_anchor),
+            (ordering.pace.rate, ordering.pace.anchor),
             (30, Some((90, 2_000)))
         );
         ordering.apply_scheduled_rate(start + 5_000, start);
         assert_eq!(
-            (ordering.pace.rate, ordering.pace.federated_anchor),
+            (ordering.pace.rate, ordering.pace.anchor),
             (20, Some((180, 5_000)))
         );
         assert!(ordering.pace.scheduled.is_empty());
@@ -5575,6 +5569,43 @@ mod tests {
     }
 
     #[test]
+    fn ready_accepts_a_renewed_expiry_and_refuses_a_different_pacing() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 2);
+        let (mut first, mut second) = (client(&key, 0), client(&key, 1));
+        connect(&mut server, &mut first, 0);
+        connect(&mut server, &mut second, 0);
+        let cert = OrderingCertificate {
+            pacing: CertificatePacing::On,
+            ..OrderingCertificate::parse(&certificate(&key, 3, 2000)).unwrap()
+        };
+        configure(&mut server, &mut first, &cert.sign(&key).unwrap(), 1000);
+        let renewed = OrderingCertificate {
+            expires: 2100,
+            ..cert
+        };
+        let retry = configure(&mut server, &mut first, &renewed.sign(&key).unwrap(), 1500);
+        assert!(matches!(retry.first(), Some(OrderEvent::Ready { .. })));
+        let different = OrderingCertificate {
+            pacing: CertificatePacing::Off,
+            ..renewed
+        };
+        let reply = configure(
+            &mut server,
+            &mut second,
+            &different.sign(&key).unwrap(),
+            2000,
+        );
+        assert!(matches!(
+            reply.as_slice(),
+            [OrderEvent::Error {
+                code: OrderError::AgreementMismatch,
+                ..
+            }]
+        ));
+    }
+
+    #[test]
     fn a_loading_players_different_ready_refuses_the_start_for_everyone() {
         let key = SecretKey::new([73; 32]);
         let mut server = RelayServer::new(key.clone(), 2);
@@ -6314,13 +6345,11 @@ impl RelayServer {
             } else if ordering.storage_failed {
                 error(OrderError::StorageUnavailable, ordering.next_seq)
             } else if ordering.agreement_mismatch
-                || ordering.certificate.room != certificate.room
-                || ordering.certificate.sources_mask != certificate.sources_mask
-                || ordering.certificate.tick_hz != certificate.tick_hz
+                || !ordering.certificate.same_match(&certificate)
                 || ordering.agreement != agreement
             {
-                // VERA: a loading player's Ready proves a world the first
-                // Ready players cannot start with. Cancel the start for
+                // VERA: a loading player's Ready disagrees on the signed match
+                // settings or the initial world. Cancel the start for
                 // everyone now, as its Leave could, instead of letting its
                 // keepalives hold the others until the loading limit drops it
                 // and they start without it. A ready source's agreement
