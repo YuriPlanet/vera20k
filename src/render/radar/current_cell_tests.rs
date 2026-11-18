@@ -271,23 +271,14 @@ fn snapshot_restored_collapsed_high_runtime(
 
     let terrain_speed_config = sim.terrain_speed_config().clone();
     let bytes = GameSnapshot::save_validated(&sim, 1, 2, "Radar load", 3);
-    let mut restored = GameSnapshot::load_validated(&bytes, 1, 2, "RADARLOAD.MAP")
-        .expect("validated current snapshot")
-        .sim;
-    restored
-        .restore_after_snapshot_load()
-        .expect("restored object graph");
     let resources = SimResources::empty();
-    restored.rebuild_caches_after_load(
-        terrain_template.clone(),
-        terrain_speed_config,
-        &resources.rules,
-    );
-    restored
-        .restore_map_authority_after_snapshot_load(
+    let restored = GameSnapshot::load_validated(&bytes, 1, 2, "RADARLOAD.MAP")
+        .expect("validated current snapshot")
+        .restore_checkpoint_map_for_test(
             &resources.rules,
             &resources.overlay_registry,
-            None,
+            terrain_template.clone(),
+            terrain_speed_config,
         )
         .expect("restored current map authority");
     SimRuntime {

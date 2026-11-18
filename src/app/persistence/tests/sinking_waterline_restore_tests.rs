@@ -36,7 +36,7 @@ fn sinking_waterline_envelope_preserves_native_short_without_changing_simulation
     );
     let loaded = GameSnapshot::load_validated(&bytes, 1, 2, LOAD_FIXTURE_MAP_NAME).unwrap();
     assert_eq!(loaded.sinking_waterlines, waterlines);
-    assert_eq!(loaded.sim.state_hash(), hash);
+    assert_eq!(loaded.into_simulation_for_test().state_hash(), hash);
     assert_eq!(
         GameSnapshot::read_header(&bytes).unwrap().description,
         "waterline"
@@ -45,7 +45,7 @@ fn sinking_waterline_envelope_preserves_native_short_without_changing_simulation
     let headless = GameSnapshot::save_validated(&sim, 1, 2, "headless", 3);
     let loaded = GameSnapshot::load_validated(&headless, 1, 2, LOAD_FIXTURE_MAP_NAME).unwrap();
     assert!(loaded.sinking_waterlines.is_empty());
-    assert_eq!(loaded.sim.state_hash(), hash);
+    assert_eq!(loaded.into_simulation_for_test().state_hash(), hash);
 }
 
 #[test]

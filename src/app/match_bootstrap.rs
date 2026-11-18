@@ -1004,7 +1004,9 @@ mod tests {
         sim.session_mut_for_test()
             .initialize_campaign_for_test(1, 3, CampaignCarryOver::CLEARED);
         let bytes = GameSnapshot::save(&sim, 0, 0, "SOV03UMD.MAP", 0);
-        let restored = GameSnapshot::load(&bytes).unwrap().sim;
+        let restored = GameSnapshot::load(&bytes)
+            .unwrap()
+            .into_simulation_for_test();
         let source = crate::map::source::LoadedMapSource::Mix {
             logical_name: "SOV03UMD.MAP".into(),
             source_archive: "mapsmd03.mix".into(),

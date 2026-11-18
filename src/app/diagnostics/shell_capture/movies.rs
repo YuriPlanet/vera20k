@@ -2148,15 +2148,10 @@ fn initial_save_receipt(state: &AppState, directory: &Path) -> Result<Value> {
         &state.persistence.repository.read(&entry.path)?,
     )?;
     ensure!(
-        saved.sim.session().game_options().game_speed == 2,
+        saved.session().game_options().game_speed == 2,
         "automatic save preceded the Options input"
     );
-    let pending_speed = saved.sim.pending_command_snapshot().iter().any(|command| {
-        matches!(
-            command.payload,
-            crate::sim::command::Command::SetGameSpeed { .. }
-        )
-    });
+    let pending_speed = saved.has_pending_game_speed_input();
     ensure!(
         !pending_speed,
         "automatic save retained already-consumed Options input"
@@ -2173,7 +2168,7 @@ fn initial_save_receipt(state: &AppState, directory: &Path) -> Result<Value> {
         "filename": entry.path.file_name().unwrap().to_string_lossy(),
         "description": entry.header.description, "tick": entry.header.tick,
         "map_name": entry.header.map_name,
-        "game_speed": saved.sim.session().game_options().game_speed,
+        "game_speed": saved.session().game_options().game_speed,
         "pending_speed_input": pending_speed,
         "new_save_description": browser.description_edit.display_text(),
         "observation": "ordinary save browser model; dialog not opened",

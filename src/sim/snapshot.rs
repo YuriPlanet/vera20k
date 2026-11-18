@@ -260,8 +260,12 @@ pub struct GameSnapshot {
     pub map_name: String,
     /// Capability of the retained Rules owner, or this build for synthetic saves.
     compatibility: RulesCompatibility,
-    /// The full authoritative simulation state (caches excluded via serde skip).
-    pub sim: Simulation,
+    /// Decoded world. Its skipped caches and live process state need restoration.
+    #[cfg(not(any(test, feature = "test-support")))]
+    sim: Simulation,
+    // Core fixtures inspect individual stages of this same wire field.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) sim: Simulation,
     /// Presentation-owned Techno+3CA waterline shorts by stable entity ID.
     /// Original AbstractLoad410380 reads the raw object, then FootLoad4DB60D
     /// and no-init Foot4D3540 preserve this short (naval_lifetime_controls).
@@ -363,6 +367,8 @@ pub enum SnapshotError {
 /// Structural failures found before a deserialized simulation is admitted.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SnapshotRestoreError {
+    #[error(transparent)]
+    Factory(#[from] crate::sim::production::FactoryRestoreError),
     #[error(transparent)]
     Tiberium(#[from] crate::rules::overlay_types::TiberiumImageError),
     #[error("object {object_id} has invalid attached stats: {reason}")]
@@ -592,6 +598,17 @@ pub type SnapshotTerrainAssetPreparation<'a> = dyn FnMut(
     ) -> Result<(), String>
     + 'a;
 
+/// Incoming Cell values and their theater assets at the player-file boundary.
+pub enum PlayerSaveCells<'borrow, 'assets> {
+    Saved {
+        land: crate::map::resolved_terrain::SavedCellLandValues,
+        prepare_assets: &'borrow mut SnapshotTerrainAssetPreparation<'assets>,
+    },
+    /// A synthetic fixture with no saved resource record or live Cell values.
+    #[cfg(any(test, feature = "test-support"))]
+    FixtureBaseline,
+}
+
 /// The app presentation saved beside the simulation, in `GameSnapshotRef` order.
 type SavedPresentationRef<'a> = (
     &'a [(u64, i16)],
@@ -735,6 +752,106 @@ impl GameSnapshot {
         )
     }
 
+    /// Scenario metadata needed to bind the incoming theater and terrain.
+    pub fn session(&self) -> &crate::sim::scenario_session::ScenarioSession {
+        self.sim.session()
+    }
+
+    /// Whether an Options speed input was still queued when the player file was written.
+    pub fn has_pending_game_speed_input(&self) -> bool {
+        self.sim.pending_command_snapshot().iter().any(|command| {
+            matches!(
+                command.payload,
+                crate::sim::command::Command::SetGameSpeed { .. }
+            )
+        })
+    }
+
+    /// Inspect an internal checkpoint or an intermediate player-load stage in a fixture.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn into_simulation_for_test(self) -> Simulation {
+        self.sim
+    }
+
+    /// Restore the reference graph of a fixture without applying the player-file resets.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn restore_references_for_test(self) -> Result<Simulation, SnapshotRestoreError> {
+        let mut simulation = self.sim;
+        simulation.restore_after_snapshot_load()?;
+        Ok(simulation)
+    }
+
+    /// Restore an internal checkpoint whose external terrain is supplied by a client fixture.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn restore_checkpoint_map_for_test(
+        self,
+        rules: &crate::rules::ruleset::RuleSet,
+        overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+        terrain: crate::map::resolved_terrain::ResolvedTerrainGrid,
+        speed: crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig,
+    ) -> Result<Simulation, SnapshotRestoreError> {
+        let mut simulation = self.restore_references_for_test()?;
+        simulation.rebuild_caches_after_load(terrain, speed, rules);
+        simulation.restore_map_authority_after_snapshot_load(rules, overlay_registry, None)?;
+        Ok(simulation)
+    }
+
+    /// Prepare a detached player world for the caller's transaction. All fallible
+    /// world restoration finishes before the candidate can be published. An
+    /// internal checkpoint or replay keeps its own simulation continuation.
+    pub fn restore_player_world(
+        self,
+        process: crate::sim::world::SnapshotProcessState<'_>,
+        rules: &crate::rules::ruleset::RuleSet,
+        terrain_template: crate::map::resolved_terrain::ResolvedTerrainGrid,
+        terrain_speed_config: crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig,
+        overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+        cells: PlayerSaveCells<'_, '_>,
+    ) -> Result<(Simulation, SnapshotMapRestoreOutput), SnapshotRestoreError> {
+        let mut simulation = self.sim;
+        simulation.retain_process_state_for_load(process);
+        // Native MouseLoad->Resize reconstructs the dummy before subsequent
+        // LoadContent67E8CD hierarchy reads. The fallible candidate must see
+        // that state without touching the running match's retained identity.
+        simulation.bind_shared_cell_dummy(crate::map::resolved_terrain::SharedCellDummy::fresh());
+        simulation.reconstruct_cellclass_dummy_for_map_resize();
+        // InfantryLoad521A0C -> TechnoNoInit6F4335 resets the transition
+        // clock. This user-file seam is separate from internal continuations.
+        simulation.restart_cloak_progress_after_player_load();
+        simulation.reconstruct_building_repair_progress_after_player_load();
+        simulation.validate_ares_state_for_load(rules.ares())?;
+        simulation.restore_after_snapshot_load()?;
+        crate::sim::production::validate_restored_factory_state(&simulation, rules)?;
+        simulation.rebuild_caches_after_load(terrain_template, terrain_speed_config, rules);
+
+        let map_restore = match cells {
+            PlayerSaveCells::Saved {
+                land,
+                prepare_assets,
+            } => simulation.restore_map_authority_after_user_load(
+                rules,
+                overlay_registry,
+                Some(prepare_assets),
+                land,
+            )?,
+            #[cfg(any(test, feature = "test-support"))]
+            PlayerSaveCells::FixtureBaseline => simulation
+                .restore_map_authority_after_snapshot_load(rules, overlay_registry, None)?,
+        };
+        // Older headless saves may omit types that had never spawned. Add
+        // those canonical names without changing any saved ID, then build
+        // the handle table; a missing name must never become sidebar ID zero.
+        simulation.intern_rule_type_ids(rules);
+        simulation.resolve_type_handles(rules);
+        simulation.rebuild_lighting_sources_after_load(rules);
+        // Post_Load_Game6851AC/6851B1 reselects lighting, then refreshes the
+        // flagged Anim conversions from the incoming stored Locations.
+        simulation.reinitialize_lighting_after_user_load();
+        simulation.refresh_animated_tiberium_after_load(rules, overlay_registry)?;
+
+        Ok((simulation, map_restore))
+    }
+
     pub fn sidebar_order(&self) -> Option<&SavedSidebarOrder> {
         self.sidebar_order.as_ref()
     }
@@ -798,8 +915,8 @@ impl GameSnapshot {
     /// body is admitted. The duplicated preview metadata must also agree with
     /// `ScenarioSession`; no warning/continue or zero-hash sentinel exists.
     /// The returned Scenario RNG is the canonical seed-zero state. Main/MapGen
-    /// fields are deserialize placeholders; the app's in-scenario production
-    /// load seam replaces them with the live process cursors and seed.
+    /// fields are deserialize placeholders. [`Self::restore_player_world`]
+    /// supplies the process cursors and seed for a player load.
     #[cfg(any(test, feature = "test-support"))]
     pub fn load_validated(
         bytes: &[u8],
@@ -1810,7 +1927,7 @@ impl Simulation {
     /// BuildingLoad453ECF invokes NoInit43B680 after the saved global Frame
     /// has loaded. Reconstruct its independent repair Stage at the player-file
     /// boundary, preserving mission state, radio links and internal continuations.
-    pub fn reconstruct_building_repair_progress_after_player_load(&mut self) {
+    fn reconstruct_building_repair_progress_after_player_load(&mut self) {
         let frame = self.session.binary_frame() as i32;
         for entity in self.substrate.entities.values_mut() {
             entity
@@ -1823,7 +1940,10 @@ impl Simulation {
     /// a pending unit delivery, a paid superweapon selection) loads only into
     /// a game Ares plays in; the player load checks it with the loading
     /// game's switch before restoring.
-    pub fn validate_ares_state_for_load(&self, ares: bool) -> Result<(), SnapshotRestoreError> {
+    pub(crate) fn validate_ares_state_for_load(
+        &self,
+        ares: bool,
+    ) -> Result<(), SnapshotRestoreError> {
         for (_, entity) in self.substrate.entities.iter_sorted() {
             entity
                 .validate_ares_compatibility(ares)
@@ -1845,7 +1965,7 @@ impl Simulation {
     /// rejects any unmatched modeled native pointer, cleans only deliberate
     /// weak/derived identities, and reconstructs skipped indexes in dependency
     /// order.
-    pub fn restore_after_snapshot_load(&mut self) -> Result<(), SnapshotRestoreError> {
+    pub(crate) fn restore_after_snapshot_load(&mut self) -> Result<(), SnapshotRestoreError> {
         for (_, entity) in self.substrate.entities.iter_sorted() {
             if !entity.type_facts.foundation().valid() {
                 return Err(SnapshotRestoreError::InvalidFoundation {
@@ -2142,7 +2262,8 @@ impl Simulation {
     /// behind. Bridge cell state needs no separate pass: its flags return
     /// through the dynamic terrain cells above, and its overlay identity and
     /// state byte through OverlayGrid.
-    pub fn restore_map_authority_after_snapshot_load(
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn restore_map_authority_after_snapshot_load(
         &mut self,
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
@@ -2151,9 +2272,9 @@ impl Simulation {
         self.restore_map_authority_after_load(rules, overlay_registry, prepare_terrain_assets, None)
     }
 
-    /// The app's user-file boundary only. Generic simulation continuations must
-    /// not run CellLoad4839F0 / Map no-init565190's crate resets.
-    pub fn restore_map_authority_after_user_load(
+    /// Player-file CellLoad4839F0 / Map no-init565190 crate resets.
+    /// Internal simulation continuations keep their saved crates.
+    pub(crate) fn restore_map_authority_after_user_load(
         &mut self,
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,

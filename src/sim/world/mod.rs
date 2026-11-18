@@ -3539,7 +3539,7 @@ impl Simulation {
     /// (`install_fresh_process_main`). In-scenario loading keeps the live
     /// seed and MapGen; the cold shell starts MapGen from the CRT Seed(0)
     /// object (native fixture in world/rng_routing_tests.rs).
-    pub fn retain_process_state_for_load(&mut self, process: SnapshotProcessState<'_>) {
+    pub(crate) fn retain_process_state_for_load(&mut self, process: SnapshotProcessState<'_>) {
         match process {
             SnapshotProcessState::Live(live) => {
                 self.session.record_random_seed(live.session.seed());
@@ -3623,9 +3623,9 @@ impl Simulation {
     /// `MouseClass::Load` dispatch at `0x005BE150` routes restored dimensions through
     /// `MapClass::Resize @ 0x00565C10`, whose unconditional call to
     /// `CellClass::Constructor @ 0x0047BBF0` reconstructs the fixed dummy in
-    /// place. The app resets a detached candidate before fallible restoration,
+    /// place. Player loads reset a detached candidate before fallible restoration,
     /// so a rejected transactional load cannot mutate the running world.
-    pub fn reconstruct_cellclass_dummy_for_map_resize(&mut self) {
+    pub(crate) fn reconstruct_cellclass_dummy_for_map_resize(&mut self) {
         self.effective_shared_cell_dummy()
             .reconstruct_for_map_resize();
         self.trigger_runtime.reconstruct_dummy_for_map_resize();
@@ -3635,6 +3635,16 @@ impl Simulation {
         self.substrate
             .raw_cell_occupation
             .reconstruct_dummy_for_map_resize();
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn retain_player_load_process_for_test(&mut self, process: SnapshotProcessState<'_>) {
+        self.retain_process_state_for_load(process);
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn reconstruct_map_dummy_for_test(&mut self) {
+        self.reconstruct_cellclass_dummy_for_map_resize();
     }
 
     /// Adopt the process-global CellClass identity already bound to a load's
@@ -7546,7 +7556,7 @@ impl Simulation {
     /// `restore_map_authority_after_snapshot_load` once rules and the overlay
     /// registry are bound. Rule animation lists are re-interned from names:
     /// an outgoing simulation's numeric IDs do not belong to this saved world.
-    pub fn rebuild_caches_after_load(
+    pub(crate) fn rebuild_caches_after_load(
         &mut self,
         mut resolved_terrain: ResolvedTerrainGrid,
         terrain_speed_config: terrain_speed::TerrainSpeedConfig,

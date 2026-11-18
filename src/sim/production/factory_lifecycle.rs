@@ -1412,7 +1412,7 @@ pub struct FactoryRestoreError {
 /// limbo objects remain supported; manager pointers are not globally reciprocal.
 /// VERA-only: checks each held object's InLimbo, Marked and LogicVector facts and its
 /// spawn/slave links against the loaded store, their source of truth.
-pub fn validate_restored_factory_state(
+pub(crate) fn validate_restored_factory_state(
     sim: &Simulation,
     rules: &RuleSet,
 ) -> Result<(), FactoryRestoreError> {

@@ -85,10 +85,10 @@ fn player_load_restarts_mid_cloak_without_reentering_cloak() {
         return;
     };
     let before = cloak(&saved, id);
-    let mut internal = GameSnapshot::load(&snapshot_bytes(&saved, &rules))
+    let internal = GameSnapshot::load(&snapshot_bytes(&saved, &rules))
         .unwrap()
-        .sim;
-    internal.restore_after_snapshot_load().unwrap();
+        .restore_references_for_test()
+        .unwrap();
     assert_eq!(
         cloak(&internal, id),
         before,
