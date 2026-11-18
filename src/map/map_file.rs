@@ -994,7 +994,7 @@ mod tests {
         let cache = root.path().join("NetworkMaps");
         let dimensions =
             format!("[Map]\nSize=0,0,513,512\n[IsoMapPack5]\n1={ONE_CELL_ISO_MAP_PACK}\n");
-        let error = crate::map::source::install_received_map(
+        let error = crate::map::source::test_support::install_received_map(
             &cache,
             dimensions.as_bytes().to_vec(),
             &crate::util::sha256::sha256_hex(dimensions.as_bytes()),
@@ -1015,7 +1015,7 @@ mod tests {
         for (index, line) in packed.as_bytes().chunks(72).enumerate() {
             bomb.push_str(&format!("{index}={}\n", std::str::from_utf8(line).unwrap()));
         }
-        let error = crate::map::source::install_received_map(
+        let error = crate::map::source::test_support::install_received_map(
             &cache,
             bomb.as_bytes().to_vec(),
             &crate::util::sha256::sha256_hex(bomb.as_bytes()),

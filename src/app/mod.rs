@@ -135,6 +135,7 @@ pub(crate) mod types;
 pub(crate) mod updater;
 pub(crate) mod web_link;
 mod window_icon;
+pub(crate) mod worker;
 
 /// Main window title. The single-instance gate finds a running copy's window by
 /// this exact title, so `main` hands the same constant to

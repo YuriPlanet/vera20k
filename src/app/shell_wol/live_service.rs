@@ -64,13 +64,62 @@ pub(super) const CHAT_LIMIT_BYTES: usize = 2048;
 /// The configured lobby's HTTPS origin: the build's, or `VERA20K_LOBBY_URL`
 /// for staging.
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-pub(crate) fn lobby_base_url() -> Result<String> {
+fn lobby_base_url() -> Result<String> {
     let base = std::env::var("VERA20K_LOBBY_URL").unwrap_or_else(|_| DEFAULT_LOBBY_URL.to_owned());
     ensure!(
         base.starts_with("https://") && !base[8..].chars().any(|ch| matches!(ch, '@' | '?' | '#')),
         "the online lobby needs its configured HTTPS service"
     );
     Ok(base)
+}
+
+/// The configured lobby's answer to a public read ([`lobby_get`]).
+pub(crate) struct LobbyAnswer {
+    pub(crate) status: u16,
+    pub(crate) etag: Option<String>,
+    pub(crate) body: Box<dyn std::io::Read>,
+}
+
+/// `GET <path>` from the configured lobby, for the reads that need no
+/// session (`/v1/stats`, the map library), with `If-None-Match` when
+/// `if_none_match` is given. Blocking: worker threads only. Its timeouts are
+/// per read, not the session agent's 12 s in all, so a library map still
+/// arrives on a slow line.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) fn lobby_get(path: &str, if_none_match: Option<&str>) -> Result<LobbyAnswer> {
+    let url = format!("{}{path}", lobby_base_url()?.trim_end_matches('/'));
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .https_only(true)
+        .max_redirects(0)
+        .http_status_as_error(false)
+        .timeout_connect(Some(std::time::Duration::from_secs(15)))
+        .timeout_recv_response(Some(std::time::Duration::from_secs(30)))
+        .timeout_per_read(Some(std::time::Duration::from_secs(30)))
+        .build()
+        .into();
+    let mut request = agent.get(&url).header("User-Agent", http::USER_AGENT);
+    if let Some(tag) = if_none_match {
+        request = request.header("If-None-Match", tag);
+    }
+    let response = request
+        .call()
+        .with_context(|| format!("cannot reach {url}"))?;
+    Ok(LobbyAnswer {
+        status: response.status().as_u16(),
+        etag: response
+            .headers()
+            .get("ETag")
+            .and_then(|tag| tag.to_str().ok())
+            .map(str::to_owned),
+        body: Box::new(response.into_body().into_reader()),
+    })
+}
+
+/// The browser build starts no worker thread for these reads
+/// ([`crate::app::worker::THREADS`]).
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+pub(crate) fn lobby_get(_path: &str, _if_none_match: Option<&str>) -> Result<LobbyAnswer> {
+    anyhow::bail!("the browser build reads the lobby only through its session")
 }
 
 /// The departing visit's same HTTP/cleanup owner survives the menu teardown.
