@@ -80,8 +80,10 @@ pub struct PictureDecl {
 
 /// What the simulation takes from a declared picture where it takes an SHP
 /// header's words ([`ArtRegistry::picture_header`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PictureFacts {
+    /// The candidate file that was read.
+    pub file: String,
     /// The frame count, shadow frames included (header `+6`).
     pub frames: i32,
     /// The frame canvas in game pixels (header `+2`, `+4`).
@@ -2363,7 +2365,7 @@ impl ArtRegistry {
         theater_name: &str,
     ) {
         let header = self.picture_header(name, decl, asset_manager, theater_name);
-        let raw_count = header.map_or(0, |header| header.frames);
+        let raw_count = header.as_ref().map_or(0, |header| header.frames);
         let (loaded_end, loaded_loop_end) = if header.is_some() {
             resolve_loaded_bounds(
                 raw_count,
@@ -2379,7 +2381,7 @@ impl ArtRegistry {
         };
         let bound = self.anim_runtime_configs.get_mut(name).unwrap();
         bound.raw_shp_frame_count = Some(raw_count);
-        bound.raw_shp_height = Some(header.map_or(0, |header| header.size[1]));
+        bound.raw_shp_height = Some(header.as_ref().map_or(0, |header| header.size[1]));
         bound.middle_frame = Some(raw_count / 2);
         bound.end = loaded_end;
         bound.loop_end = loaded_loop_end;
@@ -2390,6 +2392,23 @@ impl ArtRegistry {
     pub fn declares_picture(&self, section: &str) -> bool {
         self.get(section)
             .is_some_and(|entry| entry.picture.is_some())
+    }
+
+    /// The art section an object's art metadata is read through
+    /// ([`Self::resolve_metadata_entry`]) and its `Picture=`, when that
+    /// section declares one (docs/picture-model-art.md).
+    pub fn resolve_declared_picture(
+        &self,
+        type_id: &str,
+        rules_image: &str,
+    ) -> Option<(&str, &PictureDecl)> {
+        let image = rules_image.trim();
+        let base = if image.is_empty() { type_id } else { image };
+        let (section, entry) = [base, type_id].into_iter().find_map(|id| {
+            folded_entry_name(&self.entry_names, id)
+                .and_then(|name| self.entries.get_key_value(name))
+        })?;
+        Some((section.as_str(), entry.picture.as_ref()?))
     }
 
     /// The files `decl`, declared in art section `section`, may load in
@@ -2435,10 +2454,7 @@ impl ArtRegistry {
             .iter()
             .find_map(|file| asset_manager.get_ref(file).map(|bytes| (file, bytes)))
         else {
-            log::warn!(
-                "[{section}] Picture={} is not found; it has no frames",
-                decl.file
-            );
+            log::warn!("[{section}] {} is not found; it has no frames", decl.file);
             return None;
         };
         let header = match crate::assets::picture_file::PictureHeader::read(bytes) {
@@ -2461,6 +2477,7 @@ impl ArtRegistry {
             );
         }
         Some(PictureFacts {
+            file: file.clone(),
             frames: word(header.frames),
             size: decl
                 .size
