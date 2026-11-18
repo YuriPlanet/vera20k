@@ -414,17 +414,24 @@ current: say what was done, what was not, and what comes next.
 
 ### In progress
 
-- Nothing being written. Chain 5's residuals (debris model shadows, building
-  gun animation, `ShareSource=` debris from a declared model, diffuse light
-  for projectiles and debris) are merged. The branch passes
-  `check -p vera20k --lib --bins`; the tests have not been built yet.
+- Compiles: `check -p vera20k --lib --bins` and every lib test build pass.
+- Full lib test run (both crates, retail INIs, this machine): 12,608 passed,
+  756 failed. All but eight failures are missing files in this machine's
+  retail folder (maps such as Hills.mmx, MOVIES01.MIX, language CSFs). Three
+  of the eight came from this work and are fixed (`bb588c2db`): platform
+  trig in model_file, a rules-to-map dependency, an overflow on empty
+  picture frames. The other five fail on the base commit too
+  (`retail_ifv_tip_names_its_turret_or_passenger`,
+  `sim_does_not_reference_the_generator`, and three tests needing the
+  missing language files or Transylv.yro).
+- Next: production validation (step 3 below), then the off-state check.
 
 ### Next steps, in order
 
-1. Compile: `python3 -m tools.cargo_run -- check -p vera20k --lib --bins`,
+1. Done. Compile: `python3 -m tools.cargo_run -- check -p vera20k --lib --bins`,
    then the same with tests (`test --no-run` for the touched groups); fix
    every error; commit and push.
-2. Run the new tests and the touched modules' existing tests (focused, see
+2. Done for the lib tests. Run the new tests and the touched modules' existing tests (focused, see
    AGENTS.md), with `RA2_DIR` set and `VERA20K_REQUIRE_RETAIL_INI=1`; fix,
    commit, push. Also `python -m tools.run_tests` for the Python tools, and
    the wasm check in docs/wasm.md (sprite_atlas.rs is in its list).
