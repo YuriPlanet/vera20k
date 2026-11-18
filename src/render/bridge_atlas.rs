@@ -194,6 +194,25 @@ pub fn build_bridge_atlas(
         if !loaded_rubble.insert(key.clone()) {
             continue;
         }
+        // VERA-only (docs/picture-model-art.md): a declared body picture's
+        // physical shadow frame (0x0045F1D0's count/2 + 3) is the stencil;
+        // its SHP is never opened.
+        if art.picture.is_some() {
+            rendered.extend(
+                crate::render::picture_atlas::rubble_picture(art, asset_manager)
+                    .and_then(|frames| frames.stored_frame(usize::from(art.shadow_frame)))
+                    .map(|frame| RenderedBridge {
+                        key,
+                        rgba: shadow_stencil_to_rgba(&frame.sprite.indices),
+                        source_indices: frame.sprite.indices,
+                        width: frame.sprite.size[0],
+                        height: frame.sprite.size[1],
+                        offset_x: frame.offset[0],
+                        offset_y: frame.offset[1],
+                    }),
+            );
+            continue;
+        }
         let Some(shp) = asset_manager
             .get_ref(&art.shp)
             .and_then(|bytes| ShpFile::from_bytes(bytes).ok())

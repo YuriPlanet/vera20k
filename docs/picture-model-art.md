@@ -165,6 +165,10 @@ against this list.
 - Asset lookup: no new probes; a picture or model is opened only by its key.
 - The sprite atlas: no SHP keys for a type with `Picture=`; picture pages and
   entries appended. Existing shaders, pipelines, layouts and passes untouched.
+- The overlay and bridge atlases: a building whose rubble art names a
+  declared picture takes its rubble body and shadow frames from the picture
+  (`picture_atlas::rubble_picture`). Those atlases are already RGBA pages
+  with an index plane, so the frames share their page and draw path.
 - The world zoom pass (chain 6): one call that draws the new art after
   magnification.
 

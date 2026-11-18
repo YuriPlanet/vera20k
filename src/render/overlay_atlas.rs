@@ -815,6 +815,18 @@ pub(crate) fn build_overlay_atlas_on_device(
         if rubble_loaded.contains(&key) {
             continue;
         }
+        // VERA-only (docs/picture-model-art.md): a body art that declares
+        // Picture= draws its rubble frame from the picture; its SHP is never
+        // opened.
+        if art.picture.is_some() {
+            if let Some(sprite) = crate::render::picture_atlas::rubble_picture(art, asset_manager)
+                .and_then(|frames| render_rubble_picture(&frames, art))
+            {
+                rendered.push(sprite);
+                rubble_loaded.insert(key);
+            }
+            continue;
+        }
         let Some(shp) = asset_manager
             .get_ref(&art.shp)
             .and_then(|data| ShpFile::from_bytes(data).ok())
@@ -1064,6 +1076,30 @@ fn render_decoded_overlay_frame(
             i32::from(shp.height / 2) - i32::from(frame.frame_y),
         ],
         extended: frame.format & 2 != 0,
+    })
+}
+
+/// VERA-only (docs/picture-model-art.md): `art`'s rubble body frame from
+/// its declared picture, at the frame index and stored-frame placement the
+/// SHP arm gives `render_decoded_overlay_frame` (0x0045F160's frame 3,
+/// `CellClass::DrawOverlay_Body @ 0x0047F6A0`, no Y bias). The index plane
+/// holds the picture's lit and unlit indices, so the ordinary overlay draw
+/// reads this page's RGBA as it reads every overlay sprite's.
+fn render_rubble_picture(
+    frames: &crate::render::picture_atlas::GamePictureFrames,
+    art: &crate::rules::building_rubble::RubbleArt,
+) -> Option<RenderedOverlay> {
+    let frame = frames.stored_frame(usize::from(art.body_frame))?;
+    Some(RenderedOverlay {
+        key: rubble_key(&art.shp, art.body_frame),
+        width: frame.sprite.size[0],
+        height: frame.sprite.size[1],
+        rgba: frame.sprite.rgba,
+        source_indices: frame.sprite.indices,
+        offset_x: frame.offset[0],
+        offset_y: frame.offset[1],
+        draw_point_offset: frame.draw_point,
+        extended: false,
     })
 }
 
@@ -2063,5 +2099,53 @@ mod tests {
         for (name, frame) in [("TIB05", 8), ("GEM01", 11)] {
             assert!(keys.contains(&tiberium_image_key(name, frame)));
         }
+    }
+
+    /// A building whose art declares `Picture=` draws its rubble from the
+    /// picture frame the SHP arm draws (0x0045F160's frame 3), placed as that
+    /// stored SHP frame (CC_Draw_Shape 0x004AED70), lit by its index plane.
+    #[test]
+    fn rubble_picture_draws_the_frame_the_shp_arm_selects() {
+        use super::*;
+        use crate::render::picture_atlas::{GamePictureFrames, LIT_INDEX};
+        use crate::rules::building_rubble::{RUBBLE_BODY_FRAME, RubbleArt};
+        // Eight 8x2 frames; frame i draws one pixel at column i of row 1.
+        let frames = (0..8u8)
+            .map(|i| {
+                let mut frame = vec![0u8; 8 * 2 * 4];
+                let at = (8 + usize::from(i)) * 4;
+                frame[at..at + 4].copy_from_slice(&[10 * i, 0, 0, 255]);
+                frame
+            })
+            .collect();
+        let picture = GamePictureFrames::shrink(
+            &crate::assets::picture_file::PictureFrames {
+                width: 8,
+                height: 2,
+                frames,
+            },
+            None,
+            None,
+        )
+        .unwrap();
+        let art = RubbleArt {
+            shp: "ruin.png".into(),
+            body_frame: RUBBLE_BODY_FRAME,
+            shadow_frame: 7,
+            picture: Some(crate::rules::art_data::PictureDecl {
+                file: "ruin.png".into(),
+                size: None,
+            }),
+        };
+
+        let sprite = render_rubble_picture(&picture, &art).unwrap();
+        assert_eq!(sprite.key, rubble_key("ruin.png", RUBBLE_BODY_FRAME));
+        assert_eq!((sprite.width, sprite.height), (1, 1));
+        assert_eq!(sprite.rgba, [30, 0, 0, 255], "frame 3, not frame 0");
+        assert_eq!(sprite.source_indices, [LIT_INDEX]);
+        // Column 3 and row 1 less the canvas half (4, 1).
+        assert_eq!((sprite.offset_x, sprite.offset_y), (-1.0, 0.0));
+        assert_eq!(sprite.draw_point_offset, [1, 0]);
+        assert!(!sprite.extended);
     }
 }

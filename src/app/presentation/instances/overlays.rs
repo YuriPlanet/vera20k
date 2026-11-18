@@ -1951,6 +1951,7 @@ mod tests {
                 shp: "ruin.shp".into(),
                 body_frame: 3,
                 shadow_frame: 7,
+                picture: None,
             },
         );
         let mut interner = crate::sim::intern::StringInterner::new();

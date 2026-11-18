@@ -303,6 +303,35 @@ impl GamePictureFrames {
                 .any(|(class, pixel)| *class == MaskClass::House && pixel[3] != 0)
         })
     }
+
+    /// Frame `frame` without house colour, placed as a stored SHP frame
+    /// relative to its draw point (CC_Draw_Shape `0x004AED70`: the canvas
+    /// half, truncated, then the frame's origin; `stored_frame_offset`).
+    /// None when it draws nothing.
+    pub(crate) fn stored_frame(&self, frame: usize) -> Option<StoredPictureFrame> {
+        let sprite = self.sprite(frame, None)?;
+        let half = self
+            .canvas
+            .map(|side| i32::try_from(side / 2).unwrap_or(i32::MAX));
+        let origin = sprite
+            .origin
+            .map(|side| i32::try_from(side).unwrap_or(i32::MAX));
+        Some(StoredPictureFrame {
+            offset: [(origin[0] - half[0]) as f32, (origin[1] - half[1]) as f32],
+            draw_point: [half[0] - origin[0], half[1] - origin[1]],
+            sprite,
+        })
+    }
+}
+
+/// A frame placed as a stored SHP frame ([`GamePictureFrames::stored_frame`]).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct StoredPictureFrame {
+    pub sprite: PictureSprite,
+    /// The sprite's top-left corner from the draw point.
+    pub offset: [f32; 2],
+    /// The draw point's place in the sprite.
+    pub draw_point: [i32; 2],
 }
 
 /// One frame of `picture_width`-wide RGBA shrunk by `scale` onto `canvas`.
@@ -439,39 +468,7 @@ impl PictureSources {
                     .picture_candidates(section, decl, theater_name)
                     .into_iter()
                     .find_map(|file| asset_manager.get_ref(&file).map(|bytes| (file, bytes)))?;
-                let mask_name = format!(
-                    "{}.mask.png",
-                    file.rsplit_once('.')
-                        .map_or(file.as_str(), |(stem, _)| stem)
-                );
-                let decoded = PictureFrames::decode(bytes).and_then(|picture| {
-                    let mask = asset_manager
-                        .get_ref(&mask_name)
-                        .map(PictureFrames::decode)
-                        .transpose()?;
-                    Ok((picture, mask))
-                });
-                let shrunk = decoded
-                    .map_err(PictureArtError::from)
-                    .and_then(|(picture, mask)| {
-                        let canvas = decl.size.map(|size| size.map(|side| side.unsigned_abs()));
-                        GamePictureFrames::shrink(&picture, mask.as_ref(), canvas)
-                    });
-                match shrunk {
-                    Ok(frames) => {
-                        log::info!(
-                            "[{section}] {file}: {} frames of {}x{}",
-                            frames.frame_count(),
-                            frames.canvas[0],
-                            frames.canvas[1]
-                        );
-                        Some(frames)
-                    }
-                    Err(error) => {
-                        log::warn!("[{section}] {file} cannot be drawn: {error}");
-                        None
-                    }
-                }
+                decode_declared_picture(section, &file, bytes, &decl, asset_manager)
             })
             .as_ref()
     }
@@ -569,6 +566,64 @@ pub(crate) fn building_render_bounds(
     bounds[0] -= canvas[0] / 2;
     bounds[1] -= canvas[1] / 2;
     bounds
+}
+
+/// The picture `file`, read as `bytes` for art section `section` that
+/// declares it as `decl`, with its mask beside it, at game pixels. A
+/// picture that cannot be decoded or does not fit its canvas is logged and
+/// draws nothing.
+fn decode_declared_picture(
+    section: &str,
+    file: &str,
+    bytes: &[u8],
+    decl: &crate::rules::art_data::PictureDecl,
+    asset_manager: &crate::assets::asset_manager::AssetManager,
+) -> Option<GamePictureFrames> {
+    let mask_name = format!(
+        "{}.mask.png",
+        file.rsplit_once('.').map_or(file, |(stem, _)| stem)
+    );
+    let decoded = PictureFrames::decode(bytes).and_then(|picture| {
+        let mask = asset_manager
+            .get_ref(&mask_name)
+            .map(PictureFrames::decode)
+            .transpose()?;
+        Ok((picture, mask))
+    });
+    let shrunk = decoded
+        .map_err(PictureArtError::from)
+        .and_then(|(picture, mask)| {
+            let canvas = decl.size.map(|size| size.map(|side| side.unsigned_abs()));
+            GamePictureFrames::shrink(&picture, mask.as_ref(), canvas)
+        });
+    match shrunk {
+        Ok(frames) => {
+            log::info!(
+                "[{section}] {file}: {} frames of {}x{}",
+                frames.frame_count(),
+                frames.canvas[0],
+                frames.canvas[1]
+            );
+            Some(frames)
+        }
+        Err(error) => {
+            log::warn!("[{section}] {file} cannot be drawn: {error}");
+            None
+        }
+    }
+}
+
+/// A destroyed building's rubble frames when its art declares `Picture=`:
+/// the body picture rubble binding resolved (`RubbleArt::shp`), at game
+/// pixels. None for SHP rubble, which never reaches here, and for a picture
+/// that cannot be drawn.
+pub(crate) fn rubble_picture(
+    art: &crate::rules::building_rubble::RubbleArt,
+    asset_manager: &crate::assets::asset_manager::AssetManager,
+) -> Option<GamePictureFrames> {
+    let decl = art.picture.as_ref()?;
+    let bytes = asset_manager.get_ref(&art.shp)?;
+    decode_declared_picture(&art.shp, &art.shp, bytes, decl, asset_manager)
 }
 
 /// One RGBA source page of picture sprites: its size, pixels, index plane
