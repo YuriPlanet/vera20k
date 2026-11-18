@@ -628,7 +628,7 @@ impl RelayServer {
                         Ok(records) => {
                             let mut replies = vec![ordering.watch_status(view, feedback, now_ms)];
                             replies.extend(
-                                pack::encode_pack_v2(&records, WATCH_PULL_PACKS)
+                                pack::encode_pack(&records, WATCH_PULL_PACKS)
                                     .into_iter()
                                     .map(|(pack, _)| pack),
                             );

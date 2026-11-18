@@ -750,7 +750,7 @@ impl ReaderLink {
         now_ms: u64,
     ) {
         let (first, count) = pack.map_or((0, 0), |pack| {
-            crate::sequenced::pack::pack_v2_range(pack).expect("a pack this relay wrote")
+            crate::sequenced::pack::pack_range(pack).expect("a pack this relay wrote")
         });
         self.log[(sequence % SENDLOG_READER as u64) as usize] = SendRecord {
             sequence,
