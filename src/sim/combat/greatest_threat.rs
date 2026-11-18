@@ -3183,18 +3183,39 @@ mod tests {
     use crate::sim::combat::threat_posed::live_threat_posed;
     use crate::sim::intern::test_interner;
 
-    /// On a 350 by 350 map the last included ring still reaches the eastern tip.
+    /// A map-authored gun and guard radius reach a tank beyond ring 256.
     #[test]
-    fn the_ring_walk_includes_the_large_map_corner() {
-        let centre = (150, 250);
-        let corner = (699, 350);
-        assert!(crate::map::playfield::size_diamond_contains(
-            350, 350, corner
-        ));
-        let rings = square_rings_covering_rect(centre, [1, 1, 699, 699]);
-        assert!(
-            square_ring_cells(centre, rings - 1)
-                .any(|cell| cell == (i32::from(corner.0), i32::from(corner.1)))
+    fn a_guarding_tank_acquires_an_enemy_290_cells_away() {
+        let map = IniFile::from_str(
+            "[Map]\nTheater=TEMPERATE\nSize=0,0,160,160\nLocalSize=0,0,160,160\n\
+             [HTNK]\nGuardRange=300\n[120mm]\nRange=300\n",
+        );
+        let Some(retail) =
+            crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&map)
+        else {
+            return;
+        };
+        let rules = &retail.rules;
+        let mut sim = crate::sim::arena_fixture::rival_arena_with_size(rules, 1, 320);
+        sim.install_playfield_from_map_header(&crate::map::map_file::parse_header(&map).unwrap());
+        sim.intern_rule_type_ids(rules);
+        sim.resolve_type_handles(rules);
+        let scanner = sim
+            .spawn_object("HTNK", "Russians", 10, 154, 64, rules)
+            .unwrap();
+        let target = sim
+            .spawn_object("MTNK", "Americans", 300, 154, 64, rules)
+            .unwrap();
+        let pick = sim.greatest_threat_represented(
+            rules,
+            None,
+            scanner,
+            super::super::ScanMission::Guard,
+            None,
+        );
+        assert_eq!(
+            pick.and_then(super::super::TargetKind::object_id),
+            Some(target)
         );
     }
 
