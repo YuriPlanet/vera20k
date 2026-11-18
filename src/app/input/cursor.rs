@@ -130,6 +130,7 @@ pub(crate) fn answer_kept_questions(state: &AppState) {
     current_cursor_feedback_kind(state, &targets);
     crate::app::input::ferry::armed_click_accepted(state);
     crate::app::input::planning_mode::hover_node(state);
+    crate::app::input::tooltips::answer_kept_tactical_tip(state);
 }
 
 fn find_cursor_feedback_kind(
