@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
-use crate::assets::asset_manager::AssetManager;
+use crate::assets::asset_manager::{AssetManager, ResolvedAssetFile};
+use crate::assets::error::AssetError;
 use crate::map::map_file::{self, MapFile};
 use crate::rules::ini_parser::IniFile;
 use crate::util::sha256::sha256_hex;
@@ -16,6 +17,7 @@ use crate::util::sha256::sha256_hex;
 const MAP_EXTENSIONS: [&str; 5] = ["mmx", "yro", "map", "mpr", "yrm"];
 pub const MAX_TRANSFER_MAP_BYTES: usize = 8 * 1024 * 1024;
 mod cache;
+mod saved_path;
 pub use cache::CacheLease;
 
 /// Exact source whose bytes were parsed into the active map.
@@ -23,6 +25,7 @@ pub use cache::CacheLease;
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LoadedMapSource {
     Loose {
+        #[serde(flatten, with = "saved_path")]
         path: PathBuf,
         payload_len: usize,
         /// Hash of the consumed file buffer, including the wrapper for .mmx.
@@ -52,6 +55,22 @@ pub enum LoadedMapSource {
 }
 
 impl LoadedMapSource {
+    /// Lookup name and external mission directory after restoring a saved world.
+    /// A moved install can find its own copy by basename. Its old parent no
+    /// longer supplies the directory for the next mission.
+    pub fn restored_loose_lookup(&self) -> (Option<&str>, Option<&Path>) {
+        let Self::Loose { path, .. } = self else {
+            return (None, None);
+        };
+        if crate::util::file_system::is_file(path) {
+            return (
+                path.to_str().or_else(|| saved_path::basename(path)),
+                path.parent().filter(|dir| !dir.as_os_str().is_empty()),
+            );
+        }
+        (saved_path::basename(path), None)
+    }
+
     pub fn physical_identity(&self) -> Option<(usize, &str)> {
         match self {
             Self::Loose {
@@ -141,7 +160,7 @@ pub struct LoadedMap {
 }
 
 pub fn read_map_ini_for_metadata(path: &Path) -> Option<IniFile> {
-    map_file::ini_from_file_bytes(crate::util::file_system::read(path).ok()?).ok()
+    map_file::ini_from_file_bytes(crate::util::file_system::read(path).ok()?.into()).ok()
 }
 
 /// Physical INI plus the exact source bytes used by shell map verification.
@@ -155,6 +174,36 @@ pub struct LoadedMapIni {
 struct MapInput<'a> {
     bytes: Cow<'a, [u8]>,
     source: LoadedMapSource,
+}
+
+impl<'a> MapInput<'a> {
+    fn loose(path: &Path, bytes: Cow<'a, [u8]>) -> Self {
+        let source = LoadedMapSource::Loose {
+            cache_lease: Default::default(),
+            path: path.to_path_buf(),
+            payload_len: bytes.len(),
+            source_sha256: sha256_hex(&bytes),
+        };
+        Self { bytes, source }
+    }
+
+    fn from_asset(logical_name: String, file: ResolvedAssetFile<'a>) -> Self {
+        match file {
+            ResolvedAssetFile::Loose { path, entry } => {
+                Self::loose(path, Cow::Borrowed(entry.bytes))
+            }
+            ResolvedAssetFile::Mix(entry) => Self {
+                bytes: Cow::Borrowed(entry.bytes),
+                source: LoadedMapSource::Mix {
+                    logical_name,
+                    source_archive: entry.source_archive.to_owned(),
+                    entry_id: entry.entry_id,
+                    payload_len: entry.bytes.len(),
+                    source_sha256: sha256_hex(entry.bytes),
+                },
+            },
+        }
+    }
 }
 
 static DOWNLOADED_MAPS_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
@@ -289,16 +338,7 @@ fn read_loose_map_input_bounded(path: &Path, limit: Option<usize>) -> Result<Map
         limit.is_none_or(|limit| bytes.len() <= limit),
         "map exceeds transfer size limit"
     );
-    let source = LoadedMapSource::Loose {
-        cache_lease: Default::default(),
-        path: path.to_path_buf(),
-        payload_len: bytes.len(),
-        source_sha256: sha256_hex(&bytes),
-    };
-    Ok(MapInput {
-        bytes: Cow::Owned(bytes),
-        source,
-    })
+    Ok(MapInput::loose(path, Cow::Owned(bytes)))
 }
 
 fn decode_map(input: MapInput<'_>) -> Result<LoadedMap> {
@@ -318,8 +358,7 @@ fn decode_metadata(input: MapInput<'_>) -> Result<LoadedMapIni> {
         //695349 ignores INI.Load's boolean before ReadString. A malformed
         // physical file still supplies the reader default; it must not cause
         // a fallback to a different MIX payload.
-        ini: map_file::ini_from_file_bytes(input.bytes.into_owned())
-            .unwrap_or_else(|_| IniFile::empty()),
+        ini: map_file::ini_from_file_bytes(input.bytes).unwrap_or_else(|_| IniFile::empty()),
         source: input.source,
     })
 }
@@ -432,7 +471,7 @@ pub fn load_network_map_ini(
 
 fn decode_map_with_assets(input: MapInput<'_>, assets: &AssetManager) -> Result<LoadedMap> {
     let ini = if matches!(input.source, LoadedMapSource::Loose { .. }) {
-        map_file::ini_from_file_bytes(input.bytes.into_owned())?
+        map_file::ini_from_file_bytes(input.bytes)?
     } else {
         IniFile::from_bytes(&input.bytes)?
     };
@@ -465,22 +504,16 @@ fn load_map_input_with_assets<T>(
         Ok(value) => Ok(value),
         Err(local_err) => {
             for candidate in asset_map_candidates(map_name) {
-                if let Some(resolved) = assets.resolve_ref(&candidate) {
-                    anyhow::ensure!(
-                        limit.is_none_or(|limit| resolved.bytes.len() <= limit),
-                        "map exceeds transfer size limit"
-                    );
-                    let source = LoadedMapSource::Mix {
-                        logical_name: candidate,
-                        source_archive: resolved.source_archive.to_string(),
-                        entry_id: resolved.entry_id,
-                        payload_len: resolved.bytes.len(),
-                        source_sha256: sha256_hex(resolved.bytes),
-                    };
-                    return decode(MapInput {
-                        bytes: Cow::Borrowed(resolved.bytes),
-                        source,
-                    });
+                let file = assets
+                    .resolve_file_with_limit(&candidate, limit)
+                    .map_err(|error| match error {
+                        AssetError::ReadLimitExceeded { .. } => {
+                            anyhow::anyhow!("map exceeds transfer size limit")
+                        }
+                        error => error.into(),
+                    })?;
+                if let Some(file) = file {
+                    return decode(MapInput::from_asset(candidate, file));
                 }
             }
             Err(local_err)
@@ -1076,6 +1109,56 @@ pub mod test_support {
 #[cfg(all(test, tests_map))]
 mod tests {
     use super::test_support::{TestDirectory, make_new_format_mix_bytes};
+
+    #[cfg(unix)]
+    #[test]
+    fn saved_loose_path_stays_readable_across_readers_and_platforms() {
+        use super::LoadedMapSource;
+        use std::os::unix::ffi::OsStrExt;
+        use std::path::PathBuf;
+
+        let loose = |path| LoadedMapSource::Loose {
+            path,
+            cache_lease: Default::default(),
+            payload_len: 12,
+            source_sha256: "saved-digest".into(),
+        };
+        let ordinary = loose("maps/Mission.map".into());
+        let old = serde_json::to_value(&ordinary).unwrap();
+        assert_eq!(old["path"], "maps/Mission.map");
+        assert!(old.get("native_path").is_none());
+        assert_eq!(
+            serde_json::from_value::<LoadedMapSource>(old).unwrap(),
+            ordinary
+        );
+
+        let path = std::ffi::OsStr::from_bytes(b"/game/\xff/Mission.map");
+        let source = loose(path.into());
+        let mut wire = serde_json::to_value(&source).unwrap();
+        assert_eq!(
+            wire["native_path"]["Unix"],
+            serde_json::json!(path.as_bytes())
+        );
+        #[derive(serde::Deserialize)]
+        struct OldLooseFields {
+            path: PathBuf,
+        }
+        let old: OldLooseFields = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(old.path, PathBuf::from("Mission.map"));
+        assert_eq!(
+            serde_json::from_value::<LoadedMapSource>(wire.clone()).unwrap(),
+            source
+        );
+
+        // A Windows save with a non-Unicode parent retains the same portable name.
+        let windows: Vec<u16> = [0xd800, b'\\' as u16]
+            .into_iter()
+            .chain("Mission.map".encode_utf16())
+            .collect();
+        wire["native_path"] = serde_json::json!({ "Windows": windows });
+        let foreign: LoadedMapSource = serde_json::from_value(wire).unwrap();
+        assert_eq!(foreign, loose("Mission.map".into()));
+    }
 
     #[test]
     fn a_received_map_is_kept_in_veras_folder_without_replacing_the_players_file() {
@@ -1824,6 +1907,38 @@ mod tests {
                 source_sha256: SOURCE_TEST_MAP_SHA256.to_string(),
             }
         );
+    }
+
+    #[test]
+    fn asset_fallback_keeps_the_loose_wrappers_path_and_bytes() {
+        let direct = TestDirectory::new("empty-direct-root");
+        let loose = TestDirectory::new("asset-wrapper");
+        let wrapper = make_new_format_mix_bytes(&[("Arena.map", SOURCE_TEST_MAP)]);
+        loose.write("Arena.mmx", &wrapper);
+        let assets = AssetManager::from_loose_root_for_test(loose.path());
+        let name = "ARENA.MMX";
+        let metadata =
+            load_map_ini_by_name_or_path_with_assets(direct.path(), name, &assets).unwrap();
+        let digest = sha256_hex(&wrapper);
+        assert_eq!(
+            metadata.source,
+            LoadedMapSource::Loose {
+                path: loose.path().join("Arena.mmx"),
+                payload_len: wrapper.len(),
+                source_sha256: digest.clone(),
+                cache_lease: Default::default(),
+            }
+        );
+
+        let gameplay = load_map_by_name_or_path_with_assets(direct.path(), name, &assets).unwrap();
+        assert_eq!(gameplay.map.header.theater, "TEMPERATE");
+        assert_eq!(gameplay.map.ini.content_hash(), metadata.ini.content_hash());
+        assert_eq!(gameplay.source, metadata.source);
+
+        // The same map as plain INI is a different file from the selected wrapper.
+        let upload = prepare_transfer_map_source(&metadata.source, &assets).unwrap();
+        loose.write("Arena.mmx", SOURCE_TEST_MAP);
+        assert!(upload.read(&digest, wrapper.len()).is_err());
     }
 
     #[test]

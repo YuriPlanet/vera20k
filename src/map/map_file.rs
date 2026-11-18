@@ -11,6 +11,7 @@
 //! ## Dependency rules
 //! - Part of map/ — depends on assets/ (MIX archives), rules/ (INI parser), util/ (base64, lzo).
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 #[cfg(any(test, feature = "test-support"))]
 use std::path::Path;
@@ -506,14 +507,14 @@ pub fn load_from_path(path: &Path) -> Result<MapFile, MapError> {
 /// Callers recording source identity can hash this same buffer before passing
 /// ownership here. Wrapped maps retain the existing inner-entry selection.
 pub fn load_from_bytes(bytes: Vec<u8>) -> Result<MapFile, MapError> {
-    MapFile::from_ini(ini_from_file_bytes(bytes)?)
+    MapFile::from_ini(ini_from_file_bytes(bytes.into())?)
 }
 
 /// Select and parse the map INI without decoding terrain or preview packs.
 /// Menu metadata and full loading share this raw/wrapped-file decision.
-pub(crate) fn ini_from_file_bytes(bytes: Vec<u8>) -> Result<IniFile, MapError> {
+pub(crate) fn ini_from_file_bytes(bytes: Cow<'_, [u8]>) -> Result<IniFile, MapError> {
     if is_mix_header(&bytes) {
-        let archive: MixArchive = MixArchive::from_bytes(bytes)?;
+        let archive = MixArchive::from_bytes(bytes.into_owned())?;
         pick_map_ini(&archive, false)
     } else {
         Ok(IniFile::from_bytes(&bytes)?)
