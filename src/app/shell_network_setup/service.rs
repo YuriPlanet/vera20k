@@ -434,7 +434,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             // 0x5E3E73..0x5E3E90: a WOL parse drops every option text while
             // the game runs ([0xB77DC1]) or a StartGame is pending ([0xB77E28]).
             if dialog.wol()
-                && (crate::app::shell_wol::in_match(state) || super::wol::start_pending(state))
+                && (crate::app::shell_wol::in_match(state) || super::start_phase(state).submitted())
             {
                 return Ok(());
             }
@@ -445,7 +445,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 "a host cannot receive guest-authored host setup"
             );
             if let Some(file) = launch.selected_map_file.as_deref()
-                && let Err(error) = crate::map::source::validate_network_map_name(file)
+                && let Err(error) = super::maps::validate_room_map_name(file)
             {
                 fail_go_handoff(state);
                 return Err(error);
@@ -768,7 +768,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             // not answered on top of it. WOL's pump takes it only while no
             // start is pending and shows 0x468 first, leaving 0x71F as it is
             // (0x00796710).
-            let wol_pending = dialog.wol() && super::wol::start_pending(state);
+            let wol_pending = dialog.wol() && super::start_phase(state).submitted();
             let protocol = state
                 .frontend
                 .network_setup_protocol
@@ -805,7 +805,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             // The 'C' arm (0x005E43CE) follows the parse's WOL drop of every
             // option text (0x005E3E73..0x005E3E90), as HostSetup does.
             if dialog.wol()
-                && (crate::app::shell_wol::in_match(state) || super::wol::start_pending(state))
+                && (crate::app::shell_wol::in_match(state) || super::start_phase(state).submitted())
             {
                 return Ok(());
             }
@@ -816,7 +816,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             // of 37 tokens commits nothing. A WOL parse drops it while the
             // game runs or a start is pending (0x005E3E73..0x005E3E90).
             if dialog.wol()
-                && (crate::app::shell_wol::in_match(state) || super::wol::start_pending(state))
+                && (crate::app::shell_wol::in_match(state) || super::start_phase(state).submitted())
             {
                 return Ok(());
             }
@@ -1828,7 +1828,7 @@ fn auto_accept(state: &mut AppState) {
 /// player leaves or starts watching, or the host adds a seat or takes an AI
 /// out.
 fn seat_queue(state: &mut AppState) {
-    if super::wol::start_pending(state)
+    if super::start_phase(state).in_progress()
         || state
             .frontend
             .network_setup_protocol

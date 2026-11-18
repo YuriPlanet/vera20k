@@ -50,6 +50,8 @@ pub enum NetworkInterruption {
     /// which a player leaving does.
     #[error("another player left before the match started")]
     StartCancelled,
+    #[error("the game servers lost contact with each other")]
+    FederationLost,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

@@ -42,6 +42,14 @@ longer carries its locals either. Loading a save keeps its saved variables. Offl
 the original game's local variable carryover. This changes no packets: mixed builds
 are refused by the existing build check, and a rollback restores the earlier
 carryover behavior.
+
+Each new LAN or online match also rebuilds mutable Rules from the frozen startup
+sources and the room's current options. This includes the country/color choices
+shown before loading and the Rules used for random-map agreement and generation.
+A previous map's scalars or extra Types cannot become defaults for the next room.
+Offline loads keep the original retaining reset. No packet changes are required;
+mixed builds use the existing refusal, and a rollback restores the earlier retention.
+
 Whether Ares plays in a match is decided from that same data: the rules, mode
 and map, whether the selected mod loads `ares.mix`, and the player's
 [Ares setting](ares.md#the-ares-setting), which the rules agreement covers. With
@@ -114,7 +122,19 @@ names vera20k.org (`web_link::DOWNLOAD_PAGE`), but a release signed by a new key
 still points to the GitHub releases. Nothing exchanged changes: a released game
 shows only the text with its link, and a rollback does the same.
 
+A relay deploy reaches every version the lobby admits, from `OLDEST_ADMITTED` in
+`tools/relay_compat.py` on. Before a relay change merges, the Relay compatibility
+workflow plays a client built on the relay protocol crate of each of those releases,
+and of the newest dev build, against it. A change that breaks one of them raises that
+floor, so the lobby refuses the release at sign-in with 426 instead of its matches
+ending under it.
+
 When an online start fails, each player's game says whose side failed and logs why.
+If the lobby announces a match whose start this game cannot accept (for example,
+its map or rules differ), the game finishes that specific pending match. Its
+player sees the local reason, and the lobby tells the others the start was
+cancelled. An older game that refuses locally still leaves everyone waiting for
+the admission timeout. No packets or lobby changes are needed.
 A start whose 30-second relay admission runs out tells a player whose `relay_ready` the
 lobby took that another player's game could not reach the game server, a player whose
 relay answered but whose `relay_ready` the lobby never took that the lobby is busy or not
@@ -195,6 +215,10 @@ later player's Ready: the others wait until that player leaves, which cancels
 the start, or for up to 3 minutes, then start without it (a match on several
 relays is cancelled instead).
 Deploying the relay change is separate from publishing a new game build.
+Relays of one match must also speak one relay-to-relay link version: a relay
+that hears another version cancels the startup at once, and one too old to know
+this cancels at its loading limit, so players get the cancelled-start message
+instead of a frozen match. Game and lobby traffic do not change.
 At each deadline, missing input is empty; a command joins the next unsealed
 frame. The sender also waits for that commit.
 Frames use the existing Event codec and simulation queues, with a fresh compression
@@ -284,6 +308,15 @@ every active client to report; a room with an older client or one spread over
 several relays keeps its speed. Native lockstep instead slows every match to its
 slowest player (ProcessNetwork `0x00647BF4..0x00647E6D`).
 
+When the lobby admits a match on three or more relays with federation
+adjudication, a relay missing for ten minutes ends that match without a winner.
+A short outage keeps its place. Losing a player's own connection still follows
+the ordinary reconnect rule below. Each surviving relay propagates a confirmed
+failure even when the missing relay coordinated the start; it creates no player
+departure or simulation frames to bridge the gap. Current games and watchers
+show what happened, and released games show a connection failure.
+The relay and lobby compatibility gates are in [the relay guide](../services/relay/README.md).
+
 The relay keeps a bounded RAM cache and the full match journal on disk. The
 journal is not encrypted: it holds plain commands and relies on file permissions. Temporary connection loss keeps the player's identity, units, input cursor
 and world in the match; the client renews its ticket and reads missed frames when
@@ -305,11 +338,12 @@ crash box shows, or once the game thread has not serviced the connection for
 60 seconds. The others then read "<name> is not responding." 10 seconds later
 and the ten-minute limit below starts, as for a closed game. A frozen game that
 recovers is heard again; no Leave goes out, so the launcher can still resume
-the match. A crash also silences a LAN match's sockets. From admission until
-the match starts, the game services the connection only while its window draws,
-so a window kept minimised or covered that long can fall silent too (a Quick
-Match found while the player is in another window); the relay then drops that
-player 60 seconds later, if that comes before the 3-minute limit.
+the match. A crash also silences a LAN match's sockets. A healthy game
+whose window is minimised or covered after relay admission continues its
+connection checks, loads its map and enters the match without a redraw.
+The game thread services that work and the crash/stall limits stay in effect.
+An older game can still fall silent in that window and be dropped before it
+starts.
 The relay and the packets are unchanged. Released games keep sending for a
 crashed or frozen game, so in a mixed room an older game is still never named.
 After ten minutes of silence the relay removes the player
@@ -327,8 +361,10 @@ match on the same relay, or the match's final frame after 24 hours of play ends
 membership. The relay
 remains required for progress.
 
-A process that left a match without Leave (a closed window or browser tab, a crash)
-can be replaced within that silence limit. The launcher receives a fresh `[Relay]`
+A closed desktop game first sends the relay its Leave and the lobby its `finish`,
+waiting up to three seconds for them. A process that left a match without Leave (a
+crash, a closed browser tab, or a closed game whose Leave did not arrive in time) can
+be replaced within that silence limit. The launcher receives a fresh `[Relay]`
 section with `ResumePings`, the timing vector every client started with, and
 `ResumeCursor`, the end of the lobby events that process already consumed. The new
 process skips the start barriers, loads the same world without reporting progress to
@@ -410,7 +446,11 @@ ignores the field and is refused at the build check. Online, an older guest cann
 read the host's options while Teams is set and says the update was invalid, in a room
 that cannot start, since its players' versions differ. A lobby from before Teams
 refuses the field; the host's game then turns Teams Off, says so and sends its options
-again without it. A room has 2 to 15 teams, named A to O.
+again without it. A lobby that lists matches to watch already supports Teams, the queue
+and the room rules. A refusal from it leaves the settings in place. The host checks the
+map has enough starts for the playing teams, people and AI before publishing, so they
+can change the map or the seats while keeping their room settings. A room has 2 to 15
+teams, named A to O.
 
 In a VERA room whose mode has teams and Teams set, people play only on a team. A newcomer
 comes in watching while a spectator seat is open and takes a seat with a team header's
@@ -636,9 +676,12 @@ the code.
 
 The lobby's grant carries the match's start, its options and a watch ticket. The
 watcher's game downloads the map as a guest does, checks that its version and rules
-digest are the players', and joins the relay as a watcher (`live_service::begin_watch`,
+digest are the players', and joins the relay as a watcher (`live_service::prepare_watch`,
 `poll_watch`): a read-only session that pulls the match's stream from its first frame,
-held back by the delay, and sends nothing into it, not even a checksum
+held back by the delay. Receiving the grant ends the lobby request's wait. The map
+download and relay connection each keep their own deadline. If the setup cannot
+start, the game releases the watch grant with
+`unwatch` and shows the failure in the lobby. A watcher only reads the stream
 (relay README, "Watchers"). It loads the world as a returning player does, with no
 progress reports and nobody waiting for it, and then plays the stream's frames. Until
 it reaches the match's delayed present it runs them at speed, in passes of up to 50 ms
@@ -777,6 +820,25 @@ directory, and the bind/peer endpoints exchanged. The output manifest's
 `lan.rounds[n].runtime.native_checksums` records per-frame checksums for each
 round. The live targets drive real Move/Stop input, results, a rematch in the
 host's reopened room and Main Menu return across two games.
+For a process-state comparison, give both peers `--lan-isolation-seed 73`
+and the host `--lan-map XMP03T4.MAP`. This fixes the seed, countries, colors and
+start positions across both rounds and skips the separate observer-seat exercise. Compare
+the accepted launch, startup receipt and committed frame checksums; any input
+timing differences still need to be reconciled before attributing a difference
+to retained state.
+The host can add `--lan-prior-map <history-map>` to play a different first map.
+The second round still uses `--lan-map`. Each round records `setup_catalog`
+before loading and `gameplay_rules` afterward, so the comparison can confirm
+that the history changed the first world and that its choices were then cleared.
+
+`sim-bench --state-isolation-report <new.json> --map XMP03T4.MAP --seed 73
+--client-timing --isolation-mode wol --isolation-humans 1 --computers 1`
+provides the complementary headless comparison. Run it in separate processes,
+first without a history, then with one or more `--prior-map <map>` arguments.
+Equal `target` values cover the Rules owner, world construction and every
+recorded simulation frame for that fixture. This does not cover app input or
+the network transport.
+
 The `lan-live-timeout-host` and `lan-live-quit-host` targets pair with
 `lan-live-failure-guest` on the same endpoints. That guest plays the shared 300-frame
 prefix and then exits without leaving, so the host meets a real peer disappearance

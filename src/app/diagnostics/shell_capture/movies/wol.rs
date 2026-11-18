@@ -5549,12 +5549,11 @@ impl WolCapture {
 
     /// Once the local loader reports 100, the controlled guest finishes too.
     fn complete_peer_loading(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        use crate::app::match_runtime::session::NetworkLoadingRequest;
-        let requests = state.match_state.session.take_network_loading_requests();
-        if !requests
-            .iter()
-            .any(|request| matches!(request, NetworkLoadingRequest::ReportProgress(100)))
-        {
+        let reports = state
+            .match_state
+            .session
+            .take_network_loading_progress_reports();
+        if !reports.contains(&100) {
             return Ok(());
         }
         ensure!(
@@ -5563,7 +5562,7 @@ impl WolCapture {
         );
         self.route.push(json!({"frame": frame,
             "action": "controlled guest loading completion after the local report",
-            "requests": requests.iter().map(|r| format!("{r:?}")).collect::<Vec<_>>()}));
+            "reports": reports}));
         Ok(())
     }
 

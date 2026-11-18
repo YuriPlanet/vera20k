@@ -568,24 +568,11 @@ pub(super) fn admit_join_country(
     state: &AppState,
     slot: &mut crate::skirmish_launch::SkirmishLocalSlot,
 ) {
-    if !current(state) {
-        return;
-    }
-    let runtime = &state.frontend.multiplayer_shell_runtime;
-    let requested = if slot.country_random {
-        -2
-    } else {
-        i32::from(slot.country.raw_index())
-    };
-    if runtime.cooperative_admits(requested) {
-        return;
-    }
-    match runtime.cooperative_default_country() {
-        Some(country) => {
-            slot.country = country;
-            slot.country_random = false;
-        }
-        None => slot.country_random = true,
+    if current(state) {
+        state
+            .frontend
+            .multiplayer_shell_runtime
+            .cooperative_admit_country(slot);
     }
 }
 

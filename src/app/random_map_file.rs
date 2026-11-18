@@ -109,7 +109,7 @@ pub(crate) fn generate(
     let prepared = prepare_random_map_generation(
         assets,
         options,
-        RandomMapRulesPreparation::ReadOnly(Some(rules)),
+        RandomMapRulesPreparation::NetworkAgreement(Some(rules)),
         mode_rules.as_ref(),
     )
     .context("the random map's theater or rules are unavailable")?;

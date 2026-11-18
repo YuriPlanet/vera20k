@@ -8,7 +8,10 @@ use crate::map::source::{LoadedTransferAsset, TransferResource};
 use crate::util::time::{Duration, Instant};
 use anyhow::{Result, anyhow, ensure};
 use std::path::PathBuf;
-const CHUNK: usize = 32768;
+/// The lobby's map transfer chunk (docs/lobby-protocol.md, `map_upload`):
+/// each chunk but a transfer's last holds exactly this many bytes, which
+/// [`Transfer::append_chunk`] alone checks.
+const MAP_CHUNK_BYTES: usize = 32768;
 
 #[derive(PartialEq, Eq)]
 struct Key {
@@ -55,7 +58,7 @@ impl Transfer {
         complete: bool,
     ) -> Result<()> {
         let (expected_digest, expected_total) = key.asset(self.resource);
-        let expected_size = CHUNK.min(expected_total.saturating_sub(self.offset));
+        let expected_size = MAP_CHUNK_BYTES.min(expected_total.saturating_sub(self.offset));
         ensure!(
             digest == expected_digest
                 && total == expected_total
@@ -193,38 +196,28 @@ impl Transfers {
         if !self.active {
             return Ok(());
         }
-        let Some(launch) = state.match_state.session.network_setup() else {
+        if state.match_state.session.network_setup().is_none() {
             self.key = None;
             self.transfer = None;
             return Ok(());
-        };
+        }
         let Some(metadata) = state.match_state.session.network_map_metadata().cloned() else {
             return Ok(());
         };
         let Some(scope) = self.scope(state) else {
             return Ok(());
         };
-        let seed = launch
-            .selected_map_file
-            .as_deref()
-            .is_some_and(|s| s.eq_ignore_ascii_case("RandMap.Sed"));
+        let seed = shared_maps::generated_selection(&state.match_state.session);
         if seed && self.generated.is_none() {
             return Ok(());
         }
         let key = Key {
             room: scope,
             digest: metadata.source_sha256.clone(),
-            total: usize::try_from(metadata.byte_length)?,
+            total: shared_maps::transfer_length(&metadata)?,
             effective_digest: metadata.effective_digest.clone(),
             random: self.generated.clone(),
         };
-        ensure!(
-            crate::map::source::valid_source_sha256(&key.digest)
-                && crate::map::source::valid_source_sha256(&key.effective_digest)
-                && key.total > 0
-                && key.total <= TransferResource::Map.limit(),
-            "invalid map transfer identity"
-        );
         if self.key.as_ref() != Some(&key) {
             self.forget_other_available(&key);
             // An offer for the previous map closes, asking or downloading.
@@ -268,7 +261,7 @@ impl Transfers {
         let (digest, total) = key.asset(transfer.resource);
         let request = match transfer.direction {
             Direction::Upload => {
-                let end = (transfer.offset + CHUNK).min(total);
+                let end = (transfer.offset + MAP_CHUNK_BYTES).min(total);
                 let id = service.next_request;
                 service.next_request = service.next_request.wrapping_add(1);
                 http::Request::UploadMapChunk {
@@ -546,7 +539,7 @@ impl Transfers {
             http::Response::MapUploaded { completed, .. } => {
                 let transfer = self.transfer.as_mut().unwrap();
                 ensure!(
-                    completed == (transfer.offset + CHUNK).min(total),
+                    completed == (transfer.offset + MAP_CHUNK_BYTES).min(total),
                     "upload offset differs"
                 );
                 transfer.offset = completed;
@@ -562,7 +555,7 @@ impl Transfers {
                             .ok_or_else(|| anyhow!("no asset directory"))?;
                         let source = crate::map::source::transfer_file_source(
                             &crate::map::source::random_map_dir(&config.paths.ra2_dir)
-                                .join("RandMap.img"),
+                                .join(crate::map::skirmish_scenarios::RANDMAP_PREVIEW),
                             resource,
                         )?;
                         ensure!(
@@ -788,11 +781,11 @@ mod tests {
         assert!(transfer.retry_after_failure(false).is_err());
     }
     #[test]
-    fn download_rejects_duplicate_offsets_and_changed_identity_without_appending() {
+    fn download_rejects_oversized_or_duplicate_chunks_and_changed_identity_without_appending() {
         let key = Key {
             room: "room".into(),
             digest: "a".repeat(64),
-            total: CHUNK + 2,
+            total: MAP_CHUNK_BYTES + 2,
             effective_digest: "b".repeat(64),
             random: None,
         };
@@ -808,23 +801,31 @@ mod tests {
             retries: 0,
             directory: PathBuf::new(),
         };
+        let (full, oversized) = (vec![1; MAP_CHUNK_BYTES], vec![1; MAP_CHUNK_BYTES + 1]);
+        let (digest, total) = (&key.digest, key.total);
+        assert!(
+            transfer
+                .append_chunk(&key, digest, total, 0, &oversized, false)
+                .is_err()
+        );
         transfer
-            .append_chunk(&key, &key.digest, key.total, 0, &vec![1; CHUNK], false)
+            .append_chunk(&key, digest, total, 0, &full, false)
             .unwrap();
         assert!(
             transfer
-                .append_chunk(&key, &key.digest, key.total, 0, &vec![1; CHUNK], false)
+                .append_chunk(&key, digest, total, 0, &full, false)
                 .is_err()
         );
+        let changed = "b".repeat(64);
         assert!(
             transfer
-                .append_chunk(&key, &"b".repeat(64), key.total, CHUNK, &[2, 3], true)
+                .append_chunk(&key, &changed, total, MAP_CHUNK_BYTES, &[2, 3], true)
                 .is_err()
         );
-        assert_eq!(transfer.offset, CHUNK);
+        assert_eq!(transfer.offset, MAP_CHUNK_BYTES);
         transfer
-            .append_chunk(&key, &key.digest, key.total, CHUNK, &[2, 3], true)
+            .append_chunk(&key, digest, total, MAP_CHUNK_BYTES, &[2, 3], true)
             .unwrap();
-        assert_eq!(&transfer.bytes[CHUNK..], &[2, 3]);
+        assert_eq!(&transfer.bytes[MAP_CHUNK_BYTES..], &[2, 3]);
     }
 }

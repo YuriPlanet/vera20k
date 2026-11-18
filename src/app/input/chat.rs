@@ -4,7 +4,7 @@
 //!
 //! The MessageList edit itself is `ui::messages`. The transport is the
 //! controlled network service: a send queues
-//! [`NetworkLoadingRequest::Chat`](crate::app::match_runtime::session::NetworkLoadingRequest)
+//! [`NetworkSendRequest::Chat`](crate::app::match_runtime::session::NetworkSendRequest)
 //! and a received packet arrives as `NetworkMatchEvent::Chat`.
 //!
 //! With an own beacon selected, the same three keys open a hidden beacon

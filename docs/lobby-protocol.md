@@ -22,7 +22,9 @@ and maintenance message then come in that language when the operator wrote it: t
 translation for that tag, else for its language alone (`zh`), else for another region of
 that language, else the operator's `text`. A missing or malformed tag gets `text`.
 Each entry receives a fresh random player
-UUID and bearer token. `expires_at` is a Unix timestamp in seconds. An active name
+UUID and bearer token. `expires_at` is a Unix timestamp in seconds by the lobby's clock,
+which alone decides expiry; games before 0.3.6 need the field and refuse a session their
+own clock calls expired. An active name
 returns 409 `name_unavailable`; entering its name never replaces that session.
 An account's name signs in only with its password or a remembered sign-in, and a name
 without an account enters as a guest ([Accounts](#accounts)).
@@ -52,9 +54,9 @@ session out first.
 The HTTP paths retain `/v1`; `protocol:4` is the required client capability.
 Older/missing capabilities cannot enter new games. Existing v3 sessions may poll, renew an active lease and finish/leave/logout; their active match is preserved.
 Lobby capability4 adds the signed fixed-clock ordering capability.
-Relay tickets and encrypted datagrams retain wire version2; lobby capability and
-relay wire versions are independent. Unsupported sessions retire through ordinary
-room/match cleanup and cannot renew grants.
+Relay tickets keep wire version 2 and relay datagrams use envelope version 3; lobby
+capability and relay wire versions are independent. Unsupported sessions retire
+through ordinary room/match cleanup and cannot renew grants.
 `GET /health` reports `protocol:4`.
 `GET /v1/stats` needs no bearer and returns `{online,in_game,open_games,games_24h,games_total}`:
 active sessions, those in a playing match, joinable game rooms, and games whose play
@@ -63,7 +65,9 @@ requests a minute per address (an IPv4 address or IPv6 /64), and one answer serv
 every reader for 10 seconds.
 
 `POST /v1/commands` accepts `{request_id,after,operation,payload}`. A request ID is unique
-within a session and retries are idempotent. Responses and
+within a session and retries are idempotent: a retry sends the same payload, and a request ID
+the lobby committed, reused with another payload, is refused with 409 `request_conflict`; a
+refused request records nothing. Responses and
 `GET /v1/events?after=<cursor>` return `{events:[{sequence,kind,payload}],cursor}`.
 Sequences increase within a session. An event appears once logically even when
 responses are repeated. `GET /v1/channels?kind=0|41` returns `{kind,channels}`. The
@@ -99,6 +103,8 @@ operations retain the cursor barrier. Clients attempt logout with their existing
 bearer before discarding a session whose history expired.
 
 Channel: `{id,kind,max_users,users,tournament,flags,game_flags,ping,name,ex_info}`.
+`id` is the lobby's own; it ignores one in `create` and `advertise`, where games from
+0.3.6 leave it out and older games send it empty, so it stays optional there.
 `kind` is 0 for chat and 41 for a game. The service sets `flags` from the room, never
 from the creator: 256 when a game has a password, which clients show as a lock and
 ask for before joining, otherwise 0. `max_users` (1–30) from `create` and the host's
@@ -165,9 +171,13 @@ bounded to 2048 bytes. A lobby from before those maps refuses a record past 37 n
 or 512 bytes with 400 `invalid_options`;
 `staging_digest` is its lowercase SHA-256, or the empty string for authored maps.
 `launch` is the existing serde representation of `SkirmishLaunchSession` (including
-its human rows, AI rows and launch options). `launch.options.game_speed` is a setup
-speed, 0 to 6 or VERA's 8; a guest's game refuses host options with any other speed
-and shows its invalid-update line. `launch.options.teams`, a VERA room's
+its human rows, AI rows and launch options). The game's tests keep `tests/fixtures/lobby/`
+current: `options.json` holds rooms' options as the game sends them at the limits it
+reaches, and `start_staging.json` holds `W` records, each with whether the game takes it
+for its seed's capacity. The lobby requires `launch.pre_fill_house_roster` because
+guests decode it before rebuilding it from the rows. The lobby accepts setup speeds
+0 to 6 and VERA's 8 in `launch.options.game_speed`. An older lobby can forward another
+speed, which current guests refuse with the invalid-update line. `launch.options.teams`, a VERA room's
 Teams count, is an optional integer from 2 to 15 that the game leaves out while Teams
 is Off. A lobby from before it refuses options that carry
 it with 400 `invalid_options`; the host's game then turns Teams Off, says so in the
@@ -195,13 +205,16 @@ drops the room's rules, says so and sends its options again, before it stops que
 then turns Teams Off if the lobby still refuses. `watching`, the room's Watching, is `off`,
 `delayed` or `live` ([Watching](#watching)). A lobby from before it refuses it in the same
 way; the host's game then turns Watching off, says so and sends its options again, before
-any of the others. `map_metadata` is
+any of the others. Only a fresh 404 on the watch list for the latest, still unchanged room
+publication can retire an unsupported setting. A lobby that lists matches already understands those fields, so its refusal
+keeps the room settings. `map_metadata` is
 `{display_name,player_capacity,official,byte_length,digest,source_sha256,effective_digest}`. The legacy
 INI `digest` remains distinct from lowercase SHA-256 over the physical map bytes;
 online `map_digest` agreements compare `source_sha256`. `effective_digest` and
 `effective_map_digest` compare the parsed gameplay map after its applicable include
 expansion, so identical root bytes cannot conceal different local dependencies. `vacancies` is an array
-of `open`, `closed`, `observer` or `waiting`. A receiver resolves its own
+of `open`, `closed`, `observer` or `waiting`. A network map's display name keeps legacy
+Windows punctuation and fits the lobby's 256 UTF-8 bytes without control characters. A receiver resolves its own
 `launch.local_player_index` from the authenticated player; it never uses the host's.
 `slot` uses `SkirmishLocalSlot` serde. Options are authored only by the room owner;
 the service increments `revision` and clears guest readiness on a material change.
@@ -211,7 +224,8 @@ Starting requires at least two playing participants, counting the actual
 watch, and with two or more AI everyone in the room may watch. The map's
 `player_capacity` must cover every playing human and AI row, or with Teams set
 (`launch.options.teams`), where a team's players share its bases, one start for each
-team that has players or AI and one for each playing participant on no team. A lobby
+team that has players or AI and one for each playing participant on no team. Before
+publishing, the host checks this limit and tells the room the map is too small. A lobby
 from before this refuses options past the map's capacity with `invalid_options`, and a
 start with both observers and AI with 409 `not_ready`; one from before AI-only games
 refuses a start where every human watches with 409 `not_ready`. `start.users` contains
@@ -318,7 +332,8 @@ preserve the timeline and batch IDs.
 `federation`, present only in a federated match, is the same base64url roster
 in every grant: `VO1F`, room UUID16, relay count (2–6), then per relay IPv4,
 LE port and LE source mask, then per relay nonce16, wrapped32 and tag32. The
-masks partition the signed sources. `wrapped` is the match link key XORed with
+masks partition the signed sources; a relay refuses Ready as an agreement
+mismatch when they do not. `wrapped` is the match link key XORed with
 HMAC-SHA256(relay ticket key, `VERA20k relay federation wrap v1\0` ‖ room ‖
 nonce); `tag` is HMAC-SHA256(relay ticket key, `VERA20k relay federation roster
 v1\0` ‖ the table through the masks ‖ index byte ‖ nonce ‖ wrapped). The client
@@ -337,7 +352,10 @@ guest's client accepts the final displayed settings by itself once it has the
 verified map; players never ready up by hand. Only after the matching options
 revision and every fresh acknowledgement arrive does the retained Start request
 reach the server. A local optimistic choice cannot be accepted before its host
-options echo. Later edits cancel the staged request; rejected or timed-out starts
+options echo. While the request is staged, the host's client holds its own
+edits, kicks a newcomer and ignores `balance`; a guest's changed choices, the
+host's kick of a guest and any departure change the options, which cancels the
+staged request, as the host leaving does. Rejected or timed-out starts
 release the normal setup screen for retry without rerunning assignment while a
 request is pending. The service continues enforcing the same full agreement.
 
@@ -540,6 +558,7 @@ is `{mean,max,samples}` or null, `tick_ms_p50`, `tick_ms_p99`, `fps_p50`, `fps_p
 `started` says the relay's clock for the match started. `failure` is null, or names the
 error that ended the match on this game: `agreement_mismatch`, `start_cancelled`, `modified_retry`,
 `invalid_cursor`, `refused`, `history_expired`, `invalid_timeline`, `desync`, `unavailable`,
+`federation_lost` (a marked game ended after its relays lost contact),
 `absent` (no answer from the relay for ten minutes), `queue_full`, `newer_client_required` or
 `local_error`. `start_hash` is null once the
 relay's clock started; before that it maps each part of the start this game offered the
@@ -558,7 +577,8 @@ of these three, so a service reads the report with or without them.
 A start cancelled before play and a match an external launcher formed send none. The
 service may keep reports for its operator without the player's name or address; one it
 cannot read is dropped and the match still finishes. A service that refuses the field
-gets the same finish again without it.
+gets the same finish again without it. `tests/fixtures/lobby/network_quality.json` is a
+report as the game sends it, every field filled, which the game's tests keep current.
 
 `POST /v1/translate` accepts exactly `{text,target}` from a v4 bearer and returns
 `{text}`: `text` translated into `target`, a language tag such as `en` or `zh-Hans`.
@@ -607,11 +627,19 @@ Both return `{welcome}`, the text or `null`. `POST /v1/admin/maintenance` takes 
 bearer: `{text}`, one line of at most 160 characters with optional `translations` of the
 same kind, closes sign-ins, and `{text:null}` opens them.
 
+A browser gateway (`tools/wasm/gateway`) sends its players' requests from its own
+address. It may name the player's address in `Vera-Client-Address` together with
+`Vera-Gateway-Key`, the deployment's `GATEWAY_KEY`; the lobby then keys that request's
+per-address limits on the named address. Without a `GATEWAY_KEY` of at least 32
+characters, or with another key, the named address is ignored and the request's own
+address counts. A gateway refuses to start with a key shorter than 32 characters.
+
 Released clients sign in with `User-Agent: VERA20k/<MAJOR.MINOR.PATCH> multiplayer-client`.
 A client that names a version older than 0.2.7 is refused at sign-in with 426
 `upgrade_required`, since clients before it cannot play through the relays'
 adaptive transport (UPLINK, `services/relay/README.md`); one that names no
-version is not.
+version is not. Relay compatibility plays every release from this floor, which
+`OLDEST_ADMITTED` in `tools/relay_compat.py` must equal.
 A session whose version is older than `version` in
 `https://downloads.vera20k.org/latest.json`, which the lobby reads at most every
 10 minutes, receives one such chat line per newer release, naming both versions,
@@ -696,8 +724,10 @@ value, `quick_coop:true` for a Quick Co-op room (a paired room with tournament 0
 `pings` of `timing_confirmed`, the delay, `playing_since`, `ranked:true` for a ranked
 game, and a WatchGrant. It fails with 409 `unknown_match` when the caller may not watch that match,
 409 `match_active` while the caller plays one, and 409 `watchers_full` when the match has
-its 10 watchers. Watching the same match again, as after the game restarted, keeps the
-watcher's place. An account is always the same watcher of a match on a relay, its
+its 10 watchers. `match_active` also refuses `create`, `join` and `logout` while the caller
+plays, and a room's commands once its game started. Of the room and match commands, games say
+why only for `watch`; account deletion refuses with it too and shows its message ([Accounts](#accounts)).
+Watching the same match again, as after the game restarted, keeps the watcher's place. An account is always the same watcher of a match on a relay, its
 identity there an HMAC of the match and the player under the relay's ticket key, so a
 newer watch ticket replaces the relay session it had rather than taking another place.
 While the match plays, its watchers download its map as a
@@ -801,6 +831,8 @@ password. Every request below is a `POST` with a JSON body; a refusal's
   owner; anyone may then take the name. Records of its ranked games stay 90 days for
   disputes, and no profile names it. A wrong password counts as at `/v1/sessions` (403
   `wrong_password`, the lock), and a name without an account returns 404 `no_account`.
+  It refuses with 409 `match_active` while its player is in a match or a ranked game of
+  theirs has not ended for every player.
 
 At `/v1/sessions` an account's name needs its `password` or a `sign_in_token`, never
 both: with neither it returns 403 `name_claimed`, with a wrong one 403 `wrong_password`,
@@ -854,10 +886,12 @@ left) or `disconnected` (the game lost its connection). A player who leaves afte
 decided their House reports that result: `lost` once it was defeated, `won` once it won. When the game saw the match
 decided, `winners` names the players still in it whose Houses won. A lobby from before
 team ladders refuses `winners`; the game then finishes again without it. `ended_ago` is how
-many whole seconds before this `finish` the game decided its `result`, which the score screen
-holds back, so the lobby times a player's leaving by their game, not by when they closed the
-score screen; a lobby from before it refuses the field, and the game then finishes again
-without it.
+many whole seconds before it first sends this `finish` the game decided its `result`, which the
+score screen holds back, so the lobby times a player's leaving by their game, not by when they
+closed the score screen; a retry repeats it. A lobby from before it refuses the field, and the
+game then finishes again without it. A desktop game closed during its match or on the score
+screen finishes the match as it closes, with `quit` unless it had already decided the player's
+result; one closed while the match loads finishes it without a result.
 
 `ladder` with up to 64 names answers with the running season's records of those that
 played a rated game in it (`season` is `null` and `records` empty when no season runs),
@@ -934,3 +968,49 @@ command from anyone but the host with 403 `forbidden`. Current games never send 
 The host can also move a player by hand: to another team, into a free seat or to the
 spectators. The host's game publishes the options as it does after `/balance`, with no new
 field, and the moved player's game tells them in chat.
+
+### Confirming a federated match result
+
+For a match on three or more relays, the lobby can ask the relays to confirm whether
+they maintained one command history. Each selected relay must be configured to report
+outcomes and listed with `settlement: true` in the lobby's relay fleet. If a ranked
+room would use three or more homes and any selected relay lacks that capability, the
+lobby selects the ordinary central relay and keeps the room ranked. Matches already
+created keep the grants and scoring policy they started with.
+
+The marked `VO1F` roster uses the same table and wrapped link key as an ordinary roster.
+Only the per-relay roster authentication domain changes to
+`VERA20k relay adjudicated federation roster v1\0` (the final byte is zero).
+Released games can carry the signed roster unchanged. The marked relays speak `VF2L`.
+The lobby and each home retain the identity of the roster the lobby issued.
+
+Each home sends its immutable terminal receipt to the lobby over HTTPS with
+`POST /v1/relay/outcome` and `Content-Type: application/octet-stream`. The 94 bytes are:
+
+| Bytes | Meaning |
+|---|---|
+| 0–3 | ASCII `VFO1` |
+| 4–19 | Match UUID in roster byte order |
+| 20–51 | SHA-256 of the entire signed roster, including its wraps |
+| 52 | Home's index in that roster |
+| 53 | 0 for normal ordering closure, 1 for confirmed federation failure |
+| 54–61 | Issue time in Unix seconds, little-endian |
+| 62–93 | HMAC-SHA256 under that home's ticket key, over `VERA20k relay federation outcome v1\0` followed by bytes 0–61 |
+
+The lobby returns 204 for an accepted receipt, including an identical retry. A home
+can report only one outcome for the match. A conflicting report receives 409.
+A relay retries a network failure, 408, 429 or server error within seven days.
+The endpoint needs no player credentials. A player's disconnect, concession, quality
+report or missing finish cannot establish an infrastructure failure.
+
+One authenticated failure voids the match without changing any player's points, wins
+or losses. Normal closure from **every** home releases the ordinary player-reported
+result after the match closes. Players can finish and rejoin their room while delivery
+is pending. If evidence is still incomplete seven days after the match ends, the
+lobby records an unconfirmed result without changing ratings. A delayed finish cannot
+apply points to a different season.
+
+Roll out the receiving lobby and reporting relays before marking the fleet capable.
+Before a rollback, stop issuing marked rosters and drain marked matches and pending
+results. Remove the optional fleet field before restoring a lobby whose config reader
+predates it. Earlier lobbies do not rate a protected match from player reports alone.

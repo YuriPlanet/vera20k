@@ -30,10 +30,6 @@ const WIDE_ART_SIZE: [i32; 2] = [800, 600];
 
 /// Skirmish mode whose briefing block sits lower on the loading screen.
 
-/// Bitmap the random-map setup dialog writes and the preview source the
-/// random-map loading branch consumes.
-pub(crate) const RANDOM_MAP_PREVIEW_FILE: &str = "RandMap.img";
-
 /// Loading-art viewport size for the current screen width.
 pub(crate) const fn loading_art_viewport_size(render_width: u32) -> [i32; 2] {
     if render_width == NARROW_LOADING_SCREEN_WIDTH {

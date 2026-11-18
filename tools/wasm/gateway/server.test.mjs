@@ -18,15 +18,18 @@ const until = (udp, done, ms) => new Promise(resolve => {
   check();
 });
 
-async function fixture(t, extra = {}) {
+async function fixture(t, { otherRelays = [], ...extra } = {}) {
   const udp = dgram.createSocket('udp4');
   udp.bind(0, '127.0.0.1');
   await once(udp, 'listening');
   const requests = [];
+  // Responses to /v1/hold wait here until the test ends them.
+  const held = [];
   const upstream = http.createServer((req, res) => {
     const chunks = [];
     req.on('data', bytes => chunks.push(bytes));
     req.on('end', () => {
+      if (req.url === '/v1/hold') { held.push(res); return; }
       requests.push({ path: req.url, method: req.method, auth: req.headers.authorization,
         cookie: req.headers.cookie, address: req.headers['vera-client-address'],
         key: req.headers['vera-gateway-key'], body: Buffer.concat(chunks) });
@@ -36,8 +39,9 @@ async function fixture(t, extra = {}) {
     });
   });
   await listen(upstream);
+  const relay = `127.0.0.1:${udp.address().port}`;
   const options = { lobby: `http://127.0.0.1:${upstream.address().port}`, allowHttp: true,
-    relayHost: '127.0.0.1', relayPort: udp.address().port, origin, ...extra };
+    relays: [relay, ...otherRelays], origin, ...extra };
   const serverSockets = [];
   const emit = WebSocketServer.prototype.emit;
   t.mock.method(WebSocketServer.prototype, 'emit', function (event, ...args) {
@@ -52,13 +56,17 @@ async function fixture(t, extra = {}) {
     udp.close();
   });
   const base = `http://127.0.0.1:${gateway.server.address().port}`;
-  const socket = async (route = 'primary') => {
-    const ws = new WebSocket(`${base.replace('http:', 'ws:')}/game/${route}`, { origin });
+  const connect = (path, headers) => {
+    const ws = new WebSocket(`${base.replace('http:', 'ws:')}${path}`, { origin, headers });
     t.after(() => ws.terminate());
+    return ws;
+  };
+  const socket = async (channel = 'primary', headers = {}) => {
+    const ws = connect(`/game/${channel}/${relay}`, headers);
     await once(ws, 'open');
     return ws;
   };
-  return { udp, options, gateway, requests, base, socket, serverSockets };
+  return { udp, relay, options, gateway, requests, held, base, connect, socket, serverSockets };
 }
 
 test('lobby HTTP remains byte-for-byte, bounded and restricted to its configured upstream', { timeout: 10000 }, async t => {
@@ -111,7 +119,7 @@ test('each WS channel has a stable isolated UDP port, preserves binary boundarie
   const first = await socket('primary');
   const alternate = await socket('alternate');
   const second = await socket('primary');
-  // Includes all byte values and exceeds today's 827-byte encrypted relay maximum.
+  // Includes all byte values and exceeds the relay's datagram maximum.
   const payload = Buffer.from(Array.from({ length: 2048 }, (_, index) => index & 255));
   for (const ws of [first, alternate, second]) {
     const received = once(ws, 'message');
@@ -155,13 +163,98 @@ test('each WS channel has a stable isolated UDP port, preserves binary boundarie
   }
 });
 
-test('WS rejects arbitrary routes, foreign origins, text and oversized messages', { timeout: 10000 }, async t => {
-  const { base, socket } = await fixture(t);
-  const url = `${base.replace('http:', 'ws:')}/game/primary`;
-  const foreign = new WebSocket(url, { origin: 'https://foreign.example' });
+const refused = ws => new Promise((resolve, reject) => {
+  ws.on('open', () => reject(new Error('upgrade accepted')));
+  ws.on('error', error => (/403/.test(error.message) ? resolve() : reject(error)));
+});
+
+test('each socket reaches the listed relay its grant names; others are refused', { timeout: 10000 }, async t => {
+  const other = dgram.createSocket('udp4');
+  other.bind(0, '127.0.0.1');
+  await once(other, 'listening');
+  t.after(() => other.close());
+  const second = `127.0.0.1:${other.address().port}`;
+  const { udp, relay, options, connect, socket } = await fixture(t, { otherRelays: [second] });
+  assert.deepEqual(gatewayOptionsFromEnv({ VERA_RELAYS: `${relay}, ${second}` }).relays, [relay, second]);
+  for (const relays of [[], ['relay.example:5000'], ['127.0.0.01:5000'], ['127.0.0.1:0']]) {
+    assert.throws(() => createGateway({ ...options, relays }), /VERA_RELAYS/);
+  }
+  const seen = [[], []];
+  udp.on('message', data => seen[0].push(data[0]));
+  other.on('message', data => seen[1].push(data[0]));
+  (await socket()).send(Buffer.from([1]));
+  const alternate = connect(`/game/alternate/${second}`);
+  await once(alternate, 'open');
+  alternate.send(Buffer.from([2]));
+  await until(other, () => seen[1].length === 1, 2000);
+  await until(udp, () => seen[0].length === 1, 2000);
+  assert.deepEqual(seen, [[1], [2]]);
+  for (const path of ['/game/primary', '/game/primary/127.0.0.1:9', `/game/primary/${relay}?target=127.0.0.1:9`]) {
+    await refused(connect(path));
+  }
+});
+
+test('a named legacy relay takes the bare channel paths of an older bundle', { timeout: 10000 }, async t => {
+  const other = dgram.createSocket('udp4');
+  other.bind(0, '127.0.0.1');
+  await once(other, 'listening');
+  t.after(() => other.close());
+  const second = `127.0.0.1:${other.address().port}`;
+  const { udp, relay, options, connect } = await fixture(t, { otherRelays: [second], legacyRelay: second });
+  assert.equal(gatewayOptionsFromEnv({ VERA_LEGACY_RELAY: ` ${second} ` }).legacyRelay, second);
+  assert.equal(gatewayOptionsFromEnv({ VERA_LEGACY_RELAY: '' }).legacyRelay, undefined);
+  for (const legacyRelay of ['127.0.0.1:9', 'relay.example:5000']) {
+    assert.throws(() => createGateway({ ...options, legacyRelay }), /VERA_LEGACY_RELAY/);
+  }
+  const seen = [[], []];
+  udp.on('message', data => seen[0].push(data[0]));
+  other.on('message', data => seen[1].push(data[0]));
+  const primary = connect('/game/primary');
+  const alternate = connect('/game/alternate');
+  await Promise.all([once(primary, 'open'), once(alternate, 'open')]);
+  primary.send(Buffer.from([1]));
+  alternate.send(Buffer.from([2]));
+  await until(other, () => seen[1].length === 2, 2000);
+  assert.deepEqual([seen[0], seen[1].sort()], [[], [1, 2]]);
+  for (const path of ['/game/primary/', '/game/other', `/game/primary?target=${relay}`]) {
+    await refused(connect(path));
+  }
+});
+
+test('one network holds at most a tenth of the game sockets and of the lobby exchanges', { timeout: 10000 }, async t => {
+  const { base, relay, held, connect, socket, serverSockets } = await fixture(t, { clientIpHeader: 'x-forwarded-for' });
+  const from = address => ({ 'x-forwarded-for': address });
+  // Every IPv6 /64 of one /48 counts toward that /48's share.
+  const own = [];
+  for (let i = 0; i < LIMITS.networkConnections; i++) own.push(await socket('primary', from(`2001:db8:1:${i}::1`)));
+  await refused(connect(`/game/primary/${relay}`, from('2001:db8:1:ffff::1')));
+  // A closed socket gives its place back.
+  const released = once(serverSockets[0], 'close');
+  own[0].close();
+  await released;
+  await socket('primary', from('2001:db8:1:ffff::1'));
+  await socket('primary', from('2001:db8:2::1'));
+  // A request the configured proxy did not name is refused.
+  await refused(connect(`/game/primary/${relay}`));
+  const exchanges = Array.from({ length: LIMITS.networkRequests },
+    () => fetch(`${base}/v1/hold`, { headers: from('203.0.113.7') }));
+  while (held.length < LIMITS.networkRequests) await sleep(5);
+  assert.equal((await fetch(`${base}/v1/events`, { headers: from('203.0.113.7') })).status, 503);
+  assert.equal((await fetch(`${base}/v1/events`, { headers: from('203.0.113.8') })).status, 409);
+  assert.equal((await fetch(`${base}/v1/events`)).status, 403);
+  for (const res of held) res.end('{}');
+  for (const response of await Promise.all(exchanges)) assert.equal(response.status, 200);
+});
+
+test('without a client address header, loopback peers are a local proxy or test and are not capped', { timeout: 10000 }, async t => {
+  const { socket } = await fixture(t);
+  for (let i = 0; i <= LIMITS.networkConnections; i++) await socket();
+});
+
+test('WS rejects foreign origins, text and oversized messages', { timeout: 10000 }, async t => {
+  const { relay, base, socket } = await fixture(t);
+  const foreign = new WebSocket(`${base.replace('http:', 'ws:')}/game/primary/${relay}`, { origin: 'https://foreign.example' });
   await once(foreign, 'error');
-  const arbitrary = new WebSocket(`${url}?target=127.0.0.1:9`, { origin });
-  await once(arbitrary, 'error');
   const text = await socket();
   let closed = once(text, 'close');
   text.send('not a datagram');

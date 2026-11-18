@@ -75,7 +75,7 @@ else
 fi
 
 if [ "$mode" = browser ]; then
-  VERA_RELAY_HOST=127.0.0.1 VERA_RELAY_PORT=$relay_port VERA_WEB_ORIGIN=http://localhost:$page_port \
+  VERA_RELAYS=127.0.0.1:$relay_port VERA_WEB_ORIGIN=http://localhost:$page_port \
     VERA_LOBBY_URL=http://127.0.0.1:$service_port VERA_ALLOW_LOCAL_HTTP=1 PORT=$gateway_port \
     node "$root/tools/wasm/gateway/server.mjs" > "$out/gateway.log" 2>&1 &
   pids="$pids $!"
