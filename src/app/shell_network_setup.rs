@@ -475,8 +475,9 @@ impl NetworkSetupProtocol {
         }
     }
 
-    /// A launcher's or a watch's setup (`external`): with no dialog it sends
-    /// none of the room's pings or start requests.
+    /// A launcher's or a watch's setup (`external`): with no dialog it
+    /// publishes no options or advertisement and runs no ping timer, since a
+    /// launcher or the lobby agreed the room.
     fn dialogless(dialog: SetupDialog) -> Self {
         Self {
             external: true,
@@ -694,8 +695,9 @@ pub(crate) fn accept_external_session(
     session.accept_network_setup(launch, host, None, false)
 }
 
-/// Install an external launch's setup without a dialog, its online start
-/// requests or pings: the launcher already agreed the room.
+/// Install an external launch's setup without a dialog
+/// (`NetworkSetupProtocol::dialogless`): the launcher already agreed the
+/// room.
 pub(crate) fn install_external_setup(
     state: &mut AppState,
     launch: SkirmishLaunchSession,
