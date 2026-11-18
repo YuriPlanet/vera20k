@@ -13,8 +13,8 @@ use crate::app::shell_network_setup::{
 };
 use crate::app::shell_wol::lobby::WolJoined;
 use crate::app::shell_wol::{
-    WolApiStatus, WolLoginAccepted, WolProvider, WolServer, WolServerList, WolServiceEvent,
-    WolServiceRequest, service_event,
+    SERVER_STATUS_READY, WolApiStatus, WolLoginAccepted, WolProvider, WolServer, WolServerList,
+    WolServiceEvent, WolServiceRequest, service_event,
 };
 use crate::ui::chat_translation::{ChatLanguage, ChatTranslation};
 use crate::ui::shell::geom::RectPx;
@@ -1296,7 +1296,7 @@ impl WolCapture {
                                 password: PASSWORD.into(),
                             }]),
                         );
-                        service_event(state, WolServiceEvent::NetStatus(0x0004_012F));
+                        service_event(state, WolServiceEvent::NetStatus(SERVER_STATUS_READY));
                         service_event(state, WolServiceEvent::ServerList(Ok(server_list())));
                         let requests = self.requests(state, frame)?;
                         ensure!(
@@ -1334,7 +1334,7 @@ impl WolCapture {
                     }
                     _ => {
                         service_event(state, WolServiceEvent::Credentials(Vec::new()));
-                        service_event(state, WolServiceEvent::NetStatus(0x0004_012F));
+                        service_event(state, WolServiceEvent::NetStatus(SERVER_STATUS_READY));
                         service_event(state, WolServiceEvent::ServerList(Ok(server_list())));
                         ensure!(
                             state
@@ -6222,7 +6222,7 @@ impl WolCapture {
                 },
             ]),
         );
-        service_event(state, WolServiceEvent::NetStatus(0x0004_012F));
+        service_event(state, WolServiceEvent::NetStatus(SERVER_STATUS_READY));
         service_event(state, WolServiceEvent::ServerList(Ok(server_list())));
         ensure!(
             crate::app::shell_wol::my_info::page(state).is_some(),

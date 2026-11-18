@@ -1764,9 +1764,6 @@ fn answer_local_request(state: &mut AppState, request: &WolServiceRequest) -> bo
         WolServiceRequest::EnsureApi => {
             service_event(state, WolServiceEvent::Api(WolApiStatus::Available))
         }
-        WolServiceRequest::ListCredentials => {
-            service_event(state, WolServiceEvent::Credentials(Vec::new()))
-        }
         WolServiceRequest::FetchServers { .. } => {
             service_event(
                 state,
@@ -1782,7 +1779,10 @@ fn answer_local_request(state: &mut AppState, request: &WolServiceRequest) -> bo
                     selected: 1,
                 })),
             );
-            service_event(state, WolServiceEvent::NetStatus(0x0004_012F));
+            service_event(
+                state,
+                WolServiceEvent::NetStatus(super::SERVER_STATUS_READY),
+            );
         }
         _ => return false,
     }
@@ -1943,13 +1943,12 @@ fn remember_sign_in(
 }
 
 fn request_service(state: &mut AppState, service: &mut LiveService, request: WolServiceRequest) {
-    if answer_local_request(state, &request) {
-        return;
-    }
     match request {
-        WolServiceRequest::EnsureApi
-        | WolServiceRequest::ListCredentials
-        | WolServiceRequest::FetchServers { .. } => {}
+        request @ (WolServiceRequest::EnsureApi | WolServiceRequest::FetchServers { .. }) => {
+            answer_local_request(state, &request);
+        }
+        // The login reducer asks only native providers for stored credentials.
+        WolServiceRequest::ListCredentials => {}
         WolServiceRequest::Connect {
             nickname,
             password,

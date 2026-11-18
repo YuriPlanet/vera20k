@@ -26,7 +26,9 @@
 
 use super::lobby::WolJoined;
 use super::service::{WolHighScoreRecord, WolLadderRecord};
-use super::{WolApiStatus, WolLoginAccepted, WolServer, WolServerList, WolServiceEvent};
+use super::{
+    SERVER_STATUS_READY, WolApiStatus, WolLoginAccepted, WolServer, WolServerList, WolServiceEvent,
+};
 use super::{WolProvider, WolServiceRequest, service_event};
 use crate::app::AppState;
 use crate::app::match_runtime::session::SessionMode;
@@ -37,9 +39,6 @@ use crate::ui::wol_lobby::{
 };
 use crate::ui::wol_login::WolCredential;
 use crate::util::time::Instant;
-
-/// Event 9's status that completes the server-list wait.
-const SERVER_STATUS_READY: u32 = 0x0004_012F;
 
 /// Replies per poll; each may queue further requests (a list reply asks to
 /// join, a join asks for both lists).

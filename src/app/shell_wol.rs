@@ -50,9 +50,9 @@ pub(crate) use live_service::{
 };
 pub(crate) use login::{account_form_layout, combo_popup, login_layout, open_login_art};
 pub(crate) use service::{
-    NET_STATUS_LOST, WolApiStatus, WolHighScoreRecord, WolLadderRecord, WolLoginAccepted, WolMatch,
-    WolProvider, WolServer, WolServerList, WolServiceEvent, WolServiceRequest, request,
-    service_event,
+    NET_STATUS_LOST, SERVER_STATUS_READY, WolApiStatus, WolHighScoreRecord, WolLadderRecord,
+    WolLoginAccepted, WolMatch, WolProvider, WolServer, WolServerList, WolServiceEvent,
+    WolServiceRequest, request, service_event,
 };
 pub(crate) use test_service::{
     WolTestGuest, default_buddies as test_service_buddies,

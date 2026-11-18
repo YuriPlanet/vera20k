@@ -806,8 +806,9 @@ matches to end before rolling back the lobby or relay.
 
 ## Native behavior and deliberate bounds
 
-The following native scheduling/reliability details apply to LAN and legacy routing;
-modern online ordering above is an intentional adaptation.
+The following native scheduling/reliability details apply to LAN and to the native
+reliable messages online play sends through the relay as DATA; the relay-ordered
+command stream above is an intentional adaptation.
 
 - Event packets use the native layouts and persistent compression caches from
   `64B4D0`, `64B660` and `64BDD0`. The packet boundary rejects a semantic event
