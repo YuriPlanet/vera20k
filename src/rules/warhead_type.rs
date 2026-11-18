@@ -542,6 +542,13 @@ pub struct WarheadType {
     /// (`Ext/WarheadType/Detonate.cpp:236-237`).
     #[cfg(feature = "phobos")]
     pub taunt: bool,
+    /// Phobos `IvanBomb.Detonate=` (`Ext/WarheadType/Body.cpp`'s
+    /// `IvanBomb_Detonate.Read`, default false): a hit target's attached
+    /// bombs detonate now (`Ext/WarheadType/Detonate.cpp:957-1000`). Its
+    /// effect is unported, but the key is a `PossibleCellSpreadDetonate`
+    /// member, so it still starts the per-target pass and its two draws.
+    #[cfg(feature = "phobos")]
+    pub phobos_ivan_bomb_detonate: bool,
     /// Phobos `Ammo=` (`Body.cpp:452`, default 0): the per-target ammo delta,
     /// clamped to `0..type->Ammo` (`Ext/WarheadType/Detonate.cpp:221-222,
     /// 923-932`).
@@ -1160,6 +1167,8 @@ impl WarheadType {
             can_kill: section.read_bool("CanKill", true),
             #[cfg(feature = "phobos")]
             taunt: section.read_bool("Taunt", false),
+            #[cfg(feature = "phobos")]
+            phobos_ivan_bomb_detonate: section.read_bool("IvanBomb.Detonate", false),
             #[cfg(feature = "phobos")]
             ammo: section.read_int("Ammo", 0),
             #[cfg(feature = "phobos")]

@@ -200,6 +200,16 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
    同样在烘焙时应用（`Matrix3D::VoxelDefaultMatrix` 已由 voxel_oracle 捕获）。
 6. **MindControl.Permanent.ReplaceSilent**（`6a261e2cb`）：无残渣；只作用于
    Ares 的 ApplyPermaMC 调用点，Dominator 原生路径不变。
+7. **PossibleCellSpreadDetonate 的 `IvanBomb.Detonate` 成员**（本链）：
+   `crit::detonate` 的门按 `Ext/WarheadType/Body.cpp` 的完整成员表（16 项）判定，
+   原先缺 `IvanBomb.Detonate`，因此只设该键的 warhead 少掉每次引爆的两次
+   buffer 抽样，整条 scenario RNG 流错位。现在解析该键
+   （`rules/warhead_type.rs` 的 `phobos_ivan_bomb_detonate`）并计入同一 owner 的
+   门。残余：该键自身的**效果**（让命中目标身上的疯狂伊文炸弹当场引爆，
+   `Detonate.cpp:957-1000` 的 `IvanBomb_Detonate*` 分支）未移植；触发：只设
+   `IvanBomb.Detonate=yes` 的 warhead；影响：没有炸弹被提前引爆；零售数据与
+   Phobos 默认值都是 no，须 mod 显式开启。回归测试
+   `crit_tests::ivan_bomb_detonate_is_a_possible_cell_spread_member`。
 
 ### 全局已知残渣（早前链条，仍需实机抽查）
 - **BuildLimitGroup 的 `RemoveProduction`**（`docs/phobos-build-limit-group.md`）：

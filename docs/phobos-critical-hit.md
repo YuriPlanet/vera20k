@@ -87,9 +87,10 @@ while the effect is held; see [AttachEffect](phobos-attach-effect.md).
 
 ## Residuals
 
-- Of `PossibleCellSpreadDetonate`'s members VERA reads only the AttachEffect
-  lists; a warhead setting only an unread member skips the two buffer draws
-  native makes per detonation, shifting the scenario RNG stream.
+- `PossibleCellSpreadDetonate` is reproduced member-for-member, `IvanBomb.Detonate`
+  included, so the per-detonation draws and the pass's target set match Phobos.
+  `IvanBomb.Detonate`'s own effect (re-detonating the bombs stuck to a hit
+  target) is still unported; nothing else consumes the key.
 - `CellSpread.Cylinder` **is** read and consumed: the warhead key
   (`rules/warhead_type.rs:1033`) reaches `sim::combat::combat_aoe`
   (`:661`, `:715`), which measures the cylinder instead of the sphere. The
