@@ -84,6 +84,10 @@ pub struct Cli {
     pub ini_strict: bool,
     pub ini_source_only: bool,
     pub ini_max_depth: usize,
+    /// `export-picture --theater`: the theater whose archives are mounted
+    /// before the SHP is looked up (TEMPERATE, SNOW, URBAN, DESERT,
+    /// NEWURBAN, LUNAR).
+    pub theater: Option<String>,
 }
 
 pub fn usage() -> &'static str {
@@ -113,7 +117,8 @@ VERBS
   archives             Every mounted archive, with lookup reachability marked.
   extract <NAME>       Write an asset's raw bytes to disk.
   export-picture <NAME>  Write an SHP as picture art (APNG and mask) for
-                       Picture= (docs/picture-model-art.md). --palette, --out.
+                       Picture= (docs/picture-model-art.md). --palette, --out,
+                       --theater <NAME> to reach a theater's archives.
   csf-get <KEY>        One string-table entry, with its normalisation flagged.
   csf-grep <TEXT>      Search keys and values of the string table.
   sound <NAME>         One audio-bag entry; --wav decodes it.
@@ -267,6 +272,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
         ini_strict: false,
         ini_source_only: false,
         ini_max_depth: 64,
+        theater: None,
     };
 
     let mut args = argv.into_iter().peekable();
@@ -588,6 +594,12 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
                 cli.compare.scale = Some(n);
             }
             "--house" => cli.render.house = Some(number::<u8>(&mut args, "--house")?),
+            "--theater" => {
+                if !matches!(cli.verb, Verb::ExportPicture { .. }) {
+                    return Err(flag_not_valid(&flag, &cli.verb));
+                }
+                cli.theater = Some(value(&mut args, "--theater")?.to_ascii_uppercase());
+            }
             "--palette" => {
                 let name = value(&mut args, "--palette")?;
                 cli.render.palette = Some(name.clone());

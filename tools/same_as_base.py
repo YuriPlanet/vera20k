@@ -70,6 +70,14 @@ def capture_profile(source, step, zoom, wheel_zoom=None):
     profile = json.loads(Path(source).read_text())
     profile['ticks'] = step
     profile['commands'] = [c for c in profile.get('commands', []) if c['issue_after_step'] < step]
+    if zoom == 100 and wheel_zoom is None:
+        # A cursor over a unit animates and the capture refuses it; park it
+        # over the sidebar, as tools/map_observation.md advises. A profile
+        # cannot combine cursor_position with presentation, so the default
+        # view takes no presentation block.
+        profile.pop('presentation', None)
+        profile.setdefault('cursor_position', [profile['width'] - 40, profile['height'] // 2])
+        return profile
     profile['presentation'] = {'zoom': zoom, 'sidebar': 100}
     if wheel_zoom is not None:
         profile['presentation']['wheel_zoom'] = wheel_zoom
@@ -209,7 +217,11 @@ def main(argv=None):
     sides = [Side('base', base, work, ra2_dir, stamp), Side('head', head, work, ra2_dir, stamp)]
     print(f'base {base}\nhead {head}', flush=True)
     config = (f'[paths]\nra2_dir = "{ra2_dir.as_posix()}"\n'
-              f'settings_dir = "{settings.as_posix()}"\n')
+              f'settings_dir = "{settings.as_posix()}"\n'
+              # map_observation refuses a game whose input delay differs
+              # from the profile's.
+              f'[gameplay]\ninput_delay_ticks = '
+              f'{json.loads(args.profile.read_text())["input_delay_ticks"]}\n')
     summary = {'base': base, 'head': head, 'differences': [], 'errors': []}
     try:
         for side in sides:
