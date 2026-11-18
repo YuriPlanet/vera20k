@@ -664,12 +664,17 @@ Two games play together only on one build: their `shell_network_setup::agreement
 the package version and `VERA20K_NETWORK_BUILD` joined by `:`, must be equal. build.rs hashes
 into `VERA20K_NETWORK_BUILD` the files under `src/` and `services/relay-protocol/src`, the
 manifests, `Cargo.lock` and `build.rs`, by path and content with CRLF line endings counted as
-LF, and every enabled Cargo feature but the test groups. One commit built with the same
-features therefore matches on every platform, and any other difference keeps games apart: a
-default build (`dev-overlays`) never meets a `--no-default-features` release, APK or browser
-package, and browser packages built with other options (`--lan`, `--threads`) do not meet
-each other. Earlier builds add `:0` and their Phobos, NPatch and NPBUG flags (`:0000` in a
-release), which the hash already covers; they are refused as any other build is.
+LF, and every enabled Cargo feature but the test groups and the browser's thread pool
+(`wasm-threads`), which do not change how the game plays (`network_build::add_features`). One
+commit built with the same features therefore matches on every platform, and any other
+difference keeps games apart: a default build (`dev-overlays`) never meets a
+`--no-default-features` release, APK or browser package, and a `--lan` browser package does
+not meet a `--network` one. A browser package built with `--threads` matches the same package
+built without it, and the desktop build with the package's other features
+(`--no-default-features --features wasm-net`), which is how a launcher seats desktop and
+browser players in one room. A rollback to a build that counts `wasm-threads` refuses such a
+room at its start. Earlier builds add `:0` and their Phobos, NPatch and NPBUG flags (`:0000`
+in a release), which the hash already covers; they are refused as any other build is.
 
 - LAN: the host denies a join from another build (reason 8), and the guest sees Request
   denied and "VERA20k build or enabled gameplay features differ." (`VERA:LanBuildDiffers`).
