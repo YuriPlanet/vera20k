@@ -769,7 +769,7 @@ fn offline_backup_preserves_paid_infantry_with_system_hold() {
     for offset in 1..=12 {
         let sim = &mut runtime.simulation;
         sim.production
-            .factories_mut()
+            .edit_factories()
             .step_all(&mut sim.houses, sim.session.binary_frame() + offset);
     }
     let sim = &runtime.simulation;
@@ -2705,7 +2705,7 @@ fn building_queue_switch_queues_and_starts_the_next_after_placement() {
             .factories_mut()
             .test_arm_ready(owner, ProductionCategory::Building)
     );
-    sim.production.factories_mut().complete_production(
+    sim.production.edit_factories().complete_production(
         owner,
         ProductionCategory::Building,
         sim.session.binary_frame(),

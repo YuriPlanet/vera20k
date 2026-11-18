@@ -6161,7 +6161,7 @@ impl Simulation {
             // FactoryClass::PointerExpired4CA580 is a control-insensitive
             // listener in Dispatch7258D0. Its only mutation clears a matching
             // held product; no entity listener consumes that factory pointer.
-            let mut named = self.production.factories_mut().pointer_expired(expired_id);
+            let mut named = self.production.factory_product_expired(expired_id);
             // `HouseClass::PointerExpired @ 0x004FB9B0`, each house a listener
             // (`0x004F5FFB`), forgets House+54E0 whatever the control. Phobos'
             // `AnnounceInvalidPointer` hook at this dispatcher's entry

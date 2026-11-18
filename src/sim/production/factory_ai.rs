@@ -192,7 +192,7 @@ fn exit_finished_object(
             // CompletedProduction lets the placed object go; the delete
             // finds none to abandon.
             sim.production
-                .factories_mut()
+                .edit_factories()
                 .remove_building_factory(building);
         }
         BuildingExit::TryLater => {
@@ -317,16 +317,8 @@ fn start_factory(
     let cost = sim.cost_of(owner, object, rules);
     // The FactoryClass constructor joins the factory vector
     // (`0x004C9974..0x004C9989`) before StartProduction constructs the object.
-    let insertion_seq = sim.production.next_enqueue_order();
-    sim.production.spend_enqueue_order();
-    sim.production.factories_mut().create_building_factory(
-        building,
-        owner,
-        category,
-        type_id,
-        insertion_seq,
-        cost,
-    );
+    sim.production
+        .create_building_factory(building, owner, category, type_id, cost);
     if start_active_production(
         sim,
         rules,
@@ -339,7 +331,7 @@ fn start_factory(
     {
         // `0x004503A7 -> 0x004502DC`: deleted, nothing held to abandon.
         sim.production
-            .factories_mut()
+            .edit_factories()
             .remove_building_factory(building);
     }
 }

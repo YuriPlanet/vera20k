@@ -320,7 +320,7 @@ impl PaidHead {
                 FrameEffects::default(),
             ),
             "declared_successful_delivery_completion" => {
-                assert!(sim.production.factories_mut().complete_production(
+                assert!(sim.production.edit_factories().complete_production(
                     self.owner,
                     CATEGORY,
                     sim.session.binary_frame(),

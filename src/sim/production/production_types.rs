@@ -1,16 +1,13 @@
 //! Production system types, constants, and state containers.
 //!
 //! Shared types used across production sub-modules: queue items, build options,
-//! placement previews, and the central `ProductionState` struct.
-
-use std::collections::BTreeSet;
+//! placement previews and sidebar projections.
 
 use serde::{Deserialize, Serialize};
 
 use crate::rules::object_type::{FactoryType, ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
-use crate::sim::production::factory::FactoryRegistry;
 
 /// A test house's opening balance.
 #[cfg(any(test, feature = "test-support"))]
@@ -282,102 +279,5 @@ impl BuildOption {
             self.reason,
             Some(BuildDisabledReason::NoFactory | BuildDisabledReason::CannotBuild)
         )
-    }
-}
-
-/// Player production state.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProductionState {
-    // Building+3D3, one byte per retained building. Building448070/448160
-    // group peers by the raw Factory value and Naval, not by sidebar queue,
-    // and clear only matching non-limbo peers, so a limbo peer can keep its
-    // flag beside the chosen on-map factory. This is the sole primary-state
-    // owner; the House FactoryClass queue slots remain in `factories`.
-    primary_factories: BTreeSet<u64>,
-    /// The monotonic temporal stamp the next accepted enqueue takes.
-    next_enqueue_order: u64,
-    /// Per-(house, category) factory registry — the authoritative production state
-    /// machine AND (as of P5d) the queue-of-record: the active build is the `Factory` head
-    /// fields, the FIFO tail is `Factory.queue` of `QueueEntry`. Mutated directly by
-    /// enqueue/cancel/delivery (no `queues_by_owner` mirror); serialized + hashed. Its
-    /// per-step charge runs against the real wallet via
-    /// `step_all` at the Phase-7 head, before the house tail (C1).
-    factories: FactoryRegistry,
-}
-
-impl ProductionState {
-    /// The stamp the next enqueue takes; it is spent only once the enqueue
-    /// is accepted ([`Self::spend_enqueue_order`]).
-    pub fn next_enqueue_order(&self) -> u64 {
-        self.next_enqueue_order
-    }
-
-    /// An accepted enqueue (or a computer factory's construction) spends the
-    /// stamp it read.
-    pub(crate) fn spend_enqueue_order(&mut self) {
-        self.next_enqueue_order = self.next_enqueue_order.saturating_add(1);
-    }
-
-    pub fn factories(&self) -> &FactoryRegistry {
-        &self.factories
-    }
-
-    /// The registry's own operations carry the factory rules.
-    pub(crate) fn factories_mut(&mut self) -> &mut FactoryRegistry {
-        &mut self.factories
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn set_next_enqueue_order_for_test(&mut self, value: u64) {
-        self.next_enqueue_order = value;
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn factories_mut_for_test(&mut self) -> &mut FactoryRegistry {
-        &mut self.factories
-    }
-
-    /// Set the native primary byte. Building448070/448160 own which peers
-    /// clear first; this store keeps no group of its own.
-    pub(super) fn set_primary_factory(&mut self, id: u64) {
-        self.primary_factories.insert(id);
-    }
-    /// Clear the native primary byte without choosing a replacement. Unlimbo
-    /// and ChangeOwner write it; destruction removes its retained identity.
-    /// Limbo preserves the byte, while FindFactory filters the limbo object.
-    pub(crate) fn clear_primary_factory(&mut self, id: u64) {
-        self.primary_factories.remove(&id);
-    }
-    /// Whether this retained building has its native primary flag
-    /// (`TechnoClass+0x3D3`). Limbo preserves that flag; production eligibility
-    /// and display admission remain with their respective consumers.
-    pub fn is_primary_factory(&self, id: u64) -> bool {
-        self.primary_factories.contains(&id)
-    }
-    pub(crate) fn retain_primary_factory_links(&mut self, live: &BTreeSet<u64>) {
-        self.primary_factories.retain(|id| live.contains(id));
-    }
-    /// Every retained primary flag, in id order; no flag folds nothing.
-    pub(crate) fn hash_primary_factories(&self, hasher: &mut impl std::hash::Hasher) {
-        use std::hash::Hash;
-        for id in &self.primary_factories {
-            id.hash(hasher);
-        }
-    }
-    /// Fixtures outside this module set one byte; they clear any other
-    /// flag they placed themselves.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn set_primary_factory_for_test(&mut self, id: u64) {
-        self.set_primary_factory(id);
-    }
-}
-
-impl Default for ProductionState {
-    fn default() -> Self {
-        Self {
-            primary_factories: BTreeSet::new(),
-            next_enqueue_order: 1,
-            factories: FactoryRegistry::default(),
-        }
     }
 }
