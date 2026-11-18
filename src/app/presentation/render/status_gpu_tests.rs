@@ -519,6 +519,9 @@ fn a_hovered_enemy_mirage_worn_as_terrain_draws_no_health_strip() {
         let mut sim = Simulation::new();
         let player = sim.intern("Player");
         let owner = sim.intern("Enemy");
+        // The frame's records capture what the local player sees.
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(player));
         let object = rules.object(name).unwrap();
         let mut entity = GameEntity::new_at_frame_zero_for_test(
             1,
@@ -713,29 +716,27 @@ fn native_self_heal_draw_fault_order() {
         sim.fog_mut_for_test().reveal_all_for_owner(owner);
         sim.entities_mut_for_test().insert(entity);
         sim.resubmit_entity_display_for_test(1);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            techno_extras_for_parent(
-                &sim,
-                &ObjectRecord::of_test_sim(&sim, &rules, 1),
-                Some(&rules),
-                &overlay,
-                None,
-                Some("Owner"),
-                StatusViewport {
-                    camera: [-380.0, 400.0],
-                    size: [160.0, 120.0],
-                    zoom: 1.0,
-                    ignore_visibility: true,
-                },
-                HealthBarMode::Vanilla,
-            )
-        }));
+        let strip = techno_extras_for_parent(
+            &sim,
+            &ObjectRecord::of_test_sim(&sim, &rules, 1),
+            Some(&rules),
+            &overlay,
+            None,
+            Some("Owner"),
+            StatusViewport {
+                camera: [-380.0, 400.0],
+                size: [160.0, 120.0],
+                zoom: 1.0,
+                ignore_visibility: true,
+            },
+            HealthBarMode::Vanilla,
+        );
         // The original HasSelfHeal query precedes the divide. Drawing does
         // not skip the admitted divide for full health, unlike the AI arm.
-        assert_eq!(result.is_err(), !row["fault"].is_null(), "{row}");
-        if let Ok(strip) = result {
-            assert!(strip.self_heal.is_none());
-        }
+        // gamemd traps there (IDIV at 0x0070A549 / 0x0070A5B5); VERA keeps
+        // the marker on its steady frame instead, so the marker shows
+        // exactly where gamemd faulted.
+        assert_eq!(strip.self_heal.is_some(), !row["fault"].is_null(), "{row}");
         checked += 1;
     }
     assert_eq!(checked, 8);
@@ -1056,13 +1057,35 @@ fn native_building_status_labels(fixture: &'static str) {
                 .iter()
                 .zip(row["text_draws"].as_array().unwrap())
             {
-                let first = &labels.instances[run.text.start as usize];
+                let at = |field: &str, index: usize| draw[field][index].as_i64().unwrap() as f32;
+                // The backing gamemd fills, clipped to the view.
+                let backing = &labels.instances[run.rectangles.start as usize];
                 assert_eq!(
-                    first.position,
-                    [
-                        draw["result_position"][0].as_i64().unwrap() as f32 + cam.camera_pos[0],
-                        draw["result_position"][1].as_i64().unwrap() as f32 + cam.camera_pos[1],
-                    ],
+                    (backing.position, backing.size),
+                    (
+                        [
+                            at("rect", 0) + cam.camera_pos[0],
+                            at("rect", 1) + cam.camera_pos[1]
+                        ],
+                        [at("rect", 2), at("rect", 3)],
+                    ),
+                    "{} original clipped text rect",
+                    row["name"]
+                );
+                // A glyph's instance sits at its ink, not at the pen, so the
+                // origin is checked as where the font puts the first glyph
+                // of gamemd's text drawn from gamemd's origin.
+                let native_text = font.build_text(
+                    draw["text"].as_str().unwrap(),
+                    at("result_position", 0) + cam.camera_pos[0],
+                    at("result_position", 1) + cam.camera_pos[1],
+                    1.0,
+                    0.0,
+                    [1.0; 3],
+                    [0.0, 0.0],
+                );
+                assert_eq!(
+                    labels.instances[run.text.start as usize].position, native_text[0].position,
                     "{} original centered text origin",
                     row["name"]
                 );
@@ -1302,6 +1325,9 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
             }
             let owner = sim.intern("Owner");
             let enemy = sim.intern("Enemy");
+            // The frame's records capture what the local player sees.
+            sim.session_mut_for_test()
+                .set_current_house_for_test(Some(owner));
             if input.get("self_heal_infantry").is_some() || input.get("self_heal_units").is_some() {
                 let mut house =
                     crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10);
@@ -2303,6 +2329,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             wrench: None,
                             power_off: None,
                             rank: *rank,
+                            rank_insignia: None,
                             background: *background,
                             shield_background: None,
                             fills: fills.clone(),

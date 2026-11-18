@@ -332,37 +332,18 @@ impl App {
             };
             if !live.has_terminal_network_error() {
                 let frame = session.binary_frame();
-                let frontier = live.committed_frontier();
-                let may_continue = if let Some(timing) = live.sequenced_timing().filter(|_| {
-                    !state.match_state.paused()
-                        && !state.focus_freeze_active()
-                        && !session.scenario_paused()
-                        && !state.match_state.match_diagnostics.is_replay_playback()
-                }) {
-                    let recovering = live
-                        .recovery_status(
-                            crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
-                            frame,
-                        )
-                        .is_some();
-                    state
-                        .platform
-                        .frame_pacer
-                        .online_frame_decision(
-                            Instant::now(),
-                            frame,
-                            frontier,
-                            timing,
-                            runtime.simulation.pending_network_wait(),
-                            recovering,
-                        )
-                        .admits()
-                } else {
-                    crate::app::match_runtime::frame_pacer::LocalFramePacer::admits_canonical_frame(
-                        frame, frontier,
-                    )
-                };
-                if !may_continue {
+                let inputs = crate::app::match_runtime::sim_tick::online_pacing_inputs(
+                    state,
+                    frame,
+                    crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+                );
+                if !state.platform.frame_pacer.admits_online_frame(
+                    Instant::now(),
+                    frame,
+                    live.committed_frontier(),
+                    inputs,
+                    runtime.simulation.pending_network_wait(),
+                ) {
                     break;
                 }
             }
@@ -714,24 +695,32 @@ impl App {
             return None;
         }
         let frame = sim.session().binary_frame();
-        if let Some(timing) = live.sequenced_timing() {
-            let recovering = live
-                .recovery_status(
-                    crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
-                    frame,
-                )
-                .is_some();
-            if !state.platform.frame_pacer.online_frame_due(
+        let frontier = live.committed_frontier();
+        if let Some((timing, recovering)) =
+            crate::app::match_runtime::sim_tick::online_pacing_inputs(
+                state,
+                frame,
+                crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+            )
+            && !state.platform.frame_pacer.online_frame_due(
                 Instant::now(),
                 frame,
-                live.committed_frontier(),
+                frontier,
                 timing,
                 recovering,
-            ) {
-                return None;
-            }
+            )
+        {
+            return None;
         }
-        (frame > 0).then_some((frame, live.committed_frontier()))
+        (frame > 0).then_some((frame, frontier))
+    }
+
+    /// The installed online transport still needs its RTT, load and Ready
+    /// serviced before the hidden in-game loop can take over.
+    pub(super) fn online_start_runs_while_hidden(state: &AppState) -> bool {
+        state.platform.window_hidden
+            && state.match_state.live_network.is_none()
+            && crate::app::lan_service::has_online_relay_route(state)
     }
 
     /// Does a hidden window still have a running match to service? True while
@@ -1003,6 +992,7 @@ impl App {
         let message_ms = if state.focus_freeze_active() {
             None
         } else {
+            crate::app::input::messages::show_status_notices(state);
             crate::app::input::messages::update(
                 state,
                 runtime_pass.main_tick_admitted || hidden_run.is_some(),
@@ -1492,6 +1482,7 @@ impl App {
                         .as_ref()
                         .unwrap()
                         .draw(&mut encoder, &view);
+                    render::draw_world_window_copy(state, &mut encoder, &view);
                     crate::app::presentation::sidebar_surface::draw_window_copy(
                         state,
                         &mut encoder,
@@ -1587,64 +1578,6 @@ impl App {
             &state.renderer.bit_font,
             crate::app::diagnostics::performance_overlay::match_panel(state),
         );
-        if state.frontend.screen == GameScreen::InGame {
-            let status = state
-                .match_state
-                .match_diagnostics
-                .playback_status()
-                .or_else(|| {
-                    let live = state.match_state.live_network.as_ref()?;
-                    let frame = state
-                        .match_state
-                        .sim_runtime
-                        .runtime()?
-                        .simulation
-                        .session()
-                        .binary_frame();
-                    match live.recovery_status(
-                        crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
-                        frame,
-                    )? {
-                        crate::net::live_commands::NetworkRecoveryStatus::Reconnecting => {
-                            // The relay drops a lapsed pass, which only the
-                            // lobby can renew: then waiting cannot help.
-                            let lapsed = live.relay_expires().is_some_and(|expires| {
-                                crate::util::time::SystemTime::now()
-                                    .duration_since(crate::util::time::UNIX_EPOCH)
-                                    .is_ok_and(|now| now.as_secs() >= expires)
-                            });
-                            Some(crate::i18n::tr(if lapsed {
-                                "VERA:ReconnectPassLapsed"
-                            } else {
-                                "VERA:Reconnecting"
-                            }))
-                        }
-                        crate::net::live_commands::NetworkRecoveryStatus::CatchingUp { frames } => {
-                            let key = if live.restoring_match() {
-                                "VERA:Rejoining"
-                            } else {
-                                "VERA:CatchingUp"
-                            };
-                            Some(crate::i18n::tr_count(key, frames, &[]))
-                        }
-                    }
-                })
-                .or_else(|| {
-                    crate::app::input::pause_menu::multiplayer_control(state)?
-                        .status
-                        .map(crate::i18n::tr)
-                });
-            if let Some(status) = status {
-                state.renderer.performance_overlay.encode_status(
-                    &state.renderer.gpu,
-                    &state.renderer.batch_renderer,
-                    &mut encoder,
-                    &output.texture,
-                    &state.renderer.bit_font,
-                    &status,
-                );
-            }
-        }
         if state.frontend.screen == GameScreen::InGame
             && let Some(offset_px) = runtime_pass.screen_shake_offset
         {
@@ -1729,7 +1662,10 @@ impl App {
             std::mem::take(&mut state.match_state.input.retail_screenshot_requested);
         let screenshot_central_rect = shake_central_rect(state, &output.texture);
         // Text drawn in the window (`window_ui`) is not in the frame the
-        // screenshot retains: this frame's goes over its copy.
+        // screenshot retains, and neither is the wheel-zoomed battlefield's
+        // window copy: this frame's go over its copy, the battlefield only
+        // when this frame drew it (not under an in-game menu). A zoomed frame
+        // is always copied, being smaller than the window.
         let window_text = state.renderer.window_ui.drew_text();
         let previous_composition = state
             .renderer
@@ -1747,12 +1683,20 @@ impl App {
         if let Some(copy) = previous_composition
             .as_ref()
             .and_then(|previous| previous.copy())
-            .filter(|_| window_text)
         {
-            state
-                .renderer
-                .window_ui
-                .draw_screenshot_text(state, &mut encoder, copy);
+            if game_render_output.is_some() {
+                render::draw_world_window_copy(
+                    state,
+                    &mut encoder,
+                    &copy.create_view(&Default::default()),
+                );
+            }
+            if window_text {
+                state
+                    .renderer
+                    .window_ui
+                    .draw_screenshot_text(state, &mut encoder, copy);
+            }
         }
         let pending_retail_screenshot = previous_composition
             .map(|previous| {

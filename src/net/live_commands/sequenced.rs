@@ -53,8 +53,9 @@ const WATCH_SAMPLES: usize = 16;
 // the relay dropped it long before.
 const WATCH_SILENCE_MS: u32 = 60_000;
 
-/// App diagnostics for one match's ordered delivery, counted by the session
-/// that owns it. Wall-clock observations; never simulation or delivery input.
+/// One match's ordered delivery as the app reads it: a copy of what the
+/// session that owns it counted and of its lifecycle, which the session itself
+/// decides from. Wall-clock observations; never simulation or delivery input.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DeliveryCounters {
     /// The relay session's link measurements as last read (spec §10.1),
@@ -68,10 +69,44 @@ pub struct DeliveryCounters {
     /// The sampled frame whose checksums differed, from the relay's DESYNC.
     pub desync_frame: Option<u32>,
     /// The relay's clock for this match has started, even if the relay
-    /// lost the match later.
+    /// lost the match later (the session's `ever_started`).
     pub started: bool,
-    /// The name (`SequencedError::code`) of the error that ended the match here.
+    /// The name (`SequencedError::code`) of the error that ended the match
+    /// here (the session's `failure`).
     pub failure: Option<&'static str>,
+}
+
+/// What the session counts for `DeliveryCounters`.
+#[derive(Debug, Clone, Copy, Default)]
+struct DeliveryCounts {
+    link: Option<ClientLinkStats>,
+    round_trips: u64,
+    round_trip_total_ms: u64,
+    round_trip_max_ms: u64,
+    desync_frame: Option<u32>,
+}
+
+/// The error that ended a match here. It stays for the rest of the session:
+/// `poll` hands out the error itself once and `LiveCommandError::Failed`
+/// after, so every later read still sees a failed match.
+#[derive(Debug)]
+struct Failure {
+    /// `SequencedError::code`, or `local_error` for one of this PC's own.
+    code: &'static str,
+    unreported: Option<LiveCommandError>,
+}
+
+impl Failure {
+    fn new(error: LiveCommandError) -> Self {
+        let code = match &error {
+            LiveCommandError::Sequenced(error) => error.code(),
+            _ => "local_error",
+        };
+        Self {
+            code,
+            unreported: Some(error),
+        }
+    }
 }
 
 /// App diagnostics for one local command batch: its first transmission, the
@@ -80,7 +115,8 @@ pub struct DeliveryCounters {
 #[derive(Debug, Clone, Copy)]
 pub struct CommandDeliveryTrace {
     pub batch_id: u64,
-    pub sent_at: Option<Instant>,
+    /// When the relay session sealed it, to go out with its next UPLINK.
+    pub sent_at: Instant,
     pub assigned: Option<(u32, Instant)>,
     pub frame_received_at: Option<Instant>,
 }
@@ -256,16 +292,6 @@ struct ReceivedEntry {
     received_at: Instant,
 }
 
-fn trace_mut(
-    traces: &mut VecDeque<CommandDeliveryTrace>,
-    batch_id: u64,
-) -> Option<&mut CommandDeliveryTrace> {
-    traces
-        .iter_mut()
-        .rev()
-        .find(|trace| trace.batch_id == batch_id)
-}
-
 /// How long a running match's ordered stream may stand still before the
 /// client shows Reconnecting (and Quit leaves without the stream).
 const STALL_MS: u32 = 5_000;
@@ -304,6 +330,8 @@ pub enum SequencedError {
     /// The relay closed this match's room before it started: a player left.
     #[error("a player left before the online match started")]
     StartCancelled,
+    #[error("the match ended after the game servers lost contact with each other")]
+    FederationLost,
     #[error("online command queue is full")]
     QueueFull,
     #[error("this online match needs a newer VERA20k")]
@@ -334,6 +362,7 @@ impl SequencedError {
             Self::Unavailable => "unavailable",
             Self::Absent => "absent",
             Self::StartCancelled => "start_cancelled",
+            Self::FederationLost => "federation_lost",
             Self::QueueFull => "queue_full",
             Self::NewerClientRequired => "newer_client_required",
             Self::WatchDesync { .. } => "watch_desync",
@@ -353,6 +382,7 @@ impl SequencedError {
             Self::NewerClientRequired => NetworkInterruption::NewerClientRequired,
             Self::Refused(OrderError::AgreementMismatch) => NetworkInterruption::StartMismatch,
             Self::StartCancelled => NetworkInterruption::StartCancelled,
+            Self::FederationLost => NetworkInterruption::FederationLost,
             Self::HistoryExpired
             | Self::InvalidTimeline
             | Self::Unavailable
@@ -363,13 +393,21 @@ impl SequencedError {
     }
 }
 
+/// A local batch whose records stay in OutList until the relay accepts it.
 #[derive(Debug)]
 struct Submission {
-    id: u64,
     records: Vec<CommandRecord>,
-    bytes: Vec<u8>,
-    // Handed to the relay session, which schedules its UPLINKs (spec §6).
-    sealed: bool,
+    batch: SubmissionBatch,
+}
+
+/// The relay session numbers a sealed batch, keeps its bytes, schedules its
+/// UPLINKs and decides when the relay accepted it (spec §6.1-§6.4).
+#[derive(Debug)]
+enum SubmissionBatch {
+    /// Encoded; the route could not take it yet.
+    Unsealed(Vec<u8>),
+    /// The ID the relay session sealed it as.
+    Sealed(u64),
 }
 
 /// The relay's DESYNC record: the sampled frame and the outlier's and the
@@ -421,9 +459,13 @@ pub(super) struct SequencedSession {
     /// The relay's current sealing rate, which paces playout.
     pub(super) pace_fps: u16,
     pace_meter: PaceMeter,
+    /// The relay runs this match's clock now. A relay that lost the match's
+    /// configuration (NotConfigured) clears it until it is configured again.
     started: bool,
+    /// The relay has run this match's clock at some point; this never clears.
+    ever_started: bool,
     head_frame: u32,
-    error: Option<LiveCommandError>,
+    failure: Option<Failure>,
     last_response: Option<u32>,
     /// When the ordered stream last moved (its head, next sequence or our
     /// cursor). A relay can keep answering while its stream stands still:
@@ -434,7 +476,7 @@ pub(super) struct SequencedSession {
     unreadable: Option<Unreadable>,
     last_control: Option<u32>,
     remote_next_sequence: u64,
-    delivery: DeliveryCounters,
+    delivery: DeliveryCounts,
     pause: CanonicalPause,
     /// VERA: the current pause found this game catching up, and it has not
     /// reached the pause yet; see `take_caught_up_in_pause`.
@@ -457,12 +499,10 @@ pub(super) struct SequencedSession {
     // Sources whose batch could not be read; each departed at that batch's
     // frame and the rest of its stream is ignored.
     refused: u32,
-    next_batch: u64,
     // This process replaces one that left a match under way. Its batch counter
     // lies in the history it is reading, so it submits nothing until caught up.
     restoring: bool,
     last_restore_log: Option<u32>,
-    accepted_batch: u64,
     submissions: VecDeque<Submission>,
     sample_sent: Option<u32>,
     // Derived checksum samples from immutable post-Logic contexts, evicted in
@@ -556,8 +596,9 @@ impl SequencedSession {
             pace_fps: fps,
             pace_meter: PaceMeter::default(),
             started: false,
+            ever_started: false,
             head_frame: 0,
-            error: None,
+            failure: None,
             last_response: None,
             last_progress: None,
             first_service: None,
@@ -565,7 +606,7 @@ impl SequencedSession {
             unreadable: None,
             last_control: None,
             remote_next_sequence: 1,
-            delivery: DeliveryCounters::default(),
+            delivery: DeliveryCounts::default(),
             pause: CanonicalPause::default(),
             pause_found_behind: false,
             pause_relay_supported: false,
@@ -587,10 +628,8 @@ impl SequencedSession {
             frames: VecDeque::new(),
             last_batch: [0; 30],
             refused: 0,
-            next_batch: 1,
             restoring: false,
             last_restore_log: None,
-            accepted_batch: 0,
             submissions: VecDeque::new(),
             sample_sent: None,
             samples: VecDeque::new(),
@@ -656,22 +695,19 @@ impl SequencedSession {
 
     /// Ends a restore once the world at `frame` has reached the shared one.
     /// A status can only postdate the last batch the departed process sent,
-    /// so history read past that status holds this source's final batch ID.
-    fn settle_restore(&mut self, frame: u32) -> Result<(), SequencedError> {
+    /// so history read past that status holds this source's final batch ID,
+    /// which the restoring relay session took as its counter.
+    fn settle_restore(&mut self, frame: u32) {
         if self.statuses > 0
             && self.next_sequence >= self.remote_next_sequence
             && self.head_frame.saturating_sub(frame) <= u32::from(self.pace_fps) / 2
         {
-            let last = self.last_batch[usize::from(self.local_source)];
-            self.next_batch = last.checked_add(1).ok_or(SequencedError::InvalidTimeline)?;
-            self.accepted_batch = last;
             self.restoring = false;
             log::info!(
-                "Rejoined the match at frame {frame}; next batch {}",
-                self.next_batch
+                "Rejoined the match at frame {frame} after batch {}",
+                self.last_batch[usize::from(self.local_source)]
             );
         }
-        Ok(())
     }
 
     /// Remote Houses whose connection the relay ended in dispatched frames.
@@ -701,7 +737,7 @@ impl SequencedSession {
     #[cfg(any(test, feature = "test-support"))]
     pub(super) fn mark_started_for_test(&mut self) {
         self.started = true;
-        self.delivery.started = true;
+        self.ever_started = true;
     }
 
     pub(super) fn frontier(&self) -> u32 {
@@ -718,8 +754,18 @@ impl SequencedSession {
     pub(super) fn started(&self) -> bool {
         self.started
     }
+    pub(super) fn ever_started(&self) -> bool {
+        self.ever_started
+    }
     pub(super) fn failed(&self) -> bool {
-        self.error.is_some()
+        self.failure.is_some()
+    }
+
+    /// Ends this match here. The first error is the one it ended with.
+    fn fail(&mut self, error: impl Into<LiveCommandError>) {
+        if self.failure.is_none() {
+            self.failure = Some(Failure::new(error.into()));
+        }
     }
     pub(super) fn record_tick_cost(&mut self, micros: u32) {
         self.pace_meter.record_tick_cost(micros);
@@ -734,16 +780,16 @@ impl SequencedSession {
     }
 
     pub(super) fn delivery_counters(&self) -> DeliveryCounters {
-        self.delivery
-    }
-
-    /// Keeps the error that ended this match for its report.
-    pub(super) fn record_failure(&mut self, error: &LiveCommandError) {
-        let code = match error {
-            LiveCommandError::Sequenced(error) => error.code(),
-            _ => "local_error",
-        };
-        self.delivery.failure.get_or_insert(code);
+        let counts = self.delivery;
+        DeliveryCounters {
+            link: counts.link,
+            round_trips: counts.round_trips,
+            round_trip_total_ms: counts.round_trip_total_ms,
+            round_trip_max_ms: counts.round_trip_max_ms,
+            desync_frame: counts.desync_frame,
+            started: self.ever_started,
+            failure: self.failure.as_ref().map(|failure| failure.code),
+        }
     }
 
     /// The relay's sealed head as this PC last learned it.
@@ -756,7 +802,12 @@ impl SequencedSession {
     }
 
     fn trace_assignment(&mut self, batch_id: u64, frame: u32, received_at: Instant) {
-        if let Some(trace) = trace_mut(&mut self.command_traces, batch_id) {
+        if let Some(trace) = self
+            .command_traces
+            .iter_mut()
+            .rev()
+            .find(|trace| trace.batch_id == batch_id)
+        {
             trace.assigned.get_or_insert((frame, received_at));
         }
     }
@@ -831,11 +882,8 @@ impl SequencedSession {
                 self.note_unreadable(now);
                 continue;
             }
-            match self.receive(received.event, received.received_at) {
-                Ok(()) => {}
-                Err(error) => {
-                    self.error.get_or_insert(error.into());
-                }
+            if let Err(error) = self.receive(received.event, received.received_at) {
+                self.fail(error);
             }
         }
         // Network silence is recoverable until the relay departs this source
@@ -846,7 +894,7 @@ impl SequencedSession {
         // here instead of showing Reconnecting for as long as the game stays
         // open. Before anything below asks the released route to send.
         if transport.relay_absent() {
-            self.error.get_or_insert(SequencedError::Absent.into());
+            self.fail(SequencedError::Absent);
         }
         if self.watch.is_some()
             && self
@@ -854,17 +902,19 @@ impl SequencedSession {
                 .or(self.first_service)
                 .is_some_and(|last| now.wrapping_sub(last) > WATCH_SILENCE_MS)
         {
-            self.error.get_or_insert(SequencedError::WatchLost.into());
+            self.fail(SequencedError::WatchLost);
         }
-        if self.error.is_some() {
+        // A failed match pulls, paces and seals nothing more; the transport
+        // keeps its route until the app leaves the match.
+        if self.failed() {
             return;
         }
         if let Err(error) = self.assemble() {
-            self.error = Some(error.into());
+            self.fail(error);
             return;
         }
         if let Err(error) = self.check_unreadable(now) {
-            self.error = Some(error.into());
+            self.fail(error);
             return;
         }
         let position = (
@@ -882,10 +932,7 @@ impl SequencedSession {
         }
         self.service_pause(transport, now);
         self.service_pace(transport, now);
-        if let Err(error) = self.seal_submissions(transport) {
-            self.error = Some(error.into());
-            return;
-        }
+        self.seal_submissions(transport);
         // The relay session decides every UPLINK (spec §6.3); this layer only
         // hands over its stream position.
         let gap = self.ordering_gap();
@@ -963,24 +1010,25 @@ impl SequencedSession {
     /// Seals each local batch with the relay session in order; it retries
     /// them until acknowledged (spec §6.1-§6.3). An unready route seals on a
     /// later service.
-    fn seal_submissions(&mut self, transport: &mut LanUdpTransport) -> Result<(), SequencedError> {
-        for pending in self
-            .submissions
-            .iter_mut()
-            .filter(|pending| !pending.sealed)
-        {
-            let Ok(id) = transport.seal_ordering_batch(&pending.bytes) else {
+    fn seal_submissions(&mut self, transport: &mut LanUdpTransport) {
+        for pending in &mut self.submissions {
+            let SubmissionBatch::Unsealed(bytes) = &pending.batch else {
+                continue;
+            };
+            let Ok(id) = transport.seal_ordering_batch(bytes) else {
                 break;
             };
-            if id != pending.id {
-                return Err(SequencedError::InvalidTimeline);
+            pending.batch = SubmissionBatch::Sealed(id);
+            if self.command_traces.len() == COMMAND_TRACE_HISTORY {
+                self.command_traces.pop_front();
             }
-            pending.sealed = true;
-            if let Some(trace) = trace_mut(&mut self.command_traces, pending.id) {
-                trace.sent_at.get_or_insert_with(Instant::now);
-            }
+            self.command_traces.push_back(CommandDeliveryTrace {
+                batch_id: id,
+                sent_at: Instant::now(),
+                assigned: None,
+                frame_received_at: None,
+            });
         }
-        Ok(())
     }
 
     /// The gap the uplink scheduler acts on (spec §6.3 row 2), while the
@@ -1100,14 +1148,6 @@ impl SequencedSession {
                     .is_some_and(|(seq, _)| *seq > self.next_sequence))
     }
 
-    fn accept_through(&mut self, id: u64) -> Result<(), SequencedError> {
-        if id >= self.next_batch {
-            return Err(SequencedError::InvalidTimeline);
-        }
-        self.accepted_batch = self.accepted_batch.max(id);
-        Ok(())
-    }
-
     fn receive(&mut self, event: OrderEvent, received_at: Instant) -> Result<(), SequencedError> {
         match event {
             OrderEvent::Left => return Err(SequencedError::InvalidTimeline),
@@ -1128,7 +1168,7 @@ impl SequencedSession {
                     self.last_progress = None;
                 }
                 self.started |= status.started;
-                self.delivery.started |= status.started;
+                self.ever_started |= status.started;
                 self.head_frame = self.head_frame.max(status.head_frame);
                 self.remote_next_sequence = self.remote_next_sequence.max(status.next_seq);
                 self.pause_active_sources &= status.active_sources;
@@ -1172,15 +1212,10 @@ impl SequencedSession {
                 }
                 self.finish_pause_request();
             }
+            // The relay session took its acceptance (spec §6.4).
             OrderEvent::Ack {
                 batch_id, frame, ..
-            } => {
-                if batch_id == 0 {
-                    return Err(SequencedError::InvalidTimeline);
-                }
-                self.accept_through(batch_id)?;
-                self.trace_assignment(batch_id, frame, received_at);
-            }
+            } => self.trace_assignment(batch_id, frame, received_at),
             OrderEvent::Entry(entry) => {
                 let sequence = match &entry {
                     OrderEntry::Batch {
@@ -1194,7 +1229,6 @@ impl SequencedSession {
                         // the process it replaces; a watcher's is the player
                         // it follows.
                         if *source == self.local_source && !self.restoring && self.watch.is_none() {
-                            self.accept_through(*batch_id)?;
                             self.trace_assignment(*batch_id, *frame, received_at);
                         }
                         *sequence
@@ -1214,24 +1248,20 @@ impl SequencedSession {
                 }
             }
             OrderEvent::Error { code, expected } => match code {
+                OrderError::Inactive if expected == vera20k_relay_protocol::FEDERATION_LOST => {
+                    return Err(SequencedError::FederationLost);
+                }
                 OrderError::NotConfigured => {
                     self.started = false;
                     self.last_control = None;
                 }
-                OrderError::NotStarted | OrderError::Backpressure => {}
-                OrderError::BatchGap => {
-                    let accepted = expected
-                        .checked_sub(1)
-                        .ok_or(SequencedError::InvalidTimeline)?;
-                    // The relay's authenticated prefix receipt never moves
-                    // backwards. It resets no batch: the session's RTO
-                    // resends them (spec §6.4).
-                    self.accept_through(accepted)?;
-                }
+                // The relay session takes BatchGap's acceptance and resends
+                // the rest by its RTO (spec §6.4).
+                OrderError::NotStarted | OrderError::Backpressure | OrderError::BatchGap => {}
                 OrderError::HistoryGap => return Err(SequencedError::HistoryExpired),
                 // Only a match that never started: a restored session has not
                 // heard from the relay yet, and its match did start.
-                OrderError::Inactive if !self.delivery.started && !self.restoring => {
+                OrderError::Inactive if !self.ever_started && !self.restoring => {
                     return Err(SequencedError::StartCancelled);
                 }
                 OrderError::Inactive | OrderError::StorageUnavailable => {
@@ -1269,7 +1299,7 @@ impl SequencedSession {
     }
 
     /// How far this game is behind the relay's head, when that is more than
-    /// half a second of frames: the Catching up status line.
+    /// half a second of frames: the Catching up message row.
     fn catching_up_frames(&self, current_frame: u32) -> Option<u32> {
         let frames = self.head_frame.saturating_sub(current_frame);
         // A watcher's frames come a pull or a second at a time and wait
@@ -1429,14 +1459,13 @@ impl SequencedSession {
                             && trace.frame_received_at.is_none()
                         {
                             trace.frame_received_at = Some(received_at);
-                            if let Some(sent_at) = trace.sent_at {
-                                let ms = received_at.saturating_duration_since(sent_at).as_millis()
-                                    as u64;
-                                self.delivery.round_trips += 1;
-                                self.delivery.round_trip_total_ms += ms;
-                                self.delivery.round_trip_max_ms =
-                                    self.delivery.round_trip_max_ms.max(ms);
-                            }
+                            let ms = received_at
+                                .saturating_duration_since(trace.sent_at)
+                                .as_millis() as u64;
+                            self.delivery.round_trips += 1;
+                            self.delivery.round_trip_total_ms += ms;
+                            self.delivery.round_trip_max_ms =
+                                self.delivery.round_trip_max_ms.max(ms);
                         }
                     }
                     self.latest_frame_receipt = Some(SequencedTiming {
@@ -1645,7 +1674,7 @@ impl SequencedSession {
         queues: &mut NetworkCommandQueues<'_>,
         now: u32,
     ) {
-        if !self.started || self.error.is_some() {
+        if !self.started || self.failed() {
             return;
         }
         let Some((context, _)) = self.current.filter(|(context, _)| context.frame != 0) else {
@@ -1654,7 +1683,7 @@ impl SequencedSession {
         if let Err(error) = self.flush_local_commands(transport, queues, context, now) {
             // The regular frame boundary owns terminal error delivery. Its
             // admission gate also observes this retained error while stalled.
-            self.error = Some(error);
+            self.fail(error);
         }
     }
 
@@ -1666,7 +1695,7 @@ impl SequencedSession {
         now: u32,
     ) -> Result<(), LiveCommandError> {
         if self.restoring {
-            self.settle_restore(context.frame)?;
+            self.settle_restore(context.frame);
             if !self.restoring {
                 transport.set_ordering_restore(false);
             }
@@ -1686,11 +1715,11 @@ impl SequencedSession {
                 .map_err(super::CommandExchangeError::from)?;
             return Ok(());
         }
-        while self
-            .submissions
-            .front()
-            .is_some_and(|pending| pending.id <= self.accepted_batch)
-        {
+        // An accepted batch leaves OutList; its records come back in its frame.
+        let accepted = transport.ordering_accepted_through().unwrap_or(0);
+        while self.submissions.front().is_some_and(
+            |pending| matches!(pending.batch, SubmissionBatch::Sealed(id) if id <= accepted),
+        ) {
             let pending = self.submissions.pop_front().unwrap();
             queues
                 .commit_local_submission(&pending.records)
@@ -1749,33 +1778,20 @@ impl SequencedSession {
                 if encoded.mirrors.is_empty() {
                     return Err(SequencedError::InvalidTimeline.into());
                 }
-                let bytes = encoded.bytes[EVENT_PACKET_HEADER_LEN..].to_vec();
-                let next_batch = self
-                    .next_batch
-                    .checked_add(1)
-                    .ok_or(SequencedError::InvalidTimeline)?;
-                if self.command_traces.len() == COMMAND_TRACE_HISTORY {
-                    self.command_traces.pop_front();
-                }
-                self.command_traces.push_back(CommandDeliveryTrace {
-                    batch_id: self.next_batch,
-                    sent_at: None,
-                    assigned: None,
-                    frame_received_at: None,
-                });
                 self.submissions.push_back(Submission {
-                    id: self.next_batch,
                     records: encoded.mirrors,
-                    bytes,
-                    sealed: false,
+                    batch: SubmissionBatch::Unsealed(
+                        encoded.bytes[EVENT_PACKET_HEADER_LEN..].to_vec(),
+                    ),
                 });
-                self.next_batch = next_batch;
                 self.service(transport, now);
             }
         }
         Ok(())
     }
 
+    /// Any error ends the match here and stays: the first poll after it
+    /// returns that error, every later one `LiveCommandError::Failed`.
     pub(super) fn poll(
         &mut self,
         transport: &mut LanUdpTransport,
@@ -1784,9 +1800,29 @@ impl SequencedSession {
         now: u32,
     ) -> Result<NetworkQueuePass, LiveCommandError> {
         self.service(transport, now);
-        if let Some(error) = self.error.take() {
-            return Err(error);
+        if !self.failed() {
+            match self.poll_frame(transport, queues, context, now) {
+                Ok(pass) => return Ok(pass),
+                // The frame's own error (a desync, a full queue) is the one
+                // that ends the match, even when its flush's service recorded
+                // a relay error earlier in this call.
+                Err(error) => self.failure = Some(Failure::new(error)),
+            }
         }
+        Err(self
+            .failure
+            .as_mut()
+            .and_then(|failure| failure.unreported.take())
+            .unwrap_or(LiveCommandError::Failed))
+    }
+
+    fn poll_frame(
+        &mut self,
+        transport: &mut LanUdpTransport,
+        queues: &mut NetworkCommandQueues<'_>,
+        context: NetworkQueueContext,
+        now: u32,
+    ) -> Result<NetworkQueuePass, LiveCommandError> {
         if let Some((old, done)) = self.current {
             if context.frame == old.frame {
                 if context.checksum != old.checksum {
@@ -2063,6 +2099,18 @@ mod restore_tests {
             expected: 0,
         };
 
+        let lost = OrderEvent::Error {
+            code: OrderError::Inactive,
+            expected: vera20k_relay_protocol::FEDERATION_LOST,
+        };
+        assert_eq!(
+            session()
+                .receive(lost, Instant::now())
+                .unwrap_err()
+                .interruption(),
+            NetworkInterruption::FederationLost
+        );
+
         let refused = session().receive(inactive(), Instant::now()).unwrap_err();
         assert_eq!(refused.code(), "start_cancelled");
         assert_eq!(refused.interruption(), NetworkInterruption::StartCancelled);
@@ -2094,31 +2142,29 @@ mod restore_tests {
         );
     }
 
-    /// The counter the departed process reached comes from the history: its
-    /// own first ID would make the relay end this client's match (`BatchGap`).
+    /// The counter the departed process reached comes from the history, so
+    /// a restore ends only once the world has read and caught up with it.
     #[test]
-    fn resumes_the_batch_counter_only_once_the_world_caught_up() {
+    fn ends_a_restore_only_once_the_world_caught_up() {
         let mut houses = [None; 30];
         houses[..2].copy_from_slice(&[Some(0), Some(1)]);
         let mut session = SequencedSession::with_roster(houses, 0, [7; 32], 30);
         session.begin_restore();
-        session.last_batch[0] = 41;
         session.next_sequence = 500;
 
         // Nothing is known of the relay yet.
-        session.settle_restore(0).unwrap();
+        session.settle_restore(0);
         assert!(session.restoring());
         session.receive(status(900, 1000), Instant::now()).unwrap();
         // History still to read, then a world still far behind it.
-        session.settle_restore(1000).unwrap();
+        session.settle_restore(1000);
         assert!(session.restoring());
         session.next_sequence = 900;
-        session.settle_restore(900).unwrap();
+        session.settle_restore(900);
         assert!(session.restoring());
 
-        session.settle_restore(990).unwrap();
+        session.settle_restore(990);
         assert!(!session.restoring());
-        assert_eq!((session.next_batch, session.accepted_batch), (42, 41));
     }
 }
 
@@ -2241,7 +2287,7 @@ mod delivery_counter_tests {
         let sent = Instant::now();
         session.command_traces.push_back(CommandDeliveryTrace {
             batch_id: 1,
-            sent_at: Some(sent),
+            sent_at: sent,
             assigned: Some((1, sent)),
             frame_received_at: None,
         });
@@ -2467,6 +2513,7 @@ mod departure_tests {
             tick_hz: 30,
             expires: 2000,
             pacing: Default::default(),
+            ordered_alone: false,
         }
         .sign(&key)
         .unwrap();
@@ -2761,26 +2808,12 @@ mod watch_tests {
     }
 
     /// A watcher stands in the place of the player it follows: that
-    /// player's batches are the stream's like any other's, its loss gets a
-    /// line, and the match is over once every player left and their frames
-    /// ran.
+    /// player's loss gets a line, and the match is over once every player
+    /// left and their frames ran.
     #[test]
     fn a_watcher_reads_its_players_stream_to_the_end() {
         let mut houses = [None; 30];
         houses[..2].copy_from_slice(&[Some(0), Some(1)]);
-        let batch = || {
-            OrderEvent::Entry(OrderEntry::Batch {
-                sequence: 1,
-                frame: 1,
-                source: 0,
-                batch_id: 1,
-                bytes: vec![0],
-            })
-        };
-        let mut player = SequencedSession::with_roster(houses, 0, [0; 32], 30);
-        assert!(player.receive(batch(), Instant::now()).is_err());
-        assert!(watcher(houses).receive(batch(), Instant::now()).is_ok());
-
         let mut session = watcher(houses);
         let departure = |sequence, source, lost| {
             OrderEvent::Entry(OrderEntry::Departure {

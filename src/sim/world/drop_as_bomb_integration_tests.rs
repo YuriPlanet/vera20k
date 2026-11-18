@@ -218,7 +218,7 @@ fn a_tank_killed_by_its_bridge_fall_still_scans_on_that_visit() {
         .unwrap();
     put_on_deck(&mut sim, &rules, tank, false);
     sim.object_custom_sounds
-        .insert(tank, "TestAmbient".to_owned());
+        .insert(tank, "TestAmbient".to_owned().into());
     remove_deck(&mut sim);
     blow_up_bridge_cell_fallout(
         &mut sim,

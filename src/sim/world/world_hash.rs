@@ -15,6 +15,9 @@ use crate::sim::parallel;
 use crate::sim::state_hasher::digests;
 use crate::util::state_hasher::{self, StateHasher};
 
+/// [`Simulation::state_hash_owners`]: each part's name and digest.
+pub type StateHashOwners = [(&'static str, u64); 34];
+
 #[cfg(all(test, tests_sim_world_t_z))]
 mod retained_cell_hash_tests {
     use super::*;
@@ -326,6 +329,56 @@ mod hash_owner_attribution_tests {
             .collect();
         assert_eq!(differing, ["fold_before_fog", "scenario_rng"]);
     }
+
+    /// The causes of the failed 0.3.5 starts: carried trigger locals and
+    /// the network MapGen cursor each show under their own name.
+    #[test]
+    fn network_trigger_locals_and_mapgen_show_under_their_own_names() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::sim::scenario_session::ScenarioGameMode;
+        let map = |variables: &str| {
+            let mut map = crate::map::rmg::emit::empty_map_file(
+                &crate::map::rmg::RmgOptions::default(),
+                16,
+                16,
+            );
+            map.local_variables = crate::map::variable_names::parse_local_variables(
+                &IniFile::from_str(&format!("[VariableNames]\n{variables}")),
+            );
+            map
+        };
+        let mut previous = Simulation::new();
+        previous.initialize_trigger_definitions(
+            &map("7=Previous,1\n"),
+            &Default::default(),
+            None,
+            None,
+            None,
+        );
+        let start = |carried| {
+            let mut sim = Simulation::new();
+            sim.install_session_mode(ScenarioGameMode::Lan);
+            if let Some(carried) = carried {
+                sim.inherit_local_variables_for_fresh_load(carried);
+            }
+            sim.initialize_trigger_definitions(&map(""), &Default::default(), None, None, None);
+            sim
+        };
+        let first = start(None);
+        let mut second = start(Some(previous.retain_local_variables_for_fresh_load()));
+        second.mapgen_rng.next_u32();
+        let differing: Vec<_> = first
+            .state_hash_owners()
+            .into_iter()
+            .zip(second.state_hash_owners())
+            .filter(|(left, right)| left != right)
+            .map(|(left, _)| left.0)
+            .collect();
+        assert_eq!(
+            differing,
+            ["fold_before_fog", "trigger_locals", "mapgen_rng"]
+        );
+    }
 }
 
 #[cfg(all(test, tests_sim_world_t_z))]
@@ -534,7 +587,7 @@ impl Simulation {
     /// clients' lists, as a match that never started reports them, name what
     /// differs. `interner` is outside the hash: it tells apart two clients
     /// whose Houses and objects differ only in how names were numbered.
-    pub fn state_hash_owners(&self) -> [(&'static str, u64); 30] {
+    pub fn state_hash_owners(&self) -> StateHashOwners {
         fn digest(fold: impl FnOnce(&mut StateHasher)) -> u64 {
             let mut hasher = StateHasher::new();
             fold(&mut hasher);
@@ -575,9 +628,24 @@ impl Simulation {
                     }
                 }),
             ),
+            // The trigger runtime in its four parts, so a start that failed
+            // on it says whether locals, globals or the map's definitions
+            // (action operands among them) differed.
             (
-                "trigger_runtime",
-                digest(|h| self.trigger_runtime.hash_state(h)),
+                "trigger_globals",
+                digest(|h| self.trigger_runtime.hash_globals(h)),
+            ),
+            (
+                "trigger_locals",
+                digest(|h| self.trigger_runtime.hash_locals(h)),
+            ),
+            (
+                "trigger_definitions",
+                digest(|h| self.trigger_runtime.hash_definitions(h)),
+            ),
+            (
+                "trigger_live",
+                digest(|h| self.trigger_runtime.hash_live(h)),
             ),
             (
                 "team_script_vm",
@@ -594,6 +662,7 @@ impl Simulation {
             ("planning", digest(|h| self.planning.hash_state(h))),
             ("projectiles", digest(|h| self.hash_projectiles(h))),
             ("scenario_rng", digest(|h| self.scenario_rng.hash_state(h))),
+            ("mapgen_rng", digest(|h| self.hash_network_mapgen(h))),
             (
                 "native_unique_ids",
                 digest(|h| self.native_unique_ids.hash(h)),
@@ -674,12 +743,13 @@ impl Simulation {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn hash_owner_diagnostics_for_test(&self) -> [(&'static str, u64); 14] {
-        // Preserve the existing snapshot tests' owner selection; the new
-        // production prefix additionally includes clocks and Scenario RNG.
-        self.state_hash_owners()[1..15]
+    pub(crate) fn hash_owner_diagnostics_for_test(&self) -> [(&'static str, u64); 17] {
+        // Preserve the existing snapshot tests' owner selection, houses
+        // through projectiles; the new production prefix additionally
+        // includes clocks and Scenario RNG.
+        self.state_hash_owners()[1..18]
             .try_into()
-            .expect("14 retained owner groups")
+            .expect("17 retained owner groups")
     }
 
     /// Deterministic state hash over canonicalized simulation state.
@@ -729,6 +799,18 @@ impl Simulation {
         self.session.pixel_conversion_bounds().hash(hasher);
     }
 
+    /// Offline, ScenarioClass owns the sole synchronized RNG; Main and MapGen
+    /// are process globals. Network MapGen is agreed at fresh start
+    /// ([`Simulation::install_session_mode`]) because bridge repair consumes
+    /// it to select hashed overlay IDs. This reaches the state hash the start
+    /// agreement compares, not the per-frame sync checksum.
+    fn hash_network_mapgen(&self, hasher: &mut impl Hasher) {
+        if self.session.game_mode().is_network() {
+            b"network-mapgen-v1".hash(hasher);
+            self.mapgen_rng.hash_state(hasher);
+        }
+    }
+
     /// The fold before the fog digests: clocks, RNG, identities, scripts,
     /// object order, occupation, Houses, production and power.
     fn fold_before_fog(&self, hasher: &mut impl Hasher) {
@@ -738,9 +820,9 @@ impl Simulation {
         self.hash_ion_blasts(hasher);
         #[cfg(feature = "phobos")]
         self.warhead_anim_runtime.hash_state(hasher);
-        // ScenarioClass owns the sole saved/synchronized RNG. Main and MapGen
-        // are process globals and are deliberately absent from this hash.
+        // ScenarioClass's RNG; Main is a process global.
         self.scenario_rng.hash_state(hasher);
+        self.hash_network_mapgen(hasher);
         // Scenario+214 controls identities of future constructors and therefore
         // guided Bullet steering. The saved prefix/phase also controls a fresh
         // map-read continuation. This is independent of Rust stable handles.

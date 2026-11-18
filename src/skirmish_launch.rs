@@ -391,6 +391,17 @@ pub enum LaunchStartPosition {
     Position(u8),
 }
 
+impl LaunchStartPosition {
+    /// The shell's start item data: -2 for Auto (the Random entry), else the
+    /// waypoint.
+    pub const fn shell_value(self) -> i32 {
+        match self {
+            Self::Auto => -2,
+            Self::Position(index) => index as i32,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub enum LaunchTeam {
@@ -406,6 +417,18 @@ impl LaunchTeam {
             Self::Team(value as u8)
         }
     }
+    /// The shell's team item data: -2 for no team.
+    pub const fn shell_value(self) -> i32 {
+        match self {
+            Self::None => -2,
+            Self::Team(index) => index as i32,
+        }
+    }
+}
+
+/// A side or colour pick as shell item data: -2 for Random, else its index.
+const fn pick_shell_value(random: bool, index: i32) -> i32 {
+    if random { -2 } else { index }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -694,6 +717,22 @@ pub struct SkirmishLocalSlot {
     pub team: LaunchTeam,
 }
 
+impl SkirmishLocalSlot {
+    /// The seat's side as shell item data (the combos, the LAN and WOL
+    /// options): -3 while its player watches, -2 for Random, else the country.
+    pub const fn country_shell_value(&self, observer: bool) -> i32 {
+        if observer {
+            -3
+        } else {
+            pick_shell_value(self.country_random, self.country.raw_index() as i32)
+        }
+    }
+    /// The seat's colour as shell item data: -2 for Random.
+    pub const fn color_shell_value(&self) -> i32 {
+        pick_shell_value(self.color_random, self.color_index as i32)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SkirmishAiSlot {
@@ -711,6 +750,18 @@ pub struct SkirmishAiSlot {
     pub start_position: LaunchStartPosition,
     pub team: LaunchTeam,
     pub difficulty: AiDifficulty,
+}
+
+impl SkirmishAiSlot {
+    /// [`SkirmishLocalSlot::country_shell_value`] for an AI, which never
+    /// watches.
+    pub const fn country_shell_value(&self) -> i32 {
+        pick_shell_value(self.country_random, self.country.raw_index() as i32)
+    }
+    /// [`SkirmishLocalSlot::color_shell_value`].
+    pub const fn color_shell_value(&self) -> i32 {
+        pick_shell_value(self.color_random, self.color_index as i32)
+    }
 }
 
 fn legacy_raw_ai_slot() -> u8 {

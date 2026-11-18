@@ -598,10 +598,21 @@ pub struct AresUnitLostLine {
     pub radar_event: bool,
 }
 
+
+/// The native playback destination for a map-authored sound reference.
+#[derive(Debug, Clone)]
+pub enum TriggerSoundTarget {
+    Centered,
+    Eva,
+    Coordinate { coordinate: DriveCoord, flags: u32 },
+    Object { owner: u64, world: crate::sim::anim_class::AnimWorldCoord },
+}
+
 /// A sound event produced during simulation (combat, death, production).
 /// Pure data — no audio library dependency. Drained by the app layer each frame.
 #[derive(Debug, Clone)]
 pub enum SimSoundEvent {
+    TriggerAudio { reference: crate::rules::sound_ini::SoundReference, target: TriggerSoundTarget },
     /// PlanMgr638593 accepted an editing order; audio gates the local issuer.
     PlanningNodeAdded { owner: InternedId },
     /// TAction21 Execute6DD8B0 calls VoxQueueVoice752480 with its literal
@@ -1484,8 +1495,10 @@ pub struct Simulation {
     /// fixed-map construction uses `Random__Seed(0)`, matching the verified
     /// native fresh-process state; launch `.SED` generation installs its exact
     /// post-RMG continuation. Bridge repair consumes this stream; destruction
-    /// remains Scenario-owned. This cursor is not saved or checksummed; Rust
-    /// retains it across in-scenario restore and fresh Scenario handoff.
+    /// remains Scenario-owned. Offline this cursor is not saved or checksummed;
+    /// Rust retains it across in-scenario restore and fresh Scenario handoff.
+    /// Network starts seed it from the agreed match seed and hash it, since
+    /// bridge repair writes its chosen variant into authoritative overlays.
     /// Original Init_Random_Number_System52FC20 leaves this entire object
     /// unchanged; only random-map generation reseeds it at598996.
     #[serde(skip, default = "deserialized_process_rng_placeholder")]
@@ -1620,9 +1633,10 @@ pub struct Simulation {
     /// `ObjectClass+0x64`: the custom sound trigger action 99 gave an object
     /// (a Building or Terrain), keyed by stable id. Absent is the
     /// constructor's -1. Only `object_sound` writes it; the object's
-    /// destruction removes it.
+    /// destruction removes it. A network trigger retains the authored
+    /// name/slot so local playback availability cannot change idle admission.
     #[serde(default)]
-    object_custom_sounds: BTreeMap<u64, String>,
+    object_custom_sounds: BTreeMap<u64, crate::rules::sound_ini::SoundReference>,
     /// Test observation of each refinery unload gate. The dock commits the
     /// gate's smoke and SpecialAnim itself; the frame tail drops these.
     #[cfg(any(test, feature = "test-support"))]
@@ -3890,6 +3904,21 @@ impl Simulation {
     /// The loader's GameMode install, at startup or from an admitted save
     /// ([`ScenarioSession::set_game_mode`]).
     pub fn install_session_mode(&mut self, mode: crate::sim::scenario_session::ScenarioGameMode) {
+        if mode.is_network() && !self.session.game_mode().is_network() {
+            // VERA network adaptation: Init_Random_Number_System52FC20 seeds
+            // Scenario/Main, leaving process MapGen alone. MapGen598030 also
+            // supplies bridge repair's overlay variants, so a shared match
+            // must not inherit each client's unrelated RMG/repair history.
+            // Rejoin/watch use this same fresh start before replaying history.
+            // On a generated map this also replaces the post-RMG cursor the
+            // bootstrap installed (Generate598960 leaves MapGen advanced, and
+            // gamemd's repairs continue from it), so a generated network map's
+            // repair variants differ from gamemd's for the same map seed. The
+            // match seed is the one value every peer, rejoiner and watcher
+            // already holds. Truncated to 32 bits as for Scenario/Main, it gives
+            // MapGen their seeded state, from which it advances on its own.
+            self.mapgen_rng = SimRng::new(self.session.seed());
+        }
         self.session.set_game_mode(mode);
     }
 
@@ -8453,7 +8482,7 @@ impl ObjectSubstrate {
     }
 }
 
-#[cfg(all(test, any(tests_sim_world_t_z, tests_net, tests_sim_t_z)))]
+#[cfg(all(test, any(tests_sim_world_t_z, tests_sim_world_p_s, tests_sim_t_z)))]
 #[path = "world_tests.rs"]
 pub(crate) mod tests;
 
@@ -8557,6 +8586,9 @@ mod world_orders_bridge_repair_tests;
 #[cfg(all(test, tests_sim_world_p_s))]
 #[path = "rng_routing_tests.rs"]
 mod rng_routing_tests;
+
+#[cfg(all(test, tests_sim_world_p_s))]
+mod raw_record_convergence_tests;
 
 #[cfg(all(test, tests_sim_world_p_s))]
 #[path = "slice6_retask_tests.rs"]

@@ -110,6 +110,21 @@ pub(crate) fn canonical_cell_coord(x: i32, y: i32) -> Option<(u16, u16)> {
     CellGrid::Retail.canonical_coord(x, y)
 }
 
+/// Number of square rings, starting with ring zero, that cover a loaded
+/// cell rectangle `[left, top, width, height]`. The last ring touches its
+/// farthest edge. Map extents and cell coordinates fit signed 32-bit math.
+pub(crate) fn square_rings_covering_rect(
+    (x, y): (i32, i32),
+    [left, top, width, height]: [i32; 4],
+) -> i32 {
+    if width <= 0 || height <= 0 {
+        return 0;
+    }
+    let dx = (x - left).abs().max((left + width - 1 - x).abs());
+    let dy = (y - top).abs().max((top + height - 1 - y).abs());
+    dx.max(dy) + 1
+}
+
 /// The cells of square ring `r` around `center` (`max(|dx|, |dy|) == r`), in
 /// the fixed order gamemd's ring searches walk them:
 ///

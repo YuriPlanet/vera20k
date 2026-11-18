@@ -281,6 +281,16 @@ mod tests {
                         .assign_secret_lab_fallback((ObjectCategory::Infantry, id));
                 }
             }
+            // The loader installs GameMode before post-map runs. A network mode
+            // reseeds MapGen from the match seed (VERA adaptation), so install
+            // it before the native cursors the gate must leave unchanged.
+            if let Some(gate) = row.get("startup_gate") {
+                sim.install_session_mode(
+                    crate::sim::scenario_session::ScenarioGameMode::from_game_mode(
+                        gate["game_mode"].as_i64().unwrap() as i32,
+                    ),
+                );
+            }
             sim.scenario_rng = SimRng::from_native_state_hex_for_test(
                 row["rng_before"]["scenario"].as_str().unwrap(),
             );
@@ -291,12 +301,7 @@ mod tests {
                 row["rng_before"]["mapgen"].as_str().unwrap(),
             );
             let (_, draws) = trace_draws(|| {
-                if let Some(gate) = row.get("startup_gate") {
-                    sim.install_session_mode(
-                        crate::sim::scenario_session::ScenarioGameMode::from_game_mode(
-                            gate["game_mode"].as_i64().unwrap() as i32,
-                        ),
-                    );
+                if row.get("startup_gate").is_some() {
                     let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
                         &IniFile::empty(),
                         None,

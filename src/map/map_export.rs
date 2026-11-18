@@ -216,7 +216,8 @@ fn object_line(entity: &MapEntity) -> String {
         // ...,Facing,Tag,AISellable,AIRebuildable,Powered,Upgrades,SpotLight,
         // Upgrade1..3,AIRepairable,Nominal
         EntityCategory::Structure => {
-            format!("{base},{facing},None,1,0,1,0,0,None,None,None,1,0")
+            let powered = i32::from(entity.structure_online);
+            format!("{base},{facing},None,1,0,{powered},0,0,None,None,None,1,0")
         }
         // ...,SubCell,Mission,Facing,Tag,Veterancy,Group,High,Recruitable A/B
         EntityCategory::Infantry => {
@@ -276,5 +277,32 @@ mod tests {
             .map(|o| (o.rx, o.ry, o.overlay_id, o.frame))
             .collect();
         assert_eq!(placed, [(300, 200, 5, 3)]);
+    }
+
+    /// VERA extension: a derelict's unpowered flag survives export, where the
+    /// original writer always marked every structure powered.
+    #[test]
+    fn derelict_structures_keep_their_power_state_in_the_export() {
+        let mut map = MapFile::from_bytes(
+            b"[Basic]\nNewINIFormat=4\n\
+              [Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
+              [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n\
+              [Structures]\n\
+              0=Neutral,GARAD,48,1,1,0,None,1,0,0,0,0,None,None,None,1,0\n\
+              1=Neutral,CAPOWR,256,1,0,0,None,1,0,1,0,0,None,None,None,1,0\n",
+        )
+        .unwrap();
+        map.ini = crate::rules::ini_parser::IniFile::from_str("");
+        let text = multiplayer_map_text(&map, "Derelicts", 2, 2, None, None);
+        let read = MapFile::from_bytes(text.as_bytes()).unwrap();
+        let powers: Vec<_> = read
+            .entities
+            .iter()
+            .map(|e| (e.type_id.clone(), e.health, e.structure_online))
+            .collect();
+        assert_eq!(
+            powers,
+            [("GARAD".into(), 48, false), ("CAPOWR".into(), 256, true),]
+        );
     }
 }

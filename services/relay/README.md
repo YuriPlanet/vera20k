@@ -35,7 +35,8 @@ Generation tombstones last for the maximum 300-second ticket
 lifetime, so old still-valid grants cannot recreate retired rooms. Renewals keep
 the same player, match and generation, and are a new hop with a new session;
 the old session then takes only Leave, so a player quitting before the new
-READY still leaves, and is released like an expired one. A released session
+READY still leaves, and is released 300 seconds after its old ticket expires,
+so renewals every few minutes do not fill the session table. A released session
 is never assigned again for 10 minutes. Each hop counts its sequences from 1
 to `u32::MAX` (a 300-second ticket never comes near it), and a relay that ran
 out would stop sending on the hop. An authenticated datagram whose sequence
@@ -78,10 +79,11 @@ Build from the repository root:
 python -m tools.cargo_run -- build --release -p vera20k-relay
 ```
 
-A deploy reaches players who have not updated. On a PR that touches the relay,
-the Relay compatibility workflow (`tools/relay_compat.py`) plays the latest
-stable release's and the newest dev build's client code against it, including a
-player the relay removes for silence.
+A deploy reaches every version the lobby admits. On a PR that touches the relay,
+the Relay compatibility workflow (`tools/relay_compat.py`) builds a compat client
+against the protocol crate of each stable release from `OLDEST_ADMITTED` (the
+lobby's lowest admitted version) on and of the newest dev build, and plays each
+against it, including a player the relay removes for silence.
 
 Clients from v0.2.4 read a Status, PauseStatus, Ready, Ack or Error
 longer than they know by its known prefix, and an unknown error code as an
@@ -90,13 +92,15 @@ that read it differently would desync. A client that cannot read the record at
 its cursor, or before the start any Status, for about 5 seconds ends the match
 and asks for a newer VERA20k; v0.2.3 and older stall instead. Extend replies
 only by appending fields, and add a record kind, departure reason or entry field
-only after clients that read it have shipped. A new error code counts as
+only after every admitted release reads it. A new error code counts as
 unreadable too, so one the relay repeats while a client's cursor waits ends that
 client's match the same way. The turn-based transport (packed entries, turns,
 relay checksums; below) replaced the one-entry datagrams outright: clients and
 relays from before it cannot play together. So did the adaptive transport
 (UPLINK, below): its relay and clients ship together, and the lobby's lowest
-admitted version rises with it.
+admitted version rose with it. A change that breaks admitted releases on purpose
+raises `OLDEST_ADMITTED` past them, the lobby raises its floor to match before
+the relay deploys, and the PR carries the `relay-compat-break` label.
 
 Install the executable as `/usr/local/bin/vera20k-relay`, create the unprivileged
 `vera20k-relay` user, and install `vera20k-relay.service`. Allow UDP port 5000 in
@@ -118,8 +122,9 @@ only once the silence limits below pass.
 
 The service journal reports aggregate traffic and rejection counts once a minute,
 with the ordering push datagrams and their bytes as `pushed` and `pushed_bytes`
-the Pull requests answered as `pull_replies`, and the matches it ended with a
-desync record as `desyncs`. The reader downlink adds `push_packets` and
+the Pull requests answered as `pull_replies`, the matches it ended with a
+desync record as `desyncs`, and the startups it refused for a different initial
+world as `start_mismatches`. The reader downlink adds `push_packets` and
 `push_bytes` by kind (status, new pack, repeat, retransmission, tail probe),
 `piggybacked_records`, `down_lost` datagrams and the `retransmitted_records`
 for them, `readers_avg` (subscribed readers per state: good, lossy, congested,
@@ -130,7 +135,11 @@ Use them to distinguish rate limits, expired grants and authentication failures
 from packet loss and client timeouts.
 
 Modern ordering uses authenticated control kind4 and a lobby-signed `VO1C` or
-`VO2C` certificate (see `../../docs/lobby-protocol.md`). Every source that becomes ready
+`VO2C` certificate (see `../../docs/lobby-protocol.md`). The relay orders a match of
+two or more sources, or of one whose `VO2C` flags bit 1 the lobby set: one person
+who watches AI play, ordered so that others can watch it
+(`OrderingCertificate::relay_orders`). It refuses the Ready of any other one-source
+certificate (`Authentication`), whose match runs locally. Every source that becomes ready
 certifies the same initial world; fixed FPS deadlines then commit batches
 sorted by source and
 batch ID, followed by an explicit frame end. An absent input contributes nothing.
@@ -289,19 +298,25 @@ as it reaches the frame after that record.
 A federated match spreads its sources over up to six relays, each serving the
 players nearest it. The lobby-signed `VO1F` roster (see `../../docs/lobby-protocol.md`)
 rides in every CONFIRM after the cookie; a relay admits only the sources its
-own roster entry homes and recovers the match link key with its ticket key. Each
+own roster entry homes and recovers the match link key with its ticket key. It
+refuses Ready as an agreement mismatch unless the roster homes exactly the
+certificate's sources. Each
 relay seals its own players' entries at the shared frame deadlines and sends
-them, authenticated with the link key, to every other relay as `VF1L` link
+them, authenticated with the link key, to every other relay as `VF1L` or `VF2L` link
 packets at each new seal and otherwise every 50 ms. Each entry is sent once, in a
 packet that goes out twice, and is retained until acknowledged; it is sent
 again only after going unacknowledged for the measured round trip plus 100 ms.
 A relay that misses a packet ignores later ones until then. A
 frame is emitted once every relay sealed it, in the same canonical order, so
-every relay delivers the same stream and sequence numbers. Player DATA to a remote source crosses one link to its relay. The
-first roster relay picks the start time from measured link round trips; the
-others follow its clock offset. Only it cancels a startup: another relay's Leave
-before the start asks it to, and becomes a frame-1 departure if the start was
-already on its way. Federated rooms cannot pause. The other relays forward
+every relay delivers the same stream and sequence numbers. Player DATA to a remote source
+crosses one link to its relay. Both paths forward to addressed peers other than the
+sender, through 30 seconds since each peer was last heard from. The first roster relay picks the start time from measured link round trips; the
+others follow its clock offset. It alone cancels a startup for an ordinary
+reason: another relay's Leave before the start asks it to, and becomes a
+frame-1 departure if the start was already on its way. A relay that proves an
+agreement mismatch (below) refuses the start itself and asks it to cancel the
+rest; one that hears another link version (below) cancels its own startup.
+Federated rooms cannot pause. The other relays forward
 their players' latest pace reports to the coordinator every 500 ms as link kind
 2, `[count]` then per source `[source][pace][LE frames u16][LE tick µs u32, 0
 none][LE age ms u32]`. The coordinator's rate change travels as a contribution
@@ -316,12 +331,25 @@ them, and its desync travels as a contribution of source 255 (batch ID
 seal, which every relay emits after that frame's end. Every relay also tells
 every other when it last heard its players (link kind 4, Silence below). Link packets go to the roster
 address on the relay's existing UDP port and are authenticated by their MAC,
-whatever address they arrive from. Deploy every relay of a federation at
-once: a relay rejects link entries newer than its own code, and one rejected
-packet stalls the whole merged stream.
+whatever address they arrive from. Deploy and roll back every relay at once,
+so all run one version: relays of different versions can end the same startup
+differently. The digit in `VF1L` is the link version, bumped whenever the
+layout or meaning of an existing link kind changes (the FRAME header and its
+entries, a coordinator control batch, DATA, pace, checksum or silence reports),
+since a relay refuses a packet it cannot read: one refused FRAME stalls the
+merged stream, and refused reports leave desyncs and slow players unnoticed.
+Only a new kind whose loss changes no result needs none, as kind 4 did: an
+older relay only leaves that silence untold. The 32-byte link header and the
+MAC domain stay the same in every version, so a relay that authenticates a link
+packet of another version cancels that startup at once. A relay too old to
+know this drops the packet and cancels at its 3-minute loading limit. Relays of
+different link versions therefore never start a match together.
 
 The RAM hot cache retains4,096 entries/2 MiB per room under a64 MiB global
-budget. Eviction from this cache does not evict match history: every complete
+budget. Across rooms, the relay evicts the oldest cached entry by its estimated
+frame due time. After a speed change, that estimate follows the same start clock
+as sealing, including a follower's clock corrections. Eviction from this cache
+does not evict match history: every complete
 canonical frame first appends to the full-match disk journal. The data
 file uses a length prefix per entry and the separate offset index is also on
 disk; no full-match index grows in RAM. Push and Pull share one reader for the
@@ -333,18 +361,53 @@ player can replay from its old cursor even after every short hop ticket expired.
 Any authenticated packet, keepalives included, keeps a source's place. A started
 source silent for 10 minutes departs through the stream (`ABSENT_MS`; a game
 that hears nothing from its relay for that long releases its route, which ends
-a match of two or more players). Before the start, a
+the match). Before the start, a
 source that never sent Ready departs in frame 1 after 60 seconds of silence,
 counted from its last packet even before the room existed, or once the room is 3
-minutes old, and the others start without it; a Ready source waits. A federated
-startup cannot drop a source alone: those limits, or any relay's room reaching 3
-minutes unstarted, ask the coordinator to cancel it, and a relay whose
-coordinator has then been silent for 10 seconds cancels on its own. A relay
+minutes old, and the others start without it; a Ready source waits. A Ready
+whose agreement or signed match settings (including pacing) differ from the
+room's first gets
+`AgreementMismatch`. From a source still loading, it proves the others cannot
+start with it: the relay cancels the startup for every source at once, as that
+source's Leave could, and answers every later Ready, and the ready sources'
+Pull and UPLINK, with the same error. A federated relay also refuses so once another relay's ready players
+report a different agreement. A federated startup cannot drop a source alone:
+those limits, a refused start, or any relay's room reaching 3 minutes unstarted
+ask the coordinator to cancel it, and a relay whose coordinator has then been
+silent for 10 seconds cancels on its own. Players on a relay that proved no
+mismatch see an ordinary cancellation. A relay
 reports only its own players' departures, and a restarted relay never does. Once
 a started two-relay room has heard nothing from the other relay for 10 minutes,
 that relay's players depart as lost after the last frame it sealed there, and
 the room merges on without it: the match continues among the remaining players
-or ends. With three or more relays the survivors could disagree on that frame,
+or ends. A lobby can select adjudication for a match on three or more relays.
+Its VO1F wrap tags then use the domain `VERA20k relay adjudicated federation roster v1\0`;
+the admission and link key stay opaque to the game. The relay accepts such a grant
+only with its durable outcome reporter enabled. Each admitted member uses VF2L,
+where FRAME byte 4 keeps the pre-start cancellation bit 0, adds bit 1 for a
+durably recorded federation failure, and bit 2 for a sender that has started this
+match. A startup-only heartbeat after a process restart cannot renew the old
+match. If any member is missing for the full ten-minute in-match grace, the
+detecting relay freezes its ordered stream and signs a failure receipt. Once
+durably saved, it repeats the failure bit to every other relay. If its disk
+cannot take the receipt, it stops reporting a healthy started match to peers.
+Players get ordinary server unavailability after five seconds of backpressure.
+An unsaved verdict cannot award or void a ladder result. Ordinary terminal room
+and journal retirement still runs. If the outbox cannot take an ended room's
+receipt, the relay retains only those 94 bytes for retry, up to its room count
+in detached receipts. At capacity the relay increments `outcome_handoff_drops`
+and frees the game's resources; the lobby leaves incomplete evidence unrated. Any member that
+hears it also ends the match; this needs no living coordinator. Players and
+watchers receive `Inactive` with expected cursor 1. Released games show a game
+server failure; updated games say the match ended without a winner. A normal
+game signs its own ordinary close only after the ordered terminal frame.
+The lobby settles a marked game from the signed results, as described in the
+[federation outcome protocol](../../docs/lobby-protocol.md). Unmarked grants
+and two-relay matches continue to use VF1L. Enable the lobby's gate after all
+selected relays support the marked grants; disable it and drain marked matches
+before rolling relays back.
+
+In an unmarked match with three or more relays the survivors could disagree on that frame,
 so such a room ends instead once its own players have left and every other
 relay has been silent for 10 minutes. A
 departure's last byte is
@@ -482,3 +545,34 @@ Watchers spend budgets of their own, never the players': each watcher 64 packets
 32 journal pulls and 256 KiB out a second, all watchers together 4,096 packets,
 512 journal pulls and 8 MiB a second. A Pull that reads the journal pays before
 it reads.
+
+## Federation outcome delivery
+
+To enable signed outcome reporting, set `VERA_RELAY_OUTCOME_URL` to the lobby’s
+HTTPS origin followed by `/v1/relay/outcome`. The default is off. The relay
+checks the server certificate and sends the exact 94 signed bytes as
+`application/octet-stream`. It follows no redirects. The URL accepts no
+credentials, query string or fragment. The lobby authenticates the body itself.
+
+Before the relay publishes a marked federation’s terminal failure, its disk
+worker commits the signed receipt to `federation-outcomes.sqlite3` in the
+relay state directory. The database is mode 0600 on Unix. SQLite is bundled
+into the relay, so the host needs no separately installed database library or
+service. Its rollback journal and EXTRA-synchronous commits protect both the
+receipt and its retry deadline across process or machine restarts. Repeated
+handoffs of identical bytes for the same room are safe. Preserve this file
+alongside the relay state when restarting or moving a relay. It contains
+signed receipts and no signing key.
+
+HTTPS runs on a separate worker from disk writes and game traffic. A 204
+retires the receipt. Network failures, 408, 429 and 5xx responses retry with
+backoff from 10 seconds up to one hour, for seven days from the receipt’s
+issue time. A crash during a POST can repeat the delivery. All other HTTP
+responses keep the refused receipt until expiry without retrying it. The
+relay logs aggregate failure notices without receipt bytes or room IDs.
+
+The outbox holds up to 4,096 receipts, with an 8 MiB database limit plus
+SQLite’s transient rollback journal. An unavailable or full store acknowledges
+only the receipts it committed. Other terminal rooms wait for storage and
+cannot publish a failure on the strength of a volatile handoff. A restarted
+relay drains committed receipts when reporting is enabled again.

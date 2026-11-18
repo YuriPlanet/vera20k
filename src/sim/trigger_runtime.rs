@@ -159,17 +159,77 @@ enum DefinitionReference {
     Tag(usize),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct RuntimeAction {
     entry: ActionEntry,
     reference: Option<DefinitionReference>,
     /// Original Read6DD5B0 materializes +90 once, including Vox753250.
     value: Option<i32>,
-    /// Parameter type 7's +90: `VocClass::FindIndex @ 0x007514D0` of the raw
-    /// token (`0x006DD7CE..0x006DD7D5`). The canonical SOUNDMD id stands for
-    /// the resolved index so no Voc ordinal enters simulation; `None` is the
-    /// -1 a missing or unknown name materializes.
-    sound: Option<String>,
+    /// Offline: the SOUNDMD name resolved by Read6DD7CE/FindIndex7514D0.
+    /// Network playback: the authored name or nonnegative literal slot,
+    /// resolved only by the client's audio owner. Also carries action21's
+    /// network EVA reference; gameplay uses the unchanged numeric `value`.
+    sound: Option<crate::rules::sound_ini::SoundReference>,
+}
+
+impl RuntimeAction {
+    fn playback_operand(&self) -> bool {
+        let kind = self.entry.kind;
+        match self.entry.params.first().map_or(0, |value| crt_atoi(value)) {
+            6 => kind == 21,
+            7 => matches!(kind, 19 | 98 | 99),
+            8 => kind == 20,
+            _ => matches!(kind, 19 | 20 | 21 | 98 | 99),
+        }
+    }
+
+    // VERA network adaptation: ObjectClass::Set_Custom_Sound5F6CB0 and
+    // AI5F3E70 keep the same requested identity and wake/sleep admission on
+    // every peer even when one client cannot play it. A negative literal
+    // still means no sound. No RNG, timer or detach is added by this read.
+    //
+    // RESIDUAL: an action-99 name stays a name here, so where this player's
+    // catalog lacks it the object keeps a custom sound (and stays awake for
+    // it) whose every PlayAt7509E0 visit finds no cue and stops the object's
+    // live handle: its previous loop is cut. Native resolves the name in each
+    // player's own catalog to -1, and Set_Custom_Sound5F6CB0(-1) detaches the
+    // handle through 405FD0, so the loop plays out. Network games only; a
+    // misspelt, mod-only or locally missing name on a building or tree that
+    // already plays a custom sound.
+    fn retain_network_playback(&mut self) {
+        if !self.playback_operand() || self.entry.kind == 20 {
+            return;
+        }
+        use crate::rules::sound_ini::SoundReference;
+        self.sound = match self.entry.params.first().map_or(0, |value| crt_atoi(value)) {
+            6 | 7 => self
+                .entry
+                .params
+                .get(1)
+                .filter(|name| !name.is_empty())
+                .map(|name| SoundReference::Name(name.to_ascii_uppercase())),
+            _ => self
+                .value
+                .filter(|index| *index >= 0)
+                .map(SoundReference::Index),
+        };
+    }
+}
+
+impl Hash for RuntimeAction {
+    fn hash<H: Hasher>(&self, hasher: &mut H) {
+        self.entry.hash(hasher);
+        self.reference.hash(hasher);
+        // VERA network adaptation: Read6DD7BC/6DD7CE/6DD7E0 resolves a
+        // playback operand against a process catalog. Its raw name/index is
+        // already in entry; local resolution is not shared simulation state.
+        // An unusual action such as SetTimer27 still consumes +90 as gameplay
+        // and must keep its actual resolved value in the hash.
+        if !self.playback_operand() {
+            self.value.hash(hasher);
+            self.sound.hash(hasher);
+        }
+    }
 }
 
 /// Original shared TEvent+54, constructed null. Map parsing owns only the
@@ -396,7 +456,7 @@ impl RuntimeDefinitions {
         } else {
             None
         }
-        .map(|sound| sound.id.clone());
+        .map(|sound| crate::rules::sound_ini::SoundReference::Name(sound.id.clone()));
         RuntimeAction {
             entry,
             reference,
@@ -1036,9 +1096,33 @@ impl TriggerRuntime {
         // and the deferred queue affect later actions and are all retained.
         // Observers never participate in this fold. Index lists fold as
         // 64-bit words on every target ([`hash_indices`]).
+        self.hash_globals(hasher);
+        self.hash_locals(hasher);
+        self.hash_definitions(hasher);
+        self.hash_live(hasher);
+    }
+
+    // A start report lists the four parts of `hash_state` apart
+    // (`Simulation::state_hash_owners`); together they fold the same bytes.
+
+    /// The set Scenario globals.
+    pub(crate) fn hash_globals(&self, hasher: &mut impl Hasher) {
         self.globals_set.hash(hasher);
+    }
+
+    /// The set locals.
+    pub(crate) fn hash_locals(&self, hasher: &mut impl Hasher) {
         self.locals_set.hash(hasher);
+    }
+
+    /// The map's TeamType names, and its trigger and Tag types with their
+    /// events and actions.
+    pub(crate) fn hash_definitions(&self, hasher: &mut impl Hasher) {
         self.definitions.hash(hasher);
+    }
+
+    /// The live Tags and triggers, their orders, attachments and cursors.
+    pub(crate) fn hash_live(&self, hasher: &mut impl Hasher) {
         self.tags.hash(hasher);
         self.triggers.hash(hasher);
         hash_indices(&self.tag_order, hasher);
@@ -1532,8 +1616,16 @@ impl Simulation {
                 None => {}
             }
         }
+        let mut definitions = RuntimeDefinitions::read_map(map, teams, eva, sounds, themes);
+        if self.session.game_mode().is_network() {
+            for trigger in &mut definitions.trigger_types {
+                for action in &mut trigger.actions {
+                    action.retain_network_playback();
+                }
+            }
+        }
         self.trigger_runtime = TriggerRuntime {
-            definitions: RuntimeDefinitions::read_map(map, teams, eva, sounds, themes),
+            definitions,
             definitions_prepared: true,
             locals_set,
             ..TriggerRuntime::default()
@@ -3989,7 +4081,7 @@ impl Simulation {
         }
         let reference = action.reference;
         let value = action.value;
-        let sound = action.sound.as_deref();
+        let sound = action.sound.as_ref();
         let action = &action.entry;
         match action.kind {
             6 => {
@@ -4132,15 +4224,16 @@ impl Simulation {
             20 => {
                 // Steam gamemd: Execute6DE8E4..6DE903 passes +90
                 // to Theme720B20 and returns AL1, even when audio is gated.
-                // Fresh type8 reads already retained From_Name's index. Keep
-                // late Name delivery only for older saved None operands;
-                // numeric sentinels pass unchanged. No RNG/timer/detach here.
-                let request =
-                    if value.is_none() && action.params.first().map_or(0, |v| crt_atoi(v)) == 8 {
-                        ThemeRequest::Name(action.params.get(1).cloned().unwrap_or_default())
-                    } else {
-                        ThemeRequest::Index(value.unwrap_or(-1))
-                    };
+                // Offline type8 reads retain From_Name's index. Network
+                // playback keeps the authored name independent of the local
+                // playlist. Numeric sentinels pass unchanged. No RNG/timer/detach.
+                let request = if (self.session.game_mode().is_network() || value.is_none())
+                    && action.params.first().map_or(0, |v| crt_atoi(v)) == 8
+                {
+                    ThemeRequest::Name(action.params.get(1).cloned().unwrap_or_default())
+                } else {
+                    ThemeRequest::Index(value.unwrap_or(-1))
+                };
                 effects.push(TriggerEffect::MusicTheme { request });
             }
             0 => {
@@ -4881,9 +4974,7 @@ impl Simulation {
                 // of +90, centre pan2000, volume1.0, no handle. -1 returns at
                 //75093B.
                 if let Some(sound_id) = sound {
-                    self.sound_events.emit(SimSoundEvent::VocCentered {
-                        sound_id: sound_id.to_owned(),
-                    });
+                    self.emit_trigger_sound(sound_id, super::world::TriggerSoundTarget::Centered);
                     frame_effects.flush_sound(self, rules);
                 }
             }
@@ -5018,7 +5109,19 @@ impl Simulation {
                 let Some(index) = value else {
                     return false;
                 };
-                self.sound_events.emit(SimSoundEvent::TriggerEva { index });
+                if self.session.game_mode().is_network()
+                    && action.params.first().map_or(0, |v| crt_atoi(v)) != 7
+                    && action.params.first().map_or(0, |v| crt_atoi(v)) != 8
+                {
+                    if let Some(reference) = sound {
+                        self.sound_events.emit(SimSoundEvent::TriggerAudio {
+                            reference: reference.clone(),
+                            target: super::world::TriggerSoundTarget::Eva,
+                        });
+                    }
+                } else {
+                    self.sound_events.emit(SimSoundEvent::TriggerEva { index });
+                }
                 frame_effects.flush_sound(self, rules);
             }
             59 => {
@@ -6104,7 +6207,6 @@ impl TriggerRuntime {
         self.locals_set.contains(&index)
     }
 }
-
 
 #[path = "trigger_runtime_ares.rs"]
 mod ares;

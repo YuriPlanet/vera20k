@@ -25,7 +25,7 @@ pub(crate) use measure::{
 
 use crate::{
     ClientSession, OrderError, OrderEvent, OrderPace, OrderStatus, RelayError, RelayServer,
-    ServerEvent,
+    ReplayWindow, ServerEvent,
 };
 
 /// A direction's link state (spec §5.2), first match wins: offline, then
@@ -55,7 +55,7 @@ impl LinkState {
     }
 }
 
-/// The receive window of one hop (spec §4.1): the highest authenticated hop
+/// A snapshot of one hop's replay window (spec §4.1): the highest authenticated hop
 /// sequence received, and a bitmap where bit `i` set means `high - i` was
 /// received. `high == 0` (with `bits == 0`) means nothing counted yet.
 ///
@@ -527,7 +527,7 @@ impl ClientSession {
     /// counters; see [`ClientLinkStats`].
     pub fn link_stats(&self) -> ClientLinkStats {
         let mut stats = ClientLinkStats {
-            down: self.hop.down,
+            down: self.hop.down.feedback_window(),
             datagrams_received: self.hop.received,
             ..ClientLinkStats::default()
         };
@@ -630,7 +630,7 @@ impl RelayServer {
             severe: link.loss.severe,
             packets_by_kind: link.packets_by_kind,
             bytes_by_kind: link.bytes_by_kind,
-            up: link.up,
+            up: link.up.feedback_window(),
             jittery: link.jittery,
             ..ReaderLinkStats::default()
         };
@@ -672,7 +672,7 @@ struct ClientSend {
 /// 1-3, §4.4 steps 1-2). A renewed hop starts with a fresh one (§4.7).
 #[derive(Debug)]
 pub(crate) struct HopLink {
-    pub(crate) down: RecvWindow,
+    down: ReplayWindow,
     log: Vec<ClientSend>,
     cursor: LossCursor,
     // The `up_high` of the last reply that gave an RTT sample.
@@ -691,7 +691,7 @@ pub(crate) struct HopLink {
 impl Default for HopLink {
     fn default() -> Self {
         Self {
-            down: RecvWindow::default(),
+            down: ReplayWindow::default(),
             log: vec![ClientSend::default(); SENDLOG_CLIENT],
             cursor: LossCursor::default(),
             rtt_high: 0,
@@ -705,6 +705,15 @@ impl Default for HopLink {
 }
 
 impl HopLink {
+    /// READY, CONTROL and DATA use this hop's relay sequence. CHALLENGE
+    /// and LEAVE_ACK echo a client sequence and never reach here (§4.1).
+    pub(super) fn heard(&mut self, sequence: u64, now_ms: u64) -> Result<(), RelayError> {
+        self.down.accept(sequence)?;
+        self.last_heard_ms = Some(now_ms);
+        self.received += 1;
+        Ok(())
+    }
+
     pub(crate) fn record_send(&mut self, sequence: u64, now_ms: u64) {
         self.log[(sequence % SENDLOG_CLIENT as u64) as usize] = ClientSend {
             sequence,
@@ -784,7 +793,7 @@ pub(crate) struct SendRecord {
 /// over the path measurement with `carry_path` (§4.7).
 #[derive(Debug)]
 pub(crate) struct ReaderLink {
-    pub(crate) up: RecvWindow,
+    up: ReplayWindow,
     up_high_at_ms: u64,
     log: Vec<SendRecord>,
     cursor: LossCursor,
@@ -806,7 +815,7 @@ impl ReaderLink {
         let mut clock = StateClock::default();
         clock.enter(LinkState::Good, false, now_ms);
         Self {
-            up: RecvWindow::default(),
+            up: ReplayWindow::default(),
             up_high_at_ms: now_ms,
             log: vec![SendRecord::default(); SENDLOG_READER],
             cursor: LossCursor::default(),
@@ -837,12 +846,17 @@ impl ReaderLink {
         self.rttvar_c = previous.rttvar_c;
     }
 
-    /// An authenticated datagram of this hop (spec §4.1, §5.1).
-    pub(crate) fn heard(&mut self, sequence: u64, now_ms: u64) {
-        if self.up.record(sequence) {
+    pub(super) fn highest_received(&self) -> u64 {
+        self.up.maximum
+    }
+
+    /// Accepts an authenticated datagram once and timestamps its receipt (§4.1, §5.1).
+    pub(super) fn heard(&mut self, sequence: u64, now_ms: u64) -> Result<(), RelayError> {
+        if self.up.accept(sequence)? {
             self.up_high_at_ms = now_ms;
         }
         self.last_heard_ms = self.last_heard_ms.max(now_ms);
+        Ok(())
     }
 
     /// Judges nothing sent before hop sequence `next` (spec §5.5).
@@ -853,7 +867,7 @@ impl ReaderLink {
     /// The ACK and STATUS tail, read when the reply is encoded (spec §4.1).
     pub(crate) fn feedback(&self, now_ms: u64) -> HopFeedback {
         HopFeedback {
-            up: self.up,
+            up: self.up.feedback_window(),
             echo_delay_ms: now_ms
                 .saturating_sub(self.up_high_at_ms)
                 .min(u64::from(u16::MAX)) as u16,
@@ -984,14 +998,6 @@ impl ReaderLink {
 }
 
 impl ClientSession {
-    /// Counts an authenticated datagram of this hop at `clock_ms` (spec
-    /// §4.1, §5.1). CHALLENGE and LEAVE_ACK never reach here.
-    pub(crate) fn hop_heard(&mut self, sequence: u64) {
-        self.hop.down.record(sequence);
-        self.hop.last_heard_ms = Some(self.clock_ms);
-        self.hop.received += 1;
-    }
-
     /// Logs a datagram this hop sends (spec §4.2); HELLO is not counted by
     /// the relay's window and is never logged.
     pub(crate) fn hop_sent(&mut self, sequence: u64) {

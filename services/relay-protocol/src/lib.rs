@@ -27,16 +27,18 @@ pub mod netsim;
 mod sequenced;
 pub mod varint;
 pub use link::{ClientLinkStats, HopFeedback, LinkState, OrderingGap, ReaderLinkStats, RecvWindow};
-pub use sequenced::federation::{MAX_FEDERATED_RELAYS, sign_federation_roster};
+pub use sequenced::federation::{
+    FEDERATION_LOST, FederationOutcome, MAX_FEDERATED_RELAYS, sign_federation_roster,
+};
 pub use sequenced::pack::{decode_pack_v2, encode_pack_v2};
 pub use sequenced::watch::{
     MAX_ROOM_WATCHERS, MAX_WATCH_DELAY_SECONDS, WATCH_TICKET_VERSION, WatchTicket,
 };
 pub use sequenced::{
-    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY, ORDERING_CERTIFICATE_LEN,
-    ORDERING_CERTIFICATE_V2_LEN, ORDERING_PULL_LIMIT, OrderEntry, OrderError, OrderEvent,
-    OrderPace, OrderStatus, OrderingCertificate, is_ordering_certificate_len, paced_rates,
-    turn_frames, turn_ms,
+    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY,
+    ORDERING_CERTIFICATE_LEN, ORDERING_CERTIFICATE_V2_LEN, ORDERING_PULL_LIMIT, OrderEntry,
+    OrderError, OrderEvent, OrderPace, OrderStatus, OrderingCertificate,
+    is_ordering_certificate_len, paced_rates, turn_frames, turn_ms,
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -232,7 +234,8 @@ struct ReplayWindow {
 }
 
 impl ReplayWindow {
-    fn accept(&mut self, sequence: u64) -> Result<(), RelayError> {
+    /// Returns whether the accepted sequence advanced the high watermark.
+    fn accept(&mut self, sequence: u64) -> Result<bool, RelayError> {
         if sequence == 0 {
             return Err(RelayError::Replay);
         }
@@ -244,14 +247,22 @@ impl ReplayWindow {
                 (self.seen << advance) | 1
             };
             self.maximum = sequence;
-            return Ok(());
+            return Ok(true);
         }
         let behind = self.maximum - sequence;
         if behind >= 128 || self.seen & (1u128 << behind) != 0 {
             return Err(RelayError::Replay);
         }
         self.seen |= 1u128 << behind;
-        Ok(())
+        Ok(false)
+    }
+
+    /// Adaptive feedback reports the newest 64 receipts (spec §4.1).
+    fn feedback_window(&self) -> RecvWindow {
+        RecvWindow {
+            high: self.maximum,
+            bits: self.seen as u64,
+        }
     }
 }
 
@@ -260,7 +271,6 @@ pub struct ClientSession {
     ticket: Ticket,
     key: SecretKey,
     sent: u64,
-    received: ReplayWindow,
     probe: Option<u64>,
     ready: bool,
     // Assigned by the READY answering this hop's CONFIRM (spec §6.2).
@@ -323,7 +333,6 @@ impl ClientSession {
             ticket_bytes: ticket.try_into().map_err(|_| RelayError::Malformed)?,
             key: SecretKey::new(packet_key),
             sent: 0,
-            received: ReplayWindow::default(),
             probe: None,
             ready: false,
             session: None,
@@ -512,8 +521,7 @@ impl ClientSession {
                 Ok(ServerEvent::Challenge(payload))
             }
             READY if payload.is_empty() => {
-                self.received.accept(sequence)?;
-                self.hop_heard(sequence);
+                self.hop.heard(sequence, self.clock_ms)?;
                 if claim {
                     self.session = Some(header.session);
                 }
@@ -521,8 +529,7 @@ impl ClientSession {
                 Ok(ServerEvent::Ready)
             }
             CONTROL if self.ready => {
-                self.received.accept(sequence)?;
-                self.hop_heard(sequence);
+                self.hop.heard(sequence, self.clock_ms)?;
                 if payload.first() == Some(&sequenced::PACK_EVENT) {
                     return Ok(ServerEvent::OrderingPack(
                         self.receive_ordering_pack(payload)?,
@@ -538,8 +545,7 @@ impl ClientSession {
             }
             // `[source u8][data]`, plaintext (spec §3.2, §6.1).
             DATA if self.ready && payload.len() > 1 && payload[0] < MAX_PEERS => {
-                self.received.accept(sequence)?;
-                self.hop_heard(sequence);
+                self.hop.heard(sequence, self.clock_ms)?;
                 Ok(ServerEvent::Payload {
                     source: payload[0],
                     bytes: &payload[1..],
@@ -756,7 +762,6 @@ struct Peer {
     // This hop's key in `RelayServer::sessions` (spec §6.2).
     session: u32,
     endpoint: SocketAddrV4,
-    received: ReplayWindow,
     sent: u64,
     last_seen: u64,
     // After its LEAVE the hop accepts only LEAVE, until this second
@@ -851,6 +856,12 @@ pub struct OrderingCounts {
     pub pull_replies: u64,
     /// Matches this relay ended with a DESYNC record.
     pub desyncs: u64,
+    /// Ended games whose receipt could not be saved or retained under the
+    /// bounded handoff budget. The lobby cannot rate one lacking evidence.
+    pub outcome_handoff_drops: u64,
+    /// Startups this relay cancelled because a Ready, on it or on another
+    /// relay of the match, proved a different initial world.
+    pub start_mismatches: u64,
     /// Reader downlink (spec §10.2). Pushed datagrams and their bytes by
     /// send-log kind: 0 status, 1 new pack, 2 repeat, 3 retransmission,
     /// 4 tail probe.
@@ -918,6 +929,17 @@ pub struct RelayServer {
     ended_orderings: HashMap<[u8; 16], u64>,
     // Since `take_ordering_counts` last read them.
     ordering_counts: OrderingCounts,
+    // The ordering bytes the last pass over every room counted, plus what
+    // was reserved or sealed since (`reserve_ordering`), so a reservation
+    // needs no count of every room. Freed bytes leave it at the next pass:
+    // it overcounts, and only an exact count refuses or evicts. Growth no
+    // reservation covers, such as a federated frame, joins it at that pass.
+    ordering_estimate: usize,
+    // An operational reporter owns durable delivery of marked VO1F outcomes.
+    federation_outcomes_enabled: bool,
+    // A retired room needs only its unacknowledged receipt until the writer
+    // can save it. At most one cohort of max_rooms, outside gameplay quotas.
+    retired_outcomes: HashMap<[u8; 16], FederationOutcome>,
     // Every live or leaving hop by its session (spec §6.2).
     sessions: HashMap<u32, SessionSlot>,
     // Released sessions until they may be assigned again (spec §6.2).
@@ -954,6 +976,9 @@ impl RelayServer {
             journal_directory: None,
             ended_orderings: HashMap::new(),
             ordering_counts: OrderingCounts::default(),
+            ordering_estimate: 0,
+            federation_outcomes_enabled: false,
+            retired_outcomes: HashMap::new(),
             sessions: HashMap::new(),
             retired_sessions: HashMap::new(),
             mac_counts: MacFailureCounts::default(),
@@ -1011,7 +1036,7 @@ impl RelayServer {
         // sender's own limits, so forged, junk or replayed datagrams cannot
         // spend capacity other players need. Rejecting one costs at most
         // three HMACs. No source-address map grows under spoofed UDP traffic.
-        if bytes.starts_with(sequenced::federation::LINK_MAGIC) {
+        if sequenced::federation::is_link_packet(bytes) {
             return self.federation_receive(bytes, now, now_millis);
         }
         let header = envelope::peek(envelope::Direction::Up, bytes)?;
@@ -1077,11 +1102,10 @@ impl RelayServer {
         else {
             return Err(RelayError::Unregistered);
         };
-        room.peers[index].received.accept(message.sequence)?;
+        room.peers[index].link.heard(message.sequence, now_millis)?;
         // NAT rebinding: an authenticated, fresh datagram moves the hop
         // (spec §6.2 "换地址", §6.4 item 5).
         room.peers[index].endpoint = source;
-        room.peers[index].link.heard(message.sequence, now_millis);
         // Any datagram of the hop ends the reader's offline state (§5.1);
         // push still waits for its subscription.
         room.peers[index].evaluate_reader(now_millis);
@@ -1114,7 +1138,7 @@ impl RelayServer {
         } else {
             room.peers
                 .iter()
-                .filter(|peer| data_recipient(peer, &message, now))
+                .filter(|peer| data_recipient(peer, message.ticket.source, message.target, now))
                 .count()
         };
         let packet_bytes = envelope::OVERHEAD
@@ -1160,7 +1184,7 @@ impl RelayServer {
         }
         let mut output = Vec::with_capacity(recipients);
         for peer in &mut room.peers {
-            if data_recipient(peer, &message, now) {
+            if data_recipient(peer, message.ticket.source, message.target, now) {
                 output.push(server_packet(
                     peer,
                     DATA,
@@ -1244,6 +1268,8 @@ impl RelayServer {
         self.admissions
             .retain(|_, admission| admission.retain_until > now);
         self.ended_orderings.retain(|_, expires| *expires > now);
+        self.retired_outcomes
+            .retain(|_, receipt| now <= receipt.expires_at());
         self.unadmitted_handshakes.clear();
         self.ingress.allocate(
             now,
@@ -1379,6 +1405,7 @@ impl RelayServer {
                 &self.key,
                 roster,
                 &message.ticket,
+                self.federation_outcomes_enabled,
             )?),
         };
         let cost = envelope::OVERHEAD as u64;
@@ -1435,11 +1462,10 @@ impl RelayServer {
                 peer.link.carry_path(&previous.link);
                 replaced = Some(previous);
             }
-            if message.sequence <= peer.received.maximum && peer.endpoint != source {
+            if message.sequence <= peer.link.highest_received() && peer.endpoint != source {
                 return Err(RelayError::Replay);
             }
-            peer.received.accept(message.sequence)?;
-            peer.link.heard(message.sequence, now_ms);
+            peer.link.heard(message.sequence, now_ms)?;
             peer.evaluate_reader(now_ms);
             if peer.endpoint != source {
                 // A confirmed new path must opt in before receiving history.
@@ -1457,8 +1483,7 @@ impl RelayServer {
             )?
         } else {
             let mut peer = new_peer(message, session, source, now, now_ms);
-            peer.received.accept(message.sequence)?;
-            peer.link.heard(message.sequence, now_ms);
+            peer.link.heard(message.sequence, now_ms)?;
             let reply = server_packet(
                 &mut peer,
                 READY,
@@ -1485,13 +1510,17 @@ impl RelayServer {
         }
         // The replaced hop keeps its session for LEAVE: a client that quits
         // before the new READY arrives leaves from it (spec §6.2 "续期").
+        // The client moves to the new hop on that READY, so the session is
+        // released a ticket lifetime after the old ticket expires, 300 to 600
+        // seconds from now (`prune` already dropped an expired peer): time
+        // for the client's minute of Leave retries.
         if let Some(old) = replaced
             && let Some(slot) = self.sessions.get_mut(&old.session)
         {
             slot.hop = SessionHop::Leaving(Box::new(LeavingHop {
                 ticket: old.ticket,
                 key: old.key.clone(),
-                until: now.saturating_add(LEAVE_GRACE),
+                until: old.ticket.expires.saturating_add(MAX_TICKET_LIFETIME),
             }));
         }
         let mut admission = prior.unwrap_or(Admission {
@@ -1587,7 +1616,6 @@ fn new_peer(
         key: message.key.clone(),
         session,
         endpoint,
-        received: ReplayWindow::default(),
         sent: 0,
         last_seen: now,
         left_until: None,
@@ -1596,12 +1624,12 @@ fn new_peer(
     }
 }
 
-/// Whether `peer` gets `message`'s DATA: another recently heard source it
-/// addresses.
-fn data_recipient(peer: &Peer, message: &Incoming<'_>, now: u64) -> bool {
-    peer.ticket.source != message.ticket.source
+/// A player DATA packet goes to other addressed peers heard from in the last
+/// 30 seconds, whether it arrived on a player hop or a federation link.
+fn data_recipient(peer: &Peer, source: u8, target: u8, now: u64) -> bool {
+    peer.ticket.source != source
         && now.saturating_sub(peer.last_seen) <= 30
-        && (message.target == BROADCAST || message.target == peer.ticket.source)
+        && (target == BROADCAST || target == peer.ticket.source)
 }
 
 /// One datagram on `peer`'s hop, logged at `now_ms` as `send_kind`
@@ -1875,8 +1903,9 @@ impl ClientSession {
 impl RelayServer {
     /// Test support only: every hop in the session table (§6.2), ordered by
     /// session. A hop is in it from its accepted CONFIRM until
-    /// `LEAVE_GRACE` seconds after its LEAVE, its ticket's expiry or the
-    /// accepted CONFIRM of its renewal (§6.2).
+    /// `LEAVE_GRACE` seconds after its LEAVE or its ticket's expiry, or, once
+    /// a renewal's CONFIRM replaced it, until `MAX_TICKET_LIFETIME` seconds
+    /// after its ticket's expiry (§6.2).
     pub fn session_table(&self) -> Vec<SessionEntry> {
         let mut table: Vec<_> = self
             .sessions
@@ -2028,6 +2057,44 @@ mod tests {
     }
 
     #[test]
+    fn downlink_feedback_reports_64_sequences_but_rejects_replays_across_128() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 1);
+        let mut client = client(&key, 1, 0);
+        connect(
+            &mut server,
+            &mut client,
+            SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30001),
+        );
+        let session = client.session().unwrap();
+        let packet_key = client.key.clone();
+        let packet = |sequence| encode_server(&packet_key, DATA, session, sequence, &[1, 42]);
+
+        client.receive(&packet(200)).unwrap();
+        assert_eq!(client.link_stats().down, RecvWindow { high: 200, bits: 1 });
+        // Fresh deliveries 1 and 63 behind appear in feedback. At ages 64
+        // and 127 they still reach the game exactly once, outside feedback.
+        for sequence in [199, 137, 136, 73] {
+            let bytes = packet(sequence);
+            assert!(matches!(
+                client.receive(&bytes),
+                Ok(ServerEvent::Payload { .. })
+            ));
+            assert_eq!(client.receive(&bytes).unwrap_err(), RelayError::Replay);
+        }
+        assert_eq!(client.receive(&packet(72)).unwrap_err(), RelayError::Replay);
+        let stats = client.link_stats();
+        assert_eq!(
+            stats.down,
+            RecvWindow {
+                high: 200,
+                bits: (1 << 63) | 3
+            }
+        );
+        assert_eq!(stats.datagrams_received, 6); // READY and five DATA
+    }
+
+    #[test]
     fn authenticated_round_trip_preserves_payload_and_rejects_replay_forgery_and_other_room() {
         let key = SecretKey::new([73; 32]);
         let mut server = RelayServer::new(key.clone(), 2);
@@ -2080,6 +2147,26 @@ mod tests {
             server.process(a, &bytes, 2000),
             Err(RelayError::Unregistered)
         ));
+    }
+
+    #[test]
+    fn a_data_recipient_is_still_reachable_after_thirty_seconds() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 1);
+        let mut sender = client(&key, 1, 0);
+        let mut recipient = client(&key, 1, 1);
+        let from = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30001);
+        let to = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30002);
+        connect(&mut server, &mut sender, from);
+        connect(&mut server, &mut recipient, to);
+
+        let mut bytes = Vec::new();
+        sender.data(1, b"ping", &mut bytes).unwrap();
+        let at_limit = server.process(from, &bytes, 1030).unwrap();
+        assert_eq!(at_limit.len(), 1);
+        assert_eq!(at_limit[0].endpoint, to);
+        sender.data(1, b"ping", &mut bytes).unwrap();
+        assert!(server.process(from, &bytes, 1031).unwrap().is_empty());
     }
 
     #[test]
@@ -2185,7 +2272,8 @@ mod tests {
             .unwrap();
         connect(&mut server, &mut renewed, endpoint);
         // The renewal takes the hop over; the old session takes only LEAVE
-        // until its grace ends, then retires (spec §6.2 "续期", "释放").
+        // until a ticket lifetime after its ticket expired (1200), then
+        // retires (spec §6.2 "续期", "释放").
         let table = server.session_table();
         assert_eq!(table.len(), 2);
         let old = table
@@ -2198,7 +2286,14 @@ mod tests {
             server.process(endpoint, &bytes, 1000).err(),
             Some(RelayError::Unregistered)
         );
-        let released = 1000 + LEAVE_GRACE;
+        let released = 1200 + MAX_TICKET_LIFETIME;
+        server.process(endpoint, &bytes, released - 1).ok();
+        assert!(
+            server
+                .session_table()
+                .iter()
+                .any(|entry| entry.session == 0x0102_0304 && entry.leaving)
+        );
         server.process(endpoint, &bytes, released).ok();
         assert_eq!(
             server.session_retired_until(0x0102_0304),

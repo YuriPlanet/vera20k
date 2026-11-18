@@ -18,7 +18,8 @@ const AI_COLOR_OFFSET: usize = 0xb0;
 const AI_DIFFICULTY_OFFSET: usize = 0xd0;
 const AI_START_OFFSET: usize = 0xf0;
 const AI_TEAM_OFFSET: usize = 0x110;
-const ROWS: usize = 8;
+/// BC6's raw slots: its readiness bytes `0x89E000[8]` and each `0x32` array.
+pub const ROWS: usize = 8;
 
 /// A header-only BC6 record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

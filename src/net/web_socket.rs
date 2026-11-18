@@ -13,7 +13,7 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(catch, js_namespace = globalThis, js_name = veraSocketOpen)]
-    fn open(origin: &str, channel: &str, max_datagram: usize) -> Result<u32, JsValue>;
+    fn open(origin: &str, channel: &str, relay: &str, max_datagram: usize) -> Result<u32, JsValue>;
     #[wasm_bindgen(js_namespace = globalThis, js_name = veraSocketSend)]
     fn send(id: u32, bytes: &[u8]) -> u32;
     #[wasm_bindgen(js_namespace = globalThis, js_name = veraSocketReceive)]
@@ -79,13 +79,18 @@ impl UdpSocket {
                 "a browser LAN socket cannot carry a relay session",
             ));
         }
-        let next = open(gateway, self.channel, vera20k_relay_protocol::MAX_DATAGRAM)
-            .map_err(|_| io::Error::other("browser proxy configuration is unavailable"))?;
+        // The gateway forwards to the grant's relay when its relay list holds it.
+        let next = open(
+            gateway,
+            self.channel,
+            &endpoint.to_string(),
+            vera20k_relay_protocol::MAX_DATAGRAM,
+        )
+        .map_err(|_| io::Error::other("browser proxy configuration is unavailable"))?;
         if let Some(previous) = self.id.replace(next) {
             close(previous);
         }
-        // This is the grant's logical source, not the last send destination.
-        // The gateway has one fixed UDP upstream and does not accept targets.
+        // Received datagrams come from the grant's relay, not the last send destination.
         self.relay = Some(endpoint);
         Ok(())
     }

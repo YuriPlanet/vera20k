@@ -96,7 +96,9 @@ use super::combat_weapon::{
 };
 use super::threat_mask::{self, InfantryScanner};
 use super::threat_range::{ScanRange, scan_range};
-use crate::map::cell_index::{NativeCellIdentity, square_ring_cells};
+use crate::map::cell_index::{
+    MAX_CELL_SIDE, NativeCellIdentity, square_ring_cells, square_rings_covering_rect,
+};
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::locomotor_type::SpeedType;
@@ -1574,7 +1576,16 @@ pub(crate) fn greatest_threat(
     // `[ESP+0x30]`/`[ESP+0x34]` (`0x006F93A1..0x006F93B3`): the best wall
     // cell's score starts at 0, so a wall must score above it.
     let mut wall: Option<((i16, i16), i32)> = None;
-    for ring in 0..radius {
+    // Map568300 rejects every cell past MapRect. Keep the authored radius
+    // for the native early returns below and visit all in-bounds rings in order.
+    let rings = radius.min(
+        fire_world
+            .and_then(|world| world.map_rect())
+            .map_or(i32::from(MAX_CELL_SIDE), |rect| {
+                square_rings_covering_rect((cx, cy), rect)
+            }),
+    );
+    for ring in 0..rings {
         for (x, y) in square_ring_cells((cx, cy), ring) {
             // Native ring coordinates cross the packed CellStruct seam before
             // Map568300 tests Size's diamond. Loaded-world callers own Size;
@@ -3020,6 +3031,11 @@ fn threat_avoidance(ctx: &ScanContext<'_>, candidate: &GameEntity, score: i32) -
             rows.contains(&y) && if x < cx { x >= left } else { x < columns.end }
         }
     };
+    // Beyond MapRect none of the side tests above admits a cell.
+    let rings = rings.min(square_rings_covering_rect(
+        (cx, cy),
+        [left, top, width, height],
+    ));
     let halvings = (1..rings)
         .flat_map(|ring| square_ring_cells((cx, cy), ring).map(move |cell| (cell, ring)))
         .filter(|&(cell, ring)| inside(cell, ring) && allied_building(cell.0, cell.1))
@@ -3166,6 +3182,42 @@ mod tests {
 
     use crate::sim::combat::threat_posed::live_threat_posed;
     use crate::sim::intern::test_interner;
+
+    /// A map-authored gun and guard radius reach a tank beyond ring 256.
+    #[test]
+    fn a_guarding_tank_acquires_an_enemy_290_cells_away() {
+        let map = IniFile::from_str(
+            "[Map]\nTheater=TEMPERATE\nSize=0,0,160,160\nLocalSize=0,0,160,160\n\
+             [HTNK]\nGuardRange=300\n[120mm]\nRange=300\n",
+        );
+        let Some(retail) =
+            crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&map)
+        else {
+            return;
+        };
+        let rules = &retail.rules;
+        let mut sim = crate::sim::arena_fixture::rival_arena_with_size(rules, 1, 320);
+        sim.install_playfield_from_map_header(&crate::map::map_file::parse_header(&map).unwrap());
+        sim.intern_rule_type_ids(rules);
+        sim.resolve_type_handles(rules);
+        let scanner = sim
+            .spawn_object("HTNK", "Russians", 10, 154, 64, rules)
+            .unwrap();
+        let target = sim
+            .spawn_object("MTNK", "Americans", 300, 154, 64, rules)
+            .unwrap();
+        let pick = sim.greatest_threat_represented(
+            rules,
+            None,
+            scanner,
+            super::super::ScanMission::Guard,
+            None,
+        );
+        assert_eq!(
+            pick.and_then(super::super::TargetKind::object_id),
+            Some(target)
+        );
+    }
 
     /// A Hunt's flat walk loads and scores only the objects its id and owner
     /// gates pass ([`flat_walk_admits`]): 300 of the hunter's own conscripts

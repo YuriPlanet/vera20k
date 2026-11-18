@@ -1,8 +1,8 @@
-//! Link measurement shared by both ends of a hop (spec §4, §5): the receive
-//! window, sender-side loss judgement, the client's RTT estimator and the
+//! Link measurement shared by both ends of a hop (spec §4, §5): sender-side
+//! loss judgement, the client's RTT estimator and the
 //! direction state clock. Every time is the caller's monotonic `now_ms`.
 
-use super::{LinkState, RecvWindow};
+use super::LinkState;
 
 /// Packets past the newest feedback left for the next one (spec §4.3).
 pub(crate) const REORDER_THRESHOLD: u64 = 3;
@@ -29,28 +29,6 @@ const JITTER_MIN_SAMPLES: u64 = 16;
 const JITTERY_FLOOR_US: u64 = 10_000;
 /// srtt values above this share the last percentile bucket.
 const SRTT_BUCKETS: usize = 2001;
-
-impl RecvWindow {
-    /// Counts authenticated hop sequence `sequence` (spec §4.1). Returns
-    /// whether it became the new `high`.
-    pub(crate) fn record(&mut self, sequence: u64) -> bool {
-        if sequence > self.high {
-            let advance = sequence - self.high;
-            self.bits = if advance >= 64 {
-                1
-            } else {
-                (self.bits << advance) | 1
-            };
-            self.high = sequence;
-            return true;
-        }
-        let behind = self.high - sequence;
-        if behind < 64 {
-            self.bits |= 1 << behind;
-        }
-        false
-    }
-}
 
 /// The sender's per-hop judgement cursor (spec §4.3 steps 1-3): it starts
 /// again on a new hop (§4.7).
@@ -472,26 +450,6 @@ pub(crate) fn link_state(offline: bool, congested: bool, lossy: bool) -> LinkSta
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_receive_window_counts_ahead_reordered_far_jumps_and_ignores_old() {
-        let mut window = RecvWindow::default();
-        assert!(window.record(1));
-        assert!(window.record(3));
-        assert_eq!((window.high, window.bits), (3, 0b101));
-        // Reordered: the missing 2 fills its bit.
-        assert!(!window.record(2));
-        assert_eq!(window.bits, 0b111);
-        // Exactly 64 ahead restarts the bitmap.
-        window.record(67);
-        assert_eq!((window.high, window.bits), (67, 1));
-        window.record(70);
-        // 63 behind is the oldest bit; 64 behind changes nothing.
-        window.record(7);
-        assert_eq!(window.bits, 0b1001 | 1 << 63);
-        window.record(6);
-        assert_eq!(window.bits, 0b1001 | 1 << 63);
-    }
 
     #[test]
     fn loss_is_judged_three_behind_the_newest_feedback_inside_the_bitmap_only() {

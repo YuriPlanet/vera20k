@@ -27,8 +27,8 @@ use crate::app::AppState;
 use crate::app::loading::campaign_presentation::CampaignLoadingPresentation;
 use crate::app::loading::composition::{
     LoadingCompositionSnapshot, LoadingParticipantId, LoadingStartAssignment,
-    RANDOM_MAP_PREVIEW_FILE, build_loading_composition, build_random_map_loading_composition,
-    loading_authored_size, loading_screen_scale,
+    build_loading_composition, build_random_map_loading_composition, loading_authored_size,
+    loading_screen_scale,
 };
 use crate::app::loading::fresh_scenario::FreshScenarioLoadContextDescriptor;
 use crate::app::loading::init::{self, MapLoadInitial, MapLoadResult};
@@ -255,6 +255,7 @@ impl<'a> LoadingPhaseProgress<'a> {
     fn select(
         native: Option<&'a mut NativeLoadingScreenState>,
         mismatch: bool,
+        show_progress: bool,
         network: Option<crate::app::lan_service::LoadingNetworkService<'a>>,
         rendering: impl FnOnce(
             &'a mut NativeLoadingScreenState,
@@ -269,7 +270,7 @@ impl<'a> LoadingPhaseProgress<'a> {
             };
         };
         let runtime_color_scheme_count = native.runtime_color_scheme_count;
-        let sink = if native.atlas.is_some() {
+        let sink = if show_progress && native.atlas.is_some() {
             SelectedProgressSink::Rendering(rendering(native, network))
         } else {
             SelectedProgressSink::Gated(GatedProgressSink {
@@ -559,7 +560,7 @@ impl LoadingRequest {
             map_additions,
             progress,
         )?;
-        initial.retain_process_state(mapgen_retention, resident);
+        initial.retain_process_state(mapgen_retention, resident, self.startup().session_mode());
         self.prepare_initial(initial)
     }
 
@@ -1108,10 +1109,15 @@ impl LoadingJob {
 fn ordinary_country_loading_index(
     startup: &LoadingStartup,
 ) -> Option<crate::rules::ruleset::CountryIdx> {
-    if matches!(
-        startup,
-        LoadingStartup::Network(_) | LoadingStartup::Campaign(_) | LoadingStartup::Generic { .. }
-    ) || crate::map::rmg::is_seed_selection(startup.selected_map_file())
+    // A replay of a network game has the same cold Rules boundary as a live
+    // match. An ordinary Country prefix would transfer the old world's writes
+    // into that rebuilt registry after the initial map load.
+    if startup.session_mode().is_network()
+        || matches!(
+            startup,
+            LoadingStartup::Campaign(_) | LoadingStartup::Generic { .. }
+        )
+        || crate::map::rmg::is_seed_selection(startup.selected_map_file())
     {
         return None;
     }
@@ -1706,8 +1712,9 @@ fn loading_failure_policy(state: &AppState) -> LoadingFailurePolicy {
     )
 }
 
-fn pump_loading_after_present(
+fn pump_loading(
     state: &mut AppState,
+    show_progress: bool,
     mut observer: Option<
         &mut crate::app::diagnostics::shell_capture::loading_host_loss::LoadingObserver<'_>,
     >,
@@ -1750,10 +1757,10 @@ fn pump_loading_after_present(
         session
     };
     if matches!(session.stage, LoadingStage::ConstructingScenario(_)) {
-        return pump_map_construction(state, session, observer);
+        return pump_map_construction(state, session, show_progress, observer);
     }
     if matches!(session.stage, LoadingStage::PreparingPresentation { .. }) {
-        return pump_presentation(state, session, observer);
+        return pump_presentation(state, session, show_progress, observer);
     }
     if matches!(session.stage, LoadingStage::ReadyToInstall { .. }) {
         return finish_network_load(state, session, observer);
@@ -1883,6 +1890,7 @@ fn pump_loading_after_present(
                 .prepares_scenario_before_first_frame()
         {
             advance_and_present_native_progress(
+                show_progress,
                 &state.renderer.gpu,
                 &state.renderer.shell_surface_presenter,
                 &state.renderer.depth_view,
@@ -1913,12 +1921,14 @@ fn pump_loading_after_present(
             state.process_assets.native_rules_mut_with_tile_cache();
         let native_rules_owner =
             native_rules_owner.expect("native Rules availability checked before split borrow");
-        // The outgoing scene no longer advances. Return its live Type and
-        // ambient Rules writes before Full_Init's optional prefix Process.
+        // The outgoing scene no longer advances. Offline loads return its
+        // live Type and ambient Rules writes before Full_Init's prefix Process.
+        // Network loads already installed a cold registry for the new match.
         // Type reset deletes Types but retains the ambient scalar defaults.
         // Only Rules read the Ares way bind a prefix, which already returned them.
         let should_retire_outgoing = prepared_rules_prefix.is_none();
         if !initial.has_generated_rules()
+            && !startup.session_mode().is_network()
             && should_retire_outgoing
             && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle)
         {
@@ -1941,6 +1951,7 @@ fn pump_loading_after_present(
             let mut progress = LoadingPhaseProgress::select(
                 native.as_mut(),
                 native_theater_cache_mismatch,
+                show_progress,
                 network,
                 |native, network| {
                     RenderingProgressSink::new(
@@ -2018,6 +2029,7 @@ fn pump_loading_after_present(
                 if result.pending_atlases.is_none() {
                     publish_load_complete(
                         state,
+                        show_progress,
                         &mut native,
                         &mut result,
                         observer.as_deref_mut(),
@@ -2105,6 +2117,7 @@ fn pump_loading_after_present(
 fn pump_map_construction(
     state: &mut AppState,
     mut session: LoadingSession,
+    show_progress: bool,
     observer: Option<
         &mut crate::app::diagnostics::shell_capture::loading_host_loss::LoadingObserver<'_>,
     >,
@@ -2144,6 +2157,7 @@ fn pump_map_construction(
         let mut progress = LoadingPhaseProgress::select(
             session.native.as_mut(),
             constructing.load.theater_cache_mismatch(),
+            show_progress,
             network,
             |native, network| {
                 RenderingProgressSink::new(
@@ -2189,9 +2203,13 @@ fn pump_map_construction(
                 retire_rules_prefix(constructing.rules_prefix.take(), &mut state.process_assets);
             }
             if result.pending_atlases.is_none() {
-                if let Err(error) =
-                    publish_load_complete(state, &mut session.native, &mut result, observer)
-                {
+                if let Err(error) = publish_load_complete(
+                    state,
+                    show_progress,
+                    &mut session.native,
+                    &mut result,
+                    observer,
+                ) {
                     session.retire(&mut state.process_assets);
                     return Ok(LoadingPump::Failed(error));
                 }
@@ -2225,6 +2243,7 @@ fn pump_map_construction(
 
 fn publish_load_complete(
     state: &mut AppState,
+    show_progress: bool,
     native: &mut Option<NativeLoadingScreenState>,
     result: &mut MapLoadResult,
     mut observer: Option<
@@ -2256,6 +2275,7 @@ fn publish_load_complete(
             )?;
         }
         advance_and_present_native_progress(
+            show_progress,
             &state.renderer.gpu,
             &state.renderer.shell_surface_presenter,
             &state.renderer.depth_view,
@@ -2279,6 +2299,7 @@ fn publish_load_complete(
 fn pump_presentation(
     state: &mut AppState,
     mut session: LoadingSession,
+    show_progress: bool,
     observer: Option<
         &mut crate::app::diagnostics::shell_capture::loading_host_loss::LoadingObserver<'_>,
     >,
@@ -2304,7 +2325,9 @@ fn pump_presentation(
             result.pending_atlases = None;
         }
     }
-    if let Err(error) = publish_load_complete(state, &mut session.native, result, observer) {
+    if let Err(error) =
+        publish_load_complete(state, show_progress, &mut session.native, result, observer)
+    {
         session.retire(&mut state.process_assets);
         return Ok(LoadingPump::Failed(error));
     }
@@ -2724,7 +2747,8 @@ fn decode_random_map_loading_preview(
 ) -> Option<DecodedPreview> {
     let path = match source {
         Some(crate::map::source::LoadedMapSource::Loose { path, .. }) => path.clone(),
-        _ => crate::map::source::random_map_dir(ra2_dir).join(RANDOM_MAP_PREVIEW_FILE),
+        _ => crate::map::source::random_map_dir(ra2_dir)
+            .join(crate::map::skirmish_scenarios::RANDMAP_PREVIEW),
     };
     let bytes = match std::fs::read(&path) {
         Ok(bytes) => bytes,
@@ -2973,7 +2997,9 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
         // Original Full_Init686D46 opens MISSIONMD for the current filename.
         // Missing keys retain SetDefaults' zero/empty values. Missing metadata
         // suppresses DrawLoading552D60 without inventing a generic screen.
-        if let Ok(selected) = crate::rules::retail_sources::select_ini(assets, "MISSIONMD.INI") {
+        if let Ok(selected) =
+            crate::rules::retail_sources::select_ini(assets, assets.ini_roots().mission())
+        {
             log::info!(
                 "Campaign MISSION source: {}",
                 serde_json::json!(selected.source)
@@ -3305,7 +3331,7 @@ fn encode_loading_screen(
 /// owns acknowledgement, continuation and terminal disposition as one step.
 pub(crate) fn after_loading_frame_presented(
     state: &mut AppState,
-    mut observer: Option<
+    observer: Option<
         crate::app::diagnostics::shell_capture::loading_host_loss::LoadingObserver<'_>,
     >,
 ) -> anyhow::Result<()> {
@@ -3321,9 +3347,37 @@ pub(crate) fn after_loading_frame_presented(
         return Ok(());
     }
     loading_screen_presented(state);
+    advance_loading(state, true, observer)
+}
+
+/// An admitted online loader still reads its map and serves peer progress
+/// while the window is covered. Only a presented frame consumes its visual
+/// first-frame state, so uncovering a slow load paints it normally.
+pub(crate) fn advance_hidden_network_loading(state: &mut AppState) {
+    if !network_loading_active(state) {
+        return;
+    }
+    if let Err(error) =
+        ensure_native_loading_atlas(state).and_then(|()| advance_loading(state, false, None))
+    {
+        fail_loading(state, LoadingFailurePolicy::RetryNetworkShell, error);
+    }
+}
+
+fn advance_loading(
+    state: &mut AppState,
+    show_progress: bool,
+    mut observer: Option<
+        crate::app::diagnostics::shell_capture::loading_host_loss::LoadingObserver<'_>,
+    >,
+) -> anyhow::Result<()> {
     let policy = loading_failure_policy(state);
-    match pump_loading_after_present(state, observer.as_mut())? {
-        LoadingPump::Pending => state.platform.window.request_redraw(),
+    match pump_loading(state, show_progress, observer.as_mut())? {
+        LoadingPump::Pending => {
+            if show_progress {
+                state.platform.window.request_redraw();
+            }
+        }
         LoadingPump::Finished {
             mut result,
             timed_out,
@@ -3341,7 +3395,7 @@ pub(crate) fn after_loading_frame_presented(
             if let Some(observer) = observer.as_mut() {
                 observer.before_install()?;
             }
-            log::debug!(target: "vera20k::loading_attempt", "install_begin");
+            log::debug!(target: "vera20k::loading_attempt", "install_begin show_progress={show_progress}");
             super::transitions::finish_fresh_scenario_read(state, *result);
             if let Some(observer) = observer.as_ref() {
                 observer.installed(state)?;
@@ -3377,7 +3431,7 @@ fn apply_network_loading_disconnects(
     let Some(sim) = result.scenario.simulation.as_mut() else {
         // No House array to consult: the connections still drop.
         for &index in indices {
-            session.disconnect_network_participant(index, 1);
+            session.disconnect_network_participant(index);
         }
         return Vec::new();
     };
@@ -3528,6 +3582,9 @@ pub(crate) fn present_saved_game_loading(state: &mut AppState) -> anyhow::Result
 /// the first game frame (`0x00683E07..0x00683E1C`, again at
 /// `0x0052EAA1..0x0052EAEB`); the tactical install runs under it.
 pub(crate) fn present_game_mode_blank(state: &AppState) {
+    if crate::app::App::online_start_runs_while_hidden(state) {
+        return;
+    }
     if let Err(err) = render::present_blank(
         &state.renderer.gpu,
         &state.renderer.shell_surface_presenter,
@@ -3622,6 +3679,7 @@ fn loading_scale(state: &AppState) -> ShellScale {
 }
 
 fn advance_and_present_native_progress<'a>(
+    show_progress: bool,
     gpu: &'a GpuContext,
     presenter: &'a ShellSurfacePresenter,
     depth_view: &'a wgpu::TextureView,
@@ -3634,8 +3692,12 @@ fn advance_and_present_native_progress<'a>(
     scale: ShellScale,
     network: Option<crate::app::lan_service::LoadingNetworkService<'a>>,
 ) -> anyhow::Result<()> {
-    let mut selected =
-        LoadingPhaseProgress::select(Some(native), false, network, |native, network| {
+    let mut selected = LoadingPhaseProgress::select(
+        Some(native),
+        false,
+        show_progress,
+        network,
+        |native, network| {
             RenderingProgressSink::new(
                 native,
                 network,
@@ -3648,7 +3710,8 @@ fn advance_and_present_native_progress<'a>(
                 render_size,
                 scale,
             )
-        });
+        },
+    );
     selected.sink.milestone(raw_percent)
 }
 

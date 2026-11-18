@@ -38,7 +38,8 @@ pub(crate) fn labels(
             NetworkInterruption::ConnectionFailed
             | NetworkInterruption::NewerClientRequired
             | NetworkInterruption::StartMismatch
-            | NetworkInterruption::StartCancelled,
+            | NetworkInterruption::StartCancelled
+            | NetworkInterruption::FederationLost,
         ) => (
             "TXT_SYSTEM_NOT_RESPONDING",
             "The other system is not responding.",
@@ -81,11 +82,12 @@ fn reason(state: &AppState) -> Option<String> {
     match interruption(state)? {
         NetworkInterruption::NewerClientRequired => Some(crate::i18n::tr_fill(
             "VERA:MatchNeedsNewerVera",
-            &[("url", &crate::app::shell_wol::RELEASES_URL)],
+            &[("url", &crate::app::web_link::DOWNLOAD_PAGE)],
         )),
         NetworkInterruption::ConnectionFailed if online(state) => {
             Some(crate::i18n::tr("VERA:GameServerConnectionFailed"))
         }
+        NetworkInterruption::FederationLost => Some(crate::i18n::tr("VERA:FederationLost")),
         NetworkInterruption::StartMismatch => Some(crate::i18n::tr("VERA:MatchStartMismatch")),
         NetworkInterruption::StartCancelled => Some(crate::i18n::tr("VERA:MatchStartCancelled")),
         _ => None,

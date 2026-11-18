@@ -758,7 +758,8 @@ impl ApplicationHandler for App {
         // Playback has presentation-only input. Exit is local and never
         // schedules EventClass EXIT or changes the recorded simulation. A
         // watcher's is presentation-only too: it gives no orders, Tab follows
-        // the next player and Escape leaves the match.
+        // the next player, Escape leaves the match and its mouse moves the
+        // view.
         let replay = state.match_state.match_diagnostics.is_replay_playback();
         let watching = !replay
             && state.frontend.screen == GameScreen::InGame
@@ -803,6 +804,18 @@ impl ApplicationHandler for App {
                 }
                 WindowEvent::CursorMoved { position, .. } => {
                     state.set_cursor_from_window(position.x as f32, position.y as f32);
+                    return;
+                }
+                WindowEvent::MouseInput {
+                    state: button_state,
+                    button,
+                    ..
+                } if watching => {
+                    crate::app::match_runtime::watching::mouse(
+                        state,
+                        *button,
+                        button_state.is_pressed(),
+                    );
                     return;
                 }
                 WindowEvent::MouseWheel { delta, .. } => {
@@ -2282,6 +2295,19 @@ impl ApplicationHandler for App {
                 } else {
                     ControlFlow::WaitUntil(Self::match_service_wake(state, Instant::now()))
                 });
+            } else if Self::online_start_runs_while_hidden(state) {
+                // The relay is installed before its RTT barrier. Its IO
+                // worker cannot advance the lobby, map or Ready on our behalf.
+                crate::app::lan_service::poll(
+                    state,
+                    crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+                );
+                Self::drive_shell_exit(state);
+                crate::app::loading::pump::advance_hidden_network_loading(state);
+                event_loop.set_control_flow(ControlFlow::WaitUntil(Self::match_service_wake(
+                    state,
+                    Instant::now(),
+                )));
             } else if state.platform.frame_pacer.render_deferred() {
                 event_loop.set_control_flow(ControlFlow::Poll);
                 state.platform.window.request_redraw();

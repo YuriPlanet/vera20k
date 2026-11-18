@@ -43,7 +43,7 @@ use winit::keyboard::KeyCode;
 /// The list wait `0x0077F120` gives up after 30 s.
 const LIST_WAIT: Duration = Duration::from_millis(30_000);
 // The initial VERA public lobby; native diagnostic catalogs keep their rooms.
-const PUBLIC_LOBBY_NAME: &str = "Lob_41_2";
+pub(super) const PUBLIC_LOBBY_NAME: &str = "Lob_41_2";
 /// The modern UI's name for `PUBLIC_LOBBY_NAME` in place of its base name
 /// `TXT_LOB_3` (index `2 % 8`, retail "German Bunker"); the legacy UI keeps
 /// the retail names.
@@ -159,6 +159,12 @@ enum Step {
     /// VERA: a watch row's `watch` behind the wait box, until the lobby
     /// grants it ([`watch_admitted`]) or refuses it.
     Watching {
+        match_id: String,
+        request: Option<OnlineRequest>,
+    },
+    /// VERA: the room's Lobby, until the public lobby's `joined` marked
+    /// `visit` ([`visit_lobby`]).
+    Visiting {
         request: Option<OnlineRequest>,
     },
 }
@@ -177,7 +183,8 @@ impl Step {
             Self::JoiningLobby { request, .. }
             | Self::JoiningGame { request }
             | Self::Creating { request, .. }
-            | Self::Watching { request } => *request,
+            | Self::Watching { request, .. }
+            | Self::Visiting { request } => *request,
             _ => None,
         }
     }
@@ -187,7 +194,8 @@ impl Step {
             Self::JoiningLobby { request, .. }
             | Self::JoiningGame { request }
             | Self::Creating { request, .. }
-            | Self::Watching { request } => Some(request),
+            | Self::Watching { request, .. }
+            | Self::Visiting { request } => Some(request),
             _ => None,
         }
     }
@@ -241,6 +249,10 @@ pub(super) fn online_request_failed(state: &mut AppState, id: u64, code: u32) ->
     let event = match lobby.step {
         Step::Creating { .. } => WolServiceEvent::Created(Err(code)),
         Step::Watching { .. } => WolServiceEvent::WatchRefused(code),
+        Step::Visiting { .. } => {
+            visit_failed(state);
+            return true;
+        }
         _ => WolServiceEvent::Joined(Err(code)),
     };
     service::service_event(state, event);
@@ -336,6 +348,18 @@ pub(crate) struct WolLobby {
     joining: Option<WolChannel>,
     /// VERA: the running matches the modern list offers to watch.
     matches: Vec<service::WolMatch>,
+    /// VERA: the public lobby this player looks round from their game room
+    /// ([`visit_lobby`]).
+    visit: Option<LobbyVisit>,
+}
+
+/// VERA: the public lobby a game room's member visits (docs/lobby-protocol.md
+/// "Visiting the lobby"). The runner's channel and members stay the room's,
+/// which goes on hidden; the lobby page shows these.
+#[derive(Debug)]
+struct LobbyVisit {
+    channel: WolChannel,
+    members: Vec<WolMember>,
 }
 
 impl WolLobby {
@@ -386,6 +410,16 @@ impl WolLobby {
             insert_member(&mut self.members, member, sort, rank);
         } else {
             insert_game_member(&mut self.members, member);
+        }
+    }
+
+    /// The grant answered the watch command. The map transfer and relay
+    /// admission now own their deadlines while the lobby keeps the wait box.
+    pub(super) fn watch_granted(&mut self, granted: &str) {
+        if let Step::Watching { match_id, request } = &mut self.step
+            && match_id == granted
+        {
+            *request = None;
         }
     }
 
@@ -521,6 +555,18 @@ fn message_line(state: &mut AppState, text: String) {
 
 fn echo(state: &mut AppState, text: Vec<u16>, color: u32) {
     crate::app::shell_lan::append_chat(state, LanChatLine { text, color });
+}
+
+/// A line of the game room's, which goes to it also while its player visits
+/// the lobby ([`crate::app::shell_lan::append_room_chat`]).
+fn room_line(state: &mut AppState, text: String) {
+    crate::app::shell_lan::append_room_chat(
+        state,
+        LanChatLine {
+            text: text.encode_utf16().collect(),
+            color: u32::MAX,
+        },
+    );
 }
 
 /// The login nickname `[0xB73E40]` (the MultiPlayer handle).
@@ -1148,11 +1194,6 @@ fn room_reopened(state: &mut AppState, joined: WolJoined) {
         visit.back_to_room = false;
         resume = visit.cooperative_resume.take();
     }
-    let me = nickname(state);
-    let host = joined
-        .members
-        .iter()
-        .any(|member| member.flags & MEMBER_OPERATOR != 0 && member.name.eq_ignore_ascii_case(&me));
     let listed = joined.members.clone();
     let channel = joined.channel.clone();
     if let Some(lobby) = lobby_mut(state) {
@@ -1163,11 +1204,59 @@ fn room_reopened(state: &mut AppState, joined: WolJoined) {
     });
     request_listed(state, &listed);
     close_wait(state);
+    let observe = state
+        .frontend
+        .multiplayer_shell_runtime
+        .lan_create_observer();
+    open_game_room(state, &listed, observe, resume);
+}
+
+/// The others in a room this game hosts again take rows as joiners would,
+/// in the lobby's order, so the host's options name them all; VERA's room
+/// does not tell them as joins. Everyone still here stays: past this host's
+/// own Max players, or with no seat free, the room grows and they watch.
+fn seat_again(state: &mut AppState, listed: &[WolMember], me: &str) {
+    if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+        protocol.quiet_joins();
+    }
+    for name in listed
+        .iter()
+        .map(|member| member.name.clone())
+        .filter(|name| !name.eq_ignore_ascii_case(me))
+    {
+        let session = &mut state.match_state.session;
+        if session.network_several_observers() && session.network_join_row(false).is_none() {
+            let people = session
+                .network_setup()
+                .map_or(0, |launch| launch.humans.len() + 1);
+            let grown = session
+                .set_network_people_limit(u8::try_from(people).unwrap_or(u8::MAX))
+                .and_then(|()| session.set_network_spectators(true));
+            if let Err(error) = grown {
+                log::warn!("WOL room grows for {name}: {error:#}");
+            }
+        }
+        if let Err(error) = setup::user_joined(state, name) {
+            log::warn!("WOL room seats its players again: {error:#}");
+        }
+    }
+}
+
+/// Opens the game room this player just came into or back to: as its host
+/// when the lobby lists it as the owner, from this game's own room
+/// settings (on the campaign's next stage with `resume`), seating everyone
+/// else listed, and otherwise as a guest.
+fn open_game_room(
+    state: &mut AppState,
+    listed: &[WolMember],
+    observe: bool,
+    resume: Option<crate::app::shell_network_setup::CooperativeResume>,
+) -> bool {
+    let me = nickname(state);
+    let host = listed
+        .iter()
+        .any(|member| member.flags & MEMBER_OPERATOR != 0 && member.name.eq_ignore_ascii_case(&me));
     if host {
-        let observe = state
-            .frontend
-            .multiplayer_shell_runtime
-            .lan_create_observer();
         commit_create(state, observe);
         // Before anyone is seated again: the Cooperative mode admits only
         // its two players.
@@ -1176,24 +1265,319 @@ fn room_reopened(state: &mut AppState, joined: WolJoined) {
         {
             log::warn!("WOL reopened room keeps its mode: {error:#}");
         }
-        // The players who came back take rows as joiners would, in the
-        // lobby's order, so the host's options name them all; VERA's room
-        // does not tell them as joins.
-        if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
-            protocol.quiet_joins();
-        }
-        for name in listed
-            .iter()
-            .map(|member| member.name.clone())
-            .filter(|name| !name.eq_ignore_ascii_case(&me))
-        {
-            if let Err(error) = setup::user_joined(state, name) {
-                log::warn!("WOL reopened room: {error:#}");
-            }
-        }
+        seat_again(state, listed, &me);
     } else {
         enter_game_as_guest(state);
     }
+    host
+}
+
+/// Makes `name` the host in a room's member list, first, without the old
+/// host, where a guest's game takes its host from
+/// (`setup::guest_users_listed`); returns the old host's name.
+fn pass_room(members: &mut Vec<WolMember>, name: &str) -> Option<String> {
+    let old = members
+        .iter()
+        .find(|member| member.flags & MEMBER_OPERATOR != 0)
+        .map(|member| member.name.clone());
+    members.retain(|member| Some(&member.name) != old.as_ref());
+    for member in members.iter_mut() {
+        member.flags &= !MEMBER_OPERATOR;
+    }
+    if let Some(index) = members
+        .iter()
+        .position(|member| member.name.eq_ignore_ascii_case(name))
+    {
+        let mut host = members.remove(index);
+        host.flags |= MEMBER_OPERATOR;
+        members.insert(0, host);
+    }
+    old
+}
+
+/// VERA: the host left, and the lobby made `name` the room's host, renaming
+/// a room it named for the old host (`host_changed`, docs/lobby-protocol.md
+/// "Host handover"); the old host's `member_left` follows. The room opens
+/// again as after a match: the new host's game from its own room settings,
+/// seating everyone still here, and the others' games enter it as after a
+/// join. The chat stays. A join still sliding in opens the room as it is
+/// now ([`joined`]).
+fn host_changed(state: &mut AppState, name: String, channel: Option<WolChannel>) {
+    let Some(runner) = lobby_mut(state) else {
+        return;
+    };
+    if !runner
+        .current
+        .as_ref()
+        .is_some_and(|current| current.kind == GAME_CHANNEL)
+    {
+        if let Some(Ok(joined)) = runner.deferred.as_mut() {
+            pass_room(&mut joined.members, &name);
+            if let Some(channel) = channel {
+                joined.channel = channel;
+            }
+        }
+        return;
+    }
+    if let Some(channel) = channel {
+        runner.current = Some(channel);
+    }
+    let old = pass_room(&mut runner.members, &name);
+    refill_players(state);
+    if !in_setup_channel(state) || quick_match_runner(state) {
+        return;
+    }
+    let chat = state
+        .frontend
+        .multiplayer_setup
+        .as_mut()
+        .map(|ui| std::mem::take(&mut ui.chat));
+    let observe = state
+        .match_state
+        .session
+        .network_setup()
+        .is_some_and(|launch| launch.local_player().is_observer());
+    let listed = lobby(state)
+        .map(|lobby| lobby.members.clone())
+        .unwrap_or_default();
+    // A visitor's room opens again hidden: the lobby page stays as it is,
+    // with any box or page open over it.
+    let page = visiting(state).then(|| {
+        let shown = lobby(state).map(|lobby| (lobby.shown, lobby.covered));
+        (std::mem::take(&mut state.frontend.shell_controller), shown)
+    });
+    let host = open_game_room(state, &listed, observe, None);
+    if let (Some(chat), Some(ui)) = (chat, state.frontend.multiplayer_setup.as_mut()) {
+        ui.chat = chat;
+    }
+    if let Some((controller, shown)) = page {
+        crate::app::shell_network_setup::hide_room(state);
+        state.frontend.shell_controller = controller;
+        let join = selected_admits(state);
+        if let (Some(lobby), Some((shown, covered))) = (lobby_mut(state), shown) {
+            lobby.shown = shown;
+            lobby.covered = covered;
+            lobby.ui.enable_commands(join);
+        }
+    }
+    if let Some(old) = old {
+        room_line(
+            state,
+            crate::i18n::tr_fill("VERA:PlayerLeftRoom", &[("name", &old)]),
+        );
+    }
+    room_line(
+        state,
+        if host {
+            crate::i18n::tr("VERA:NowHost")
+        } else {
+            crate::i18n::tr_fill("VERA:NewHost", &[("name", &name)])
+        },
+    );
+}
+
+/// VERA: the room's Lobby (docs/lobby-protocol.md "Visiting the lobby"):
+/// this player also joins the public lobby to look round it. Their room
+/// goes on hidden, its events still reaching it, until Back to Room.
+pub(crate) fn visit_lobby(state: &mut AppState) {
+    if quick_match_runner(state) || !in_setup_channel(state) {
+        return;
+    }
+    let Some(runner) = lobby_mut(state) else {
+        return;
+    };
+    if !matches!(runner.step, Step::Ready) || runner.visit.is_some() {
+        return;
+    }
+    runner.step = Step::Visiting { request: None };
+    request(state, WolServiceRequest::VisitLobby);
+}
+
+/// Whether this player looks round the public lobby while their game room
+/// goes on hidden ([`visit_lobby`]).
+pub(crate) fn visiting(state: &AppState) -> bool {
+    lobby(state).is_some_and(|lobby| lobby.visit.is_some())
+}
+
+/// The lobby let this player into the public lobby as a visitor: its page
+/// shows over the hidden room, with Back to Room. A repeat answer lists the
+/// lobby again; one this game no longer waits for ends the visit.
+fn visit_joined(state: &mut AppState, joined: WolJoined) {
+    let Some(runner) = lobby_mut(state) else {
+        return;
+    };
+    let first = runner.visit.is_none();
+    if first && !matches!(runner.step, Step::Visiting { .. }) {
+        request(state, WolServiceRequest::EndVisit);
+        return;
+    }
+    if first {
+        runner.step = Step::Ready;
+        runner.pending = None;
+    }
+    let listed = joined.members.clone();
+    sort_lobby(state, |lobby, sort, rank| {
+        let mut members = Vec::new();
+        for member in joined.members {
+            insert_member(&mut members, member, sort, rank);
+        }
+        lobby.visit = Some(LobbyVisit {
+            channel: joined.channel,
+            members,
+        });
+        lobby.ui.set_visiting(true);
+    });
+    request_listed(state, &listed);
+    show_visit(state);
+    if first {
+        let room = current_channel(state)
+            .map(|room| room.name)
+            .unwrap_or_default();
+        message_line(
+            state,
+            crate::i18n::tr_fill("VERA:VisitingLobby", &[("room", &room)]),
+        );
+    }
+}
+
+/// The lobby page over the visitor's hidden room.
+fn show_visit(state: &mut AppState) {
+    crate::app::shell_network_setup::hide_room(state);
+    if let Some(visit) = state.frontend.wol.as_mut() {
+        visit.page = WolPage::Lobby;
+    }
+    state
+        .frontend
+        .shell_controller
+        .reset_to(super::WOL_LOBBY_DIALOG, false);
+    let join = selected_admits(state);
+    if let Some(lobby) = lobby_mut(state) {
+        lobby.shown = true;
+        lobby.covered = false;
+        lobby.ui.enable_commands(join);
+    }
+    refill_players(state);
+    request_games(state);
+    state.platform.window.request_redraw();
+}
+
+/// Whether the selected game row admits Join, as a player or a spectator.
+fn selected_admits(state: &mut AppState) -> bool {
+    lobby(state)
+        .and_then(|lobby| lobby.ui.game_list.selected)
+        .is_some_and(|row| {
+            admit_row(state, row, false, false) || admit_row(state, row, true, false)
+        })
+}
+
+/// Back to Room: the visitor leaves the public lobby, and their room, which
+/// went on meanwhile, shows as it is now.
+fn back_to_room(state: &mut AppState) {
+    if visit_ends(state) {
+        request(state, WolServiceRequest::EndVisit);
+    }
+}
+
+/// Ends a visit here, for Back to Room or the room's start (the lobby ends
+/// it for a start itself): the room shows again. False without a visit.
+pub(super) fn visit_ends(state: &mut AppState) -> bool {
+    let Some(runner) = lobby_mut(state) else {
+        return false;
+    };
+    if runner.visit.take().is_none() {
+        return false;
+    }
+    runner.ui.set_visiting(false);
+    runner.shown = false;
+    runner.covered = false;
+    refill_players(state);
+    crate::app::shell_network_setup::show_room(state);
+    true
+}
+
+/// A refused or lost visit: the player stays in their room.
+fn visit_failed(state: &mut AppState) {
+    let Some(runner) = lobby_mut(state) else {
+        return;
+    };
+    runner.step = Step::Ready;
+    message_line(state, crate::i18n::tr("VERA:VisitFailed"));
+    state.platform.window.request_redraw();
+}
+
+/// Ends the visit with its room, as leaving it or the runner's close does:
+/// the hidden room is dropped through its owner. The lobby visited, if
+/// there was a visit.
+fn take_visit(state: &mut AppState) -> Option<LobbyVisit> {
+    let runner = lobby_mut(state)?;
+    let visit = runner.visit.take()?;
+    runner.ui.set_visiting(false);
+    if state.frontend.network_setup_protocol.is_some() {
+        crate::app::shell_network_setup::abandon_for_wol_runner(state);
+    }
+    Some(visit)
+}
+
+/// The visitor's room was left: for another game they join from the lobby
+/// page (the leave before that join, which ended the visit too), or because
+/// it closed, which leaves them in the lobby.
+fn visit_room_left(state: &mut AppState) {
+    if lobby(state).is_some_and(|lobby| matches!(lobby.step, Step::Leaving { .. })) {
+        take_visit(state);
+        leave_finished(state, true);
+        return;
+    }
+    let room = current_channel(state)
+        .map(|room| room.name)
+        .unwrap_or_default();
+    visit_settles(
+        state,
+        crate::i18n::tr_fill("VERA:VisitedRoomClosed", &[("room", &room)]),
+    );
+}
+
+/// The visitor's room is gone for them, kicked or closed: the lobby made
+/// the public lobby they visit their channel, and its page stays, saying
+/// why with `line`.
+fn visit_settles(state: &mut AppState, line: String) {
+    let Some(visit) = take_visit(state) else {
+        return;
+    };
+    state.frontend.wol_lobby_globals.lobby_number = visit.channel.joined_lobby_number();
+    let join = selected_admits(state);
+    if let Some(lobby) = lobby_mut(state) {
+        lobby.current = Some(visit.channel);
+        lobby.members = visit.members;
+        lobby.ui.enable_commands(join);
+    }
+    refill_players(state);
+    message_line(state, line);
+    state.platform.window.request_redraw();
+}
+
+/// Another user joined the lobby this player visits: its list takes them,
+/// with their ladder record and high score, as the modern lobby's users.
+fn visit_user_joined(state: &mut AppState, member: WolMember) {
+    if !visiting(state) {
+        return;
+    }
+    let key = member.name.to_ascii_lowercase();
+    request(state, WolServiceRequest::LadderRecords(vec![key.clone()]));
+    request(state, WolServiceRequest::HighScores(vec![key]));
+    sort_lobby(state, |lobby, sort, rank| {
+        if let Some(visit) = lobby.visit.as_mut() {
+            insert_member(&mut visit.members, member, sort, rank);
+        }
+    });
+    refill_players(state);
+}
+
+/// Another user left the lobby this player visits.
+fn visit_user_left(state: &mut AppState, name: String) {
+    if let Some(visit) = lobby_mut(state).and_then(|lobby| lobby.visit.as_mut()) {
+        visit.members.retain(|member| member.name != name);
+    }
+    refill_players(state);
 }
 
 fn new_runner(
@@ -1225,6 +1609,7 @@ fn new_runner(
         deferred: None,
         joining: None,
         matches: Vec::new(),
+        visit: None,
     })
 }
 
@@ -1565,9 +1950,13 @@ pub(super) fn refill_players(state: &mut AppState) {
     let Some(lobby) = visit.lobby.as_deref_mut() else {
         return;
     };
-    let rows = match &lobby.current {
-        Some(channel) if channel.kind == 0 => lobby
-            .members
+    // A visitor's lobby page lists the lobby they visit.
+    let (current, members) = match &lobby.visit {
+        Some(visit) => (Some(&visit.channel), &visit.members),
+        None => (lobby.current.as_ref(), &lobby.members),
+    };
+    let rows = match current {
+        Some(channel) if channel.kind == 0 => members
             .iter()
             .map(|member| {
                 let key = member.name.to_ascii_lowercase();
@@ -1608,12 +1997,22 @@ fn admit_row(state: &mut AppState, row: usize, observer: bool, show: bool) -> bo
     let Some(row) = lobby.ui.game_rows.get(row) else {
         return false;
     };
+    // VERA: a visitor watches or joins nothing from their own room; another
+    // game they join leaves it first.
     if row.watch {
-        return true;
+        return lobby.visit.is_none();
     }
     let Some(channel) = lobby.games.get(row.record) else {
         return false;
     };
+    if lobby.visit.is_some()
+        && lobby
+            .current
+            .as_ref()
+            .is_some_and(|room| room.name == channel.name)
+    {
+        return false;
+    }
     match admit(channel, observer, admission_context(state)) {
         Ok(()) => true,
         Err(key) => {
@@ -1895,6 +2294,7 @@ fn join_failed_locally(state: &mut AppState, game: bool) {
 /// slide and `WOL_Main` shows the welcome (mode 0), or the online lobby
 /// again for a Quick Match runner that lobby started.
 fn close_runner(state: &mut AppState) {
+    take_visit(state);
     let quick_match = quick_match_runner(state);
     if quick_match {
         super::quick_match::runner_closed(state);
@@ -2288,14 +2688,17 @@ fn begin_watch(state: &mut AppState, match_id: String) {
         return;
     };
     lobby.ui.disable_commands();
-    lobby.step = Step::Watching { request: None };
+    lobby.step = Step::Watching {
+        match_id: match_id.clone(),
+        request: None,
+    };
     show_wait(state, "VERA:ContactingOnline");
     request(state, WolServiceRequest::Watch { match_id });
 }
 
 /// VERA: whether the lobby page waits for a watch's grant.
-pub(crate) fn awaits_watch(state: &AppState) -> bool {
-    lobby(state).is_some_and(|lobby| matches!(lobby.step, Step::Watching { .. }))
+pub(crate) fn awaits_watch(state: &AppState, match_id: &str) -> bool {
+    lobby(state).is_some_and(|lobby| matches!(&lobby.step, Step::Watching { match_id: awaited, .. } if awaited == match_id))
 }
 
 /// VERA: the relay admitted the watch that [`Step::Watching`] waits for:
@@ -2555,7 +2958,13 @@ fn send_chat(state: &mut AppState, text: Vec<u16>) {
         Vec::new()
     };
     super::chat_sent(state, &line);
-    request(state, WolServiceRequest::Chat { line, to });
+    // A visitor's lobby page talks in the lobby they visit.
+    let chat = if visiting(state) {
+        WolServiceRequest::VisitChat { line, to }
+    } else {
+        WolServiceRequest::Chat { line, to }
+    };
+    request(state, chat);
     if let Some((text, color)) = echo_line {
         echo(state, text, color);
     }
@@ -2585,7 +2994,12 @@ fn send_emote(state: &mut AppState, text: Vec<u16>) {
         wol_chat::PRIVATE_EMOTE_COLOR
     };
     echo(state, wol_chat::emote_echo(&nickname, &text), color);
-    request(state, WolServiceRequest::Emote { text, to });
+    let emote = if visiting(state) {
+        WolServiceRequest::VisitEmote { text, to }
+    } else {
+        WolServiceRequest::Emote { text, to }
+    };
+    request(state, emote);
 }
 
 /// `0x00789B60` up to its popup: Limit Screen Resolution is cleared on a
@@ -2641,6 +3055,8 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
             let show = lobby.ui.join_row != Some(row);
             begin_join(state, row, show);
         }
+        // A visitor's Back goes back to their room.
+        WolLobbyAction::Back if visiting(state) => back_to_room(state),
         WolLobbyAction::Back => {
             App::leave_shell_dialog(state, shell_transition::ShellExitThen::WolLobbyBack);
         }
@@ -2670,7 +3086,10 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
                     .and_then(|visit| visit.lobby.as_deref_mut())
                 {
                     let rank = |name: &str| ladder_rank(&globals.ladder, name);
-                    resort_members(&mut lobby.members, sort, &rank);
+                    match lobby.visit.as_mut() {
+                        Some(visit) => resort_members(&mut visit.members, sort, &rank),
+                        None => resort_members(&mut lobby.members, sort, &rank),
+                    }
                 }
                 refill_players(state);
             }
@@ -2730,6 +3149,7 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
                 crate::ui::wol_shell::WolMode::PlayBuddy,
             ),
         ),
+        WolLobbyAction::BackToRoom => back_to_room(state),
         // VERA: the online page's Quick Match ends the runner as Buddy List
         // does, with return mode 4, and the Quick Match runner follows.
         WolLobbyAction::QuickMatch => App::leave_shell_dialog(
@@ -2951,7 +3371,10 @@ fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
     request_listed(state, &listed);
     if joined.channel.kind == GAME_CHANNEL {
         close_wait(state);
-        enter_game_as_guest(state);
+        // As a guest, unless the lobby made this player the room's host
+        // while the join slid in ([`host_changed`]).
+        let observe = state.frontend.multiplayer_shell_runtime.lan_observer();
+        open_game_room(state, &listed, observe, None);
         return;
     }
     // A chat lobby: its number (0x7A5EFD, any type-0 name), the
@@ -2977,10 +3400,7 @@ fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
         );
         message_line(state, text);
     }
-    let selected = lobby(state).and_then(|lobby| lobby.ui.game_list.selected);
-    let join = selected.is_some_and(|row| {
-        admit_row(state, row, false, false) || admit_row(state, row, true, false)
-    });
+    let join = selected_admits(state);
     if let Some(lobby) = lobby_mut(state) {
         lobby.ui.lobby_switched(join);
     }
@@ -3286,6 +3706,9 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                 }
             }
         }
+        WolServiceEvent::VisitJoined(joined) => visit_joined(state, joined),
+        WolServiceEvent::VisitUserJoined(member) => visit_user_joined(state, member),
+        WolServiceEvent::VisitUserLeft(name) => visit_user_left(state, name),
         WolServiceEvent::Joined(result) => joined(state, result),
         WolServiceEvent::UserJoined(member) => {
             let lobby = lobby_mut(state).expect("checked");
@@ -3340,6 +3763,8 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             }
         }
         WolServiceEvent::RoomReopened(joined) => room_reopened(state, joined),
+        WolServiceEvent::HostChanged { name, channel } => host_changed(state, name, channel),
+        WolServiceEvent::ChannelLeft if visiting(state) => visit_room_left(state),
         WolServiceEvent::ChannelLeft if awaiting_room(state) => room_not_returned(state, true),
         WolServiceEvent::ChannelLeft if in_setup_channel(state) => setup_channel_left(state),
         WolServiceEvent::ChannelLeft => leave_finished(state, true),
@@ -3403,7 +3828,8 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
 /// The runner is in a game channel with C2/C9 open over the hidden `0x113`,
 /// or with Quick Match's setup under `0x117`.
 fn in_setup_channel(state: &AppState) -> bool {
-    (state.frontend.shell_route.network_setup() || setup::quick_match(state))
+    // A visitor's room goes on while the lobby page shows.
+    (state.frontend.shell_route.network_setup() || setup::quick_match(state) || visiting(state))
         && lobby(state)
             .and_then(|lobby| lobby.current.as_ref())
             .is_some_and(|current| current.kind == GAME_CHANNEL)
@@ -3427,14 +3853,15 @@ fn sender(member: &WolMember) -> wol_chat::WolSender<'_> {
 /// match (it closes every dialog first); C2/C9 run when the setup route is
 /// up. The local record is found by the login nickname
 /// (`[0xB73E40]`) among the channel's users.
-fn sender_passes(state: &AppState, from: &WolMember, text: &[u16]) -> bool {
+/// `room`: the line is the game room's, shown or a visitor's hidden one.
+fn sender_passes(state: &AppState, from: &WolMember, text: &[u16], room: bool) -> bool {
     let visit = state.frontend.wol.as_ref();
     let filters = wol_chat::WolDisplayFilters::new(
         &state.frontend.wol_preferences,
         visit.is_some_and(|visit| visit.modern_ui()),
     );
     let sender = sender(from);
-    let setup_open = state.frontend.shell_route.network_setup();
+    let setup_open = room;
     let local = nickname(state);
     let in_game = visit.is_none_or(|visit| visit.in_game);
     let lobby = lobby_dialog(state).filter(|_| !in_game);
@@ -3465,6 +3892,8 @@ pub(super) struct ReceivedMessage {
     pub(super) ansi: bool,
     pub(super) options: Option<Box<setup::HostOptions>>,
     pub(super) sent_at: Option<u64>,
+    /// VERA: said in the public lobby this player visits from their room.
+    pub(super) visit: bool,
 }
 
 /// The chat sinks (`0x007A8DA0`, `0x007A8FC0`, `0x007AB170`, `0x007AAFB0`
@@ -3484,7 +3913,14 @@ pub(super) fn message_received(state: &mut AppState, message: ReceivedMessage) {
         ansi,
         options,
         sent_at,
+        visit,
     } = message;
+    // A visitor's room goes on hidden: its lines go to it, and the visited
+    // lobby's to the lobby page.
+    if visit && !visiting(state) {
+        return;
+    }
+    let room = !visit && (state.frontend.shell_route.network_setup() || visiting(state));
     let in_game = state
         .frontend
         .wol
@@ -3500,18 +3936,27 @@ pub(super) fn message_received(state: &mut AppState, message: ReceivedMessage) {
         .wol
         .as_ref()
         .is_none_or(|visit| visit.in_game)
-        || !sender_passes(state, &from, &text)
+        || !sender_passes(state, &from, &text, room)
         || from.name.eq_ignore_ascii_case(&nickname(state))
     {
         return;
     }
     let (line, color) = wol_chat::received_line(&sender(&from), &text, private, action);
-    crate::app::shell_lan::append_chat_sent_at(state, LanChatLine { text: line, color }, sent_at);
+    let line = LanChatLine { text: line, color };
+    if visit {
+        crate::app::shell_lan::append_wol_lobby_chat(state, line, sent_at);
+    } else {
+        crate::app::shell_lan::append_room_chat_sent_at(state, line, sent_at);
+    }
     let (prefix, _) = wol_chat::received_line(&sender(&from), &[], private, action);
     super::translation::received(
         state,
         &text,
-        super::translation::TranslatedLine::Wol { prefix, color },
+        super::translation::TranslatedLine::Wol {
+            prefix,
+            color,
+            visit,
+        },
     );
     state.platform.window.request_redraw();
 }
@@ -3710,7 +4155,17 @@ pub(super) fn kicked(state: &mut AppState, channel: WolChannel, user: WolMember,
         .as_ref()
         .is_some_and(|current| current.kind != 0)
     {
-        if !state.frontend.shell_route.network_setup() {
+        // VERA: a kicked visitor stays in the lobby they visit; the lobby
+        // made it their channel.
+        if user.flags & MEMBER_LOCAL != 0 && visiting(state) {
+            let text = format_csf(
+                &csf(state, setup::kicked_key(state)),
+                &[CsfArg::Str(&channel.name), CsfArg::Str(&by.name)],
+            );
+            visit_settles(state, text);
+            return;
+        }
+        if !state.frontend.shell_route.network_setup() && !visiting(state) {
             return;
         }
         if user.flags & MEMBER_LOCAL != 0 {
@@ -3725,6 +4180,7 @@ pub(super) fn kicked(state: &mut AppState, channel: WolChannel, user: WolMember,
                     text: text.encode_utf16().collect(),
                     color: u32::MAX,
                 },
+                None,
             );
             setup_channel_left(state);
             return;
@@ -3807,7 +4263,14 @@ pub(super) fn channel_ban(state: &mut AppState, name: &str, banned: bool) {
 /// plays last in both.
 /// RESIDUAL: the auto-reply `[0xB77E40]`/`[0xB76230]` has no writer here.
 pub(super) fn page_received(state: &mut AppState, from: WolMember, text: Vec<u16>, ansi: bool) {
-    if state.frontend.wol.is_none() || !sender_passes(state, &from, &text) {
+    if state.frontend.wol.is_none()
+        || !sender_passes(
+            state,
+            &from,
+            &text,
+            state.frontend.shell_route.network_setup(),
+        )
+    {
         return;
     }
     let visit = state.frontend.wol.as_mut().expect("checked");
@@ -4317,7 +4780,8 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
         // An uncertain HTTP outcome may have joined on the server. Queue a
         // normal leave behind that command before allowing another attempt.
         // A watch joins no channel: the player is still in the chat lobby.
-        if !matches!(lobby.step, Step::Watching { .. }) {
+        // A lobby visit keeps the room, which a leave would give up.
+        if !matches!(lobby.step, Step::Watching { .. } | Step::Visiting { .. }) {
             request(state, WolServiceRequest::LeaveChannel);
         }
         online_request_failed(state, request_id, 0x8000_4005);
@@ -4566,7 +5030,7 @@ pub(super) fn locale_name(state: &AppState, name: &str) -> Option<String> {
 fn scenario_description(state: &AppState, scenario: &str) -> String {
     use crate::util::native_string::crt_strcmpi;
     use std::cmp::Ordering;
-    if crt_strcmpi(scenario, crate::app::shell_random_map::RANDMAP_SED_FILE) == Ordering::Equal {
+    if crt_strcmpi(scenario, crate::map::skirmish_scenarios::RANDMAP_SED) == Ordering::Equal {
         return csf(
             state,
             crate::app::shell_random_map::RANDOM_MAP_DESCRIPTION_KEY,
@@ -4855,13 +5319,31 @@ mod tests {
         step = Step::Ready;
         assert!(!step.bind_online_request(9, now));
         // A watch's refusal or silence reaches its step the same way.
-        step = Step::Watching { request: None };
+        step = Step::Watching {
+            match_id: "match".into(),
+            request: None,
+        };
         assert!(step.bind_online_request(10, now));
         assert!(step.accepts_online_result(10));
     }
 
     /// VERA's modern list: each match to watch by its room's name, or the
     /// map's when the room has none, with its watchers; a full one greyed.
+    #[test]
+    fn a_watch_grant_ends_only_its_request_deadline() {
+        let mut lobby = listed_runner(0);
+        lobby.step = Step::Watching {
+            match_id: "current".into(),
+            request: None,
+        };
+        assert!(lobby.step.bind_online_request(17, Instant::now()));
+        lobby.watch_granted("earlier");
+        assert!(lobby.step.accepts_online_result(17));
+        lobby.watch_granted("current");
+        assert!(!lobby.step.accepts_online_result(17));
+        assert!(matches!(&lobby.step, Step::Watching { match_id, .. } if match_id == "current"));
+    }
+
     #[test]
     fn watch_rows_name_each_match_with_its_watchers() {
         let watch = |match_id: &str, name: &str, watchers| service::WolMatch {

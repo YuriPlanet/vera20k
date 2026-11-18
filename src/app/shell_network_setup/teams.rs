@@ -9,7 +9,7 @@
 //! (`wol::balance_teams`).
 
 use super::*;
-use crate::app::match_runtime::session::SeatPick;
+use crate::app::match_runtime::session::{MatchSession, SeatPick};
 use crate::rules::ruleset::RuleSet;
 use crate::rules::skirmish_colors::RETAIL_COLOR_COUNT;
 use crate::skirmish_launch::{
@@ -23,34 +23,11 @@ pub(super) fn set_teams(state: &mut AppState, teams: Option<u8>) -> anyhow::Resu
     Ok(())
 }
 
-/// A lobby that cannot take the host's options refuses them while they carry
-/// a field it does not know: the room goes on without the newest one it
-/// carries, Watching (while the lobby has not said whether it lists matches
-/// to watch) before Superweapon Limit before the rest of the room's rules
-/// before the join queue before Teams, and publishes again. Returns the line
-/// telling the host so, or `None` when none was set.
-///
-/// A random map for more than eight players, which a lobby from before them
-/// refuses, comes after Watching: the room keeps its options, and the host
-/// picks another map.
+/// Only a lobby known to predate watching may need a room rule omitted.
 pub(crate) fn lobby_refused_option(state: &mut AppState) -> Option<&'static str> {
-    // A lobby from before watching: nobody watches the room's games.
     let lobby_watches = crate::app::shell_wol::lobby_watches(state);
-    if state
-        .frontend
-        .network_setup_protocol
-        .as_mut()
-        .is_some_and(|room| room.stop_watching(lobby_watches))
-    {
-        return Some("VERA:WatchingNotTaken");
-    }
-    let random_map = state
-        .match_state
-        .session
-        .network_setup()
-        .and_then(|launch| launch.selected_map_file.as_deref())
-        .is_some_and(|file| file.eq_ignore_ascii_case("RandMap.Sed"));
-    if random_map
+    if lobby_watches == Some(false)
+        && super::maps::generated_selection(&state.match_state.session)
         && state
             .frontend
             .multiplayer_shell_runtime
@@ -60,52 +37,38 @@ pub(crate) fn lobby_refused_option(state: &mut AppState) -> Option<&'static str>
     {
         return Some("VERA:BigRandomMapNotTaken");
     }
-    if let Some(mut options) = state
-        .match_state
-        .session
-        .network_setup()
-        .map(|launch| launch.options.clone())
-        .filter(|options| options.host_rules.superweapon_limit != 0)
-    {
-        // A lobby from before the limit: the room keeps its other rules.
+    let line = refused_room_rule(&mut state.match_state.session, lobby_watches)?;
+    actions::queue(state, NetworkSetupRequest::PublishOptions);
+    Some(line)
+}
+
+fn refused_room_rule(
+    session: &mut MatchSession,
+    lobby_watches: Option<bool>,
+) -> Option<&'static str> {
+    // All these keys predate watching. An unknown capability is rechecked
+    // before retry; an ordinary refusal from a current lobby keeps the room.
+    if lobby_watches != Some(false) || !session.host() {
+        return None;
+    }
+    let mut options = session.network_setup()?.options.clone();
+    if options.host_rules.superweapon_limit != 0 {
         options.host_rules.superweapon_limit = 0;
-        state
-            .match_state
-            .session
-            .set_network_options(options)
-            .ok()?;
-        actions::queue(state, NetworkSetupRequest::PublishOptions);
-        return Some("VERA:SuperweaponLimitNotTaken");
-    }
-    if let Some(mut options) = state
-        .match_state
-        .session
-        .network_setup()
-        .map(|launch| launch.options.clone())
-        .filter(|options| !options.host_rules.is_empty())
-    {
-        // Every player then plays the original rules there.
+        session.set_network_options(options).ok()?;
+        Some("VERA:SuperweaponLimitNotTaken")
+    } else if !options.host_rules.is_empty() {
         options.host_rules = Default::default();
-        state
-            .match_state
-            .session
-            .set_network_options(options)
-            .ok()?;
-        actions::queue(state, NetworkSetupRequest::PublishOptions);
-        return Some("VERA:HostRulesNotTaken");
+        session.set_network_options(options).ok()?;
+        Some("VERA:HostRulesNotTaken")
+    } else if !session.network_queue().is_empty() {
+        session.stop_network_queue().ok()?;
+        Some("VERA:QueueNotTaken")
+    } else if options.teams.is_some() {
+        session.set_network_teams(None).ok()?;
+        Some("VERA:TeamsNotTaken")
+    } else {
+        None
     }
-    if !state.match_state.session.network_queue().is_empty() {
-        // The room stops queueing, and its spectators keep watching.
-        state.match_state.session.stop_network_queue().ok()?;
-        actions::queue(state, NetworkSetupRequest::PublishOptions);
-        return Some("VERA:QueueNotTaken");
-    }
-    let set = state
-        .match_state
-        .session
-        .network_setup()
-        .is_some_and(|launch| launch.options.teams.is_some());
-    (set && set_teams(state, None).is_ok()).then_some("VERA:TeamsNotTaken")
 }
 
 /// The host's Balance in the team bar: `/balance` in the room's chat, as
@@ -170,10 +133,7 @@ pub(super) fn team_starts(state: &mut AppState, keep_picks: bool) -> anyhow::Res
     // -2 is the Team list's no team, which plays alone.
     let teams: Vec<i32> = seats
         .iter()
-        .map(|&(_, team, _)| match team {
-            LaunchTeam::Team(team) => i32::from(team),
-            LaunchTeam::None => -2,
-        })
+        .map(|&(_, team, _)| team.shell_value())
         .collect();
     let session = &state.match_state.session;
     let bases = starts
@@ -269,18 +229,31 @@ fn shared_bases(seats: &[i32], starts: usize) -> Option<(Vec<usize>, Vec<i32>)> 
     Some((base_of, base_teams))
 }
 
-/// The fewest starts a room sharing bases seats its players on, as
-/// [`shared_bases`] gives them: one for each team with players, one for
-/// each player on no team.
-pub(super) fn bases_needed(launch: &SkirmishLaunchSession) -> i32 {
+/// A room needs a start per playing participant, or one per playing team
+/// plus a start per unteamed participant when the room shares bases.
+pub(crate) fn starts_needed(
+    launch: &SkirmishLaunchSession,
+    shared: bool,
+    flavor: SetupFlavor,
+) -> i32 {
+    let people = launch.humans.iter().filter(|human| !human.is_observer());
+    if !shared {
+        let ai = match flavor {
+            SetupFlavor::Wol => launch.opponents.len() as i32,
+            SetupFlavor::Lan => launch.ai_player_count,
+        };
+        return people.count() as i32 + ai;
+    }
+    // Online the lobby counts every published player. LAN shares bases among
+    // the people bound to rows; a node awaiting its row occupies no base yet.
+    let people =
+        people.filter(|human| flavor == SetupFlavor::Wol || human.raw_slot_index.is_some());
     let mut teams = Vec::new();
     let mut alone = 0;
-    let people = launch
-        .humans
-        .iter()
-        .filter(|human| human.raw_slot_index.is_some() && !human.is_observer())
-        .map(|human| human.slot.team);
-    for team in people.chain(launch.opponents.iter().map(|ai| ai.team)) {
+    for team in people
+        .map(|human| human.slot.team)
+        .chain(launch.opponents.iter().map(|ai| ai.team))
+    {
         match team {
             LaunchTeam::Team(team) if !teams.contains(&team) => teams.push(team),
             LaunchTeam::Team(_) => {}
@@ -518,6 +491,41 @@ fn hue_gap(a: i32, b: i32) -> i32 {
 mod tests {
     use super::*;
     use crate::rules::skirmish_colors::FIRST_EXTRA_PRIORITY;
+
+    #[test]
+    fn only_a_confirmed_legacy_lobby_can_drop_a_host_rule() {
+        use crate::app::match_runtime::session::NetworkReturnContext;
+        let rooms = crate::test_fixture::json("tests/fixtures/lobby/options.json");
+        let mut launch: SkirmishLaunchSession =
+            serde_json::from_value(rooms["rooms"]["generated_map_for_thirty"]["launch"].clone())
+                .unwrap();
+        launch.options.host_rules.superweapon_limit = 7;
+        let mut room = MatchSession::default();
+        room.enter_network(NetworkReturnContext::Wol);
+        room.accept_network_setup(launch, true, None, true).unwrap();
+        assert_eq!(refused_room_rule(&mut room, None), None);
+        assert_eq!(refused_room_rule(&mut room, Some(true)), None);
+        assert_eq!(
+            room.network_setup()
+                .unwrap()
+                .options
+                .host_rules
+                .superweapon_limit,
+            7
+        );
+        assert_eq!(
+            refused_room_rule(&mut room, Some(false)),
+            Some("VERA:SuperweaponLimitNotTaken")
+        );
+        assert_eq!(
+            room.network_setup()
+                .unwrap()
+                .options
+                .host_rules
+                .superweapon_limit,
+            0
+        );
+    }
 
     /// The `[Colors]` names of the colours Team Colors gives seats on
     /// `teams`.

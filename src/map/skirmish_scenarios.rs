@@ -10,7 +10,14 @@ use crate::map::waypoints::Waypoint;
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::skirmish_modes::SkirmishGameMode;
 
+/// The random-map seed file the `.SED` launch branch recognises, and the
+/// chooser's sentinel row. VERA writes it into its own folder
+/// (`map::source::random_map_dir`), where `map_load` reads it; gamemd keeps it
+/// in the game folder.
 pub const RANDMAP_SED: &str = "RandMap.Sed";
+/// The preview bitmap the random-map dialog writes beside [`RANDMAP_SED`]: the
+/// chooser's thumbnail, a room's generated preview and the loading screen's.
+pub const RANDMAP_PREVIEW: &str = "RandMap.img";
 /// `[RandomMap] NumPlayers` is clamped to this inclusive range before
 /// generation, so the sentinel has to advertise the same span. The original
 /// stops at 8; VERA's generator seats up to the offline Skirmish row count

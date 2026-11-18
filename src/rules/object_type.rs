@@ -374,6 +374,18 @@ pub const WEAPON_COUNT_LIMIT: i32 = 1024;
 /// which for a value near `i32::MAX` exhausts memory; no dock layout needs more.
 pub const DOCK_CONTACT_LIMIT: i32 = 256;
 
+/// VERA's bound on `MaxDebris=` and `MinDebris=` (TechnoType and Warhead).
+/// The debris throw (`0x00702291..0x0070256C`, `0x00469D0C..0x00469EB4`)
+/// draws and builds one piece at a time, so a value near `i32::MAX` freezes
+/// the match on the first death; retail throws at most 15.
+pub const DEBRIS_LIMIT: i32 = 256;
+
+/// VERA's bound on `SpawnsNumber=`, read by `TechnoTypeClass::ReadINI`'s
+/// ReadInt (`0x00714EF0`, `+0xD5C`). The spawn manager constructor
+/// (`0x006B6C90`) builds one node per spawn and each node its aircraft, so a
+/// value near `i32::MAX` exhausts memory; no carrier needs more.
+pub const SPAWNS_NUMBER_LIMIT: i32 = 128;
+
 /// Weapon-array slot the `Primary=` / `ElitePrimary=` keys name
 /// (`TechnoTypeClass+0x898` / `+0xA94`).
 pub const WEAPON_SLOT_PRIMARY: usize = 0;
@@ -903,6 +915,9 @@ pub struct ObjectType {
     /// the ordered TechnoType reader.
     #[cfg(feature = "phobos")]
     pub phobos_insignia: crate::rules::insignia_type::PhobosInsignia,
+    /// Ares `TechnoTypeExt` insignia keys (`Insignia*`, `InsigniaFrame*`,
+    /// `Insignia.ShowEnemy`), accumulated like the Phobos block above.
+    pub ares_insignia: crate::rules::insignia_type::AresInsignia,
     /// Phobos `Passengers.BySize` (`Valueable<bool>`, default yes): the
     /// passenger-count key `DrawInsignia` indexes `Insignia.PassengersN`
     /// with. Its other consumer, the NoQueueUpToEnter admission rewrite, is
@@ -1542,7 +1557,8 @@ pub struct ObjectType {
     /// resolvable value is the sole gate on creating a spawn manager, matching
     /// `TechnoClass::Init_Managers`.
     pub spawns: Option<String>,
-    /// Spawn pool capacity (`SpawnsNumber=`). Default 0.
+    /// Spawn pool capacity (`SpawnsNumber=`). Default 0, at most
+    /// [`SPAWNS_NUMBER_LIMIT`].
     pub spawns_number: i32,
     /// Frames before a destroyed spawn child is rebuilt (`SpawnRegenRate=`).
     pub spawn_regen_rate: u32,
@@ -4398,8 +4414,8 @@ impl ObjectType {
         // no folding step, so the 17 `[VehicleTypes]` that spell it
         // `Maxdebris=3` are invisible to gamemd and keep the constructor
         // default of 0 (`TechnoTypeClass::Constructor 0x00710FB7`).
-        let max_debris = section.read_int("MaxDebris", 0);
-        let min_debris = section.read_int("MinDebris", 0).max(0);
+        let max_debris = section.read_int("MaxDebris", 0).min(DEBRIS_LIMIT);
+        let min_debris = section.read_int("MinDebris", 0).clamp(0, DEBRIS_LIMIT);
         let max_debris = max_debris.max(min_debris);
 
         Self {
@@ -4706,6 +4722,7 @@ impl ObjectType {
             // accumulates these keys over every reached pass.
             #[cfg(feature = "phobos")]
             phobos_insignia: crate::rules::insignia_type::PhobosInsignia::default(),
+            ares_insignia: crate::rules::insignia_type::AresInsignia::default(),
             #[cfg(feature = "phobos")]
             phobos_passengers_by_size: crate::rules::ares_switch::not_ares_read(|| {
                 section.read_ares_bool("Passengers.BySize", true)
@@ -4972,7 +4989,7 @@ impl ObjectType {
             // Spawn manager pool. Constructor null; only the ordered Process
             // owner reads `Spawns=`.
             spawns: None,
-            spawns_number: section.read_int("SpawnsNumber", 0),
+            spawns_number: section.read_int("SpawnsNumber", 0).min(SPAWNS_NUMBER_LIMIT),
             spawn_regen_rate: section.read_int("SpawnRegenRate", 0).max(0) as u32,
             spawn_reload_rate: section.read_int("SpawnReloadRate", 0).max(0) as u32,
             missile_spawn: section.read_bool("MissileSpawn", false),

@@ -363,6 +363,15 @@ impl AppState {
     /// The active rules: runtime-bound during a match, startup-shell rules
     /// otherwise. Matches the old field's Option shape at every consumer.
     pub(crate) fn rules(&self) -> Option<&crate::rules::ruleset::RuleSet> {
+        let route = self.frontend.shell_route;
+        if self.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
+            && (route.wol_visit() || route.lan_lobby() || route.network_setup())
+        {
+            // Network choices must agree before loading. Keep the old world's
+            // Rules with its objects, but don't offer its map's colors or Types
+            // in the next room. PrepareSession refreshed startup's Countries.
+            return self.frontend.frontend_rules.as_ref();
+        }
         self.match_state
             .sim_runtime
             .runtime()

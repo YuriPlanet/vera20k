@@ -2,7 +2,7 @@
 
 [简体中文](wasm-net.md) | [English](wasm-net.en.md)
 
-`wasm-net` 为浏览器版本增加现有在线大厅和 UDP relay 的访问入口。默认构建、桌面联网和仅启用 `wasm` 的单机包继续使用原路径。接入方式是 WS 与 UDP 的透明转换：原大厅和 relay 服务端、消息格式、票据、加密、ACK、可靠消息和指令排序协议均不修改。
+`wasm-net` 为浏览器版本增加现有在线大厅和 UDP relay 的访问入口。默认构建、桌面联网和仅启用 `wasm` 的单机包继续使用原路径。接入方式是 WS 与 UDP 的透明转换：原大厅和 relay 服务端、消息格式、票据、逐跳认证、ACK、可靠消息和指令排序协议均不修改。
 
 ## 构建和地址
 
@@ -26,7 +26,7 @@ WS_PROXY_URL=ws://localhost:8788 python3 tools/wasm/build.py --network
 
 `WS_PROXY_URL` 是编译期代理 origin，默认完整值为 `wss://wss.vera20k.com`。唯一 Rust 配置入口是 [`net::udp::browser_proxy_url`](../src/net/udp.rs)，通过 `option_env!` 取得构建环境；JS 不另设默认值。构建工具拒绝空值、凭据、路径、查询串、片段和非 WebSocket scheme；`ws://` 只允许回环地址。正常部署使用 `wss://`。
 
-默认的两条 WS 地址为 `wss://wss.vera20k.com/game/primary` 和 `wss://wss.vera20k.com/game/alternate`。大厅 Fetch 使用同一 authority 的 HTTPS `/v1/*`（本地 `ws:` 对应 `http:`）。没有运行时地址设置、localStorage 或页面域名回退。默认域名只是构建约定，不表示服务已部署。`WS_PROXY_URL` 不改变大厅下发的 `RelayGrant.address`。
+默认的两条 WS 地址为 `wss://wss.vera20k.com/game/primary/<relay>` 和 `wss://wss.vera20k.com/game/alternate/<relay>`，其中 `<relay>` 是票据的 IPv4:端口。大厅 Fetch 使用同一 authority 的 HTTPS `/v1/*`（本地 `ws:` 对应 `http:`）。没有运行时地址设置、localStorage 或页面域名回退。默认域名只是构建约定，不表示服务已部署。`WS_PROXY_URL` 不改变大厅下发的 `RelayGrant.address`；relay 由该地址决定。
 
 ## 局域网（`wasm-lan`）
 
@@ -59,16 +59,16 @@ WS_PROXY_URL=ws://localhost:8788 python3 tools/wasm/build.py --network
 
 ```text
 现有在线大厅逻辑 → Fetch → 网关 /v1/* → 原 HTTPS 大厅
-现有网络协议 → 浏览器 socket → WS /game/primary → 独立 UDP socket → 原 relay
-             浏览器 alternate → WS /game/alternate → 另一 UDP socket
+现有网络协议 → 浏览器 socket → WS /game/primary/<relay> → 独立 UDP socket → 票据指定的 relay
+             浏览器 alternate → WS /game/alternate/<relay> → 另一 UDP socket
 桌面客户端 → 原 HTTPS 大厅与 UDP relay
 ```
 
-一条 WS binary message 就是一份完整的原 UDP 数据报，不增加目的地址头、JSON、base64 或自定义握手，不拼接报文。认证、续期、ACK、重试、排序及对局日志始终由原所有者处理。WS OPEN 不是 relay admission；连接 Ping/Pong 不代表游戏层确认。
+一条 WS binary message 就是一份完整的原 UDP 数据报。relay 只在每条连接的 WS 路径中写明一次；数据报不增加目的地址头、JSON、base64 或自定义握手，不拼接报文。认证、续期、ACK、重试、排序及对局日志始终由原所有者处理。WS OPEN 不是 relay admission；连接 Ping/Pong 不代表游戏层确认。
 
-每个 WS 连接独占一个 connected UDP socket，存活期间源端口稳定，不同玩家和通道不共用端口。网关的 UDP 目标由管理员固定配置，必须对应大厅下发的 relay；浏览器不能指定任意转发目标。部署方法和限制见 [网关说明](../tools/wasm/gateway/README.zh-CN.md)。
+每个 WS 连接独占一个 connected UDP socket，存活期间源端口稳定，不同玩家和通道不共用端口。只有路径中的 relay 在管理员配置的 `VERA_RELAYS` 列表（大厅下发的全部 relay）中时，网关才把该连接转发过去，其他路径一律拒绝；浏览器不能指定任意转发目标。部署方法和限制见 [网关说明](../tools/wasm/gateway/README.zh-CN.md)。
 
-`/v1/*` 代理保持现有方法、路径、Authorization、请求体、状态码和响应体，不解析或改写游戏 JSON，也不替客户端重试。跨源 CORS 由网关处理，原大厅不需要增加 OPTIONS。网关的 HTTP 部分会经手 bearer 和包含 payload key 的响应，属于大厅凭据的信任边界；它不需要 relay 签名密钥，不记录凭据，也不读取零售资源。
+`/v1/*` 代理保持现有方法、路径、Authorization、请求体、状态码和响应体，不解析或改写游戏 JSON，也不替客户端重试。跨源 CORS 由网关处理，原大厅不需要增加 OPTIONS。网关的 HTTP 部分会经手 bearer 和包含票据与 packet key 的响应，属于大厅凭据的信任边界；它转发的游戏数据报按每一跳认证，但不加密；它不需要 relay 签名密钥，不记录凭据，也不读取零售资源。
 
 ## 客户端边界
 
@@ -76,7 +76,7 @@ WS_PROXY_URL=ws://localhost:8788 python3 tools/wasm/build.py --network
 
 [`web_socket.rs`](../src/net/web_socket.rs) 仅替换 `UdpIo` 的私有物理 socket，保留 `LanUdpTransport` 接口和原协议队列。`bind` 只创建逻辑句柄，直到原 owner 接受 relay grant 后才打开 WS；局域网菜单不能顺带连接远程代理（`wasm-lan` 只连接信令，见上文）。发送和接收端点绑定于该 grant，不使用“最后一次发送目的地”推断来源。
 
-[`network.js`](../tools/wasm/network.js) 只缓冲原始字节。接收上限为 256 包和 256 KiB，发送通过 `bufferedAmount` 限制为 256 KiB；Rust 使用原 codec 的 `MAX_DATAGRAM`。未连接或发送积压时返回 WouldBlock，协议队列仍拥有重试责任。
+[`network.js`](../tools/wasm/network.js) 只缓冲原始字节。接收上限为 256 包和 256 KiB，队列已满时像 UDP 一样丢弃新到的数据报；发送通过 `bufferedAmount` 限制为 256 KiB；Rust 使用原 codec 的 `MAX_DATAGRAM`。未连接或发送积压时返回 WouldBlock，协议队列仍拥有重试责任。
 
 物理连接失败时重连，退避上限 2 秒（relay 对 1.5 秒无消息的跳判为离线），清除旧连接的字节与回调，通知原 Rust owner 重新进行 relay challenge。原可靠队列、对局身份、未确认 batch 和日志 cursor 保留。断网不制造 Leave；显式退出仍走原确认流程。浏览器没有原生 I/O pump 线程，app 的分次 service 和事件循环共同推进网络。
 

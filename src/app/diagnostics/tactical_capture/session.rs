@@ -182,7 +182,7 @@ impl TacticalCaptureSession {
                 // owns the unique start-staging token. Drive that owner before
                 // launch regeneration; never reconstruct starts from map cells.
                 ensure!(
-                    seed_name == crate::app::shell_random_map::RANDMAP_SED_FILE,
+                    seed_name == crate::map::skirmish_scenarios::RANDMAP_SED,
                     "generated capture requires the normal accepted RandMap.Sed record"
                 );
                 let path = crate::map::source::random_map_dir(

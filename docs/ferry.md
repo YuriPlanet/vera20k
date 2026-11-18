@@ -75,6 +75,7 @@ order again.
 
 ## What ends a ferry
 
+- Starting another match.
 - The **Stop** key with the transport selected.
 - A new ferry order for the transport, which replaces the old route.
 - The transport is destroyed, changes owner or boards another transport.

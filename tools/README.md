@@ -11,7 +11,7 @@ oracle families index their own fixtures and producers.
 | Observe match data or explicitly enable offline trainer/event tools | [Telemetry dashboard and debug build](telemetry-dashboard/README.md) |
 | Give a new worktree its ignored `ini/` and `config.toml`, or a clone its `config.toml`; report what the game, retail tests and oracles still need | `python -m tools.prepare_checkout` |
 | Run all Python tool and source-skill tests | `python -m tools.run_tests` (below) |
-| Play the latest stable and newest dev build's relay client code against a relay change (CI only) | `.github/workflows/relay-compat.yml`, `tools/relay_compat.py` |
+| Play a client built on the relay protocol crate of every build the lobby admits against a relay change (CI only) | `.github/workflows/relay-compat.yml`, `tools/relay_compat.py` |
 | Inspect process audio definitions, sample sources and retention evidence | [Process audio catalog owner](audio_catalog_owner.md), `asset sound` |
 | Wait for builds; test, check, lint or build the current checkout; preserve A/B binaries | `python -m tools.cargo_run` (below) |
 | Avoid shell traps that make a failed run look clean | [shell pitfalls](#shell-pitfalls) |

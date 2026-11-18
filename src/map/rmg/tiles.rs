@@ -173,6 +173,14 @@ impl TileIds {
                 .any(|base| tile_in_native_window(tile, base, WATERFALL_SPAN))
     }
 
+    /// The WaterSet family alone, without the shore pieces and waterfalls
+    /// [`Self::is_water_shore_or_waterfall`] adds. A shore piece is walkable
+    /// beach, so a water-only unit (`SpeedType=Float`) needs this stricter
+    /// test to stand on open sea.
+    pub fn is_water(&self, tile: i32) -> bool {
+        tile_in_native_window(tile, self.water_base, WATER_FAMILY_SPAN)
+    }
+
     /// Paved-road range used by the start 6x6 passability gate.
     pub fn is_paved_road(&self, tile: i32) -> bool {
         in_span(tile, self.paved_roads, PAVED_ROADS_SPAN)

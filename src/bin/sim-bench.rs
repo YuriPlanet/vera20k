@@ -52,6 +52,14 @@
 //! The periodic hashes
 //! are timed on their own, which measures what each hashing frame also takes.
 //! The scenarios' own work (choosing each frame's commands) is not timed.
+//!
+//! `--state-isolation-report <new.json>` compares process lifetimes through
+//! the production headless loader. Run once in a fresh process, then again
+//! with `--prior-map <map>` (repeatable), and compare the reports' `target`
+//! values. Use the same map, seed, `--isolation-mode lan|wol`,
+//! `--isolation-humans 1|2`, computers and tick count. This exercises Rules,
+//! world construction and ordinary frames; app input and transport need the
+//! live LAN capture described in docs/Networking.md.
 //! A frame that fails ends the run with its error, after the CSV, summary and
 //! periodic hashes of the frames before it; `final_hash` is then left out.
 //!
@@ -110,6 +118,7 @@
 //! Build with `cargo build --release -p vera20k-core --bin sim-bench`; timings from a debug
 //! build are not meaningful.
 
+mod sim_bench_isolation;
 mod sim_bench_match;
 
 use std::io::Write;
@@ -171,6 +180,10 @@ struct Args {
     frame_hashes: Option<PathBuf>,
     client_timing: bool,
     presentation_frame: bool,
+    isolation_report: Option<PathBuf>,
+    prior_maps: Vec<String>,
+    isolation_mode: Option<ScenarioGameMode>,
+    isolation_humans: usize,
 }
 
 impl Args {
@@ -215,6 +228,10 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
         frame_hashes: None,
         client_timing: false,
         presentation_frame: false,
+        isolation_report: None,
+        prior_maps: Vec::new(),
+        isolation_mode: None,
+        isolation_humans: 1,
     };
     let mut march_flag = None;
     while let Some(flag) = argv.next() {
@@ -273,6 +290,16 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
             "--no-sleep" => args.no_sleep = true,
             "--sleep-check" => args.sleep_check = true,
             "--presentation-frame" => args.presentation_frame = true,
+            "--state-isolation-report" => args.isolation_report = Some(PathBuf::from(value()?)),
+            "--prior-map" => args.prior_maps.push(value()?),
+            "--isolation-mode" => {
+                args.isolation_mode = Some(match value()?.as_str() {
+                    "lan" => ScenarioGameMode::Lan,
+                    "wol" => ScenarioGameMode::Wol,
+                    _ => return Err("--isolation-mode needs lan or wol".into()),
+                });
+            }
+            "--isolation-humans" => args.isolation_humans = number(value()?)? as usize,
             other => return Err(format!("unrecognised argument {other}")),
         }
     }
@@ -293,11 +320,18 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
         args.lan = true;
     }
     let marched = args.scenario == ScenarioKind::March;
-    if marched && args.computers.is_some() {
+    if marched && args.computers.is_some() && args.isolation_report.is_none() {
         return Err("--computers is a match and skirmish option".to_string());
     }
     if !marched && let Some(flag) = march_flag {
         return Err(format!("{flag} is a march option"));
+    }
+    if args.isolation_report.is_none()
+        && (!args.prior_maps.is_empty()
+            || args.isolation_mode.is_some()
+            || args.isolation_humans != 1)
+    {
+        return Err("state-isolation options need --state-isolation-report".into());
     }
     Ok(args)
 }
@@ -847,11 +881,16 @@ fn main() -> Result<(), String> {
                  [--types E1,E2,MTNK,HTNK] [--order-spread 30] [--return-at T] (march) \
                  [--hash-every N] [--frame-hash-every 15] [--csv <path>] [--serial-paths] [--serial-scans] \
                  [--frame-profile] [--lan] [--watchers N (skirmish)] [--frame-hashes <path>] \
-                 [--client-timing]"
+                 [--client-timing] \
+                 [--state-isolation-report <new.json> --prior-map <map> \
+                 --isolation-mode lan|wol --isolation-humans 1|2]"
             );
             std::process::exit(2);
         }
     };
+    if args.isolation_report.is_some() {
+        return sim_bench_isolation::run(&args);
+    }
     let computers = match args.scenario {
         ScenarioKind::March => 0,
         ScenarioKind::Match | ScenarioKind::Skirmish => seated_computers(&args)?,

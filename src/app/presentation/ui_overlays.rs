@@ -1347,6 +1347,9 @@ pub(crate) struct TechnoExtras {
     /// were read the Ares way.
     pub power_off: Option<SpriteInstance>,
     pub rank: Option<SpriteInstance>,
+    /// The custom insignia SHP (normalized file name) `rank` was cut from;
+    /// `None` is the stock PIPS strip. The replay binds that shape's texture.
+    pub rank_insignia: Option<String>,
     pub background: Option<SpriteInstance>,
     /// Phobos mobile shield PIPBRD/E00, before the shield and health fills.
     pub shield_background: Option<SpriteInstance>,
@@ -1542,8 +1545,9 @@ fn shield_bar_instances(
     }
 }
 
-/// Phobos `TechnoExt::DrawInsignia`: the custom/stock rank shape, frame and
-/// screen position for one Techno, or `None` when the draw is refused. The
+/// Phobos `TechnoExt::DrawInsignia`: the custom/stock rank shape, frame,
+/// screen position and custom SHP name for one Techno, or `None` when the
+/// draw is refused. The
 /// hook replaces the native rank block whenever the Phobos capability is
 /// compiled in, so the stock negative-rank frame19 arm is not reached.
 #[cfg(feature = "phobos")]
@@ -1563,6 +1567,7 @@ fn phobos_insignia_draw<'a>(
     &'a crate::render::selection_overlay::CenteredShapeStrip,
     usize,
     (f32, f32),
+    Option<String>,
 )> {
     let globals = rules.phobos_draw_globals();
     if globals.only_on_selected
@@ -1655,16 +1660,16 @@ fn phobos_insignia_draw<'a>(
         if let Some(found) = layer[rank]
             .iter()
             .rev()
-            .find_map(|name| overlay.insignia_shape(name))
+            .find_map(|name| Some((overlay.insignia_shape(name)?, name)))
         {
             shape = Some(found);
         }
     }
     let (shape, custom) = match shape {
-        Some(shape) => (shape, true),
-        None => (overlay.pips()?, false),
+        Some((shape, name)) => (shape, Some(name.clone())),
+        None => (overlay.pips()?, None),
     };
-    let frame = usize::try_from(insignia.frame(rank, custom)?).ok()?;
+    let frame = usize::try_from(insignia.frame(rank, custom.is_some())?).ok()?;
     let (mut x, mut y) = (sx, sy);
     match entity.category() {
         EntityCategory::Infantry => {
@@ -1688,7 +1693,84 @@ fn phobos_insignia_draw<'a>(
     if globals.use_pixel_selection_bracket_delta {
         y += object.pixel_selection_bracket_delta as f32;
     }
-    Some((shape, frame, (x, y)))
+    Some((shape, frame, (x, y), custom))
+}
+
+/// Ares.dll 0x1004E0F1..0x1004E149 checks the owner's ally mask for the
+/// viewer and compares the viewer to the observer house (0xAC1198).
+#[cfg(not(feature = "phobos"))]
+fn ares_insignia_visible(
+    sim: &crate::sim::world::Simulation,
+    owner: crate::sim::intern::InternedId,
+    viewer: Option<crate::sim::intern::InternedId>,
+    show_enemy: bool,
+) -> bool {
+    show_enemy
+        || viewer.is_some_and(|viewer| {
+            sim.house_alliances()
+                .is_allied(sim.interner(), owner, viewer)
+                || sim.session().is_observer_house(viewer)
+        })
+}
+
+/// Ares `TechnoClass_DrawVeterancy` (Ares.dll 1004E0C0, hook 0x70A990),
+/// which replaces the stock rank leaf; Phobos's `DrawInsignia` replaces it
+/// in turn. The rank shape, frame and custom SHP name, or `None`:
+/// - 1004E0F1..1004E149: the player, an ally of the owner or the observer
+///   sees it; anyone else only with `Insignia.ShowEnemy`, else `[General]
+///   EnemyInsignia`;
+/// - 1004E14F..1004E1A7: Veterancy at 2.0 is elite (PIPS 15), at 1.0
+///   veteran (14), else rookie (none, no negative frame 19); the rank's
+///   custom SHP replaces PIPS with frame 0;
+/// - 1004E1AB..1004E1D5: a nonnegative `InsigniaFrame` replaces that frame.
+///
+/// The caller keeps the stock offsets, PALETTE.PAL, E00 and Z -2 it draws
+/// with (1004E1D7..1004E228). Its TechnoTypeExt and RulesExt keys are read
+/// only the Ares way, so the caller asks [`RuleSet::ares_form`].
+#[cfg(not(feature = "phobos"))]
+fn ares_insignia_draw<'a>(
+    sim: &crate::sim::world::Simulation,
+    entity: &ObjectRecord,
+    object: &crate::rules::object_type::ObjectType,
+    rules: &RuleSet,
+    overlay: &'a crate::render::selection_overlay::SelectionOverlay,
+    observer_id: Option<crate::sim::intern::InternedId>,
+) -> Option<(
+    &'a crate::render::selection_overlay::CenteredShapeStrip,
+    usize,
+    Option<String>,
+)> {
+    use crate::sim::combat::veterancy::{raw_is_elite, raw_is_veteran};
+    let insignia = &object.ares_insignia;
+    let show_enemy = insignia
+        .show_enemy
+        .unwrap_or_else(|| rules.ares_enemy_insignia());
+    if !ares_insignia_visible(sim, entity.owner(), observer_id, show_enemy) {
+        return None;
+    }
+    let raw = entity.veterancy.raw();
+    let (rank, stock_frame) = if raw_is_elite(raw) {
+        (2, 15)
+    } else if raw_is_veteran(raw) {
+        (1, 14)
+    } else {
+        (0, -1)
+    };
+    let custom = insignia.images[rank]
+        .iter()
+        .rev()
+        .find_map(|name| Some((overlay.insignia_shape(name)?, name)));
+    let (shape, default_frame, name) = match custom {
+        Some((shape, name)) => (shape, 0, Some(name.clone())),
+        None => (overlay.pips()?, stock_frame, None),
+    };
+    let frame = match insignia.frames[rank] {
+        frame if frame < 0 => default_frame,
+        frame => frame,
+    };
+    usize::try_from(frame)
+        .ok()
+        .map(|frame| (shape, frame, name))
 }
 
 /// DrawExtras' wrench test (`0x006F5253`): a repairing building. Ares
@@ -1938,8 +2020,10 @@ pub(crate) fn techno_extras_for_parent(
     let observer_id = local_owner_id;
     let disguised = observer_id.is_some() && entity.seen.disguised_to_observer;
     let character = entity.seen.visual_character;
+    // Ares replaces this leaf (hook 0x70A990) when the Rules were read the
+    // Ares way ([`ares_insignia_draw`]).
     #[cfg(not(feature = "phobos"))]
-    if !disguised && character != 5 {
+    if !ares_form && !disguised && character != 5 {
         use crate::sim::combat::veterancy::{raw_is_elite, raw_is_negative, raw_is_veteran};
         //70A999's +88 getter is discarded (Unit741490, Building459EE0);
         // there is no Trainable gate.70A9B2/C2/D2 tests the raw accumulator,
@@ -1973,7 +2057,7 @@ pub(crate) fn techno_extras_for_parent(
     #[cfg(feature = "phobos")]
     if character != 5
         && let Some(rules) = rules
-        && let Some((shape, frame, point)) = phobos_insignia_draw(
+        && let Some((shape, frame, point, insignia)) = phobos_insignia_draw(
             sim,
             entity,
             rules,
@@ -1992,6 +2076,28 @@ pub(crate) fn techno_extras_for_parent(
                 rank.z_adjust = -2.0;
                 rank
             });
+        strip.rank_insignia = strip.rank.is_some().then_some(insignia).flatten();
+    }
+    #[cfg(not(feature = "phobos"))]
+    if ares_form
+        && !disguised
+        && character != 5
+        && let (Some(rules), Some(object)) = (rules, object)
+        && let Some((shape, frame, insignia)) =
+            ares_insignia_draw(sim, entity, object, rules, overlay, observer_id)
+    {
+        let (dx, dy) = if entity.category() == EntityCategory::Infantry {
+            (5.0, 2.0)
+        } else {
+            (10.0, 6.0)
+        };
+        strip.rank = instance(shape, frame, (sx + dx, sy + dy), 0.0006)
+            .filter(|rank| viewport.contains(rank))
+            .map(|mut rank| {
+                rank.z_adjust = -2.0;
+                rank
+            });
+        strip.rank_insignia = strip.rank.is_some().then_some(insignia).flatten();
     }
     let widened = health_strip_widened(
         sim,
@@ -2761,6 +2867,28 @@ mod mind_control_pip_tests;
 
 #[cfg(all(test, tests_app_presentation))]
 mod tests {
+    #[cfg(not(feature = "phobos"))]
+    #[test]
+    fn ares_enemy_insignia_checks_the_owners_allies_and_the_observer_house() {
+        use super::ares_insignia_visible as visible;
+        let mut sim = crate::sim::world::Simulation::new();
+        let blue = sim.intern("Blue");
+        let red = sim.intern("Red");
+        sim.house_alliances_mut_for_test()
+            .entry("BLUE".into())
+            .or_default()
+            .insert("RED".into());
+
+        assert!(visible(&sim, blue, Some(red), false));
+        assert!(!visible(&sim, red, Some(blue), false));
+        assert!(visible(&sim, red, Some(blue), true));
+        assert!(!visible(&sim, red, None, false));
+
+        sim.session_mut_for_test()
+            .install_observer_houses_for_test(vec![blue]);
+        assert!(visible(&sim, red, Some(blue), false));
+    }
+
     /// Ares TechnoClass_DrawExtras_PowerOff (10049FE0, hook 0x6F526C): the
     /// owner sees its repairing building's wrench, an enemy only with
     /// `EnemyWrench=yes` (the default).

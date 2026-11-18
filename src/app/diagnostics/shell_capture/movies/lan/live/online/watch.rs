@@ -1,13 +1,14 @@
 //! `online-live-watch` within LiveRoundFlow: a third account watches the
 //! configured host's running match (docs/Networking.md "Watching"). Only the
-//! ordinary lobby mouse adapter and the watcher's own keys
-//! (`match_runtime::watching::key`) make inputs; the lobby's list poll, the
-//! grant, the map, the relay's stream, its catch-up and the exit run as in an
-//! interactive game. A desync or a lost relay stops the match with its usual
-//! message, which `LiveLanCapture::after_present` fails on.
+//! ordinary lobby mouse adapter and the watcher's own keys and mouse buttons
+//! (`match_runtime::watching::key` and `mouse`) make inputs; the lobby's list
+//! poll, the grant, the map, the relay's stream, its catch-up and the exit run
+//! as in an interactive game. A desync or a lost relay stops the match with its
+//! usual message, which `LiveLanCapture::after_present` fails on.
 
 use super::*;
 use crate::app::match_runtime::watching;
+use winit::event::MouseButton;
 
 /// Frames the watcher must play once it has caught up.
 const FRAMES_AFTER_CATCH_UP: u32 = REQUIRED_FRAMES;
@@ -20,6 +21,11 @@ const STALL: Duration = Duration::from_secs(60);
 const RETURN_WAIT: Duration = Duration::from_secs(60);
 /// Tab's stops at most: 30 players and the observer's sidebar.
 const TAB_STOPS: usize = 31;
+/// How far right of its anchor the right drag holds the pointer, in frame
+/// pixels: past any drag threshold, and on the battlefield from its middle.
+const PAN_PIXELS: f32 = 120.0;
+/// How long the right drag may leave the view where it was.
+const PAN_WAIT: Duration = Duration::from_secs(10);
 /// The observer's sidebar among the views Tab shows; every other is a House.
 const OBSERVER_VIEW: &str = "the observer's sidebar";
 
@@ -31,7 +37,9 @@ enum Step {
     Joining,
     /// The watched match, through its catch-up and the frames after it.
     Playing,
-    /// Tab went through the views; Escape comes a presented frame later.
+    /// Tab went through the views; the right mouse button drags the view.
+    Panning,
+    /// The drag moved the view; Escape comes a presented frame later.
     Followed,
     /// Escape pressed: back to the online lobby.
     Returning,
@@ -50,6 +58,11 @@ pub(super) struct WatchRun {
     frames_after: u32,
     /// The view before Tab and each it showed, back to that one.
     tab: Option<(String, Vec<String>)>,
+    /// The view when the right drag began, whether the drag turned left,
+    /// and how far it moved the view.
+    pan_from: Option<(f32, f32)>,
+    pan_turned: bool,
+    pan: Option<[f32; 2]>,
     exit_route: Vec<Value>,
 }
 
@@ -73,6 +86,9 @@ impl LiveRoundFlow {
             last_frame: None,
             frames_after: 0,
             tab: None,
+            pan_from: None,
+            pan_turned: false,
+            pan: None,
             exit_route: Vec::new(),
         });
         self.record(
@@ -93,6 +109,7 @@ impl LiveRoundFlow {
             Step::List => self.join_listed_match(&mut run, state, rendered, frame),
             Step::Joining => self.await_watched_match(&mut run, state, frame),
             Step::Playing => self.play_watched_match(&mut run, state, frame),
+            Step::Panning => self.pan_watched_view(&mut run, state, frame),
             Step::Followed => self.leave_watched_match(&mut run, state, frame),
             Step::Returning => self.watch_returned(&mut run, state, rendered, frame),
         };
@@ -184,6 +201,18 @@ impl LiveRoundFlow {
             .filter(|live| live.watching())
             .and_then(|live| live.relay_watch_delay())
             .context("the watched match runs without a watcher's relay route")?;
+        ensure!(
+            state
+                .match_state
+                .sim_runtime
+                .runtime()
+                .is_some_and(|runtime| runtime.simulation.session().watcher()),
+            "the watched match started as a player's world"
+        );
+        ensure!(
+            !state.match_state.sandbox_full_visibility,
+            "the watched match started on the whole map, not its followed player's sight"
+        );
         let native = native_frame(state)?;
         run.delay_seconds = Some(delay);
         run.first_frame = Some(native);
@@ -271,6 +300,14 @@ impl LiveRoundFlow {
                 views.last().unwrap_or(&start) != &view,
                 "Tab kept showing {view}"
             );
+            // Only the observer's sidebar sees the whole map; a player's view
+            // sees what that player sees.
+            let whole = state.match_state.sandbox_full_visibility;
+            ensure!(
+                whole == (view == OBSERVER_VIEW),
+                "{view} {} the whole map",
+                if whole { "showed" } else { "did not show" }
+            );
             views.push(view);
         }
         ensure!(
@@ -292,6 +329,49 @@ impl LiveRoundFlow {
             ),
         );
         run.tab = Some((start, views));
+        run.pan_from = Some(begin_pan(state)?);
+        run.advance(Step::Panning);
+        Ok(())
+    }
+
+    /// The right drag must move the view within [`PAN_WAIT`]. A view already
+    /// at the map's right edge cannot move right, so halfway through the
+    /// drag turns left, past its anchor by as much.
+    fn pan_watched_view(
+        &mut self,
+        run: &mut WatchRun,
+        state: &mut AppState,
+        frame: u32,
+    ) -> Result<()> {
+        let from = run.pan_from.context("right drag start")?;
+        let camera = (
+            state.match_state.input.camera_x,
+            state.match_state.input.camera_y,
+        );
+        if camera == from {
+            let waited = run.since.elapsed();
+            ensure!(
+                waited < PAN_WAIT,
+                "a right drag over the battlefield did not move the watcher's view within {} s",
+                PAN_WAIT.as_secs()
+            );
+            if waited >= PAN_WAIT / 2 && !run.pan_turned {
+                state.match_state.input.cursor_x -= 2.0 * PAN_PIXELS;
+                run.pan_turned = true;
+            }
+            return Ok(());
+        }
+        watching::mouse(state, MouseButton::Right, false);
+        MoviesCapture::restore_neutral_pointer(state);
+        let moved = [camera.0 - from.0, camera.1 - from.1];
+        self.record(
+            frame,
+            &format!(
+                "A right drag moved the view by ({:.0}, {:.0}) world pixels",
+                moved[0], moved[1]
+            ),
+        );
+        run.pan = Some(moved);
         run.advance(Step::Followed);
         Ok(())
     }
@@ -369,12 +449,12 @@ impl LiveRoundFlow {
         Ok(
             json!({"target":"online-live-watch","account":config.account,"host":config.host,
             "service_boundary":"normal WOL UI, deployed HTTPS lobby and its watch grant, the relay's delayed stream to a watcher, production loading and frame boundary",
-            "scope":"a third account finds the host's running match in the lobby's watch list, loads it, catches up to the delayed present, plays 300 frames more without a stop, goes through the players and the observer's sidebar with Tab and leaves with Escape to the lobby and the settled Main Menu; no result or cross-client checksum claim beyond the watcher's own check",
+            "scope":"a third account finds the host's running match in the lobby's watch list, loads it as a watcher with its followed player's sight, catches up to the delayed present, plays 300 frames more without a stop, goes through the players (each with their own sight) and the observer's sidebar (the whole map) with Tab, moves the view with a right drag and leaves with Escape to the lobby and the settled Main Menu; no result or cross-client checksum claim beyond the watcher's own check",
             "watch":{"match_id":run.match_id,"delay_seconds":run.delay_seconds,
                 "first_native_frame":run.first_frame,"catch_up_seen":run.catch_up_seen,
                 "caught_up_native_frame":run.caught_up_frame,
                 "frames_after_catch_up":run.frames_after,
-                "tab_start":start,"tab_views":views,
+                "tab_start":start,"tab_views":views,"right_drag_moved":run.pan,
                 "exit_route":exit_route},
             "returned_to_menu":true,"menu_return":menu,"route":self.route}),
         )
@@ -413,6 +493,24 @@ fn shown_view(state: &AppState) -> Result<String> {
         .try_resolve(house)
         .context("followed House name")?
         .to_owned())
+}
+
+/// A right press at the resting pointer through the watcher's mouse adapter,
+/// as the window's button events reach it in a watched match, and the pointer
+/// moved right past the drag threshold. Answers the view before the drag.
+fn begin_pan(state: &mut AppState) -> Result<(f32, f32)> {
+    MoviesCapture::restore_neutral_pointer(state);
+    ensure!(
+        crate::app::input::camera::cursor_over_battlefield(state),
+        "the resting pointer is off the battlefield"
+    );
+    let from = (
+        state.match_state.input.camera_x,
+        state.match_state.input.camera_y,
+    );
+    watching::mouse(state, MouseButton::Right, true);
+    state.match_state.input.cursor_x += PAN_PIXELS;
+    Ok(from)
 }
 
 /// A press and release through the watcher's key adapter, as the window's

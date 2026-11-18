@@ -73,7 +73,7 @@ pub(super) enum SleepVisit {
 pub(super) struct SleepCheck {
     expected: serde_json::Value,
     /// The state hash's parts with the visit counted.
-    hash: [(&'static str, u64); 30],
+    hash: super::world_hash::StateHashOwners,
     scenario_rng: u64,
     main_rng: u64,
     logic_len: usize,

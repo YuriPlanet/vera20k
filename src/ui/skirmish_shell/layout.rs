@@ -1,5 +1,7 @@
 //! Dialog 0x102 shell layout recovered from gamemd.exe.
 
+use super::scroll::ScrollModel;
+use super::state::DropdownScrollbarPart;
 use crate::ui::shell::descriptor::{AnchorRule, LOW_HEADING_ANCHOR, MAP_TEXT_ANCHOR};
 pub use crate::ui::shell::geom::{RectPx, RightPanelRects};
 use crate::ui::shell::geom::{
@@ -340,11 +342,24 @@ pub enum AdvancedField {
     /// Mountainous map types keep before cutting it into levels with cliffs.
     PlateauSize,
     Accessibility,
+    /// VERA extension (Advanced page 2): neutral tech-building amount.
+    TechBuildings,
+    /// VERA extension (Advanced page 2): derelict combat buildings amount.
+    Derelicts,
+    /// VERA extension (Advanced page 2): whole-map building damage level.
+    Damage,
+    /// VERA extension: extra civilian infantry and vehicles on Neutral.
+    Civilians,
+    /// VERA extension: `Name=Animal …` units on Neutral.
+    Animals,
+    /// VERA extension: player-buildable units left neutral and hostile.
+    Wild,
 }
 
 impl AdvancedField {
-    /// Row order in the Advanced view.
-    pub const ALL: [Self; 7] = [
+    /// Row order in the Advanced view: the original seven, then VERA's
+    /// sliders on the following pages.
+    pub const ALL: [Self; 13] = [
         Self::Water,
         Self::Hills,
         Self::Buildings,
@@ -352,10 +367,102 @@ impl AdvancedField {
         Self::OreFields,
         Self::PlateauSize,
         Self::Accessibility,
+        Self::TechBuildings,
+        Self::Derelicts,
+        Self::Damage,
+        Self::Civilians,
+        Self::Animals,
+        Self::Wild,
     ];
+
+    /// Sliders on a page. The dialog has room for the original seven rows.
+    pub const PAGE_SIZE: usize = 7;
+    pub const PAGE_COUNT: usize = 2;
 
     pub const fn row(self) -> usize {
         self as usize
+    }
+
+    /// The page this slider is on: the original seven first, then VERA's.
+    pub const fn page(self) -> usize {
+        self.row() / Self::PAGE_SIZE
+    }
+
+    /// The row within the page, used to index the seven dialog control rects.
+    pub const fn page_row(self) -> usize {
+        self.row() % Self::PAGE_SIZE
+    }
+
+    /// The Advanced view's native vertical scrollbar, to the right of the
+    /// reusable slider windows. Its span is exactly the sliders' span, so it
+    /// stays aligned at every page scale.
+    pub fn advanced_scrollbar_rect(layout: &RandomMapSetupLayout) -> RectPx {
+        let first = layout.advanced_control_rects[0];
+        let last = layout.advanced_control_rects[Self::PAGE_SIZE - 1];
+        RectPx::new(
+            first.x + first.w + 4,
+            first.y,
+            DropdownMetrics::scaled(layout.scale).scrollbar_w,
+            last.y + last.h - first.y,
+        )
+    }
+
+    /// The same scrollbar geometry the combo dropdowns use, with the seven
+    /// visible Advanced rows as its page size.
+    pub fn advanced_scrollbar_model(scale: ShellScale) -> ScrollModel {
+        ScrollModel::combo_at(Self::PAGE_SIZE as i32, DropdownMetrics::scaled(scale))
+    }
+
+    /// Thumb position for a scroll offset clamped to the available pages.
+    pub fn advanced_scrollbar_thumb(layout: &RandomMapSetupLayout, page: usize) -> RectPx {
+        let bar = Self::advanced_scrollbar_rect(layout);
+        let model = Self::advanced_scrollbar_model(layout.scale);
+        let thumb_h = model.thumb_height(Self::PAGE_SIZE, Self::ALL.len(), bar.h);
+        let top = page.min(Self::PAGE_COUNT - 1);
+        let thumb_y = model.thumb_y(bar, thumb_h, top, Self::PAGE_COUNT - 1);
+        RectPx::new(bar.x, thumb_y, bar.w, thumb_h)
+    }
+
+    /// Which part of the Advanced scrollbar a point is over.
+    pub fn advanced_scrollbar_part_at(
+        layout: &RandomMapSetupLayout,
+        page: usize,
+        x: i32,
+        y: i32,
+    ) -> Option<DropdownScrollbarPart> {
+        let bar = Self::advanced_scrollbar_rect(layout);
+        if !bar.contains(x, y) {
+            return None;
+        }
+        let button_h = DropdownMetrics::scaled(layout.scale).button_h;
+        if y < bar.y + button_h {
+            return Some(DropdownScrollbarPart::UpArrow);
+        }
+        if y >= bar.y + bar.h - button_h {
+            return Some(DropdownScrollbarPart::DownArrow);
+        }
+        let thumb = Self::advanced_scrollbar_thumb(layout, page);
+        Some(if thumb.contains(x, y) {
+            DropdownScrollbarPart::Thumb
+        } else {
+            DropdownScrollbarPart::Track
+        })
+    }
+
+    /// Scroll offset a track press or thumb drag maps to.
+    pub fn advanced_scrollbar_page_at_pointer(
+        layout: &RandomMapSetupLayout,
+        page: usize,
+        y: i32,
+    ) -> usize {
+        let bar = Self::advanced_scrollbar_rect(layout);
+        let thumb = Self::advanced_scrollbar_thumb(layout, page);
+        Self::advanced_scrollbar_model(layout.scale).top_index_at_pointer(
+            bar,
+            thumb.h,
+            Self::PAGE_COUNT - 1,
+            y,
+        )
     }
 
     /// The row label: the string table's own names where it has one.
@@ -368,6 +475,12 @@ impl AdvancedField {
             Self::OreFields => ("GUI:TiberiumFields", "Ore Fields"),
             Self::PlateauSize => ("VERA:RandomMapPlateauSize", "Plateau Size"),
             Self::Accessibility => ("GUI:Accessability", "Accessibility"),
+            Self::TechBuildings => ("VERA:RandomMapTechBuildings", "Tech Buildings"),
+            Self::Derelicts => ("VERA:RandomMapDerelicts", "Derelicts"),
+            Self::Damage => ("VERA:RandomMapDamage", "Damage"),
+            Self::Civilians => ("VERA:RandomMapCivilians", "Civilians"),
+            Self::Animals => ("VERA:RandomMapAnimals", "Animals"),
+            Self::Wild => ("VERA:RandomMapWild", "Neutral Defenders"),
         }
     }
 }
@@ -393,6 +506,8 @@ pub enum RandomMapSetupControl {
     AdvancedToggle,
     /// VERA: one of the Advanced view's sliders.
     Advanced(AdvancedField),
+    /// VERA: the vertical scrollbar that pages the Advanced sliders.
+    AdvancedScrollbar,
     /// VERA: writes the generated map as a `.yrm` file.
     ExportMap,
     /// VERA: turns Fair Starts on or off.
@@ -1157,6 +1272,7 @@ pub fn random_map_setup_control_at_view(
     advanced: bool,
     extras: bool,
     ares: bool,
+    advanced_page: usize,
 ) -> Option<RandomMapSetupControl> {
     if layout.advanced.contains(x, y) {
         return Some(RandomMapSetupControl::AdvancedToggle);
@@ -1173,15 +1289,26 @@ pub fn random_map_setup_control_at_view(
     if !advanced {
         return random_map_setup_control_at(layout, x, y, ares);
     }
-    if let Some(field) = AdvancedField::ALL
-        .into_iter()
-        .find(|field| layout.advanced_control_rects[field.row()].contains(x, y))
-    {
-        return Some(if extras {
-            RandomMapSetupControl::ExtrasRow(field.row())
-        } else {
-            RandomMapSetupControl::Advanced(field)
-        });
+    // VERA: the scrollbar belongs only to the Advanced sliders; the Extras
+    // view has its own paging row and keeps the same physical area.
+    if !extras && AdvancedField::advanced_scrollbar_rect(layout).contains(x, y) {
+        return Some(RandomMapSetupControl::AdvancedScrollbar);
+    }
+    if extras {
+        // The Extras view owns its own paging; a row is the seven reusable
+        // slider windows, so hit-test by raw row as before.
+        if let Some(field) = AdvancedField::ALL
+            .into_iter()
+            .take(AdvancedField::PAGE_SIZE)
+            .find(|field| layout.advanced_control_rects[field.row()].contains(x, y))
+        {
+            return Some(RandomMapSetupControl::ExtrasRow(field.row()));
+        }
+    } else if let Some(field) = AdvancedField::ALL.into_iter().find(|field| {
+        field.page() == advanced_page
+            && layout.advanced_control_rects[field.page_row()].contains(x, y)
+    }) {
+        return Some(RandomMapSetupControl::Advanced(field));
     }
     // Everything but the option rows hit-tests as in the basic view; Ares'
     // Urban Areas box sits under the seventh slider and is basic-only.
@@ -1877,23 +2004,56 @@ mod tests {
         let water = sliders[AdvancedField::Water.row()];
         let (cx, cy) = (water.x + water.w / 2, water.y + water.h / 2);
         assert_eq!(
-            random_map_setup_control_at_view(&setup, cx, cy, true, false, false),
+            random_map_setup_control_at_view(&setup, cx, cy, true, false, false, 0),
             Some(RandomMapSetupControl::Advanced(AdvancedField::Water))
         );
         assert_eq!(
-            random_map_setup_control_at_view(&setup, cx, cy, true, true, false),
+            random_map_setup_control_at_view(&setup, cx, cy, true, true, false, 0),
             Some(RandomMapSetupControl::ExtrasRow(AdvancedField::Water.row())),
             "the Extras view takes the sliders' rows"
         );
         assert_eq!(
-            random_map_setup_control_at_view(&setup, cx, cy, false, false, false),
+            random_map_setup_control_at_view(&setup, cx, cy, false, false, false, 0),
             Some(RandomMapSetupControl::MapType0x405),
             "the basic view keeps the original rows"
         );
         let toggle = (setup.advanced.x + 4, setup.advanced.y + 4);
         assert_eq!(
-            random_map_setup_control_at_view(&setup, toggle.0, toggle.1, false, false, false),
+            random_map_setup_control_at_view(&setup, toggle.0, toggle.1, false, false, false, 0),
             Some(RandomMapSetupControl::AdvancedToggle)
+        );
+    }
+
+    /// VERA: the Advanced scrollbar sits beside the sliders, its thumb moves
+    /// between the two seven-row windows, and the Extras view keeps its rows.
+    #[test]
+    fn advanced_scrollbar_sits_beside_the_sliders_and_maps_to_pages() {
+        use super::DropdownScrollbarPart;
+        let setup = compute_random_map_setup_layout(800, 600);
+        let bar = AdvancedField::advanced_scrollbar_rect(&setup);
+        let sliders = setup.advanced_control_rects;
+        assert!(bar.x > sliders[0].x + sliders[0].w);
+        assert_eq!(bar.y, sliders[0].y);
+        assert_eq!(bar.y + bar.h, sliders[6].y + sliders[6].h);
+        let top = AdvancedField::advanced_scrollbar_thumb(&setup, 0);
+        let bottom = AdvancedField::advanced_scrollbar_thumb(&setup, 1);
+        assert!(top.y < bottom.y, "the thumb travels with the page");
+        let (px, py) = (bar.x + bar.w / 2, bar.y + bar.h / 2);
+        assert_eq!(
+            random_map_setup_control_at_view(&setup, px, py, true, false, false, 0),
+            Some(RandomMapSetupControl::AdvancedScrollbar)
+        );
+        assert_eq!(
+            AdvancedField::advanced_scrollbar_part_at(&setup, 0, px, bar.y + 2),
+            Some(DropdownScrollbarPart::UpArrow)
+        );
+        assert_eq!(
+            AdvancedField::advanced_scrollbar_part_at(&setup, 0, px, bar.y + bar.h - 2),
+            Some(DropdownScrollbarPart::DownArrow)
+        );
+        assert_eq!(
+            AdvancedField::advanced_scrollbar_page_at_pointer(&setup, 0, bar.y + bar.h - 2),
+            1
         );
     }
 
