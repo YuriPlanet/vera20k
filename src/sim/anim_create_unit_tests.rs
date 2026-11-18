@@ -522,13 +522,13 @@ fn create_unit_marks_all_infantry_bits_until_the_actual_effects() {
 }
 
 /// [`scene`] over a rules text that also defines a Fly aircraft (`ORCA`), an
-/// `AirportBound` Fly aircraft (`PLANE`) and a Jumpjet (`ZEP`), for
-/// `CreateUnit`'s per-locomotor spawn orders.
+/// `AirportBound` Fly aircraft (`PLANE`), a Jumpjet (`ZEP`) and a BalloonHover
+/// jumpjet vehicle (`BHOV`), for `CreateUnit`'s per-locomotor spawn orders.
 #[cfg(feature = "phobos")]
 fn scene_air(make_lines: &str) -> (Simulation, RuleSet) {
     const AIR_RULES: &str = "[Countries]\n0=Americans\n1=Russians\n2=Civilians\n\
         [Sides]\nCivilian=Civilians\n\
-        [VehicleTypes]\n0=MTNK\n[InfantryTypes]\n[BuildingTypes]\n0=LAB\n\
+        [VehicleTypes]\n0=MTNK\n1=BHOV\n[InfantryTypes]\n[BuildingTypes]\n0=LAB\n\
         [AircraftTypes]\n0=ORCA\n1=PLANE\n2=ZEP\n\
         [Animations]\n0=MAKE\n1=SPAWN\n\
         [MTNK]\nStrength=100\nSpeed=4\nSight=4\nPrimary=GUN\n\
@@ -538,6 +538,9 @@ fn scene_air(make_lines: &str) -> (Simulation, RuleSet) {
         Locomotor={4A582746-9839-11D1-B709-00A024DDAFD1}\nAirportBound=yes\n\
         [ZEP]\nStrength=200\nSpeed=8\nSight=6\n\
         Locomotor={92612C46-F71F-11D1-AC9F-006008055BB5}\nJumpjetHeight=400\n\
+        [BHOV]\nStrength=200\nSpeed=8\nSight=6\n\
+        Locomotor={92612C46-F71F-11D1-AC9F-006008055BB5}\nJumpjetHeight=400\n\
+        BalloonHover=yes\n\
         [LAB]\nStrength=1000\nFoundation=1x1\n\
         [Weapons]\n0=GUN\n[GUN]\nDamage=5\nROF=20\nRange=5\nWarhead=WH\nProjectile=PIFF\n\
         [Warheads]\n0=WH\n[WH]\n\
@@ -665,5 +668,36 @@ fn a_jumpjet_spawn_snaps_its_locomotion_facing() {
         jumpjet.flight().facing().current(frame),
         64,
         "LocomotionFacing.SetCurrent(DirStruct(facing))"
+    );
+}
+
+/// `Ext/TechnoType/Body.cpp:689-695`: a BalloonHover jumpjet is ordered to
+/// ascend straight up — `IsMoving = true`, `DestinationCoords = GetCoords()`,
+/// and the `FootExt::JumpjetStraightAscend` latch its locomotion consumes
+/// (`Ext/Unit/Hooks.Jumpjet.cpp:394-437`).
+#[cfg(feature = "phobos")]
+#[test]
+fn a_balloon_hover_jumpjet_spawn_holds_its_own_coords_and_the_latch() {
+    let (mut sim, rules) = scene_air(
+        "CreateUnit=BHOV\nCreateUnit.RandomFacing=no\nCreateUnit.SpawnHeight=1000\n",
+    );
+    let id = spawn_make(&mut sim, &rules, Some("Americans"));
+    drive(&mut sim, &rules, id);
+    let bhov = spawned(&sim, &rules, "BHOV").expect("the BHOV constructs");
+    let jumpjet = bhov
+        .locomotor
+        .as_ref()
+        .and_then(|locomotor| locomotor.jumpjet_runtime())
+        .expect("Jumpjet locomotor");
+    assert!(jumpjet.moving(), "IsMoving = true");
+    let destination = jumpjet.destination();
+    assert_eq!(
+        (destination.x, destination.y, destination.z),
+        (20 * 256 + 128, 10 * 256 + 128, 1000),
+        "DestinationCoords = GetCoords() at the spawn height"
+    );
+    assert!(
+        bhov.jumpjet_straight_ascend(),
+        "FootExt::JumpjetStraightAscend = true"
     );
 }

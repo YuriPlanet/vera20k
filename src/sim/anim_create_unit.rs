@@ -345,6 +345,11 @@ impl Simulation {
                 } else if jumpjet {
                     // `pJJLoco->LocomotionFacing.SetCurrent(DirStruct(facing))`.
                     let now = self.session.binary_frame();
+                    let location = DriveCoord {
+                        x: placement.x,
+                        y: placement.y,
+                        z: placement.z,
+                    };
                     if let Some(locomotor) = self
                         .substrate
                         .entities
@@ -353,25 +358,25 @@ impl Simulation {
                         .and_then(|locomotor| locomotor.jumpjet_runtime_mut())
                     {
                         locomotor.phobos_set_locomotion_facing(facing, now);
+                        // `:689-695`: a BalloonHover jet is ordered to ascend
+                        // straight up — `IsMoving = true`,
+                        // `DestinationCoords = GetCoords()` written directly,
+                        // plus the `JumpjetStraightAscend` latch its locomotion
+                        // consumes (`Ext/Unit/Hooks.Jumpjet.cpp:394-437`).
+                        if object.balloon_hover {
+                            locomotor.phobos_straight_ascend_hold(location);
+                        }
                     }
                     // RESIDUAL: `LastMapCoords = CellClass::Coord2Cell(location)`
                     // (`:687`) has no VERA owner — nothing reads a Foot last-cell
-                    // latch — and the `BalloonHover` arm (`:689-695`) needs
-                    // `FootExt::JumpjetStraightAscend`
-                    // (`Ext/Unit/Hooks.Jumpjet.cpp:394-437`), an unmodelled
-                    // one-shot "ascend without steering" latch, plus its
-                    // `DestinationCoords = GetCoords()` order. A non-BalloonHover
-                    // jet in air takes `Move_To(location)` (`:696-700`) here.
-                    if !object.balloon_hover && high_flying {
-                        self.jumpjet_move_to(
-                            unit,
-                            DriveCoord {
-                                x: placement.x,
-                                y: placement.y,
-                                z: placement.z,
-                            },
-                            rules,
-                        );
+                    // latch.
+                    if object.balloon_hover {
+                        if let Some(entity) = self.substrate.entities.get_mut(unit) {
+                            entity.mark_jumpjet_straight_ascend();
+                        }
+                    } else if high_flying {
+                        // `:696-700`: a non-BalloonHover jet in air lands.
+                        self.jumpjet_move_to(unit, location, rules);
                     }
                 } else if high_flying && !parachuted {
                     if let Some(entity) = self.substrate.entities.get_mut(unit) {

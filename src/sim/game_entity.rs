@@ -877,6 +877,13 @@ pub struct GameEntity {
     /// Object-level fall state, shared by Paradrop and DropAsBomb.
     #[serde(default)]
     fall: ObjectFallState,
+    /// Phobos `FootExt::JumpjetStraightAscend` (`Ext/Foot/Body.h:25`): a
+    /// BalloonHover spawn asks for a straight vertical ascent, so the jumpjet
+    /// locomotion skips its horizontal speed, its turn and its location write
+    /// while the owner stays in state 0/1.
+    #[serde(default)]
+    #[cfg(feature = "phobos")]
+    jumpjet_straight_ascend: bool,
     /// The IronCurtain or ForceShield state: the curtain's timer and its tint
     /// stage. `None` until the first curtain; `Some` after it, nullifying all
     /// damage (except healing) while the timer runs ([`is_invulnerable`]).
@@ -2947,6 +2954,8 @@ impl GameEntity {
             spawn_manager: None,
             spawn_owner_id: Default::default(),
             fall: ObjectFallState::default(),
+            #[cfg(feature = "phobos")]
+            jumpjet_straight_ascend: false,
             invulnerability: None,
             airstrike: Default::default(),
             airstrike_tint: Default::default(),
@@ -3169,6 +3178,24 @@ impl GameEntity {
     #[cfg(feature = "phobos")]
     pub(crate) fn take_on_parachuted(&mut self) -> bool {
         self.fall.take_on_parachuted()
+    }
+
+    /// Phobos `FootExt::JumpjetStraightAscend` (`Ext/Foot/Body.h:25`).
+    #[cfg(feature = "phobos")]
+    pub(crate) fn jumpjet_straight_ascend(&self) -> bool {
+        self.jumpjet_straight_ascend
+    }
+
+    #[cfg(feature = "phobos")]
+    pub(crate) fn mark_jumpjet_straight_ascend(&mut self) {
+        self.jumpjet_straight_ascend = true;
+    }
+
+    /// The MovementAI hook (`Ext/Unit/Hooks.Jumpjet.cpp:413-437`) clears the
+    /// flag on a crash, a dead owner, or any state past the ascend.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn clear_jumpjet_straight_ascend(&mut self) {
+        self.jumpjet_straight_ascend = false;
     }
 
     pub(crate) fn fall_rate(&self) -> i32 {

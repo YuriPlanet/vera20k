@@ -311,6 +311,16 @@ impl JumpjetRuntime {
         }
     }
 
+    /// Phobos CreateUnit's BalloonHover arm (`Ext/TechnoType/Body.cpp:692-695`):
+    /// `IsMoving = true` and `DestinationCoords = GetCoords()` are written at
+    /// the locomotor, without `Move_To`'s cell search, NavCom write or descent
+    /// lift, so the owner only climbs.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn phobos_straight_ascend_hold(&mut self, location: DriveCoord) {
+        self.moving = true;
+        self.destination = location;
+    }
+
     /// Phobos `pJJLoco->LocomotionFacing.SetCurrent(DirStruct(facing))`
     /// (`Ext/TechnoType/Body.cpp:686`): a spawn order snaps the locomotion
     /// facing to the unit's spawn facing without a turn. Native writes

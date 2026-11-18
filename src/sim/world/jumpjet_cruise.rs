@@ -247,6 +247,21 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     fn balloon_hover(&self) -> bool {
         self.owner().locomotor.as_ref().unwrap().balloon_hover()
     }
+    /// Phobos `FootExt::JumpjetStraightAscend` (`Ext/Foot/Body.h:25`).
+    #[cfg(feature = "phobos")]
+    fn straight_ascend(&self) -> bool {
+        self.owner().jumpjet_straight_ascend()
+    }
+    #[cfg(feature = "phobos")]
+    fn set_straight_ascend(&mut self, on: bool) {
+        if let Some(owner) = self.sim.substrate.entities.get_mut(self.stable_id) {
+            if on {
+                owner.mark_jumpjet_straight_ascend();
+            } else {
+                owner.clear_jumpjet_straight_ascend();
+            }
+        }
+    }
     /// `Techno+0x2B4`, TarCom, is set.
     fn has_target(&self) -> bool {
         self.owner().attack_target.target().is_some()
