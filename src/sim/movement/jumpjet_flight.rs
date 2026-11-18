@@ -231,6 +231,17 @@ impl JumpjetFlightParams {
     pub fn linked_facing(&self) -> FacingClass {
         FacingClass::new(0x4000, self.turn_rate)
     }
+
+    /// Phobos `FootExt::UpdateTypeData` (`Ext/Foot/Body.cpp:733-746`) rewrites
+    /// the instance's copy of the type block after a conversion: the same
+    /// values `Link_To_Object` copies, except that the hook clamps
+    /// `JumpjetTurnRate` to 127 first (`:733`), so the stored turn rate — which
+    /// doubles as the turn-error threshold — is the clamped one.
+    pub(crate) fn relinked(params: &JumpjetParams) -> Self {
+        let mut relinked = Self::link(params);
+        relinked.turn_rate = relinked.turn_rate.min(127);
+        relinked
+    }
 }
 
 /// Flight fields of the locomotor (receiver `+0x54..+0x8C`).
@@ -320,6 +331,16 @@ impl JumpjetFlight {
             target_height: 0,
             bob_phase_bits: 0,
         }
+    }
+
+    /// Phobos `FootExt::UpdateTypeData`'s instance-side write
+    /// (`Ext/Foot/Body.cpp:744-746`): `Height` and `CurrentHeight` become the
+    /// new type's `JumpjetHeight=` and `LocomotionFacing.SetROT(turnrate)`
+    /// replaces only the rate. The facing and its destination, the current
+    /// and target speed and the hover bob survive, unlike a `Link_To_Object`.
+    pub(crate) fn relinked_for_type_change(&mut self, params: &JumpjetFlightParams) {
+        self.facing.set_rot(params.turn_rate);
+        self.target_height = params.height;
     }
 
     #[cfg(any(test, feature = "test-support"))]

@@ -24,6 +24,18 @@ use crate::sim::entity_store::EntityStore;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
 
+/// What a landing cell answered: `CellClass::IsClearToMove`'s verdict for the
+/// mover's `SpeedType`/`MovementZone` and the cell's own `ContainsBridge()`
+/// (`+0x140 & 0x100`), which both Phobos arms copy into `OnBridge`.
+#[cfg(feature = "phobos")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LandingCellVerdict {
+    /// The `IsClearToMove` answer.
+    pub clear: bool,
+    /// `pCell->ContainsBridge()`.
+    pub on_bridge: bool,
+}
+
 /// Begin parachute descent for an entity at world Z `drop_z` (leptons).
 /// Returns `true` on success.
 ///
@@ -334,37 +346,56 @@ impl crate::sim::world::Simulation {
     /// `SpeedType` answers clear so the pre-existing ratio packet stands.
     #[cfg(feature = "phobos")]
     fn landing_cell_clear(&self, id: u64, rules: &crate::rules::ruleset::RuleSet) -> bool {
+        self.landing_cell_verdict(id, rules)
+            .is_some_and(|verdict| verdict.clear)
+    }
+
+    /// [`Self::landing_cell_clear`] plus the two facts Phobos's type-change arm
+    /// (`Ext/Foot/Body.cpp:772-785`) needs: `None` when `TryGetCellAt` finds no
+    /// `CellClass` at the object's coordinate (the arm then takes its else
+    /// branch), otherwise the `IsClearToMove` answer and the cell's
+    /// `ContainsBridge()` it copies into `OnBridge`.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn landing_cell_verdict(
+        &self,
+        id: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> Option<LandingCellVerdict> {
         use crate::map::resolved_terrain::NativeCellQuery;
         use crate::rules::locomotor_type::SpeedType;
         use crate::sim::occupancy::RawCellKey;
 
+        let unknown = Some(LandingCellVerdict {
+            clear: true,
+            on_bridge: false,
+        });
         let Some(entity) = self.substrate.entities.get(id) else {
-            return true;
+            return unknown;
         };
         if self.interner.try_resolve(entity.type_ref()).is_none() {
-            return true;
+            return unknown;
         }
         let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
-            return true;
+            return unknown;
         };
         if object.speed_type == SpeedType::Invalid {
-            return true;
+            return unknown;
         }
         let Some(terrain) = self.resolved_terrain.as_ref() else {
-            return true;
+            return unknown;
         };
         let coord = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
         let cells = NativeCellQuery::canonical(terrain);
         let cell = cells.lookup_world(coord.x, coord.y);
         let (rx, ry) = cells.coord(cell);
         let (Ok(rx), Ok(ry)) = (u16::try_from(rx), u16::try_from(ry)) else {
-            return true;
+            return unknown;
         };
         let Some(resolved) = terrain.cell(rx, ry) else {
-            return true;
+            return unknown;
         };
         if resolved.outside_playfield {
-            return false;
+            return None;
         }
         let contains_bridge = crate::sim::cell_rect::canonical_cell_ref(terrain, cell)
             .bridge_flags_0x1180()
@@ -375,20 +406,30 @@ impl crate::sim::world::Simulation {
                 RawCellKey::Real(rx, ry),
                 crate::sim::movement::locomotor::MovementLayer::Bridge,
             );
-            return (deck & 0xE0) & 0x5F == 0;
+            return Some(LandingCellVerdict {
+                clear: (deck & 0xE0) & 0x5F == 0,
+                on_bridge: true,
+            });
         }
         if !crate::sim::pathfinding::passability::is_passable_for_zone(
             resolved.zone_type,
             object.movement_zone,
         ) {
-            return false;
+            return Some(LandingCellVerdict {
+                clear: false,
+                on_bridge: false,
+            });
         }
-        terrain
+        let clear = terrain
             .land_speed_costs(i32::from(resolved.land_type))
             .cost_for_speed_type(object.speed_type)
             // An unbound row (no rules bound to the grid) is unknown, not a
             // zero row: answer clear so the ratio packet stands.
-            .is_none_or(|bits| f32::from_bits(bits.bits()) > 0.0)
+            .is_none_or(|bits| f32::from_bits(bits.bits()) > 0.0);
+        Some(LandingCellVerdict {
+            clear,
+            on_bridge: false,
+        })
     }
 
     /// The type's `Strength=`, the ratio model's base for a ratio up to 1.0
