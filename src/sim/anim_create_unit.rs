@@ -20,7 +20,7 @@
 //! ## Dependency rules
 //! - Part of sim/; uses the shared construction, movement and mission owners.
 
-use crate::rules::locomotor_type::{LocomotorKind, MovementZone, SpeedType};
+use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::phobos_create_unit::CreateUnitSettings;
 use crate::rules::ruleset::RuleSet;
@@ -266,27 +266,119 @@ impl Simulation {
             invoker,
         );
 
-        // `Ext/TechnoType/Body.cpp:696-706`: after `Unlimbo` placed a Techno
-        // with neither a Fly nor a Jumpjet locomotor, `inAir` is re-read from
-        // `IsInAir()` (the Z-based `inAir` above only selects the
-        // `SpawnParachutedInAir` arm) and the spawn lets it go into free fall,
-        // marking it `OnParachuted` so its landing takes no
-        // `FallingDownDamage` (`Ext/Techno/Hooks.cpp:1067`).
+        // `Ext/TechnoType/Body.cpp:661-706`: after `Unlimbo` and the random
+        // spawn anim, a Techno that is not in limbo takes one order per its
+        // locomotor, unless `AlwaysSpawnOnGround`:
+        //   Fly (`:674-683`)     re-stamp the placement, then `EnterIdleMode(false, true)`
+        //                        when `pCell->GetContent()` or an `AirportBound`
+        //                        `AircraftType`, else `Move_To(GetCoordsWithBridge())`;
+        //   Jumpjet (`:684-700`) `LocomotionFacing.SetCurrent(DirStruct(facing)`,
+        //                        `Move_To(location)` when `inAir`;
+        //   other (`:702-706`)   `IsFallingDown` + `OnParachuted`.
         #[cfg(feature = "phobos")]
-        if !settings.always_spawn_on_ground && !parachuted {
-            let falls = self.substrate.entities.get(unit).is_some_and(|entity| {
-                !entity.lifecycle.in_limbo()
-                    && object.locomotor != LocomotorKind::Fly
-                    && object.locomotor != LocomotorKind::Jumpjet
-                    && crate::sim::movement::air_movement::is_high_flying(
+        if !settings.always_spawn_on_ground {
+            let facts = self.substrate.entities.get(unit).map(|entity| {
+                let fly = entity
+                    .locomotor
+                    .as_ref()
+                    .and_then(|locomotor| locomotor.fly_runtime());
+                let jumpjet = entity
+                    .locomotor
+                    .as_ref()
+                    .and_then(|locomotor| locomotor.jumpjet_runtime())
+                    .is_some();
+                (
+                    entity.lifecycle.in_limbo(),
+                    fly.is_some(),
+                    fly.is_some_and(crate::sim::movement::fly_height::FlyRuntime::airport_bound)
+                        && aircraft,
+                    jumpjet,
+                    crate::sim::movement::air_movement::is_high_flying(
                         entity,
                         self.resolved_terrain.as_ref(),
                         Some((rules, &self.interner)),
-                    )
+                    ),
+                )
             });
-            if falls && let Some(entity) = self.substrate.entities.get_mut(unit) {
-                entity.raise_falling_down();
-                entity.mark_on_parachuted();
+            if let Some((in_limbo, fly, airport_bound, jumpjet, high_flying)) = facts
+                && !in_limbo
+            {
+                // `pCell->GetContent()` (`0x0047E9xx`): the deck list when the
+                // cell has a structural bridge, the ground list otherwise. The
+                // spawned object itself is never content here — neither arm
+                // places it on the cell list before this call.
+                let content = self.native_cell_content((rx, ry)).any(|member| {
+                    !matches!(
+                        member,
+                        crate::sim::occupancy::CellObjectMember::Entity(id) if id == unit
+                    )
+                });
+                if fly && (content || airport_bound) {
+                    crate::sim::aircraft::enter_idle_mode_for(
+                        self,
+                        unit,
+                        rules,
+                        overlay_registry,
+                        frame_effects,
+                    );
+                } else if fly {
+                    // `pFlyLoco->Move_To(pCell->GetCoordsWithBridge())`: the
+                    // cell's centre and its structural deck when the cell has
+                    // one (`NativeCellQuery::canonical` answers the same plane
+                    // `GetCoordsWithBridge` does).
+                    let cells = self
+                        .resolved_terrain
+                        .as_ref()
+                        .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+                    let target = crate::sim::movement::target_cell_coord(rx, ry, cells.as_ref());
+                    Self::move_air_coordinate(
+                        &mut self.interner,
+                        &self.session,
+                        &mut self.substrate,
+                        &mut self.sound_events,
+                        &self.resolved_terrain,
+                        unit,
+                        target,
+                        None,
+                        rules,
+                    );
+                } else if jumpjet {
+                    // `pJJLoco->LocomotionFacing.SetCurrent(DirStruct(facing))`.
+                    let now = self.session.binary_frame();
+                    if let Some(locomotor) = self
+                        .substrate
+                        .entities
+                        .get_mut(unit)
+                        .and_then(|entity| entity.locomotor.as_mut())
+                        .and_then(|locomotor| locomotor.jumpjet_runtime_mut())
+                    {
+                        locomotor.phobos_set_locomotion_facing(facing, now);
+                    }
+                    // RESIDUAL: `LastMapCoords = CellClass::Coord2Cell(location)`
+                    // (`:687`) has no VERA owner — nothing reads a Foot last-cell
+                    // latch — and the `BalloonHover` arm (`:689-695`) needs
+                    // `FootExt::JumpjetStraightAscend`
+                    // (`Ext/Unit/Hooks.Jumpjet.cpp:394-437`), an unmodelled
+                    // one-shot "ascend without steering" latch, plus its
+                    // `DestinationCoords = GetCoords()` order. A non-BalloonHover
+                    // jet in air takes `Move_To(location)` (`:696-700`) here.
+                    if !object.balloon_hover && high_flying {
+                        self.jumpjet_move_to(
+                            unit,
+                            DriveCoord {
+                                x: placement.x,
+                                y: placement.y,
+                                z: placement.z,
+                            },
+                            rules,
+                        );
+                    }
+                } else if high_flying && !parachuted {
+                    if let Some(entity) = self.substrate.entities.get_mut(unit) {
+                        entity.raise_falling_down();
+                        entity.mark_on_parachuted();
+                    }
+                }
             }
         }
 
@@ -311,10 +403,6 @@ impl Simulation {
         {
             house.request_tech_recheck();
         }
-        // RESIDUAL: the Fly/Jumpjet post-spawn landing orders
-        // (`Ext/TechnoType/Body.cpp:668-700`) are not modeled, so a spawned
-        // Aircraft or Jumpjet keeps its placement pose. The `IsFallingDown` /
-        // `OnParachuted` fallback right below them is ported.
         true
     }
 

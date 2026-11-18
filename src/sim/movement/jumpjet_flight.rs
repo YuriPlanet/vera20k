@@ -272,6 +272,14 @@ impl JumpjetFlight {
         &mut self.facing
     }
 
+    /// Phobos `pJJLoco->LocomotionFacing.SetCurrent(DirStruct(facing))` for a
+    /// spawn order (`Ext/TechnoType/Body.cpp:686`): both the current and the
+    /// target bytes move to the spawn facing, with no turn.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn set_locomotion_facing(&mut self, facing: u16, binary_frame: u32) {
+        self.facing.snap(facing, binary_frame);
+    }
+
     /// The OmniFire hook's `pLoco->LocomotionFacing.SetDesired(tgtDir)`
     /// (`Ext/Unit/Hooks.Jumpjet.cpp:82-84`): a smooth setter on the
     /// locomotor's own facing; the body copies it every Update.

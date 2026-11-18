@@ -228,13 +228,29 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
    `docs/phobos-tunnel-locomotor.md:120-131`）。
 
 ### 全局已知残渣（早前链条，仍需实机抽查）
-- **CreateUnit 空中出生落体（2026-11-18）**：`Ext/TechnoType/Body.cpp:702-706` 已移植
-  ——`sim/anim_create_unit.rs` 在 Unlimbo 落位后用 `IsInAir()`（
-  `sim/movement/air_movement::is_high_flying`，即 `ObjectClass+0x54`）重判，非
-  `AlwaysSpawnOnGround`、未走 `SpawnParachutedInAir` 臂、且类型 locomotor 不是
-  Fly/Jumpjet 时置 `IsFallingDown` + `OnParachuted`（落地不扣落体伤害，测试
-  `an_air_spawned_unit_is_let_go_into_a_parachuted_fall`）。残余只剩同处
-  `:668-700` 的 Fly/Jumpjet 出生落位指令。
+- **CreateUnit 空中出生落位（2026-11-18）**：`:668-706` 全臂已移植
+  ——`sim/anim_create_unit.rs` 在 Unlimbo 落位、`SpawnAnim` 之后按
+  `!pTechno->InLimbo` 三分：
+  - Fly（`:674-683`）：`pCell->GetContent() || AirportBound` 走
+    `EnterIdleMode(false, true)`（`crate::sim::aircraft::enter_idle_mode_for`），
+    否则 `pFlyLoco->Move_To(pCell->GetCoordsWithBridge())`
+    （`Simulation::move_air_coordinate`，目标为 cell 中心坐标）；测试
+    `...a_fly_spawn_on_a_free_cell_is_ordered_to_the_cell_centre`/
+    `...an_airport_bound_fly_spawn_enters_idle_mode`/
+    `...a_fly_spawn_on_an_occupied_cell_enters_idle_mode`。
+  - Jumpjet（`:684-700`）：`LocomotionFacing.SetCurrent(DirStruct(facing))`
+    （`JumpjetRuntime::phobos_set_locomotion_facing` → `JumpjetFlight::set_locomotion_facing`），
+    非 `BalloonHover` 且 `IsInAir()` 时 `Move_To(location)`（`jumpjet_move_to`）；
+    测试 `...a_jumpjet_spawn_snaps_its_locomotion_facing`（BalloonHover 臂见下条）。
+  - 其余（`:702-706`）：非 `AlwaysSpawnOnGround`、未走 `SpawnParachutedInAir`、且
+    locomotor 不是 Fly/Jumpjet 时置 `IsFallingDown` + `OnParachuted`（落地不扣
+    落体伤害，测试 `an_air_spawned_unit_is_let_go_into_a_parachuted_fall`）。
+  该处剩余残渣两条：①`LastMapCoords = CellClass::Coord2Cell(location)`（`:687`）
+  在 VERA 无 owner（`last_map_coords` 全库零命中），只有 `Process_Dig`/回归寻路类
+  玩法会读它，当前无消费者；②`BalloonHover` 臂的 `DestinationCoords = GetCoords()`
+  与 `FootExt::JumpjetStraightAscend`（`Ext/Unit/Hooks.Jumpjet.cpp:394-437`）未建模，
+  前者与 VERA `jumpjet_move_to` 的既有目的地语义重叠，后者需要一个"一次上升不转向"
+  的推力闩。
 - **`TechnoExt::OnParachuted`（2026-11-18）**：闩已落地
   （`sim/object_fall.rs` 的 `on_parachuted`）：空降出生
   （`Ext/Techno/Hooks.cpp:1907`，`sim/aircraft/drop_payload.rs`）与空中重现身
