@@ -608,6 +608,10 @@ impl Simulation {
                 alliances: Some(&self.house_alliances),
                 buildings: Some(CellBuildings::of(self)),
             },
+            // The FLH-predicted source belongs to `InRange`'s targeting scan
+            // (`Ext/Bullet/Hooks.Obstacles.cpp:89-125`, `:226`); a bullet already
+            // in flight walks from its own position.
+            None,
         )
         .map_or(placement, |cell| {
             let coord = cell.get_coords();

@@ -223,6 +223,29 @@ impl LineOfFireShot {
     }
 }
 
+/// Phobos `InRange`'s second pass (`Ext/Bullet/Hooks.Obstacles.cpp:226-237`):
+/// the source it walks from and the `subjectToGround` flag that pass reads.
+///
+/// `subjectToGround` is copied in rather than re-read because
+/// `AddFLHToSourceCoords` (`:92-97`) clears it when the firer is not a Foot
+/// techno, is airborne, targets something airborne, or rides a transporter; the
+/// cleared flag must also stop the ground clause of that pass.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct PhobosScanInput {
+    pub source: (i64, i64, i64),
+    pub subject_to_ground: bool,
+}
+
+/// One pass' inputs: the sample origin, the sample count rule and the two
+/// predicates that pass is allowed to answer with.
+#[derive(Clone, Copy)]
+enum WalkArm {
+    /// `FUN_004CC100`'s own predicate.
+    Stock,
+    /// `BulletObstacleHelper::FindFirstObstacle`'s body.
+    Phobos,
+}
+
 #[cfg(any(test, feature = "test-support"))]
 thread_local! {
     static LINE_SAMPLES: std::cell::RefCell<Option<Vec<DriveCoord>>> = const { std::cell::RefCell::new(None) };
@@ -517,14 +540,50 @@ pub(crate) fn walk_line_for_blocking_cell<'a>(
     cells: &NativeCellQuery<'a>,
     interner: &StringInterner,
     los: &LineOfFireInputs<'_>,
+    phobos: Option<PhobosScanInput>,
 ) -> Option<CellRef<'a>> {
     // Native runs the stock walk first and only calls Phobos' `FindFirstObstacle`
-    // when it found nothing (`Ext/Bullet/Hooks.Obstacles.cpp:222-237`); both
-    // passes step the same sample sequence, so one loop with two predicates
-    // returns the same first cell.
-    if !shot.vanilla_scans() && !shot.phobos_scans() {
-        return None;
+    // when it found nothing (`Ext/Bullet/Hooks.Obstacles.cpp:222-237`). Both
+    // passes step the same sample sequence, so a cell the stock pass would have
+    // answered still wins; only a stock miss lets the second pass answer, and
+    // the second pass may start from a different source.
+    let mut shot = shot;
+    let mut phobos_source = src;
+    if let Some(input) = phobos {
+        shot.subject_to_ground = input.subject_to_ground;
+        phobos_source = input.source;
     }
+    if shot.vanilla_scans()
+        && let Some(hit) = walk_arm(src, tgt, shot, WalkArm::Stock, rules, cells, interner, los)
+    {
+        return Some(hit);
+    }
+    if shot.phobos_scans() {
+        return walk_arm(
+            phobos_source,
+            tgt,
+            shot,
+            WalkArm::Phobos,
+            rules,
+            cells,
+            interner,
+            los,
+        );
+    }
+    None
+}
+
+/// One pass of the shared sample sequence.
+fn walk_arm<'a>(
+    src: (i64, i64, i64),
+    tgt: (i64, i64, i64),
+    shot: LineOfFireShot,
+    arm: WalkArm,
+    rules: &RuleSet,
+    cells: &NativeCellQuery<'a>,
+    interner: &StringInterner,
+    los: &LineOfFireInputs<'_>,
+) -> Option<CellRef<'a>> {
     let src = [src.0 as i32, src.1 as i32, src.2 as i32];
     let tgt = [tgt.0 as i32, tgt.1 as i32, tgt.2 as i32];
     let packed = |p: [i32; 3]| {
@@ -577,7 +636,7 @@ pub(crate) fn walk_line_for_blocking_cell<'a>(
                 });
             }
         });
-        if shot.vanilla_scans()
+        if matches!(arm, WalkArm::Stock)
             && let Some(hit) = cell_blocks_line_of_fire(
                 CellObstructionProbe {
                     source: source.clone(),
@@ -602,7 +661,7 @@ pub(crate) fn walk_line_for_blocking_cell<'a>(
         // the cell predicate, then the ground clause. Both read the cell the
         // sample lands in, the native `pCellCur`.
         let current = lookup(packed(sample));
-        if shot.phobos_scans() {
+        if matches!(arm, WalkArm::Phobos) {
             if shot.phobos_terrain_blocks(&current) {
                 return Some(current);
             }
@@ -660,6 +719,7 @@ pub(crate) fn line_of_fire_blocking_cell<'a>(
     cells: &NativeCellQuery<'a>,
     interner: &StringInterner,
     los: &LineOfFireInputs<'_>,
+    phobos: Option<PhobosScanInput>,
 ) -> Option<CellRef<'a>> {
     // `WeaponType+0xA0`, the projectile, written at 0x007729AA.
     let projectile = rules.weapon_projectile(weapon);
@@ -672,6 +732,7 @@ pub(crate) fn line_of_fire_blocking_cell<'a>(
         cells,
         interner,
         los,
+        phobos,
     )?;
 
     if matches!(
@@ -787,6 +848,7 @@ mod tests {
                     &query,
                     &interner,
                     &los,
+                    None,
                 )
             });
             let actual_samples: Vec<_> = samples.iter().map(|p| [p.x, p.y, p.z]).collect();
@@ -839,6 +901,7 @@ mod tests {
                 &query,
                 &StringInterner::new(),
                 &LineOfFireInputs::default(),
+                None,
             )
             .is_some()
         };
@@ -848,6 +911,53 @@ mod tests {
             "the stock walk never looks at the floor"
         );
         assert!(!blocked(0, true), "level with the floor is not below it");
+    }
+
+    /// Phobos `InRange`'s second pass starts from the point
+    /// `AddFLHToSourceCoords` predicted, not from `InRange`'s own source
+    /// (`Ext/Bullet/Hooks.Obstacles.cpp:226-237`). The same shot that clears the
+    /// floor when it walks from the raw source stops on the first sample when
+    /// that pass is handed a predicted source under it.
+    #[test]
+    fn the_phobos_pass_walks_from_the_predicted_source() {
+        let blocked = |phobos: Option<super::PhobosScanInput>| {
+            let terrain = crate::map::resolved_terrain::test_grid(
+                8,
+                8,
+                crate::map::resolved_terrain::test_flat_cell,
+            );
+            let query = NativeCellQuery::canonical(&terrain);
+            walk_line_for_blocking_cell(
+                (384, 384, 0),
+                (7 * 256 + 128, 384, 0),
+                LineOfFireShot {
+                    subject_to_ground: true,
+                    ..Default::default()
+                },
+                RuleSet::empty_for_test(),
+                &query,
+                &StringInterner::new(),
+                &LineOfFireInputs::default(),
+                phobos,
+            )
+            .map(|cell| match cell {
+                CellRef::Real(cell) => (cell.rx, cell.ry),
+                CellRef::Dummy { .. } => panic!("the flat test grid is real"),
+            })
+        };
+        assert_eq!(
+            blocked(None),
+            None,
+            "the raw source is level with the floor"
+        );
+        assert_eq!(
+            blocked(Some(super::PhobosScanInput {
+                source: (384, 384, -16),
+                subject_to_ground: true,
+            })),
+            Some((1, 1)),
+            "the predicted source is below the floor"
+        );
     }
 
     /// Phobos `SubjectToLand=` / `SubjectToWater=`
@@ -886,6 +996,7 @@ mod tests {
                 &query,
                 &StringInterner::new(),
                 &LineOfFireInputs::default(),
+                None,
             )
             .is_some()
         };
@@ -943,6 +1054,7 @@ mod tests {
                 &query,
                 &StringInterner::new(),
                 &LineOfFireInputs::default(),
+                None,
             )
             .is_some()
         };
@@ -1001,7 +1113,6 @@ mod tests {
             1,
             7,
             MovementLayer::Ground,
-            None,
             CellListInsertion::AppendBuilding,
         );
         let firer = test_intern("Firer");
@@ -1032,6 +1143,7 @@ mod tests {
                     }),
                     ..Default::default()
                 },
+                None,
             )
             .map(|cell| match cell {
                 CellRef::Real(cell) => (cell.rx, cell.ry),
@@ -1040,14 +1152,9 @@ mod tests {
         };
         let rules = rules_for("");
         assert_eq!(blocks(&rules, "GUN", None, &enemies), Some((4, 1)));
-        assert_eq!(
-            blocks(&rules, "GUN", Some(7), &enemies),
-            None,
-            "its own target"
-        );
+        assert_eq!(blocks(&rules, "GUN", Some(7), &enemies), "its own target");
         assert_eq!(
             blocks(&rules, "PIERCE", None, &enemies),
-            None,
             "SolidLevel 1 >= 1"
         );
         assert_eq!(
