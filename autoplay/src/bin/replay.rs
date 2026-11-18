@@ -308,20 +308,28 @@ fn run() -> Result<(), String> {
     };
 
     if args.verify_only {
-        let summary = verification.as_ref().map_or_else(
-            || match &stopped {
+        // A replay that stopped before the recording's last tick — by a hash
+        // mismatch, an undecodable command or the end of the input — has
+        // verified nothing. Printing the stop and exiting zero is how a failed
+        // verification reads as a pass, so it is an error instead.
+        let Some(verification) = verification.as_ref() else {
+            let stopped_at = match &stopped {
                 Some(stopped) => format!("stopped at {stopped}"),
                 None => format!("stopped at tick {walked} of {recorded_ticks}"),
-            },
-            |verification| {
-                format!(
-                    "{} ticks, {} hashes checked, final hash {:#018x}",
-                    verification.ticks, verification.checked_hashes, verification.final_state_hash
-                )
-            },
-        );
+            };
+            if !args.quiet {
+                println!("{}: {stopped_at}", args.replay.display());
+            }
+            return Err(format!("{}: {stopped_at}", args.replay.display()));
+        };
         if !args.quiet {
-            println!("{}: {summary}", args.replay.display());
+            println!(
+                "{}: {} ticks, {} hashes checked, final hash {:#018x}",
+                args.replay.display(),
+                verification.ticks,
+                verification.checked_hashes,
+                verification.final_state_hash
+            );
         }
         return Ok(());
     }
