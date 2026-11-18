@@ -26,14 +26,15 @@ An account's name signs in only with its password or a remembered sign-in, and a
 without an account enters as a guest ([Accounts](#accounts)).
 Guest locale, buddies and relay admission counters belong to this player identity
 and are removed with its session on logout or expiry. Idle lobby visits expire
-after 120 seconds without a request or stream ack; admitted v4 players retain their session during
+after 120 seconds without a request or stream ack; admitted players retain their session during
 a network outage while another unfinished player of their match is online, and
 otherwise through 10 minutes of silence, until explicit finish/leave or the
 match/session lifetime.
 A later entry gets a new identity and empty preferences. The old
 `POST /v1/accounts` returns 426 `upgrade_required`.
-Failed requests return `{error:{code,message,phrases?}}`; messages must not echo
-credentials. A refusal a game shows its player (sign-in, accounts, versions, a full
+Failed requests return `{error:{code,message,phrases?,retry_after?}}`; messages must not echo
+credentials. `retry_after` comes with a spent rate budget's 429 (the admission
+limits below). A refusal a game shows its player (sign-in, accounts, versions, a full
 or busy lobby) also carries its message as `phrases`, as a lobby line does (`chat`).
 Clients show a 426 `message` (plain text, at most 160 characters) to the player with
 the download page's link (vera20k.org; older releases link GitHub's), so it should name
@@ -47,12 +48,10 @@ unavailable. Players already signed in keep their sessions.
 A client in the lobby, outside a match, whose event polls fail for about a minute tells
 its player the connection was lost and stops polling; its next sign-in logs the old
 session out first.
-The HTTP paths retain `/v1`; `protocol:4` is the required client capability.
-Older/missing capabilities cannot enter new games. Existing v3 sessions may poll, renew an active lease and finish/leave/logout; their active match is preserved.
-Lobby capability4 adds the signed fixed-clock ordering capability.
-Relay tickets keep wire version 2 and relay datagrams use envelope version 3; lobby
-capability and relay wire versions are independent. Unsupported sessions retire
-through ordinary room/match cleanup and cannot renew grants.
+The HTTP paths keep `/v1`. Sign-in requires `protocol:4`; any other value gets 426
+`upgrade_required`. Relay tickets are wire version 2 and relay datagrams envelope
+version 3, plain text under a per-hop 4-byte MAC (`services/relay/README.md`); lobby
+capability and relay wire versions are independent.
 `GET /health` reports `protocol:4`.
 `GET /v1/stats` needs no bearer and returns `{online,in_game,open_games,games_24h,games_total}`:
 active sessions, those in a playing match, joinable game rooms, and games whose play
@@ -71,8 +70,8 @@ responses are repeated. `GET /v1/channels?kind=0|41` returns `{kind,channels}`. 
 caller's ([sign-in headers](#sign-in-headers)).
 Clients poll at most once per second. Responses contain at most 256 events and
 256 KiB of UTF-8 JSON.
-`GET /v1/events/stream?after=<cursor>` with a WebSocket upgrade and the bearer (protocol 4
-only; 400 without an upgrade) pushes the same replies as text frames, from `after` on,
+`GET /v1/events/stream?after=<cursor>` with a WebSocket upgrade and the bearer (400
+without an upgrade) pushes the same replies as text frames, from `after` on,
 as soon as a request, ack or expiry adds events. Frames continue from the stream's last
 frame, so one can repeat events a command reply already delivered or arrive behind it;
 the game keeps the newer cursor and drops events it has. Its only message is
@@ -80,8 +79,8 @@ the game keeps the newer cursor and drops events it has. Its only message is
 idle expiry and is answered with a frame, empty when nothing is new. A newer stream of
 the session closes the older with 4000 `replaced`; a stream whose request would now fail
 closes with 4000 plus that status (4401, 4409, ...) and the error code as its reason.
-Games from 0.2.4 stream on native builds, poll whenever no stream is up and reconnect
-after 5 seconds, doubling to 5 minutes; older games and the browser build poll.
+Native games stream, poll whenever no stream is up and reconnect after 5 seconds,
+doubling to 5 minutes; the browser build polls.
 A game an external launcher started never streams and polls once a minute after
 `timing_confirmed`, so its service answers `renew_relay` with `relay_renewed` in the reply.
 Critical history is bounded to 1,024 events/2 MiB per session;
@@ -104,7 +103,7 @@ Channel: `{id,kind,max_users,users,tournament,flags,game_flags,ping,name,ex_info
 from the creator: 256 when a game has a password, which clients show as a lock and
 ask for before joining, otherwise 0. `max_users` (1–30) from `create` and the host's
 `advertise` is the room's join limit, never below its current members; a join past
-it fails with `room_full`. Games from 0.2.6 advertise the most people their room
+it fails with `room_full`. Games advertise the most people their room
 takes, players and spectators: the host's Max players, which current games' hosts also
 change in the room as Room size and advertise again, at most the room's thirty rows less
 its AI, and with spectators off no more than its seats. Their host gives a newcomer a free seat, then the last AI's
@@ -115,10 +114,9 @@ with 403 `room_kept_out`, which clients show with the join ban's text while stay
 existing shell. Member: `{player_id,name,flags,squad,clan_name,clan_tag}`. Flags bit 0
 is the channel owner, bit 1 voice; the client adds its own local bit 32768. Servers
 set identity and flags from the authenticated membership, never from user payloads.
-The only public chat channel is `name:"Lob_41_2"` (`id:"public"`), which games from
-0.2.4 show as VERA20K Online and older games by its retail name, German Bunker.
-The service updates that stored room's name without replacing its membership or
-accounts. Other chat channels, apart from Quick Match's below, are neither listed nor
+The only public chat channel is `name:"Lob_41_2"` (`id:"public"`), which the modern UI
+shows as VERA20K Online and the legacy UI by its retail name, German Bunker.
+Other chat channels, apart from Quick Match's below, are neither listed nor
 joinable; game rooms remain available through `kind:41`.
 
 Commands and their payloads:
@@ -143,7 +141,7 @@ Commands and their payloads:
 | `watch` / `renew_watch` / `unwatch` | `{match_id}` ([Watching](#watching)) |
 | `map_upload` | `{digest,byte_length,offset,data,resource?}` |
 | `chat` | `{text,to:[name],action,visit?}` |
-| `ping` | `{}` (accepted and ignored) |
+| `ping` | `{}` (accepted and ignored; only older games send it) |
 | `locales` | `{names:[name]}` |
 | `set_locale` | `{locale}` |
 | `buddies` | `{}` |
@@ -151,6 +149,14 @@ Commands and their payloads:
 | `kick` | `{name,keep_out?}` |
 | `ladder` | `{names:[name]}` |
 | `balance` | `{}` |
+
+`chat` reaches the other members of the sender's room, or with `visit:true` of the lobby
+they visit, and with `to` only those it names, by exact name; it succeeds when `to` names
+nobody there. Outside a room it fails with 409 `not_in_room`, and in a room past its lobby
+phase with 409 `match_active`; [Quick Match](#quick-match) chat goes only to the matchbot.
+Games page a player (`/page`, `/reply`, the Page dialog) as `chat` with `to:[name]`, under
+the name their room or visited lobby lists; for a player neither lists, or during a match,
+they show the page as failed and send nothing.
 
 HostOptions is `{launch,map_metadata,vacancies,observer_row,cooperative_difficulty,seed}`.
 A slot's `color_index` is 0 to 7 for the original colours, 8 for an observer and 9 to 30
@@ -225,12 +231,13 @@ Starting requires at least two playing participants, counting the actual
 watch, and with two or more AI everyone in the room may watch. The map's
 `player_capacity` must cover every playing human and AI row, or with Teams set
 (`launch.options.teams`), where a team's players share its bases, one start for each
-team that has players or AI and one for each playing participant on no team. Before
-publishing, the host checks this limit and tells the room the map is too small. A lobby
-from before this refuses options past the map's capacity with `invalid_options`, and a
-start with both observers and AI with 409 `not_ready`; one from before AI-only games
-refuses a start where every human watches with 409 `not_ready`. `start.users` contains
-exactly the canonical human names, including observers, and never includes AI rows.
+team that has players or AI and one for each playing participant on no team. The host's
+game checks this limit before publishing; past it, it tells the host the map is too small
+and publishes nothing. A lobby from before this refuses options past the map's capacity
+with `invalid_options`, and a start with both observers and AI with 409 `not_ready`; one
+from before AI-only games refuses a start where every human watches with 409 `not_ready`.
+`start.users` contains exactly the canonical human names, including observers, and never
+includes AI rows.
 
 Event kinds and payloads:
 
@@ -263,8 +270,8 @@ Event kinds and payloads:
 | `balance` | `{teams:[{name,team}]}` |
 | `error` | `{code,message}` |
 
-A `chat` event's `sent_at` is the Unix time in seconds the service sent it. Games from
-0.2.4 show it, in the player's local time, before each line of the chat lobby.
+A `chat` event's `sent_at` is the Unix time in seconds the service sent it. Games
+show it, in the player's local time, before each line of the chat lobby.
 
 Lines the lobby writes itself, from the notice sender (`VERA20k`) and the matchbot's
 `Info` lines, also carry `phrases`: the line as a list of sentences `{key,values?}`, of
@@ -402,36 +409,6 @@ permits only that principal's newest generation/match, evicts its older membersh
 and retains the generation floor for the maximum 300-second ticket lifetime.
 Cancelling a start cannot accumulate long-lived rooms using two player identities.
 
-Every live VERA event packet, including FRAMESYNC probes, starts with bytes
-`56 43 4d 01` (`VCM`, version 1), then an immutable little-endian `u64` command
-frontier for the source's sending frame, followed by the existing 14-byte event
-header and body. The payload remains at most 558 bytes. Native `timing_word` is
-only the low 16-bit projection; readiness compares the full frontier with
-reliably decoded commands. Live packets have no raw-header fallback.
-
-Reliable broadcast must accept every peer copy before the sender removes or
-mirrors commands or commits compression state. A rejected send retains the same
-frame target and retries while the existing receive/ACK service proceeds. Local
-outstanding input is bounded to 32,768 source commands, reserving 128 slots for
-control records. Receiver DoList allows 65,536 records per source to include one
-FRAMEINFO per packet, with a 30-source total bound and allocation on demand.
-
-The VCM1 event body also carries these fixed VERA records. Each retains the
-ordinary seven-byte event header and authenticated source House. All numeric
-payload fields are little-endian; unknown action/category values are rejected.
-
-| Opcode | Payload |
-| --- | --- |
-| `0x30` | 21 bytes: action u8 (begin 0, complete 1, cancel 2), source and destination SuperWeaponTypes indices i32, one-use sequence u64, cell x/y i16 |
-| `0x31` | 5 bytes: the existing TargetClass object token for bunker eject, stable object identity i32 and kind `0x34` |
-| `0x32` | 1 byte: production category Building 0, Defense 1, Infantry 2, Vehicle 3, Aircraft 4, Ship 5 |
-
-Paid selections require distinct nonnegative type indices and a nonzero
-sequence. Target cells are within 0–511; cancel has canonical zero coordinates.
-The existing payment, bunker and producer owners validate and execute these
-records. They add no independent ticket, entity or factory state. Native SELL
-`0x16`, PRIMARY `0x11` and SPECIAL_PLACE `0x12` retain their existing layouts.
-
 Maps are limited to 8 MiB. Only the room owner can upload the currently selected
 physical SHA-256, in contiguous 32,768-byte chunks (except the final chunk).
 `data` is unpadded base64url; identical chunk retries are accepted. A completed
@@ -445,26 +422,33 @@ ordinary commands and events share 600/minute/player. Action limits additionally
 bound starts to 12 per 10 minutes, relay renewals to 12/minute, chat to 30/minute and
 24 KiB/minute, and room chat to 120/minute. Control payloads are bounded to
 4 MiB/minute/player and room fanout to 128 MiB/minute. Room chat, control and fanout limits bind guests, never the room's
-host. The public channel takes 120 joins/minute and each network 30 of them and 30 of its
-chats/minute; a game room takes 60 joins/minute. Re-joining the current room is free.
+host. The public channel takes 300 joins and 300 chat lines a minute; a game room takes
+60 joins a minute. Re-joining the current room is free.
 Map upload/download bytes each have a 32 MiB/minute player budget, and so do the
 earlier chunks the service re-reads to check a finished upload.
 Canonical options are limited to 24 KiB, choice objects use the exact canonical
-slot schema, and unknown request/option fields are rejected. The actor also caps
-pending requests/parsed bodies at 128/4 MiB and individual events at 64 KiB. Active
-sessions, guest profiles and public-room membership are capped at 256, of which
-guests hold at most 192 so that accounts always fit. When guests hold them all, a
-new guest from a smaller range replaces the longest-silent guest of the largest
-range, unless that guest is in a match, and is otherwise refused (503
+slot schema, and unknown request/option fields are rejected. The actor refuses a
+request with 429 `busy` while 320 requests are pending, a POST while 160 are, and a
+body that would take the parsed bodies pending past 4 MiB; an event is at most 64 KiB.
+Active sessions, guest profiles and public-room membership are capped at 320, of which
+guests hold at most three quarters, 240, so that accounts always fit. When guests hold
+them all, a new guest from a smaller range replaces the longest-silent guest of the
+largest range, unless that guest is in a match, and is otherwise refused (503
 `service_full`). Per-address limits key on the client's network: an IPv4 address,
 or an IPv6 /64, with the enclosing /48 as the range. New guest entries are limited
-to 40/hour per address, 64/hour per range and 512/hour globally, and one range holds
-at most 32 active sessions (503 `network_full`), with the existing sign-in and
-ingress limits also applied. One name can be taken 30 times in 5 minutes; refused entries do not count. These are service admission limits, not gameplay timers.
+to 40 an hour per address and 640 an hour in all, with the sign-in and ingress
+limits also applied. One range may use at most a tenth of these lobby-wide budgets: 32
+of the sessions (503 `network_full`), 64 new guest entries an hour, 30 public-channel
+joins and 30 chat lines a minute, and 1,000 of the 10,000 daily translations (below).
+A request past a rate budget gets 429 `rate_limited`, or `lobby_busy` past a lobby-wide
+total, with `retry_after`, the whole seconds until that budget refills, also sent as a
+`Retry-After` header; a spent daily translation budget answers 503 instead (below).
+One name can be taken 30 times in 5 minutes; refused entries do not count. These are
+service admission limits, not gameplay timers.
 Clients verify and install into a
 local cache, preserve existing installed maps, and still require user readiness.
 Generated maps transfer the `.SED` bytes as the map and the separate native PCX
-preview with `resource:"preview"` (512KiB maximum). Preview downloads use the
+preview with `resource:"preview"` (512 KiB maximum). Preview downloads use the
 selected seed's URL plus `&resource=preview`; response `digest` names the preview.
 Both resources use the same ownership, ordered chunk, hash and cleanup rules.
 Generated capacity equals the staged start count (2–30); observers consume only
@@ -489,7 +473,10 @@ the map's `[Basic] Name=`, `file_name` the `.yrm` name to save it under, and `he
 the base64 of the map's own `[Basic]`, `[Preview]`, `[PreviewPack]`, `[Waypoints]`,
 `[Header]` and `[RandomMap]` lines, byte for byte. No two library maps share a
 `file_name` without case: one whose name would, or whose name has nothing left to save
-under, ends in `-<first 8 hex of its SHA-256>.yrm`. The catalog carries
+under, ends in `-<first 8 hex of its SHA-256>.yrm`. The game skips an entry whose
+`file_name` it would not save as it is: one not ending in `.yrm`, or with a path, a colon,
+a control character, a leading dot, a trailing dot or space, another character Windows
+forbids, or a name Windows reserves. The catalog carries
 `ETag: "lib-<revision>-<16 hex>"`, the hex from its content (catalogs written before:
 `"lib-<revision>"`), and answers 304 to a matching `If-None-Match`, weak or not, or `*`.
 `GET /v1/library/maps/<sha256>` downloads one map, and
@@ -533,7 +520,7 @@ the header, closes with `channel_left`. Earlier lobbies also sent `error` with
 code `host_left` before the close, which released games displayed as a refused
 request. A lobby from before handover closes every room whose host leaves.
 Membership, authorization, readiness, sequence history and idle expiration are server-owned.
-Idle lobby visits expire after 120 seconds. An unfinished v4 playing membership
+Idle lobby visits expire after 120 seconds. An unfinished playing membership
 survives that idle interval while another unfinished player of the match is online
 (a request or stream ack in the last 120 seconds), and otherwise through 10 minutes of silence, until
 explicit finish/leave or the match/session lifetime; lost internet does not remove
@@ -584,7 +571,7 @@ cannot read is dropped and the match still finishes. A service that refuses the 
 gets the same finish again without it. `tests/fixtures/lobby/network_quality.json` is a
 report as the game sends it, every field filled, which the game's tests keep current.
 
-`POST /v1/translate` accepts exactly `{text,target}` from a v4 bearer and returns
+`POST /v1/translate` accepts exactly `{text,target}` with the bearer and returns
 `{text}`: `text` translated into `target`, a language tag such as `en` or `zh-Hans`.
 A reply can start with a short bracketed note, in that language, naming the language
 it was translated from. It can also carry `source`, that language's tag, when it is one
@@ -592,15 +579,15 @@ of the translation targets; clients hide a translation whose `source` is its `ta
 `text` is non-blank and at most 2048 UTF-8 bytes, the chat limit. Clients translate
 received chat only after the player opts in, and always keep the original visible.
 A deployment without a translator, a failed model call or one taking over 10 seconds,
-a new message while 8 others wait on the model, the service's daily budget
-of 10,000 model calls or one network's daily 2,500 of them returns 503
+a new message while 8 others wait on the model, or a spent daily translation budget,
+the service's or one range's share of it (above), returns 503
 `translation_unavailable`; an unsupported target
 returns 400 `invalid_request`. Each player may ask 60 times a minute. Successful
 replies are cached for 24 hours by `target` and `text`, and readers asking for the
 same message while it is translated share one model call. Translation never waits
 for, or delays, room commands.
 
-`GET /v1/match/resume?match_id=<UUID>` requires the same v4 bearer and its own
+`GET /v1/match/resume?match_id=<UUID>` requires the bearer and its own
 unfinished playing match. It returns `{match_id,cursor,relay}` with a fresh
 short-lived ticket for the existing source/generation and the current shell cursor.
 This recovers an expired lobby event cursor without skipping gameplay: missed
@@ -684,9 +671,10 @@ not know.
 - `Vera-Version: <MAJOR.MINOR.PATCH>`: its version. Released games name it in
   `User-Agent: VERA20k/<version> multiplayer-client`, which the lobby reads when this
   header is absent; a browser cannot set its User-Agent.
-- `Vera-Build: <build>`: the agreement `version` its `ready` and `map_status` carry,
-  1–128 characters of `0-9A-Za-z.:_+-`, which two builds of one version (two nightlies,
-  or a nightly and the release) do not share.
+- `Vera-Build: <build>`: the agreement `version` its `ready` and `map_status` carry
+  ([build check](Networking.md#build-check)), 1–128 characters of `0-9A-Za-z.:_+-`,
+  which two builds of one version (two nightlies, or a nightly and the release) do not
+  share.
 - `Vera-Language: <tag>`: its player's language, a BCP 47 tag of two or three letters
   and at most three subtags such as `zh-CN`. The operator's welcome, notice and
   maintenance message come in that language when the operator wrote it: the translation

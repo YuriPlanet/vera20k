@@ -339,7 +339,7 @@ pub(crate) fn can_load(
             return CanLoad::Answer(RadioResponse::Negatory);
         }
         let passengers = building
-            .passenger_role
+            .passenger_role()
             .cargo()
             .map_or(0, |cargo| cargo.count());
         if i64::from(passengers) < i64::from(building_type.passengers)
@@ -1296,7 +1296,7 @@ fn transport_has_room(
     // place of the Size total; the SizeLimit test after it stays.
     if ares && !transport_type.ares_passengers_by_size {
         let heads = transport
-            .passenger_role
+            .passenger_role()
             .cargo()
             .map_or(0, |cargo| cargo.count() as i32);
         return heads < transport_type.passengers
@@ -1306,7 +1306,7 @@ fn transport_has_room(
             );
     }
     let occupied = transport
-        .passenger_role
+        .passenger_role()
         .cargo()
         .map_or(0, |cargo| cargo.total_size());
     crate::sim::passenger::PassengerCargo::size_fits_transport(
@@ -1482,7 +1482,7 @@ fn aircraft_receive(
         carryall: object.is_some_and(|object| object.carryall),
         passengers: object.map_or(0, |object| object.passengers),
         cargo: entity
-            .passenger_role
+            .passenger_role()
             .cargo()
             .map_or(0, |cargo| cargo.count() as i32),
     };
@@ -1491,7 +1491,7 @@ fn aircraft_receive(
         && entity.tether.partner().is_some()
         && sender.is_some_and(|sender| {
             entity
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .and_then(|cargo| cargo.passengers().first())
                 == Some(&sender)
@@ -1612,7 +1612,7 @@ fn aircraft_can_enter_radio(
         return RadioResponse::None;
     }
     let count = transport
-        .passenger_role
+        .passenger_role()
         .cargo()
         .map_or(0, |cargo| cargo.count() as i32);
     if count >= object.passengers {
@@ -1643,7 +1643,7 @@ fn aircraft_dock_now(
     if let Some(entity) = sim.substrate.entities.get(aircraft)
         && let Some(object) = sim.entity_object_type(entity, rules)
         && entity
-            .passenger_role
+            .passenger_role()
             .cargo()
             .map_or(0, |cargo| cargo.count() as i32)
             == object.passengers
@@ -2567,7 +2567,7 @@ mod tests {
                 5,
                 true,
             );
-            let cargo = hull.passenger_role.ensure_hold();
+            let cargo = hull.passenger_role_mut_for_test().ensure_hold();
             cargo.set_passengers_for_test(vec![2, 3]);
             cargo.set_passenger_sizes_for_test(vec![3.0, 3.0]);
             assert_eq!(
@@ -3464,7 +3464,7 @@ mod tests {
             for (index, entry) in input["cargo_sizes"].as_array().unwrap().iter().enumerate() {
                 cargo.board_forced_chain(&[(10 + index as u64, entry.as_f64().unwrap())]);
             }
-            carrier.passenger_role = PassengerRole::transport(cargo);
+            carrier.set_passenger_role_for_test(PassengerRole::transport(cargo));
             if input["warped"].as_bool().unwrap_or(false) {
                 carrier.set_temporal_for_test(
                     crate::sim::temporal::TemporalState::warped_by_for_test(99),
@@ -3571,7 +3571,7 @@ mod tests {
             5,
             false,
         );
-        plane.passenger_role = PassengerRole::transport(PassengerCargo::new(5, 0.0));
+        plane.set_passenger_role_for_test(PassengerRole::transport(PassengerCargo::new(5, 0.0)));
         sim.substrate.entities.insert(plane);
         let gi_type = sim.intern("E1");
         sim.substrate
@@ -3688,7 +3688,7 @@ mod tests {
             5,
             false,
         );
-        plane.passenger_role = PassengerRole::transport(PassengerCargo::new(2, 0.0));
+        plane.set_passenger_role_for_test(PassengerRole::transport(PassengerCargo::new(2, 0.0)));
         sim.substrate.entities.insert(plane);
         let gi_type = sim.intern("E1");
         for (id, owner) in [(2, own), (3, enemy)] {
@@ -3725,7 +3725,7 @@ mod tests {
             .entities
             .get_mut(1)
             .unwrap()
-            .passenger_role
+            .passenger_role_mut_for_test()
             .cargo_mut()
             .unwrap()
             .set_passengers_for_test(vec![90, 91]);
@@ -3765,7 +3765,7 @@ mod tests {
             5,
             false,
         );
-        plane.passenger_role = PassengerRole::transport(PassengerCargo::new(2, 0.0));
+        plane.set_passenger_role_for_test(PassengerRole::transport(PassengerCargo::new(2, 0.0)));
         sim.substrate.entities.insert(plane);
         for (id, name) in [(2, "E1"), (3, "E2")] {
             let gi_type = sim.intern(name);

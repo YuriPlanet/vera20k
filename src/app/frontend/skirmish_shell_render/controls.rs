@@ -456,31 +456,96 @@ const SKIRMISH_SWATCH_RGB: [[u8; 3]; 8] = [
     [255, 154, 235],
 ];
 
-/// Resolve a lobby colour priority to its owner-draw swatch.
+/// Resolve a selectable lobby colour priority to its owner-draw swatch.
 ///
 /// YR's eight read the fixed table whatever `rules` hold. gamemd has no
 /// swatch for VERA's extra colours, so theirs is the colour gamemd prints
 /// their House's text in: the scheme's own H,S,V (`house_text_rgb`). Anything
-/// else is the native observer grey.
-pub(super) fn house_color_tint(rules: Option<&RuleSet>, index: usize) -> [f32; 3] {
-    let [r, g, b] = SKIRMISH_SWATCH_RGB
-        .get(index)
-        .copied()
-        .or_else(|| {
-            let rules = rules?;
-            let priority = i32::try_from(index).ok()?;
-            let colors = rules.skirmish_colors();
-            colors.is_lobby_priority(priority).then(|| {
-                crate::rules::house_colors::house_text_rgb(
-                    &rules.color_schemes,
-                    crate::rules::house_colors::HouseColorIndex(
-                        colors.entry_for_priority(priority) as u8,
-                    ),
-                )
-            })
+/// else has no player swatch.
+fn lobby_swatch_rgb(rules: Option<&RuleSet>, index: usize) -> Option<[u8; 3]> {
+    SKIRMISH_SWATCH_RGB.get(index).copied().or_else(|| {
+        let rules = rules?;
+        let priority = i32::try_from(index).ok()?;
+        let colors = rules.skirmish_colors();
+        colors.is_lobby_priority(priority).then(|| {
+            crate::rules::house_colors::house_text_rgb(
+                &rules.color_schemes,
+                crate::rules::house_colors::HouseColorIndex(
+                    colors.entry_for_priority(priority) as u8
+                ),
+            )
         })
-        .unwrap_or([96, 96, 96]);
-    [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0]
+    })
+}
+
+pub(super) fn house_color_tint(rules: Option<&RuleSet>, index: usize) -> [f32; 3] {
+    lobby_swatch_rgb(rules, index)
+        .unwrap_or([96, 96, 96])
+        .map(|v| f32::from(v) / 255.0)
+}
+
+/// Hue in degrees round the RGB colour wheel. Very low saturation has no
+/// useful hue; near-grey swatches share a separate family.
+fn swatch_hue(rgb: [u8; 3]) -> Option<i32> {
+    let [r, g, b] = rgb.map(i32::from);
+    let high = r.max(g).max(b);
+    let chroma = high - r.min(g).min(b);
+    if 8 * chroma <= high {
+        return None;
+    }
+    let hue = if r == high {
+        60 * (g - b) / chroma
+    } else if g == high {
+        120 + 60 * (b - r) / chroma
+    } else {
+        240 + 60 * (r - g) / chroma
+    };
+    Some(hue.rem_euclid(360))
+}
+
+/// Each seat votes for the closest of the eight lobby swatch hues or grey.
+/// The caption takes the mean colour of the strict majority's swatches.
+pub(super) fn team_caption_tint(rules: Option<&RuleSet>, colors: &[u8]) -> Option<[f32; 3]> {
+    const GREY: usize = SKIRMISH_SWATCH_RGB.len();
+    let hues = SKIRMISH_SWATCH_RGB.map(|rgb| swatch_hue(rgb).unwrap_or_default());
+    let mut families = [(0usize, [0u32; 3]); GREY + 1];
+    let mut votes = 0;
+    for &priority in colors {
+        let Some(rgb) = lobby_swatch_rgb(rules, usize::from(priority)) else {
+            continue;
+        };
+        let family = swatch_hue(rgb)
+            .and_then(|hue| {
+                (0..hues.len()).min_by_key(|&i| {
+                    let gap = (hue - hues[i]).abs();
+                    gap.min(360 - gap)
+                })
+            })
+            .unwrap_or(GREY);
+        let (count, sum) = &mut families[family];
+        *count += 1;
+        for (channel, value) in sum.iter_mut().zip(rgb) {
+            *channel += u32::from(value);
+        }
+        votes += 1;
+    }
+    let (count, sum) = families.into_iter().find(|(count, _)| *count > votes / 2)?;
+    let mut rgb = sum.map(|v| v as f32 / (255.0 * count as f32));
+    // First raise the value of dark shades (such as navy) keeping their saturation.
+    // Mix in white only when the hue itself is too dark for the small text.
+    let mut luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+    const MIN_LUMA: f32 = 0.55;
+    if luma > 0.0 && luma < MIN_LUMA {
+        let peak = rgb[0].max(rgb[1]).max(rgb[2]);
+        let gain = (MIN_LUMA / luma).min(1.0 / peak);
+        rgb = rgb.map(|v| v * gain);
+        luma *= gain;
+    }
+    if luma < MIN_LUMA {
+        let white = (MIN_LUMA - luma) / (1.0 - luma);
+        rgb = rgb.map(|v| v + (1.0 - v) * white);
+    }
+    Some(rgb)
 }
 
 /// The value plaque of `ShellTrackbar__WndProc`'s paint
@@ -1161,6 +1226,22 @@ mod tests {
             ];
             assert_eq!(house_color_tint(None, slot), expected, "slot {slot}");
         }
+    }
+
+    #[test]
+    fn team_caption_follows_the_majority_of_picked_swatch_hues() {
+        use crate::rules::ini_parser::IniFile;
+
+        // Two different blue shades outvote red, including a mod's dark navy.
+        let ini = IniFile::from_str("[Colors]\nNavy=166,220,100\n[SkirmishColors]\n1=Navy\n");
+        let rules = RuleSet::from_ini(&ini).unwrap();
+        let team = team_caption_tint(Some(&rules), &[2, 9, 1]).expect("blue majority");
+        assert!(team[2] > team[1] && team[2] > team[0]);
+        assert_eq!(Some(team), team_caption_tint(Some(&rules), &[2, 9]));
+        let navy = team_caption_tint(Some(&rules), &[9]).expect("navy");
+        assert!(navy[2] > 0.8 && navy[2] - navy[0] > 0.2);
+        assert_eq!(team_caption_tint(Some(&rules), &[9, 1]), None);
+        assert_eq!(team_caption_tint(None, &[]), None);
     }
 
     #[test]

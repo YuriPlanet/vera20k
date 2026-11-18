@@ -77,7 +77,9 @@ fn shared_null_destination_matches_original_gate_and_timer_boundaries() {
             );
         }
         if input["open_transport"] == true {
-            e.passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(2, true);
+            e.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
+                2, true,
+            ));
         }
         sim.substrate.entities.insert(e);
         if aircraft {

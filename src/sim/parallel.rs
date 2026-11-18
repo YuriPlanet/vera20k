@@ -127,6 +127,16 @@ pub fn drop_on_pool<T: Send + 'static>(value: T) {
     drop(value);
 }
 
+/// Run a fixture on the pool's only worker so deferred drops stay queued until it yields.
+#[cfg(all(not(target_arch = "wasm32"), any(test, feature = "test-support")))]
+pub fn on_single_worker_for_test(work: impl FnOnce() + Send) {
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(1)
+        .build()
+        .expect("a worker pool")
+        .install(work);
+}
+
 #[cfg(all(test, tests_sim_p_s))]
 mod tests {
     #[test]

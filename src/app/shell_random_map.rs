@@ -601,8 +601,8 @@ pub(super) enum RandomMapUpdate {
     Started,
     /// The map at one of the boundaries the original redraws its preview at.
     Progress(Box<crate::map::rmg::build::GenerationSnapshot>),
-    /// The finished map.
-    Finished(Box<crate::map::rmg::GeneratedMap>),
+    /// The completed run, including its MapGen cursor until the shell publishes it.
+    Finished(Box<crate::map::rmg::GeneratedMapRun>),
 }
 
 /// Plain generation inputs resolved on the app thread before the worker is
@@ -922,7 +922,7 @@ pub(super) fn spawn_random_map_generation_worker(
             // worker. It therefore proves a production generation entry even
             // when the caller and worker use different test threads.
             let _ = sender.send(RandomMapUpdate::Started);
-            let generated = objects.generate(|objects| {
+            let run = objects.generate(|objects| {
                 crate::map::rmg::build::generate_map_observed(
                     &options,
                     &settings,
@@ -939,14 +939,15 @@ pub(super) fn spawn_random_map_generation_worker(
                     },
                 )
             });
-            if generated.unfilled_start_slots > 0 {
+            let unfilled = run.map().unfilled_start_slots;
+            if unfilled > 0 {
                 log::warn!(
                     "Random map is short of spawns: {} start slot(s) could \
                      not be filled; those players have no start position",
-                    generated.unfilled_start_slots
+                    unfilled
                 );
             }
-            let _ = sender.send(RandomMapUpdate::Finished(Box::new(generated)));
+            let _ = sender.send(RandomMapUpdate::Finished(Box::new(run)));
         })?;
     Ok(receiver)
 }
@@ -958,7 +959,7 @@ pub(super) fn finish_random_map_generation_owners(
     runtime: &mut crate::app::frontend::skirmish_session::MultiplayerShellRuntime,
     retention: &mut RandomMapGenerationRetention,
     modal: &mut crate::ui::skirmish_shell::RandomMapSetupModalState,
-    mut generated: crate::map::rmg::GeneratedMap,
+    run: crate::map::rmg::GeneratedMapRun,
     preview: Option<crate::map::rmg::preview::PreviewImage>,
     accept_on_finish: bool,
 ) -> bool {
@@ -971,7 +972,7 @@ pub(super) fn finish_random_map_generation_owners(
     // Original598960 seeds and advances the resident g_MapGenRng, returning
     // without restoring it (59951F..599527). The dialog's OK/Cancel branches
     // only select a modal result, so publish before preview disposition.
-    let continuation = generated.take_mapgen_continuation();
+    let (generated, continuation) = run.into_parts();
     retention.publish_mapgen_continuation(resident_simulation, continuation);
     runtime.replay_random_map_preview_construction(&generated.construction_trace);
     // VERA: the map's fairness report, for the dialog's readout.
@@ -1467,8 +1468,8 @@ impl App {
             match job.receiver.try_recv() {
                 Ok(RandomMapUpdate::Started) => {}
                 Ok(RandomMapUpdate::Progress(snapshot)) => latest_progress = Some(snapshot),
-                Ok(RandomMapUpdate::Finished(generated)) => {
-                    finished = Some(generated);
+                Ok(RandomMapUpdate::Finished(run)) => {
+                    finished = Some(run);
                     break;
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
@@ -1479,14 +1480,13 @@ impl App {
             }
         }
 
-        if let Some(generated) = finished {
+        if let Some(run) = finished {
             let job = state
                 .frontend
                 .random_map_generation
                 .take()
                 .expect("checked present above");
-            let preview = Self::rasterise_generated_map(state, &job, &generated);
-            let generated = *generated;
+            let preview = Self::rasterise_generated_map(state, &job, run.map());
             let accept = {
                 let resident_simulation = state
                     .match_state
@@ -1504,7 +1504,7 @@ impl App {
                         &mut frontend.multiplayer_shell_runtime,
                         &mut frontend.random_map_retention,
                         modal,
-                        generated,
+                        *run,
                         preview,
                         job.accept_on_finish,
                     ),
@@ -2394,13 +2394,14 @@ mod tests {
             None,
         )
         .unwrap();
-        let generated = crate::map::rmg::build::generate_map(
+        let run = crate::map::rmg::build::generate_map(
             &options,
             &prepared.settings,
             &prepared.resolved_inputs,
             &prepared.blocks,
             &crate::map::rmg::build::GenerationObjects::tech(&prepared.tech_types, prepared.ares),
         );
+        let generated = run.map();
         let staging = crate::app::loading::composition::scenario_start_staging(
             &generated.map_file,
             &generated.start_waypoints,
@@ -2481,14 +2482,14 @@ mod tests {
         )
         .expect("production generation worker");
         let mut entries = 0;
-        let generated = loop {
+        let (generated, _) = loop {
             match receiver
                 .recv_timeout(std::time::Duration::from_secs(60))
                 .expect("production generation receipt")
             {
                 RandomMapUpdate::Started => entries += 1,
                 RandomMapUpdate::Progress(_) => {}
-                RandomMapUpdate::Finished(map) => break map,
+                RandomMapUpdate::Finished(run) => break run.into_parts(),
             }
         };
         assert_eq!(entries, 1);
@@ -3179,9 +3180,6 @@ mod tests {
         };
         crate::map::rmg::GeneratedMap {
             map_file: crate::map::rmg::emit::empty_map_file(&options, 32, 32),
-            mapgen_continuation: Some(
-                crate::map::rmg::RmgRng::new(seed as u16).into_continuation(),
-            ),
             construction_trace: crate::map::rmg::RmgConstructionTrace::default(),
             start_waypoints: vec![(0, start_x, 20)],
             stages_run: Vec::new(),
@@ -3202,8 +3200,10 @@ mod tests {
         let expected =
             crate::sim::rng::SimRng::from_mapgen_continuation(rng.clone().into_continuation())
                 .logical_state();
-        let mut generated = generated_preview(i32::from(seed), 10);
-        generated.mapgen_continuation = Some(rng.into_continuation());
+        let run = crate::map::rmg::GeneratedMapRun::from_parts_for_test(
+            generated_preview(i32::from(seed), 10),
+            rng.into_continuation(),
+        );
         let options = crate::map::rmg::RmgOptions {
             seed: i32::from(seed),
             ..Default::default()
@@ -3230,18 +3230,16 @@ mod tests {
             &mut runtime,
             retention,
             &mut modal,
-            generated,
+            run,
             None,
             false,
         ));
-        assert!(
+        assert_eq!(
             retention
-                .candidate
-                .as_ref()
+                .candidate()
                 .expect("completed preview retained")
-                .mapgen_continuation
-                .is_none(),
-            "presentation must no longer own the process cursor"
+                .start_waypoints,
+            [(0, 10, 20)],
         );
         expected
     }
@@ -3568,7 +3566,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let generated = crate::map::rmg::build::generate_map(
+        let run = crate::map::rmg::build::generate_map(
             &options,
             &prepared.settings,
             &prepared.resolved_inputs,
@@ -3576,7 +3574,7 @@ mod tests {
             &crate::map::rmg::build::GenerationObjects::tech(&prepared.tech_types, prepared.ares),
         );
         let text = crate::map::map_export::multiplayer_map_text(
-            &generated.map_file,
+            &run.map().map_file,
             "Slider Test",
             2,
             2,

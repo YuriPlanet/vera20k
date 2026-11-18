@@ -1,9 +1,9 @@
 //! Static decal rendering for the SmudgeGrid.
 //!
 //! Reads the per-cell SmudgeGrid + SmudgeTypeRegistry and produces SpriteInstance
-//! buffers for the active smudges. Drawn between the terrain pass and the
-//! entity pass so smudges sit on top of the ground but underneath units and
-//! buildings.
+//! buffers for the active smudges. Each draws inside the terrain pass right
+//! after its cell's tile, so the tiles walked after it can cover it, and
+//! under everything drawn after the tiles.
 //!
 //! Smudges are static — no animation, no remap, no facing. Multi-cell
 //! SmudgeType SHPs have a single composite frame. Native asks every occupied
@@ -24,6 +24,7 @@ use crate::map::terrain::{TILE_WIDTH, TilePlacement, iso_to_screen};
 use crate::render::batch::SpriteInstance;
 use crate::render::cell_window::{AnchorBounds, ArtExtent, CellWindow};
 use crate::render::palette_light::PaletteLight;
+use crate::render::terrain_instances::walk_key;
 use crate::rules::smudge_type::{SmudgeTypeDef, SmudgeTypeRegistry};
 use crate::sim::smudge_grid::{SmudgeCell, SmudgeGrid};
 
@@ -97,9 +98,10 @@ fn recentered_art_extent(registry: &SmudgeTypeRegistry, art: ArtExtent) -> ArtEx
 /// (atlas UVs + pixel size + draw offset). The closure is borrowed because the
 /// smudge atlas lives on the renderer side and uses interior types we don't
 /// want to expose here. `art` bounds every placement it returns; only the
-/// cells whose recentered art can then reach the view are visited, in storage
-/// order, which is the draw order (no Z orders smudges). The SHP frame is
-/// always zero; the stored cell-data byte controls only position.
+/// cells whose recentered art can then reach the view are visited. They come
+/// out in the tile walk's order (no Z orders smudges), each to be drawn after
+/// the tiles [`VisibleSmudges::cuts`] counts. The SHP frame is always zero;
+/// the stored cell-data byte controls only position.
 pub fn build_visible_instances(
     grid: &SmudgeGrid,
     registry: &SmudgeTypeRegistry,
@@ -111,7 +113,7 @@ pub fn build_visible_instances(
     camera_y: f32,
     screen_w: f32,
     screen_h: f32,
-) -> Vec<SmudgeInstance> {
+) -> VisibleSmudges {
     let build = |window: CellWindow| {
         visible_instances_in(
             window,
@@ -135,15 +137,73 @@ pub fn build_visible_instances(
         },
         resolved_terrain.level_span(),
     );
-    let instances = build(window);
+    let smudges = build(window);
     if cfg!(debug_assertions) && window != CellWindow::Whole {
+        let whole = build(CellWindow::Whole);
         assert!(
-            bytemuck::cast_slice::<_, u8>(&instances)
-                == bytemuck::cast_slice::<_, u8>(&build(CellWindow::Whole)),
+            bytemuck::cast_slice::<_, u8>(&smudges.instances)
+                == bytemuck::cast_slice::<_, u8>(&whole.instances)
+                && smudges.walk == whole.walk,
             "the smudge window changed the smudge instances"
         );
     }
-    instances
+    smudges
+}
+
+/// The visible smudges in the tile walk's order, each with the
+/// [`walk_key`] of the cell whose tile it draws after.
+#[derive(Default)]
+pub struct VisibleSmudges {
+    pub instances: Vec<SmudgeInstance>,
+    /// Ascending.
+    pub walk: Vec<u32>,
+}
+
+impl VisibleSmudges {
+    /// For each smudge, how many of the walk-ordered tiles `tile_walk`
+    /// draw before it: those of its cell and the cells walked earlier.
+    pub fn cuts(&self, tile_walk: &[u32]) -> Vec<u32> {
+        self.walk
+            .iter()
+            .map(|&key| tile_walk.partition_point(|&tile| tile <= key) as u32)
+            .collect()
+    }
+}
+
+/// The cell after whose tile a smudge drawn from `(rx, ry)` with data
+/// `data` stays on screen. Each footprint cell holding it redraws the whole
+/// art at the source anchor right after its own tile (`0x004804F5`), so on
+/// the collapsed route the walk-last of them decides what later tiles cover.
+fn last_redraw_key(
+    grid: &SmudgeGrid,
+    definition: &SmudgeTypeDef,
+    type_id: u16,
+    (rx, ry): (u16, u16),
+    collapsed: bool,
+) -> u32 {
+    if !collapsed {
+        return walk_key(rx, ry);
+    }
+    let mut last = walk_key(rx, ry);
+    for y in 0..definition.height {
+        for x in 0..definition.width {
+            let (Ok(dx), Ok(dy), Ok(data)) = (
+                u16::try_from(x),
+                u16::try_from(y),
+                u8::try_from(y * definition.width + x),
+            ) else {
+                continue;
+            };
+            let (Some(cx), Some(cy)) = (rx.checked_add(dx), ry.checked_add(dy)) else {
+                continue;
+            };
+            let cell = grid.cell(cx, cy);
+            if cell.type_id == Some(type_id) && cell.frame_offset == data {
+                last = last.max(walk_key(cx, cy));
+            }
+        }
+    }
+    last
 }
 
 fn visible_instances_in(
@@ -154,8 +214,8 @@ fn visible_instances_in(
     cell_lights: &CellLightGrid,
     atlas_lookup: &dyn Fn(u16, u8) -> Option<TilePlacement>,
     [camera_x, camera_y, screen_w, screen_h]: [f32; 4],
-) -> Vec<SmudgeInstance> {
-    let mut instances: Vec<SmudgeInstance> = Vec::with_capacity(64);
+) -> VisibleSmudges {
+    let mut instances: Vec<(u32, SmudgeInstance)> = Vec::with_capacity(64);
     let view_right: f32 = camera_x + screen_w;
     let view_bottom: f32 = camera_y + screen_h;
     // The whole window is exactly `iter_occupied`.
@@ -184,7 +244,8 @@ fn visible_instances_in(
         // only when data has not wrapped. In wrapped footprints, a decoded
         // anchor need not have any data0 source. Unequal material and partial
         // clears on the collapsed path remain outside its proven coverage.
-        if can_collapse_footprint(definition) && cell.frame_offset != 0 {
+        let collapsed = can_collapse_footprint(definition);
+        if collapsed && cell.frame_offset != 0 {
             continue;
         }
         let Some(terrain_cell) = resolved_terrain.cell(rx, ry) else {
@@ -215,19 +276,26 @@ fn visible_instances_in(
         if draw_y >= view_bottom || draw_y + placement.pixel_size[1] <= camera_y {
             continue;
         }
-        instances.push(SmudgeInstance {
-            position: [draw_x, draw_y],
-            size: placement.pixel_size,
-            uv_origin: placement.uv_origin,
-            uv_size: placement.uv_size,
-            depth: SMUDGE_DEPTH,
-            tint: [1.0, 1.0, 1.0],
-            alpha: 1.0,
-            palette_light: PaletteLight::cell(cell_lights, (rx, ry), false),
-            ..Default::default()
-        });
+        let walk = last_redraw_key(grid, definition, type_id, (rx, ry), collapsed);
+        instances.push((
+            walk,
+            SmudgeInstance {
+                position: [draw_x, draw_y],
+                size: placement.pixel_size,
+                uv_origin: placement.uv_origin,
+                uv_size: placement.uv_size,
+                depth: SMUDGE_DEPTH,
+                tint: [1.0, 1.0, 1.0],
+                alpha: 1.0,
+                palette_light: PaletteLight::cell(cell_lights, (rx, ry), false),
+                ..Default::default()
+            },
+        ));
     }
-    instances
+    // Each cell holds one smudge, so the keys are unique.
+    instances.sort_unstable_by_key(|&(key, _)| key);
+    let (walk, instances) = instances.into_iter().unzip();
+    VisibleSmudges { instances, walk }
 }
 
 #[cfg(all(test, tests_render_s_z))]
@@ -235,11 +303,12 @@ mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
 
-    /// Overlapping smudges in adjacent rows draw in storage order (row-major,
-    /// not the diagonal sum) when one reaches the view only through its art's
-    /// width from columns left of it.
+    /// Overlapping smudges in adjacent rows draw in the tile walk's order
+    /// (X+Y, then X, 0x006D7560), each after its own cell's tile, also when
+    /// one reaches the view only through its art's width from columns left
+    /// of it.
     #[test]
-    fn edge_smudges_in_adjacent_rows_keep_storage_order() {
+    fn edge_smudges_in_adjacent_rows_follow_the_tile_walk() {
         let registry =
             SmudgeTypeRegistry::from_rules_ini(&IniFile::from_str("[SmudgeTypes]\n0=CR1\n"));
         let terrain = crate::map::resolved_terrain::test_grid(
@@ -270,7 +339,7 @@ mod tests {
             right: 240.0,
             bottom: 15.0,
         };
-        let instances = build_visible_instances(
+        let smudges = build_visible_instances(
             &grid,
             &registry,
             &terrain,
@@ -283,11 +352,81 @@ mod tests {
             400.0,
         );
         assert_eq!(
-            instances
+            smudges
+                .instances
                 .iter()
                 .map(|instance| instance.position)
                 .collect::<Vec<_>>(),
-            [[-120.0, 240.0], [-270.0, 195.0]]
+            [[-270.0, 195.0], [-120.0, 240.0]]
         );
+        assert_eq!(smudges.walk, [walk_key(4, 11), walk_key(8, 10)]);
+        // Tiles walked before (4,11), through (4,11), up to (8,10).
+        let tiles = [
+            walk_key(3, 11),
+            walk_key(4, 11),
+            walk_key(5, 11),
+            walk_key(8, 10),
+        ];
+        assert_eq!(smudges.cuts(&tiles), [2, 4]);
+    }
+
+    /// Every footprint cell redraws the whole art right after its own tile,
+    /// so the collapsed draw follows the walk-last cell still holding it.
+    #[test]
+    fn a_collapsed_footprint_draws_after_its_walk_last_cell() {
+        let registry = SmudgeTypeRegistry::from_rules_ini(&IniFile::from_str(
+            "[SmudgeTypes]\n0=CR1\n[CR1]\nWidth=2\nHeight=2\n",
+        ));
+        let terrain = crate::map::resolved_terrain::test_grid(
+            30,
+            30,
+            crate::map::resolved_terrain::test_smudge_cell,
+        );
+        let mut grid = SmudgeGrid::new(30, 30);
+        for (data, (rx, ry)) in [(10, 10), (11, 10), (10, 11), (11, 11)]
+            .into_iter()
+            .enumerate()
+        {
+            grid.test_force_set(
+                rx,
+                ry,
+                SmudgeCell {
+                    type_id: Some(0),
+                    frame_offset: data as u8,
+                },
+            );
+        }
+        let placement = TilePlacement {
+            uv_origin: [0.0; 2],
+            uv_size: [1.0; 2],
+            pixel_size: [120.0, 60.0],
+            draw_offset: [-60.0, -30.0],
+        };
+        let art = ArtExtent {
+            left: -60.0,
+            top: -30.0,
+            right: 60.0,
+            bottom: 30.0,
+        };
+        let build = |grid: &SmudgeGrid| {
+            build_visible_instances(
+                grid,
+                &registry,
+                &terrain,
+                &CellLightGrid::new(),
+                &|_, _| Some(placement),
+                art,
+                -400.0,
+                0.0,
+                800.0,
+                600.0,
+            )
+        };
+        let smudges = build(&grid);
+        assert_eq!(smudges.instances.len(), 1);
+        assert_eq!(smudges.walk, [walk_key(11, 11)]);
+        // A cleared last cell hands the redraw to the next walk-last one.
+        grid.test_force_set(11, 11, SmudgeCell::default());
+        assert_eq!(build(&grid).walk, [walk_key(11, 10)]);
     }
 }

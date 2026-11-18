@@ -188,7 +188,6 @@ fn frame(sim: &mut Simulation, rules: &RuleSet) {
     sim.advance_app_frame(
         &commands,
         rules,
-        None,
         33,
         super::TickLane::Ordinary,
         super::FrameEffects::default(),

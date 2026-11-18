@@ -91,14 +91,13 @@ fn scene(root: &Path) -> (HeadlessScenario, u64) {
     let plant = candidates
         .into_iter()
         .find_map(|(x, y)| {
-            scene.runtime.simulation.spawn_object_with_overlay_registry(
+            scene.runtime.simulation.spawn_object_with_map_overlays(
                 "GAPOWR",
                 OWNER,
                 x,
                 y,
                 0,
                 &scene.runtime.resources.rules,
-                &scene.runtime.resources.overlay_registry,
             )
         })
         .expect("a clear physical foundation admits the stock power plant");

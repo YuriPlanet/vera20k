@@ -118,7 +118,7 @@ fn retail_hills_ordinary_move_reserves_a_collapsing_deck_cell() {
         let mut drivers = BridgeDamageDrivers::new(
             &mut runtime.simulation,
             &runtime.resources.rules,
-            Some(&runtime.resources.overlay_registry),
+            Some(runtime.resources.rules.overlay_registry()),
             FrameEffects::default(),
         );
         let returned = drivers.apply_damage_to_cell((target.0 as i16, target.1 as i16));
@@ -194,7 +194,7 @@ fn retail_hills_empty_claim_nonmatching_head_and_stale_pending_controls() {
     moving_collapse::apply(
         &mut runtime.simulation,
         &runtime.resources.rules,
-        Some(&runtime.resources.overlay_registry),
+        Some(runtime.resources.rules.overlay_registry()),
         (76, 75),
         FrameEffects::default(),
     );
@@ -255,7 +255,7 @@ fn retail_hills_empty_claim_nonmatching_head_and_stale_pending_controls() {
     moving_collapse::apply(
         &mut runtime.simulation,
         &runtime.resources.rules,
-        Some(&runtime.resources.overlay_registry),
+        Some(runtime.resources.rules.overlay_registry()),
         (76, 75),
         FrameEffects::default(),
     );
@@ -292,7 +292,7 @@ fn retail_hills_empty_claim_nonmatching_head_and_stale_pending_controls() {
     let mut driver = BridgeDamageDrivers::new(
         &mut runtime.simulation,
         &runtime.resources.rules,
-        Some(&runtime.resources.overlay_registry),
+        Some(runtime.resources.rules.overlay_registry()),
         FrameEffects::default(),
     );
     let no_driver = (90, 44);

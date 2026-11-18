@@ -1355,7 +1355,7 @@ fn action128_skips_only_passengers_with_a_transporter() {
         .entities
         .get_mut(reinforcement)
         .unwrap()
-        .passenger_role
+        .passenger_role_mut_for_test()
         .set_inside_transport(transport, false);
     let map = install_event_ingress_map(
         &mut sim,
@@ -3008,7 +3008,6 @@ fn parsed_event_records_match_native_list_and_production_predicates() {
                 .advance_app_frame(
                     &[],
                     crate::rules::ruleset::RuleSet::empty_for_test(),
-                    None,
                     67,
                     TickLane::Ordinary,
                     crate::sim::world::FrameEffects::default(),
@@ -3146,7 +3145,6 @@ fn parsed_map_trigger_flags_gate_production_frames_and_survive_restore() {
             .advance_app_frame(
                 &[],
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                None,
                 67,
                 TickLane::Ordinary,
                 crate::sim::world::FrameEffects::default(),
@@ -3999,7 +3997,7 @@ fn retail_hills_forced_trigger_does_not_inherit_the_outer_bridge_cell() {
         },
         &mut Vec::new(),
         &runtime.resources.rules,
-        Some(&runtime.resources.overlay_registry),
+        Some(runtime.resources.rules.overlay_registry()),
         FrameEffects::default(),
     );
     assert!(sim.global_variables()[7], "the forced Trigger ran");

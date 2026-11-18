@@ -1332,7 +1332,7 @@ fn droppod_reinforcement_carrier_matches_original_constructor_cargo_and_orders()
         );
         assert_eq!(
             plane
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .unwrap()
                 .passengers()
@@ -1670,7 +1670,7 @@ fn full_reinforcement_members_cargo_and_scalar_cleanup_match_original() {
             .entities()
             .get(head)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap();
         assert_eq!(
@@ -2278,14 +2278,7 @@ fn place_full_team(
     let team_type = sim.interner.get("FULL_MINER").unwrap();
     for _ in 0..32 {
         let result = sim
-            .advance_app_frame(
-                &[],
-                rules,
-                Some(rules.overlay_registry()),
-                67,
-                TickLane::Ordinary,
-                FrameEffects::default(),
-            )
+            .advance_app_frame(&[], rules, 67, TickLane::Ordinary, FrameEffects::default())
             .expect("ordinary frame");
         assert!(result.tick.frame_committed);
         if let Some(team) = sim.team_script_vm.first_team_of_type(team_type) {

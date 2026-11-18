@@ -27,13 +27,14 @@ pub(crate) fn unload_command(
     }
     let obj = obj?;
     let has_passengers = entity
-        .passenger_role
+        .passenger_role()
         .cargo()
         .is_some_and(|cargo| !cargo.is_empty());
     let can_unload = match entity.category() {
         // Building44731C..447358 reads independent Cargo+114 and Occupants+694.
         EntityCategory::Structure => {
-            !entity.passenger_role.occupants().is_empty() || (obj.infantry_absorb && has_passengers)
+            !entity.passenger_role().occupants().is_empty()
+                || (obj.infantry_absorb && has_passengers)
         }
         EntityCategory::Unit => obj.passengers > 0 && has_passengers,
         // Aircraft417DCD..417DDA keeps Self while the hold (+0x114) holds

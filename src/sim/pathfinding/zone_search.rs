@@ -386,34 +386,6 @@ fn admit_zone_search<'a>(
     Err(PathSearchFailure::CompatibilityZoneRejected)
 }
 
-/// 429C1A prepares the marker transaction only after 42C900 has admitted
-/// the search; the receiver's transaction, else the caller's overlay, holds
-/// through the cell A*. Returns the facts with the prepared urgency.
-fn prepared_markers<'a>(
-    facts: MoverSearchFacts<'a>,
-) -> Result<
-    (
-        MoverSearchFacts<'a>,
-        Option<std::cell::Ref<'a, SearchMarkerOverlay>>,
-    ),
-    PathSearchFailure,
-> {
-    let prepared = facts
-        .foot_entry
-        .prepare_search_markers()
-        .map_err(PathSearchFailure::CellEntryUnavailable)?;
-    Ok(match prepared {
-        Some((urgency, overlay)) => (
-            MoverSearchFacts {
-                urgency,
-                foot_entry: facts.foot_entry,
-            },
-            Some(overlay),
-        ),
-        None => (facts, None),
-    })
-}
-
 /// [`find_layered_path_zoned_marker_detailed`] asking [`super::WalkableEntry`].
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn find_layered_path_zoned_marker(
@@ -548,11 +520,6 @@ fn find_layered_path_after_entry(
         },
         facts.foot_entry,
     )?;
-    let (facts, prepared) = prepared_markers(facts)?;
-    // Native builds and drops the marker transaction around each
-    // AStar_main_loop (0x429C1A, then 0x42A42D or 0x42A44C). Nothing between
-    // two tries changes what it reads, so the one transaction serves them all.
-    let overlay = prepared.as_deref().or(marker_overlay);
     let search = |gate: Option<HierarchyGate<'_>>| {
         find_layered_path_marker(
             grid,
@@ -561,7 +528,7 @@ fn find_layered_path_after_entry(
             goal,
             gate,
             resolved_terrain,
-            overlay,
+            marker_overlay,
             facts,
         )
     };

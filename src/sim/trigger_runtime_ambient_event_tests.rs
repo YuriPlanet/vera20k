@@ -121,14 +121,7 @@ fn saved_pending_ambient_event_fires_after_the_production_frame_fade() {
     let mut original = fixture(90, true);
     let rules = RuleSet::from_ini(&IniFile::empty()).unwrap();
     let first = original
-        .advance_app_frame(
-            &[],
-            &rules,
-            None,
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
+        .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
         .unwrap();
     assert!(first.tick.frame_committed);
     // Logic polls before this frame's fade. The target action changes 100
@@ -148,14 +141,7 @@ fn saved_pending_ambient_event_fires_after_the_production_frame_fade() {
     for sim in [&mut original, &mut restored] {
         sim.record_trigger_springs(true);
         let frame = sim
-            .advance_app_frame(
-                &[],
-                &rules,
-                None,
-                67,
-                TickLane::Ordinary,
-                FrameEffects::default(),
-            )
+            .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
             .unwrap();
         assert!(frame.tick.frame_committed);
         assert_eq!(sim.session.lighting().current_ambient(), 90);

@@ -150,14 +150,13 @@ impl RetailParachuteScene {
                     }
                     // This read-only candidate query is not a Build command. The
                     // initial-object constructor/Unlimbo below still admits the site.
-                    scene.runtime.simulation.spawn_object_with_overlay_registry(
+                    scene.runtime.simulation.spawn_object_with_map_overlays(
                         type_id,
                         &owner_name,
                         x,
                         y,
                         0,
                         &scene.runtime.resources.rules,
-                        &scene.runtime.resources.overlay_registry,
                     )
                 })
                 .unwrap_or_else(|| panic!("a real foundation must admit initial {type_id}"))
@@ -294,7 +293,12 @@ impl RetailParachuteScene {
             .collect();
         assert_eq!(planes.len(), 1);
         let plane = planes[0];
-        let passengers = plane.passenger_role.cargo().unwrap().passengers().to_vec();
+        let passengers = plane
+            .passenger_role()
+            .cargo()
+            .unwrap()
+            .passengers()
+            .to_vec();
         assert_eq!(passengers.len(), PAYLOAD, "physical American payload");
         for &id in &passengers {
             let passenger = sim.entities().get(id).unwrap();

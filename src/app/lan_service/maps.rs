@@ -15,8 +15,8 @@ use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use anyhow::{Result, anyhow, ensure};
 
 use crate::app::AppState;
+use crate::app::shell_network_setup as setup;
 use crate::app::shell_network_setup::maps::{self as shared, GeneratedMapManifest};
-use crate::app::shell_network_setup::{self as setup, NetworkSetupRequest};
 use crate::map::source::{LoadedTransferAsset, TransferMapSource, TransferResource};
 use crate::net::lan_messages::SessionScope;
 
@@ -994,42 +994,6 @@ pub(super) fn receive(state: &mut AppState, source: SocketAddrV4, bytes: &[u8]) 
         .expect("retained LAN service")
         .maps = maps;
     result
-}
-
-/// Modern manifest prefetch replaces native preview offers and GO file pulls;
-/// the requests still reach this owner and cannot fabricate successful admission.
-pub(super) fn setup_request(
-    state: &mut AppState,
-    request: &NetworkSetupRequest,
-) -> Result<Option<bool>> {
-    match request {
-        NetworkSetupRequest::RequestPreview
-        | NetworkSetupRequest::RequestRandomMapImage
-        | NetworkSetupRequest::OfferPreview
-        | NetworkSetupRequest::SendPreviewFile
-        | NetworkSetupRequest::AcknowledgePreview
-        | NetworkSetupRequest::RequestPreviewFile => {
-            ensure!(
-                state
-                    .match_state
-                    .lan_service
-                    .as_ref()
-                    .is_some_and(|service| service.setup_scope().is_some()),
-                "LAN map request has no admitted scope"
-            );
-            Ok(Some(true))
-        }
-        NetworkSetupRequest::PublishStartStaging(text) => {
-            let manifest = shared::host_generated_manifest(state)?
-                .ok_or_else(|| anyhow!("staging publication has no selected seed"))?;
-            ensure!(
-                &manifest.start_staging == text,
-                "published W staging differs from selected seed"
-            );
-            Ok(Some(true))
-        }
-        _ => Ok(None),
-    }
 }
 
 #[cfg(all(test, tests_app))]

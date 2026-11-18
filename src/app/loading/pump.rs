@@ -10,7 +10,6 @@
 //! in the private `tests` child.
 
 mod render;
-pub(crate) use render::transfer_progress_draws;
 
 #[cfg(all(test, tests_app))]
 mod tests;
@@ -570,6 +569,7 @@ impl LoadingRequest {
         ra2_dir: PathBuf,
         assets: &mut AssetManager,
         native_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
+        mapgen_retention: &mut crate::app::shell_random_map::RandomMapGenerationRetention,
         progress: &mut dyn LoadingProgressSink,
     ) -> anyhow::Result<init::RandomMapLaunchSnapshot> {
         let prepared = self.prepare(
@@ -577,7 +577,7 @@ impl LoadingRequest {
             assets,
             native_rules,
             None,
-            &mut Default::default(),
+            mapgen_retention,
             None,
             progress,
         )?;
@@ -1663,7 +1663,6 @@ pub(crate) fn clear_loading_state(state: &mut AppState) {
 
 fn reset_loading_presentation(state: &mut AppState) {
     state.renderer.performance_overlay.clear_simulation_rate();
-    state.frontend.loading_screen_atlas = None;
     state.frontend.loading_progress = LoadingProgressState::standard_skirmish();
 }
 

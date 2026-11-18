@@ -30,7 +30,7 @@ use vera20k_relay_protocol::{
 /// plaintext and it goes unused (bandwidth-compaction spec §3.2).
 const PAYLOAD_KEY: [u8; 32] = [89; 32];
 /// Plaintext bytes per command, a move's records as the network
-/// simulation's default (bandwidth-compaction spec §2, §4).
+/// simulation's default (bandwidth-compaction spec §4, appendix A).
 const COMMAND_BYTES: usize = 19;
 /// The game loop's service period (spec §6.3).
 const SERVICE_MS: u64 = 16;

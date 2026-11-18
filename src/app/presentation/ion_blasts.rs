@@ -19,7 +19,10 @@ const RIPPLE_DETAIL_LEVEL: u32 = 2;
 const CLIP_BOTTOM_ROWS: i32 = 7;
 /// ZBuffer `+0x24`, the row seed the threshold starts from (`0x0053D6AA`).
 /// `ZBuffer::Pan @ 0x007BCB50` moves it with each vertical scroll; every
-/// blitter seeds from it, so VERA's fixed seed gives the same comparisons.
+/// blitter seeds from it, so VERA's fixed seed gives the same comparisons
+/// up to the quantised-gradient phase recorded at [`DEFAULT_Z`].
+///
+/// [`DEFAULT_Z`]: crate::render::native_z::DEFAULT_Z
 const ROW_SEED: i32 = crate::render::native_z::DEFAULT_Z;
 
 /// DrawAll's draws for `blasts` (coordinate and frame, in vector order) seen

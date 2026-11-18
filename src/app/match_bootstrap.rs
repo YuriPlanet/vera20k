@@ -903,8 +903,8 @@ mod tests {
     };
 
     fn explicit_session() -> SkirmishLaunchSession {
-        SkirmishLaunchSession {
-            mode: SkirmishLaunchMode {
+        SkirmishLaunchSession::from_rows(
+            SkirmishLaunchMode {
                 class: crate::skirmish_modes::MpModeClass::Battle,
                 id: 1,
                 ui_name_key: "GUI:Battle".into(),
@@ -915,8 +915,8 @@ mod tests {
                 allies_allowed: true,
                 must_ally: false,
             },
-            selected_map_file: Some("DeepFrze.map".into()),
-            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+            Some("DeepFrze.map".into()),
+            vec![crate::skirmish_launch::SkirmishHumanSlot {
                 raw_slot_index: Some(0),
                 name: "Player".into(),
                 slot: SkirmishLocalSlot {
@@ -929,9 +929,8 @@ mod tests {
                 },
                 role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
             }],
-            local_player_index: 0,
-            ai_player_count: 1,
-            opponents: vec![SkirmishAiSlot {
+            0,
+            vec![SkirmishAiSlot {
                 raw_slot_index: 1,
                 country: LaunchCountry::Russia,
                 country_random: false,
@@ -941,10 +940,8 @@ mod tests {
                 team: LaunchTeam::None,
                 difficulty: AiDifficulty::Easy,
             }],
-            pre_fill_house_roster:
-                crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(1),
-            options: SkirmishLaunchOptions::default(),
-        }
+            SkirmishLaunchOptions::default(),
+        )
     }
 
     fn accepted_session() -> AcceptedBattleSession {
@@ -1004,7 +1001,9 @@ mod tests {
         sim.session_mut_for_test()
             .initialize_campaign_for_test(1, 3, CampaignCarryOver::CLEARED);
         let bytes = GameSnapshot::save(&sim, 0, 0, "SOV03UMD.MAP", 0);
-        let restored = GameSnapshot::load(&bytes).unwrap().sim;
+        let restored = GameSnapshot::load(&bytes)
+            .unwrap()
+            .into_simulation_for_test();
         let source = crate::map::source::LoadedMapSource::Mix {
             logical_name: "SOV03UMD.MAP".into(),
             source_archive: "mapsmd03.mix".into(),

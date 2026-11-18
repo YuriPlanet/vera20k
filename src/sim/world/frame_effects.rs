@@ -125,6 +125,7 @@ pub struct FrameEffects<'a> {
     tactical_radar: Option<&'a dyn TacticalRadarBoundary>,
     outcome_wait: Option<&'a dyn OutcomeWaitBoundary>,
     local_planning: Option<&'a dyn LocalPlanningBoundary>,
+    selection_voice_suppressed: bool,
     network_commands: Option<&'a dyn NetworkCommandBoundary>,
     overlay_registry: Option<&'a OverlayTypeRegistry>,
     before_logic: Option<&'a dyn Fn(&Simulation)>,
@@ -150,6 +151,7 @@ impl<'a> FrameEffects<'a> {
             tactical_radar: None,
             outcome_wait: None,
             local_planning: None,
+            selection_voice_suppressed: false,
             network_commands: None,
             overlay_registry: None,
             before_logic: None,
@@ -163,16 +165,7 @@ impl<'a> FrameEffects<'a> {
     pub fn for_sound(sound: &'a dyn SoundBoundary) -> Self {
         Self {
             sound: Some(sound),
-            tactical_radar: None,
-            outcome_wait: None,
-            local_planning: None,
-            network_commands: None,
-            overlay_registry: None,
-            before_logic: None,
-            command_applied: None,
-            bounty_text: None,
-            production_factories: &[],
-            production_request_cleared: None,
+            ..Self::empty()
         }
     }
 
@@ -351,6 +344,19 @@ impl<'a> FrameEffects<'a> {
     pub(crate) fn local_planning_active(self) -> bool {
         self.local_planning
             .is_some_and(LocalPlanningBoundary::planning_active)
+    }
+
+    /// Ares clears 0x00822CF2 around a silent Select. Its synchronous tag
+    /// actions and any Select they start inherit the same voice setting.
+    pub(crate) fn without_selection_voice(self) -> Self {
+        Self {
+            selection_voice_suppressed: true,
+            ..self
+        }
+    }
+
+    pub(super) fn selection_voice_enabled(self) -> bool {
+        !self.selection_voice_suppressed
     }
 
     /// Bind the match's OverlayTypeClass table for receivers the frame reaches

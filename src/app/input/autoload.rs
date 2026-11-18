@@ -244,7 +244,7 @@ fn collect_facts(
         if !entity.is_alive() || entity.death.is_dying() {
             continue;
         }
-        if entity.passenger_role.is_inside_transport() {
+        if entity.passenger_role().is_inside_transport() {
             continue;
         }
         let Some(object) = sim.interner().object_type(entity.type_ref(), rules) else {
@@ -263,7 +263,7 @@ fn collect_facts(
         // carrier also keeps its transport role for this AutoLoad plan.
         if sim.techno_player_controllable(id, rules)
             && entity
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .is_none_or(PassengerCargo::is_empty)
         {
@@ -293,7 +293,7 @@ fn transport_fact(
         return None;
     }
     let cargo = entity
-        .passenger_role
+        .passenger_role()
         .cargo()
         .cloned()
         .unwrap_or_else(|| PassengerCargo::new(object.passengers as u32, object.size_limit));

@@ -498,32 +498,27 @@ fn a_warhead_that_cannot_target_the_owners_house_skips_absorption() {
     assert!(can_target_house(warhead, Some(enemy), owner, &sim));
 }
 
-/// The wave lookahead reads the surviving damage without consuming the
-/// shield; the commit path then absorbs the hit exactly once.
 #[test]
-fn the_wave_preview_reports_the_surviving_damage_without_consuming_the_shield() {
+fn the_dispatched_receiver_returns_the_damage_left_by_the_shield() {
+    use crate::sim::combat::{combat_aoe::AreaDamageReceiver, world_receiver};
     let rules = rules("", "");
     let (mut sim, _) = scene(&rules);
-    let warhead_ref = sim.interner.intern("WH");
-    let event = EntityDamageEvent::area(1, 40, 0, RAD_NO_ATTACKER, None, warhead_ref);
-
-    assert_eq!(preview_receive_damage(&sim, &rules, &event, 40), Some(0));
-    assert_eq!(shield(&sim).hp(), 100, "the preview wrote no state");
-
-    let target = sim.substrate.entities.get(1).unwrap();
-    let target_type = sim.interner.object_type(target.type_ref(), &rules);
-    let divisors = crate::sim::combat::receiver_divisors(
-        target,
-        target_type,
+    let warhead = sim.interner.intern("WH");
+    let event = EntityDamageEvent::area(1, 40, 0, RAD_NO_ATTACKER, None, warhead);
+    let (_, _, packet) = world_receiver::commit_receiver(
+        &mut sim,
+        &mut world_receiver::ReceiverRun::default(),
+        AreaDamageReceiver::Entity(event),
         &rules,
-        &sim.interner,
-        &sim.houses,
-        target.phobos_armor_multiplier(),
+        None,
     );
-    let receipt =
-        pre_receive_damage(&mut sim, &rules, &event, 40, &divisors).expect("a shield owns the hit");
-    assert_eq!(receipt.remaining, 0);
-    assert_eq!(shield(&sim).hp(), 60);
+    assert_eq!(packet, 0);
+    assert_eq!(health(&sim), 200);
+    assert_eq!(
+        shield(&sim).hp(),
+        60,
+        "one receiver absorbed the 40-point hit once"
+    );
 }
 
 /// `IsBrokenAndNonRespawning` gates the shield bar: a broken shield with no

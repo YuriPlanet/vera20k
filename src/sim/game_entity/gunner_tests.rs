@@ -220,7 +220,7 @@ fn ares_passenger_turret_follows_the_passenger_count() {
     let turret = |passengers: usize| {
         let mut entity = GameEntity::test_default(1, "IFV", "A", 1, 1);
         entity
-            .passenger_role
+            .passenger_role_mut_for_test()
             .ensure_hold()
             .set_passengers_for_test((10..10 + passengers as u64).collect());
         entity.update_passenger_turret(object);

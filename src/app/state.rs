@@ -354,8 +354,8 @@ impl AppState {
         self.match_state
             .sim_runtime
             .runtime()
-            .map(|rt| &rt.resources.overlay_registry)
-            .or(self.frontend.shell_preview_overlay_registry.as_ref())
+            .map(|rt| rt.resources.rules.overlay_registry())
+            .or(self.frontend.shell_preview_overlay_registry.as_deref())
     }
 }
 

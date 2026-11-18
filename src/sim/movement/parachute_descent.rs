@@ -240,9 +240,7 @@ impl crate::sim::world::Simulation {
                 // the Anim owner. Keep a single held identity, not a type scan.
                 self.substrate
                     .entities
-                    .write_held_anim(owner_id, |owner, authority| {
-                        owner.hold_parachute_animation(anim_id, authority)
-                    })?;
+                    .hold_parachute_animation(owner_id, anim_id)?;
                 self.set_anim_owner_object(anim_id, Some(owner_id), rules);
                 // Native Paradrop calls SetOwnerObject, then GetRemapColour
                 // through the owner's vtable and stores that ConvertClass at

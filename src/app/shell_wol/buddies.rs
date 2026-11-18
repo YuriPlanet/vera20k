@@ -9,10 +9,12 @@
 //! Remove `0x0079CBA0`, the status refresh `0x0079CE70` and `0x116`'s timer,
 //! and the find sink's buddy branch (`0x007A9970`, taken whenever a buddy
 //! locate is pending). The lobby's `DisplayBuddies` filter (`0x0077D4C0`)
-//! and `0x116`'s rows (`0x0079AF10`) read them. No RNG is drawn here.
+//! and `0x116`'s rows (`0x0079AF10`) read them. VERA's modern UI, which
+//! has no `0x116`, keeps the names (the filter and the player card) and the
+//! ladder queue but sends no buddy locate. No RNG is drawn here.
 
-use std::collections::{HashMap, VecDeque};
 use crate::util::time::{Duration, Instant};
+use std::collections::{HashMap, VecDeque};
 
 use super::service::{self, WolLadderRecord, WolServiceRequest};
 use crate::app::AppState;
@@ -90,7 +92,13 @@ impl WolBuddies {
     /// The locate kick every add path and the find sink share: a pending
     /// locate younger than 5 s is waited for; otherwise the queue's head
     /// becomes the pending locate.
-    fn next_locate(&mut self, now: Instant) -> Option<String> {
+    /// VERA: the modern UI has no `0x116`, the statuses' only reader, so it
+    /// locates no buddy, and no pending buddy locate takes the answer to the
+    /// player's own locate (`0x007A9986`).
+    fn next_locate(&mut self, now: Instant, modern_ui: bool) -> Option<String> {
+        if modern_ui {
+            return None;
+        }
         if let Some((_, sent)) = &self.locating
             && now.saturating_duration_since(*sent) < LOCATE_HOLD
         {
@@ -181,7 +189,12 @@ fn mirror(state: &mut AppState) -> &mut WolBuddies {
 
 /// The pending-locate kick: API+0x60 for the next queued name.
 fn kick_locate(state: &mut AppState) {
-    if let Some(name) = mirror(state).next_locate(Instant::now()) {
+    let modern_ui = state
+        .frontend
+        .wol
+        .as_ref()
+        .is_none_or(|visit| visit.modern_ui());
+    if let Some(name) = mirror(state).next_locate(Instant::now(), modern_ui) {
         service::request(state, WolServiceRequest::Locate(name));
     }
 }
@@ -366,13 +379,31 @@ mod tests {
         buddies.append("A".into());
         buddies.append("B".into());
         let now = Instant::now();
-        assert_eq!(buddies.next_locate(now).as_deref(), Some("A"));
-        assert_eq!(buddies.next_locate(now + Duration::from_secs(4)), None);
+        assert_eq!(buddies.next_locate(now, false).as_deref(), Some("A"));
         assert_eq!(
-            buddies.next_locate(now + Duration::from_secs(5)).as_deref(),
+            buddies.next_locate(now + Duration::from_secs(4), false),
+            None
+        );
+        assert_eq!(
+            buddies
+                .next_locate(now + Duration::from_secs(5), false)
+                .as_deref(),
             Some("B")
         );
-        assert_eq!(buddies.next_locate(now + Duration::from_secs(11)), None);
+        assert_eq!(
+            buddies.next_locate(now + Duration::from_secs(11), false),
+            None
+        );
+        assert!(buddies.locating.is_none());
+    }
+
+    /// VERA: the modern UI starts no buddy locate, so none is pending to
+    /// take the answer to the player's own (`0x007A9986`).
+    #[test]
+    fn the_modern_ui_starts_no_buddy_locate() {
+        let mut buddies = WolBuddies::default();
+        buddies.append("A".into());
+        assert_eq!(buddies.next_locate(Instant::now(), true), None);
         assert!(buddies.locating.is_none());
     }
 

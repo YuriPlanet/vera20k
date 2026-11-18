@@ -56,11 +56,23 @@ impl DisplayLayer {
     }
 }
 
+/// A member's layer and its place in submission order
+/// ([`DisplayLayers::submission_order`]).
+#[derive(Debug, Clone, Copy)]
+struct Registration {
+    layer: DisplayLayer,
+    order: u64,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct DisplayLayers {
     layers: [Vec<u64>; 5],
     /// Rebuilt from the vectors on deserialize; updated only by submit/remove.
-    registered: LookupMap<u64, DisplayLayer>,
+    registered: LookupMap<u64, Registration>,
+    /// Shared submissions so far: the next shared member's place in
+    /// submission order ([`Self::submission_order`]). Derived like
+    /// `registered`, never saved or hashed.
+    submissions: u64,
     /// Ground member -> its index in the Ground vector. Derived like
     /// `registered`, so a Ground removal swaps instead of shifting.
     ground_index: LookupMap<u64, u32>,
@@ -101,7 +113,32 @@ impl DisplayLayers {
     }
 
     pub fn layer_of(&self, id: u64) -> Option<DisplayLayer> {
-        self.registered.get(&id).copied()
+        self.registered
+            .get(&id)
+            .map(|registration| registration.layer)
+    }
+
+    /// `id`'s place in submission order, what the picture orders by where
+    /// gamemd's vectors keep it: equal Ground keys (Ground551A90 inserts
+    /// after them, and neither Display4A9770 nor Layer551A30 reorders
+    /// them, `0x00551A67` JGE) and every other layer (5519B0 appends). A
+    /// shared submit takes the odd place after every earlier submit; a local
+    /// anim's ([`crate::sim::anim_class::is_local_anim_id`]) takes
+    /// [`Self::unshared_order`], so only shared submits advance the count and
+    /// every game numbers its shared members alike. After a load the saved
+    /// vectors' order numbers them: Ground ties then follow the saved swap
+    /// order until their members submit again.
+    pub fn submission_order(&self, id: u64) -> Option<u64> {
+        self.registered
+            .get(&id)
+            .map(|registration| registration.order)
+    }
+
+    /// The place in submission order of a draw made now that no other game
+    /// sees: after every shared member submitted so far and before the next
+    /// one. Equal places fall to the draws' ids.
+    pub fn unshared_order(&self) -> u64 {
+        self.submissions.saturating_mul(2)
     }
 
     /// Every member, layer by layer, each layer as [`Self::members`] holds it.
@@ -147,7 +184,9 @@ impl DisplayLayers {
         if members.try_reserve(1).is_err() || self.registered.try_reserve(1).is_err() {
             return false;
         }
-        if layer == DisplayLayer::GROUND && crate::sim::anim_class::is_local_anim_id(id) {
+        let local = crate::sim::anim_class::is_local_anim_id(id);
+        let order = self.submissions.saturating_mul(2) | u64::from(!local);
+        if layer == DisplayLayer::GROUND && local {
             if self.local_ground.try_reserve(1).is_err() {
                 return false;
             }
@@ -161,7 +200,10 @@ impl DisplayLayers {
             }
             members.push(id);
         }
-        self.registered.insert(id, layer);
+        self.registered.insert(id, Registration { layer, order });
+        if !local {
+            self.submissions += 1;
+        }
         true
     }
 
@@ -171,7 +213,7 @@ impl DisplayLayers {
     /// last member into the hole ([`Self::submit`]); other layers keep their
     /// order.
     pub fn remove(&mut self, id: u64) -> bool {
-        let Some(layer) = self.registered.remove(&id) else {
+        let Some(Registration { layer, .. }) = self.registered.remove(&id) else {
             return false;
         };
         if !self.erase(usize::from(layer.0), id) {
@@ -260,9 +302,15 @@ impl<'de> Deserialize<'de> for DisplayLayers {
             return Ok(Self::default());
         }
         let mut registered = LookupMap::default();
+        let mut submissions = 0u64;
         for (layer, members) in layers.iter().enumerate() {
             for &id in members {
-                if id == 0 || registered.insert(id, DisplayLayer(layer as u8)).is_some() {
+                let registration = Registration {
+                    layer: DisplayLayer(layer as u8),
+                    order: submissions * 2 + 1,
+                };
+                submissions += 1;
+                if id == 0 || registered.insert(id, registration).is_some() {
                     return Err(serde::de::Error::custom(
                         "null or duplicate display identity",
                     ));
@@ -277,6 +325,7 @@ impl<'de> Deserialize<'de> for DisplayLayers {
         Ok(Self {
             layers,
             registered,
+            submissions,
             ground_index,
             local_ground: Vec::new(),
         })
@@ -332,11 +381,11 @@ mod tests {
                             std::array::from_fn(|i| step["xyz"][i].as_i64().unwrap() as i32);
                     }
                     "cached_layer" => {
-                        display.registered.insert(
-                            id,
-                            DisplayLayer::from_index(step["layer"].as_u64().unwrap() as u8)
-                                .unwrap(),
-                        );
+                        let layer = DisplayLayer::from_index(step["layer"].as_u64().unwrap() as u8)
+                            .unwrap();
+                        display
+                            .registered
+                            .insert(id, Registration { layer, order: 0 });
                     }
                     op => panic!("unexpected {op}"),
                 }

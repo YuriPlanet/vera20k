@@ -50,12 +50,10 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
         victim
     ));
     saved.clear_lifecycle_test_events_for_test();
-    let registry = OverlayTypeRegistry::empty();
     let output = saved
         .advance_app_frame(
             &[CommandEnvelope::new(owner, 1, Command::ExitMatch)],
             &rules,
-            Some(&registry),
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -115,7 +113,6 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
         Some(LOAD_FIXTURE_MAP_HASH),
         Some(&rules),
         Some(&terrain),
-        Some(&registry),
     )
     .unwrap()
     .simulation;
@@ -126,7 +123,6 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
         .advance_app_frame(
             &[],
             &rules,
-            Some(&registry),
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -168,8 +164,7 @@ fn infantry_prepared_load_preserves_death_sequence_progress_and_cleanup_visit() 
             .spawn_object_at_height("E1", "Americans", 1, 1, 0, 0, &rules)
             .unwrap();
         saved
-            .entities_mut_for_test()
-            .get_mut(victim)
+            .entity_mut_for_test(victim)
             .unwrap()
             .health
             .set_for_test(0);
@@ -195,14 +190,12 @@ fn infantry_prepared_load_preserves_death_sequence_progress_and_cleanup_visit() 
         *saved.scenario_rng_mut_for_test() = crate::sim::rng::SimRng::new(0);
         saved.reset_planning_after_player_load_for_test();
         let bytes = snapshot_bytes(&saved, &rules);
-        let registry = OverlayTypeRegistry::empty();
         let mut restored = PreparedLoad::prepare_candidate(
             &bytes,
             Some(&saved),
             Some(LOAD_FIXTURE_MAP_HASH),
             Some(&rules),
             Some(&terrain),
-            Some(&registry),
         )
         .expect("actual validate/deserialize/restore/rebuild preparation")
         .simulation;

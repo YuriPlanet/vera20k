@@ -411,7 +411,7 @@ pub fn wait_box_layout_on(screen_w: i32, screen_h: i32, scale: geom::ShellScale)
 }
 
 /// The Westwood Online Create Game popup `0xC3` (`0x0078DB70`), the same
-/// 451x326 centred box: executed client rects (tools/storage_oracle/
+/// 451x326 centred box: executed screen rects (tools/storage_oracle/
 /// wol_shell.json) of its controls from their templates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WolCreateGameLayout {
@@ -769,7 +769,7 @@ pub fn wol_channel_password_layout_on(
 }
 
 /// The WOL page dialog `0xCF` (proc `0x0078D120`), the same 451x326
-/// centred box: executed client rects (tools/storage_oracle/wol_shell.json).
+/// centred box: executed screen rects (tools/storage_oracle/wol_shell.json).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WolPageLayout {
     pub dialog: RectPx,

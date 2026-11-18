@@ -472,7 +472,7 @@ fn paradrop(
             } else {
                 rider.sub_cell.release();
             }
-            rider.passenger_role.clear_carrier_relation();
+            rider.clear_carrier_relation();
             rider.on_bridge()
         });
     if !begin_parachute_descent(&mut sim.substrate.entities, passenger, landing.z) {
@@ -516,7 +516,7 @@ fn land_tail(
     if rules.ares_form()
         && let Some(entity) = sim.substrate.entities.get_mut(passenger)
     {
-        entity.passenger_role.clear_transporter();
+        entity.clear_transporter();
         entity.on_carryall.set(false);
     }
     let Some(plane_entity) = sim.substrate.entities.get(plane) else {
@@ -625,7 +625,7 @@ mod tests {
         aircraft.install_ammo_for_test(Some(TechnoAmmo::new(4)));
         let mut cargo = PassengerCargo::new(8, 0.0);
         cargo.board_forced_chain(&[(passenger_id, 1.0)]);
-        aircraft.passenger_role = PassengerRole::transport(cargo);
+        aircraft.set_passenger_role_for_test(PassengerRole::transport(cargo));
         sim.substrate.entities.insert(aircraft);
 
         let mut passenger = GameEntity::new_at_frame_zero_for_test(
@@ -644,7 +644,7 @@ mod tests {
         );
         passenger.set_is_voxel_for_test(false);
         passenger.set_sub_cell(Some(2));
-        passenger.passenger_role = PassengerRole::inside_for_test(aircraft_id, false);
+        passenger.set_passenger_role_for_test(PassengerRole::inside_for_test(aircraft_id, false));
         sim.substrate.entities.insert(passenger);
     }
 
@@ -673,7 +673,7 @@ mod tests {
             .entities
             .get(id)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .passengers()
@@ -1122,7 +1122,7 @@ mod tests {
             );
             let passenger = sim.substrate.entities.get(2).unwrap();
             (
-                passenger.passenger_role.is_inside_transport(),
+                passenger.passenger_role().is_inside_transport(),
                 passenger.on_bridge(),
             )
         };
@@ -1176,7 +1176,7 @@ mod tests {
 
         drop_payload(&mut sim, plane, &rules, None, effects);
         let rider = sim.substrate.entities.get(passenger).unwrap();
-        assert!(rider.passenger_role.is_inside_transport());
+        assert!(rider.passenger_role().is_inside_transport());
         assert!(rider.on_bridge(), "the refusal keeps OnBridge");
 
         // The plane flies on; its next drop is over plain ground at (51, 24).
@@ -1334,7 +1334,7 @@ mod tests {
             assert_eq!(plane.rearm_timer.timer(), rearm);
             let passenger = sim.substrate.entities.get(passenger_id).unwrap();
             assert_eq!(
-                passenger.passenger_role.inside_transport_id(),
+                passenger.passenger_role().inside_transport_id(),
                 Some(aircraft_id)
             );
             assert!(!passenger.is_falling_down());
@@ -1385,7 +1385,7 @@ mod tests {
             0,
             true,
         );
-        tank.passenger_role = PassengerRole::inside_for_test(1, false);
+        tank.set_passenger_role_for_test(PassengerRole::inside_for_test(1, false));
         sim.substrate.entities.insert(tank);
         let plane_z = 1500;
         let plane = sim.substrate.entities.get_mut(1).unwrap();
@@ -1444,7 +1444,7 @@ mod tests {
             .entities
             .get_mut(aircraft_id)
             .unwrap()
-            .passenger_role
+            .passenger_role_mut_for_test()
             .cargo_mut()
             .unwrap();
         cargo_hold.clear_contents();
@@ -1497,7 +1497,7 @@ mod tests {
             {
                 let aircraft = sim.substrate.entities.get_mut(1).unwrap();
                 aircraft.set_gunner_selection_for_test(99, -1);
-                let cargo = aircraft.passenger_role.cargo_mut().unwrap();
+                let cargo = aircraft.passenger_role_mut_for_test().cargo_mut().unwrap();
                 // The real passenger (admitted at size 7) at the head, then
                 // a size-3 entry: mixed sizes.
                 let real = cargo.passengers()[0];
@@ -1509,7 +1509,7 @@ mod tests {
                     .entities
                     .get(1)
                     .unwrap()
-                    .passenger_role
+                    .passenger_role()
                     .cargo(),
             )
             .unwrap();
@@ -1523,13 +1523,13 @@ mod tests {
             );
             let aircraft = sim.substrate.entities.get(1).unwrap();
             assert_eq!(
-                serde_json::to_value(aircraft.passenger_role.cargo()).unwrap(),
+                serde_json::to_value(aircraft.passenger_role().cargo()).unwrap(),
                 held
             );
             assert_eq!(aircraft.current_weapon_number(), 99);
             assert_eq!(ammo(&sim, 1), 4);
             let passenger = sim.substrate.entities.get(2).unwrap();
-            assert_eq!(passenger.passenger_role.inside_transport_id(), Some(1));
+            assert_eq!(passenger.passenger_role().inside_transport_id(), Some(1));
             assert!(passenger.lifecycle.in_limbo());
             assert_eq!(passenger.lifecycle.cell_marked(), post_attach);
             assert!(!passenger.in_logic_vector.is_member());
@@ -1583,7 +1583,7 @@ mod tests {
                     .entities
                     .get(1)
                     .unwrap()
-                    .passenger_role
+                    .passenger_role()
                     .cargo()
                     .unwrap();
                 assert_eq!(cargo.passengers(), vec![1234]);
@@ -1592,7 +1592,7 @@ mod tests {
                 let passenger = sim.substrate.entities.get(2).unwrap();
                 assert!(passenger.is_falling_down());
                 assert!(passenger.lifecycle.cell_marked() && passenger.in_logic_vector.is_member());
-                assert!(!passenger.passenger_role.is_inside_transport());
+                assert!(!passenger.passenger_role().is_inside_transport());
                 assert_eq!(chute_sounds(&sim).len(), 1);
             }
         }

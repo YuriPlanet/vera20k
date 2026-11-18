@@ -29,6 +29,8 @@ use crate::util::fixed_math::SimFixed;
 /// timeline; optional action owners report and refuse the failed operation.
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeOverlayError {
+    #[error("post-map initialization has no populated cell overlay grid")]
+    MissingPopulatedGrid,
     #[error(transparent)]
     Tiberium(#[from] crate::rules::overlay_types::TiberiumImageError),
     #[error(transparent)]

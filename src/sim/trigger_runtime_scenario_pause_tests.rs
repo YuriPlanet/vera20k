@@ -308,7 +308,7 @@ fn scenario_services_replay_between_production_frames() {
                 &replay,
                 Some(&fixture.resources.rules),
                 None,
-                Some(&fixture.resources.overlay_registry),
+                Some(fixture.resources.rules.overlay_registry()),
                 67,
                 true,
             ),

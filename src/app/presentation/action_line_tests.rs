@@ -268,7 +268,7 @@ fn drawing_fixture(
         house.project_country_mults(&rules, &interner);
     }
     let frame = sim.session().binary_frame();
-    let actor = sim.entities_mut_for_test().get_mut(1).unwrap();
+    let actor = sim.entity_mut_for_test(1).unwrap();
     actor.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
     actor
         .body_facing
@@ -771,8 +771,7 @@ fn original_action_timer_wrap_sentinel_and_positive_remainder() {
 #[test]
 fn move_line_query_leaves_the_simulation_dummy_unchanged() {
     let (mut sim, state, view) = fixture(baseline_rows().next().unwrap());
-    sim.entities_mut_for_test()
-        .get_mut(1)
+    sim.entity_mut_for_test(1)
         .unwrap()
         .navigation
         .set_nav_com_for_test(Some(NavTargetRef::cell(u16::MAX, u16::MAX)));

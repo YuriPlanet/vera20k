@@ -138,15 +138,12 @@ pub(crate) struct RoomListing {
     roster_scroll: (usize, usize),
 }
 impl RoomListing {
-    /// The row on the page at `visible`: in VERA's room, the entry its
-    /// roster shows there.
-    fn shown(&self, visible: usize) -> Option<Listed> {
+    /// Index in the full listing, including for a team's pinned header.
+    fn shown_index(&self, visible: usize) -> Option<usize> {
         if self.roster_scroll.0 > 0 {
-            self.places
-                .get(visible)
-                .and_then(|place| self.row_at(place.item))
+            self.places.get(visible).map(|place| place.item)
         } else {
-            self.row_at(self.first_row + visible)
+            Some(self.first_row + visible)
         }
     }
     fn row_at(&self, position: usize) -> Option<Listed> {
@@ -274,9 +271,10 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let host_name = protocol.wol_host.as_deref();
     let local = launch.humans.get(launch.local_player_index)?;
     let room = session.network_room();
+    let dialog = super::dialog(state);
     // 0x4E5C5B..0x4E5C90, 0x4E5FD5..0x4E6004: a WOL clan room hides every
     // team combo and the team header 0x794.
-    let clan_room = profile_is_wol(state) && room.clan;
+    let clan_room = dialog.wol() && room.clan;
     let map_index = local_map_index(state);
     let listing = room_listing(state)?;
     let RoomListing {
@@ -308,7 +306,6 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     // With Teams Off a room with teams is free-for-all and nobody is on a
     // team, so, as in a clan room, it has no Team lists.
     let no_team_lists = clan_room || grouped && teams.is_none();
-    let shown = |visible: usize| listing.shown(visible);
     // The local player's Join and Watch on the headers: a seated player
     // joins another team, a guest watching takes a free seat on any, or
     // with none free joins the queue for the next.
@@ -324,7 +321,6 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let ai_seat = (host && ai_allowed)
         .then(|| session.network_ai_seat())
         .flatten();
-    let dialog = super::dialog(state);
     // VERA's roster holds the rows its page fits; a native page always has
     // its eight row controls, hidden past the room's rows.
     let rows = if dialog.modern {
@@ -336,7 +332,10 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let mut row_icons = std::array::from_fn(|_| None);
     let mut headers = std::array::from_fn(|_| None);
     for visible_row in 0..rows {
-        let row = match shown(visible_row) {
+        let Some(index) = listing.shown_index(visible_row) else {
+            break;
+        };
+        let row = match listing.row_at(index) {
             None => break,
             Some(Listed::Blank) => continue,
             Some(Listed::Row(row)) => row,
@@ -381,8 +380,26 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                         },
                     ),
                 };
+                // Team members follow their header in the full listing; the
+                // visible page may begin or end halfway through them.
+                let member_colors = if matches!(group, SetupGroup::Team(_)) {
+                    listing
+                        .listed
+                        .iter()
+                        .skip(index + 1)
+                        .take(count)
+                        .filter_map(|item| {
+                            let Listed::Row(row) = *item else { return None };
+                            let slot = session.network_row_choices(row)?;
+                            (!slot.color_random).then_some(slot.color_index)
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
                 headers[visible_row] = Some(SetupHeader {
                     group,
+                    member_colors,
                     caption,
                     join_enabled: button.as_ref().is_some_and(|(_, enabled)| *enabled) && !starting,
                     join: button.map(|(label, _)| label),
@@ -751,6 +768,11 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 Some(flag) => Some(flag),
                 None => flag_pcx_for_side_item_data(country).map(str::to_owned),
             };
+            // RESIDUAL: C2/C9's ping image (7A0E50 from 5EA3E0, 007A0EA0),
+            // the latency tooltip 0078F5C0 (TXT_LATENCY_ICON_TOOLTIP_*) that
+            // reads the same table, and the host's ping timer 0x14AF8 that
+            // fills it are not ported: the lobby carries no per-user latency
+            // to the room.
             row_icons[visible_row] = Some(SetupRowIcon {
                 country: flag,
                 // 0x5EA3E0: wolhost.pcx on the human row named [0xA8D610];
@@ -830,18 +852,6 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             visible: dialog.modern,
         },
     ];
-    // 7A0E50 from 5EA3E0: rows without a node show no ping image.
-    let ping_icons = std::array::from_fn(|position| {
-        (dialog.wol() && position < rows).then_some(())?;
-        let Listed::Row(row) = shown(position)? else {
-            return None;
-        };
-        let human = launch
-            .humans
-            .iter()
-            .find(|human| human.raw_slot_index == Some(row))?;
-        ping_icon(protocol.ping(&human.name)?)
-    });
     // The host drags people, itself too, and AI between the boxes of a room
     // with teams; only people go to watch.
     let mut box_of = None;
@@ -888,12 +898,11 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         roster_scroll: listing.roster_scroll,
         pages: listing.pages,
         dialog,
-        ping_icons,
         host,
         locked: protocol.locked,
         // C2's lockout (0x78F85E..0x78F907, 0x79132A..0x7913D1): Short Game
         // checked and disabled in a tournament or clan room.
-        short_game_locked: host && profile_is_wol(state) && room.tournament_or_clan(),
+        short_game_locked: host && dialog.wol() && room.tournament_or_clan(),
         team_header: !no_team_lists,
         accept_enabled: accept_enabled(state),
         start_requested: protocol.start_requested
@@ -945,8 +954,6 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         map_label: super::map_display_name(state)
             .map_or_else(|| label(state, "GUI:None"), str::to_owned),
         selected_map_index: map_index,
-        no_preview: protocol.wol_no_preview().0,
-        preview_hidden: protocol.wol_no_preview().1,
         cooperative,
         cooperative_description: coop.as_ref().and_then(|coop| coop.description).map(
             |(campaign, stage)| {
@@ -1074,10 +1081,6 @@ fn listed_rows(
         group(SetupGroup::Spectators, spectators.len(), spectators);
     }
     listed
-}
-
-fn profile_is_wol(state: &AppState) -> bool {
-    state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol
 }
 
 #[cfg(all(test, tests_app))]

@@ -686,6 +686,7 @@ pub(crate) fn shp_visitor<'a>(
                     && foundation.0 <= ZSHAPE_MAX_FOUNDATION_WIDTH
                     && gate_open_frame.is_none();
                 let origin = native_z::zshape_origin(
+                    native_z::ZSHAPE_ANCHOR,
                     (sx.round() as i32, sy.round() as i32),
                     foundation,
                     point_move,
@@ -1991,7 +1992,7 @@ fn emit_building_anims(
         // DrawIt422CA0 -> 4AED70 retains the Anim's Convert selector. Reducing
         // it to alpha loses the indexed palette/A lookup and packed RGB565
         // blend (spatial_oracle/building_anim_translucency). The inherited
-        // cloak/offset/effect composition is a separate, unresolved owner.
+        // cloak/effect composition is a separate, unresolved owner.
         // The shared pass builder replaces this material for the shadow.
         let (alpha, draw_state) = if flags & 6 != 0
             && anim_entry.is_some_and(|entry| entry.source_palette != 0)

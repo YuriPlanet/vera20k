@@ -19,10 +19,12 @@ use super::draw_plan_lowering::{ObjectDrawRun, ObjectLayerPass, ObjectTexture};
 use super::object_stages::{ObjectStages, StageKind};
 use crate::render::tactical_draw_plan::RenderZPolicy;
 
-/// Native background bases6D9920 and subsequent Display sweep6D8DB0 use
-/// the same sprite payload and GPU blitters at their respective frame phases.
+/// Native static trees6D97D0, background bases6D9920 and the subsequent
+/// Display sweep6D8DB0 use the same sprite payload and GPU blitters at their
+/// respective frame phases.
 #[derive(Clone, Copy)]
 pub(super) enum ObjectDrawPhase {
+    StaticTree,
     BuildingBase,
     Display,
 }
@@ -120,6 +122,7 @@ pub(super) fn draw_native_object_pass<'a>(
         }
     };
     let runs = match phase {
+        ObjectDrawPhase::StaticTree => &ground.static_tree_runs,
         ObjectDrawPhase::BuildingBase => &ground.building_base_runs,
         ObjectDrawPhase::Display => &ground.runs,
     };

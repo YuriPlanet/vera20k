@@ -617,7 +617,8 @@ GuardRange=9\n\n\
                     .as_u64()
                     .unwrap();
                 passenger.set_gunner_selection_for_test(current as i32, -1);
-                passenger.passenger_role = PassengerRole::inside_for_test(1, open_topped);
+                passenger
+                    .set_passenger_role_for_test(PassengerRole::inside_for_test(1, open_topped));
                 entities.insert(passenger);
                 cargo.board_forced_chain(&[(id, 1.0)]);
             }
@@ -625,7 +626,7 @@ GuardRange=9\n\n\
             transport
                 .veterancy
                 .set_rank_for_test(veterancy(lookup(input, defaults, "veterancy")));
-            transport.passenger_role = PassengerRole::transport(cargo);
+            transport.set_passenger_role_for_test(PassengerRole::transport(cargo));
             let interner = crate::sim::intern::test_interner();
             let obj = rules.object("TRN").unwrap();
 

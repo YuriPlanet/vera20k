@@ -130,7 +130,7 @@ fn new_presentation(gpu: &Gpu, scene: &HeadlessScenario, format: wgpu::TextureFo
     let overlay_data = crate::app::loading::transitions::build_minimap_overlay_data(
         &scene.map.overlays,
         &scene.map.terrain_objects,
-        Some(&scene.runtime.resources.overlay_registry),
+        Some(scene.runtime.resources.rules.overlay_registry()),
         Some(&scene.runtime.resources.rules),
     );
     let view = scene.runtime.view();
@@ -274,7 +274,6 @@ fn present(
                     Some(&runtime.resources.rules),
                     Some(view.interner()),
                     view.overlay_grid(),
-                    Some(&runtime.resources.overlay_registry),
                     &overlay_colors,
                     view.resolved_terrain(),
                     None,

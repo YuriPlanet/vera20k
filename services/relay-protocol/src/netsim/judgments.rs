@@ -119,7 +119,7 @@ fn copies_since(trace: &Trace, client: usize, from_us: u64) -> u64 {
 // --- Judgment 1 (spec §1.2, §3) and the one-UPLINK-per-service rule (§6.3) ---
 
 /// Every datagram parses by spec §3 as the bandwidth compaction encodes it
-/// (the inspector applies the six UPLINK decoding rules of §3.2, ACK and
+/// (the inspector applies UPLINK decoding rules 1-6 of §3.2, ACK and
 /// STATUS with their feedback tail, §3.3 and §3.4), and it refuses the
 /// removed requests and PushState (§1.2); every UPLINK has
 /// PUSH set (§3.2 flags bit0, "对局开始后始终置 1") unless the client left;

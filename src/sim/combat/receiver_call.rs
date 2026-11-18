@@ -117,21 +117,39 @@ pub enum DamageWriteback {
     VoxelType(crate::rules::voxel_anim_type::VoxelAnimTypeId),
 }
 
-impl DamageWriteback {
-    pub(crate) fn read(self, world: &crate::sim::world::Simulation, rules: &RuleSet) -> i32 {
-        match self {
-            Self::VoxelType(id) => world.voxel_type_damage(id, rules),
+/// The single `int *damage` of a dispatched receiver. A local belongs to this
+/// call; a VoxelAnimType field can also be written by a nested callback.
+pub(super) enum ReceiverDamage {
+    Local(i32),
+    Field(DamageWriteback),
+}
+
+impl ReceiverDamage {
+    pub(super) fn new(raw: i32, field: Option<DamageWriteback>) -> Self {
+        match field {
+            Some(field) => Self::Field(field),
+            None => Self::Local(raw),
         }
     }
 
-    pub(crate) fn write(
-        self,
+    pub(super) fn read(&self, world: &crate::sim::world::Simulation, rules: &RuleSet) -> i32 {
+        match self {
+            Self::Local(value) => *value,
+            Self::Field(DamageWriteback::VoxelType(id)) => world.voxel_type_damage(*id, rules),
+        }
+    }
+
+    pub(super) fn write(
+        &mut self,
         world: &mut crate::sim::world::Simulation,
         rules: &RuleSet,
         value: i32,
     ) {
         match self {
-            Self::VoxelType(id) => world.write_voxel_type_damage(id, value, rules),
+            Self::Local(local) => *local = value,
+            Self::Field(DamageWriteback::VoxelType(id)) => {
+                world.write_voxel_type_damage(*id, value, rules)
+            }
         }
     }
 }
@@ -491,16 +509,18 @@ pub(super) fn resolve_receive_damage_with_input(
     let source = (event.attacker_id != RAD_NO_ATTACKER)
         .then(|| entities.get(event.attacker_id))
         .flatten();
-    let source_house = event
-        .source_house
-        .or_else(|| source.map(|entity| entity.owner()));
     // The concrete Infantry head already ran before Foot's prefix. Its signed
     // result is Techno's original-sign snapshot for the IC/FS gate; the Phobos
     // shield stage may have replaced it with the surviving damage.
 
     let allied = |asker: InternedId, other: InternedId| alliances.is_allied(interner, asker, other);
-    let attacker_is_allied = source_house.is_some_and(|owner| allied(owner, target.owner()));
-    let source_house_is_allied = source_house.is_some_and(|owner| allied(target.owner(), owner));
+    // Techno701CA1 asks the live attacker's House about the target;
+    // Psychedelic701CE5 asks the target's House about the literal sourceHouse argument.
+    let attacker_is_allied =
+        source.is_some_and(|attacker| allied(attacker.owner(), target.owner()));
+    let source_house_is_allied = event
+        .source_house
+        .is_some_and(|owner| allied(target.owner(), owner));
     // Installed Ares TechnoClass_ReceiveDamage_Abilities1004A950 (hook
     // 0x701BFE): the rank's RADIMMUNE, PSIONICWEAPONIMMUNE, POISONIMMUNE and
     // PSIONICSIMMUNE join the type flags, and `ImmuneToBerserk` overrides the
@@ -689,70 +709,6 @@ pub(super) fn resolve_receive_damage_with_input(
         outcome,
         invulnerability_impact,
     })
-}
-
-/// Inspect the value left in WaveClass::DamageArea's shared per-cell damage
-/// local by one concrete Techno receiver. The receiver commit immediately
-/// following this call runs the same pure ABI resolver against the same live
-/// state; exposing the pointer result here avoids fabricating immutable damage
-/// inputs for later occupants.
-pub(crate) fn wave_post_object_damage(
-    event: &EntityDamageEvent,
-    entities: &EntityStore,
-    rules: &RuleSet,
-    interner: &StringInterner,
-    houses: &crate::sim::houses::Houses,
-    alliances: &HouseAlliances,
-    scenario_no_damage: bool,
-    current_tick: u64,
-    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-    #[cfg(feature = "phobos")] simulation: Option<&crate::sim::world::Simulation>,
-) -> Option<i32> {
-    let event = prepare_infantry_receiver(event, entities, rules, interner, terrain);
-    // The shield hook writes its surviving value into the caller pointer
-    // before Techno's body; preview the stage without committing it, because
-    // the receiver commit that follows applies the absorption exactly once.
-    #[cfg(feature = "phobos")]
-    let shield_remaining = simulation.and_then(|simulation| {
-        crate::sim::shield::preview_receive_damage(simulation, rules, &event, event.damage)
-    });
-    #[cfg(not(feature = "phobos"))]
-    let shield_remaining: Option<i32> = None;
-    let resolved = match shield_remaining {
-        Some(remaining) => resolve_receive_damage_with_input(
-            &event,
-            entities,
-            rules,
-            interner,
-            houses,
-            alliances,
-            scenario_no_damage,
-            current_tick,
-            terrain,
-            remaining,
-            remaining == 0,
-            None,
-        ),
-        None => resolve_receive_damage(
-            &event,
-            entities,
-            rules,
-            interner,
-            houses,
-            alliances,
-            scenario_no_damage,
-            current_tick,
-            terrain,
-            None,
-        ),
-    };
-    match shield_remaining {
-        // A later Techno body write, when there is one, wins over the shield's.
-        Some(remaining) => {
-            resolved.map(|resolved| resolved.outcome.post_object_damage.unwrap_or(remaining))
-        }
-        None => resolved.and_then(|resolved| resolved.outcome.post_object_damage),
-    }
 }
 
 /// TechnoClass::ReceiveDamage builds the anger-node increment from the final

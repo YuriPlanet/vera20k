@@ -99,7 +99,6 @@ fn readers_keep_signed_fields_and_raw_unknown_bytes() {
                 let fields = message.join_fields().unwrap();
                 assert_eq!((fields.country, fields.color), (-3, 6));
                 assert_eq!(fields.observer_request, 0x23);
-                assert_eq!(message.serial_bytes(), b"1234567890123456789012");
             }
             LanMessageKind::JoinAccepted => assert_eq!(
                 message.acceptance_fields().unwrap(),

@@ -8,9 +8,7 @@ use std::path::Path;
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::pal_file::Palette;
-use crate::map::basic::BridgeDestroyabilityMode;
 use crate::map::houses::HouseColorMap;
-use crate::map::map_file::MapFile;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::terrain::TerrainGrid;
 use crate::map::theater::{self, TileImage, TileKey};
@@ -361,7 +359,6 @@ pub(crate) fn bind_rules_art_metadata(
 /// bind join that closure.
 pub(crate) fn bind_rules_asset_closure(
     rules: &mut RuleSet,
-    overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
     roots: &[String],
     authored_anim_roots: &[String],
     assets: &AssetManager,
@@ -381,7 +378,7 @@ pub(crate) fn bind_rules_asset_closure(
     rules.bind_building_buildup_assets(assets, theater_name);
     rules.bind_building_rubble_assets(assets, theater_ext, theater_name);
     rules.bind_terrain_assets(assets, theater_ext, terrain_phase);
-    rules.bind_alpha_images(overlay_registry, assets);
+    rules.bind_alpha_images(assets);
     Ok(())
 }
 
@@ -390,8 +387,8 @@ pub(crate) fn bind_rules_asset_closure(
 /// earlier in the loading funnel, so live-object discovery alone is too late.
 pub(crate) fn startup_crate_anim_remap_keys(
     rules: &RuleSet,
-    overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
 ) -> HashSet<sprite_atlas::AnimRemapKey> {
+    let overlay_registry = rules.overlay_registry();
     [
         rules.crate_rules.wood_crate_img.as_deref(),
         rules.crate_rules.crate_img.as_deref(),
@@ -443,42 +440,6 @@ pub(crate) struct PresentationManifest {
     pub(crate) palette_set: Option<crate::render::palette_textures::PaletteSet>,
 }
 
-/// Populate the already-staged gameplay owner with map object sections.
-///
-/// The caller creates this exact Simulation before Fill and keeps it through
-/// authored overlay finalization.  This helper deliberately cannot construct a
-/// replacement owner.
-pub(crate) fn populate_staged_app_scenario<F>(
-    sim: &mut Simulation,
-    map_data: &MapFile,
-    resolved_terrain: &ResolvedTerrainGrid,
-    theater_name: &str,
-    rules: &RuleSet,
-    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
-    bridge_destroyability_mode: BridgeDestroyabilityMode,
-    descriptor: &crate::sim::scenario_session::ScenarioDescriptor,
-    generated_inits: Option<&crate::sim::world::GeneratedTechnoInitTable>,
-    initialize_houses_before_objects: F,
-) -> Result<(), crate::sim::runtime::ScenarioPopulationError>
-where
-    F: FnOnce(&mut Simulation),
-{
-    crate::sim::runtime::populate_staged_scenario_with_generated_inits(
-        sim,
-        map_data,
-        resolved_terrain,
-        theater_name,
-        rules,
-        overlay_registry,
-        overlay_grid,
-        bridge_destroyability_mode,
-        descriptor,
-        generated_inits,
-        initialize_houses_before_objects,
-    )
-}
-
 /// Build the voxel and SHP sprite atlases, and the palette set, for a fully
 /// constructed simulation. A load builds them once; sprites the world needs
 /// later go onto the atlases' growth pages.
@@ -490,7 +451,6 @@ pub(crate) fn build_presentation_manifest(
     theater_ext: &str,
     theater_name: &str,
     rules: Option<&RuleSet>,
-    overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
     house_colors: &HouseColorMap,
     theater_unit_palette: Option<&Palette>,
     theater_iso_palette: Option<&Palette>,
@@ -503,7 +463,6 @@ pub(crate) fn build_presentation_manifest(
         theater_ext,
         theater_name,
         rules,
-        overlay_registry,
         house_colors,
         theater_unit_palette,
         theater_iso_palette,
@@ -519,7 +478,6 @@ pub(crate) fn prepare_presentation_manifest(
     theater_ext: &str,
     theater_name: &str,
     rules: Option<&RuleSet>,
-    overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
     house_colors: &HouseColorMap,
     theater_unit_palette: Option<&Palette>,
     theater_iso_palette: Option<&Palette>,
@@ -548,7 +506,7 @@ pub(crate) fn prepare_presentation_manifest(
     if let Some(rules) = rules {
         coverage
             .anim_remap_keys
-            .extend(startup_crate_anim_remap_keys(rules, overlay_registry));
+            .extend(startup_crate_anim_remap_keys(rules));
     }
     let sprite_work = palette.map(|pal| {
         sprite_atlas::prepare_sprite_atlas(
@@ -856,11 +814,7 @@ mod tests {
             !roots.iter().any(|root| root == "GHOST_A"),
             "an unregistered art animation is no root at all: {roots:?}"
         );
-        let strict = crate::map::resolved_terrain::scheduler_anim_roots(
-            &rules,
-            &crate::rules::overlay_types::OverlayTypeRegistry::empty(),
-            &[],
-        );
+        let strict = crate::map::resolved_terrain::scheduler_anim_roots(&rules, &[]);
         assert!(
             !strict.iter().any(|root| root == "KNOWN_A"),
             "building animations must not be required assets"
@@ -902,7 +856,6 @@ mod tests {
         land_wheel_speed_zero: bool,
         bridge_deck: bool,
         radar_color: Option<[u8; 3]>,
-        track: bool,
         land: LandType,
         no_use_tile_land_type: bool,
         land_speed_costs: Option<SpeedCostProfile>,
@@ -919,8 +872,6 @@ mod tests {
              [CrateRules]\nCrateImg=STARTBOX\nWoodCrateImg=STARTBOX\nWaterCrateImg=STARTBOX\n",
         );
         let rules = RuleSet::from_ini(&ini).expect("rules");
-        let overlay_registry =
-            crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
         let tiles = vec![
             TerrainTileAnimation {
                 rx: 4,
@@ -943,7 +894,7 @@ mod tests {
         ];
 
         assert_eq!(
-            scheduler_anim_roots(&rules, &overlay_registry, &tiles),
+            scheduler_anim_roots(&rules, &tiles),
             vec![
                 "CRATE_SPARK",
                 "CUSTOM_FALLS",
@@ -968,8 +919,7 @@ mod tests {
         );
         let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&ini);
         let rules = RuleSet::from_ini(&ini).expect("rules");
-        let overlay_registry =
-            crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
+        let overlay_registry = rules.overlay_registry();
 
         assert_eq!(
             rules.crate_rules.crate_img.as_deref(),
@@ -991,7 +941,7 @@ mod tests {
         assert_eq!(tiberium.color_scheme(), 3);
 
         assert_eq!(
-            startup_crate_anim_remap_keys(&rules, &overlay_registry),
+            startup_crate_anim_remap_keys(&rules),
             HashSet::from([(
                 "CRATE_SPARK".to_string(),
                 crate::render::sprite_atlas::ShpPaletteContext::SelectedScheme,
@@ -1121,7 +1071,6 @@ mod tests {
                     land_wheel_speed_zero: flags.land_wheel_speed_zero,
                     bridge_deck: flags.bridge_deck,
                     radar_color: flags.radar_color,
-                    track: flags.track,
                     land: flags.land,
                     no_use_tile_land_type: flags.no_use_tile_land_type,
                     land_speed_costs: flags.land_speed_costs,
