@@ -732,7 +732,14 @@ impl LiveRoundFlow {
             self.phase = RoundPhase::Running;
         }
         let online = self.config.is_some();
-        let host = self.input_host(core);
+        // A kept online room can promote a surviving guest to host.
+        let host = if online {
+            state.match_state.session.host()
+        } else {
+            core.host()
+        };
+        let online_room =
+            online && rendered == PresentedShell::NetworkSetup && online_setup_settled(state, host);
         // On LAN the guest rejoins the host after the room reopens. Note
         // the visit even while the room still slides in.
         if !online
@@ -1382,13 +1389,11 @@ impl LiveRoundFlow {
                     .config
                     .as_ref()
                     .is_some_and(|config| config.ai.is_some())
-                    && lobby_ready(state, rendered) =>
+                    && (online_room || lobby_ready(state, rendered)) =>
             {
-                self.current_round.as_mut().context("completed AI round")?["result"] = json!({"shown":false,"completion":"ordinary B6 Leave returned directly to lobby"});
-                self.record(
-                    frame,
-                    "Singleton Leave returned to the lobby without a results page",
-                );
+                self.current_round.as_mut().context("completed AI round")?["result"] =
+                    json!({"shown":false,"completion":"ordinary B6 Leave"});
+                self.record(frame, "Singleton Leave returned without a results page");
                 self.phase = RoundPhase::Returning;
             }
             // Surrender's EXIT ends the match for its player at once.
@@ -1412,10 +1417,7 @@ impl LiveRoundFlow {
             }
             RoundPhase::Returning
                 if if online {
-                    lobby_ready(state, rendered)
-                        || (core.failure.is_none()
-                            && rendered == PresentedShell::NetworkSetup
-                            && online_setup_settled(state, host))
+                    lobby_ready(state, rendered) || (core.failure.is_none() && online_room)
                 } else if returns_to_room(core, state) {
                     room_returned(core, state, rendered)
                 } else {
@@ -1517,12 +1519,7 @@ impl LiveRoundFlow {
                 }
             }
             RoundPhase::LeaveRoom
-                if rendered == PresentedShell::NetworkSetup
-                    && (if online {
-                        online_setup_settled(state, host)
-                    } else {
-                        setup_settled(state, host)
-                    })
+                if (online_room || (!online && rendered == PresentedShell::NetworkSetup && setup_settled(state, host)))
                     // Online the service reopens with everyone seated. A guest
                     // can leave before the host draws that first roster.
                     && (!host

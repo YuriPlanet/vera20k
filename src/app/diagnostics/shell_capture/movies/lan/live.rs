@@ -1341,6 +1341,14 @@ impl LiveLanCapture {
             state.frontend.screen == GameScreen::InGame,
             "live LAN match left gameplay before completion"
         );
+        // Observe the frame this render admitted before another pass can
+        // admit the next one. A lent runtime publishes no entities.
+        if self.battle.is_some() && state.match_state.sim_runtime.is_lent() {
+            if !state.match_state.sim_runtime.pass_may_run(true) {
+                return Ok(());
+            }
+            crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
+        }
         if self.battle.is_none() && self.mass.is_none() && self.latency.is_none() {
             let simulation = &state
                 .match_state
@@ -1479,10 +1487,10 @@ impl LiveLanCapture {
             return Ok(());
         }
         if self.battle.is_some() {
-            // The battle inspects real entities at their committed frame.
-            // The presentation copy has none while the worker holds the
-            // world, and a network wait has not yet committed its DoList.
-            if state.match_state.sim_runtime.is_lent() || simulation.pending_network_wait() {
+            // Wait_For_Players is inside an unfinished native MainTick: Logic
+            // may already have repaired a building, but DoList and the frame
+            // commit are still pending. Observe only its committed result.
+            if simulation.pending_network_wait() {
                 return Ok(());
             }
             let host = self.host();
