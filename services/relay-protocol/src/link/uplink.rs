@@ -393,7 +393,7 @@ impl ClientSession {
         let uplink = Uplink {
             flags,
             recv_next,
-            down: self.hop.down,
+            down: self.hop.down.feedback_window(),
             srtt_ms: saturate(link.rtt.srtt),
             base_ms: saturate(link.rtt.base()),
             // 0 with srtt (spec §3.2).

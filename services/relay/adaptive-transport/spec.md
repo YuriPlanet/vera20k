@@ -217,7 +217,7 @@ RecvWindow { high: u64, bits: u64 }
   - `bits = (d ≥ 64) ? 1 : (bits << d) | 1`
   - `high = s`
 - `high − 63 ≤ s ≤ high`：`bits |= 1 << (high − s)`。
-- 更旧的序号：不更新窗口。数据报本身照常交给重放窗口处理。
+- 落后 64 至 127 个序号：首次收到时接受，但反馈位图不含该序号。重复的序号或落后至少 128 的序号被拒绝。
 
 **不计入窗口的数据报：**
 - 中继的 CHALLENGE（server kind 0）和 LEAVE_ACK（server kind 5）：信封序号回显的是客户端请求的序号，不是 `peer.sent`。
@@ -225,9 +225,7 @@ RecvWindow { high: u64, bits: u64 }
 
 中继的 `up` 窗口从这一跳的 CONFIRM 开始统计。客户端的 `down` 窗口从第一个 READY 开始统计。
 
-**归属：**
-- 客户端在 `ClientSession` 认证数据报时更新 `down` 窗口。
-- 中继在 `Peer` 认证数据报时更新 `up` 窗口。
+**归属：** 每跳的 128 位重放窗口记录已接受的序号。`down` 和 `up` 分别取自客户端和中继（玩家或观战者）的重放窗口，报告最高序号和低 64 位。
 
 **填字段的时机：** `UPLINK` 的 `down_high` 和 `down_bits`、ACK 和 STATUS 的 `up_high` 和 `up_bits`，都在**编码那一刻**从窗口读取。
 

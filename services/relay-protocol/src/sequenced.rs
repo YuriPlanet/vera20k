@@ -2781,6 +2781,31 @@ mod tests {
             }
         );
         assert_eq!(stats.datagrams_received, 3);
+
+        // Deliver a keepalive (5) before the older pull (4). Both count,
+        // but STATUS measures the delay since 5 first arrived.
+        let mut pull = Vec::new();
+        first.pull_ordering_at(1, 130, &mut pull).unwrap();
+        first.probe_at(135, &mut bytes).unwrap();
+        server
+            .process_at(endpoint(&first), &bytes, unix(150), 150)
+            .unwrap();
+        let replies = server
+            .process_at(endpoint(&first), &pull, unix(175), 175)
+            .unwrap();
+        let ServerEvent::Ordering(OrderEvent::Status(status)) =
+            first.receive_at(&replies[0].bytes, 190).unwrap()
+        else {
+            panic!("status");
+        };
+        assert_eq!(
+            status.feedback.up,
+            RecvWindow {
+                high: 5,
+                bits: 0b1111
+            }
+        );
+        assert_eq!(status.feedback.echo_delay_ms, 25);
     }
 
     #[test]

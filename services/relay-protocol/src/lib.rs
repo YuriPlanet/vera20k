@@ -234,7 +234,8 @@ struct ReplayWindow {
 }
 
 impl ReplayWindow {
-    fn accept(&mut self, sequence: u64) -> Result<(), RelayError> {
+    /// Returns whether the accepted sequence advanced the high watermark.
+    fn accept(&mut self, sequence: u64) -> Result<bool, RelayError> {
         if sequence == 0 {
             return Err(RelayError::Replay);
         }
@@ -246,14 +247,22 @@ impl ReplayWindow {
                 (self.seen << advance) | 1
             };
             self.maximum = sequence;
-            return Ok(());
+            return Ok(true);
         }
         let behind = self.maximum - sequence;
         if behind >= 128 || self.seen & (1u128 << behind) != 0 {
             return Err(RelayError::Replay);
         }
         self.seen |= 1u128 << behind;
-        Ok(())
+        Ok(false)
+    }
+
+    /// Adaptive feedback reports the newest 64 receipts (spec §4.1).
+    fn feedback_window(&self) -> RecvWindow {
+        RecvWindow {
+            high: self.maximum,
+            bits: self.seen as u64,
+        }
     }
 }
 
@@ -262,7 +271,6 @@ pub struct ClientSession {
     ticket: Ticket,
     key: SecretKey,
     sent: u64,
-    received: ReplayWindow,
     probe: Option<u64>,
     ready: bool,
     // Assigned by the READY answering this hop's CONFIRM (spec §6.2).
@@ -325,7 +333,6 @@ impl ClientSession {
             ticket_bytes: ticket.try_into().map_err(|_| RelayError::Malformed)?,
             key: SecretKey::new(packet_key),
             sent: 0,
-            received: ReplayWindow::default(),
             probe: None,
             ready: false,
             session: None,
@@ -514,8 +521,7 @@ impl ClientSession {
                 Ok(ServerEvent::Challenge(payload))
             }
             READY if payload.is_empty() => {
-                self.received.accept(sequence)?;
-                self.hop_heard(sequence);
+                self.hop.heard(sequence, self.clock_ms)?;
                 if claim {
                     self.session = Some(header.session);
                 }
@@ -523,8 +529,7 @@ impl ClientSession {
                 Ok(ServerEvent::Ready)
             }
             CONTROL if self.ready => {
-                self.received.accept(sequence)?;
-                self.hop_heard(sequence);
+                self.hop.heard(sequence, self.clock_ms)?;
                 if payload.first() == Some(&sequenced::PACK_EVENT) {
                     return Ok(ServerEvent::OrderingPack(
                         self.receive_ordering_pack(payload)?,
@@ -540,8 +545,7 @@ impl ClientSession {
             }
             // `[source u8][data]`, plaintext (spec §3.2, §6.1).
             DATA if self.ready && payload.len() > 1 && payload[0] < MAX_PEERS => {
-                self.received.accept(sequence)?;
-                self.hop_heard(sequence);
+                self.hop.heard(sequence, self.clock_ms)?;
                 Ok(ServerEvent::Payload {
                     source: payload[0],
                     bytes: &payload[1..],
@@ -758,7 +762,6 @@ struct Peer {
     // This hop's key in `RelayServer::sessions` (spec §6.2).
     session: u32,
     endpoint: SocketAddrV4,
-    received: ReplayWindow,
     sent: u64,
     last_seen: u64,
     // After its LEAVE the hop accepts only LEAVE, until this second
@@ -1099,11 +1102,10 @@ impl RelayServer {
         else {
             return Err(RelayError::Unregistered);
         };
-        room.peers[index].received.accept(message.sequence)?;
+        room.peers[index].link.heard(message.sequence, now_millis)?;
         // NAT rebinding: an authenticated, fresh datagram moves the hop
         // (spec §6.2 "换地址", §6.4 item 5).
         room.peers[index].endpoint = source;
-        room.peers[index].link.heard(message.sequence, now_millis);
         // Any datagram of the hop ends the reader's offline state (§5.1);
         // push still waits for its subscription.
         room.peers[index].evaluate_reader(now_millis);
@@ -1460,11 +1462,10 @@ impl RelayServer {
                 peer.link.carry_path(&previous.link);
                 replaced = Some(previous);
             }
-            if message.sequence <= peer.received.maximum && peer.endpoint != source {
+            if message.sequence <= peer.link.highest_received() && peer.endpoint != source {
                 return Err(RelayError::Replay);
             }
-            peer.received.accept(message.sequence)?;
-            peer.link.heard(message.sequence, now_ms);
+            peer.link.heard(message.sequence, now_ms)?;
             peer.evaluate_reader(now_ms);
             if peer.endpoint != source {
                 // A confirmed new path must opt in before receiving history.
@@ -1482,8 +1483,7 @@ impl RelayServer {
             )?
         } else {
             let mut peer = new_peer(message, session, source, now, now_ms);
-            peer.received.accept(message.sequence)?;
-            peer.link.heard(message.sequence, now_ms);
+            peer.link.heard(message.sequence, now_ms)?;
             let reply = server_packet(
                 &mut peer,
                 READY,
@@ -1616,7 +1616,6 @@ fn new_peer(
         key: message.key.clone(),
         session,
         endpoint,
-        received: ReplayWindow::default(),
         sent: 0,
         last_seen: now,
         left_until: None,
@@ -2055,6 +2054,44 @@ mod tests {
             Ok(ServerEvent::Ready)
         ));
         assert!(client.is_ready());
+    }
+
+    #[test]
+    fn downlink_feedback_reports_64_sequences_but_rejects_replays_across_128() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 1);
+        let mut client = client(&key, 1, 0);
+        connect(
+            &mut server,
+            &mut client,
+            SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30001),
+        );
+        let session = client.session().unwrap();
+        let packet_key = client.key.clone();
+        let packet = |sequence| encode_server(&packet_key, DATA, session, sequence, &[1, 42]);
+
+        client.receive(&packet(200)).unwrap();
+        assert_eq!(client.link_stats().down, RecvWindow { high: 200, bits: 1 });
+        // Fresh deliveries 1 and 63 behind appear in feedback. At ages 64
+        // and 127 they still reach the game exactly once, outside feedback.
+        for sequence in [199, 137, 136, 73] {
+            let bytes = packet(sequence);
+            assert!(matches!(
+                client.receive(&bytes),
+                Ok(ServerEvent::Payload { .. })
+            ));
+            assert_eq!(client.receive(&bytes).unwrap_err(), RelayError::Replay);
+        }
+        assert_eq!(client.receive(&packet(72)).unwrap_err(), RelayError::Replay);
+        let stats = client.link_stats();
+        assert_eq!(
+            stats.down,
+            RecvWindow {
+                high: 200,
+                bits: (1 << 63) | 3
+            }
+        );
+        assert_eq!(stats.datagrams_received, 6); // READY and five DATA
     }
 
     #[test]
