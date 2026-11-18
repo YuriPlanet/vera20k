@@ -382,6 +382,9 @@ impl App {
         let game_config = startup_asset_or_error(game_config, &mut main_menu_shell_error);
         if let Some(config) = &game_config {
             crate::map::source::set_downloaded_maps_dir(config.paths.downloaded_maps_dir());
+            crate::render::locomotor_visual::set_high_terrain_building_lift(
+                config.graphics.high_terrain_building_lift,
+            );
         }
         let startup_files = StartupFiles {
             config_file: GameConfig::path(),
