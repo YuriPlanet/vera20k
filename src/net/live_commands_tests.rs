@@ -88,6 +88,8 @@ fn fixture_agreement(
         30,
         rate,
         0,
+        "",
+        "",
     )
     .unwrap()
 }
@@ -246,6 +248,46 @@ fn poll_pair(
     (passes[0], passes[1])
 }
 
+/// Games that load the same world but would play it differently, another
+/// build or other rules, never certify one start; the start report names
+/// the part that differs.
+#[test]
+fn start_identity_differs_by_build_and_by_rules() {
+    let agreement = |version: &str, rules: &str| {
+        let rate = NonZeroU32::new(1).unwrap();
+        StartupAgreement::new(
+            [(0, 0), (1, 1)],
+            [0, 1],
+            73,
+            10,
+            30,
+            rate,
+            0,
+            version,
+            rules,
+        )
+        .unwrap()
+    };
+    let base = agreement("1.0:a:0000", "rules");
+    for (other, part) in [
+        (agreement("1.0:b:0000", "rules"), "build"),
+        (agreement("1.0:a:0000", "other"), "rules"),
+    ] {
+        assert_ne!(
+            other.sequencing_identity().unwrap().0,
+            base.sequencing_identity().unwrap().0
+        );
+        let differs: Vec<_> = base
+            .report_parts()
+            .into_iter()
+            .zip(other.report_parts())
+            .filter(|(ours, theirs)| ours != theirs)
+            .map(|(ours, _)| ours.0)
+            .collect();
+        assert_eq!(differs, [part]);
+    }
+}
+
 /// A real private-UDP cohort; the agreement is the install-time snapshot,
 /// never inferred from subsequent probes or the mutable connection table.
 fn startup_cohort(active: &[u8], hashes: &[u64]) -> Vec<LiveCommandSession> {
@@ -278,6 +320,8 @@ fn startup_cohort(active: &[u8], hashes: &[u64]) -> Vec<LiveCommandSession> {
                 30,
                 rate,
                 hashes[index],
+                "",
+                "",
             )
             .unwrap();
             LiveCommandSession::new(
@@ -349,7 +393,9 @@ fn full_and_majority_loading_rosters_require_the_same_frozen_world() {
             10,
             30,
             NonZeroU32::new(5).unwrap(),
-            0
+            0,
+            "",
+            ""
         ),
         Err(StartupError::NoMajority)
     );
@@ -499,6 +545,8 @@ fn startup_ready_retries_after_release_and_old_scope_cannot_certify_rematch() {
         30,
         rate,
         Simulation::with_seed(73).state_hash(),
+        "",
+        "",
     )
     .unwrap();
     let mut clients = wires
@@ -1350,7 +1398,18 @@ fn invalid_roster_context_and_initial_seed_are_explicit_failures() {
     // human. Once startup is admitted, losing the last peer also retains
     // the normal local-only transfer path (covered below).
     let mut one = LiveCommandSession::new(
-        StartupAgreement::new([(0, 0)], [0], 1, 10, 30, NonZeroU32::new(5).unwrap(), 0).unwrap(),
+        StartupAgreement::new(
+            [(0, 0)],
+            [0],
+            1,
+            10,
+            30,
+            NonZeroU32::new(5).unwrap(),
+            0,
+            "",
+            "",
+        )
+        .unwrap(),
         transport(),
         0,
         1,
@@ -1916,7 +1975,7 @@ fn a_one_human_match_orders_through_the_relay_only_when_the_lobby_marked_it() {
         };
         wire.set_ordering_certificate(certificate.sign(&key).unwrap())
             .unwrap();
-        let agreement = StartupAgreement::new([(0, 0)], [0], 73, 10, 30, rate, 0).unwrap();
+        let agreement = StartupAgreement::new([(0, 0)], [0], 73, 10, 30, rate, 0, "", "").unwrap();
         let live =
             LiveCommandSession::new(agreement, wire, 0, 73, rate, LiveCommandMode::Wol).unwrap();
         assert_eq!(live.uses_sequenced_lockstep(), alone, "marked: {alone}");
@@ -1934,7 +1993,7 @@ fn solo_wol_commands_apply_without_ahead_or_batching_across_timing_updates() {
         .install_network_command_timing(0, std::num::NonZeroU8::new(10).unwrap(), [0]);
     let rate = NonZeroU32::new(10).unwrap();
     let agreement =
-        StartupAgreement::new([(0, 0)], [0], 73, 40, 30, rate, sim.state_hash()).unwrap();
+        StartupAgreement::new([(0, 0)], [0], 73, 40, 30, rate, sim.state_hash(), "", "").unwrap();
     let mut live =
         LiveCommandSession::new(agreement, transport(), 0, 73, rate, LiveCommandMode::Wol).unwrap();
     live.configure_precalculated_timing(40, 45);
@@ -3063,6 +3122,8 @@ fn sequenced_udp_paused_client_catches_up_without_stalling_healthy_commands() {
         30,
         NonZeroU32::new(1).unwrap(),
         worlds[0].state_hash(),
+        "",
+        "",
     )
     .unwrap();
     let boundaries: Vec<_> = (0..2u8)
@@ -3350,6 +3411,8 @@ fn sequenced_service_ends_a_match_a_newer_relay_keeps_stalling() {
         30,
         NonZeroU32::new(1).unwrap(),
         0,
+        "",
+        "",
     )
     .unwrap();
     let mut session = sequenced::SequencedSession::new(&agreement, &wire, 0).unwrap();
@@ -3544,6 +3607,8 @@ fn sequenced_unsent_batch_retries_when_the_relay_route_recovers() {
         30,
         NonZeroU32::new(1).unwrap(),
         0,
+        "",
+        "",
     )
     .unwrap();
     let mut session = sequenced::SequencedSession::new(&agreement, &wire, 0).unwrap();
@@ -3778,6 +3843,8 @@ fn sequenced_pair_with_second_hash_offset(offset: u64) -> SequencedPair {
             30,
             NonZeroU32::new(1).unwrap(),
             world_hash.wrapping_add(u64::from(source) * offset),
+            "",
+            "",
         )
         .unwrap()
     };

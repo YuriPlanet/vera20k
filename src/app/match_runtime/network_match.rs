@@ -1551,6 +1551,8 @@ mod tests {
                 30,
                 std::num::NonZeroU32::new(2).unwrap(),
                 sim.state_hash(),
+                "",
+                "",
             )
             .unwrap(),
             transport,
@@ -1648,6 +1650,8 @@ mod tests {
                         30,
                         NonZeroU32::new(5).unwrap(),
                         sim.state_hash(),
+                        "",
+                        "",
                     )
                     .unwrap(),
                     transport,
@@ -1808,6 +1812,8 @@ mod tests {
                 30,
                 NonZeroU32::new(1).unwrap(),
                 sim.state_hash(),
+                "",
+                "",
             )
             .unwrap(),
             transport,
@@ -1965,6 +1971,8 @@ mod tests {
             30,
             rate,
             original_hash,
+            "",
+            "",
         )
         .unwrap();
         let mut first =

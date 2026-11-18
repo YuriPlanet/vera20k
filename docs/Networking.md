@@ -196,7 +196,8 @@ relay orders a one-source match only with that mark.
 Online matches with two or more human sources, or one the lobby marked, use a
 lobby-certified relay clock
 and one immutable relay command stream. Every originally admitted client that
-finishes loading must agree to the initial world before it starts. A player who
+finishes loading must agree to the initial world, its build and its rules
+(`agreement::local`) before it starts. A player who
 never finishes loading leaves in the first frame once silent for 60 seconds, or 3
 minutes after the first client was ready; the native loading timeout leaves that
 departure to the relay. A match spread over several relays is cancelled instead.
@@ -220,6 +221,16 @@ Relays of one match must also speak one relay-to-relay link version: a relay
 that hears another version cancels the startup at once, and one too old to know
 this cancels at its loading limit, so players get the cancelled-start message
 instead of a frozen match. Game and lobby traffic do not change.
+The build and rules ride in the same 32-byte start identity the relay already
+compares (`StartupAgreement`), and a match that never started reports them as its
+`build` and `rules` start parts. A lobby room refused another build or other rules
+before its start, so only a launcher's relay match (`tools/spawn`) meets the new
+refusal: one whose players run other builds or rules, which used to start and could
+desync later, is now refused at its start like a different world, a released game
+facing this one included. Its box (`VERA:MatchStartMismatch`) names the version and
+files and, for a launcher's match, Terrain Deformation and the Superweapon Limit.
+Players of one build agree as before, also after a rollback, and nothing new is
+exchanged.
 At each deadline, missing input is empty; a command joins the next unsealed
 frame. The sender also waits for that commit.
 Frames use the existing Event codec and simulation queues, with a fresh compression
@@ -372,8 +383,8 @@ process skips the start barriers, loads the same world without reporting progres
 the others, and reads the whole stream from sequence 1 as ordinary catch-up. It
 learns its batch counter from that stream, so it submits nothing until the world has
 caught up; local orders given until then are dropped, and effects and voices stay
-silent. The relay refuses a different world as an agreement mismatch. Abort Mission
-during this replay leaves as it does while Reconnecting.
+silent. The relay refuses a different world, build or rules as an agreement mismatch.
+Abort Mission during this replay leaves as it does while Reconnecting.
 
 Authored matches, Cooperative aside, record reconstructible JSON replays in `replays/`,
 offline skirmishes against computer players included.
@@ -616,8 +627,9 @@ same whichever rules a room plays. Offline games play the player's own, a networ
 replay the room's it recorded. A Quick Match room has none: the guest's game drops
 any its host sends, and the lobby refuses them there. A launcher's network game
 (`tools/spawn`) has no host to share them, so each player plays their own, which its
-`ExpectedRulesDigest` compares. So the room's door, the native rules hash (LAN's join
-check, online the room's `ex_info`), leaves the switches out, while the rules
+`ExpectedRulesDigest` compares, and the start barrier compares again. So the room's
+door, the native rules hash (LAN's join check, online the room's `ex_info`), leaves
+the switches out, while the rules
 digest compares the ones each game plays. When the door
 still refuses a join because the rules files differ, or the digest a start, each game
 says what it changes from the original game, its mod, `config.toml`'s INI roots and

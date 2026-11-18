@@ -23,6 +23,19 @@ use crate::net::udp::{DEFAULT_LAN_PORT, LanUdpTransport, UdpBindConfig};
 // presence cadence;5E1410's nativeType5 probe is not an admitted-peer lease.
 const SETUP_PEER_LEASE: u32 = 1800;
 
+/// What one setup keepalive did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SetupKeepalive {
+    /// Not a renewal: another scope or sender, or a replayed sequence.
+    Ignored,
+    /// Renewed its sender's setup lease.
+    Renewed,
+    /// VERA: a direct spawn's participant, named here, runs another build.
+    OtherBuild(String),
+    /// VERA: a direct spawn's participant, named here, plays other rules.
+    OtherRules(String),
+}
+
 const LOBBY_RETRY_TIMING: RetryTiming = RetryTiming {
     retry_delta: 30,
     max_retries: u32::MAX,
@@ -391,6 +404,16 @@ impl LanService {
         })
     }
 
+    /// A control proof with this game's rules digest, for the messages whose
+    /// receiver compares it: GO, its acknowledgements and setup keepalives.
+    fn agreed_proof(&self) -> anyhow::Result<LanSessionProof> {
+        let mut proof = self.control_proof()?;
+        if let Some(agreement) = self.setup_agreement.as_ref() {
+            proof.rules_digest.clone_from(&agreement.rules_digest);
+        }
+        Ok(proof)
+    }
+
     fn validate_scope(&self, proof: &LanSessionProof) -> bool {
         self.setup_scope == Some(proof.scope) && self.in_room(proof)
     }
@@ -461,10 +484,7 @@ impl LanService {
         if !self.can_queue_go(destinations.len()) {
             return Ok(false);
         }
-        let mut proof = self.control_proof()?;
-        if let Some(agreement) = self.setup_agreement.as_ref() {
-            proof.rules_digest = agreement.rules_digest.clone();
-        }
+        let proof = self.agreed_proof()?;
         let message = message.clone().with_session_proof(&proof)?;
         let transport = self
             .transport
@@ -848,7 +868,7 @@ impl LanService {
                 .collect()
         };
         for endpoint in endpoints {
-            let mut proof = self.control_proof()?;
+            let mut proof = self.agreed_proof()?;
             if session.host() {
                 let Some(peer) = self.peer_admissions.get(&endpoint) else {
                     continue;
@@ -876,7 +896,7 @@ impl LanService {
         incoming: &GlobalMessage,
         message: &LanMessage,
         now: u32,
-    ) -> anyhow::Result<bool> {
+    ) -> anyhow::Result<SetupKeepalive> {
         let proof = message
             .session_proof()?
             .ok_or_else(|| anyhow::anyhow!("LAN keepalive has no confirmed proof"))?;
@@ -885,7 +905,6 @@ impl LanService {
             || !self
                 .setup_scope
                 .is_some_and(|scope| scope.epoch == proof.scope.epoch)
-            || proof.version != super::shell_network_setup::agreement::version()
             || if session.host() {
                 !self.peer_admission_matches(incoming.source, &proof)
             } else {
@@ -897,27 +916,49 @@ impl LanService {
                     || self.admission_nonce != Some(proof.admission_nonce)
             }
         {
-            return Ok(false);
+            return Ok(SetupKeepalive::Ignored);
         }
         let Some(source) = session.network_endpoint_source(incoming.source) else {
-            return Ok(false);
+            return Ok(SetupKeepalive::Ignored);
         };
         let Some(launch) = session.network_setup() else {
-            return Ok(false);
+            return Ok(SetupKeepalive::Ignored);
         };
         let Some(record) = self.peer_admissions.get_mut(&incoming.source) else {
-            return Ok(false);
+            return Ok(SetupKeepalive::Ignored);
         };
         if source == launch.local_player_index
             || !record.name.eq_ignore_ascii_case(&message.name())
             || !launch.humans[source]
                 .name
                 .eq_ignore_ascii_case(&record.name)
-            || record
-                .heartbeat_sequence
-                .is_some_and(|last| incoming.sequence.wrapping_sub(last) as i32 <= 0)
         {
-            return Ok(false);
+            return Ok(SetupKeepalive::Ignored);
+        }
+        // VERA: a direct spawn's participants derive scope and nonces from
+        // the launch alone, so one of another build or other rules files
+        // gets here. It could never start; name it rather than let its
+        // lease run out. A LAN room refused another build at its join.
+        if proof.version != super::shell_network_setup::agreement::version() {
+            return Ok(if self.preadmitted {
+                SetupKeepalive::OtherBuild(record.name.clone())
+            } else {
+                SetupKeepalive::Ignored
+            });
+        }
+        if self.preadmitted
+            && self
+                .setup_agreement
+                .as_ref()
+                .is_some_and(|agreement| agreement.rules_digest != proof.rules_digest)
+        {
+            return Ok(SetupKeepalive::OtherRules(record.name.clone()));
+        }
+        if record
+            .heartbeat_sequence
+            .is_some_and(|last| incoming.sequence.wrapping_sub(last) as i32 <= 0)
+        {
+            return Ok(SetupKeepalive::Ignored);
         }
         // Global already owns each sender's sequence. Reordered/duplicated
         // probes cannot renew a lease; a new confirmed nonce resets this view.
@@ -926,7 +967,7 @@ impl LanService {
             now,
             SETUP_PEER_LEASE,
         ));
-        Ok(true)
+        Ok(SetupKeepalive::Renewed)
     }
 
     fn expired_setup_peer(
@@ -1157,15 +1198,12 @@ pub(super) fn verify_setup_agreement(state: &mut AppState) -> anyhow::Result<()>
 
 fn local_control_proof(state: &mut AppState) -> anyhow::Result<LanSessionProof> {
     verify_setup_agreement(state)?;
-    let service = state.match_state.lan_service.as_ref().expect("visit");
-    let mut proof = service.control_proof()?;
-    proof.rules_digest = service
-        .setup_agreement
+    state
+        .match_state
+        .lan_service
         .as_ref()
-        .expect("verified agreement")
-        .rules_digest
-        .clone();
-    Ok(proof)
+        .expect("visit")
+        .agreed_proof()
 }
 
 fn fresh_nonce() -> anyhow::Result<[u8; 16]> {
@@ -1377,7 +1415,10 @@ impl DirectAdmission {
             "direct endpoints do not match the launch roster"
         );
         // Hash the launch every participant shares, so a different map,
-        // option or roster can never enter another participant's scope.
+        // option or roster can never enter another participant's scope. It
+        // also holds each player's own Terrain Deformation and Superweapon
+        // Limit (`start_spawn_session`), so players whose Options rules
+        // differ never share one either.
         let mut shared = launch.clone();
         shared.local_player_index = 0;
         shared.selected_map_file = None;
@@ -1538,8 +1579,11 @@ pub(crate) fn begin_direct_spawn(
 }
 
 /// The direct spawn host starts the ordinary LAN GO once every guest is up.
+/// A failed launch never does: the participant that ended it is retired, so
+/// the rest may all have answered.
 fn poll_direct_start(state: &mut AppState) {
     if !state.match_state.session.host()
+        || state.frontend.external_launch_error.is_some()
         || !super::shell_network_setup::external(state)
         || !state
             .frontend
@@ -2234,12 +2278,32 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
     match message.kind() {
         LanMessageKind::Keepalive => {
             if setup_liveness_active(state) {
-                state
+                let keepalive = state
                     .match_state
                     .lan_service
                     .as_mut()
                     .expect("visit")
                     .accept_setup_keepalive(&state.match_state.session, &incoming, &message, now)?;
+                let differs = match keepalive {
+                    SetupKeepalive::OtherBuild(name) => Some(format!(
+                        "direct participant {name} runs another VERA20k build"
+                    )),
+                    SetupKeepalive::OtherRules(name) => Some(format!(
+                        "direct participant {name}: {}",
+                        super::shell_network_setup::agreement::rules_differ_text(state)
+                    )),
+                    SetupKeepalive::Ignored | SetupKeepalive::Renewed => None,
+                };
+                if let Some(reason) = differs {
+                    // As when its lease runs out, with the reason.
+                    state
+                        .match_state
+                        .lan_service
+                        .as_mut()
+                        .expect("visit")
+                        .retire_setup_peer(incoming.source);
+                    super::App::fail_external_launch(state, &reason);
+                }
             }
         }
         LanMessageKind::Options => {
@@ -3478,6 +3542,10 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
         state.match_state.lan_service.is_some(),
         "LAN transport was not opened"
     );
+    // VERA: the start every player's game certifies names its build and
+    // rules too, so a launcher's relay match, which no lobby compared,
+    // refuses games that would desync.
+    let multiplayer = super::shell_network_setup::agreement::local(state)?;
     let sim = &state
         .match_state
         .sim_runtime
@@ -3642,7 +3710,21 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
             .frames_per_second(),
         rate,
         sim.state_hash(),
+        &multiplayer.version,
+        &multiplayer.rules_digest,
     )?;
+    // The lobby keeps a report of at most 64 start parts (`start_hash` in
+    // docs/lobby-protocol.md) and drops a longer one whole.
+    const _: () = {
+        const fn parts<T, const N: usize>(_: fn(&T) -> [(&'static str, u64); N]) -> usize {
+            N
+        }
+        assert!(
+            parts(crate::net::live_commands::StartupAgreement::report_parts)
+                + parts(crate::sim::world::Simulation::state_hash_owners)
+                <= 64
+        );
+    };
     if ordering_clock.is_some() {
         let parts = agreement
             .report_parts()
@@ -5055,6 +5137,12 @@ mod tests {
         assert!(!ordinary.setup_maps_verified());
         host.adopt_direct_admission(&host_admission);
         guest.adopt_direct_admission(&guest_admission);
+        let agreement = super::super::shell_network_setup::agreement::MultiplayerAgreement {
+            version: super::super::shell_network_setup::agreement::version(),
+            rules_digest: "a".repeat(64),
+        };
+        host.setup_agreement = Some(agreement.clone());
+        guest.setup_agreement = Some(agreement);
         assert!(host.setup_roster_complete(&host_session));
         assert!(guest.setup_roster_complete(&guest_session));
         assert!(host.setup_maps_verified() && guest.setup_maps_verified());
@@ -5065,9 +5153,11 @@ mod tests {
         guest.transport.as_mut().unwrap().service(31);
         let received = next_message(&mut host, &host_session);
         let message = LanMessage::decode(&received.payload).unwrap();
-        assert!(
+        assert_eq!(
             host.accept_setup_keepalive(&host_session, &received, &message, 1)
-                .unwrap()
+                .unwrap(),
+            SetupKeepalive::Renewed,
+            "the keepalive carries the rules both play"
         );
         assert!(host.direct_peers_heard());
 
@@ -5075,10 +5165,11 @@ mod tests {
         host.transport.as_mut().unwrap().service(32);
         let received = next_message(&mut guest, &guest_session);
         let message = LanMessage::decode(&received.payload).unwrap();
-        assert!(
+        assert_eq!(
             guest
                 .accept_setup_keepalive(&guest_session, &received, &message, 2)
                 .unwrap(),
+            SetupKeepalive::Renewed,
             "the host echoes the guest's own pair"
         );
         // GO and its Type13 reply carry proofs the other side admits.
@@ -5086,6 +5177,63 @@ mod tests {
         assert!(guest.validate_scope(&go) && guest.peer_admission_matches(host_address, &go));
         let reply = guest.control_proof().unwrap();
         assert!(host.validate_scope(&reply) && host.peer_admission_matches(guest_address, &reply));
+    }
+
+    /// A direct spawn's participant of another build or other rules files
+    /// derives the same scope and nonces from the launch; its keepalive names
+    /// it instead of being dropped until its lease runs out.
+    #[test]
+    fn direct_spawn_keepalive_of_another_build_or_rules_names_its_participant() {
+        use super::super::shell_network_setup::agreement;
+        let guest = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30125);
+        let session = session(true, guest);
+        let admission = DirectAdmission::derive(
+            session.network_setup().unwrap(),
+            5,
+            &[None, Some(guest)],
+            b"map",
+        )
+        .unwrap();
+        let mut host = service();
+        host.adopt_direct_admission(&admission);
+        host.setup_agreement = Some(agreement::MultiplayerAgreement {
+            version: agreement::version(),
+            rules_digest: "a".repeat(64),
+        });
+        let pair = admission.peers[0].2;
+        let mut keepalive = |sequence, version: String, rules: char| {
+            let proof = LanSessionProof {
+                scope: admission.scope,
+                join_nonce: pair.join_nonce,
+                admission_nonce: pair.admission_nonce,
+                version,
+                rules_digest: rules.to_string().repeat(64),
+            };
+            let message = LanMessage::named(LanNamedMessage::Keepalive, "Guest")
+                .unwrap()
+                .with_session_proof(&proof)
+                .unwrap();
+            let incoming = GlobalMessage {
+                source: guest,
+                product_id: 0xaa04,
+                sequence,
+                payload: message.as_bytes().to_vec(),
+            };
+            host.accept_setup_keepalive(&session, &incoming, &message, 1)
+                .unwrap()
+        };
+        assert_eq!(
+            keepalive(1, "0.1.0:released:0000".into(), 'a'),
+            SetupKeepalive::OtherBuild("Guest".into())
+        );
+        assert_eq!(
+            keepalive(2, agreement::version(), 'b'),
+            SetupKeepalive::OtherRules("Guest".into())
+        );
+        assert_eq!(
+            keepalive(3, agreement::version(), 'a'),
+            SetupKeepalive::Renewed
+        );
     }
 
     #[test]
@@ -5122,19 +5270,20 @@ mod tests {
             !host.validate_scope(&proof),
             "old readiness remains invalid"
         );
-        assert!(
+        assert_eq!(
             host.accept_setup_keepalive(&host_session, &received, &message, SETUP_PEER_LEASE - 1)
-                .unwrap()
+                .unwrap(),
+            SetupKeepalive::Renewed
         );
-        assert!(
-            !host
-                .accept_setup_keepalive(
-                    &host_session,
-                    &received,
-                    &message,
-                    2 * SETUP_PEER_LEASE - 2
-                )
-                .unwrap()
+        assert_eq!(
+            host.accept_setup_keepalive(
+                &host_session,
+                &received,
+                &message,
+                2 * SETUP_PEER_LEASE - 2
+            )
+            .unwrap(),
+            SetupKeepalive::Ignored
         );
         assert_eq!(
             host.expired_setup_peer(&host_session, 2 * SETUP_PEER_LEASE - 2),
@@ -5150,18 +5299,20 @@ mod tests {
         host.transport.as_mut().unwrap().service(31);
         let received = next_message(&mut guest, &guest_session);
         let message = LanMessage::decode(&received.payload).unwrap();
-        assert!(
+        assert_eq!(
             guest
                 .accept_setup_keepalive(&guest_session, &received, &message, 10)
-                .unwrap()
+                .unwrap(),
+            SetupKeepalive::Renewed
         );
         guest.admission_nonce = Some([13; 16]);
         let mut newer = received;
         newer.sequence = newer.sequence.wrapping_add(1);
-        assert!(
-            !guest
+        assert_eq!(
+            guest
                 .accept_setup_keepalive(&guest_session, &newer, &message, 11)
-                .unwrap()
+                .unwrap(),
+            SetupKeepalive::Ignored
         );
     }
 
@@ -5194,9 +5345,10 @@ mod tests {
             sequence: 8,
             payload: message.as_bytes().to_vec(),
         };
-        assert!(
+        assert_eq!(
             host.accept_setup_keepalive(&session, &incoming, &message, SETUP_PEER_LEASE - 1)
-                .unwrap()
+                .unwrap(),
+            SetupKeepalive::Renewed
         );
         assert!(host.send(b"expired previous", direct(expired), true));
         assert!(host.send(b"survivor previous", direct(survivor), true));
@@ -6092,6 +6244,8 @@ mod tests {
             30,
             rate,
             sim.state_hash(),
+            "",
+            "",
         )
         .unwrap();
         let mut service = service();

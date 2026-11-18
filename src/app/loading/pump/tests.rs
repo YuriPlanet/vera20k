@@ -251,6 +251,8 @@ fn cold_and_warm_rules_share_world_and_agreement_identity(
                 45,
                 std::num::NonZeroU32::new(u32::from(send_rate)).unwrap(),
                 sim.state_hash(),
+                "",
+                "",
             )
             .unwrap(),
         );
@@ -262,7 +264,8 @@ fn cold_and_warm_rules_share_world_and_agreement_identity(
         warm.sim().native_identity_cursor(),
         cold.sim().native_identity_cursor()
     );
-    // The full value object includes every private sequencing-identity input.
+    // The full value object includes every world-derived sequencing-identity
+    // input; the build and rules are process-level and left out here.
     assert_eq!(agreements[0], agreements[1]);
 }
 

@@ -562,7 +562,8 @@ error that ended the match on this game: `agreement_mismatch`, `start_cancelled`
 `absent` (no answer from the relay for ten minutes), `queue_full`, `newer_client_required` or
 `local_error`. `start_hash` is null once the
 relay's clock started; before that it maps each part of the start this game offered the
-relay to 16 hex digits, so two games' reports of one match differ in the part that differs.
+relay, at most 64, to 16 hex digits, so two games' reports of one match differ in the part
+that differs.
 Games before these fields send none of them.
 `fps_p50` and `fps_p5` read the presents of a moving picture: one that stands between
 frames is not drawn again, and the present after it starts a new interval.
