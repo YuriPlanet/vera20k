@@ -1548,7 +1548,7 @@ mod tests {
                 simulation,
                 &resources.rules,
                 hut,
-                Some(&resources.overlay_registry),
+                Some(resources.rules.overlay_registry()),
                 crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(

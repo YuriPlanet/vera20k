@@ -1471,7 +1471,6 @@ pub fn apply_explicit_skirmish_launch_session(
 /// Apply the retained stock-offline House/start projection without repeating
 /// any prefix draw. Existing starting-force and later initialization draws
 /// remain after this projection.
-#[cfg(any(test, feature = "test-support"))]
 pub fn apply_pre_fill_scenario_prefix_launch_session(
     sim: &mut Simulation,
     map_data: &MapFile,
@@ -1488,29 +1487,7 @@ pub fn apply_pre_fill_scenario_prefix_launch_session(
         rules,
         resolved_terrain,
         descriptor,
-        None,
-        LaunchStartResolution::Prefix(plan),
-    )
-}
-
-pub fn apply_pre_fill_scenario_prefix_launch_session_with_overlay_registry(
-    sim: &mut Simulation,
-    map_data: &MapFile,
-    house_roster: &HouseRoster,
-    rules: &RuleSet,
-    resolved_terrain: &ResolvedTerrainGrid,
-    descriptor: &MatchLaunchDescriptor,
-    overlay_registry: &OverlayTypeRegistry,
-    plan: &StockOfflinePrefixProjection,
-) -> SkirmishLaunchApplyResult {
-    apply_resolved_skirmish_launch_session(
-        sim,
-        map_data,
-        house_roster,
-        rules,
-        resolved_terrain,
-        descriptor,
-        Some(overlay_registry),
+        Some(rules.overlay_registry()),
         LaunchStartResolution::Prefix(plan),
     )
 }
@@ -4559,13 +4536,12 @@ mod tests {
                 .unwrap();
             }
         }
-        let overlays = crate::rules::overlay_types::OverlayTypeRegistry::empty();
         sim.finalize_scenario_post_map(crate::sim::scenario_post_map::ScenarioPostMapInput {
             map_width: 32,
             map_height: 32,
             fill_silos: false,
             rules: &rules,
-            overlay_registry: &overlays,
+            overlay_registry: rules.overlay_registry(),
             house_roster: &HouseRoster::default(),
             skirmish_session: Some(&launch),
             campaign_map: None,
@@ -4575,11 +4551,7 @@ mod tests {
         (
             SimRuntime {
                 simulation: sim,
-                resources: std::sync::Arc::new(SimResources {
-                    rules,
-                    overlay_registry: overlays,
-                    terrain_template: None,
-                }),
+                resources: std::sync::Arc::new(SimResources::new(rules)),
             },
             actors,
         )
@@ -5833,14 +5805,13 @@ mod tests {
                     terrain = ResolvedTerrainGrid::from_cells(96, 96, cells);
                     sim.install_resolved_terrain_for_new_map(terrain.clone());
                 }
-                let result = apply_pre_fill_scenario_prefix_launch_session_with_overlay_registry(
+                let result = apply_pre_fill_scenario_prefix_launch_session(
                     &mut sim,
                     &map,
                     &roster,
                     &rules,
                     &terrain,
                     &launch,
-                    &overlays,
                     &projection,
                 );
                 assert_eq!(
@@ -7342,14 +7313,13 @@ mod tests {
 
         let starting_techno_word = (reference.next_u32() & 0xFFFF) as u16;
         let _starting_force_tail = reference.next_range_u32_inclusive(0, 0xFFFF);
-        let launch_result = apply_pre_fill_scenario_prefix_launch_session_with_overlay_registry(
+        let launch_result = apply_pre_fill_scenario_prefix_launch_session(
             &mut sim,
             &map,
             &house_roster,
             &rules,
             &terrain,
             &launch,
-            &overlays,
             &projection,
         );
         assert_eq!(launch_result.spawned_mcvs, 1);

@@ -103,7 +103,6 @@ fn player_load_restarts_the_paid_depot_repair_interval() {
         Some(LOAD_FIXTURE_MAP_HASH),
         Some(&runtime.resources.rules),
         runtime.resources.terrain_template.as_ref(),
-        Some(&runtime.resources.overlay_registry),
     )
     .expect("prepare the real mid-repair state");
     prepared.commit_into(&mut runtime);

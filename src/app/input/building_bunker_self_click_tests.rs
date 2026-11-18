@@ -285,7 +285,7 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
                 "NATBNK",
                 31,
                 85,
-                Some(&scene.runtime.resources.overlay_registry),
+                Some(scene.runtime.resources.rules.overlay_registry()),
             )
             .expect("real stock NATBNK placement query")
             .valid,
@@ -377,7 +377,7 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
             &hover,
             OrderModifier::Normal,
             false,
-            Some(&scene.runtime.resources.overlay_registry),
+            Some(scene.runtime.resources.rules.overlay_registry()),
         )
         .expect("real stock CAN_LOAD entry action");
         assert!(selected.is_empty());
@@ -451,7 +451,7 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
                 Some(bunker),
                 &hover,
                 Some(rules),
-                Some(&scene.runtime.resources.overlay_registry),
+                Some(scene.runtime.resources.rules.overlay_registry()),
                 OrderModifier::Normal,
                 false,
                 false,
@@ -459,7 +459,7 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
             building_selection_click(
                 sim,
                 rules,
-                &scene.runtime.resources.overlay_registry,
+                scene.runtime.resources.rules.overlay_registry(),
                 &[bunker],
                 &[bunker],
                 owner,
@@ -530,7 +530,7 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
                 Some(tank),
                 &hover,
                 Some(rules),
-                Some(&scene.runtime.resources.overlay_registry),
+                Some(scene.runtime.resources.rules.overlay_registry()),
                 OrderModifier::Normal,
                 false,
                 false
@@ -540,7 +540,7 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
         self_click_command(
             sim,
             rules,
-            Some(&scene.runtime.resources.overlay_registry),
+            Some(scene.runtime.resources.rules.overlay_registry()),
             owner,
             &[tank],
             Some(&hover),

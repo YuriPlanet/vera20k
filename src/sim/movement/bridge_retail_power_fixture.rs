@@ -55,7 +55,7 @@ pub(super) fn prepare_powered_mover(
                     crate::sim::build_site::can_place_building_at(
                         simulation,
                         rules,
-                        Some(&resources.overlay_registry),
+                        Some(resources.rules.overlay_registry()),
                         object,
                         (rx as i16, ry as i16),
                         Some(owner),

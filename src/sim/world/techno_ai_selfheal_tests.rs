@@ -687,7 +687,7 @@ fn the_mechanism_runs_on_a_real_map() {
     let site = {
         let sim = &runtime.simulation;
         let rules = &runtime.resources.rules;
-        let registry = Some(&runtime.resources.overlay_registry);
+        let registry = Some(runtime.resources.rules.overlay_registry());
         let hospital = rules.object("CATHOSP").unwrap();
         (6i16..70)
             .flat_map(|ry| (6i16..70).map(move |rx| (rx, ry)))

@@ -4,7 +4,6 @@
 
 use super::*;
 use crate::map::map_file::MapFile;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::combat::TargetKind;
 use crate::sim::command::Command;
@@ -29,8 +28,6 @@ impl Scene {
         retail
             .rules
             .bind_effect_assets(&assets, theater.extension, "TEMPERATE");
-        let registry =
-            OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
         let rules = retail.rules;
 
         let mut sim = Simulation::with_seed(0x71a9c4);
@@ -73,7 +70,7 @@ impl Scene {
                     &map.entities,
                     &rules,
                     Some(&terrain),
-                    Some(&registry)
+                    Some(rules.overlay_registry())
                 ),
                 map.entities.len() as u32
             );
@@ -84,7 +81,6 @@ impl Scene {
             simulation: sim,
             resources: std::sync::Arc::new(SimResources {
                 rules,
-                overlay_registry: registry,
                 terrain_template,
             }),
         }))
@@ -100,7 +96,7 @@ impl Scene {
                 cell.1,
                 0,
                 &self.0.resources.rules,
-                &self.0.resources.overlay_registry,
+                self.0.resources.rules.overlay_registry(),
             )
             .expect("stock constructor and real Unlimbo")
     }
@@ -285,7 +281,7 @@ impl Scene {
         loaded
             .restore_map_authority_after_snapshot_load(
                 &resources.rules,
-                &resources.overlay_registry,
+                resources.rules.overlay_registry(),
                 None,
             )
             .unwrap();

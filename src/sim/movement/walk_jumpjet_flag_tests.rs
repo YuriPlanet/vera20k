@@ -2,12 +2,7 @@
 use crate::rules::{ini_parser::IniFile, locomotor_type::LocomotorKind, ruleset::RuleSet};
 use crate::sim::{mission::MissionId, world::Simulation};
 
-fn mapped_gi() -> Option<(
-    Simulation,
-    RuleSet,
-    crate::rules::overlay_types::OverlayTypeRegistry,
-    u64,
-)> {
+fn mapped_gi() -> Option<(Simulation, RuleSet, u64)> {
     let rules = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(
         &IniFile::from_str("[E1]\nJumpJet=yes\n"),
     )?
@@ -16,7 +11,7 @@ fn mapped_gi() -> Option<(
     assert!(object.jumpjet);
     assert_eq!(object.locomotor, LocomotorKind::Walk);
     // Retail layered rules on the existing flat entry map, not a Hills map load.
-    let (mut sim, _, registry) = crate::sim::world::entry_test_fixture::fixture();
+    let (mut sim, _, _) = crate::sim::world::entry_test_fixture::fixture();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     let owner = sim.intern("Americans");
@@ -39,17 +34,17 @@ fn mapped_gi() -> Option<(
             id,
             crate::sim::components::NavTargetRef::cell(16, 15),
             &rules,
-            Some(&registry),
+            Some(rules.overlay_registry()),
             crate::sim::world::FrameEffects::default(),
         )
         .unwrap()
     );
-    Some((sim, rules, registry, id))
+    Some((sim, rules, id))
 }
 
 #[test]
 fn retail_e1_jumpjet_flag_keeps_walk_through_first_short_move() {
-    let Some((mut sim, rules, registry, id)) = mapped_gi() else {
+    let Some((mut sim, rules, id)) = mapped_gi() else {
         return;
     };
     // Original gamemd.exe 75B2F1 -> Infantry+4F8 @00521EB0: a Walk's
@@ -58,7 +53,6 @@ fn retail_e1_jumpjet_flag_keeps_walk_through_first_short_move() {
         sim.advance_app_frame(
             &[],
             &rules,
-            Some(&registry),
             67,
             crate::sim::world::TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -87,7 +81,7 @@ fn retail_e1_jumpjet_flag_keeps_walk_through_first_short_move() {
 #[test]
 fn retail_e1_jumpjet_flag_failed_path_receiver_preserves_foot_prefix() {
     use crate::rules::mission_data::MissionType;
-    let Some((mut sim, rules, _, id)) = mapped_gi() else {
+    let Some((mut sim, rules, id)) = mapped_gi() else {
         return;
     };
     // Original gamemd.exe Infantry+4F4 @00521DD0 only discards GetClassID

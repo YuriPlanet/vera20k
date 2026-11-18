@@ -264,7 +264,6 @@ fn two_instance_multiplayer_checksums_match_every_frame_and_catch_a_desync() {
             .advance_app_frame(
                 commands,
                 rules,
-                None,
                 67,
                 TickLane::Ordinary,
                 FrameEffects::default(),

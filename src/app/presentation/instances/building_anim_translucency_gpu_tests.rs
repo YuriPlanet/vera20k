@@ -126,14 +126,13 @@ impl SlotScene {
                 scene
                     .runtime
                     .simulation
-                    .spawn_object_with_overlay_registry(
+                    .spawn_object_with_map_overlays(
                         "GAPOWR",
                         PLANT_OWNER,
                         x,
                         y,
                         0,
                         &scene.runtime.resources.rules,
-                        &scene.runtime.resources.overlay_registry,
                     )
                     .map(|id| (id, attacker_cells))
             })
@@ -329,7 +328,7 @@ impl SlotScene {
                 id,
                 crate::sim::combat::TargetKind::Entity(self.plant),
                 true,
-                Some(&self.scene.runtime.resources.overlay_registry),
+                Some(self.scene.runtime.resources.rules.overlay_registry()),
             );
             eprintln!(
                 "{boundary}: attack_target={:?} navigation={:?} locomotor={:?} rearm={:?} last_fire={} facing={} pose={:?} GetFireError={error:?}",
@@ -397,7 +396,7 @@ impl SlotScene {
             Some(sim.house_alliances()),
             &crate::sim::combat::line_of_fire::LineOfFireInputs {
                 overlay_grid: sim.overlay_grid(),
-                overlay_registry: Some(&self.scene.runtime.resources.overlay_registry),
+                overlay_registry: Some(self.scene.runtime.resources.rules.overlay_registry()),
                 alliances: Some(sim.house_alliances()),
                 buildings: Some(crate::sim::combat::line_of_fire::CellBuildings::of(sim)),
             },
@@ -554,14 +553,13 @@ impl SlotScene {
                 self.scene
                     .runtime
                     .simulation
-                    .spawn_object_with_overlay_registry(
+                    .spawn_object_with_map_overlays(
                         "CLEG",
                         ATTACKER_OWNER,
                         x,
                         y,
                         64,
                         &self.scene.runtime.resources.rules,
-                        &self.scene.runtime.resources.overlay_registry,
                     )
             })
             .expect("the same clear patch admits an in-range CLEG");

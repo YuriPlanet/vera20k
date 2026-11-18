@@ -123,7 +123,7 @@ fn board_infantry(fortress: &mut Fortress, kind: &str) -> u64 {
             y + 2,
             0,
             &resources.rules,
-            &resources.overlay_registry,
+            resources.rules.overlay_registry(),
         )
         .unwrap_or_else(|| panic!("{kind} spawns"));
     sim.resolve_type_handles(&resources.rules);
@@ -553,7 +553,7 @@ fn retail_dustbowl_battle_fortress_rider_walks_in_and_stays_put() {
                 y + 2,
                 0,
                 &resources.rules,
-                &resources.overlay_registry,
+                resources.rules.overlay_registry(),
             )
             .expect("GI spawns");
         sim.resolve_type_handles(&resources.rules);

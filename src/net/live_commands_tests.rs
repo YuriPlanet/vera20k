@@ -1828,9 +1828,9 @@ fn production_frame(sim: &mut Simulation, rules: &RuleSet, boundary: &Boundary) 
         .with_network_commands(boundary)
         .with_command_applied(&applied);
     if sim.pending_network_wait() {
-        sim.resume_network_wait(rules, None, effects).unwrap()
+        sim.resume_network_wait(rules, effects).unwrap()
     } else {
-        sim.advance_app_frame(&[], rules, None, 33, TickLane::Ordinary, effects)
+        sim.advance_app_frame(&[], rules, 33, TickLane::Ordinary, effects)
             .unwrap()
     }
 }
@@ -3499,9 +3499,9 @@ fn sequenced_match_ends_as_absent_once_its_silent_relay_route_is_released() {
             boundary.now.set(ticks);
             let effects = FrameEffects::empty().with_network_commands(boundary);
             if world.pending_network_wait() {
-                let _ = world.resume_network_wait(&rules, None, effects);
+                let _ = world.resume_network_wait(&rules, effects);
             } else {
-                let _ = world.advance_app_frame(&[], &rules, None, 33, TickLane::Ordinary, effects);
+                let _ = world.advance_app_frame(&[], &rules, 33, TickLane::Ordinary, effects);
             }
         }
     };
@@ -3930,9 +3930,9 @@ fn sequenced_agreement_mismatch_names_itself_in_the_match_report() {
             let effects = FrameEffects::empty().with_network_commands(boundary);
             // This match is meant to fail; its report is what is checked.
             if world.pending_network_wait() {
-                let _ = world.resume_network_wait(&rules, None, effects);
+                let _ = world.resume_network_wait(&rules, effects);
             } else {
-                let _ = world.advance_app_frame(&[], &rules, None, 33, TickLane::Ordinary, effects);
+                let _ = world.advance_app_frame(&[], &rules, 33, TickLane::Ordinary, effects);
             }
         }
         if boundaries

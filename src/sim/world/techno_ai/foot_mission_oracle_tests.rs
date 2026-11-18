@@ -2019,7 +2019,7 @@ fn original_retail_foot_stray_and_empty_rescue_home_complete_destination_transac
             &rules,
             row,
             super::super::ObjectAiCtx {
-                overlay_registry: Some(&scene.runtime.resources.overlay_registry),
+                overlay_registry: Some(scene.runtime.resources.rules.overlay_registry()),
                 ..Default::default()
             },
         );

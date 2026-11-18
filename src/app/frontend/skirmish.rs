@@ -17,7 +17,6 @@ use crate::render::overlay_assets::{render_overlay_names, resolve_overlay_name_f
 use crate::render::overlay_atlas::{self, OverlayAtlas};
 use crate::rules::color_scheme::{ColorSchemeEntry, scheme_entry_by_name};
 use crate::rules::house_colors::{DEFAULT_SCHEME_ENTRY, HouseColorIndex};
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::skirmish_colors::SkirmishColorMode;
 use crate::sim::scenario_bootstrap::normalized_launch_slots;
@@ -87,7 +86,6 @@ pub(crate) fn build_overlay_presentation(
     theater_ext: &str,
     theater_name: &str,
     rules: &RuleSet,
-    overlay_registry: &OverlayTypeRegistry,
     theater_iso_palette: Option<&Palette>,
     theater_unit_palette: Option<&Palette>,
     theater_tiberium_palette: Option<&Palette>,
@@ -113,6 +111,7 @@ pub(crate) fn build_overlay_presentation(
         );
     }
 
+    let overlay_registry = rules.overlay_registry();
     let art_registry = rules.art();
     let rubble_arts: Vec<_> = rules.building_rubble_arts().cloned().collect();
 

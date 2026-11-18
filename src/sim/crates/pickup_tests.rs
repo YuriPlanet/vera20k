@@ -5,7 +5,7 @@
 //! run through [`pickup_crate`] itself; the other arms are Rust regressions
 //! against the native reading cited at each arm.
 
-use super::super::tests::{crate_cells, crate_registry, crate_ruleset, sim_with_grid};
+use super::super::tests::{crate_cells, crate_ruleset, sim_with_grid};
 use super::*;
 use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
@@ -143,7 +143,15 @@ fn eva_events(sim: &Simulation) -> Vec<(InternedId, &'static str)> {
 
 /// A multiplayer pickup fixture on the crate test grid: one crate at `CELL`
 /// holding `slot`, one Speed-style actor standing on it.
-fn multiplayer_fixture(slot: u8) -> (Simulation, RuleSet, OverlayTypeRegistry, InternedId, u64) {
+fn multiplayer_fixture(
+    slot: u8,
+) -> (
+    Simulation,
+    RuleSet,
+    std::sync::Arc<OverlayTypeRegistry>,
+    InternedId,
+    u64,
+) {
     let mut sim = sim_with_grid(31);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
@@ -157,7 +165,8 @@ fn multiplayer_fixture(slot: u8) -> (Simulation, RuleSet, OverlayTypeRegistry, I
     sim.session.set_binary_frame_for_test(100);
     sim.playfield_bounds_mut_for_test().as_mut().unwrap().base = 10;
     sim.set_playfield_size_height_for_test(Some(10));
-    let registry = crate_registry();
+    // Effect-specific fixtures keep the table for the crate already on this grid.
+    let registry = rules.retain_overlay_registry();
     place_registered_crate(&mut sim, &registry, CELL, slot);
     let owner = house(&mut sim, "H0", false);
     let actor = place_actor(
@@ -228,7 +237,7 @@ fn original_pickup_rows_match_through_the_dispatcher() {
             rules.crate_rules.crate_img = Some("WOOD".into());
             rules.crate_rules.water_crate_img = Some("WOOD".into());
         }
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
         let wood = registry.id_for_name("WOOD").unwrap();
         if input["overlay"].as_i64() != Some(-1) {
             let image = if input["crate"].as_i64() == Some(0) {
@@ -291,7 +300,7 @@ fn original_pickup_rows_match_through_the_dispatcher() {
         let answer = pickup_crate(
             &mut sim,
             &rules,
-            &registry,
+            registry,
             cell,
             actor,
             crate::sim::world::FrameEffects::default(),

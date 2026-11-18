@@ -188,7 +188,7 @@ fn retail_wood_force_fire_collapses_then_engineer_rebuilds() {
             55,
             128,
             &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .expect("ordinary Road firing placement");
     export(&scene, "attack_before_command");

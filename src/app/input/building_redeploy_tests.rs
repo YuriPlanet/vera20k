@@ -9,7 +9,6 @@ fn step(sim: &mut Simulation, rules: &RuleSet) {
     sim.advance_app_frame(
         &commands,
         rules,
-        None,
         33,
         crate::sim::world::TickLane::Ordinary,
         Default::default(),

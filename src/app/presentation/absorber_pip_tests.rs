@@ -87,15 +87,8 @@ fn native_frames(cargo_types: &[&str]) -> Vec<usize> {
 }
 
 fn advance(sim: &mut Simulation, rules: &RuleSet) {
-    sim.advance_app_frame(
-        &[],
-        rules,
-        None,
-        33,
-        TickLane::Ordinary,
-        FrameEffects::default(),
-    )
-    .expect("ordinary stock Bio Reactor frame");
+    sim.advance_app_frame(&[], rules, 33, TickLane::Ordinary, FrameEffects::default())
+        .expect("ordinary stock Bio Reactor frame");
 }
 
 #[test]

@@ -1523,7 +1523,6 @@ fn retail_factory_guard_clears_its_exit_after_idle_entry() {
                     .advance_app_frame(
                         &[],
                         &rules,
-                        Some(rules.overlay_registry()),
                         33,
                         crate::sim::world::TickLane::Ordinary,
                         crate::sim::world::FrameEffects::empty(),
@@ -1740,7 +1739,6 @@ fn a_factory_product_reconnects_to_its_ordered_transport_after_clearance() {
             .advance_app_frame(
                 &commands,
                 &rules,
-                Some(rules.overlay_registry()),
                 33,
                 TickLane::Ordinary,
                 FrameEffects::default().with_production_strip(&visits, &|_| {}),

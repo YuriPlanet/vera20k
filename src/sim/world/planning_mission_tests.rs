@@ -146,19 +146,10 @@ fn commit(sim: &mut Simulation, rules: &crate::rules::ruleset::RuleSet, owner: I
 }
 
 fn step(sim: &mut Simulation, rules: &crate::rules::ruleset::RuleSet) {
-    step_with_overlays(sim, rules, None);
-}
-
-fn step_with_overlays(
-    sim: &mut Simulation,
-    rules: &crate::rules::ruleset::RuleSet,
-    overlays: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-) {
     let commands = sim.take_due_commands();
     sim.advance_app_frame(
         &commands,
         rules,
-        overlays,
         33,
         super::super::TickLane::Ordinary,
         Default::default(),
@@ -235,7 +226,6 @@ fn retail_plan_publication_uses_final_timing_and_yields_to_an_existing_player_mo
             .advance_app_frame(
                 &[],
                 &rules,
-                None,
                 33,
                 super::super::TickLane::Ordinary,
                 Default::default(),
@@ -765,7 +755,7 @@ fn retail_planned_and_ordinary_harvest_extracts_ore_after_walking() {
                 Some(&rules)
             ));
             for _ in 0..3 {
-                step_with_overlays(&mut sim, &rules, Some(&overlays));
+                step(&mut sim, &rules);
             }
             assert_eq!(
                 sim.entities()
@@ -807,7 +797,7 @@ fn retail_planned_and_ordinary_harvest_extracts_ore_after_walking() {
                     .effective()
                     .known()
                     == Some(crate::sim::mission::MissionType::Harvest);
-                step_with_overlays(&mut sim, &rules, Some(&overlays));
+                step(&mut sim, &rules);
                 let mission = &sim.entities().get(actor).unwrap().mission;
                 guard_after_harvest |= harvest_dispatched
                     && (mission.current().known() == Some(crate::sim::mission::MissionType::Guard)

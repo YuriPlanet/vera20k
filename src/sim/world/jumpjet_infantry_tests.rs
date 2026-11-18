@@ -101,7 +101,7 @@ pub(super) fn retail_dustbowl_rocketeer()
                 y,
                 64,
                 &resources.rules,
-                &resources.overlay_registry,
+                resources.rules.overlay_registry(),
             )?;
             Some((rocketeer, x, y))
         })
@@ -120,7 +120,7 @@ pub(super) fn retail_dustbowl_rocketeer()
                 crate::sim::build_site::can_place_building_at(
                     sim,
                     &resources.rules,
-                    Some(&resources.overlay_registry),
+                    Some(resources.rules.overlay_registry()),
                     plant_type,
                     (px as i16, py as i16),
                     Some(owner_id),
@@ -247,7 +247,7 @@ fn retail_rocketeer_hover_raises_its_cell_tag_on_absolute_frames_after_restore()
             loaded
                 .restore_map_authority_after_snapshot_load(
                     &resources.rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                     None,
                 )
                 .unwrap();
@@ -390,7 +390,7 @@ fn retail_dustbowl_rocketeer_flies_hovers_and_fires_in_its_airborne_poses() {
             y,
             192,
             &resources.rules,
-            &resources.overlay_registry,
+            resources.rules.overlay_registry(),
         )
         .expect("conscript");
     sim.resolve_type_handles(&resources.rules);
@@ -540,7 +540,7 @@ fn retail_dustbowl_parked_rocketeer_engages_nearby_enemies() {
             y,
             192,
             &resources.rules,
-            &resources.overlay_registry,
+            resources.rules.overlay_registry(),
         )
         .expect("conscript");
     sim.resolve_type_handles(&resources.rules);

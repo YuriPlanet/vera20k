@@ -3632,7 +3632,6 @@ mod tests {
         sim.advance_app_frame(
             &[],
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            None,
             67,
             super::super::TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),

@@ -572,7 +572,7 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
                 "GAPOWR",
                 rx,
                 ry,
-                Some(&scene.runtime.resources.overlay_registry),
+                Some(scene.runtime.resources.rules.overlay_registry()),
             ) else {
                 continue;
             };
@@ -667,7 +667,7 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
         &theater.tiberium_palette,
         theater.extension,
         "TEMPERATE",
-        &scene.runtime.resources.overlay_registry,
+        scene.runtime.resources.rules.overlay_registry(),
         rules,
         Some(&rules.smudge_types),
         &[],

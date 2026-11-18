@@ -996,7 +996,7 @@ pub(crate) fn drop_click(state: &mut AppState) -> bool {
                 route_for(
                     sim,
                     &runtime.resources.rules,
-                    Some(&runtime.resources.overlay_registry),
+                    Some(runtime.resources.rules.overlay_registry()),
                     owner,
                     id,
                     clicked,
@@ -1035,7 +1035,7 @@ pub(crate) fn frame_pass(state: &mut AppState) {
                 Some(owner) if now % CHECK_INTERVAL == 0 => ferry.check(
                     sim,
                     &runtime.resources.rules,
-                    Some(&runtime.resources.overlay_registry),
+                    Some(runtime.resources.rules.overlay_registry()),
                     owner,
                     now,
                 ),
@@ -1089,7 +1089,7 @@ fn find_armed_preview(state: &AppState) -> Option<(Vec<Cell>, Cell, bool)> {
     // click needs a whole route.
     let waypoint_click = state.match_state.input.ferry.waypoint_click();
     let rules = &runtime.resources.rules;
-    let registry = Some(&runtime.resources.overlay_registry);
+    let registry = Some(runtime.resources.rules.overlay_registry());
     let accepted = transports.iter().any(|&id| {
         if waypoint_click {
             ordinary_cell_move_goal(sim, rules, registry, owner, id, clicked, false).is_some()
