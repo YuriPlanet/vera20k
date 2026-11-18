@@ -745,6 +745,14 @@ impl ProjectileCollisionWorld<'_> {
                         .projectile_type()
                         .and_then(|id| self.rules.projectile(self.interner.resolve(id)))
                         .is_some_and(|kind| kind.phobos_subject_to_ground()),
+                    // The in-flight `GetObstacle` arm (`0x468C86`) is its own
+                    // native call site with `isTargetingCheck = false`, where
+                    // `.Detonate` decides whether the bullet explodes or flies
+                    // on. This probe answers only the stock cell verdict, so the
+                    // terrain keys stay unset here (recorded residual).
+                    phobos_level: false,
+                    phobos_subject_to_land: None,
+                    phobos_subject_to_water: None,
                     #[cfg(feature = "ares")]
                     subject_to_solid: projectile.collision().subject_to_solid,
                     parties: LineOfFireParties {
