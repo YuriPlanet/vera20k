@@ -1291,7 +1291,7 @@ Ares 和 Phobos 的键尚未分类。
 | --- | --- | --- | --- |
 | `Name` | string | 全部 | `client_node_find` 用的名字；`veraui.ini` 节点为部件名（节名中布局前缀之后的部分），只读 |
 | `Label` | string | `Text`、`Button`、`Decoration` | CSF 条目名或文字：有该名字的 CSF 条目时显示条目，否则显示文字本身 |
-| `Art` | string | `Button`、`Image`、`Decoration` | 图片名（按名字解析，当前为 SHP） |
+| `Art` | string | `Button`、`Image`、`Decoration` | 图片名，按名字解析，格式由引擎决定 |
 | `X`、`Y`、`Width`、`Height` | int | 全部 | 像素 |
 | `Hold` | enum `Hold` | 全部 | |
 | `Gap` | int | `Row`、`Column` | 各部分间距（像素） |

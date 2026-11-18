@@ -1291,7 +1291,7 @@ Client-only references, writable with `client_set` and `client_set_bytes`. They 
 | --- | --- | --- | --- |
 | `Name` | string | All | Read-only name for `client_node_find`. For a `veraui.ini` node, the part name after the layout prefix in the section name |
 | `Label` | string | `Text`, `Button`, `Decoration` | CSF entry name or literal. Display the CSF entry if it exists, otherwise the literal text |
-| `Art` | string | `Button`, `Image`, `Decoration` | Image name. Resolve by name, currently to SHP |
+| `Art` | string | `Button`, `Image`, `Decoration` | Image name, resolved by name; the engine decides the format |
 | `X`, `Y`, `Width`, `Height` | int | All | Pixels |
 | `Hold` | enum `Hold` | All | |
 | `Gap` | int | `Row`, `Column` | Gap between parts in pixels |
