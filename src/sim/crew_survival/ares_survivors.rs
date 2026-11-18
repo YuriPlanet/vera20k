@@ -196,7 +196,6 @@ impl Simulation {
         if selected {
             self.techno_select(
                 id,
-                true,
                 UninitContext::new(rules, registry).with_effects(effects),
             );
         }
