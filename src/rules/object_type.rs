@@ -1096,9 +1096,10 @@ pub struct ObjectType {
     /// (`IronCurtain.*`, `ForceShield.*`).
     #[cfg(feature = "phobos")]
     pub phobos_invulnerability: crate::rules::invulnerability_rules::PhobosInvulnerability,
-    /// Phobos `AutoDeath.Behavior=` and `AutoDeath.AfterDelay=`
-    /// (`Ext/TechnoType/Body.cpp:817,825`). The other `AutoDeath.*` triggers
-    /// stay unported; see [`crate::rules::phobos_auto_death`].
+    /// The whole Phobos `AutoDeath.*` block: `Behavior=`/`AfterDelay=`
+    /// (`Ext/TechnoType/Body.cpp:817,825`) plus the trigger and
+    /// `OnOwnerChange.*` keys; [`crate::rules::phobos_auto_death`] reads them
+    /// and `sim/auto_death.rs` consumes every one.
     #[cfg(feature = "phobos")]
     pub phobos_auto_death: crate::rules::phobos_auto_death::AutoDeathTypeSettings,
     /// Phobos `HealthBar.*` (`Ext/TechnoType/Body.cpp:761-764`).

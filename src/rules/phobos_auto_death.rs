@@ -10,10 +10,11 @@
 //!
 //! This reader covers the triggers (`OnAmmoDepletion`, `AfterDelay`,
 //! `PlayerPowerState`, `PlayerMoney.*`, `Technos*`), the `OnOwnerChange.*`
-//! flags and the `VanishAnimation` list. The `AllowLimboed` gate (type key
-//! plus the `[CombatDamage]` global at `Ext/Rules/Body.cpp:629-632`) is
-//! unported; it keeps its gap entry in the chain plan so a later chain reads
-//! each from the layer native does.
+//! flags, the `AllowLimboed` gate (type key plus the `[CombatDamage]` global
+//! at `Ext/Rules/Body.cpp:629-632`, read per type from the layer native
+//! reads) and the `VanishAnimation` list. `sim/auto_death.rs` consumes all of
+//! them, with the type-level `AllowLimboed` falling back to the
+//! `[CombatDamage]` global (`rules::phobos_globals`).
 //!
 //! ## Dependency rules
 //! - Part of rules/ — no dependencies on sim/, render/, ui/, etc.

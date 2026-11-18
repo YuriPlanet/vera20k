@@ -3451,30 +3451,44 @@ pub struct RadiationRules {
     #[cfg(feature = "phobos")]
     pub use_global_rad_application_delay: bool,
     /// Phobos `[Radiation] RadApplicationDelay.Building` (default 0). Above 0
-    /// it enables radiation damage to buildings; the building damage chain is
-    /// not implemented, so the value is retained only.
+    /// it admits radiation damage to buildings, read by
+    /// `sim/combat/world_receiver.rs::apply_building_radiation`, which
+    /// `sim/world/techno_ai.rs` calls for every live structure; 0 leaves
+    /// buildings untouched even on a boundary frame. Per-type values override
+    /// it through
+    /// `rules/phobos_radiation.rs::effective_radiation` when
+    /// `UseGlobalRadApplicationDelay` is off.
     #[cfg(feature = "phobos")]
     pub application_delay_building: i32,
     /// Phobos `[Radiation] RadBuildingDamageMaxCount` (default -1: no limit).
-    /// Retained only, like the building delay above.
+    /// Retained only: Phobos declares the per-site `damageCounts` map its gate
+    /// reads (`Ext/RadSite/Hooks.cpp:124,147`) and never increments it, so no
+    /// cap is applied; adding one would invent behaviour Phobos lacks
+    /// (`dormant_building_damage_max_count_leaves_damage_unchanged` in
+    /// `sim/combat/combat_tests.rs` holds that line).
     #[cfg(feature = "phobos")]
     pub building_damage_max_count: i32,
     /// Phobos `[Radiation] RadSiteWarhead.Detonate` (default false): makes
-    /// `RadSiteWarhead` detonate on affected objects. Retained only.
+    /// `RadSiteWarhead` detonate on affected objects instead of calling the
+    /// receiver, read by
+    /// `sim/combat/world_receiver.rs::apply_building_radiation` and
+    /// the unit/infantry radiation pass (`sim/combat/world_receiver.rs`).
     #[cfg(feature = "phobos")]
     pub site_warhead_detonate: bool,
-    /// Phobos `[Radiation] RadSiteWarhead.Detonate.Full` (default true): full
-    /// warhead detonation instead of area damage when detonating. Retained
-    /// only.
+    /// Phobos `[Radiation] RadSiteWarhead.Detonate.Full` (default true): the
+    /// detonation also runs the ordinary `BulletExt::Detonate` anim/flash
+    /// tail; false is the bare `DamageAreaWithTarget` area call. Both reach
+    /// the receiver shown on `site_warhead_detonate`.
     #[cfg(feature = "phobos")]
     pub site_warhead_detonate_full: bool,
     /// Phobos `[Radiation] RadHasOwner` (default false): radiation damage
-    /// counts as dealt by the house that fired the projectile. Retained only.
+    /// counts as dealt by the house that fired the projectile, read at
+    /// `sim/radiation.rs` when it fills the receiver's attacker/source house.
     #[cfg(feature = "phobos")]
     pub has_owner: bool,
     /// Phobos `[Radiation] RadHasInvoker` (default false): radiation damage
-    /// counts as dealt by the firing TechnoType and grants it experience.
-    /// Retained only.
+    /// counts as dealt by the firing TechnoType and grants it experience,
+    /// read beside `has_owner` in `sim/radiation.rs`.
     #[cfg(feature = "phobos")]
     pub has_invoker: bool,
     /// Phobos `[RadiationTypes]` catalog with the default `Radiation` entry,
