@@ -3117,7 +3117,7 @@ fn accept_participant(
         .as_mut()
         .expect("visit")
         .commit_peer_admission(endpoint, &name, &proof);
-    // The host snapshot can precede Type3. Apply its existing parser/HostSetup
+    // The host snapshot can precede Type3. Apply it through HostSetup again
     // after this binding so country/start/team cannot remain Type3 defaults.
     options::reapply_received_options(state)?;
     Ok(())
@@ -5867,7 +5867,8 @@ mod tests {
         session.enter_network(NetworkReturnContext::LanLobby);
         receiver.admitted_host = Some(("Host".into(), host));
         let messages = [
-            LanMessage::options("Host", b"seed,map,options", 0, 0).unwrap(),
+            LanMessage::options("Host", b"K1", 0, 0).unwrap(),
+            LanMessage::player_choices("Host", b"R-2,6,-2,-2").unwrap(),
             LanMessage::start_prompt("Host").unwrap(),
             LanMessage::go(10),
         ];

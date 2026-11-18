@@ -97,7 +97,8 @@ pub(crate) enum NetworkRosterEntry {
 /// Session's five raw AI-array words (A8B27C/29C/2BC/2DC/2FC).
 /// Active rows are derived from `launch.opponents`; only inactive rows retain
 /// these words, independently of the visible human or vacant-row controls.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A LAN host's full options carry every row's words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct NetworkAiOptions {
     pub difficulty: i32,
     pub country: i32,
@@ -107,7 +108,8 @@ pub(crate) struct NetworkAiOptions {
 }
 
 impl NetworkAiOptions {
-    /// An active row's words, as the options string writes them.
+    /// An active row's words, as gamemd's options string (`0x005DBB60`)
+    /// writes them.
     pub(crate) fn of(ai: &crate::skirmish_launch::SkirmishAiSlot) -> Self {
         Self {
             difficulty: ai.difficulty.as_i32(),
@@ -3016,9 +3018,8 @@ impl MatchSession {
 
     /// The seat the host's Add AI fills: the first Open one of the map's,
     /// then, in a room sharing bases, a spare row past them. There the AI
-    /// starts on a teammate's start, beside them (`teams::team_starts`). A
-    /// VERA room's LAN options carry an AI on every row
-    /// (`LanGameOptions::all_ai_rows`), as the online launch does.
+    /// starts on a teammate's start, beside them (`teams::team_starts`). The
+    /// host's options carry an AI on every row, on LAN as online.
     pub(crate) fn network_ai_seat(&self) -> Option<u8> {
         self.network_open_seat()
             .or_else(|| self.network_spare_seats().next())
