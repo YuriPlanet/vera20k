@@ -477,6 +477,18 @@ impl NetworkSetupProtocol {
         }
     }
 
+    /// A launcher's or a watch's setup (`external`): with no dialog it
+    /// publishes no options or advertisement and runs no ping timer, since a
+    /// launcher or the lobby agreed the room.
+    fn dialogless(dialog: SetupDialog) -> Self {
+        Self {
+            external: true,
+            ping_deadline: None,
+            requests: Vec::new(),
+            ..Self::new(dialog, false)
+        }
+    }
+
     /// No join is told for a moment: see `quiet_joins_until`.
     pub(crate) fn quiet_joins(&mut self) {
         self.quiet_joins_until = Some(Instant::now() + QUIET_JOINS);
@@ -685,8 +697,9 @@ pub(crate) fn accept_external_session(
     session.accept_network_setup(launch, host, None, false)
 }
 
-/// Install an external launch's setup without a dialog, its online start
-/// requests or pings: the launcher already agreed the room.
+/// Install an external launch's setup without a dialog
+/// (`NetworkSetupProtocol::dialogless`): the launcher already agreed the
+/// room.
 pub(crate) fn install_external_setup(
     state: &mut AppState,
     launch: SkirmishLaunchSession,
@@ -728,11 +741,7 @@ pub(crate) fn install_external_setup(
         .match_state
         .session
         .accept_external_network_map_source(loaded.source, effective)?;
-    let mut protocol = NetworkSetupProtocol::new(dialog(state), false);
-    protocol.external = true;
-    protocol.ping_deadline = None;
-    protocol.requests.clear();
-    state.frontend.network_setup_protocol = Some(protocol);
+    state.frontend.network_setup_protocol = Some(NetworkSetupProtocol::dialogless(dialog(state)));
     Ok(())
 }
 
@@ -769,11 +778,7 @@ pub(crate) fn install_watch_setup(
     let capacity = map_metadata.player_capacity;
     session.accept_network_host_setup(launch, vacancies, capacity, observer_row, false)?;
     session.accept_network_map_metadata(map_metadata, None, true)?;
-    let mut protocol = NetworkSetupProtocol::new(dialog(state), false);
-    protocol.external = true;
-    protocol.ping_deadline = None;
-    protocol.requests.clear();
-    state.frontend.network_setup_protocol = Some(protocol);
+    state.frontend.network_setup_protocol = Some(NetworkSetupProtocol::dialogless(dialog(state)));
     Ok(())
 }
 
