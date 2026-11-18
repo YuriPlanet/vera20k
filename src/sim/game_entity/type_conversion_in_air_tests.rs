@@ -224,3 +224,98 @@ fn a_grounded_body_converting_types_does_not_fall() {
     let entity = sim.entities().get(id).expect("converted body");
     assert!(!entity.is_falling_down());
 }
+
+/// `:787-791`: an Infantry that changed to parachute status plays
+/// `Sequence::Paradrop` through the class's own `Do_Action` (`0x0051D6F0`)
+/// with `force` set and a deterministic first stage, so both the man's Doing
+/// and the pose the SHP pass reads move to the Paradrop record.
+#[test]
+fn an_airborne_infantry_conversion_force_arms_the_paradrop_sequence() {
+    let (mut sim, rules) = infantry_world(true);
+    let id = sim
+        .spawn_object("ENGINEER", "Americans", 10, 10, 0, &rules)
+        .expect("ENGINEER spawns");
+    airborne(&mut sim, id, 600);
+    assert_eq!(
+        sim.entities()
+            .get(id)
+            .expect("spawned man")
+            .infantry_sprite_pose(),
+        Some((INFANTRY_SEQUENCE_SENTINEL, 0)),
+        "the spawned man keeps the constructor's -1 sequence"
+    );
+    convert_infantry(&mut sim, id, "PARA", &rules);
+    let entity = sim.entities().get(id).expect("converted body");
+    assert!(entity.is_falling_down(), "the body is let go");
+    assert!(
+        entity.on_parachuted(),
+        "a clear cell lands it as a parachute"
+    );
+    assert!(
+        !entity.was_dropped_as_bomb(),
+        "the Paradrop call runs after both landing arms and does not depend on them"
+    );
+    assert_eq!(
+        entity.infantry_sprite_pose(),
+        Some((crate::sim::movement::infantry_action::DO_PARADROP, 0)),
+        "the Doing write 0x51D9D2 lands on the Paradrop record the SHP pass reads"
+    );
+}
+
+/// `0x0051D70F`: the same call refuses when the new type's Paradrop record
+/// carries no frames, so the man keeps the Doing he had.
+#[test]
+fn a_new_type_without_a_paradrop_record_keeps_its_doing() {
+    let (mut sim, rules) = infantry_world(false);
+    let id = sim
+        .spawn_object("ENGINEER", "Americans", 10, 10, 0, &rules)
+        .expect("ENGINEER spawns");
+    airborne(&mut sim, id, 600);
+    convert_infantry(&mut sim, id, "PARA", &rules);
+    let entity = sim.entities().get(id).expect("converted body");
+    assert!(entity.is_falling_down(), "the body is still let go");
+    assert!(entity.on_parachuted());
+    assert_eq!(
+        entity.infantry_sprite_pose(),
+        Some((INFANTRY_SEQUENCE_SENTINEL, 0)),
+        "a zero-length Paradrop record refuses at 0x0051D70F"
+    );
+}
+
+/// `InfantryClass`'s constructor leaves `SequenceAnim` (`+0x6C4`) at -1.
+const INFANTRY_SEQUENCE_SENTINEL: i32 = -1;
+
+/// The entry fixture's Infantry pair, `PARA` differing only in its compiled
+/// Paradrop record (`Artmd.ini` numbers the action like any other).
+fn infantry_world(with_paradrop: bool) -> (Simulation, RuleSet) {
+    let paradrop = if with_paradrop {
+        "Paradrop=300,6,6\n"
+    } else {
+        ""
+    };
+    let art = IniFile::from_str(&format!(
+        "[ENGINEER]\nSequence=EngineerSequence\n[EngineerSequence]\nReady=100,6,6\n\
+         [PARA]\nSequence=ParaSequence\n[ParaSequence]\nReady=100,6,6\n{paradrop}"
+    ));
+    let extra = "[InfantryTypes]\n2=PARA\n\
+         [PARA]\nStrength=75\nSpeed=4\nSpeedType=Foot\n\
+         Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n";
+    let (mut sim, rules, _) =
+        crate::sim::world::entry_test_fixture::fixture_with_rules_and_fixed_art(extra, &art);
+    let owner = sim.intern("Americans");
+    sim.houses
+        .register(HouseState::new(owner, 0, None, false, 0, 10));
+    (sim, rules)
+}
+
+fn convert_infantry(sim: &mut Simulation, id: u64, name: &str, rules: &RuleSet) {
+    sim.convert_techno_type(
+        id,
+        &DeliveryType {
+            category: crate::rules::object_type::ObjectCategory::Infantry,
+            id: name.to_owned(),
+        },
+        rules,
+        FrameEffects::default(),
+    );
+}
