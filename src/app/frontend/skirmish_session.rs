@@ -1129,7 +1129,7 @@ impl MultiplayerShellRuntime {
             state.player_color_claimed = false;
         }
 
-        for (opponent, persisted) in state.opponents.iter_mut().zip(self.snapshot.slots) {
+        for (opponent, persisted) in state.opponents.iter_mut().zip(self.snapshot.slots.iter()) {
             opponent.row_type = ai_row_type_from_persisted(persisted.row_type);
             opponent.enabled = opponent.row_type.is_active();
             if let Some(difficulty) = opponent.row_type.difficulty() {
@@ -2890,7 +2890,7 @@ mod tests {
                 .enumerate()
                 .map(|(index, file)| {
                     let map = MapMenuEntry {
-                        player_capacity: 12,
+                        player_capacity: 120,
                         ..map_named(file)
                     };
                     SkirmishScenarioRecord::from_map_menu_entry(index, &map)
@@ -2908,17 +2908,21 @@ mod tests {
         let mut page = SkirmishSavedSetup::capture(&shell, maps);
         page.player.start = LaunchStartPosition::Position(2);
         page.player.team = 1;
-        page.computers[8] = SkirmishSetupComputer {
+        page.computers[118] = SkirmishSetupComputer {
             row_type: SkirmishAiRowType::Hard,
             seat: SkirmishSetupSeat {
-                start: LaunchStartPosition::Position(9),
+                start: LaunchStartPosition::Position(119),
                 team: 0,
-                ..page.computers[8].seat
+                ..page.computers[118].seat
             },
         };
         page.apply(&mut shell, maps);
         assert_eq!(SkirmishSavedSetup::capture(&shell, maps), page);
         runtime.pack_durable_state(&shell, maps, &[mode()]);
+        assert_eq!(
+            runtime.snapshot.slots.get(118).map(|slot| slot.row_type),
+            Some(4)
+        );
         runtime.persist_snapshot();
 
         // A map added before it puts `ScenIndex` on another file.

@@ -62,10 +62,11 @@ impl ScenarioStartHeader {
 /// Start slots the native staging holds (`Scenario+0x1140`, 8 pairs), and so
 /// the slots every `'W'` record carries.
 pub const NATIVE_START_STAGING_SLOTS: usize = 8;
-/// VERA extension: the staging holds a start for each of thirty players, so a
-/// random map for more than eight players keeps every start. A `'W'` record
-/// grows past the native 8 slots only when a slot beyond them is used.
-pub const START_STAGING_SLOTS: usize = crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT;
+/// VERA extension: the staging holds a start for each offline Skirmish row
+/// ([`crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT`]), so a random map for
+/// more than eight players keeps every start. A `'W'` record grows past the
+/// native 8 slots only when a slot beyond them is used.
+pub const START_STAGING_SLOTS: usize = crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT;
 
 /// The retained Scenario start staging `+0x112C..+0x11DF` that the host's
 /// `'W'` options string carries to its guests.
@@ -75,7 +76,7 @@ pub const START_STAGING_SLOTS: usize = crate::skirmish_launch::NETWORK_PLAYER_SL
 /// overwrites it from every `'W'` it receives (`0x005E3E96..0x005E40C6`).
 /// Full_Init copies `cells` into waypoints 0..7 for a random map
 /// (`0x006873E6..0x0068740E`) before House start assignment.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScenarioStartStaging {
     /// `+0x112C` / `+0x1130`: the playfield's minimum screen X/60, Y/30.
     pub start_x: i32,
@@ -89,6 +90,22 @@ pub struct ScenarioStartStaging {
     pub pairs: [(i32, i32); START_STAGING_SLOTS],
     /// `+0x11C0`: start waypoint cells; `(0, 0)` is the null cell (undefined).
     pub cells: [(i16, i16); START_STAGING_SLOTS],
+}
+
+impl Default for ScenarioStartStaging {
+    /// Arrays past thirty-two elements do not implement `Default`; the native
+    /// staging starts cleared.
+    fn default() -> Self {
+        Self {
+            start_x: 0,
+            start_y: 0,
+            width: 0,
+            height: 0,
+            count: 0,
+            pairs: [(0, 0); START_STAGING_SLOTS],
+            cells: [(0, 0); START_STAGING_SLOTS],
+        }
+    }
 }
 
 impl ScenarioStartStaging {

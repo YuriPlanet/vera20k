@@ -1876,7 +1876,7 @@ pub fn normalized_launch_slots(session: &SkirmishLaunchSession) -> Vec<Normalize
     for (source, (index, human)) in humans.into_iter().enumerate() {
         let controller = LaunchController {
             human_index: index,
-            source: i8::try_from(source).expect("at most 30 human nodes"),
+            source: i8::try_from(source).expect("at most 96 human nodes"),
         };
         let leader = session.house_leader(index);
         if leader != index {

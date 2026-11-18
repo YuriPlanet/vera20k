@@ -568,9 +568,11 @@ anyone waits. A lobby from before the queue refuses the field; the host's game s
 queueing in that room, says so and sends its options again, and its spectators keep
 watching. A rollback past Teams then turns Teams Off too.
 
-A room's Create Random Map is Skirmish's whole generator: up to 30 players, the sizes
-past Very Large, the added landform and theaters, Advanced, Fair Starts, Extras, Presets
-and Export Map. A map for more than eight players stages one `W` slot for each start
+Network rooms seat up to 30 players on an authored map, including maps that seat up to
+120 in offline Skirmish. For maps with more than 30 starts, the host advertises 30 and
+guests verify the same capacity. Create Random Map and imported random-map seeds support up to 30
+starts in a room. The room offers the sizes past Very Large, the added landform and
+theaters, Advanced, Fair Starts, Extras, Presets and Export Map. A map for more than eight players stages one `W` slot for each start
 (`ScenarioStartStaging::to_w_text`), so its record runs past the native 37 numbers and
 512 bytes, up to 2048 (`maps::checked_staging`); it travels as any random map's does, on
 LAN in the extended options and online as `random_map` ([lobby protocol](lobby-protocol.md)).

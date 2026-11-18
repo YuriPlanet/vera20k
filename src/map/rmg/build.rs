@@ -854,6 +854,28 @@ mod tests {
         assert_eq!(slots, (0..30).collect::<Vec<u8>>());
     }
 
+    /// VERA offline Skirmish: a one-hundred-twenty-player map places every start.
+    #[test]
+    fn a_one_hundred_twenty_player_map_places_every_start() {
+        let options = RmgOptions {
+            num_players: 120,
+            width: crate::map::rmg::MAX_SIZE_OPTION,
+            height: crate::map::rmg::MAX_SIZE_OPTION,
+            ..options(1, 0)
+        };
+        let generated = generate_map(
+            &options,
+            &RmgSettings::default(),
+            &resolved(),
+            &one_by_one(),
+            &GenerationObjects::tech(&[], false),
+        );
+        assert_eq!(generated.unfilled_start_slots, 0);
+        let mut slots: Vec<u8> = generated.start_waypoints.iter().map(|w| w.0).collect();
+        slots.sort_unstable();
+        assert_eq!(slots, (0..120).collect::<Vec<u8>>());
+    }
+
     /// VERA extension: thirty players' islands survive the start threshold,
     /// so an archipelago seats every player at the default and largest size.
     #[test]

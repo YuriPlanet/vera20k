@@ -34,14 +34,17 @@ pub(crate) fn checked_staging(
     capacity: i32,
 ) -> Result<crate::map::preview::ScenarioStartStaging> {
     ensure!(
-        text.len() <= MAX_STAGING_TEXT,
+        text.len() <= MAX_STAGING_TEXT
+            && text.bytes().filter(|&byte| byte == b',').count()
+                <= 4 + 4 * crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT,
         "generated start staging is too large"
     );
     let staging = crate::map::preview::ScenarioStartStaging::parse_w_text(text)
         .ok_or_else(|| anyhow!("generated start staging is missing"))?;
     ensure!(
         staging.to_w_text() == text
-            && (2..=crate::map::preview::START_STAGING_SLOTS as i32).contains(&staging.count)
+            && (2..=crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32)
+                .contains(&staging.count)
             && staging.count == capacity
             && staging.width > 0
             && staging.height > 0

@@ -2,7 +2,7 @@
 
 use crate::map::scenario_menu::MapMenuEntry;
 use crate::skirmish_launch::{
-    HOUSE_COLOR_COUNT, LaunchCountry, LaunchStartPosition, NETWORK_PLAYER_SLOT_COUNT,
+    HOUSE_COLOR_COUNT, LaunchCountry, LaunchStartPosition, SKIRMISH_MAX_SLOT_COUNT,
     SKIRMISH_PLAYER_SLOT_COUNT,
 };
 use crate::ui::shell::combobox::{ComboPopup, ComboPress};
@@ -306,17 +306,14 @@ pub fn combo_items(
                 .filter(|color| color_claimed_by_other_row(state, row, *color).is_some()),
         ),
         SkirmishComboId::Start(row) => {
-            // VERA lists a map's starts up to thirty, as its rooms do.
+            // VERA lists a map's starts up to SKIRMISH_MAX_SLOT_COUNT.
             let capacity = maps
                 .get(state.selected_map_idx)
-                .map(|map| {
-                    map.player_capacity
-                        .clamp(0, NETWORK_PLAYER_SLOT_COUNT as i32) as usize
-                })
+                .map(|map| map.player_capacity.clamp(0, SKIRMISH_MAX_SLOT_COUNT as i32) as usize)
                 .unwrap_or(SKIRMISH_PLAYER_SLOT_COUNT);
             available_start_choices(
                 selected_start_position(state, row),
-                (0..NETWORK_PLAYER_SLOT_COUNT)
+                (0..SKIRMISH_MAX_SLOT_COUNT)
                     .map(|index| LaunchStartPosition::Position(index as u8))
                     .filter(|start| start_position_taken_by_other_row(state, row, *start)),
                 capacity,
@@ -394,7 +391,7 @@ pub fn available_start_choices(
     let claimed: Vec<_> = claimed.into_iter().collect();
     std::iter::once(SkirmishComboItem::Start(LaunchStartPosition::Auto))
         .chain(
-            (0..capacity.min(crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT))
+            (0..capacity.min(crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT))
                 .map(|index| LaunchStartPosition::Position(index as u8))
                 .filter(|start| selected == Some(*start) || !claimed.contains(start))
                 .map(SkirmishComboItem::Start),

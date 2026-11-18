@@ -61,8 +61,8 @@ pub use random_map_extras::{
 };
 pub use random_map_setup::{
     ADVANCED_RANGE, AcceptOutcome, CUSTOM_PRESET_SLOTS, MainRngRanged, PLAYERS_RANGE,
-    RandomMapPreset, RandomMapSetupModalState,
-    SETUP_COMBO_ROWS, SetupCombo, SetupComboItem, setup_combo_items,
+    RandomMapPreset, RandomMapSetupModalState, SETUP_COMBO_ROWS, SetupCombo, SetupComboItem,
+    setup_combo_items,
 };
 pub use saved_seed_browser::{
     SAVED_SEED_DESCRIPTION_MAX_UNITS, SavedSeedBrowserRow, SavedSeedBrowserState,
@@ -76,7 +76,7 @@ pub use trackbars::{
 };
 
 use crate::skirmish_launch::{
-    AiDifficulty, HOUSE_COLOR_COUNT, LaunchCountry, LaunchStartPosition, NETWORK_PLAYER_SLOT_COUNT,
+    AiDifficulty, HOUSE_COLOR_COUNT, LaunchCountry, LaunchStartPosition, SKIRMISH_MAX_SLOT_COUNT,
 };
 
 use self::player_name::inactive_ai_team_default;
@@ -316,7 +316,7 @@ fn default_opponents(first_country: LaunchCountry) -> Vec<SkirmishShellOpponent>
         LaunchCountry::Germany,
     ];
 
-    (0..NETWORK_PLAYER_SLOT_COUNT - 1)
+    (0..SKIRMISH_MAX_SLOT_COUNT - 1)
         .map(|idx| {
             let country = countries[idx % countries.len()];
             let row_type = if idx == 0 {

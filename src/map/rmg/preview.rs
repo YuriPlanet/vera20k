@@ -50,7 +50,7 @@ const MARKER_SIZE: i32 = 4;
 const MARKER_RGB: [u8; 3] = [0xF0, 0x00, 0x00];
 const MARKER_ORIGIN_BIAS: i32 = -1;
 /// The original marks only the first eight waypoints, all a random map has.
-/// VERA marks every start of a random map for up to thirty players.
+/// VERA marks every start of a random map for the offline Skirmish rows.
 pub const MARKER_WAYPOINT_COUNT: u8 = super::MAX_PLAYERS as u8;
 
 /// Project a cell centre to the preview's coordinate space.

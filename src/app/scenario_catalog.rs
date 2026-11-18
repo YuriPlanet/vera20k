@@ -110,21 +110,24 @@ impl ScenarioCatalog {
                 anyhow::anyhow!("selected network map has no local catalog record: {file}")
             })?;
         let loaded = crate::map::source::load_network_map_ini(root, &record.file_name, assets)?;
-        let digest = if record
-            .file_name
-            .eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED)
-        {
-            // The random-map record carries 0x005E84D0's option digest
-            // (0x005E8590), not a [Digest]; the .Sed holds the same block.
+        let room_limit = crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32;
+        let digest = if crate::map::rmg::is_seed_selection(file) {
             let mut options = crate::map::rmg::RmgOptions::default();
             options.apply_sed(&loaded.ini, ares);
+            anyhow::ensure!(
+                options.num_players <= room_limit,
+                "This random map has {} starts. Choose a seed with at most {room_limit} starts for a network room.",
+                options.num_players
+            );
+            // Seeds carry the generator's option digest (0x005E84D0); the
+            // guest reads the same options when it verifies the transferred file.
             options.native_digest()
         } else {
             network_map_digest(&loaded.ini)
         };
         Ok(NetworkMapMetadata {
             display_name: network_map_title(&record.display_name, file),
-            player_capacity: record.player_capacity,
+            player_capacity: record.player_capacity.min(room_limit),
             official: record.official,
             byte_length: physical_map_length(&loaded.source),
             digest,
@@ -214,11 +217,15 @@ impl ScenarioCatalog {
             // separate effective-map digest already normalizes its input.
             let digest = options.native_digest();
             options.normalize();
+            if options.num_players > crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32 {
+                return false;
+            }
             (digest, options.num_players)
         } else {
             (
                 network_map_digest(&loaded.ini),
-                crate::map::waypoints::skirmish_player_capacity(&loaded.ini),
+                crate::map::waypoints::skirmish_player_capacity(&loaded.ini)
+                    .min(crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32),
             )
         };
         loaded
@@ -414,6 +421,44 @@ mod tests {
             catalog
                 .verify_network_map_input("RandMap.Sed", &wrong, root.path(), &assets, false)
                 .is_none()
+        );
+        options.num_players = 120;
+        root.write("RandMap.Sed", &options.to_sed_bytes(false));
+        assert!(
+            catalog
+                .network_map_metadata("RandMap.Sed", root.path(), &assets, false)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn extended_authored_map_advertises_and_verifies_the_network_capacity() {
+        use std::fmt::Write;
+        let root = TestDirectory::new("extended-network-map");
+        let mut map = String::from(
+            "[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n[IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n[Basic]\nMaxPlayers=120\n[Waypoints]\n",
+        );
+        for slot in 0..120 {
+            writeln!(map, "{slot}={}", 1001 + slot).unwrap();
+        }
+        root.write("Wide.map", map.as_bytes());
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        let record = SkirmishScenarioRecord::concrete_from_ini(
+            0,
+            SkirmishScenarioSource::Synthetic,
+            "Wide.map",
+            &IniFile::from_str(&map),
+        );
+        assert_eq!(record.player_capacity, 120);
+        let catalog = ScenarioCatalog::from_records(vec![record]);
+        let metadata = catalog
+            .network_map_metadata("Wide.map", root.path(), &assets, false)
+            .unwrap();
+        assert_eq!(metadata.player_capacity, 30);
+        assert!(
+            catalog
+                .verify_network_map_input("Wide.map", &metadata, root.path(), &assets, false)
+                .is_some()
         );
     }
 

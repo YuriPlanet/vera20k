@@ -596,7 +596,7 @@ pub(super) fn push_random_map_setup_modal_control_instances(
             &chrome,
             ControlPaint::Trackbar {
                 rect: players,
-                thumb_left: crate::ui::skirmish_shell::PLAYERS_RANGE.thumb_left_in(
+                thumb_left: modal.players_range.thumb_left_in(
                     modal.options.num_players,
                     players,
                     layout.scale,

@@ -287,13 +287,16 @@ fn powerup_globals_preserve_raw_indices_through_save_and_type_reset() {
 }
 
 #[test]
-fn player_at_supports_thirty_slots_without_constructing_countries() {
+fn player_at_supports_one_hundred_twenty_slots_without_constructing_countries() {
     let root = IniFile::from_str("[Countries]\n0=Americans\n");
     for (token, selector) in [
         ("<Player @ I>", 0x1183),
         ("<Player @ Z>", 0x1194),
         ("<Player @ AA>", 0x1195),
         ("<Player @ AD>", 0x1198),
+        ("<Player @ AZ>", 0x11AE),
+        ("<Player @ BA>", 0x11AF),
+        ("<Player @ DP>", 0x11F2),
     ] {
         let settings = IniFile::from_str(&format!("[MultiPlayer]\nSide={token}\n"));
         let (index, trace) = read_native_multiplayer_country(
@@ -311,9 +314,13 @@ fn player_at_supports_thirty_slots_without_constructing_countries() {
             1
         );
     }
-    assert_eq!(house_type_player_at("<Player @ AE>"), None);
+    assert_eq!(house_type_player_at("<Player @ DQ>"), None);
     assert_eq!(house_type_player_at("<Player @ [>"), None);
     assert_eq!(house_type_player_at("<player @ a>"), None);
+    assert_eq!(
+        house_type_player_at_text(0x117B + 119).as_deref(),
+        Some("<Player @ DP>")
+    );
 }
 
 #[test]

@@ -17,11 +17,40 @@ use crate::skirmish_modes::SkirmishGameMode;
 pub const BATTLE_MODE_ID: i32 = 1;
 pub const SKIRMISH_PLAYER_SLOT_COUNT: usize = 8;
 pub const SKIRMISH_AI_SLOT_COUNT: usize = SKIRMISH_PLAYER_SLOT_COUNT - 1;
-/// VERA seats up to thirty players: its network rooms page their roster, and
-/// offline Skirmish scrolls its computer rows through the retail eight
-/// resource rows. Its lobbies list a colour for each
+/// VERA seats up to thirty players in a network room: its rooms page their
+/// roster, and its lobbies list a colour for each
 /// ([`crate::rules::skirmish_colors`]).
 pub const NETWORK_PLAYER_SLOT_COUNT: usize = 30;
+/// VERA offline extension: the most player rows a Skirmish map may seat.
+///
+/// The full House roster is split into three bands, all inside the native
+/// signed-byte positive half (0..=127) and the 128-bit reservation word:
+///
+/// - `0..SKIRMISH_MAX_SLOT_COUNT` — the player rows (120).
+/// - the next two — the Neutral and Special Houses (see
+///   `SKIRMISH_NEUTRAL_HOUSE_COUNT`).
+/// - the remaining `SKIRMISH_RESERVED_HOUSE_COUNT` — intentionally unused,
+///   kept for mods and future special Houses.
+///
+/// Nothing widens the on-the-wire House id: it stays the native signed byte,
+/// so command bytes, replay hashes and lockstep traffic are unchanged.
+/// Network rooms keep [`NETWORK_PLAYER_SLOT_COUNT`]: their protocol counts
+/// sources in a `u32` mask.
+pub const SKIRMISH_MAX_SLOT_COUNT: usize = 120;
+/// Neutral and Special — the two non-player Houses native always constructs.
+pub const SKIRMISH_NEUTRAL_HOUSE_COUNT: usize = 2;
+/// Slots reserved for mods/future use. They exist in the 128-wide House space
+/// but no Skirmish row or selector may claim them.
+pub const SKIRMISH_RESERVED_HOUSE_COUNT: usize = 6;
+/// Every addressable House slot. Fills the `i8` positive half and the 128-bit
+/// reservation word exactly; the compile-time checks below keep that true.
+pub const SKIRMISH_HOUSE_SLOT_COUNT: usize = 128;
+const _: () = assert!(
+    SKIRMISH_MAX_SLOT_COUNT + SKIRMISH_NEUTRAL_HOUSE_COUNT + SKIRMISH_RESERVED_HOUSE_COUNT
+        == SKIRMISH_HOUSE_SLOT_COUNT
+);
+const _: () = assert!(SKIRMISH_HOUSE_SLOT_COUNT == i8::MAX as usize + 1);
+const _: () = assert!(SKIRMISH_HOUSE_SLOT_COUNT == u128::BITS as usize);
 /// YR's eight lobby colours, priorities 0..=7. The colours a lobby lists
 /// beyond them are [`SkirmishColorMode::lobby_priorities`].
 pub const HOUSE_COLOR_COUNT: usize = crate::rules::skirmish_colors::RETAIL_COLOR_COUNT;
@@ -927,12 +956,14 @@ impl TryFrom<SkirmishLaunchSessionInput> for SkirmishLaunchSession {
         opponents.sort_by_key(|opponent| opponent.raw_slot_index);
         if opponents
             .iter()
-            .any(|opponent| opponent.raw_slot_index >= NETWORK_PLAYER_SLOT_COUNT as u8)
+            .any(|opponent| opponent.raw_slot_index >= SKIRMISH_MAX_SLOT_COUNT as u8)
             || opponents
                 .windows(2)
                 .any(|pair| pair[0].raw_slot_index == pair[1].raw_slot_index)
         {
-            return Err("launch AI raw slot indices must be distinct and below30".into());
+            return Err(
+                "launch AI raw slot indices must be distinct and inside the Skirmish rows".into(),
+            );
         }
         Ok(Self {
             mode: input.mode,

@@ -50,6 +50,7 @@ on:
       - 'src/app/in_game.rs'
       - 'src/app/initialize.rs'
       - 'src/app/shell_main_menu.rs'
+      - 'src/app/random_map_file.rs'
       - 'src/app/shell_random_map.rs'
       - 'src/app/shell_wol.rs'
       - 'src/app/spawn_probe.rs'

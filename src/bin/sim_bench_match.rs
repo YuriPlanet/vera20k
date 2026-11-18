@@ -73,11 +73,11 @@ const ORE_REACH: i32 = 40;
 const DEPLOY_PAD: i32 = 3;
 /// Houses a house attacks: its nearest living ones.
 const FRONTS: usize = 3;
-/// Computer houses at most: one at every start of a 30-start map
-/// (`tools.scale_map --starts 30`) but the local house's, filling the
-/// lobby's `NETWORK_PLAYER_SLOT_COUNT` slots. A map with fewer starts seats
+/// Computer houses at most: one at every start of a 120-start map
+/// (`tools.scale_map --starts 120`) but the local house's, filling the offline
+/// Skirmish rows (`SKIRMISH_MAX_SLOT_COUNT`). A map with fewer starts seats
 /// fewer.
-pub(crate) const COMPUTERS: usize = 29;
+pub(crate) const COMPUTERS: usize = vera20k_core::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT - 1;
 /// The default run, two minutes of game time, in which the armies reach the
 /// nearest bases.
 pub(crate) const TICKS: u64 = 1800;
