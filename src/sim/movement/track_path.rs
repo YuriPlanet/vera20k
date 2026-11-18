@@ -29,7 +29,7 @@
 //! relocation.
 //!
 //! Find_Path's ordinary zero-prefix copy installs at most 24 direction words
-//! (`FootPathQueue::install`, 0x4D3E82..0x4D3EA1). The full search destination
+//! (`FootPathQueue::install_directions`, 0x4D3E82..0x4D3EA1). The full search destination
 //! stays with its owner. When the window runs short, the existing last-word
 //! distance check or no-queue continuation can request the next window;
 //! this is not an unconditional replan every 24 cells.
