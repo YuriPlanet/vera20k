@@ -94,10 +94,10 @@ pub(crate) fn effect_target_coordinate(
 /// across peers. The hooks only fire while `FireAtTemp::FireBullet` is set,
 /// i.e. inside `FireAt`, never for a shrapnel or split-child draw.
 ///
-/// RESIDUAL: `GetRandomCoordsNear` itself is not ported; this reuses
-/// [`crate::sim::projectile::launch::random_coords_near`], whose single
-/// angle draw is the same approximation the `Inaccurate=` trajectory arm
-/// already records.
+/// RESIDUAL: none on the point — `GetRandomCoordsNear` (`0x0049F420`) is the
+/// [`crate::sim::combat::inviso_scatter::random_direction_coord`] owner, reached
+/// through [`crate::sim::projectile::launch::random_coords_near`], so this draw
+/// and every other Phobos caller share one angle formula.
 #[cfg(feature = "phobos")]
 pub(crate) fn visual_scatter_target(
     world: &mut Simulation,
@@ -110,6 +110,7 @@ pub(crate) fn visual_scatter_target(
         rules.phobos_globals.visual_scatter_max,
     );
     Some(crate::sim::projectile::launch::random_coords_near(
+        world.cell_grid(),
         point,
         radius,
         &mut world.scenario_rng,
