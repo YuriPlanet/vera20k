@@ -498,13 +498,16 @@ current: say what was done, what was not, and what comes next.
 - Chain 5, building voxel guns, seen in a match
   (`map_observation.grand-cannon`, `[GTGCANTUR] Model=GTGCANTUR.glb`,
   `ModelSize=326` from `asset export-model GTGCANTUR`): the turret and
-  barrel draw from the model and the simulation state hash is unchanged, but
-  the barrel is posed wrong: it points flatter and higher and looks shorter
-  than the VXL barrel. `building_gun_draw_matrices` follows the VXL path's
-  facing, pitch and translations, so the difference is likely where the
-  exported barrel's geometry sits relative to its pivot (the barrel VXL's
-  bounds and HVA against the turret's). Unit barrels (the Grizzly) draw
-  right. Voxel projectiles and debris have not been seen in a match yet.
+  barrel draw from the model and the simulation state hash is unchanged.
+  The model barrel points higher than the stock VXL barrel because the
+  stock draw reuses its cached gun image (key: facing and frame,
+  `0x0043E2FA`), which keeps the pitch the barrel was first drawn at; with
+  `DisableVoxelCache=yes` on `[GTGCAN]` the VXL barrel takes the same pose
+  as the model. Residual: a model gun always draws the current elevation,
+  as an uncached VXL does; a player sees the barrel follow its elevation
+  where stock art would hold the old pitch until the facing changes. Turret
+  shading differs slightly from the VXL's. Voxel projectiles and debris
+  have not been seen in a match yet.
 - A type with a declared model still asks the unit atlas for its VXL and
   logs "No voxel model for ... pictures stay undrawn"; harmless, but the
   request should be skipped.
