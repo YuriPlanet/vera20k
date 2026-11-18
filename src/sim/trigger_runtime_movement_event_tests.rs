@@ -955,7 +955,7 @@ fn an_infantryman_entering_a_bio_reactor_raises_its_entered_by_event() {
             .entities
             .get(infantry)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport_id(),
         Some(reactor)
     );
@@ -1046,7 +1046,7 @@ fn an_occupier_garrisoning_a_building_raises_its_entered_by_event() {
             .entities
             .get(building)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .occupants()
             .count(),
         1
@@ -1172,7 +1172,7 @@ fn garrison_arrival_raises_entered_by_only_for_an_admitted_infantryman() {
                 .entities
                 .get(infantry)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .inside_transport_id(),
             (health == 500 || red_entered).then_some(building),
         );
@@ -1341,7 +1341,7 @@ fn all03_needle_garrison_runs_the_authored_difficulty_specific_reveal() {
                 .entities
                 .get(infantry)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .inside_transport_id()
                 == Some(building)
             {

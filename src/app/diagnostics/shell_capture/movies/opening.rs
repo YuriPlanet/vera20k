@@ -1058,7 +1058,7 @@ fn opening_observation(state: &AppState) -> Result<Value> {
                 "members": team.members().collect::<Vec<_>>(),
                 "transports": team.members().filter_map(|id| {
                     let entity = sim.entities().get(id)?;
-                    let cargo = entity.passenger_role.cargo()?;
+                    let cargo = entity.passenger_role().cargo()?;
                     Some(json!({"id": id, "cell": [entity.position.rx(), entity.position.ry()],
                         "passengers": cargo.passengers()}))
                 }).collect::<Vec<_>>(),

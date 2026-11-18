@@ -1230,7 +1230,7 @@ fn require_object_reference(
 
 fn validate_passenger_size_tables(sim: &Simulation) -> Result<(), SnapshotRestoreError> {
     for (carrier_id, entity) in sim.substrate.entities.iter_sorted() {
-        let Some(cargo) = entity.passenger_role.cargo() else {
+        let Some(cargo) = entity.passenger_role().cargo() else {
             continue;
         };
         if cargo.passengers().len() != cargo.passenger_sizes().len() {
@@ -1419,7 +1419,7 @@ fn restore_object_references(
             )?;
         }
 
-        if let Some(cargo) = entity.passenger_role.cargo() {
+        if let Some(cargo) = entity.passenger_role().cargo() {
             for &passenger_id in cargo.passengers() {
                 require_resolved_reference(
                     entity_ids.contains(&passenger_id),
@@ -1434,7 +1434,7 @@ fn restore_object_references(
 
         // BuildingClass's saved vector+684 contains independent Infantry
         // references; Cargo+114 is validated above, never reclassified by flags.
-        for &occupant_id in entity.passenger_role.occupants().ids() {
+        for &occupant_id in entity.passenger_role().occupants().ids() {
             require_resolved_reference(
                 entity_ids.contains(&occupant_id),
                 "EntityStore",
@@ -1667,7 +1667,7 @@ fn restore_object_references(
             }
         }
 
-        if let Some(target_id) = entity.passenger_role.inside_transport_id() {
+        if let Some(target_id) = entity.passenger_role().inside_transport_id() {
             require_resolved_reference(
                 entity_ids.contains(&target_id),
                 "EntityStore",
@@ -3944,14 +3944,14 @@ mod tests {
         let mut carrier = GameEntity::test_default(carrier_id, "TRAN", "Americans", 0, 0);
         carrier.set_owner_for_test(owner);
         carrier.set_type_ref_for_test(sim.intern("TRAN"));
-        carrier.passenger_role = PassengerRole::transport(cargo);
+        carrier.set_passenger_role_for_test(PassengerRole::transport(cargo));
         sim.substrate.entities.insert(carrier);
         for id in passenger_ids {
             let mut passenger = GameEntity::test_default(id, "E1", "Americans", 0, 0);
             passenger.set_owner_for_test(owner);
             passenger.set_type_ref_for_test(sim.intern("E1"));
             passenger
-                .passenger_role
+                .passenger_role_mut_for_test()
                 .set_inside_transport(carrier_id, false);
             sim.substrate.entities.insert(passenger);
         }
@@ -3970,7 +3970,7 @@ mod tests {
             .entities
             .get(carrier_id)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap();
         assert_eq!(cargo.passengers(), passenger_ids.as_slice());
@@ -3992,7 +3992,7 @@ mod tests {
             .entities
             .get_mut(carrier_id)
             .unwrap()
-            .passenger_role
+            .passenger_role_mut_for_test()
             .cargo_mut()
             .unwrap();
         assert!(cargo.disembark(passenger_ids[1]));
@@ -4005,7 +4005,7 @@ mod tests {
             .entities
             .get_mut(passenger_ids[1])
             .unwrap()
-            .passenger_role
+            .passenger_role_mut_for_test()
             .clear_carrier_relation();
         assert_ne!(restored.state_hash(), before);
     }

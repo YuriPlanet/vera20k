@@ -339,7 +339,7 @@ pub(crate) fn controlled_transport_house(
     interner: &StringInterner,
     rider: &GameEntity,
 ) -> Option<InternedId> {
-    let transport = entities.get(rider.passenger_role.transporter()?)?;
+    let transport = entities.get(rider.passenger_role().transporter()?)?;
     let open_topped = interner
         .object_type(transport.type_ref(), rules)
         .is_some_and(|obj| obj.open_topped);
@@ -549,7 +549,7 @@ pub(crate) fn open_topped_cargo_range(
     let mut shortest = None;
     // Cargo owns the native head/+30 sequence. Neither limbo nor death
     // filters belong to this reader; boarded passengers are in limbo.
-    for &id in entity.passenger_role.cargo()?.passengers() {
+    for &id in entity.passenger_role().cargo()?.passengers() {
         let Some(passenger) = entities.get(id) else {
             break;
         };
@@ -1066,7 +1066,7 @@ pub fn attacker_facts(entity: &GameEntity, obj: &ObjectType) -> AttackerFacts {
         veterancy: entity.veterancy.rank(),
         current_weapon_number: entity.current_weapon_number(),
         open_transport_weapon: open_transport_weapon(
-            entity.passenger_role.in_open_transport(),
+            entity.passenger_role().in_open_transport(),
             obj,
         ),
         gattling_stage: entity.gattling.stage(),
@@ -1312,7 +1312,7 @@ pub(crate) fn is_occupied(entity: &GameEntity, obj: &ObjectType) -> bool {
     entity.category() == EntityCategory::Structure
         && obj.can_be_occupied
         && obj.can_occupy_fire
-        && entity.passenger_role.occupants().count() > 0
+        && entity.passenger_role().occupants().count() > 0
 }
 
 /// `BuildingClass @ 0x00458E00` (vt+0x404): half the shorter side of the
@@ -1338,7 +1338,7 @@ pub(crate) fn firing_occupant_id(entity: &GameEntity, obj: &ObjectType) -> Optio
     if !is_occupied(entity, obj) {
         return None;
     }
-    let occupants = entity.passenger_role.occupants();
+    let occupants = entity.passenger_role().occupants();
     // Native452742 uses signed DWORD. Unsafe negative/stale slots are not
     // representable object references; do not narrow a valid index to u8.
     occupants
@@ -1543,7 +1543,7 @@ mod tests {
             5,
             EntityCategory::Structure,
         );
-        host.passenger_role.occupants_mut().add(2);
+        host.garrison_mut_for_test().add_for_test(2);
         world.substrate.entities.insert(host);
         world
             .substrate
@@ -1660,7 +1660,7 @@ mod tests {
                 );
                 inside.veterancy.set_rank_for_test(veterancy);
                 entities.insert(inside);
-                building.passenger_role.occupants_mut().add(2);
+                building.garrison_mut_for_test().add_for_test(2);
             }
             entities.insert(building);
             let interner = crate::sim::intern::test_interner();
@@ -2047,16 +2047,22 @@ mod tests {
         sim.interner = crate::sim::intern::test_interner();
         sim.substrate.entities.get_mut(1).unwrap().mind_control =
             MindControlLink::controlled_by_for_test(3);
-        sim.substrate.entities.get_mut(2).unwrap().passenger_role =
-            PassengerRole::inside_for_test(1, false);
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .set_passenger_role_for_test(PassengerRole::inside_for_test(1, false));
         let rider = sim.substrate.entities.get(2).unwrap();
         assert_eq!(
             controlled_transport_house(&sim.substrate.entities, &rules, &sim.interner, rider),
             None,
             "a garrison occupant or cargo rider stores no Transporter"
         );
-        sim.substrate.entities.get_mut(2).unwrap().passenger_role =
-            PassengerRole::boarded_for_test(1, true);
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .set_passenger_role_for_test(PassengerRole::boarded_for_test(1, true));
         let expected = sim.substrate.entities.get(3).unwrap().owner();
         let rider = sim.substrate.entities.get(2).unwrap();
         assert_eq!(

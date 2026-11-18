@@ -72,7 +72,7 @@ fn a_loaded_transport_on_a_beach_offers_no_deploy() {
     sim.entities_mut_for_test()
         .get_mut(transport)
         .unwrap()
-        .passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+        .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(cargo));
     let land = |sim: &mut Simulation, land: LandType| {
         sim.resolved_terrain_mut_for_test()
             .as_mut()

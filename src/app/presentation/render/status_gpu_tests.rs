@@ -1622,10 +1622,10 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                         // Retain the same supplied drawing order in its
                         // canonical store; transport rows still own Cargo.
                         entity
-                            .passenger_role
+                            .passenger_role_mut_for_test()
                             .set_occupants_for_test(cargo.passengers().to_vec(), 0);
                     } else {
-                        entity.passenger_role = PassengerRole::transport(cargo);
+                        entity.set_passenger_role_for_test(PassengerRole::transport(cargo));
                     }
                 }
                 if let Some(count) = actor["capture_count"].as_u64() {

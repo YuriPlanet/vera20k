@@ -143,7 +143,7 @@ impl Scene {
             &Command::clicked_mission(child, MissionType::Enter, TargetKind::Entity(reactor))
         ));
         self.until(900, |scene| {
-            scene.actor(child).passenger_role.inside_transport_id() == Some(reactor)
+            scene.actor(child).passenger_role().inside_transport_id() == Some(reactor)
         });
         let child = self.actor(child);
         assert!(child.lifecycle.in_limbo());
@@ -152,7 +152,7 @@ impl Scene {
 
     fn cargo(&self, reactor: u64) -> &[u64] {
         self.actor(reactor)
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .passengers()
@@ -406,7 +406,7 @@ fn pending_reactor_warp_restores_cargo_and_scalar_disposes_without_child_kill_ta
     assert_eq!(scene.cargo(reactor), [second, first]);
     for id in [first, second] {
         assert_eq!(
-            scene.actor(id).passenger_role.inside_transport_id(),
+            scene.actor(id).passenger_role().inside_transport_id(),
             Some(reactor)
         );
         assert!(scene.actor(id).lifecycle.in_limbo());

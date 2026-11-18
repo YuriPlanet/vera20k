@@ -119,7 +119,11 @@ impl Scene {
     }
 
     fn cargo(&self, id: u64) -> &[u64] {
-        self.actor(id).passenger_role.cargo().unwrap().passengers()
+        self.actor(id)
+            .passenger_role()
+            .cargo()
+            .unwrap()
+            .passengers()
     }
 
     fn enter(&mut self, kind: &str, owner: &str, building: u64, capture: bool) -> u64 {
@@ -135,7 +139,9 @@ impl Scene {
                 Command::clicked_mission(id, MissionType::Enter, TargetKind::Entity(building))
             },
         );
-        self.until(|scene| scene.actor(id).passenger_role.inside_transport_id() == Some(building));
+        self.until(|scene| {
+            scene.actor(id).passenger_role().inside_transport_id() == Some(building)
+        });
         assert!(self.actor(id).lifecycle.in_limbo());
         id
     }
@@ -400,10 +406,10 @@ fn combined_absorber_and_garrison_save_firing_order_then_unload_separate_lists()
     ));
     for id in [gi, conscript, second] {
         assert!(!scene.actor(id).lifecycle.in_limbo());
-        assert_eq!(scene.actor(id).passenger_role.inside_transport_id(), None);
+        assert_eq!(scene.actor(id).passenger_role().inside_transport_id(), None);
     }
     assert_eq!(
-        scene.actor(first).passenger_role.inside_transport_id(),
+        scene.actor(first).passenger_role().inside_transport_id(),
         Some(reactor)
     );
     assert_eq!(scene.threat(reactor), 0);

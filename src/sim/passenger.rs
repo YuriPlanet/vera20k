@@ -375,38 +375,43 @@ impl BuildingOccupants {
     }
 
     /// AddGarrisonOccupant52293B..52297C appends without a capacity test.
-    pub(crate) fn add(&mut self, id: u64) {
+    fn add(&mut self, id: u64) {
         self.ids.push(id);
     }
 
     /// FireAt6FF065..6FF085: INC DWORD, then signed IDIV by live count.
-    pub(crate) fn advance_fire_index(&mut self) {
+    fn advance_fire_index(&mut self) {
         let count = self.count();
         if count > 0 {
             self.fire_index = self.fire_index.wrapping_add(1) % count;
         }
     }
     /// SellBuilding457DEB and KillOccupants4585CA clear the cursor first.
-    pub(crate) fn reset_fire_index(&mut self) {
+    fn reset_fire_index(&mut self) {
         self.fire_index = 0;
     }
-    pub(crate) fn clear(&mut self) {
+    fn clear(&mut self) {
         self.ids.clear();
         self.reset_fire_index();
     }
     /// Ares 3.0 doTraverseTo (`100130E0`): `Occupants.RemoveItem(0)`, the
     /// head shifted out without changing +69C.
-    pub(crate) fn remove_head(&mut self) -> Option<u64> {
+    fn remove_head(&mut self) -> Option<u64> {
         (!self.ids.is_empty()).then(|| self.ids.remove(0))
     }
     /// BuildingPointerExpired44EAC0..44EB02 removes the first matching
     /// vector entry by shifting, without changing +69C. Its caller owns
     /// the ScenarioInit(A8E7AC) gate; ordinary Cargo expiry is separate.
-    pub(crate) fn remove_expired(&mut self, id: u64) {
+    fn remove_expired(&mut self, id: u64) {
         if let Some(index) = self.ids.iter().position(|&entry| entry == id) {
             self.ids.remove(index);
         }
     }
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn add_for_test(&mut self, id: u64) {
+        self.add(id);
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_ids_for_test(&mut self, ids: Vec<u64>) {
         self.ids = ids;
@@ -414,6 +419,114 @@ impl BuildingOccupants {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_fire_index_for_test(&mut self, index: i32) {
         self.fire_index = index;
+    }
+}
+
+/// Only the passenger module can obtain a mutable role on a registered entity.
+pub(crate) struct PassengerWrite(());
+
+impl GameEntity {
+    fn passenger_state_mut(&mut self) -> &mut PassengerRole {
+        self.passenger_role_for_update(PassengerWrite(()))
+    }
+
+    /// Install the new Techno's CargoClass capacity without replacing its
+    /// independently stored building occupants or Transporter pointer.
+    pub(crate) fn install_passenger_hold(&mut self, capacity: u32, size_limit: f64) {
+        let cargo = self.ensure_cargo_hold();
+        cargo.capacity = capacity;
+        cargo.size_limit = size_limit;
+    }
+
+    pub(crate) fn cargo_mut(&mut self) -> Option<&mut PassengerCargo> {
+        self.passenger_state_mut().cargo_mut()
+    }
+
+    pub(crate) fn ensure_cargo_hold(&mut self) -> &mut PassengerCargo {
+        self.passenger_state_mut().ensure_hold()
+    }
+
+    pub(crate) fn set_inside_transport(&mut self, transport_id: u64, open_topped: bool) {
+        self.passenger_state_mut()
+            .set_inside_transport(transport_id, open_topped);
+    }
+
+    pub(crate) fn clear_carrier_relation(&mut self) {
+        self.passenger_state_mut().clear_carrier_relation();
+    }
+
+    pub(crate) fn clear_transporter(&mut self) {
+        self.passenger_state_mut().clear_transporter();
+    }
+
+    pub(crate) fn set_carrier_link(&mut self, link: CarrierLink) {
+        self.passenger_state_mut().set_carrier_link(link);
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn garrison_mut_for_test(&mut self) -> &mut BuildingOccupants {
+        &mut self.passenger_state_mut().occupants
+    }
+
+    pub(crate) fn advance_garrison_fire_index(&mut self) {
+        self.passenger_state_mut().occupants.advance_fire_index();
+    }
+
+    /// Ares repairs +69C after all transfers or after the occupant hit returns.
+    pub(crate) fn repair_garrison_fire_index(&mut self) {
+        let occupants = &mut self.passenger_state_mut().occupants;
+        if occupants.fire_index() >= occupants.count() {
+            occupants.reset_fire_index();
+        }
+    }
+
+    /// Remove one vector reference, preserving the cursor and the rider's
+    /// link until the damage/expiry owner reaches that distinct stage.
+    pub(crate) fn remove_garrison_reference(&mut self, id: u64) {
+        self.passenger_state_mut().occupants.remove_expired(id);
+    }
+}
+
+impl ObjectSubstrate {
+    /// Admission follows successful Limbo or construction in Limbo. No
+    /// callback runs between the building append and the rider link.
+    pub(crate) fn attach_garrison_occupant(&mut self, building: u64, rider: u64) -> Option<i32> {
+        if !self.entities.contains(rider) {
+            return None;
+        }
+        self.append_garrison_member(building, rider)
+    }
+
+    fn append_garrison_member(&mut self, building: u64, rider: u64) -> Option<i32> {
+        let occupants = &mut self
+            .entities
+            .get_mut(building)?
+            .passenger_state_mut()
+            .occupants;
+        occupants.add(rider);
+        let count = occupants.count();
+        if let Some(rider) = self.entities.get_mut(rider) {
+            rider.set_inside_transport(building, false);
+        }
+        Some(count)
+    }
+
+    /// Ares doTraverseTo (100130E0) transfers a source head to the target
+    /// tail without a placement callback. An existing reference awaiting
+    /// expiry still moves in vector order if its rider has already gone.
+    pub(crate) fn transfer_garrison_head(&mut self, source: u64, target: u64) -> bool {
+        if !self.entities.contains(target) {
+            return false;
+        }
+        let Some(rider) = self
+            .entities
+            .get_mut(source)
+            .and_then(|building| building.passenger_state_mut().occupants.remove_head())
+        else {
+            return false;
+        };
+        self.append_garrison_member(target, rider);
+        true
     }
 }
 
@@ -425,14 +538,14 @@ impl Simulation {
             .substrate
             .entities
             .get(transport_id)
-            .and_then(|transport| transport.passenger_role.cargo())
+            .and_then(|transport| transport.passenger_role().cargo())
             .map(|cargo| cargo.passengers().to_vec())
             .unwrap_or_default();
         for id in passengers {
             if let Some(passenger) = self.substrate.entities.get_mut(id)
-                && let Some(link) = passenger.passenger_role.carrier_link()
+                && let Some(link) = passenger.passenger_role().carrier_link()
             {
-                passenger.passenger_role.set_carrier_link(CarrierLink {
+                passenger.set_carrier_link(CarrierLink {
                     open_topped: false,
                     ..link
                 });
@@ -491,7 +604,7 @@ impl Simulation {
             .get(carrier)
             .is_some_and(|transport| {
                 transport.category().is_foot()
-                    && transport.passenger_role.passenger_count() == 1
+                    && transport.passenger_role().passenger_count() == 1
                     && self
                         .entity_object_type(transport, rules)
                         .is_some_and(|object| object.gunner)
@@ -530,11 +643,11 @@ impl Simulation {
         context: UninitContext<'_>,
     ) -> bool {
         if let Some(entity) = self.substrate.entities.get_mut(passenger) {
-            entity.passenger_role.set_carrier_link(CarrierLink {
+            entity.set_carrier_link(CarrierLink {
                 transport_id: carrier,
                 open_topped: rider,
             });
-            entity.passenger_role.transporter = Some(carrier);
+            entity.passenger_state_mut().transporter = Some(carrier);
         }
         if rider {
             let _ = self.enter_open_topped(passenger, context.rules(), context.effects());
@@ -554,11 +667,11 @@ impl Simulation {
         effects: FrameEffects<'_>,
     ) {
         if let Some(passenger) = self.substrate.entities.get_mut(passenger) {
-            passenger.passenger_role.set_carrier_link(CarrierLink {
+            passenger.set_carrier_link(CarrierLink {
                 transport_id: carrier,
                 open_topped,
             });
-            passenger.passenger_role.transporter = Some(carrier);
+            passenger.passenger_state_mut().transporter = Some(carrier);
         }
         if open_topped {
             let registered = self.enter_open_topped(passenger, rules, effects);
@@ -603,7 +716,7 @@ impl Simulation {
         // Every native Techno has CargoClass even when Type.Passengers is0.
         // Make its empty hold at the first raw Cargo attach; ordinary
         // capacity admission remains a caller policy.
-        let cargo = transport.passenger_role.ensure_hold();
+        let cargo = transport.ensure_cargo_hold();
         // The existing size cache belongs to Cargo as well: ordinary callers
         // supply their admitted type size; retries retain the popped size.
         // Native quantity is the chain length, not its configured capacity.
@@ -766,9 +879,6 @@ impl PassengerRole {
     pub fn occupants(&self) -> &BuildingOccupants {
         &self.occupants
     }
-    pub(crate) fn occupants_mut(&mut self) -> &mut BuildingOccupants {
-        &mut self.occupants
-    }
 
     /// Install a supplied Building-vector prior across the core/client test
     /// boundary. Production admission remains add_garrison_occupant522910.
@@ -917,7 +1027,7 @@ pub fn can_enter_transport(
     // These are order/UI lifecycle admission, not extra receiver0F gates.
     if !passenger.is_alive()
         || passenger.death.is_dying()
-        || passenger.passenger_role.is_inside_transport()
+        || passenger.passenger_role().is_inside_transport()
         || !transport.is_alive()
         || transport.death.is_dying()
     {
@@ -1136,7 +1246,7 @@ fn garrison_parts<'a>(
         building,
         sim.object_type(passenger.type_ref(), rules)?,
         sim.object_type(building.type_ref(), rules)?,
-        building.passenger_role.occupants(),
+        building.passenger_role().occupants(),
     ))
 }
 
@@ -1320,7 +1430,7 @@ pub(crate) fn board_passenger(
         .substrate
         .entities
         .get(pax_id)
-        .and_then(|pax| pax.passenger_role.transporter());
+        .and_then(|pax| pax.passenger_role().transporter());
     if arm == BoardingArm::InfantryTransport {
         sim.mark_boarded_transport_passenger(pax_id, carrier_id, open_topped, rules, effects);
     }
@@ -1346,8 +1456,8 @@ pub(crate) fn board_passenger(
         if arm == BoardingArm::InfantryTransport
             && let Some(passenger) = sim.substrate.entities.get_mut(pax_id)
         {
-            passenger.passenger_role.clear_carrier_relation();
-            passenger.passenger_role.transporter = prior_transporter;
+            passenger.clear_carrier_relation();
+            passenger.passenger_state_mut().transporter = prior_transporter;
         }
         let _ = sim.reveal_entity_with_context(pax_id, context);
         return false;
@@ -1359,8 +1469,7 @@ pub(crate) fn board_passenger(
         // (`+0x11C`, `PassengerRole::transporter`) stays as it is. Boarding keeps the
         // passenger's TarCom and passive flag: neither arm nor Limbo writes
         // them.
-        pax.passenger_role
-            .set_inside_transport(carrier_id, open_topped && !arm.building());
+        pax.set_inside_transport(carrier_id, open_topped && !arm.building());
         if arm == BoardingArm::InfantryBuilding {
             pax.navigation.stop_moving();
         }
@@ -1451,17 +1560,9 @@ pub fn add_garrison_occupant(
     if sim.techno_limbo_with_context(pax_id, context) != ConcealOutcome::Concealed {
         return Ok(false);
     }
-    let Some(count) = sim.substrate.entities.get_mut(building_id).map(|building| {
-        let occupants = building.passenger_role.occupants_mut();
-        occupants.add(pax_id);
-        occupants.count()
-    }) else {
+    let Some(count) = sim.substrate.attach_garrison_occupant(building_id, pax_id) else {
         return Ok(false);
     };
-    if let Some(pax) = sim.substrate.entities.get_mut(pax_id) {
-        // Admission and Limbo keep the occupant's TarCom and passive flag.
-        pax.passenger_role.set_inside_transport(building_id, false);
-    }
     // Ares 3.0 10017240 (hook 0x52297F): an occupier of another house
     // raids the building (sim::ares_garrison).
     if rules.ares_form() {
@@ -1567,7 +1668,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get_mut(transport_id)
-                .and_then(|entity| entity.passenger_role.cargo_mut())
+                .and_then(|entity| entity.cargo_mut())
         {
             cargo.disembark(id);
         }
@@ -1593,7 +1694,7 @@ impl Simulation {
             .get(transport_id)
             .is_some_and(|entity| {
                 entity
-                    .passenger_role
+                    .passenger_role()
                     .cargo()
                     .is_some_and(|cargo| cargo.is_empty())
                     && self
@@ -1740,7 +1841,7 @@ pub(crate) fn open_topped_riders_follow(
     // Cargo first: every changed SetLocation asks, and the type lookup costs
     // an allocation.
     let Some(cargo) = transport
-        .passenger_role
+        .passenger_role()
         .cargo()
         .filter(|cargo| !cargo.passengers.is_empty())
     else {
@@ -1787,7 +1888,7 @@ impl Simulation {
             return;
         }
         let passengers: Vec<u64> = transport
-            .passenger_role
+            .passenger_role()
             .cargo()
             .map(|cargo| cargo.passengers.clone())
             .unwrap_or_default();
@@ -1858,7 +1959,7 @@ pub(crate) fn reconcile_civilian_garrison_owner_for_building(
         return false;
     };
     // Native458272 tests the vector independently of Cargo/type allocation.
-    let occupants = building.passenger_role.occupants();
+    let occupants = building.passenger_role().occupants();
     let current_owner = building.owner();
     let cargo_empty = occupants.is_empty();
     //458313 reads Occupants[0], the earliest admission.
@@ -2050,10 +2151,10 @@ ConditionYellow=50%
         entity.set_owner_for_test(owner_id);
         entity.set_type_ref_for_test(type_id);
         entity.set_category_for_test(EntityCategory::Unit);
-        entity.passenger_role = PassengerRole::transport(PassengerCargo::new(
+        entity.set_passenger_role_for_test(PassengerRole::transport(PassengerCargo::new(
             obj.passengers.max(0) as u32,
             obj.size_limit,
-        ));
+        )));
         sim.substrate.entities.insert(entity);
         assert!(matches!(
             sim.reveal_entity_with_rules(stable_id, rules),
@@ -2167,7 +2268,7 @@ ConditionYellow=50%
 
         let actor = sim.substrate.entities.get(passenger).unwrap();
         assert_eq!(
-            actor.passenger_role.inside_transport(),
+            actor.passenger_role().inside_transport(),
             Some((transport, true))
         );
         assert!(actor.attack_target.target().is_none());

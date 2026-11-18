@@ -762,7 +762,7 @@ fn a_gattling_tank_boards_with_its_spin_reset() {
         )
         .unwrap();
     let tank = spin.sim.substrate.entities.get(spin.tank).unwrap();
-    assert!(tank.passenger_role.is_inside_transport());
+    assert!(tank.passenger_role().is_inside_transport());
     assert_eq!((tank.gattling.stage(), tank.gattling.value()), (0, 0));
     assert_eq!(tank.mission.ai_counter(), 0);
     assert!(!tank.gattling.report_latch());

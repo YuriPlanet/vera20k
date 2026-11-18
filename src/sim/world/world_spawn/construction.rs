@@ -355,9 +355,7 @@ impl Simulation {
         }
         // Cargo+114 is independent of Building occupants+684 (Ctor43B8DC).
         if obj.passengers > 0 {
-            ge.passenger_role = crate::sim::passenger::PassengerRole::transport(
-                crate::sim::passenger::PassengerCargo::new(obj.passengers as u32, obj.size_limit),
-            );
+            ge.install_passenger_hold(obj.passengers as u32, obj.size_limit);
         }
 
         // TechnoClass::Init_Managers — manager-owned children are committed

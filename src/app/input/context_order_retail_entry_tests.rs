@@ -733,7 +733,7 @@ fn board(sim: &mut Simulation, rules: &RuleSet, passenger: u64, carrier: u64, fr
         if sim
             .entities()
             .get(passenger)
-            .is_some_and(|entity| entity.passenger_role.is_inside_transport())
+            .is_some_and(|entity| entity.passenger_role().is_inside_transport())
         {
             break;
         }
@@ -743,7 +743,7 @@ fn board(sim: &mut Simulation, rules: &RuleSet, passenger: u64, carrier: u64, fr
         sim.entities()
             .get(carrier)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .passenger_count(),
         1
     );
@@ -1198,7 +1198,7 @@ fn a_loaded_carryall_offers_unload() {
     sim.entities_mut_for_test()
         .get_mut(carryall)
         .unwrap()
-        .passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+        .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(cargo));
     assert_eq!(
         unload(&sim),
         Some(Command::UnloadPassengers {

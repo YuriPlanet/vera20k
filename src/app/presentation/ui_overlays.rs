@@ -2416,7 +2416,7 @@ fn ares_passenger_pip_frames(
     let mut frames = vec![0; max];
     let mut next = 0;
     let passengers = entity
-        .passenger_role
+        .passenger_role()
         .cargo()
         .map_or(&[][..], |cargo| cargo.passengers());
     for &id in passengers.iter().rev() {
@@ -2509,7 +2509,7 @@ fn scale_pip_rows(
     //709C27..D17 precedes passengers and uses raw OccupyPip, including
     //reader-produced1..5 as well as person frames6..12. Keep its own origin.
     if building && object.show_occupant_pips && object.max_number_occupants > 0 {
-        let occupants = entity.passenger_role.occupants().ids();
+        let occupants = entity.passenger_role().occupants().ids();
         pips.extend((0..object.max_number_occupants as usize).map(|slot| {
             let frame = occupants
                 .get(slot)
@@ -2548,7 +2548,7 @@ fn scale_pip_rows(
             let gunner_step = if object.gunner && slot > 0 { 2 } else { 0 };
             pip(slot + gunner_step, 0, row_y)
         }));
-        let Some(cargo) = entity.passenger_role.cargo() else {
+        let Some(cargo) = entity.passenger_role().cargo() else {
             return pips;
         };
         //4598A0/709DD4..9E43: absorbers walk the head forward, consuming

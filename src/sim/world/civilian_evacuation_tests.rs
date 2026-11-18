@@ -119,7 +119,7 @@ fn full_aircraft_evacuates_the_civilian_passenger_house_after_save_and_polling()
             .entities()
             .get(plane)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .passengers()

@@ -1332,7 +1332,7 @@ fn droppod_reinforcement_carrier_matches_original_constructor_cargo_and_orders()
         );
         assert_eq!(
             plane
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .unwrap()
                 .passengers()
@@ -1670,7 +1670,7 @@ fn full_reinforcement_members_cargo_and_scalar_cleanup_match_original() {
             .entities()
             .get(head)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap();
         assert_eq!(

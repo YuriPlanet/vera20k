@@ -120,7 +120,7 @@ fn deploy_key_on_a_selected_loaded_bio_reactor_does_not_unload_absorber_cargo() 
             .entities()
             .get(initiate)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport_id()
             == Some(reactor)
         {
@@ -133,7 +133,7 @@ fn deploy_key_on_a_selected_loaded_bio_reactor_does_not_unload_absorber_cargo() 
             .entities()
             .get(initiate)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport_id(),
         Some(reactor)
     );
@@ -186,7 +186,7 @@ fn deploy_key_on_a_selected_loaded_bio_reactor_does_not_unload_absorber_cargo() 
             .entities()
             .get(reactor)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .passengers(),
@@ -198,7 +198,7 @@ fn deploy_key_on_a_selected_loaded_bio_reactor_does_not_unload_absorber_cargo() 
             .entities()
             .get(initiate)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport_id(),
         Some(reactor)
     );
@@ -245,7 +245,7 @@ fn deploy_key_on_a_selected_loaded_bio_reactor_does_not_unload_absorber_cargo() 
             .entities()
             .get(reactor)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .is_empty()
@@ -259,7 +259,7 @@ fn deploy_key_on_a_selected_loaded_bio_reactor_does_not_unload_absorber_cargo() 
             .entities()
             .get(reactor)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .is_empty()
@@ -270,7 +270,7 @@ fn deploy_key_on_a_selected_loaded_bio_reactor_does_not_unload_absorber_cargo() 
             .entities()
             .get(initiate)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport_id(),
         None
     );
@@ -411,7 +411,7 @@ fn retail_garrison_deploy_key_clears_target_before_releasing_real_occupants() {
         for _ in 0..600 {
             step(&mut runtime);
             let actor = runtime.simulation.entities().get(gi).unwrap();
-            if actor.passenger_role.inside_transport_id() == Some(house)
+            if actor.passenger_role().inside_transport_id() == Some(house)
                 && runtime.simulation.entities().get(house).unwrap().owner() == owner
             {
                 break;
@@ -420,7 +420,7 @@ fn retail_garrison_deploy_key_clears_target_before_releasing_real_occupants() {
         let actor = runtime.simulation.entities().get(gi).unwrap();
         let building = runtime.simulation.entities().get(house).unwrap();
         assert_eq!(
-            actor.passenger_role.inside_transport_id(),
+            actor.passenger_role().inside_transport_id(),
             Some(house),
             "production garrison Capture reaches the actual passenger owner, fired={fired_before_d}"
         );
@@ -429,7 +429,7 @@ fn retail_garrison_deploy_key_clears_target_before_releasing_real_occupants() {
             owner,
             "real entry captures the civilian house"
         );
-        assert_eq!(building.passenger_role.occupants().ids(), [gi]);
+        assert_eq!(building.passenger_role().occupants().ids(), [gi]);
         assert!(
             runtime
                 .simulation
@@ -498,7 +498,7 @@ fn retail_garrison_deploy_key_clears_target_before_releasing_real_occupants() {
                     .entities()
                     .get(house)
                     .unwrap()
-                    .passenger_role
+                    .passenger_role()
                     .occupants()
                     .ids(),
                 [gi]
@@ -562,7 +562,7 @@ fn retail_garrison_deploy_key_clears_target_before_releasing_real_occupants() {
                     Some(expected["queued_mission"].as_i64().unwrap() as i32)
                 );
                 assert_eq!(
-                    building.passenger_role.occupants().count(),
+                    building.passenger_role().occupants().count(),
                     expected["occupants"].as_i64().unwrap() as i32
                 );
                 assert_eq!(
@@ -588,7 +588,7 @@ fn retail_garrison_deploy_key_clears_target_before_releasing_real_occupants() {
                 .entities()
                 .get(gi)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .is_inside_transport()
             {
                 break;
@@ -597,7 +597,7 @@ fn retail_garrison_deploy_key_clears_target_before_releasing_real_occupants() {
         }
         let actor = runtime.simulation.entities().get(gi).unwrap();
         assert!(
-            !actor.passenger_role.is_inside_transport(),
+            !actor.passenger_role().is_inside_transport(),
             "actual Unload releases GI, fired={fired_before_d}"
         );
         assert!(!actor.lifecycle.in_limbo());
@@ -608,7 +608,7 @@ fn retail_garrison_deploy_key_clears_target_before_releasing_real_occupants() {
                 .entities()
                 .get(house)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .occupants()
                 .is_empty()
         );

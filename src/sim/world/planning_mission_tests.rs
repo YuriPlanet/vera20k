@@ -581,7 +581,7 @@ fn retail_planned_enter_reaches_transport_and_bunker_adapters() {
                     .is_some_and(|entity| entity.bunker.occupant() == Some(actor))
             } else {
                 sim.entities().get(actor).is_some_and(|entity| {
-                    entity.passenger_role.inside_transport_id() == Some(target)
+                    entity.passenger_role().inside_transport_id() == Some(target)
                 })
             };
             if entered {
@@ -876,7 +876,7 @@ fn retail_planned_garrison_capture_and_self_unload_reach_passenger_owners() {
         if sim
             .entities()
             .get(actor)
-            .is_some_and(|e| e.passenger_role.inside_transport_id() == Some(building))
+            .is_some_and(|e| e.passenger_role().inside_transport_id() == Some(building))
         {
             break;
         }
@@ -885,7 +885,7 @@ fn retail_planned_garrison_capture_and_self_unload_reach_passenger_owners() {
         sim.entities()
             .get(actor)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport_id(),
         Some(building)
     );
@@ -903,7 +903,7 @@ fn retail_planned_garrison_capture_and_self_unload_reach_passenger_owners() {
         if sim
             .entities()
             .get(actor)
-            .is_some_and(|e| !e.passenger_role.is_inside_transport())
+            .is_some_and(|e| !e.passenger_role().is_inside_transport())
         {
             assert!(!sim.entities().get(actor).unwrap().lifecycle.in_limbo());
             return;

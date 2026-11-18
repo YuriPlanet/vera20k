@@ -792,7 +792,7 @@ impl Simulation {
         self.substrate
             .entities
             .get(attacker)
-            .is_some_and(|entity| entity.passenger_role.in_open_transport())
+            .is_some_and(|entity| entity.passenger_role().in_open_transport())
     }
 
     /// The erase (`0x0071A895..0x0071AB02`).
@@ -870,7 +870,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(target)
-                .is_some_and(|entity| entity.passenger_role.occupants().count() > 0)
+                .is_some_and(|entity| entity.passenger_role().occupants().count() > 0)
             {
                 crate::sim::passenger::garrison_eject::kill_building_occupants(
                     self,

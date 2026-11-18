@@ -1024,7 +1024,7 @@ pub(super) fn capability_cursor_for_hover(
         // passengers (+0x114) is 0, the arrow.
         let empty_aircraft = entity.category() == EntityCategory::Aircraft
             && entity
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .is_none_or(|cargo| cargo.count() == 0);
         return if entity.category() == EntityCategory::Structure || empty_aircraft {
@@ -3272,12 +3272,12 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         sim.entities_mut_for_test()
             .get_mut(house)
             .unwrap()
-            .passenger_role
+            .passenger_role_mut_for_test()
             .set_occupants_for_test(vec![gi], 0);
         sim.entities_mut_for_test()
             .get_mut(gi)
             .unwrap()
-            .passenger_role = PassengerRole::inside_for_test(house, false);
+            .set_passenger_role_for_test(PassengerRole::inside_for_test(house, false));
         assert!(rules.object("HOUSE").unwrap().primary().is_none());
         for (actor, y) in [(tower, 6), (house, 10)] {
             assert_eq!(
@@ -3494,19 +3494,19 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             sim.entities_mut_for_test()
                 .get_mut(house)
                 .unwrap()
-                .passenger_role
+                .passenger_role_mut_for_test()
                 .set_occupants_for_test(vec![gi], 0);
             sim.entities_mut_for_test()
                 .get_mut(gi)
                 .unwrap()
-                .passenger_role = PassengerRole::inside_for_test(house, false);
+                .set_passenger_role_for_test(PassengerRole::inside_for_test(house, false));
             let occupant = sim.entities().get(gi).unwrap();
             assert!(occupant.lifecycle.in_limbo());
             assert!(!occupant.lifecycle.cell_marked());
             assert!(!occupant.in_logic_vector.is_member());
             assert!(!sim.live_object_order_snapshot().contains(&gi));
             assert_eq!(
-                occupant.passenger_role.inside_transport(),
+                occupant.passenger_role().inside_transport(),
                 Some((house, false))
             );
             let target = if cell_route {
@@ -3549,7 +3549,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                     actor.mission_leaf,
                     actor.building_body_state(),
                     actor.queued_building_body_state(),
-                    actor.passenger_role.cargo(),
+                    actor.passenger_role().cargo(),
                     actor.rearm_timer.timer(),
                     actor.passive_scan.timer(),
                     actor.passive_scan.acquired(),

@@ -294,7 +294,12 @@ impl RetailParachuteScene {
             .collect();
         assert_eq!(planes.len(), 1);
         let plane = planes[0];
-        let passengers = plane.passenger_role.cargo().unwrap().passengers().to_vec();
+        let passengers = plane
+            .passenger_role()
+            .cargo()
+            .unwrap()
+            .passengers()
+            .to_vec();
         assert_eq!(passengers.len(), PAYLOAD, "physical American payload");
         for &id in &passengers {
             let passenger = sim.entities().get(id).unwrap();
