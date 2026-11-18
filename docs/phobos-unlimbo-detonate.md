@@ -84,10 +84,23 @@ it back.
 
 ## Residuals
 
-- `TechnoExt::OnParachuted` (`Hooks.DetonateLogics.cpp:556-560`) has no VERA
-  consumer: `raise_falling_down` sets `IsFallingDown` alone. Trigger: a
-  detonation while the bullet's target is airborne; effect: the reappearing
-  firer never takes the unported `FallingDownDamage`/parachute behavior.
+- `TechnoExt::OnParachuted` **is ported** (`Ext/Techno/Body.h:80`):
+  `ObjectFallState::on_parachuted` (`sim/object_fall.rs`) carries the latch;
+  the airborne reappear sets it next to `raise_falling_down`
+  (`Ext/Bullet/Hooks.DetonateLogics.cpp:607-610`), and the paradrop spawn sets
+  it right after `SpawnParachuted` returns true
+  (`Ext/Techno/Hooks.cpp:1907`, `sim/aircraft/drop_payload.rs`). The
+  falling-down landing arm reads and clears it on every Techno, before the
+  `IsABomb` gate (`Ext/Techno/Hooks.cpp:1030-1031`), and a set flag leaves the
+  damage packet at 0 so neither the EMP arm nor the `FallingDownDamage`
+  ratio runs (`:1067-1084`). Tests:
+  `sim::movement::parachute_descent::falling_damage_tests::
+  a_parachuted_landing_skips_the_falling_down_ratio` and
+  `sim::superweapon::paradrop_tests::
+  a_paradropped_passenger_is_marked_on_parachuted`.
+  The other two Phobos set points — `Ext/Foot/Body.cpp:784` and
+  `Ext/TechnoType/Body.cpp:705` — live in the in-air branches Phobos rewrites
+  there, which VERA does not own; a fall raised through them stays unflagged.
 - `MapClass::Unselect_All` clearing: VERA clears remembered selections only
   when `apply_selection_snapshot` receives an empty set, while native clears
   on every `Unselect_All`, including the clear before a new non-empty

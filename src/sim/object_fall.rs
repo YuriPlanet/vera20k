@@ -27,6 +27,18 @@ pub(crate) struct ObjectFallState {
     #[cfg(feature = "phobos")]
     #[serde(default)]
     hover_shutdown: bool,
+    /// Phobos `TechnoExt::OnParachuted` (`Ext/Techno/Body.h:80`, saved at
+    /// `Ext/Techno/Body.cpp:1360`): the object was just issued as a parachute
+    /// fall, so the landing arm skips the `FallingDownDamage` ratio
+    /// (`Ext/Techno/Hooks.cpp:1030-1031` read and clear it before the
+    /// `IsABomb` arm, `:1067` gates the ratio block on it). Set by
+    /// `FootClass_Paradrop` (`:1907`), by the airborne reappear
+    /// (`Ext/Bullet/Hooks.DetonateLogics.cpp:607-610`) and by the two
+    /// in-air branches Phobos rewrites (`Ext/Foot/Body.cpp:784`,
+    /// `Ext/TechnoType/Body.cpp:705`).
+    #[cfg(feature = "phobos")]
+    #[serde(default)]
+    on_parachuted: bool,
 }
 
 impl ObjectFallState {
@@ -79,6 +91,26 @@ impl ObjectFallState {
     #[cfg(feature = "phobos")]
     pub(crate) fn take_hover_shutdown(&mut self) -> bool {
         std::mem::take(&mut self.hover_shutdown)
+    }
+
+    /// Phobos `TechnoExt::OnParachuted`, set by the paradrop spawn
+    /// (`Ext/Techno/Hooks.cpp:1907`) and by the airborne reappear
+    /// (`Ext/Bullet/Hooks.DetonateLogics.cpp:607-610`).
+    #[cfg(feature = "phobos")]
+    pub(crate) fn on_parachuted(&self) -> bool {
+        self.on_parachuted
+    }
+
+    #[cfg(feature = "phobos")]
+    pub(crate) fn mark_on_parachuted(&mut self) {
+        self.on_parachuted = true;
+    }
+
+    /// `Ext/Techno/Hooks.cpp:1030-1031`: the landing arm reads the flag and
+    /// clears it on every falling-down Techno, before the `IsABomb` gate.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn take_on_parachuted(&mut self) -> bool {
+        std::mem::take(&mut self.on_parachuted)
     }
 
     pub(crate) fn begin_bomb(&mut self) {

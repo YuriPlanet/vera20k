@@ -125,10 +125,14 @@ spawn callers pass their own house.
 ## Residuals (trigger · impact · frequency · risk)
 
 - **Fly/Jumpjet landing orders.** The `FlyLocomotion`/`JumpjetLocomotion`
-  blocks and the `IsFallingDown`/`OnParachuted` fallback after `Unlimbo` are
-  not modeled; a spawned air unit keeps its placement pose. Trigger: a
-  CreateUnit type whose spawned type is an Aircraft or Jumpjet. Frequency:
-  authored mods. Risk: movement behavior.
+  blocks are not modeled; a spawned air unit keeps its placement pose. The
+  `IsFallingDown`/`OnParachuted` half of that branch is covered by the
+  `OnParachuted` latch (`docs/phobos-unlimbo-detonate.md`), but the two in-air
+  branches that raise the fall (`Ext/Foot/Body.cpp:784`,
+  `Ext/TechnoType/Body.cpp:705`) are those Phobos locomotion blocks and stay
+  unported. Trigger: a CreateUnit type whose spawned type is an Aircraft or
+  Jumpjet. Frequency: authored mods. Risk: movement behavior; no fall damage
+  is taken, since no fall starts.
 - **`allowBridges`.** Native tests `GroundType[Clear].Cost[SpeedType] > 0`;
   VERA treats every non-Winged speed type (Aircraft uses Wheel, as native
   does) as bridge-capable. Trigger: a type whose Clear cost is zero.
