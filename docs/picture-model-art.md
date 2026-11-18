@@ -430,6 +430,11 @@ current: say what was done, what was not, and what comes next.
   rerun with the camera moved.
 - Next: model validation (a glb vehicle in a match). It needs a glb; port
   `asset export-mesh` from `feature/mesh-render` (VXL to glb) for that.
+- `asset export-model <NAME> [--palette P] [--out DIR] [--theater T]`
+  (`asset_tools::verb_export_model`), written, not yet compiled: VXL body,
+  turret and barrel at HVA frame 0 as `body`/`turret`/`barrel` nodes of
+  exposed voxel faces, palette `COLOR_0`, table normals, house colour by
+  `NAME.mask.png`; reports the `ModelSize=` that keeps the VXL's tilt sizes.
 
 ### Next steps, in order
 

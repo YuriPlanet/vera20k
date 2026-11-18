@@ -33,6 +33,7 @@ pub enum Verb {
     Archives,
     Extract { name: String },
     ExportPicture { name: String },
+    ExportModel { name: String },
     CsfGet { key: String },
     CsfGrep { text: String },
     Sound { name: String },
@@ -84,8 +85,8 @@ pub struct Cli {
     pub ini_strict: bool,
     pub ini_source_only: bool,
     pub ini_max_depth: usize,
-    /// `export-picture --theater`: the theater whose archives are mounted
-    /// before the SHP is looked up (TEMPERATE, SNOW, URBAN, DESERT,
+    /// `export-picture` and `export-model --theater`: the theater whose
+    /// archives are mounted before the SHP or VXL is looked up (TEMPERATE, SNOW, URBAN, DESERT,
     /// NEWURBAN, LUNAR).
     pub theater: Option<String>,
 }
@@ -120,6 +121,10 @@ VERBS
                        Picture= (docs/picture-model-art.md). --palette, --out,
                        --theater <T> (tem, sno, urb, lun, des, ubn) to reach
                        a theater's archives.
+  export-model <NAME>  Write NAME.VXL with NAMETUR/NAMEBARL and their HVAs as
+                       model art (NAME.glb, mask) for Model=, and suggest
+                       ModelSize= (docs/picture-model-art.md). --palette,
+                       --out, --theater.
   csf-get <KEY>        One string-table entry, with its normalisation flagged.
   csf-grep <TEXT>      Search keys and values of the string table.
   sound <NAME>         One audio-bag entry; --wav decodes it.
@@ -350,6 +355,9 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
         },
         "export-picture" => Verb::ExportPicture {
             name: require_target(target, "export-picture", "<NAME>")?,
+        },
+        "export-model" => Verb::ExportModel {
+            name: require_target(target, "export-model", "<NAME>")?,
         },
         "csf-get" => Verb::CsfGet {
             key: require_target(target, "csf-get", "<KEY>")?,
@@ -584,7 +592,10 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
             }
             "--theater" => {
                 let theater = value(&mut args, "--theater")?;
-                if matches!(cli.verb, Verb::ExportPicture { .. }) {
+                if matches!(
+                    cli.verb,
+                    Verb::ExportPicture { .. } | Verb::ExportModel { .. }
+                ) {
                     cli.theater = Some(theater_name(&theater));
                 } else {
                     cli.art.theater = theater;
@@ -712,6 +723,7 @@ fn flag_not_valid(flag: &str, verb: &Verb) -> String {
         Verb::Archives => "archives",
         Verb::Extract { .. } => "extract",
         Verb::ExportPicture { .. } => "export-picture",
+        Verb::ExportModel { .. } => "export-model",
         Verb::CsfGet { .. } => "csf-get",
         Verb::CsfGrep { .. } => "csf-grep",
         Verb::Sound { .. } => "sound",
