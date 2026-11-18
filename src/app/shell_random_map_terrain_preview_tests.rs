@@ -194,7 +194,7 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
         Some(directory.path()),
     );
     let pcx = crate::assets::pcx_file::PcxFile::from_bytes(
-        &std::fs::read(directory.path().join(RANDMAP_PREVIEW_FILE)).unwrap(),
+        &std::fs::read(directory.path().join(RANDMAP_PREVIEW)).unwrap(),
     )
     .unwrap();
     let rgb: Vec<_> = preview

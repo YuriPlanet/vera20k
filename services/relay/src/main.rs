@@ -1,4 +1,4 @@
-//! Small UDP-only relay. No retail assets, simulation engine, client identity
+//! UDP gameplay relay. No retail assets, simulation engine, client identity
 //! database or lobby bearer credentials are present in this process.
 
 use std::io;
@@ -51,7 +51,7 @@ impl TrafficCounts {
 
     fn report(&self, seconds: u64, rooms: usize, ordering: OrderingCounts, mac: MacFailureCounts) {
         eprintln!(
-            "VERA20k relay interval_s={seconds} rooms={rooms} slowdowns={} raises={} catching_up_s={} received={} forwarded={} send_errors={} malformed={} authentication={} expired={} replay={} unregistered={} full={} rate_limited={} counter_exhausted={} entropy_unavailable={} pushed={} pushed_bytes={} pull_replies={} desyncs={} start_mismatches={} push_packets={:?} push_bytes={:?} piggybacked_records={} down_lost={} retransmitted_records={} readers_avg={:?} offline_unsent={} mac_failures={} unknown_sessions={} session_alerts={}",
+            "VERA20k relay interval_s={seconds} rooms={rooms} slowdowns={} raises={} catching_up_s={} received={} forwarded={} send_errors={} malformed={} authentication={} expired={} replay={} unregistered={} full={} rate_limited={} counter_exhausted={} entropy_unavailable={} pushed={} pushed_bytes={} pull_replies={} desyncs={} start_mismatches={} outcome_handoff_drops={} push_packets={:?} push_bytes={:?} piggybacked_records={} down_lost={} retransmitted_records={} readers_avg={:?} offline_unsent={} mac_failures={} unknown_sessions={} session_alerts={}",
             ordering.slowdowns,
             ordering.raises,
             ordering.catching_up_s,
@@ -72,6 +72,7 @@ impl TrafficCounts {
             ordering.pull_replies,
             ordering.desyncs,
             ordering.start_mismatches,
+            ordering.outcome_handoff_drops,
             ordering.push_packets,
             ordering.push_bytes,
             ordering.piggybacked_records,
@@ -102,6 +103,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(PathBuf::from)
         .ok_or("relay journal requires STATE_DIRECTORY or VERA_RELAY_STATE_DIR")?;
     let mut server = RelayServer::with_journal(SecretKey::new(key), 1024, &state_dir)?;
+    let mut reporter = vera20k_relay::Reporter::configured(&state_dir)?;
+    if reporter.is_some() {
+        server.enable_federation_outcomes();
+    }
     let mut buffer = [0u8; MAX_DATAGRAM + 1];
     let mut counts = TrafficCounts::default();
     let mut reported_at = Instant::now();
@@ -125,6 +130,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut counts,
                 server.drain_federation(monotonic_ms, now),
             );
+            if let Some(reporter) = &mut reporter {
+                reporter.poll(&mut server);
+            }
             let pushed = server.drain_ordering_push(monotonic_ms, now);
             counts.pushed += pushed.len() as u64;
             counts.pushed_bytes += pushed

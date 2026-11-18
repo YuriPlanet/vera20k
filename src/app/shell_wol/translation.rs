@@ -13,8 +13,17 @@ use crate::ui::lan_shell::LanChatLine;
 /// line's prefix and colour, or as a match message row from its sender.
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) enum TranslatedLine {
-    Wol { prefix: Vec<u16>, color: u32 },
-    Match { name: String, color: i32 },
+    /// `visit`: a line of the public lobby a visitor looks round from their
+    /// room, which goes to the lobby page while they still do.
+    Wol {
+        prefix: Vec<u16>,
+        color: u32,
+        visit: bool,
+    },
+    Match {
+        name: String,
+        color: i32,
+    },
 }
 
 /// A line another player wrote reached the screen. If the chosen language
@@ -52,15 +61,21 @@ pub(super) fn show(state: &mut AppState, line: TranslatedLine, reply: &ChatReply
     let translated = without_note(&reply.text);
     let in_match = super::in_match(state);
     match line {
-        TranslatedLine::Wol { mut prefix, color } if !in_match => {
+        TranslatedLine::Wol {
+            mut prefix,
+            color,
+            visit,
+        } if !in_match => {
             prefix.extend(MARKER.encode_utf16().chain(translated.encode_utf16()));
-            crate::app::shell_lan::append_chat(
-                state,
-                LanChatLine {
-                    text: prefix,
-                    color,
-                },
-            );
+            let line = LanChatLine {
+                text: prefix,
+                color,
+            };
+            if !visit {
+                crate::app::shell_lan::append_room_chat(state, line);
+            } else if super::lobby::visiting(state) {
+                crate::app::shell_lan::append_wol_lobby_chat(state, line, None);
+            }
             state.platform.window.request_redraw();
         }
         TranslatedLine::Match { name, color } if in_match => {

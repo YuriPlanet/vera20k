@@ -140,9 +140,6 @@ const SHELL_CURSOR_DEPTH: f32 = 0.00001;
 const SHELL_BUTTON_TEXT_RGB_00000C05: [f32; 3] = [5.0 / 255.0, 12.0 / 255.0, 0.0];
 const SHELL_LABEL_TEXT_RGB: [f32; 3] = [1.0, 1.0, 0.0];
 const SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F: [f32; 3] = [0x9F as f32 / 255.0, 0.0, 0.0];
-const RANDMAP_SENTINEL_FILE_NAME: &str = "RandMap.Sed";
-
-const RANDMAP_PREVIEW_FILE_NAME: &str = "RandMap.img";
 const COMBODROPWIN_TEXT_INSET_X: i32 = 3;
 const COMBODROPWIN_TEXT_TRUNCATION_SCROLLBAR_RESERVE_PX: i32 = 20;
 // Owner-draw packed colors are 0x00BBGGRR. Runtime DirectDraw conversion is

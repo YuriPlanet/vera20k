@@ -3,7 +3,7 @@
 //! chat boxes write, and the chat packet `0x0C`'s send and receive.
 //!
 //! The MessageList edit itself is `ui::messages`. A send queues
-//! [`NetworkLoadingRequest::Chat`](crate::app::match_runtime::session::NetworkLoadingRequest),
+//! [`NetworkSendRequest::Chat`](crate::app::match_runtime::session::NetworkSendRequest),
 //! which `lan_service`'s match-request drain sends as packet `0x0C`; a
 //! received `0x0C` comes through `lan_service`'s global demux to
 //! [`receive_packet`].

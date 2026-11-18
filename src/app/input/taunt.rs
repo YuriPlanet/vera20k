@@ -4,7 +4,7 @@
 //! not EventClass records and not part of lockstep.
 //!
 //! A send queues
-//! [`NetworkLoadingRequest::Taunt`](crate::app::match_runtime::session::NetworkLoadingRequest),
+//! [`NetworkSendRequest::Taunt`](crate::app::match_runtime::session::NetworkSendRequest),
 //! which `lan_service`'s match-request drain sends as packet `0x1D` with the
 //! sender's name, colour (`+0x31`) and game-name hash (`+0x35`); a received
 //! `0x1D` comes through `lan_service`'s global demux to [`receive`]. Playback

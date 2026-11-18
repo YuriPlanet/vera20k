@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_fixture::unhex;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -62,14 +63,6 @@ fn corpus() -> Corpus {
         "tools/storage_oracle/lan_event_packets.json",
     ))
     .expect("native Event packet corpus")
-}
-
-fn unhex(text: &str) -> Vec<u8> {
-    assert!(text.len().is_multiple_of(2));
-    text.as_bytes()
-        .chunks_exact(2)
-        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
-        .collect()
 }
 
 fn record(text: &str, fill: u8) -> CommandRecord {

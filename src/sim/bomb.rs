@@ -1006,8 +1006,9 @@ impl Simulation {
     /// (`TargetClass::As_Techno`) drops its planning tokens
     /// (`TechnoClass::ClearPlanningTokens`, [`Self::planning_detach_actor`]),
     /// then its bomb, if any, goes off ([`Self::bomb_detonate`]). The event's
-    /// house and the carrier's owner are not asked. Answers whether a bomb
-    /// went off.
+    /// house and the carrier's owner are not asked here; online, the VERA
+    /// network gate (`network_command_actor_foreign`) has already refused
+    /// another House's bomb. Answers whether a bomb went off.
     pub(crate) fn execute_detonate_event(
         &mut self,
         carrier: u64,

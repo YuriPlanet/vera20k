@@ -50,6 +50,8 @@ pub enum NetworkInterruption {
     /// which a player leaving does.
     #[error("another player left before the match started")]
     StartCancelled,
+    #[error("the game servers lost contact with each other")]
+    FederationLost,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -334,7 +336,15 @@ impl<'a> NetworkCommandQueues<'a> {
     /// Decoder64BDD0 admits each expanded event immediately. A false return
     /// preserves the already admitted prefix and lets the decoder report its
     /// native queue-full failure; no rollback or silent eviction is permitted.
+    ///
+    /// VERA network admission, alike on every client: a received plan
+    /// dispatch is dropped as if admitted, since each client generates its
+    /// own. gamemd runs one, so a peer could clear any actor's dispatch latch
+    /// (`0x006386E0`).
     pub fn admit_received(&mut self, record: CommandRecord) -> bool {
+        if super::planning::planning_dispatch_record(&record) {
+            return true;
+        }
         self.sim.admit_native_command_record(record)
     }
 }
@@ -517,6 +527,22 @@ mod tests {
                 .iter()
                 .all(|entry| !entry.is_processed())
         );
+    }
+
+    /// A peer's plan dispatch (MEGAMISSION flag 2) never reaches DoList and
+    /// is not a queue-full failure; a plan append (flag 1) still is admitted.
+    #[test]
+    fn received_plan_dispatch_is_dropped() {
+        let mut sim = Simulation::new();
+        let mut record =
+            CommandRecord::encode(crate::sim::command::MEGAMISSION_OPCODE, 0, 7, &[]).unwrap();
+        record.payload_mut()[22] = 2;
+        let mut queues = NetworkCommandQueues::new(&mut sim);
+        assert!(queues.admit_received(record.clone()));
+        assert_eq!(queues.synchronized_len(), 0);
+        record.payload_mut()[22] = 1;
+        assert!(queues.admit_received(record));
+        assert_eq!(queues.synchronized_len(), 1);
     }
 }
 

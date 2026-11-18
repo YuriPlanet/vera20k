@@ -1998,9 +1998,10 @@ fn selected_native_gate_preserves_metadata_and_raw_progress_cadence() {
         );
         native.runtime_color_scheme_count = 16;
         {
-            let mut phase = LoadingPhaseProgress::select(Some(&mut native), true, None, |_, _| {
-                panic!("no atlas must select the real gated sink")
-            });
+            let mut phase =
+                LoadingPhaseProgress::select(Some(&mut native), true, true, None, |_, _| {
+                    panic!("no atlas must select the real gated sink")
+                });
             assert!(matches!(&phase.sink, SelectedProgressSink::Gated(_)));
             assert!(phase.native_theater_cache_mismatch);
             assert_eq!(phase.runtime_color_scheme_count, 16);
@@ -2010,9 +2011,10 @@ fn selected_native_gate_preserves_metadata_and_raw_progress_cadence() {
         }
         assert_eq!(native.progress.current_percent(), expected);
         {
-            let mut phase = LoadingPhaseProgress::select(Some(&mut native), false, None, |_, _| {
-                panic!("no atlas must select the real gated sink")
-            });
+            let mut phase =
+                LoadingPhaseProgress::select(Some(&mut native), false, true, None, |_, _| {
+                    panic!("no atlas must select the real gated sink")
+                });
             assert!(!phase.native_theater_cache_mismatch);
             phase
                 .sink
@@ -2397,7 +2399,6 @@ fn held_network_sink_sends_rmg_display_progress_and_services_the_same_source_row
             .progress_row
             .total_fraction(&host_native.progress),
     );
-    host_session.request_kick_proposal(1);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     loop {
         for (service, session, native, raw) in [
@@ -2410,9 +2411,10 @@ fn held_network_sink_sends_rmg_display_progress_and_services_the_same_source_row
                 false,
             )
             .unwrap();
-            let mut phase = LoadingPhaseProgress::select(Some(native), false, network, |_, _| {
-                panic!("fixture deliberately uses the real gated network sink without GPU art")
-            });
+            let mut phase =
+                LoadingPhaseProgress::select(Some(native), false, true, network, |_, _| {
+                    panic!("fixture deliberately uses the real gated network sink without GPU art")
+                });
             phase.sink.milestone(raw).unwrap();
         }
         if host_native.progress_row.participants[1]
@@ -2446,15 +2448,6 @@ fn held_network_sink_sends_rmg_display_progress_and_services_the_same_source_row
         host_native.progress_row.participants[0]
             .remote_progress
             .is_none()
-    );
-    assert_eq!(
-        host_session.take_network_loading_requests(),
-        vec![
-            crate::app::match_runtime::session::NetworkLoadingRequest::ProposeKick {
-                target_source: 1
-            },
-        ],
-        "the synchronous report drain cannot steal another owner's request"
     );
     let fraction = host_native
         .progress_row

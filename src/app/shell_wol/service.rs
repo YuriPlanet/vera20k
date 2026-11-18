@@ -80,6 +80,9 @@ pub(crate) enum WolApiStatus {
 pub(crate) struct WolLoginAccepted {
     /// The message of the day the login sink stores in `[0xB73AE0]`.
     pub(crate) motd: String,
+    /// VERA: the lobby lets a room's players visit the public lobby
+    /// (docs/lobby-protocol.md "Visiting the lobby").
+    pub(crate) lobby_visits: bool,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -139,6 +142,16 @@ pub(crate) enum WolServiceRequest {
     JoinChannel { channel: WolChannel, key: String },
     /// API+0x24: leave the current channel.
     LeaveChannel,
+    /// VERA: a game room's member also joins the public lobby to look round
+    /// it, staying in the room (docs/lobby-protocol.md "Visiting the lobby").
+    VisitLobby,
+    /// VERA: the visitor leaves the public lobby for their room.
+    EndVisit,
+    /// VERA: the lobby page's chat while visiting, to the visited lobby.
+    VisitChat { line: WolChatLine, to: Vec<String> },
+    /// VERA: the lobby page's action line while visiting, to the visited
+    /// lobby.
+    VisitEmote { text: Vec<u16>, to: Vec<String> },
     /// VERA HTTPS cleanup intent when the visit returns while its live service
     /// is borrowed by a callback. The same service owns the match/finish ID.
     MatchReturned,
@@ -284,10 +297,6 @@ pub(crate) enum WolServiceEvent {
     /// Event 1 (server sink `0x007A41C0`), or its negative result (event 0
     /// with `TXT_NO_SERV_LIST`).
     ServerList(Result<WolServerList, ()>),
-    /// Event 8: the patch download finished (`0x00797640` returns 2). Only a
-    /// patching service sends it; the capture provider has no patch.
-    #[cfg_attr(not(test), allow(dead_code))]
-    Interrupted,
     /// The login sink `0x007A5290`: 0 with the MOTD, or the result code.
     Login(Result<WolLoginAccepted, u32>),
     /// The channel-list sink: every record of one requested type.
@@ -308,6 +317,21 @@ pub(crate) enum WolServiceEvent {
     HostChanged {
         name: String,
         channel: Option<WolChannel>,
+    },
+    /// VERA: this player visits the public lobby from their game room
+    /// (`joined` marked `visit`).
+    VisitJoined(super::lobby::WolJoined),
+    /// VERA: another user joined the visited lobby.
+    VisitUserJoined(WolMember),
+    /// VERA: another user left the visited lobby.
+    VisitUserLeft(String),
+    /// VERA: a chat line in the visited lobby.
+    VisitMessage {
+        from: WolMember,
+        text: Vec<u16>,
+        private: bool,
+        action: bool,
+        sent_at: Option<u64>,
     },
     /// OnJoin for another user of the current channel.
     UserJoined(WolMember),
@@ -681,9 +705,11 @@ impl WolVisit {
                 self.last_error = Some("TXT_NO_SERV_LIST");
                 WolStep::Leave(-2)
             }
-            (Awaiting::Servers { .. }, WolServiceEvent::Interrupted) => WolStep::Leave(-1),
+            // Event 8, a finished patch download (`0x00797640` returns 2),
+            // has no source: no provider patches the game.
             (Awaiting::Connect { .. }, WolServiceEvent::Login(Ok(accepted))) => {
                 self.motd = Some(accepted.motd);
+                self.lobby_visits = accepted.lobby_visits;
                 self.authenticated = true;
                 // The connect clears [0xB77DC0] (0x007867E6) and the login
                 // sink [0xB77DC2] (0x007A559D).
@@ -978,6 +1004,29 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                     ansi,
                     options,
                     sent_at,
+                    visit: false,
+                },
+            );
+            return;
+        }
+        WolServiceEvent::VisitMessage {
+            from,
+            text,
+            private,
+            action,
+            sent_at,
+        } => {
+            super::lobby::message_received(
+                state,
+                super::lobby::ReceivedMessage {
+                    from,
+                    text,
+                    private,
+                    action,
+                    ansi: false,
+                    options: None,
+                    sent_at,
+                    visit: true,
                 },
             );
             return;
@@ -1049,6 +1098,9 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
         | WolServiceEvent::Joined(_)
         | WolServiceEvent::RoomReopened(_)
         | WolServiceEvent::HostChanged { .. }
+        | WolServiceEvent::VisitJoined(_)
+        | WolServiceEvent::VisitUserJoined(_)
+        | WolServiceEvent::VisitUserLeft(_)
         | WolServiceEvent::UserJoined(_)
         | WolServiceEvent::UserLeft(_)
         | WolServiceEvent::ChannelLeft
@@ -1184,19 +1236,14 @@ fn apply(state: &mut AppState, step: WolStep) {
     }
 }
 
-/// Login's persona load/save (`0x00786821..0x007868F9`) for native diagnostics.
-/// `persona::info_file` excludes modern visits; their nickname still needs
-/// validation here, including providers bypassing the HTTP worker.
+/// Login's persona load/save (`0x00786821..0x007868F9`) for native
+/// diagnostics; `persona::info_file` gives modern visits no file.
 fn connected_persona(
     file: Option<&WolInfoFile>,
     nickname: &str,
-    online: bool,
     server: Option<&str>,
     csf: &dyn Fn(&str) -> String,
-) -> anyhow::Result<WolPersona> {
-    if online {
-        crate::app::frontend::skirmish_session::validate_online_handle(nickname)?;
-    }
+) -> WolPersona {
     let mut persona =
         file.map_or_else(WolPersona::default, |file| file.load_persona(nickname, csf));
     // Modes 4 and 5 retain the connected server and save the named persona.
@@ -1206,7 +1253,7 @@ fn connected_persona(
             file.save_persona(&mut persona, nickname, csf);
         }
     }
-    Ok(persona)
+    persona
 }
 
 /// `0x007864C0`'s success continuation (`0x00786795..0x00786A48`), up to
@@ -1217,7 +1264,12 @@ fn connect_succeeded(state: &mut AppState) {
         visit.page = WolPage::Backdrop { wait: None };
     }
     // ReadMultiPlayerSettings 0x006980C0.
-    App::prepare_multiplayer_settings(state);
+    if !App::prepare_multiplayer_settings(
+        state,
+        crate::app::match_runtime::session::SessionMode::Wol,
+    ) {
+        return;
+    }
     let nickname = state.frontend.wol_account.nickname.clone();
     let visit = state.frontend.wol.as_ref().expect("WOL visit");
     let online = visit.provider == WolProvider::Online;
@@ -1230,11 +1282,17 @@ fn connect_succeeded(state: &mut AppState) {
     let persona = connected_persona(
         file.as_ref(),
         &nickname,
-        online,
         server.as_ref().map(WolServer::persona_server),
         &|key| resolve(state, key),
     );
-    let Ok(persona) = persona else {
+    // The nickname becomes the session handle [0xA8B380], the persona's
+    // Country and Color the MultiPlayer picks, and WriteMultiPlayerSettings
+    // 0x006990A0 saves them. An online name is the handle owner's to admit.
+    let runtime = &mut state.frontend.multiplayer_shell_runtime;
+    if !online {
+        runtime.set_handle(&nickname);
+        runtime.set_side_and_color(persona.country, persona.color);
+    } else if runtime.accept_online_handle(&nickname).is_err() {
         if let Some(visit) = state.frontend.wol.as_mut() {
             visit.authenticated = false;
             visit.connected = false;
@@ -1249,20 +1307,6 @@ fn connect_succeeded(state: &mut AppState) {
             },
         );
         return;
-    };
-    // The nickname becomes the session handle [0xA8B380], the persona's
-    // Country and Color the MultiPlayer picks, and WriteMultiPlayerSettings
-    // 0x006990A0 saves them.
-    let runtime = &mut state.frontend.multiplayer_shell_runtime;
-    if online {
-        runtime
-            .accept_online_handle(&nickname)
-            .expect("online nickname admitted before persona access");
-    } else {
-        runtime.set_handle(&nickname);
-    }
-    if !online {
-        runtime.set_side_and_color(persona.country, persona.color);
     }
     runtime.persist_local_preferences();
     if let Some(file) = file {
@@ -1586,28 +1630,16 @@ mod tests {
     }
 
     #[test]
-    fn online_login_validates_without_persona_io_and_native_login_still_saves() {
+    fn native_login_saves_the_connected_server() {
         use crate::app::persistence::wol_profile::WOLINFO_INI;
         let directory = crate::map::source::test_support::TestDirectory::new("login-persona");
         let file = WolInfoFile::in_directory(directory.path());
-        let path = directory.path().join(WOLINFO_INI);
-        let nickname = "a]\r\n[Ask]\r\nAutoLogin=no\r\n[b";
         let csf = |key: &str| key.to_owned();
-        assert!(connected_persona(Some(&file), nickname, true, Some("Online"), &csf).is_err());
-        assert!(
-            !path.exists(),
-            "rejected identity must not create a profile"
+        directory.write(
+            WOLINFO_INI,
+            b"; retained profile\r\n[Ask]\r\nAutoLogin=yes\r\n",
         );
-        let previous = b"; retained profile\r\n[Ask]\r\nAutoLogin=yes\r\n";
-        directory.write(WOLINFO_INI, previous);
-        assert!(connected_persona(Some(&file), nickname, true, Some("Online"), &csf).is_err());
-        assert_eq!(std::fs::read(&path).unwrap(), previous);
-
-        // The production persona owner supplies no file for modern visits.
-        let persona = connected_persona(None, "Player_Alpha", true, Some("Online"), &csf).unwrap();
-        assert_eq!(persona.server, "Online");
-        assert_eq!(std::fs::read(&path).unwrap(), previous);
-        connected_persona(Some(&file), "Player_Alpha", false, Some("Legacy"), &csf).unwrap();
+        connected_persona(Some(&file), "Player_Alpha", Some("Legacy"), &csf);
         assert!(file.ask_auto_login());
         assert_eq!(file.load_persona("Player_Alpha", &csf).server, "Legacy");
     }
@@ -1715,11 +1747,6 @@ mod tests {
         );
         let mut visit = visit_waiting_servers();
         assert_eq!(
-            visit.reduce(WolServiceEvent::Interrupted),
-            WolStep::Leave(-1)
-        );
-        let mut visit = visit_waiting_servers();
-        assert_eq!(
             visit.reduce(WolServiceEvent::NetStatus(0x8004_0068)),
             WolStep::Message {
                 key: "TXT_CANT_CONNECT",
@@ -1782,7 +1809,8 @@ mod tests {
         };
         assert_eq!(
             visit.reduce(WolServiceEvent::Login(Ok(WolLoginAccepted {
-                motd: "Welcome".into()
+                motd: "Welcome".into(),
+                lobby_visits: false,
             }))),
             WolStep::Accepted
         );

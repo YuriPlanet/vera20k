@@ -344,6 +344,9 @@ impl RelayServer {
         let state = peer.evaluate_reader(now_ms);
         self.ordering_counts.reader_states[state.index()] += 1;
         let ordering = room.ordering.as_mut()?;
+        if ordering.federation_failed() {
+            return None; // Every UPLINK/PULL answers the terminal error after durable handoff.
+        }
         let push = peer.push.as_mut()?;
         if state == LinkState::Offline {
             // About one new pack per new head the reader misses.

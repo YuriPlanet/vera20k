@@ -487,6 +487,7 @@ fn relay_section_at(source: u8, sources_mask: u32, tick_hz: u16) -> String {
         tick_hz,
         expires: 86400,
         pacing: Default::default(),
+        ordered_alone: false,
     }
     .sign(&key)
     .unwrap();

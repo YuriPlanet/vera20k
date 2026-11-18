@@ -107,24 +107,10 @@ impl NetworkAiOptions {
     pub(crate) fn of(ai: &crate::skirmish_launch::SkirmishAiSlot) -> Self {
         Self {
             difficulty: ai.difficulty.as_i32(),
-            country: if ai.country_random {
-                -2
-            } else {
-                i32::from(ai.country.raw_index())
-            },
-            color: if ai.color_random {
-                -2
-            } else {
-                i32::from(ai.color_index)
-            },
-            start: match ai.start_position {
-                crate::skirmish_launch::LaunchStartPosition::Auto => -2,
-                crate::skirmish_launch::LaunchStartPosition::Position(index) => i32::from(index),
-            },
-            team: match ai.team {
-                crate::skirmish_launch::LaunchTeam::None => -2,
-                crate::skirmish_launch::LaunchTeam::Team(index) => i32::from(index),
-            },
+            country: ai.country_shell_value(),
+            color: ai.color_shell_value(),
+            start: ai.start_position.shell_value(),
+            team: ai.team.shell_value(),
         }
     }
 
@@ -202,7 +188,7 @@ impl NetworkMapMetadata {
     ///5E5500..5844: custom missing maps permit Accept and request transfer;
     /// RandMap.Sed bypasses physical availability.
     pub fn admission(&self, file: &str, local_present: bool) -> NetworkMapAdmission {
-        if local_present || file.eq_ignore_ascii_case("RandMap.Sed") {
+        if local_present || file.eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED) {
             NetworkMapAdmission::Present
         } else if self.official {
             NetworkMapAdmission::Unavailable
@@ -271,18 +257,11 @@ enum NetworkPhase {
     },
 }
 
+/// A packet the battle or the co-op round asks the LAN service to send.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum NetworkLoadingRequest {
-    ///69AE90's effective display percent; random-map milestones are already halved.
-    ReportProgress(i32),
-    Disconnect {
-        source_index: usize,
-        reason: i32,
-    },
+pub(crate) enum NetworkSendRequest {
     /// The kick proposal packet `0x1C` (0x0064AAE0) to every other node.
-    ProposeKick {
-        target_source: usize,
-    },
+    ProposeKick { target_source: usize },
     /// The in-battle chat packet `0x0C` (`0x0055EDBF..0x0055F04E`) to these
     /// participants. The packet's name and colour are the local player's.
     Chat {
@@ -291,19 +270,12 @@ pub(crate) enum NetworkLoadingRequest {
     },
     /// The taunt packet `0x1D` (`0x00536350`) to these participants; `byte`
     /// is `(country << 4) | n` at packet `+0x30`.
-    Taunt {
-        recipients: Vec<usize>,
-        byte: u8,
-    },
+    Taunt { recipients: Vec<usize>, byte: u8 },
     /// A beacon record `0x20`/`0x21` to every other node
     /// (`0x00430E0C..0x00430E4E`, `0x004313C2..0x004313F5`).
     Beacon(crate::net::lan_messages::ingame::BeaconRecord),
     /// A beacon label `0x22` to every other node (`0x0043165E..0x00431678`).
-    BeaconText {
-        house: i8,
-        slot: i8,
-        text: Vec<u16>,
-    },
+    BeaconText { house: i8, slot: i8, text: Vec<u16> },
     /// BC6's `0x26` to every node.
     CooperativeReady,
     /// BC6's `0x24` (Quit) to every node.
@@ -326,7 +298,10 @@ struct NetworkSession {
     /// The WOL start's tournament value and clan lists, taken at
     /// OnGameStart/Start Game Now for the accepted start.
     wol_start: WolStartTerms,
-    loading_requests: Vec<NetworkLoadingRequest>,
+    send_requests: Vec<NetworkSendRequest>,
+    /// 69AE90's effective display percents waiting for the LAN service;
+    /// random-map milestones are already halved.
+    loading_reports: Vec<i32>,
     /// Node addresses belong to the accepted participants, not discovery UI
     /// rows. Native node+28 is carried into697B70's House/connection binding.
     /// The IPv4 LAN adaptation uses the actual global-envelope source endpoint.
@@ -566,7 +541,8 @@ impl MatchSession {
         self.network = Some(NetworkSession {
             room: NetworkRoom::default(),
             wol_start: WolStartTerms::default(),
-            loading_requests: Vec::new(),
+            send_requests: Vec::new(),
+            loading_reports: Vec::new(),
             endpoints: Default::default(),
             map_metadata: None,
             local_map_source: None,
@@ -1367,10 +1343,7 @@ impl MatchSession {
             inactive_choices[index].team = native_network_row_defaults(&launch.mode, false).team;
             //5ED1B0 ->5EE510 runs after the clear above, including for Open
             //and Closed rows: the raw team array takes mode+2C last.
-            inactive_ai_options[index].team = match inactive_choices[index].team {
-                crate::skirmish_launch::LaunchTeam::None => -2,
-                crate::skirmish_launch::LaunchTeam::Team(team) => i32::from(team),
-            };
+            inactive_ai_options[index].team = inactive_choices[index].team.shell_value();
         }
         launch.ai_player_count = launch.opponents.len() as i32;
         launch.rebuild_house_roster();
@@ -1806,6 +1779,14 @@ impl MatchSession {
             "host options cannot replace admitted participant identity or source order"
         );
         validate_network_option_rows(&incoming)?;
+        // SpeedNormalize (`0x005FB2E0`) indexes its table's eight columns
+        // with the stored speed; the setup offers 0..=6 and VERA's 8.
+        anyhow::ensure!(
+            u8::try_from(incoming.options.game_speed)
+                .is_ok_and(crate::sim::game_options::is_selectable_game_speed),
+            "host game speed {} is not a selectable speed",
+            incoming.options.game_speed
+        );
         incoming.opponents.sort_by_key(|ai| ai.raw_slot_index);
         incoming.rebuild_house_roster();
         // A Teams count this build does not offer leaves Teams Off.
@@ -2806,10 +2787,7 @@ impl MatchSession {
         //5EE510 writes A8B2FC even for rows whose display pointer is human
         //or vacant.5E9E70's start reset affects controls, not A8B2DC.
         for raw in inactive_ai_options {
-            raw.team = match human_team {
-                crate::skirmish_launch::LaunchTeam::None => -2,
-                crate::skirmish_launch::LaunchTeam::Team(team) => i32::from(team),
-            };
+            raw.team = human_team.shell_value();
         }
         launch.rebuild_house_roster();
         candidate.keep_spectator_row()?;
@@ -3329,36 +3307,25 @@ impl MatchSession {
         assert_eq!(self.host, startup.host());
     }
 
-    pub(crate) fn take_network_loading_requests(&mut self) -> Vec<NetworkLoadingRequest> {
+    pub(crate) fn take_network_send_requests(&mut self) -> Vec<NetworkSendRequest> {
         self.network.as_mut().map_or_else(Vec::new, |network| {
-            std::mem::take(&mut network.loading_requests)
+            std::mem::take(&mut network.send_requests)
         })
     }
 
-    /// Borrowed synchronous loading drains only its own publications. All chat,
-    /// disconnect and other requests retain their existing FIFO/consumer.
+    /// Loading reports keep their own queue, so the held loader can send them
+    /// while the other requests wait for the ordinary service pass.
     pub(crate) fn take_network_loading_progress_reports(&mut self) -> Vec<i32> {
-        let mut reports = Vec::new();
-        if let Some(network) = self.network.as_mut() {
-            network.loading_requests.retain(|request| {
-                if let NetworkLoadingRequest::ReportProgress(percent) = request {
-                    reports.push(*percent);
-                    false
-                } else {
-                    true
-                }
-            });
-        }
-        reports
+        self.network.as_mut().map_or_else(Vec::new, |network| {
+            std::mem::take(&mut network.loading_reports)
+        })
     }
 
     pub(crate) fn report_network_loading_progress(&mut self, percent: i32) {
         if let Some(network) = self.network.as_mut()
             && matches!(network.phase, NetworkPhase::Frozen { .. })
         {
-            network
-                .loading_requests
-                .push(NetworkLoadingRequest::ReportProgress(percent));
+            network.loading_reports.push(percent);
         }
     }
 
@@ -3369,8 +3336,8 @@ impl MatchSession {
             && matches!(network.phase, NetworkPhase::Frozen { .. })
         {
             network
-                .loading_requests
-                .push(NetworkLoadingRequest::ProposeKick { target_source });
+                .send_requests
+                .push(NetworkSendRequest::ProposeKick { target_source });
         }
     }
 
@@ -3383,8 +3350,8 @@ impl MatchSession {
             )
         {
             network
-                .loading_requests
-                .push(NetworkLoadingRequest::Chat { recipients, text });
+                .send_requests
+                .push(NetworkSendRequest::Chat { recipients, text });
         }
     }
 
@@ -3396,8 +3363,8 @@ impl MatchSession {
             && matches!(network.phase, NetworkPhase::Frozen { .. })
         {
             network
-                .loading_requests
-                .push(NetworkLoadingRequest::Beacon(record));
+                .send_requests
+                .push(NetworkSendRequest::Beacon(record));
         }
     }
 
@@ -3406,8 +3373,8 @@ impl MatchSession {
             && matches!(network.phase, NetworkPhase::Frozen { .. })
         {
             network
-                .loading_requests
-                .push(NetworkLoadingRequest::BeaconText { house, slot, text });
+                .send_requests
+                .push(NetworkSendRequest::BeaconText { house, slot, text });
         }
     }
 
@@ -3416,8 +3383,8 @@ impl MatchSession {
             && matches!(network.phase, NetworkPhase::Frozen { .. })
         {
             network
-                .loading_requests
-                .push(NetworkLoadingRequest::Taunt { recipients, byte });
+                .send_requests
+                .push(NetworkSendRequest::Taunt { recipients, byte });
         }
     }
 
@@ -3487,15 +3454,12 @@ impl MatchSession {
             })
     }
 
-    /// `IPXManager::Delete_Connection 0x00540F00` and the node removal of
-    /// DestroyConnection (`0x005DAA8A`, `--[0xA8B54C]`): the participant
-    /// leaves the live membership and the transport is asked to drop it.
-    /// False when it is the local player or no longer connected.
-    pub(crate) fn disconnect_network_participant(
-        &mut self,
-        source_index: usize,
-        reason: i32,
-    ) -> bool {
+    /// DestroyConnection's node removal (`0x005DAA8A`, `--[0xA8B54C]`): the
+    /// participant leaves the live membership. Its private connection
+    /// (`IPXManager::Delete_Connection 0x00540F00`, called at `0x005DA85D`)
+    /// is removed by `network_match::destroy_connection`. False when it is
+    /// the local player or no longer connected.
+    pub(crate) fn disconnect_network_participant(&mut self, source_index: usize) -> bool {
         let Some(network) = self.network.as_mut() else {
             return false;
         };
@@ -3509,12 +3473,6 @@ impl MatchSession {
             return false;
         };
         connected.remove(position);
-        network
-            .loading_requests
-            .push(NetworkLoadingRequest::Disconnect {
-                source_index,
-                reason,
-            });
         true
     }
 
@@ -3534,7 +3492,8 @@ impl MatchSession {
         let network = self.network.as_mut()?;
         network.phase = NetworkPhase::Lobby;
         network.endpoints.clear();
-        network.loading_requests.clear();
+        network.send_requests.clear();
+        network.loading_reports.clear();
         network.map_metadata = None;
         network.local_map_source = None;
         network.local_map_effective_digest = None;
@@ -3919,9 +3878,19 @@ fn validate_network_rows(launch: &SkirmishLaunchSession) -> anyhow::Result<()> {
 
 /// A start's admission, shared by the first start and a co-op
 /// continuation: a consistent House roster, resolved assignments and an
-/// exact map.
+/// exact map. A Cooperative human sits in one of BC6's eight raw slots
+/// (`0x89E000[8]`), which the round after the mission indexes by row.
 fn admit_network_start_roster(launch: &SkirmishLaunchSession) -> anyhow::Result<()> {
     validate_network_rows(launch)?;
+    anyhow::ensure!(
+        !launch.mode.class.uses_cooperative_setup()
+            || launch
+                .humans
+                .iter()
+                .filter_map(|human| human.raw_slot_index)
+                .all(|row| usize::from(row) < crate::net::lan_messages::cooperative::ROWS),
+        "a Cooperative human sits past the round's eight rows"
+    );
     anyhow::ensure!(
         launch.house_roster_is_consistent(),
         "network House constructor cache disagrees with the participant roster"
@@ -4733,12 +4702,12 @@ mod tests {
             assert_eq!(session.network_connected_source_indices(), &[0, 1]);
             session.report_network_loading_progress(100);
             assert!(
-                !session.disconnect_network_participant(1, 1),
+                !session.disconnect_network_participant(1),
                 "local cannot time out itself"
             );
-            assert!(session.disconnect_network_participant(0, 1));
+            assert!(session.disconnect_network_participant(0));
             assert!(
-                !session.disconnect_network_participant(0, 1),
+                !session.disconnect_network_participant(0),
                 "disconnect is one-shot"
             );
             assert_eq!(session.network_connected_source_indices(), &[1]);
@@ -4747,16 +4716,7 @@ mod tests {
                 2,
                 "historical launch stays immutable"
             );
-            assert_eq!(
-                session.take_network_loading_requests(),
-                vec![
-                    super::NetworkLoadingRequest::ReportProgress(100),
-                    super::NetworkLoadingRequest::Disconnect {
-                        source_index: 0,
-                        reason: 1
-                    },
-                ]
-            );
+            assert_eq!(session.take_network_loading_progress_reports(), [100]);
             session.assert_network_start(prepared);
             assert_eq!(prepared.seed.value, 0x1234abcd);
             assert_eq!(prepared.launch_session().local_player_index, 1);
@@ -5532,6 +5492,35 @@ mod tests {
         session.set_network_player_ready(1, false).unwrap();
         assert!(session.network_player_ready(0));
         assert!(!session.network_player_ready(1));
+    }
+
+    #[test]
+    fn host_options_with_a_speed_the_setup_never_offers_are_refused() {
+        let mut session = MatchSession::default();
+        session.enter_network(super::NetworkReturnContext::LanLobby);
+        session
+            .accept_network_setup(network_fixture(), false, Some(7), false)
+            .unwrap();
+        let accepted = session.clone();
+        let vacancies = [super::NetworkVacancy::Open; 8];
+        let with_speed = |speed| {
+            let mut incoming = accepted.network_setup().unwrap().clone();
+            incoming.options.game_speed = speed;
+            incoming
+        };
+        for speed in [-1, 7, 9] {
+            assert!(
+                session
+                    .accept_network_host_setup(with_speed(speed), vacancies, 4, Some(7), false)
+                    .is_err(),
+                "speed {speed}"
+            );
+            assert_eq!(session, accepted);
+        }
+        session
+            .accept_network_host_setup(with_speed(8), vacancies, 4, Some(7), false)
+            .unwrap();
+        assert_eq!(session.network_setup().unwrap().options.game_speed, 8);
     }
 
     #[test]

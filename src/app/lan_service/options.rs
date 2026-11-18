@@ -572,10 +572,10 @@ fn projected_options(
         .iter()
         .map(|human| LanOptionsHuman {
             name: human.name.clone(),
-            country: super::country_value(human),
-            color: super::color_value(human),
-            start: start_value(human.slot.start_position),
-            team: team_value(human.slot.team),
+            country: human.slot.country_shell_value(human.is_observer()),
+            color: human.slot.color_shell_value(),
+            start: human.slot.start_position.shell_value(),
+            team: human.slot.team.shell_value(),
         })
         .collect();
     let ai = std::array::from_fn(|row| {
@@ -837,18 +837,6 @@ pub(super) fn decoded_choices(
     Ok(slot)
 }
 
-pub(super) fn start_value(start: LaunchStartPosition) -> i32 {
-    match start {
-        LaunchStartPosition::Auto => -2,
-        LaunchStartPosition::Position(index) => i32::from(index),
-    }
-}
-pub(super) fn team_value(team: LaunchTeam) -> i32 {
-    match team {
-        LaunchTeam::None => -2,
-        LaunchTeam::Team(index) => i32::from(index),
-    }
-}
 pub(super) fn decoded_difficulty(value: i32) -> Result<AiDifficulty> {
     match value {
         0 => Ok(AiDifficulty::Hard),

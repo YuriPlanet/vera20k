@@ -244,6 +244,9 @@ pub(crate) struct WolVisit {
     /// list of them last answered (docs/lobby-protocol.md "Watching"); `None`
     /// before the first answer.
     lobby_watches: Option<bool>,
+    /// VERA: the lobby lets a room's players visit the public lobby, as
+    /// its sign-in answered (docs/lobby-protocol.md "Visiting the lobby").
+    lobby_visits: bool,
     /// VERA: BC6's Continue after a co-op mission: the stage the kept
     /// room's host takes when the room comes back. The runner's post-match
     /// entry drops it unless it waits for that room.
@@ -315,6 +318,7 @@ impl WolVisit {
             back_to_room: false,
             problem_line: None,
             lobby_watches: None,
+            lobby_visits: false,
             cooperative_resume: None,
             connected: false,
             disconnected: false,
@@ -462,6 +466,16 @@ pub(crate) fn lobby_watches(state: &AppState) -> Option<bool> {
         .and_then(|visit| visit.lobby_watches)
 }
 
+/// VERA: whether the online lobby lets a room's players visit the public
+/// lobby, as its sign-in answered; a lobby from before it does not.
+pub(crate) fn lobby_visits(state: &AppState) -> bool {
+    state
+        .frontend
+        .wol
+        .as_ref()
+        .is_some_and(|visit| visit.lobby_visits)
+}
+
 /// A WOL box (`0x005E2CD0` style 0) with a CSF body.
 pub(crate) fn message_box(state: &AppState, key: &str) -> crate::ui::wol_shell::WolMessageBox {
     service::message_box(state, key, false)
@@ -500,6 +514,19 @@ pub(crate) fn hold_problem_line(state: &mut AppState, text: String) {
         && visit.provider == WolProvider::Online
     {
         visit.problem_line = Some(text);
+    }
+}
+
+/// VERA: add `text` to the line waiting for the chat this online visit next
+/// lands in, or let it wait alone.
+pub(crate) fn add_problem_line(state: &mut AppState, text: String) {
+    if let Some(visit) = state.frontend.wol.as_mut()
+        && visit.provider == WolProvider::Online
+    {
+        visit.problem_line = Some(match visit.problem_line.take() {
+            Some(held) => format!("{held} {text}"),
+            None => text,
+        });
     }
 }
 
@@ -568,6 +595,12 @@ pub(crate) fn reenter_after_match(state: &mut AppState) {
         visit.back_to_room = false;
     }
     live_service::match_returned(state);
+    if !App::prepare_multiplayer_settings(
+        state,
+        crate::app::match_runtime::session::SessionMode::Wol,
+    ) {
+        return;
+    }
     persona::enter_wol_main(state);
     read_wol_settings(state);
     let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();

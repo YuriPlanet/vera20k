@@ -210,6 +210,7 @@ fn run_room(options: &Options, key: &SecretKey, room_index: usize, started: Inst
         tick_hz: options.tick_hz,
         expires,
         pacing: Default::default(),
+        ordered_alone: false,
     }
     .sign(key)
     .expect("certificate");
