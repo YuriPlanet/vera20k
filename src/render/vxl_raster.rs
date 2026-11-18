@@ -445,8 +445,8 @@ fn voxel_draw_rotation_for_state(slope_type: u8, blend: Option<VxlSlopeBlend>, s
 }
 
 /// The double at `0x00B1D008`: model units per lepton
-/// ([`crate::map::voxel_pose::MODEL_UNITS_PER_LEPTON_BITS`]).
-use crate::map::voxel_pose::MODEL_UNITS_PER_LEPTON_BITS as TURRET_OFFSET_UNITS_PER_LEPTON;
+/// ([`crate::util::lepton::MODEL_UNITS_PER_LEPTON_BITS`]).
+use crate::util::lepton::MODEL_UNITS_PER_LEPTON_BITS as TURRET_OFFSET_UNITS_PER_LEPTON;
 
 /// `TurretOffset=` (`Type+0x720`) in model units, as `UnitClass::DrawVoxelBody`
 /// forms it before translating the turret along the hull's X column: `FILD`

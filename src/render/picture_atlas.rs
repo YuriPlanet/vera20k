@@ -274,7 +274,7 @@ impl GamePictureFrames {
                 }
             }
         }
-        (left < right).then_some(([left, top], [right - left, bottom - top]))
+        (left < right).then(|| ([left, top], [right - left, bottom - top]))
     }
 
     /// Frame `frame`'s rectangle `[x, y, w, h]` as `SHPStruct::GetFrameBounds`

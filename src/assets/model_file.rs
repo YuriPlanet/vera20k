@@ -339,12 +339,17 @@ fn slerp(a: [f32; 4], b: [f32; 4], u: f32) -> [f32; 4] {
     let (wa, wb) = if dot > 0.9995 {
         (1.0 - u, u)
     } else {
-        let theta = dot.min(1.0).acos();
-        let sin = theta.sin();
-        (((1.0 - u) * theta).sin() / sin, (u * theta).sin() / sin)
+        // `libm`: the same results on every platform, as any math whose
+        // results may reach shared state (AGENTS.md).
+        let theta = libm::acosf(dot.min(1.0));
+        let sin = libm::sinf(theta);
+        (
+            libm::sinf((1.0 - u) * theta) / sin,
+            libm::sinf(u * theta) / sin,
+        )
     };
     let out: [f32; 4] = std::array::from_fn(|lane| a[lane] * wa + b[lane] * wb);
-    let length = out.iter().map(|lane| lane * lane).sum::<f32>().sqrt();
+    let length = libm::sqrtf(out.iter().map(|lane| lane * lane).sum::<f32>());
     if length > 0.0 {
         out.map(|lane| lane / length)
     } else {

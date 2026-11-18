@@ -99,7 +99,7 @@ fn tilt_half_sizes(size_x: u8, size_y: u8) -> [f32; 2] {
 /// given the VXL section sizes it stands in for: `ModelSize=` leptons per body
 /// length along glTF +Z (forward), the same scale across glTF X, converted to
 /// voxels with the native model units per lepton (`0x00B1D008`,
-/// [`crate::map::voxel_pose::MODEL_UNITS_PER_LEPTON_BITS`]; one voxel is one
+/// [`crate::util::lepton::MODEL_UNITS_PER_LEPTON_BITS`]; one voxel is one
 /// model unit, as a section whose bounds span its size draws), rounded to
 /// whole voxels and held to a size byte's 1..=255:
 ///
@@ -117,7 +117,7 @@ pub fn model_tilt_half_sizes(
     if !(length.is_finite() && width.is_finite() && length > 0.0) {
         return None;
     }
-    let voxels_per_lepton = f64::from_bits(crate::map::voxel_pose::MODEL_UNITS_PER_LEPTON_BITS);
+    let voxels_per_lepton = f64::from_bits(crate::util::lepton::MODEL_UNITS_PER_LEPTON_BITS);
     let voxels = |leptons: f64| (leptons * voxels_per_lepton).round().clamp(1.0, 255.0) as u8;
     let model_size = f64::from(model_size);
     Some(tilt_half_sizes(

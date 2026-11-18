@@ -45,7 +45,7 @@
 //! as a `TUR.VXL` does.
 //!
 //! [`native_draw_bounds_from_extents`]: crate::render::vxl_raster::native_draw_bounds_from_extents
-//! [`MODEL_UNITS_PER_LEPTON_BITS`]: crate::map::voxel_pose::MODEL_UNITS_PER_LEPTON_BITS
+//! [`MODEL_UNITS_PER_LEPTON_BITS`]: crate::util::lepton::MODEL_UNITS_PER_LEPTON_BITS
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -250,7 +250,7 @@ impl Layout {
             .body_bounds()
             .map_or(1.0, |bounds| bounds.max[2] - bounds.min[2]);
         let units_per_lepton =
-            f64::from_bits(crate::map::voxel_pose::MODEL_UNITS_PER_LEPTON_BITS) as f32;
+            f64::from_bits(crate::util::lepton::MODEL_UNITS_PER_LEPTON_BITS) as f32;
         let scale = if length > 0.0 {
             declared.decl.size as f32 * units_per_lepton / length
         } else {
@@ -1542,7 +1542,7 @@ mod tests {
         let model = Arc::new(Model::from_glb(&glb).unwrap());
         let declared = DeclaredModel::for_test(model, 256);
         let layout = Layout::of(&declared);
-        let units = f64::from_bits(crate::map::voxel_pose::MODEL_UNITS_PER_LEPTON_BITS) as f32;
+        let units = f64::from_bits(crate::util::lepton::MODEL_UNITS_PER_LEPTON_BITS) as f32;
         let front = layout.to_voxels.transform_point3(Vec3::new(0.0, 0.0, 2.0));
         assert!((front.x - 128.0 * units).abs() < 1e-3, "{front}");
         let top = layout.to_voxels.transform_point3(Vec3::new(0.0, 0.5, 0.0));
