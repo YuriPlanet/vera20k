@@ -1620,7 +1620,7 @@ impl OrderingRoom {
         }
         state.pause_request = Some(request);
         // Capability agreement belongs to the admitted match principals, not
-        // short hop tickets. Legacy peers never advertise, so receive no marker.
+        // short hop tickets. Each source advertises once its match started.
         if self.supported_pause_sources() & self.active != self.active
             || self.starts_at.is_none_or(|start| start > now_ms)
             || request.expected_epoch != self.pause_epoch

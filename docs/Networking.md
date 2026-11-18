@@ -279,7 +279,7 @@ alone. The receiving client rebuilds the same canonical records, so journal,
 replay and federation are unchanged. Measured traffic is in
 `services/relay/adaptive-transport/results.md`.
 
-When every active player and the relay support synchronized pause, any player
+In a match played through one relay, any player
 can use the Pause key or Options' **Pause All Players** / **Resume All Players**
 button, or type `/pause` or `/resume` as a whole line in match chat. Such a line
 goes out as chat to its recipients like any other, so they read who asked; in a
@@ -297,8 +297,7 @@ running; accepted gameplay inputs wait for their assigned frames after resume.
 Opening Options alone remains local. After a resume nobody can pause again for
 30 seconds. Confirming Leave resumes as needed until the queued EXIT executes.
 Shared paused time is excluded from the score-screen duration.
-This feature requires updated clients and relay;
-it is unavailable in a mixed-version room or a direct LAN match.
+A direct LAN match and a match spread over several relays cannot pause.
 
 Pushed clients use a local adaptive playout schedule based on socket receipt
 timestamps. It starts with no added buffer and can reserve at most 20 ms or one

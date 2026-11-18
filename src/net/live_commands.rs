@@ -426,7 +426,8 @@ impl LiveCommandSession {
     }
 
     /// Shared pause is a relay timeline control, independent of local menus.
-    /// Unsupported or mixed-version matches leave it unavailable.
+    /// A direct LAN match has none, and one spread over several relays
+    /// leaves it unavailable.
     pub fn multiplayer_pause(&self) -> Option<MultiplayerPauseStatus> {
         self.sequenced
             .as_ref()
