@@ -1604,6 +1604,142 @@ pub(crate) fn receive_gunner(
 /// Gunner caller dispatch to UnitClass +4D8 (7464E0). RemoveGunner always
 /// selects mode0 after optional temporal return/LetGo, even with no gunner.
 impl Simulation {
+    /// Phobos `FootClass_SetDestination_OpenToppedFireWhileMoving`
+    /// (`Ext/Techno/Hooks.Transport.cpp:933-1000`, hook `0x4D9510`, the
+    /// NavCom publication in `FootClass::SetDestination`): a moving
+    /// `OpenTopped` Unit that carries passengers lets each passenger drop a
+    /// locomotion or temporal link it is holding when that link cannot be kept
+    /// while the carrier moves. A link stays only when the carrier's
+    /// `OpenTopped.FireWhileMoving` and the passenger's
+    /// `OpenTransport.FireWhileMoving` both allow firing, and either the
+    /// link's own weapon (`Warhead.IsLocomotor`, or `Warhead.Temporal`) is
+    /// marked `FireWhileMoving=yes` or the two keys say so.
+    ///
+    /// VERA calls this from [`Self::begin_foot_destination`] as soon as a
+    /// non-null destination is admitted — the same call, before the NavCom
+    /// write instead of after it; only the passengers' own destinations move,
+    /// so the order against the carrier's publication does not matter.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn phobos_open_topped_release_locks(
+        &mut self,
+        carrier: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        let Some(entity) = self.substrate.entities.get(carrier) else {
+            return;
+        };
+        if entity.category() != EntityCategory::Unit {
+            return;
+        }
+        let Some(object) = self.entity_object_type(entity, rules) else {
+            return;
+        };
+        if !object.open_topped {
+            return;
+        }
+        let Some(passengers) = entity
+            .passenger_role
+            .cargo()
+            .map(|cargo| cargo.passengers().to_vec())
+        else {
+            return;
+        };
+        if passengers.is_empty() {
+            return;
+        }
+        let carrier_allows = object.phobos_open_topped().fire_while_moving(rules);
+        let mut plans = Vec::new();
+        {
+            let world = &*self;
+            for passenger in passengers {
+                let Some(passenger_entity) = world.substrate.entities.get(passenger) else {
+                    continue;
+                };
+                let can_fire = carrier_allows
+                    && crate::sim::combat::fire_error_world::passenger_fire_while_moving(
+                        passenger_entity,
+                        rules,
+                        &world.interner,
+                    );
+                if let Some(target) = passenger_entity.lift.target() {
+                    let keep = can_fire
+                        && !world.phobos_fire_while_moving_forbids(
+                            passenger, target, true, rules,
+                        );
+                    if !keep {
+                        plans.push((passenger, true));
+                    }
+                }
+                if let Some(target) = passenger_entity.temporal.warp_target() {
+                    let keep = can_fire
+                        && !world.phobos_fire_while_moving_forbids(
+                            passenger, target, false, rules,
+                        );
+                    if !keep {
+                        plans.push((passenger, false));
+                    }
+                }
+            }
+        }
+        for (passenger, locomotion) in plans {
+            if locomotion {
+                self.release_locomotor(passenger, true, rules, registry, effects);
+            } else {
+                Self::temporal_let_go(
+                    &mut self.substrate,
+                    &mut self.houses,
+                    &mut self.power_states,
+                    passenger,
+                );
+            }
+        }
+    }
+
+    /// The weapon half of the hook above: the passenger's selected weapon
+    /// against `target` is an `IsLocomotor=` (or `Temporal=`) warhead and is
+    /// not `FireWhileMoving=yes`. A missing weapon keeps the link, as the
+    /// native `GetWeapon(...)->WeaponType` chain has nothing to read.
+    #[cfg(feature = "phobos")]
+    fn phobos_fire_while_moving_forbids(
+        &self,
+        passenger: u64,
+        target: u64,
+        locomotion: bool,
+        rules: &RuleSet,
+    ) -> bool {
+        let Some(entity) = self.substrate.entities.get(passenger) else {
+            return false;
+        };
+        let Some(object) = self.entity_object_type(entity, rules) else {
+            return false;
+        };
+        let facts = crate::sim::combat::combat_weapon::attacker_facts(entity, object);
+        let kind = crate::sim::combat::TargetKind::Entity(target);
+        let selected = crate::sim::combat::combat_weapon::select_weapon_against(
+            rules,
+            entity,
+            object,
+            &facts,
+            Some(&kind),
+            self,
+            &self.interner,
+            self.resolved_terrain.as_ref(),
+            Some(&self.house_alliances),
+        )
+        .and_then(|(_, selected)| selected);
+        let Some(selected) = selected else {
+            return false;
+        };
+        let link_warhead = if locomotion {
+            selected.warhead.is_locomotor
+        } else {
+            selected.warhead.temporal
+        };
+        link_warhead && !selected.weapon.fire_while_moving
+    }
+
     /// FootClass::RemovePassenger4DE670: the named Cargo4734B0 removal,
     /// optional LeaveTransportSound and empty-hold virtual RemoveGunner.
     /// The caller retains ownership of the passenger's carrier link until
