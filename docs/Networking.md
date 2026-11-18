@@ -1,8 +1,9 @@
 # Multiplayer behavior and ownership
 
 Windows, macOS and Linux builds provide LAN and online multiplayer through
-the normal game menus; Android builds play LAN ([Android](android.md#lan-play-on-android))
-and the browser's network package online ([browser networking](wasm-net.en.md)).
+the normal game menus; Android builds play LAN ([Android](android.md#lan-play-on-android)),
+and the browser's network package plays online and, built with `--lan`, LAN with other
+browsers only ([browser networking](wasm-net.en.md#lan-wasm-lan)).
 Both paths use the existing
 owners for session setup, synchronized commands, reliable UDP delivery, frame
 pacing, checksums, disconnects, results and rematches.
