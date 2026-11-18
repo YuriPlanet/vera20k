@@ -687,7 +687,7 @@ mod map_wall_owner_candidate_tests {
         sim.session_mut_for_test()
             .lighting_mut()
             .set_current_ambient_for_test(30);
-        sim.rebuild_lighting_sources_after_load(&rules);
+        sim.rebuild_lighting_sources_for_test(&rules);
         assert!(sim.lighting_sources().pending().is_empty());
         assert!(sim.lighting_sources().buildings()[&41].active);
         // A load reinstalls lighting through the world-presentation owner.

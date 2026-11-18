@@ -2454,7 +2454,7 @@ impl Simulation {
     /// attached entries. Non-resource cells keep the prior Convert. This is not
     /// the live AI's virtual coordinate minus384, and does not alter timers,
     /// intensity, depth, attachment or RNG.
-    pub fn refresh_animated_tiberium_after_load(
+    pub(crate) fn refresh_animated_tiberium_after_load(
         &mut self,
         rules: &RuleSet,
         overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,

@@ -119,7 +119,7 @@ pub(crate) enum PreparedLoadError {
     #[error(transparent)]
     Snapshot(#[from] SnapshotError),
     #[error(transparent)]
-    Restore(#[from] SnapshotRestoreError),
+    Restore(SnapshotRestoreError),
     #[error(transparent)]
     FactoryState(#[from] crate::sim::production::FactoryRestoreError),
     #[error("invalid saved sidebar order: {0}")]
@@ -136,6 +136,15 @@ pub(crate) enum PreparedLoadError {
     LocalView(#[from] crate::sim::snapshot::saved_local_view::SavedLocalViewError),
     #[error(transparent)]
     RadarEvents(#[from] crate::render::radar::SavedRadarEventsError),
+}
+
+impl From<SnapshotRestoreError> for PreparedLoadError {
+    fn from(error: SnapshotRestoreError) -> Self {
+        match error {
+            SnapshotRestoreError::Factory(source) => Self::FactoryState(source),
+            other => Self::Restore(other),
+        }
+    }
 }
 
 /// Fully validated, cache-rebuilt replacement state ready for one infallible commit.
@@ -268,29 +277,21 @@ impl PreparedLoad {
             terrain_template,
             current_simulation.terrain_speed_config().clone(),
             overlay_registry.ok_or(PreparedLoadError::MissingOverlayRegistry)?,
-            None,
-            None,
+            crate::sim::snapshot::PlayerSaveCells::FixtureBaseline,
         )
     }
 
     /// One world restore for production resource loads and headless fixtures.
     /// The caller supplies the incoming bound resources and only lends the
     /// current process RNG owners; no fresh scenario construction is replayed.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "bound resources and explicit user-file Cell values"
-    )]
     fn prepare_snapshot(
-        snapshot: GameSnapshot,
+        mut snapshot: GameSnapshot,
         process: crate::sim::world::SnapshotProcessState<'_>,
         rules: &RuleSet,
         terrain_template: ResolvedTerrainGrid,
         terrain_speed_config: crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig,
         overlay_registry: &OverlayTypeRegistry,
-        prepare_terrain_assets: Option<
-            &mut crate::sim::snapshot::SnapshotTerrainAssetPreparation<'_>,
-        >,
-        saved_land: Option<crate::map::resolved_terrain::SavedCellLandValues>,
+        cells: crate::sim::snapshot::PlayerSaveCells<'_, '_>,
     ) -> Result<Self, PreparedLoadError> {
         let saved_sidebar_order = snapshot.sidebar_order().cloned();
         let tactical_view = snapshot.tactical_view().cloned();
@@ -298,54 +299,21 @@ impl PreparedLoad {
             crate::app::input::camera::validate_saved_tactical_view(saved)
                 .map_err(PreparedLoadError::TacticalView)?;
         }
-        let mut simulation = snapshot.sim;
-        simulation.retain_process_state_for_load(process);
-        // Native MouseLoad->Resize reconstructs the dummy before subsequent
-        // LoadContent67E8CD hierarchy reads. The fallible candidate must see
-        // that state without touching the running match's retained identity.
-        simulation.bind_shared_cell_dummy(crate::map::resolved_terrain::SharedCellDummy::fresh());
-        simulation.reconstruct_cellclass_dummy_for_map_resize();
-        // InfantryLoad521A0C -> TechnoNoInit6F4335 resets the transition
-        // clock. This user-file seam is separate from internal continuations.
-        simulation.restart_cloak_progress_after_player_load();
-        simulation.reconstruct_building_repair_progress_after_player_load();
-        simulation.validate_ares_state_for_load(rules.ares())?;
-        simulation.restore_after_snapshot_load()?;
-        crate::sim::production::validate_restored_factory_state(&simulation, rules)?;
-        simulation.rebuild_caches_after_load(terrain_template, terrain_speed_config, rules);
-
-        let map_restore = match saved_land {
-            Some(saved_land) => simulation.restore_map_authority_after_user_load(
-                rules,
-                overlay_registry,
-                prepare_terrain_assets,
-                saved_land,
-            )?,
-            None => simulation.restore_map_authority_after_snapshot_load(
-                rules,
-                overlay_registry,
-                prepare_terrain_assets,
-            )?,
-        };
-        // Older headless saves may omit types that had never spawned. Add
-        // those canonical names without changing any saved ID, then build
-        // the handle table; a missing name must never become sidebar ID zero.
-        simulation.intern_rule_type_ids(rules);
-        simulation.resolve_type_handles(rules);
-        simulation.rebuild_lighting_sources_after_load(rules);
-        // Post_Load_Game6851AC/6851B1 reselects lighting, then refreshes the
-        // flagged Anim conversions from the incoming stored Locations.
-        simulation.reinitialize_lighting_after_user_load();
-        simulation
-            .refresh_animated_tiberium_after_load(rules, overlay_registry)
-            .map_err(SnapshotRestoreError::from)?;
+        let mut sinking_waterlines = std::mem::take(&mut snapshot.sinking_waterlines);
+        let mut anim_intensities = std::mem::take(&mut snapshot.anim_intensities);
+        let (simulation, map_restore) = snapshot.restore_player_world(
+            process,
+            rules,
+            terrain_template,
+            terrain_speed_config,
+            overlay_registry,
+            cells,
+        )?;
 
         // A render cache can retain an outgoing ID until its next sweep. Only
         // restored entity identities may re-enter the new presentation owner;
         // do not infer +3CA from current height or from the sinking byte.
-        let mut sinking_waterlines = snapshot.sinking_waterlines;
         sinking_waterlines.retain(|(id, _)| simulation.entities().contains(*id));
-        let mut anim_intensities = snapshot.anim_intensities;
         anim_intensities.retain(|(id, _)| simulation.anim(*id).is_some());
         // MouseLoad5BDF70 preserves the four strip lists; no-init5BE9B0
         // resets their progress only. Hydration is fallible and borrows no
@@ -1286,7 +1254,7 @@ mod tests {
             .base_reservations_mut_for_test()
             .reserve(None, -1, 0, 6);
         assert_ne!(simulation.state_hash(), accepted_hash);
-        simulation.reconstruct_cellclass_dummy_for_map_resize();
+        simulation.reconstruct_map_dummy_for_test();
         assert_eq!(simulation.base_reservations().dummy_mask(), 0);
         assert_eq!(
             simulation.state_hash(),
@@ -1423,7 +1391,9 @@ mod tests {
             let path = repository
                 .write_named(&format!("collision-{case_index}.bin"), &bytes)
                 .unwrap();
-            let mut outgoing = GameSnapshot::load(&bytes).unwrap().sim;
+            let mut outgoing = GameSnapshot::load(&bytes)
+                .unwrap()
+                .into_simulation_for_test();
             outgoing
                 .session_mut_for_test()
                 .set_current_house_for_test(Some(ai));

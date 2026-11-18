@@ -2261,11 +2261,9 @@ fn snapshot_restores_singleton_anchor_and_retained_layer_order_for_next_key() {
     ));
 
     let bytes = GameSnapshot::save_validated(&sim, 1, 2, "N/M continuation", 0);
-    let mut restored = GameSnapshot::load_validated(&bytes, 1, 2, &row.id)
+    let restored = GameSnapshot::load_validated(&bytes, 1, 2, &row.id)
         .expect("current VERA snapshot and matching content identity")
-        .sim;
-    restored
-        .restore_after_snapshot_load()
+        .restore_references_for_test()
         .expect("ordinary fixture references and retained membership");
     for index in 0..5 {
         let layer = DisplayLayer::from_index(index).unwrap();

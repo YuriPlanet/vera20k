@@ -255,7 +255,7 @@ fn sidebar_order_envelope_roundtrips_without_changing_simulation_hash() {
     assert_eq!(loaded.sidebar_order(), Some(&saved));
     assert_eq!(loaded.sidebar_order().unwrap().owner(), owner);
     assert_eq!(loaded.sinking_waterlines, [(7, -12)]);
-    assert_eq!(loaded.sim.state_hash(), hash);
+    assert_eq!(loaded.into_simulation_for_test().state_hash(), hash);
     let bytes = GameSnapshot::save_validated(
         &sim,
         LOAD_FIXTURE_MAP_HASH,
@@ -272,7 +272,7 @@ fn sidebar_order_envelope_roundtrips_without_changing_simulation_hash() {
     .unwrap();
     assert!(loaded.sidebar_order().is_none());
     assert!(loaded.sinking_waterlines.is_empty());
-    assert_eq!(loaded.sim.state_hash(), hash);
+    assert_eq!(loaded.into_simulation_for_test().state_hash(), hash);
 }
 
 #[test]
@@ -338,7 +338,7 @@ fn load_keeps_every_strip_order_and_shows_its_top_row() {
     )
     .unwrap();
     assert_eq!(loaded.sidebar_order(), Some(&saved));
-    assert_eq!(loaded.sim.state_hash(), hash);
+    assert_eq!(loaded.into_simulation_for_test().state_hash(), hash);
 
     let mut outgoing = scrolled_projection(owner, &candidates);
     let before = outgoing.saved_order();

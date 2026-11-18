@@ -156,8 +156,8 @@ fn ordinary_and_planned_hospital_clicks_enter_heal_and_exit_after_save_load() {
                 let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "hospital", 0);
                 sim = crate::sim::snapshot::GameSnapshot::load(&bytes)
                     .unwrap()
-                    .sim;
-                sim.restore_after_snapshot_load().unwrap();
+                    .restore_references_for_test()
+                    .unwrap();
                 sim.resolve_type_handles(&rules);
                 // Restore the same external32x32 map, not supply_native_map's
                 // default64x64 map (the snapshot's overlay plane is32x32).

@@ -130,15 +130,15 @@ impl PreparedSavedGame {
         saved.terrain().validate()?;
         if saved.terrain().dimensions()
             != (
-                snapshot.sim.session().map_width(),
-                snapshot.sim.session().map_height(),
+                snapshot.session().map_width(),
+                snapshot.session().map_height(),
             )
         {
             return Err(PreparedLoadError::Resources(
                 "saved terrain and scenario dimensions disagree".into(),
             ));
         }
-        let theater_name = snapshot.sim.session().theater().to_owned();
+        let theater_name = snapshot.session().theater().to_owned();
         let theater = theater::load_theater(assets, &theater_name).ok_or_else(|| {
             PreparedLoadError::Resources(format!("cannot load theater {theater_name}"))
         })?;
@@ -204,10 +204,6 @@ impl PreparedSavedGame {
             crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Saved,
         )
         .map_err(|error| PreparedLoadError::Resources(error.to_string()))?;
-        // The saved hash was checked above against the unchanged incoming
-        // Type state. TerrainTypeLoad71E22D now binds even a ctor-null list;
-        // carry that legitimate same-envelope mutation into runtime admission.
-        snapshot.rules_hash = rules.simulation_config_hash();
         // Only a live-value capture can run the native user-file Cell reset.
         // Baseline-only headless payloads remain on their separate adapter.
         let saved_land = saved.terrain().user_load_land_values()?;
@@ -255,8 +251,10 @@ impl PreparedSavedGame {
                 .clone(),
             terrain_speed,
             overlay_types,
-            Some(&mut bind_loaded_cells),
-            Some(saved_land),
+            crate::sim::snapshot::PlayerSaveCells::Saved {
+                land: saved_land,
+                prepare_assets: &mut bind_loaded_cells,
+            },
         )?;
         resources
             .terrain_template
