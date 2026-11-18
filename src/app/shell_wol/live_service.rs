@@ -5658,9 +5658,10 @@ mod completion_tests {
         assert!(pending.answered_by(&json!({"launch":launch})));
     }
 
-    /// A guest who left the room, signed out or lost the lobby before the
-    /// host answered hears nothing more of it: the answer's time running out
-    /// restores no settings and shows no notice.
+    /// What `end_room` stops for a guest who left the room, signed out or
+    /// lost the lobby before the host answered: the answer's time running out
+    /// restores no settings and shows no notice. Its call sites need an
+    /// `AppState`, which unit tests cannot build.
     #[test]
     fn a_room_this_game_is_done_with_waits_for_no_answer() {
         let (mut service, _input, _output) = control_service(None);
