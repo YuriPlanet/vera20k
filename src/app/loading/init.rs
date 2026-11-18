@@ -2727,9 +2727,9 @@ pub(crate) fn load_map_initial_with_assets(
         } else {
             crate::map::rmg::build::GenerationObjects::tech(&tech_types, ares)
         };
-        let mut generated =
+        let run =
             crate::map::rmg::build::generate_map(&options, &settings, &resolved, &blocks, &objects);
-        generated.map_file.ini = synthetic_ini;
+        let generated = run.map();
         log::info!(
             "Random map generated: theater={}, {}x{}, seed={}, players={}",
             generated.map_file.header.theater,
@@ -2749,7 +2749,8 @@ pub(crate) fn load_map_initial_with_assets(
         }
 
         progress.milestone(8)?;
-        let mapgen_rng_continuation = generated.take_mapgen_continuation();
+        let (mut generated, mapgen_rng_continuation) = run.into_parts();
+        generated.map_file.ini = synthetic_ini;
         let generated_construction_trace = generated.construction_trace;
         return Ok(MapLoadInitial {
             map_data: generated.map_file,

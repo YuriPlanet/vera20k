@@ -570,6 +570,7 @@ impl LoadingRequest {
         ra2_dir: PathBuf,
         assets: &mut AssetManager,
         native_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
+        mapgen_retention: &mut crate::app::shell_random_map::RandomMapGenerationRetention,
         progress: &mut dyn LoadingProgressSink,
     ) -> anyhow::Result<init::RandomMapLaunchSnapshot> {
         let prepared = self.prepare(
@@ -577,7 +578,7 @@ impl LoadingRequest {
             assets,
             native_rules,
             None,
-            &mut Default::default(),
+            mapgen_retention,
             None,
             progress,
         )?;
