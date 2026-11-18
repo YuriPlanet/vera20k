@@ -223,8 +223,7 @@ pub(crate) struct FrontendState {
     /// Number of matches finished this session — the score screen's `Game: n`.
     /// gamemd increments the same counter as it tears the scenario down.
     pub(crate) finished_game_count: u32,
-    /// Which shell surface owns the MainMenu screen (F11): structural
-    /// exclusivity replaces the old boolean triple.
+    /// Which shell surface owns the MainMenu screen.
     pub(crate) shell_route: crate::app::shell_route::ShellRoute,
     /// Which screen is currently active (MainMenu, Loading, InGame).
     pub(crate) screen: GameScreen,
