@@ -135,20 +135,8 @@ impl GamePictureFrames {
     ) -> Option<PictureSprite> {
         let source = self.frames.get(frame)?;
         let width = self.canvas[0];
-        let drawn = |x: u32, y: u32| source.rgba[((y * width + x) * 4 + 3) as usize] != 0;
-        let (mut left, mut top, mut right, mut bottom) = (u32::MAX, u32::MAX, 0, 0);
-        for y in 0..self.canvas[1] {
-            for x in 0..width {
-                if drawn(x, y) {
-                    (left, top) = (left.min(x), top.min(y));
-                    (right, bottom) = (right.max(x + 1), bottom.max(y + 1));
-                }
-            }
-        }
-        if left >= right {
-            return None;
-        }
-        let size = [right - left, bottom - top];
+        let ([left, top], size) = self.drawn_rect(frame)?;
+        let (right, bottom) = (left + size[0], top + size[1]);
         let mut rgba = Vec::with_capacity((size[0] * size[1] * 4) as usize);
         let mut indices = Vec::with_capacity((size[0] * size[1]) as usize);
         for y in top..bottom {
@@ -176,6 +164,40 @@ impl GamePictureFrames {
             size,
             rgba,
             indices,
+        })
+    }
+
+    /// Frame `frame`'s drawn rectangle on the canvas, origin and size, as a
+    /// stored SHP frame's; None for a frame past the end or with nothing
+    /// drawn.
+    fn drawn_rect(&self, frame: usize) -> Option<([u32; 2], [u32; 2])> {
+        let source = self.frames.get(frame)?;
+        let width = self.canvas[0];
+        let drawn = |x: u32, y: u32| source.rgba[((y * width + x) * 4 + 3) as usize] != 0;
+        let (mut left, mut top, mut right, mut bottom) = (u32::MAX, u32::MAX, 0, 0);
+        for y in 0..self.canvas[1] {
+            for x in 0..width {
+                if drawn(x, y) {
+                    (left, top) = (left.min(x), top.min(y));
+                    (right, bottom) = (right.max(x + 1), bottom.max(y + 1));
+                }
+            }
+        }
+        (left < right).then_some(([left, top], [right - left, bottom - top]))
+    }
+
+    /// Frame `frame`'s rectangle `[x, y, w, h]` as `SHPStruct::GetFrameBounds`
+    /// (`0x0069E7E0`) reads a stored SHP frame's: all zero for an empty frame
+    /// or one past the end.
+    fn frame_bounds(&self, frame: usize) -> [i32; 4] {
+        self.drawn_rect(frame).map_or([0; 4], |(origin, size)| {
+            let word = |value: u32| i32::try_from(value).unwrap_or(i32::MAX);
+            [
+                word(origin[0]),
+                word(origin[1]),
+                word(size[0]),
+                word(size[1]),
+            ]
         })
     }
 
@@ -275,30 +297,55 @@ pub(crate) struct PlacedPicture {
     pub canvas_rect: [f32; 4],
 }
 
-/// The pictures one atlas build draws, each decoded and shrunk once, by art
-/// section. A picture that is missing or does not fit its canvas is logged
-/// once and draws nothing.
+/// Where an atlas key's frames are drawn from: the art section that declares
+/// `Picture=`, which gives the theater substitution and the log name, and the
+/// picture, the section's own `Picture=` or one a building's `Buildup=` or
+/// `BibShape=` names beside it.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct PictureSource {
+    pub section: String,
+    pub decl: crate::rules::art_data::PictureDecl,
+}
+
+impl PictureSource {
+    /// The picture `name` names beside this section's `Picture=`: `NAME.png`,
+    /// on the same `PictureSize=` canvas (a building's `Buildup=` and
+    /// `BibShape=`, `docs/picture-model-art.md`).
+    pub(crate) fn named(&self, name: &str) -> Self {
+        Self {
+            section: self.section.clone(),
+            decl: crate::rules::art_data::PictureDecl {
+                file: format!("{name}.png"),
+                size: self.decl.size,
+            },
+        }
+    }
+}
+
+/// The pictures one atlas build draws, each decoded and shrunk once, by
+/// [`PictureSource`]. A picture that is missing or does not fit its canvas is
+/// logged once and draws nothing.
 #[derive(Default)]
 pub(crate) struct PictureSources {
-    decoded: std::collections::HashMap<String, Option<GamePictureFrames>>,
+    decoded: std::collections::HashMap<PictureSource, Option<GamePictureFrames>>,
 }
 
 impl PictureSources {
-    /// `section`'s declared picture at game pixels, decoding it on first use.
+    /// `source`'s picture at game pixels, decoding it on first use.
     fn frames(
         &mut self,
+        source: &PictureSource,
         art: &crate::rules::art_data::ArtRegistry,
-        section: &str,
         asset_manager: &crate::assets::asset_manager::AssetManager,
         theater_name: &str,
     ) -> Option<&GamePictureFrames> {
-        let upper = section.to_ascii_uppercase();
         self.decoded
-            .entry(upper)
+            .entry(source.clone())
             .or_insert_with(|| {
-                let decl = art.get(section)?.picture.clone()?;
+                let section = source.section.as_str();
+                let decl = &source.decl;
                 let (file, bytes) = art
-                    .picture_candidates(section, &decl, theater_name)
+                    .picture_candidates(section, decl, theater_name)
                     .into_iter()
                     .find_map(|file| asset_manager.get_ref(&file).map(|bytes| (file, bytes)))?;
                 let mask_name = format!(
@@ -338,19 +385,23 @@ impl PictureSources {
             .as_ref()
     }
 
-    /// `key`'s frame of its type's picture, placed at the art's
-    /// `draw_offsets`, house colour in `ramp`; None when it draws nothing.
+    /// `key`'s frame of `source`, placed at the art's `draw_offsets`, house
+    /// colour in `ramp`; None when it draws nothing. `select_frame` picks the
+    /// frame drawn from the picture's frame count, as `render_shp_frame`
+    /// picks an SHP's.
     pub(crate) fn place(
         &mut self,
         key: &crate::render::sprite_atlas::ShpSpriteKey,
+        source: &PictureSource,
         art: &crate::rules::art_data::ArtRegistry,
         asset_manager: &crate::assets::asset_manager::AssetManager,
         theater_name: &str,
         draw_offsets: (i32, i32),
+        select_frame: impl FnOnce(usize) -> Option<usize>,
         ramp: Option<&[Color; RAMP_SIZE]>,
     ) -> Option<PlacedPicture> {
-        let frames = self.frames(art, &key.type_id, asset_manager, theater_name)?;
-        let sprite = frames.sprite(usize::from(key.frame), ramp)?;
+        let frames = self.frames(source, art, asset_manager, theater_name)?;
+        let sprite = frames.sprite(select_frame(frames.frame_count())?, ramp)?;
         let [width, height] = frames.canvas;
         // -ShapeWidth/2, truncated, as `render_shp_frame`.
         let left = -((width / 2) as f32) + draw_offsets.0 as f32;
@@ -365,6 +416,68 @@ impl PictureSources {
             sprite,
         })
     }
+
+    /// `BuildingTypeClass::GetRenderDimensions` (`0x00465570`) of a building
+    /// drawn from pictures: [`building_render_bounds`] of its `body`,
+    /// `buildup` and `bib` pictures. A buildup or bib picture that cannot be
+    /// drawn is left out, as an SHP the theater lacks; a body that cannot be
+    /// drawn gives the empty rectangle, as a missing body SHP does.
+    pub(crate) fn building_bounds(
+        &mut self,
+        art: &crate::rules::art_data::ArtRegistry,
+        asset_manager: &crate::assets::asset_manager::AssetManager,
+        theater_name: &str,
+        body: &PictureSource,
+        buildup: Option<&PictureSource>,
+        bib: Option<&PictureSource>,
+    ) -> [i32; 4] {
+        for source in [Some(body), buildup, bib].into_iter().flatten() {
+            self.frames(source, art, asset_manager, theater_name);
+        }
+        let Some(body) = self.decoded_frames(body) else {
+            return [0; 4];
+        };
+        building_render_bounds(
+            body,
+            buildup.and_then(|source| self.decoded_frames(source)),
+            bib.and_then(|source| self.decoded_frames(source)),
+        )
+    }
+
+    /// `source`'s picture if [`Self::frames`] decoded it.
+    fn decoded_frames(&self, source: &PictureSource) -> Option<&GamePictureFrames> {
+        self.decoded.get(source).and_then(Option::as_ref)
+    }
+}
+
+/// `BuildingTypeClass::GetRenderDimensions` (`0x00465570`) over pictures, as
+/// `sprite_atlas::building_type_render_bounds` folds an SHP's frame
+/// rectangles: every body frame, every buildup frame, then bib frame 0, in
+/// that order, centred by the body's canvas only.
+pub(crate) fn building_render_bounds(
+    body: &GamePictureFrames,
+    buildup: Option<&GamePictureFrames>,
+    bib: Option<&GamePictureFrames>,
+) -> [i32; 4] {
+    let mut accumulated = None;
+    for frames in [Some(body), buildup].into_iter().flatten() {
+        for frame in 0..frames.frame_count() {
+            crate::util::rect::union_native_draw_bounds(
+                &mut accumulated,
+                frames.frame_bounds(frame),
+            );
+        }
+    }
+    if let Some(bib) = bib {
+        crate::util::rect::union_native_draw_bounds(&mut accumulated, bib.frame_bounds(0));
+    }
+    let mut bounds = accumulated.unwrap_or([0; 4]);
+    let canvas = body
+        .canvas
+        .map(|side| i32::try_from(side).unwrap_or(i32::MAX));
+    bounds[0] -= canvas[0] / 2;
+    bounds[1] -= canvas[1] / 2;
+    bounds
 }
 
 /// One RGBA source page of picture sprites: its size, pixels, index plane

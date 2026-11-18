@@ -472,6 +472,7 @@ fn retail_shp_vehicle_keys_include_the_native_embedded_shadow_half() {
             "TEMPERATE",
             Some(&rules),
             Some(rules.art()),
+            None,
         );
         let source = sources
             .get(&(ShpImageKind::Object, type_id.to_owned()))
@@ -580,6 +581,7 @@ fn a_turreted_shp_unit_registers_the_turret_frames_after_its_body_blocks() {
             "TEMPERATE",
             Some(&rules),
             Some(rules.art()),
+            None,
         );
         for frame in 0..48u16 {
             let key = ShpSpriteKey {
@@ -651,6 +653,7 @@ fn deploy_targets_get_the_same_keys_as_placed_structures() {
         "TEMPERATE",
         Some(&rules),
         Some(&art),
+        None,
     );
 
     let frames = |type_id: &str| -> HashSet<u16> {
@@ -919,6 +922,7 @@ fn registered_underscore_building_requests_make_frames_from_buildup_asset() {
         Some(&rules),
         rules.art(),
         "TEMPERATE",
+        None,
     );
 
     assert_eq!(make_frame_counts.get("GAGATE_A_MAKE"), Some(&10));
@@ -990,6 +994,7 @@ fn gate_structure_keys_cover_every_stage_and_damaged_stage_frame() {
         "TEMPERATE",
         Some(&rules),
         Some(rules.art()),
+        None,
     );
     assert_eq!(
         sources[&(ShpImageKind::Object, "GAGATE_A".to_owned())]
@@ -1064,6 +1069,7 @@ fn a_counting_shp_unit_draws_death_frames_the_atlas_holds() {
         "TEMPERATE",
         Some(&rules),
         Some(rules.art()),
+        None,
     );
     let has = |frame| {
         needed
@@ -1315,6 +1321,7 @@ fn raw_infantry_atlas_keeps_guard_and_actions_without_sequence_kinds() {
             "TEMPERATE",
             Some(&rules),
             Some(&art),
+            None,
         );
         assert_eq!(sources.len(), 1, "one decoded source for both colours");
         let source = sources[&(ShpImageKind::Object, "RAWGI".to_owned())]
@@ -1365,6 +1372,7 @@ fn raw_infantry_atlas_bounds_signed_records_without_aliasing_indices() {
             "TEMPERATE",
             Some(&rules),
             Some(&art),
+            None,
         );
         assert_eq!(
             sources[&(ShpImageKind::Object, "RAWGI".to_owned())]
@@ -1541,6 +1549,7 @@ fn raw_infantry_atlas_missing_source_has_no_invented_frame_fallback() {
         "TEMPERATE",
         Some(&rules),
         Some(&art),
+        None,
     );
     assert_eq!(sources.len(), 1);
     assert!(sources[&(ShpImageKind::Object, "RAWGI".to_owned())].is_none());
@@ -1754,6 +1763,7 @@ fn building_anim_shadow_frames_follow_each_attached_palette_context() {
                 color,
                 "tem",
                 "TEMPERATE",
+                None,
             );
             for frame in 0..4 {
                 assert!(needed.contains(&ShpSpriteKey {
@@ -1799,6 +1809,7 @@ fn retail_refinery_anim_loads_its_physical_shadow_companions() {
         HouseColorIndex(1),
         "tem",
         "TEMPERATE",
+        None,
     );
     assert_eq!(counts["YAREFN_A"], (2, 4));
     assert_eq!(
@@ -3556,6 +3567,7 @@ fn custom_harvest_uses_bound_theater_shape_all_frames_and_own_placement() {
         Some(rules.art()),
         "tem",
         "TEMPERATE",
+        None,
     );
     let file = &files[&(ShpImageKind::Animation, "GATHER".to_owned())];
     assert_eq!(file, "OREIMAGE.TEM");
@@ -3845,6 +3857,7 @@ fn retail_spy_atlas_loads_its_default_disguise_without_a_real_infantryman() {
         "TEMPERATE",
         Some(&rules),
         Some(rules.art()),
+        None,
     );
     let source = sources
         .get(&(ShpImageKind::Object, worn.to_owned()))
@@ -4083,4 +4096,131 @@ fn a_fogged_anim_frame_past_its_shp_requests_no_sprite() {
     .map(|key| key.frame)
     .collect();
     assert_eq!(frames, [3]);
+}
+
+/// VERA-only, experimental (docs/picture-model-art.md): a building whose art
+/// declares `Picture=` draws its body, Buildup and bib from pictures. Its keys
+/// land in the upload's pictures and none reaches the SHP raster; its frame
+/// counts and render bounds (`0x00465570`) are the pictures', though SHPs of
+/// the same names with other frame counts lie beside them.
+#[test]
+fn a_picture_building_draws_body_buildup_and_bib_from_pictures() {
+    use crate::rules::ini_parser::IniFile;
+    let directory = StoredFrameTestDirectory::new();
+    // A 4x4 frame drawn in `[x, y, w, h]`, transparent elsewhere.
+    let frame = |[x0, y0, w, h]: [u32; 4]| {
+        let mut rgba = vec![0u8; 4 * 4 * 4];
+        for y in y0..y0 + h {
+            for x in x0..x0 + w {
+                let at = ((y * 4 + x) * 4) as usize;
+                rgba[at..at + 4].copy_from_slice(&[200, 100, 50, 255]);
+            }
+        }
+        rgba
+    };
+    let write = |name: &str, frames: Vec<Vec<u8>>| {
+        let bytes = crate::assets::picture_file::encode_frames(4, 4, &frames).unwrap();
+        std::fs::write(directory.0.join(name), bytes).unwrap();
+    };
+    write("PICBLD.png", vec![frame([1, 1, 2, 2]); 4]);
+    write("PICMK.png", vec![frame([0, 0, 1, 1]), frame([0, 0, 0, 0])]);
+    write("PICBIB.png", vec![frame([3, 3, 1, 1])]);
+    for name in ["PICBLD.SHP", "PICMK.SHP", "PICBIB.SHP"] {
+        std::fs::write(directory.0.join(name), raw_shp(&[([2, 2], 1); 6])).unwrap();
+    }
+    let art_ini =
+        IniFile::from_str("[PICBLD]\nPicture=PICBLD.png\nBuildup=PICMK\nBibShape=PICBIB\n");
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str("[BuildingTypes]\n0=PICBLD\n[PICBLD]\nStrength=100\n"),
+        &art_ini,
+    )
+    .expect("rules");
+    rules.install_art_data(ArtRegistry::from_ini(&art_ini));
+    let assets = AssetManager::from_loose_root_for_test(&directory.0);
+    let color = HouseColorIndex(2);
+    let colors = HouseColorMap::from([("Americans".to_string(), color)]);
+    let entities = crate::sim::entity_store::EntityStore::new();
+    let PreparedSpriteAtlas::Raster(work, upload) = prepare_sprite_atlas(
+        8192,
+        &entities,
+        &assets,
+        &Palette::from_rgb(|i| [i, i, i]),
+        "tem",
+        "TEMPERATE",
+        Some(&rules),
+        Some(rules.art()),
+        &colors,
+        &["PICBLD"],
+        &Default::default(),
+        &Default::default(),
+        &Default::default(),
+        None,
+        None,
+        None,
+    ) else {
+        panic!("the picture building's keys are prepared");
+    };
+
+    assert!(
+        work.keys
+            .iter()
+            .all(|raster| !raster.key.type_id.starts_with("PIC")),
+        "no picture key reaches the SHP raster"
+    );
+    assert!(
+        upload
+            .shp_files
+            .keys()
+            .all(|(_, name)| !name.starts_with("PIC")),
+        "no SHP file is registered for a picture key"
+    );
+    let placed: HashSet<(&str, u16)> = upload
+        .pictures
+        .iter()
+        .map(|picture| (picture.key.type_id.as_str(), picture.key.frame))
+        .collect();
+    assert_eq!(
+        placed,
+        HashSet::from([
+            ("PICBLD", 0),
+            ("PICBLD", 1),
+            ("PICBLD", 2),
+            ("PICBLD", 3),
+            ("PICBLD_MAKE", 0),
+            ("PICBIB", 0),
+        ]),
+        "body frames 0/1 and their shadow half, the Buildup and the bib"
+    );
+    assert!(
+        upload
+            .picture_unrenderable
+            .iter()
+            .any(|key| key.type_id == "PICBLD_MAKE" && key.frame == 1),
+        "an empty picture frame draws nothing, as an empty SHP frame"
+    );
+    let body = upload
+        .pictures
+        .iter()
+        .find(|picture| picture.key.type_id == "PICBLD" && picture.key.frame == 0)
+        .unwrap();
+    assert_eq!(
+        body.offset,
+        [-1.0, -1.0],
+        "canvas centred, frame origin added"
+    );
+    assert_eq!(body.canvas_rect, [-2.0, -2.0, 4.0, 4.0]);
+    for (name, count) in [("PICBLD", 4), ("PICBLD_MAKE", 2), ("PICBIB", 1)] {
+        assert_eq!(
+            upload.object_shp_frame_counts.get(name),
+            Some(&count),
+            "{name}"
+        );
+    }
+    assert_eq!(upload.make_frame_counts.get("PICBLD_MAKE"), Some(&1));
+    // Body [1,1,2,2], Buildup [0,0,1,1] then empty, bib [3,3,1,1], folded
+    // with the native strict-edge +1 and centred by the 4x4 body canvas.
+    assert_eq!(
+        upload.building_type_bounds.get("PICBLD"),
+        Some(&[-2, -2, 5, 5])
+    );
 }

@@ -32,6 +32,7 @@ use crate::map::entities::EntityCategory;
 use crate::map::houses::HouseColorMap;
 use crate::render::atlas_growth::{self, GrowthShelf, SPRITE_PADDING};
 use crate::render::batch::{BatchRenderer, BatchTexture};
+use crate::render::picture_atlas::{PictureSource, PictureSources};
 use crate::rules::art_data::{self, ArtRegistry};
 use crate::rules::effect_asset_catalog::available_effect_anim_frame_count;
 use crate::rules::house_colors::{HouseColorIndex, HouseColorRamps};
@@ -138,6 +139,7 @@ fn collect_building_make_asset_requests(
     rules: Option<&RuleSet>,
     art: &ArtRegistry,
     theater_name: &str,
+    mut pictures: Option<&mut PictureRoutes<'_>>,
 ) {
     for (type_id, color) in new_objects {
         // Only registered BuildingTypes have a `BuildingClass` make sequence;
@@ -154,12 +156,26 @@ fn collect_building_make_asset_requests(
         let count = match make_frame_counts.get(&make_key) {
             Some(&count) => count,
             None => {
-                let candidates = buildup_shp_candidates(art, rules, type_id, theater_name);
-                let Some((file, data)) = find_shp(asset_manager, &candidates) else {
-                    continue;
-                };
-                let Ok(raw_count) = ShpFile::frame_count_from_bytes(&data) else {
-                    continue;
+                // VERA-only, experimental (docs/picture-model-art.md): beside
+                // a declared Picture=, Buildup= names a picture whose frames
+                // are counted from its header; the SHP is never opened.
+                let picture = pictures.as_deref_mut().and_then(|routes| {
+                    let source = routes.buildup(type_id)?;
+                    Some(routes.frame_count(&source))
+                });
+                let (raw_count, file) = match picture {
+                    Some(Some(raw_count)) => (raw_count, None),
+                    Some(None) => continue,
+                    None => {
+                        let candidates = buildup_shp_candidates(art, rules, type_id, theater_name);
+                        let Some((file, data)) = find_shp(asset_manager, &candidates) else {
+                            continue;
+                        };
+                        let Ok(raw_count) = ShpFile::frame_count_from_bytes(&data) else {
+                            continue;
+                        };
+                        (raw_count, Some(file.to_string()))
+                    }
                 };
                 // RA2 make SHPs have shadow frames in the second half — only use the first half.
                 let count = if raw_count / 2 > 0 {
@@ -167,11 +183,10 @@ fn collect_building_make_asset_requests(
                 } else {
                     raw_count
                 };
-                log::debug!("Make SHP for {type_id}: {count} frames from {file}");
-                shp_files.insert(
-                    (ShpImageKind::Object, make_key.to_ascii_uppercase()),
-                    file.to_string(),
-                );
+                if let Some(file) = file {
+                    log::debug!("Make SHP for {type_id}: {count} frames from {file}");
+                    shp_files.insert((ShpImageKind::Object, make_key.to_ascii_uppercase()), file);
+                }
                 object_shp_frame_counts.insert(make_key.to_ascii_uppercase(), raw_count);
                 make_frame_counts.insert(make_key.clone(), count);
                 count
@@ -227,16 +242,23 @@ fn scan_building_anim_frame_count(
     );
     let (file, data) = find_shp(asset_manager, &candidates)?;
     let raw_count = ShpFile::frame_count_from_bytes(&data).ok()?;
+    let count = building_anim_frame_count(raw_count, loop_end);
+    Some((count, raw_count, file.to_string()))
+}
+
+/// A building animation's usable frame count of `raw_count` physical frames:
+/// the first half when it covers `loop_end`, else `loop_end` when the image
+/// has that many, else every frame.
+fn building_anim_frame_count(raw_count: u16, loop_end: u16) -> u16 {
     let real: u16 = raw_count / 2;
     let required_count = loop_end.max(1);
-    let count = if real > 0 && real >= required_count {
+    if real > 0 && real >= required_count {
         real
     } else if raw_count >= required_count {
         required_count
     } else {
         raw_count
-    };
-    Some((count, raw_count, file.to_string()))
+    }
 }
 
 /// Register every frame of one building animation (ActiveAnim, IdleAnim and
@@ -254,21 +276,34 @@ fn register_building_anim(
     house_color: HouseColorIndex,
     theater_ext: &str,
     theater_name: &str,
+    pictures: Option<&mut PictureRoutes<'_>>,
 ) {
     let upper = anim_type.to_ascii_uppercase();
-    if !scanned.contains_key(&upper)
-        && let Some((count, raw_count, file)) = scan_building_anim_frame_count(
-            asset_manager,
-            art,
-            anim_type,
-            loop_end,
-            theater_ext,
-            theater_name,
-        )
-    {
-        log::debug!("Building anim {anim_type}: {count} frames from {file}");
-        scanned.insert(upper.clone(), (count, raw_count));
-        shp_files.insert((ShpImageKind::Animation, upper.clone()), file);
+    if !scanned.contains_key(&upper) {
+        // VERA-only, experimental (docs/picture-model-art.md): a declared
+        // picture's frames are counted from its header; its SHP is never
+        // opened.
+        match pictures.and_then(|routes| routes.anim_frames(anim_type)) {
+            Some(Some(raw_count)) => {
+                let count = building_anim_frame_count(raw_count, loop_end);
+                scanned.insert(upper.clone(), (count, raw_count));
+            }
+            Some(None) => {}
+            None => {
+                if let Some((count, raw_count, file)) = scan_building_anim_frame_count(
+                    asset_manager,
+                    art,
+                    anim_type,
+                    loop_end,
+                    theater_ext,
+                    theater_name,
+                ) {
+                    log::debug!("Building anim {anim_type}: {count} frames from {file}");
+                    scanned.insert(upper.clone(), (count, raw_count));
+                    shp_files.insert((ShpImageKind::Animation, upper.clone()), file);
+                }
+            }
+        }
     }
     let (count, raw_count) = scanned.get(&upper).copied().unwrap_or((1, 1));
     let config = art.anim_runtime_config(anim_type);
@@ -2133,6 +2168,7 @@ fn insert_new_object_keys(
     theater_name: &str,
     rules: Option<&RuleSet>,
     art: Option<&ArtRegistry>,
+    mut pictures: Option<&mut PictureRoutes<'_>>,
 ) -> HashMap<(ShpImageKind, String), Option<ShpSource>> {
     let categories: HashMap<&str, EntityCategory> = entities
         .values()
@@ -2164,6 +2200,26 @@ fn insert_new_object_keys(
             });
         let infantry_frames = if category == EntityCategory::Infantry {
             let frames = frame_sets.entry(type_str.as_str()).or_insert_with(|| {
+                let actions = rules
+                    .and_then(|rules| {
+                        rules.animation_sequence_in_category(
+                            crate::rules::object_type::ObjectCategory::Infantry,
+                            type_str,
+                        )
+                    })
+                    .and_then(|set| set.infantry_actions());
+                // VERA-only, experimental (docs/picture-model-art.md): the
+                // records select frames of a declared picture's frame count;
+                // its SHP is never opened.
+                if let Some(count) = pictures
+                    .as_deref_mut()
+                    .and_then(|routes| routes.object_frames(type_str))
+                {
+                    return count
+                        .zip(actions)
+                        .map(|(count, actions)| infantry_asset_frames(actions, count))
+                        .unwrap_or_default();
+                }
                 let source = load_shp_source(
                     asset_manager,
                     type_str,
@@ -2174,14 +2230,6 @@ fn insert_new_object_keys(
                     art,
                     ShpImageKind::Object,
                 );
-                let actions = rules
-                    .and_then(|rules| {
-                        rules.animation_sequence_in_category(
-                            crate::rules::object_type::ObjectCategory::Infantry,
-                            type_str,
-                        )
-                    })
-                    .and_then(|set| set.infantry_actions());
                 let frames = match (source.as_ref(), actions) {
                     (Some(source), Some(actions)) => {
                         // ShpFile's parser reads the u16 header count. Keep
@@ -2215,24 +2263,31 @@ fn insert_new_object_keys(
             // Resolve the actual theater/rules-selected object source once and
             // retain it for rendering. Its physical frame count establishes
             // the embedded shadow half; Type.Image text alone does not.
-            let source = sources
-                .entry((ShpImageKind::Object, type_str.clone()))
-                .or_insert_with(|| {
-                    load_shp_source(
-                        asset_manager,
-                        type_str,
-                        None,
-                        theater_ext,
-                        theater_name,
-                        rules,
-                        art,
-                        ShpImageKind::Object,
-                    )
-                });
-            if let Some(raw_count) = source
-                .as_ref()
-                .and_then(|source| u16::try_from(source.shp.frames.len()).ok())
-            {
+            // VERA-only, experimental (docs/picture-model-art.md): a declared
+            // picture's frame count stands in, and its SHP is never opened.
+            let picture_count = pictures
+                .as_deref_mut()
+                .and_then(|routes| routes.object_frames(type_str));
+            let raw_count = match picture_count {
+                Some(count) => count,
+                None => sources
+                    .entry((ShpImageKind::Object, type_str.clone()))
+                    .or_insert_with(|| {
+                        load_shp_source(
+                            asset_manager,
+                            type_str,
+                            None,
+                            theater_ext,
+                            theater_name,
+                            rules,
+                            art,
+                            ShpImageKind::Object,
+                        )
+                    })
+                    .as_ref()
+                    .and_then(|source| u16::try_from(source.shp.frames.len()).ok()),
+            };
+            if let Some(raw_count) = raw_count {
                 // Unit73C6AD..73C6D3 draws a counting Unit's death image, which
                 // no sequence holds. Past the SHP, GetFrameData (0x0069E740)
                 // answers NULL and nothing draws.
@@ -2332,6 +2387,7 @@ fn register_projectile_frames(
     house_colors: &HouseColorMap,
     theater_ext: &str,
     theater_name: &str,
+    mut pictures: Option<&mut PictureRoutes<'_>>,
 ) {
     let Some(rules) = rules else {
         return;
@@ -2345,6 +2401,13 @@ fn register_projectile_frames(
         }
         let id = projectile.id.to_ascii_uppercase();
         let (_, count) = files.entry(id.clone()).or_insert_with(|| {
+            // VERA-only, experimental (docs/picture-model-art.md): a declared
+            // picture's frames, with no file; its SHP is never opened.
+            if let Some(routes) = pictures.as_deref_mut()
+                && let Some(source) = routes.projectile(projectile)
+            {
+                return (String::new(), routes.frame_count(&source).unwrap_or(0));
+            }
             let candidates = projectile_shp_candidates(projectile, theater_ext, theater_name);
             find_shp(assets, &candidates)
                 .and_then(|(file, bytes)| {
@@ -2363,6 +2426,155 @@ fn register_projectile_frames(
                 needed.insert(projectile_key(&id, projectile, frame, HouseColorIndex(0)));
             }
         }
+    }
+}
+
+/// VERA-only, experimental (docs/picture-model-art.md): which atlas keys are
+/// drawn from a declared picture instead of an SHP, and those pictures' frame
+/// counts. Built only when some art section declares `Picture=`; with none
+/// (retail data) every key takes its SHP path and no picture is looked up.
+struct PictureRoutes<'a> {
+    art: &'a ArtRegistry,
+    rules: Option<&'a RuleSet>,
+    asset_manager: &'a AssetManager,
+    theater_name: &'a str,
+    /// Upper-case `BibShape=` names of sections that declare `Picture=`,
+    /// with the bib picture each names. The first section to name one wins.
+    bibs: HashMap<String, PictureSource>,
+    /// Frame counts read from picture headers in this build.
+    counts: HashMap<PictureSource, Option<u16>>,
+}
+
+impl<'a> PictureRoutes<'a> {
+    fn new(
+        art: Option<&'a ArtRegistry>,
+        rules: Option<&'a RuleSet>,
+        asset_manager: &'a AssetManager,
+        theater_name: &'a str,
+    ) -> Option<Self> {
+        let art = art?;
+        let mut declared = false;
+        let mut bibs = HashMap::new();
+        for (name, entry) in art.iter_entries() {
+            if entry.picture.is_none() {
+                continue;
+            }
+            declared = true;
+            if let Some(bib) = entry.bib_shape.as_deref()
+                && let Some(source) = Self::declared(art, name, "")
+            {
+                bibs.entry(bib.to_ascii_uppercase())
+                    .or_insert_with(|| source.named(bib));
+            }
+        }
+        declared.then(|| Self {
+            art,
+            rules,
+            asset_manager,
+            theater_name,
+            bibs,
+            counts: HashMap::new(),
+        })
+    }
+
+    /// The picture declared by the art section `type_id`'s image resolves to
+    /// ([`ArtRegistry::resolve_declared_picture`]).
+    fn declared(art: &ArtRegistry, type_id: &str, rules_image: &str) -> Option<PictureSource> {
+        let (section, decl) = art.resolve_declared_picture(type_id, rules_image)?;
+        Some(PictureSource {
+            section: section.to_owned(),
+            decl: decl.clone(),
+        })
+    }
+
+    /// An AnimType's picture, declared in its own section.
+    fn anim(&self, anim_type: &str) -> Option<PictureSource> {
+        Self::declared(self.art, anim_type, "")
+    }
+
+    /// A rules object's body picture, declared in the section its image
+    /// resolves to: the one its art metadata and Buildup are read through.
+    fn object(&self, type_id: &str) -> Option<PictureSource> {
+        let object = self.rules?.object(type_id)?;
+        Self::declared(self.art, type_id, &object.image)
+    }
+
+    /// A building's Buildup picture: `Buildup=` beside its declared
+    /// `Picture=` names `NAME.png` ([`buildup_shp_candidates`] otherwise).
+    fn buildup(&self, building: &str) -> Option<PictureSource> {
+        let image = self
+            .rules
+            .and_then(|rules| rules.object(building))
+            .map_or(building, |object| object.image.as_str());
+        let source = Self::declared(self.art, building, image)?;
+        let buildup = self.art.get(&source.section)?.buildup.as_deref()?;
+        Some(source.named(buildup))
+    }
+
+    /// A BulletType's picture, declared in the section its image resolves to.
+    fn projectile(&self, projectile: &ProjectileType) -> Option<PictureSource> {
+        Self::declared(
+            self.art,
+            &projectile.id,
+            projectile.image.as_deref().unwrap_or(""),
+        )
+    }
+
+    /// The picture `key` is drawn from, resolved as [`find_shp_source`]
+    /// resolves its SHP: an anim's own section, a `_MAKE` key's Buildup, a
+    /// rules object's image section, else a declared BibShape. None draws
+    /// the key from its SHP.
+    fn key(&self, key: &ShpSpriteKey) -> Option<PictureSource> {
+        let type_id = key.type_id.as_str();
+        match key.palette_context.image_kind() {
+            ShpImageKind::Animation => self.anim(type_id),
+            ShpImageKind::Particle => None,
+            ShpImageKind::Projectile => self.projectile(self.rules?.projectile(type_id)?),
+            ShpImageKind::Object => {
+                if let Some(building) = type_id.strip_suffix("_MAKE") {
+                    self.buildup(building)
+                } else if self.rules.and_then(|rules| rules.object(type_id)).is_some() {
+                    self.object(type_id)
+                } else {
+                    self.bibs.get(&type_id.to_ascii_uppercase()).cloned()
+                }
+            }
+        }
+    }
+
+    /// `source`'s frame count, shadow frames included, from its header
+    /// ([`ArtRegistry::picture_header`]); None when it is missing, unreadable
+    /// or empty, as a missing SHP.
+    fn frame_count(&mut self, source: &PictureSource) -> Option<u16> {
+        if let Some(&count) = self.counts.get(source) {
+            return count;
+        }
+        let count = self
+            .art
+            .picture_header(
+                &source.section,
+                &source.decl,
+                self.asset_manager,
+                self.theater_name,
+            )
+            .and_then(|facts| u16::try_from(facts.frames).ok())
+            .filter(|&count| count > 0);
+        self.counts.insert(source.clone(), count);
+        count
+    }
+
+    /// For a rules object whose image declares `Picture=`, its picture's
+    /// frame count; None for an object drawn from its SHP.
+    fn object_frames(&mut self, type_id: &str) -> Option<Option<u16>> {
+        let source = self.object(type_id)?;
+        Some(self.frame_count(&source))
+    }
+
+    /// For an AnimType that declares `Picture=`, its picture's frame count;
+    /// None for an animation drawn from its SHP.
+    fn anim_frames(&mut self, anim_type: &str) -> Option<Option<u16>> {
+        let source = self.anim(anim_type)?;
+        Some(self.frame_count(&source))
     }
 }
 
@@ -2484,6 +2696,10 @@ pub(crate) fn prepare_sprite_atlas(
         .cloned()
         .collect();
     let mut needed: HashSet<ShpSpriteKey> = HashSet::new();
+    // VERA-only, experimental (docs/picture-model-art.md): None unless some
+    // art section declares Picture=.
+    let mut picture_routes = PictureRoutes::new(art, rules, asset_manager, theater_name);
+    let mut pictures = PictureSources::default();
     let mut object_sources = insert_new_object_keys(
         &mut needed,
         &new_objects,
@@ -2494,6 +2710,7 @@ pub(crate) fn prepare_sprite_atlas(
         theater_name,
         rules,
         art,
+        picture_routes.as_mut(),
     );
 
     // Frame counts and source files registered so far: a refresh extends the
@@ -2519,11 +2736,41 @@ pub(crate) fn prepare_sprite_atlas(
             shp_files.insert((*kind, key), source.found_name.clone());
         }
     }
+    // VERA-only, experimental (docs/picture-model-art.md): a picture object's
+    // physical frame count is its picture's.
+    if let Some(routes) = picture_routes.as_mut() {
+        for (type_id, _) in &new_objects {
+            if let Some(Some(count)) = routes.object_frames(type_id) {
+                object_shp_frame_counts.insert(type_id.to_ascii_uppercase(), count);
+            }
+        }
+    }
     // Frozen DrawAll4D1890 uses a saved body frame and the physical image's
     // second half as its shadow, even when the live Building no longer exists.
     // Reuse the decoded-source owner for both registration and rendering.
     needed.extend(additional_keys.iter().cloned());
     for key in additional_keys {
+        // VERA-only, experimental (docs/picture-model-art.md): a picture key
+        // counts its picture's frames; its SHP is never opened.
+        if let Some(routes) = picture_routes.as_mut()
+            && let Some(source) = routes.key(key)
+        {
+            if key.palette_context.image_kind() == ShpImageKind::Object
+                && let Some(count) = routes.frame_count(&source)
+            {
+                object_shp_frame_counts.insert(key.type_id.to_ascii_uppercase(), count);
+                if rules
+                    .and_then(|rules| rules.object(&key.type_id))
+                    .is_some_and(|object| {
+                        object.category == crate::rules::object_type::ObjectCategory::Building
+                    })
+                    && let Some(shadow) = fogged_shadow_key(key, count)
+                {
+                    needed.insert(shadow);
+                }
+            }
+            continue;
+        }
         let source = object_sources
             .entry((key.palette_context.image_kind(), key.type_id.to_string()))
             .or_insert_with(|| {
@@ -2574,6 +2821,7 @@ pub(crate) fn prepare_sprite_atlas(
         house_colors,
         theater_ext,
         theater_name,
+        picture_routes.as_mut(),
     );
 
     // Step 1b: Collect every declared building animation frame required by art
@@ -2636,12 +2884,37 @@ pub(crate) fn prepare_sprite_atlas(
                         *house_color,
                         theater_ext,
                         theater_name,
+                        picture_routes.as_mut(),
                     );
                 }
             }
             // BibShape: ground-level pad SHP (e.g., refinery dock GAREFNBB).
             // Use bib name directly as atlas key so render can look it up.
-            if let Some(ref bib) = entry.bib_shape {
+            // VERA-only, experimental (docs/picture-model-art.md): a bib named
+            // beside a declared Picture= counts its picture's frames; its SHP
+            // is never opened.
+            if let Some(ref bib) = entry.bib_shape
+                && let Some(routes) = picture_routes.as_mut()
+                && let Some(source) = routes.bibs.get(&bib.to_ascii_uppercase()).cloned()
+            {
+                let name = bib.to_ascii_uppercase();
+                let count = match object_shp_frame_counts.get(&name) {
+                    Some(&count) => Some(count),
+                    None => routes.frame_count(&source),
+                };
+                if let Some(count) = count {
+                    object_shp_frame_counts.insert(name.clone(), count);
+                    for frame in 0..count {
+                        needed.insert(ShpSpriteKey {
+                            palette_context: building_art_palette_context(entry),
+                            type_id: name.as_str().into(),
+                            facing: 0,
+                            frame,
+                            house_color: *house_color,
+                        });
+                    }
+                }
+            } else if let Some(ref bib) = entry.bib_shape {
                 let name = bib.to_ascii_uppercase();
                 let source = object_sources
                     .entry((ShpImageKind::Object, name.clone()))
@@ -2708,6 +2981,7 @@ pub(crate) fn prepare_sprite_atlas(
             rules,
             art_reg,
             theater_name,
+            picture_routes.as_mut(),
         );
     }
 
@@ -2726,6 +3000,28 @@ pub(crate) fn prepare_sprite_atlas(
         else {
             continue;
         };
+        // VERA-only, experimental (docs/picture-model-art.md): the same union
+        // over the body, Buildup and bib pictures' drawn frame rectangles.
+        if let Some(routes) = picture_routes.as_ref()
+            && let Some(body) = routes.object(type_id)
+        {
+            let buildup = routes.buildup(type_id);
+            let bib = routes
+                .art
+                .get(&body.section)
+                .and_then(|entry| entry.bib_shape.as_deref())
+                .and_then(|bib| routes.bibs.get(&bib.to_ascii_uppercase()));
+            let bounds = pictures.building_bounds(
+                routes.art,
+                asset_manager,
+                theater_name,
+                &body,
+                buildup.as_ref(),
+                bib,
+            );
+            building_type_bounds.insert(type_id.clone(), bounds);
+            continue;
+        }
         // Reuse the body/bib bindings already chosen above and the registered
         // make filename; do not resolve another candidate or decode pixels.
         let Some(main) = object_sources.get(&(ShpImageKind::Object, type_id.clone())) else {
@@ -3064,6 +3360,7 @@ pub(crate) fn prepare_sprite_atlas(
             art,
             theater_ext,
             theater_name,
+            picture_routes.as_mut(),
         );
     }
 
@@ -3105,6 +3402,14 @@ pub(crate) fn prepare_sprite_atlas(
         .cloned()
         .collect();
     new_keys.sort_unstable_by(|a, b| sprite_key_order(a).cmp(&sprite_key_order(b)));
+    // VERA-only, experimental (docs/picture-model-art.md): the picture each
+    // new key is drawn from, if any; such a key reads no SHP. Its palette
+    // choice still decides its house remap (`key_house_remap`).
+    let key_pictures: Vec<Option<PictureSource>> =
+        picture_routes.as_ref().map_or_else(Vec::new, |routes| {
+            new_keys.iter().map(|key| routes.key(key)).collect()
+        });
+    let picture_of = |index: usize| key_pictures.get(index).and_then(Option::as_ref);
     log::info!(
         "Sprite atlas: {} already resolved, {} new to render, {} total needed",
         needed.len() - new_keys.len(),
@@ -3246,15 +3551,15 @@ pub(crate) fn prepare_sprite_atlas(
         (SpritePaletteChoice, &str, Option<HouseColorIndex>),
         usize,
     > = HashMap::new();
-    let mut pictures = crate::render::picture_atlas::PictureSources::default();
     let mut placed_pictures = Vec::new();
     let mut picture_unrenderable = Vec::new();
     let default_ramps = HouseColorRamps::default();
-    for (key, palette_choice) in new_keys.into_iter().zip(palette_choices) {
-        // VERA-only, experimental (docs/picture-model-art.md): a type that
-        // declares Picture= draws from its picture, never from an SHP.
-        if key.palette_context.image_kind() == ShpImageKind::Animation
-            && let Some(art) = art.filter(|art| art.declares_picture(&key.type_id))
+    for (index, (key, palette_choice)) in new_keys.into_iter().zip(palette_choices).enumerate() {
+        // VERA-only, experimental (docs/picture-model-art.md): a key whose
+        // art declares Picture= draws from its picture, never from an SHP,
+        // placed and offset as render_shp_frame places an SHP frame.
+        if let Some(source) = picture_of(index)
+            && let Some(art) = art
         {
             let ramp = (key_house_remap(&key, palette_choice)
                 && key.house_color != crate::rules::house_colors::NO_REMAP)
@@ -3263,12 +3568,23 @@ pub(crate) fn prepare_sprite_atlas(
                         .map_or(&default_ramps, |rules| &rules.house_color_ramps)
                         .ramp(key.house_color)
                 });
+            let kind = key.palette_context.image_kind();
+            let draw_offsets = if kind == ShpImageKind::Projectile
+                || key.palette_context == ShpPaletteContext::Harvest
+            {
+                (0, 0)
+            } else {
+                art_draw_offsets(Some(art), &key.type_id, kind)
+            };
+            let infantry = shp_key_is_infantry(&key, rules);
             let placed = pictures.place(
                 &key,
+                source,
                 art,
                 asset_manager,
                 theater_name,
-                art.draw_offsets(&key.type_id),
+                draw_offsets,
+                |count| shp_frame_index(&key, count, infantry),
                 ramp,
             );
             match placed {
@@ -3978,7 +4294,16 @@ fn find_shp_source(
         );
     }
     log::trace!("Loaded SHP: {} ({} bytes)", found_name, shp_data.len());
-    let draw_offsets = if kind == ShpImageKind::Animation
+    Some(FoundShp {
+        data: shp_data,
+        name: found_name.to_string(),
+        draw_offsets: art_draw_offsets(art, type_id, kind),
+    })
+}
+
+/// The art XDrawOffset/YDrawOffset a type's `kind` image is drawn at.
+fn art_draw_offsets(art: Option<&ArtRegistry>, type_id: &str, kind: ShpImageKind) -> (i32, i32) {
+    if kind == ShpImageKind::Animation
         && art
             .and_then(|art| art.anim_runtime_config(type_id))
             .is_some_and(|config| !config.art_body_read)
@@ -3988,12 +4313,7 @@ fn find_shp_source(
         (0, 0)
     } else {
         art.map(|a| a.draw_offsets(type_id)).unwrap_or((0, 0))
-    };
-    Some(FoundShp {
-        data: shp_data,
-        name: found_name.to_string(),
-        draw_offsets,
-    })
+    }
 }
 
 /// Load and render a single SHP sprite, with the RGBA its indices resolve to.
@@ -4099,19 +4419,7 @@ fn render_shp_frame(
     let shp = &source.shp;
     let found_name = source.found_name.as_str();
 
-    if (key.palette_context.is_projectile() || infantry) && key.frame as usize >= shp.frames.len() {
-        return None;
-    }
-    let frame_idx: usize = if (key.frame as usize) < shp.frames.len() {
-        key.frame as usize
-    } else if shp.frames.len() >= 8 {
-        (INFANTRY_FACING_BUCKETS as usize
-            - (canonical_infantry_facing(key.facing) as usize / INFANTRY_FACING_STEP as usize))
-            % INFANTRY_FACING_BUCKETS as usize
-    } else {
-        0
-    };
-
+    let frame_idx = shp_frame_index(key, shp.frames.len(), infantry)?;
     let frame = shp.frames.get(frame_idx)?;
     if frame.frame_width == 0 || frame.frame_height == 0 {
         log::debug!(
@@ -4186,6 +4494,24 @@ fn render_shp_frame(
     })
 }
 
+/// The frame `key` draws of an image of `frame_count` frames: its own frame,
+/// or past the end the standing frame of its facing (eight frames or more)
+/// or frame 0. A projectile or Infantry key past the end draws nothing.
+fn shp_frame_index(key: &ShpSpriteKey, frame_count: usize, infantry: bool) -> Option<usize> {
+    if (key.palette_context.is_projectile() || infantry) && key.frame as usize >= frame_count {
+        return None;
+    }
+    Some(if (key.frame as usize) < frame_count {
+        key.frame as usize
+    } else if frame_count >= 8 {
+        (INFANTRY_FACING_BUCKETS as usize
+            - (canonical_infantry_facing(key.facing) as usize / INFANTRY_FACING_STEP as usize))
+            % INFANTRY_FACING_BUCKETS as usize
+    } else {
+        0
+    })
+}
+
 /// Canonicalize RA2 facing byte to one of the 8 infantry-facing buckets.
 pub fn canonical_infantry_facing(facing: u8) -> u8 {
     (facing / INFANTRY_FACING_STEP) * INFANTRY_FACING_STEP
@@ -4207,21 +4533,34 @@ fn register_custom_harvest_frames(
     art: Option<&ArtRegistry>,
     theater_ext: &str,
     theater_name: &str,
+    mut pictures: Option<&mut PictureRoutes<'_>>,
 ) {
     for anim in rules.harvest_overlay_anim_types() {
-        let candidates = effect_anim_shp_candidates(anim, art, theater_ext, theater_name);
-        let Some((file, data)) = find_shp(assets, &candidates) else {
-            log::warn!("gather animation [{anim}] has no loaded SHP asset");
-            continue;
+        // VERA-only, experimental (docs/picture-model-art.md): a declared
+        // picture's frames; its SHP is never opened.
+        let count = match pictures
+            .as_deref_mut()
+            .and_then(|routes| routes.anim_frames(anim))
+        {
+            Some(Some(count)) => count,
+            Some(None) => continue,
+            None => {
+                let candidates = effect_anim_shp_candidates(anim, art, theater_ext, theater_name);
+                let Some((file, data)) = find_shp(assets, &candidates) else {
+                    log::warn!("gather animation [{anim}] has no loaded SHP asset");
+                    continue;
+                };
+                let Ok(count) = ShpFile::frame_count_from_bytes(&data) else {
+                    log::warn!("gather animation [{anim}] has an invalid SHP asset");
+                    continue;
+                };
+                files.insert(
+                    (ShpImageKind::Animation, anim.to_ascii_uppercase()),
+                    file.to_string(),
+                );
+                count
+            }
         };
-        let Ok(count) = ShpFile::frame_count_from_bytes(&data) else {
-            log::warn!("gather animation [{anim}] has an invalid SHP asset");
-            continue;
-        };
-        files.insert(
-            (ShpImageKind::Animation, anim.to_ascii_uppercase()),
-            file.to_string(),
-        );
         needed.extend((0..count).map(|frame| ShpSpriteKey {
             palette_context: ShpPaletteContext::Harvest,
             type_id: anim.into(),
