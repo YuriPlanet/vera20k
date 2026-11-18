@@ -435,10 +435,7 @@ impl ClientSession {
         if !self.ready || self.is_watching() {
             return Err(RelayError::Unregistered);
         }
-        if payload.is_empty()
-            || payload.len() > MAX_PAYLOAD
-            || (target >= MAX_PEERS && target != BROADCAST)
-        {
+        if !data_fits(target, payload) {
             return Err(RelayError::Malformed);
         }
         // `[target u8][data]`, plaintext (spec §3.2, §6.1).
@@ -619,19 +616,24 @@ fn handshake_incoming<'a>(
 }
 
 /// The framing of a session datagram's payload (spec §6.1): PING empty,
-/// CONTROL non-empty, DATA `[target][1..=MAX_PAYLOAD bytes]`.
+/// CONTROL non-empty, DATA `[target][data]`.
 fn session_payload(kind: u8, payload: &[u8]) -> Result<(u8, &[u8]), RelayError> {
     match kind {
         PING if payload.is_empty() => Ok((BROADCAST, payload)),
         CONTROL if !payload.is_empty() => Ok((BROADCAST, payload)),
-        DATA if payload.len() > 1
-            && payload.len() <= 1 + MAX_PAYLOAD
-            && (payload[0] < MAX_PEERS || payload[0] == BROADCAST) =>
-        {
-            Ok((payload[0], &payload[1..]))
-        }
+        DATA => match payload.split_first() {
+            Some((&target, data)) if data_fits(target, data) => Ok((target, data)),
+            _ => Err(RelayError::Malformed),
+        },
         _ => Err(RelayError::Malformed),
     }
+}
+
+/// A player DATA packet's bounds, as a client sends it and as a relay takes
+/// it from a hop or a federation link: 1..=`MAX_PAYLOAD` plaintext bytes
+/// (compaction spec §3.2) to one source or to `BROADCAST`.
+fn data_fits(target: u8, data: &[u8]) -> bool {
+    !data.is_empty() && data.len() <= MAX_PAYLOAD && (target < MAX_PEERS || target == BROADCAST)
 }
 
 #[derive(Clone, Copy, Default)]

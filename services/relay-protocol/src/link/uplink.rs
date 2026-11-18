@@ -606,7 +606,7 @@ impl ClientSession {
     ) {
         if let Some(ordering) = self.ordering.as_mut() {
             ordering.link.schedule.pace = Some(PaceSegment {
-                pace: pace as u8,
+                pace,
                 frames_per_second,
                 tick_micros: tick_micros.unwrap_or(0),
             });

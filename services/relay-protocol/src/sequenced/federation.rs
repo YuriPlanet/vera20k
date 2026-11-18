@@ -873,12 +873,7 @@ impl Federation {
         let sources = self.links[position].sources;
         for entry in payload[1..].chunks_exact(PACE_FORWARD_ENTRY) {
             let source = entry[0];
-            let pace = match entry[1] {
-                0 => OrderPace::KeepingUp,
-                1 => OrderPace::Behind,
-                2 => OrderPace::CatchingUp,
-                _ => return Err(RelayError::Malformed),
-            };
+            let pace = OrderPace::parse(entry[1])?;
             if source >= MAX_PEERS || sources & (1 << source) == 0 {
                 return Err(RelayError::Malformed);
             }
@@ -1074,16 +1069,13 @@ impl RelayServer {
                 Ok(Vec::new())
             }
             DATA_KIND => {
-                if payload.len() < 3 {
-                    return Err(RelayError::Malformed);
-                }
                 // `[source][target][data]`.
-                let (source, target, data) = (payload[0], payload[1], &payload[2..]);
+                let &[source, target, ref data @ ..] = payload else {
+                    return Err(RelayError::Malformed);
+                };
                 if source >= MAX_PEERS
                     || federation.links[position].sources & (1 << source) == 0
-                    || (target >= MAX_PEERS && target != BROADCAST)
-                    // Plaintext DATA (compaction spec §3.2).
-                    || data.len() > MAX_PAYLOAD
+                    || !data_fits(target, data)
                 {
                     return Err(RelayError::Malformed);
                 }
@@ -1991,6 +1983,32 @@ mod tests {
                     "relay {relay}, ready {ready:?}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn the_coordinator_refuses_a_forwarded_pace_it_cannot_name() {
+        let mut game = Match::new(false);
+        let federation = game.relays[1]
+            .rooms
+            .get_mut(&[5; 16])
+            .unwrap()
+            .federation
+            .as_mut()
+            .unwrap();
+        // `[count][source][pace][frames_per_second u16][tick_micros u32][age_ms u32]`.
+        let mut payload = [1, 1, 2, 45, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let named = federation.packet(0, PACE_KIND, &payload).unwrap();
+        payload[2] = 3;
+        let unnamed = federation.packet(0, PACE_KIND, &payload).unwrap();
+        let clock = game.clock(0);
+        for (datagram, result) in [(named, Ok(())), (unnamed, Err(RelayError::Malformed))] {
+            assert_eq!(
+                game.relays[0]
+                    .process_at(game.addresses[1], &datagram.bytes, unix(clock), clock)
+                    .map(|_| ()),
+                result
+            );
         }
     }
 
