@@ -328,6 +328,11 @@ fn voxel_models<'a>(
             return None;
         }
         let type_str = interner.map_or("", |i| i.resolve(entity.type_ref()));
+        // A type drawn from a declared model (`docs/picture-model-art.md`)
+        // never draws its VXL; retail art declares none.
+        if rules.is_some_and(|rules| rules.draws_declared_model(type_str)) {
+            return None;
+        }
         if voxel {
             return Some(if aircraft {
                 VoxelModel::Air(type_str)

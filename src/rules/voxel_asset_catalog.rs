@@ -1001,6 +1001,9 @@ mod tests {
         assert!(!loaded(&rules, "NOSIZE"), "its VXL path finds no file");
         assert!(!loaded(&rules, "PLAIN"));
         assert!(rules.object_voxel_half_sizes("PLAIN").is_none());
+        // The unit atlas skips a type drawn from a model, refused or not.
+        assert!(rules.draws_declared_model("TEST"));
+        assert!(!rules.draws_declared_model("PLAIN"));
     }
 
     /// A unit with indexed guns needs a `turretN` node for each, as a missing
@@ -1077,6 +1080,8 @@ mod tests {
         let gun = rules.building_gun_model("GUNBLD").unwrap().unwrap();
         assert_eq!((gun.section.as_str(), gun.decl.size), ("GUNTUR", 100));
         assert!(rules.building_gun_model("PLAINGUN").is_none());
+        assert!(rules.draws_declared_model("GUNBLD"));
+        assert!(!rules.draws_declared_model("PLAINGUN"));
         assert!(!loaded(&rules, "GUNBLD"), "the guns are not a main model");
         let anim = |name| rules.voxel_anim_type_id_by_name(name).unwrap();
         let chunk = rules.voxel_anim_declared_model(anim("CHUNK")).unwrap();

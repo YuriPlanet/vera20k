@@ -7713,6 +7713,23 @@ impl RuleSet {
         self.voxel_assets.building_gun_model(type_id)
     }
 
+    /// VERA-only, experimental (`docs/picture-model-art.md`): whether the
+    /// voxel unit, aircraft or building gun `type_id` draws from a declared
+    /// `Model=` (admitted or refused) and never from its VXL, so the unit
+    /// atlas need not load it. False for retail art.
+    pub fn draws_declared_model(&self, type_id: &str) -> bool {
+        if self.building_gun_model(type_id).is_some() {
+            return true;
+        }
+        self.object(type_id).is_some_and(|object| {
+            object.voxel_image_load().is_some_and(|image| {
+                self.art()
+                    .resolve_declared_model(&object.id, image)
+                    .is_some()
+            })
+        })
+    }
+
     /// [`Self::building_gun_model`] for the voxel projectile type `type_id`.
     pub fn projectile_model(
         &self,

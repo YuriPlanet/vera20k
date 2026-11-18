@@ -603,6 +603,11 @@ pub struct ModelFrame {
     layouts: HashMap<usize, Layout>,
     gpu: Option<Gpu>,
     models: HashMap<usize, GpuModel>,
+    /// The models `layouts` and `models` are keyed by (their `Arc`
+    /// address), held so no other model can take that address while an
+    /// entry stands; [`Self::begin_frame`] drops a model, and its entries,
+    /// once nothing else holds it (its match's rules are gone).
+    held: HashMap<usize, Arc<DeclaredModel>>,
     overflowed: bool,
     /// The VPL's brightness per light page ([`vpl_page_brightness`]), read
     /// on the first frame that draws a model.
@@ -624,6 +629,7 @@ impl ModelFrame {
     ) {
         self.placed.clear();
         self.keys.clear();
+        self.release_unheld_models();
         let limit = device.limits().max_texture_dimension_2d;
         let mut side = self.wanted.max(PAGE_START).min(limit);
         if std::mem::take(&mut self.overflowed) {
@@ -689,6 +695,28 @@ impl ModelFrame {
             .map(|page| ShelfCursor::new(page.size[0], page.size[1]));
     }
 
+    /// Forget the layouts and GPU buffers of models only this frame holds.
+    fn release_unheld_models(&mut self) {
+        let gone: Vec<usize> = self
+            .held
+            .iter()
+            .filter(|(_, model)| Arc::strong_count(model) == 1)
+            .map(|(&key, _)| key)
+            .collect();
+        for key in gone {
+            self.held.remove(&key);
+            self.layouts.remove(&key);
+            self.models.remove(&key);
+        }
+    }
+
+    /// Key `model` by its address, holding it while its entries stand.
+    fn hold(&mut self, model: &Arc<DeclaredModel>) -> usize {
+        let key = Arc::as_ptr(model) as usize;
+        self.held.entry(key).or_insert_with(|| Arc::clone(model));
+        key
+    }
+
     /// This frame's image of `pose`, placing it on the page the first time
     /// the frame asks for it. None when the frame has no page, the pose draws
     /// nothing, or the page is full (the next frame's page is bigger).
@@ -703,8 +731,8 @@ impl ModelFrame {
         pose: ModelPose,
         nodes: ModelNodes,
     ) -> Option<ModelImage> {
-        let page = self.page.as_ref()?;
-        let model = Arc::as_ptr(&pose.model) as usize;
+        self.page.as_ref()?;
+        let model = self.hold(&pose.model);
         let animated = !pose.model.model.animations.is_empty();
         let key = PoseKey::Body {
             model,
@@ -768,7 +796,7 @@ impl ModelFrame {
     /// onto their bottom face ([`shadow_camera`]).
     pub(crate) fn request_shadow(&mut self, shadow: ModelShadow) -> Option<ModelImage> {
         self.page.as_ref()?;
-        let model = Arc::as_ptr(&shadow.model) as usize;
+        let model = self.hold(&shadow.model);
         let key = PoseKey::Shadow {
             model,
             matrix: shadow.matrix.to_cols_array().map(f32::to_bits),
@@ -1980,6 +2008,26 @@ mod tests {
     /// the barrel matrix (43DA80's B8 and C0); a C0-only building draws the
     /// barrel alone. A debris piece draws the `VoxelIndex`th mesh node, its
     /// own mesh only, and nothing past the last.
+    /// A cached layout keeps its model alive, so a later model can't land
+    /// at the same address and pick up the stale entry; the entry goes once
+    /// nothing but the cache holds the model.
+    #[test]
+    fn a_cached_model_is_held_until_its_rules_drop_it() {
+        let glb = crate::assets::model_file::test_glb::box_model(2.0, 1.0, 4.0, &["body"]);
+        let model = Arc::new(DeclaredModel::for_test(
+            Arc::new(Model::from_glb(&glb).unwrap()),
+            256,
+        ));
+        let mut frame = ModelFrame::default();
+        let key = frame.hold(&model);
+        frame.layouts.insert(key, Layout::of(&model));
+        frame.release_unheld_models();
+        assert!(frame.layouts.contains_key(&key), "the rules still hold it");
+        drop(model);
+        frame.release_unheld_models();
+        assert!(frame.layouts.is_empty() && frame.held.is_empty());
+    }
+
     #[test]
     fn building_guns_and_debris_draw_their_nodes() {
         let glb = crate::assets::model_file::test_glb::box_model(2.0, 1.0, 4.0, &["barrel"]);
