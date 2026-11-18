@@ -1,7 +1,10 @@
 # Multiplayer behavior and ownership
 
 Windows, macOS and Linux builds provide LAN and online multiplayer through
-the normal game menus. Both paths use the existing
+the normal game menus; Android builds play LAN ([Android](android.md#lan-play-on-android)),
+and the browser's network package plays online and, built with `--lan`, LAN with other
+browsers only ([browser networking](wasm-net.en.md#lan-wasm-lan)).
+Both paths use the existing
 owners for session setup, synchronized commands, reliable UDP delivery, frame
 pacing, checksums, disconnects, results and rematches.
 
@@ -30,7 +33,7 @@ seed/preview data and verify build, rules and effective-map agreement before sta
 Games with two or more human players number their objects from one agreed start, so
 a player whose game already ran the random-map dialog or an earlier match numbers
 them as one just opened does; nothing new is exchanged, and older builds are
-refused by the build check.
+refused by the [build check](#build-check).
 Fresh LAN and online matches also initialize local trigger variables from the
 incoming map only. Unassigned values cannot carry over from a player's previous
 match, including on generated maps with no local assignments. This includes a
@@ -63,9 +66,8 @@ from the same files read without it; a game without it adds nothing.
 Players on one build reach the same answer. Older builds, including those that
 load an installed `ares.mix` with No mod selected, are refused by the existing
 build check. A rollback restores that build's earlier selection and INI reading.
-Ares needs no build feature: the build check's version keeps a 0 where the retired `ares`
-feature's flag was, and the rules digest still hashes `false` in its place, as a released
-game's do; nothing exchanged changes.
+Ares needs no build feature: the rules digest still hashes `false` where the retired
+`ares` feature's flag was, as a released game's does.
 Whether Phobos plays is decided from the same rules, mode and map
 ([the Phobos switch](phobos.md#the-phobos-switch)) and adds nothing to the
 digest, so players on one build reach the same answer; older builds are refused
@@ -628,6 +630,34 @@ doesn't offer it. A guest's own pick sent at the same moment carries its whole r
 wins on the host. Online, a game sends its room commands to the lobby one at a time; a
 newer options, map-status or ready command replaces an older one of the same kind that
 is still waiting, and goes out after whatever was queued before it.
+
+### Build check
+
+Two games play together only on one build: their `shell_network_setup::agreement::version()`,
+the package version and `VERA20K_NETWORK_BUILD` joined by `:`, must be equal. build.rs hashes
+into `VERA20K_NETWORK_BUILD` the files under `src/` and `services/relay-protocol/src`, the
+manifests, `Cargo.lock` and `build.rs`, by path and content with CRLF line endings counted as
+LF, and every enabled Cargo feature but the test groups. One commit built with the same
+features therefore matches on every platform, and any other difference keeps games apart: a
+default build (`dev-overlays`) never meets a `--no-default-features` release, APK or browser
+package, and browser packages built with other options (`--lan`, `--threads`) do not meet
+each other. Earlier builds add `:0` and their Phobos, NPatch and NPBUG flags (`:0000` in a
+release), which the hash already covers; they are refused as any other build is.
+
+- LAN: the host denies a join from another build (reason 8), and the guest sees Request
+  denied and "VERA20k build or enabled gameplay features differ." (`VERA:LanBuildDiffers`).
+  A guest that receives the host's options from another build says so in the room's chat
+  (`VERA:LanHostBuildDiffers`) and does not start.
+- Online: the sign-in names the version (`Vera-Build`), and every `ready` and `map_status`
+  carries it. The lobby hides rooms and matches of another build, or of another version
+  where a game names no build, and starts a match only when every player's is equal
+  ([lobby protocol](lobby-protocol.md#sign-in-headers)); a watcher's game compares its own
+  with the match's before it loads.
+- Start: every network start folds it into the start identity the relay and LAN's startup
+  compare (`StartupAgreement`), so a launcher's match of two builds, which no lobby
+  compares, is refused at its start.
+- External launches: `[Settings] ExpectedVersion` is compared with it, as `--probe`
+  reports it ([external launches](spawn.md#probe)).
 
 ### Room rules
 

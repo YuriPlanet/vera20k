@@ -34,8 +34,8 @@ pub(crate) struct ProbeGameMode {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct ProbeReport {
-    /// The multiplayer agreement's version: package version, network build
-    /// hash and the Ares/Phobos/NPatch feature bits. `ExpectedVersion`.
+    /// The multiplayer agreement's version: package version and network
+    /// build hash. `ExpectedVersion`.
     pub version: String,
     pub build_identity: BuildIdentity,
     /// The multiplayer rules agreement for spawn Battle launches
@@ -101,9 +101,10 @@ pub(crate) struct BuildIdentity {
     pub package_version: String,
     /// Hash of the multiplayer sources and enabled Cargo features.
     pub network_build: String,
+    /// Informational: the extension features this build has, which
+    /// `network_build` covers.
     pub phobos: bool,
     pub npatch: bool,
-    /// Informational; not part of `version`.
     pub verax: bool,
     /// Informational: the build's platform.
     pub target: &'static str,
@@ -818,6 +819,16 @@ mod tests {
         };
         let value = serde_json::to_value(&none).unwrap();
         assert!(value["map"].is_null() && value["max_start_waypoints"].is_null());
+    }
+
+    /// `version` is `build_identity`'s package version and network build alone.
+    #[test]
+    fn version_is_the_package_version_and_network_build() {
+        let identity = build_identity();
+        assert_eq!(
+            agreement::version(),
+            format!("{}:{}", identity.package_version, identity.network_build)
+        );
     }
 
     #[test]

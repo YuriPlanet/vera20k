@@ -10,17 +10,16 @@ pub(crate) struct MultiplayerAgreement {
     pub rules_digest: String,
 }
 
+/// The build two games must share to play together: the package version and
+/// build.rs's hash of the sources and enabled Cargo features
+/// (docs/Networking.md, "Build check").
 pub(crate) fn version() -> String {
-    // The `0` held the retired `ares` build feature; every game now has Ares
-    // (`RuleSet::ares`), and the slot keeps a released game's value.
-    format!(
-        "{}:{}:0{}{}{}",
+    concat!(
         env!("CARGO_PKG_VERSION"),
-        env!("VERA20K_NETWORK_BUILD"),
-        u8::from(crate::rules::PHOBOS_ENABLED),
-        u8::from(crate::rules::NPATCH_ENABLED),
-        u8::from(crate::rules::NPBUG_ENABLED)
+        ":",
+        env!("VERA20K_NETWORK_BUILD")
     )
+    .to_owned()
 }
 
 pub(crate) fn local(state: &mut AppState) -> Result<MultiplayerAgreement> {
