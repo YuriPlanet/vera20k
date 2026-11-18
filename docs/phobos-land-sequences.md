@@ -46,14 +46,19 @@ So `OnlyUseLandSequences` short-circuits the whole water-sequence selection:
 consumes it in `src/sim/movement/infantry_action.rs`'s water arm:
 `object.phobos_land_sequences.only_land(rules.phobos_globals.only_use_land_sequences)`
 keeps every requested action unmapped while the water-state store and the
-transition sound still run on the `SkipWaterSequences` path. The
-`SecondaryFireSequenceLandOnly` branch is a separate key and is not owned
-here.
+transition sound still run on the `SkipWaterSequences` path. The sibling
+`SecondaryFireSequenceLandOnly=` art key is owned by the same module
+(`src/rules/phobos_land_sequences.rs:53-90`) and consumed by the same water
+arm (`src/sim/movement/infantry_action.rs:311-348`, `4 | 8 if
+secondary_fire_land_only => 22`).
 
 ## Residual
 
-None for this key. The sibling `SecondaryFireSequenceLandOnly=` art key
-(`Ext/Techno/Hooks.Misc.cpp:897-899`) remains a separate unported mechanism.
+None. `SecondaryFireSequenceLandOnly=` (`Ext/Techno/Hooks.Misc.cpp:897-899`)
+was previously recorded here as unported; it is read (type art + `[General]`
+fallback, `Valueable` default yes) and consumed, so a water-borne
+`SecondaryFire`/`SecondaryProne` request maps to `WetAttack` only when the
+resolved key is yes.
 
 ## Tests
 

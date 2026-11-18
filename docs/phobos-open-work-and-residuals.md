@@ -212,6 +212,14 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   裁剪发生在入队时刻而非每次 `CanBuild`/灰化读取，纯 UI 触发的裁剪不会发生——
   可见结果集相同。触发：组上限已满但没有经过入队的队列动作；影响：没有可裁副本；
   频率：罕见；风险：低。
+- **残渣文档已按 `src` 对齐（2026-11-18 第二轮）**：`phobos-land-sequences.md`
+  （`SecondaryFireSequenceLandOnly` 已读并接线，`infantry_action.rs:311-348`）、
+  `phobos-alternate-flh.md`（`BurstPerTurret` 由
+  `fire_coord::phobos_turret_pivot_offset` 消费）、`phobos-auto-death.md`
+  （`IsOwnerChangeFromRevertOnExit` 闩与 AutoDeath 臂已接，仅 AttachEffect
+  读取仍缺）、`phobos-transact-money.md`（`CreateGap`/`Reveal`/`SpawnsCrate`/`LaunchSW`
+  都已是独立 owner，全在 `sim::combat::crit`）、`phobos-critical-hit.md`（`CellSpread.Cylinder` 已由
+  `combat_aoe` 消费）。这五处此前的 “unported” 声明已作废，不再作为残渣依据。
 - **残渣文档已按 `src` 对齐（2026-11-18）**：`phobos-slaved.md`（`Slaved.OwnerWhenMasterKilled`
   四值分派已接线并有 `slave_manager_cycle_tests` 覆盖）、`phobos-spawns-queue.md`
   （`InitialSpawnsNumber=`）、`phobos-hover-drown.md`（`FallingDownDamage` /

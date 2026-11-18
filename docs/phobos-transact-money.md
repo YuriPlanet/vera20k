@@ -72,6 +72,8 @@ checks.
   another.
 - `TransactMoney` shares `WarheadTypeExt::Detonate`'s other per-house arms
   (`CreateGap`, `Reveal`, `SpawnsCrate.*`, `LaunchSW.*`) only in ordering.
-  Those remain separate chains and are unported, so a warhead that combines
-  them with `TransactMoney` still runs only this block and the
-  crit/AttachEffect pass.
+  Those are now separate owners rather than gaps: `sim::combat::crit` runs the
+  `CreateGap` (`:136-150`), `Reveal` (`:152-`), `SpawnsCrate` (`:210`) and
+  `LaunchSW` (`:222`) arms, each with its own tests. A warhead that combines
+  them with `TransactMoney` therefore runs this block plus those owners, still
+  in native order.

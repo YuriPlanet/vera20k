@@ -180,9 +180,12 @@ clock has a zero maximum, which the renderer skips.
 
 ## Residuals
 
-- `FootExt::IsOwnerChangeFromRevertOnExit` is unported — the AttachEffect
-  discard chain also reads it as `false` — so `IgnoreRevertOnExit` cannot fire
-  and the owner-change transporter gate has no revert term.
+- `FootExt::IsOwnerChangeFromRevertOnExit`: the latch exists
+  (`GameEntity::phobos_revert_on_exit_latch`, set only across the exit
+  revert's own owner change) and the AutoDeath owner-change hook reads it, so
+  `IgnoreRevertOnExit` fires. The AttachEffect discard chain still reads it as
+  `false`, so an AttachEffect
+  `DiscardOn.Revoked`/owner-change arm cannot distinguish a revert exit.
 - **Ares-scoped, deferred:** `AresFunctions::SpawnSurvivors` before the fatal
   hit (`Ext/Techno/Body.Update.cpp:810-819`) is not called. This is not a
   Phobos feature: Phobos only calls it from the `Kill` arm when Ares is
