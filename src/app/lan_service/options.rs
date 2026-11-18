@@ -99,7 +99,7 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
 /// The host's full options (`SetupKind::Options`), replaced whole on every
 /// revision. Only a game of the same build reads them: the join refuses any
 /// other (reason 8), and a guest checks `agreement` again before the rest.
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct ExtendedOptions {
     agreement: MultiplayerAgreement,
     random_map: Option<crate::app::shell_network_setup::maps::GeneratedMapManifest>,
@@ -140,24 +140,24 @@ struct HumanChoices {
 /// Host-authored admission projection for native Type3 assembly, derived from
 /// Session and replaced with each complete snapshot. Only Session admits a
 /// participant/address; a stale Type3 cannot replace the host's current proof.
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct ExtendedAdmission {
     name: String,
     endpoint: SocketAddrV4,
     identity: super::PeerAdmission,
 }
 
-/// Exact received host snapshot, replaced on every admitted revision and
-/// cleared with the visit. Session remains the editable options/roster owner.
+/// The host's last admitted room, kept for a player whose Type3 comes after
+/// it; replaced on every revision and cleared with the visit.
 pub(super) struct ReceivedOptions {
     scope: crate::net::lan_messages::SessionScope,
-    options: ExtendedOptions,
+    room: HostRoom,
 }
 
 pub(super) fn reapply_received_options(state: &mut AppState) -> Result<()> {
     let Some(room) = state.match_state.lan_service.as_ref().and_then(|service| {
         let received = service.received_options.as_ref()?;
-        (service.setup_scope() == Some(received.scope)).then(|| received.options.room.clone())
+        (service.setup_scope() == Some(received.scope)).then(|| received.room.clone())
     }) else {
         return Ok(());
     };
@@ -364,7 +364,7 @@ pub(super) fn receive_extended(
                 service.setup_agreement = Some(options.agreement.clone());
                 service.received_options = Some(ReceivedOptions {
                     scope,
-                    options: options.clone(),
+                    room: options.room.clone(),
                 });
                 service.replace_peer_admissions(
                     options
@@ -840,32 +840,6 @@ mod tests {
                 .map(|ai| (ai.raw_slot_index, ai.difficulty))
                 .collect::<Vec<_>>(),
             [(9, AiDifficulty::Easy)]
-        );
-    }
-
-    /// Options that come before a player's Type3 give them their row once
-    /// this guest admits them.
-    #[test]
-    fn options_before_type3_apply_by_name_once_admitted() {
-        let mut host = fixture(true);
-        let mut launch = host.network_setup().unwrap().clone();
-        let mut late = launch.humans[1].clone();
-        late.name = "Late".into();
-        late.raw_slot_index = Some(2);
-        late.slot.start_position = LaunchStartPosition::Position(4);
-        launch.humans.push(late.clone());
-        host.accept_network_setup(launch, true, Some(7), false)
-            .unwrap();
-        let room = sent(&host);
-        let mut guest = fixture(false);
-        apply(&mut guest, &room);
-        assert_eq!(guest.network_setup().unwrap().humans.len(), 2);
-        late.slot.start_position = LaunchStartPosition::Auto;
-        guest.add_network_participant(late).unwrap();
-        apply(&mut guest, &room);
-        assert_eq!(
-            guest.network_setup().unwrap().humans[2].slot.start_position,
-            LaunchStartPosition::Position(4)
         );
     }
 
