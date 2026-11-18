@@ -5090,8 +5090,8 @@ mod tests {
     #[test]
     fn ordinary_capture_admission_uses_canonical_color_and_source_roster() {
         let mut profile = example();
+        profile.launch.use_live_house_rows();
         profile.launch.local_slot_mut().color_index = 6;
-        profile.launch.rebuild_house_roster();
         profile.validate().unwrap();
         let baseline = profile;
         let mut profile = baseline.clone();
@@ -5099,17 +5099,14 @@ mod tests {
         assert!(profile.validate().is_err());
         let mut profile = baseline.clone();
         profile.launch.humans[0].role = crate::skirmish_launch::LaunchHumanRole::Observer;
-        profile.launch.rebuild_house_roster();
         assert!(profile.validate().is_err());
         let mut profile = baseline.clone();
         profile.launch.opponents[0].raw_slot_index = 3;
-        profile.launch.rebuild_house_roster();
         assert!(profile.validate().is_err());
         let mut profile = baseline;
         let mut remote = profile.launch.humans[0].clone();
         remote.raw_slot_index = Some(2);
         profile.launch.humans.push(remote);
-        profile.launch.rebuild_house_roster();
         assert!(profile.validate().is_err());
     }
 

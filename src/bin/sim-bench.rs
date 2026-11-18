@@ -648,7 +648,6 @@ fn watched_session(
     for computer in &mut session.opponents {
         computer.raw_slot_index += watchers as u8 - 1;
     }
-    session.rebuild_house_roster();
     Ok(session)
 }
 

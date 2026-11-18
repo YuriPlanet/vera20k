@@ -196,7 +196,7 @@ fn client_skirmish_preserves_roster_options_and_native_indices() {
     assert_eq!(session.local_slot().team, LaunchTeam::Team(0));
     assert_eq!(session.opponents[1].team, LaunchTeam::None);
     assert_eq!(session.required_start_count(), 3);
-    assert_eq!(session.pre_fill_house_roster.created_house_count(), 5);
+    assert_eq!(session.pre_fill_house_roster().created_house_count(), 5);
     assert!(session.house_roster_is_consistent());
     assert_eq!(session.options.starting_credits, 5000);
     assert!(!session.options.super_weapons);

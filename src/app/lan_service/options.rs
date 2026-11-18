@@ -770,7 +770,7 @@ fn parse_options(
     ensure!(fields.next().is_none(), "extra LAN AI fields");
     launch.ai_player_count = opponents.len() as i32;
     launch.opponents = opponents;
-    launch.rebuild_house_roster();
+    launch.use_live_house_rows();
     let vacancies = std::array::from_fn(|row| {
         session
             .network_vacancy(row as u8)
@@ -946,7 +946,6 @@ mod tests {
         launch.local_player_index = usize::from(!host);
         launch.options.game_speed = 4;
         launch.options.starting_credits = 9000;
-        launch.rebuild_house_roster();
         let mut session = MatchSession::default();
         session.enter_network(NetworkReturnContext::LanLobby);
         session
@@ -1013,7 +1012,6 @@ mod tests {
                 human
             })
             .collect();
-        launch.rebuild_house_roster();
         host.accept_network_setup(launch.clone(), true, None, false)
             .unwrap();
         host.select_network_map(launch.mode.clone(), "thirty.map".into(), 30)

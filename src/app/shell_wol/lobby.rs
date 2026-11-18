@@ -5123,7 +5123,6 @@ mod tests {
         guest.raw_slot_index = Some(1);
         launch.humans.push(guest);
         launch.local_player_index = 1;
-        launch.rebuild_house_roster();
         let mut vacancies =
             [NetworkVacancy::Closed; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT];
         vacancies[2] = NetworkVacancy::Open;

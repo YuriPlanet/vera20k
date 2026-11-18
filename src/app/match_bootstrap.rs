@@ -903,8 +903,8 @@ mod tests {
     };
 
     fn explicit_session() -> SkirmishLaunchSession {
-        SkirmishLaunchSession {
-            mode: SkirmishLaunchMode {
+        SkirmishLaunchSession::from_rows(
+            SkirmishLaunchMode {
                 class: crate::skirmish_modes::MpModeClass::Battle,
                 id: 1,
                 ui_name_key: "GUI:Battle".into(),
@@ -915,8 +915,8 @@ mod tests {
                 allies_allowed: true,
                 must_ally: false,
             },
-            selected_map_file: Some("DeepFrze.map".into()),
-            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+            Some("DeepFrze.map".into()),
+            vec![crate::skirmish_launch::SkirmishHumanSlot {
                 raw_slot_index: Some(0),
                 name: "Player".into(),
                 slot: SkirmishLocalSlot {
@@ -929,9 +929,8 @@ mod tests {
                 },
                 role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
             }],
-            local_player_index: 0,
-            ai_player_count: 1,
-            opponents: vec![SkirmishAiSlot {
+            0,
+            vec![SkirmishAiSlot {
                 raw_slot_index: 1,
                 country: LaunchCountry::Russia,
                 country_random: false,
@@ -941,10 +940,8 @@ mod tests {
                 team: LaunchTeam::None,
                 difficulty: AiDifficulty::Easy,
             }],
-            pre_fill_house_roster:
-                crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(1),
-            options: SkirmishLaunchOptions::default(),
-        }
+            SkirmishLaunchOptions::default(),
+        )
     }
 
     fn accepted_session() -> AcceptedBattleSession {

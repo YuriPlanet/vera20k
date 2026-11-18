@@ -944,22 +944,18 @@ impl App {
         let Some(mode) = mode else {
             return;
         };
-        let mut launch = SkirmishLaunchSession {
-            mode: crate::skirmish_launch::SkirmishLaunchMode::from_game_mode(&mode),
-            selected_map_file: None,
-            humans: vec![acceptance.local],
-            local_player_index: 0,
-            opponents: Vec::new(),
-            ai_player_count: 0,
-            pre_fill_house_roster:
-                crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(0),
-            options: state
+        let launch = SkirmishLaunchSession::from_rows(
+            crate::skirmish_launch::SkirmishLaunchMode::from_game_mode(&mode),
+            None,
+            vec![acceptance.local],
+            0,
+            Vec::new(),
+            state
                 .frontend
                 .skirmish_shell_state
                 .launch_options_base
                 .clone(),
-        };
-        launch.rebuild_house_roster();
+        );
         // The packet7 peer's identity belongs to the service envelope until
         // the original type3 roster admission; it is not a fabricated node.
         let dialog = setup_dialog(state, false, SetupFlavor::Lan);

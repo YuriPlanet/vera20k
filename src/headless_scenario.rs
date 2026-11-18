@@ -36,20 +36,20 @@ use crate::skirmish_launch::{AiDifficulty, LaunchCountry, SkirmishLaunchSession}
 
 /// A Battle session on `selected_map_file`: the local player against one
 /// computer house for each of `opponents` (its country and difficulty), every
-/// house on a start the launch draws. The lobby allows seven opponents.
+/// house on a start the launch draws.
 pub fn battle_session(
     selected_map_file: &str,
     opponents: &[(LaunchCountry, AiDifficulty)],
 ) -> SkirmishLaunchSession {
     use crate::skirmish_launch::{
-        BATTLE_MODE_ID, LaunchStartPosition, LaunchTeam, PreFillHouseRoster, SkirmishAiSlot,
-        SkirmishLaunchMode, SkirmishLaunchOptions, SkirmishLocalSlot,
+        BATTLE_MODE_ID, LaunchStartPosition, LaunchTeam, SkirmishAiSlot, SkirmishLaunchMode,
+        SkirmishLaunchOptions, SkirmishLocalSlot,
     };
 
-    SkirmishLaunchSession {
-        mode: SkirmishLaunchMode::stock(BATTLE_MODE_ID).expect("stock Battle row"),
-        selected_map_file: Some(selected_map_file.to_string()),
-        humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+    SkirmishLaunchSession::from_rows(
+        SkirmishLaunchMode::stock(BATTLE_MODE_ID).expect("stock Battle row"),
+        Some(selected_map_file.to_string()),
+        vec![crate::skirmish_launch::SkirmishHumanSlot {
             raw_slot_index: Some(0),
             name: "Player".to_string(),
             slot: SkirmishLocalSlot {
@@ -62,9 +62,8 @@ pub fn battle_session(
             },
             role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
         }],
-        local_player_index: 0,
-        ai_player_count: opponents.len() as i32,
-        opponents: opponents
+        0,
+        opponents
             .iter()
             .enumerate()
             .map(|(slot, &(country, difficulty))| SkirmishAiSlot {
@@ -78,9 +77,8 @@ pub fn battle_session(
                 difficulty,
             })
             .collect(),
-        pre_fill_house_roster: PreFillHouseRoster::from_compact_skirmish(opponents.len()),
-        options: SkirmishLaunchOptions::default(),
-    }
+        SkirmishLaunchOptions::default(),
+    )
 }
 
 /// A loaded scenario plus the per-tick inputs `advance_tick` needs.

@@ -588,7 +588,7 @@ impl MatchSession {
         launch
             .opponents
             .sort_by_key(|opponent| opponent.raw_slot_index);
-        launch.rebuild_house_roster();
+        launch.use_live_house_rows();
         let network = self.network.as_mut().expect("network mode owns a visit");
         anyhow::ensure!(
             !matches!(network.phase, NetworkPhase::Frozen { .. }),
@@ -748,7 +748,6 @@ impl MatchSession {
         launch.humans = humans;
         launch.local_player_index = local_index;
         *admission = reordered_admission;
-        launch.rebuild_house_roster();
         Ok(())
     }
 
@@ -797,7 +796,6 @@ impl MatchSession {
             ready: false,
             map_status: 0,
         });
-        launch.rebuild_house_roster();
         self.keep_spectator_row()?;
         // A newcomer who gets a seat in a VERA room with teams joins the
         // team with the fewest players.
@@ -830,7 +828,6 @@ impl MatchSession {
         if index < launch.local_player_index {
             launch.local_player_index -= 1;
         }
-        launch.rebuild_house_roster();
         self.keep_spectator_row()
     }
 
@@ -1009,7 +1006,6 @@ impl MatchSession {
                     observer_row.unwrap_or(target)
                 });
             }
-            self.editable_network_setup()?.rebuild_house_roster();
             self.keep_spectator_row()?;
             return Ok(change);
         }
@@ -1224,7 +1220,6 @@ impl MatchSession {
             }
         }
         validate_network_option_rows(&candidate)?;
-        candidate.rebuild_house_roster();
         *launch = candidate;
         *vacancies = next_vacancies;
         *display_ai = next_ai;
@@ -1352,7 +1347,6 @@ impl MatchSession {
             inactive_ai_options[index].team = inactive_choices[index].team.shell_value();
         }
         launch.ai_player_count = launch.opponents.len() as i32;
-        launch.rebuild_house_roster();
         Ok(removed)
     }
 
@@ -1399,7 +1393,6 @@ impl MatchSession {
         for choices in inactive_choices.iter_mut().take(usize::from(rows)) {
             (choices.country, choices.country_random) = set(choices.country);
         }
-        launch.rebuild_house_roster();
         Ok(())
     }
 
@@ -1435,7 +1428,6 @@ impl MatchSession {
         for choices in inactive_choices.iter_mut() {
             choices.country_random |= banned(choices.country);
         }
-        launch.rebuild_house_roster();
         Ok(())
     }
 
@@ -1487,7 +1479,6 @@ impl MatchSession {
                 inactive_choices[usize::from(row)] = choices;
             }
         }
-        launch.rebuild_house_roster();
         Ok(())
     }
 
@@ -1794,7 +1785,7 @@ impl MatchSession {
             incoming.options.game_speed
         );
         incoming.opponents.sort_by_key(|ai| ai.raw_slot_index);
-        incoming.rebuild_house_roster();
+        incoming.use_live_house_rows();
         // A Teams count this build does not offer leaves Teams Off.
         incoming.options.teams = incoming
             .options
@@ -1845,7 +1836,6 @@ impl MatchSession {
             .get_mut(index)
             .ok_or_else(|| anyhow::anyhow!("unknown participant"))?
             .role = role;
-        launch.rebuild_house_roster();
         Ok(())
     }
 
@@ -2110,7 +2100,6 @@ impl MatchSession {
                     **start = crate::skirmish_launch::LaunchStartPosition::Auto;
                 }
             }
-            launch.rebuild_house_roster();
         }
         self.keep_to_map_seats()?;
         self.keep_spectator_row()?;
@@ -2167,7 +2156,6 @@ impl MatchSession {
                 human.set_observer(true);
             }
         }
-        launch.rebuild_house_roster();
         Ok(())
     }
 
@@ -2286,9 +2274,6 @@ impl MatchSession {
             players[smallest] += 1;
             moved = true;
         }
-        if moved {
-            launch.rebuild_house_roster();
-        }
         Ok(moved)
     }
 
@@ -2330,7 +2315,6 @@ impl MatchSession {
                 SeatPick::Color(pick) => (*color, *random) = (pick, false),
             }
         }
-        launch.rebuild_house_roster();
         Ok(())
     }
 
@@ -2785,7 +2769,6 @@ impl MatchSession {
         for raw in inactive_ai_options {
             raw.team = human_team.shell_value();
         }
-        launch.rebuild_house_roster();
         candidate.keep_spectator_row()?;
         candidate.keep_players_on_teams()?;
         *self = candidate;
@@ -2810,7 +2793,6 @@ impl MatchSession {
             candidate.opponents = opponents;
             validate_network_rows(&candidate)?;
             candidate.opponents.sort_by_key(|ai| ai.raw_slot_index);
-            candidate.rebuild_house_roster();
             *launch = candidate;
         }
         Ok(())
@@ -2820,7 +2802,7 @@ impl MatchSession {
     /// order/identity, options and map cannot change at this seam.
     pub(crate) fn accept_network_assignments(
         &mut self,
-        resolved: SkirmishLaunchSession,
+        mut resolved: SkirmishLaunchSession,
     ) -> anyhow::Result<()> {
         let current = self.editable_network_setup()?;
         anyhow::ensure!(
@@ -2856,6 +2838,7 @@ impl MatchSession {
             resolved.house_roster_is_consistent(),
             "inconsistent resolved House roster"
         );
+        resolved.use_live_house_rows();
         *current = resolved;
         Ok(())
     }
@@ -3717,7 +3700,6 @@ pub(crate) fn apply_peer_choices(
         change.options = true;
     }
     launch.humans[index].slot = slot;
-    launch.rebuild_house_roster();
     change
 }
 
@@ -3889,7 +3871,7 @@ fn admit_network_start_roster(launch: &SkirmishLaunchSession) -> anyhow::Result<
     );
     anyhow::ensure!(
         launch.house_roster_is_consistent(),
-        "network House constructor cache disagrees with the participant roster"
+        "network House constructors disagree with the participant rows"
     );
     crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(launch.clone())
         .map_err(|error| anyhow::anyhow!("network assignments unresolved: {error}"))?;
@@ -3940,7 +3922,6 @@ mod tests {
             })
             .collect();
         launch.local_player_index = 29;
-        launch.rebuild_house_roster();
         let mut session = MatchSession::default();
         session.enter_network(super::NetworkReturnContext::Wol);
         session
@@ -4987,7 +4968,6 @@ mod tests {
                 difficulty: crate::skirmish_launch::AiDifficulty::Easy,
             });
         launch.ai_player_count = 1;
-        launch.rebuild_house_roster();
         session
             .accept_network_setup(launch, false, None, false)
             .unwrap();
@@ -5373,8 +5353,7 @@ mod tests {
             .unwrap();
         let mut session = MatchSession::default();
         session.enter_network(super::NetworkReturnContext::Wol);
-        let mut launch = network_fixture();
-        launch.rebuild_house_roster();
+        let launch = network_fixture();
         session
             .accept_network_setup(launch.clone(), false, None, false)
             .unwrap();

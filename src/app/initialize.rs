@@ -1447,12 +1447,12 @@ pub(crate) fn quickplay_launch_session(
         log::warn!("RA2_QUICKPLAY needs the MPModesMD.ini Battle row; not launching");
         return None;
     };
-    Some(SkirmishLaunchSession {
-        mode: SkirmishLaunchMode::from_game_mode(battle),
-        selected_map_file: Some(selected_map),
+    Some(SkirmishLaunchSession::from_rows(
+        SkirmishLaunchMode::from_game_mode(battle),
+        Some(selected_map),
         // The local House takes the player name, so naming it after the
         // country lets a fixture map's `Americans`-owned objects spawn.
-        humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+        vec![crate::skirmish_launch::SkirmishHumanSlot {
             raw_slot_index: Some(0),
             name: "Americans".to_string(),
             slot: SkirmishLocalSlot {
@@ -1467,13 +1467,11 @@ pub(crate) fn quickplay_launch_session(
             },
             role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
         }],
-        local_player_index: 0,
+        0,
         // An empty AI house is still a contender: its automatic defeat would
         // award victory to the fixture owner and end the comparison session.
-        ai_player_count: 0,
-        opponents: Vec::new(),
-        pre_fill_house_roster: crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(0),
-        options: SkirmishLaunchOptions {
+        Vec::new(),
+        SkirmishLaunchOptions {
             // VERA developer shortcut: fixture maps carry their own objects.
             // Both native starting-force gates must be off: UnitCount=0 alone
             // still adds an MCV at each start and reveals an extra radar area.
@@ -1481,7 +1479,7 @@ pub(crate) fn quickplay_launch_session(
             unit_count: 0,
             ..SkirmishLaunchOptions::default()
         },
-    })
+    ))
 }
 
 #[cfg(all(test, tests_app))]
@@ -1569,7 +1567,7 @@ mod tests {
         assert_eq!(session.required_start_count(), 1);
         assert!(
             session
-                .pre_fill_house_roster
+                .pre_fill_house_roster()
                 .ai_slots()
                 .iter()
                 .all(|slot| !slot.valid)
@@ -1614,7 +1612,9 @@ mod tests {
                     team: LaunchTeam::None,
                     difficulty: AiDifficulty::Easy,
                 });
-                session.pre_fill_house_roster = PreFillHouseRoster::from_compact_skirmish(1);
+                session.set_recorded_house_roster_for_test(
+                    PreFillHouseRoster::from_compact_skirmish(1),
+                );
             }
             let descriptor = MatchLaunchDescriptor::from_resolved(session).unwrap();
             let mut loaded =
