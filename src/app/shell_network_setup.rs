@@ -475,6 +475,17 @@ impl NetworkSetupProtocol {
         }
     }
 
+    /// A launcher's or a watch's setup (`external`): with no dialog it sends
+    /// none of the room's pings or start requests.
+    fn dialogless(dialog: SetupDialog) -> Self {
+        Self {
+            external: true,
+            ping_deadline: None,
+            requests: Vec::new(),
+            ..Self::new(dialog, false)
+        }
+    }
+
     /// No join is told for a moment: see `quiet_joins_until`.
     pub(crate) fn quiet_joins(&mut self) {
         self.quiet_joins_until = Some(Instant::now() + QUIET_JOINS);
@@ -726,11 +737,7 @@ pub(crate) fn install_external_setup(
         .match_state
         .session
         .accept_external_network_map_source(loaded.source, effective)?;
-    let mut protocol = NetworkSetupProtocol::new(dialog(state), false);
-    protocol.external = true;
-    protocol.ping_deadline = None;
-    protocol.requests.clear();
-    state.frontend.network_setup_protocol = Some(protocol);
+    state.frontend.network_setup_protocol = Some(NetworkSetupProtocol::dialogless(dialog(state)));
     Ok(())
 }
 
@@ -767,11 +774,7 @@ pub(crate) fn install_watch_setup(
     let capacity = map_metadata.player_capacity;
     session.accept_network_host_setup(launch, vacancies, capacity, observer_row, false)?;
     session.accept_network_map_metadata(map_metadata, None, true)?;
-    let mut protocol = NetworkSetupProtocol::new(dialog(state), false);
-    protocol.external = true;
-    protocol.ping_deadline = None;
-    protocol.requests.clear();
-    state.frontend.network_setup_protocol = Some(protocol);
+    state.frontend.network_setup_protocol = Some(NetworkSetupProtocol::dialogless(dialog(state)));
     Ok(())
 }
 
