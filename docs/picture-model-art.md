@@ -414,17 +414,22 @@ current: say what was done, what was not, and what comes next.
 
 ### In progress
 
-- Compiles: `check -p vera20k --lib --bins` and every lib test build pass.
-- Full lib test run (both crates, retail INIs, this machine): 12,608 passed,
-  756 failed. All but eight failures are missing files in this machine's
-  retail folder (maps such as Hills.mmx, MOVIES01.MIX, language CSFs). Three
-  of the eight came from this work and are fixed (`bb588c2db`): platform
-  trig in model_file, a rules-to-map dependency, an overflow on empty
-  picture frames. The other five fail on the base commit too
-  (`retail_ifv_tip_names_its_turret_or_passenger`,
-  `sim_does_not_reference_the_generator`, and three tests needing the
-  missing language files or Transylv.yro).
-- Next: production validation (step 3 below), then the off-state check.
+- Compiles; lib tests run (see the commit log for the failures that came
+  from missing retail files on this machine and the three fixed ones).
+- Production validation done for pictures (`ce7da48c3`): GI
+  (`Picture=GI.png`) and the Allied power plant (`Picture=GAPOWR.png`, body
+  `GGPOWR.png`, Buildup `GTPOWRMK.png`, all from `asset export-picture`) in
+  `map_observation.barracks-output` at steps 300, 1200 and 2200 keep the SHP
+  run's simulation state hash, and their frames differ from it only in the 3
+  to 7 ore-field pixels two SHP runs also differ in. The building run found
+  and fixed a missing BUILDNGZ shape on picture buildings.
+- Off-state check, first run: base and head give the same sim-bench final
+  hash (9,000 ticks, 1v29) and rules hash; 100% frames differ only in ore-field
+  noise. Its frame times ran beside other builds and are being re-measured
+  quietly; the 150% captures failed on a cursor over a unit and are being
+  rerun with the camera moved.
+- Next: model validation (a glb vehicle in a match). It needs a glb; port
+  `asset export-mesh` from `feature/mesh-render` (VXL to glb) for that.
 
 ### Next steps, in order
 
@@ -435,7 +440,7 @@ current: say what was done, what was not, and what comes next.
    AGENTS.md), with `RA2_DIR` set and `VERA20K_REQUIRE_RETAIL_INI=1`; fix,
    commit, push. Also `python -m tools.run_tests` for the Python tools, and
    the wasm check in docs/wasm.md (sprite_atlas.rs is in its list).
-3. Production validation: `asset export-picture` a retail anim, a building
+3. Done for pictures; models remain. Production validation: `asset export-picture` a retail anim, a building
    and an infantry type into a scratch game folder with a loose artmd.ini that
    declares them; capture with map_observation and compare against the SHP
    capture (they should match pixel for pixel at 1x). Then one glb vehicle in
