@@ -662,19 +662,19 @@ mission: a watcher's game cannot yet rebuild their starts. A host chooses in Cre
 Game who may watch the room's games: everyone 2 minutes behind (the default), nobody,
 or everyone live. Quick Match and ranked games are always watched 2 minutes behind.
 
-One person who watches AI play alone would play without the relay, which then keeps no
-stream to watch ([above](#current-production-path)). When the room lets others watch,
-the person's game signed in with `Vera-Watch-AI: 1`, and the selected relay has
-both `watch: true` and `ordered_alone: true` in the lobby's fleet configuration,
-the lobby marks the match's certificate (VO2C flags bit 1,
-`OrderingCertificate::ordered_alone`). The relay then orders the match from its one
-source. Without that relay capability, the lone observer plays locally. That person's game then plays it through the relay as a match of two would
-(`LiveCommandSession::new`), with its command lead time, and losing the relay ends it.
-Watching is on by default, so such a match holds a relay ordering room and journal, one
-source's share, whether or not anyone watches; a host who turns watching off plays it
-without the relay. Every game built with this sends the header on `POST /v1/sessions`;
-a version cannot say it, since a nightly build names the next version before it has
-the code.
+A lone observer normally plays an AI match locally, so there is no stream for
+others to watch ([above](#current-production-path)). To make it watchable, the
+room must allow watching, the observer's game must advertise `Vera-Watch-AI: 1`
+at sign-in, and the selected relay must have both `watch: true` and
+`ordered_alone: true` in the lobby's fleet configuration.
+
+When all three apply, the lobby sets VO2C flags bit 1
+(`OrderingCertificate::ordered_alone`). The relay then orders that one source,
+and the game plays through it with the usual command lead time
+(`LiveCommandSession::new`). Even without a watcher, the match holds a relay
+ordering room and journal, and losing the relay ends it. The desktop client
+advertises support. Other clients keep local play for a lone observer until
+they advertise it too.
 
 The lobby's grant carries the match's start, its options and a watch ticket. The
 watcher's game downloads the map as a guest does, checks that its version and rules
