@@ -1988,7 +1988,7 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             }
         }
         WolServiceRequest::EndVisit => service.command("end_visit", json!({})),
-        WolServiceRequest::VisitChat { line, to } => send_chat(service, line, to, true),
+        WolServiceRequest::VisitChat { line, to } => chat(state, service, line, to, true),
         WolServiceRequest::VisitEmote { text, to } => service.command(
             "chat",
             json!({"text":String::from_utf16_lossy(&text),"to":to,"action":true,"visit":true}),
@@ -2022,7 +2022,7 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             service.begin_logout(Instant::now());
             crate::app::lan_service::close(state);
         }
-        WolServiceRequest::Chat { line, to } => send_chat(service, line, to, false),
+        WolServiceRequest::Chat { line, to } => chat(state, service, line, to, false),
         WolServiceRequest::Emote { text, to } => service.command(
             "chat",
             json!({"text":String::from_utf16_lossy(&text),"to":to,"action":true}),
@@ -2106,31 +2106,69 @@ fn request_match(
     let text = request.text(super::quick_match::MatchTransport::default());
     send_chat(
         service,
+        None,
         WolChatLine::Say(text.encode_utf16().collect()),
         vec![matchbot],
         false,
     );
 }
 
+/// [`send_chat`], answering a page's result to its sink `0x007A9800`.
+fn chat(
+    state: &mut AppState,
+    service: &mut LiveService,
+    line: WolChatLine,
+    to: Vec<String>,
+    visit: bool,
+) {
+    if let Some(result) = send_chat(service, state.frontend.wol.as_ref(), line, to, visit) {
+        service_event(state, WolServiceEvent::PageResult(result));
+    }
+}
+
 /// `visit` sends to the public lobby this player visits from their room.
-fn send_chat(service: &mut LiveService, line: WolChatLine, mut to: Vec<String>, visit: bool) {
-    let text = match line {
-        WolChatLine::Say(text) | WolChatLine::Reply { text } => text,
-        WolChatLine::Page { name, text } => {
-            to = vec![String::from_utf16_lossy(&name)];
-            text
+/// A page (API+0xF8, or `/reply` to `[0xB77E30]`) returns its result: the
+/// lobby delivers private chat only within one room and outside a match
+/// (docs/lobby-protocol.md, `chat`), so a page goes, under the name the
+/// room lists, to this player's channel or the lobby they visit, and fails
+/// unsent for anyone neither lists.
+/// RESIDUAL: success is answered on sending; a later refusal shows the
+/// generic refused line after `TXT_PAGESENT`.
+fn send_chat(
+    service: &mut LiveService,
+    wol: Option<&super::WolVisit>,
+    line: WolChatLine,
+    mut to: Vec<String>,
+    mut visit: bool,
+) -> Option<Result<(), u32>> {
+    let (text, page) = match line {
+        WolChatLine::Say(text) => (text, None),
+        WolChatLine::Page { name, text } => (text, Some(String::from_utf16_lossy(&name))),
+        WolChatLine::Reply { text } => {
+            let pager = wol
+                .and_then(|wol| wol.last_pager.clone())
+                .unwrap_or_default();
+            (text, Some(pager))
         }
         WolChatLine::Locate { name } => {
             service.command("locate", json!({"name":String::from_utf16_lossy(&name)}));
-            return;
+            return None;
         }
-        WolChatLine::Notice(_) => return,
+        WolChatLine::Notice(_) => return None,
     };
+    if let Some(name) = &page {
+        let Some((name, visited)) = wol.and_then(|wol| super::lobby::page_target(wol, name)) else {
+            return Some(Err(0x8000_4005));
+        };
+        to = vec![name.to_owned()];
+        visit = visited;
+    }
     let mut chat = json!({"text":String::from_utf16_lossy(&text),"to":to,"action":false});
     if visit {
         chat["visit"] = Value::Bool(true);
     }
     service.command("chat", chat);
+    page.map(|_| Ok(()))
 }
 
 /// The map digests are the verified local source's. Without one the map
@@ -2528,13 +2566,13 @@ fn request_setup(
         NetworkSetupRequest::Balance => {
             service.command("chat", json!({"text":"/balance","to":[],"action":false}))
         }
-        NetworkSetupRequest::WolChat(line) => send_chat(service, line, Vec::new(), false),
+        NetworkSetupRequest::WolChat(line) => chat(state, service, line, Vec::new(), false),
         NetworkSetupRequest::WolEmote(text) => service.command(
             "chat",
             json!({"text":String::from_utf16_lossy(&text),"to":[],"action":true}),
         ),
         NetworkSetupRequest::Chat(text) => {
-            send_chat(service, WolChatLine::Say(text), Vec::new(), false)
+            send_chat(service, None, WolChatLine::Say(text), Vec::new(), false);
         }
         // RESIDUAL: mode+64's C1 (0x005C2710) is not carried, as on LAN:
         // VERA reads no round assignment after the publish, so guests keep
@@ -4765,6 +4803,29 @@ mod completion_tests {
                 })
             )
         );
+    }
+
+    /// The lobby drops private chat to anyone outside the sender's room: a
+    /// page with no listed target fails unsent, and a reply never goes to
+    /// the whole room.
+    #[test]
+    fn a_page_or_reply_without_a_listed_target_fails_unsent() {
+        let (mut service, input, _output) = control_service(None);
+        let visit = super::super::WolVisit::open(false);
+        let units = |text: &str| text.encode_utf16().collect::<Vec<u16>>();
+        let page = WolChatLine::Page {
+            name: units("Bob"),
+            text: units("hi"),
+        };
+        let reply = WolChatLine::Reply { text: units("hi") };
+        for line in [page, reply] {
+            let result = send_chat(&mut service, Some(&visit), line, Vec::new(), false);
+            let sent = input.try_recv().ok().map(|request| match request {
+                http::Request::Command { payload, .. } => payload,
+                _ => Value::Null,
+            });
+            assert_eq!((result, sent), (Some(Err(0x8000_4005)), None));
+        }
     }
 
     /// Only the matchbot's ANSI `Start` gives its host the pairing.

@@ -152,6 +152,14 @@ Commands and their payloads:
 | `ladder` | `{names:[name]}` |
 | `balance` | `{}` |
 
+`chat` reaches the other members of the sender's room, or with `visit:true` of the lobby
+they visit, and with `to` only those it names, by exact name; it succeeds when `to` names
+nobody there. Outside a room it fails with 409 `not_in_room`, and in a room past its lobby
+phase with 409 `match_active`; [Quick Match](#quick-match) chat goes only to the matchbot.
+Games page a player (`/page`, `/reply`, the Page dialog) as `chat` with `to:[name]`, under
+the name their room or visited lobby lists; for a player neither lists, or during a match,
+they show the page as failed and send nothing.
+
 HostOptions is `{launch,map_metadata,vacancies,observer_row,cooperative_difficulty,seed}`.
 A slot's `color_index` is 0 to 7 for the original colours, 8 for an observer and 9 to 30
 for the game's [extra lobby colours](skirmish-colors.md); the lobby passes 0 to 255 on
