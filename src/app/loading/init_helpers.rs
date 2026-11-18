@@ -368,6 +368,9 @@ pub(crate) fn bind_rules_art_metadata(
 ) {
     // ARTMD is read the way the game's Rules were (`ares_switch::ares_way`).
     let _ares_way = crate::rules::ares_switch::read_ares_way(rules.reads_ares_way());
+    // This load's art problems, shown once its match has loaded
+    // (`input::messages::post_art_problems`), start here.
+    crate::rules::art_problems::begin();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(fixed_art));
     let (populated, fallback) = rules.populate_anim_frame_dims(assets, theater_ext, theater_name);
     log::info!("Anim frame dims: {populated} populated, {fallback} fallback (defaults to 30x30)");

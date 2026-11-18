@@ -211,6 +211,7 @@ mod ares_type_selection_tests;
 pub mod compatibility;
 pub mod animation_sequence;
 pub mod art_data;
+pub mod art_problems;
 pub mod bridge_warheads;
 pub mod building_extra_power;
 pub mod building_light;

@@ -822,16 +822,8 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         message_list.set_width(tactical_width as i32);
     }
     state.match_state.match_presentation.message_list = message_list;
-    crate::app::input::messages::post_layout_problem(
-        &state.platform,
-        &state.renderer,
-        &state.diag,
-        &state.frontend,
-        &mut state.match_state,
-        &state.process_assets,
-        &mut state.audio.sfx_player,
-        &state.persistence,
-    );
+    crate::app::input::messages::post_layout_problem(state);
+    crate::app::input::messages::post_art_problems(state);
     state.match_state.match_presentation.chat = Default::default();
     // Clear_Scene6851F0 -> 534450 resets BeaconManagerClass (53499B).
     // Display Init_Clear4A88C0 clears +11B0..+11B2, not beacon mode +11B4.

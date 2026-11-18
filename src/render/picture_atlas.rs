@@ -468,7 +468,45 @@ impl PictureSources {
                     .picture_candidates(section, decl, theater_name)
                     .into_iter()
                     .find_map(|file| asset_manager.get_ref(&file).map(|bytes| (file, bytes)))?;
-                decode_declared_picture(section, &file, bytes, &decl, asset_manager)
+                let mask_name = format!(
+                    "{}.mask.png",
+                    file.rsplit_once('.')
+                        .map_or(file.as_str(), |(stem, _)| stem)
+                );
+                let decoded = PictureFrames::decode(bytes).and_then(|picture| {
+                    let mask = asset_manager
+                        .get_ref(&mask_name)
+                        .map(PictureFrames::decode)
+                        .transpose()?;
+                    Ok((picture, mask))
+                });
+                let shrunk = decoded
+                    .map_err(PictureArtError::from)
+                    .and_then(|(picture, mask)| {
+                        let canvas = decl.size.map(|size| size.map(|side| side.unsigned_abs()));
+                        GamePictureFrames::shrink(&picture, mask.as_ref(), canvas)
+                    });
+                match shrunk {
+                    Ok(frames) => {
+                        log::info!(
+                            "[{section}] {file}: {} frames of {}x{}",
+                            frames.frame_count(),
+                            frames.canvas[0],
+                            frames.canvas[1]
+                        );
+                        Some(frames)
+                    }
+                    Err(error) => {
+                        log::warn!("[{section}] {file} cannot be drawn: {error}");
+                        crate::rules::art_problems::report(
+                            section,
+                            &format!("Picture={}", decl.file),
+                            &format!("{file} cannot be drawn ({error})"),
+                            "it draws nothing",
+                        );
+                        None
+                    }
+                }
             })
             .as_ref()
     }
@@ -714,6 +752,12 @@ fn pack_scale(mut pictures: Vec<PlacedPicture>, max_side: u32, scale: u32) -> Ve
                 "[{}] frame {} is {width}x{height}, larger than a {max_side} page",
                 picture.key.type_id,
                 picture.key.frame
+            );
+            crate::rules::art_problems::report(
+                &picture.key.type_id,
+                "Picture=",
+                &format!("a frame is larger than a {max_side}x{max_side} page"),
+                "such frames draw nothing",
             );
             continue;
         }

@@ -1866,6 +1866,39 @@ fn a_declared_picture_stands_in_for_the_shp_header_and_only_when_declared() {
     assert_eq!(plain.raw_shp_height, Some(50));
 }
 
+/// A refused `PictureSize=` and a missing picture each become one line for
+/// the player (`art_problems`), however often the art is read or the picture
+/// looked up (docs/picture-model-art.md, "Keys").
+#[test]
+fn bad_picture_art_reports_one_line_per_problem() {
+    let root = AnimDimTestRoot::new();
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    let ini = IniFile::from_str("[PMNOTICE]\nPicture=pmnotice.png\nPictureSize=0,30\n");
+    let art = ArtRegistry::from_ini(&ini);
+    let _read_again = ArtRegistry::from_ini(&ini);
+    let decl = art.get("PMNOTICE").unwrap().picture.clone().unwrap();
+    assert_eq!(decl.size, None, "the refused size");
+    for _ in 0..2 {
+        assert!(
+            art.picture_header("PMNOTICE", &decl, &assets, "TEMPERATE")
+                .is_none()
+        );
+    }
+
+    let lines: Vec<String> = crate::rules::art_problems::lines()
+        .into_iter()
+        .filter(|line| line.starts_with("[PMNOTICE]"))
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            "[PMNOTICE] PictureSize=: needs two sizes from 1 to 4096; \
+             the picture's own size is used.",
+            "[PMNOTICE] Picture=pmnotice.png: the file is not found; it draws nothing.",
+        ]
+    );
+}
+
 /// Retail art declares no picture, so every retail image keeps its SHP path
 /// and nothing looks for a picture (docs/picture-model-art.md, "Off").
 #[test]

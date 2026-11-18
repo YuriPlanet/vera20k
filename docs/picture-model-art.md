@@ -48,7 +48,9 @@ numbers, so `Start=`, `End=`, `LoopStart=`, `Shadow=`, `Sequence=`,
 
 A value out of range is refused with an in-game message naming the section and
 key; a refused `Picture=` or `Model=` leaves the section with no art (it draws
-nothing), as a missing SHP or VXL does today.
+nothing), as a missing SHP or VXL does today. A file that is missing, cannot
+be read or cannot be drawn is told the same way. The match shows these once,
+when it has loaded: the first three, then how many more the log file lists.
 
 For a building, `Buildup=` and `BibShape=` name pictures (`NAME.png`) when the
 building's section declares `Picture=`; they take its `PictureSize=`.

@@ -857,13 +857,29 @@ impl SpriteAtlas {
             return;
         }
         let max_side = device.limits().max_texture_dimension_2d;
-        for page in crate::render::picture_atlas::pack_picture_pages(pictures, max_side) {
+        let mut pages =
+            crate::render::picture_atlas::pack_picture_pages(pictures, max_side).into_iter();
+        while let Some(page) = pages.next() {
             let index = self.pages.len();
             let Ok(page_byte) = u8::try_from(index) else {
                 log::warn!(
                     "Sprite atlas: no page left for {} picture sprites",
                     page.sprites.len()
                 );
+                // Every section left out, this page's and the later ones'.
+                let sections: std::collections::BTreeSet<&str> = std::iter::once(&page)
+                    .chain(pages.as_slice())
+                    .flat_map(|page| &page.sprites)
+                    .map(|(picture, _)| picture.key.type_id.as_str())
+                    .collect();
+                for section in sections {
+                    crate::rules::art_problems::report(
+                        section,
+                        "Picture=",
+                        "the sprite atlas has no page left for it",
+                        "it draws nothing",
+                    );
+                }
                 return;
             };
             let texture = batch.create_texture_on_device(

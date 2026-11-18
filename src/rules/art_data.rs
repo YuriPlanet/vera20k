@@ -108,6 +108,12 @@ fn parse_picture_decl(section_name: &str, section: &IniSection) -> Option<Pictur
                 "[{section_name}] PictureSize= needs two sizes from 1 to {PICTURE_SIZE_MAX}; \
                  the picture's own size is used"
             );
+            crate::rules::art_problems::report(
+                section_name,
+                "PictureSize=",
+                &format!("needs two sizes from 1 to {PICTURE_SIZE_MAX}"),
+                "the picture's own size is used",
+            );
         }
         size
     });
@@ -2455,12 +2461,24 @@ impl ArtRegistry {
             .find_map(|file| asset_manager.get_ref(file).map(|bytes| (file, bytes)))
         else {
             log::warn!("[{section}] {} is not found; it has no frames", decl.file);
+            crate::rules::art_problems::report(
+                section,
+                &format!("Picture={}", decl.file),
+                "the file is not found",
+                "it draws nothing",
+            );
             return None;
         };
         let header = match crate::assets::picture_file::PictureHeader::read(bytes) {
             Ok(header) => header,
             Err(error) => {
                 log::warn!("[{section}] {file} cannot be read ({error}); it has no frames");
+                crate::rules::art_problems::report(
+                    section,
+                    &format!("Picture={}", decl.file),
+                    &format!("{file} cannot be read ({error})"),
+                    "it draws nothing",
+                );
                 return None;
             }
         };
@@ -2474,6 +2492,12 @@ impl ArtRegistry {
                 "[{section}] {file} has {} frames; the first {} are used",
                 header.frames,
                 i16::MAX
+            );
+            crate::rules::art_problems::report(
+                section,
+                &format!("Picture={}", decl.file),
+                &format!("{file} has {} frames", header.frames),
+                &format!("the first {} are used", i16::MAX),
             );
         }
         Some(PictureFacts {

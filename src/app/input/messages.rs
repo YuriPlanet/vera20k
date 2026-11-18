@@ -1805,6 +1805,27 @@ pub(crate) fn post_layout_problem(
     );
 }
 
+/// The most art problems [`post_art_problems`] shows as rows of their own.
+const ART_PROBLEM_ROWS: usize = 3;
+
+/// VERA: declared `Picture=` or `Model=` art that this load could not use as
+/// written (`rules::art_problems`, docs/picture-model-art.md), said once when
+/// the match has loaded: the first few problems, then how many more the log
+/// lists. The lines name sections, keys and files, so they stay in English.
+/// Art that declares neither key reports nothing, and nothing is shown.
+pub(crate) fn post_art_problems(state: &mut AppState) {
+    let problems = crate::rules::art_problems::take();
+    // One incoming-message sound for the lot.
+    for (row, line) in problems.iter().take(ART_PROBLEM_ROWS).enumerate() {
+        post_grey_row(state, line, false, row > 0);
+    }
+    if problems.len() > ART_PROBLEM_ROWS {
+        let more = problems.len() - ART_PROBLEM_ROWS;
+        let text = format!("And {more} more art problems (see the log).");
+        post_grey_row(state, &text, false, true);
+    }
+}
+
 /// What the layout edit mode tells the player (`input::layout_edit`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LayoutEditLine {

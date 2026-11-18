@@ -209,6 +209,7 @@ pub(crate) fn commit_prepared_load(
     let message_list = &mut state.match_state.match_presentation.message_list;
     *message_list = crate::ui::messages::MessageList::scenario();
     message_list.set_width(tactical_w);
+    crate::app::input::messages::post_art_problems(state);
     state
         .match_state
         .match_presentation
