@@ -1975,7 +1975,7 @@ fn a_one_human_match_orders_through_the_relay_only_when_the_lobby_marked_it() {
         };
         wire.set_ordering_certificate(certificate.sign(&key).unwrap())
             .unwrap();
-        let agreement = StartupAgreement::new([(0, 0)], [0], 73, 10, 30, rate, 0).unwrap();
+        let agreement = StartupAgreement::new([(0, 0)], [0], 73, 10, 30, rate, 0, "", "").unwrap();
         let live =
             LiveCommandSession::new(agreement, wire, 0, 73, rate, LiveCommandMode::Wol).unwrap();
         assert_eq!(live.uses_sequenced_lockstep(), alone, "marked: {alone}");
