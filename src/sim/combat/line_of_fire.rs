@@ -143,7 +143,7 @@ pub(crate) struct LineOfFireParties {
 }
 
 /// One shot's walk inputs: its projectile's obstacle flags and its parties.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct LineOfFireShot {
     pub subject_to_cliffs: bool,
     pub subject_to_walls: bool,
@@ -158,10 +158,37 @@ pub(crate) struct LineOfFireShot {
     /// `src/rules/phobos_bullet_terrain.rs`), the terrain predicate's subject.
     pub phobos_subject_to_land: Option<bool>,
     pub phobos_subject_to_water: Option<bool>,
+    /// The two `.Detonate=` companions (`Valueable<bool>`, constructed true).
+    /// They only answer on the bullet's own flight
+    /// (`Ext/Bullet/Hooks.Obstacles.cpp:90-110`), where `isTargetingCheck` is
+    /// false: `false` lets the bullet fly through the cell it matches.
+    pub phobos_subject_to_land_detonate: bool,
+    pub phobos_subject_to_water_detonate: bool,
     /// Ares BulletTypeExt `SubjectToBuildings` (`+0x8`).
     #[cfg(feature = "ares")]
     pub subject_to_solid: bool,
     pub parties: LineOfFireParties,
+}
+
+impl Default for LineOfFireShot {
+    /// The two `.Detonate=` companions are constructed **true**
+    /// (`Ext/BulletType/Body.h:115-118`), so a fixture that fills only one key
+    /// keeps the detonating answer.
+    fn default() -> Self {
+        Self {
+            subject_to_cliffs: false,
+            subject_to_walls: false,
+            subject_to_ground: false,
+            phobos_level: false,
+            phobos_subject_to_land: None,
+            phobos_subject_to_water: None,
+            phobos_subject_to_land_detonate: true,
+            phobos_subject_to_water_detonate: true,
+            #[cfg(feature = "ares")]
+            subject_to_solid: false,
+            parties: LineOfFireParties::default(),
+        }
+    }
 }
 
 impl LineOfFireShot {
@@ -177,6 +204,10 @@ impl LineOfFireShot {
                 .and_then(|p| p.phobos_subject_to_terrain.subject_to_land),
             phobos_subject_to_water: projectile
                 .and_then(|p| p.phobos_subject_to_terrain.subject_to_water),
+            phobos_subject_to_land_detonate: projectile
+                .is_none_or(|p| p.phobos_subject_to_terrain.subject_to_land_detonate),
+            phobos_subject_to_water_detonate: projectile
+                .is_none_or(|p| p.phobos_subject_to_terrain.subject_to_water_detonate),
             #[cfg(feature = "ares")]
             subject_to_solid: projectile.is_some_and(|p| p.bullet_type_ext.subject_to_solid),
             parties,
@@ -203,13 +234,14 @@ impl LineOfFireShot {
             || self.subject_to_ground
     }
 
-    /// Phobos `SubjectToTerrain`'s cell arm (`Ext/Bullet/Hooks.Obstacles.cpp:90-110`)
-    /// at the `isTargetingCheck = true` call `TechnoClass::InRange` makes (`:222-237`):
-    /// a water or beach cell answers `SubjectToWater`, everything else
-    /// `SubjectToLand`. The `Level` floor branch is guarded by
-    /// `!isTargetingCheck`, so it cannot fire on this arm, and `.Detonate` is
-    /// only read when the check is false (the bullet's own flight).
-    fn phobos_terrain_blocks(&self, cell: &CellRef<'_>) -> bool {
+    /// Phobos `SubjectToTerrain`'s cell arm (`Ext/Bullet/Hooks.Obstacles.cpp:90-110`).
+    /// `TechnoClass::InRange` calls it with `isTargetingCheck = true`
+    /// (`:222-237`): a water or beach cell answers `SubjectToWater`, everything
+    /// else `SubjectToLand`, and `.Detonate`/the `Level` floor branch are
+    /// unreachable there. The bullet's own flight (`0x468C86` `GetObstacle`)
+    /// passes `false`, where the same match answers the `.Detonate=` companion —
+    /// a `false` lets the bullet keep flying through the cell.
+    pub(crate) fn phobos_terrain_blocks(&self, cell: &CellRef<'_>, targeting_check: bool) -> bool {
         let CellRef::Real(cell) = cell else {
             return false;
         };
@@ -217,8 +249,10 @@ impl LineOfFireShot {
             || cell.land_type == crate::rules::terrain_rules::LandType::Beach.as_index();
         if water {
             self.phobos_subject_to_water == Some(true)
+                && (targeting_check || self.phobos_subject_to_water_detonate)
         } else {
             self.phobos_subject_to_land == Some(true)
+                && (targeting_check || self.phobos_subject_to_land_detonate)
         }
     }
 }
@@ -662,7 +696,7 @@ fn walk_arm<'a>(
         // sample lands in, the native `pCellCur`.
         let current = lookup(packed(sample));
         if matches!(arm, WalkArm::Phobos) {
-            if shot.phobos_terrain_blocks(&current) {
+            if shot.phobos_terrain_blocks(&current, true) {
                 return Some(current);
             }
             if shot.subject_to_ground
@@ -957,6 +991,47 @@ mod tests {
             })),
             Some((1, 1)),
             "the predicted source is below the floor"
+        );
+    }
+
+    /// The two `.Detonate=` companions (`Ext/BulletType/Body.h:115-118`) only
+    /// answer on the bullet's own flight (`0x468C86` `GetObstacle` with
+    /// `isTargetingCheck = false`, `Ext/Bullet/Hooks.Obstacles.cpp:90-110,130-160`):
+    /// `false` lets the bullet fly through the cell it matches, while
+    /// `InRange`'s `isTargetingCheck = true` call never reads them.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn the_flight_arm_reads_detonate_and_the_range_arm_does_not() {
+        let mut terrain = crate::map::resolved_terrain::test_grid(
+            8,
+            8,
+            crate::map::resolved_terrain::test_flat_cell,
+        );
+        let land = CellRef::Real(
+            terrain
+                .cell_mut_for_test(1, 1)
+                .expect("the flat test grid is real"),
+        );
+        let shot = LineOfFireShot {
+            phobos_subject_to_land: Some(true),
+            phobos_subject_to_land_detonate: false,
+            ..Default::default()
+        };
+        assert!(
+            !shot.phobos_terrain_blocks(&land, false),
+            "Detonate=no flies through the land cell it matches"
+        );
+        assert!(
+            shot.phobos_terrain_blocks(&land, true),
+            "InRange never reads .Detonate"
+        );
+        let detonating = LineOfFireShot {
+            phobos_subject_to_land: Some(true),
+            ..Default::default()
+        };
+        assert!(
+            detonating.phobos_terrain_blocks(&land, false),
+            "the companion is constructed true"
         );
     }
 
