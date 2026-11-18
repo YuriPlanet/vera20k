@@ -970,3 +970,78 @@ fn powers_up_buildings_build_limit_counts_every_host() {
         "BuildLimit=2 is reached only when both hosts count"
     );
 }
+
+#[cfg(feature = "phobos")]
+fn queued_of(sim: &Simulation, owner: InternedId, category: ProductionCategory, name: &str) -> i32 {
+    let type_id = sim.interner.get(name).unwrap();
+    sim.production
+        .factories()
+        .count_total(owner, category, type_id)
+}
+
+/// `RemoveProduction @ Ext/House/Body.cpp:768-784`: a reached group drops the
+/// excess copies of the **queried** type from its factory and leaves the held
+/// product. Outside arm (the queried type is not a member) removes every copy.
+#[test]
+#[cfg(feature = "phobos")]
+fn build_limit_group_reach_prunes_the_excess_queue() {
+    let rules = build_limit_group_rules("BuildLimitGroup.Types=GT\nBuildLimitGroup.Nums=2\n", true);
+    let row = json!({
+        "owned": [["unit", "GT", 2]],
+        "factories": [{"kind": "building", "object": "HOST", "queued": ["UPG", "UPG"]}]
+    });
+    let (mut sim, owner) = sim_for(&row, &rules);
+    let upgrade = rules.object("UPG").unwrap().clone();
+    assert!(
+        check_build_limit(&sim, &rules, owner, &upgrade),
+        "owned GT=2 reaches Nums=2"
+    );
+    assert_eq!(
+        queued_of(&sim, owner, ProductionCategory::Building, "UPG"),
+        2
+    );
+    phobos_trim_build_limit_group_queue(&mut sim, &rules, owner, &upgrade);
+    assert_eq!(
+        queued_of(&sim, owner, ProductionCategory::Building, "UPG"),
+        0,
+        "the outside arm passes -1, so every queued copy leaves"
+    );
+    assert_eq!(
+        queued_of(&sim, owner, ProductionCategory::Building, "HOST"),
+        1,
+        "the held product stays"
+    );
+}
+
+/// The tail prune of the multi-limit arm (`Body.cpp:1179`) only fires when
+/// `realReached || NotBuildableIfQueueMatch`; the flag is the difference.
+#[test]
+#[cfg(feature = "phobos")]
+fn build_limit_group_tail_prune_follows_not_buildable_if_queue_match() {
+    let base = "BuildLimitGroup.Types=GT,EX\nBuildLimitGroup.Nums=2,1\n";
+    let row = json!({
+        "owned": [["unit", "GT", 1]],
+        "factories": [
+            {"kind": "vehicle", "object": "Q", "queued": ["GT"]},
+            {"kind": "building", "object": "HOST", "queued": ["UPG"]}
+        ]
+    });
+    for (extra, expected) in [
+        ("", 1),                                               // realReached=false: keep it
+        ("BuildLimitGroup.NotBuildableIfQueueMatch=yes\n", 0), // prune all
+    ] {
+        let rules = build_limit_group_rules(&format!("{base}{extra}"), true);
+        let upgrade = rules.object("UPG").unwrap().clone();
+        let (mut sim, owner) = sim_for(&row, &rules);
+        assert!(
+            check_build_limit(&sim, &rules, owner, &upgrade),
+            "the grey-out still reaches without the flag"
+        );
+        phobos_trim_build_limit_group_queue(&mut sim, &rules, owner, &upgrade);
+        assert_eq!(
+            queued_of(&sim, owner, ProductionCategory::Building, "UPG"),
+            expected,
+            "{extra:?}"
+        );
+    }
+}

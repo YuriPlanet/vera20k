@@ -1467,6 +1467,33 @@ impl FactoryRegistry {
         }
     }
 
+    /// `FactoryClass::RemoveFromQueue @ 0x004CA620`: drop the first queued
+    /// copy of `type_id`, keeping the rest in order. The held product is
+    /// untouched and no refund is issued — Phobos' `RemoveProduction` calls
+    /// this, not the abandon path. Returns false when nothing matched.
+    pub(super) fn remove_one_queued(
+        &mut self,
+        owner: InternedId,
+        category: ProductionCategory,
+        type_id: InternedId,
+    ) -> bool {
+        let Some(factory) = self
+            .factories
+            .get_mut(&FactoryHolder::House(owner, category))
+        else {
+            return false;
+        };
+        let Some(index) = factory
+            .queue
+            .iter()
+            .position(|entry| entry.type_id == type_id)
+        else {
+            return false;
+        };
+        factory.queue.remove(index);
+        true
+    }
+
     /// Link the EntityStore identity created at StartProduction to the active
     /// factory object. The link is established at progress zero and is retained
     /// through completion and every delivery retry.
