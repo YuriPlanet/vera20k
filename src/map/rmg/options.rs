@@ -63,6 +63,29 @@ pub struct RmgOptions {
     /// ([`Self::native_digest`]) leaves it out. Only code that runs when
     /// Ares.dll is loaded (the game is read the Ares way) sets or reads it.
     pub urban_areas: bool,
+    /// VERA extension: neutral tech-building amount, 0 = the original's own
+    /// random count. Above 0 it is a 0..100 slider that steers how many neutral
+    /// tech buildings the generator seats.
+    pub tech_building_amount: i32,
+    /// VERA extension: derelict combat buildings, 0 = none. A 0..100 slider
+    /// that scatters neutral, unpowered military buildings (radar, lab,
+    /// refinery, war factory, barracks, power, yard) over open ground.
+    pub derelict_amount: i32,
+    /// VERA extension: damage level, 0 = leave building health as generated.
+    /// A 0..100 slider that randomly damages every neutral building on the map
+    /// for a war-torn look; stronger than the War Damage Extra wins.
+    pub damage_amount: i32,
+    /// VERA extension: extra civilians, 0 = only the original urban foots. A
+    /// 0..100 slider that scatters civilian infantry and vehicles (the same
+    /// kinds a town already places) over open ground, all on Neutral.
+    pub civilian_amount: i32,
+    /// VERA extension: animals, 0 = none. A 0..100 slider that scatters the
+    /// rules' `Name=Animal …` infantry and vehicles on Neutral ground.
+    pub animal_amount: i32,
+    /// VERA extension: neutral defenders, 0 = none. A 0..100 slider that
+    /// scatters player-buildable infantry and vehicles (E1, GI, tanks, …) on
+    /// the Neutral house, so they defend themselves without a player house.
+    pub wild_amount: i32,
 }
 
 impl RmgOptions {
@@ -82,6 +105,10 @@ impl RmgOptions {
     /// buildings from it.
     pub fn wants_vera_catalog(&self) -> bool {
         self.urban_enabled
+            || self.derelict_amount > 0
+            || self.civilian_amount > 0
+            || self.animal_amount > 0
+            || self.wild_amount > 0
             || super::extras::Extra::ALL
                 .iter()
                 .any(|&extra| extra.needs_catalog() && self.extras.get(extra) != 0)
@@ -92,6 +119,18 @@ impl RmgOptions {
 const VERA_URBAN_KEY: &str = "VeraUrban";
 /// VERA's `.SED` key for [`RmgOptions::fair_starts`].
 const VERA_FAIR_KEY: &str = "VeraFair";
+/// VERA's `.SED` key for [`RmgOptions::tech_building_amount`].
+const VERA_TECH_AMOUNT_KEY: &str = "VeraTechBuildings";
+/// VERA's `.SED` key for [`RmgOptions::derelict_amount`].
+const VERA_DERELICT_KEY: &str = "VeraDerelicts";
+/// VERA's `.SED` key for [`RmgOptions::damage_amount`].
+const VERA_DAMAGE_KEY: &str = "VeraDamage";
+/// VERA's `.SED` key for [`RmgOptions::civilian_amount`].
+const VERA_CIVILIAN_KEY: &str = "VeraCivilians";
+/// VERA's `.SED` key for [`RmgOptions::animal_amount`].
+const VERA_ANIMAL_KEY: &str = "VeraAnimals";
+/// VERA's `.SED` key for [`RmgOptions::wild_amount`].
+const VERA_WILD_KEY: &str = "VeraWild";
 
 impl Default for RmgOptions {
     /// The original constructor's defaults (`MapSeedClass` ctor `0x00595680`,
@@ -120,6 +159,12 @@ impl Default for RmgOptions {
             seed: -1,
             description: SeedDescription::default(),
             urban_areas: false,
+            tech_building_amount: 0,
+            derelict_amount: 0,
+            damage_amount: 0,
+            civilian_amount: 0,
+            animal_amount: 0,
+            wild_amount: 0,
         }
     }
 }
@@ -155,6 +200,12 @@ impl RmgOptions {
         self.accessibility = self.accessibility.clamp(0, 100);
         self.region_size = self.region_size.clamp(0, 100);
         self.seed = self.seed.clamp(0, 0xFFFF);
+        self.tech_building_amount = self.tech_building_amount.clamp(0, 100);
+        self.derelict_amount = self.derelict_amount.clamp(0, 100);
+        self.damage_amount = self.damage_amount.clamp(0, 100);
+        self.civilian_amount = self.civilian_amount.clamp(0, 100);
+        self.animal_amount = self.animal_amount.clamp(0, 100);
+        self.wild_amount = self.wild_amount.clamp(0, 100);
     }
 
     /// Seed in the form the generator's RNG consumes. Normalizing first
@@ -198,6 +249,13 @@ impl RmgOptions {
         // whatever `self` held.
         self.urban_enabled = section.read_bool(VERA_URBAN_KEY, false);
         self.fair_starts = section.read_bool(VERA_FAIR_KEY, false);
+        // VERA: the Advanced sliders; absent means the original's behaviour.
+        read(VERA_TECH_AMOUNT_KEY, &mut self.tech_building_amount);
+        read(VERA_DERELICT_KEY, &mut self.derelict_amount);
+        read(VERA_DAMAGE_KEY, &mut self.damage_amount);
+        read(VERA_CIVILIAN_KEY, &mut self.civilian_amount);
+        read(VERA_ANIMAL_KEY, &mut self.animal_amount);
+        read(VERA_WILD_KEY, &mut self.wild_amount);
         for extra in super::extras::Extra::ALL {
             let value = section.read_int(extra.key(), 0).clamp(0, 255);
             self.extras.set(extra, value as u8);
@@ -238,6 +296,26 @@ impl RmgOptions {
         }
         if self.fair_starts {
             values.push((VERA_FAIR_KEY, "yes".to_string()));
+        }
+        // VERA: the Advanced sliders are written only when set, so an original
+        // seed's bytes stay unchanged.
+        if self.tech_building_amount != 0 {
+            values.push((VERA_TECH_AMOUNT_KEY, self.tech_building_amount.to_string()));
+        }
+        if self.derelict_amount != 0 {
+            values.push((VERA_DERELICT_KEY, self.derelict_amount.to_string()));
+        }
+        if self.damage_amount != 0 {
+            values.push((VERA_DAMAGE_KEY, self.damage_amount.to_string()));
+        }
+        if self.civilian_amount != 0 {
+            values.push((VERA_CIVILIAN_KEY, self.civilian_amount.to_string()));
+        }
+        if self.animal_amount != 0 {
+            values.push((VERA_ANIMAL_KEY, self.animal_amount.to_string()));
+        }
+        if self.wild_amount != 0 {
+            values.push((VERA_WILD_KEY, self.wild_amount.to_string()));
         }
         for extra in super::extras::Extra::ALL {
             let value = self.extras.get(extra);
@@ -311,6 +389,21 @@ impl RmgOptions {
         if ares {
             flags |= u8::from(options.urban_areas) << 2;
         }
+        let building_sliders = [
+            byte(options.tech_building_amount),
+            byte(options.derelict_amount),
+            byte(options.damage_amount),
+        ];
+        let population_sliders = [
+            byte(options.civilian_amount),
+            byte(options.animal_amount),
+            byte(options.wild_amount),
+        ];
+        if population_sliders != [0; 3] {
+            flags |= SHARE_BUILDING_SLIDERS | SHARE_POPULATION_SLIDERS;
+        } else if building_sliders != [0; 3] {
+            flags |= SHARE_BUILDING_SLIDERS;
+        }
         let seed = options.seed_u16().to_le_bytes();
         let [major, minor, patch] = made_by.0;
         let mut bytes = vec![
@@ -347,6 +440,12 @@ impl RmgOptions {
             .rposition(|&value| value != 0)
             .map_or(0, |at| at + 1);
         bytes.extend_from_slice(&extras[..used]);
+        if flags & SHARE_BUILDING_SLIDERS != 0 {
+            bytes.extend_from_slice(&building_sliders);
+        }
+        if flags & SHARE_POPULATION_SLIDERS != 0 {
+            bytes.extend_from_slice(&population_sliders);
+        }
         bytes.push(share_check(&bytes));
 
         let mut code = String::from(SHARE_PREFIX);
@@ -409,6 +508,7 @@ impl RmgOptions {
         }
         let (version, bytes) = bytes.split_at(SHARE_VERSION_BYTES);
         let made_by = ShareVersion([version[0], version[1], version[2]]);
+        let (extras, sliders) = share_extras_and_sliders(bytes[15], &bytes[SHARE_OPTION_BYTES..])?;
         let field = |at: usize| i32::from(bytes[at]);
         let mut options = Self {
             theater: field(0),
@@ -429,16 +529,19 @@ impl RmgOptions {
             urban_enabled: bytes[15] & 1 != 0,
             fair_starts: bytes[15] & 2 != 0,
             seed: i32::from(u16::from_le_bytes([bytes[16], bytes[17]])),
+            tech_building_amount: sliders.first().copied().map_or(0, i32::from),
+            derelict_amount: sliders.get(1).copied().map_or(0, i32::from),
+            damage_amount: sliders.get(2).copied().map_or(0, i32::from),
+            civilian_amount: sliders.get(3).copied().map_or(0, i32::from),
+            animal_amount: sliders.get(4).copied().map_or(0, i32::from),
+            wild_amount: sliders.get(5).copied().map_or(0, i32::from),
             ..self.clone()
         };
         if ares {
             options.urban_areas = bytes[15] & 4 != 0;
         }
         options.extras = super::extras::RmgExtras::default();
-        for (&extra, &value) in super::extras::Extra::ALL
-            .iter()
-            .zip(&bytes[SHARE_OPTION_BYTES..])
-        {
+        for (&extra, &value) in super::extras::Extra::ALL.iter().zip(extras) {
             options.extras.set(extra, value);
         }
         options.normalize();
@@ -475,6 +578,34 @@ const SHARE_DIGITS: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const SHARE_VERSION_BYTES: usize = 3;
 /// The option bytes every share code holds between its version and Extras.
 const SHARE_OPTION_BYTES: usize = 18;
+
+const SHARE_BUILDING_SLIDERS: u8 = 1 << 3;
+const SHARE_POPULATION_SLIDERS: u8 = 1 << 4;
+
+/// The original layout trims trailing zero Extras, then appends either no
+/// sliders or three building sliders. A development build also wrote six
+/// sliders with the three-slider flag. Prefer the original interpretation
+/// whenever both could have been emitted; new six-slider codes set both bits.
+fn share_extras_and_sliders(flags: u8, tail: &[u8]) -> Option<(&[u8], &[u8])> {
+    let count = match flags & (SHARE_BUILDING_SLIDERS | SHARE_POPULATION_SLIDERS) {
+        0 => 0,
+        SHARE_BUILDING_SLIDERS => {
+            let (extras, sliders) = tail.split_last_chunk::<3>()?;
+            let could_be_three = extras.len() <= super::extras::Extra::ALL.len()
+                && extras.last() != Some(&0)
+                && super::extras::Extra::ALL
+                    .iter()
+                    .zip(extras)
+                    .all(|(extra, &v)| v < extra.choices())
+                && sliders.iter().any(|&value| value != 0);
+            if could_be_three { 3 } else { 6 }
+        }
+        SHARE_POPULATION_SLIDERS => return None,
+        _ => 6,
+    };
+    let at = tail.len().checked_sub(count)?;
+    Some(tail.split_at(at))
+}
 
 /// A share code's check byte over its other bytes.
 fn share_check(bytes: &[u8]) -> u8 {
@@ -550,6 +681,14 @@ mod tests {
             fair_starts: true,
             seed: 54321,
             description: "mine".into(),
+            // These are also valid Extras, so decoding this round trip
+            // depends on the explicit flag for the population sliders.
+            tech_building_amount: 2,
+            derelict_amount: 1,
+            damage_amount: 1,
+            civilian_amount: 40,
+            animal_amount: 25,
+            wild_amount: 55,
             ..RmgOptions::default()
         };
         sent.extras.set(Extra::TownVariant, 4);
@@ -580,9 +719,12 @@ mod tests {
         );
 
         // One changed character fails the check; other texts are no code.
-        let last = code.len() - 1;
-        let swapped = if code.ends_with('0') { "1" } else { "0" };
-        let damaged = format!("{}{swapped}", &code[..last]);
+        // Change the first data digit after the prefix — the last digit can
+        // land in encoder padding and not affect any decoded byte.
+        let prefix = "VR1-";
+        let first = code.as_bytes()[prefix.len()] as char;
+        let swapped = if first == '0' { '1' } else { '0' };
+        let damaged = format!("{prefix}{swapped}{}", &code[prefix.len() + 1..]);
         assert_eq!(receiver.from_share_code(&damaged, false), None);
         assert_eq!(receiver.from_share_code("hello", false), None);
         assert_eq!(receiver.from_share_code("VR1-", false), None);
@@ -594,6 +736,67 @@ mod tests {
             .from_share_code(&plain.share_code(false), false)
             .expect("reads");
         assert!(back.extras.is_default() && !back.fair_starts);
+    }
+
+    #[test]
+    fn legacy_slider_codes_keep_their_extras() {
+        use crate::map::rmg::extras::Extra;
+
+        // Version 0.3.6, seed 42, Ore/Town/Mood Extras, then three building
+        // sliders. A development build also wrote six under the same flag.
+        let legacy_three = "VR1-001GC-00104-0G400-00000-20000-00002-1A001-0808S-695TR";
+        let legacy_six = "VR1-001GC-00104-0G400-00000-20000-00002-1A001-0808S-695GA-2GF8W";
+        for (code, population) in [(legacy_three, [0, 0, 0]), (legacy_six, [5, 10, 15])] {
+            let (read, version) = RmgOptions::default().from_share_code(code, false).unwrap();
+            assert_eq!(version, ShareVersion([0, 3, 6]));
+            assert_eq!(read.seed, 42);
+            assert_eq!(read.extras.get(Extra::Mood), 1);
+            assert_eq!(
+                [
+                    read.tech_building_amount,
+                    read.derelict_amount,
+                    read.damage_amount
+                ],
+                [25, 50, 75]
+            );
+            assert_eq!(
+                [read.civilian_amount, read.animal_amount, read.wild_amount],
+                population
+            );
+        }
+    }
+
+    /// A code made before the three Advanced sliders existed has neither the
+    /// flag bit nor the trailing bytes. Such a code is byte-for-byte what a
+    /// current build writes with the sliders at 0, and reads back as 0 — so an
+    /// old friend's code never gains derelicts or damage it never asked for.
+    #[test]
+    fn a_share_code_without_sliders_reads_as_original_behaviour() {
+        let old_style = RmgOptions {
+            seed: 2468,
+            water_amount: 44,
+            num_players: 12,
+            urban_enabled: true,
+            fair_starts: true,
+            description: "old map".into(),
+            tech_building_amount: 0,
+            derelict_amount: 0,
+            damage_amount: 0,
+            ..RmgOptions::default()
+        };
+        let code = old_style.share_code(false);
+        let (read, _) = RmgOptions::default()
+            .from_share_code(&code, false)
+            .expect("an old-style code reads");
+        assert_eq!(read.tech_building_amount, 0);
+        assert_eq!(read.derelict_amount, 0);
+        assert_eq!(read.damage_amount, 0);
+        // The pre-slider options still round-trip unchanged.
+        assert_eq!(read.seed, old_style.seed);
+        assert_eq!(read.water_amount, old_style.water_amount);
+        assert_eq!(read.num_players, old_style.num_players);
+        assert_eq!(read.urban_enabled, old_style.urban_enabled);
+        assert_eq!(read.fair_starts, old_style.fair_starts);
     }
 
     /// The Urban Areas box rides flag bit 2 only when Ares.dll is loaded:
@@ -725,6 +928,12 @@ mod tests {
             seed: 0x1_0000,
             description: SeedDescription::default(),
             urban_areas: false,
+            tech_building_amount: 500,
+            derelict_amount: -3,
+            damage_amount: 200,
+            civilian_amount: 500,
+            animal_amount: -9,
+            wild_amount: 200,
         };
         options.normalize();
 
@@ -746,6 +955,17 @@ mod tests {
         assert_eq!((options.width, options.height), (7, 7));
         assert_eq!((options.accessibility, options.region_size), (100, 0));
         assert_eq!(options.seed, 0xFFFF);
+        assert_eq!(
+            (
+                options.tech_building_amount,
+                options.derelict_amount,
+                options.damage_amount,
+                options.civilian_amount,
+                options.animal_amount,
+                options.wild_amount
+            ),
+            (100, 0, 100, 100, 0, 100)
+        );
     }
 
     #[test]
@@ -809,6 +1029,12 @@ mod tests {
                 seed: 4321,
                 description: "Round Trip".into(),
                 urban_areas: ares,
+                tech_building_amount: 60,
+                derelict_amount: 35,
+                damage_amount: 80,
+                civilian_amount: 40,
+                animal_amount: 25,
+                wild_amount: 55,
             };
             original.normalize();
 
