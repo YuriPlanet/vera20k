@@ -291,6 +291,88 @@ impl CenteredShapeStrip {
             frames,
         })
     }
+
+    /// VERA-only, experimental (docs/picture-model-art.md):
+    /// [`Self::from_shp_on_device`] for a declared picture's frames at game
+    /// pixels, house-colour pixels in `ramp`. Each frame is its drawn
+    /// rectangle at the origin a stored SHP frame has, centred by the
+    /// `PictureSize=` canvas; an empty frame draws nothing, as an SHP's.
+    pub(crate) fn from_picture_on_device(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        picture: &crate::render::picture_atlas::GamePictureFrames,
+        ramp: Option<&[crate::assets::pal_file::Color; crate::render::picture_atlas::RAMP_SIZE]>,
+    ) -> Option<Self> {
+        let sprites: Vec<_> = (0..picture.frame_count())
+            .map(|frame| picture.sprite(frame, ramp))
+            .collect();
+        let atlas_w: u32 = sprites
+            .iter()
+            .flatten()
+            .map(|sprite| sprite.size[0])
+            .sum::<u32>()
+            .max(1);
+        let atlas_h: u32 = sprites
+            .iter()
+            .flatten()
+            .map(|sprite| sprite.size[1])
+            .max()
+            .unwrap_or(0)
+            .max(1);
+        let mut rgba = vec![0u8; (atlas_w * atlas_h * 4) as usize];
+        let mut indices = vec![0u8; (atlas_w * atlas_h) as usize];
+        let word = |value: u32| i32::try_from(value).unwrap_or(i32::MAX);
+        let [canvas_w, canvas_h] = picture.canvas;
+        let mut frames = Vec::with_capacity(sprites.len());
+        let mut x = 0;
+        for sprite in &sprites {
+            let Some(sprite) = sprite else {
+                frames.push(CenteredShapeFrame {
+                    x,
+                    w: 0,
+                    h: 0,
+                    offset: (0, 0),
+                    raw_offset: (0, 0),
+                });
+                continue;
+            };
+            let [w, h] = sprite.size;
+            let row = w as usize;
+            for py in 0..h {
+                let src = (py * w) as usize;
+                let dst = (py * atlas_w + x) as usize;
+                indices[dst..dst + row].copy_from_slice(&sprite.indices[src..src + row]);
+                rgba[dst * 4..(dst + row) * 4]
+                    .copy_from_slice(&sprite.rgba[src * 4..(src + row) * 4]);
+            }
+            let [left, top] = sprite.origin.map(word);
+            frames.push(CenteredShapeFrame {
+                x,
+                w,
+                h,
+                offset: (left - word(canvas_w / 2), top - word(canvas_h / 2)),
+                raw_offset: (left, top),
+            });
+            x += w;
+        }
+        Some(Self {
+            texture: batch.create_texture_on_device(
+                device,
+                queue,
+                &rgba,
+                atlas_w,
+                atlas_h,
+                Some(&indices),
+            ),
+            atlas_w: atlas_w as f32,
+            atlas_h: atlas_h as f32,
+            shape_w: canvas_w,
+            shape_h: canvas_h,
+            frames,
+        })
+    }
+
     /// The PLACE instances of [`placement_cell_draws`], in its order.
     pub fn build_building_preview(
         &self,

@@ -19,7 +19,7 @@ use crate::assets::picture_file::{PictureError, PictureFrames};
 
 /// A house colour ramp's entries, palette indices 16–31
 /// (`HouseColorRamps::ramp`).
-const RAMP_SIZE: usize = 16;
+pub(crate) const RAMP_SIZE: usize = 16;
 
 /// The index-plane value of an ordinary drawn pixel: any index 1..=239 is lit
 /// the same way (`native_palette_word`).
@@ -452,7 +452,7 @@ pub(crate) struct PictureSources {
 
 impl PictureSources {
     /// `source`'s picture at game pixels, decoding it on first use.
-    fn frames(
+    pub(crate) fn frames(
         &mut self,
         source: &PictureSource,
         art: &crate::rules::art_data::ArtRegistry,

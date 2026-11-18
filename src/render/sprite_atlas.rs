@@ -2472,6 +2472,34 @@ fn register_projectile_frames(
     }
 }
 
+/// VERA-only, experimental (docs/picture-model-art.md): a rules object's body
+/// picture, declared in the section its image resolves to: the one its art
+/// metadata and Buildup are read through. None draws it from its SHP.
+pub(crate) fn object_picture(
+    art: &ArtRegistry,
+    rules: &RuleSet,
+    type_id: &str,
+) -> Option<PictureSource> {
+    let object = rules.object(type_id)?;
+    PictureRoutes::declared(art, type_id, &object.image)
+}
+
+/// VERA-only, experimental (docs/picture-model-art.md): a building's Buildup
+/// picture: `Buildup=` beside its declared `Picture=` names `NAME.png`
+/// ([`buildup_shp_candidates`] otherwise).
+pub(crate) fn buildup_picture(
+    art: &ArtRegistry,
+    rules: Option<&RuleSet>,
+    building: &str,
+) -> Option<PictureSource> {
+    let image = rules
+        .and_then(|rules| rules.object(building))
+        .map_or(building, |object| object.image.as_str());
+    let source = PictureRoutes::declared(art, building, image)?;
+    let buildup = art.get(&source.section)?.buildup.as_deref()?;
+    Some(source.named(buildup))
+}
+
 /// VERA-only, experimental (docs/picture-model-art.md): which atlas keys are
 /// drawn from a declared picture instead of an SHP, and those pictures' frame
 /// counts. Built only when some art section declares `Picture=`; with none
@@ -2484,6 +2512,12 @@ struct PictureRoutes<'a> {
     /// Upper-case `BibShape=` names of sections that declare `Picture=`,
     /// with the bib picture each names. The first section to name one wins.
     bibs: HashMap<String, PictureSource>,
+    /// Upper-case factory door names (`ArtEntry::factory_door`) of sections
+    /// that declare `Picture=`, with the picture each names. These are raw
+    /// SHP names the building loads (`0x0045F31D..0x0045F706`), not
+    /// AnimTypes, so like `BibShape=` they name `NAME.png`. The first section
+    /// to name one wins.
+    doors: HashMap<String, PictureSource>,
     /// Frame counts read from picture headers in this build.
     counts: HashMap<PictureSource, Option<u16>>,
 }
@@ -2498,16 +2532,23 @@ impl<'a> PictureRoutes<'a> {
         let art = art?;
         let mut declared = false;
         let mut bibs = HashMap::new();
+        let mut doors = HashMap::new();
         for (name, entry) in art.iter_entries() {
             if entry.picture.is_none() {
                 continue;
             }
             declared = true;
-            if let Some(bib) = entry.bib_shape.as_deref()
-                && let Some(source) = Self::declared(art, name, "")
-            {
+            let Some(source) = Self::declared(art, name, "") else {
+                continue;
+            };
+            if let Some(bib) = entry.bib_shape.as_deref() {
                 bibs.entry(bib.to_ascii_uppercase())
                     .or_insert_with(|| source.named(bib));
+            }
+            for door in entry.factory_door.names() {
+                doors
+                    .entry(door.to_ascii_uppercase())
+                    .or_insert_with(|| source.named(door));
             }
         }
         declared.then(|| Self {
@@ -2516,6 +2557,7 @@ impl<'a> PictureRoutes<'a> {
             asset_manager,
             theater_name,
             bibs,
+            doors,
             counts: HashMap::new(),
         })
     }
@@ -2535,23 +2577,14 @@ impl<'a> PictureRoutes<'a> {
         Self::declared(self.art, anim_type, "")
     }
 
-    /// A rules object's body picture, declared in the section its image
-    /// resolves to: the one its art metadata and Buildup are read through.
+    /// A rules object's body picture ([`object_picture`]).
     fn object(&self, type_id: &str) -> Option<PictureSource> {
-        let object = self.rules?.object(type_id)?;
-        Self::declared(self.art, type_id, &object.image)
+        object_picture(self.art, self.rules?, type_id)
     }
 
-    /// A building's Buildup picture: `Buildup=` beside its declared
-    /// `Picture=` names `NAME.png` ([`buildup_shp_candidates`] otherwise).
+    /// A building's Buildup picture ([`buildup_picture`]).
     fn buildup(&self, building: &str) -> Option<PictureSource> {
-        let image = self
-            .rules
-            .and_then(|rules| rules.object(building))
-            .map_or(building, |object| object.image.as_str());
-        let source = Self::declared(self.art, building, image)?;
-        let buildup = self.art.get(&source.section)?.buildup.as_deref()?;
-        Some(source.named(buildup))
+        buildup_picture(self.art, self.rules, building)
     }
 
     /// A BulletType's picture, declared in the section its image resolves to.
@@ -2565,8 +2598,8 @@ impl<'a> PictureRoutes<'a> {
 
     /// The picture `key` is drawn from, resolved as [`find_shp_source`]
     /// resolves its SHP: an anim's own section, a `_MAKE` key's Buildup, a
-    /// rules object's image section, else a declared BibShape. None draws
-    /// the key from its SHP.
+    /// rules object's image section, else a declared BibShape or factory
+    /// door. None draws the key from its SHP.
     fn key(&self, key: &ShpSpriteKey) -> Option<PictureSource> {
         let type_id = key.type_id.as_str();
         match key.palette_context.image_kind() {
@@ -2579,7 +2612,11 @@ impl<'a> PictureRoutes<'a> {
                 } else if self.rules.and_then(|rules| rules.object(type_id)).is_some() {
                     self.object(type_id)
                 } else {
-                    self.bibs.get(&type_id.to_ascii_uppercase()).cloned()
+                    let upper = type_id.to_ascii_uppercase();
+                    self.bibs
+                        .get(&upper)
+                        .or_else(|| self.doors.get(&upper))
+                        .cloned()
                 }
             }
         }
@@ -3117,9 +3154,21 @@ pub(crate) fn prepare_sprite_atlas(
             };
             for name in entry.factory_door.names() {
                 let upper = name.to_ascii_uppercase();
-                let count = match object_shp_frame_counts.get(&upper) {
-                    Some(&count) => count,
-                    None => {
+                // VERA-only, experimental (docs/picture-model-art.md): a door
+                // named beside a declared Picture= counts its picture's
+                // frames; its SHP is never opened.
+                let picture = picture_routes.as_mut().and_then(|routes| {
+                    let source = routes.doors.get(&upper)?.clone();
+                    Some(routes.frame_count(&source))
+                });
+                let count = match (object_shp_frame_counts.get(&upper), picture) {
+                    (Some(&count), _) => count,
+                    (None, Some(None)) => continue,
+                    (None, Some(Some(count))) => {
+                        object_shp_frame_counts.insert(upper.clone(), count);
+                        count
+                    }
+                    (None, None) => {
                         let candidates = art_data::theater_shp_names(&upper, theater_name)
                             .map(|name| format!("{name}.SHP"));
                         let Some((file, data)) = find_shp(asset_manager, &candidates) else {

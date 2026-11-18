@@ -52,8 +52,10 @@ nothing), as a missing SHP or VXL does today. A file that is missing, cannot
 be read or cannot be drawn is told the same way. The match shows these once,
 when it has loaded: the first three, then how many more the log file lists.
 
-For a building, `Buildup=` and `BibShape=` name pictures (`NAME.png`) when the
-building's section declares `Picture=`; they take its `PictureSize=`.
+For a building, `Buildup=`, `BibShape=` and a war factory's `DeployingAnim=`,
+`RoofDeployingAnim=`, `UnderDoorAnim=` and `UnderRoofDoorAnim=` (SHP names
+there, not AnimTypes) name pictures (`NAME.png`) when the building's section
+declares `Picture=`; they take its `PictureSize=`.
 
 ## Files
 
@@ -201,4 +203,8 @@ production run on a real map with converted art.
 
 - Design: this file.
 - Chain 1: in progress.
-- Chain 6: picture art drawn (`render::picture_zoom`), written but not yet compiled or run; models follow with chain 4.
+- Chains 2 and 3, drawing: the sprite atlas draws building bodies, Buildup,
+  BibShape, factory door art and building anims, infantry and SHP vehicle
+  bodies, and projectiles from declared pictures, with their frame counts and building
+  render bounds taken from the pictures; the Phobos placement preview draws a
+  picture building's Buildup or body picture; not yet compiled.

@@ -4224,3 +4224,87 @@ fn a_picture_building_draws_body_buildup_and_bib_from_pictures() {
         Some(&[-2, -2, 5, 5])
     );
 }
+
+/// VERA-only, experimental (docs/picture-model-art.md): a war factory whose
+/// art declares `Picture=` reads its `DeployingAnim=` and `UnderDoorAnim=`
+/// (raw SHP names, `0x0045F31D`/`0x0045F55A`) as `NAME.png` pictures: every
+/// frame is placed from the picture and counted from it, though SHPs of the
+/// same names with other frame counts lie beside them.
+#[test]
+fn a_picture_factory_draws_its_door_art_from_pictures() {
+    use crate::rules::ini_parser::IniFile;
+    let directory = StoredFrameTestDirectory::new();
+    let mut rgba = vec![0u8; 4 * 4 * 4];
+    rgba[..4].copy_from_slice(&[200, 100, 50, 255]);
+    let write = |name: &str, count: usize| {
+        let bytes =
+            crate::assets::picture_file::encode_frames(4, 4, &vec![rgba.clone(); count]).unwrap();
+        std::fs::write(directory.0.join(name), bytes).unwrap();
+    };
+    write("PICWEAP.png", 2);
+    write("PICDOOR.png", 4);
+    write("PICUND.png", 2);
+    for name in ["PICDOOR.SHP", "PICUND.SHP"] {
+        std::fs::write(directory.0.join(name), raw_shp(&[([2, 2], 1); 6])).unwrap();
+    }
+    let art_ini = IniFile::from_str(
+        "[PICWEAP]\nPicture=PICWEAP.png\nDeployingAnim=PICDOOR\nUnderDoorAnim=PICUND\n",
+    );
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str("[BuildingTypes]\n0=PICWEAP\n[PICWEAP]\nStrength=100\n"),
+        &art_ini,
+    )
+    .expect("rules");
+    rules.install_art_data(ArtRegistry::from_ini(&art_ini));
+    let assets = AssetManager::from_loose_root_for_test(&directory.0);
+    let colors = HouseColorMap::from([("Americans".to_string(), HouseColorIndex(2))]);
+    let entities = crate::sim::entity_store::EntityStore::new();
+    let PreparedSpriteAtlas::Raster(work, upload) = prepare_sprite_atlas(
+        8192,
+        &entities,
+        &assets,
+        &Palette::from_rgb(|i| [i, i, i]),
+        "tem",
+        "TEMPERATE",
+        Some(&rules),
+        Some(rules.art()),
+        &colors,
+        &["PICWEAP"],
+        &Default::default(),
+        &Default::default(),
+        &Default::default(),
+        None,
+        None,
+        None,
+    ) else {
+        panic!("the picture factory's keys are prepared");
+    };
+
+    assert!(
+        work.keys
+            .iter()
+            .all(|raster| !raster.key.type_id.starts_with("PIC")),
+        "no door key reaches the SHP raster"
+    );
+    assert!(
+        upload
+            .shp_files
+            .keys()
+            .all(|(_, name)| !name.starts_with("PIC")),
+        "no door SHP is registered"
+    );
+    for (name, count) in [("PICDOOR", 4u16), ("PICUND", 2)] {
+        assert_eq!(
+            upload.object_shp_frame_counts.get(name),
+            Some(&count),
+            "{name}"
+        );
+        let placed: HashSet<u16> = upload
+            .pictures
+            .iter()
+            .filter(|picture| picture.key.type_id == name)
+            .map(|picture| picture.key.frame)
+            .collect();
+        assert_eq!(placed, (0..count).collect(), "{name}");
+    }
+}
