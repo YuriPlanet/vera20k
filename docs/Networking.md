@@ -200,10 +200,11 @@ finishes loading must agree to the initial world before it starts. A player who
 never finishes loading leaves in the first frame once silent for 60 seconds, or 3
 minutes after the first client was ready; the native loading timeout leaves that
 departure to the relay. A match spread over several relays is cancelled instead.
-If a loading player's Ready reports a different initial world from the one its
-relay already took, or ready players on different relays report different
-worlds, the relay refuses the start for everyone at once with the existing
-agreement-mismatch error, instead of keeping the first ready players waiting.
+At each relay, a loading player's Ready must agree with the first player's
+initial world and signed match settings, including pacing. Only certificate
+expiry may change on renewal. If these checks fail, or ready players on
+different relays report different worlds, the relay refuses the start for
+everyone at once with the existing agreement-mismatch error.
 The other relays of such a match cancel through the coordinator, so their
 players may see an ordinary cancellation. A relay whose players have not sent
 Ready is still loading, not a mismatch. The refusal remains available to retries

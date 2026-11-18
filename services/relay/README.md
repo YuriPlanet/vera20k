@@ -361,7 +361,8 @@ the match). Before the start, a
 source that never sent Ready departs in frame 1 after 60 seconds of silence,
 counted from its last packet even before the room existed, or once the room is 3
 minutes old, and the others start without it; a Ready source waits. A Ready
-whose agreement, roster or rate differs from the room's first gets
+whose agreement or signed match settings (including pacing) differ from the
+room's first gets
 `AgreementMismatch`. From a source still loading, it proves the others cannot
 start with it: the relay cancels the startup for every source at once, as that
 source's Leave could, and answers every later Ready, and the ready sources'
