@@ -1,17 +1,13 @@
 //! WOL-only parts of the setup dialogs C2 (0078F7F0) and C9 (00791B10).
 //! Everything shared with BC/BD stays in the parent owner; this module holds
-//! the StartGame/OnGameStart handshake, the WOL chat line, the host ping
-//! timer and the readiness clearing native WOL performs on option edits.
+//! the StartGame/OnGameStart handshake, the WOL chat line and the readiness
+//! clearing native WOL performs on option edits.
 
 use super::chat_notice as message;
 use super::*;
 use crate::skirmish_launch::LaunchTeam;
 use crate::ui::lan_shell::LanChatLine;
 use crate::ui::wol_chat;
-use std::time::Duration;
-
-/// `SetTimer(hDlg, 0x14AF8, 5000)` at `0x7914FF`.
-pub(super) const PING_PERIOD: Duration = Duration::from_millis(5000);
 
 /// One server user record of the game channel at OnGameStart. `flags` bit0
 /// marks the channel owner (`0x794F6F..`: the first such row decides).
@@ -722,7 +718,6 @@ pub(super) fn game_started(
     // 0x7A7E03: [0xB77E28] = 2 until the abort or the match, so packets,
     // joins and the setup's own controls stay dropped under 0x130.
     protocol.set_start_phase(super::StartPhase::Submitted);
-    protocol.ping_deadline = None;
     protocol.wol_verify = Some(crate::ui::wol_verify::WolVerifyDialog::open(names));
     Ok(())
 }
@@ -1032,38 +1027,6 @@ fn local_nickname(state: &AppState) -> String {
         .local_player_name()
         .unwrap_or_default()
         .to_owned()
-}
-
-/// Host `WM_TIMER 0x14AF8`: broadcast the ping list (`007A0F40`) and ask
-/// again, unless a start is pending.
-pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
-    let protocol = state.frontend.network_setup_protocol.as_mut()?;
-    let deadline = protocol.ping_deadline?;
-    let now = Instant::now();
-    if now < deadline {
-        return Some(deadline);
-    }
-    let next = now + PING_PERIOD;
-    protocol.ping_deadline = Some(next);
-    protocol.requests.push(NetworkSetupRequest::BroadcastPings);
-    if !protocol.start_phase.submitted() {
-        protocol.requests.push(NetworkSetupRequest::RequestPings);
-    }
-    Some(next)
-}
-
-/// `007A0EA0`: a ping for a node name updates that node's icon.
-pub(super) fn ping(state: &mut AppState, name: String, ping: i32) -> anyhow::Result<()> {
-    let protocol = state
-        .frontend
-        .network_setup_protocol
-        .as_mut()
-        .ok_or_else(|| anyhow::anyhow!("no setup protocol"))?;
-    match protocol.pings.iter_mut().find(|(known, _)| *known == name) {
-        Some(entry) => entry.1 = ping,
-        None => protocol.pings.push((name, ping)),
-    }
-    Ok(())
 }
 
 #[cfg(all(test, tests_app))]

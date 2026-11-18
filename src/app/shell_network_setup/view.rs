@@ -768,6 +768,11 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 Some(flag) => Some(flag),
                 None => flag_pcx_for_side_item_data(country).map(str::to_owned),
             };
+            // RESIDUAL: C2/C9's ping image (7A0E50 from 5EA3E0, 007A0EA0),
+            // the latency tooltip 0078F5C0 (TXT_LATENCY_ICON_TOOLTIP_*) that
+            // reads the same table, and the host's ping timer 0x14AF8 that
+            // fills it are not ported: the lobby carries no per-user latency
+            // to the room.
             row_icons[visible_row] = Some(SetupRowIcon {
                 country: flag,
                 // 0x5EA3E0: wolhost.pcx on the human row named [0xA8D610];
@@ -847,18 +852,6 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             visible: dialog.modern,
         },
     ];
-    // 7A0E50 from 5EA3E0: rows without a node show no ping image.
-    let ping_icons = std::array::from_fn(|position| {
-        (dialog.wol() && position < rows).then_some(())?;
-        let Listed::Row(row) = listing.row_at(listing.shown_index(position)?)? else {
-            return None;
-        };
-        let human = launch
-            .humans
-            .iter()
-            .find(|human| human.raw_slot_index == Some(row))?;
-        ping_icon(protocol.ping(&human.name)?)
-    });
     // The host drags people, itself too, and AI between the boxes of a room
     // with teams; only people go to watch.
     let mut box_of = None;
@@ -905,7 +898,6 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         roster_scroll: listing.roster_scroll,
         pages: listing.pages,
         dialog,
-        ping_icons,
         host,
         locked: protocol.locked,
         // C2's lockout (0x78F85E..0x78F907, 0x79132A..0x7913D1): Short Game
