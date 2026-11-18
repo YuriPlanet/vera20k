@@ -1045,3 +1045,48 @@ fn build_limit_group_tail_prune_follows_not_buildable_if_queue_match() {
         );
     }
 }
+
+/// `BuildLimitGroupUpgradeCheck` trims too (`Body.cpp:896,943,962,995,1008`):
+/// a `PowersUp.Buildings` item outside the reached group drops every queued
+/// copy when `num >= 1 - factor`, and a group that never reaches leaves the
+/// queue alone.
+#[test]
+#[cfg(feature = "phobos")]
+fn build_limit_group_upgrade_check_prunes_the_queue() {
+    let row = json!({
+        "owned": [["unit", "GT", 3]],
+        "factories": [{"kind": "building", "object": "HOST", "queued": ["UPG", "UPG"]}]
+    });
+    let reached =
+        build_limit_group_rules("BuildLimitGroup.Types=GT\nBuildLimitGroup.Nums=2\n", true);
+    let upgrade = reached.object("UPG").unwrap().clone();
+    let (sim, owner) = sim_for(&row, &reached);
+    let gate = build_limit_group_upgrade_gate(&sim, &reached, owner, &upgrade, true);
+    assert!(gate.reached, "owned GT=3 reaches Nums=2");
+    assert_eq!(gate.removals, vec![-1], "the outside arm passes -1");
+
+    let (mut sim, owner) = sim_for(&row, &reached);
+    phobos_trim_build_limit_group_queue(&mut sim, &reached, owner, &upgrade);
+    assert_eq!(
+        queued_of(&sim, owner, ProductionCategory::Building, "UPG"),
+        0,
+        "every queued copy leaves"
+    );
+
+    // Owned GT=1 is below Nums=2: neither gate reaches, so nothing is pruned.
+    let below = build_limit_group_rules("BuildLimitGroup.Types=GT\nBuildLimitGroup.Nums=2\n", true);
+    let upgrade = below.object("UPG").unwrap().clone();
+    let (mut sim, owner) = sim_for(
+        &json!({
+            "owned": [["unit", "GT", 1]],
+            "factories": [{"kind": "building", "object": "HOST", "queued": ["UPG"]}]
+        }),
+        &below,
+    );
+    phobos_trim_build_limit_group_queue(&mut sim, &below, owner, &upgrade);
+    assert_eq!(
+        queued_of(&sim, owner, ProductionCategory::Building, "UPG"),
+        1,
+        "an unreached group keeps the queue"
+    );
+}

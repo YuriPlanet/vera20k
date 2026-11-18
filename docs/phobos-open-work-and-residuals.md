@@ -203,15 +203,15 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 
 ### 全局已知残渣（早前链条，仍需实机抽查）
 - **BuildLimitGroup 的 `RemoveProduction`**（`docs/phobos-build-limit-group.md`）：
-  灰化/`CanBuild` 的 owner 仍是纯查询，但灰化臂的裁剪已接线（2026-11-18）——
-  `check_build_limit` 的 gate 返回裁剪意图（`BuildLimitGroupGate`），队列入场 owner
-  `queue_production` 调 `phobos_trim_build_limit_group_queue` 应用
-  （`FactoryRegistry::remove_one_queued`，对应 `FactoryClass::RemoveFromQueue
-  @ 0x004CA620`，不退款、保留 held 产物）。`NotBuildableIfQueueMatch` 因此有了读者
-  （`Body.cpp:1179` 的尾裁剪）。残余：`BuildLimitGroupUpgradeCheck`
-  （`Body.cpp:896-1008`）自己的四处裁剪仍无可变调用者，其 `CanBuild` owner 与 UI 共用。
-  触发：`PowersUp.Buildings` 项经 CanBuild 门超额排队；影响：这些副本留存；
-  频率：升级宿主 + 组上限同时使用的 mod；风险：低。
+  已完成（2026-11-18）。灰化/`CanBuild` 的 owner 仍是纯查询，但两个 gate 都返回裁剪
+  意图（`BuildLimitGroupGate`），队列入场 owner `queue_production` 调
+  `phobos_trim_build_limit_group_queue` 按 native 钩子顺序应用（UpgradeCheck 先、
+  ReachedBuildLimit 后），走 `FactoryRegistry::remove_one_queued`
+  （`FactoryClass::RemoveFromQueue @ 0x004CA620`，不退款、保留 held 产物）。
+  `NotBuildableIfQueueMatch` 因此有了读者（`Body.cpp:1008`/`:1179` 两个尾裁剪）。残余：
+  裁剪发生在入队时刻而非每次 `CanBuild`/灰化读取，纯 UI 触发的裁剪不会发生——
+  可见结果集相同。触发：组上限已满但没有经过入队的队列动作；影响：没有可裁副本；
+  频率：罕见；风险：低。
 - **残渣文档已按 `src` 对齐（2026-11-18）**：`phobos-slaved.md`（`Slaved.OwnerWhenMasterKilled`
   四值分派已接线并有 `slave_manager_cycle_tests` 覆盖）、`phobos-spawns-queue.md`
   （`InitialSpawnsNumber=`）、`phobos-hover-drown.md`（`FallingDownDamage` /

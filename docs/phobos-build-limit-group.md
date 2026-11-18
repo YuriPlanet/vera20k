@@ -154,21 +154,23 @@ does not hold a slot.
   against real RA2 data. Impact: cap behavior only verified on synthetic
   fixtures. Frequency: always in this workspace. Risk: medium — real INI
   values may exercise untested `Types`/`Nums` shapes.
-- **`RemoveProduction` queue deletion** (`:782-800`): ported for the
-  grey-out arm. Native runs it inside the read-only query; VERA's gate returns
-  the trim (`BuildLimitGroupGate`) and the queue-admission owner applies it
-  (`phobos_trim_build_limit_group_queue` from `queue_production`, using
-  `FactoryRegistry::remove_one_queued` — `FactoryClass::RemoveFromQueue @
-  0x004CA620`, no refund, held product untouched). `NotBuildableIfQueueMatch`
-  now widens the tail prune (`Body.cpp:1179`). Regression tests
-  `build_limit_group_reach_prunes_the_excess_queue` and
-  `build_limit_group_tail_prune_follows_not_buildable_if_queue_match`.
-  Residual: `BuildLimitGroupUpgradeCheck`'s own prunes (`Body.cpp:896,943,
-  962,995,1008`) still have no mutable caller — its `CanBuild` owner is a
-  query shared with the UI. Trigger: a `PowersUp.Buildings` item reaches a
-  group cap with copies queued through the CanBuild gate. Impact: those copies
-  survive. Frequency: mods that combine upgrade hosts with build-limit groups.
-  Risk: low.
+- **`RemoveProduction` queue deletion** (`:782-800`): ported for both
+  native callers. Native runs it inside the read-only queries; VERA's gates
+  return the trim (`BuildLimitGroupGate`) and the queue-admission owner applies
+  them in hook order — `BuildLimitGroupUpgradeCheck` first, then
+  `ReachedBuildLimit` — via `phobos_trim_build_limit_group_queue` from
+  `queue_production`, using `FactoryRegistry::remove_one_queued`
+  (`FactoryClass::RemoveFromQueue @ 0x004CA620`, no refund, held product
+  untouched). `NotBuildableIfQueueMatch` now widens both tail prunes
+  (`Body.cpp:1008`, `:1179`). Regression tests
+  `build_limit_group_reach_prunes_the_excess_queue`,
+  `build_limit_group_tail_prune_follows_not_buildable_if_queue_match` and
+  `build_limit_group_upgrade_check_prunes_the_queue`.
+  Residual: the trims fire at queue admission, not on every `CanBuild`/grey
+  read, so a purely UI-triggered prune (no queue action) does not happen —
+  the visible result is the same set of copies. Trigger: a group cap reached
+  while nothing is queued through an admission. Impact: no copies to remove
+  anyway. Frequency: rare. Risk: low.
 - **Held-object deduction scope**: `QueuedNum` uses the primary factory of the
   type; VERA's `held_in_factory()` matches any factory of the owner, so a held
   object in a different strip is deduced from a queue count it was never part

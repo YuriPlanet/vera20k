@@ -1102,11 +1102,12 @@ fn phobos_remove_production(sim: &mut Simulation, owner: InternedId, obj: &Objec
     }
 }
 
-/// The queue half of `ReachedBuildLimit`: native runs the trim inside the
-/// grey query, which is read-only here, so the queue-admission owner applies
+/// The queue half of the two native gates. Native runs the trims inside the
+/// read-only `CanBuild` / grey queries, so the queue-admission owner applies
 /// the same `RemoveProduction` calls before it inspects the limit
-/// (`queue_production` in `factory_lifecycle.rs`). A gate that did not reach
-/// trims nothing.
+/// (`queue_production` in `factory_lifecycle.rs`), in the native hook order:
+/// `BuildLimitGroupUpgradeCheck` first, then `ReachedBuildLimit`. A gate that
+/// did not reach trims nothing.
 #[cfg(feature = "phobos")]
 pub(crate) fn phobos_trim_build_limit_group_queue(
     sim: &mut Simulation,
@@ -1114,6 +1115,12 @@ pub(crate) fn phobos_trim_build_limit_group_queue(
     owner: InternedId,
     obj: &ObjectType,
 ) {
+    // `HouseClass_CanBuild_UpgradesInteraction 0x4F8361` runs with
+    // `includeQueued` set for the queue pass.
+    let upgrade = build_limit_group_upgrade_gate(sim, rules, owner, obj, true);
+    for num in upgrade.removals {
+        phobos_remove_production(sim, owner, obj, num);
+    }
     let gate = build_limit_group_gate(sim, rules, owner, obj);
     if !gate.reached {
         return;
@@ -1139,25 +1146,48 @@ fn build_limit_group_upgrade_check(
     obj: &ObjectType,
     include_queued: bool,
 ) -> bool {
+    build_limit_group_upgrade_gate(sim, rules, owner, obj, include_queued).reached
+}
+
+/// The prune-carrying body of the same native function: every arm that
+/// returns `TemporarilyUnbuildable` also names its `RemoveProduction` calls
+/// (`Body.cpp:896,943,962,995,1008`), which is what the queue-admission owner
+/// applies. The second pass (`:949-1012`) trims nothing.
+#[cfg(feature = "phobos")]
+fn build_limit_group_upgrade_gate(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    obj: &ObjectType,
+    include_queued: bool,
+) -> BuildLimitGroupGate {
+    let unbuildable = |removals: Vec<i32>| BuildLimitGroupGate {
+        reached: true,
+        removals,
+    };
+    let buildable = || BuildLimitGroupGate {
+        reached: false,
+        removals: Vec::new(),
+    };
     // `Hooks.Upgrade.cpp:104-108`: the native replacement only runs for a
     // BuildingType whose `PowersUp_Buildings` is non-empty.
     if obj.category != ObjectCategory::Building
         || obj.building_upgrade().powers_up_buildings().is_empty()
     {
-        return false;
+        return buildable();
     }
     let group = &obj.phobos_build_limit_group;
     // `UpgradeCheck:806` returns Buildable on empty Types; empty Nums with a
     // non-empty Types drops into the multi branch with `size = 0`, which is
     // `reached` and therefore `TemporarilyUnbuildable`.
     if group.types.is_empty() {
-        return false;
+        return buildable();
     }
     let Some(c) = build_limit_group_census(sim, rules, owner, obj) else {
-        return false;
+        return buildable();
     };
     if c.members.is_empty() {
-        return false;
+        return buildable();
     }
     let factor = c.factor;
     let contributions: Vec<i32> = (0..c.members.len())
@@ -1171,27 +1201,47 @@ fn build_limit_group_upgrade_check(
             sum = sum.wrapping_add(*contribution);
         }
         if sum >= c.limits[0].wrapping_add(1).wrapping_sub(factor) {
-            return true;
+            // `:867-890`: `num = sum - limits[0]`, the item keeps as many
+            // copies as the group allows, otherwise the flag decides.
+            let num = sum.wrapping_sub(c.limits[0]);
+            let inside = (0..c.members.len()).any(item_at);
+            let removals = if inside {
+                vec![num.wrapping_add(factor).wrapping_sub(1) / factor]
+            } else if num >= 1i32.wrapping_sub(factor) || c.not_buildable {
+                vec![-1]
+            } else {
+                Vec::new()
+            };
+            return unbuildable(removals);
         }
     } else {
         let size = c.limits.len().min(contributions.len());
         let mut reached = true;
+        let mut real_reached = true;
         for i in 0..size {
             let num = contributions[i].wrapping_sub(c.limits[i]);
             if item_at(i) {
                 if num >= 1i32.wrapping_sub(factor) && c.content_if_any {
-                    return true;
+                    return unbuildable(vec![num.wrapping_add(factor).wrapping_sub(1) / factor]);
                 }
             } else if num >= 0 {
                 if c.content_if_any {
-                    return true;
+                    return unbuildable(vec![-1]);
+                } else if num < 0 {
+                    real_reached = false;
                 }
             } else {
                 reached = false;
             }
         }
         if reached {
-            return true;
+            // `:995-1008`: the tail prune, gated by the same flag.
+            let removals = if real_reached || c.not_buildable {
+                vec![-1]
+            } else {
+                Vec::new()
+            };
+            return unbuildable(removals);
         }
     }
 
@@ -1204,10 +1254,10 @@ fn build_limit_group_upgrade_check(
             if contributions[i] >= c.limits[i].wrapping_add(1).wrapping_sub(factor)
                 && (!include_queued || !c.in_production[i])
             {
-                return true;
+                return unbuildable(Vec::new());
             }
         }
-        return false;
+        return buildable();
     }
     if c.limits.len() == 1 {
         let mut sum = 0i32;
@@ -1217,10 +1267,10 @@ fn build_limit_group_upgrade_check(
         if sum >= c.limits[0].wrapping_add(1).wrapping_sub(factor) {
             let any_in_production = include_queued && c.in_production.iter().any(|&v| v);
             if !any_in_production {
-                return true;
+                return unbuildable(Vec::new());
             }
         }
-        return false;
+        return buildable();
     }
     for i in 0..size {
         let threshold = if item_at(i) {
@@ -1229,13 +1279,13 @@ fn build_limit_group_upgrade_check(
             c.limits[i]
         };
         if contributions[i] < threshold {
-            return false;
+            return buildable();
         }
         if include_queued && c.in_production[i] {
-            return false;
+            return buildable();
         }
     }
-    true
+    unbuildable(Vec::new())
 }
 
 /// The shared Unit census in House::CanBuild4F80E6..4F8128 and
