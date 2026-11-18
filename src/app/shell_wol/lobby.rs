@@ -3887,6 +3887,9 @@ fn sender_passes(state: &AppState, from: &WolMember, text: &[u16], room: bool) -
 pub(super) struct ReceivedMessage {
     pub(super) from: WolMember,
     pub(super) text: Vec<u16>,
+    /// VERA: the lobby's own line, `text` from its phrases in the interface
+    /// language.
+    pub(super) localized: bool,
     pub(super) private: bool,
     pub(super) action: bool,
     pub(super) ansi: bool,
@@ -3908,6 +3911,7 @@ pub(super) fn message_received(state: &mut AppState, message: ReceivedMessage) {
     let ReceivedMessage {
         from,
         text,
+        localized,
         private,
         action,
         ansi,
@@ -3952,6 +3956,7 @@ pub(super) fn message_received(state: &mut AppState, message: ReceivedMessage) {
     super::translation::received(
         state,
         &text,
+        localized,
         super::translation::TranslatedLine::Wol {
             prefix,
             color,

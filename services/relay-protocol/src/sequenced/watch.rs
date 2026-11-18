@@ -25,8 +25,9 @@ pub(crate) const WATCH_SOURCE: u8 = MAX_PEERS;
 /// A watcher silent this long loses its place.
 const WATCH_SILENCE_S: u64 = 30;
 /// A room notes its stream's end this often, and keeps enough of these
-/// marks for the longest delay.
-const WATCH_MARK_MS: u64 = 1000;
+/// marks for the longest delay: a delayed watcher's stream grows by this
+/// much at a time.
+pub const WATCH_MARK_MS: u64 = 1000;
 const WATCH_MARKS: usize = MAX_WATCH_DELAY_SECONDS as usize + 2;
 /// Checksums every player reported alike, kept one per this many frames
 /// for watchers' sync check, and how many are kept.

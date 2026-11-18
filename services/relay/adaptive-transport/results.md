@@ -30,6 +30,7 @@
   python -m tools.cargo_run -- build --release -p vera20k-relay-protocol --features test-support --example relay_netsim
   ```
   然后用生成的程序运行场景文件。同一场景、同一种子，结果逐包一致。
+- **复现的版本**："压缩"一列是本改造合入 main 时（`7b8cbe6dd`）的代码。此后模拟框架改为与 `services/relay/src/main.rs` 一样每毫秒只跑一轮中继（原来每收到一个包还多跑一轮），客户端的续期、心跳和 LEAVE 节奏也改为与游戏一致，所以在更新的代码上重跑，数字会略有不同。要逐包复现本文的表格，先检出 `7b8cbe6dd`。
 - **采样**：每个场景测 60 s（预热 5 s 之后）。帧率 30 Hz，基础 RTT 40 ms；"300 APM"表示每名玩家每分钟 300 次操作，"空闲"表示没有操作。
 - **字节**：含 28 B 的 IPv4/UDP 头。KB = 1000 B；Mbit/s 按 1 KB = 1024 B、1 Mbit = 1024 Kbit 换算。
 - **中继流量**：在网络层直接统计，不是把客户端的数据相加。

@@ -308,10 +308,6 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     // With Teams Off a room with teams is free-for-all and nobody is on a
     // team, so, as in a clan room, it has no Team lists.
     let no_team_lists = clan_room || grouped && teams.is_none();
-    // While an older host's Balance automatically is on, nobody picks a team:
-    // the Team lists and the headers' Join close for every seated player. A
-    // spectator's Join still asks to play, and that host's balance places it.
-    let auto_balance = session.network_auto_balance();
     let shown = |visible: usize| listing.shown(visible);
     // The local player's Join and Watch on the headers: a seated player
     // joins another team, a guest watching takes a free seat on any, or
@@ -385,14 +381,10 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                         },
                     ),
                 };
-                // A spectator's Join asks to play: the balance places it.
-                let closed = auto_balance && seated && group != SetupGroup::Spectators;
                 headers[visible_row] = Some(SetupHeader {
                     group,
                     caption,
-                    join_enabled: button.as_ref().is_some_and(|(_, enabled)| *enabled)
-                        && !starting
-                        && !closed,
+                    join_enabled: button.as_ref().is_some_and(|(_, enabled)| *enabled) && !starting,
                     join: button.map(|(label, _)| label),
                 });
                 // The host's Add AI in a team's box or the one box fills
@@ -741,7 +733,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 id: column.control(visible_row),
                 row,
                 enabled: (editable || switching && column == SetupColumn::Country || host_moves)
-                    && (column != SetupColumn::Team || mode.allies_allowed && !auto_balance),
+                    && (column != SetupColumn::Team || mode.allies_allowed),
                 visible: visible
                     && !bare
                     && (column == SetupColumn::Country || !observer)

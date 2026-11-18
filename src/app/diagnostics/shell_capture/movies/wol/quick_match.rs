@@ -846,6 +846,7 @@ fn matchbot_says(
         WolServiceEvent::Message {
             from: member(MATCHBOT, MEMBER_OPERATOR, ""),
             text: text.encode_utf16().collect(),
+            localized: false,
             private,
             action: false,
             ansi: true,

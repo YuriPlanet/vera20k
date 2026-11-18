@@ -112,6 +112,19 @@ status page says the games differ (`VERA:MatchStartMismatch`), the log records b
 hashes, and the search goes on after the stage timeout; the host only times out. This
 adds nothing to what game, lobby and relay exchange.
 
+Every game names its version and build when it signs in (`Vera-Version` and `Vera-Build`,
+docs/lobby-protocol.md "Sign-in headers"); the browser's sends every sign-in header the
+desktop's does but federation (`live_service::http::sign_in_headers`). The lobby compares
+two games' builds when both name one, else their versions. Two games that both name a
+build therefore see no room or match to watch from another build, and Quick Match does
+not pair them, where the start would be refused. Where one names no build, such as a
+released game, which names only its version in its User-Agent, their versions decide as
+before, and two builds of one version can still meet and be refused at the start. A
+lobby that does not read the headers ignores them, and a rollback of game or lobby
+compares versions again. The browser gateway must forward them: an older one
+refuses them at its CORS check, failing a newer browser package's sign-in, so the
+gateway ships first.
+
 The lobby lists only rooms of the player's own version, and the matchbot pairs only
 equal versions, so a game the lobby calls old asks its player to update. A 426 at
 sign-in, the first 426 to a signed-in request (`Outdated`) and the lobby's
@@ -173,9 +186,11 @@ matches is sent to the lobby's translation service when it needs it: for a Latin
 language a line with any letter outside it, for any other language a line with none of
 its letters. A reader whose script another listed language shares, English readers
 excepted, also sends the lines in that script, since they may be another language. The
-original stays; its translation follows as a line from the same sender marked `»`,
+lobby's own lines that VERA shows from their phrases in the chosen language are not sent.
+The original stays; its translation follows as a line from the same sender marked `»`,
 without the service's bracketed note naming the source language, unless it only repeats
-the original or the service says it was already in the chosen language.
+the original, the service says it was already in the chosen language, or the player chose
+another language while it was asked.
 
 The app services reliable messages and intermediate progress while loading, and
 continues servicing transport during frame waits. Gameplay uses the same
@@ -559,11 +574,12 @@ or sign out; it then also drops an entry whose session is gone.
 
 Games 0.3.3 and 0.3.4 had a host setting, Balance automatically, that travels online as
 `launch.options.auto_balance` and had the lobby balance the room 5 seconds after who
-plays or the Teams count changed. Current games neither offer it nor send it. In a room
-whose older host has it on, a current guest still closes its seated players' Team lists
-and team headers' Join (a spectator's Join still asks to play, and that host's balance
-places it), as that host's own game does. A released guest in a current host's room
-sees the setting off; the host's Balance button still evens the teams.
+plays or the Teams count changed. Current games neither offer it nor send it. A current
+guest reads and ignores it in such a host's room, which cannot start anyway, since the
+versions differ: the guest's Team list and team headers' Join stay open, that host's
+game keeps the player's team, and the guest is told the host did not acknowledge the
+choice. That host's own balance still moves the players. A released guest in a current
+host's room sees the setting off; the host's Balance button still evens the teams.
 
 A VERA room queues its spectators for seats. A spectator who asks to play while no seat
 is free, with a team header's Join Queue or, in a room without teams, as a newcomer who
