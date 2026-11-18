@@ -1100,6 +1100,32 @@ struct Stored {
     bytes: Vec<u8>,
 }
 
+/// Rooms that take no new startup: cancelled before any Ready, here or by
+/// another relay of the match, or whose ordering room was retired. A Ready
+/// for one gets `Inactive`, and while the room remains, a federated relay
+/// tells the others it is cancelled. While an `OrderingRoom` lives it holds
+/// that state itself. Unlike the room, which goes once its peers' tickets
+/// expire, the record lasts until every certificate signed before its last
+/// close has expired.
+#[derive(Default)]
+pub(super) struct ClosedStartups(HashMap<[u8; 16], u64>);
+
+impl ClosedStartups {
+    /// Closes `room` for MAX_MATCH_SECONDS, the 24 hours a certificate
+    /// lasts: every one signed before now expires first.
+    pub(super) fn close(&mut self, room: [u8; 16], now: u64) {
+        self.0.insert(room, now.saturating_add(MAX_MATCH_SECONDS));
+    }
+
+    pub(super) fn contains(&self, room: &[u8; 16]) -> bool {
+        self.0.contains_key(room)
+    }
+
+    pub(super) fn prune(&mut self, now: u64) {
+        self.0.retain(|_, until| *until > now);
+    }
+}
+
 pub(super) struct OrderingRoom {
     certificate: OrderingCertificate,
     agreement: [u8; 32],
@@ -5683,6 +5709,44 @@ mod tests {
     }
 
     #[test]
+    fn a_leave_before_any_ready_keeps_the_start_closed_once_its_room_is_gone() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 2);
+        let cert = certificate(&key, 3, 2000);
+        // The first player quits while loading; its Ready never arrived.
+        let mut leaver = client(&key, 0);
+        connect(&mut server, &mut leaver, 0);
+        let mut bytes = Vec::new();
+        leaver
+            .configure_ordering(&cert, [7; 32], &mut bytes)
+            .unwrap();
+        leaver.leave_ordering(&mut bytes).unwrap();
+        events(&mut server, &mut leaver, &bytes, 0);
+        // Its ticket expires, and the room with it.
+        let expired = (leaver.ticket.expires - unix(0)) * 1000;
+        server.advance_clock(expired, unix(expired));
+        assert_eq!(server.room_count(), 0);
+        // The other player arrives later on a renewed ticket.
+        let mut ticket = client(&key, 1).ticket;
+        ticket.expires = unix(expired) + 200;
+        let signed = ticket.sign(&key).unwrap();
+        let mut late = ClientSession::new(
+            &signed,
+            *derive_packet_key(&key, &signed).expose_for_https(),
+            [89; 32],
+        )
+        .unwrap();
+        connect(&mut server, &mut late, expired);
+        assert!(matches!(
+            configure(&mut server, &mut late, &cert, expired).as_slice(),
+            [OrderEvent::Error {
+                code: OrderError::Inactive,
+                ..
+            }]
+        ));
+    }
+
+    #[test]
     fn a_late_returner_cannot_restart_a_cleaned_up_match_under_its_id() {
         let directory = TestDirectory::new();
         let key = SecretKey::new([73; 32]);
@@ -5725,9 +5789,9 @@ mod tests {
         // The marker outlasts any certificate verified before the cleanup.
         let expiry = unix(cleaned) + MAX_MATCH_SECONDS;
         server.advance_clock(1_000_000, expiry - 1);
-        assert!(!server.ended_orderings.is_empty());
+        assert!(server.closed_startups.contains(&[5; 16]));
         server.advance_clock(1_000_000, expiry);
-        assert!(server.ended_orderings.is_empty());
+        assert!(!server.closed_startups.contains(&[5; 16]));
     }
 
     /// A started journaled match whose archive fails at 112 seconds, when a
@@ -5988,7 +6052,7 @@ impl RelayServer {
                 }) {
                     return Err(RelayError::Authentication);
                 }
-                room.ordering_cancelled = true;
+                self.closed_startups.close(message.ticket.room, now);
             }
             if let Some(peer) = room
                 .peers
@@ -6147,10 +6211,7 @@ impl RelayServer {
             if !retire {
                 continue;
             }
-            // Every certificate for this match, renewed ones included, was
-            // verified to expire within MAX_MATCH_SECONDS of now or earlier.
-            self.ended_orderings
-                .insert(id, now.saturating_add(MAX_MATCH_SECONDS));
+            self.closed_startups.close(id, now);
             if let Some(receipt) = ordering
                 .terminal
                 .take()
@@ -6286,12 +6347,7 @@ impl RelayServer {
             {
                 return Err(RelayError::Authentication);
             }
-            if self
-                .rooms
-                .get(&message.ticket.room)
-                .is_some_and(|room| room.ordering_cancelled)
-                || self.ended_orderings.contains_key(&message.ticket.room)
-            {
+            if self.closed_startups.contains(&message.ticket.room) {
                 return self.ordering_reply(
                     message.ticket,
                     error(OrderError::Inactive, 0),

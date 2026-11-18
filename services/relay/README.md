@@ -422,9 +422,12 @@ bounds only a startup; a started room ends at its final frame, which pauses
 postpone, and is retired regardless 48 hours and 3 minutes after it was created.
 Once every source has departed, a
 300-second terminal replay grace precedes exact-file cleanup. For 24 hours after
-that cleanup, longer than any of its certificates lasts, a cleaned-up match
-answers Ready with `Inactive`, so a player returning later cannot start a new
-timeline under its ID; the marker lives in memory and a relay restart drops it. No reader
+that cleanup, or after a startup was cancelled before any Ready reached this
+relay, longer than any certificate signed by then lasts, the relay answers
+Ready for that match with `Inactive`, so a player returning
+later cannot start a new timeline under its ID. While the room remains, a
+federated relay also tells the others the startup is cancelled. The marker
+outlives the room and lives in memory; a relay restart drops it. No reader
 acknowledgement gates advancement or retention.
 The service checks deadlines every 6 ms even when no packets arrive. Its pass
 over every room starts a millisecond after the previous one ended, so no

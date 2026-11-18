@@ -234,6 +234,13 @@ later player's Ready: the others wait until that player leaves, which cancels
 the start, or for up to 3 minutes, then start without it (a match on several
 relays is cancelled instead).
 Deploying the relay change is separate from publishing a new game build.
+A relay keeps a startup closed for 24 hours after it was cancelled before any Ready
+reached that relay, or after the relay cleaned up its match, even once its room is
+gone: a player who arrives later gets the cancelled-start message (0.2.7 and 0.2.8,
+a game server failure) instead of starting alone. While that room remains, each
+relay of a match on several relays tells the others the startup is cancelled; once
+it is gone, another relay whose players arrive later cancels at its 3-minute
+loading limit.
 Relays of one match must also speak one relay-to-relay link version: a relay
 that hears another version cancels the startup at once, and one too old to know
 this cancels at its loading limit, so players get the cancelled-start message

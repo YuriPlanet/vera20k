@@ -811,9 +811,6 @@ struct Room {
     ordering: Option<sequenced::OrderingRoom>,
     // Set by the first admission carrying a lobby relay roster.
     federation: Option<sequenced::federation::Federation>,
-    // Only an explicit signed Leave before the first ordering Ready sets this.
-    // Prevent a delayed Ready from recreating an already canceled startup.
-    ordering_cancelled: bool,
     // Read-only hops apart from the players (README "Watchers").
     watchers: Vec<sequenced::watch::Watcher>,
 }
@@ -919,9 +916,7 @@ pub struct RelayServer {
     last_pruned: u64,
     push_after: Option<([u8; 16], u8)>,
     journal_directory: Option<journal::JournalDirectory>,
-    // Ordering rooms cleaned up before their certificate expired, until that
-    // expiry: a late Ready gets Inactive instead of a new timeline.
-    ended_orderings: HashMap<[u8; 16], u64>,
+    closed_startups: sequenced::ClosedStartups,
     // Since `take_ordering_counts` last read them.
     ordering_counts: OrderingCounts,
     // The ordering bytes the last pass over every room counted, plus what
@@ -969,7 +964,7 @@ impl RelayServer {
             last_pruned: 0,
             push_after: None,
             journal_directory: None,
-            ended_orderings: HashMap::new(),
+            closed_startups: Default::default(),
             ordering_counts: OrderingCounts::default(),
             ordering_estimate: 0,
             federation_outcomes_enabled: false,
@@ -1262,7 +1257,7 @@ impl RelayServer {
         self.retired_sessions.retain(|_, until| *until > now);
         self.admissions
             .retain(|_, admission| admission.retain_until > now);
-        self.ended_orderings.retain(|_, expires| *expires > now);
+        self.closed_startups.prune(now);
         self.retired_outcomes
             .retain(|_, receipt| now <= receipt.expires_at());
         self.unadmitted_handshakes.clear();
