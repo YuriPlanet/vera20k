@@ -148,6 +148,10 @@ impl crate::sim::world::Simulation {
                     // The drowning arm keeps the whole current-Health packet
                     // (`Ext/Techno/Hooks.cpp:1033-1036`).
                     health
+                } else if !self.landing_cell_clear(id, rules) {
+                    // `IsClearToMove` fails before the ratio block: the whole
+                    // current Health goes (`:1043-1055`).
+                    health
                 } else {
                     // A shutdown over a non-drowning cell falls through into the
                     // same ratio block the canopy arm uses (`:1062-1084`).
@@ -280,6 +284,67 @@ impl crate::sim::world::Simulation {
         (land == i32::from(LandType::Water.as_index())
             || land == i32::from(LandType::Beach.as_index()))
             && cells.flags(cell) & 0x100 == 0
+    }
+
+    /// `CellClass::IsClearToMove(pType->SpeedType, true, true, -1,
+    /// pType->MovementZone, -1, onBridge)` (`Ext/Techno/Hooks.cpp:1043-1055`):
+    /// the cell a falling unit lands on must admit it. VERA reads the two arms
+    /// that decide it here — the cell's reduced `ZoneType` against the mover's
+    /// `MovementZone` (`MOVEMENT_ZONE_PASSABILITY`, the matrix the zone
+    /// flood-fill uses) and the `LandType` row's speed for the mover's
+    /// `SpeedType` (a zero row is impassable). A cell outside the playfield is
+    /// not clear. An unknown cell, type or `SpeedType` answers clear so the
+    /// pre-existing ratio packet stands.
+    ///
+    /// RESIDUAL: the native call also passes `onBridge`, whose deck row these
+    /// two arms reach through the cell's own land/zone bytes; VERA has no
+    /// separate deck land row, so a landing on a bridge deck reads the deck
+    /// cell's bytes as it stores them.
+    #[cfg(feature = "phobos")]
+    fn landing_cell_clear(&self, id: u64, rules: &crate::rules::ruleset::RuleSet) -> bool {
+        use crate::map::resolved_terrain::NativeCellQuery;
+        use crate::rules::locomotor_type::SpeedType;
+
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return true;
+        };
+        if self.interner.try_resolve(entity.type_ref()).is_none() {
+            return true;
+        }
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+            return true;
+        };
+        if object.speed_type == SpeedType::Invalid {
+            return true;
+        }
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return true;
+        };
+        let coord = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+        let cells = NativeCellQuery::canonical(terrain);
+        let cell = cells.lookup_world(coord.x, coord.y);
+        let (rx, ry) = cells.coord(cell);
+        let (Ok(rx), Ok(ry)) = (u16::try_from(rx), u16::try_from(ry)) else {
+            return true;
+        };
+        let Some(resolved) = terrain.cell(rx, ry) else {
+            return true;
+        };
+        if resolved.outside_playfield {
+            return false;
+        }
+        if !crate::sim::pathfinding::passability::is_passable_for_zone(
+            resolved.zone_type,
+            object.movement_zone,
+        ) {
+            return false;
+        }
+        terrain
+            .land_speed_costs(i32::from(resolved.land_type))
+            .cost_for_speed_type(object.speed_type)
+            // An unbound row (no rules bound to the grid) is unknown, not a
+            // zero row: answer clear so the ratio packet stands.
+            .is_none_or(|bits| f32::from_bits(bits.bits()) > 0.0)
     }
 
     /// The type's `Strength=`, the ratio model's base for a ratio up to 1.0
@@ -1195,5 +1260,66 @@ FallingDownDamage=0.25
             health.is_none_or(|current| current <= 0),
             "the default ratio is 1.0, which still kills: {health:?}"
         );
+    }
+
+    /// `CellClass::IsClearToMove(SpeedType, true, true, -1, MovementZone, -1,
+    /// onBridge)` (`Ext/Techno/Hooks.cpp:1043-1055`): a landing cell the mover's
+    /// `MovementZone` cannot pass takes the whole current Health before the
+    /// ratio block runs, so a low `FallingDownDamage` cannot save it.
+    #[test]
+    fn a_blocked_landing_cell_takes_the_whole_health_packet() {
+        const C4: &str = "C4Warhead=C4
+[Warheads]
+0=C4
+[C4]
+Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
+";
+        fn land(zone: Option<u8>) -> (bool, Option<i32>) {
+            // Water cell with the type's Water ratio set low: the ratio packet
+            // would leave 300 of 400, the blocked arm takes all of it.
+            let (mut sim, rules, id) = scene(
+                "FallingDownDamage.Water=0.1
+",
+                C4,
+                true,
+            );
+            if let Some(zone) = zone {
+                sim.resolved_terrain
+                    .as_mut()
+                    .expect("scene grid")
+                    .cell_mut_for_test(10, 10)
+                    .expect("water cell")
+                    .zone_type = zone;
+            }
+            let clear = sim.landing_cell_clear(id, &rules);
+            let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+            entity.position.set_exact_z_leptons_for_test(Some(0));
+            entity.begin_bomb_fall();
+            sim.object_ai_fall(id, &rules, None, FrameEffects::default())
+                .expect("landing arm");
+            let health = sim
+                .substrate
+                .entities
+                .get(id)
+                .map(|entity| entity.health.current());
+            (clear, health)
+        }
+
+        // Reduced ZoneType 4 is the Water column, which only the water rows of
+        // `MOVEMENT_ZONE_PASSABILITY` pass; a Normal mover never does.
+        let (clear, health) = land(Some(4));
+        assert!(
+            !clear,
+            "the water column is not clear for MovementZone Normal"
+        );
+        assert!(
+            health.is_none_or(|current| current <= 0),
+            "the whole current Health goes: {health:?}"
+        );
+        // The same cell with its ground class left as authored: clear, so the
+        // type's Water ratio applies.
+        let (clear, health) = land(None);
+        assert!(clear, "a ground-classed cell is clear");
+        assert_eq!(health, Some(300), "0.1 of Strength 1000 is a 100 packet");
     }
 }
