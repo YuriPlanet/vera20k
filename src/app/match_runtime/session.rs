@@ -3954,7 +3954,7 @@ mod tests {
             .accept_network_host_setup(
                 launch.clone(),
                 [super::NetworkVacancy::Open; 30],
-                30,
+                120,
                 None,
                 false,
             )

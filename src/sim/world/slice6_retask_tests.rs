@@ -442,9 +442,8 @@ fn slice6_baseline_hash(ares: bool) -> u64 {
     if ares {
         0x949A_7C55_B2F8_4F0B
     } else {
-        // CellReservationGrid widened u32 -> u128 for 120 players; the
-        // overlay mask bytes in the state hash move with it.
-        0xCF8D_B9A7_E3D8_F495
+        // The Ground display set's order changed (`DisplayLayers::submit`).
+        0x3A0E_D950_8413_8E77
     }
 }
 

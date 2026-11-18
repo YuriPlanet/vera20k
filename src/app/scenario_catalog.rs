@@ -415,6 +415,44 @@ mod tests {
                 .verify_network_map_input("RandMap.Sed", &wrong, root.path(), &assets, false)
                 .is_none()
         );
+        options.num_players = 120;
+        root.write("RandMap.Sed", &options.to_sed_bytes(false));
+        assert!(
+            catalog
+                .network_map_metadata("RandMap.Sed", root.path(), &assets, false)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn extended_authored_map_advertises_and_verifies_the_network_capacity() {
+        use std::fmt::Write;
+        let root = TestDirectory::new("extended-network-map");
+        let mut map = String::from(
+            "[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n[IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n[Basic]\nMaxPlayers=120\n[Waypoints]\n",
+        );
+        for slot in 0..120 {
+            writeln!(map, "{slot}={}", 1001 + slot).unwrap();
+        }
+        root.write("Wide.map", map.as_bytes());
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        let record = SkirmishScenarioRecord::concrete_from_ini(
+            0,
+            SkirmishScenarioSource::Synthetic,
+            "Wide.map",
+            &IniFile::from_str(&map),
+        );
+        assert_eq!(record.player_capacity, 120);
+        let catalog = ScenarioCatalog::from_records(vec![record]);
+        let metadata = catalog
+            .network_map_metadata("Wide.map", root.path(), &assets, false)
+            .unwrap();
+        assert_eq!(metadata.player_capacity, 30);
+        assert!(
+            catalog
+                .verify_network_map_input("Wide.map", &metadata, root.path(), &assets, false)
+                .is_some()
+        );
     }
 
     #[test]

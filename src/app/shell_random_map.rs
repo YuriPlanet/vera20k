@@ -3156,6 +3156,24 @@ mod tests {
     }
 
     #[test]
+    fn accepting_an_offline_random_map_retains_the_last_start() {
+        let mut generated = generated_preview(0x501, 10);
+        generated.start_waypoints = (0..120_u8)
+            .map(|slot| (slot, 20 + u16::from(slot), 20))
+            .collect();
+        let mut retention = RandomMapGenerationRetention::default();
+        retention.finish_generation(generated);
+        retention.accept_setup("RandMap.Sed");
+        let starts = retention
+            .take_acceptance_for_loading(Some("RandMap.Sed"))
+            .unwrap()
+            .start_staging
+            .into_waypoint_table();
+        assert_eq!(starts.len(), 120);
+        assert_eq!((starts[&119].rx, starts[&119].ry), (139, 20));
+    }
+
+    #[test]
     fn every_generate_records_the_start_header_and_cancel_keeps_it() {
         let mut retention = RandomMapGenerationRetention::default();
         assert_eq!(retention.generated_header().count, 0, "before any Generate");
