@@ -23,7 +23,7 @@ use crate::sim::cell_kernel::{WorldCoordinate, cell_center};
 use crate::sim::components::DriveCoord;
 use crate::sim::world::Simulation;
 use crate::util::lepton::lepton_to_cell_packed;
-use jumpjet_flight::{FlightOwnerKind, STATE_ASCEND, STATE_DESCEND};
+use jumpjet_flight::{FlightOwnerKind, STATE_ASCEND, STATE_DESCEND, STATE_HOLD};
 
 /// Persistent Jumpjet instance fields: cached XYZ at +40, moving at +4C,
 /// phase at +50 (interface-relative offsets are four bytes smaller).
@@ -279,6 +279,36 @@ impl JumpjetRuntime {
     pub(crate) fn link(&mut self, type_params: &crate::rules::jumpjet_params::JumpjetParams) {
         self.params = jumpjet_flight::JumpjetFlightParams::link(type_params);
         self.flight = jumpjet_flight::JumpjetFlight::linked(&self.params);
+    }
+
+    /// Phobos `FootExt::UpdateTypeData` (`Ext/Foot/Body.cpp:733-746`): a
+    /// conversion that keeps the Jumpjet locomotor rewrites the instance's copy
+    /// of the new type's `Jumpjet*` block instead of relinking it, so the state
+    /// at `+0x50`, the destination and the moving byte survive. The facing keeps
+    /// its current and destination angle and takes only the new rate; the target
+    /// height becomes the new `JumpjetHeight=`.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn phobos_relink_for_type_change(
+        &mut self,
+        type_params: &crate::rules::jumpjet_params::JumpjetParams,
+    ) {
+        self.params = jumpjet_flight::JumpjetFlightParams::relinked(type_params);
+        self.flight.relinked_for_type_change(&self.params);
+    }
+
+    /// Phobos `FootExt::UpdateTypeData`'s `BalloonHover` arm
+    /// (`Ext/Foot/Body.cpp:752-759`): after the block above, an airborne body
+    /// whose new type hovers is parked in `State::Hovering` with the moving
+    /// byte raised, so it neither descends nor asks for a destination again. A
+    /// body that was not really moving takes its current location as the
+    /// destination; native reads that answer before raising `IsMoving`.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn phobos_hover_in_place(&mut self, location: DriveCoord, was_moving: bool) {
+        self.phase = STATE_HOLD;
+        self.moving = true;
+        if !was_moving {
+            self.destination = location;
+        }
     }
 
     /// The prologue both orders share (`0x0054B1C3..0x0054B21A`,

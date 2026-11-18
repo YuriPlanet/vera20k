@@ -258,7 +258,130 @@ impl Simulation {
             self.lifecycle_outputs
                 .emit(LifecycleOutput::ObjectTypeChanged { stable_id: id });
         }
+        // Phobos `FootExt::UpdateTypeData` (`Ext/Foot/Body.cpp:722-793`), run
+        // by `TechnoExt::ConvertToType` once the instance is rebound
+        // (`Ext/Techno/Body.cpp:353` under Ares, `:455` otherwise).
+        #[cfg(feature = "phobos")]
+        self.phobos_update_type_data_in_air(id, destination, rules);
         true
+    }
+
+    /// Phobos `FootExt::UpdateTypeData`'s in-air arm
+    /// (`Ext/Foot/Body.cpp:722-793`).
+    ///
+    /// A destination that is not an Aircraft and whose locomotor is neither
+    /// `Fly` nor `Hover` (those land themselves) either rewrites the running
+    /// Jumpjet instance from the new type and, when the body is in the air,
+    /// parks it there or re-targets it, or — with no Jumpjet at all — lets an
+    /// airborne body fall, as a crash death when the cell below refuses it.
+    #[cfg(feature = "phobos")]
+    fn phobos_update_type_data_in_air(
+        &mut self,
+        id: u64,
+        destination: &crate::rules::object_type::ObjectType,
+        rules: &RuleSet,
+    ) {
+        if destination.category == ObjectCategory::Aircraft
+            || matches!(
+                destination.locomotor,
+                LocomotorKind::Fly | LocomotorKind::Hover
+            )
+        {
+            return;
+        }
+        let Some(actor) = self.substrate.entities.get(id) else {
+            return;
+        };
+        // `pThis->IsInAir() && !pThis->IsAttackedByLocomotor` (`:729`): a
+        // Magnetron's lift (`FootClass+0x6AD`) displaces the locomotor, so a
+        // held body is not flying on its own and must not be dropped.
+        let in_air = crate::sim::movement::air_movement::is_high_flying(
+            actor,
+            self.resolved_terrain.as_ref(),
+            Some((rules, &self.interner)),
+        ) && !actor.is_attacked_by_locomotor();
+        let frame = self.session.binary_frame();
+        // `pJJLoco->Is_Really_Moving_Now()` (`:750`, ILocomotion+0xA8).
+        let was_moving = crate::sim::movement::motion_query::is_really_moving_now(
+            actor,
+            crate::sim::movement::SpeedRules::new(rules, &self.interner, &self.houses),
+            frame,
+        );
+        let coords = ground_pose::object_get_coords(actor, self.resolved_terrain.as_ref());
+        if destination.locomotor == LocomotorKind::Jumpjet {
+            // `:733-746`: the instance keeps its state, destination and moving
+            // byte and takes the new type's `Jumpjet*` block and facing rate.
+            let hover_in_place = in_air && destination.balloon_hover;
+            if let Some(runtime) = self
+                .substrate
+                .entities
+                .get_mut(id)
+                .and_then(|actor| actor.locomotor.as_mut())
+                .and_then(|locomotor| locomotor.jumpjet_runtime_mut())
+            {
+                runtime.phobos_relink_for_type_change(&destination.jumpjet_params);
+                if hover_in_place {
+                    // `:752-759`: hover without descending or re-targeting.
+                    runtime.phobos_hover_in_place(
+                        DriveCoord {
+                            x: coords.x,
+                            y: coords.y,
+                            z: coords.z,
+                        },
+                        was_moving,
+                    );
+                }
+            }
+            if in_air && !destination.balloon_hover && !was_moving {
+                // `:761-764` `Move_To(pThis->Location)`: an idle airborne
+                // instance re-enters the climb at the place it hangs.
+                self.jumpjet_move_to(
+                    id,
+                    DriveCoord {
+                        x: coords.x,
+                        y: coords.y,
+                        z: coords.z,
+                    },
+                    rules,
+                );
+            }
+            return;
+        }
+        if !in_air {
+            return;
+        }
+        // `:770` Let it go into free fall.
+        if let Some(actor) = self.substrate.entities.get_mut(id) {
+            actor.raise_falling_down();
+        }
+        match self.landing_cell_verdict(id, rules) {
+            Some(verdict) if !verdict.clear => {
+                // `:774-779` the landing cells refuses the new type: the body
+                // lands as a bomb and dies.
+                if let Some(actor) = self.substrate.entities.get_mut(id) {
+                    actor.begin_bomb_fall();
+                }
+            }
+            verdict => {
+                // `:782-785` a null cell (`TryGetCellAt`) takes this branch
+                // with `OnBridge` false.
+                let on_bridge = verdict.is_some_and(|verdict| verdict.on_bridge);
+                if let Some(actor) = self.substrate.entities.get_mut(id) {
+                    actor.on_bridge.store(on_bridge);
+                    if let Some(locomotor) = actor.locomotor.as_mut() {
+                        locomotor.store_ground_layer(on_bridge);
+                    }
+                    actor.mark_on_parachuted();
+                }
+            }
+        }
+        // RESIDUAL: `:787-791` also plays `Sequence::Paradrop` on an Infantry
+        // (`PlayAnim(Sequence::Paradrop, true, false)`). VERA's infantry
+        // sequencer picks a sequence from `Doing`/the deploy and fire latches
+        // and owns no per-object one-shot override, so the man falls without
+        // that sequence. Trigger: an Infantry converting type in the air. Effect:
+        // presentation only — the fall, the landing and `OnParachuted` are
+        // unaffected. Frequency: a Phobos `Convert.*` on an airborne infantry.
     }
 
     /// Phobos `FootExt::HealthAutoConvertActions` (`Ext/Foot/Body.cpp:909-927`),
@@ -678,3 +801,7 @@ mod owner_tests;
 #[cfg(all(test, feature = "phobos"))]
 #[path = "type_conversion_mind_control_tests.rs"]
 mod mind_control_tests;
+
+#[cfg(all(test, feature = "phobos"))]
+#[path = "type_conversion_in_air_tests.rs"]
+mod in_air_tests;

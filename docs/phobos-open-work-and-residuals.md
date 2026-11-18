@@ -241,9 +241,33 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   （`Ext/Bullet/Hooks.DetonateLogics.cpp:607-610`）各置位一次，落地臂按
   `:1030-1031` 读取并清除、`:1067` 以 0 伤害包越过 EMP/ratio 段（测试
   `...a_parachuted_landing_skips_the_falling_down_ratio`、
-  `...a_paradropped_passenger_is_marked_on_parachuted`）。残余：`Ext/Foot/Body.cpp:784`
-  与 `Ext/TechnoType/Body.cpp:705` 两个置位点位于 VERA 未移植的空中分支，经此两处
-  起落的单位不带闩（无起落即无伤害包，无可见差）。
+  `...a_paradropped_passenger_is_marked_on_parachuted`）。两个置位点现均已落地：
+  空降/空中重现身之外，`Ext/Foot/Body.cpp:784`（换类型时空中分支，见下一条）与
+  `Ext/TechnoType/Body.cpp:705`（CreateUnit 空中落体）各自置位。
+- **换类型时的空中分支（2026-11-18）**：Phobos `FootExt::UpdateTypeData`
+  （`Ext/Foot/Body.cpp:722-793`）已移植。`sim/game_entity/type_conversion.rs` 的
+  `convert_techno_type` 在 locomotor 重绑与 `ConvertToType:452-453` 的 balloon-hover
+  `Move_To` 臂之后调用 `phobos_update_type_data_in_air`：
+  - 门：目标不是 Aircraft、locomotor 不是 Fly/Hover；`isinAir` =
+    `is_high_flying`（`ObjectClass+0x54`）且 `!is_attacked_by_locomotor`
+    （`GameEntity::is_attacked_by_locomotor` = Magnetron 吊起）。
+  - Jumpjet 目标：`JumpjetRuntime::phobos_relink_for_type_change` 按 `:733-746`
+    重写 `JumpjetSpeed/Climb/Accel/Crash/Deviation/NoWobbles/Wobbles/Height`
+    与 `JumpjetTurnRate`（≥127 截 127），保留 state/destination/moving；
+    空中且 `BalloonHover=` → `phobos_hover_in_place`（State=2、moving 置位、
+    未在动时 destination=当前位置），否则未在动时 `jumpjet_move_to(location)`
+    （`:761-764`）。
+  - 无 Jumpjet：`raise_falling_down()`，再按 `landing_cell_verdict`
+    （`parachute_descent.rs` 的 `IsClearToMove` owner，新增返回
+    `LandingCellVerdict{clear,on_bridge}`）决定：拒绝 → `begin_bomb_fall()`
+    （`:778` 摔死）；通过或 `TryGetCellAt` 无格 → `OnBridge`/`store_ground_layer`
+    + `mark_on_parachuted()`（`:782-785`）。
+  测试 `sim/game_entity/type_conversion_in_air_tests.rs`（5 条，去掉调用后 4 条红）。
+  残余：①`:787-791` 步兵的 `PlayAnim(Sequence::Paradrop)` 未播——VERA 的步兵
+  序列 owner 由 `Doing`/部署与开火闩选择序列，没有逐对象一次性序列覆盖；仅表现，
+  落地与 `OnParachuted` 不受影响。②原生此臂传 `pCell->GetLevel()`，VERA 的
+  `landing_cell_verdict` 沿用落体臂的 `-1` 语义，故在桥面格上原生按地面平面判定、
+  VERA 按桥面占用判定（平地上两者等价）。
 - **BuildLimitGroup 的 `RemoveProduction`**（`docs/phobos-build-limit-group.md`）：
   已完成（2026-11-18）。灰化/`CanBuild` 的 owner 仍是纯查询，但两个 gate 都返回裁剪
   意图（`BuildLimitGroupGate`），队列入场 owner `queue_production` 调
