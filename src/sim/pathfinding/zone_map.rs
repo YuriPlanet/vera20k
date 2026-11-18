@@ -1211,13 +1211,11 @@ pub(crate) fn cell_is_in_native_map_diamond(
     map_size_width: i32,
     map_size_height: i32,
 ) -> bool {
-    let x = coord.0 as i16 as i32;
-    let y = coord.1 as i16 as i32;
-    let sum = x.wrapping_add(y);
-    map_size_width < sum
-        && x.wrapping_sub(y) < map_size_width
-        && y.wrapping_sub(x) < map_size_width
-        && sum <= map_size_width.wrapping_add(map_size_height.wrapping_mul(2))
+    crate::map::playfield::size_diamond_contains(
+        map_size_width,
+        map_size_height,
+        (coord.0 as i16, coord.1 as i16),
+    )
 }
 
 // Tests are declared in zone/mod.rs (zone_map_tests.rs).

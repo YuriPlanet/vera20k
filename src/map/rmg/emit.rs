@@ -16,18 +16,12 @@ use crate::rules::ini_parser::IniFile;
 use super::grid::RmgGrid;
 use super::options::RmgOptions;
 use super::tiles::TILE_UNASSIGNED;
+use super::{LOCAL_LEFT, LOCAL_TOP, MapGeometry, padded_size};
 
 /// Placed-at-full-health value for emitted neutral structures (256 = 100%).
 const NEUTRAL_HEALTH: u16 = 256;
 /// House the generator assigns to neutral tech buildings.
 const NEUTRAL_OWNER: &str = "Neutral";
-
-/// The full map is the generated interior plus a fixed margin, and the
-/// playable area is inset from the top-left corner.
-const SIZE_PAD_X: u32 = 4;
-const SIZE_PAD_Y: u32 = 12;
-const LOCAL_LEFT: u32 = 2;
-const LOCAL_TOP: u32 = 5;
 
 /// Map the theater option to the engine's theater name.
 ///
@@ -43,18 +37,22 @@ pub fn theater_name(theater: i32) -> &'static str {
     }
 }
 
-/// A `MapFile` with header and empty sections, ready for phases to fill.
-///
-/// `gen_w`/`gen_h` are the generated interior dimensions.
+/// Project a generation's own interior into the header used by previews and the finished map.
+pub fn empty_map_from_geometry(options: &RmgOptions, geometry: MapGeometry) -> MapFile {
+    empty_map_file(options, geometry.gen_w as u32, geometry.gen_h as u32)
+}
+
+/// A `MapFile` with the given interior dimensions and empty sections.
 pub fn empty_map_file(options: &RmgOptions, gen_w: u32, gen_h: u32) -> MapFile {
+    let (width, height) = padded_size(gen_w, gen_h);
     let header = MapHeader {
         theater: theater_name(options.theater).to_string(),
         fill: "Clear".to_string(),
         level: 0,
-        width: gen_w + SIZE_PAD_X,
-        height: gen_h + SIZE_PAD_Y,
-        local_left: LOCAL_LEFT,
-        local_top: LOCAL_TOP,
+        width,
+        height,
+        local_left: u32::from(LOCAL_LEFT),
+        local_top: u32::from(LOCAL_TOP),
         local_width: gen_w,
         local_height: gen_h,
     };

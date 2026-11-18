@@ -124,14 +124,9 @@ fn busy_factory_exit_product(
     }
     let type_id = sim.intern("MTNK");
     let cost = sim.cost_of(owner, rules.object("MTNK").unwrap(), rules);
-    sim.production.factories_mut().create_building_factory(
-        1,
-        owner,
-        ProductionCategory::Vehicle,
-        type_id,
-        70,
-        cost,
-    );
+    sim.production
+        .factories_mut_for_test()
+        .create_building_factory_for_test(1, owner, ProductionCategory::Vehicle, type_id, 70, cost);
     let product = super::factory_lifecycle::start_active_production(
         sim,
         rules,
@@ -250,14 +245,9 @@ fn busy_factory_exit_skips_attached_different_type_and_non_guard_buildings() {
         dispatch_timer: crate::sim::mission::MissionDispatchTimer::at_frame(0),
     });
     let mtnk = sim.intern("MTNK");
-    sim.production.factories_mut().create_building_factory(
-        2,
-        owner,
-        ProductionCategory::Vehicle,
-        mtnk,
-        90,
-        700,
-    );
+    sim.production
+        .factories_mut_for_test()
+        .create_building_factory_for_test(2, owner, ProductionCategory::Vehicle, mtnk, 90, 700);
     let attached = sim.production.factories().building_factory(2).cloned();
     sim.houses
         .get_mut(&owner)
@@ -393,14 +383,9 @@ fn busy_factory_exit_attachment_owner_preserves_identity_and_rejects_occupied_ta
     let product = busy_factory_exit_product(&mut sim, &rules, owner, true);
     let mtnk = sim.intern("MTNK");
     let cost = sim.cost_of(owner, rules.object("MTNK").unwrap(), &rules);
-    sim.production.factories_mut().create_building_factory(
-        3,
-        owner,
-        ProductionCategory::Vehicle,
-        mtnk,
-        91,
-        cost,
-    );
+    sim.production
+        .factories_mut_for_test()
+        .create_building_factory_for_test(3, owner, ProductionCategory::Vehicle, mtnk, 91, cost);
     let registry = sim.production.factories().clone();
     let source = sim.production.factories().building_factory(1).cloned();
     let credits = sim.houses[&owner].economy().credits();
@@ -408,14 +393,14 @@ fn busy_factory_exit_attachment_owner_preserves_identity_and_rejects_occupied_ta
     for (from, to) in [(1, 3), (1, 1), (4, 2)] {
         assert!(
             !sim.production
-                .factories_mut()
+                .edit_factories()
                 .transfer_building_factory_attachment(from, to)
         );
         assert_eq!(*sim.production.factories(), registry);
     }
     assert!(
         sim.production
-            .factories_mut()
+            .edit_factories()
             .transfer_building_factory_attachment(1, 2)
     );
     assert!(sim.production.factories().building_factory(1).is_none());
@@ -427,7 +412,7 @@ fn busy_factory_exit_attachment_owner_preserves_identity_and_rejects_occupied_ta
     assert_eq!(source.unwrap().object().unwrap().entity_id, Some(product));
     assert!(
         sim.production
-            .factories_mut()
+            .edit_factories()
             .transfer_building_factory_attachment(2, 1)
     );
     assert_eq!(*sim.production.factories(), registry);
@@ -770,14 +755,16 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
         let cost = sim.cost_of(owner, rules.object("MTNK").unwrap(), &rules);
         for (label, _) in &producer_types {
             if *label != "source" && before["producers"][label]["attachment"] != "0x0" {
-                sim.production.factories_mut().create_building_factory(
-                    labels[label],
-                    owner,
-                    ProductionCategory::Vehicle,
-                    type_id,
-                    90 + labels[label],
-                    cost,
-                );
+                sim.production
+                    .factories_mut_for_test()
+                    .create_building_factory_for_test(
+                        labels[label],
+                        owner,
+                        ProductionCategory::Vehicle,
+                        type_id,
+                        90 + labels[label],
+                        cost,
+                    );
             }
         }
         let actor = sim.substrate.entities.get_mut(product).unwrap();

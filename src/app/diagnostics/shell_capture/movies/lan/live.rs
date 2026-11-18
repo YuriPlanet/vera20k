@@ -982,9 +982,7 @@ impl LiveLanCapture {
                 let config = self.config.as_ref().expect("LAN transport configuration");
                 let mut service = match config.transport {
                     LiveLanTransport::ProductionBroadcast => {
-                        crate::app::lan_service::LanService::open(
-                            crate::app::match_runtime::frame_pacer::wall_clock_bucket(),
-                        )?
+                        crate::app::lan_service::LanService::open()?
                     }
                     LiveLanTransport::Explicit { bind, peer } => {
                         let alternate = std::net::SocketAddrV4::new(*bind.ip(), bind.port() + 2);

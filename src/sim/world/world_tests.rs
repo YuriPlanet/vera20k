@@ -3379,6 +3379,48 @@ fn sonic_wave_test_rules(range: u8) -> RuleSet {
     .expect("Sonic Wave fixture")
 }
 
+/// Wave passes its firer and a null source House (75F417..75F42C).
+/// Psychedelic checks that nullable House at 701CE5, even for friendly fire.
+#[test]
+fn stock_psychedelic_wave_can_affect_the_firers_own_house() {
+    use crate::sim::wave::{Wave, WaveRecordedCell};
+
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let rules = combat_test_rules_with_override(
+        "[MTNK]\nPrimary=SonicZap\n[SonicZap]\nIsSonic=yes\nDamage=1\nAmbientDamage=20\nWarhead=SA\n\
+         [SA]\nPsychedelic=yes\nAffectsAllies=yes\n",
+    );
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 42);
+    let firer = sim
+        .spawn_object("MTNK", "Americans", 6, 10, 0, &rules)
+        .unwrap();
+    let friendly = sim
+        .spawn_object("E1", "Americans", 7, 10, 0, &rules)
+        .unwrap();
+    let hostile = sim
+        .spawn_object("E1", "Russians", 8, 10, 0, &rules)
+        .unwrap();
+    let mut wave = Wave::new_owned(
+        0,
+        firer,
+        TargetKind::Cell(8, 10),
+        ProjectileCoord::new(6 * 256, 10 * 256, 0),
+        ProjectileCoord::new(8 * 256, 10 * 256, 0),
+    );
+    wave.set_active_geometry_for_test(false);
+    wave.set_decaying_for_test(true);
+    wave.replace_recorded_cells(vec![
+        WaveRecordedCell::real(7, 10),
+        WaveRecordedCell::real(8, 10),
+    ]);
+    let id = sim.substrate.allocate_stable_id();
+    sim.admit_wave(id, wave);
+    assert!(sim.object_ai_visit_one(id, Some(&rules), Default::default()));
+    let berserk = |id| sim.entities().get(id).unwrap().berserk.is_active();
+    assert!(berserk(hostile), "the hostile GI went berserk");
+    assert!(berserk(friendly), "the friendly GI should also go berserk");
+}
+
 fn sonic_tail_order_test_rules() -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n0=DLPH\n1=LATER\n2=TARGET\n\n\

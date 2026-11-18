@@ -465,7 +465,9 @@ mod tests {
             cell_x: 15,
             cell_y: 15,
         };
-        *simulation.crate_authority.slot_mut_for_test(0) = due;
+        *simulation
+            .crate_authority_mut_for_test()
+            .slot_mut_for_test(0) = due;
 
         let mut runtime = SimRuntime {
             simulation,
@@ -482,7 +484,7 @@ mod tests {
             .expect("fixture frame must complete");
 
         assert_ne!(
-            runtime.simulation.crate_authority.slots()[0],
+            runtime.simulation.crate_authority().slots()[0],
             due,
             "SimRuntime::advance_frame must reach the crate regeneration rung"
         );

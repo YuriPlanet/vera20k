@@ -1632,7 +1632,7 @@ impl Simulation {
     /// retain future timer behavior without mutating `OverlayGrid`.
     fn hash_crate_authority(&self, hasher: &mut impl Hasher) {
         b"crate-authority-v1".hash(hasher);
-        for slot in self.crate_authority.slots() {
+        for slot in self.crate_authority().slots() {
             slot.start_frame.hash(hasher);
             slot.aux.hash(hasher);
             slot.duration.hash(hasher);

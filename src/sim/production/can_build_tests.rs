@@ -251,7 +251,7 @@ fn sim_for(row: &Value, rules: &RuleSet) -> (Simulation, InternedId) {
             )
             .expect("the supplied factory object constructs");
         assert_eq!(
-            sim.production.factories_mut().link_active_entity(
+            sim.production.edit_factories().link_active_entity(
                 crate::sim::production::factory::FactoryHolder::House(holder, kind),
                 entity,
                 0, // This supplied factory prior starts with zero debt.

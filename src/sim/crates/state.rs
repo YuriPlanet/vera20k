@@ -4,6 +4,7 @@
 //! pair is the sole emptiness discriminator; accepted ghosts retain the same
 //! coordinate/timer state as visible crates.
 
+use crate::sim::rng::SimRng;
 use crate::sim::timer::CdTimer;
 use crate::util::native_random::minutes_timer_frames;
 use crate::util::native_x87::NativeF64Bits;
@@ -60,47 +61,19 @@ impl Default for CrateAuthority {
 impl CrateAuthority {
     /// Map no-init565190 follows MouseLoad's raw read and empties every slot,
     /// including ghosts, without pausing/rebasing any of its three timer words.
-    pub(crate) fn reset_coordinates_after_user_load(&mut self) {
+    pub(in crate::sim) fn reset_coordinates_after_user_load(&mut self) {
         for slot in &mut self.slots {
             slot.cell_x = 0;
             slot.cell_y = 0;
         }
     }
 
-    pub(crate) fn first_empty_index(&self) -> Option<usize> {
+    pub(super) fn first_empty_index(&self) -> Option<usize> {
         self.slots.iter().position(|slot| slot.is_empty())
     }
 
     pub fn slots(&self) -> &[CrateSlot; CRATE_SLOT_CAPACITY] {
         &self.slots
-    }
-
-    /// `CrateSlot__PlaceOverlayAndInitTimer @ 0x004A17C0`: accepted ghosts
-    /// and visible overlays both write the packed coordinate before drawing.
-    pub(crate) fn claim(&mut self, index: usize, cell: (u16, u16)) {
-        let slot = &mut self.slots[index];
-        slot.cell_x = cell.0 as i16;
-        slot.cell_y = cell.1 as i16;
-    }
-
-    /// The same function then installs the start/aux/duration words
-    /// [`crate_timer_words`] computes.
-    pub(crate) fn install_timer(&mut self, index: usize, words: (i32, u32, i32)) {
-        let slot = &mut self.slots[index];
-        (slot.start_frame, slot.aux, slot.duration) = words;
-    }
-
-    /// `CrateSlot__ClearAndPreserveTimer @ 0x004A1750`'s slot writes: the
-    /// coordinate is freed and the timer rebased to its remaining time (a
-    /// paused one keeps its stored duration).
-    pub(crate) fn clear_and_preserve_timer(&mut self, index: usize, current_frame: i32) {
-        let slot = &mut self.slots[index];
-        slot.cell_x = 0;
-        slot.cell_y = 0;
-        let mut timer = slot.timer();
-        timer.pause(current_frame);
-        slot.start_frame = timer.start_frame();
-        slot.duration = timer.duration();
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -124,12 +97,55 @@ impl CrateAuthority {
     }
 }
 
+/// The live slot table and Scenario RNG borrowed together for crate placement or removal.
+pub(crate) struct CrateSlotUpdates<'a> {
+    authority: &'a mut CrateAuthority,
+    scenario_rng: &'a mut SimRng,
+}
+
+impl<'a> CrateSlotUpdates<'a> {
+    pub(crate) fn new(authority: &'a mut CrateAuthority, scenario_rng: &'a mut SimRng) -> Self {
+        Self {
+            authority,
+            scenario_rng,
+        }
+    }
+
+    /// `CrateSlot__PlaceOverlayAndInitTimer @ 0x004A17C0`: an accepted visible
+    /// or ghost crate stores its coordinate before drawing and installing its timer.
+    pub(super) fn accept_placement(
+        self,
+        index: usize,
+        cell: (u16, u16),
+        regen: NativeF64Bits,
+        current_frame: i32,
+    ) {
+        let slot = &mut self.authority.slots[index];
+        slot.cell_x = cell.0 as i16;
+        slot.cell_y = cell.1 as i16;
+        let draw = self.scenario_rng.next_range_u32_inclusive(0, 0x7fff_fffe);
+        (slot.start_frame, slot.aux, slot.duration) = crate_timer_words(regen, draw, current_frame);
+    }
+
+    /// `CrateSlot__ClearAndPreserveTimer @ 0x004A1750` frees the coordinate
+    /// after overlay removal and pauses a running timer at its remaining time.
+    pub(super) fn clear_and_preserve_timer(self, index: usize, current_frame: i32) {
+        let slot = &mut self.authority.slots[index];
+        slot.cell_x = 0;
+        slot.cell_y = 0;
+        let mut timer = slot.timer();
+        timer.pause(current_frame);
+        slot.start_frame = timer.start_frame();
+        slot.duration = timer.duration();
+    }
+}
+
 /// Compute the accepted-slot timer words of
 /// `CrateSlot__PlaceOverlayAndInitTimer @ 0x004A17C0`: the duration
 /// [`minutes_timer_frames`] draws from `CrateRegen=`, then
 /// `0x004A18BA..0x004A18C5` store the start frame, the high dword of the
 /// stored upper bound and that duration.
-pub(crate) fn crate_timer_words(
+pub(super) fn crate_timer_words(
     regen: NativeF64Bits,
     draw: u32,
     current_frame: i32,
@@ -307,7 +323,7 @@ mod tests {
             },
         ] {
             let mut changed = Simulation::new();
-            *changed.crate_authority.slot_mut_for_test(73) = slot;
+            *changed.crate_authority_mut_for_test().slot_mut_for_test(73) = slot;
             assert_ne!(baseline_current, changed.state_hash());
         }
     }
@@ -318,7 +334,7 @@ mod tests {
 
         let mut baseline = Simulation::with_seed(0x1414);
         let mut changed = Simulation::with_seed(0x1414);
-        *changed.crate_authority.slot_mut_for_test(4) = CrateSlot {
+        *changed.crate_authority_mut_for_test().slot_mut_for_test(4) = CrateSlot {
             start_frame: i32::MAX,
             aux: u32::MAX,
             duration: i32::MIN,

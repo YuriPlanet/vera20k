@@ -169,8 +169,7 @@ fn the_under_door_draws_its_damage_frame_and_shadow_after_the_bib() {
     let object = rules.object("GAWEAP").unwrap();
     for (health, frame) in [(object.strength, 0), (object.strength / 2, 1)] {
         let (mut sim, factory) = unloading_factory(rules, "MTNK", true);
-        sim.entities_mut_for_test()
-            .get_mut(factory)
+        sim.entity_mut_for_test(factory)
             .unwrap()
             .health
             .set_for_test(health);
@@ -248,8 +247,7 @@ fn a_damaged_factory_draws_its_damaged_bib_and_its_shadow() {
     atlas.set_object_shp_frame_count_for_test("GAWEAPBB", 4);
     for (health, frame) in [(object.strength, 0), (object.strength / 2, 1)] {
         let (mut sim, factory) = unloading_factory(rules, "MTNK", false);
-        sim.entities_mut_for_test()
-            .get_mut(factory)
+        sim.entity_mut_for_test(factory)
             .unwrap()
             .health
             .set_for_test(health);

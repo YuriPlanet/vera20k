@@ -264,16 +264,14 @@ mod tests {
             assert_eq!(
                 result,
                 case["max_ahead"].as_u64().unwrap() as i32,
-                "{} {}",
-                case["name"],
-                case["role"]
+                "{}",
+                case["name"]
             );
             assert_eq!(
-                reads,
-                case["calls"].as_array().unwrap().len(),
-                "{} {}",
-                case["name"],
-                case["role"]
+                reads as u64,
+                case["reads"].as_u64().unwrap(),
+                "{}",
+                case["name"]
             );
         }
     }
@@ -326,15 +324,10 @@ mod tests {
     fn wol_start_timing_matches_original_start_game_now_block() {
         let corpus = crate::test_fixture::json("tools/storage_oracle/wol_shell.json");
         let cases = corpus["timing"].as_array().unwrap();
+        assert!(!cases.is_empty());
         let int = |value: &serde_json::Value| i32::try_from(value.as_i64().unwrap()).unwrap();
-        let mut checked = 0;
         for case in cases {
             let name = case["name"].as_str().unwrap();
-            // The command-line debug byte 0xA8E2C8 is dormant; its controls
-            // only document the native +20/x2 branch.
-            if case["debug"].as_bool().unwrap() {
-                continue;
-            }
             let pings: Vec<i32> = case["pings"].as_array().unwrap().iter().map(int).collect();
             let result = super::wol_start_timing(
                 int(&case["game_speed"]),
@@ -359,9 +352,7 @@ mod tests {
                 set_timing,
             };
             assert_eq!(result, expected, "{name}");
-            checked += 1;
         }
-        assert_eq!(checked, cases.len() - 3, "three dormant debug controls");
     }
 
     #[test]

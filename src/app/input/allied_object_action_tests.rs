@@ -66,8 +66,7 @@ fn object_pair(rules: &RuleSet, actor_kind: &str, relation: &str) -> (Simulation
         )
         .unwrap();
     sim.fog_mut_for_test().reveal_all_for_owner(owner);
-    sim.entities_mut_for_test()
-        .get_mut(actor)
+    sim.entity_mut_for_test(actor)
         .unwrap()
         .selection
         .set_selected_for_test(true);
@@ -462,7 +461,7 @@ fn allied_object_shared_grants_match_original_without_forking_weapon_selection()
         let (mut sim, actor, target) = object_pair(&battle.rules, "MTNK", "ally");
         if input["infested"] == true {
             crate::sim::arena_fixture::install_action_infestation(
-                sim.entities_mut_for_test().get_mut(target).unwrap(),
+                sim.entity_mut_for_test(target).unwrap(),
                 actor,
             );
         }
@@ -665,8 +664,7 @@ fn a_building_over_another_selected_building_does_nothing() {
     let other = sim
         .spawn_object("GAPILL", "Americans", 10, 14, 0, &battle.rules)
         .unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(other)
+    sim.entity_mut_for_test(other)
         .unwrap()
         .selection
         .set_selected_for_test(true);
@@ -818,10 +816,7 @@ fn a_ground_owner_moves_onto_an_ally_worn_as_a_tree() {
         let tree = sim.intern("TREE01");
         let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
         disguise.acquire(0, Some(tree), None);
-        sim.entities_mut_for_test()
-            .get_mut(target)
-            .unwrap()
-            .disguise = Some(disguise);
+        sim.entity_mut_for_test(target).unwrap().disguise = Some(disguise);
         assert_eq!(
             attack_action(
                 &sim,
@@ -983,8 +978,7 @@ fn a_receiver_the_player_cannot_control_answers_its_attack_rung_under_alt() {
     let bunkered = sim
         .spawn_object("MTNK", "Americans", 10, 12, 0, &battle.rules)
         .unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(bunkered)
+    sim.entity_mut_for_test(bunkered)
         .unwrap()
         .bunker
         .set_bunker_link_for_test(crate::sim::docking::bunker_link::BunkerLink::Installed(3));
@@ -1082,9 +1076,6 @@ fn a_terrain_fire_weapon_attacks_an_enemy_worn_as_a_tree() {
     let tree = sim.intern("TREE01");
     let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
     disguise.acquire(0, Some(tree), None);
-    sim.entities_mut_for_test()
-        .get_mut(target)
-        .unwrap()
-        .disguise = Some(disguise);
+    sim.entity_mut_for_test(target).unwrap().disguise = Some(disguise);
     assert_eq!(action(&sim), AttackAction::Attack);
 }

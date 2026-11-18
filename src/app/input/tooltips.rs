@@ -25,6 +25,7 @@ use crate::ui::tooltips::{TipRect, TipRegion, TooltipService};
 /// In-game tip ids mirror the gamemd id space: button ids as-is, cameo slots
 /// at 1000+.
 pub(crate) const CAMEO_TIP_ID_BASE: u32 = 1000;
+const ID_TACTICAL_TIP: u32 = 500;
 
 /// Phobos left superweapon sidebar cameo tips, one id per visible slot. Kept
 /// clear of the right sidebar's cameo range.
@@ -483,6 +484,35 @@ fn tactical_tip_text(state: &AppState) -> String {
     {
         return String::new();
     }
+    // CursorCheat returns coordinates before reaching the entity picker.
+    if input.cursor_coordinates {
+        return tactical_tip_at_cursor(state, view);
+    }
+    tactical_hover_text(
+        &state.match_state.sim_runtime,
+        &input.tactical_tip_seen,
+        input.cursor_px(),
+        || tactical_tip_at_cursor(state, view),
+    )
+}
+
+pub(crate) type TacticalTipAnswer = std::cell::RefCell<((i32, i32), String)>;
+
+/// Display::GetTooltipText (0x004AE4F0) picks live entities. The answer
+/// published before lending the world applies only to the cursor it used.
+fn tactical_hover_text(
+    host: &crate::app::match_runtime::sim_host::SimHost,
+    kept: &TacticalTipAnswer,
+    cursor: (i32, i32),
+    resolve: impl FnOnce() -> String,
+) -> String {
+    let (at, text) =
+        crate::app::match_runtime::sim_host::home_answer(host, kept, || (cursor, resolve()));
+    if at == cursor { text } else { String::new() }
+}
+
+fn tactical_tip_at_cursor(state: &AppState, view: crate::sim::runtime::SimView<'_>) -> String {
+    let input = &state.match_state.input;
     let Some(rules) = state.rules() else {
         return String::new();
     };
@@ -502,6 +532,30 @@ fn tactical_tip_text(state: &AppState) -> String {
         translucent_viewer,
         state.match_state.sim_runtime.frame(),
     )
+}
+
+pub(crate) fn answer_kept_tactical_tip(state: &AppState) {
+    let input = &state.match_state.input;
+    let tips = &state.match_state.match_presentation.tooltips;
+    if state.frontend.screen == GameScreen::InGame
+        && !state.match_state.paused()
+        && state.frontend.keyboard_dialog.is_none()
+        && input.cursor_visibility.is_visible()
+        && !input.cursor_coordinates
+        && tips.may_read_text(ID_TACTICAL_TIP, tactical_tip_rect(state))
+    {
+        // Prepare during the show delay as well. It can expire while the
+        // tick owns the world, before the next opportunity to pick.
+        let text = tactical_tip_text(state);
+        *input.tactical_tip_seen.borrow_mut() = (input.cursor_px(), text);
+    } else {
+        input.tactical_tip_seen.borrow_mut().1.clear();
+    }
+}
+
+fn tactical_tip_rect(state: &AppState) -> TipRect {
+    let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+    TipRect::new(x as i32, y as i32, width as i32, height as i32)
 }
 
 /// Callback479050 reads WWMouse+0C through virtual+28 (7B89F0), returning
@@ -646,10 +700,9 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
     // Set_View_Dimensions4A8960 (registration4A8B50) registers the viewport as
     // dynamic region500. CursorCheat537EF0 toggles its coordinate text at
     // 4AE580, before the ordinary object/shroud tooltip lookup.
-    let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
     regions.push(region(
-        500,
-        TipRect::new(x as i32, y as i32, width as i32, height as i32),
+        ID_TACTICAL_TIP,
+        tactical_tip_rect(state),
         &|| dynamic_tip_text(cursor, || tactical_tip_text(state)),
     ));
     // Power meter first: gamemd asks the power bar for a tip before the
@@ -1094,6 +1147,67 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn tactical_hover_uses_the_prepared_unit_name_during_a_lent_tick() {
+        use crate::app::match_runtime::sim_host::SimHost;
+        use crate::ui::tooltips::{TOOLTIP_DELAY_MS, TOOLTIP_DURATION_MS};
+
+        let ini = crate::sim::arena_fixture::clear_ground_ini(
+            "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=100\nUIName=Name:TANK\n",
+        );
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
+        let csf = crate::assets::csf_file::test_csf(&[("Name:TANK", "Test Tank")]);
+        let MappedTipFixture {
+            runtime,
+            csf,
+            world,
+            ..
+        } = mapped_tip_fixture_with_rules("TANK", "Russians", "Russians", rules, csf);
+        let mut host = SimHost::default();
+        host.install(Some(runtime));
+        let kept = TacticalTipAnswer::default();
+        let cursor = (20, 20);
+        let resolve = |host: &SimHost| {
+            let runtime = host.runtime().unwrap();
+            tactical_world_tip_text(
+                runtime.view(),
+                &runtime.resources.rules,
+                Some(&csf),
+                world,
+                false,
+            )
+        };
+        let rect = TipRect::new(0, 0, 100, 100);
+        let region = |text| TipRegion {
+            id: ID_TACTICAL_TIP,
+            rect,
+            text,
+        };
+        let mut tips = TooltipService::new();
+        tips.on_mouse_move(cursor.0, cursor.1, 0);
+        assert!(!tips.pass_reads_text(ID_TACTICAL_TIP, rect, 0));
+        assert!(tips.may_read_text(ID_TACTICAL_TIP, rect));
+        let expected = tactical_hover_text(&host, &kept, cursor, || resolve(&host));
+        assert_eq!(expected, "Test Tank");
+        assert!(host.lend(Box::new(|_| Box::new(()))));
+        let expiry = TOOLTIP_DELAY_MS + TOOLTIP_DURATION_MS;
+        for now in [TOOLTIP_DELAY_MS, TOOLTIP_DELAY_MS + 16, expiry - 1] {
+            let text = tactical_hover_text(&host, &kept, cursor, || resolve(&host));
+            tips.sync_regions(&[region(text)]);
+            tips.poll(now);
+            assert_eq!(
+                tips.active().map(|tip| tip.text.as_str()),
+                Some(expected.as_str())
+            );
+        }
+        let text = tactical_hover_text(&host, &kept, cursor, || resolve(&host));
+        tips.sync_regions(&[region(text)]);
+        tips.poll(expiry);
+        assert!(tips.active().is_none(), "the tooltip expires at 10 seconds");
+        assert!(tactical_hover_text(&host, &kept, (21, 20), || resolve(&host)).is_empty());
+    }
+
+    #[test]
     fn radar_diplomacy_tip_reads_briefing_in_campaign() {
         assert_eq!(
             radar_button_tip_labels(false),
@@ -1174,8 +1288,7 @@ mod tests {
         );
         runtime
             .simulation
-            .entities_mut_for_test()
-            .get_mut(entity_id)
+            .entity_mut_for_test(entity_id)
             .unwrap()
             .mark_nominal_survivor_for_test();
         let hash = runtime.simulation.state_hash();
@@ -1262,8 +1375,7 @@ mod tests {
         let sim = &mut fixture.runtime.simulation;
         let worn = sim.intern("E2");
         let viewer = sim.intern("British");
-        sim.entities_mut_for_test()
-            .get_mut(fixture.entity_id)
+        sim.entity_mut_for_test(fixture.entity_id)
             .unwrap()
             .disguise
             .as_mut()
@@ -1312,8 +1424,7 @@ mod tests {
             fixture
                 .runtime
                 .simulation
-                .entities_mut_for_test()
-                .get_mut(fixture.entity_id)
+                .entity_mut_for_test(fixture.entity_id)
                 .unwrap()
                 .disguise
                 .get_or_insert_with(|| crate::sim::cloak_disguise::DisguiseRuntime::new(0))
@@ -1467,10 +1578,6 @@ mod tests {
         viewer_name: &str,
         patch: Option<&crate::rules::ini_parser::IniFile>,
     ) -> Option<MappedTipFixture> {
-        use crate::sim::house_state::HouseState;
-        use crate::sim::runtime::SimRuntime;
-        use crate::sim::world::Simulation;
-
         let retail = match patch {
             Some(patch) => {
                 crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
@@ -1482,7 +1589,26 @@ mod tests {
         }?;
         let (_, assets) = crate::rules::retail_ini_fixture::retail_assets()?;
         let csf = crate::app::loading::init::load_csf(&assets).expect("physical retail CSF");
-        let rules = retail.rules;
+        Some(mapped_tip_fixture_with_rules(
+            type_id,
+            owner_name,
+            viewer_name,
+            retail.rules,
+            csf,
+        ))
+    }
+
+    fn mapped_tip_fixture_with_rules(
+        type_id: &str,
+        owner_name: &str,
+        viewer_name: &str,
+        rules: crate::rules::ruleset::RuleSet,
+        csf: crate::assets::csf_file::CsfFile,
+    ) -> MappedTipFixture {
+        use crate::sim::house_state::HouseState;
+        use crate::sim::runtime::SimRuntime;
+        use crate::sim::world::Simulation;
+
         let mut sim = Simulation::with_seed(0x4AE4_F000);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
@@ -1538,13 +1664,13 @@ mod tests {
         );
         let mut runtime = SimRuntime::from_simulation(sim);
         runtime.resources_mut().rules = rules;
-        Some(MappedTipFixture {
+        MappedTipFixture {
             runtime,
 
             csf,
             entity_id,
             world,
-        })
+        }
     }
 
     fn assert_mapped_tip_uses_retail_ui_name_and_clears_after_limbo(
@@ -1595,7 +1721,7 @@ mod tests {
 
         let mut tips = crate::ui::tooltips::TooltipService::new();
         let region = |text| TipRegion {
-            id: 500,
+            id: ID_TACTICAL_TIP,
             rect: TipRect::new(0, 0, 100, 100),
             text,
         };

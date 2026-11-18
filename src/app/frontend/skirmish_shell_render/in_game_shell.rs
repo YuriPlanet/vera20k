@@ -284,8 +284,6 @@ pub(super) struct ShellFrameOverlay {
     /// A dialog background from the score art's atlas (`SCRBK` under
     /// BC6), drawn before the parent art.
     pub score_backdrop: Option<SpriteInstance>,
-    /// Shared ProgressScreen atlas draws, retained by the frontend owner.
-    pub progress_meter: Vec<SpriteInstance>,
     /// Map thumbnail from the shared preview cache, below ordinary controls.
     pub preview: Option<SpriteInstance>,
     pub controls: Vec<SpriteInstance>,
@@ -408,7 +406,6 @@ pub(super) fn render_shell_frame(
         }
         None => batch.create_instance_buffer(gpu, &overlay.controls),
     };
-    let progress_buffer = batch.create_instance_buffer(gpu, &overlay.progress_meter);
     let overlay_text_buffers: Vec<_> = overlay
         .texts
         .iter()
@@ -511,12 +508,6 @@ pub(super) fn render_shell_frame(
             *count,
             overlay.smooth_art,
         );
-    }
-    if let (Some((buffer, count)), Some(atlas)) = (
-        &progress_buffer,
-        state.frontend.loading_screen_atlas.as_ref(),
-    ) {
-        batch.draw_with_buffer_passthrough(&mut pass, &atlas.texture, buffer, *count);
     }
     for (draw, buffer) in overlay.texts.iter().zip(&overlay_text_buffers) {
         if let Some((buffer, count)) = buffer.as_ref().filter(|_| window_raster.is_none()) {

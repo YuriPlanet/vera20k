@@ -179,7 +179,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
         let monotonic_ms = clock_origin.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
         // Rejections expose no packet, key, ticket, address or player data.
-        // Ordinary UDP loss is handled by the existing client reliable owner.
         match server.process_at(source, &buffer[..length], now, monotonic_ms) {
             Ok(forward) => send_datagrams(&socket, &mut counts, forward),
             Err(error) => counts.reject(error),

@@ -2431,11 +2431,7 @@ impl Simulation {
             if !zones.is_native_load_pending() {
                 return Err(SnapshotRestoreError::NavigationAuthorityPublicationFailed);
             }
-            self.crate_authority.reset_coordinates_after_user_load();
-            self.overlay_grid
-                .as_mut()
-                .expect("validated overlay cache")
-                .reset_crate_fields_after_user_load(saved_land.allocated_cells());
+            self.reset_crates_after_user_load(saved_land)?;
         }
 
         // Reproject runtime isometric replacements onto the pristine
@@ -4207,25 +4203,25 @@ mod tests {
     #[test]
     fn phase14_crate_authority_roundtrips_visible_and_ghost_slots() {
         let mut sim = Simulation::with_seed(0);
-        *sim.crate_authority.slot_mut_for_test(0) = crate::sim::crates::CrateSlot {
+        *sim.crate_authority_mut_for_test().slot_mut_for_test(0) = crate::sim::crates::CrateSlot {
             start_frame: 17,
             aux: 0x40b5_1800,
             duration: 3375,
             cell_x: 6,
             cell_y: 9,
         };
-        *sim.crate_authority.slot_mut_for_test(1) = crate::sim::crates::CrateSlot {
+        *sim.crate_authority_mut_for_test().slot_mut_for_test(1) = crate::sim::crates::CrateSlot {
             start_frame: -2,
             aux: u32::MAX,
             duration: i32::MIN,
             cell_x: -4,
             cell_y: 12,
         };
-        let expected = sim.crate_authority.clone();
+        let expected = sim.crate_authority().clone();
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "test_map", 0);
         let loaded = GameSnapshot::load(&bytes).expect("v114 crate authority snapshot");
-        assert_eq!(loaded.sim.crate_authority, expected);
+        assert_eq!(loaded.sim.crate_authority(), &expected);
     }
 
     #[test]

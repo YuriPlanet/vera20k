@@ -23,57 +23,6 @@ const TRANSFER_FILE: &str = "CONTROLLED.MAP";
 /// The Soviet campaign's first map (`coopcampmd.ini` `[Soviet]` `Map1`).
 const COOP_MAP: &str = "C2S01MD.MAP";
 const TRANSFER_ROOT_MARKER: &str = ".vera20k-lan-capture-root";
-/// The controlled host's own install directory inside the isolated root, from
-/// which it generates its random map.
-const CONTROLLED_HOST_DIR: &str = ".vera20k-lan-capture-host";
-/// The guest's second GO receive (`0x005DDA5D`, `0x00829ABC`).
-const RANDMAP_IMG: &str = "RandMap.img";
-
-/// The controlled host's random map: its `.Sed`, the `'W'` its generator's
-/// staging gives, and a flat stand-in for its `RandMap.img` payload.
-struct ControlledRandomMap {
-    sed: Vec<u8>,
-    digest: String,
-    capacity: i32,
-    staging: crate::map::preview::ScenarioStartStaging,
-    image: Vec<u8>,
-    preview_bin: Vec<u8>,
-}
-
-/// Diagnostic file lease, never a map/catalog authority. Existing files are
-/// refused; cleanup removes only the unchanged file this capture created.
-struct OwnedTransferFile {
-    path: PathBuf,
-    length: usize,
-    sha256: String,
-}
-impl OwnedTransferFile {
-    fn remove_unchanged(&self) -> Result<()> {
-        let metadata = match fs::symlink_metadata(&self.path) {
-            Ok(value) => value,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-            Err(error) => return Err(error.into()),
-        };
-        ensure!(
-            metadata.is_file() && !metadata.file_type().is_symlink(),
-            "owned transfer path replaced; preserving it"
-        );
-        let bytes = fs::read(&self.path)?;
-        ensure!(
-            bytes.len() == self.length && crate::util::sha256::sha256_hex(&bytes) == self.sha256,
-            "owned transfer bytes changed; preserving {}",
-            self.path.display()
-        );
-        fs::remove_file(&self.path).context("remove unchanged capture transfer file")
-    }
-}
-impl Drop for OwnedTransferFile {
-    fn drop(&mut self) {
-        if let Err(error) = self.remove_unchanged() {
-            log::warn!("LAN capture file cleanup: {error:#}");
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LanTarget {
@@ -136,11 +85,12 @@ pub enum LanTarget {
     ModernHostLeft,
     NoMap,
     TransferEligible,
-    TransferProgress,
-    TransferFailure,
-    TransferFailureReturn,
+    /// The guest's map is still missing at GO: map preparation fails and the
+    /// CE notice shows (`fail_go_handoff`).
+    GoMapFailure,
+    /// The same notice's OK back to BB.
+    GoMapFailureReturn,
     GuestGo,
-    TransferGo,
     HostAbortReturn,
     /// Tab opens Diplomacy over a two-human LAN match: each row shows its
     /// own House's UI name.
@@ -168,13 +118,6 @@ pub enum LanTarget {
     /// publishes `RandMap.Sed` with the generator's option digest, and the
     /// two-player match loads the generated map.
     HostRandomMap,
-    /// The guest joins the controlled host's random map: one 0x1B on the
-    /// map change, the host's `'W'` staging, `RandMap.Sed` then
-    /// `RandMap.img` at GO, and the match starts on the `'W'` cells.
-    GuestRandomMap,
-    /// The same guest on BD once `Preview.bin` arrived: the host's 64-colour
-    /// half-size preview with the `'W'` start markers.
-    GuestRandomMapPreview,
     /// B6 Observe in a two-human LAN match, through the executed DESTRUCT and
     /// the local defeat to the re-armed menu and its Observe-less B6.
     HostObserve,
@@ -279,14 +222,9 @@ pub(crate) const LAN_CHECKPOINTS: &[(&str, LanTarget)] = &[
     ("lan-host-close-notice", LanTarget::ModernHostLeft),
     ("lan-0xbd-no-map", LanTarget::NoMap),
     ("lan-0xbd-transfer-eligible", LanTarget::TransferEligible),
-    ("lan-map-transfer-progress", LanTarget::TransferProgress),
-    ("lan-map-transfer-failure", LanTarget::TransferFailure),
-    (
-        "lan-map-transfer-failure-return",
-        LanTarget::TransferFailureReturn,
-    ),
+    ("lan-go-map-failure", LanTarget::GoMapFailure),
+    ("lan-go-map-failure-return", LanTarget::GoMapFailureReturn),
     ("lan-guest-loading-first", LanTarget::GuestGo),
-    ("lan-transfer-loading-first", LanTarget::TransferGo),
     ("lan-host-abort-return", LanTarget::HostAbortReturn),
     ("lan-host-diplomacy", LanTarget::HostDiplomacy),
     ("lan-ingame-peer-left", LanTarget::HostPeerLeft),
@@ -295,11 +233,6 @@ pub(crate) const LAN_CHECKPOINTS: &[(&str, LanTarget)] = &[
     ("lan-ingame-ally", LanTarget::IngameAlly),
     ("lan-ingame-taunt", LanTarget::IngameTaunt),
     ("lan-host-random-map", LanTarget::HostRandomMap),
-    ("lan-guest-random-map", LanTarget::GuestRandomMap),
-    (
-        "lan-0xbd-random-map-preview",
-        LanTarget::GuestRandomMapPreview,
-    ),
     ("lan-host-observe", LanTarget::HostObserve),
     ("lan-host-observe-offered", LanTarget::HostObserveOffered),
     (
@@ -391,12 +324,7 @@ impl LanTarget {
     fn missing_map(self) -> bool {
         matches!(
             self,
-            Self::NoMap
-                | Self::TransferEligible
-                | Self::TransferProgress
-                | Self::TransferFailure
-                | Self::TransferFailureReturn
-                | Self::TransferGo
+            Self::NoMap | Self::TransferEligible | Self::GoMapFailure | Self::GoMapFailureReturn
         )
     }
     fn cooperative_host(self) -> bool {
@@ -414,9 +342,6 @@ impl LanTarget {
     fn cooperative_continuation(self) -> bool {
         matches!(self, Self::CoopResult | Self::CoopNext | Self::CoopRetry)
     }
-    fn random_map_guest(self) -> bool {
-        matches!(self, Self::GuestRandomMap | Self::GuestRandomMapPreview)
-    }
     fn guest(self) -> bool {
         matches!(
             self,
@@ -432,15 +357,11 @@ impl LanTarget {
                 | Self::ModernHostLeft
                 | Self::NoMap
                 | Self::TransferEligible
-                | Self::TransferProgress
-                | Self::TransferFailure
-                | Self::TransferFailureReturn
+                | Self::GoMapFailure
+                | Self::GoMapFailureReturn
                 | Self::GuestGo
-                | Self::TransferGo
                 | Self::GuestAbortReturn
                 | Self::RemoteLoadingProgress
-                | Self::GuestRandomMap
-                | Self::GuestRandomMapPreview
                 | Self::JoinDenied
                 | Self::JoinDeniedReturn
                 | Self::JoinTimeoutReturn
@@ -474,7 +395,6 @@ enum LanPhase {
     ChooserReturn,
     Returned,
     MainReturn,
-    Transfer,
     Notice,
     Loading,
     RemoteProgress,
@@ -517,8 +437,6 @@ pub(super) struct LanCapture {
     abort_input: Option<abort_return::AbortReturnInput>,
     observed_exit_cascade: bool,
     observed_runtime: Option<Value>,
-    transfer_file: Option<OwnedTransferFile>,
-    delivery: Option<Value>,
     join_requested_at: Option<Instant>,
     loading_wait_reported_at: Option<Instant>,
     /// Offline 0x102 mode/map before LAN Choose Map; the LAN chooser must not
@@ -527,7 +445,6 @@ pub(super) struct LanCapture {
     /// The random-map route has committed `RandMap.Sed` to BC.
     random_map_committed: bool,
     random_map_input: Option<RandomMapInput>,
-    random_map_host: Option<ControlledRandomMap>,
     /// The Cooperative route has used its campaign row on BC.
     cooperative_committed: bool,
     /// The co-op continuation's first mission.
@@ -555,14 +472,11 @@ impl LanCapture {
             abort_input: None,
             observed_exit_cascade: false,
             observed_runtime: None,
-            transfer_file: None,
-            delivery: None,
             join_requested_at: None,
             loading_wait_reported_at: None,
             offline_selection: None,
             random_map_committed: false,
             random_map_input: None,
-            random_map_host: None,
             cooperative_committed: false,
             cooperative_first_map: None,
             inputs: if target.live() {
@@ -684,8 +598,6 @@ impl LanCapture {
         } else if self.target.missing_map() {
             self.assert_map_absent(state)?;
             TRANSFER_FILE
-        } else if self.target.random_map_guest() {
-            crate::map::skirmish_scenarios::RANDMAP_SED
         } else {
             let file = values["map"].as_str().context("native map")?;
             ensure!(
@@ -787,9 +699,7 @@ impl LanCapture {
             .as_array()
             .context("native timing corpus")?
             .iter()
-            .find(|row| {
-                row["name"] == "p2_zero" && row["role"] == if host { "host" } else { "guest" }
-            })
+            .find(|row| row["name"] == "p2_zero")
             .context("native zero-response timing control")?;
         let response = row["responses"][0].as_u64().context("native response")? as u32;
         let protocol = row["protocol"].as_i64().context("native protocol")? as i32;
@@ -810,19 +720,6 @@ impl LanCapture {
     }
 
     fn map_metadata(&self) -> Result<NetworkMapMetadata> {
-        if let Some(random_map) = &self.random_map_host {
-            // 0x005E8590's record: the generator's option digest, the
-            // .Sed's length and the sentinel's official byte.
-            return Ok(NetworkMapMetadata {
-                display_name: "Random Map".into(),
-                player_capacity: random_map.capacity,
-                official: true,
-                byte_length: random_map.sed.len() as i32,
-                digest: random_map.digest.clone(),
-                source_sha256: String::new(),
-                effective_digest: String::new(),
-            });
-        }
         let values = &self.inputs["host_options"];
         Ok(NetworkMapMetadata {
             display_name: values["display_name"]
@@ -872,8 +769,6 @@ impl LanCapture {
         );
         Ok(root)
     }
-    /// The peer's 0x1B: the host clears its acceptance and sends the `'W'`
-    /// with the staging Generate wrote; the peer then accepts again.
     /// Click Cooperative in the chooser's game types: `+0x4C` lists the
     /// campaigns. The other routes then use the Soviet row.
     fn cooperative_chooser(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
@@ -995,73 +890,6 @@ impl LanCapture {
         Ok(())
     }
 
-    fn host_answers_preview_request(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        self.drain_requests(state);
-        setup::service_event(state, NetworkSetupEvent::PreviewRequested)?;
-        ensure!(
-            !state.match_state.session.network_player_ready(1),
-            "0x1B kept the peer's acceptance"
-        );
-        let staging = state.frontend.multiplayer_shell_runtime.start_staging();
-        let requests = self.drain_requests(state);
-        let published: Vec<&String> = requests
-            .iter()
-            .filter_map(|request| match request {
-                NetworkSetupRequest::PublishStartStaging(text) => Some(text),
-                _ => None,
-            })
-            .collect();
-        ensure!(
-            published.len() == 1
-                && crate::map::preview::ScenarioStartStaging::parse_w_text(published[0])
-                    == Some(staging)
-                && staging.count >= 2,
-            "0x1B did not send the generated staging once: {published:?}"
-        );
-        ensure!(
-            requests.last() == Some(&NetworkSetupRequest::OfferPreview),
-            "the 'W' was not followed by the 0x19 offer: {requests:?}"
-        );
-        let w = published[0].clone();
-        // The peer's 0x1A completes the offer: Preview.bin is written from
-        // the host's preview, halved and cut to 64 colours, and sent.
-        let preview_path = Self::isolated_root(state)?.join("Preview.bin");
-        // Only the guests the offer went to count; the host's own index does
-        // not complete it.
-        setup::service_event(state, NetworkSetupEvent::PreviewAcknowledged { index: 0 })?;
-        ensure!(
-            self.drain_requests(state).is_empty(),
-            "the host's own index completed the offer"
-        );
-        setup::service_event(state, NetworkSetupEvent::PreviewAcknowledged { index: 1 })?;
-        ensure!(
-            self.drain_requests(state) == vec![NetworkSetupRequest::SendPreviewFile],
-            "the last 0x1A did not send Preview.bin"
-        );
-        let host_preview = crate::app::frontend::skirmish_shell_render::decode_network_map_preview(
-            state,
-            crate::map::skirmish_scenarios::RANDMAP_SED,
-        )
-        .context("host random-map preview")?;
-        let received = crate::map::preview::preview_bin_blob(&fs::read(&preview_path)?)
-            .and_then(|blob| crate::map::preview::paletted_preview_image(&blob))
-            .context("Preview.bin did not decode")?;
-        ensure!(
-            (received.width, received.height) == (host_preview.width / 2, host_preview.height / 2),
-            "Preview.bin is not the host preview halved"
-        );
-        self.route
-            .push(json!({"frame":frame,"action":"controlled 0x1B answered",
-            "w":w,"preview_bin":{"bytes":fs::metadata(&preview_path)?.len(),
-            "width":received.width,"height":received.height}}));
-        setup::service_event(
-            state,
-            NetworkSetupEvent::PlayerReady {
-                index: 1,
-                accepted: true,
-            },
-        )
-    }
     pub(super) fn isolated_root(state: &AppState) -> Result<PathBuf> {
         let assets = state
             .process_assets
@@ -1091,305 +919,6 @@ impl LanCapture {
             "isolated capture marker has wrong identity"
         );
         Ok(root)
-    }
-    /// The controlled host generates its random map from its own `.Sed`
-    /// through the production loader, and computes the `'W'` staging the
-    /// way its Generate does (`0x0058B820`).
-    fn prepare_controlled_random_map(&mut self, state: &mut AppState) -> Result<()> {
-        struct Silent;
-        impl crate::app::loading::pump::LoadingProgressSink for Silent {
-            fn milestone(&mut self, _percent: u32) -> anyhow::Result<()> {
-                Ok(())
-            }
-        }
-        let host_dir = Self::isolated_root(state)?.join(CONTROLLED_HOST_DIR);
-        fs::create_dir_all(&host_dir)?;
-        let options = crate::map::rmg::RmgOptions {
-            seed: 20_261_020,
-            num_players: 2,
-            ..Default::default()
-        };
-        let ares = state.process_assets.reads_ares_way();
-        let sed = options.to_sed_bytes(ares);
-        // A path, as a bare name would be read from VERA's random-map folder.
-        let sed_path = host_dir.join(crate::map::skirmish_scenarios::RANDMAP_SED);
-        fs::write(&sed_path, &sed)?;
-        let mode_file = state
-            .match_state
-            .session
-            .network_setup()
-            .map(|launch| launch.mode.override_file.clone());
-        let the_team_enabled = state
-            .frontend
-            .main_menu_shell_state
-            .typed_codes
-            .the_team_enabled();
-        let (manager, rules, _) = state.process_assets.manager_and_rules_with_tile_cache();
-        let initial = crate::app::loading::init::load_map_initial_with_assets(
-            host_dir,
-            manager.context("controlled host assets")?,
-            rules,
-            None,
-            Some(sed_path.to_str().context("controlled host seed path")?),
-            mode_file.as_deref(),
-            SessionMode::Lan,
-            the_team_enabled,
-            None,
-            &mut Silent,
-        )?;
-        let map = initial.map_data();
-        let starts: Vec<(u8, u16, u16)> = map
-            .waypoints
-            .values()
-            .filter(|waypoint| waypoint.index < 8)
-            .map(|waypoint| (waypoint.index as u8, waypoint.rx, waypoint.ry))
-            .collect();
-        let mut staging = crate::app::loading::composition::scenario_start_staging(map, &starts);
-        // The guest's starts must come from the 'W', not from its own
-        // regeneration: the controlled host swaps slots 0 and 1.
-        ensure!(
-            staging.cells[0] != staging.cells[1],
-            "the controlled swap must change the starts"
-        );
-        staging.pairs.swap(0, 1);
-        staging.cells.swap(0, 1);
-        ensure!(
-            staging.count >= options.num_players,
-            "controlled random map staged {} starts",
-            staging.count
-        );
-        // The host's preview stand-in: a 138x70 gradient, the size of the
-        // generator's own RandMap.img.
-        let (width, height) = (138u16, 70u16);
-        let mut rgb = Vec::new();
-        for y in 0..height {
-            for x in 0..width {
-                rgb.extend_from_slice(&[(40 + x) as u8, (60 + 2 * y) as u8, ((x + y) / 2) as u8]);
-            }
-        }
-        let image = crate::assets::pcx_file::encode_direct_rgb(width, height, &rgb)?;
-        let mut rgba = Vec::new();
-        for pixel in rgb.chunks_exact(3) {
-            rgba.extend_from_slice(&[pixel[0], pixel[1], pixel[2], 0xFF]);
-        }
-        let preview_bin =
-            crate::map::preview::preview_bin_bytes(&crate::map::preview::create_paletted_preview(
-                &crate::map::preview::DecodedPreview {
-                    width: u32::from(width),
-                    height: u32::from(height),
-                    rgba,
-                },
-                crate::map::preview::PALETTED_PREVIEW_COLORS,
-            ));
-        self.route.push(json!({"controlled_random_map":{"seed":options.seed,
-            "sed_bytes":sed.len(),"w":staging.to_w_text(),
-            "boundary":"controlled host generation through the production loader, slots 0 and 1 swapped in the W; gradient stand-in for the host preview"}}));
-        self.random_map_host = Some(ControlledRandomMap {
-            digest: options.native_digest(),
-            capacity: options.num_players,
-            sed,
-            staging,
-            image,
-            preview_bin,
-        });
-        Ok(())
-    }
-    /// A random map's two GO receives land in the install directory,
-    /// overwriting the guest's own files (`0x005DDA31..0x005DDA6F`). VERA's
-    /// land in its random-map folder, inside the marked settings root.
-    fn deliver_random_map_file(&self, state: &AppState, file: &str) -> Result<()> {
-        let random_map = self
-            .random_map_host
-            .as_ref()
-            .context("no controlled random map")?;
-        let bytes = if file == RANDMAP_IMG {
-            &random_map.image
-        } else {
-            &random_map.sed
-        };
-        let settings = Self::isolated_settings_root(state)?;
-        let dir = crate::map::source::random_map_dir(&settings);
-        fs::create_dir_all(dir)?;
-        fs::write(dir.join(file), bytes)?;
-        Ok(())
-    }
-    /// RandMap.Sed never verifies, so the map change sends one 0x1B; a
-    /// republish of the same map sends none. The host's `'W'` then fills the
-    /// guest's staging.
-    fn guest_takes_start_staging(
-        &mut self,
-        state: &mut AppState,
-        frame: u32,
-        requests: &[NetworkSetupRequest],
-    ) -> Result<()> {
-        ensure!(
-            requests
-                .iter()
-                .filter(|request| **request == NetworkSetupRequest::RequestPreview)
-                .count()
-                == 1,
-            "the random-map change did not send exactly one 0x1B"
-        );
-        let launch = self.host_options(state)?;
-        self.publish_setup(state, launch)?;
-        ensure!(
-            !self
-                .drain_requests(state)
-                .contains(&NetworkSetupRequest::RequestPreview),
-            "an unchanged republish sent 0x1B again"
-        );
-        let staging = self
-            .random_map_host
-            .as_ref()
-            .context("no controlled random map")?
-            .staging;
-        setup::service_event(state, NetworkSetupEvent::StartStaging(staging.to_w_text()))?;
-        // The offer that follows: the guest acks and receives Preview.bin.
-        ensure!(
-            state
-                .frontend
-                .network_setup_protocol
-                .as_ref()
-                .is_some_and(|protocol| protocol.received_preview().is_none()),
-            "an unverified map kept a preview"
-        );
-        setup::service_event(state, NetworkSetupEvent::PreviewOffered)?;
-        ensure!(
-            self.drain_requests(state)
-                == vec![
-                    NetworkSetupRequest::AcknowledgePreview,
-                    NetworkSetupRequest::RequestPreviewFile
-                ],
-            "0x19 did not ack and request the file"
-        );
-        setup::service_event(state, NetworkSetupEvent::PreviewOffered)?;
-        ensure!(
-            self.drain_requests(state).is_empty(),
-            "a second 0x19 during the receive was answered"
-        );
-        let preview_bin = &self
-            .random_map_host
-            .as_ref()
-            .context("no controlled random map")?
-            .preview_bin;
-        fs::write(Self::isolated_root(state)?.join("Preview.bin"), preview_bin)?;
-        setup::service_event(
-            state,
-            NetworkSetupEvent::PreviewFileReceived {
-                transferred_file: Some("Preview.bin".into()),
-            },
-        )?;
-        ensure!(
-            state
-                .frontend
-                .network_setup_protocol
-                .as_ref()
-                .and_then(|protocol| protocol.received_preview())
-                .is_some_and(|(_, preview)| (preview.width, preview.height) == (69, 35)),
-            "the guest did not take the host's Preview.bin"
-        );
-        ensure!(
-            state.frontend.multiplayer_shell_runtime.start_staging() == staging,
-            "the guest did not take the host's 'W'"
-        );
-        self.event(frame, "controlled host 'W' after the guest's 0x1B");
-        Ok(())
-    }
-    fn deliver_map_file(&mut self, state: &AppState) -> Result<()> {
-        let root = self.assert_map_absent(state)?;
-        ensure!(
-            Self::isolated_root(state)? == root,
-            "delivery root is not the isolated root"
-        );
-        let assets = state
-            .process_assets
-            .manager()
-            .context("retained delivery asset source")?;
-        let original = self.inputs["host_options"]["map"]
-            .as_str()
-            .context("native delivery source")?;
-        let source = assets
-            .resolve_ref(original)
-            .context("original retail map bytes unavailable")?;
-        let length = self.inputs["host_options"]["map_bytes"]
-            .as_u64()
-            .context("native map bytes")? as usize;
-        let sha256 = self.inputs["transfer"]["source_sha256"]
-            .as_str()
-            .context("native delivered map SHA")?;
-        ensure!(
-            source.bytes.len() == length && crate::util::sha256::sha256_hex(source.bytes) == sha256,
-            "retail delivery bytes differ from native successful transfer"
-        );
-        let path = root.join(TRANSFER_FILE);
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)?;
-        self.transfer_file = Some(OwnedTransferFile {
-            path: path.clone(),
-            length,
-            sha256: sha256.into(),
-        });
-        file.write_all(source.bytes)?;
-        file.flush()?;
-        drop(file);
-        self.delivery = Some(
-            json!({"path":path,"payload_len":length,"source_sha256":sha256,
-            "retail_source_archive":source.source_archive,"retail_entry_id":source.entry_id,
-            "boundary":"declared successful file-delivery service input; transport excluded"}),
-        );
-        Ok(())
-    }
-    fn transferred_loader_source<'a>(
-        &self,
-        state: &'a AppState,
-    ) -> Result<Option<&'a crate::map::source::LoadedMapSource>> {
-        if self.target != LanTarget::TransferGo {
-            return Ok(None);
-        }
-        let owned = self
-            .transfer_file
-            .as_ref()
-            .context("transfer completion never delivered its file")?;
-        ensure!(
-            crate::app::loading::pump::loading_map_name(state) == Some(TRANSFER_FILE),
-            "loader selected a different map token"
-        );
-        let source = crate::app::loading::pump::loading_map_source(state)
-            .context("production loader has not parsed transferred file")?;
-        let crate::map::source::LoadedMapSource::Loose {
-            path,
-            payload_len,
-            source_sha256,
-            ..
-        } = source
-        else {
-            bail!("transferred map was not parsed from the delivered loose file")
-        };
-        ensure!(
-            fs::canonicalize(path)? == owned.path
-                && *payload_len == owned.length
-                && *source_sha256 == owned.sha256,
-            "production parser consumed different transferred bytes"
-        );
-        ensure!(
-            !state
-                .frontend
-                .scenario_catalog
-                .shell_maps()
-                .iter()
-                .any(|map| map.file_name.eq_ignore_ascii_case(TRANSFER_FILE)),
-            "first transferred load invented a discovery catalog entry"
-        );
-        Ok(Some(source))
-    }
-    pub(super) fn cleanup(&mut self) -> Result<()> {
-        if let Some(file) = self.transfer_file.as_ref() {
-            file.remove_unchanged()?;
-        }
-        self.transfer_file = None;
-        Ok(())
     }
 
     fn timing(&self) -> Result<i32> {
@@ -1580,12 +1109,12 @@ impl LanCapture {
                         let incoming = "[ControlledPeer] Hello back"
                             .encode_utf16()
                             .collect::<Vec<_>>();
-                        lobby::service_event(
+                        lobby::append_chat(
                             state,
-                            LanServiceEvent::Chat(LanChatLine {
+                            LanChatLine {
                                 text: incoming.clone(),
                                 color: 0x0000_F0F0,
-                            }),
+                            },
                         );
                         ensure!(
                             state
@@ -2075,9 +1604,6 @@ impl LanCapture {
                         accepted: true,
                     },
                 )?;
-                if self.target == LanTarget::HostRandomMap {
-                    self.host_answers_preview_request(state, frame)?;
-                }
                 if self.target == LanTarget::HostObserverGo || self.observe() {
                     setup::service_event(
                         state,
@@ -2449,9 +1975,6 @@ impl LanCapture {
                         NetworkSetupEvent::ParticipantJoined(self.human(true)?),
                     )?;
                     self.assert_guest_order(state, true)?;
-                    if self.target.random_map_guest() {
-                        self.prepare_controlled_random_map(state)?;
-                    }
                     let launch = self.host_options(state)?;
                     self.publish_setup(state, launch)?;
                     if self.target == LanTarget::CoopGuest {
@@ -2459,14 +1982,7 @@ impl LanCapture {
                     }
                     let status = if self.target == LanTarget::NoMap {
                         0
-                    } else if matches!(
-                        self.target,
-                        LanTarget::TransferEligible
-                            | LanTarget::TransferProgress
-                            | LanTarget::TransferFailure
-                            | LanTarget::TransferFailureReturn
-                            | LanTarget::TransferGo
-                    ) {
+                    } else if self.target.missing_map() {
                         2
                     } else {
                         1
@@ -2480,9 +1996,6 @@ impl LanCapture {
                         requests.contains(&NetworkSetupRequest::MapStatus(status)),
                         "production map availability did not publish K{status}"
                     );
-                    if self.target.random_map_guest() {
-                        self.guest_takes_start_staging(state, frame, &requests)?;
-                    }
                     ensure!(
                         setup::view(state)
                             .context("configured guest view")?
@@ -2501,8 +2014,7 @@ impl LanCapture {
                 LanTarget::Guest
                 | LanTarget::CoopGuest
                 | LanTarget::NoMap
-                | LanTarget::TransferEligible
-                | LanTarget::GuestRandomMapPreview => self.settle(state),
+                | LanTarget::TransferEligible => self.settle(state),
                 LanTarget::StartPrompt | LanTarget::StartPromptAccepted => {
                     self.drain_requests(state);
                     setup::service_event(state, NetworkSetupEvent::StartPrompt)?;
@@ -2667,79 +2179,17 @@ impl LanCapture {
                             setup::service_event(state, NetworkSetupEvent::ControlledGoCompleted)?;
                             self.phase = LanPhase::Loading;
                         } else {
-                            setup::service_event(state, NetworkSetupEvent::MapTransferStarted)?;
-                            self.phase = LanPhase::Transfer;
+                            // The transport's map preparation for GO: the map
+                            // is still missing, so the handoff fails.
+                            ensure!(
+                                setup::prepare_lan_guest_handoff(state).is_err(),
+                                "GO prepared a missing map"
+                            );
+                            self.phase = LanPhase::Notice;
                         }
                     }
                 }
             }
-            LanPhase::Transfer => match self.target {
-                LanTarget::GuestRandomMap => {
-                    let sed = crate::map::skirmish_scenarios::RANDMAP_SED;
-                    self.deliver_random_map_file(state, sed)?;
-                    setup::service_event(
-                        state,
-                        NetworkSetupEvent::MapTransferFinished {
-                            transferred_file: Some(sed.into()),
-                        },
-                    )?;
-                    ensure!(
-                        self.drain_requests(state)
-                            .contains(&NetworkSetupRequest::RequestRandomMapImage)
-                            && state.frontend.screen != GameScreen::Loading,
-                        "RandMap.Sed alone finished GO"
-                    );
-                    setup::service_event(state, NetworkSetupEvent::MapTransferStarted)?;
-                    self.deliver_random_map_file(state, RANDMAP_IMG)?;
-                    setup::service_event(
-                        state,
-                        NetworkSetupEvent::MapTransferFinished {
-                            transferred_file: Some(RANDMAP_IMG.into()),
-                        },
-                    )?;
-                    self.event(frame, "RandMap.Sed then RandMap.img received");
-                    self.phase = LanPhase::Loading;
-                }
-                LanTarget::TransferProgress => {
-                    setup::service_event(
-                        state,
-                        NetworkSetupEvent::MapTransferProgress {
-                            completed: 219,
-                            total: 436,
-                        },
-                    )?;
-                    ensure!(
-                        state
-                            .frontend
-                            .network_setup_protocol
-                            .as_ref()
-                            .context("transfer owner")?
-                            .transfer_progress()
-                            == Some((219, 436)),
-                        "transfer progress not retained"
-                    );
-                    self.settle(state);
-                }
-                LanTarget::TransferGo => {
-                    self.deliver_map_file(state)?;
-                    setup::service_event(
-                        state,
-                        NetworkSetupEvent::MapTransferFinished {
-                            transferred_file: Some(TRANSFER_FILE.into()),
-                        },
-                    )?;
-                    self.phase = LanPhase::Loading;
-                }
-                _ => {
-                    setup::service_event(
-                        state,
-                        NetworkSetupEvent::MapTransferFinished {
-                            transferred_file: None,
-                        },
-                    )?;
-                    self.phase = LanPhase::Notice;
-                }
-            },
             LanPhase::Notice if rendered == PresentedShell::NetworkSetup => {
                 ensure!(
                     state
@@ -2749,9 +2199,9 @@ impl LanCapture {
                         .context("BD")?
                         .notice
                         .is_some(),
-                    "failed transfer lacks CE notice"
+                    "failed GO map lacks CE notice"
                 );
-                if self.target == LanTarget::TransferFailureReturn {
+                if self.target == LanTarget::GoMapFailureReturn {
                     setup_input::key_press(state, Some(KeyCode::Enter), None);
                     self.phase = LanPhase::Returned;
                 } else {
@@ -3050,10 +2500,7 @@ impl LanCapture {
                     self.phase = LanPhase::ScoreWait;
                     return Ok(());
                 }
-                if matches!(
-                    self.target,
-                    LanTarget::HostRandomMap | LanTarget::GuestRandomMap
-                ) {
+                if self.target == LanTarget::HostRandomMap {
                     let runtime = state
                         .match_state
                         .sim_runtime
@@ -3064,24 +2511,6 @@ impl LanCapture {
                         map.eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED),
                         "the LAN match did not load the random map: {map}"
                     );
-                    if let Some(random_map) = &self.random_map_host {
-                        let starts: Vec<(u32, (u16, u16))> = runtime
-                            .simulation
-                            .session()
-                            .mp_start_waypoints()
-                            .iter()
-                            .map(|(index, cell)| (*index, *cell))
-                            .collect();
-                        let staged: Vec<(u32, (u16, u16))> = random_map
-                            .staging
-                            .defined_cells()
-                            .map(|(slot, (rx, ry))| (slot as u32, (rx as u16, ry as u16)))
-                            .collect();
-                        ensure!(
-                            starts == staged,
-                            "guest starts {starts:?} are not the host's swapped 'W' cells {staged:?}"
-                        );
-                    }
                     self.route
                         .push(json!({"frame":frame,"action":"random map loaded",
                         "map":map,"tick":runtime.simulation.session().tick()}));
@@ -4049,7 +3478,6 @@ impl LanCapture {
                 | LanTarget::IngameTaunt
                 | LanTarget::IngameAlly
                 | LanTarget::HostRandomMap
-                | LanTarget::GuestRandomMap
                 | LanTarget::HostObserve
                 | LanTarget::HostObserveOffered
                 | LanTarget::GuestAbortReturn
@@ -4113,7 +3541,6 @@ impl LanCapture {
         if let Some(live) = &self.live {
             return live.receipt(state);
         }
-        let loader_source = self.transferred_loader_source(state)?;
         let presentation = crate::app::loading::pump::network_loading_presentation(state);
         if self.target == LanTarget::HostObserverGo {
             use crate::render::loading_screen_chrome::LoadingArtVariant;
@@ -4146,7 +3573,7 @@ impl LanCapture {
             "participants":loading.participants.iter().map(|row|json!({"label":row.label,"art":format!("{:?}",row.art)})).collect::<Vec<_>>()}));
         Ok(
             json!({"target":format!("{:?}",self.target),"route":self.route,
-            "service_boundary":"controlled decoded inputs; no transport/backend claim","session":session_receipt(state),"before_handoff":self.admitted,"installed_runtime":self.observed_runtime,"observed_exit_cascade":self.observed_exit_cascade,"file_delivery":self.delivery,"parsed_transfer_source":loader_source,"loading_presentation":presentation}),
+            "service_boundary":"controlled decoded inputs; no transport/backend claim","session":session_receipt(state),"before_handoff":self.admitted,"installed_runtime":self.observed_runtime,"observed_exit_cascade":self.observed_exit_cascade,"loading_presentation":presentation}),
         )
     }
 }
@@ -4569,34 +3996,6 @@ mod tests {
                 .unwrap(),
             u32::from_le_bytes(packet("acceptance")[0x57..0x5b].try_into().unwrap()) as u64
         );
-    }
-    #[test]
-    fn transfer_cleanup_preserves_changed_file_and_removes_unchanged_owned_file() {
-        let root = std::env::temp_dir().join(format!(
-            "vera20k-lan-transfer-cleanup-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir(&root).unwrap();
-        let path = root.join(TRANSFER_FILE);
-        let bytes = b"declared delivered fixture";
-        let guard = OwnedTransferFile {
-            path: path.clone(),
-            length: bytes.len(),
-            sha256: crate::util::sha256::sha256_hex(bytes),
-        };
-        fs::write(&path, bytes).unwrap();
-        guard.remove_unchanged().unwrap();
-        assert!(!path.exists());
-        fs::write(&path, b"changed by another owner").unwrap();
-        assert!(guard.remove_unchanged().is_err());
-        drop(guard);
-        assert_eq!(fs::read(&path).unwrap(), b"changed by another owner");
-        fs::remove_file(&path).unwrap();
-        fs::remove_dir(root).unwrap();
     }
 }
 

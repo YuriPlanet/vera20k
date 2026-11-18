@@ -873,12 +873,7 @@ impl Federation {
         let sources = self.links[position].sources;
         for entry in payload[1..].chunks_exact(PACE_FORWARD_ENTRY) {
             let source = entry[0];
-            let pace = match entry[1] {
-                0 => OrderPace::KeepingUp,
-                1 => OrderPace::Behind,
-                2 => OrderPace::CatchingUp,
-                _ => return Err(RelayError::Malformed),
-            };
+            let pace = OrderPace::parse(entry[1])?;
             if source >= MAX_PEERS || sources & (1 << source) == 0 {
                 return Err(RelayError::Malformed);
             }
@@ -1056,7 +1051,7 @@ impl RelayServer {
                         ordering.cancel(now_ms);
                     }
                 }
-                None => room.ordering_cancelled = true,
+                None => self.closed_startups.close(id, now),
             }
             return Err(RelayError::Malformed);
         }
@@ -1068,22 +1063,19 @@ impl RelayServer {
                     && room.ordering.is_none()
                     && (federation.own == 0 || federation.links[position].index == 0)
                 {
-                    room.ordering_cancelled = true;
+                    self.closed_startups.close(id, now);
                 }
                 self.advance_ordering_room(id, now_ms);
                 Ok(Vec::new())
             }
             DATA_KIND => {
-                if payload.len() < 3 {
-                    return Err(RelayError::Malformed);
-                }
                 // `[source][target][data]`.
-                let (source, target, data) = (payload[0], payload[1], &payload[2..]);
+                let &[source, target, ref data @ ..] = payload else {
+                    return Err(RelayError::Malformed);
+                };
                 if source >= MAX_PEERS
                     || federation.links[position].sources & (1 << source) == 0
-                    || (target >= MAX_PEERS && target != BROADCAST)
-                    // Plaintext DATA (compaction spec §3.2).
-                    || data.len() > MAX_PAYLOAD
+                    || !data_fits(target, data)
                 {
                     return Err(RelayError::Malformed);
                 }
@@ -1135,7 +1127,7 @@ impl RelayServer {
     pub fn drain_federation(&mut self, now_ms: u64, now: u64) -> Vec<ForwardDatagram> {
         self.prune(now);
         let mut output = Vec::new();
-        for room in self.rooms.values_mut() {
+        for (id, room) in &mut self.rooms {
             let Some(federation) = room.federation.as_mut() else {
                 continue;
             };
@@ -1168,7 +1160,7 @@ impl RelayServer {
                     adjudicated_flags: 0,
                     ready: 0,
                     agreement: [0; 32],
-                    cancelled: room.ordering_cancelled,
+                    cancelled: self.closed_startups.contains(id),
                     starts_at: None,
                     sealed: 0,
                     paces: Vec::new(),
@@ -1980,7 +1972,7 @@ mod tests {
                     .map(|_| ()),
                 Err(RelayError::Malformed)
             );
-            assert!(ready[1] || game.relays[1].rooms[&[5; 16]].ordering_cancelled);
+            assert!(ready[1] || game.relays[1].closed_startups.contains(&[5; 16]));
             for _ in 0..400 {
                 game.step();
             }
@@ -1991,6 +1983,32 @@ mod tests {
                     "relay {relay}, ready {ready:?}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn the_coordinator_refuses_a_forwarded_pace_it_cannot_name() {
+        let mut game = Match::new(false);
+        let federation = game.relays[1]
+            .rooms
+            .get_mut(&[5; 16])
+            .unwrap()
+            .federation
+            .as_mut()
+            .unwrap();
+        // `[count][source][pace][frames_per_second u16][tick_micros u32][age_ms u32]`.
+        let mut payload = [1, 1, 2, 45, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let named = federation.packet(0, PACE_KIND, &payload).unwrap();
+        payload[2] = 3;
+        let unnamed = federation.packet(0, PACE_KIND, &payload).unwrap();
+        let clock = game.clock(0);
+        for (datagram, result) in [(named, Ok(())), (unnamed, Err(RelayError::Malformed))] {
+            assert_eq!(
+                game.relays[0]
+                    .process_at(game.addresses[1], &datagram.bytes, unix(clock), clock)
+                    .map(|_| ()),
+                result
+            );
         }
     }
 
@@ -2035,6 +2053,37 @@ mod tests {
         }
         let ordering = game.ordering(1);
         assert!(ordering.starts_at.is_none() && ordering.finished_at == Some(limit));
+    }
+
+    #[test]
+    fn a_coordinator_that_retired_its_startup_cancels_a_follower_ready_later() {
+        // Only the coordinator's player is ready, under a certificate that
+        // expires unstarted at 100 s. Its ticket keeps the hop room.
+        let mut game = Match::build(false, [false; 2]);
+        let mut bytes = Vec::new();
+        let cert = certificate(&game.relays[0].key, 3, unix(100_000));
+        game.clients[0]
+            .configure_ordering(&cert, [7; 32], &mut bytes)
+            .unwrap();
+        let clock = game.clock(0);
+        events(&mut game.relays[0], &mut game.clients[0], &bytes, clock);
+        game.now = 100_000 - 1;
+        game.step();
+        assert!(game.relays[0].rooms[&[5; 16]].ordering.is_none());
+        // The follower's player is first ready after that, under a renewed
+        // certificate.
+        let cert = certificate(&game.relays[1].key, 3, 2000);
+        game.clients[1]
+            .configure_ordering(&cert, [7; 32], &mut bytes)
+            .unwrap();
+        let clock = game.clock(1);
+        events(&mut game.relays[1], &mut game.clients[1], &bytes, clock);
+        assert!(game.ordering(1).finished_at.is_none());
+        for _ in 0..400 {
+            game.step();
+        }
+        let ordering = game.ordering(1);
+        assert!(ordering.starts_at.is_none() && ordering.finished_at.is_some());
     }
 
     #[test]

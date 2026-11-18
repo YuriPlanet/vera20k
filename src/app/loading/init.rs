@@ -2512,18 +2512,17 @@ fn generated_full_init_ini(
         .map(|(id, _)| id)
         .ok_or_else(|| anyhow::anyhow!("RMG Full_Init requires the current first Country"))?;
     let geometry = crate::map::rmg::MapGeometry::from_options(options);
+    let (width, height) = geometry.map_size();
+    let [left, top, local_width, local_height] = geometry.local_size();
     let mut map = IniSection::new("Map".into());
     map.set(
         "Theater",
         crate::map::rmg::emit::theater_name(options.theater),
     );
-    map.set(
-        "Size",
-        &format!("0,0,{},{}", geometry.map_w, geometry.map_h),
-    );
+    map.set("Size", &format!("0,0,{width},{height}"));
     map.set(
         "LocalSize",
-        &format!("2,5,{},{}", geometry.gen_w, geometry.gen_h),
+        &format!("{left},{top},{local_width},{local_height}"),
     );
     map.set("Level", "4");
     let mut ini = IniFile::from_sections([map]);
@@ -2727,9 +2726,9 @@ pub(crate) fn load_map_initial_with_assets(
         } else {
             crate::map::rmg::build::GenerationObjects::tech(&tech_types, ares)
         };
-        let mut generated =
+        let run =
             crate::map::rmg::build::generate_map(&options, &settings, &resolved, &blocks, &objects);
-        generated.map_file.ini = synthetic_ini;
+        let generated = run.map();
         log::info!(
             "Random map generated: theater={}, {}x{}, seed={}, players={}",
             generated.map_file.header.theater,
@@ -2749,7 +2748,8 @@ pub(crate) fn load_map_initial_with_assets(
         }
 
         progress.milestone(8)?;
-        let mapgen_rng_continuation = generated.take_mapgen_continuation();
+        let (mut generated, mapgen_rng_continuation) = run.into_parts();
+        generated.map_file.ini = synthetic_ini;
         let generated_construction_trace = generated.construction_trace;
         return Ok(MapLoadInitial {
             map_data: generated.map_file,

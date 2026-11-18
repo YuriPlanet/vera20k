@@ -1183,6 +1183,7 @@ impl ApplicationHandler for App {
                 // `WM_SETCURSOR` with it), so VERA stops drawing mouse.shp rather
                 // than fighting it for the same pixel.
                 state.platform.pointer_in_client = false;
+                crate::app::input::tooltips::on_button_event(state);
                 state.platform.window.request_redraw();
             }
             WindowEvent::ModifiersChanged(_) => {

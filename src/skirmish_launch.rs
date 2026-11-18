@@ -23,6 +23,8 @@ pub const SKIRMISH_AI_SLOT_COUNT: usize = SKIRMISH_PLAYER_SLOT_COUNT - 1;
 /// roster, and its lobbies list a colour for each
 /// ([`crate::rules::skirmish_colors`]).
 pub const NETWORK_PLAYER_SLOT_COUNT: usize = 30;
+// Each player of an online room is one of its relay's sources.
+const _: () = assert!(NETWORK_PLAYER_SLOT_COUNT <= vera20k_relay_protocol::MAX_PEERS as usize);
 /// VERA offline extension: the most player rows a Skirmish map may seat.
 ///
 /// The full House roster is split into three bands, all inside the native
@@ -670,19 +672,13 @@ impl SkirmishLaunchOptions {
 }
 
 /// The options VERA's game room adds to gamemd's: Destroyable Bridges,
-/// In-game Allying, the bans and Teams. LAN carries them beside the native
-/// options text, which has no field for them, and the room keeps them for its
-/// next game.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
+/// In-game Allying, the bans and Teams, which the room keeps for its next
+/// game.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RoomOptions {
     pub bridges_destroyable: bool,
     pub ally_change_allowed: bool,
     pub bans: RoomBans,
-    /// LAN carries Teams in a field of its own: a game that does not know a
-    /// field here refuses the whole options before it can say the host's
-    /// build differs.
-    #[serde(skip)]
     pub teams: Option<u8>,
 }
 

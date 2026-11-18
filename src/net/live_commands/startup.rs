@@ -23,9 +23,13 @@ pub enum StartupError {
     Mismatch,
     #[error("startup lost a required participant before agreement")]
     Aborted,
+    /// VERA: the lobby's certificate names more or fewer players than the
+    /// match admitted ([`super::relay_clock`]).
+    #[error("the lobby's match clock names a different number of players than this match")]
+    ClockRoster,
 }
 
-/// Immutable protocol snapshot, not another simulation/membership owner.
+/// The install-time admission every peer certifies before the start.
 /// Pairs bind shared raw setup row to constructed House. LAN source vectors
 /// are local-first, so their ordinal or socket address must never be hashed.
 /// Active rows are fixed at install after the native loading wait.
@@ -109,8 +113,8 @@ impl StartupAgreement {
         })
     }
 
-    pub(super) fn is_original_singleton(&self) -> bool {
-        self.houses.len() == 1
+    pub(super) fn original_houses(&self) -> usize {
+        self.houses.len()
     }
 
     /// The relay clock requires the entire originally certified membership.

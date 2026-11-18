@@ -1401,17 +1401,6 @@ impl MultiplayerShellRuntime {
         self.scenario_start_staging = staging;
     }
 
-    /// A received `'W'`: true when it committed (all 37 tokens).
-    pub(crate) fn accept_start_staging_text(&mut self, text: &str) -> bool {
-        match crate::map::preview::ScenarioStartStaging::parse_w_text(text) {
-            Some(staging) => {
-                self.scenario_start_staging = staging;
-                true
-            }
-            None => false,
-        }
-    }
-
     pub(crate) fn observe_map_preview(&mut self, map: &MapMenuEntry) {
         self.scenario_start_header.apply(map.preview.start_header);
     }
@@ -1437,8 +1426,9 @@ impl MultiplayerShellRuntime {
             &session.opponents,
         )
     }
-    /// Cooperative mode+64 after current-round assignment retains all later
-    /// round country/color pairs, using the same process Scenario stream.
+    /// Cooperative mode+64 after current-round assignment draws all later
+    /// round country/color pairs from the same process Scenario stream.
+    /// Only the draws matter: C1, which carries the rounds, is not sent.
     pub(crate) fn complete_network_mode_assignments(
         &mut self,
         session: &SkirmishLaunchSession,
@@ -1453,19 +1443,15 @@ impl MultiplayerShellRuntime {
             .iter()
             .map(|human| i32::from(human.slot.color_index))
             .collect();
-        self.cooperative_progress.prepare_round_assignments(
-            &self.cooperative_registry,
-            campaign,
-            &self.cooperative_country_roster,
-            &colors,
-            &mut self.scenario_rng,
-        )
-    }
-    pub(crate) fn cooperative_round_assignments(&self) -> &[[[i32; 2]; 8]] {
-        self.cooperative_progress.round_assignments().rounds()
-    }
-    pub(crate) fn accept_cooperative_round_assignments(&mut self, rounds: Vec<[[i32; 2]; 8]>) {
-        self.cooperative_progress.accept_round_assignments(rounds);
+        self.cooperative_progress
+            .prepare_round_assignments(
+                &self.cooperative_registry,
+                campaign,
+                &self.cooperative_country_roster,
+                &colors,
+                &mut self.scenario_rng,
+            )
+            .map(drop)
     }
 
     pub(crate) fn cooperative_difficulty(&self) -> i32 {

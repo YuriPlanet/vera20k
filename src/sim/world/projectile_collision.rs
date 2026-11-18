@@ -732,13 +732,8 @@ impl ProjectileCollisionWorld<'_> {
 /// `MapClass::CoordinatesLegal @ 0x00568350`: the lepton coordinate's cell
 /// (signed words) lies in the map's Size diamond.
 fn map_size_contains((width, height): (i32, i32), x: i32, y: i32) -> bool {
-    let x = i32::from((x / 256) as i16);
-    let y = i32::from((y / 256) as i16);
-    let sum = x.wrapping_add(y);
-    width < sum
-        && x.wrapping_sub(y) < width
-        && y.wrapping_sub(x) < width
-        && sum <= width.wrapping_add(height.wrapping_mul(2))
+    let cell = ((x / 256) as i16, (y / 256) as i16);
+    crate::map::playfield::size_diamond_contains(width, height, cell)
 }
 
 impl Simulation {
@@ -759,6 +754,13 @@ mod tests {
     use crate::sim::occupancy::CellListInsertion;
     use crate::util::fixed_math::SimFixed;
     use serde_json::Value;
+
+    #[test]
+    fn coordinates_legal_divides_negative_leptons_before_packing() {
+        // CoordinatesLegal @ 0x00568350 truncates toward zero, then packs signed cell words.
+        assert!(map_size_contains((4, 4), -16_776_449, 512));
+        assert!(!map_size_contains((4, 4), -16_775_425, 1536));
+    }
 
     fn world(sim: &Simulation) -> ProjectileCollisionWorld<'_> {
         ProjectileCollisionWorld {

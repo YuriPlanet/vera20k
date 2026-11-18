@@ -226,8 +226,7 @@ pub(crate) struct FrontendState {
     /// Number of matches finished this session — the score screen's `Game: n`.
     /// gamemd increments the same counter as it tears the scenario down.
     pub(crate) finished_game_count: u32,
-    /// Which shell surface owns the MainMenu screen (F11): structural
-    /// exclusivity replaces the old boolean triple.
+    /// Which shell surface owns the MainMenu screen.
     pub(crate) shell_route: crate::app::shell_route::ShellRoute,
     /// Which screen is currently active (MainMenu, Loading, InGame).
     pub(crate) screen: GameScreen,
@@ -261,9 +260,6 @@ pub(crate) struct FrontendState {
         Option<crate::app::frontend::skirmish_shell_render::SkirmishPreviewTexture>,
     /// VERA's enlarged map preview, while it shows.
     pub(crate) preview_zoom: Option<crate::app::frontend::preview_zoom::PreviewZoom>,
-    /// Minimap renderer — created at map load time.
-    pub(crate) loading_screen_atlas:
-        Option<crate::render::loading_screen_chrome::LoadingScreenAtlas>,
     pub(crate) loading_progress: crate::app::loading::pump::LoadingProgressState,
     /// Game data from rules.ini — needed by combat system for weapon/warhead lookups.
     /// Startup-shell rules loaded at boot for menu presentation; match paths

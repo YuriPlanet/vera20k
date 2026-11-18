@@ -97,7 +97,8 @@ pub(crate) enum NetworkRosterEntry {
 /// Session's five raw AI-array words (A8B27C/29C/2BC/2DC/2FC).
 /// Active rows are derived from `launch.opponents`; only inactive rows retain
 /// these words, independently of the visible human or vacant-row controls.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A LAN host's full options carry every row's words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct NetworkAiOptions {
     pub difficulty: i32,
     pub country: i32,
@@ -107,7 +108,8 @@ pub(crate) struct NetworkAiOptions {
 }
 
 impl NetworkAiOptions {
-    /// An active row's words, as the options string writes them.
+    /// An active row's words, as gamemd's options string (`0x005DBB60`)
+    /// writes them.
     pub(crate) fn of(ai: &crate::skirmish_launch::SkirmishAiSlot) -> Self {
         Self {
             difficulty: ai.difficulty.as_i32(),
@@ -325,9 +327,8 @@ struct NetworkSession {
 }
 
 /// The live session: who holds `GameMode`, human participant table, the
-/// local participant's index, whether this client owns the match setup (seed
-/// and player list), and the retail sync-checksum history the multiplayer
-/// queue fills.
+/// local participant's index and whether this client owns the match setup
+/// (seed and player list).
 ///
 /// Process start matches native: `GameMode` 0 with an empty participant list
 /// (`0x0077B532`). The shell writes it at offline launch and network entry or
@@ -3017,9 +3018,8 @@ impl MatchSession {
 
     /// The seat the host's Add AI fills: the first Open one of the map's,
     /// then, in a room sharing bases, a spare row past them. There the AI
-    /// starts on a teammate's start, beside them (`teams::team_starts`). A
-    /// VERA room's LAN options carry an AI on every row
-    /// (`LanGameOptions::all_ai_rows`), as the online launch does.
+    /// starts on a teammate's start, beside them (`teams::team_starts`). The
+    /// host's options carry an AI on every row, on LAN as online.
     pub(crate) fn network_ai_seat(&self) -> Option<u8> {
         self.network_open_seat()
             .or_else(|| self.network_spare_seats().next())
@@ -3308,16 +3308,19 @@ impl MatchSession {
         }
     }
 
-    /// 0x0064AAE0's kick proposal for participant `target_source`, sent to
-    /// every other connected node.
-    pub(crate) fn request_kick_proposal(&mut self, target_source: usize) {
+    /// Queue a request the service sends while the match runs.
+    fn queue_frozen_request(&mut self, request: NetworkSendRequest) {
         if let Some(network) = self.network.as_mut()
             && matches!(network.phase, NetworkPhase::Frozen { .. })
         {
-            network
-                .send_requests
-                .push(NetworkSendRequest::ProposeKick { target_source });
+            network.send_requests.push(request);
         }
+    }
+
+    /// 0x0064AAE0's kick proposal for participant `target_source`, sent to
+    /// every other connected node.
+    pub(crate) fn request_kick_proposal(&mut self, target_source: usize) {
+        self.queue_frozen_request(NetworkSendRequest::ProposeKick { target_source });
     }
 
     /// One in-battle chat packet to `recipients`.
@@ -3338,33 +3341,15 @@ impl MatchSession {
         &mut self,
         record: crate::net::lan_messages::ingame::BeaconRecord,
     ) {
-        if let Some(network) = self.network.as_mut()
-            && matches!(network.phase, NetworkPhase::Frozen { .. })
-        {
-            network
-                .send_requests
-                .push(NetworkSendRequest::Beacon(record));
-        }
+        self.queue_frozen_request(NetworkSendRequest::Beacon(record));
     }
 
     pub(crate) fn request_beacon_text(&mut self, house: i8, slot: i8, text: Vec<u16>) {
-        if let Some(network) = self.network.as_mut()
-            && matches!(network.phase, NetworkPhase::Frozen { .. })
-        {
-            network
-                .send_requests
-                .push(NetworkSendRequest::BeaconText { house, slot, text });
-        }
+        self.queue_frozen_request(NetworkSendRequest::BeaconText { house, slot, text });
     }
 
     pub(crate) fn request_taunt(&mut self, recipients: Vec<usize>, byte: u8) {
-        if let Some(network) = self.network.as_mut()
-            && matches!(network.phase, NetworkPhase::Frozen { .. })
-        {
-            network
-                .send_requests
-                .push(NetworkSendRequest::Taunt { recipients, byte });
-        }
+        self.queue_frozen_request(NetworkSendRequest::Taunt { recipients, byte });
     }
 
     /// The frozen launch's owner key of the House network participant

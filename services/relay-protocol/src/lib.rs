@@ -38,14 +38,16 @@ pub use sequenced::watch::{
     MAX_ROOM_WATCHERS, MAX_WATCH_DELAY_SECONDS, WATCH_MARK_MS, WATCH_TICKET_VERSION, WatchTicket,
 };
 pub use sequenced::{
-    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY, OrderEntry,
-    OrderError, OrderEvent, OrderPace, OrderStatus, OrderingCertificate, paced_rates, turn_frames,
-    turn_ms,
+    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, MAX_FRAME_BATCHES, ORDERING_BATCH_CAPACITY,
+    OrderEntry, OrderError, OrderEvent, OrderPace, OrderStatus, OrderingCertificate, paced_rates,
+    turn_frames, turn_ms,
 };
 
 type HmacSha256 = Hmac<Sha256>;
 
 pub const MAX_PEERS: u8 = 30;
+// Relay, wire and client source masks are u32 with one bit per source.
+const _: () = assert!(MAX_PEERS as u32 <= u32::BITS);
 pub const BROADCAST: u8 = 255;
 /// The largest DATA message a client relays.
 pub const MAX_PAYLOAD: usize = 640;
@@ -65,8 +67,9 @@ const TICKET_DOMAIN: &[u8] = b"VERA20k relay ticket v2\0";
 const KEY_DOMAIN: &[u8] = b"VERA20k relay packet key v2\0";
 const COOKIE_DOMAIN: &[u8] = b"VERA20k relay source v2\0";
 const INGRESS_PER_SECOND: u64 = 16_384;
-// Room for the lobby's 256 sessions and an hour's 512 new guests, whose tickets
-// live 300 seconds, each at their own rate. A handshake costs a few HMACs.
+// Room for the lobby's 320 sessions and an hour's 640 new guests
+// (docs/lobby-protocol.md), whose tickets live 300 seconds, each at their own
+// rate. A handshake costs a few HMACs.
 const HANDSHAKES_PER_SECOND: u64 = 8192;
 const PLAYER_HANDSHAKES_PER_SECOND: u64 = 8;
 // Pulls that read the journal. A catching-up client sends about ten a second.
@@ -435,10 +438,7 @@ impl ClientSession {
         if !self.ready || self.is_watching() {
             return Err(RelayError::Unregistered);
         }
-        if payload.is_empty()
-            || payload.len() > MAX_PAYLOAD
-            || (target >= MAX_PEERS && target != BROADCAST)
-        {
+        if !data_fits(target, payload) {
             return Err(RelayError::Malformed);
         }
         // `[target u8][data]`, plaintext (spec §3.2, §6.1).
@@ -619,19 +619,24 @@ fn handshake_incoming<'a>(
 }
 
 /// The framing of a session datagram's payload (spec §6.1): PING empty,
-/// CONTROL non-empty, DATA `[target][1..=MAX_PAYLOAD bytes]`.
+/// CONTROL non-empty, DATA `[target][data]`.
 fn session_payload(kind: u8, payload: &[u8]) -> Result<(u8, &[u8]), RelayError> {
     match kind {
         PING if payload.is_empty() => Ok((BROADCAST, payload)),
         CONTROL if !payload.is_empty() => Ok((BROADCAST, payload)),
-        DATA if payload.len() > 1
-            && payload.len() <= 1 + MAX_PAYLOAD
-            && (payload[0] < MAX_PEERS || payload[0] == BROADCAST) =>
-        {
-            Ok((payload[0], &payload[1..]))
-        }
+        DATA => match payload.split_first() {
+            Some((&target, data)) if data_fits(target, data) => Ok((target, data)),
+            _ => Err(RelayError::Malformed),
+        },
         _ => Err(RelayError::Malformed),
     }
+}
+
+/// A player DATA packet's bounds, as a client sends it and as a relay takes
+/// it from a hop or a federation link: 1..=`MAX_PAYLOAD` plaintext bytes
+/// (compaction spec §3.2) to one source or to `BROADCAST`.
+fn data_fits(target: u8, data: &[u8]) -> bool {
+    !data.is_empty() && data.len() <= MAX_PAYLOAD && (target < MAX_PEERS || target == BROADCAST)
 }
 
 #[derive(Clone, Copy, Default)]
@@ -809,9 +814,6 @@ struct Room {
     ordering: Option<sequenced::OrderingRoom>,
     // Set by the first admission carrying a lobby relay roster.
     federation: Option<sequenced::federation::Federation>,
-    // Only an explicit signed Leave before the first ordering Ready sets this.
-    // Prevent a delayed Ready from recreating an already canceled startup.
-    ordering_cancelled: bool,
     // Read-only hops apart from the players (README "Watchers").
     watchers: Vec<sequenced::watch::Watcher>,
 }
@@ -917,9 +919,7 @@ pub struct RelayServer {
     last_pruned: u64,
     push_after: Option<([u8; 16], u8)>,
     journal_directory: Option<journal::JournalDirectory>,
-    // Ordering rooms cleaned up before their certificate expired, until that
-    // expiry: a late Ready gets Inactive instead of a new timeline.
-    ended_orderings: HashMap<[u8; 16], u64>,
+    closed_startups: sequenced::ClosedStartups,
     // Since `take_ordering_counts` last read them.
     ordering_counts: OrderingCounts,
     // The ordering bytes the last pass over every room counted, plus what
@@ -967,7 +967,7 @@ impl RelayServer {
             last_pruned: 0,
             push_after: None,
             journal_directory: None,
-            ended_orderings: HashMap::new(),
+            closed_startups: Default::default(),
             ordering_counts: OrderingCounts::default(),
             ordering_estimate: 0,
             federation_outcomes_enabled: false,
@@ -1027,8 +1027,10 @@ impl RelayServer {
         self.prune(now);
         // Relay-wide budgets are charged only after authentication and the
         // sender's own limits, so forged, junk or replayed datagrams cannot
-        // spend capacity other players need. Rejecting one costs at most
-        // three HMACs. No source-address map grows under spoofed UDP traffic.
+        // spend capacity other players need. Rejecting one before any budget
+        // costs at most three HMACs; a CONFIRM within the handshake budget then
+        // checks its cookie and any federation roster. No source-address map
+        // grows under spoofed UDP traffic.
         if sequenced::federation::is_link_packet(bytes) {
             return self.federation_receive(bytes, now, now_millis);
         }
@@ -1041,19 +1043,16 @@ impl RelayServer {
                 }
                 message => (message?, false),
             }
-        } else if let Some(SessionSlot {
-            hop: SessionHop::Watcher { room },
-            ..
-        }) = self.sessions.get(&header.session)
-        {
-            let room = *room;
-            return self.watch_datagram(source, header, bytes, room, now, now_millis);
         } else {
             self.session_incoming(header, bytes, now)?
         };
         // Watchers never reach a player's path (README "Watchers").
         if message.ticket.source == sequenced::watch::WATCH_SOURCE {
-            return self.watch_handshake(source, &message, now, now_millis);
+            return if matches!(message.kind, HELLO | CONFIRM) {
+                self.watch_handshake(source, &message, now, now_millis)
+            } else {
+                self.watch_datagram(source, &message, now, now_millis)
+            };
         }
         if message.kind == CONTROL && message.payload == [sequenced::LEAVE_REQUEST] {
             return self.ordering_leave(source, &message, now, now_millis);
@@ -1260,7 +1259,7 @@ impl RelayServer {
         self.retired_sessions.retain(|_, until| *until > now);
         self.admissions
             .retain(|_, admission| admission.retain_until > now);
-        self.ended_orderings.retain(|_, expires| *expires > now);
+        self.closed_startups.prune(now);
         self.retired_outcomes
             .retain(|_, receipt| now <= receipt.expires_at());
         self.unadmitted_handshakes.clear();
@@ -1696,7 +1695,8 @@ impl RelayServer {
     /// Authenticates a datagram on a session (spec §6.2, §6.4): an unknown
     /// session is dropped without an HMAC; a known one's tag is verified
     /// under its hop key, a failure dropping only this datagram. Returns the
-    /// message and whether its hop is leaving (accepts only LEAVE).
+    /// message and whether its hop is leaving (accepts only LEAVE). A
+    /// watcher's message carries its hop's ticket, `source` `WATCH_SOURCE`.
     fn session_incoming<'a>(
         &mut self,
         header: envelope::Header,
@@ -1719,8 +1719,18 @@ impl RelayServer {
                 (peer.ticket, peer.key.clone(), peer.left_until.is_some())
             }
             SessionHop::Leaving(hop) => (hop.ticket, hop.key.clone(), true),
-            // `process_at` hands watchers' datagrams to `watch_datagram`.
-            SessionHop::Watcher { .. } => return Err(RelayError::Unregistered),
+            SessionHop::Watcher { room } => {
+                let watcher = self
+                    .rooms
+                    .get(room)
+                    .and_then(|room| {
+                        room.watchers
+                            .iter()
+                            .find(|watcher| watcher.session == header.session)
+                    })
+                    .ok_or(RelayError::Unregistered)?;
+                (watcher.ticket, watcher.key.clone(), false)
+            }
         };
         let payload = match envelope::open(envelope::Direction::Up, &key, bytes) {
             Ok((_, payload)) => payload,
@@ -2294,10 +2304,10 @@ mod tests {
         );
 
         // Distinct players still share the relay-wide budget, which outlasts
-        // the lobby's 256 sessions and an hour's 512 new guests.
+        // the lobby's 320 sessions and an hour's 640 new guests.
         let mut server = RelayServer::new(key.clone(), 1);
         let players = HANDSHAKES_PER_SECOND / PLAYER_HANDSHAKES_PER_SECOND;
-        assert!(players >= 768);
+        assert!(players >= 320 + 640);
         for player in 1..=players + 1 {
             let mut id = [0; 16];
             id[..8].copy_from_slice(&player.to_le_bytes());

@@ -5623,8 +5623,7 @@ mod tests {
             let id = sim
                 .spawn_object(kind, "Americans", rx, 5, 0, &rules)
                 .unwrap();
-            sim.entities_mut_for_test()
-                .get_mut(id)
+            sim.entity_mut_for_test(id)
                 .unwrap()
                 .berserk
                 .set_active_for_test(berserk);
@@ -5654,8 +5653,7 @@ mod tests {
         assert_eq!(click(&[tank, gi], None, (3, 5)), Dispatch);
         assert_eq!(click(&[gi, tank], None, (6, 5)), Nothing);
         // 0 over an object already selected does nothing (`0x004ABE0B`).
-        sim.entities_mut_for_test()
-            .get_mut(friend)
+        sim.entity_mut_for_test(friend)
             .unwrap()
             .selection
             .set_selected_for_test(true);
@@ -6217,8 +6215,7 @@ mod tests {
         );
         assert_eq!(click(&sim, mcv), None);
 
-        sim.entities_mut_for_test()
-            .get_mut(enemy)
+        sim.entity_mut_for_test(enemy)
             .unwrap()
             .selection
             .set_selected_for_test(true);
@@ -6248,13 +6245,12 @@ mod tests {
                 target_ry,
             })
         );
-        sim.entities_mut_for_test()
-            .get_mut(enemy)
+        sim.entity_mut_for_test(enemy)
             .unwrap()
             .selection
             .set_selected_for_test(false);
 
-        let loaner = sim.entities_mut_for_test().get_mut(mcv).unwrap();
+        let loaner = sim.entity_mut_for_test(mcv).unwrap();
         loaner.mission_only.mark();
         loaner.discovery.set_owned_by_current_house_for_test(true);
         assert_eq!(action(&sim, mcv), AttackAction::NoMove);
@@ -6295,14 +6291,12 @@ mod tests {
             .unwrap();
         let own_tank = sim.spawn_object("MTNK", "Local", 6, 4, 0, &rules).unwrap();
         let wingman = sim.spawn_object("ORCA", "Local", 6, 5, 0, &rules).unwrap();
-        sim.entities_mut_for_test()
-            .get_mut(wingman)
+        sim.entity_mut_for_test(wingman)
             .unwrap()
             .selection
             .set_selected_for_test(true);
         for flier in [kirov, rocketeer] {
-            sim.entities_mut_for_test()
-                .get_mut(flier)
+            sim.entity_mut_for_test(flier)
                 .unwrap()
                 .position
                 .set_exact_z_leptons_for_test(Some(700));
@@ -6848,8 +6842,7 @@ mod tests {
             .unwrap();
         let selected = [other, clicked];
         for id in selected {
-            sim.entities_mut_for_test()
-                .get_mut(id)
+            sim.entity_mut_for_test(id)
                 .unwrap()
                 .selection
                 .set_selected_for_test(true);
@@ -6940,8 +6933,7 @@ mod tests {
         let shrouded_kirov = sim.spawn_object("ZEP", "Enemy", 12, 6, 0, &rules).unwrap();
         let disc = sim.spawn_object("DISK", "Enemy", 9, 9, 0, &rules).unwrap();
         for flier in [kirov, rocketeer, own_wall_kirov, shrouded_kirov, disc] {
-            sim.entities_mut_for_test()
-                .get_mut(flier)
+            sim.entity_mut_for_test(flier)
                 .unwrap()
                 .position
                 .set_exact_z_leptons_for_test(Some(700));
@@ -8025,8 +8017,7 @@ mod tests {
         // answers 0 over a selected object (0x007005BF), which Building
         // keeps (0x0044750D).
         for id in [first, second] {
-            sim.entities_mut_for_test()
-                .get_mut(id)
+            sim.entity_mut_for_test(id)
                 .unwrap()
                 .selection
                 .set_selected_for_test(true);
@@ -8067,8 +8058,7 @@ mod tests {
             .expect("Bio Reactor builds");
         let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 0.0);
         cargo.board_forced_chain(&[(99, 1.0)]);
-        sim.entities_mut_for_test()
-            .get_mut(reactor)
+        sim.entity_mut_for_test(reactor)
             .unwrap()
             .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(cargo));
         let hover = HoverTargetKindWithId {
@@ -8119,8 +8109,7 @@ mod tests {
             .expect("transport builds");
         let mut cargo = crate::sim::passenger::PassengerCargo::new(1, 0.0);
         cargo.board_forced_chain(&[(99, 1.0)]);
-        sim.entities_mut_for_test()
-            .get_mut(ifv)
+        sim.entity_mut_for_test(ifv)
             .unwrap()
             .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(cargo));
         let hover = HoverTargetKindWithId {
@@ -8150,10 +8139,7 @@ mod tests {
                 crate::app::types::CursorFeedbackKind::Deploy
             )
         );
-        sim.entities_mut_for_test()
-            .get_mut(ifv)
-            .unwrap()
-            .set_on_bridge(true);
+        sim.entity_mut_for_test(ifv).unwrap().set_on_bridge(true);
         assert_eq!(
             probe(&sim),
             (None, crate::app::types::CursorFeedbackKind::NoDeploy)
@@ -8190,8 +8176,7 @@ mod tests {
             (true, false, false),
             (true, false, true),
         ] {
-            sim.entities_mut_for_test()
-                .get_mut(id)
+            sim.entity_mut_for_test(id)
                 .unwrap()
                 .set_unit_simple_deploy_for_test(deployed, begin, reverse);
             assert_eq!(
@@ -8218,10 +8203,7 @@ mod tests {
             None,
             "a group self-click remains selection"
         );
-        sim.entities_mut_for_test()
-            .get_mut(id)
-            .unwrap()
-            .low_bridge_tube_state = Some(
+        sim.entity_mut_for_test(id).unwrap().low_bridge_tube_state = Some(
             crate::sim::movement::tube_movement::LowBridgeTubeMovementState::for_test(
                 crate::map::tube_facts::TubeId(0),
                 0,
@@ -8305,8 +8287,7 @@ mod tests {
             (true, false, false),
             (true, false, true),
         ] {
-            sim.entities_mut_for_test()
-                .get_mut(chopper)
+            sim.entity_mut_for_test(chopper)
                 .unwrap()
                 .set_unit_simple_deploy_for_test(deployed, begin, reverse);
             let (on_cell, over_object) = goals(&sim, chopper);
@@ -8322,8 +8303,7 @@ mod tests {
             }
         }
         assert!(rules.object("E1").unwrap().deployer);
-        sim.entities_mut_for_test()
-            .get_mut(gi)
+        sim.entity_mut_for_test(gi)
             .unwrap()
             .mission_leaf
             .set_infantry_doing_verified(28)
@@ -8334,8 +8314,7 @@ mod tests {
             matches!(over_object, Some(TargetKind::Cell(..))),
             "{over_object:?}"
         );
-        sim.entities_mut_for_test()
-            .get_mut(gi)
+        sim.entity_mut_for_test(gi)
             .unwrap()
             .mission_leaf
             .set_infantry_doing_verified(0)
@@ -8522,8 +8501,7 @@ mod tests {
         let hut = sim
             .spawn_object("CABHUT", owner, 10, 10, 0, &rules)
             .unwrap();
-        sim.entities_mut_for_test()
-            .get_mut(hut)
+        sim.entity_mut_for_test(hut)
             .unwrap()
             .health
             .set_for_test(150);
@@ -8789,8 +8767,7 @@ mod tests {
             if gates["bunker"] == true {
                 // Typed existing owner state: positive native pointer control,
                 // not an assertion of ordinary Infantry bunker installation.
-                sim.entities_mut_for_test()
-                    .get_mut(engineer)
+                sim.entity_mut_for_test(engineer)
                     .unwrap()
                     .bunker
                     .set_bunker_link_for_test(
@@ -8798,8 +8775,7 @@ mod tests {
                     );
             }
             if gates["paralysis_start"].is_number() {
-                sim.entities_mut_for_test()
-                    .get_mut(engineer)
+                sim.entity_mut_for_test(engineer)
                     .unwrap()
                     .parasite
                     .set_paralysis_for_test(CdTimer::from_raw(
@@ -8808,16 +8784,14 @@ mod tests {
                     ));
             }
             if gates["warp_out"] == true {
-                sim.entities_mut_for_test()
-                    .get_mut(engineer)
+                sim.entity_mut_for_test(engineer)
                     .unwrap()
                     .set_temporal_for_test(
                         crate::sim::temporal::TemporalState::warped_by_for_test(hover.stable_id),
                     );
             }
             if gates["warp_in"] == true {
-                sim.entities_mut_for_test()
-                    .get_mut(engineer)
+                sim.entity_mut_for_test(engineer)
                     .unwrap()
                     .install_teleport_state_for_test(Some(
                         crate::sim::movement::teleport_movement::TeleportState::for_test(
@@ -8829,7 +8803,7 @@ mod tests {
                     ));
             }
             if gates["slave_owner"] == true {
-                sim.entities_mut_for_test().get_mut(engineer).unwrap().slave =
+                sim.entity_mut_for_test(engineer).unwrap().slave =
                     crate::sim::slave_manager::SlaveLink::for_test(Some(hover.stable_id), vec![]);
             }
             if let Some(native_slots) = gates["spawn_slots"].as_array() {
@@ -8839,8 +8813,7 @@ mod tests {
                         let child = sim
                             .spawn_object("ENGINEER", "Americans", 5 + index as u16, 12, 0, &rules)
                             .unwrap();
-                        sim.entities_mut_for_test()
-                            .get_mut(child)
+                        sim.entity_mut_for_test(child)
                             .unwrap()
                             .lifecycle
                             .set_in_limbo_for_test(native_slot["limbo"] == true);
@@ -8861,10 +8834,8 @@ mod tests {
                     ));
                 }
                 let spawn_type = sim.intern("ENGINEER");
-                sim.entities_mut_for_test()
-                    .get_mut(engineer)
-                    .unwrap()
-                    .spawn_manager = Some(Box::new(SpawnManagerState::for_test(spawn_type, slots)));
+                sim.entity_mut_for_test(engineer).unwrap().spawn_manager =
+                    Some(Box::new(SpawnManagerState::for_test(spawn_type, slots)));
             }
             let before = sim.state_hash();
             let actor = serde_json::to_value(sim.entities().get(engineer).unwrap()).unwrap();
@@ -9105,8 +9076,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         );
         let house = Some(sim.entities().get(stationary).unwrap().owner());
         sim.session_mut_for_test().set_current_house_for_test(house);
-        sim.entities_mut_for_test()
-            .get_mut(stationary)
+        sim.entity_mut_for_test(stationary)
             .unwrap()
             .bunker
             .set_bunker_link_for_test(BunkerLink::Installed(99));

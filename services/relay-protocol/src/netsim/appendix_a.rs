@@ -320,7 +320,7 @@ fn appendix_a_timeline_and_fields() {
     arrives(turn, 616.7);
     let (base, records) = pack(turn);
     assert_eq!((base, records.len()), (1, 9));
-    // No gap was ever reported and nothing pulled (§7.4, §14).
+    // No gap was ever reported and nothing pulled (§7.4).
     assert!(!trace.of(B, Up).any(|r| r.kind() == "PULL"));
 
     // Packet 24: B's acknowledgement shows relay seq 10 missing.

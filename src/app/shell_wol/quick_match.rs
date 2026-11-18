@@ -358,7 +358,6 @@ pub(super) fn run(state: &mut AppState) {
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
-    visit.in_game = false;
     let globals = &mut visit.quick_match;
     globals.failure = 0;
     globals.set(stage::IDLE, None);
@@ -367,40 +366,33 @@ pub(super) fn run(state: &mut AppState) {
     globals.opponent = None;
     globals.lobby = None;
     globals.search = None;
-    lobby::open_quick_match_runner(state);
+    lobby::open_runner(state, lobby::Runner::QuickMatch);
 }
 
 /// The refusal that names the changed game files (`{files}`).
 const CHANGED_FILES: &str = "VERA:QuickMatchChangedFiles";
 
-use crate::app::shell_network_setup::agreement::changed_files_text;
+use crate::app::shell_network_setup::agreement::{
+    OriginalGameChange, changed_files_text, original_game_changes,
+};
 
 /// VERA: Quick Match pairs players who agreed on nothing, so it plays the
 /// original game. A mod fails the pre-match check; other INI roots or
 /// changed game files fail the join's rules hash (`0x0079BA60`, silently in
 /// Quick Match), against any opponent without the same, and an Ares setting
 /// other than Auto fails the start's rules digest. The box says what to
-/// turn off, and the runner ends before it queues. The Options switches need
-/// nothing: its room has no host rules, so its match
-/// plays without them (`HostRules`).
+/// turn off for the first change ([`original_game_changes`]), and the
+/// runner ends before it queues.
 fn original_game_refusal(
-    mod_in_use: bool,
+    mod_title: Option<&str>,
     assets: &crate::app::process_assets::ProcessAssets,
 ) -> Option<&'static str> {
-    if mod_in_use {
-        Some("VERA:QuickMatchNoMod")
-    } else if !assets.stock_ini_roots() {
-        Some("VERA:QuickMatchIniProfile")
-    } else if assets.ares_setting() != crate::util::ares_launch::AresSetting::Auto {
-        // On or Off changes the rules digest every opponent compares, and On
-        // can mount the installation's `ares.mix`, which a changed-files box
-        // would send the player to delete.
-        Some("VERA:QuickMatchAresSetting")
-    } else if !assets.changed_game_files().is_empty() {
-        Some(CHANGED_FILES)
-    } else {
-        None
-    }
+    Some(match original_game_changes(mod_title, assets).first()? {
+        OriginalGameChange::Mod(_) => "VERA:QuickMatchNoMod",
+        OriginalGameChange::IniRoots => "VERA:QuickMatchIniProfile",
+        OriginalGameChange::Ares(_) => "VERA:QuickMatchAresSetting",
+        OriginalGameChange::ChangedFiles(_) => CHANGED_FILES,
+    })
 }
 
 /// The lobby list arrived (`0x0079FD37..0x0079FE44`): the first lobby whose
@@ -409,9 +401,7 @@ fn original_game_refusal(
 /// `WOL:MatchingServerUnavailable`. Both boxes end the runner with 0; only
 /// the first clears the away text (`0x0079FD66`).
 pub(super) fn lobbies_listed(state: &mut AppState, lobbies: &[WolChannel]) {
-    if let Some(key) =
-        original_game_refusal(state.frontend.mods.active.is_some(), &state.process_assets)
-    {
+    if let Some(key) = original_game_refusal(state.frontend.mods.title(), &state.process_assets) {
         lobby::quick_match_box(state, key, lobby::QuickMatchBoxThen::Return);
         if key == CHANGED_FILES {
             let files = changed_files_text(state.process_assets.changed_game_files());
@@ -1781,12 +1771,13 @@ mod tests {
         use crate::app::process_assets::ProcessAssets;
         use crate::assets::asset_manager::MediaArchiveMode;
         use crate::rules::personal_rules::PersonalRules;
+        use crate::util::ares_launch::AresSetting;
         // The Options switches stay home: Quick Match's room shares none,
         // so its match plays without them.
         let mut changes = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
             .with_personal_rules(PersonalRules::default());
         changes.set_terrain_deformation(true);
-        assert_eq!(original_game_refusal(false, &changes), None);
+        assert_eq!(original_game_refusal(None, &changes), None);
         // A loose rulesmd.ini the retail archives don't hold, found at startup.
         let dir = crate::assets::asset_manager::test_support::audio_test_install("qm-files");
         std::fs::write(dir.path().join("rulesmd.ini"), b"[General]\n").unwrap();
@@ -1797,7 +1788,22 @@ mod tests {
         .unwrap();
         changes.install_native_ini_hashes(&game, &[]);
         assert_eq!(changes.changed_game_files(), ["rulesmd.ini"]);
-        assert_eq!(original_game_refusal(false, &changes), Some(CHANGED_FILES));
+        assert_eq!(original_game_refusal(None, &changes), Some(CHANGED_FILES));
+        // Ares On as well: the rules-differ text names both, and Quick Match
+        // the setting, as On can mount the `ares.mix` a files box would name.
+        changes = changes.with_ares_setting(AresSetting::On);
+        assert_eq!(
+            original_game_changes(None, &changes),
+            [
+                OriginalGameChange::Ares(AresSetting::On),
+                OriginalGameChange::ChangedFiles(&["rulesmd.ini".to_owned()]),
+            ]
+        );
+        assert_eq!(
+            original_game_refusal(None, &changes),
+            Some("VERA:QuickMatchAresSetting")
+        );
+        changes = changes.with_ares_setting(AresSetting::Auto);
         // With no mod selected, an installed `ares.mix` is ignored. The
         // changed rules still refuse Quick Match; removing them permits it.
         dir.write_mix("ares.mix", "ares.txt", b"ares");
@@ -1808,7 +1814,7 @@ mod tests {
         .unwrap();
         changes.install_native_ini_hashes(&game, &[]);
         assert_eq!(changes.changed_game_files(), ["rulesmd.ini"]);
-        assert_eq!(original_game_refusal(false, &changes), Some(CHANGED_FILES));
+        assert_eq!(original_game_refusal(None, &changes), Some(CHANGED_FILES));
         std::fs::remove_file(dir.path().join("rulesmd.ini")).unwrap();
         let game = crate::assets::asset_manager::AssetManager::new(
             dir.path(),
@@ -1817,7 +1823,7 @@ mod tests {
         .unwrap();
         changes.install_native_ini_hashes(&game, &[]);
         assert!(changes.changed_game_files().is_empty());
-        assert_eq!(original_game_refusal(false, &changes), None);
+        assert_eq!(original_game_refusal(None, &changes), None);
         // Original mode also skips an installed LANGRULE, even without a
         // valid Digest; it must not prevent Quick Match from queuing.
         std::fs::write(
@@ -1832,10 +1838,10 @@ mod tests {
         .unwrap();
         changes.install_native_ini_hashes(&game, &[]);
         assert!(changes.changed_game_files().is_empty());
-        assert_eq!(original_game_refusal(false, &changes), None);
+        assert_eq!(original_game_refusal(None, &changes), None);
         // A selected mod remains ineligible for Quick Match.
         assert_eq!(
-            original_game_refusal(true, &changes),
+            original_game_refusal(Some("My Mod"), &changes),
             Some("VERA:QuickMatchNoMod")
         );
     }
