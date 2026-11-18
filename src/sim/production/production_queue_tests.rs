@@ -1106,7 +1106,6 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
         .advance_app_frame(
             std::slice::from_ref(&rally),
             &rules,
-            None,
             67,
             crate::sim::world::TickLane::Ordinary,
             crate::sim::world::FrameEffects::default().with_production_strip(&visits, &|_| {}),
@@ -1160,7 +1159,6 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
         .advance_app_frame(
             &due,
             &rules,
-            None,
             67,
             crate::sim::world::TickLane::Ordinary,
             crate::sim::world::FrameEffects::default().with_production_strip(&visits, &|_| {}),
@@ -1237,7 +1235,6 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
         .advance_app_frame(
             &due,
             &rules,
-            None,
             67,
             TickLane::Ordinary,
             FrameEffects::default()
@@ -1273,7 +1270,6 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
         .advance_app_frame(
             &due,
             &rules,
-            None,
             67,
             TickLane::Ordinary,
             FrameEffects::default().with_production_strip(&visits, &|_| {}),
@@ -1303,7 +1299,6 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
             .advance_app_frame(
                 &due,
                 &rules,
-                None,
                 67,
                 TickLane::Ordinary,
                 FrameEffects::default().with_production_strip(&visits, &|_| {}),

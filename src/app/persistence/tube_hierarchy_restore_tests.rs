@@ -8,7 +8,6 @@ fn tube_hierarchy_restore_prepares_detached_dummy_then_publishes_terminal_fields
         ZonePrecheckExclusions, ZonePrecheckOutcome, zone_precheck_flat,
     };
     let rules = load_fixture_rules();
-    let registry = OverlayTypeRegistry::empty();
     let cells = (0..32)
         .flat_map(|y| {
             (0..32).map(move |x| {
@@ -135,7 +134,6 @@ fn tube_hierarchy_restore_prepares_detached_dummy_then_publishes_terminal_fields
         Some(LOAD_FIXTURE_MAP_HASH),
         Some(&rules),
         Some(&template),
-        Some(&registry),
     );
     assert!(
         matches!(failure, Err(PreparedLoadError::SidebarOrder(_))),
@@ -157,7 +155,6 @@ fn tube_hierarchy_restore_prepares_detached_dummy_then_publishes_terminal_fields
         Some(LOAD_FIXTURE_MAP_HASH),
         Some(&rules),
         Some(&template),
-        Some(&registry),
     )
     .unwrap();
     assert!(

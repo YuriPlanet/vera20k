@@ -131,7 +131,7 @@ fn app_frames_match_original_ore_driver_histories_and_rng_continuation() {
         let input = &row["input"];
         let name = input["name"].as_str().unwrap();
         let capacity = row["capacity"].as_u64().unwrap() as u32;
-        let (mut sim, rules, registry) = world(row);
+        let (mut sim, rules, _) = world(row);
         compare_state(
             &sim.ore_growth_state,
             &sim.scenario_rng,
@@ -149,7 +149,6 @@ fn app_frames_match_original_ore_driver_histories_and_rng_continuation() {
                 sim.advance_app_frame(
                     &[],
                     &rules,
-                    Some(&registry),
                     67,
                     TickLane::Ordinary,
                     crate::sim::world::FrameEffects::default(),
@@ -207,14 +206,13 @@ fn app_ore_constructor_terminal_cleanup_matches_original_deferred_drain() {
     assert!(!rows.is_empty(), "original deferred-lifecycle controls");
     for row in rows {
         let name = row["input"]["name"].as_str().unwrap();
-        let (mut sim, rules, registry) = world(row);
+        let (mut sim, rules, _) = world(row);
         sim.session
             .set_binary_frame_for_test(row["input"]["frame"].as_i64().unwrap() as u32);
         let (output, draws) = crate::sim::rng::trace_draws(|| {
             sim.advance_app_frame(
                 &[],
                 &rules,
-                Some(&registry),
                 67,
                 TickLane::Ordinary,
                 crate::sim::world::FrameEffects::default(),

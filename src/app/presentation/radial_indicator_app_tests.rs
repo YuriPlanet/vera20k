@@ -552,15 +552,8 @@ fn targeting_a_missing_cell_cannot_change_the_simulation_dummy() {
 }
 
 fn advance(sim: &mut Simulation, rules: &RuleSet) {
-    sim.advance_app_frame(
-        &[],
-        rules,
-        None,
-        33,
-        TickLane::Ordinary,
-        FrameEffects::default(),
-    )
-    .unwrap();
+    sim.advance_app_frame(&[], rules, 33, TickLane::Ordinary, FrameEffects::default())
+        .unwrap();
 }
 
 /// One composite while `armed` is placed at `cursor` or `super_weapon` is

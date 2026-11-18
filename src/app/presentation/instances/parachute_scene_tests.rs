@@ -150,14 +150,13 @@ impl RetailParachuteScene {
                     }
                     // This read-only candidate query is not a Build command. The
                     // initial-object constructor/Unlimbo below still admits the site.
-                    scene.runtime.simulation.spawn_object_with_overlay_registry(
+                    scene.runtime.simulation.spawn_object_with_map_overlays(
                         type_id,
                         &owner_name,
                         x,
                         y,
                         0,
                         &scene.runtime.resources.rules,
-                        &scene.runtime.resources.overlay_registry,
                     )
                 })
                 .unwrap_or_else(|| panic!("a real foundation must admit initial {type_id}"))

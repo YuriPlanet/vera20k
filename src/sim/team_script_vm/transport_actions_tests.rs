@@ -94,14 +94,7 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
     let mut cameras = Vec::new();
     for _ in 0..100 {
         let output = sim
-            .advance_app_frame(
-                &[],
-                &rules,
-                None,
-                67,
-                TickLane::Ordinary,
-                FrameEffects::default(),
-            )
+            .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
             .unwrap();
         cameras.extend(output.trigger_effects.into_iter().filter(|effect| {
             matches!(
@@ -145,14 +138,7 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     for _ in 0..250 {
         let output = sim
-            .advance_app_frame(
-                &[],
-                &rules,
-                None,
-                67,
-                TickLane::Ordinary,
-                FrameEffects::default(),
-            )
+            .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
             .unwrap();
         assert!(
             !output.trigger_effects.iter().any(|effect| matches!(

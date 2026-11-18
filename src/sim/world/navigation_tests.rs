@@ -348,7 +348,6 @@ fn held_factory_and_consumed_upgrade_stay_off_navigation_through_frame_and_resto
         .advance_app_frame(
             &[],
             &rules,
-            Some(&overlays),
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),

@@ -187,7 +187,6 @@ fn prepare(
         Some(LOAD_FIXTURE_MAP_HASH),
         Some(rules),
         Some(&load_fixture_terrain()),
-        Some(&OverlayTypeRegistry::empty()),
     )
 }
 

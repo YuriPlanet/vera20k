@@ -5936,9 +5936,8 @@ fn homing_ground_impact_reaches_damage_and_cleanup_through_runtime_frame() {
             );
         }
         let mut runtime = SimRuntime::from_simulation(sim);
-        runtime.resources_mut().rules = RuleSet::from_ini(&ini).unwrap();
-        runtime.resources_mut().overlay_registry =
-            crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, Some(&art));
+        runtime.resources_mut().rules =
+            RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
 
         let _ = runtime
             .advance_frame(

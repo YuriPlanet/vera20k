@@ -115,15 +115,8 @@ fn retail_turning_cannon_updates_its_loop_before_fatal_limbo_releases_it() {
         Some(&rules),
     ));
     let planted = (0..180).any(|_| {
-        sim.advance_app_frame(
-            &[],
-            &rules,
-            None,
-            33,
-            TickLane::Ordinary,
-            FrameEffects::empty(),
-        )
-        .unwrap();
+        sim.advance_app_frame(&[], &rules, 33, TickLane::Ordinary, FrameEffects::empty())
+            .unwrap();
         sim.entities()
             .get(cannon)
             .unwrap()
@@ -148,21 +141,14 @@ fn retail_turning_cannon_updates_its_loop_before_fatal_limbo_releases_it() {
         Some(&rules),
     ));
     let started = (0..120).any(|_| {
-        sim.advance_app_frame(
-            &[],
-            &rules,
-            None,
-            33,
-            TickLane::Ordinary,
-            FrameEffects::empty(),
-        )
-        .unwrap()
-        .sound_events
-        .iter()
-        .any(|event| {
-            matches!(event, SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
+        sim.advance_app_frame(&[], &rules, 33, TickLane::Ordinary, FrameEffects::empty())
+            .unwrap()
+            .sound_events
+            .iter()
+            .any(|event| {
+                matches!(event, SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
                     if *anim_id == turret_rotate_sound_owner(cannon) && sound_id == CUE)
-        })
+            })
     });
     assert!(started, "the real Attack aim starts the stock turret cue");
     assert!(!latch(&sim, cannon));
@@ -185,7 +171,6 @@ fn retail_turning_cannon_updates_its_loop_before_fatal_limbo_releases_it() {
         sim.advance_app_frame(
             &[],
             &rules,
-            None,
             33,
             TickLane::Ordinary,
             FrameEffects::for_sound(&heard),

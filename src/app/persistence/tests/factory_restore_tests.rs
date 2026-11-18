@@ -82,7 +82,6 @@ fn prepare_saved(
         .write_named("factory.bin", &snapshot_bytes(saved, &rules))
         .expect("write matching-header snapshot");
     state.runtime.resources_mut().rules = rules;
-    state.runtime.resources_mut().overlay_registry = OverlayTypeRegistry::empty();
     state.runtime.resources_mut().terrain_template = Some(load_fixture_terrain());
     let before = state.baseline();
     let result = PreparedLoad::from_repository(

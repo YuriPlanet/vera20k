@@ -2073,7 +2073,7 @@ fn retail_dustbowl_crews_scatter_off_their_wrecks() {
             .into();
         let guard = keep_undefeated(sim, resources, mcv_cell);
         sim.resolve_type_handles(&resources.rules);
-        let registry = Some(&resources.overlay_registry);
+        let registry = Some(resources.rules.overlay_registry());
         let before = sim.substrate.entities.keys_sorted();
         kill_with(sim, &resources.rules, registry, plant, "Super", ORDINARY);
         kill_with(sim, &resources.rules, registry, mcv, "Super", ORDINARY);
@@ -2204,7 +2204,7 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
                         if i < 3 { ty + 1 } else { ty - 1 },
                         0,
                         rules,
-                        &resources.overlay_registry,
+                        resources.rules.overlay_registry(),
                     )
                     .unwrap_or_else(|| {
                         panic!(
@@ -2230,7 +2230,7 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
                 gi,
                 *transport,
                 crate::sim::passenger::BoardingArm::InfantryTransport,
-                Some(&resources.overlay_registry),
+                Some(resources.rules.overlay_registry()),
                 crate::sim::world::FrameEffects::default(),
             ));
         }
@@ -2247,7 +2247,7 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
             == rules.object("E1").unwrap().ifv_mode,
         "the IFV took its gunner's weapon"
     );
-    let registry = Some(&resources.overlay_registry);
+    let registry = Some(resources.rules.overlay_registry());
     for (_, transport, _, _) in &loads {
         kill_with(sim, rules, registry, *transport, "Super", ORDINARY);
     }

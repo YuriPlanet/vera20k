@@ -588,7 +588,6 @@ fn whole_map_reentry_skips_a_later_site_limboed_by_discovery() {
         .advance_app_frame(
             &[],
             &rules,
-            Some(rules.overlay_registry()),
             67,
             crate::sim::world::TickLane::Ordinary,
             FrameEffects::default(),

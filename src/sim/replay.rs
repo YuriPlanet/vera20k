@@ -1447,7 +1447,7 @@ impl ReplayRunner {
                     "diagnostic log continues after a fatal FRAMEINFO mismatch"
                 );
                 result = sim
-                    .resume_after_network_failure(
+                    .resume_after_network_failure_for_test(
                         rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
                         overlay_registry,
                         crate::sim::world::FrameEffects::default().with_network_commands(&network),

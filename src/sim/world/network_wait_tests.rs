@@ -79,7 +79,6 @@ fn repeated_network_waits_resume_only_dispatch_and_commit_after_one_logic_visit(
         .advance_app_frame(
             &[],
             RuleSet::empty_for_test(),
-            None,
             33,
             TickLane::Ordinary,
             effects,
@@ -101,7 +100,6 @@ fn repeated_network_waits_resume_only_dispatch_and_commit_after_one_logic_visit(
         sim.advance_app_frame(
             &[],
             RuleSet::empty_for_test(),
-            None,
             33,
             TickLane::Ordinary,
             effects
@@ -112,13 +110,13 @@ fn repeated_network_waits_resume_only_dispatch_and_commit_after_one_logic_visit(
     let bytes = serde_json::to_vec(&sim).unwrap();
     let mut sim: Simulation = serde_json::from_slice(&bytes).unwrap();
     let second = sim
-        .resume_network_wait(RuleSet::empty_for_test(), None, effects)
+        .resume_network_wait(RuleSet::empty_for_test(), effects)
         .unwrap();
     assert!(second.network_waiting);
     assert!(second.lifecycle_outputs.is_empty());
     assert_eq!(sim.session.tick(), 0);
     let mut third = sim
-        .resume_network_wait(RuleSet::empty_for_test(), None, effects)
+        .resume_network_wait(RuleSet::empty_for_test(), effects)
         .unwrap();
     assert!(!third.network_waiting);
     assert!(third.network_failure.is_none());
@@ -131,7 +129,7 @@ fn repeated_network_waits_resume_only_dispatch_and_commit_after_one_logic_visit(
     assert_eq!(boundary.visits.get(), 3);
     assert!(!sim.pending_network_wait());
     assert!(
-        sim.resume_network_wait(RuleSet::empty_for_test(), None, effects)
+        sim.resume_network_wait(RuleSet::empty_for_test(), effects)
             .is_err()
     );
 }
@@ -155,7 +153,6 @@ fn natural_outcome_waits_for_terminal_network_dispatch_and_score_snapshot() {
         .advance_app_frame(
             &[],
             RuleSet::empty_for_test(),
-            None,
             33,
             TickLane::Ordinary,
             effects,
@@ -169,7 +166,7 @@ fn natural_outcome_waits_for_terminal_network_dispatch_and_score_snapshot() {
     let rng_before_score = sim.scenario_rng.state();
 
     let complete = sim
-        .resume_network_wait(RuleSet::empty_for_test(), None, effects)
+        .resume_network_wait(RuleSet::empty_for_test(), effects)
         .unwrap();
     assert!(!complete.network_waiting);
     assert!(!complete.tick.frame_committed);
@@ -201,7 +198,6 @@ fn skipped_network_dispatch_commits_without_consuming_or_retiring_dolist() {
         .advance_app_frame(
             &[],
             RuleSet::empty_for_test(),
-            None,
             33,
             TickLane::Ordinary,
             FrameEffects::empty().with_network_commands(&boundary),
@@ -240,7 +236,6 @@ fn fatal_receive_failure_suspends_before_dispatch_and_acknowledges_only_frame_ta
         .advance_app_frame(
             &[],
             RuleSet::empty_for_test(),
-            None,
             33,
             TickLane::Ordinary,
             FrameEffects::empty().with_network_commands(&FullQueue),
@@ -256,7 +251,7 @@ fn fatal_receive_failure_suspends_before_dispatch_and_acknowledges_only_frame_ta
     let bytes = serde_json::to_vec(&sim).unwrap();
     let mut sim: Simulation = serde_json::from_slice(&bytes).unwrap();
     let output = sim
-        .resume_after_network_failure(RuleSet::empty_for_test(), None, FrameEffects::empty())
+        .resume_after_network_failure(RuleSet::empty_for_test(), FrameEffects::empty())
         .unwrap();
     assert!(output.tick.frame_committed);
     assert_eq!(sim.session.binary_frame(), 1);
@@ -264,7 +259,7 @@ fn fatal_receive_failure_suspends_before_dispatch_and_acknowledges_only_frame_ta
     assert_eq!(sim.pending_commands, before);
     assert!(sim.pending_network_interruption().is_none());
     assert!(
-        sim.resume_after_network_failure(RuleSet::empty_for_test(), None, FrameEffects::empty())
+        sim.resume_after_network_failure(RuleSet::empty_for_test(), FrameEffects::empty())
             .is_err()
     );
 }
@@ -283,27 +278,25 @@ fn external_wait_timeout_or_quit_resumes_the_same_tail_without_dispatch() {
             .advance_app_frame(
                 &[],
                 RuleSet::empty_for_test(),
-                None,
                 33,
                 TickLane::Ordinary,
                 FrameEffects::empty().with_network_commands(&boundary),
             )
             .unwrap();
         assert!(output.network_waiting);
-        let output = if timeout {
-            assert!(
-                sim.interrupt_network_wait(
+        let output =
+            if timeout {
+                assert!(sim.interrupt_network_wait(
                     crate::sim::world::NetworkInterruption::ConnectionFailed
-                )
-            );
-            assert!(!sim.pending_network_wait());
-            assert!(sim.pending_network_interruption().is_some());
-            sim.resume_after_network_failure(RuleSet::empty_for_test(), None, FrameEffects::empty())
-                .unwrap()
-        } else {
-            sim.leave_network_wait(RuleSet::empty_for_test(), None, FrameEffects::empty())
-                .unwrap()
-        };
+                ));
+                assert!(!sim.pending_network_wait());
+                assert!(sim.pending_network_interruption().is_some());
+                sim.resume_after_network_failure(RuleSet::empty_for_test(), FrameEffects::empty())
+                    .unwrap()
+            } else {
+                sim.leave_network_wait(RuleSet::empty_for_test(), FrameEffects::empty())
+                    .unwrap()
+            };
         assert!(output.tick.frame_committed);
         assert!(output.tick.state_hash.is_some());
         assert_eq!(sim.session.binary_frame(), 1);
@@ -320,7 +313,7 @@ fn external_wait_timeout_or_quit_resumes_the_same_tail_without_dispatch() {
             !sim.interrupt_network_wait(crate::sim::world::NetworkInterruption::ConnectionFailed)
         );
         assert!(
-            sim.leave_network_wait(RuleSet::empty_for_test(), None, FrameEffects::empty())
+            sim.leave_network_wait(RuleSet::empty_for_test(), FrameEffects::empty())
                 .is_err()
         );
     }

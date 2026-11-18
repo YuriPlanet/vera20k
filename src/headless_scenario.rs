@@ -324,7 +324,6 @@ fn load_with_assets(
     let theater = theater::load_theater(assets, &map.header.theater)
         .ok_or_else(|| format!("load theater {}", map.header.theater))?;
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
-    let overlay_registry = rules.overlay_registry().clone();
     let house_roster = crate::map::houses::parse_house_roster(
         &map.ini,
         rules.color_schemes.as_slice(),
@@ -409,7 +408,7 @@ fn load_with_assets(
             Some(&theater),
             Some(&assets),
             Some(&rules.terrain_rules),
-            Some(&overlay_registry),
+            Some(rules.overlay_registry()),
             true,
             rules.general.cliff_back_impassability,
             &mut scenario_fill_ranged,
@@ -421,8 +420,7 @@ fn load_with_assets(
     // Pending authored Fill has no eager Tile##Anim list. Bind damage-fire
     // roots now and let the authored host bind each actually reached map Anim
     // synchronously before its native constructor spends an ID.
-    let scheduler_roots =
-        crate::map::resolved_terrain::scheduler_anim_roots(&rules, &overlay_registry, &[]);
+    let scheduler_roots = crate::map::resolved_terrain::scheduler_anim_roots(&rules, &[]);
     rules.bind_scheduler_anim_assets(
         &scheduler_roots,
         &assets,
@@ -463,9 +461,9 @@ fn load_with_assets(
         theater.extension,
         crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
     );
-    rules.bind_alpha_images(&overlay_registry, &assets);
+    rules.bind_alpha_images(&assets);
     let overlay_shp_ids = crate::rules::effect_asset_catalog::resolved_overlay_shp_ids(
-        &overlay_registry,
+        rules.overlay_registry(),
         &assets,
         theater.extension,
         &map.header.theater,
@@ -485,7 +483,6 @@ fn load_with_assets(
         &assets,
         &mut rules,
         native_rules_owner,
-        &overlay_registry,
         &overlay_shp_ids,
         signed_new_ini_format,
         true,
@@ -509,22 +506,20 @@ fn load_with_assets(
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.install_team_ai_registry(&team_ai_registry, &rules);
-    let _launch_result = crate::sim::scenario_bootstrap::
-        apply_pre_fill_scenario_prefix_launch_session_with_overlay_registry(
+    let _launch_result =
+        crate::sim::scenario_bootstrap::apply_pre_fill_scenario_prefix_launch_session(
             &mut sim,
             &map,
             &house_roster,
             &rules,
             &resolved_terrain,
             &launch,
-            &overlay_registry,
             &scenario_prefix_projection,
         );
     let post_map = crate::sim::runtime::finalize_constructed_scenario(
         &mut sim,
         &map,
         &rules,
-        &overlay_registry,
         &house_roster,
         Some(&launch),
     )
@@ -540,7 +535,6 @@ fn load_with_assets(
         runtime: crate::sim::runtime::SimRuntime {
             simulation: sim,
             resources: std::sync::Arc::new(crate::sim::runtime::SimResources {
-                overlay_registry,
                 terrain_template: None,
                 rules,
             }),
@@ -2280,7 +2274,7 @@ mod retail_construction_tests {
             crate::sim::build_site::can_place_building_at(
                 sim,
                 &placing.rules,
-                Some(&placing.overlay_registry),
+                Some(placing.rules.overlay_registry()),
                 natbnk,
                 (x, y),
                 None,
@@ -2790,7 +2784,7 @@ mod retail_construction_tests {
                         crate::sim::build_site::can_place_building_at(
                             sim,
                             &resources.rules,
-                            Some(&resources.overlay_registry),
+                            Some(resources.rules.overlay_registry()),
                             yard,
                             (x, y),
                             None,

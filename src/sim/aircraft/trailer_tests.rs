@@ -155,14 +155,7 @@ fn trailer_invalid_divisors_stop_before_construction_and_fail_the_frame() {
     );
     assert_eq!(constructor_state(&sim), before);
     let error = sim
-        .advance_app_frame(
-            &[],
-            &rules,
-            None,
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
+        .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
         .expect_err("reached invalid cadence must fail the production frame");
     assert_eq!((error.entity_id, error.binary_frame), (plane, 103));
     assert!(error.cause.contains("SpawnDelay 0"));

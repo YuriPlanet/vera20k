@@ -186,7 +186,6 @@ impl Encounter {
             .advance_app_frame(
                 &commands,
                 &self.rules,
-                None,
                 33,
                 TickLane::Ordinary,
                 FrameEffects::default(),
@@ -907,7 +906,6 @@ fn stock_squid_internal_snapshot_preserves_live_roll_progress_and_reference() {
             .advance_app_frame(
                 &commands,
                 &scene.rules,
-                None,
                 33,
                 TickLane::Ordinary,
                 FrameEffects::default(),

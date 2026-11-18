@@ -270,7 +270,7 @@ pub(crate) struct FrontendState {
     /// last-loaded match registry across scenario exit, matching the pre-F07
     /// persistence of the old app field. Match paths read the runtime-bound
     /// copy via `overlay_registry()`.
-    pub(crate) shell_preview_overlay_registry: Option<OverlayTypeRegistry>,
+    pub(crate) shell_preview_overlay_registry: Option<std::sync::Arc<OverlayTypeRegistry>>,
     /// The online map library's catalog and Choose Map's map download.
     pub(crate) map_library: crate::app::map_library::MapLibrary,
     /// The online login page's lobby counts.

@@ -187,7 +187,7 @@ fn unit_bridge_condition(
             depth_cell(
                 terrain,
                 view.overlay_grid(),
-                Some(&runtime.resources.overlay_registry),
+                Some(runtime.resources.rules.overlay_registry()),
                 coord,
             )
         },
@@ -362,7 +362,7 @@ fn unit_z_adjust_in(
         depth_cell(
             terrain,
             view.overlay_grid(),
-            Some(&runtime.resources.overlay_registry),
+            Some(runtime.resources.rules.overlay_registry()),
             requested,
         )
     })

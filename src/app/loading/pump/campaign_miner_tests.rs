@@ -125,7 +125,6 @@ fn load_campaign(
         simulation: result.scenario.simulation.take().unwrap(),
         resources: crate::sim::runtime::SimResources {
             rules: result.scenario.rules.take().unwrap(),
-            overlay_registry: result.scenario.overlay_registry,
             terrain_template: result.scenario.resolved_terrain.take(),
         }
         .into(),
@@ -181,7 +180,7 @@ fn miner(runtime: &crate::sim::runtime::SimRuntime) -> u64 {
 
 fn keep_ore(runtime: &mut crate::sim::runtime::SimRuntime, keep: impl Fn(u16, u16) -> bool) {
     let sim = &mut runtime.simulation;
-    let registry = &runtime.resources.overlay_registry;
+    let registry = runtime.resources.rules.overlay_registry();
     let mut grid = sim.overlay_grid_mut_for_test().take().unwrap();
     let remove: Vec<_> = grid
         .iter_occupied()

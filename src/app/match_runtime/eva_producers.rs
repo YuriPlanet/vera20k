@@ -721,15 +721,12 @@ mod tests {
         u64,
         u64,
     )> {
-        use crate::rules::overlay_types::OverlayTypeRegistry;
         use crate::sim::house_state::HouseState;
         use crate::sim::overlay_grid::OverlayGrid;
         use crate::sim::runtime::{SimResources, SimRuntime};
         use crate::sim::world::Simulation;
 
         let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")?;
-        let overlays =
-            OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
         let rules = retail.rules;
         let mut sim = Simulation::with_seed(0x4F93_E000);
         sim.intern_rule_type_ids(&rules);
@@ -758,7 +755,10 @@ mod tests {
         // no ore (SlaveManager6B0062). Supply map-like ore east of the
         // target's 2x2 foundation, through the shared overlay/recalc owner,
         // so ordinary slaves work while the real attacker closes in.
-        let ore_id = overlays.id_for_name("TIB01").expect("stock ore overlay");
+        let ore_id = rules
+            .overlay_registry()
+            .id_for_name("TIB01")
+            .expect("stock ore overlay");
         let mut ore = OverlayGrid::new(32, 32);
         for ry in 19..=21 {
             for rx in 23..=25 {
@@ -767,7 +767,7 @@ mod tests {
                     sim.resolved_terrain_mut_for_test()
                         .as_mut()
                         .expect("arena terrain"),
-                    &overlays,
+                    rules.overlay_registry(),
                     (rx, ry),
                 );
             }
@@ -787,9 +787,7 @@ mod tests {
         let attacker = sim
             .spawn_object_at_height("CLEG", "Americans", 6, 20, 0, 0, &rules)
             .expect("stock hostile Chrono Legionnaire");
-        let mut resources = SimResources::empty();
-        resources.rules = rules;
-        resources.overlay_registry = overlays;
+        let resources = SimResources::new(rules);
         Some((
             SimRuntime {
                 simulation: sim,

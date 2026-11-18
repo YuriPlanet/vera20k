@@ -152,7 +152,7 @@ fn nonharvester_free_unit_commits_harvest_through_paid_refinery_completion() {
                                 kind,
                                 rx,
                                 ry,
-                                Some(&scene.runtime.resources.overlay_registry),
+                                Some(scene.runtime.resources.rules.overlay_registry()),
                             )
                             .unwrap()
                             .valid
@@ -247,7 +247,7 @@ fn nonharvester_free_unit_commits_harvest_through_paid_refinery_completion() {
     let actor = sim.entities().get(tank).unwrap();
     let start = (actor.position.rx(), actor.position.ry());
     let rules = &scene.runtime.resources.rules;
-    let registry = Some(&scene.runtime.resources.overlay_registry);
+    let registry = Some(scene.runtime.resources.rules.overlay_registry());
     let destination = [(-1, 0), (0, -1), (1, 0), (0, 1)]
         .into_iter()
         .map(|(dx, dy)| {

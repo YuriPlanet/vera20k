@@ -1069,10 +1069,10 @@ mod tests {
             .expect("Move_To on the fixture map");
     }
 
-    fn touchdown_crate_fixture() -> (Simulation, RuleSet, OverlayTypeRegistry) {
+    fn touchdown_crate_fixture() -> (Simulation, RuleSet) {
         let mut sim = hovering_jumpjet(0x40);
         let rules = crate::sim::crates::tests::crate_ruleset("");
-        let registry = crate::sim::crates::tests::crate_registry();
+        let registry = rules.overlay_registry();
         sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(24, 16));
         let wood = registry.id_for_name("WOOD").unwrap();
         sim.overlay_grid
@@ -1100,19 +1100,19 @@ mod tests {
             .with_destination_for_test(DriveCoord::cell(10, 10, 0));
         Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, 1);
         sim.substrate.air_slots.set_holder((10, 10), Some(1));
-        (sim, rules, registry)
+        (sim, rules)
     }
 
     /// Supply an admitted State4 entry after Update. Owner callbacks remain
     /// production calls, including the vanished-deck DropAsBomb below.
-    fn descend_once(sim: &mut Simulation, rules: &RuleSet, registry: &OverlayTypeRegistry) -> i32 {
+    fn descend_once(sim: &mut Simulation, rules: &RuleSet) -> i32 {
         sim.with_jumpjet_process(1, |runtime, sim| {
             let mut host = CruiseHost {
                 sim,
                 frame: 0,
                 trig: TrigTable::embedded(),
                 rules,
-                registry: Some(registry),
+                registry: Some(rules.overlay_registry()),
                 frame_effects: FrameEffects::default(),
                 stable_id: 1,
                 touched_down: false,
@@ -1131,7 +1131,7 @@ mod tests {
 
     #[test]
     fn a_jumpjet_that_starts_falling_at_touchdown_does_not_finish_landing() {
-        let (mut sim, rules, registry) = touchdown_crate_fixture();
+        let (mut sim, rules) = touchdown_crate_fixture();
         let e = sim.substrate.entities.get_mut(1).unwrap();
         e.on_bridge.store(true);
         e.position
@@ -1143,7 +1143,7 @@ mod tests {
             10,
             crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS,
         ));
-        assert_eq!(descend_once(&mut sim, &rules, &registry), STATE_DESCEND);
+        assert_eq!(descend_once(&mut sim, &rules), STATE_DESCEND);
         let e = sim.substrate.entities.get(1).unwrap();
         assert!(
             e.is_falling_down(),
@@ -1151,7 +1151,7 @@ mod tests {
         );
         assert_eq!(
             sim.overlay_grid.as_ref().unwrap().cell(10, 10).overlay_id,
-            registry.id_for_name("WOOD"),
+            rules.overlay_registry().id_for_name("WOOD"),
             "aborted touchdown must not collect its crate"
         );
         assert!(!e.lift.may_end());
@@ -1188,7 +1188,7 @@ mod tests {
             ("healthy", false),
             ("health_zero", false),
         ] {
-            let (mut sim, rules, registry) = touchdown_crate_fixture();
+            let (mut sim, rules) = touchdown_crate_fixture();
             let e = sim.substrate.entities.get_mut(1).unwrap();
             e.crash.set_crashing_for_test(true);
             e.drop_credit.set_being_manipulated_for_test(true);
@@ -1200,7 +1200,7 @@ mod tests {
                 _ => {}
             }
             let rng = sim.scenario_rng.native_state_hex();
-            let phase = descend_once(&mut sim, &rules, &registry);
+            let phase = descend_once(&mut sim, &rules);
             let e = sim.substrate.entities.get(1).unwrap();
             let runtime = e.locomotor.as_ref().unwrap().jumpjet_runtime().unwrap();
             assert_eq!(
@@ -1882,7 +1882,7 @@ mod tests {
                     cell.1,
                     64,
                     &resources.rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
                 .expect("spawns on open ground");
             sim.resolve_type_handles(&resources.rules);
@@ -1999,7 +1999,7 @@ mod tests {
                     y,
                     64,
                     &resources.rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
                 .expect("Kirov spawns");
             let reactor = sim
@@ -2010,7 +2010,7 @@ mod tests {
                     y - 1,
                     0,
                     &resources.rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
                 .expect("reactor spawns");
             sim.resolve_type_handles(&resources.rules);
@@ -2095,7 +2095,7 @@ mod tests {
                 sim.techno_limbo_with_rules(
                     rocketeer,
                     &resources.rules,
-                    Some(&resources.overlay_registry),
+                    Some(resources.rules.overlay_registry()),
                 ),
                 crate::sim::world::ConcealOutcome::Concealed,
             );
@@ -2111,7 +2111,7 @@ mod tests {
                     crate::sim::build_site::can_place_building_at(
                         sim,
                         &resources.rules,
-                        Some(&resources.overlay_registry),
+                        Some(resources.rules.overlay_registry()),
                         plant_type,
                         (px as i16, py as i16),
                         Some(owner),
@@ -2130,7 +2130,7 @@ mod tests {
                     y,
                     64,
                     &resources.rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
                 .expect("Kirov spawns");
             sim.resolve_type_handles(&resources.rules);
@@ -2216,7 +2216,7 @@ mod tests {
                     y,
                     64,
                     &resources.rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
                 .expect("Floating Disc spawns");
             let tank = sim
@@ -2227,7 +2227,7 @@ mod tests {
                     y,
                     0,
                     &resources.rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
                 .expect("tank spawns");
             sim.resolve_type_handles(&resources.rules);

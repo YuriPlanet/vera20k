@@ -409,7 +409,6 @@ fn ordinary_stock_gas_refresh_and_expiry_reach_the_infantry_shp_material() {
                 .advance_app_frame(
                     &commands,
                     &rules,
-                    None,
                     33,
                     TickLane::Ordinary,
                     FrameEffects::default(),
