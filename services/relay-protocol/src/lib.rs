@@ -40,7 +40,7 @@ pub use sequenced::watch::{
     MAX_ROOM_WATCHERS, MAX_WATCH_DELAY_SECONDS, WATCH_MARK_MS, WATCH_TICKET_VERSION, WatchTicket,
 };
 pub use sequenced::{
-    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY,
+    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, FRAME_RATES, ORDERING_BATCH_CAPACITY,
     ORDERING_CERTIFICATE_LEN, ORDERING_CERTIFICATE_V2_LEN, ORDERING_PULL_LIMIT, OrderEntry,
     OrderError, OrderEvent, OrderPace, OrderStatus, OrderingCertificate,
     is_ordering_certificate_len, paced_rates, turn_frames, turn_ms,

@@ -168,8 +168,10 @@ or 512 bytes with 400 `invalid_options`;
 `launch` is the existing serde representation of `SkirmishLaunchSession` (including
 its human rows, AI rows and launch options). The game's tests keep `tests/fixtures/lobby/`
 current: `options.json` holds rooms' options as the game sends them at the limits it
-reaches, and `start_staging.json` holds `W` records, each with whether the game takes it
-for its seed's capacity. The lobby requires `launch.pre_fill_house_roster` because
+reaches, `start_staging.json` holds `W` records, each with whether the game takes it
+for its seed's capacity, and `game_contract.json` holds the selectable setup speeds
+with each one's FPS and the map chunk size.
+The lobby requires `launch.pre_fill_house_roster` because
 guests decode it before rebuilding it from the rows. The lobby accepts setup speeds
 0 to 6 and VERA's 8 in `launch.options.game_speed`. An older lobby can forward another
 speed, which current guests refuse with the invalid-update line. `launch.options.teams`, a VERA room's
@@ -321,6 +323,8 @@ the same version and flags; clients reject a renewal whose flags differ. The sig
 mask includes all human sources (including observers); AI has no source. FPS
 follows launch speed `[60,45,30,20,15,12,10]` for stored settings 0–6;
 VERA's setting 8 selects 90 FPS. Setting 7 is not a selectable setup speed.
+`tests/fixtures/lobby/game_contract.json` lists these rows from the game's own table,
+and the relay accepts no other FPS (`FRAME_RATES` in `services/relay-protocol`).
 The certificate lasts24 hours;
 every UDP control still needs a live authenticated short-lived ticket. The relay
 binds the first matching startup agreement to this roster/clock and starts once
