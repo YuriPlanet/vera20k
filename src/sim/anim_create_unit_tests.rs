@@ -231,6 +231,40 @@ fn create_unit_spawn_height_and_ground_gate() {
     assert_eq!(coords.z, 0, "AlwaysSpawnOnGround uses the cell floor");
 }
 
+/// `Ext/TechnoType/Body.cpp:702-706`: a spawn whose `Unlimbo` left the object
+/// in the air, on a type with neither a Fly nor a Jumpjet locomotor and with
+/// no `SpawnParachutedInAir`, is let go into free fall and marked
+/// `OnParachuted` — so its landing skips the `FallingDownDamage` ratio
+/// (`Ext/Techno/Hooks.cpp:1067`). `AlwaysSpawnOnGround` keeps it on the floor
+/// and takes no fall.
+#[cfg(feature = "phobos")]
+#[test]
+fn an_air_spawned_unit_is_let_go_into_a_parachuted_fall() {
+    fn spawn(keys: &str) -> (bool, bool) {
+        let (mut sim, rules) = scene(keys);
+        let id = spawn_make(&mut sim, &rules, Some("Americans"));
+        drive(&mut sim, &rules, id);
+        let unit = sim
+            .substrate
+            .entities
+            .get(units(&sim, &rules)[0])
+            .expect("spawned unit");
+        (unit.is_falling_down(), unit.on_parachuted())
+    }
+
+    let (falling, marked) = spawn(
+        "CreateUnit=MTNK\nCreateUnit.RandomFacing=no\nCreateUnit.SpawnHeight=1200\n",
+    );
+    assert!(falling, "an airborne ground type starts a free fall");
+    assert!(marked, "and is marked OnParachuted");
+
+    let (falling, marked) = spawn(
+        "CreateUnit=MTNK\nCreateUnit.RandomFacing=no\n\
+         CreateUnit.SpawnHeight=1200\nCreateUnit.AlwaysSpawnOnGround=yes\n",
+    );
+    assert!(!falling && !marked, "AlwaysSpawnOnGround stays on the floor");
+}
+
 #[test]
 fn create_unit_refuses_a_building_type() {
     let (mut sim, rules) = scene("CreateUnit=LAB\n");

@@ -124,15 +124,21 @@ spawn callers pass their own house.
 
 ## Residuals (trigger · impact · frequency · risk)
 
-- **Fly/Jumpjet landing orders.** The `FlyLocomotion`/`JumpjetLocomotion`
-  blocks are not modeled; a spawned air unit keeps its placement pose. The
-  `IsFallingDown`/`OnParachuted` half of that branch is covered by the
-  `OnParachuted` latch (`docs/phobos-unlimbo-detonate.md`), but the two in-air
-  branches that raise the fall (`Ext/Foot/Body.cpp:784`,
-  `Ext/TechnoType/Body.cpp:705`) are those Phobos locomotion blocks and stay
-  unported. Trigger: a CreateUnit type whose spawned type is an Aircraft or
-  Jumpjet. Frequency: authored mods. Risk: movement behavior; no fall damage
-  is taken, since no fall starts.
+- **Fly/Jumpjet landing orders.** The `FlyLocomotion`/`JumpjetLocomotion` post-spawn
+  blocks (`Ext/TechnoType/Body.cpp:668-700`) are not modeled; a spawned Aircraft
+  or Jumpjet keeps its placement pose. Their `else if (inAir && !parachuted)`
+  fallback right below them **is ported**:
+  `Simulation::anim_create_unit` re-reads `IsInAir()` after the spawn
+  (`sim/movement/air_movement::is_high_flying`, the same owner as
+  `ObjectClass+0x54`), and for a non-`AlwaysSpawnOnGround` spawn that did not
+  take the `SpawnParachutedInAir` arm and whose type locomotor is neither `Fly`
+  nor `Jumpjet`, it raises `IsFallingDown` and marks `OnParachuted` so the
+  landing skips `FallingDownDamage` (`Ext/Techno/Hooks.cpp:1067`). Test
+  `sim::anim_create_unit::
+  an_air_spawned_unit_is_let_go_into_a_parachuted_fall`. Trigger of the
+  residual: a CreateUnit type whose spawned type is an Aircraft or Jumpjet.
+  Frequency: authored mods. Risk: movement behavior only; the fall itself
+  starts.
 - **`allowBridges`.** Native tests `GroundType[Clear].Cost[SpeedType] > 0`;
   VERA treats every non-Winged speed type (Aircraft uses Wheel, as native
   does) as bridge-capable. Trigger: a type whose Clear cost is zero.
