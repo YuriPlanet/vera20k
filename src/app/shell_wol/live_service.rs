@@ -4847,6 +4847,31 @@ mod completion_tests {
         assert!(!line("VERA20k", json!([{"key": "OnlyPlayerOnline"}])).announces_release());
     }
 
+    /// Only a line shown from the lobby's phrases counts as localized, which
+    /// is what keeps it from translation into the interface language; a
+    /// player's line, or phrases this game cannot show, keep the text.
+    #[test]
+    fn only_a_line_shown_from_the_lobbys_phrases_is_localized() {
+        let line = |phrases: Value| -> (String, bool) {
+            let chat: Chat = decode(json!({
+                "from": {"player_id": "p", "name": "VERA20k", "flags": 1},
+                "text": "the lobby's text",
+                "phrases": phrases,
+            }))
+            .unwrap();
+            let (text, localized) = chat.shown_text();
+            (String::from_utf16(&text).unwrap(), localized)
+        };
+        let hidden = "1 game is hidden because it runs another VERA20k version.";
+        assert_eq!(
+            line(json!([{"key": "GamesHidden", "values": {"count": 1}}])),
+            (hidden.to_owned(), true)
+        );
+        let text = ("the lobby's text".to_owned(), false);
+        assert_eq!(line(Value::Null), text);
+        assert_eq!(line(json!([{"key": "NotYetKnown"}])), text);
+    }
+
     #[test]
     fn lobby_upgrade_notice_names_the_download_once_per_sign_in() {
         let (mut service, _input, _output) = control_service(None);
