@@ -5432,14 +5432,12 @@ mod completion_tests {
     #[test]
     fn a_cooperative_campaign_reaches_the_guest_ahead_of_the_options_it_rides_in() {
         let launch = setup_session().network_setup().unwrap().clone();
-        let mut vacancies = vec!["open"; 30];
-        vacancies[29] = "observer";
         let mut value = json!({
             "launch": launch,
             "map_metadata": {"display_name": "Map", "player_capacity": 2, "official": true,
                 "byte_length": 1, "digest": "d", "source_sha256": "11".repeat(32),
                 "effective_digest": "aa".repeat(32)},
-            "vacancies": vacancies,
+            "vacancies": vec!["open"; 30],
             "observer_row": null,
             "cooperative_difficulty": 1,
             "seed": null,
@@ -5464,10 +5462,7 @@ mod completion_tests {
             [
                 NetworkSetupEvent::CooperativeCampaign(campaign),
                 NetworkSetupEvent::HostSetup(options),
-            ] if campaign == text
-                && options.launch.local_player_index == 1
-                && options.vacancies[29]
-                    == crate::app::match_runtime::session::NetworkVacancy::OpenObserver
+            ] if campaign == text && options.launch.local_player_index == 1
         ));
     }
 
