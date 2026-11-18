@@ -361,7 +361,7 @@ mod tests {
             .unwrap()
             .value;
         let mut runtime = world();
-        let peer = crate::net::lockstep::FrameInfo {
+        let peer = crate::sim::command_queue::FrameInfo {
             house_id: 0,
             event_frame: 256,
             checksum: expected ^ 1,
