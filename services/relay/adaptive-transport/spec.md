@@ -90,7 +90,7 @@
 ```
 
 - ordering 消息都放在 `kind = CONTROL(4)` 的 payload 里，客户端发送时 `target = 255`。
-- payload 最长 `MAX_WIRE_PAYLOAD = 681` B。
+- payload 最长 `envelope::PACK_LIMIT = 681` B。
 
 **逐跳序号的覆盖范围：** 发往同一个 peer 的**所有**数据报（CONTROL、DATA、READY、CHALLENGE 回复等）共用同一个计数器。所以接收方统计的丢包率是这一跳的整体丢包率。
 

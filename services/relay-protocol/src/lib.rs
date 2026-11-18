@@ -26,24 +26,21 @@ mod link;
 pub mod netsim;
 mod sequenced;
 pub mod varint;
+#[cfg(any(test, feature = "test-support"))]
+pub use link::ReaderLinkStats;
 pub use link::{
     ClientLinkStats, HOP_HANDSHAKE_INTERVAL_MS, HOP_PING_INTERVAL_MS, HOP_READINESS_TIMEOUT_MS,
     HopFeedback, LEAVE_ATTEMPTS, LEAVE_INTERVAL_MS, LinkState, OrderingGap, PACE_INTERVAL_MS,
-    READY_REQUEST_INTERVAL_MS, REORDER_WINDOW, RESTORE_PULL_INTERVAL_MS, ReaderLinkStats,
-    RecvWindow,
+    READY_REQUEST_INTERVAL_MS, REORDER_WINDOW, RESTORE_PULL_INTERVAL_MS, RecvWindow,
 };
-pub use sequenced::federation::{
-    FEDERATION_LOST, FederationOutcome, MAX_FEDERATED_RELAYS, sign_federation_roster,
-};
-pub use sequenced::pack::{decode_pack_v2, encode_pack_v2};
+pub use sequenced::federation::{FEDERATION_LOST, FederationOutcome, MAX_FEDERATED_RELAYS};
 pub use sequenced::watch::{
     MAX_ROOM_WATCHERS, MAX_WATCH_DELAY_SECONDS, WATCH_MARK_MS, WATCH_TICKET_VERSION, WatchTicket,
 };
 pub use sequenced::{
-    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY,
-    ORDERING_CERTIFICATE_LEN, ORDERING_CERTIFICATE_V2_LEN, ORDERING_PULL_LIMIT, OrderEntry,
-    OrderError, OrderEvent, OrderPace, OrderStatus, OrderingCertificate,
-    is_ordering_certificate_len, paced_rates, turn_frames, turn_ms,
+    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY, OrderEntry,
+    OrderError, OrderEvent, OrderPace, OrderStatus, OrderingCertificate, paced_rates, turn_frames,
+    turn_ms,
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -53,17 +50,14 @@ pub const BROADCAST: u8 = 255;
 /// The largest DATA message a client relays.
 pub const MAX_PAYLOAD: usize = 640;
 pub const TICKET_LEN: usize = 98;
-/// The packing limit of PACK and UPLINK payloads, unchanged by the
-/// compaction (bandwidth-compaction spec §5.4).
-const MAX_WIRE_PAYLOAD: usize = envelope::PACK_LIMIT;
+/// A player ticket's first byte; a watch ticket's is `WATCH_TICKET_VERSION`.
+const TICKET_VERSION: u8 = 2;
 pub const MAX_DATAGRAM: usize = envelope::MAX_DATAGRAM;
 pub const MAX_TICKET_LIFETIME: u64 = 300;
 const TICKET_BODY_LEN: usize = 66;
-/// Hop envelope bytes before the payload, either direction (§6.1).
-const CLIENT_HEADER: usize = envelope::HEADER_LEN;
-#[cfg(test)]
-const SERVER_HEADER: usize = envelope::HEADER_LEN;
-use envelope::HOP_TAG_LEN;
+use envelope::{
+    CHALLENGE, CONFIRM, CONTROL, DATA, HEADER_LEN, HELLO, HOP_TAG_LEN, LEAVE_ACK, PING, READY,
+};
 /// A full HMAC-SHA256: ticket signatures and federation links.
 const MAC_LEN: usize = 32;
 const COOKIE_LEN: usize = 40;
@@ -77,19 +71,13 @@ const HANDSHAKES_PER_SECOND: u64 = 8192;
 const PLAYER_HANDSHAKES_PER_SECOND: u64 = 8;
 // Pulls that read the journal. A catching-up client sends about ten a second.
 const PLAYER_ARCHIVE_PULLS_PER_SECOND: u64 = 256;
+// One player's datagrams in, and its ordering datagrams out, each a second.
+const PLAYER_PACKETS_PER_SECOND: u64 = 2048;
 const PLAYER_BYTES_PER_SECOND: u64 = 2 * 1024 * 1024;
 const ROOM_BYTES_PER_SECOND: u64 = 64 * 1024 * 1024;
 const TOTAL_BYTES_PER_SECOND: u64 = 64 * 1024 * 1024;
 const LEAVES_PER_SECOND: u64 = 512;
 const LEAVE_GRACE: u64 = sequenced::ROOM_LIFETIME_MS.div_ceil(1000) + MAX_TICKET_LIFETIME;
-const HELLO: u8 = 0;
-const CONFIRM: u8 = 1;
-const DATA: u8 = 2;
-const PING: u8 = 3;
-const CONTROL: u8 = 4;
-const LEAVE_ACK: u8 = 5;
-const CHALLENGE: u8 = 0;
-const READY: u8 = 1;
 
 /// Server signing material or a single client's packet key. HTTPS credentials
 /// have their own owner; this value is only held in process memory.
@@ -139,7 +127,7 @@ pub struct Ticket {
 
 impl Ticket {
     pub fn parse(bytes: &[u8]) -> Result<Self, RelayError> {
-        if bytes.len() != TICKET_LEN || bytes[0] != 2 || bytes[17] >= MAX_PEERS {
+        if bytes.len() != TICKET_LEN || bytes[0] != TICKET_VERSION || bytes[17] >= MAX_PEERS {
             return Err(RelayError::Malformed);
         }
         let ticket = Self {
@@ -165,7 +153,7 @@ impl Ticket {
             return Err(RelayError::Malformed);
         }
         let mut bytes = [0; TICKET_LEN];
-        bytes[0] = 2;
+        bytes[0] = TICKET_VERSION;
         bytes[1..17].copy_from_slice(&self.room);
         bytes[17] = self.source;
         bytes[18..26].copy_from_slice(&self.expires.to_le_bytes());
@@ -586,7 +574,7 @@ fn handshake_incoming<'a>(
     bytes: &'a [u8],
     now: u64,
 ) -> Result<Incoming<'a>, RelayError> {
-    let body = &bytes[CLIENT_HEADER..bytes.len() - HOP_TAG_LEN];
+    let body = &bytes[HEADER_LEN..bytes.len() - HOP_TAG_LEN];
     if header.session != 0 || body.len() < TICKET_LEN {
         return Err(RelayError::Malformed);
     }
@@ -1118,7 +1106,7 @@ impl RelayServer {
             .admissions
             .get_mut(&message.ticket.player)
             .ok_or(RelayError::Unregistered)?;
-        if !admission.packets.permits(now, 1, 2048)
+        if !admission.packets.permits(now, 1, PLAYER_PACKETS_PER_SECOND)
             || !self
                 .ingress
                 .admit_part(&mut room.ingress, now, 1, INGRESS_PER_SECOND)
@@ -1661,8 +1649,9 @@ fn server_packet(
     peer.sent = sequence;
     let pack =
         (kind == CONTROL && payload.first() == Some(&sequenced::PACK_EVENT)).then_some(payload);
-    peer.link
-        .record_send(peer.sent, pack, send_kind, bytes.len(), now_ms);
+    peer.link.record_send(peer.sent, pack, send_kind, now_ms);
+    #[cfg(any(test, feature = "test-support"))]
+    peer.link.count_send(send_kind, bytes.len());
     Ok(ForwardDatagram {
         endpoint: peer.endpoint,
         bytes,
@@ -1847,15 +1836,6 @@ impl ClientSession {
     pub fn mac_failures(&self) -> u64 {
         self.mac_failures
     }
-
-    /// Whether this hop's next sequence has reached
-    /// `envelope::RENEWAL_SEQUENCE` (2³² − 2¹⁶), so the client should renew
-    /// it now (§11 case 7), whatever its ticket's remaining lifetime. The
-    /// hop keeps sending until `u32::MAX`; past that every send is
-    /// `RelayError::CounterExhausted`.
-    pub fn sequence_wants_renewal(&self) -> bool {
-        self.sent + 1 >= u64::from(envelope::RENEWAL_SEQUENCE)
-    }
 }
 
 impl RelayServer {
@@ -1888,20 +1868,6 @@ pub struct SessionEntry {
     /// The sequence of the relay's next datagram on this hop; `None` once
     /// its ticket expired or a renewal replaced it.
     pub next_sequence: Option<u64>,
-}
-
-#[cfg(any(test, feature = "test-support"))]
-impl ClientSession {
-    /// Test support only: the next datagram this hop sends carries
-    /// sequence `next` (1..=`u32::MAX`), as if the hop had already sent
-    /// `next - 1`, so tests reach `envelope::RENEWAL_SEQUENCE` and
-    /// `CounterExhausted` (§6.1, §11 case 7) without sending billions. The
-    /// skipped sequences count as never sent for the hop's link
-    /// measurements. Use it between sends.
-    pub fn preset_next_sequence(&mut self, next: u32) {
-        assert!(next > 0, "hop sequences start at 1");
-        self.sent = u64::from(next) - 1;
-    }
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -1994,31 +1960,6 @@ impl RelayServer {
             "session {session:#x} is not free"
         );
         self.next_session = Some(session);
-    }
-
-    /// Test support only: the relay's next datagram on `session`'s hop
-    /// carries sequence `next` (1..=`u32::MAX`), so tests reach the end of
-    /// its counter (§6.1, §11 case 7). Past `u32::MAX` the relay stops
-    /// sending on that hop (§6.1). Returns false when no live hop holds
-    /// `session`.
-    pub fn preset_relay_sequence(&mut self, session: u32, next: u32) -> bool {
-        assert!(next > 0, "hop sequences start at 1");
-        let Some(SessionSlot {
-            hop: SessionHop::Peer { room, source },
-            ..
-        }) = self.sessions.get(&session)
-        else {
-            return false;
-        };
-        let Some(peer) = self.rooms.get_mut(room).and_then(|room| {
-            room.peers
-                .iter_mut()
-                .find(|peer| peer.ticket.source == *source)
-        }) else {
-            return false;
-        };
-        peer.sent = u64::from(next) - 1;
-        true
     }
 }
 
@@ -2141,7 +2082,7 @@ mod tests {
             server.process(a, &bytes, 1000),
             Err(RelayError::Replay)
         ));
-        bytes[CLIENT_HEADER] ^= 1;
+        bytes[HEADER_LEN] ^= 1;
         assert!(matches!(
             server.process(a, &bytes, 1000),
             Err(RelayError::Authentication)
@@ -2318,10 +2259,8 @@ mod tests {
             &mut first,
             SocketAddrV4::new(Ipv4Addr::LOCALHOST, 31201),
         );
-        assert!(!first.sequence_wants_renewal());
-        first.preset_next_sequence(envelope::RENEWAL_SEQUENCE);
-        assert!(first.sequence_wants_renewal());
-        first.preset_next_sequence(u32::MAX);
+        // The next send is the hop's last sequence.
+        first.sent = u64::from(u32::MAX) - 1;
         let mut bytes = Vec::new();
         first.data(BROADCAST, b"last", &mut bytes).unwrap();
         assert_eq!(
