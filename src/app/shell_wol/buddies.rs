@@ -9,10 +9,12 @@
 //! Remove `0x0079CBA0`, the status refresh `0x0079CE70` and `0x116`'s timer,
 //! and the find sink's buddy branch (`0x007A9970`, taken whenever a buddy
 //! locate is pending). The lobby's `DisplayBuddies` filter (`0x0077D4C0`)
-//! and `0x116`'s rows (`0x0079AF10`) read them. No RNG is drawn here.
+//! and `0x116`'s rows (`0x0079AF10`) read them. VERA's modern UI, which
+//! has no `0x116`, keeps the names (the filter and the player card) and the
+//! ladder queue but sends no buddy locate. No RNG is drawn here.
 
-use std::collections::{HashMap, VecDeque};
 use crate::util::time::{Duration, Instant};
+use std::collections::{HashMap, VecDeque};
 
 use super::service::{self, WolLadderRecord, WolServiceRequest};
 use crate::app::AppState;
@@ -180,7 +182,18 @@ fn mirror(state: &mut AppState) -> &mut WolBuddies {
 }
 
 /// The pending-locate kick: API+0x60 for the next queued name.
+/// VERA: the modern UI has no `0x116`, the statuses' only reader, so it
+/// locates no buddy, and no pending buddy locate takes the answer to the
+/// player's own locate (`0x007A9986`).
 fn kick_locate(state: &mut AppState) {
+    if state
+        .frontend
+        .wol
+        .as_ref()
+        .is_none_or(|visit| visit.modern_ui())
+    {
+        return;
+    }
     if let Some(name) = mirror(state).next_locate(Instant::now()) {
         service::request(state, WolServiceRequest::Locate(name));
     }
