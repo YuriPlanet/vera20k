@@ -288,11 +288,13 @@ impl PreparedCampaignStartup {
     ///
     /// VERA: a saved game is a file from a stranger, so it names no file
     /// location. Its map name must be a logical name, and its loose map path
-    /// counts only inside a folder this game already reads maps from: the
-    /// game's (`ra2_dir` and `map::source`'s own) or `launch_dir`, the outgoing
-    /// campaign's external folder. Any other path is dropped and the map is
-    /// found by name, so a save cannot make Restart or the next mission open a
-    /// network share or a device.
+    /// counts only inside a folder this game already reads maps from
+    /// (`map::source::saved_map_folder`): `launch_dir`, the outgoing campaign's
+    /// external folder, or the game's own. Any other path is dropped and the
+    /// map is found by name, so a save cannot make Restart or the next mission
+    /// open a network share or a device. Under `launch_dir` the next mission is
+    /// looked for there, as the launch did; under the game's folders, beside
+    /// the saved map.
     pub(crate) fn from_saved_scenario(
         campaigns: &crate::rules::campaigns::CampaignRegistry,
         simulation: &Simulation,
@@ -314,17 +316,15 @@ impl PreparedCampaignStartup {
         let campaign_index = usize::try_from(session.campaign_index()?).ok()?;
         let campaign = campaigns.get(campaign_index)?.clone();
         let saved_file = match source {
-            crate::map::source::LoadedMapSource::Loose { path, .. }
-                if crate::map::source::saved_map_path_admitted(ra2_dir, launch_dir, path) =>
-            {
-                Some(path.as_path())
-            }
             crate::map::source::LoadedMapSource::Loose { path, .. } => {
-                log::warn!(
-                    "Saved map path {path:?} is outside the game's map folders; \
-                     the map is found by name"
-                );
-                None
+                let folder = crate::map::source::saved_map_folder(ra2_dir, launch_dir, path);
+                if folder.is_none() {
+                    log::warn!(
+                        "Saved map path {path:?} is outside the game's map folders; \
+                         the map is found by name"
+                    );
+                }
+                folder.map(|folder| (path.as_path(), folder))
             }
             _ => None,
         };
@@ -332,7 +332,7 @@ impl PreparedCampaignStartup {
             campaign_index,
             campaign,
             scenario: session.map_name().to_owned(),
-            scenario_file: saved_file.map(|path| path.to_string_lossy().into_owned()),
+            scenario_file: saved_file.map(|(path, _)| path.to_string_lossy().into_owned()),
             mission_counter: session.campaign_mission_counter()?,
             difficulty: session.campaign_house_difficulties()?.0 as i32,
             // Reuse the saved session's existing options authority. A loose
@@ -341,7 +341,13 @@ impl PreparedCampaignStartup {
                 game_speed: session.game_options().game_speed,
                 build_off_ally: session.game_options().build_off_ally,
                 scenario_directory: saved_file
-                    .and_then(std::path::Path::parent)
+                    .and_then(|(path, folder)| {
+                        if Some(folder) == launch_dir {
+                            Some(folder)
+                        } else {
+                            path.parent()
+                        }
+                    })
                     .map(std::path::Path::to_path_buf),
             }),
             carry_over: session.campaign_restart_carry_over(),
@@ -1128,10 +1134,13 @@ mod tests {
             )
             .unwrap()
         };
-        for folder in [game, client] {
-            let inside = folder.join("sov03umd.map");
+        for (folder, next_from) in [(game, game.join("Maps")), (client, client.to_path_buf())] {
+            let inside = folder.join("Maps").join("sov03umd.map");
             assert_eq!(saved(&inside).selected_map_file(), inside.to_str().unwrap());
-            assert_eq!(saved(&inside).scenario_directory(), Some(folder));
+            assert_eq!(
+                saved(&inside).scenario_directory(),
+                Some(next_from.as_path())
+            );
         }
         for outside in [
             "/dev/zero",
@@ -1144,7 +1153,12 @@ mod tests {
         }
         let startup = saved(&game.join("sov03umd.map"));
         let mut clock = CountingClock { value: 1, reads: 0 };
-        for name in [r"\\host\share\NEXT.MAP", "../NEXT.MAP", "/dev/zero"] {
+        for name in [
+            r"\\host\share\NEXT.MAP",
+            "../NEXT.MAP",
+            "/dev/zero",
+            "COM1.MAP",
+        ] {
             let next =
                 startup.next_mission(name.into(), 4, 2, 1, CampaignCarryOver::CLEARED, &mut clock);
             assert!(next.is_none(), "{name}");

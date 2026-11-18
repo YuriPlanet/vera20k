@@ -30,6 +30,10 @@ select Easy, Normal or Hard AI from an open player slot in Battle or Free For Al
 The HTTPS service supplies match-specific relay credentials before the same loading
 and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.
+A room's map name is a logical name (`map::source::is_logical_name`): a game refuses one
+with a drive, a root, a `.` or `..` part, or a part Windows reads as a device, such as
+`CON` or `COM1`. Refusing the device part changes no packets: an older build still admits
+such a name, and a rollback admits it again.
 Games with two or more human players number their objects from one agreed start, so
 a player whose game already ran the random-map dialog or an earlier match numbers
 them as one just opened does; nothing new is exchanged, and older builds are
