@@ -414,10 +414,10 @@ current: say what was done, what was not, and what comes next.
 
 ### In progress
 
-- Chain 5 residuals, on `feature/pm-chain5-residuals` (being written):
-  debris model ground shadow, building gun node animations, `ShareSource=`
-  debris from a declared model, `BarrelAnimIsVoxel=` without
-  `TurretAnimIsVoxel=`, diffuse light for projectile and debris models.
+- Nothing being written. Chain 5's residuals (debris model shadows, building
+  gun animation, `ShareSource=` debris from a declared model, diffuse light
+  for projectiles and debris) are merged. The branch passes
+  `check -p vera20k --lib --bins`; the tests have not been built yet.
 
 ### Next steps, in order
 
@@ -448,6 +448,11 @@ current: say what was done, what was not, and what comes next.
 - The Options zoom alone now keeps the world zoom pass when picture art is
   magnified; status text, band box and health bar timing follow that path and
   need a visual check.
+
+- VERA's own VXL path draws nothing for a building with `BarrelAnimIsVoxel=`
+  and no `TurretAnimIsVoxel=`, where native draws the barrel (43DA80 arm
+  0x43E5D9..0x43E795); the model path matches VERA. Dormant in retail rules;
+  a separate issue, not part of this feature.
 
 ### Machine notes
 
