@@ -987,7 +987,9 @@ two players for 7,200 frames, and `--online-frames N` changes the count. More th
 players (`--online-players N` on every process, one guest process for each further
 account) also needs `--online-simple-input` or `--online-mass-input`.
 `online-live-timeout-host` and `online-live-quit-host` pair with
-`online-live-failure-guest` as their LAN namesakes do. `lan-live-desync-host` with
+`online-live-failure-guest` as their LAN namesakes do, except that this guest writes
+`<output>.prefix.json` after the shared 300-frame prefix and then stays in the match:
+kill its process by hand to make the peer disappear. `lan-live-desync-host` with
 `lan-live-desync-guest` expects the desync box once the `lan-fault-proxy` tool between
 them damages a FRAMEINFO checksum past the shared 300-frame prefix. The parser's
 errors give each target's option rules. A launcher's

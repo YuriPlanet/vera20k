@@ -244,10 +244,6 @@ impl StartupHandshake {
         })
     }
 
-    pub(super) fn agreement(&self) -> &StartupAgreement {
-        &self.agreement
-    }
-
     pub(super) fn pending(&self) -> bool {
         self.phase == Phase::Pending
     }

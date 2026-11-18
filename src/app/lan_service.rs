@@ -174,26 +174,6 @@ pub(crate) struct LanService {
 }
 
 impl LanService {
-    /// Diagnostic opt-in follows the SAME global owner through loading/live
-    /// handoff; callers never borrow the private socket or another queue.
-    pub(crate) fn observe_loading(&mut self) {
-        if let Some(transport) = self.transport.as_mut() {
-            transport.global_mut().observe_loading();
-        }
-    }
-
-    /// Bounded owned snapshot for receipt generation only. Release the I/O
-    /// guard before the capture performs JSON construction or file work.
-    pub(crate) fn loading_observation(
-        &self,
-    ) -> Option<(crate::net::global::LoadingObservationLog, bool)> {
-        let global = self.transport.as_ref()?.global();
-        Some((
-            global.loading_observation()?.clone(),
-            global.authenticated_acknowledgments(),
-        ))
-    }
-
     pub(crate) fn open() -> std::io::Result<Self> {
         // IPv4 adaptation: limited broadcast on the OS-selected interface.
         // Explicit interface/target selection remains a separate transport
@@ -299,37 +279,6 @@ impl LanService {
 
     pub(super) fn setup_scope(&self) -> Option<SessionScope> {
         self.setup_scope
-    }
-
-    /// Read-only observations for the real process-loss capture. Admission,
-    /// countdowns, map work and cancellation remain in their existing owners.
-    pub(super) fn setup_peer_lease(&self, endpoint: SocketAddrV4, now: u32) -> Option<(u32, u32)> {
-        let record = self.peer_admissions.get(&endpoint)?;
-        record.heartbeat_sequence?;
-        Some((record.lease?.remaining(now), SETUP_PEER_LEASE))
-    }
-
-    pub(super) fn setup_peer_cleanup_pending(&self, endpoint: SocketAddrV4) -> bool {
-        self.peer_admissions.contains_key(&endpoint)
-            || self
-                .pending_admissions
-                .iter()
-                .any(|entry| entry.endpoint == endpoint)
-            || self
-                .pending_setup
-                .iter()
-                .any(|(_, destination)| *destination == direct(endpoint))
-            || self.maps.has_peer(endpoint)
-    }
-
-    pub(super) fn setup_map_work_active(&self) -> bool {
-        self.maps.active()
-    }
-
-    /// Current authored-map bytes that have actually arrived but have not yet
-    /// reached installation. No progress or admission state is changed.
-    pub(super) fn setup_map_download(&self) -> Option<(&str, usize, usize)> {
-        self.maps.incomplete_map_download(self.setup_scope?)
     }
 
     /// Physical source, effective map and generated preview/staging are one
@@ -2149,31 +2098,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 payload: &incoming.payload,
             },
         )? {
-            let applied =
-                super::loading::pump::accept_network_loading_progress(state, source, percent);
-            if let Some(displayed) =
-                super::loading::pump::network_loading_displayed_percent(state, source)
-            {
-                let global = if let Some(live) = state.match_state.live_network.as_mut() {
-                    Some(live.global_mut())
-                } else {
-                    state
-                        .match_state
-                        .lan_service
-                        .as_mut()
-                        .and_then(|service| service.transport.as_mut())
-                        .map(|transport| transport.global_mut())
-                };
-                if let Some(mut global) = global {
-                    global.observe_loading_application(
-                        source,
-                        incoming.sequence,
-                        percent,
-                        displayed,
-                        applied,
-                    );
-                }
-            }
+            super::loading::pump::accept_network_loading_progress(state, source, percent);
         }
         return Ok(());
     }
@@ -2204,18 +2129,6 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
         //those after synchronous loading: cancel this attempt at its safe
         //boundary through the existing loading-failure owner, never install
         //a stale result or invent a partial House/roster mutation.
-        let source = state
-            .match_state
-            .session
-            .network_endpoint_source(incoming.source);
-        let match_id = super::shell_wol::online_match_id(state).map(str::to_owned);
-        state.match_state.match_diagnostics.observe_loading_cancel(
-            "authenticated_departure",
-            match_id,
-            source,
-            false,
-            true,
-        );
         super::loading::pump::cancel_network_loading(
             state,
             &crate::i18n::tr("VERA:PlayerLeftWhileLoading"),
