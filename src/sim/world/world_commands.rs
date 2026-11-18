@@ -3168,21 +3168,24 @@ impl Simulation {
     pub(crate) fn techno_select(
         &mut self,
         stable_id: u64,
-        voice_latch: bool,
         context: super::UninitContext<'_>,
     ) -> bool {
         if !self.techno_select_admits(stable_id) || !self.object_select(stable_id, true, context) {
             return false;
         }
         let rules = context.rules();
-        if let Some(sound_id) = self.selection_voice_request(rules, stable_id, voice_latch) {
+        if let Some(sound_id) = self.selection_voice_request(
+            rules,
+            stable_id,
+            context.effects().selection_voice_enabled(),
+        ) {
             let sound_id = sound_id.to_owned();
             self.sound_events.emit(SimSoundEvent::UnitVoiceRequested {
                 owner: stable_id,
                 sound_id,
             });
         }
-        self.planning_select_tail_node(stable_id, voice_latch, context);
+        self.planning_select_tail_node(stable_id, context);
         true
     }
 
