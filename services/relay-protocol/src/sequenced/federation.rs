@@ -1216,6 +1216,7 @@ mod tests {
         clients: [ClientSession; 2],
         addresses: [SocketAddrV4; 2],
         links: Vec<(u64, usize, Vec<u8>)>,
+        link_delay_ms: [u64; 2],
         delivered: Vec<ForwardDatagram>,
         drop_first_copies: bool,
         // When each relay sent a link datagram carrying entries, and how
@@ -1264,6 +1265,7 @@ mod tests {
                 clients: [client(&keys[0], 0), client(&keys[1], 1)],
                 addresses,
                 links: Vec::new(),
+                link_delay_ms: [LINK_MS; 2],
                 delivered: Vec::new(),
                 drop_first_copies,
                 carried: [Vec::new(), Vec::new()],
@@ -1324,8 +1326,11 @@ mod tests {
                     self.lose -= usize::from(lost);
                     let untold = from == 1 && self.untold && datagram.bytes[29] == SILENCE_KIND;
                     if !(self.drop_first_copies && copied || lost || untold) {
-                        self.links
-                            .push((self.now + LINK_MS, 1 - from, datagram.bytes));
+                        self.links.push((
+                            self.now + self.link_delay_ms[from],
+                            1 - from,
+                            datagram.bytes,
+                        ));
                     }
                 } else {
                     self.delivered.push(datagram);
@@ -1575,7 +1580,7 @@ mod tests {
             // Both relays seal whole turns from the same anchor.
             for relay in 0..2 {
                 let ordering = game.ordering(relay);
-                let (anchor, _) = ordering.pace.federated_anchor.unwrap_or((0, 0));
+                let (anchor, _) = ordering.pace.anchor.unwrap_or((0, 0));
                 assert_eq!(
                     (ordering.sealed - anchor) % turn_frames(ordering.pace.rate),
                     0,
@@ -1584,10 +1589,7 @@ mod tests {
                 );
             }
         }
-        assert_eq!(
-            game.ordering(0).pace.federated_anchor,
-            game.ordering(1).pace.federated_anchor
-        );
+        assert_eq!(game.ordering(0).pace.anchor, game.ordering(1).pace.anchor);
         assert_eq!(
             [game.ordering(0).pace.rate, game.ordering(1).pace.rate],
             [30, 30]
@@ -1608,6 +1610,25 @@ mod tests {
             .map(|(_, _, entry)| entry.unwrap().1)
             .collect();
         assert_eq!(markers, [30 << 8 | 1], "slowed to 30 for source 1");
+
+        // A shorter return path improves the follower's clock sample. The
+        // history eviction clock must move with its sealing clock.
+        let follower = game.ordering(1);
+        let frame = follower.head;
+        let start = follower.starts_at.unwrap();
+        let due = follower.frame_due_ms(frame);
+        game.link_delay_ms[0] = LINK_MS / 2;
+        for _ in 0..1000 {
+            game.step();
+        }
+        let follower = game.ordering(1);
+        let new_start = follower.starts_at.unwrap();
+        assert_ne!(start, new_start, "the improved sample slewed the clock");
+        assert_eq!(
+            due - start,
+            follower.frame_due_ms(frame) - new_start,
+            "same frame, before and after a clock correction"
+        );
     }
 
     /// Only the coordinator compares checksums: a follower forwards its
