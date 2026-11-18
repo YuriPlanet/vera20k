@@ -31,6 +31,7 @@ use crate::sim::behavior::{Goal, MicroStep};
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::control::brain::{Brain, Outbox};
 use crate::sim::control::budget::Budget;
+use crate::sim::control::intent::Intent;
 use crate::sim::control::micro::MicroTable;
 use crate::sim::control::observation::Observation;
 use crate::sim::intern::InternedId;
@@ -169,7 +170,35 @@ pub struct ControlBoard {
     /// Diagnostics: the queue is the authority, not these counts.
     rejected: usize,
     not_ready: usize,
+    /// Object orders the brain asked for recently, and the tick each was
+    /// asked on. See [`ORDER_ISSUE_COOLDOWN`].
+    recent_orders: Vec<(u64, Goal, u64)>,
+    /// House requests the brain asked for recently, and the tick each was
+    /// asked on. See [`INTENT_ISSUE_COOLDOWN`].
+    recent_intents: Vec<(Intent, u64)>,
 }
+
+/// How long the same house request is held before the board lets it through
+/// again, in frames.
+///
+/// A request is a fact about the world — a type the yard is already making,
+/// a building already waiting for its cell — and the brain's answer to not
+/// seeing it take effect is to ask again next frame. Measured on XMP29U2.MAP:
+/// one building type was queued 12,898 times in a 24,736-tick match, at a
+/// median spacing of one tick, and the yard never finished it.
+///
+/// One term: long enough for the state to move, short enough that a request
+/// held back for a passing reason is not lost.
+const INTENT_ISSUE_COOLDOWN: u64 = 15;
+/// How long the same order to the same object is held before the board lets it
+/// through again, in frames.
+///
+/// The funnel answers a unit that is mid-transition with `NotReady`, and the
+/// brain's answer to that is to ask again next frame. Measured on Barrel.mmx:
+/// one engineer was sent into the same building 321 times in 12,000 ticks, and
+/// one tank was sent to the same cell 150 times. A different goal — a new target,
+/// a new cell — is a different order and is never held.
+const ORDER_ISSUE_COOLDOWN: u64 = 15;
 
 impl ControlBoard {
     pub fn new(brain: Box<dyn Brain>, owner: InternedId, max_commands_per_frame: usize) -> Self {
@@ -182,6 +211,8 @@ impl ControlBoard {
             micro: MicroTable::default(),
             rejected: 0,
             not_ready: 0,
+            recent_intents: Vec::new(),
+            recent_orders: Vec::new(),
         }
     }
 
@@ -276,10 +307,28 @@ impl ControlBoard {
             let obs = Observation::new(sim, owner).with_player_groups(&self.excluded);
             self.brain.think(rules, &obs, &mut out);
         }
+        let tick = sim.session().tick();
+        let mut asked: Vec<Intent> = Vec::new();
         for intent in out.intents {
-            let command = intent.command();
+            // The same request again inside one term is the brain asking for a
+            // state it has already asked for: the yard is already making that
+            // type, the building is already waiting for its cell. Held for a
+            // term and dropped, so a frame cannot turn one request into twenty
+            // thousand. See [`INTENT_ISSUE_COOLDOWN`].
+            if self.recent_intents.iter().any(|(held, at)| {
+                *held == intent && tick.saturating_sub(*at) < INTENT_ISSUE_COOLDOWN
+            }) {
+                continue;
+            }
+            let command = intent.clone().command();
             self.admit(sim, rules, &owner_name, command, &mut issued);
+            asked.push(intent);
         }
+        for intent in asked {
+            self.recent_intents.push((intent, tick));
+        }
+        self.recent_intents
+            .retain(|(_, at)| tick.saturating_sub(*at) < INTENT_ISSUE_COOLDOWN);
         // Objects the brain hands to a managed routine. Consumed before the
         // orders below, because a routine is its object's only issuer: the
         // order the brain also asked for this frame is dropped by the
@@ -316,9 +365,20 @@ impl ControlBoard {
         // army of a hundred is a hundred units each told once, refused, and
         // held to it for the whole of the intent's term.
         let mut refused: Vec<(u64, Goal)> = Vec::new();
+        let mut asked_orders: Vec<(u64, Goal, u64)> = Vec::new();
         for order in &out.orders {
             if self.micro.is_managed(order.actor) {
-                refused.push((order.actor, order.goal));
+                refused.push((order.actor, order.goal.clone()));
+                continue;
+            }
+            // The same order to the same object inside one term is the brain
+            // asking again for a state it has already asked for. A different
+            // goal — a new target, a new cell — is a different order.
+            if self.recent_orders.iter().any(|(actor, goal, at)| {
+                *actor == order.actor
+                    && *goal == order.goal
+                    && tick.saturating_sub(*at) < ORDER_ISSUE_COOLDOWN
+            }) {
                 continue;
             }
             let outcome = self.issue(
@@ -326,13 +386,19 @@ impl ControlBoard {
                 rules,
                 &owner_name,
                 order.actor,
-                order.goal,
+                order.goal.clone(),
                 &mut issued,
             );
+            asked_orders.push((order.actor, order.goal.clone(), tick));
             if !outcome.is_queued() {
-                refused.push((order.actor, order.goal));
+                refused.push((order.actor, order.goal.clone()));
             }
         }
+        for (actor, goal, at) in asked_orders {
+            self.recent_orders.push((actor, goal, at));
+        }
+        self.recent_orders
+            .retain(|(_, _, at)| tick.saturating_sub(*at) < ORDER_ISSUE_COOLDOWN);
         if !refused.is_empty() {
             self.brain.orders_refused(&refused);
         }

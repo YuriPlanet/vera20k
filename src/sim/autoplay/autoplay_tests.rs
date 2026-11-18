@@ -1547,3 +1547,99 @@ fn a_full_queue_refuses_the_order_without_reporting_it_as_issued() {
     assert_eq!(refused.get(), Some((tank, goal)));
     assert_eq!(host.rejected(), 1);
 }
+
+/// A brain with one house request it asks for again every frame.
+///
+/// The retail brain does exactly this: it reads the projection, sees no power
+/// plant, and asks for one. On XMP29U2.MAP that filled a 24,736-tick match with
+/// 12,898 `QueueProduction` commands for one type at a median spacing of one
+/// tick, and the yard never finished it. The board holds the request for a term.
+#[test]
+fn a_house_request_repeated_every_frame_is_issued_once_a_term() {
+    use crate::sim::control::intent::Intent;
+
+    struct Nagging {
+        power: InternedId,
+    }
+
+    impl Brain for Nagging {
+        fn name(&self) -> &'static str {
+            "nagging"
+        }
+
+        fn think(&mut self, _: &RuleSet, _: &Observation<'_>, out: &mut Outbox) {
+            out.intents
+                .push(Intent::QueueProduction { type_id: self.power });
+        }
+    }
+
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(""))
+        .expect("synthetic rules");
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0xA17);
+    let owner = american(&mut sim);
+    let type_id = sim.interner.intern("GAPOWR");
+    let mut host = AutoPlayHost::new(Box::new(Nagging { power: type_id }), owner, 8);
+
+    let mut issued = Vec::new();
+    for _ in 0..30 {
+        issued.extend(host.step(&mut sim, &rules));
+        sim.advance_tick(&[], Some(&rules), None, None, 33);
+    }
+    let queued = issued
+        .iter()
+        .filter(|command| matches!(command, Command::QueueProduction { .. }))
+        .count();
+    assert_eq!(
+        queued, 2,
+        "one request when asked, one after the term, not one a frame"
+    );
+}
+
+/// A brain that gives one object the same order every frame.
+///
+/// The retail brain does this too: its passes re-ask for a guard post, an
+/// approach or a capture each frame, and the funnel answers a unit that is
+/// mid-transition with `NotReady`. Measured on Barrel.mmx: 118-127 orders a
+/// frame were refused that way, and one engineer was sent into the same
+/// building 321 times in 12,000 ticks.
+#[test]
+fn an_order_repeated_every_frame_reaches_the_unit_once_a_term() {
+    struct Nagging {
+        actor: u64,
+    }
+
+    impl Brain for Nagging {
+        fn name(&self) -> &'static str {
+            "nagging"
+        }
+
+        fn think(&mut self, _: &RuleSet, _: &Observation<'_>, out: &mut Outbox) {
+            out.order(self.actor, Goal::Guard);
+        }
+    }
+
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+        "[VehicleTypes]\n0=PLANNER\n[PLANNER]\nStrength=100\nSpeed=8\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+    ))
+    .expect("synthetic rules");
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0xA17);
+    let tank = sim
+        .spawn_object("PLANNER", "Americans", 16, 16, 0, &rules)
+        .expect("an American tank");
+    let owner = american(&mut sim);
+    let mut host = AutoPlayHost::new(Box::new(Nagging { actor: tank }), owner, 8);
+
+    let mut issued = Vec::new();
+    for _ in 0..30 {
+        issued.extend(host.step(&mut sim, &rules));
+        sim.advance_tick(&[], Some(&rules), None, None, 33);
+    }
+    let guards = issued
+        .iter()
+        .filter(|command| matches!(command, Command::Guard { .. }))
+        .count();
+    assert_eq!(
+        guards, 2,
+        "one order when asked, one after the term, not one a frame"
+    );
+}
