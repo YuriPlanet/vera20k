@@ -135,8 +135,9 @@ const ERROR_EVENT: u8 = 6;
 /// What a certificate says about relay pacing (README, Pace).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CertificatePacing {
-    /// `VO1C`: members may be released clients that read no rate marker, so
-    /// the clock changes only once every active source has reported.
+    /// `VO1C`: the signer could not tell that every member reads rate
+    /// markers, so the clock changes only once every active source has
+    /// reported.
     #[default]
     Legacy,
     /// `VO2C`: every member reads rate markers; a player who cannot keep up
@@ -1446,8 +1447,8 @@ impl OrderingRoom {
                 continue;
             }
             let Some(report) = source.pace else {
-                // A VO1C member may be a released client that reads no rate
-                // marker; under VO2C every member reads them.
+                // A VO1C member may read no rate marker; under VO2C every
+                // member reads them.
                 if self.certificate.pacing == CertificatePacing::Legacy {
                     return;
                 }

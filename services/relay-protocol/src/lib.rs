@@ -67,8 +67,9 @@ const TICKET_DOMAIN: &[u8] = b"VERA20k relay ticket v2\0";
 const KEY_DOMAIN: &[u8] = b"VERA20k relay packet key v2\0";
 const COOKIE_DOMAIN: &[u8] = b"VERA20k relay source v2\0";
 const INGRESS_PER_SECOND: u64 = 16_384;
-// Room for the lobby's 256 sessions and an hour's 512 new guests, whose tickets
-// live 300 seconds, each at their own rate. A handshake costs a few HMACs.
+// Room for the lobby's 320 sessions and an hour's 640 new guests
+// (docs/lobby-protocol.md), whose tickets live 300 seconds, each at their own
+// rate. A handshake costs a few HMACs.
 const HANDSHAKES_PER_SECOND: u64 = 8192;
 const PLAYER_HANDSHAKES_PER_SECOND: u64 = 8;
 // Pulls that read the journal. A catching-up client sends about ten a second.
@@ -1026,8 +1027,10 @@ impl RelayServer {
         self.prune(now);
         // Relay-wide budgets are charged only after authentication and the
         // sender's own limits, so forged, junk or replayed datagrams cannot
-        // spend capacity other players need. Rejecting one costs at most
-        // three HMACs. No source-address map grows under spoofed UDP traffic.
+        // spend capacity other players need. Rejecting one before any budget
+        // costs at most three HMACs; a CONFIRM within the handshake budget then
+        // checks its cookie and any federation roster. No source-address map
+        // grows under spoofed UDP traffic.
         if sequenced::federation::is_link_packet(bytes) {
             return self.federation_receive(bytes, now, now_millis);
         }
@@ -2301,10 +2304,10 @@ mod tests {
         );
 
         // Distinct players still share the relay-wide budget, which outlasts
-        // the lobby's 256 sessions and an hour's 512 new guests.
+        // the lobby's 320 sessions and an hour's 640 new guests.
         let mut server = RelayServer::new(key.clone(), 1);
         let players = HANDSHAKES_PER_SECOND / PLAYER_HANDSHAKES_PER_SECOND;
-        assert!(players >= 768);
+        assert!(players >= 320 + 640);
         for player in 1..=players + 1 {
             let mut id = [0; 16];
             id[..8].copy_from_slice(&player.to_le_bytes());

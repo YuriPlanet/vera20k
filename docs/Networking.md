@@ -857,6 +857,12 @@ command stream above is an intentional adaptation.
 - Event packets use the native layouts and persistent compression caches from
   `64B4D0`, `64B660` and `64BDD0`. The packet boundary rejects a semantic event
   without a supported raw command producer rather than inventing a wire form.
+  On LAN every packet, FRAMESYNC probes included, starts with VERA's `VCM\x01`
+  and a little-endian u64 command frontier within the native 558 bytes, and a
+  receiver refuses one without it (`net::event_packet`). VERA's own records,
+  which LAN packets and online batches carry alike, are laid out in
+  `sim::command`: 0x30 paid superweapon, 0x31 bunker eject (still decoded so older
+  recordings play; no input sends it) and 0x32 producer cycle.
 - `649CA0` mirrors the local OutList before broadcasting it. Send failures do not
   undo that mirror; the reached native wait and recovery paths decide what
   happens next. Transport queues retain bytes, not gameplay decisions.
