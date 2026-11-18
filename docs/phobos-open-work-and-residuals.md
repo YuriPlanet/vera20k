@@ -239,18 +239,32 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
     `...an_airport_bound_fly_spawn_enters_idle_mode`/
     `...a_fly_spawn_on_an_occupied_cell_enters_idle_mode`。
   - Jumpjet（`:684-700`）：`LocomotionFacing.SetCurrent(DirStruct(facing))`
-    （`JumpjetRuntime::phobos_set_locomotion_facing` → `JumpjetFlight::set_locomotion_facing`），
-    非 `BalloonHover` 且 `IsInAir()` 时 `Move_To(location)`（`jumpjet_move_to`）；
-    测试 `...a_jumpjet_spawn_snaps_its_locomotion_facing`（BalloonHover 臂见下条）。
+    （`JumpjetRuntime::phobos_set_locomotion_facing` → `JumpjetFlight::set_locomotion_facing`）；
+    `BalloonHover` 时直接在运行态写 `IsMoving = true` +
+    `DestinationCoords = GetCoords()`（`JumpjetRuntime::phobos_straight_ascend_hold`，
+    不经 `Move_To` 的搜格/NavCom/下降抬升）并置
+    `FootExt::JumpjetStraightAscend`（`GameEntity::mark_jumpjet_straight_ascend`），
+    否则 `IsInAir()` 时 `Move_To(location)`（`jumpjet_move_to`）；测试
+    `...a_jumpjet_spawn_snaps_its_locomotion_facing`、
+    `...a_balloon_hover_jumpjet_spawn_holds_its_own_coords_and_the_latch`。
   - 其余（`:702-706`）：非 `AlwaysSpawnOnGround`、未走 `SpawnParachutedInAir`、且
     locomotor 不是 Fly/Jumpjet 时置 `IsFallingDown` + `OnParachuted`（落地不扣
     落体伤害，测试 `an_air_spawned_unit_is_let_go_into_a_parachuted_fall`）。
-  该处剩余残渣两条：①`LastMapCoords = CellClass::Coord2Cell(location)`（`:687`）
+  该处剩余残渣只剩一条：`LastMapCoords = CellClass::Coord2Cell(location)`（`:687`）
   在 VERA 无 owner（`last_map_coords` 全库零命中），只有 `Process_Dig`/回归寻路类
-  玩法会读它，当前无消费者；②`BalloonHover` 臂的 `DestinationCoords = GetCoords()`
-  与 `FootExt::JumpjetStraightAscend`（`Ext/Unit/Hooks.Jumpjet.cpp:394-437`）未建模，
-  前者与 VERA `jumpjet_move_to` 的既有目的地语义重叠，后者需要一个"一次上升不转向"
-  的推力闩。
+  玩法会读它，当前无消费者。
+- **`JumpjetStraightAscend` 的两个消费者（2026-11-18）**：闸已落地
+  （`Ext/Unit/Hooks.Jumpjet.cpp:394-437`）。
+  - `0x54BBD0` Ascending：闩置位时跳过 `target_speed_bits` 抬升与
+    `LocomotionFacing.Set` 转向，仍执行其后的 factory 通知
+    （`jumpjet_flight::state1_ascend`）。
+  - `0x54D600` MovementAI：闩置位且 `State <= Ascending` 时跳过
+    `Set_Location` 与 body facing 快照，只改 Z；崩溃/死亡或状态越过 1 时清闩
+    并按普通路径移动（`jumpjet_flight::update_coordinates_and_altitude`）。
+  测试 `...a_straight_ascend_keeps_the_horizontal_position`、
+  `...a_state_past_the_ascend_clears_the_straight_ascend_latch`。
+  残余：闩的清除点只按 `0x54D600` 的三条分支建模；Phobos 没有别的清除点
+  （`find` 全文只有这两处消费者），故不另设。
 - **`TechnoExt::OnParachuted`（2026-11-18）**：闩已落地
   （`sim/object_fall.rs` 的 `on_parachuted`）：空降出生
   （`Ext/Techno/Hooks.cpp:1907`，`sim/aircraft/drop_payload.rs`）与空中重现身
