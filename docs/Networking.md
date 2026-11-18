@@ -519,10 +519,10 @@ A room named as games name rooms (`<name>'s_game`) takes the new host's name unl
 another open room has it; the room is listed to the new host's version and stays ranked
 or unranked as it was created. The chat stays, and it says who left and who hosts now. A
 room that comes back after its match without its host goes to its next player the same
-way, through `room_reopened`. A room with an older game in it, or a Quick Match room,
-closes as before, so an older game never meets `host_changed`; a game that does not know
-it would ignore it and leave the room once its host left. A rollback closes every such
-room again.
+way, through `room_reopened`. In a room with an older game in it, or a Quick Match
+room, the guests receive `channel_left` when the host leaves. Released games already
+close the room on that event. Rolling the lobby back can also show the old generic
+refusal before the close. A lobby from before host handover closes every such room.
 
 In a VERA room before its start, the host and every guest can press Lobby to look round
 the public lobby while staying in the room, and Back to Room shows the room again
