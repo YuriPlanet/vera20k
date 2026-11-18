@@ -1041,19 +1041,16 @@ impl RelayServer {
                 }
                 message => (message?, false),
             }
-        } else if let Some(SessionSlot {
-            hop: SessionHop::Watcher { room },
-            ..
-        }) = self.sessions.get(&header.session)
-        {
-            let room = *room;
-            return self.watch_datagram(source, header, bytes, room, now, now_millis);
         } else {
             self.session_incoming(header, bytes, now)?
         };
         // Watchers never reach a player's path (README "Watchers").
         if message.ticket.source == sequenced::watch::WATCH_SOURCE {
-            return self.watch_handshake(source, &message, now, now_millis);
+            return if matches!(message.kind, HELLO | CONFIRM) {
+                self.watch_handshake(source, &message, now, now_millis)
+            } else {
+                self.watch_datagram(source, &message, now, now_millis)
+            };
         }
         if message.kind == CONTROL && message.payload == [sequenced::LEAVE_REQUEST] {
             return self.ordering_leave(source, &message, now, now_millis);
@@ -1696,7 +1693,8 @@ impl RelayServer {
     /// Authenticates a datagram on a session (spec §6.2, §6.4): an unknown
     /// session is dropped without an HMAC; a known one's tag is verified
     /// under its hop key, a failure dropping only this datagram. Returns the
-    /// message and whether its hop is leaving (accepts only LEAVE).
+    /// message and whether its hop is leaving (accepts only LEAVE). A
+    /// watcher's message carries its hop's ticket, `source` `WATCH_SOURCE`.
     fn session_incoming<'a>(
         &mut self,
         header: envelope::Header,
@@ -1719,8 +1717,18 @@ impl RelayServer {
                 (peer.ticket, peer.key.clone(), peer.left_until.is_some())
             }
             SessionHop::Leaving(hop) => (hop.ticket, hop.key.clone(), true),
-            // `process_at` hands watchers' datagrams to `watch_datagram`.
-            SessionHop::Watcher { .. } => return Err(RelayError::Unregistered),
+            SessionHop::Watcher { room } => {
+                let watcher = self
+                    .rooms
+                    .get(room)
+                    .and_then(|room| {
+                        room.watchers
+                            .iter()
+                            .find(|watcher| watcher.session == header.session)
+                    })
+                    .ok_or(RelayError::Unregistered)?;
+                (watcher.ticket, watcher.key.clone(), false)
+            }
         };
         let payload = match envelope::open(envelope::Direction::Up, &key, bytes) {
             Ok((_, payload)) => payload,
