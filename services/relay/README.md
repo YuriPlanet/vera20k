@@ -209,7 +209,7 @@ holds. The client also reports JITTERY when the arrival jitter of new-turn
 packs, RFC 3550 smoothed, reaches max(10, turn_ms / 4) ms over 16 samples,
 until half that.
 
-History entries travel packed (PACK v2): consecutive entries fill one datagram
+History entries travel packed (PACK): consecutive entries fill one datagram
 up to a 681-byte payload as `[12][base seq varint][base frame varint][count]`,
 then per entry a tag byte (kind in bits 0..3; bits 4..5 the frame: same as the
 previous, the next, or a varint delta of at least 2 after the tag; bit 6 a

@@ -767,6 +767,8 @@ pub(crate) enum SetupGroup {
 #[derive(Debug, Clone)]
 pub(crate) struct SetupHeader {
     pub(crate) group: SetupGroup,
+    /// Chosen swatches of every player on this team, including rows offscreen.
+    pub(crate) member_colors: Vec<u8>,
     pub(crate) caption: String,
     /// The button's caption; `None` shows no button.
     pub(crate) join: Option<String>,
@@ -2278,6 +2280,7 @@ mod tests {
         // open too; a cell whose list opens takes the press for its list.
         view.headers[0] = Some(SetupHeader {
             group: SetupGroup::Team(1),
+            member_colors: vec![],
             caption: String::new(),
             join: Some(String::new()),
             join_enabled: true,
@@ -2399,6 +2402,7 @@ mod tests {
         let header = |group| {
             Some(SetupHeader {
                 group,
+                member_colors: vec![],
                 caption: String::new(),
                 join: None,
                 join_enabled: false,

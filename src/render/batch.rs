@@ -2306,14 +2306,25 @@ impl BatchRenderer {
         buffer: &'a wgpu::Buffer,
         count: u32,
     ) {
-        if count == 0 {
+        self.draw_zdepth_range(render_pass, bind_group, buffer, 0..count);
+    }
+
+    /// [`Self::draw_with_buffer_zdepth`] for the instances in `range`.
+    pub fn draw_zdepth_range<'a>(
+        &'a self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        bind_group: &'a wgpu::BindGroup,
+        buffer: &'a wgpu::Buffer,
+        range: std::ops::Range<u32>,
+    ) {
+        if range.is_empty() {
             return;
         }
         render_pass.set_pipeline(&self.zdepth_pipeline);
         render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
         render_pass.set_bind_group(1, bind_group, &[]);
         render_pass.set_vertex_buffer(0, buffer.slice(..));
-        render_pass.draw(0..6, 0..count);
+        render_pass.draw(0..6, range);
     }
 
     /// Direct surface/UI stores with neither A nor Z interaction. Native

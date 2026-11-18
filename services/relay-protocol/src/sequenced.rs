@@ -12,10 +12,10 @@ pub(crate) mod pack;
 pub(crate) mod watch;
 
 /// A `VO1C` certificate; `VO2C` adds one flags byte.
-pub const ORDERING_CERTIFICATE_LEN: usize = 66;
-pub const ORDERING_CERTIFICATE_V2_LEN: usize = 67;
+const ORDERING_CERTIFICATE_LEN: usize = 66;
+const ORDERING_CERTIFICATE_V2_LEN: usize = 67;
 pub const ORDERING_BATCH_CAPACITY: usize = 512;
-pub const ORDERING_PULL_LIMIT: usize = 32;
+const ORDERING_PULL_LIMIT: usize = 32;
 const CERTIFICATE_MAGIC: &[u8; 4] = b"VO1C";
 const CERTIFICATE_DOMAIN: &[u8] = b"VERA20k relay ordering certificate v1\0";
 const CERTIFICATE_V2_MAGIC: &[u8; 4] = b"VO2C";
@@ -67,10 +67,14 @@ const RATE_EVENT: u8 = 10;
 const RATE_ENTRY_BYTES: usize = 16;
 const DESYNC_EVENT: u8 = 11;
 const DESYNC_ENTRY_BYTES: usize = 27;
-// A DESYNC record after its sequence and frame: sample frame u32, outlier
-// source u8 and checksum u32, other source u8 and checksum u32.
-pub(super) const DESYNC_TAIL: usize = DESYNC_ENTRY_BYTES - 13;
-// Consecutive history entries in one datagram, PACK v2 (compaction spec
+/// Every canonical record's head: kind u8, sequence u64, frame u32.
+pub(super) const CANONICAL_HEAD: usize = 13;
+// A RATE record after its head: frames per second u16 and the slow source u8.
+pub(super) const RATE_TAIL: usize = RATE_ENTRY_BYTES - CANONICAL_HEAD;
+// A DESYNC record after its head: sample frame u32, outlier source u8 and
+// checksum u32, other source u8 and checksum u32.
+pub(super) const DESYNC_TAIL: usize = DESYNC_ENTRY_BYTES - CANONICAL_HEAD;
+// Consecutive history entries in one datagram, PACK (compaction spec
 // §5.2, `pack.rs`).
 pub(super) const PACK_EVENT: u8 = 12;
 // A federated control record travels between relays as an entry of this
@@ -150,7 +154,7 @@ pub struct OrderingCertificate {
 }
 
 /// Either certificate length, for a READY payload's split.
-pub fn is_ordering_certificate_len(length: usize) -> bool {
+fn is_ordering_certificate_len(length: usize) -> bool {
     length == ORDERING_CERTIFICATE_LEN || length == ORDERING_CERTIFICATE_V2_LEN
 }
 
@@ -497,8 +501,8 @@ impl ClientOrdering {
 }
 
 impl ClientSession {
-    /// Bounded client pipeline, below the existing relay's eight pending
-    /// batches per source. This changes neither its wire format nor admission.
+    /// Bounded client pipeline, below the relay's `MAX_SOURCE_PENDING`
+    /// batches per source.
     pub const ORDERING_SUBMISSION_WINDOW: usize = 4;
 
     /// Move the current stream cache at hop-lease promotion, after the old
@@ -762,7 +766,7 @@ impl ClientSession {
                     return Err(RelayError::Malformed);
                 }
                 if let Some(ordering) = self.ordering.as_mut() {
-                    // The unchanged relay only accepts consecutive IDs, so
+                    // The relay accepts only consecutive IDs (`BatchGap`), so
                     // acceptance of this batch also acknowledges its prefix.
                     ordering.accept_through(batch_id)?;
                 }
@@ -887,7 +891,7 @@ impl ClientSession {
         &mut self,
         payload: &[u8],
     ) -> Result<Vec<OrderEvent>, RelayError> {
-        pack::decode_pack_v2(payload)?
+        pack::decode_pack(payload)?
             .iter()
             .map(|entry| self.receive_ordering(entry))
             .collect()
@@ -984,6 +988,7 @@ impl PushSubscription {
     }
 
     /// This subscription's part of `RelayServer::reader_link_stats`.
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) fn fill_stats(&self, stats: &mut crate::ReaderLinkStats) {
         stats.acked_next = self.acknowledged_next;
         stats.sent_next = self.sent_next;
@@ -2354,7 +2359,7 @@ impl OrderingRoom {
                     Ok(records) => {
                         let mut output = vec![self.status(now_ms)];
                         output.extend(
-                            pack::encode_pack_v2(&records, records.len())
+                            pack::encode_pack(&records, records.len())
                                 .into_iter()
                                 .map(|(pack, _)| pack),
                         );
@@ -2517,7 +2522,7 @@ mod tests {
 
     /// The batches of an encoded client UPLINK datagram.
     fn uplink_batches(datagram: &[u8]) -> Vec<Vec<u8>> {
-        crate::link::decode_uplink(&datagram[CLIENT_HEADER..datagram.len() - HOP_TAG_LEN])
+        crate::link::decode_uplink(&datagram[HEADER_LEN..datagram.len() - HOP_TAG_LEN])
             .unwrap()
             .batches
             .iter()
@@ -2889,7 +2894,7 @@ mod tests {
         assert_eq!(stats.uplink_state_ms, [1000, 0, 1999, 500]);
     }
 
-    /// Spec appendix A packets 20 and 25 in PACK v2: a pack with two piggybacked frame
+    /// Spec appendix A packets 20 and 25 as PACKs: a pack with two piggybacked frame
     /// ends before a batch, and a status heartbeat's feedback.
     #[test]
     fn appendix_pack_and_status_heartbeat_have_their_layouts() {
@@ -2904,14 +2909,14 @@ mod tests {
             OrderingRoom::encoded_entry(6, 5, FRAME_END_EVENT, &[]),
             OrderingRoom::encoded_entry(7, 6, FRAME_END_EVENT, &[]),
         ];
-        // PACK v2 (compaction spec §5.2): 86 B, 128 B in v1.
-        let packs = pack::encode_pack_v2(&records, 1);
+        // Compaction spec §5.2: 86 B.
+        let packs = pack::encode_pack(&records, 1);
         let (pack, count) = &packs[0];
         assert_eq!((pack.len(), *count), (86, 5));
         assert_eq!(&pack[..6], &[PACK_EVENT, 3, 3, 5, 0x04, 0x14]);
         assert_eq!(&pack[6..10], &[0x13, 0, 1, 74]);
         assert_eq!(&pack[84..], &[0x04, 0x14]);
-        assert_eq!(pack::decode_pack_v2(pack).unwrap(), records);
+        assert_eq!(pack::decode_pack(pack).unwrap(), records);
 
         let key = SecretKey::new([78; 32]);
         let mut reader = client(&key, 1);
@@ -2956,13 +2961,13 @@ mod tests {
             .process_at(endpoint(&first), &bytes, unix(400), 400)
             .unwrap();
         assert_eq!(packets.len(), 2, "a status and one pack");
-        let payload = &packets[1].bytes[SERVER_HEADER..packets[1].bytes.len() - HOP_TAG_LEN];
+        let payload = &packets[1].bytes[HEADER_LEN..packets[1].bytes.len() - HOP_TAG_LEN];
         let history: Vec<_> = ordering(&server)
             .history
             .iter()
             .map(|entry| entry.bytes.clone())
             .collect();
-        assert_eq!(pack::decode_pack_v2(payload).unwrap(), history);
+        assert_eq!(pack::decode_pack(payload).unwrap(), history);
         let entries: Vec<_> = received(&mut first, &packets[1].bytes)
             .into_iter()
             .map(|event| match event {
@@ -3603,9 +3608,9 @@ mod tests {
         pause_control(&mut server, &mut first, 1, 0, true, 300);
         let mut lost = None;
         for packet in server.drain_ordering_push(300, unix(300)) {
-            let payload = &packet.bytes[SERVER_HEADER..packet.bytes.len() - HOP_TAG_LEN];
+            let payload = &packet.bytes[HEADER_LEN..packet.bytes.len() - HOP_TAG_LEN];
             if payload[0] == PACK_EVENT {
-                lost = pack::decode_pack_v2(payload)
+                lost = pack::decode_pack(payload)
                     .unwrap()
                     .into_iter()
                     .find(|entry| entry[0] == PAUSE_EVENT);
@@ -3653,8 +3658,8 @@ mod tests {
             .unwrap();
         assert!(
             packets.iter().any(|packet| {
-                let payload = &packet.bytes[SERVER_HEADER..packet.bytes.len() - HOP_TAG_LEN];
-                payload[0] == PACK_EVENT && pack::decode_pack_v2(payload).unwrap().contains(&lost)
+                let payload = &packet.bytes[HEADER_LEN..packet.bytes.len() - HOP_TAG_LEN];
+                payload[0] == PACK_EVENT && pack::decode_pack(payload).unwrap().contains(&lost)
             }),
             "disk replay retains exactly the lost canonical marker bytes"
         );
@@ -3931,7 +3936,7 @@ mod tests {
                     .position(|peer| endpoint(peer) == packet.endpoint)
                     .unwrap();
                 *per_peer.entry(index).or_insert(0) += 1;
-                if packet.bytes[SERVER_HEADER] == PACK_EVENT {
+                if packet.bytes[HEADER_LEN] == PACK_EVENT {
                     if index == 0 && !lost {
                         lost = true;
                         continue; // a real missing authenticated datagram
@@ -4164,9 +4169,9 @@ mod tests {
             .into_iter()
             .filter(|packet| packet.endpoint == reader_endpoint)
         {
-            let payload = &packet.bytes[SERVER_HEADER..packet.bytes.len() - HOP_TAG_LEN];
+            let payload = &packet.bytes[HEADER_LEN..packet.bytes.len() - HOP_TAG_LEN];
             if payload[0] == PACK_EVENT {
-                canonical = canonical.or(pack::decode_pack_v2(payload)
+                canonical = canonical.or(pack::decode_pack(payload)
                     .unwrap()
                     .into_iter()
                     .find(|entry| entry[0] == BATCH_EVENT));
@@ -4198,8 +4203,8 @@ mod tests {
         subscribe(&mut server, &mut reader, 1, 250_000);
         let replay = server.drain_ordering_push(250_000, unix(250_000));
         assert!(replay.iter().any(|packet| {
-            let payload = &packet.bytes[SERVER_HEADER..packet.bytes.len() - HOP_TAG_LEN];
-            payload[0] == PACK_EVENT && pack::decode_pack_v2(payload).unwrap().contains(&canonical)
+            let payload = &packet.bytes[HEADER_LEN..packet.bytes.len() - HOP_TAG_LEN];
+            payload[0] == PACK_EVENT && pack::decode_pack(payload).unwrap().contains(&canonical)
         }));
         for packet in replay {
             reader.receive(&packet.bytes).unwrap();
@@ -6638,7 +6643,9 @@ impl RelayServer {
             .outgoing
             .permits(now, cost, PLAYER_BYTES_PER_SECOND)
             || !room.outgoing.permits(now, cost, ROOM_BYTES_PER_SECOND)
-            || !admission.order_packets.permits(now, packets, 2048)
+            || !admission
+                .order_packets
+                .permits(now, packets, PLAYER_PACKETS_PER_SECOND)
             || !room.order_packets.permits(now, packets, ROOM_ORDER_PACKETS)
         {
             return Err(RelayError::RateLimited);

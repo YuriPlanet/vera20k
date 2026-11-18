@@ -798,6 +798,7 @@ pub(crate) fn render_game(
             cell_body_draws: &world.cell_body_draws,
             terrain: &world.terrain.normal,
             smudge: &world.smudge,
+            smudge_cuts: &world.smudge_cuts,
             bridge_shadows: &world.bridge_body_shadow,
             object_layers: &world.object_layers,
             fogged_objects: &world.fogged_objects,

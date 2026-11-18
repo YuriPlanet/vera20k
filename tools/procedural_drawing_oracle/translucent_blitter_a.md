@@ -12,20 +12,23 @@ python -m tools.procedural_drawing_oracle.blitter_a --translucent --check
   with and without `+4000`. Unit `73B140` composites its source cache once through
   `490B90`; SHP `705E00` reaches `490E50` through `4AED70`.
 - `cases`: N1/N27/N53 palette and LUT profiles, A, indices, brightness and
-  destination boundaries, with prior and final colors and depths. Bit8 offsets
-  -1/+1/±8 read `[destination+offset*2]` at `495641`, so a negative offset reads
-  pixels the same call already wrote. SHP character4 does not add bit8
+  destination boundaries, with final colors and prior and final depths. Bit8
+  warps 1/2/3 (`displacement`) read `[destination+warp*2]` at `495641`, a word
+  the call has not stored yet. Bit_Blit `4373B0` seeds the warp from the row,
+  relative to the tactical top, and the clipped left x
+  (`4374A3..4374B7`, XOR 3 per row at `4378F9`); the Unit `73B140` value
+  `70BE50` computes is never read. SHP character4 does not add bit8
   (`705E45..705E56`); Unit and voxel do.
 - `replay_controls`: three successive calls of one leaf on a retained destination
   and depth array.
 - `cloak_transition`: `Foot4DA4E0 -> Techno703860` and Unit selector
   `73B21F..73B259` over stage and progress controls, including invalid stages.
-- `cloak_offsets`: `70BE50` over native identity and raw `+24C`, which is zeroed
-  at `6F2D62`; no other writer was found.
 
 `src/render/draw_state.rs` and `src/sim/game_entity.rs` test the cloak rows. The
 ignored GPU tests in `src/app/presentation/render/packed_material_gpu_tests.rs`
-read `cases` and `replay_controls`. Allied and sensor visibility branches are not
+read `cases` and `replay_controls`, placing each warp case where the row and
+column parities give its warp. The committed JSON is trimmed to the fields a
+Rust source names ([capture files](../README.md#capture-files)). Allied and sensor visibility branches are not
 executed.
 
 Rust's visual-character scaling truncates in integers. For positive i32 progress

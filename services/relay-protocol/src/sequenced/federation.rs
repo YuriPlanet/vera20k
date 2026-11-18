@@ -150,9 +150,10 @@ fn wrap_tag(
     mac
 }
 
-/// The lobby's signer, for tools and tests. Relay keys never reach clients;
-/// the coordinator is the first relay.
-pub fn sign_federation_roster(
+/// The lobby's roster signing, for this crate's tests. Relay keys never
+/// reach clients; the coordinator is the first relay.
+#[cfg(test)]
+fn sign_federation_roster(
     room: [u8; 16],
     relays: &[(SocketAddrV4, u32, &SecretKey)],
     link: &SecretKey,
@@ -937,7 +938,7 @@ impl Federation {
                 || frame == 0
                 || if control {
                     match batch_id {
-                        RATE_BATCH => length != 3,
+                        RATE_BATCH => length != RATE_TAIL,
                         DESYNC_BATCH => length != DESYNC_TAIL,
                         // A new control batch bumps the link version (LINK_MAGIC).
                         _ => true,

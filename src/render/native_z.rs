@@ -11,8 +11,7 @@
 //! fractional ordering are not an exact native u16 source. TREE reads a mixed
 //! compatibility destination by rounding its value on the native axis.
 //!
-//! Evidence (read-only Ghidra, 2026-09-07, `docs/research/ZBUFFER_DEPTH_SYSTEM.md`
-//! sections 1, 2, 4):
+//! Evidence (gamemd instructions):
 //! - `Standard_SHP_blitter @ 0x004373B0` (`0x004374BB..0x004375A7`): the two
 //!   seeding paths below, then the per-row step applied after each row
 //!   (`0x00437921..0x0043793f`).
@@ -32,12 +31,26 @@
 //! - Gradient table `g_ZGradientTable @ 0x00817710`.
 
 /// `g_ZBuffer + 0x24`: row seed constant; distinct from empty stored Z.
+///
+/// RESIDUAL (seed phase): gamemd's seed is not constant. `ZBufferClass::Pan
+/// @ 0x007BCB50` subtracts each small vertical scroll from it (`0x007BCD14`)
+/// until a radar jump (`0x00653EBA`) or a view change (`0x004A8A48`) puts it
+/// back; a forced redraw and Init_Clear keep it. The tile, line and Flat
+/// producers move with it, but the quantised walks (`0x00437527..0x00437585`,
+/// `0x00437BBA`, `0x00437C45`: Moderate and Vertical step 3) round from it,
+/// so their Z against the ground shifts by the scroll's remainder mod 3 (0..2).
+/// Trigger: any vertical scroll; effect: a sprite's occlusion line on a cliff
+/// or ramp moves by up to 2 px and, natively, shimmers as the view scrolls.
+/// VERA keeps the phase at zero. After about 32K px of net small-step
+/// scrolling without a radar jump or load, gamemd's seed also nears zero and
+/// its tile and line candidates wrap past 0xFFFF in a horizontal band (a
+/// native bug VERA does not reproduce). Neither is visible in play.
 pub const DEFAULT_Z: i32 = 0x8000;
 
 /// Lossless GPU storage of the native u16 Z-buffer word. The original leaves
 /// compare their signed candidate first, then write its low16 bits. Hardware
 /// comparisons alone only establish that behavior for in-range candidates.
-/// See TERRAIN_STATIC_BODY_SHADOW_NATIVE_2026_09_09.md and native_z.wgsl.
+/// See native_z.wgsl.
 pub const STORED_DEPTH_CLEAR: f32 = 1.0;
 
 /// Original ctor 007BCA08 and active dirty clear 007BCFB0 store 0xffff;
@@ -153,6 +166,14 @@ pub const Z_GRADIENT_ZSHAPE_CLIP_FLAG: u32 = 0x200;
 /// while preceding rows use gradient 0/FootZ-5. Shadows do not carry it.
 pub const Z_GRADIENT_VOXEL_BRIDGE_SPLIT_FLAG: u32 = 0x400;
 
+/// A voxel body's final composite reaches the screen through Bit_Blit
+/// (`0x0073B140` and TechnoClass::Render `0x00706ED0`, both via `0x004AF2A0`),
+/// which clips its destination rectangle to the tactical view before seeding
+/// (`0x00437461`, then `0x004374BB..0x004375A7` read the clipped rectangle).
+/// A bottom-seeded walk then depends on the clipped bottom row. Only the
+/// voxel sprite shader consumes this bit; the RLE walker never clips its seed.
+pub const Z_GRADIENT_VOXEL_VIEW_CLIP_FLAG: u32 = 0x1000;
+
 /// Encoded overlay depth file: geometry was clipped on the CPU and the
 /// optional surface reads signed raw bytes by linear address. Bits12..13
 /// select one of four RGBA channels; high16 stores the native row stride.
@@ -166,8 +187,11 @@ pub fn pack_overlay_z_gradient(gradient: ZGradient, slope: u8, stride: u16) -> u
         | (u32::from(stride) << 16)
 }
 
+/// A voxel body's final composite: clipped to the view, and split when
+/// `bridge_split`.
 pub const fn pack_voxel_z_gradient(gradient: ZGradient, bridge_split: bool) -> u32 {
     gradient as u32
+        | Z_GRADIENT_VOXEL_VIEW_CLIP_FLAG
         | if bridge_split {
             Z_GRADIENT_VOXEL_BRIDGE_SPLIT_FLAG
         } else {
@@ -187,8 +211,9 @@ pub struct VoxelDepthRegion {
 /// CPU description of the voxel shader's per-fragment region selection.
 /// `rect` is [world top, height], `clip` is [world top, exclusive bottom].
 /// Eligibility uses the original height; clipping happens afterwards in
-/// each Standard_SHP_blitter call (0x0073B2FE, 0x00437461). This does not
-/// choose the gameplay/type predicate or move the parent's painter position.
+/// each Standard_SHP_blitter call (0x0073B2FE, 0x00437461), split or not.
+/// This does not choose the gameplay/type predicate or move the parent's
+/// painter position.
 pub fn voxel_depth_region(
     rect: [i32; 2],
     packed_gradient: u32,
@@ -212,6 +237,9 @@ pub fn voxel_depth_region(
                 gradient = ZGradient::Vertical;
             }
         }
+    }
+    if packed_gradient & (Z_GRADIENT_VOXEL_BRIDGE_SPLIT_FLAG | Z_GRADIENT_VOXEL_VIEW_CLIP_FLAG) != 0
+    {
         let bottom = (top + height).min(clip[1]);
         top = top.max(clip[0]);
         height = bottom - top;
@@ -255,6 +283,9 @@ pub(crate) fn voxel_depth_range(
         clip[1].checked_sub(1)?,
     ];
     let count = if packed_gradient & Z_GRADIENT_VOXEL_BRIDGE_SPLIT_FLAG != 0 {
+        probes.len()
+    } else if packed_gradient & Z_GRADIENT_VOXEL_VIEW_CLIP_FLAG != 0 {
+        // One region; the clip may move its top and bottom.
         probes.len()
     } else {
         1
@@ -385,18 +416,25 @@ pub fn ground_anchored_z_adjust(height_level: i32, class_term: i32) -> i32 {
 /// foundation shift (`BuildingClass_DrawBody 0x0043D6EF..0x0043D77A`).
 pub const ZSHAPE_ANCHOR: (i32, i32) = (0xC6, 0x1BE);
 
+/// The same point for a remembered building under fog of war:
+/// FoggedObjectClass::DrawAll adds (0x90, 0xAC) to ZShapePointMove
+/// (`0x004D1DBD`, `0x004D1DCE`) and passes it from the same draw point.
+pub const FOGGED_ZSHAPE_ANCHOR: (i32, i32) = (0x90, 0xAC);
+
 /// `BuildingClass_DrawBody @ 0x0043D787`: a foundation width of 8 or more
 /// draws without a z-shape (`CMP EAX, 8 / JL`).
 pub const ZSHAPE_MAX_FOUNDATION_WIDTH: u16 = 7;
 
 /// World-pixel origin of the z-shape canvas for one building.
 ///
-/// The body pushes `(0xC6, 0x1BE) + ZShapePointMove - CellToPixel((W-1)*256,
-/// (H-1)*256)` as the z-shape offset; the extended blitter reads z-shape pixel
+/// The body pushes `anchor + ZShapePointMove - CellToPixel((W-1)*256,
+/// (H-1)*256)` as the z-shape offset, `anchor` being [`ZSHAPE_ANCHOR`] or
+/// [`FOGGED_ZSHAPE_ANCHOR`]; the extended blitter reads z-shape pixel
 /// `p` for screen pixel `draw_point - offset + p`. `draw_point` is the point
 /// `CC_Draw_Shape` centres the body on (VERA's building anchor), in world
 /// pixels.
 pub fn zshape_origin(
+    anchor: (i32, i32),
     draw_point: (i32, i32),
     foundation: (u16, u16),
     point_move: (i32, i32),
@@ -410,8 +448,8 @@ pub fn zshape_origin(
         (w + h) * HEIGHT_LEVEL_PX,
     );
     let offset = (
-        ZSHAPE_ANCHOR.0 + point_move.0 - far_corner.0,
-        ZSHAPE_ANCHOR.1 + point_move.1 - far_corner.1,
+        anchor.0 + point_move.0 - far_corner.0,
+        anchor.1 + point_move.1 - far_corner.1,
     );
     (draw_point.0 - offset.0, draw_point.1 - offset.1)
 }
@@ -560,6 +598,8 @@ mod tests {
                 .gradient,
             ZGradient::Vertical
         );
+        // An unsplit body is one Bit_Blit, clipped to the view before its
+        // seed (0x00437461); a shadow's plain gradient is not.
         let ordinary = voxel_depth_region(
             [-4, 32],
             pack_voxel_z_gradient(ZGradient::Moderate, false),
@@ -568,10 +608,15 @@ mod tests {
             [0, 24],
         )
         .unwrap();
-        assert_eq!(ordinary.top, -4);
-        assert_eq!(ordinary.height, 32);
+        assert_eq!(ordinary.top, 0);
+        assert_eq!(ordinary.height, 24);
         assert_eq!(ordinary.gradient, ZGradient::Moderate);
         assert_eq!(ordinary.z_adjust, 7);
+        let shadow = voxel_depth_region([-4, 32], ZGradient::Moderate as u32, 7, 6, [0, 24]);
+        assert_eq!(
+            shadow.map(|region| [region.top, region.height]),
+            Some([-4, 32])
+        );
     }
 
     #[test]
@@ -639,16 +684,16 @@ mod tests {
     fn zshape_origin_shifts_down_and_across_with_the_foundation() {
         // 1x1: the canvas anchor lands on the draw point.
         assert_eq!(
-            zshape_origin((1000, 500), (1, 1), (0, 0)),
+            zshape_origin(ZSHAPE_ANCHOR, (1000, 500), (1, 1), (0, 0)),
             (1000 - 0xC6, 500 - 0x1BE)
         );
         // 3x3: far corner (2,2) cells -> (0, 60) px, so the canvas drops 60 rows.
         assert_eq!(
-            zshape_origin((1000, 500), (3, 3), (0, 0)),
+            zshape_origin(ZSHAPE_ANCHOR, (1000, 500), (3, 3), (0, 0)),
             (1000 - 0xC6, 500 - 0x1BE + 60)
         );
         // 4x2 (GAWEAP-like) with ZShapePointMove=30,15.
-        let (x, y) = zshape_origin((1000, 500), (4, 2), (30, 15));
+        let (x, y) = zshape_origin(ZSHAPE_ANCHOR, (1000, 500), (4, 2), (30, 15));
         assert_eq!((x, y), (1000 - (0xC6 + 30 - 60), 500 - (0x1BE + 15 - 60)));
     }
 

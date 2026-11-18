@@ -156,6 +156,12 @@ fn native_candidate(in: VertexOutput) -> i32 {
                 gradient = 2u;
             }
         }
+    }
+    // Every voxel body blit (0x1000, split or not) is a Bit_Blit, which clips
+    // its rectangle to the tactical view before seeding (0x00437461, then
+    // 0x004374BB..0x004375A7). Its bottom-seeded walk follows the clipped bottom.
+    if ((in.z_gradient & 0x1400u) != 0u) {
+        rect_top = round(rect_top);
         // fx_params.w is this voxel body's tactical clip height in world
         // pixels, supplied from the actual scissor. Zero retains the whole
         // viewport for offscreen callers. Do not bake the sidebar/footer size
