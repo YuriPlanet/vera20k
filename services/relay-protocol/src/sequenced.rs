@@ -80,8 +80,7 @@ pub(super) const RATE_BATCH: u64 = u64::MAX;
 pub(super) const DESYNC_BATCH: u64 = u64::MAX - 1;
 /// Game Speed's frame rates, fastest first: the only rates an ordering
 /// certificate may name. The game's test in `net::lockstep` pins each
-/// selectable speed to one of them, and the lobby's relay-grants check signs
-/// a certificate at each rate it uses.
+/// selectable speed to one of them.
 pub const FRAME_RATES: [u16; 8] = [90, 60, 45, 30, 20, 15, 12, 10];
 // A player's report counts this long; a silent client slows nobody.
 const PACE_REPORT_MS: u64 = 3_000;

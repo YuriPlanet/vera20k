@@ -313,11 +313,11 @@ text under the per-hop MAC, and the relay can read them
 so the lobby needs no change; removing it is a follow-up. `source_index` is the immutable canonical user index, 0–29.
 `ordering_certificate` is 66 base64url-encoded bytes: `VO1C`, room UUID16,
 source mask LEu32, fixed FPS LEu16, expiry LEu64, then HMAC-SHA256 over the
-first34 bytes with domain `VERA20k relay ordering certificate v1\0`. A lobby
+first 34 bytes with domain `VERA20k relay ordering certificate v1\0`. A lobby
 whose every member build reads relay rate markers may instead issue a 67-byte
 `VO2C` certificate: the same fields, then a flags byte (bit 0: the host turned
 relay pacing off; bit 1: the relay orders this one-source match, below; other bits
-zero), then HMAC-SHA256 over the first35 bytes with
+zero), then HMAC-SHA256 over the first 35 bytes with
 domain `VERA20k relay ordering certificate v2\0`. Every grant of one match carries
 the same version and flags; clients reject a renewal whose flags differ. The signed
 mask includes all human sources (including observers); AI has no source. FPS
@@ -325,7 +325,7 @@ follows launch speed `[60,45,30,20,15,12,10]` for stored settings 0–6;
 VERA's setting 8 selects 90 FPS. Setting 7 is not a selectable setup speed.
 `tests/fixtures/lobby/game_contract.json` lists these rows from the game's own table,
 and the relay accepts no other FPS (`FRAME_RATES` in `services/relay-protocol`).
-The certificate lasts24 hours;
+The certificate lasts 24 hours;
 every UDP control still needs a live authenticated short-lived ticket. The relay
 binds the first matching startup agreement to this roster/clock and starts once
 every remaining signed source is ready. A source that never becomes ready leaves
