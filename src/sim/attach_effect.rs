@@ -87,6 +87,14 @@ pub struct AttachEffectInstance {
     #[cfg(feature = "phobos")]
     #[serde(default)]
     reflect_damage_timer: crate::sim::timer::CdTimer,
+    /// `Animation.ResetOnReapply` (`New/Entity/AttachEffectClass.cpp:549-555`,
+    /// `:928-934`, `:991-997`): every `RefreshDuration` and the shorter-duration
+    /// reapply arm kill and re-create the animation. The flag asks the
+    /// animation owner (`maintain_phobos_attach_effect_anim`) to retire the
+    /// live one before its next pass.
+    #[cfg(feature = "phobos")]
+    #[serde(default)]
+    reset_anim: bool,
     /// `LaserTrailClass::LastLocation`: the endpoint the next trail segment
     /// starts from. The trail is created and retired with this instance
     /// (`AttachEffectClass::AttachEffect` / destructor).
@@ -125,6 +133,8 @@ impl AttachEffectInstance {
             armor_multiplier_timer: crate::sim::timer::CdTimer::default(),
             #[cfg(feature = "phobos")]
             reflect_damage_timer: crate::sim::timer::CdTimer::default(),
+            #[cfg(feature = "phobos")]
+            reset_anim: false,
             #[cfg(feature = "phobos")]
             trail_last_location: None,
         };
@@ -183,6 +193,7 @@ impl AttachEffectInstance {
             last_sequence_check: self.last_sequence_check,
             armor_multiplier_timer: self.armor_multiplier_timer,
             reflect_damage_timer: self.reflect_damage_timer,
+            reset_anim: false,
             trail_last_location: None,
         }
     }
@@ -235,12 +246,36 @@ impl AttachEffectInstance {
         } else {
             effect.duration
         };
+        #[cfg(feature = "phobos")]
+        if effect.animation_reset_on_reapply {
+            self.request_anim_reset();
+        }
     }
 
     /// `RefreshDuration` for a caller that already folded the duration
-    /// multipliers into `duration`.
+    /// multipliers into `duration`. `AttachEffectClass.cpp:549-555` ends it
+    /// with the `Animation.ResetOnReapply` kill-and-re-create.
     pub fn refresh_with(&mut self, duration: i32) {
         self.remaining = duration.max(0);
+    }
+
+    /// The shorter-duration reapply arm (`AttachEffectClass.cpp:928-934` and
+    /// `:991-997`): the duration is not refreshed, but the animation still
+    /// restarts when the type asks for it.
+    #[cfg(feature = "phobos")]
+    fn request_reapply_anim_reset(&mut self, effect: &AttachEffectType) {
+        if effect.animation_reset_on_reapply {
+            self.request_anim_reset();
+        }
+    }
+
+    /// `KillAnim()` when there is one: the animation owner re-creates it on the
+    /// next pass if `CanShowAnim`.
+    #[cfg(feature = "phobos")]
+    fn request_anim_reset(&mut self) {
+        if self.anim.is_some() {
+            self.reset_anim = true;
+        }
     }
 
     pub fn is_online(&self) -> bool {
@@ -606,9 +641,13 @@ impl AttachEffectList {
             }
             current_type_count += 1;
             if !effect.cumulative {
+                // Both arms restart the animation under `ResetOnReapply`:
+                // `RefreshDuration` does it itself, the shorter-duration arm
+                // does it explicitly.
                 if policy.replace_longer_duration || duration >= instance.remaining {
                     self.instances[index].refresh_with(duration);
                 }
+                self.instances[index].request_reapply_anim_reset(effect);
                 return AttachOutcome::Refreshed;
             }
             // `IsFromSource(pInvoker, pSource)`: the retained house is no
@@ -637,12 +676,14 @@ impl AttachEffectList {
                 if policy.cumulative_refresh_all {
                     for index in matches {
                         self.instances[index].refresh_with(duration);
+                        self.instances[index].request_reapply_anim_reset(effect);
                     }
-                } else if let Some(index) = shortest
-                    && (policy.replace_longer_duration
-                        || duration >= self.instances[index].remaining)
-                {
-                    self.instances[index].refresh_with(duration);
+                } else if let Some(index) = shortest {
+                    if policy.replace_longer_duration || duration >= self.instances[index].remaining
+                    {
+                        self.instances[index].refresh_with(duration);
+                    }
+                    self.instances[index].request_reapply_anim_reset(effect);
                 }
                 return AttachOutcome::Refreshed;
             } else if policy.cumulative_refresh_all && policy.cumulative_refresh_all_on_attach {
@@ -650,6 +691,7 @@ impl AttachEffectList {
                 // still appends the new instance.
                 for index in matches {
                     self.instances[index].refresh_with(duration);
+                    self.instances[index].request_reapply_anim_reset(effect);
                 }
             }
         }
@@ -1609,12 +1651,14 @@ impl Simulation {
     ///
     /// RESIDUALS: native `IsImmobilized` is approximated by the chrono-warp and
     /// transport-interior gates VERA models; `CloakCheck` and the tunnel
-    /// animation state are not ported; `Animation.ResetOnReapply` does not
-    /// restart a refreshed effect's animation. A cumulative type's animation
-    /// follows `AnimExt::ChangeAnimType` for the designated layer
+    /// animation state are not ported. A cumulative type's animation follows
+    /// `AnimExt::ChangeAnimType` for the designated layer
     /// (`CumulativeAnimations.RestartOnChange` picks the proportional or the
     /// restart arm); the native per-instance `AnimClass` of every other layer
     /// is not modeled, because VERA shows one animation per cumulative type.
+    /// `Animation.ResetOnReapply` retires the animation when the effect
+    /// refreshes or is reapplied, so the replacement is created on the next
+    /// pass of this walk rather than inside the attach call as native does.
     /// `ShouldBeDiscardedNow`'s target facts for one entity, read once per
     /// frame before the AI walk. `needs_range` skips the weapon selection
     /// when no effect on the object reads inrange/outofrange.
@@ -2660,6 +2704,14 @@ impl Simulation {
             world,
             paused,
         } = target;
+        // `KillAnim()` from a `RefreshDuration` or a shorter-duration reapply:
+        // the re-creation below is the native `CreateAnim()` half.
+        if instance.reset_anim {
+            instance.reset_anim = false;
+            if let Some(anim) = instance.anim.take() {
+                self.destroy_anim_with_context(anim, rules);
+            }
+        }
         if let Some(anim) = instance.anim {
             let keeps = desired.is_some_and(|name| {
                 self.substrate.anims.get(anim).is_some_and(|live| {
@@ -7422,5 +7474,135 @@ Duration=100
             None,
             crate::sim::world::FrameEffects::empty(),
         );
+    }
+
+    /// `Animation.ResetOnReapply` (`New/Entity/AttachEffectClass.cpp:549-555`
+    /// and `:928-934`): a reapply of a non-cumulative effect kills the live
+    /// animation and creates a fresh one.
+    #[test]
+    fn a_reapply_restarts_the_animation_when_reset_on_reapply_is_set() {
+        let (mut sim, rules) = reapply_anim_scene("Animation.ResetOnReapply=yes\n", 31);
+        let target = spawn(&mut sim, &rules, "TARGET", "Americans", 20, 20);
+        add_layer_from_warhead(&mut sim, "REAPPLY", target, &rules);
+        sim.update_phobos_attach_effects(target, &rules);
+        let (first, name, _frame) = cumulative_anim(&sim, target);
+        assert_eq!(name, "AEONE");
+        sim.substrate
+            .anims
+            .get_mut(first)
+            .expect("the running effect animation")
+            .runtime_mut_for_test()
+            .current_frame = 4;
+        // Half of the remaining duration: the refresh arm is skipped, the
+        // animation restart is not.
+        add_layer_from_warhead(&mut sim, "REAPPLY", target, &rules);
+        assert_eq!(attach_count(&sim, target), 1, "the instance absorbed it");
+        sim.update_phobos_attach_effects(target, &rules);
+        let (second, name, frame) = cumulative_anim(&sim, target);
+        assert_eq!(name, "AEONE");
+        assert_ne!(second, first, "KillAnim + CreateAnim made a new animation");
+        assert_eq!(frame, 0, "the fresh animation starts at its first frame");
+    }
+
+    /// The key's default (`Animation.ResetOnReapply` unset) keeps the running
+    /// animation across a reapply.
+    #[test]
+    fn a_reapply_keeps_the_animation_without_reset_on_reapply() {
+        let (mut sim, rules) = reapply_anim_scene("", 32);
+        let target = spawn(&mut sim, &rules, "TARGET", "Americans", 20, 20);
+        add_layer_from_warhead(&mut sim, "REAPPLY", target, &rules);
+        sim.update_phobos_attach_effects(target, &rules);
+        let (first, name, _frame) = cumulative_anim(&sim, target);
+        assert_eq!(name, "AEONE");
+        sim.substrate
+            .anims
+            .get_mut(first)
+            .expect("the running effect animation")
+            .runtime_mut_for_test()
+            .current_frame = 4;
+        add_layer_from_warhead(&mut sim, "REAPPLY", target, &rules);
+        sim.update_phobos_attach_effects(target, &rules);
+        let (after, _, frame) = cumulative_anim(&sim, target);
+        assert_eq!(after, first, "the same animation keeps running");
+        assert_eq!(frame, 4, "its frame position survives the reapply");
+    }
+
+    /// `Animation.ResetOnReapply` on the shorter-duration reapply arm
+    /// (`AttachEffectClass.cpp:928-934`): the duration is not refreshed, yet
+    /// the animation still restarts.
+    #[test]
+    fn a_shorter_reapply_still_restarts_the_animation() {
+        let (mut sim, rules) = reapply_anim_scene("Animation.ResetOnReapply=yes\n", 33);
+        let target = spawn(&mut sim, &rules, "TARGET", "Americans", 20, 20);
+        add_layer_from_warhead(&mut sim, "REAPPLY", target, &rules);
+        sim.update_phobos_attach_effects(target, &rules);
+        let (first, name, _frame) = cumulative_anim(&sim, target);
+        assert_eq!(name, "AEONE");
+        let remaining = {
+            let instances = sim
+                .substrate
+                .entities
+                .get(target)
+                .expect("live entity")
+                .phobos_attach_effects()
+                .instances();
+            instances[0].remaining()
+        };
+        assert!(remaining > 50, "the override is shorter than what is left");
+        sim.substrate
+            .anims
+            .get_mut(first)
+            .expect("the running effect animation")
+            .runtime_mut_for_test()
+            .current_frame = 4;
+        add_layer_from_warhead(&mut sim, "SHORTER", target, &rules);
+        let remaining_after = {
+            let instances = sim
+                .substrate
+                .entities
+                .get(target)
+                .expect("live entity")
+                .phobos_attach_effects()
+                .instances();
+            instances[0].remaining()
+        };
+        assert_eq!(
+            remaining_after, remaining,
+            "the shorter hit kept the duration"
+        );
+        sim.update_phobos_attach_effects(target, &rules);
+        let (second, _, frame) = cumulative_anim(&sim, target);
+        assert_ne!(second, first, "the animation still restarted");
+        assert_eq!(frame, 0);
+    }
+
+    /// `TARGET` carries no effect; `REAPPLY` attaches one `AE` (duration 100)
+    /// and `SHORTER` attaches the same type with `DurationOverrides=50`, so the
+    /// second hit takes the reapply arm that does not refresh the duration.
+    fn reapply_anim_scene(
+        effect_keys: &str,
+        seed: u64,
+    ) -> (Simulation, crate::rules::ruleset::RuleSet) {
+        let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "[Countries]\n0=Americans\n1=Russians\n\
+             [VehicleTypes]\n0=TARGET\n\
+             [TARGET]\nStrength=1000\nSpeed=6\nArmor=none\n\
+             [Warheads]\n0=REAPPLY\n1=SHORTER\n\
+             [REAPPLY]\n{ALL_HIT}AttachEffect.AttachTypes=AE\n\
+             [SHORTER]\n{ALL_HIT}AttachEffect.AttachTypes=AE\n\
+             AttachEffect.DurationOverrides=50\n\
+             [AttachEffectTypes]\n0=AE\n\
+             [AE]\nDuration=100\nAnimation=AEONE\n{effect_keys}"
+        ));
+        let mut rules = crate::rules::ruleset::RuleSet::from_ini(&ini).expect("reapply anim rules");
+        let mut art = crate::rules::art_data::ArtRegistry::from_ini(
+            &crate::rules::ini_parser::IniFile::from_str("[AEONE]\nEnd=8\nRate=2\n"),
+        );
+        art.bind_anim_frame_count_for_test("AEONE", 8);
+        rules.replace_art_registry_for_test(art);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, seed);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        (sim, rules)
     }
 }
