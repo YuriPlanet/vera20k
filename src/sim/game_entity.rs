@@ -2853,9 +2853,16 @@ impl GameEntity {
         self.fire_particle_system.forget();
     }
 
-    /// Whether a cell object-list walk that damages what it finds (Wave
-    /// `DamageArea`, the railgun line) still reaches this object: alive, not
-    /// in its death sequence, not in limbo.
+    /// Wave (0x75F3F3) and area damage (0x4899F1) both require a live,
+    /// cell-marked object outside limbo with positive health.
+    pub(crate) fn is_live_on_map(&self) -> bool {
+        self.lifecycle.object_alive()
+            && self.lifecycle.cell_marked()
+            && !self.lifecycle.in_limbo()
+            && self.is_alive()
+    }
+
+    /// The railgun line's cell walk skips objects in their death sequence.
     pub(crate) fn reachable_in_cell_list(&self) -> bool {
         self.is_alive()
             && !self.death.is_dying()

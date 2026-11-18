@@ -117,7 +117,7 @@ pub enum WolTarget {
     CreateAccepted,
     /// C2 Back: the chat lobby rejoined and `0x113` settled again.
     SetupBack,
-    /// C2 with a joined guest: its row, ping icon and the join's requests.
+    /// C2 with a joined guest: its row and the join's requests.
     SetupGuestJoined,
     /// C2 Start with an unready guest: RequestAcceptance and the host line.
     SetupStartNotReady,
@@ -3748,8 +3748,7 @@ impl WolCapture {
         Ok(())
     }
 
-    /// The host's join sink for the controlled guest, its ping and its
-    /// map status.
+    /// The host's join sink for the controlled guest and its map status.
     fn join_guest(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         let launch = state
             .match_state
@@ -3785,18 +3784,10 @@ impl WolCapture {
                     },
                     NetworkSetupRequest::PublishRoster,
                     NetworkSetupRequest::PublishOptions,
-                    NetworkSetupRequest::RequestPings,
                     NetworkSetupRequest::Advertise,
                 ],
             "the host join sink's requests: {requests:?}"
         );
-        setup::service_event(
-            state,
-            NetworkSetupEvent::Ping {
-                name: PEER.into(),
-                ping: 120,
-            },
-        )?;
         setup::service_event(
             state,
             NetworkSetupEvent::MapStatus {
@@ -3804,15 +3795,11 @@ impl WolCapture {
                 status: 1,
             },
         )?;
-        let view = setup_view(state)?;
         ensure!(
-            view.ping_icons[1] == crate::ui::multiplayer_setup::ping_icon(120)
-                && view.ping_icons[1].is_some()
-                && !state.match_state.session.network_player_ready(1),
-            "the guest's row, ping icon or readiness: {:?}",
-            view.ping_icons
+            !state.match_state.session.network_player_ready(1),
+            "the joined guest starts ready"
         );
-        self.event(frame, "controlled guest joined, ping 120, map present");
+        self.event(frame, "controlled guest joined, map present");
         Ok(())
     }
 

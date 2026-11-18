@@ -271,9 +271,10 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let host_name = protocol.wol_host.as_deref();
     let local = launch.humans.get(launch.local_player_index)?;
     let room = session.network_room();
+    let dialog = super::dialog(state);
     // 0x4E5C5B..0x4E5C90, 0x4E5FD5..0x4E6004: a WOL clan room hides every
     // team combo and the team header 0x794.
-    let clan_room = profile_is_wol(state) && room.clan;
+    let clan_room = dialog.wol() && room.clan;
     let map_index = local_map_index(state);
     let listing = room_listing(state)?;
     let RoomListing {
@@ -320,7 +321,6 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let ai_seat = (host && ai_allowed)
         .then(|| session.network_ai_seat())
         .flatten();
-    let dialog = super::dialog(state);
     // VERA's roster holds the rows its page fits; a native page always has
     // its eight row controls, hidden past the room's rows.
     let rows = if dialog.modern {
@@ -768,6 +768,11 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 Some(flag) => Some(flag),
                 None => flag_pcx_for_side_item_data(country).map(str::to_owned),
             };
+            // RESIDUAL: C2/C9's ping image (7A0E50 from 5EA3E0, 007A0EA0),
+            // the latency tooltip 0078F5C0 (TXT_LATENCY_ICON_TOOLTIP_*) that
+            // reads the same table, and the host's ping timer 0x14AF8 that
+            // fills it are not ported: the lobby carries no per-user latency
+            // to the room.
             row_icons[visible_row] = Some(SetupRowIcon {
                 country: flag,
                 // 0x5EA3E0: wolhost.pcx on the human row named [0xA8D610];
@@ -847,18 +852,6 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             visible: dialog.modern,
         },
     ];
-    // 7A0E50 from 5EA3E0: rows without a node show no ping image.
-    let ping_icons = std::array::from_fn(|position| {
-        (dialog.wol() && position < rows).then_some(())?;
-        let Listed::Row(row) = listing.row_at(listing.shown_index(position)?)? else {
-            return None;
-        };
-        let human = launch
-            .humans
-            .iter()
-            .find(|human| human.raw_slot_index == Some(row))?;
-        ping_icon(protocol.ping(&human.name)?)
-    });
     // The host drags people, itself too, and AI between the boxes of a room
     // with teams; only people go to watch.
     let mut box_of = None;
@@ -905,12 +898,11 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         roster_scroll: listing.roster_scroll,
         pages: listing.pages,
         dialog,
-        ping_icons,
         host,
         locked: protocol.locked,
         // C2's lockout (0x78F85E..0x78F907, 0x79132A..0x7913D1): Short Game
         // checked and disabled in a tournament or clan room.
-        short_game_locked: host && profile_is_wol(state) && room.tournament_or_clan(),
+        short_game_locked: host && dialog.wol() && room.tournament_or_clan(),
         team_header: !no_team_lists,
         accept_enabled: accept_enabled(state),
         start_requested: protocol.start_requested
@@ -1089,10 +1081,6 @@ fn listed_rows(
         group(SetupGroup::Spectators, spectators.len(), spectators);
     }
     listed
-}
-
-fn profile_is_wol(state: &AppState) -> bool {
-    state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol
 }
 
 #[cfg(all(test, tests_app))]

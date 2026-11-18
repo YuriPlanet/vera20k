@@ -1629,10 +1629,12 @@ fn new_runner(
     })
 }
 
-/// The Buddy List runner's entry (`0x0079F140`, steps 1-2): a runner with
-/// no `0x113` and the chat-lobby list behind `TXT_REQ_CHANLIST`
-/// (`0x0077EF90(0, 0)`, the 30 s wait `0x0077F120`).
-pub(super) fn open_buddy_runner(state: &mut AppState) {
+/// A runner with no `0x113` and the chat-lobby list behind
+/// `TXT_REQ_CHANLIST` (`0x0077EF90(0, 0)`, the 30 s wait `0x0077F120`): the
+/// Buddy List runner's entry (`0x0079F140`, steps 1-2) and the Quick Match
+/// runner's lobby list (`0x0079FCF0..0x0079FD35`), whose entry cleared the
+/// observer preference (`0x0079FC40..0x0079FC5D`).
+pub(super) fn open_runner(state: &mut AppState, runner: Runner) {
     let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
@@ -1640,37 +1642,8 @@ pub(super) fn open_buddy_runner(state: &mut AppState) {
     visit.in_game = false;
     visit.page = WolPage::Lobby;
     visit.lobby = Some(new_runner(
-        Runner::Buddy,
+        runner,
         observer,
-        false,
-        Instant::now(),
-        !visit.legacy_ui,
-    ));
-    if state.match_state.session.network_return_context().is_none() {
-        state
-            .match_state
-            .session
-            .enter_network(crate::app::match_runtime::session::NetworkReturnContext::Wol);
-    }
-    state.frontend.wol_login_art = None;
-    state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
-    let _ = App::ensure_skirmish_shell_chrome(state);
-    show_wait(state, "TXT_REQ_CHANLIST");
-    request(state, WolServiceRequest::ListChannels { kind: 0, flags: 0 });
-    state.platform.window.request_redraw();
-}
-
-/// The Quick Match runner's lobby list (`0x0079FCF0..0x0079FD35`): a
-/// runner with no `0x113` and the chat-lobby list behind
-/// `TXT_REQ_CHANLIST` (`0x0077EF90(0, 0)`, the 30 s wait `0x0077F120`).
-pub(super) fn open_quick_match_runner(state: &mut AppState) {
-    let Some(visit) = state.frontend.wol.as_mut() else {
-        return;
-    };
-    visit.page = WolPage::Lobby;
-    visit.lobby = Some(new_runner(
-        Runner::QuickMatch,
-        false,
         false,
         Instant::now(),
         !visit.legacy_ui,

@@ -587,30 +587,6 @@ pub(crate) fn render_multiplayer_setup(
                 );
             }
         }
-        // C2/C9 ping statics 0x754+row, kind-2 images like the acceptance ones.
-        if let Some(rects) = &layout.ping_icons {
-            for (row, icon) in view.ping_icons.iter().enumerate() {
-                if let Some(entry) = icon.and_then(|icon| atlas.wol_ping_icon(icon)) {
-                    if layout.roster {
-                        push_entry_fitted(
-                            &mut controls,
-                            entry,
-                            rects[row],
-                            scale,
-                            SHELL_CONTROL_DEPTH,
-                        );
-                    } else {
-                        push_flag_entry_clipped_centered(
-                            &mut controls,
-                            entry,
-                            rects[row],
-                            scale,
-                            SHELL_CONTROL_DEPTH,
-                        );
-                    }
-                }
-            }
-        }
         // VERA's room keeps its options in Game Options; Difficulty stays.
         if layout.game_options.is_none() {
             push_option_controls(

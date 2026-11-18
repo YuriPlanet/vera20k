@@ -45,8 +45,6 @@ För att starta skirmish-matcher eller kampanjer i YR för en spelare från en C
 3. Integrera kända RTS-funktioner och några som aldrig setts förut.
 4. Integrerad flerspelarklient
 
-Se [färdplanen](https://github.com/orgs/YuriPlanet/projects/1) för aktuella prioriteringar och framtida planer.
-
 ## Bidra
 
 Medverkande kan ta ansvar för delar av motorn, med stor frihet att göra ändringar som driver
@@ -62,8 +60,7 @@ Diskussionen sker på [Discord](https://discord.gg/kmjRUn5m5F) och i QQ-gruppen 
 Motorn har tre huvuddelar:
 
 - **Simulering:** Ansvarar för speltillstånd och spellogik.
-- **Rendering:** En helt ny GPU-renderingspipeline som använder originalets spelresurser,
-  byggd för att bevara originalets utseende.
+- **Rendering:** Ritar upp terräng, enheter och byggnader med originalspelets grafik på GPU:n.
 - **Applikation:** Hanterar inmatning, menyer, ljud och plattformsintegration och kopplar ihop systemen.
 
 Denna uppdelning stöder deterministiskt spel.
@@ -99,17 +96,16 @@ portar sedan dess beteende till Rust och kontrollerar det med
 
 ## Anpassning
 
-VERA20K fungerar som standard precis som originalspelet. Varje ny funktion, även tillägg från
-moddar som Ares, måste vara avstängd tills den slås på med något av följande:
+VERA20K använder som standard samma spelregler som Yuri's Revenge. Under **Options** kan du
+ändra inställningarna för ljud, grafik och kontroller eller slå på VERA-funktioner. Spelet
+sparar dina inställningar i `VERA.INI`, med VERA:s egna alternativ i avsnittet `[VERA]`.
 
-- **En spelarinställning i VERA**, under **Options**, som sparas i avsnittet `[VERA]` i `VERA.INI`.
-- **Ett byggalternativ**, till exempel `--features phobos` för de [Phobos-tillägg](docs/phobos.md) som stöds.
-- **En INI-nyckel**, som sätts av en mod eller en karta.
+Lobbyinställningar, moddar och kartor kan ändra reglerna för en match. Via sina INI-filer kan
+moddar och kartor aktivera de funktioner i [Ares](docs/ares.md) och [Phobos](docs/phobos.md)
+som VERA20K stöder. En modd kan också aktivera Ares genom att inkludera `ares.mix`. Vissa
+Phobos-funktioner kräver fortfarande en version som byggts med `--features phobos`.
 
-Inställningar för ljud, grafik och kontroller sparas i `VERA.INI`. Spelreglerna kommer från
-lobbyinställningar, moddar eller kartor.
-
-[Moddningsguiden](docs/modding.md) förklarar hur man gör egna moddar.
+Vill du skapa en egen modd kan du börja med [moddningsguiden](docs/modding.md).
 
 ## Stöd projektet
 

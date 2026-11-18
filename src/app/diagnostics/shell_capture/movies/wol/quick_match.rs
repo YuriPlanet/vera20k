@@ -476,7 +476,6 @@ impl WolCapture {
                 },
                 NetworkSetupRequest::PublishRoster,
                 NetworkSetupRequest::PublishOptions,
-                NetworkSetupRequest::RequestPings,
             ]) && !requests.contains(&NetworkSetupRequest::Advertise)
                 && launch
                     .selected_map_file

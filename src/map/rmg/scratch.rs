@@ -5,6 +5,9 @@
 //! rather than raw offsets, but keeps the same linear indexing and the same
 //! initial values, because phases read each other's leftovers.
 
+use super::MapGeometry;
+use crate::map::playfield::SizeDiamond;
+
 /// One scratch cell.
 ///
 /// Field names map to the original record's documented offsets: coordinate at
@@ -80,26 +83,32 @@ pub struct RmgScratch {
     /// consecutive layout is what keeps those passes in cache.
     shore_masks: Vec<i32>,
     shore_enables: Vec<bool>,
-    diamond_min: i32,
-    diamond_max: i32,
+    diamond: SizeDiamond,
 }
 
 impl RmgScratch {
-    /// Build a `width` x `width` grid bounded by the given diamond limits.
+    /// Allocate the scratch square for a generated map.
+    pub fn from_geometry(geometry: MapGeometry) -> Self {
+        Self::allocate(geometry.stride(), geometry.size_diamond())
+    }
+
+    /// Build a fixture with an independently sized square and diamond.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn new(width: usize, diamond_min: i32, diamond_max: i32) -> Self {
+        Self::allocate(width, SizeDiamond::from_bounds(diamond_min, diamond_max))
+    }
+
+    /// Build a `width` x `width` grid bounded by the given diamond.
     ///
     /// Records start zeroed; only diamond-valid cells get their coordinate
     /// stamped (the original's post-alloc iterator loop), so an untouched
     /// record still reads (0, 0) — the "unused slot" convention.
-    pub fn new(width: usize, diamond_min: i32, diamond_max: i32) -> Self {
+    fn allocate(width: usize, diamond: SizeDiamond) -> Self {
         let mut cells = vec![ScratchCell::default(); width * width];
         for y in 0..width {
             for x in 0..width {
                 let (xi, yi) = (x as i32, y as i32);
-                if diamond_min < xi + yi
-                    && xi - yi < diamond_min
-                    && yi - xi < diamond_min
-                    && xi + yi <= diamond_max
-                {
+                if diamond.contains(xi, yi) {
                     let cell = &mut cells[y * width + x];
                     cell.x = x as i16;
                     cell.y = y as i16;
@@ -111,8 +120,7 @@ impl RmgScratch {
             cells,
             shore_masks: vec![-1; 2 * width * width],
             shore_enables: vec![true; 2 * width * width],
-            diamond_min,
-            diamond_max,
+            diamond,
         }
     }
 
@@ -152,7 +160,7 @@ impl RmgScratch {
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn diamond_bounds(&self) -> (i32, i32) {
-        (self.diamond_min, self.diamond_max)
+        self.diamond.bounds()
     }
 
     /// Linear index used by every phase.
@@ -183,10 +191,7 @@ impl RmgScratch {
     /// That asymmetry is load-bearing: a cell on the far diagonal is inside,
     /// one on the near diagonal is not.
     pub fn in_diamond(&self, x: i32, y: i32) -> bool {
-        self.diamond_min < x + y
-            && x - y < self.diamond_min
-            && y - x < self.diamond_min
-            && x + y <= self.diamond_max
+        self.diamond.contains(x, y)
     }
 
     /// The region stage's explicit reset: ownership and stamps to -1.

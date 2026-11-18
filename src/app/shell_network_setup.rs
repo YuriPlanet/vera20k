@@ -40,7 +40,6 @@ use crate::app::frontend::shell_transition;
 use crate::app::frontend::skirmish_session::SetupProfile;
 use crate::app::match_runtime::session::NetworkVacancy;
 use crate::app::match_runtime::session::SessionMode;
-use crate::app::shell_lan::LanJoinAcceptance;
 use crate::skirmish_launch::{SkirmishHumanSlot, SkirmishLaunchSession};
 use crate::ui::multiplayer_setup::{MultiplayerSetupState, SetupDialog, SetupFlavor};
 use crate::ui::wol_chat::WolChatLine;
@@ -96,11 +95,6 @@ pub(crate) enum NetworkSetupRequest {
     Advertise,
     /// VERA's room: the host's Balance sends `/balance` as typed.
     Balance,
-    /// C2 0x497 and timer 0x14AF8: one ping request per channel user
-    /// (API2+0x18, 1000 ms timeout).
-    RequestPings,
-    /// Host timer 0x14AF8 `007A0F40`: broadcast `"P<n>"` and the name,ping list.
-    BroadcastPings,
     /// Host join sink `007A6E7D`: tell a new user which row is the observer
     /// row (`"O<digit>"`, 8 when there is none).
     ObserverSlot {
@@ -127,8 +121,8 @@ pub(crate) enum StartPhase {
 
 impl StartPhase {
     /// Native's drops while StartGame is pending: the parse's option texts,
-    /// `A` and `K` (`0x5E3E73..0x5E3E90`), a guest's `R` (`0x7A8260`) and
-    /// the host's ping requests. Preparing takes them:
+    /// `A` and `K` (`0x5E3E73..0x5E3E90`) and a guest's `R` (`0x7A8260`).
+    /// Preparing takes them:
     /// its guests' `A` and `K` on the final revision complete it, and an `R`
     /// cancels it.
     pub(crate) fn submitted(self) -> bool {
@@ -156,10 +150,6 @@ pub(crate) struct NetworkSetupProtocol {
     external: bool,
     /// Written only through [`Self::set_start_phase`].
     start_phase: StartPhase,
-    /// WOL host `SetTimer(0x14AF8, 5000)` (`0x7914FF`).
-    ping_deadline: Option<Instant>,
-    /// WOL `00B76440`: last ping per participant name (`007A0EA0`).
-    pings: Vec<(String, i32)>,
     /// WOL guest `[0xA8D610]`: the first other user the user-list sink
     /// added (`0x7A7627..0x7A763D`); its row shows `wolhost.pcx`.
     wol_host: Option<String>,
@@ -386,16 +376,13 @@ impl NetworkSetupProtocol {
 
     fn new(dialog: SetupDialog, quick_match: bool) -> Self {
         let host = dialog.host;
-        // C2's 0x497 (the advertisement, the pings and their timer) never
-        // runs without C2.
+        // C2's 0x497 (the advertisement) never runs without C2.
         let wol_host = dialog.wol() && host && !quick_match;
         Self {
             locked: false,
             quick_match,
             external: false,
             start_phase: StartPhase::Idle,
-            ping_deadline: wol_host.then(|| Instant::now() + wol::PING_PERIOD),
-            pings: Vec::new(),
             wol_host: None,
             wol_verify: None,
             start_requested: false,
@@ -415,11 +402,10 @@ impl NetworkSetupProtocol {
             quiet_joins_until: (!dialog.wol() && !host).then(|| Instant::now() + QUIET_JOINS),
             watching: RoomWatching::Off,
             requests: if wol_host {
-                // C2 0x497: advertisement 78F000, then one ping per user.
+                // C2 0x497: the advertisement 78F000.
                 vec![
                     NetworkSetupRequest::PublishOptions,
                     NetworkSetupRequest::Advertise,
-                    NetworkSetupRequest::RequestPings,
                 ]
             } else if host && !quick_match {
                 vec![NetworkSetupRequest::PublishOptions]
@@ -430,12 +416,11 @@ impl NetworkSetupProtocol {
     }
 
     /// A launcher's or a watch's setup (`external`): with no dialog it
-    /// publishes no options or advertisement and runs no ping timer, since a
-    /// launcher or the lobby agreed the room.
+    /// publishes no options or advertisement, since a launcher or the lobby
+    /// agreed the room.
     fn dialogless(dialog: SetupDialog) -> Self {
         Self {
             external: true,
-            ping_deadline: None,
             requests: Vec::new(),
             ..Self::new(dialog, false)
         }
@@ -480,13 +465,6 @@ impl NetworkSetupProtocol {
                 LanGoWait::HostSending { .. } | LanGoWait::GuestPreparing | LanGoWait::GuestSending
             )
         )
-    }
-
-    pub(crate) fn ping(&self, name: &str) -> Option<i32> {
-        self.pings
-            .iter()
-            .find(|(known, _)| known == name)
-            .map(|(_, ping)| *ping)
     }
 
     pub(crate) fn take_service_requests(&mut self) -> Vec<NetworkSetupRequest> {
@@ -879,18 +857,29 @@ impl App {
         true
     }
 
-    /// Packet7 closes BB before full host options arrive. Retained options
-    /// supply the initial controls, but map/mode are unconfigured in BD and
-    /// Accept remains disabled until a subsequent map-availability response.
-    pub(crate) fn open_lan_joined_setup(state: &mut AppState, acceptance: LanJoinAcceptance) {
-        let mode = state.frontend.skirmish_modes.first().cloned();
-        let Some(mode) = mode else {
-            return;
+    /// A guest's setup before the host's full options arrive: retained
+    /// options supply the initial controls, with the first mode, no map and
+    /// the local node alone in rows that are all Open. LAN BD opens when
+    /// Packet7 closes BB; the packet7 peer's identity belongs to the service
+    /// envelope until the type3 roster admission, and Accept stays disabled
+    /// until a map-availability response. WOL C9 adds its own steps
+    /// ([`App::open_wol_joined_setup`]).
+    ///
+    /// Returns whether the setup opened; a refused one reopens the service
+    /// lobby.
+    pub(crate) fn open_joined_setup(
+        state: &mut AppState,
+        local: SkirmishHumanSlot,
+        observer_row: Option<u8>,
+        flavor: SetupFlavor,
+    ) -> bool {
+        let Some(mode) = state.frontend.skirmish_modes.first().cloned() else {
+            return false;
         };
         let launch = SkirmishLaunchSession::from_rows(
             crate::skirmish_launch::SkirmishLaunchMode::from_game_mode(&mode),
             None,
-            vec![acceptance.local],
+            vec![local],
             0,
             Vec::new(),
             state
@@ -899,19 +888,19 @@ impl App {
                 .launch_options_base
                 .clone(),
         );
-        // The packet7 peer's identity belongs to the service envelope until
-        // the original type3 roster admission; it is not a fabricated node.
-        let dialog = setup_dialog(state, false, SetupFlavor::Lan);
+        let dialog = setup_dialog(state, false, flavor);
         if let Err(error) = install_setup(
             state,
             launch,
             dialog,
             [NetworkVacancy::Open; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT],
-            acceptance.observer_row,
+            observer_row,
         ) {
-            log::error!("Could not admit LAN join: {error:#}");
-            Self::open_lan_lobby(state);
+            log::error!("Could not admit the {flavor:?} join: {error:#}");
+            open_service_lobby(state, dialog);
+            return false;
         }
+        true
     }
 }
 
@@ -1371,7 +1360,6 @@ mod tests {
             vec![
                 NetworkSetupRequest::PublishOptions,
                 NetworkSetupRequest::Advertise,
-                NetworkSetupRequest::RequestPings,
             ]
         );
         host.record_remote_user_left(true, false);

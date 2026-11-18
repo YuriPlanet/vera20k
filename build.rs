@@ -31,8 +31,9 @@ fn main() {
 /// alone cannot identify two different development builds. Hash portable
 /// source inputs (`network_build::add_source`), never paths on the build
 /// machine, retail data, credentials or timestamps, and every enabled Cargo
-/// feature but the test groups. The same source and features therefore give
-/// the same hash on every platform.
+/// feature but the test groups and the browser's thread pool
+/// (`network_build::add_features`). The same source and features therefore
+/// give the same hash on every platform.
 fn multiplayer_build_identity() {
     use std::path::{Path, PathBuf};
     fn sources(directory: &Path, files: &mut Vec<PathBuf>) {
@@ -77,21 +78,9 @@ fn multiplayer_build_identity() {
             &std::fs::read(&file).expect("read multiplayer build source"),
         );
     }
-    // The test group features choose which tests compile, not how the game
-    // plays (src/test_group_cfgs.rs): they stay out of the identity.
-    let mut features: Vec<_> = std::env::vars()
-        .filter_map(|(key, _)| {
-            (key.starts_with("CARGO_FEATURE_")
-                && !key.starts_with("CARGO_FEATURE_TEST_FOCUS")
-                && !key.starts_with("CARGO_FEATURE_TESTS_"))
-            .then_some(key)
-        })
-        .collect();
-    features.sort();
-    for feature in features {
+    let variables = std::env::vars().map(|(name, _)| name);
+    for feature in network_build::add_features(&mut input, variables) {
         println!("cargo::rerun-if-env-changed={feature}");
-        input.extend_from_slice(feature.as_bytes());
-        input.push(0);
     }
     println!(
         "cargo::rustc-env=VERA20K_NETWORK_BUILD={}",

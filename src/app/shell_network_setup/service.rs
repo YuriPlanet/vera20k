@@ -85,11 +85,6 @@ pub(crate) enum NetworkSetupEvent {
     Negotiated {
         result: u8,
     },
-    /// A WOL ping result for one user (`007A0EA0`).
-    Ping {
-        name: String,
-        ping: i32,
-    },
 }
 
 /// A LAN guest's room closed because its host left or stopped answering.
@@ -148,7 +143,6 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             || !matches!(
                 event,
                 NetworkSetupEvent::GameStarted { .. }
-                    | NetworkSetupEvent::Ping { .. }
                     | NetworkSetupEvent::PlayerChoices { .. }
                     | NetworkSetupEvent::Teams(_)
                     | NetworkSetupEvent::VerifyStarted { .. }
@@ -192,9 +186,9 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 super::cooperative::guest_joined(state)?;
             }
             if dialog.host {
-                // 0x7A6E7D..9E: observer row, slot names, options, pings,
-                // then the refreshed advertisement (0x78F000, skipped in
-                // modes 1-3 at 0x7A6B0D).
+                // 0x7A6E7D..9E: observer row, slot names, options, then
+                // the refreshed advertisement (0x78F000, skipped in modes
+                // 1-3 at 0x7A6B0D).
                 let row = state
                     .match_state
                     .session
@@ -209,7 +203,6 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                     NetworkSetupRequest::ObserverSlot { name, row },
                     NetworkSetupRequest::PublishRoster,
                     NetworkSetupRequest::PublishOptions,
-                    NetworkSetupRequest::RequestPings,
                 ]);
                 if !quick_match {
                     protocol.requests.push(NetworkSetupRequest::Advertise);
@@ -722,7 +715,6 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
         NetworkSetupEvent::GameStarted { users, pings } => {
             super::wol::game_started(state, users, pings)?;
         }
-        NetworkSetupEvent::Ping { name, ping } => super::wol::ping(state, name, ping)?,
         NetworkSetupEvent::VerifyStarted { pairs } => {
             if pairs {
                 super::wol::verify_connected(state, 0)?;
@@ -1368,13 +1360,12 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     auto_accept(state);
     seat_queue(state);
     point_out_briefing(state);
-    let pings = super::wol::poll(state);
     let go = poll_go(state);
     // A direct spawn's LAN service renews setup leases and waits for its
     // peers before GO; keep the frame loop servicing it.
     let direct = (super::external(state) && !super::dialog(state).wol())
         .then(|| Instant::now() + std::time::Duration::from_millis(16));
-    pings.into_iter().chain(go).chain(direct).min()
+    go.into_iter().chain(direct).min()
 }
 
 /// VERA's game room (`SetupDialog::modern`) presses Accept for a guest

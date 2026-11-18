@@ -143,7 +143,7 @@ Commands and their payloads:
 | `watch` / `renew_watch` / `unwatch` | `{match_id}` ([Watching](#watching)) |
 | `map_upload` | `{digest,byte_length,offset,data,resource?}` |
 | `chat` | `{text,to:[name],action,visit?}` |
-| `ping` | `{}` (accepted and ignored) |
+| `ping` | `{}` (accepted and ignored; only older games send it) |
 | `locales` | `{names:[name]}` |
 | `set_locale` | `{locale}` |
 | `buddies` | `{}` |

@@ -1957,6 +1957,39 @@ fn decode_batch(bytes: &[u8], house: i8, frame: u32) -> Result<Vec<CommandRecord
     Ok(records)
 }
 
+/// The sessions and STATUS the tests here and in `live_commands_tests` build on.
+#[cfg(all(test, tests_net))]
+pub(super) mod fixtures {
+    use super::*;
+    use vera20k_relay_protocol::OrderStatus;
+
+    /// The session of source 0 in a room whose sources play `houses` in
+    /// order, at 30 frames a second.
+    pub(in crate::net::live_commands) fn session_for(houses: &[i8]) -> SequencedSession {
+        let mut roster = [None; MAX_PEERS as usize];
+        for (place, &house) in roster.iter_mut().zip(houses) {
+            *place = Some(house);
+        }
+        SequencedSession::with_roster(roster, 0, [0; 32], 30)
+    }
+
+    /// The STATUS of a started room of sources 0 and 1 that sealed nothing yet.
+    pub(in crate::net::live_commands) fn started_status() -> OrderStatus {
+        OrderStatus {
+            head_frame: 0,
+            oldest_seq: 1,
+            next_seq: 1,
+            active_sources: 3,
+            tick_hz: 30,
+            start_delay_ms: 0,
+            started: true,
+            feedback: Default::default(),
+            watch_sample: None,
+            silent_sources: 0,
+        }
+    }
+}
+
 #[cfg(all(test, tests_net))]
 mod service_clock_tests {
     use super::service_due;
@@ -1974,6 +2007,7 @@ mod service_clock_tests {
 
 #[cfg(all(test, tests_net))]
 mod desync_tests {
+    use super::fixtures::session_for;
     use super::*;
 
     /// The relay's DESYNC ends the match in the frame after it. The log
@@ -1981,9 +2015,7 @@ mod desync_tests {
     /// side's House when this PC is the outlier.
     #[test]
     fn a_relay_desync_names_the_house_this_pc_differs_from() {
-        let mut houses = [None; 30];
-        houses[..3].copy_from_slice(&[Some(0), Some(4), Some(2)]);
-        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let mut session = session_for(&[0, 4, 2]);
         session.samples.push_back((15, 0x1111));
         for entry in [
             OrderEntry::FrameEnd {
@@ -2037,30 +2069,22 @@ mod desync_tests {
 
 #[cfg(all(test, tests_net))]
 mod restore_tests {
+    use super::fixtures::{session_for, started_status};
     use super::*;
     use vera20k_relay_protocol::OrderStatus;
 
     fn status(next_seq: u64, head_frame: u32) -> OrderEvent {
         OrderEvent::Status(OrderStatus {
             head_frame,
-            oldest_seq: 1,
             next_seq,
-            active_sources: 3,
-            tick_hz: 30,
-            start_delay_ms: 0,
-            started: true,
-            feedback: Default::default(),
-            watch_sample: None,
-            silent_sources: 0,
+            ..started_status()
         })
     }
 
     /// A relay that loses the match later does not unsay that it started.
     #[test]
     fn the_report_keeps_that_the_match_started() {
-        let mut houses = [None; 30];
-        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
-        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let mut session = session_for(&[0, 1]);
         assert!(!session.delivery_counters().started);
         session.receive(status(1, 0), Instant::now()).unwrap();
         let lost = OrderEvent::Error {
@@ -2076,9 +2100,7 @@ mod restore_tests {
     /// later, or to a restored session, is the service losing the match.
     #[test]
     fn an_inactive_room_is_a_cancelled_start_only_before_the_match_started() {
-        let mut houses = [None; 30];
-        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
-        let session = || SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let session = || session_for(&[0, 1]);
         let inactive = || OrderEvent::Error {
             code: OrderError::Inactive,
             expected: 0,
@@ -2131,9 +2153,7 @@ mod restore_tests {
     /// a restore ends only once the world has read and caught up with it.
     #[test]
     fn ends_a_restore_only_once_the_world_caught_up() {
-        let mut houses = [None; 30];
-        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
-        let mut session = SequencedSession::with_roster(houses, 0, [7; 32], 30);
+        let mut session = session_for(&[0, 1]);
         session.begin_restore();
         session.next_sequence = 500;
 
@@ -2155,6 +2175,7 @@ mod restore_tests {
 
 #[cfg(all(test, tests_net))]
 mod stall_tests {
+    use super::fixtures::{session_for, started_status};
     use super::*;
 
     /// Federated relays whose link failed still answer, but the ordered
@@ -2162,9 +2183,7 @@ mod stall_tests {
     /// leaves without waiting on that stream.
     #[test]
     fn a_stream_that_stands_still_while_its_relay_answers_is_reconnecting() {
-        let mut houses = [None; 30];
-        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
-        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let mut session = session_for(&[0, 1]);
         session.started = true;
         session.head_frame = 40;
         session.last_progress = Some((1_000, (40, 90, 90)));
@@ -2179,9 +2198,7 @@ mod stall_tests {
     }
 
     fn paused_at_100() -> SequencedSession {
-        let mut houses = [None; 30];
-        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
-        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let mut session = session_for(&[0, 1]);
         session.started = true;
         session.head_frame = 100;
         session.pause.paused = true;
@@ -2233,26 +2250,12 @@ mod stall_tests {
     /// must not read as a stall before frame 1 arrives.
     #[test]
     fn the_start_of_a_match_is_not_a_stall() {
-        let mut houses = [None; 30];
-        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
-        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let mut session = session_for(&[0, 1]);
         session.last_progress = Some((1_000, (0, 1, 1)));
         let now = 1_000 + 40_000;
         session.last_response = Some(now);
-        let status = vera20k_relay_protocol::OrderStatus {
-            head_frame: 0,
-            oldest_seq: 1,
-            next_seq: 1,
-            active_sources: 3,
-            tick_hz: 30,
-            start_delay_ms: 0,
-            started: true,
-            feedback: Default::default(),
-            watch_sample: None,
-            silent_sources: 0,
-        };
         session
-            .receive(OrderEvent::Status(status), Instant::now())
+            .receive(OrderEvent::Status(started_status()), Instant::now())
             .unwrap();
         assert_eq!(session.recovery_status(now, 0), None);
     }
@@ -2260,15 +2263,14 @@ mod stall_tests {
 
 #[cfg(all(test, tests_net))]
 mod delivery_counter_tests {
+    use super::fixtures::session_for;
     use super::*;
 
     /// A local batch's round trip runs from its first transmission to the
     /// receipt of the frame the relay sealed it into, counted once.
     #[test]
     fn a_sealed_frame_counts_each_local_batch_round_trip_once() {
-        let mut houses = [None; 30];
-        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
-        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let mut session = session_for(&[0, 1]);
         let sent = Instant::now();
         session.command_traces.push_back(CommandDeliveryTrace {
             batch_id: 1,
@@ -2297,6 +2299,7 @@ mod delivery_counter_tests {
 
 #[cfg(all(test, tests_net))]
 mod departure_tests {
+    use super::fixtures::{session_for, started_status};
     use super::*;
     use crate::sim::command::EXIT_OPCODE;
 
@@ -2305,9 +2308,7 @@ mod departure_tests {
     /// for its line. A Leave stays EXIT.
     #[test]
     fn lost_departures_remove_the_house_and_leave_stays_exit() {
-        let mut houses = [None; 30];
-        houses[..3].copy_from_slice(&[Some(0), Some(1), Some(2)]);
-        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let mut session = session_for(&[0, 1, 2]);
         let departure = |sequence, frame, source, lost| {
             OrderEvent::Entry(OrderEntry::Departure {
                 sequence,
@@ -2361,9 +2362,7 @@ mod departure_tests {
     /// nothing back is ignored.
     #[test]
     fn an_unreadable_record_ends_the_match_only_while_it_holds_the_cursor() {
-        let mut houses = [None; 30];
-        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
-        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let mut session = session_for(&[0, 1]);
         session.mark_started_for_test();
         session.note_unreadable(0);
         session.check_unreadable(6_000).unwrap();
@@ -2393,21 +2392,11 @@ mod departure_tests {
     #[test]
     fn an_unreadable_status_ends_the_match_before_the_start() {
         use vera20k_relay_protocol::OrderStatus;
-        let mut houses = [None; 30];
-        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
-        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let mut session = session_for(&[0, 1]);
         session.note_unreadable(0);
         let status = OrderStatus {
-            head_frame: 0,
-            oldest_seq: 1,
-            next_seq: 1,
-            active_sources: 3,
-            tick_hz: 30,
-            start_delay_ms: 0,
             started: false,
-            feedback: Default::default(),
-            watch_sample: None,
-            silent_sources: 0,
+            ..started_status()
         };
         session
             .receive(OrderEvent::Status(status), Instant::now())
@@ -2423,28 +2412,31 @@ mod departure_tests {
     }
 
     /// A batch that does not decode departs its sender in its frame
-    /// instead of leaving a sequence gap that every pull repeats.
+    /// instead of leaving a sequence gap that every pull repeats, or ending
+    /// the match: that sender's later batches and departure are ignored.
     #[test]
     fn an_unreadable_batch_departs_its_sender_in_its_frame() {
-        let mut houses = [None; 30];
-        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
-        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let mut session = session_for(&[0, 1]);
+        let unreadable = |sequence, batch_id| OrderEntry::Batch {
+            sequence,
+            frame: 2,
+            source: 1,
+            batch_id,
+            bytes: b"not a batch".to_vec(),
+        };
+        let frame_end = |sequence, frame| OrderEntry::FrameEnd { sequence, frame };
         for event in [
-            OrderEntry::FrameEnd {
-                sequence: 1,
-                frame: 1,
-            },
-            OrderEntry::Batch {
-                sequence: 2,
-                frame: 2,
+            frame_end(1, 1),
+            unreadable(2, 1),
+            unreadable(3, 2),
+            frame_end(4, 2),
+            OrderEntry::Departure {
+                sequence: 5,
+                frame: 3,
                 source: 1,
-                batch_id: 1,
-                bytes: b"not a batch".to_vec(),
+                lost: false,
             },
-            OrderEntry::FrameEnd {
-                sequence: 3,
-                frame: 2,
-            },
+            frame_end(6, 3),
         ] {
             session
                 .receive(OrderEvent::Entry(event), Instant::now())
@@ -2463,115 +2455,16 @@ mod departure_tests {
                 (frame.frame, records)
             })
             .collect();
-        assert_eq!(frames, [(1, vec![]), (2, vec![(EXIT_OPCODE, 1)])]);
-    }
-
-    /// A batch whose contents do not decode ends only its sender's place: it
-    /// leaves at that frame and its later batches and departure are ignored.
-    #[test]
-    fn a_malformed_batch_departs_its_sender_instead_of_ending_the_match() {
-        use std::net::{Ipv4Addr, SocketAddrV4};
-        use vera20k_relay_protocol::{
-            ClientSession, RelayServer, SecretKey, ServerEvent, Ticket, derive_packet_key,
-        };
-        let key = SecretKey::new([5; 32]);
-        let mut server = RelayServer::new(key.clone(), 1);
-        let mut events = |client: &mut ClientSession, bytes: &[u8], now_ms| {
-            let from = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 31000 + u16::from(client.source()));
-            let replies = server.process_at(from, bytes, 1000 + now_ms / 1000, now_ms);
-            replies
-                .unwrap()
-                .into_iter()
-                .flat_map(
-                    |reply| match client.receive_at(&reply.bytes, now_ms).unwrap() {
-                        ServerEvent::Ordering(event) => vec![Ok(event)],
-                        ServerEvent::OrderingPack(events) => events.into_iter().map(Ok).collect(),
-                        ServerEvent::Challenge(cookie) => vec![Err(cookie.to_vec())],
-                        _ => Vec::new(),
-                    },
-                )
-                .collect::<Vec<_>>()
-        };
-        let certificate = OrderingCertificate {
-            room: [9; 16],
-            sources_mask: 3,
-            tick_hz: 30,
-            expires: 2000,
-            pacing: Default::default(),
-            ordered_alone: false,
-        }
-        .sign(&key)
-        .unwrap();
-        let mut clients: Vec<_> = (0..2u8)
-            .map(|source| {
-                let ticket = Ticket {
-                    room: [9; 16],
-                    player: [source + 1; 16],
-                    source,
-                    generation: 1,
-                    expires: 1200,
-                    nonce: [source + 1; 16],
-                }
-                .sign(&key)
-                .unwrap();
-                let packet_key = *derive_packet_key(&key, &ticket).expose_for_https();
-                ClientSession::new(&ticket, packet_key, [7; 32]).unwrap()
-            })
-            .collect();
-        let mut bytes = Vec::new();
-        for client in &mut clients {
-            client.probe_at(0, &mut bytes).unwrap();
-            let [Err(cookie)] = &events(client, &bytes, 0)[..] else {
-                panic!("challenge");
-            };
-            client.confirm_at(&cookie.clone(), 0, &mut bytes).unwrap();
-            events(client, &bytes, 0);
-            client
-                .configure_ordering_at(&certificate, [7; 32], 0, &mut bytes)
-                .unwrap();
-            events(client, &bytes, 0);
-        }
-        // The start is due 200 ms after both were ready; the next
-        // READY_REQUEST's STATUS reports it.
-        for client in &mut clients {
-            client
-                .configure_ordering_at(&certificate, [7; 32], 300, &mut bytes)
-                .unwrap();
-            events(client, &bytes, 300);
-        }
-        for batch_id in 1..=2 {
-            assert_eq!(
-                clients[1].seal_ordering_batch(b"not a batch").unwrap(),
-                batch_id
-            );
-            assert!(clients[1].poll_uplink(300 + batch_id, &mut bytes));
-            events(&mut clients[1], &bytes, 300 + batch_id);
-        }
-        clients[1].leave_ordering_at(400, &mut bytes).unwrap();
-        events(&mut clients[1], &bytes, 400);
-        clients[0].pull_ordering_at(1, 700, &mut bytes).unwrap();
-        let mut houses = [None; 30];
-        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
-        let mut session = SequencedSession::with_roster(houses, 0, [7; 32], 30);
-        for event in events(&mut clients[0], &bytes, 700) {
-            if let Ok(event @ OrderEvent::Entry(_)) = event {
-                session.receive(event, Instant::now()).unwrap();
-            }
-        }
-        session.assemble().unwrap();
-        let records: Vec<_> = session
-            .frames
-            .iter()
-            .flat_map(|frame| &frame.records)
-            .map(|record| (record.opcode(), record.house_id()))
-            .collect();
-        assert!(session.frames.len() > 2);
-        assert_eq!(records, [(EXIT_OPCODE, 1)]);
+        assert_eq!(
+            frames,
+            [(1, vec![]), (2, vec![(EXIT_OPCODE, 1)]), (3, vec![])]
+        );
     }
 }
 
 #[cfg(all(test, tests_net))]
 mod frame_limit_tests {
+    use super::fixtures::session_for;
     use super::*;
     use crate::sim::command::DESTRUCT_OPCODE;
 
@@ -2580,11 +2473,7 @@ mod frame_limit_tests {
     /// after its last batch.
     #[test]
     fn the_largest_federated_frame_is_assembled() {
-        let mut houses = [None; 30];
-        for (source, house) in houses.iter_mut().enumerate() {
-            *house = Some(source as i8);
-        }
-        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let mut session = session_for(&(0..30).collect::<Vec<_>>());
         let batches = MAX_FRAME_BATCHES * MAX_FEDERATED_RELAYS;
         let mut sequence = 1..;
         let mut receive = |entry| {
@@ -2625,6 +2514,7 @@ mod frame_limit_tests {
 
 #[cfg(all(test, tests_net))]
 mod pace_tests {
+    use super::fixtures::{session_for, started_status};
     use super::*;
 
     /// Lagging needs frames waiting two seconds; behind also needs two report
@@ -2664,9 +2554,7 @@ mod pace_tests {
     /// rate, and names the slow player in the first frame it applies to.
     #[test]
     fn a_rate_marker_paces_later_frames_and_names_the_slow_player() {
-        let mut houses = [None; 30];
-        houses[..2].copy_from_slice(&[Some(0), Some(4)]);
-        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let mut session = session_for(&[0, 4]);
         let rate = |sequence, frame, frames_per_second, source| OrderEntry::Rate {
             sequence,
             frame,
@@ -2713,9 +2601,7 @@ mod pace_tests {
     /// player left).
     #[test]
     fn another_players_pause_names_them_when_the_world_reaches_it() {
-        let mut houses = [None; 30];
-        houses[..2].copy_from_slice(&[Some(0), Some(4)]);
-        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let mut session = session_for(&[0, 4]);
         let pause = |sequence, frame, epoch, paused, source| OrderEntry::Pause {
             sequence,
             frame,
@@ -2796,21 +2682,12 @@ mod pace_tests {
     #[test]
     fn another_player_the_relay_stops_hearing_is_named_until_heard_again() {
         use vera20k_relay_protocol::OrderStatus;
-        let mut houses = [None; 30];
-        houses[..3].copy_from_slice(&[Some(0), Some(4), Some(7)]);
-        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let mut session = session_for(&[0, 4, 7]);
         let status = |session: &mut SequencedSession, silent_sources: u32, active_sources: u32| {
             let status = OrderStatus {
-                head_frame: 0,
-                oldest_seq: 1,
-                next_seq: 1,
                 active_sources,
-                tick_hz: 30,
-                start_delay_ms: 0,
-                started: true,
-                feedback: Default::default(),
-                watch_sample: None,
                 silent_sources,
+                ..started_status()
             };
             session
                 .receive(OrderEvent::Status(status), Instant::now())
@@ -2831,11 +2708,12 @@ mod pace_tests {
 
 #[cfg(all(test, tests_net))]
 mod watch_tests {
+    use super::fixtures::{session_for, started_status};
     use super::*;
     use vera20k_relay_protocol::OrderStatus;
 
-    fn watcher(houses: [Option<i8>; 30]) -> SequencedSession {
-        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+    fn watcher() -> SequencedSession {
+        let mut session = session_for(&[0, 1]);
         session.watch = Some(Watch {
             delay_seconds: 120,
             samples: VecDeque::new(),
@@ -2850,9 +2728,7 @@ mod watch_tests {
     /// left and their frames ran.
     #[test]
     fn a_watcher_reads_its_players_stream_to_the_end() {
-        let mut houses = [None; 30];
-        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
-        let mut session = watcher(houses);
+        let mut session = watcher();
         let departure = |sequence, source, lost| {
             OrderEvent::Entry(OrderEntry::Departure {
                 sequence,
@@ -2885,9 +2761,7 @@ mod watch_tests {
     /// so it has read a match before the relay forgets it.
     #[test]
     fn a_watcher_keeps_every_frame_it_reads() {
-        let mut houses = [None; 30];
-        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
-        let mut session = watcher(houses);
+        let mut session = watcher();
         for frame in 1..=600 {
             let end = OrderEntry::FrameEnd {
                 sequence: u64::from(frame),
@@ -2906,21 +2780,12 @@ mod watch_tests {
     /// the watch, an equal one or a frame not reached yet does not.
     #[test]
     fn a_watcher_stops_where_its_world_differs_from_the_players() {
-        let mut houses = [None; 30];
-        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
-        let mut session = watcher(houses);
+        let mut session = watcher();
         let status = |sample| {
             OrderEvent::Status(OrderStatus {
                 head_frame: 600,
-                oldest_seq: 1,
-                next_seq: 1,
-                active_sources: 3,
-                tick_hz: 30,
-                start_delay_ms: 0,
-                started: true,
-                feedback: Default::default(),
                 watch_sample: Some(sample),
-                silent_sources: 0,
+                ..started_status()
             })
         };
         session.receive(status((240, 7)), Instant::now()).unwrap();

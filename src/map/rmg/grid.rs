@@ -5,8 +5,9 @@
 //! order is load-bearing: every per-cell RNG draw happens in `DiamondScan`
 //! order, so a different traversal silently reorders the whole draw stream.
 
+use super::MapGeometry;
 use super::tiles::TILE_UNASSIGNED;
-
+use crate::map::playfield::SizeDiamond;
 use crate::util::direction::DIRECTION_DELTAS;
 
 /// One generated cell — the fields the generation phases touch.
@@ -65,8 +66,7 @@ pub enum CellRef {
 #[derive(Debug, Clone)]
 pub struct RmgGrid {
     width: usize,
-    diamond_min: i32,
-    diamond_max: i32,
+    diamond: SizeDiamond,
     cells: Vec<GridCell>,
     /// The shared out-of-band fallback cell. The original returns one static
     /// cell for every invalid lookup, writing the requested coordinate into
@@ -79,11 +79,21 @@ pub struct RmgGrid {
 }
 
 impl RmgGrid {
+    /// Allocate the working cells for a generated map.
+    pub fn from_geometry(geometry: MapGeometry) -> Self {
+        Self::allocate(geometry.stride(), geometry.size_diamond())
+    }
+
+    /// Build a fixture with an independently sized square and diamond.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn new(width: usize, diamond_min: i32, diamond_max: i32) -> Self {
+        Self::allocate(width, SizeDiamond::from_bounds(diamond_min, diamond_max))
+    }
+
+    fn allocate(width: usize, diamond: SizeDiamond) -> Self {
         Self {
             width,
-            diamond_min,
-            diamond_max,
+            diamond,
             // Diagonal-major (see `slot`): rows of constant x + y, 2W of them.
             cells: vec![GridCell::default(); 2 * width * width],
             // Original Cell constructor47BC11 writesFFFF, not zero;
@@ -113,17 +123,13 @@ impl RmgGrid {
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn diamond_bounds(&self) -> (i32, i32) {
-        (self.diamond_min, self.diamond_max)
+        self.diamond.bounds()
     }
 
     /// Whether a cell exists at this coordinate — the allocation predicate
     /// the original uses when building the map (asymmetric diamond band).
     pub fn is_valid(&self, x: i32, y: i32) -> bool {
-        self.diamond_min < x + y
-            && x - y < self.diamond_min
-            && y - x < self.diamond_min
-            && x + y <= self.diamond_max
-            && self.in_bounds(x, y)
+        self.diamond.contains(x, y) && self.in_bounds(x, y)
     }
 
     fn in_bounds(&self, x: i32, y: i32) -> bool {
@@ -238,9 +244,10 @@ impl RmgGrid {
     /// inside the off-axis bounds, so the first coordinate past the far
     /// diagonal is where the original's null-cell check stops it.
     pub fn native_cells(&self) -> NativeCells {
+        let (near, far) = self.diamond.bounds();
         NativeCells {
-            scan: DiamondScan::new(self.diamond_min),
-            diamond_max: self.diamond_max,
+            scan: DiamondScan::new(near),
+            diamond_max: far,
         }
     }
 }
@@ -378,6 +385,16 @@ mod tests {
         grid.get_mut(3, 2).unwrap().tile = 42;
         assert_eq!(grid.get(3, 2).unwrap().tile, 42);
         assert_eq!(grid.get(2, 3).unwrap().tile, TILE_UNASSIGNED);
+
+        // A fixture may allocate a smaller square than its logical diamond.
+        let scratch = crate::map::rmg::RmgScratch::new(4, 4, 12);
+        let mut grid = RmgGrid::new(4, 4, 12);
+        assert!(scratch.in_diamond(5, 3));
+        assert!(grid.native_cells().any(|cell| cell == (5, 3)));
+        assert!(grid.get(5, 3).is_none());
+        let held = grid.cell_ref(5, 3);
+        assert_eq!(held, CellRef::Border);
+        assert_eq!(grid.ref_coord(held), (5, 3));
     }
 
     #[test]

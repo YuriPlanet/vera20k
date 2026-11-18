@@ -49,7 +49,7 @@ python3 -m http.server 8000 --bind 127.0.0.1 --directory target/wasm-dist
 
 ## 多线程构建（实验性）
 
-`--threads` 让每个 tick 在绘制旁边的模拟 Web Worker 上运行，tick 内的并行工作运行在由 Web Worker 组成的 Rayon 线程池上，可以和 `--network`、`--lan` 同时使用。它需要固定版本的 nightly，因为标准库要带 Wasm atomics 重新编译。桌面版和默认浏览器包仍使用 stable。
+`--threads` 让每个 tick 在绘制旁边的模拟 Web Worker 上运行，tick 内的并行工作运行在由 Web Worker 组成的 Rayon 线程池上，可以和 `--network`、`--lan` 同时使用。它需要固定版本的 nightly，因为标准库要带 Wasm atomics 重新编译。桌面版和默认浏览器包仍使用 stable。这个选项不计入[构建校验](Networking.md#build-check)：多线程包可以和不带它构建的同一个包联机。
 
 ```sh
 rustup toolchain install nightly-2026-10-15 --profile minimal --component rust-src --target wasm32-unknown-unknown

@@ -1,17 +1,14 @@
 //! WOL-only parts of the setup dialogs C2 (0078F7F0) and C9 (00791B10).
 //! Everything shared with BC/BD stays in the parent owner; this module holds
-//! the StartGame/OnGameStart handshake, the WOL chat line, the host ping
-//! timer and the readiness clearing native WOL performs on option edits.
+//! the StartGame/OnGameStart handshake, the WOL chat line and the readiness
+//! clearing native WOL performs on option edits.
 
+use super::actions::queue;
 use super::chat_notice as message;
 use super::*;
 use crate::skirmish_launch::LaunchTeam;
 use crate::ui::lan_shell::LanChatLine;
 use crate::ui::wol_chat;
-use std::time::Duration;
-
-/// `SetTimer(hDlg, 0x14AF8, 5000)` at `0x7914FF`.
-pub(super) const PING_PERIOD: Duration = Duration::from_millis(5000);
 
 /// One server user record of the game channel at OnGameStart. `flags` bit0
 /// marks the channel owner (`0x794F6F..`: the first such row decides).
@@ -46,34 +43,9 @@ impl App {
         observer_row: Option<u8>,
     ) {
         local.slot = unset_choices();
-        let Some(mode) = state.frontend.skirmish_modes.first().cloned() else {
-            return;
-        };
-        let launch = SkirmishLaunchSession::from_rows(
-            crate::skirmish_launch::SkirmishLaunchMode::from_game_mode(&mode),
-            None,
-            vec![local],
-            0,
-            Vec::new(),
-            state
-                .frontend
-                .skirmish_shell_state
-                .launch_options_base
-                .clone(),
-        );
-        let dialog = super::setup_dialog(state, false, SetupFlavor::Wol);
-        if let Err(error) = install_setup(
-            state,
-            launch,
-            dialog,
-            [NetworkVacancy::Open; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT],
-            observer_row,
-        ) {
-            log::error!("Could not admit WOL join: {error:#}");
-            open_service_lobby(state, dialog);
-            return;
-        }
-        if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+        if App::open_joined_setup(state, local, observer_row, SetupFlavor::Wol)
+            && let Some(protocol) = state.frontend.network_setup_protocol.as_mut()
+        {
             protocol.accept_eligible = true;
         }
     }
@@ -582,12 +554,6 @@ pub(crate) fn play_player_left(state: &mut AppState) {
     App::play_shell_ui_sound_by_id(state, sound.as_deref());
 }
 
-fn queue(state: &mut AppState, request: NetworkSetupRequest) {
-    if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
-        protocol.requests.push(request);
-    }
-}
-
 /// `005E9850`: clear every acceptance but the host's and enable Accept on C9.
 pub(super) fn clear_guest_acceptance(state: &mut AppState) -> anyhow::Result<()> {
     state.match_state.session.clear_guest_readiness()?;
@@ -671,7 +637,6 @@ pub(super) fn game_started(
     // 0x7A7E03: [0xB77E28] = 2 until the abort or the match, so packets,
     // joins and the setup's own controls stay dropped under 0x130.
     protocol.set_start_phase(super::StartPhase::Submitted);
-    protocol.ping_deadline = None;
     protocol.wol_verify = Some(crate::ui::wol_verify::WolVerifyDialog::open(names));
     Ok(())
 }
@@ -981,38 +946,6 @@ fn local_nickname(state: &AppState) -> String {
         .local_player_name()
         .unwrap_or_default()
         .to_owned()
-}
-
-/// Host `WM_TIMER 0x14AF8`: broadcast the ping list (`007A0F40`) and ask
-/// again, unless a start is pending.
-pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
-    let protocol = state.frontend.network_setup_protocol.as_mut()?;
-    let deadline = protocol.ping_deadline?;
-    let now = Instant::now();
-    if now < deadline {
-        return Some(deadline);
-    }
-    let next = now + PING_PERIOD;
-    protocol.ping_deadline = Some(next);
-    protocol.requests.push(NetworkSetupRequest::BroadcastPings);
-    if !protocol.start_phase.submitted() {
-        protocol.requests.push(NetworkSetupRequest::RequestPings);
-    }
-    Some(next)
-}
-
-/// `007A0EA0`: a ping for a node name updates that node's icon.
-pub(super) fn ping(state: &mut AppState, name: String, ping: i32) -> anyhow::Result<()> {
-    let protocol = state
-        .frontend
-        .network_setup_protocol
-        .as_mut()
-        .ok_or_else(|| anyhow::anyhow!("no setup protocol"))?;
-    match protocol.pings.iter_mut().find(|(known, _)| *known == name) {
-        Some(entry) => entry.1 = ping,
-        None => protocol.pings.push((name, ping)),
-    }
-    Ok(())
 }
 
 #[cfg(all(test, tests_app))]

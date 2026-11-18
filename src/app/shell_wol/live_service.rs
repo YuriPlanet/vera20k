@@ -2635,7 +2635,6 @@ fn request_setup(
                 service.command("advertise", json!({"channel":wire::Channel::from(channel)}));
             }
         }
-        NetworkSetupRequest::RequestPings => service.command("ping", json!({})),
         // VERA's room: the host's Balance is `/balance` as typed.
         NetworkSetupRequest::Balance => {
             service.command("chat", json!({"text":"/balance","to":[],"action":false}))
@@ -2645,9 +2644,7 @@ fn request_setup(
             "chat",
             json!({"text":String::from_utf16_lossy(&text),"to":[],"action":true}),
         ),
-        NetworkSetupRequest::RequestAcceptance
-        | NetworkSetupRequest::BroadcastPings
-        | NetworkSetupRequest::ObserverSlot { .. } => {}
+        NetworkSetupRequest::RequestAcceptance | NetworkSetupRequest::ObserverSlot { .. } => {}
         _ => notice(state, &tr("VERA:SetupOperationUnavailable")),
     }
     Ok(())
@@ -2926,8 +2923,6 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                     notice(state, &tr("VERA:FinishingPreviousMatch"));
                 }
             }
-            // The host's 5 s ping; an outage is reported once by the poll.
-            "ping" => {}
             // A refused ladder lookup leaves the tables as they were; the
             // high-score sink only logs a failure (`0x007A3B30`).
             "ladder" => {}
