@@ -20,8 +20,7 @@
 pub(crate) mod buddies;
 pub(crate) mod buddy;
 mod live_service;
-#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-pub(crate) use live_service::lobby_base_url;
+pub(crate) use live_service::lobby_get;
 pub(crate) mod lobby;
 mod lobby_phrases;
 mod login;

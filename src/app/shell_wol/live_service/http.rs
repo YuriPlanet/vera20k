@@ -350,7 +350,8 @@ pub(super) enum TranslateFailure {
 }
 
 const MAX_BODY_BYTES: u64 = 1024 * 1024;
-const USER_AGENT: &str = concat!("VERA20k/", env!("CARGO_PKG_VERSION"), " multiplayer-client");
+pub(super) const USER_AGENT: &str =
+    concat!("VERA20k/", env!("CARGO_PKG_VERSION"), " multiplayer-client");
 // The server retains1024 events and returns at most256 at a time. Permit
 // concurrent arrivals too, but never release cleanup on a partial history.
 const MAX_CLEANUP_DRAIN_BATCHES: usize = 8;

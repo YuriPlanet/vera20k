@@ -494,7 +494,10 @@ the map's `[Basic] Name=`, `file_name` the `.yrm` name to save it under, and `he
 the base64 of the map's own `[Basic]`, `[Preview]`, `[PreviewPack]`, `[Waypoints]`,
 `[Header]` and `[RandomMap]` lines, byte for byte. No two library maps share a
 `file_name` without case: one whose name would, or whose name has nothing left to save
-under, ends in `-<first 8 hex of its SHA-256>.yrm`. The catalog carries
+under, ends in `-<first 8 hex of its SHA-256>.yrm`. The game skips an entry whose
+`file_name` it would not save as it is: one not ending in `.yrm`, or with a path, a colon,
+a control character, a leading dot, a trailing dot or space, another character Windows
+forbids, or a name Windows reserves. The catalog carries
 `ETag: "lib-<revision>-<16 hex>"`, the hex from its content (catalogs written before:
 `"lib-<revision>"`), and answers 304 to a matching `If-None-Match`, weak or not, or `*`.
 `GET /v1/library/maps/<sha256>` downloads one map, and

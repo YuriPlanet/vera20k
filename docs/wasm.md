@@ -174,7 +174,9 @@ single-player package still returns an explicit unsupported error at network
 entry points. Browser LAN discovery and direct UDP connections are not supported.
 
 The Generate Map dialog, which generates on a thread of its own, and synchronous
-GPU screenshot/capture are also unavailable in the browser. A page makes a random
+GPU screenshot/capture are also unavailable in the browser. So are Choose Map's
+Online Maps row and the online login page's player counts, which the game reads
+from the lobby on threads of their own (`src/app/worker.rs`). A page makes a random
 map's file with `generate_map(input)` instead ([random maps](spawn.md#random-maps)):
 on the threaded package with its pool started it runs on a pool worker, otherwise
 on the page's thread.
