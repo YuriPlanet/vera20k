@@ -252,9 +252,9 @@ impl GameEntity {
     }
     /// 10058737..10058745 publishes the replacement Anim on the effect at
     /// `index`, through
-    /// [`EntityStore::write_held_anim`](crate::sim::entity_store::EntityStore::write_held_anim),
+    /// [`EntityStore::hold_attached_effect_anim`](crate::sim::entity_store::EntityStore::hold_attached_effect_anim),
     /// returning the Anim it replaced.
-    fn hold_attached_effect_anim(
+    pub(in crate::sim) fn hold_attached_effect_anim(
         &mut self,
         index: usize,
         anim: u64,
@@ -795,10 +795,7 @@ mod receiver {
                 let old = self
                     .substrate
                     .entities
-                    .write_held_anim(target, |victim, authority| {
-                        victim.hold_attached_effect_anim(index, anim, authority)
-                    })
-                    .flatten();
+                    .hold_attached_effect_anim(target, index, anim);
                 if let Some(old) = old {
                     self.destroy_anim_with_context(old, rules);
                 }

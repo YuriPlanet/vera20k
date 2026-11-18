@@ -281,19 +281,18 @@ Redundancy follows each player's measured link
 unacknowledged batches, the receive watermark, the per-hop receipt feedback,
 checksums and pace. The relay pushes each turn packed, with the reader's
 unacknowledged records piggybacked into the space the turn leaves. A good link
-sends each batch and turn once. A lossy or jittery link also gets 16 ms uplink
-copies and 8 ms downlink repeats. A congested link gets neither, and a silent
-one only probes. Losses that the receipt feedback shows are retransmitted by the
-relay; a lasting gap falls back to the existing replay reader. Clients and relay
-ship together: older clients are not supported.
+sends each batch and turn once. A lossy link also gets 16 ms uplink copies and
+8 ms downlink repeats; a jittery link gets only the downlink repeats. A congested
+link gets neither, and a silent one only probes. Losses that the receipt feedback
+shows are retransmitted by the relay; a lasting gap falls back to the existing
+replay reader. Clients and relay ship together: older clients are not supported.
 
 Every datagram uses the compact envelope
 (`services/relay/bandwidth-compaction/spec.md`): a 32-bit session the relay
 assigns at admission, a 32-bit hop sequence and a 4-byte truncated HMAC, 13 bytes
 in all. History packs encode each record relative to the previous one and decode
 alone. The receiving client rebuilds the same canonical records, so journal,
-replay and federation are unchanged. Measured traffic is in
-`services/relay/adaptive-transport/results.md`.
+replay and federation are unchanged.
 
 In a match played through one relay, any player
 can use the Pause key or Options' **Pause All Players** / **Resume All Players**
@@ -456,10 +455,10 @@ rollback restores that build's earlier retention and checksums.
 | Startup agreement, native send cadence and command wait; online, the relay timeline's assembly, its departure records and the checks that end the match | `net::live_commands` |
 | Certified online clock, immutable command history and bounded push/replay delivery | `vera20k-relay-protocol` |
 | Local adaptive playout and bounded catch-up presentation | `app::match_runtime::frame_pacer` |
-| LAN packet layouts and options-text encoding | `net::lan_messages` |
+| LAN packet layouts and setup payload framing | `net::lan_messages` |
 | Participant membership, admitted endpoints and launch state | `app::match_runtime::session::MatchSession` |
 | Multiplayer frame-checksum history (`B04474`) and its comparison gate | `sim::command_queue::FrameChecksumState`, held by `app::match_runtime::sim_host::SimHost` |
-| Discovery projection, options parsing and physical LAN lobby/setup service | `app::lan_service` |
+| Discovery projection, physical LAN lobby/setup service and the host's options | `app::lan_service` |
 | Online session, lobby and relay-admission adapter | `app::shell_wol::live_service` |
 | Shared map source, generated staging and verified transfer admission | `map::source`, `app::shell_network_setup::maps` |
 | Setup UI, map admission and pending handoff | `app::shell_network_setup` |
@@ -480,12 +479,23 @@ kick, while its departure removes the admitted participant and endpoint.
 In VERA's rooms the host's own kick also keeps that address and name out for five
 minutes: their joins get the VERA-only denial reason 9, shown as the join ban.
 
+A LAN host sends its full options and its roster as VS31 setup payloads, split over
+the reliable global channel (`net::lan_messages::extended_setup`), in place of gamemd's
+options text (`0x005DBB60`) and roster packet. The options are JSON: the build
+agreement, the admission proofs, any generated map, and `room`, holding the seed, the
+applied speed, the room's `options` whole as online's `launch.options`, the mode, the
+map file and metadata, each player's side, colour, start and team by name, and every
+row's AI words. A guest applies them to the players it has admitted, and once more to a
+player whose Type3 arrives after them (`app::lan_service::options`). Only a game of the
+same build reads them: the join refuses any other with reason 8, so neither a released
+game nor a rollback meets them, and a guest checks the agreement first, saying the
+host's build differs whatever else the options hold.
+
 A VERA room's Teams count, which only its host sets, travels with the host's options:
 online as `launch.options.teams` ([lobby protocol](lobby-protocol.md)), on LAN as
-`teams` beside VERA's room options in the extended options. With it set, the host
-keeps every seated player on one of the room's teams, so guests only show what the host
-sends. A LAN guest from before Teams
-ignores the field and is refused at the build check. Online, an older guest cannot
+`room.options.teams`. With it set, the host keeps every seated player on one of the
+room's teams, so guests only show what the host sends. A LAN guest from before Teams is
+refused at the build check. Online, an older guest cannot
 read the host's options while Teams is set and says the update was invalid, in a room
 that cannot start, since its players' versions differ. A lobby from before Teams
 refuses the field; the host's game then turns Teams Off, says so and sends its options
@@ -509,7 +519,7 @@ Join. A rollback seats newcomers as before.
 With Teams set the map does not limit who plays, only the room's Max players does, so no
 team is ever full: a team's people share its bases where the map runs out of starts
 (`MatchSession::network_shares_bases`). People and AI past the map's seats sit in the
-room's spare rows. A VERA room's LAN options carry all thirty AI rows on any map, where
+room's spare rows. The host's LAN options carry all thirty AI rows on any map, where
 gamemd's text carries eight for a map of up to eight players; a guest of another build is
 refused at the build check. At Start Game, Team Starts gives
 each team a start and the spare starts to the teams with the most players for each; a
@@ -605,7 +615,7 @@ prefers to play, joins the end of the host's join queue; Leave Queue, or picking
 game owns the queue as it owns seating: when a seat frees (a player leaves or starts
 watching, or the host adds a slot or removes an AI), it seats the first spectator in the
 queue as its own Seat would and publishes its options. The queue's order travels online
-as `launch.options.queue` and on LAN as `queue` beside VERA's room options. Every game in
+as `launch.options.queue` and on LAN as `room.options.queue`. Every game in
 the room lists the waiting spectators first, each with its place before its name, and a
 waiting player's own game says its place and when a seat came free. As with Teams, an
 older guest is refused at LAN's build check and online cannot read the options while
@@ -620,7 +630,7 @@ starts in a room. The room offers the sizes past Very Large, the added landform 
 theaters, Advanced, Fair Starts, Extras, Presets and Export Map. A map for more than eight players stages one `W` slot for each start
 (`ScenarioStartStaging::to_w_text`), so its record runs past the native 37 numbers and
 512 bytes, up to 2048 (`maps::checked_staging`); it travels as any random map's does, on
-LAN in the extended options and online as `random_map` ([lobby protocol](lobby-protocol.md)).
+LAN in the host's options and online as `random_map` ([lobby protocol](lobby-protocol.md)).
 The generated rules digest covers VERA's town catalogue and `[Extras]`, which each game
 resolves from its own files, so players whose games would build different towns are
 refused at Start as on any rules difference. In a game read the Ares way (Ares.dll
@@ -653,12 +663,17 @@ Two games play together only on one build: their `shell_network_setup::agreement
 the package version and `VERA20K_NETWORK_BUILD` joined by `:`, must be equal. build.rs hashes
 into `VERA20K_NETWORK_BUILD` the files under `src/` and `services/relay-protocol/src`, the
 manifests, `Cargo.lock` and `build.rs`, by path and content with CRLF line endings counted as
-LF, and every enabled Cargo feature but the test groups. One commit built with the same
-features therefore matches on every platform, and any other difference keeps games apart: a
-default build (`dev-overlays`) never meets a `--no-default-features` release, APK or browser
-package, and browser packages built with other options (`--lan`, `--threads`) do not meet
-each other. Earlier builds add `:0` and their Phobos, NPatch and NPBUG flags (`:0000` in a
-release), which the hash already covers; they are refused as any other build is.
+LF, and every enabled Cargo feature but the test groups and the browser's thread pool
+(`wasm-threads`), which do not change how the game plays (`network_build::add_features`). One
+commit built with the same features therefore matches on every platform, and any other
+difference keeps games apart: a default build (`dev-overlays`) never meets a
+`--no-default-features` release, APK or browser package, and a `--lan` browser package does
+not meet a `--network` one. A browser package built with `--threads` matches the same package
+built without it, and the desktop build with the package's other features
+(`--no-default-features --features wasm-net`), which is how a launcher seats desktop and
+browser players in one room. After a rollback to a build that counts `wasm-threads` and
+compares the build at a start, such a room is refused at its start. Earlier builds add `:0` and their Phobos, NPatch and NPBUG flags (`:0000`
+in a release), which the hash already covers; they are refused as any other build is.
 
 - LAN: the host denies a join from another build (reason 8), and the guest sees Request
   denied and "VERA20k build or enabled gameplay features differ." (`VERA:LanBuildDiffers`).
@@ -681,7 +696,7 @@ A network room plays its host's rules (`skirmish_launch::HostRules`): the host's
 Terrain Deformation box and [Superweapon Limit](superweapon-limit.md). They open as the
 host's skirmish Game Options have them and the host can change them in the room's Game Options. They travel with the host's options, online as
 `launch.options.host_rules` ([lobby protocol](lobby-protocol.md)) and on LAN as
-`host_rules` beside VERA's room options. Every player's game, the host's too, plays
+`room.options.host_rules`. Every player's game, the host's too, plays
 them in place of its own from the next scenario (`ProcessAssets::use_personal_rules`).
 The switches compose over the root each scenario reads, never over the
 cold start or the shell's Country reads, so every player's one rules registry is the
@@ -841,6 +856,12 @@ command stream above is an intentional adaptation.
 - Event packets use the native layouts and persistent compression caches from
   `64B4D0`, `64B660` and `64BDD0`. The packet boundary rejects a semantic event
   without a supported raw command producer rather than inventing a wire form.
+  On LAN every packet, FRAMESYNC probes included, starts with VERA's `VCM\x01`
+  and a little-endian u64 command frontier within the native 558 bytes, and a
+  receiver refuses one without it (`net::event_packet`). VERA's own records,
+  which LAN packets and online batches carry alike, are laid out in
+  `sim::command`: 0x30 paid superweapon, 0x31 bunker eject (still decoded so older
+  recordings play; no input sends it) and 0x32 producer cycle.
 - `649CA0` mirrors the local OutList before broadcasting it. Send failures do not
   undo that mirror; the reached native wait and recovery paths decide what
   happens next. Transport queues retain bytes, not gameplay decisions.
@@ -902,6 +923,24 @@ They require isolated mutable copies of the retail game directory, each with a
 `.vera20k-lan-capture-root` containing `VERA20k isolated shell capture fixture`
 followed by a newline. Set each process's `RA2_DIR` to its own copy and keep its
 own `config.toml`.
+
+The single-process `lan-*` targets (listed in
+`src/app/diagnostics/shell_capture/movies/lan.rs`) enter Main Menu Network and the
+real BB/BC/BD handlers; declared service events stand in for the remote side:
+discovery, admission, host options, readiness, map reports and completion. They
+write LAN and MultiPlayer preferences, so give them an isolated `RA2_DIR` and a
+`[paths] settings_dir` outside it, never a player's profile. The WOL persona
+targets (`wolinfoMD.ini`) and `lan-guest-random-map` (the received `RandMap.Sed`
+and `RandMap.img`) write into that settings directory only when it holds the same
+marker. `lan-transfer-loading-first` writes the original `XMP29U2.MAP` as
+`CONTROLLED.MAP` into the marked game copy and checks the production parser's
+name, length and SHA-256; it refuses an existing file and removes only the
+unchanged file it created. The `lan-*-loading-first` targets stop at the network
+loading boundary, while `lan-host-abort-return` and `lan-guest-abort-return` go on
+through pause, Abort and the queued EXIT back to the LAN lobby.
+`lan-0xbb-join-denied` and `lan-0xbb-join-denied-return` answer a real Join with
+reason 1; `lan-0xbb-join-timeout-return` sends no answer and waits out the normal
+600 × 16 ms join timer.
 
 After building the normal app with `--profile fast`, run the host with
 `--shell-capture lan-live-host --width 800 --height 600 --cursor-x 400

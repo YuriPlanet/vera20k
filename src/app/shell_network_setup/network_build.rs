@@ -1,8 +1,43 @@
-//! What one source file adds to `VERA20K_NETWORK_BUILD`, the build hash
-//! [`super::agreement::version`] carries. build.rs includes this file; the
-//! game compiles it only for its test.
+//! What a source file and the enabled Cargo features add to
+//! `VERA20K_NETWORK_BUILD`, the build hash [`super::agreement::version`]
+//! carries. build.rs includes this file; the game compiles it only for its
+//! tests.
 
 use std::io::BufRead;
+
+/// Appends the enabled Cargo features to the build hash's input and returns
+/// them, sorted. `variables` are the names of build.rs's environment
+/// variables, where Cargo sets `CARGO_FEATURE_<NAME>` for each enabled
+/// feature. Two kinds stay out, since neither changes how the game plays, so
+/// builds that differ only in them play together:
+///
+/// - the test groups, which choose the tests compiled (src/test_group_cfgs.rs);
+/// - `wasm-threads`, the browser package's Web Worker pool (docs/sim-thread.md,
+///   "The browser"). With it a tick runs the `sim::parallel` a desktop build
+///   runs, and without it `sim::parallel_web`, which returns the same results
+///   in the same order. A launcher seats a threaded browser package and a
+///   desktop build of the package's other features in one room, and every
+///   network start compares this hash (`StartupAgreement`).
+pub fn add_features(
+    input: &mut Vec<u8>,
+    variables: impl IntoIterator<Item = String>,
+) -> Vec<String> {
+    let mut features: Vec<_> = variables
+        .into_iter()
+        .filter(|name| {
+            name.starts_with("CARGO_FEATURE_")
+                && !name.starts_with("CARGO_FEATURE_TEST_FOCUS")
+                && !name.starts_with("CARGO_FEATURE_TESTS_")
+                && name != "CARGO_FEATURE_WASM_THREADS"
+        })
+        .collect();
+    features.sort();
+    for feature in &features {
+        input.extend_from_slice(feature.as_bytes());
+        input.push(0);
+    }
+    features
+}
 
 /// Appends the file at `path` below the checkout, holding `bytes`, to the
 /// build hash's input, so that one source gives one hash on every platform:
@@ -43,4 +78,35 @@ fn a_windows_checkout_adds_what_an_lf_checkout_does() {
     );
     assert_ne!(add("src/main.rs", b"a\rb\n"), add("src/main.rs", b"ab\n"));
     assert_ne!(add("src/main.rs", b"a\r"), add("src/main.rs", b"a"));
+}
+
+/// A threaded browser package (`--network --threads`) adds the features a
+/// desktop build with `--features wasm-net` does, whatever tests either
+/// compiles; a LAN package still adds its own.
+#[test]
+fn the_thread_pool_and_the_test_groups_add_no_feature() {
+    let add = |variables: &[&str]| {
+        let mut input = Vec::new();
+        add_features(&mut input, variables.iter().map(|name| name.to_string()));
+        input
+    };
+    let desktop = add(&["CARGO_FEATURE_WASM", "CARGO_FEATURE_WASM_NET", "PATH"]);
+    assert_eq!(
+        add(&[
+            "CARGO_FEATURE_WASM_THREADS",
+            "CARGO_FEATURE_WASM_NET",
+            "CARGO_FEATURE_WASM",
+            "CARGO_FEATURE_TESTS_APP",
+            "CARGO_FEATURE_TEST_FOCUS",
+        ]),
+        desktop
+    );
+    assert_ne!(
+        add(&[
+            "CARGO_FEATURE_WASM",
+            "CARGO_FEATURE_WASM_LAN",
+            "CARGO_FEATURE_WASM_NET",
+        ]),
+        desktop
+    );
 }

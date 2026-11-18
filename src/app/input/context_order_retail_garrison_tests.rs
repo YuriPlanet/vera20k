@@ -269,8 +269,7 @@ fn retail_capture_walk_rechecks_admission_and_respects_a_replacement_order() {
             "red_health" => {
                 runtime
                     .simulation
-                    .entities_mut_for_test()
-                    .get_mut(castle)
+                    .entity_mut_for_test(castle)
                     .unwrap()
                     .health
                     .set_for_test(1);

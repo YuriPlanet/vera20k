@@ -176,7 +176,7 @@ pub struct PipelineOutput {
 /// Run the whole deterministic pipeline in place over `grid`/`scratch`, drawing
 /// from `rng`/`gauss`. Returns the waypoints, terrain objects and structures the
 /// emitter projects into the `MapFile`.
-pub fn run_pipeline(
+pub(super) fn run_pipeline(
     grid: &mut RmgGrid,
     scratch: &mut RmgScratch,
     rng: &mut RmgRng,
@@ -185,15 +185,10 @@ pub fn run_pipeline(
     inputs: &PipelineInputs<'_>,
     observe: StageObserver<'_>,
 ) -> PipelineOutput {
-    let MapGeometry {
-        gen_w,
-        gen_h,
-        map_w,
-        map_h,
-        stride,
-        ..
-    } = *geometry;
-    let local_rect = [2, 5, gen_w, gen_h];
+    let (map_w, map_h) = geometry.map_size();
+    let local_rect = geometry.local_size();
+    let [_, _, gen_w, gen_h] = local_rect;
+    let stride = geometry.stride();
     // Emit-form start positions, filled in once `Starts` has produced them so
     // every later boundary can hand them to the observer.
     let mut waypoints: Vec<(u8, u16, u16)> = Vec::new();

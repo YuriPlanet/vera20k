@@ -27,6 +27,6 @@
     "percent": "0x0064A972",
     "width": "0x0064A99D"
   },
-  "replay_command": "python -m tools.storage_oracle.lan_lobby --wait-bars",
-  "payload_sha256": "419bd5384077fd1daeee81307b765bcb55a383006ff0c01c49553e9330b8ce0d"
+  "replay_command": "python -m tools.storage_oracle.lan_wait_bars",
+  "payload_sha256": "9e273f87fbb95523e7a294cbb13a3630851a9ab7edeb29b18e9fdc5abb94b282"
 }

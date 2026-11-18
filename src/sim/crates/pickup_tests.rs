@@ -97,10 +97,11 @@ fn place_registered_crate(
     slot: u8,
 ) {
     place_crate(sim, registry, cell, slot);
-    let index = (0..crate::sim::crates::state::CRATE_SLOT_CAPACITY)
-        .find(|&index| sim.crate_authority.slots()[index].is_empty())
+    let index = sim
+        .crate_authority()
+        .first_empty_index()
         .expect("a free crate slot");
-    *sim.crate_authority.slot_mut_for_test(index) = CrateSlot {
+    *sim.crate_authority_mut_for_test().slot_mut_for_test(index) = CrateSlot {
         start_frame: 50,
         aux: 777,
         duration: 100,
@@ -258,7 +259,7 @@ fn original_pickup_rows_match_through_the_dispatcher() {
             } else {
                 input["duplicate_slot"] == true
             };
-            *sim.crate_authority.slot_mut_for_test(index) = if occupied {
+            *sim.crate_authority_mut_for_test().slot_mut_for_test(index) = if occupied {
                 CrateSlot {
                     start_frame: start,
                     aux,
@@ -316,7 +317,7 @@ fn original_pickup_rows_match_through_the_dispatcher() {
             }),
             "{name}: overlay"
         );
-        let slot = sim.crate_authority.slots()[0];
+        let slot = sim.crate_authority().slots()[0];
         assert_eq!(
             serde_json::json!([
                 slot.start_frame,
@@ -484,7 +485,7 @@ fn money_crate_draws_once_pays_the_owner_and_sounds() {
 fn multiplayer_pickup_places_one_replacement_crate() {
     let (mut sim, rules, registry, _owner, actor) = multiplayer_fixture(0);
     sim.session.game_options_mut_for_test().crates = true;
-    *sim.crate_authority.slot_mut_for_test(0) = CrateSlot {
+    *sim.crate_authority_mut_for_test().slot_mut_for_test(0) = CrateSlot {
         start_frame: 0,
         aux: 0,
         duration: 100,
@@ -503,12 +504,12 @@ fn multiplayer_pickup_places_one_replacement_crate() {
 
     let cells = crate_cells(&sim, &registry);
     assert_eq!(cells.len(), 1, "one replacement crate: {cells:?}");
-    assert!(!sim.crate_authority.slots()[0].is_empty());
+    assert!(!sim.crate_authority().slots()[0].is_empty());
     let (x, y) = cells[0];
     assert_eq!(
         (
-            sim.crate_authority.slots()[0].cell_x,
-            sim.crate_authority.slots()[0].cell_y
+            sim.crate_authority().slots()[0].cell_x,
+            sim.crate_authority().slots()[0].cell_y
         ),
         (x as i16, y as i16)
     );
@@ -1855,7 +1856,7 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
         );
         let slot_values = |sim: &Simulation| {
             json!(
-                sim.crate_authority
+                sim.crate_authority()
                     .slots()
                     .iter()
                     .filter(|slot| !slot.is_empty())

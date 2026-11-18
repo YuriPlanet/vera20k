@@ -7,7 +7,10 @@
 //! Iteration is always in ascending stable_id order, which lockstep relies on.
 //!
 //! ## Borrow patterns
-//! - Single entity mutation: `store.get_mut(id)` borrows only that entry
+//! - Callers outside simulation borrow stored entities through `get` or the
+//!   ordered iterators. Store operations maintain the indexes when an entity
+//!   enters, leaves, or changes owner.
+//! - Within simulation, `store.get_mut(id)` borrows one actor for an update.
 //! - Cross-entity reads during mutation: read target first (clone needed data),
 //!   then get_mut on the other entity
 //! - Batch iteration with mutation: collect `keys_sorted()`, loop with
@@ -38,7 +41,7 @@ pub(crate) struct AirMembershipAuthority(());
 /// Only this module can store an Anim in a field [`GameEntity::held_anims`]
 /// names, so the anim-holder index notes the holder
 /// ([`EntityStore::write_held_anim`]).
-pub(crate) struct AnimHolderAuthority(());
+pub(super) struct AnimHolderAuthority(());
 
 /// Container for all game entities, keyed by stable_id.
 ///
@@ -728,17 +731,23 @@ impl EntityStore {
     /// live ownership changes use the world lifecycle and `change_owner` below.
     /// Replacing a stored entity wholesale is unsupported: remove/insert through
     /// the owning lifecycle instead so its indexes and registrations are updated.
-    pub fn get_mut(&mut self, stable_id: u64) -> Option<&mut GameEntity> {
+    pub(super) fn get_mut(&mut self, stable_id: u64) -> Option<&mut GameEntity> {
         let slot = self.slot(stable_id)?;
         self.touched.note(stable_id, self.slot_of.len());
         self.wake_slot(slot as usize);
         self.entities[slot as usize].as_deref_mut()
     }
 
+    /// Edit one actor when a fixture holds the store directly.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn get_mut_for_test(&mut self, stable_id: u64) -> Option<&mut GameEntity> {
+        self.get_mut(stable_id)
+    }
+
     /// `get_mut` for an entity `admit` accepts, which it reads first: one it
     /// refuses is not handed out, so it stays out of the touch logs. For walks
     /// that visit every entity and change few.
-    pub(crate) fn get_mut_if(
+    pub(super) fn get_mut_if(
         &mut self,
         stable_id: u64,
         admit: impl FnOnce(&GameEntity) -> bool,
@@ -1005,11 +1014,43 @@ impl EntityStore {
     }
 
     /// Iterate all entities mutably in stable_id order.
-    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut GameEntity> {
+    pub(super) fn values_mut(&mut self) -> impl Iterator<Item = &mut GameEntity> {
         self.touched.note_all();
         self.looks.note_all();
         self.wake_all();
         self.entities.iter_mut().filter_map(Option::as_deref_mut)
+    }
+
+    pub(super) fn hold_parachute_animation(&mut self, holder: u64, anim: u64) -> Option<()> {
+        self.write_held_anim(holder, |entity, authority| {
+            entity.hold_parachute_animation(anim, authority)
+        })
+    }
+
+    pub(super) fn hold_emp_sparkle(&mut self, holder: u64, anim: u64) -> Option<()> {
+        self.write_held_anim(holder, |entity, authority| {
+            entity.hold_emp_sparkle(anim, authority)
+        })
+    }
+
+    /// Return the Anim replaced at `index`, if the effect held one.
+    pub(super) fn hold_attached_effect_anim(
+        &mut self,
+        holder: u64,
+        index: usize,
+        anim: u64,
+    ) -> Option<u64> {
+        self.write_held_anim(holder, |entity, authority| {
+            entity.hold_attached_effect_anim(index, anim, authority)
+        })
+        .flatten()
+    }
+
+    pub(super) fn begin_parasite_grapple(&mut self, holder: u64, anim: Option<u64>) -> Option<()> {
+        self.write_held_anim(holder, |entity, authority| {
+            entity.parasite.begin_grapple(anim, authority)
+        })
+        .flatten()
     }
 
     /// Store an Anim in one of `holder`'s fields [`GameEntity::held_anims`]
@@ -1018,7 +1059,7 @@ impl EntityStore {
     /// such a store: those writes take an [`AnimHolderAuthority`], which
     /// only this module makes. Clearing a field needs no note. `None` when
     /// `holder` is not stored.
-    pub(crate) fn write_held_anim<R>(
+    fn write_held_anim<R>(
         &mut self,
         holder: u64,
         write: impl FnOnce(&mut GameEntity, AnimHolderAuthority) -> R,
@@ -1849,19 +1890,20 @@ mod tests {
     /// stored holding it or a load restored it, and no removed holder.
     #[test]
     fn anim_holders_reach_every_holder_through_writes_inserts_and_loads() {
-        let hold = |entity: &mut GameEntity, authority: AnimHolderAuthority| {
-            entity.hold_parachute_animation(50, authority)
-        };
+        let mut source = EntityStore::new();
+        source.insert(make_entity(3));
+        source.hold_parachute_animation(3, 50).unwrap();
         let mut store = EntityStore::new();
-        let mut stored_holding = make_entity(3);
-        hold(&mut stored_holding, AnimHolderAuthority(()));
-        store.insert(stored_holding);
+        store.insert(source.remove(3).unwrap());
         for id in [1, 2, 4] {
             store.insert(make_entity(id));
         }
         for id in [1, 4] {
-            store.write_held_anim(id, hold).unwrap();
+            store.hold_parachute_animation(id, 50).unwrap();
         }
+        // A missing effect slot leaves the requested Anim without a holder.
+        assert_eq!(store.hold_attached_effect_anim(1, 0, 51), None);
+        assert!(store.take_anim_holders(51).is_empty());
         store.remove(4);
         let loaded: EntityStore = crate::util::save_codec::deserialize(
             &crate::util::save_codec::serialize(&store).unwrap(),

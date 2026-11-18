@@ -19,16 +19,6 @@
 
 此外，`UPLINK`、ACK、STATUS 里的整数字段改为 varint 编码。
 
-**预期效果**（30 人、30 Hz、300 APM、良好链路）：
-
-| 指标 | 现在 | 压缩后 | 变化 |
-|---|---|---|---|
-| 每读者下行 | 20.4 KB/s | 约 6.7 KB/s | −67% |
-| 每人上行 | 2.9 KB/s | 约 0.8 KB/s | −72% |
-| 中继出口 | 约 5.0 Mbit/s | 约 1.6 Mbit/s | −67% |
-
-现有 `main` 协议的中继出口约 9 Mbit/s，压缩后约为它的 1/5.5。
-
 **兼容性：** 不兼容旧版本。中继和客户端同版发布，大厅最低版本同步提高。
 
 **约定：**
@@ -56,34 +46,10 @@
 | 状态心跳、ACK 并进回合包；放宽确认间隔；调整回合长度 | 会改变包数和传输方案的时序，可能影响已验证的成果 |
 | 用 FEC 代替补推；改变 K 或补推规则 | 属于冗余策略，同上 |
 | 修改规范记录布局 | 风险大，收益可以通过 §5 的线上编码拿到 |
-| 指令记录本身的紧凑编码（单位 ID、目标格子用 varint 或增量） | 要逐个核对 gamemd 的指令类型，原生编解码器（Compress64B660 一族）的语义也要保持；收益约 5~8 B/批次。列为后续可选项（§14） |
+| 指令记录本身的紧凑编码（单位 ID、目标格子用 varint 或增量） | 要逐个核对 gamemd 的指令类型，原生编解码器（Compress64B660 一族）的语义也要保持；收益约 5~8 B/批次。列为后续可选项 |
 | 读者自己的批次只发占位 | 收益约 3%，复杂度不划算 |
 
 **包数会自然下降，但不是改了策略。** 内容变小以后，30 人局一个回合原来要 2 个新包，现在 1 个就能装下。这只是"捎带不增加包数"（传输方案 §7.4）这条规则在更小的内容上算出的结果，规则本身不变。
-
----
-
-## 2. 现在的开销（自适应传输实现后，30 人、300 APM、良好链路，每个读者）
-
-**中继发出的每个数据报：** 108 B 固定开销 = IP/UDP 28 + 信封头 48（magic 4、kind 1、room 16、nonce 16、seq 8、source 1、len 2）+ HMAC-SHA256 32。
-
-**客户端发出的每个数据报：** 174 B 固定开销 = IP/UDP 28 + 信封头 114（magic 4、kind 1、票据 98、sent 8、target 1、len 2）+ HMAC 32。
-
-**一个批次在 PACK 里约 90 B：**
-
-| 部分 | 字节 | 说明 |
-|---|---|---|
-| PACK 内的长度字段 | 2 | |
-| 记录头 | 14 | kind 1、frame 4、source 1、batch_id 8 |
-| opaque | 74 | |
-| └ nonce | 24 | |
-| └ 密文 | 34 | |
-| 　　└ 版本号 | 1 | |
-| 　　└ 事件包头 | 14 | FRAME_INFO：House、帧号、checksum 等，在线模式下全部可以推出或恒为 0 |
-| 　　└ 指令本体 | 约 19 | 一条移动指令 |
-| └ 认证标签 | 16 | |
-
-**每秒下行 20.4 KB 的构成：** 批次内容 13.5 KB，包固定开销 3.9 KB，状态心跳和 ACK 1.3 KB，捎带 1.3 KB，帧结束记录和 PACK 头 0.4 KB。
 
 ---
 
@@ -190,7 +156,7 @@ tag u8:  bit0..3  kind（3 BATCH、4 FRAME_END、5 DEPARTURE、9 PAUSE、10 RATE
 
 ### 5.4 编码（中继）
 
-- 打包算法不变（`pack_entries`：贪心装满，上限 681 B）。只是每条记录按 v2 计算长度，所以同样的上限能装下更多记录。
+- 打包算法不变（`encode_pack`：贪心装满，上限 681 B）。只是每条记录按 v2 计算长度，所以同样的上限能装下更多记录。
 - **帧号编码选择：** 编码器必须选最短的写法：相同帧用 0，下一帧用 1，否则用 2。
 - **批次 ID 编码选择：** 同理，能用 bit6 时必须用。
 - 这样同一组记录只有一种编码结果，测试可以直接比对字节。
@@ -271,7 +237,7 @@ tag u8:  bit0..3  kind（3 BATCH、4 FRAME_END、5 DEPARTURE、9 PAUSE、10 RATE
 
 截到 4 B 以后，单个伪造包的成功率是 2⁻³²。WebRTC/SRTP 的标准套件 `AES_CM_128_HMAC_SHA1_32` 用的也是 4 B 认证标签。
 
-**不做任何会丢弃合法包的限速。** 早先的方案写过"按来源 IP、按会话限制失败次数，超出后直接丢弃"，这会让合法包被别人发来的假包连累，已删除。本方案不考虑伪造源地址的攻击。现在的规则：
+**不做任何会丢弃合法包的限速。** 按来源 IP 或按会话限制失败次数、超出后直接丢弃，会让合法包被别人发来的假包连累。本方案不考虑伪造源地址的攻击。规则如下：
 
 1. **未知会话：** session 不在会话表里，或者 session 为 0 却不是 HELLO / CONFIRM 的数据报，没有可用的密钥，直接丢弃，不做 HMAC 运算。只做全局计数，用于统计和告警，不影响任何合法会话。不按来源 IP 计数。
 2. **已知会话：** 每个数据报都做 HMAC 校验。校验失败的只丢弃这一个包，计入这个会话的失败次数；同一会话在固定的 60 s 窗口内失败超过 4096 次时，记录一条告警。合法包永远照常校验、照常接受。
@@ -303,10 +269,10 @@ MAC 长度是一个常量 `HOP_TAG_LEN`。想要更大的安全余量时改成 8
 [batch_count u8][first_batch_id varint（batch_count > 0 时）]{[len varint][P len]}
 ```
 
-- 字段的含义、取值范围、解码规则都同传输方案 §3.2，只是编码方式改了。例外：批次长度改为 `1 ≤ len ≤ 512`（明文，§3.1），不再是密文的 `40 < len ≤ 552`。
+- 字段的含义、取值范围、解码规则都同传输方案 §3.2（批次长度 `1 ≤ len ≤ 512`，明文，§3.1），只是编码方式改了。
 - **varint 字段的取值范围：** 每个字段的取值范围和它原来的定长宽度一致，例如 `frame`、`head_frame` 不超过 u32，`srtt_ms`、`echo_delay` 不超过 u16，`seq` 一类不超过 u64，超出就按 Malformed 处理。编码方需要截断的字段（`echo_delay`、`srtt_ms` 等）先按原来的规则截断到上限，再编码。
 - 原来"长度和计数正好吻合"的检查照旧，另外加上 §8 的 varint 规则。
-- 典型的不带批次的 UPLINK：35 B → 约 18 B。
+- 典型的不带批次的 UPLINK 约 18 B。
 
 ### 7.2 ACK（event 2）
 
@@ -314,7 +280,7 @@ MAC 长度是一个常量 `HOP_TAG_LEN`。想要更大的安全余量时改成 8
 [2][accepted_through varint][frame varint][up_high varint][up_bits u64][echo_delay varint]
 ```
 
-31 B → 约 13 B。
+典型的 ACK 约 13 B。
 
 ### 7.3 STATUS（event 1）
 
@@ -322,7 +288,7 @@ MAC 长度是一个常量 `HOP_TAG_LEN`。想要更大的安全余量时改成 8
 [1][head_frame varint][oldest_seq varint][next_seq varint][active_sources u32][tick_hz u16][start_delay_ms varint][started u8][up_high varint][up_bits u64][echo_delay varint]
 ```
 
-50 B → 约 22 B。开局后有活跃来源 10 秒没有任何消息时，玩家的 STATUS 在反馈之后再追加 `[silent_sources u32]`（见 relay README “Silence”）；没有这样的来源时不追加，所以正常对局一个字节也不多。观战者的 STATUS 不带此项。
+典型的 STATUS 约 22 B。开局后有活跃来源 10 秒没有任何消息时，玩家的 STATUS 在反馈之后再追加 `[silent_sources u32]`（见 relay README “Silence”）；没有这样的来源时不追加，所以正常对局一个字节也不多。观战者的 STATUS 不带此项。
 
 ### 7.4 其他
 
@@ -424,42 +390,9 @@ MAC 长度是一个常量 `HOP_TAG_LEN`。想要更大的安全余量时改成 8
 
 ---
 
-## 13. 预期效果（30 Hz，RTT 40 ms，良好链路，每秒）
-
-**估算前提：**
-- 一条移动指令的批次明文约 19 B；
-- 中继发出的包固定开销 41 B（28 + 13）；客户端发出的同样是 41 B；
-- 捎带按"前一回合有一半时间还没被确认"估算；
-- 发送策略不变。
-
-| 场景 | 方向 | 现在 | 压缩后 | 变化 |
-|---|---|---|---|---|
-| 30 人 300 APM | 每读者下行 | 36.5 包 / 20.4 KB | 约 24 包 / 6.7 KB | 字节 −67% |
-| 30 人 300 APM | 每人上行 | 11.7 包 / 2.9 KB | 约 11 包 / 0.8 KB | 字节 −72% |
-| 30 人 300 APM | 中继出口 | 约 5.0 Mbit/s | 约 1.6 Mbit/s | −67% |
-| 2 人 300 APM | 每读者下行 | 24.5 包 / 5.2 KB | 约 24 包 / 1.4 KB | −73% |
-| 空闲 | 每读者下行 | 19.5 包 / 2.9 KB | 约 19 包 / 1.0 KB | −65% |
-| 空闲 | 每人上行 | 9.4 包 / 2.0 KB | 约 9 包 / 0.7 KB | −65% |
-
-- **包数：** 30 人局下行的包数减少，是因为一个回合能装进 1 个包（§1.2），不是改了策略。
-- **捎带的占比会上升：** 新包变小，空出的空间更多，按"捎带不增加包数"的规则会捎带更多旧记录。下行 6.7 KB 里约 1.8 KB 是捎带。这是冗余策略的自然结果，没有改动。
-
----
-
-## 14. 实施顺序
-
-每步一个 PR，每步都要求传输方案的全部端到端判定仍然通过。
-
-1. **信封 v3（§6）+ varint（§8）+ 排序消息改为 varint（§7）。** 只改线上格式，排序语义完全不变；上行收益最大。
-2. **删除端到端加密（§3）+ 批次去头（§4）。** 规范记录字段不变，只是 `opaque` 改为存明文。
-3. **PACK v2（§5）。** 只改中继的编码和客户端的解码，规范记录不变。
-4. **后续可选：** 指令记录紧凑编码。要逐个核对 gamemd 的指令类型，并保留原生编解码器的语义；预计每个批次再省 5~8 B，30 人局下行再降约 15%。
-
----
-
 ## 附录 A：新格式的逐包数值
 
-场景和传输方案附录 A 完全相同：2 个客户端，30 Hz，单程 20 ms，丢掉同样的两个包，两个方向都预设为"已测为良好"。下表的数值由端到端判定方独立地从本方案推出，协议实现已逐包对上（`appendix_a_packet_by_packet_compacted`）。
+场景和传输方案附录 A 完全相同：2 个客户端，30 Hz，单程 20 ms，丢掉同样的两个包，两个方向都预设为"已测为良好"。下表的数值由端到端判定方独立地从本方案推出，协议实现已逐包对上（netsim 的 `appendix_a_packet_by_packet`）。
 
 **口径：**
 - 信封固定 13 B：`hdr` 1 + `session` 4 + `seq` 4 + `tag` 4，`hdr = 0x60 | kind`。
@@ -510,7 +443,8 @@ MAC 长度是一个常量 `HOP_TAG_LEN`。想要更大的安全余量时改成 8
 - RFC 3711（SRTP）与 RFC 4568：`AES_CM_128_HMAC_SHA1_32`，4 B 认证标签的先例。
 - LEB128：DWARF 规范第 7.6 节；Protocol Buffers 的 varint。
 - 本仓库：
-  - `services/relay-protocol/src/lib.rs`：信封、`ReplayWindow`、`derive_packet_key`；
-  - `services/relay-protocol/src/sequenced.rs`：`pack_entries` / `unpack_entries`、批次加密、`ClientSession::submit` 一族；
+  - `services/relay-protocol/src/lib.rs`：`ReplayWindow`、`derive_packet_key`；
+  - `services/relay-protocol/src/envelope.rs`：信封 v3；`services/relay-protocol/src/varint.rs`：varint；
+  - `services/relay-protocol/src/sequenced/pack.rs`：`encode_pack` / `decode_pack`；`services/relay-protocol/src/link/codec.rs`：`UPLINK` 编解码；
   - `src/net/event_packet.rs`：`EventPacketCodec`、FRAME_INFO 头 14 B；
   - `src/net/live_commands/sequenced.rs`：`decode_batch`。

@@ -1002,8 +1002,7 @@ fn assert_gattling_stop_and_release_at_native_boundaries(ares_way: bool) {
     let initial = recorded_boundary(row, "original_admitted_Unit_fire_tail");
     *sim.main_rng_mut_for_test() =
         SimRng::from_native_state_hex_for_test(main_hex(row, &initial["before"])).into();
-    sim.entities_mut_for_test().get_mut(id).unwrap().gattling =
-        GattlingState::from_fields(0, 0, false);
+    sim.entity_mut_for_test(id).unwrap().gattling = GattlingState::from_fields(0, 0, false);
     let (_, raw) = trace_draws(|| sim.gattling_increase(id, rules, 1, FrameEffects::default()));
     assert_eq!(raw.len(), 1);
     assert_eq!(raw[0]["value"], initial["requests"][0]["result"]);
@@ -1205,7 +1204,7 @@ fn production_limbo_preserves_frame_sound_scope_in_a_nested_context() {
         .spawn_object("YTNK", "Americans", 13, 14, 0, rules)
         .unwrap();
     let before = &release["before"]["gattling"];
-    sim.entities_mut_for_test().get_mut(id).unwrap().gattling = GattlingState::from_fields(
+    sim.entity_mut_for_test(id).unwrap().gattling = GattlingState::from_fields(
         before["stage"].as_i64().unwrap() as i32,
         before["value"].as_i64().unwrap() as i32,
         before["latch"].as_i64().unwrap() != 0,

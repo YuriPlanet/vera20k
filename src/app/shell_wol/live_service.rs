@@ -2440,10 +2440,9 @@ fn request_setup(
     request: NetworkSetupRequest,
 ) -> Result<()> {
     match request {
-        // The staging and Cooperative C0 also travel in the host's options.
+        // Cooperative's C0 also travels in the host's options.
         NetworkSetupRequest::PublishOptions
         | NetworkSetupRequest::PublishRoster
-        | NetworkSetupRequest::PublishStartStaging(_)
         | NetworkSetupRequest::PublishCooperativeCampaign(_) => {
             service.publish_room_options(options(state)?);
         }
@@ -2571,7 +2570,6 @@ fn request_setup(
                 service.command("advertise", json!({"channel":wire::Channel::from(channel)}));
             }
         }
-        NetworkSetupRequest::RequestPings => service.command("ping", json!({})),
         // VERA's room: the host's Balance is `/balance` as typed.
         NetworkSetupRequest::Balance => {
             service.command("chat", json!({"text":"/balance","to":[],"action":false}))
@@ -2581,22 +2579,7 @@ fn request_setup(
             "chat",
             json!({"text":String::from_utf16_lossy(&text),"to":[],"action":true}),
         ),
-        NetworkSetupRequest::Chat(text) => {
-            send_chat(service, None, WolChatLine::Say(text), Vec::new(), false);
-        }
-        // RESIDUAL: mode+64's C1 (0x005C2710) is not carried, as on LAN:
-        // VERA reads no round assignment after the publish, so guests keep
-        // their own.
-        NetworkSetupRequest::PublishCooperativeAssignments(_) => {}
-        NetworkSetupRequest::RequestPreview
-        | NetworkSetupRequest::OfferPreview
-        | NetworkSetupRequest::AcknowledgePreview
-        | NetworkSetupRequest::RequestPreviewFile
-        | NetworkSetupRequest::SendPreviewFile
-        | NetworkSetupRequest::RequestRandomMapImage => {}
-        NetworkSetupRequest::RequestAcceptance
-        | NetworkSetupRequest::BroadcastPings
-        | NetworkSetupRequest::ObserverSlot { .. } => {}
+        NetworkSetupRequest::RequestAcceptance | NetworkSetupRequest::ObserverSlot { .. } => {}
         _ => notice(state, &tr("VERA:SetupOperationUnavailable")),
     }
     Ok(())
@@ -2875,8 +2858,6 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                     notice(state, &tr("VERA:FinishingPreviousMatch"));
                 }
             }
-            // The host's 5 s ping; an outage is reported once by the poll.
-            "ping" => {}
             // A refused ladder lookup leaves the tables as they were; the
             // high-score sink only logs a failure (`0x007A3B30`).
             "ladder" => {}

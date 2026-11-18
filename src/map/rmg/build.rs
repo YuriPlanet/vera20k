@@ -147,11 +147,7 @@ impl GenerationPointView<'_> {
     /// so an early snapshot contains only constructors already reached.
     /// Projection uses the same emitter as the final generated map.
     pub fn snapshot(&self) -> GenerationSnapshot {
-        let mut map_file = emit::empty_map_file(
-            self.options,
-            self.geometry.gen_w as u32,
-            self.geometry.gen_h as u32,
-        );
+        let mut map_file = emit::empty_map_from_geometry(self.options, self.geometry);
         emit::populate(&mut map_file, self.grid, self.terrain, &[], self.waypoints);
         GenerationSnapshot {
             map_file,
@@ -516,8 +512,8 @@ fn generate_once(
     let geometry = MapGeometry::from_options(&options);
     let mut rng = RmgRng::new(options.seed_u16());
     let bridge_enabled = draw_bridge_enable(&mut rng);
-    let mut scratch = RmgScratch::new(geometry.stride, geometry.diamond_min, geometry.diamond_max);
-    let mut grid = grid::RmgGrid::new(geometry.stride, geometry.diamond_min, geometry.diamond_max);
+    let mut scratch = RmgScratch::from_geometry(geometry);
+    let mut grid = grid::RmgGrid::from_geometry(geometry);
     let mut gauss = Gaussian::default();
 
     let morphable = |tile: i32| resolved.is_morphable(tile);
@@ -615,7 +611,7 @@ fn generate_once(
     );
 
     output.construction_trace.lighting = settings.generated_lighting_override(&options);
-    let mut map_file = emit::empty_map_file(&options, geometry.gen_w as u32, geometry.gen_h as u32);
+    let mut map_file = emit::empty_map_from_geometry(&options, geometry);
     if let Some(lighting) = settings.generated_lighting_ini(&options) {
         map_file.ini = lighting;
     }

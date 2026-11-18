@@ -216,10 +216,7 @@ mod tests {
                 TargetKind::Entity(target),
             )
             .unwrap();
-            sim.entities_mut_for_test()
-                .get_mut(gun)
-                .unwrap()
-                .body_facing = FacingClass::new(facing, 0);
+            sim.entity_mut_for_test(gun).unwrap().body_facing = FacingClass::new(facing, 0);
             sim.assign_target_represented(
                 gun,
                 Some(TargetKind::Entity(target)),

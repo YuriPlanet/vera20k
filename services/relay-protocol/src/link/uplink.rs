@@ -64,7 +64,6 @@ struct Copies {
 pub(crate) struct Gap {
     pub(crate) kind: OrderingGap,
     pub(crate) since_ms: u64,
-    // An UPLINK went out while this gap was open.
     // When the first UPLINK went while the gap was open.
     pub(crate) uplinked: Option<u64>,
     // An UPLINK went max(16, 4 rttvar) ms after that one (§6.7 item 1).

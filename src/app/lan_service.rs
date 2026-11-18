@@ -3030,7 +3030,7 @@ fn accept_participant(
         .as_mut()
         .expect("visit")
         .commit_peer_admission(endpoint, &name, &proof);
-    // The host snapshot can precede Type3. Apply its existing parser/HostSetup
+    // The host snapshot can precede Type3. Apply it through HostSetup again
     // after this binding so country/start/team cannot remain Type3 defaults.
     options::reapply_received_options(state)?;
     Ok(())
@@ -4072,9 +4072,6 @@ fn setup_request(
     now: u32,
 ) -> anyhow::Result<bool> {
     use super::shell_network_setup::NetworkSetupRequest;
-    if let Some(admitted) = maps::setup_request(state, request)? {
-        return Ok(admitted);
-    }
     let message = match request {
         NetworkSetupRequest::Kick { name, keep_out } => {
             return state
@@ -4225,9 +4222,6 @@ fn setup_request(
             }
             short_options(state, text)?
         }
-        // RESIDUAL: mode+64's C1 (0x005C2710) is not encoded. VERA reads no
-        // round assignment after the publish, so guests keep their own.
-        NetworkSetupRequest::PublishCooperativeAssignments(_) => return Ok(true),
         NetworkSetupRequest::PrepareMapForHandoff { .. } => {
             if !state
                 .frontend
@@ -4277,8 +4271,7 @@ fn setup_request(
             super::shell_network_setup::mark_lan_go_packets_queued(state, now)?;
             return Ok(true);
         }
-        // The existing transfer owner must explicitly complete these; never
-        // invent a successful file handoff from a UI request.
+        // The WOL requests: a LAN setup queues none.
         _ => return Ok(false),
     };
     let require_rules = matches!(
@@ -5780,7 +5773,8 @@ mod tests {
         session.enter_network(NetworkReturnContext::LanLobby);
         receiver.admitted_host = Some(("Host".into(), host));
         let messages = [
-            LanMessage::options("Host", b"seed,map,options", 0, 0).unwrap(),
+            LanMessage::options("Host", b"K1", 0, 0).unwrap(),
+            LanMessage::player_choices("Host", b"R-2,6,-2,-2").unwrap(),
             LanMessage::start_prompt("Host").unwrap(),
             LanMessage::go(10),
         ];

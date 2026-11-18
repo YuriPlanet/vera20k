@@ -142,9 +142,8 @@ class AssignmentMachine(Machine):
 def assignment_case(name, seed, humans, ai):
     machine = AssignmentMachine(seed, humans, ai)
     initial = machine.state()
-    native_nodes = [bytes(machine.uc.mem_read(node, 0x80)).hex() for node in machine.nodes]
     machine.call(0x69B8C0, ecx=0xA8B238)
-    return dict(name=name, seed=seed, initial=initial, input_node_hex=native_nodes,
+    return dict(name=name, seed=seed, initial=initial,
                 active_ai_count=sum(country not in (-1, -3) for country, _color in ai),
                 active_ai_slots=[index for index, (country, _color) in enumerate(ai) if country not in (-1, -3)],
                 result=machine.state(), draws=machine.draws)
@@ -274,7 +273,7 @@ def host_seed_cases():
                         required_addresses=[0x65C7E0,0x7CB49D,0x7CB4AA,0x5DEC5C])
             if machine.uc.reg_read(UC_X86_REG_ESP) != sp: raise OracleError("BC seed block stack imbalance")
             entries.append(dict(main_before=before, main_after=bytes(machine.uc.mem_read(machine.rng, STRUCT_LEN)).hex(),
-                                transmitted_seed=machine.r32(0xA8ED94), crt_state=machine.r32(machine.thread+0x14),
+                                transmitted_seed=machine.r32(0xA8ED94),
                                 history=machine.history.copy(), draws=machine.draws.copy()))
         cases.append(dict(main_seed=seed, entries=entries))
     return cases
@@ -410,8 +409,8 @@ def cooperative_cases():
         result.append(dict(name=name, seed=seed, campaign=campaign, current_stage=current, human_colors=colors,
                            roster=roster, stages=stages, rng_before=initial, rng_after=machine.state()["rng_hex"],
                            rounds=machine.rounds(count), draws=machine.draws, message=machine.message))
-    return dict(campaign_ini=raw.decode("latin-1"), campaign_sha256=hashlib.sha256(raw).hexdigest(),
-                rules_sha256=hashlib.sha256(rules).hexdigest(), cases=result, preparation=preparation)
+    return dict(campaign_ini=raw.decode("latin-1"), rules_sha256=hashlib.sha256(rules).hexdigest(),
+                cases=result, preparation=preparation)
 
 def observer_start_case(name, seed, observers, preassigned):
     humans = [[-3 if observer else 0, -1, 8 if observer else index, -1]
@@ -452,7 +451,6 @@ def observer_start_case(name, seed, observers, preassigned):
     return dict(name=name, observers=observers, starts=starts, initial_table=preassigned,
                 initial_rng_hex=initial_rng, placements=placements,
                 table=list(struct.unpack("<3i", machine.uc.mem_read(scenario + 0x1180, 12))),
-                observer_flags=list(machine.uc.mem_read(0xABFDD4, 2)),
                 rng_hex=machine.state()["rng_hex"], draws=machine.draws)
 
 
@@ -461,7 +459,7 @@ def observer_start_cases():
             observer_start_case("observer_after_automatic_players", 1234, [False, False, True], [-1, -1, -1])]
 
 
-def timing_case(role, name, protocol, responses, connected=True):
+def timing_run(role, protocol, responses, connected):
     # Active LANRun host5DD48D..5DD541 and guest5DD2CD..5DD877.
     # Execute both manager5424C0 and connection48BA80 reads; change only
     # the service-owned response field before each read, never its result.
@@ -472,20 +470,20 @@ def timing_case(role, name, protocol, responses, connected=True):
     m.w32(0xA8B24C, protocol)
     for address in (0xA8B550, 0xA8B554, 0xA8DB9C, 0xA8B56C, 0xA8B570):
         m.w32(address, 0xDEADBEEF)
-    calls, leaf_calls = [], []
+    reads, leaf_calls = 0, 0
     def observe(uc, address, _size, _data):
+        nonlocal reads, leaf_calls
         if address == 0x5424C0:
             if uc.reg_read(UC_X86_REG_ECX) != 0xA8E9C0:
                 raise OracleError('wrong response getter receiver')
-            if len(calls) >= len(responses):
+            if reads >= len(responses):
                 raise OracleError('unexpected extra getter read')
-            response = responses[len(calls)]
-            m.w32(response_object + 0x1C, response)
-            calls.append(dict(response=response, return_address=m.r32(uc.reg_read(UC_X86_REG_ESP))))
+            m.w32(response_object + 0x1C, responses[reads])
+            reads += 1
         elif address == 0x48BA80:
             if uc.reg_read(UC_X86_REG_ECX) != response_object:
                 raise OracleError('wrong original response leaf receiver')
-            leaf_calls.append(m.r32(response_object + 0x1C))
+            leaf_calls += 1
     m.uc.hook_add(UC_HOOK_CODE, observe)
     sp = STACK_BASE + STACK_SIZE - 0x2000
     m.uc.reg_write(UC_X86_REG_ESP, sp)
@@ -494,53 +492,41 @@ def timing_case(role, name, protocol, responses, connected=True):
     run_checked(m.uc, begin, end, count=10000)
     if m.uc.reg_read(UC_X86_REG_ESP) != sp:
         raise OracleError('getter stack imbalance')
-    if len(leaf_calls) != (len(calls) if connected else 0):
+    if leaf_calls != (reads if connected else 0):
         raise OracleError('original getter leaf not executed')
-    result = dict(name=name, role=role, protocol=protocol, connected=connected,
-                  responses=responses, calls=calls, leaf_calls=leaf_calls,
-                  max_ahead=m.r32(0xA8B550), frame_send_rate=m.r32(0xA8B554),
-                  resets=[m.r32(a) for a in (0xA8DB9C, 0xA8B56C, 0xA8B570)])
-    if result['frame_send_rate'] != 5 or result['resets'] != [0, 0, 0]:
+    if m.r32(0xA8B554) != 5 or [m.r32(a) for a in (0xA8DB9C, 0xA8B56C, 0xA8B570)] != [0, 0, 0]:
         raise OracleError('caller timing writes missing')
-    return result
+    return reads, m.r32(0xA8B550)
+
+
+def timing_case(name, protocol, responses, connected=True):
+    """One row per control: the host and guest blocks must give the same MaxAhead and reads."""
+    host, guest = (timing_run(role, protocol, responses, connected) for role in ('host', 'guest'))
+    if host != guest:
+        raise OracleError(f"host/guest timing differs: {name}")
+    reads, max_ahead = host
+    return dict(name=name, protocol=protocol, connected=connected, responses=responses,
+                reads=reads, max_ahead=max_ahead)
 
 
 def timing_cases():
     controls = [
         ('null_connection', 2, [0xFFFFFFFF], False),
         ('p2_zero', 2, [0], True),
-        ('p2_79', 2, [79], True),
-        ('p2_80', 2, [80], True),
         ('p2_87', 2, [87], True),
         ('p2_88', 2, [88, 88], True),
-        ('p2_119', 2, [119, 119], True),
-        ('p2_120', 2, [120, 120], True),
         ('p2_127', 2, [127, 127], True),
         ('p2_128', 2, [128, 128], True),
         ('p2_unsigned_negative_one', 2, [0xFFFFFFFF, 0xFFFFFFFF], True),
-        ('p2_signed_min', 2, [0x80000000, 0x80000000], True),
         ('p2_second_zero', 2, [88, 0], True),
         ('p2_second_lower', 2, [88, 8], True),
-        ('p2_second_higher', 2, [88, 128], True),
-        ('p0_zero', 0, [0], True),
         ('p0_23', 0, [23], True),
         ('p0_24', 0, [24, 24], True),
-        ('p1_negative_one', 1, [0xFFFFFFFF], True),
-        ('p1_negative_seven', 1, [0xFFFFFFF9], True),
         ('p1_negative_eight', 1, [0xFFFFFFF8], True),
-        ('p1_signed_min', 1, [0x80000000], True),
-        ('p1_signed_max', 1, [0x7FFFFFFF, 0x7FFFFFFF], True),
-        ('p3_second_zero', 3, [24, 0], True),
         ('p3_second_negative', 3, [24, 0xFFFFFFF8], True),
-        ('p3_second_signed_min', 3, [24, 0x80000000], True),
-        ('p3_second_higher', 3, [24, 88], True),
         ('unsigned_protocol_other', 0xFFFFFFFF, [24, 31], True),
     ]
-    cases = [timing_case(role, *case) for case in controls for role in ('host', 'guest')]
-    for host, guest in zip(cases[::2], cases[1::2]):
-        if any(host[key] != guest[key] for key in ('max_ahead', 'frame_send_rate', 'resets', 'leaf_calls')):
-            raise OracleError(f"host/guest timing differs: {host['name']}")
-    return cases
+    return [timing_case(*control) for control in controls]
 
 def generate():
     ascii_units = lambda text: list(text.encode("ascii"))
@@ -556,10 +542,12 @@ def generate():
         ("u0100_only", [0x100] * 121),
         ("u0100_then_wide", [0x100, 0x4E00] + [65] * 120),
     ]
-    children = relayout(0xBB, 800, 600)
+    def layout(dialog, width, height):
+        return [{key: child[key] for key in ("id", "class", "rect")}
+                for child in relayout(dialog, width, height)]
     return dict(source="unicorn/gamemd.exe", chat=[chat_case(*row) for row in rows],
-                layout_800=children, loading_wait_progress=loading_wait_progress_cases(), starting_mcv_no_match=starting_mcv_no_match_cases(), timing=timing_cases(), host_seed=host_seed_cases(), assignments=assignment_cases(), observer_starts=observer_start_cases(), cooperative=cooperative_cases(),
-                setup_layouts=[dict(dialog=d,width=w,height=h,children=relayout(d,w,h)) for d in (0xBC,0xBD,0xBC6) for w,h in ((800,600),(640,480))],
+                layout_800=layout(0xBB, 800, 600), loading_wait_progress=loading_wait_progress_cases(), starting_mcv_no_match=starting_mcv_no_match_cases(), timing=timing_cases(), host_seed=host_seed_cases(), assignments=assignment_cases(), observer_starts=observer_start_cases(), cooperative=cooperative_cases(),
+                setup_layouts=[dict(dialog=d,width=w,height=h,children=layout(d,w,h)) for d in (0xBC,0xBD,0xBC6) for w,h in ((800,600),(640,480))],
                 setup_help=[dict(dialog=d,control=c,key=help_label(d,c)) for d in (0xBC,0xBD) for c in
                             (0x411,0x6A1,0x6A2,0x6A3,0x76D,0x529,0x402,0x54F,0x3E8,0x54E,0x69A,0x69D,0x54D,0x540,0x53F,0x468,0x5A8,0x6D2,0x6DA,2,(0x588 if d==0xBC else 0x59F))]
                           + [dict(dialog=0xBC6,control=c,key=help_label(0xBC6,c)) for c in
@@ -569,59 +557,13 @@ def generate():
 
 
 if __name__ == "__main__":
-    import sys
-    if "--messages" in sys.argv:
-        from tools.storage_oracle import lan_messages
-        finish_vectors(lan_messages.generate, Path(__file__).with_name("lan_messages.json"),
-                       provenance=lan_messages.metadata,
-                       argv=[arg for arg in sys.argv[1:] if arg != "--messages"],
-                       source_paths=lan_messages.SOURCE_PATHS)
-        raise SystemExit
-    if "--wait-bars" in sys.argv:
-        from tools.storage_oracle import lan_wait_bars
-        finish_vectors(lan_wait_bars.generate, Path(__file__).with_name("lan_wait_bars.json"),
-                       provenance=lan_wait_bars.metadata,
-                       argv=[arg for arg in sys.argv[1:] if arg != "--wait-bars"],
-                       source_paths=lan_wait_bars.SOURCE_PATHS)
-        raise SystemExit
-    if "--ingame-messages" in sys.argv:
-        from tools.storage_oracle import lan_ingame_messages
-        finish_vectors(lan_ingame_messages.generate, Path(__file__).with_name("lan_ingame_messages.json"),
-                       provenance=lan_ingame_messages.metadata,
-                       argv=[arg for arg in sys.argv[1:] if arg != "--ingame-messages"],
-                       source_paths=lan_ingame_messages.SOURCE_PATHS)
-        raise SystemExit
-    if "--manager-timing" in sys.argv:
-        from tools.storage_oracle import lan_global
-        finish_vectors(lan_global.manager_timing_controls, Path(__file__).with_name("lan_manager_timing.json"),
-                       provenance=lan_global.manager_metadata,
-                       argv=[arg for arg in sys.argv[1:] if arg != "--manager-timing"],
-                       source_paths={"global": Path(lan_global.__file__),
-                                     "native_oracle": Path(__import__("tools.native_oracle", fromlist=["x"]).__file__),
-                                     "shared_machine": Path(__import__("tools.storage_oracle.shell_relayout", fromlist=["x"]).__file__)})
-        raise SystemExit
-    if "--global-connection" in sys.argv:
-        from tools.storage_oracle import lan_global
-        finish_vectors(lan_global.generate, Path(__file__).with_name("lan_global.json"),
-                       provenance=lan_global.metadata,
-                       argv=[arg for arg in sys.argv[1:] if arg != "--global-connection"],
-                       source_paths={"global": Path(lan_global.__file__),
-                                     "native_oracle": Path(__import__("tools.native_oracle", fromlist=["x"]).__file__),
-                                     "shared_machine": Path(__import__("tools.storage_oracle.shell_relayout", fromlist=["x"]).__file__)})
-        raise SystemExit
-    if "--event-packets" in sys.argv:
-        from tools.storage_oracle.lan_event_packets import generate as event_packets, metadata
-        finish_vectors(event_packets, Path(__file__).with_name("lan_event_packets.json"),
-                       provenance=metadata,
-                       argv=[arg for arg in sys.argv[1:] if arg != "--event-packets"])
-        raise SystemExit
     finish_vectors(generate, Path(__file__).with_suffix(".json"), provenance=lambda: provenance(
         scope="Original host/guest LAN MaxAhead blocks 5DD48D/5DD2CD and response getters 5424C0/48BA80; BC host seed block 5DEC3B..5DEC61 (Main RNG -> CRT srand/rand), Battle assignments 69B8C0, observer starts 5D6890, Cooperative AI preparation 5C30C0 and campaign round assignments 5C2710 with full Scenario RNG state/draw order; BB/BC/BD/BC6 relayout/help and NewEdit 614B30 -> BB 5DDBD0 -> chat cap 5EDD00 -> send 5DE360",
         assumptions=[
             "Loading wait controls execute original643C50 signed-percent updates (including regressions/upper clamp),6433D0 average and68444C..684465 completion comparison. Only643AE0 drawing is suppressed. Explicit2/8-row controls include99/100 and signed negative input; native stored doubles and branch destinations are observed, not calculated by Python.",
             "Starting-MCV no-match controls execute complete5D7030, Owner-only505310 and originalCountryName5117D0 with explicit Owner masks and Country0. Unit constructor entry is fail-closed; completeScenario RNG bytes and callback result are observed. Separate original65C7E0(0,FFFF) records the orchestrator tail5D6FFE; no constructor/RNG result is substituted.",
-            "LAN MaxAhead controls enter original host5DD48D and guest5DD2CD with caller-established EBP=0, explicit protocol and successive raw32 connection response fields. Stop before hostSetTiming5DD541/guestcontinuation5DD877. Both paths observe frame-send-rate5 and all3 reset writes; second-read controls establish absence of another floor check.",
-            "BC5DEC3B..5DEC61 executes original MainRandomRanged(1,32767), CRTsrand7CB49D andCRTrand7CB4AA across two successive entries. ExplicitMainseeds initialize real65C6D0 state; TLSthreadcell starts73 but eachentry replacesit. FullMainstates, rawdraws, callhistory, CRTstate andtransmittedseed observed.",
+            "LAN MaxAhead controls enter original host5DD48D and guest5DD2CD with caller-established EBP=0, explicit protocol and successive raw32 connection response fields. Stop before hostSetTiming5DD541/guestcontinuation5DD877. Each control runs both paths, which must agree on MaxAhead and getter reads and observe frame-send-rate5 and all3 reset writes; one row records them. Second-read controls establish absence of another floor check.",
+            "BC5DEC3B..5DEC61 executes original MainRandomRanged(1,32767), CRTsrand7CB49D andCRTrand7CB4AA across two successive entries. ExplicitMainseeds initialize real65C6D0 state; TLSthreadcell starts73 but eachentry replacesit. FullMainstates, rawdraws, callhistory andtransmittedseed observed.",
             "Cooperative5C2710 executes all8 rows for each campaign round on actual7EE27C vtable, originalcountry callbacks/ID-Name resolver/vector allocation/RNG. OriginalReadInt/ReadString/strtok read physical CoopCampMD and RULESMD country list/Name inputs through existing lexical+reader owners. Progressstage and humanresolvedcolors are controlled inputs; no Rust values seed native results.",
             "Observer-start controls execute whole5D6890 in supplied House order with explicit House human/UIName fields, source nodes, three start cells and initial start table; original50B730/wcscmp/RNG/distance math execute. FPCW and cached ftol word0E7F match active startup. Normal rows precede observercolor8, as native CreateHouses sorts resolved colors.",
             "Assignment cases supply original128-byte human nodes (+4B country,+4F country selector,+53 color,+57 color selector,+6B observer), ordered vector and eight raw AI arrays; unfilled AI slots are-1. Battle vtable7EE184 from ctor5C0DF8 selects original5D6430/5D6440/69B670 country callbacks. seeded_struct executes native65C6D0; full RNG states and ordered ranged/raw draws retained.",

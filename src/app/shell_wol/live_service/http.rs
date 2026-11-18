@@ -168,8 +168,8 @@ fn account_call(request: &crate::ui::wol_account::AccountRequest) -> (&'static s
 }
 
 impl Request {
-    /// The periodic requests a waiting copy already covers: the host's 5 s
-    /// `ping` and the 10 s relay renewal retry.
+    /// The periodic requests a waiting copy already covers: the 10 s retry
+    /// of a player's `renew_relay` and a watcher's `renew_watch`.
     fn repeats(&self, other: &Self) -> bool {
         match (self, other) {
             (
@@ -182,7 +182,7 @@ impl Request {
                     ..
                 },
             ) => {
-                matches!(*operation, "ping" | "renew_relay")
+                matches!(*operation, "renew_relay" | "renew_watch")
                     && operation == other_operation
                     && payload == other_payload
             }
@@ -947,8 +947,8 @@ macro_rules! serial_driver {
 
     $($asynchronous)? fn session_failed(&mut self, error: RequestFailure, output: &Sender<Response>) -> bool {
         if let RequestFailure::UpgradeRequired(message) = error {
-            // The lobby keeps serving an outdated session's events, finish,
-            // leave and logout (docs/lobby-protocol.md), so it stays.
+            // A 426 refuses this request alone: the session stays, and its
+            // player hears once per sign-in that an update is needed.
             let _ = output.send(Response::Outdated { message });
             return false;
         }
@@ -1902,20 +1902,22 @@ mod tests {
             operation,
             payload,
         };
-        let renew = |id, match_id| command(id, "renew_relay", json!({"match_id":match_id}));
+        let relay = |id, match_id| command(id, "renew_relay", json!({"match_id":match_id}));
+        let watch = |id, match_id| command(id, "renew_watch", json!({"match_id":match_id}));
         for request in [
             command(2, "ready", json!({"ready":true})),
-            command(3, "ping", json!({})),
-            renew(4, "a"),
-            renew(5, "a"),
-            renew(6, "b"),
-            command(7, "chat", json!({"text":"gg"})),
+            relay(3, "a"),
+            relay(4, "b"),
+            relay(5, "b"),
+            watch(6, "a"),
+            watch(7, "a"),
             command(8, "chat", json!({"text":"gg"})),
+            command(9, "chat", json!({"text":"gg"})),
         ] {
             requests.send(request).unwrap();
         }
         let mut queued = VecDeque::new();
-        queue_arrivals(&input, Some(&command(1, "ping", json!({}))), &mut queued);
+        queue_arrivals(&input, Some(&relay(1, "a")), &mut queued);
         let ids: Vec<_> = queued
             .iter()
             .map(|request| match request {
@@ -1923,7 +1925,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(ids, [Some(2), Some(4), Some(6), Some(7), Some(8)]);
+        assert_eq!(ids, [Some(2), Some(4), Some(6), Some(8), Some(9)]);
     }
 
     #[test]

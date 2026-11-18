@@ -96,11 +96,6 @@ pub(crate) fn open_art(state: &mut AppState) -> bool {
     state.frontend.wol_buddy_art.is_some()
 }
 
-/// The runner's entry (steps 1-2): the chat-lobby list behind its wait.
-pub(super) fn open(state: &mut AppState) {
-    super::lobby::open_buddy_runner(state);
-}
-
 /// The lobby list arrived: the dialog loop starts. Step 3 leaves the
 /// channel in `[0xB77DD0]` first (`WOL:LeavingChannel`); no entry here is
 /// in one, since the lobby's Buddy List left its channel (API+0x24) and the

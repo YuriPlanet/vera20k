@@ -422,8 +422,7 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
         .expect("retained ordinary construction production placement site");
     runtime
         .simulation
-        .entities_mut_for_test()
-        .get_mut(plant)
+        .entity_mut_for_test(plant)
         .unwrap()
         .finish_building_construction_for_test();
     runtime.simulation.grand_opening(
@@ -434,11 +433,7 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
         Some(runtime.resources.rules.overlay_registry()),
         crate::sim::world::FrameEffects::default(),
     );
-    let plant_entity = runtime
-        .simulation
-        .entities_mut_for_test()
-        .get_mut(plant)
-        .unwrap();
+    let plant_entity = runtime.simulation.entity_mut_for_test(plant).unwrap();
     plant_entity
         .health
         .set_for_test(before["actual_hp"].as_i64().unwrap() as i32);

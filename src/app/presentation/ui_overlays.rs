@@ -2906,7 +2906,7 @@ mod tests {
                 .spawn_object("POWR", "Americans", 8, 8, 0, &rules)
                 .unwrap();
             crate::sim::arena_fixture::install_status_repair(
-                sim.entities_mut_for_test().get_mut(id).unwrap(),
+                sim.entity_mut_for_test(id).unwrap(),
                 true,
             );
             let record =
@@ -3112,8 +3112,7 @@ mod tests {
             admitted(&sim, None),
             "owner's one-way alliance admits shared pip tail"
         );
-        sim.entities_mut_for_test()
-            .get_mut(1)
+        sim.entity_mut_for_test(1)
             .unwrap()
             .selection
             .set_selected_for_test(false);
@@ -3122,8 +3121,7 @@ mod tests {
             admitted(&sim, Some(1)),
             "ordinary hover also admits count/self-heal/group tail"
         );
-        sim.entities_mut_for_test()
-            .get_mut(1)
+        sim.entity_mut_for_test(1)
             .unwrap()
             .lifecycle
             .set_in_limbo_for_test(true);
@@ -3217,8 +3215,7 @@ mod tests {
                 if expected {
                     // Being hovered cannot resurrect a limbo member, even
                     // while a retained Display registration still exists.
-                    sim.entities_mut_for_test()
-                        .get_mut(1)
+                    sim.entity_mut_for_test(1)
                         .unwrap()
                         .lifecycle
                         .set_in_limbo_for_test(true);

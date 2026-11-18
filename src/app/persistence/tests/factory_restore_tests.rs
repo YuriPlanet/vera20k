@@ -377,8 +377,7 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
             }
             "retained-playfield" => {
                 saved
-                    .entities_mut_for_test()
-                    .get_mut(parent)
+                    .entity_mut_for_test(parent)
                     .unwrap()
                     .set_in_playfield(true);
             }
@@ -581,13 +580,12 @@ fn factory_restore_rejects_inconsistent_roots() {
                     .entity_id = Some(parent);
             }
             "revealed-root" => saved
-                .entities_mut_for_test()
-                .get_mut(parent)
+                .entity_mut_for_test(parent)
                 .unwrap()
                 .lifecycle
                 .set_in_limbo_for_test(false),
             "marked-root" => {
-                let entity = saved.entities_mut_for_test().get_mut(parent).unwrap();
+                let entity = saved.entity_mut_for_test(parent).unwrap();
                 entity.lifecycle.set_cell_marked_for_test(true);
             }
             "logic-root" => saved.set_logic_order_for_test(vec![parent]),
@@ -640,27 +638,23 @@ fn factory_restore_rejects_inconsistent_roots() {
                 .entities_mut_for_test()
                 .change_owner(parent, InternedId::from_index(u32::MAX)),
             "wrong-type" => saved
-                .entities_mut_for_test()
-                .get_mut(parent)
+                .entity_mut_for_test(parent)
                 .unwrap()
                 .set_type_ref_for_test(other),
             "concrete-category" => {
                 saved
-                    .entities_mut_for_test()
-                    .get_mut(parent)
+                    .entity_mut_for_test(parent)
                     .unwrap()
                     .set_category_for_test(crate::map::entities::EntityCategory::Infantry);
             }
             "manager-owned-root" => saved
-                .entities_mut_for_test()
-                .get_mut(parent)
+                .entity_mut_for_test(parent)
                 .unwrap()
                 .spawn_owner_id
                 .set_for_test(Some(parent)),
             "child-root-alias" => {
                 let manager = saved
-                    .entities_mut_for_test()
-                    .get_mut(parent)
+                    .entity_mut_for_test(parent)
                     .unwrap()
                     .slave_manager
                     .as_mut()

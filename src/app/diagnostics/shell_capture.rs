@@ -2898,9 +2898,6 @@ impl ShellCaptureSession {
         write_new_file(&frame_path, pixels)?;
         let manifest_path = self.request.output_dir().join(MANIFEST_FILE_NAME);
         write_new_file(&manifest_path, &manifest_bytes)?;
-        if let Some(capture) = self.movies.as_mut() {
-            capture.cleanup()?;
-        }
 
         // The bundle keeps every partial observation, but an incomplete
         // measurement must not exit as a successful capture.
