@@ -427,6 +427,13 @@ pub struct SideScoreArt<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SideIdx(pub u8);
 
+/// VERA's bound on `[AI] AIBaseSpacing=`'s magnitude. The base reservation
+/// (`0x00455F10`), its neighbour repair (`0x004561F0`, foundation plus five
+/// spacings) and the AI site search (`0x0050B760`) walk cell rectangles
+/// grown by it, so a value near either end of `i32` walks about 2^31 by 2^31
+/// cells and freezes the match; retail spaces bases by 1.
+pub const AI_BASE_SPACING_LIMIT: i32 = 16;
+
 /// Registry section names in rules.ini and their corresponding category.
 const TYPE_REGISTRIES: &[(&str, ObjectCategory)] = &[
     ("InfantryTypes", ObjectCategory::Infantry),
@@ -4928,7 +4935,8 @@ pub struct RuleSet {
     /// without clamping. Ordered rule passes use the shared typed projection.
     /// Executed reader controls: tools/spatial_oracle/trigger_action_values.
     reveal_trigger_radius: i32,
-    /// Signed, unclamped `[AI] AIBaseSpacing`; constructor default is 1.
+    /// Signed `[AI] AIBaseSpacing`; constructor default is 1. Its magnitude
+    /// is at most [`AI_BASE_SPACING_LIMIT`].
     pub ai_base_spacing: i32,
     /// Source-ordered `[General] Shipyard=` BuildingType identities.
     pub shipyard_types: Vec<String>,
@@ -6857,7 +6865,12 @@ impl RuleSet {
         general.iron_curtain_color = color_indexes.iron_curtain_color();
         general.berserk_color = color_indexes.berserk_color();
         general.force_shield_color = color_indexes.force_shield_color();
-        let ai_base_spacing = ini.section_or_empty("AI").read_int("AIBaseSpacing", 1);
+        // `RulesClass::ReadAI`'s ReadInt (`0x00673D7E`, Rules+0x1460), within
+        // VERA's bound.
+        let ai_base_spacing = ini
+            .section_or_empty("AI")
+            .read_int("AIBaseSpacing", 1)
+            .clamp(-AI_BASE_SPACING_LIMIT, AI_BASE_SPACING_LIMIT);
         // `DifficultyClass::ReadINI_IntVector @ 0x00475D70`, reached by
         // `RulesClass::ReadGeneral` for AISlaveMinerNumber
         // `0x00670585..0x006705B7`, AIExtraRefineries `0x006705F9..0x0067062A`
@@ -16353,6 +16366,45 @@ Projectile=Invisible
         let piece = rules.voxel_anim_type(rules.voxel_anim_type_id_by_name("PIECE").unwrap());
         let default = crate::rules::voxel_anim_type::VoxelAnimType::with_defaults("PIECE");
         assert_eq!(piece.min_angular_velocity, default.min_angular_velocity);
+    }
+
+    #[test]
+    fn a_huge_debris_count_stops_at_the_debris_bound() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=TANK\n[TANK]\nMaxDebris=2147483647\nMinDebris=2147483647\n\
+             [Warheads]\n0=WH\n[WH]\nMaxDebris=2147483647\n",
+        ))
+        .unwrap();
+        let limit = crate::rules::object_type::DEBRIS_LIMIT;
+        let tank = rules.object("TANK").unwrap();
+        assert_eq!((tank.min_debris, tank.max_debris), (limit, limit));
+        assert_eq!(rules.warhead("WH").unwrap().max_debris, limit);
+    }
+
+    #[test]
+    fn a_huge_ai_base_spacing_stops_at_the_spacing_bound() {
+        let spacing = |value: &str| {
+            let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+                "[AI]\nAIBaseSpacing={value}\n[BuildingTypes]\n0=PLAIN\n[PLAIN]\nName=Plain\n"
+            )))
+            .unwrap();
+            let plain = rules.object("PLAIN").unwrap().base_reservation_spacing;
+            (rules.ai_base_spacing, plain)
+        };
+        let limit = AI_BASE_SPACING_LIMIT;
+        assert_eq!(spacing("2147483647"), (limit, Some(limit)));
+        assert_eq!(spacing("-2147483647"), (-limit, Some(-limit)));
+    }
+
+    #[test]
+    fn a_huge_spawn_count_stops_at_the_spawn_bound() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[AircraftTypes]\n0=HORNET\n[VehicleTypes]\n0=CARRIER\n\
+             [HORNET]\nStrength=100\n[CARRIER]\nSpawns=HORNET\nSpawnsNumber=2147483647\n",
+        ))
+        .unwrap();
+        let limit = crate::rules::object_type::SPAWNS_NUMBER_LIMIT;
+        assert_eq!(rules.object("CARRIER").unwrap().spawns_number, limit);
     }
 
     #[test]

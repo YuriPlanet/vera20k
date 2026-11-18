@@ -16,6 +16,12 @@ here, and a mod that changes the program doesn't.
 | Player colours | 8 | 30, and a mod can [list its own](skirmish-colors.md) |
 | Playing online | With the original game | Only with other VERA20k players |
 
+Weapon and guard ranges can span the full map. VERA20k limits the number of
+objects a single rules entry can create at once. `Cluster`, `ShrapnelCount`
+(in magnitude) and debris counts are limited to 256, and `SpawnsNumber`
+to 128. The game limits `CrateMinimum` and `CrateMaximum`
+to 512 and `[AI] AIBaseSpacing` to −16 through 16 cells.
+
 ## What you can and can't do
 
 **You can:**

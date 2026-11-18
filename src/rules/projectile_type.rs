@@ -24,6 +24,20 @@ use crate::util::native_x87::NativeF64Bits;
 /// the attempted name independently of constructor or later Image text.
 use crate::rules::object_image::ObjectImageLoad;
 
+/// VERA's bound on `ShrapnelCount=`'s magnitude, read by
+/// `BulletTypeClass::ReadINI`'s ReadInt (`0x0046C325`, `+0x2B8`).
+/// SpawnShrapnel (`0x0046A322..0x0046A3D2`) builds one projectile per
+/// fragment, so a value near `i32::MAX` freezes the match; retail throws at
+/// most 8.
+pub const SHRAPNEL_COUNT_LIMIT: i32 = 256;
+
+/// VERA's bound on `Cluster=`, read by `BulletTypeClass::ReadINI`'s ReadInt
+/// (`0x0046C1A1`, `+0x2AC`). A non-airburst impact detonates once per
+/// cluster and an airburst lists one target per cluster, so a value near
+/// `i32::MAX` freezes the match or runs out of memory; retail clusters at
+/// most 9.
+pub const CLUSTER_LIMIT: i32 = 256;
+
 /// A projectile definition parsed from a rules.ini section.
 ///
 /// Projectiles define how a weapon's shot travels and what it can target.
@@ -107,9 +121,11 @@ pub struct ProjectileType {
     pub flat: bool,
 
     // --- Integer fields ---
-    /// Number of sub-projectiles on detonation. (+0x2AC)
+    /// Number of sub-projectiles on detonation. (+0x2AC) At most
+    /// [`CLUSTER_LIMIT`].
     pub cluster: i32,
-    /// Number of shrapnel fragments on impact. (+0x2B8)
+    /// Number of shrapnel fragments on impact. (+0x2B8) Its magnitude is at
+    /// most [`SHRAPNEL_COUNT_LIMIT`].
     pub shrapnel_count: i32,
     /// Altitude at which the projectile detonates (for airburst). (+0x2BC)
     pub detonation_altitude: i32,
@@ -449,8 +465,10 @@ impl ProjectileType {
             vertical: section.read_bool("Vertical", false),
             flat: false,
             // Integer fields
-            cluster: section.read_int("Cluster", 1),
-            shrapnel_count: section.read_int("ShrapnelCount", 0),
+            cluster: section.read_int("Cluster", 1).min(CLUSTER_LIMIT),
+            shrapnel_count: section
+                .read_int("ShrapnelCount", 0)
+                .clamp(-SHRAPNEL_COUNT_LIMIT, SHRAPNEL_COUNT_LIMIT),
             detonation_altitude: section.read_int("DetonationAltitude", 0),
             acceleration: section.read_int("Acceleration", 3),
             course_lock_duration: section.read_int("CourseLockDuration", 0),
@@ -624,6 +642,17 @@ mod tests {
         );
         assert_eq!(gravity("Q"), None);
         assert_eq!(gravity("R"), None);
+    }
+
+    #[test]
+    fn huge_fragment_counts_stop_at_their_bounds() {
+        let ini = IniFile::from_str(
+            "[A]\nShrapnelCount=2147483647\nCluster=2147483647\n[B]\nShrapnelCount=-2147483648\n",
+        );
+        let read = |name| ProjectileType::from_ini_section(name, ini.section(name).unwrap(), None);
+        assert_eq!(read("A").shrapnel_count, SHRAPNEL_COUNT_LIMIT);
+        assert_eq!(read("A").cluster, CLUSTER_LIMIT);
+        assert_eq!(read("B").shrapnel_count, -SHRAPNEL_COUNT_LIMIT);
     }
 
     #[test]

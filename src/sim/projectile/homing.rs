@@ -9,7 +9,9 @@ use super::{
     ProjectileVelocity as Velocity,
 };
 use crate::util::direction_tables::{facing16_from_angle, round_facing16_to_8};
-use crate::util::native_x87::{NativeF64Bits as D, X87Chop53 as X, X87Ordering};
+use crate::util::native_x87::{
+    MaskedX87Chop53 as M, MaskedX87Value, NativeF64Bits as D, X87Chop53 as X, X87Ordering,
+};
 use crate::util::retail_trig::TrigTable;
 
 fn advance(p: Coord, v: Velocity, scale: i32) -> Coord {
@@ -84,6 +86,8 @@ pub(super) fn ramp(mut v: Velocity, g: &mut ProjectileGuidance, frame: i32) -> V
 
 /// 466BC5..466CF9: signed wrap/remainder, table sine, two separate ftol
 /// conversions (the second only inside 256 leptons), then the low byte.
+/// An infinite `MissileROTVar` (ReadDouble past binary32) plays as native:
+/// the masked sum is infinite or NaN and `Math::ftol` (`0x007C5F00`) gives 0.
 pub(super) fn turn_word(
     g: &ProjectileGuidance,
     identity: i32,
@@ -97,12 +101,15 @@ pub(super) fn turn_word(
         X::mul(X::load_i32(phase), d(D::from_bits(0x3fb1_1111_1111_1111))),
         d(D::from_bits(0x4019_21fb_5444_2d18)),
     ));
-    let variation = d(g.missile_rot_var);
-    let varied = X::add(
-        X::mul(trig.sin_from_table(d(angle)), variation),
-        X::add(variation, X::load_i32(1)),
+    let variation = M::load_f64(g.missile_rot_var);
+    let varied = M::add(
+        M::mul(
+            MaskedX87Value::from(trig.sin_from_table(d(angle))),
+            variation,
+        ),
+        M::add(variation, M::load_i32(1)),
     );
-    let mut rate = int(X::mul(varied, X::load_i32(g.rot)));
+    let mut rate = M::ftol_i32_low_masked(M::mul(varied, M::load_i32(g.rot)));
     if distance(delta(old, target), [1, 2, 0]) < 256 {
         rate = int(X::mul(
             X::load_i32(rate),
@@ -849,6 +856,32 @@ mod tests {
                 bullet.guidance.unwrap().closing_accumulator_bits,
                 row["closing_accum"].as_f64().unwrap().to_bits(),
                 "{name} complete closing"
+            );
+        }
+    }
+
+    #[test]
+    fn an_infinite_rot_variation_turns_as_native_instead_of_stopping() {
+        let g = ProjectileGuidance {
+            rot: 60,
+            missile_rot_var: D::from_bits(f64::INFINITY.to_bits()),
+            course_lock_duration: 0,
+            course_frames: 0,
+            course_locked: false,
+            very_high: false,
+            max_speed: 102,
+            acceleration: 3,
+            closing_frames: 0,
+            closing_accumulator_bits: 0,
+        };
+        let old = Coord::new(0, 0, 0);
+        // Phase 0 makes 0·inf (NaN) and phase 4 a positive sine (inf), each
+        // far from and inside the 256-lepton step.
+        for (frame, target) in [(0, 4096), (4, 4096), (4, 100)] {
+            let target = Coord::new(target, 0, 0);
+            assert_eq!(
+                turn_word(&g, 0, frame, old, target, TrigTable::embedded()),
+                0
             );
         }
     }

@@ -27,8 +27,10 @@ pub(super) fn round(value: X87Value) -> X87Value {
     d(store(value))
 }
 
+/// `Math::ftol` (`0x007C5F00`) read as EAX: past signed64 the masked
+/// `FISTP qword` stores the integer indefinite, whose low dword is zero.
 pub(super) fn int(value: X87Value) -> i32 {
-    X::ftol_i64(value).expect("native launch conversion fits signed i64") as i32
+    X::ftol_i32_low_masked(value)
 }
 
 pub(super) fn sqrt(value: X87Value) -> X87Value {
@@ -108,4 +110,17 @@ pub(super) fn turn_xy(mut v: Velocity, heading: u16, trig: &TrigTable) -> Veloci
     v.x = store(X::mul(trig.cos_from_table(d(heading)), length));
     v.y = store(X::neg(X::mul(trig.sin_from_table(d(heading)), length)));
     v
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_launch_value_past_signed64_converts_to_zero() {
+        // A hostile rules number can carry a launch value this far.
+        let huge = NativeF64Bits::from_bits(1.0e30f64.to_bits());
+        assert_eq!(int(d(huge)), 0);
+        assert_eq!(int(d(NativeF64Bits::from_bits((-7.9f64).to_bits()))), -7);
+    }
 }
