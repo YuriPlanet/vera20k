@@ -272,10 +272,10 @@ mod tests {
     }
 
     fn test_session() -> SkirmishLaunchSession {
-        SkirmishLaunchSession {
-            mode: test_battle_mode(),
-            selected_map_file: Some("test.mmx".to_string()),
-            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+        SkirmishLaunchSession::from_rows(
+            test_battle_mode(),
+            Some("test.mmx".to_string()),
+            vec![crate::skirmish_launch::SkirmishHumanSlot {
                 raw_slot_index: Some(0),
                 name: "Player".to_string(),
                 slot: SkirmishLocalSlot {
@@ -288,9 +288,8 @@ mod tests {
                 },
                 role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
             }],
-            local_player_index: 0,
-            ai_player_count: 1,
-            opponents: vec![SkirmishAiSlot {
+            0,
+            vec![SkirmishAiSlot {
                 raw_slot_index: 1,
                 country: LaunchCountry::Russia,
                 country_random: false,
@@ -300,10 +299,8 @@ mod tests {
                 team: LaunchTeam::None,
                 difficulty: Default::default(),
             }],
-            pre_fill_house_roster:
-                crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(1),
-            options: SkirmishLaunchOptions::default(),
-        }
+            SkirmishLaunchOptions::default(),
+        )
     }
 
     #[test]
@@ -2571,7 +2568,6 @@ mod tests {
             let mut session = test_session();
             session.opponents.clear();
             session.ai_player_count = 0;
-            session.rebuild_house_roster();
             session.local_slot_mut().start_position = LaunchStartPosition::Position(0);
             session.options.bases = true;
             session.options.unit_count = 0;

@@ -5407,7 +5407,6 @@ mod completion_tests {
         launch.local_player_index = 0;
         launch.opponents.clear();
         launch.ai_player_count = 0;
-        launch.rebuild_house_roster();
         let mut session = MatchSession::default();
         session.enter_network(NetworkReturnContext::Wol);
         session
@@ -5557,7 +5556,6 @@ mod completion_tests {
         let mut launch = session.network_setup().unwrap().clone();
         let random = !launch.local_slot().color_random;
         launch.local_slot_mut().color_random = random;
-        launch.rebuild_house_roster();
         session
             .accept_network_setup(launch, true, None, false)
             .unwrap();
@@ -5588,7 +5586,6 @@ mod completion_tests {
         };
         let mut launch = session.network_setup().unwrap().clone();
         launch.local_player_mut().slot = human.slot.clone();
-        launch.rebuild_house_roster();
         session
             .accept_network_setup(launch, true, None, false)
             .unwrap();

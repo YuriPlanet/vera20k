@@ -341,7 +341,6 @@ fn host_options(
         }
     }
     launch.selected_map_file = Some(file.clone());
-    launch.rebuild_house_roster();
     let map_metadata = crate::app::shell_network_setup::local_map_metadata(state, &file)?;
     crate::app::shell_network_setup::service_event(
         state,

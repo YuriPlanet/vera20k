@@ -974,10 +974,10 @@ fn build_host_options(
         slot,
         role: Default::default(),
     };
-    let mut launch = crate::skirmish_launch::SkirmishLaunchSession {
-        mode: crate::skirmish_launch::SkirmishLaunchMode::from_game_mode(mode),
-        selected_map_file: Some(file.clone()),
-        humans: vec![
+    let mut launch = crate::skirmish_launch::SkirmishLaunchSession::from_rows(
+        crate::skirmish_launch::SkirmishLaunchMode::from_game_mode(mode),
+        Some(file.clone()),
+        vec![
             human(0, &pairing.host.name, host_seat),
             human(
                 1,
@@ -985,12 +985,10 @@ fn build_host_options(
                 persona_seat(RANDOM_ITEM_DATA, RANDOM_ITEM_DATA),
             ),
         ],
-        local_player_index: 0,
-        opponents: Vec::new(),
-        ai_player_count: 0,
-        pre_fill_house_roster: crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(0),
+        0,
+        Vec::new(),
         options,
-    };
+    );
     // 0x0069B600: the guest's picks join as a peer's do, so a colour the
     // host holds turns Random.
     crate::app::match_runtime::session::apply_peer_choices(

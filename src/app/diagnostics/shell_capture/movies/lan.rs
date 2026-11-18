@@ -721,7 +721,6 @@ impl LanCapture {
             .context("native allies")?;
         launch.options.mcv_redeploy = values["mcv_redeploy"].as_bool().context("native MCV")?;
         launch.options.crates = values["crates"].as_bool().context("native crates")?;
-        launch.rebuild_house_roster();
         Ok(launch)
     }
     fn publish_setup(&self, state: &mut AppState, launch: SkirmishLaunchSession) -> Result<()> {

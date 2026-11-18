@@ -4,6 +4,8 @@
 //! needs to create stock-offline houses and initial spawns without making `sim/`
 //! depend on UI, rendering, audio, or networking modules.
 
+use std::borrow::Cow;
+
 use serde::{Deserialize, Serialize};
 
 use crate::rules::personal_rules::PersonalRules;
@@ -110,9 +112,8 @@ impl PreFillHouseRoster {
         }
     }
 
-    /// Compatibility constructor for callers that already hold the compact
-    /// ordinary-skirmish session. Production shell packing retains all seven
-    /// raw AI slots and does not use this shortcut.
+    /// Historical one-human, eight-row setup for captured launch fixtures.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn from_compact_skirmish(active_ai_count: usize) -> Self {
         let ai_slots = (0..SKIRMISH_PLAYER_SLOT_COUNT)
             .map(|slot_index| PreFillAiHouseSlot {
@@ -150,6 +151,14 @@ impl PreFillHouseRoster {
 
     pub fn nonobserver_house_count(&self) -> usize {
         self.nonobserver_human_count() + self.ai_slots.iter().filter(|slot| slot.valid).count()
+    }
+
+    /// Gather688415..42F adds the declared AI count even if Cooperative
+    /// changed that count while leaving its constructor rows alone.
+    pub(crate) fn required_start_count(&self, declared_ai: i32) -> usize {
+        (self.nonobserver_human_count() as i32)
+            .wrapping_add(declared_ai)
+            .max(0) as usize
     }
 
     pub fn nonobserver_human_count(&self) -> usize {
@@ -869,7 +878,7 @@ impl SkirmishHumanSlot {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(try_from = "SkirmishLaunchSessionInput")]
 pub struct SkirmishLaunchSession {
     pub mode: SkirmishLaunchMode,
@@ -884,11 +893,49 @@ pub struct SkirmishLaunchSession {
     /// Cooperative5C30C0 writes it before a failing stage lookup, leaving rows.
     pub ai_player_count: i32,
     pub opponents: Vec<SkirmishAiSlot>,
-    /// Native pre-compaction House constructor roster used by both pre-Fill
-    /// passes. It deliberately retains inactive AI slots and observer state.
-    pub pre_fill_house_roster: PreFillHouseRoster,
+    /// Only historical inputs can carry constructor rows their compact seats
+    /// do not describe. Ordinary setups always derive them from current rows.
+    recorded_house_roster: Option<Box<RecordedHouseRoster>>,
     pub options: SkirmishLaunchOptions,
 }
+
+#[derive(Debug, Clone)]
+struct RecordedHouseRoster {
+    constructor: PreFillHouseRoster,
+    /// The projection of the compact seats when the record was decoded.
+    /// Editing those seats selects their new projection. Moving the replay
+    /// file or changing this client's local index preserves its constructor.
+    rows_at_decode: PreFillHouseRoster,
+}
+
+/// Preserve the launch field order: direct-spawn admission hashes its JSON bytes.
+/// Equality uses these same effective fields across recorded and fresh launches.
+#[derive(Serialize, PartialEq, Eq)]
+#[serde(rename = "SkirmishLaunchSession")]
+struct LaunchSessionView<'a> {
+    mode: &'a SkirmishLaunchMode,
+    selected_map_file: Option<&'a str>,
+    humans: &'a [SkirmishHumanSlot],
+    local_player_index: usize,
+    ai_player_count: i32,
+    opponents: &'a [SkirmishAiSlot],
+    pre_fill_house_roster: Cow<'a, PreFillHouseRoster>,
+    options: &'a SkirmishLaunchOptions,
+}
+
+impl Serialize for SkirmishLaunchSession {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.view().serialize(serializer)
+    }
+}
+
+impl PartialEq for SkirmishLaunchSession {
+    fn eq(&self, other: &Self) -> bool {
+        self.view() == other.view()
+    }
+}
+
+impl Eq for SkirmishLaunchSession {}
 
 /// Decode old capture/profile inputs once at the boundary. The runtime and
 /// newly serialized form have only the canonical ordered human vector.
@@ -959,16 +1006,19 @@ impl TryFrom<SkirmishLaunchSessionInput> for SkirmishLaunchSession {
                 "launch AI raw slot indices must be distinct and inside the Skirmish rows".into(),
             );
         }
-        Ok(Self {
-            mode: input.mode,
-            selected_map_file: input.selected_map_file,
+        let mut session = Self::from_rows(
+            input.mode,
+            input.selected_map_file,
             humans,
-            local_player_index: input.local_player_index,
-            ai_player_count: input.ai_player_count.unwrap_or(opponents.len() as i32),
+            input.local_player_index,
             opponents,
-            pre_fill_house_roster: input.pre_fill_house_roster,
-            options: input.options,
-        })
+            input.options,
+        );
+        if let Some(declared_ai) = input.ai_player_count {
+            session.ai_player_count = declared_ai;
+        }
+        session.retain_recorded_house_roster(input.pre_fill_house_roster);
+        Ok(session)
     }
 }
 
@@ -1106,40 +1156,103 @@ impl ShellRandomAssignmentState {
     }
 
     pub fn finish(mut self) -> SkirmishLaunchSession {
-        self.resolved.rebuild_house_roster();
+        self.resolved.use_live_house_rows();
         self.resolved
     }
 }
 
 impl SkirmishLaunchSession {
+    /// A fresh setup. The physical House constructors follow its current seats.
+    pub fn from_rows(
+        mode: SkirmishLaunchMode,
+        selected_map_file: Option<String>,
+        humans: Vec<SkirmishHumanSlot>,
+        local_player_index: usize,
+        opponents: Vec<SkirmishAiSlot>,
+        options: SkirmishLaunchOptions,
+    ) -> Self {
+        Self {
+            mode,
+            selected_map_file,
+            humans,
+            local_player_index,
+            ai_player_count: opponents.len() as i32,
+            opponents,
+            recorded_house_roster: None,
+            options,
+        }
+    }
+
+    fn view(&self) -> LaunchSessionView<'_> {
+        LaunchSessionView {
+            mode: &self.mode,
+            selected_map_file: self.selected_map_file.as_deref(),
+            humans: &self.humans,
+            local_player_index: self.local_player_index,
+            ai_player_count: self.ai_player_count,
+            opponents: &self.opponents,
+            pre_fill_house_roster: self.pre_fill_house_roster(),
+            options: &self.options,
+        }
+    }
+
+    fn retain_recorded_house_roster(&mut self, constructor: PreFillHouseRoster) {
+        let rows_at_decode = self.roster_from_rows();
+        self.recorded_house_roster = (constructor != rows_at_decode).then(|| {
+            Box::new(RecordedHouseRoster {
+                constructor,
+                rows_at_decode,
+            })
+        });
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_recorded_house_roster_for_test(&mut self, roster: PreFillHouseRoster) {
+        self.retain_recorded_house_roster(roster);
+    }
+
+    /// An editable room adopts the received seats as its constructor authority.
+    pub fn use_live_house_rows(&mut self) {
+        self.recorded_house_roster = None;
+    }
+
+    /// Native pre-compaction constructor order. Historical descriptors may
+    /// record extra observers or different physical AI slots; honor those
+    /// as long as the rows still describe the setup that was decoded.
+    pub fn pre_fill_house_roster(&self) -> Cow<'_, PreFillHouseRoster> {
+        let current = self.roster_from_rows();
+        if let Some(recorded) = &self.recorded_house_roster
+            && recorded.rows_at_decode == current
+        {
+            return Cow::Borrowed(&recorded.constructor);
+        }
+        Cow::Owned(current)
+    }
+
     /// The all-allied scan (BC 5DD0EA, C2 0x79071E after team copy 5E9E00):
     /// only a nonobserver human in raw row 0 seeds the comparison. An observer
     /// there bypasses this native gate; do not invent all-pairs. VERA shared
     /// control: a player sharing a House plays its leader's team. VERA's
     /// room where only AI play: they are allied when all are on one team.
     pub fn all_allied(&self) -> bool {
-        let playing =
-            |human: &SkirmishHumanSlot| human.raw_slot_index.is_some() && !human.is_observer();
-        if !self.humans.iter().any(playing) {
+        let playing: Vec<_> = self
+            .humans_with_house_leaders()
+            .filter(|(_, human, _)| human.raw_slot_index.is_some() && !human.is_observer())
+            .map(|(_, human, leader)| (human.raw_slot_index, self.humans[leader].slot.team))
+            .collect();
+        if playing.is_empty() {
             let team = self.opponents.first().map(|ai| ai.team);
             return matches!(team, Some(LaunchTeam::Team(_)))
                 && self.opponents.iter().all(|ai| Some(ai.team) == team)
                 && !self.mode.class.policy().permits_all_allied;
         }
-        let house_team = |index: usize| self.humans[self.house_leader(index)].slot.team;
-        let Some(LaunchTeam::Team(team)) = self
-            .humans
-            .iter()
-            .position(|human| human.raw_slot_index == Some(0) && !human.is_observer())
-            .map(house_team)
+        let Some(&(_, LaunchTeam::Team(team))) = playing.iter().find(|(row, _)| *row == Some(0))
         else {
             return false;
         };
-        let same_humans = (0..self.humans.len())
-            .filter(|&index| {
-                self.humans[index].raw_slot_index.is_some() && !self.humans[index].is_observer()
-            })
-            .all(|index| house_team(index) == LaunchTeam::Team(team));
+        let same_humans = playing
+            .iter()
+            .all(|(_, house_team)| *house_team == LaunchTeam::Team(team));
         let same_ai = self
             .opponents
             .iter()
@@ -1164,38 +1277,53 @@ impl SkirmishLaunchSession {
             .collect()
     }
 
-    /// VERA shared control: the human whose House human `index` plays in.
-    /// When [`crate::skirmish_modes::ModePolicy::shared_start_positions`] allows it, players who pick
-    /// the same start share one House, led by the first of them in row order;
-    /// everyone else leads their own. gamemd's setup refuses a taken start
-    /// (`0x005E9720`), so it never sees a shared one.
-    pub fn house_leader(&self, index: usize) -> usize {
-        let human = &self.humans[index];
-        if !self.shares_start(human) {
-            return index;
+    /// Human source index, seat and House leader in the launch's human order.
+    /// With VERA shared starts, the lowest admitted row on a waypoint leads;
+    /// a tie keeps vector order. Every other human leads their own House.
+    /// Gamemd's setup refuses an occupied start (0x005E9720).
+    pub fn humans_with_house_leaders(
+        &self,
+    ) -> impl Iterator<Item = (usize, &SkirmishHumanSlot, usize)> {
+        let mut leaders = [None; 256];
+        for (index, human) in self.humans.iter().enumerate() {
+            if let Some(start) = self.shared_start(human) {
+                let entry = &mut leaders[usize::from(start)];
+                let rank = (human.house_source_order(index), index);
+                if entry.is_none_or(|leader| rank < leader) {
+                    *entry = Some(rank);
+                }
+            }
         }
-        self.humans
-            .iter()
-            .enumerate()
-            .filter(|(_, other)| {
-                self.shares_start(other) && other.slot.start_position == human.slot.start_position
-            })
-            .min_by_key(|(other_index, other)| other.house_source_order(*other_index))
-            .map_or(index, |(leader, _)| leader)
+        self.humans.iter().enumerate().map(move |(index, human)| {
+            let leader = self
+                .shared_start(human)
+                .and_then(|start| leaders[usize::from(start)])
+                .map_or(index, |(_, leader)| leader);
+            (index, human, leader)
+        })
+    }
+
+    fn shared_start(&self, human: &SkirmishHumanSlot) -> Option<u8> {
+        if self.mode.class.policy().shared_start_positions
+            && human.raw_slot_index.is_some()
+            && !human.is_observer()
+            && let LaunchStartPosition::Position(start) = human.slot.start_position
+        {
+            Some(start)
+        } else {
+            None
+        }
     }
 
     /// A seated player's explicit start can be shared when the mode policy allows it.
     pub fn shares_start(&self, human: &SkirmishHumanSlot) -> bool {
-        self.mode.class.policy().shared_start_positions
-            && human.raw_slot_index.is_some()
-            && !human.is_observer()
-            && matches!(human.slot.start_position, LaunchStartPosition::Position(_))
+        self.shared_start(human).is_some()
     }
 
     /// VERA: whether players share bases, as a network room with Teams set
     /// seats more players than its map has starts and Team Starts puts a
     /// team's players on its starts together. Its people on one start share
-    /// a House ([`Self::house_leader`]); each AI keeps its own House and
+    /// a House ([`Self::humans_with_house_leaders`]); each AI keeps its own House and
     /// starts beside them (`scenario_bootstrap`'s Battle start assignment).
     pub fn shares_bases(&self) -> bool {
         self.options.teams.is_some() && self.mode.class.policy().shared_start_positions
@@ -1205,21 +1333,17 @@ impl SkirmishLaunchSession {
     /// declared AI count, independently of how many AI rows construct Houses.
     /// A shared House counts once.
     pub fn required_start_count(&self) -> usize {
-        (self.pre_fill_house_roster.nonobserver_human_count() as i32)
-            .wrapping_add(self.ai_player_count)
-            .max(0) as usize
+        self.pre_fill_house_roster()
+            .required_start_count(self.ai_player_count)
     }
 
-    /// Rebuild the constructor cache after accepted roster/choice changes.
-    /// Human identity and observer state remain authoritative in `humans`.
-    /// A shared House is one node, its leader's.
-    pub fn rebuild_house_roster(&mut self) {
+    /// CreateHouses visits shared-House leaders in signed color/source order
+    /// and the active raw AI rows in slot order, retaining intervening gaps.
+    fn roster_from_rows(&self) -> PreFillHouseRoster {
         let humans = self
-            .humans
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| self.house_leader(*index) == *index)
-            .map(|(index, human)| PreFillHumanHouse {
+            .humans_with_house_leaders()
+            .filter(|(index, _, leader)| index == leader)
+            .map(|(index, human, _)| PreFillHumanHouse {
                 priority: i32::from(human.slot.color_index),
                 source_order: human.house_source_order(index),
                 observer: human.is_observer(),
@@ -1232,22 +1356,22 @@ impl SkirmishLaunchSession {
             .max()
             .unwrap_or(0)
             .max(SKIRMISH_PLAYER_SLOT_COUNT);
-        let ai = (0..ai_rows)
+        let mut ai: Vec<_> = (0..ai_rows)
             .map(|index| PreFillAiHouseSlot {
                 slot_index: index as u8,
-                valid: self
-                    .opponents
-                    .iter()
-                    .any(|opponent| usize::from(opponent.raw_slot_index) == index),
+                valid: false,
             })
             .collect();
-        self.pre_fill_house_roster = PreFillHouseRoster::new(humans, ai);
+        for opponent in &self.opponents {
+            ai[usize::from(opponent.raw_slot_index)].valid = true;
+        }
+        PreFillHouseRoster::new(humans, ai)
     }
 
     pub fn house_roster_is_consistent(&self) -> bool {
-        let mut derived = self.clone();
-        derived.rebuild_house_roster();
-        derived.pre_fill_house_roster == self.pre_fill_house_roster
+        self.recorded_house_roster
+            .as_ref()
+            .is_none_or(|recorded| self.roster_from_rows() != recorded.rows_at_decode)
     }
 
     pub fn local_player(&self) -> &SkirmishHumanSlot {
@@ -1547,10 +1671,9 @@ mod tests {
     #[test]
     fn declared_ai_count_survives_partial_mode_effect_independently_of_constructed_rows() {
         let mut session = random_test_session();
-        session.rebuild_house_roster();
         session.ai_player_count = 5;
         assert_eq!(session.required_start_count(), 6);
-        assert_eq!(session.pre_fill_house_roster.created_house_count(), 5);
+        assert_eq!(session.pre_fill_house_roster().created_house_count(), 5);
         assert!(session.house_roster_is_consistent());
         let restored: SkirmishLaunchSession =
             serde_json::from_value(serde_json::to_value(&session).unwrap()).unwrap();
@@ -1571,6 +1694,38 @@ mod tests {
         );
         value.as_object_mut().unwrap().remove("class");
         assert!(serde_json::from_value::<SkirmishLaunchMode>(value).is_err());
+    }
+
+    #[test]
+    fn recorded_house_roster_survives_a_viewpoint_change_and_follows_an_ai_row_edit() {
+        let mut input = serde_json::to_value(crate::headless_scenario::battle_session(
+            "recorded.map",
+            &[(LaunchCountry::Russia, AiDifficulty::Normal)],
+        ))
+        .unwrap();
+        let mut observer = input["humans"][0].clone();
+        observer["raw_slot_index"] = 2.into();
+        observer["role"] = "Observer".into();
+        input["humans"].as_array_mut().unwrap().push(observer);
+        let recorded = input["pre_fill_house_roster"].clone();
+        let mut launch: SkirmishLaunchSession = serde_json::from_value(input).unwrap();
+        launch.selected_map_file = Some("elsewhere/recorded.map".into());
+        launch.local_player_index = 1;
+        assert_eq!(
+            serde_json::to_value(&launch).unwrap()["pre_fill_house_roster"],
+            recorded
+        );
+        assert!(!launch.house_roster_is_consistent());
+
+        launch.opponents[0].raw_slot_index = 8;
+        let emitted = serde_json::to_value(&launch).unwrap();
+        let roster = &emitted["pre_fill_house_roster"];
+        assert_eq!(roster["ai_slots"][8]["valid"], true);
+        assert_eq!(roster["human_nodes"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            serde_json::from_value::<SkirmishLaunchSession>(emitted).unwrap(),
+            launch
+        );
     }
 
     #[test]
@@ -1705,8 +1860,8 @@ mod tests {
     }
 
     fn random_test_session() -> SkirmishLaunchSession {
-        SkirmishLaunchSession {
-            mode: SkirmishLaunchMode {
+        SkirmishLaunchSession::from_rows(
+            SkirmishLaunchMode {
                 class: crate::skirmish_modes::MpModeClass::Battle,
                 id: 1,
                 ui_name_key: "GUI:Battle".to_string(),
@@ -1717,8 +1872,8 @@ mod tests {
                 allies_allowed: true,
                 must_ally: false,
             },
-            selected_map_file: Some("test.mmx".to_string()),
-            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+            Some("test.mmx".to_string()),
+            vec![crate::skirmish_launch::SkirmishHumanSlot {
                 raw_slot_index: Some(0),
                 name: "Player".to_string(),
                 slot: SkirmishLocalSlot {
@@ -1731,9 +1886,8 @@ mod tests {
                 },
                 role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
             }],
-            local_player_index: 0,
-            ai_player_count: 2,
-            opponents: vec![
+            0,
+            vec![
                 SkirmishAiSlot {
                     raw_slot_index: 1,
                     country: LaunchCountry::Russia,
@@ -1755,9 +1909,8 @@ mod tests {
                     difficulty: AiDifficulty::Easy,
                 },
             ],
-            pre_fill_house_roster: PreFillHouseRoster::from_compact_skirmish(2),
-            options: SkirmishLaunchOptions::default(),
-        }
+            SkirmishLaunchOptions::default(),
+        )
     }
 
     #[test]
@@ -1835,7 +1988,6 @@ mod tests {
             .collect();
         session.opponents.clear();
         session.ai_player_count = 0;
-        session.rebuild_house_roster();
         session
     }
 
