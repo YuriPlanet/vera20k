@@ -2219,7 +2219,7 @@ impl WolCapture {
                     );
                     self.event(frame, "0xC3 opened (modern)");
                     let create = crate::app::shell_wol::lobby::create_layout(state);
-                    set_window_pointer_to_rect_center(state, create.limit);
+                    set_window_pointer_to_rect_center(state, create.setting_label(create.limit));
                     App::handle_wol_mouse_move(state);
                     ensure!(
                         Self::lobby(state)?

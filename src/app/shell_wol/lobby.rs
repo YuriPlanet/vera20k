@@ -4444,10 +4444,26 @@ fn popup_control(state: &AppState, popup: &WolLobbyPopup) -> Option<u16> {
                 Some((POPUP_PASSWORD, layout.password)),
                 layout.name.map(|(_, rect)| (CREATE_NAME, rect)),
                 layout.ranked.map(|rect| (CREATE_RANKED, rect)),
-                layout.watching.map(|(_, rect)| (CREATE_WATCHING, rect)),
+                layout.watching.map(|rect| (CREATE_WATCHING, rect)),
             ]
             .into_iter()
             .flatten()
+            .map(|(id, rect)| {
+                if layout.name.is_some() && !matches!(id, POPUP_OK | POPUP_CANCEL) {
+                    let label = layout.setting_label(rect);
+                    (
+                        id,
+                        crate::ui::shell::geom::RectPx::new(
+                            label.x,
+                            rect.y,
+                            rect.x + rect.w - label.x,
+                            rect.h,
+                        ),
+                    )
+                } else {
+                    (id, rect)
+                }
+            })
             .collect()
         }
         WolPopupKind::Password(_) => {
@@ -4593,7 +4609,7 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
                     CREATE_CLAN => rects.clan,
                     CREATE_LIMIT => Some(rects.limit),
                     CREATE_RANKED => rects.ranked,
-                    CREATE_WATCHING => rects.watching.map(|(_, rect)| rect),
+                    CREATE_WATCHING => rects.watching,
                     _ => rects.observe,
                 };
                 if window.is_some_and(|window| {

@@ -499,66 +499,34 @@ pub(crate) fn paint_wol_lobby_children(
     paint
 }
 
-/// VERA's Players trackbar and Allow spectators box in a Create Game box,
-/// painted after the box as its other checkboxes are.
-pub(super) fn paint_room_limits(
+/// The Max players trackbar and its value in both Create Game dialogs.
+pub(super) fn paint_room_players(
     atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
     controls: &mut Vec<SpriteInstance>,
     labels: &mut Vec<PaintLabel<'_>>,
-    picker: &crate::ui::room_limits::RoomLimitsPicker,
-    layout: &crate::ui::room_limits::RoomLimitsLayout,
+    players: u8,
+    rect: RectPx,
     scale: ShellScale,
 ) {
-    let chrome = atlas.control_chrome();
-    let players = i32::from(picker.limits.players);
+    let players = i32::from(players);
     paint_control(
         controls,
-        &chrome,
+        &atlas.control_chrome(),
         ControlPaint::Trackbar {
-            rect: layout.players,
-            thumb_left: crate::ui::room_limits::PLAYERS.thumb_left_in(
-                players,
-                layout.players,
-                scale,
-            ),
+            rect,
+            thumb_left: crate::ui::room_limits::PLAYERS.thumb_left_in(players, rect, scale),
             plaque: true,
             disabled: false,
         },
         scale,
     );
-    paint_control(
-        controls,
-        &chrome,
-        ControlPaint::Checkbox {
-            rect: layout.spectators,
-            checked: picker.limits.spectators,
-        },
-        scale,
-    );
-    let caption = |text: String, rect: RectPx, align: ShellAlign| PaintLabel {
-        text: text.into(),
-        rect,
-        align,
+    labels.push(PaintLabel {
+        text: players.to_string().into(),
+        rect: crate::ui::shell::trackbar::value_text_rect(rect, scale),
+        align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
         rgb: SHELL_LABEL_TEXT_RGB,
         path_a_reveal: None,
-    };
-    labels.extend([
-        caption(
-            crate::i18n::tr("VERA:MaxPlayers"),
-            layout.players_label,
-            ShellAlign::H_RIGHT | ShellAlign::V_CENTER,
-        ),
-        caption(
-            players.to_string(),
-            crate::ui::shell::trackbar::value_text_rect(layout.players, scale),
-            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-        ),
-        caption(
-            crate::i18n::tr("VERA:AllowSpectators"),
-            crate::ui::skirmish_shell::checkbox_text_rect(layout.spectators, scale),
-            ShellAlign::V_CENTER,
-        ),
-    ]);
+    });
 }
 
 /// `0xC3` or `0xE1` over the covered dialog; `status` is `0xC3`'s own
@@ -582,7 +550,7 @@ pub(crate) fn paint_wol_lobby_popup(
     };
     let button_align = ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0);
     let caption = |key: &str, rect: RectPx, align: ShellAlign, enabled: bool| PaintLabel {
-        text: label(state, key).into(),
+        text: super::text::localized_label(state, key, key).into(),
         rect,
         align,
         rgb: if enabled {
@@ -614,9 +582,8 @@ pub(crate) fn paint_wol_lobby_popup(
         WolPopupKind::Create(create) => {
             let layout =
                 crate::ui::shell::modal::wol_create_game_layout_on(width, height, modern, scale);
-            let check_text = |rect| crate::ui::skirmish_shell::checkbox_text_rect(rect, scale);
             let field_align = if modern {
-                ShellAlign::H_RIGHT | ShellAlign::V_CENTER
+                ShellAlign::NONE
             } else {
                 ShellAlign::H_RIGHT
             };
@@ -626,8 +593,53 @@ pub(crate) fn paint_wol_lobby_popup(
                 field_align,
                 true,
             )];
-            // The online layout has no clan or observer box.
-            for (rect, checked, key, enabled) in [
+            let room = create.room.as_ref().zip(layout.room.as_ref());
+            if let Some((picker, room)) = room {
+                labels.push(caption(
+                    "VERA:MaxPlayers",
+                    room.players_label,
+                    field_align,
+                    true,
+                ));
+                paint_room_players(
+                    atlas,
+                    &mut paint.controls,
+                    &mut labels,
+                    picker.limits.players,
+                    room.players,
+                    scale,
+                );
+            }
+
+            // In the online form the title sits on the left and the lamp
+            // and its value sit on the right. The native box labels each lamp.
+            let mut checkbox =
+                |rect: RectPx, checked: bool, title: &str, enabled: bool, value: Option<&str>| {
+                    paint_control(
+                        &mut paint.controls,
+                        &atlas.control_chrome(),
+                        ControlPaint::Checkbox { rect, checked },
+                        scale,
+                    );
+                    let text = if modern {
+                        labels.push(caption(
+                            title,
+                            layout.setting_label(rect),
+                            field_align,
+                            enabled,
+                        ));
+                        value.unwrap_or(if checked { "GUI:Yes" } else { "GUI:No" })
+                    } else {
+                        title
+                    };
+                    labels.push(caption(
+                        text,
+                        crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
+                        ShellAlign::V_CENTER,
+                        enabled,
+                    ));
+                };
+            for (rect, checked, title, enabled) in [
                 (
                     layout.clan,
                     create.clan,
@@ -642,84 +654,33 @@ pub(crate) fn paint_wol_lobby_popup(
                 ),
                 (layout.observe, create.observe, "GUI:Observe", true),
             ] {
-                let Some(rect) = rect else {
-                    continue;
-                };
-                paint_control(
-                    &mut paint.controls,
-                    &atlas.control_chrome(),
-                    ControlPaint::Checkbox { rect, checked },
-                    scale,
-                );
-                labels.push(caption(
-                    key,
-                    check_text(rect),
-                    ShellAlign::V_CENTER,
-                    enabled,
-                ));
-            }
-            if let (Some(picker), Some(room)) = (&create.room, &layout.room) {
-                paint_room_limits(atlas, &mut paint.controls, &mut labels, picker, room, scale);
-            }
-            if let (Some(ranked), Some(rect)) = (create.ranked, layout.ranked) {
-                paint_control(
-                    &mut paint.controls,
-                    &atlas.control_chrome(),
-                    ControlPaint::Checkbox {
-                        rect,
-                        checked: ranked,
-                    },
-                    scale,
-                );
-                labels.push(PaintLabel {
-                    text: crate::i18n::tr("VERA:RankedGame").into(),
-                    rect: crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
-                    align: ShellAlign::V_CENTER,
-                    rgb: SHELL_LABEL_TEXT_RGB,
-                    path_a_reveal: None,
-                });
-            }
-            // Watching: its caption, and the box ticked while others may
-            // watch, beside its value.
-            if let (Some(watching), Some((label, rect))) = (create.watching, layout.watching) {
-                paint_control(
-                    &mut paint.controls,
-                    &atlas.control_chrome(),
-                    ControlPaint::Checkbox {
-                        rect,
-                        checked: watching != RoomWatching::Off,
-                    },
-                    scale,
-                );
-                for (key, rect, align) in [
-                    (
-                        "VERA:Watching",
-                        label,
-                        ShellAlign::H_RIGHT | ShellAlign::V_CENTER,
-                    ),
-                    (
-                        watching.label_key(),
-                        crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
-                        ShellAlign::V_CENTER,
-                    ),
-                ] {
-                    labels.push(PaintLabel {
-                        text: crate::i18n::tr(key).into(),
-                        rect,
-                        align,
-                        rgb: SHELL_LABEL_TEXT_RGB,
-                        path_a_reveal: None,
-                    });
+                if let Some(rect) = rect {
+                    checkbox(rect, checked, title, enabled, None);
                 }
             }
+            if let Some((picker, room)) = room {
+                checkbox(
+                    room.spectators,
+                    picker.limits.spectators,
+                    "VERA:AllowSpectators",
+                    true,
+                    None,
+                );
+            }
+            if let Some((ranked, rect)) = create.ranked.zip(layout.ranked) {
+                checkbox(rect, ranked, "VERA:RankedGame", true, None);
+            }
+            if let Some((watching, rect)) = create.watching.zip(layout.watching) {
+                checkbox(
+                    rect,
+                    watching != RoomWatching::Off,
+                    "VERA:Watching",
+                    true,
+                    Some(watching.label_key()),
+                );
+            }
             if let (Some(edit), Some((label, rect))) = (&create.name, layout.name) {
-                labels.push(PaintLabel {
-                    text: crate::i18n::tr("VERA:RoomName").into(),
-                    rect: label,
-                    align: field_align,
-                    rgb: SHELL_LABEL_TEXT_RGB,
-                    path_a_reveal: None,
-                });
+                labels.push(caption("VERA:RoomName", label, field_align, true));
                 room_name = Some((edit, rect));
             }
             labels.push(caption(
