@@ -1,5 +1,5 @@
-//! One match's live command session, in one of two modes chosen at install
-//! (`LiveCommandSession::new`):
+//! One match's live command session, in one of two modes chosen once at
+//! install ([`relay_clock`], handed to `LiveCommandSession::new`):
 //!
 //! - LAN, and an online match with one human that the relay does not order,
 //!   run the protocol-2 Queue_AI visit from ProcessNetwork6475F0 through
@@ -39,7 +39,7 @@ use super::command_exchange::{
 };
 use super::lockstep::NetworkSendPolicy;
 use super::reliable::{Delivery, LanConnections, RetryTiming};
-use super::udp::{LanUdpTransport, UdpServiceReport};
+use super::udp::{LanUdpTransport, OrderingCertificate, UdpServiceReport};
 
 // Ordinary648060 passes180 for either transport mode.
 // Both are6C8C40 wall-clock buckets (timeGetTime>>4), not simulation frames.
@@ -49,7 +49,8 @@ const WAIT_RECEIVE_BUDGET: usize = 64;
 
 /// ProcessNetwork647919..647954 indexes the current GameMode's row at
 /// 837340. The relay changes physical routing, not this timing selection.
-/// Source: original gamemd.exe instructions and the row bytes.
+/// Source: original gamemd.exe instructions and the row bytes. VERA: only a
+/// WOL match can run on the relay's clock ([`relay_clock`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiveCommandMode {
     Lan,
@@ -97,6 +98,32 @@ impl LiveCommandMode {
             },
         }
     }
+}
+
+/// VERA: the lobby's certificate when the relay orders this match, which then
+/// runs on the relay's clock (send rate 1, `SequencedSession`). Install calls
+/// this once, before the start agreement hashes the timing, and hands the
+/// answer to [`LiveCommandSession::new`]. Only a WOL match runs there, and
+/// only when its certificate orders it (`OrderingCertificate::relay_orders`).
+/// `houses` counts the original admission; a certificate naming another number
+/// of sources never starts. `SequencedSession::new` checks which sources.
+pub fn relay_clock(
+    mode: LiveCommandMode,
+    transport: &LanUdpTransport,
+    houses: usize,
+) -> Result<Option<OrderingCertificate>, StartupError> {
+    let Some(bytes) = transport
+        .ordering_certificate()
+        .filter(|_| mode == LiveCommandMode::Wol)
+    else {
+        return Ok(None);
+    };
+    let certificate =
+        OrderingCertificate::parse(&bytes).map_err(|_| StartupError::InvalidAdmission)?;
+    if certificate.sources_mask.count_ones() as usize != houses {
+        return Err(StartupError::ClockRoster);
+    }
+    Ok(Some(certificate).filter(OrderingCertificate::relay_orders))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -202,6 +229,8 @@ pub struct LiveCommandSession {
 }
 
 impl LiveCommandSession {
+    /// `clock` is [`relay_clock`]'s answer for this match, the one the
+    /// installed timing already follows.
     pub fn new(
         agreement: StartupAgreement,
         transport: LanUdpTransport,
@@ -209,6 +238,7 @@ impl LiveCommandSession {
         initial_seed: u32,
         frame_send_rate: NonZeroU32,
         mode: LiveCommandMode,
+        clock: Option<OrderingCertificate>,
     ) -> Result<Self, LiveCommandError> {
         if local_house < 0 {
             return Err(LiveCommandError::InvalidLocalHouse(local_house));
@@ -233,33 +263,21 @@ impl LiveCommandSession {
         }
         // Intentional modern online policy: solo AI needs no command lead
         // time, unless the lobby has the relay order the match, so that others
-        // can watch the one person in it watch AI play
-        // (`OrderingCertificate::relay_orders`). The original admission is
-        // immutable; losing remote players later must never switch an
-        // existing multiplayer game to local input.
-        let relay_orders = transport
-            .ordering_certificate()
-            .and_then(|bytes| super::udp::OrderingCertificate::parse(&bytes).ok())
-            .is_some_and(|certificate| certificate.relay_orders());
+        // can watch the one person in it watch AI play (`relay_clock`). The
+        // original admission is immutable; losing remote players later must
+        // never switch an existing multiplayer game to local input.
         let solo =
-            mode == LiveCommandMode::Wol && agreement.is_original_singleton() && !relay_orders;
+            mode == LiveCommandMode::Wol && agreement.original_houses() == 1 && clock.is_none();
         let policy = if solo {
             NetworkSendPolicy::Local
         } else {
             NetworkSendPolicy::FrameSendRate2 { frame_send_rate }
         };
-        let sequenced = if mode == LiveCommandMode::Wol
-            && !solo
-            && transport.ordering_certificate().is_some()
-        {
-            Some(sequenced::SequencedSession::new(
-                &agreement,
-                &transport,
-                local_house,
-            )?)
-        } else {
-            None
-        };
+        let sequenced = clock
+            .map(|clock| {
+                sequenced::SequencedSession::new(&agreement, &transport, local_house, &clock)
+            })
+            .transpose()?;
         let startup = startup::StartupHandshake::new(
             agreement,
             local_house,

@@ -177,6 +177,7 @@ fn pair(seed: u32) -> (LiveCommandSession, LiveCommandSession) {
             seed,
             NonZeroU32::new(5).unwrap(),
             LiveCommandMode::Lan,
+            None,
         )
         .unwrap(),
         LiveCommandSession::new(
@@ -186,6 +187,7 @@ fn pair(seed: u32) -> (LiveCommandSession, LiveCommandSession) {
             seed,
             NonZeroU32::new(5).unwrap(),
             LiveCommandMode::Lan,
+            None,
         )
         .unwrap(),
     )
@@ -335,6 +337,7 @@ fn startup_cohort(active: &[u8], hashes: &[u64]) -> Vec<LiveCommandSession> {
                 } else {
                     LiveCommandMode::Wol
                 },
+                None,
             )
             .unwrap()
         })
@@ -560,6 +563,7 @@ fn startup_ready_retries_after_release_and_old_scope_cannot_certify_rematch() {
                 73,
                 rate,
                 LiveCommandMode::Lan,
+                None,
             )
             .unwrap()
         })
@@ -674,6 +678,7 @@ fn startup_ready_retries_after_release_and_old_scope_cannot_certify_rematch() {
                 73,
                 rate,
                 LiveCommandMode::Lan,
+                None,
             )
             .unwrap()
         })
@@ -895,6 +900,7 @@ fn initial_response_histories_clear_only_on_successful_barrier_once() {
         73,
         NonZeroU32::new(5).unwrap(),
         LiveCommandMode::Lan,
+        None,
     )
     .unwrap();
     certify_native_probe_fixture(&mut live);
@@ -979,6 +985,7 @@ fn ordinary_wait_uses_private_response_history_with_larger_primary_global_mean()
         73,
         NonZeroU32::new(5).unwrap(),
         LiveCommandMode::Lan,
+        None,
     )
     .unwrap();
     certify_native_probe_fixture(&mut live);
@@ -1099,6 +1106,7 @@ fn online_initial_probe_waits_for_the_online_table_boundary() {
         73,
         NonZeroU32::new(5).unwrap(),
         LiveCommandMode::Wol,
+        None,
     )
     .unwrap();
     certify_native_probe_fixture(&mut live);
@@ -1157,6 +1165,7 @@ fn initial_probe_repeats_only_at_the_native_wall_clock_boundary() {
         91,
         NonZeroU32::new(5).unwrap(),
         LiveCommandMode::Lan,
+        None,
     )
     .unwrap();
     certify_native_probe_fixture(&mut live);
@@ -1374,6 +1383,7 @@ fn lowest_frame_projection_uses_existing_signed_progress_and_first_tie() {
         73,
         NonZeroU32::new(5).unwrap(),
         LiveCommandMode::Lan,
+        None,
     )
     .unwrap();
     let mut sim = Simulation::new();
@@ -1415,6 +1425,7 @@ fn invalid_roster_context_and_initial_seed_are_explicit_failures() {
         1,
         NonZeroU32::new(5).unwrap(),
         LiveCommandMode::Lan,
+        None,
     )
     .unwrap();
     assert_eq!(
@@ -1443,7 +1454,8 @@ fn invalid_roster_context_and_initial_seed_are_explicit_failures() {
             0,
             1,
             NonZeroU32::new(5).unwrap(),
-            LiveCommandMode::Lan
+            LiveCommandMode::Lan,
+            None
         ),
         Err(LiveCommandError::InvalidRemoteHouse(200))
     ));
@@ -1458,7 +1470,8 @@ fn invalid_roster_context_and_initial_seed_are_explicit_failures() {
             0,
             1,
             NonZeroU32::new(5).unwrap(),
-            LiveCommandMode::Lan
+            LiveCommandMode::Lan,
+            None
         ),
         Err(LiveCommandError::UnboundPeer { .. })
     ));
@@ -1937,11 +1950,12 @@ fn retail_infantry_plan_finishes_both_moves_over_lan() {
 
 /// One person watching AI play runs the match through the relay when the
 /// lobby marked its certificate, so that others can watch it; any other
-/// one-human match keeps local input.
+/// one-human match keeps local input. A LAN match never runs on the relay's
+/// clock, and a certificate naming another number of players refuses the match.
 #[test]
 fn a_one_human_match_orders_through_the_relay_only_when_the_lobby_marked_it() {
     use crate::net::udp::{
-        CertificatePacing, OrderingCertificate, RelayTicket,
+        CertificatePacing, RelayTicket,
         test_support::{SecretKey, derive_packet_key},
     };
     let key = SecretKey::new([31; 32]);
@@ -1955,8 +1969,7 @@ fn a_one_human_match_orders_through_the_relay_only_when_the_lobby_marked_it() {
     }
     .sign(&key)
     .unwrap();
-    let rate = NonZeroU32::new(1).unwrap();
-    for alone in [false, true] {
+    let relay_wire = |alone| {
         let mut wire = transport();
         wire.enable_relay(
             SocketAddrV4::new(Ipv4Addr::LOCALHOST, 9),
@@ -1975,9 +1988,22 @@ fn a_one_human_match_orders_through_the_relay_only_when_the_lobby_marked_it() {
         };
         wire.set_ordering_certificate(certificate.sign(&key).unwrap())
             .unwrap();
+        wire
+    };
+    let rate = NonZeroU32::new(1).unwrap();
+    for alone in [false, true] {
+        let wire = relay_wire(alone);
+        assert_eq!(relay_clock(LiveCommandMode::Lan, &wire, 1), Ok(None));
+        assert_eq!(
+            relay_clock(LiveCommandMode::Wol, &wire, 2),
+            Err(StartupError::ClockRoster),
+            "marked: {alone}"
+        );
+        let clock = relay_clock(LiveCommandMode::Wol, &wire, 1).unwrap();
         let agreement = StartupAgreement::new([(0, 0)], [0], 73, 10, 30, rate, 0, "", "").unwrap();
         let live =
-            LiveCommandSession::new(agreement, wire, 0, 73, rate, LiveCommandMode::Wol).unwrap();
+            LiveCommandSession::new(agreement, wire, 0, 73, rate, LiveCommandMode::Wol, clock)
+                .unwrap();
         assert_eq!(live.uses_sequenced_lockstep(), alone, "marked: {alone}");
     }
 }
@@ -1994,8 +2020,16 @@ fn solo_wol_commands_apply_without_ahead_or_batching_across_timing_updates() {
     let rate = NonZeroU32::new(10).unwrap();
     let agreement =
         StartupAgreement::new([(0, 0)], [0], 73, 40, 30, rate, sim.state_hash(), "", "").unwrap();
-    let mut live =
-        LiveCommandSession::new(agreement, transport(), 0, 73, rate, LiveCommandMode::Wol).unwrap();
+    let mut live = LiveCommandSession::new(
+        agreement,
+        transport(),
+        0,
+        73,
+        rate,
+        LiveCommandMode::Wol,
+        None,
+    )
+    .unwrap();
     live.configure_precalculated_timing(40, 45);
     let mut boundary = Boundary::new(live);
     boundary.process_millis = Some(60);
@@ -2102,6 +2136,7 @@ fn originally_multiplayer_wol_keeps_its_delay_after_the_last_peer_leaves() {
         73,
         rate,
         LiveCommandMode::Wol,
+        None,
     )
     .unwrap();
     certify_native_probe_fixture(&mut live);
@@ -2252,6 +2287,7 @@ fn three_udp_clients_keep_adaptive_timing_after_the_original_publisher_exits() {
                 73,
                 NonZeroU32::new(5).unwrap(),
                 LiveCommandMode::Lan,
+                None,
             )
             .unwrap();
             let mut boundary = Boundary::new(live);
@@ -2501,6 +2537,7 @@ fn three_udp_clients_recover_a_retained_frontier_across_a_timing_shrink() {
                 73,
                 NonZeroU32::new(5).unwrap(),
                 LiveCommandMode::Wol,
+                None,
             )
             .unwrap();
             if index == 0 {
@@ -3153,6 +3190,7 @@ fn sequenced_udp_paused_client_catches_up_without_stalling_healthy_commands() {
                     relay_peer_endpoint(1 - source).unwrap(),
                 )
                 .unwrap();
+            let clock = relay_clock(LiveCommandMode::Wol, &wire, 2).unwrap();
             Boundary::new(
                 LiveCommandSession::new(
                     agreement.clone(),
@@ -3161,6 +3199,7 @@ fn sequenced_udp_paused_client_catches_up_without_stalling_healthy_commands() {
                     73,
                     NonZeroU32::new(1).unwrap(),
                     LiveCommandMode::Wol,
+                    clock,
                 )
                 .unwrap(),
             )
@@ -3415,7 +3454,10 @@ fn sequenced_service_ends_a_match_a_newer_relay_keeps_stalling() {
         "",
     )
     .unwrap();
-    let mut session = sequenced::SequencedSession::new(&agreement, &wire, 0).unwrap();
+    let clock = relay_clock(LiveCommandMode::Wol, &wire, 2)
+        .unwrap()
+        .unwrap();
+    let mut session = sequenced::SequencedSession::new(&agreement, &wire, 0, &clock).unwrap();
     // Before the start, no Status this build can read arrives.
     let mut unreadable_at = |now: u32| {
         wire.push_ordering_received_for_test(OrderEvent::Unrecognized);
@@ -3611,7 +3653,10 @@ fn sequenced_unsent_batch_retries_when_the_relay_route_recovers() {
         "",
     )
     .unwrap();
-    let mut session = sequenced::SequencedSession::new(&agreement, &wire, 0).unwrap();
+    let clock = relay_clock(LiveCommandMode::Wol, &wire, 2)
+        .unwrap()
+        .unwrap();
+    let mut session = sequenced::SequencedSession::new(&agreement, &wire, 0, &clock).unwrap();
     let mut relay = RelayServer::new(key.clone(), 1);
     // The relay orders only matches of two or more sources. Source 1 readies
     // in process and then stays silent.
@@ -3875,6 +3920,7 @@ fn sequenced_pair_with_second_hash_offset(offset: u64) -> SequencedPair {
                     relay_peer_endpoint(1 - source).unwrap(),
                 )
                 .unwrap();
+            let clock = relay_clock(LiveCommandMode::Wol, &wire, 2).unwrap();
             Boundary::new(
                 LiveCommandSession::new(
                     agreement(source),
@@ -3883,6 +3929,7 @@ fn sequenced_pair_with_second_hash_offset(offset: u64) -> SequencedPair {
                     73,
                     NonZeroU32::new(1).unwrap(),
                     LiveCommandMode::Wol,
+                    clock,
                 )
                 .unwrap(),
             )

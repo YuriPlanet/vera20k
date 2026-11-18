@@ -759,7 +759,7 @@ at sign-in, and the selected relay must have both `watch: true` and
 When all three apply, the lobby sets VO2C flags bit 1
 (`OrderingCertificate::ordered_alone`). The relay then orders that one source,
 and the game plays through it with the usual command lead time
-(`LiveCommandSession::new`). Even without a watcher, the match holds a relay
+(`live_commands::relay_clock`). Even without a watcher, the match holds a relay
 ordering room and journal, and losing the relay ends it. The desktop client
 advertises support. Other clients keep local play for a lone observer until
 they advertise it too.
