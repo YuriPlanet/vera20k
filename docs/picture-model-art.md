@@ -466,6 +466,12 @@ current: say what was done, what was not, and what comes next.
   hash after 9,000 ticks at 1v29; mean frame within 0.15 ms of main
   (3.70–4.03 ms); the zoom-100 capture differs in 2–5 pixels, no more than
   two main runs differ from each other (within the noise rule).
+- Final off-state check after the follow-up fixes and merging main
+  (74b9d8187 against 8b6897245): same final and rules hash; mean frame 3.82
+  ms against main's 4.14 ms; Options zoom 100 and 150 at steps 300, 1200
+  and 2200 within the noise rule. The wheel-zoom capture is skipped because
+  main's map_observation has no `wheel_zoom` yet; it runs once this branch
+  is on main.
 
 ### Next steps, in order
 
