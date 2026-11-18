@@ -920,8 +920,7 @@ fn no_survivor_uninits_the_absorbed_infantry() {
         .set_for_test(Some(crate::sim::c4_plant::PendingC4Detonation::new(
             crate::sim::timer::CdTimer::started(0, 100),
             Some(planter),
-        ),
-    ));
+        )));
     let stats = |sim: &Simulation, house: &str| {
         let id = sim.interner.get(house).unwrap();
         *sim.houses[&id].stats()
@@ -1768,8 +1767,29 @@ fn plan_moves_to(sim: &mut Simulation, rules: &RuleSet, ids: &[u64], cell: (u16,
 /// (`0x00738174`) inside the loop and must not pull in its own node partner.
 #[test]
 fn a_select_started_by_a_partners_tag_event_does_not_expand() {
-    let rules = rules();
+    selection_ejects_partner_passenger(false);
+}
+
+#[test]
+fn a_silent_power_loss_keeps_a_survivors_nested_selection_silent() {
+    selection_ejects_partner_passenger(true);
+}
+
+fn selection_ejects_partner_passenger(power_loss: bool) {
+    let _ares = crate::rules::ares_switch::read_ares_way(power_loss);
+    let mut ini = IniFile::from_str(RULES);
+    ini.merge(&IniFile::from_str(
+        "[E1]\nVoiceSelect=CrewReady\nPoweredBy=GAPOWR\n[APC]\nSurvivor.PassengerChance=100\n",
+    ));
+    let rules = RuleSet::from_ini_with_fixed_art_and_sounds_for_test(
+        &ini,
+        &IniFile::from_str(ART),
+        &["CrewReady"],
+    )
+    .unwrap();
     let mut sim = sim_on_arena(1, &rules);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
     let owner = sim.interner.intern("AlliedHuman");
     sim.session.set_current_house_for_test(Some(owner));
     let actor = spawn(&mut sim, &rules, "E1", "AlliedHuman", 20, 10);
@@ -1830,13 +1850,31 @@ fn a_select_started_by_a_partners_tag_event_does_not_expand() {
     sim.lifecycle_outputs.clear_for_test();
 
     let boundary = PlanningMode(true);
-    assert!(sim.techno_select(
-        actor,
-        true,
-        crate::sim::world::UninitContext::new(&rules, None).with_effects(
-            crate::sim::world::FrameEffects::default().with_local_planning(&boundary)
-        ),
-    ));
+    let effects = crate::sim::world::FrameEffects::default().with_local_planning(&boundary);
+    if power_loss {
+        assert!(rules.ares());
+        assert!(
+            !rules
+                .object("E1")
+                .unwrap()
+                .cloak_power()
+                .powered_by()
+                .is_empty()
+        );
+        let select = crate::sim::command::Command::Select {
+            entity_ids: vec![actor],
+            additive: false,
+        };
+        assert!(sim.apply_command("AlliedHuman", &select, Some(&rules)));
+        sim.session.set_binary_frame_for_test(15);
+        assert!(sim.update_ares_powered_by(actor, &rules, None, effects));
+        assert!(sim.entities().get(actor).unwrap().deactivated.is_offline());
+    } else {
+        assert!(sim.techno_select(
+            actor,
+            crate::sim::world::UninitContext::with_rules(&rules).with_effects(effects),
+        ));
+    }
     let selected = |sim: &Simulation, id: u64| {
         sim.substrate
             .entities
@@ -1853,6 +1891,17 @@ fn a_select_started_by_a_partners_tag_event_does_not_expand() {
     assert!(selected(&sim, passenger));
     assert!(!selected(&sim, escapee_partner));
     assert_eq!(logic_selects(&sim), [actor, apc, passenger]);
+    let passenger_spoke = |sim: &Simulation| {
+        sim.sound_events.iter().any(|event| {
+            matches!(
+                event,
+                crate::sim::world::SimSoundEvent::UnitVoiceRequested { owner, sound_id }
+                    if *owner == passenger && sound_id == "CrewReady"
+            )
+        })
+    };
+    assert_eq!(passenger_spoke(&sim), !power_loss);
+    sim.sound_events.clear_for_test();
     // The guard is clear again: a later Select of the escapee expands.
     sim.substrate
         .entities
@@ -1862,12 +1911,12 @@ fn a_select_started_by_a_partners_tag_event_does_not_expand() {
         .set_selected_for_test(false);
     assert!(sim.techno_select(
         passenger,
-        true,
         crate::sim::world::UninitContext::new(&rules, None).with_effects(
             crate::sim::world::FrameEffects::default().with_local_planning(&boundary)
         ),
     ));
     assert!(selected(&sim, escapee_partner));
+    assert!(passenger_spoke(&sim));
 }
 
 /// Retail `rulesmd.ini` and `artmd.ini` (the local `ini/`): the stock crew
@@ -2024,7 +2073,7 @@ fn retail_dustbowl_crews_scatter_off_their_wrecks() {
             .into();
         let guard = keep_undefeated(sim, resources, mcv_cell);
         sim.resolve_type_handles(&resources.rules);
-        let registry = Some(&resources.overlay_registry);
+        let registry = Some(resources.rules.overlay_registry());
         let before = sim.substrate.entities.keys_sorted();
         kill_with(sim, &resources.rules, registry, plant, "Super", ORDINARY);
         kill_with(sim, &resources.rules, registry, mcv, "Super", ORDINARY);
@@ -2155,7 +2204,7 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
                         if i < 3 { ty + 1 } else { ty - 1 },
                         0,
                         rules,
-                        &resources.overlay_registry,
+                        resources.rules.overlay_registry(),
                     )
                     .unwrap_or_else(|| {
                         panic!(
@@ -2181,7 +2230,7 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
                 gi,
                 *transport,
                 crate::sim::passenger::BoardingArm::InfantryTransport,
-                Some(&resources.overlay_registry),
+                Some(resources.rules.overlay_registry()),
                 crate::sim::world::FrameEffects::default(),
             ));
         }
@@ -2198,7 +2247,7 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
             == rules.object("E1").unwrap().ifv_mode,
         "the IFV took its gunner's weapon"
     );
-    let registry = Some(&resources.overlay_registry);
+    let registry = Some(resources.rules.overlay_registry());
     for (_, transport, _, _) in &loads {
         kill_with(sim, rules, registry, *transport, "Super", ORDINARY);
     }

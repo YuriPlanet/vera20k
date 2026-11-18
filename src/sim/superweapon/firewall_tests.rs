@@ -84,7 +84,7 @@ fn a_firestorm_super_powers_the_walls_while_it_drains_and_hits_shorten_the_drain
         false
     ));
     sim.session.set_binary_frame_for_test(1000);
-    tick_house_superweapon_instances(&mut sim, &rules, owner);
+    tick_house_superweapon_instances(&mut sim, &rules, owner, Default::default());
     assert_eq!(sim.super_weapons[&owner][&sw].charge_drain_state(), 1);
     let wall = sim
         .spawn_object("FSWALL", "Americans", 8, 8, 0, &rules)

@@ -327,9 +327,8 @@ struct NetworkSession {
 }
 
 /// The live session: who holds `GameMode`, human participant table, the
-/// local participant's index, whether this client owns the match setup (seed
-/// and player list), and the retail sync-checksum history the multiplayer
-/// queue fills.
+/// local participant's index and whether this client owns the match setup
+/// (seed and player list).
 ///
 /// Process start matches native: `GameMode` 0 with an empty participant list
 /// (`0x0077B532`). The shell writes it at offline launch and network entry or

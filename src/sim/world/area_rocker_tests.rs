@@ -16,7 +16,6 @@ fn ordinary_frame(sim: &mut Simulation, rules: &RuleSet) -> Vec<super::SimFireEv
         .advance_app_frame(
             &commands,
             rules,
-            None,
             33,
             TickLane::Ordinary,
             FrameEffects::default(),

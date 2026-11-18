@@ -196,7 +196,7 @@ impl Probe {
             );
         }
         let rules = &scene.runtime.resources.rules;
-        let registry = &scene.runtime.resources.overlay_registry;
+        let registry = scene.runtime.resources.rules.overlay_registry();
         let names = crate::render::overlay_assets::render_overlay_names(registry);
         let gpu = Gpu::new();
         let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
@@ -336,7 +336,7 @@ impl Probe {
                 atlas: &self.atlas,
                 names: &self.names,
                 live_grid: scene.sim().overlay_grid(),
-                registry: Some(&scene.runtime.resources.overlay_registry),
+                registry: Some(scene.runtime.resources.rules.overlay_registry()),
                 rules: None,
                 interner: None,
                 tiberium_types: Some(&scene.runtime.resources.rules.tiberium_types),
@@ -809,7 +809,7 @@ impl Probe {
             &self.names,
             entries,
             scene.sim().overlay_grid(),
-            Some(&scene.runtime.resources.overlay_registry),
+            Some(scene.runtime.resources.rules.overlay_registry()),
             None,
             view.world_origin_y,
             view.world_height,
@@ -1045,7 +1045,7 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
     let sim = scene.sim();
     let before = sim.state_hash();
     let rules = &scene.runtime.resources.rules;
-    let registry = &scene.runtime.resources.overlay_registry;
+    let registry = scene.runtime.resources.rules.overlay_registry();
     let mut assets = AssetManager::new(&root, MediaArchiveMode::STOCK_DIGITAL).unwrap();
     assert_eq!(scene.map.header.theater, "TEMPERATE");
     let theater = crate::map::theater::load_theater(&mut assets, &scene.map.header.theater)

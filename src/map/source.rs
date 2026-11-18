@@ -698,10 +698,6 @@ fn install_received_asset_with_limits(
     resource: TransferResource,
     limits: cache::Limits,
 ) -> Result<LoadedTransferAsset> {
-    #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
-    use std::io::Write;
-    #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
-    use std::sync::atomic::{AtomicU64, Ordering};
     anyhow::ensure!(valid_source_sha256(digest), "invalid map source identity");
     anyhow::ensure!(
         length > 0 && length <= resource.limit() && bytes.len() == length,
@@ -726,32 +722,9 @@ fn install_received_asset_with_limits(
     }
     #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
     if !already_cached {
-        static NEXT_STAGE: AtomicU64 = AtomicU64::new(0);
-        let (stage, mut file) = loop {
-            let id = NEXT_STAGE.fetch_add(1, Ordering::Relaxed);
-            let stage = cache
-                .directory()
-                .join(format!(".map-{}-{id}.tmp", std::process::id()));
-            match std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&stage)
-            {
-                Ok(file) => break (stage, file),
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(error) => return Err(error.into()),
-            }
-        };
-        let result = (|| -> std::io::Result<()> {
-            file.write_all(&bytes)?;
-            file.sync_all()?;
-            drop(file);
-            std::fs::rename(&stage, &path)
-        })();
-        if result.is_err() {
-            let _ = crate::util::file_system::remove_file(&stage);
-        }
-        result?;
+        write_staged(cache.directory(), &bytes, |stage| {
+            std::fs::rename(stage, &path)
+        })?;
     }
     let source = LoadedMapSource::Loose {
         cache_lease: cache.pin(&path)?,
@@ -760,6 +733,43 @@ fn install_received_asset_with_limits(
         source_sha256: digest.to_owned(),
     };
     Ok(LoadedTransferAsset { source, content })
+}
+
+/// Writes `bytes` to a new hidden file in `dir`, syncs it, and hands its path
+/// to `publish` to move it into place. The staged file is removed when the
+/// write or `publish` fails, so no partial file is published or left behind.
+#[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
+fn write_staged(
+    dir: &Path,
+    bytes: &[u8],
+    publish: impl FnOnce(&Path) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_STAGE: AtomicU64 = AtomicU64::new(0);
+    let (stage, mut file) = loop {
+        let id = NEXT_STAGE.fetch_add(1, Ordering::Relaxed);
+        let stage = dir.join(format!(".map-{}-{id}.tmp", std::process::id()));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&stage)
+        {
+            Ok(file) => break (stage, file),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    };
+    let result = (|| -> std::io::Result<()> {
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        publish(&stage)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&stage);
+    }
+    result
 }
 
 /// The name a received or downloaded map is kept under in VERA's Maps folder: the
@@ -813,13 +823,23 @@ pub struct KeptMap {
     pub name: String,
 }
 
+/// The names a map is kept under, in the order [`keep_received_map`] tries
+/// them: `kept_name`, which [`kept_map_file_name`] gave, then
+/// `<stem>-<first 8 hex of its SHA-256>.yrm` for when another map holds the
+/// first.
+pub fn kept_map_names(kept_name: &str, sha256: &str) -> [String; 2] {
+    let stem = kept_name.strip_suffix(".yrm").unwrap_or(kept_name);
+    let prefix: String = sha256.chars().take(8).collect();
+    [kept_name.to_owned(), format!("{stem}-{prefix}.yrm")]
+}
+
 /// Keeps a map downloaded or received in a room in VERA's `maps_dir`, never
 /// the retail installation; Choose Map lists it from there, so the player can
 /// host it later. `host_file` is the host's logical map name and `bytes` the
-/// verified file. The map is kept as `<stem>.yrm`, or as
-/// `<stem>-<first 8 hex of its SHA-256>.yrm` when another map holds that
-/// name in either folder, so a player's file is never replaced. A file that
-/// already holds these bytes under either name is the kept map.
+/// verified file. The map is kept under the first of [`kept_map_names`] that
+/// no other map holds in either folder, so a player's file is never
+/// replaced. A file that already holds these bytes under either name is the
+/// kept map.
 pub fn keep_received_map(
     maps_dir: &Path,
     ra2_dir: &Path,
@@ -827,9 +847,7 @@ pub fn keep_received_map(
     bytes: &[u8],
 ) -> Result<KeptMap> {
     let name = kept_map_file_name(host_file)?;
-    let sha256 = sha256_hex(bytes);
-    let stem = name.strip_suffix(".yrm").unwrap_or(&name);
-    for name in [name.clone(), format!("{stem}-{}.yrm", &sha256[..8])] {
+    for name in kept_map_names(&name, &sha256_hex(bytes)) {
         if let Some(path) = mod_dir()
             .into_iter()
             .chain([ra2_dir, maps_dir])
@@ -879,27 +897,25 @@ fn write_kept_map(maps_dir: &Path, name: &str, bytes: &[u8]) -> Result<bool> {
     }
     #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
     {
-        // Claiming the name first lets the file system refuse a spelling it
-        // treats as the same; the bytes go beside it, so Choose Map never
-        // reads half a file, and then replace only that claim.
+        // The bytes are staged beside the name first, so Choose Map never
+        // reads half a file. Claiming the name then lets the file system
+        // refuse a spelling it treats as the same, and the staged file
+        // replaces only that claim.
         let target = maps_dir.join(name);
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&target)
-        {
-            Ok(_) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return Ok(false),
-            Err(error) => return Err(error.into()),
+        let written = write_staged(maps_dir, bytes, |stage| {
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&target)?;
+            std::fs::rename(stage, &target).inspect_err(|_| {
+                let _ = std::fs::remove_file(&target);
+            })
+        });
+        match written {
+            Ok(()) => Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
+            Err(error) => Err(error.into()),
         }
-        let stage = maps_dir.join(format!(".{name}.part"));
-        let result = std::fs::write(&stage, bytes).and_then(|()| std::fs::rename(&stage, &target));
-        if result.is_err() {
-            let _ = std::fs::remove_file(&stage);
-            let _ = std::fs::remove_file(&target);
-        }
-        result?;
-        Ok(true)
     }
 }
 
@@ -930,33 +946,6 @@ pub fn load_received_asset(
         source: input.source,
         content,
     })
-}
-
-/// Existing authored-map entry points share the typed asset installer.
-pub fn install_received_map(
-    directory: &Path,
-    bytes: Vec<u8>,
-    digest: &str,
-    length: usize,
-) -> Result<LoadedMapIni> {
-    let LoadedTransferAsset {
-        source,
-        content: TransferContent::Scenario(ini),
-    } = install_received_asset(directory, bytes, digest, length, TransferResource::Map)?
-    else {
-        unreachable!()
-    };
-    Ok(LoadedMapIni { source, ini })
-}
-pub fn load_received_map(directory: &Path, digest: &str, length: usize) -> Result<LoadedMapIni> {
-    let LoadedTransferAsset {
-        source,
-        content: TransferContent::Scenario(ini),
-    } = load_received_asset(directory, digest, length, TransferResource::Map)?
-    else {
-        unreachable!()
-    };
-    Ok(LoadedMapIni { source, ini })
 }
 
 pub fn asset_map_candidates(map_name: &str) -> Vec<String> {
@@ -1031,6 +1020,23 @@ pub mod test_support {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    /// [`install_received_asset`] for an authored map, with its INI.
+    pub fn install_received_map(
+        directory: &Path,
+        bytes: Vec<u8>,
+        digest: &str,
+        length: usize,
+    ) -> Result<LoadedMapIni> {
+        let LoadedTransferAsset {
+            source,
+            content: TransferContent::Scenario(ini),
+        } = install_received_asset(directory, bytes, digest, length, TransferResource::Map)?
+        else {
+            anyhow::bail!("an authored map installs as a scenario");
+        };
+        Ok(LoadedMapIni { source, ini })
     }
 
     pub fn make_new_format_mix_bytes(entries: &[(&str, &[u8])]) -> Vec<u8> {
@@ -1149,6 +1155,7 @@ mod tests {
         assert_eq!(found("Hills.map"), game.path().join("Hills.map"));
         assert_eq!(found("RandMap.Sed"), vera.path().join("RandMap.Sed"));
     }
+    use super::test_support::install_received_map;
     use super::*;
     use crate::assets::mix_hash::mix_hash;
 
@@ -1712,9 +1719,17 @@ mod tests {
             path.file_name().unwrap().to_str().unwrap(),
             format!("{SOURCE_TEST_MAP_SHA256}.map")
         );
-        assert!(load_received_map(&cache, SOURCE_TEST_MAP_SHA256, SOURCE_TEST_MAP.len()).is_ok());
+        let load = || {
+            load_received_asset(
+                &cache,
+                SOURCE_TEST_MAP_SHA256,
+                SOURCE_TEST_MAP.len(),
+                TransferResource::Map,
+            )
+        };
+        assert!(load().is_ok());
         std::fs::write(path, b"damaged").unwrap();
-        assert!(load_received_map(&cache, SOURCE_TEST_MAP_SHA256, SOURCE_TEST_MAP.len()).is_err());
+        assert!(load().is_err());
         install_received_map(
             &cache,
             SOURCE_TEST_MAP.to_vec(),

@@ -488,7 +488,12 @@ fn superweapon_money_two_stage_source_never_changes_wallet_across_ticks() {
             admitted.push(fire(&mut sim, &rules, owner, source, (10, 10)));
             sim.session
                 .set_binary_frame_for_test(sim.session.binary_frame() + 1);
-            superweapon::tick_house_superweapon_instances(&mut sim, &rules, owner);
+            superweapon::tick_house_superweapon_instances(
+                &mut sim,
+                &rules,
+                owner,
+                Default::default(),
+            );
         }
         assert_eq!(
             sim.houses[&owner].economy().credits(),

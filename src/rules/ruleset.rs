@@ -5052,7 +5052,7 @@ pub struct RuleSet {
     /// these are per-decoration-object types parsed from `[TerrainTypes]`.
     pub terrain_object_types: HashMap<String, TerrainObjectType>,
     /// Immutable projection of the process-resident Overlay type reader.
-    overlay_registry: crate::rules::overlay_types::OverlayTypeRegistry,
+    overlay_registry: std::sync::Arc<crate::rules::overlay_types::OverlayTypeRegistry>,
     /// Rules-driven bridge destruction defaults.
     pub bridge_rules: BridgeRules,
     /// Scenario-start crate counts and crate overlay images from `[CrateRules]`.
@@ -5448,6 +5448,14 @@ impl RuleSet {
     /// The immutable Overlay projection from this same processed Rules owner.
     pub fn overlay_registry(&self) -> &crate::rules::overlay_types::OverlayTypeRegistry {
         &self.overlay_registry
+    }
+
+    /// Keep this projection across authored constructors that bind other Rules
+    /// resources, or after the match gives its overlay view back to the shell.
+    pub fn retain_overlay_registry(
+        &self,
+    ) -> std::sync::Arc<crate::rules::overlay_types::OverlayTypeRegistry> {
+        std::sync::Arc::clone(&self.overlay_registry)
     }
 
     /// Build from the active ordered rules sources.
@@ -7432,8 +7440,9 @@ impl RuleSet {
             terrain_rules,
             tiberium_types,
             terrain_object_types,
-            overlay_registry:
+            overlay_registry: std::sync::Arc::new(
                 crate::rules::overlay_types::OverlayTypeRegistry::from_processed_rules(processed),
+            ),
             bridge_rules,
             crate_rules,
             powerups,
@@ -11883,13 +11892,8 @@ impl RuleSet {
 
     /// Load every ObjectType `AlphaImage=` SHP the folded rules name
     /// ([`crate::rules::alpha_image_assets`]).
-    pub fn bind_alpha_images(
-        &mut self,
-        overlays: &crate::rules::overlay_types::OverlayTypeRegistry,
-        assets: &crate::assets::asset_manager::AssetManager,
-    ) {
-        self.alpha_images =
-            crate::rules::alpha_image_assets::AlphaImageCatalog::bind(self, overlays, assets);
+    pub fn bind_alpha_images(&mut self, assets: &crate::assets::asset_manager::AssetManager) {
+        self.alpha_images = crate::rules::alpha_image_assets::AlphaImageCatalog::bind(self, assets);
     }
 
     /// The loaded AlphaImage a type's `AlphaImage=` names: the type's +0xAC
@@ -12045,11 +12049,7 @@ impl RuleSet {
     /// Visit AlphaImage names only for typed families whose native
     /// ObjectTypeClass reader has an allocated Rust owner. AnimType names are
     /// restricted to ART bodies admitted by the Rules processor.
-    pub(crate) fn visit_alpha_image_names(
-        &self,
-        overlays: &crate::rules::overlay_types::OverlayTypeRegistry,
-        mut visit: impl FnMut(&str),
-    ) {
+    pub(crate) fn visit_alpha_image_names(&self, mut visit: impl FnMut(&str)) {
         for object in &self.object_list {
             visit(&object.alpha_image);
         }
@@ -12071,7 +12071,7 @@ impl RuleSet {
         for voxel_anim in &self.voxel_anim_types {
             visit(&voxel_anim.alpha_image);
         }
-        for image_name in overlays.alpha_images() {
+        for image_name in self.overlay_registry().alpha_images() {
             visit(image_name);
         }
         for (name, admitted) in &self.anim_type_art_read_states {
@@ -16241,24 +16241,23 @@ Projectile=Invisible
         let mut interner = crate::sim::intern::StringInterner::new();
         // Mirror Simulation::intern_rule_type_ids (the production interning
         // pass) so the table sees every registry id.
-        for id in rules
+        let ids: Vec<_> = rules
             .infantry_ids
             .iter()
             .chain(&rules.vehicle_ids)
             .chain(&rules.aircraft_ids)
             .chain(&rules.building_ids)
-        {
-            interner.intern(id);
-        }
-        let table = crate::sim::type_handle_table::TypeHandleTable::build(&rules, &interner);
+            .map(|name| interner.intern(name))
+            .collect();
+        interner.bind_types(&rules);
 
-        // Completeness: every registry id in the fixture (E1, E2, MTNK, GAPOWR)
-        // has a [section], so none is an orphan type_ref.
-        assert_eq!(
-            table.orphan_count(),
-            0,
-            "no interned type id should fail to resolve to an object"
-        );
+        for id in ids {
+            assert!(
+                interner.type_handle(id, &rules).is_some(),
+                "{} has no object type",
+                interner.resolve(id),
+            );
+        }
 
         // Casing: a lowercased reference resolves to the same handle as the stored
         // uppercase id. The interner is case-insensitive, so the interning pass ("MTNK")
@@ -16266,7 +16265,10 @@ Projectile=Invisible
         let mtnk_lower = interner
             .get("mtnk")
             .expect("MTNK interned case-insensitively");
-        assert_eq!(table.handle_for(mtnk_lower), rules.type_handle("MTNK"));
+        assert_eq!(
+            interner.type_handle(mtnk_lower, &rules),
+            rules.type_handle("MTNK")
+        );
         assert!(
             rules.object("mtnk").is_some(),
             "lowercased object() resolves"

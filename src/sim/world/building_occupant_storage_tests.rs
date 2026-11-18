@@ -4,7 +4,6 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::sim::combat::TargetKind;
 use crate::sim::combat::combat_weapon::{firing_occupant_id, is_occupied};
 use crate::sim::command::Command;
@@ -30,8 +29,6 @@ impl Scene {
         retail
             .rules
             .bind_effect_assets(&assets, theater.extension, "TEMPERATE");
-        let registry =
-            OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
         let rules = retail.rules;
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x522970);
         *sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
@@ -62,7 +59,6 @@ impl Scene {
             simulation: sim,
             resources: std::sync::Arc::new(SimResources {
                 rules,
-                overlay_registry: registry,
                 terrain_template,
             }),
         });
@@ -82,7 +78,7 @@ impl Scene {
                 cell.1,
                 0,
                 &self.0.resources.rules,
-                &self.0.resources.overlay_registry,
+                self.0.resources.rules.overlay_registry(),
             )
             .expect("physical retail constructor and ordinary Unlimbo")
     }
@@ -197,7 +193,7 @@ impl Scene {
         loaded
             .restore_map_authority_after_snapshot_load(
                 &resources.rules,
-                &resources.overlay_registry,
+                resources.rules.overlay_registry(),
                 None,
             )
             .unwrap();

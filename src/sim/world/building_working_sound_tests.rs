@@ -101,7 +101,6 @@ fn retail_patriot_updates_its_working_sound_before_c4_destructor_release() {
             .advance_app_frame(
                 &[],
                 &rules,
-                None,
                 64,
                 TickLane::Ordinary,
                 FrameEffects::for_sound(&heard),
@@ -138,7 +137,6 @@ fn retail_patriot_updates_its_working_sound_before_c4_destructor_release() {
             .advance_app_frame(
                 &[],
                 &rules,
-                None,
                 64,
                 TickLane::Ordinary,
                 FrameEffects::for_sound(&heard),

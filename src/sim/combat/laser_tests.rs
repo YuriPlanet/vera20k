@@ -543,7 +543,6 @@ fn production_frame_orders_laser_update_before_delayed_support_birth() {
         .advance_app_frame(
             &[],
             &rules,
-            None,
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -654,7 +653,6 @@ fn retail_delayed_main_uses_preclear_count_and_failed_admission_emits_no_laser()
             .advance_app_frame(
                 &[],
                 rules,
-                None,
                 67,
                 TickLane::Ordinary,
                 crate::sim::world::FrameEffects::default(),

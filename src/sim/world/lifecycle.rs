@@ -6161,7 +6161,7 @@ impl Simulation {
             // FactoryClass::PointerExpired4CA580 is a control-insensitive
             // listener in Dispatch7258D0. Its only mutation clears a matching
             // held product; no entity listener consumes that factory pointer.
-            let mut named = self.production.factories_mut().pointer_expired(expired_id);
+            let mut named = self.production.factory_product_expired(expired_id);
             // `HouseClass::PointerExpired @ 0x004FB9B0`, each house a listener
             // (`0x004F5FFB`), forgets House+54E0 whatever the control. Phobos'
             // `AnnounceInvalidPointer` hook at this dispatcher's entry
@@ -7239,7 +7239,7 @@ impl Simulation {
                     })
                     .map(|entity| entity.owner())
             {
-                crate::sim::superweapon::update_owned_supers(self, rules, owner);
+                crate::sim::superweapon::update_owned_supers(self, rules, owner, context.effects());
             }
             // Active-frame Building43BEF5..43BF11 compares Health+6C with
             // the retained AI sample+544 after its slot/fire destructors.

@@ -152,6 +152,14 @@ Commands and their payloads:
 | `ladder` | `{names:[name]}` |
 | `balance` | `{}` |
 
+`chat` reaches the other members of the sender's room, or with `visit:true` of the lobby
+they visit, and with `to` only those it names, by exact name; it succeeds when `to` names
+nobody there. Outside a room it fails with 409 `not_in_room`, and in a room past its lobby
+phase with 409 `match_active`; [Quick Match](#quick-match) chat goes only to the matchbot.
+Games page a player (`/page`, `/reply`, the Page dialog) as `chat` with `to:[name]`, under
+the name their room or visited lobby lists; for a player neither lists, or during a match,
+they show the page as failed and send nothing.
+
 HostOptions is `{launch,map_metadata,vacancies,observer_row,cooperative_difficulty,seed}`.
 A slot's `color_index` is 0 to 7 for the original colours, 8 for an observer and 9 to 30
 for the game's [extra lobby colours](skirmish-colors.md); the lobby passes 0 to 255 on
@@ -223,12 +231,13 @@ Starting requires at least two playing participants, counting the actual
 watch, and with two or more AI everyone in the room may watch. The map's
 `player_capacity` must cover every playing human and AI row, or with Teams set
 (`launch.options.teams`), where a team's players share its bases, one start for each
-team that has players or AI and one for each playing participant on no team. Before
-publishing, the host checks this limit and tells the room the map is too small. A lobby
-from before this refuses options past the map's capacity with `invalid_options`, and a
-start with both observers and AI with 409 `not_ready`; one from before AI-only games
-refuses a start where every human watches with 409 `not_ready`. `start.users` contains
-exactly the canonical human names, including observers, and never includes AI rows.
+team that has players or AI and one for each playing participant on no team. The host's
+game checks this limit before publishing; past it, it tells the host the map is too small
+and publishes nothing. A lobby from before this refuses options past the map's capacity
+with `invalid_options`, and a start with both observers and AI with 409 `not_ready`; one
+from before AI-only games refuses a start where every human watches with 409 `not_ready`.
+`start.users` contains exactly the canonical human names, including observers, and never
+includes AI rows.
 
 Event kinds and payloads:
 
@@ -485,7 +494,10 @@ the map's `[Basic] Name=`, `file_name` the `.yrm` name to save it under, and `he
 the base64 of the map's own `[Basic]`, `[Preview]`, `[PreviewPack]`, `[Waypoints]`,
 `[Header]` and `[RandomMap]` lines, byte for byte. No two library maps share a
 `file_name` without case: one whose name would, or whose name has nothing left to save
-under, ends in `-<first 8 hex of its SHA-256>.yrm`. The catalog carries
+under, ends in `-<first 8 hex of its SHA-256>.yrm`. The game skips an entry whose
+`file_name` it would not save as it is: one not ending in `.yrm`, or with a path, a colon,
+a control character, a leading dot, a trailing dot or space, another character Windows
+forbids, or a name Windows reserves. The catalog carries
 `ETag: "lib-<revision>-<16 hex>"`, the hex from its content (catalogs written before:
 `"lib-<revision>"`), and answers 304 to a matching `If-None-Match`, weak or not, or `*`.
 `GET /v1/library/maps/<sha256>` downloads one map, and

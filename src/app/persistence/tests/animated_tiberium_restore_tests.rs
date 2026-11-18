@@ -124,7 +124,6 @@ fn player_load_recolors_flagged_anims_from_stored_location_only() {
         Some(LOAD_FIXTURE_MAP_HASH),
         Some(&rules),
         Some(&terrain),
-        Some(registry),
     )
     .expect("the ordinary user-load path admits this saved world")
     .simulation;

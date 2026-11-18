@@ -959,7 +959,6 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
                     Some(&runtime.resources.rules),
                     Some(view.interner()),
                     view.overlay_grid(),
-                    Some(&runtime.resources.overlay_registry),
                     &presentation.overlay_radar_colors,
                     view.resolved_terrain(),
                     presentation

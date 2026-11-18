@@ -1,6 +1,6 @@
 //! LAN's full options and roster, which a VERA host sends in VS31 setup
-//! payloads ([`crate::net::lan_messages::extended_setup`]), and the native
-//! Options and Roster packets (`0x005E3720`, `0x005E8EA0`) it refuses. The
+//! payloads ([`crate::net::lan_messages::extended_setup`]) in place of
+//! gamemd's Options and Roster packets (`0x005E3720`, `0x005E8EA0`). The
 //! payloads are projections: MatchSession retains participants, choices, map
 //! and readiness; the existing HostSetup service performs mode/map admission
 //! and its effects.
@@ -15,8 +15,8 @@ use crate::app::match_runtime::session::{
 };
 use crate::app::shell_network_setup::agreement::MultiplayerAgreement;
 use crate::app::shell_network_setup::{HostOptions, NetworkSetupEvent};
+use crate::net::lan_messages::game_name_hash;
 use crate::net::lan_messages::setup;
-use crate::net::lan_messages::{LanMessage, game_name_hash};
 use crate::skirmish_launch::{
     AiDifficulty, LaunchCountry, LaunchStartPosition, LaunchTeam, NETWORK_PLAYER_SLOT_COUNT,
     SkirmishAiSlot, SkirmishLaunchMode, SkirmishLaunchOptions, SkirmishLocalSlot,
@@ -210,16 +210,6 @@ fn queue_payload(
         service.setup_scope = Some(scope);
     }
     Ok(admitted)
-}
-
-pub(super) fn receive_options(
-    state: &mut AppState,
-    source: SocketAddrV4,
-    message: &LanMessage,
-) -> Result<()> {
-    validate_host(state, source, message)?;
-    super::reject_setup_compatibility(state, &crate::i18n::tr("VERA:LanHostNoAgreement"));
-    anyhow::bail!("unscoped legacy full setup is not a VERA admission")
 }
 
 /// The host's room applied through HostSetup, then the AI rows' inactive
@@ -435,25 +425,6 @@ pub(super) fn receive_extended(
             Ok(())
         }
     }
-}
-
-pub(super) fn receive_roster(
-    state: &mut AppState,
-    source: SocketAddrV4,
-    message: &LanMessage,
-) -> Result<()> {
-    validate_host(state, source, message)?;
-    anyhow::bail!("unscoped native roster is not a VERA admission")
-}
-
-fn validate_host(state: &AppState, source: SocketAddrV4, message: &LanMessage) -> Result<()> {
-    let host = state
-        .match_state
-        .lan_service
-        .as_ref()
-        .and_then(|service| service.admitted_host.as_ref())
-        .ok_or_else(|| anyhow!("no admitted LAN host"))?;
-    validate_host_endpoint(&state.match_state.session, host, source, &message.name())
 }
 
 fn validate_host_endpoint(

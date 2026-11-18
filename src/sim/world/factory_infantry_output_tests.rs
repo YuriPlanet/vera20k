@@ -2021,14 +2021,7 @@ fn joined_two_paid_gi(route: OutputRoute) {
             crate::sim::world::FrameEffects::default().with_production_strip(&visits, &|_| {});
         if route == OutputRoute::RallyBetweenCompletionAndPlace {
             let mut output = sim
-                .advance_app_frame(
-                    &due,
-                    &rules,
-                    Some(&registry),
-                    TICK_MS,
-                    super::TickLane::Ordinary,
-                    effects,
-                )
+                .advance_app_frame(&due, &rules, TICK_MS, super::TickLane::Ordinary, effects)
                 .expect("the ordinary app frame completes");
             let admitted = output.take_admitted_commands();
             if products[0].completed_frame.is_some() && products[0].placed_frame.is_none() {

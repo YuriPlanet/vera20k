@@ -144,7 +144,6 @@ fn stock_carrier_pips_follow_construction_sortie_recall_reload_and_selection() {
             .advance_app_frame(
                 &[],
                 rules,
-                None,
                 33,
                 crate::sim::world::TickLane::Ordinary,
                 crate::sim::world::FrameEffects::default(),

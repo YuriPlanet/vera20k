@@ -3425,7 +3425,6 @@ mod item83_selection_order_tests {
         sim.advance_app_frame(
             &[],
             RuleSet::empty_for_test(),
-            None,
             67,
             crate::sim::world::TickLane::Ordinary,
             crate::sim::world::FrameEffects::empty(),

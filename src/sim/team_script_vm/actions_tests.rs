@@ -109,7 +109,7 @@ fn script1_tree_identity_survives_reload_then_expiry_advances_the_script() {
     };
     let sim = &runtime.simulation;
     let rules = &runtime.resources.rules;
-    let overlays = &runtime.resources.overlay_registry;
+    let overlays = runtime.resources.rules.overlay_registry();
     assert_eq!(
         sim.team_script_vm.team(team).unwrap().mission_target,
         Some(TeamTarget::Object(tree))
@@ -170,7 +170,7 @@ fn coordinate_attack_resolves_a_cell_focus_to_its_terrain_object() {
     };
     let sim = &mut runtime.simulation;
     let rules = &runtime.resources.rules;
-    let overlays = &runtime.resources.overlay_registry;
+    let overlays = runtime.resources.rules.overlay_registry();
     sim.team_assign_mission_target(
         team,
         Some(TeamTarget::Cell { x: 25, y: 20 }),

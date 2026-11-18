@@ -5,7 +5,6 @@
 use super::FrameClientBoundary;
 use crate::app::input::planning_mode::PlanningInputState;
 use crate::audio::events::SoundEventQueue;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::sim::command::Command;
 use crate::sim::house_state::HouseState;
 use crate::sim::replay::{ReplayHeader, ReplayLog, ReplayRunner};
@@ -77,10 +76,7 @@ fn retail_runtime() -> Option<(SimRuntime, [u64; 2])> {
         sim.spawn_object("GACNST", owner, x, y, 0, rules)
             .expect("stock last construction yard")
     });
-    let overlays = OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
-    let mut resources = SimResources::empty();
-    resources.rules = retail.rules;
-    resources.overlay_registry = overlays;
+    let resources = SimResources::new(retail.rules);
     Some((
         SimRuntime {
             simulation: sim,
@@ -126,7 +122,10 @@ fn retail_local_defeat_leaves_planning_in_the_same_house_frame() {
     // pending destructor drain and the next House gate decide the loss.
     rt.simulation.uninit_with_context(
         yards[0],
-        UninitContext::new(&rt.resources.rules, Some(&rt.resources.overlay_registry)),
+        UninitContext::new(
+            &rt.resources.rules,
+            Some(rt.resources.rules.overlay_registry()),
+        ),
     );
     let mut commits = Vec::new();
     let mut defeat_tick = None;
@@ -226,7 +225,7 @@ fn retail_local_defeat_leaves_planning_in_the_same_house_frame() {
         replay_yards[0],
         UninitContext::new(
             &replay.resources.rules,
-            Some(&replay.resources.overlay_registry),
+            Some(replay.resources.rules.overlay_registry()),
         ),
     );
     let hashes = ReplayRunner::run_runtime(&mut replay, &recorded, 67).unwrap();
@@ -258,7 +257,10 @@ fn retail_inactive_and_nonlocal_defeat_do_not_leave_the_local_planner() {
         let mut sounds = SoundEventQueue::new();
         rt.simulation.uninit_with_context(
             yards[losing_house],
-            UninitContext::new(&rt.resources.rules, Some(&rt.resources.overlay_registry)),
+            UninitContext::new(
+                &rt.resources.rules,
+                Some(rt.resources.rules.overlay_registry()),
+            ),
         );
         let mut admitted = Vec::new();
         for _ in 0..5 {

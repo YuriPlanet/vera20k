@@ -856,11 +856,9 @@ impl Simulation {
         };
         self.substrate.queue_crew_mission(id, mission);
         if selected_by_player {
-            // `0x0073835E`: Select (vt+0x14C) with the voice latch set, as
-            // every Logic pass leaves it.
+            // `0x0073835E`: Select (vt+0x14C) inherits the current voice latch.
             self.techno_select(
                 id,
-                true,
                 UninitContext::new(rules, registry).with_effects(effects),
             );
         }
@@ -1094,12 +1092,10 @@ impl Simulation {
                         .queue_crew_mission(passenger, MissionType::Hunt),
                 }
             }
-            // `0x00738174..0x00738180`: Select (vtable `+0x14C`), voice latch
-            // set.
+            // `0x00738174..0x00738180`: Select (vtable `+0x14C`) inherits the voice latch.
             if dying.selected_by_player {
                 sim.techno_select(
                     passenger,
-                    true,
                     UninitContext::new(rules, registry).with_effects(effects),
                 );
             }

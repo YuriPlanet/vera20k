@@ -120,7 +120,7 @@ fn capture_probe(
             target_building_id: hut
         },
         &resources.rules,
-        Some(&resources.overlay_registry),
+        Some(resources.rules.overlay_registry()),
         crate::sim::world::FrameEffects::default(),
     ));
     let mut snapshot = zone_snapshot(sim, name);
@@ -197,7 +197,7 @@ fn retail_hills_engineer_cliff_start_is_rejected() {
             74,
             0,
             &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .unwrap()
     });
@@ -330,7 +330,7 @@ fn retail_hills_engineer_enters_hut_and_repairs() {
             start.1,
             0,
             &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .unwrap();
     let command = CommandEnvelope::new(

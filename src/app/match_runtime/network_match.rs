@@ -1398,7 +1398,6 @@ mod tests {
             .advance_app_frame(
                 &[],
                 rules,
-                None,
                 33,
                 crate::sim::world::TickLane::Ordinary,
                 crate::sim::world::FrameEffects::empty().with_network_commands(&waiting),
@@ -1425,7 +1424,7 @@ mod tests {
             Some(crate::sim::world::NetworkInterruption::ConnectionFailed,)
         );
         let output = sim
-            .resume_after_network_failure(rules, None, crate::sim::world::FrameEffects::empty())
+            .resume_after_network_failure(rules, crate::sim::world::FrameEffects::empty())
             .unwrap();
         assert!(output.tick.frame_committed);
         assert_eq!(sim.session().binary_frame(), 1);

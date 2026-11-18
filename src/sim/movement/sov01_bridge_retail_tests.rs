@@ -55,7 +55,7 @@ fn sov01_transport_crosses_water_below_golden_gate() {
             .foot_entry_receiver(
                 id,
                 &scenario.runtime.resources.rules,
-                Some(&scenario.runtime.resources.overlay_registry),
+                Some(scenario.runtime.resources.rules.overlay_registry()),
                 None,
             )
             .unwrap();

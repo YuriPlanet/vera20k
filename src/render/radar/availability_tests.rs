@@ -27,7 +27,6 @@ fn frame(sim: &mut Simulation, rules: &RuleSet, boundary: &RadarBoundary) {
     sim.advance_app_frame(
         &commands,
         rules,
-        None,
         67,
         TickLane::Ordinary,
         FrameEffects::empty().with_tactical_radar(boundary),

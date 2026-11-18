@@ -277,7 +277,7 @@ fn finish_history(start_before_plants: bool) {
             type_id: "GAREFN",
             cell: (12, 13)
         },
-        Some(&runtime.resources.overlay_registry),
+        Some(runtime.resources.rules.overlay_registry()),
         FrameEffects::default(),
     ));
     for _ in 0..600 {

@@ -805,9 +805,9 @@ impl GameSnapshot {
         rules: &crate::rules::ruleset::RuleSet,
         terrain_template: crate::map::resolved_terrain::ResolvedTerrainGrid,
         terrain_speed_config: crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig,
-        overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
         cells: PlayerSaveCells<'_, '_>,
     ) -> Result<(Simulation, SnapshotMapRestoreOutput), SnapshotRestoreError> {
+        let overlay_registry = rules.overlay_registry();
         let mut simulation = self.sim;
         simulation.retain_process_state_for_load(process);
         // Native MouseLoad->Resize reconstructs the dummy before subsequent

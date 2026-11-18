@@ -165,15 +165,7 @@ fn retail_mtnk_body_light_follows_bridge_arrival_and_ground_side_cell() {
     let id = {
         let rt = &mut scene.runtime;
         rt.simulation
-            .spawn_object_with_overlay_registry(
-                "MTNK",
-                &owner_name,
-                75,
-                75,
-                0,
-                &rt.resources.rules,
-                &rt.resources.overlay_registry,
-            )
+            .spawn_object_with_map_overlays("MTNK", &owner_name, 75, 75, 0, &rt.resources.rules)
             .unwrap()
     };
     sample(&scene, id, &cases[0]);
@@ -204,15 +196,7 @@ fn retail_mtnk_body_light_follows_bridge_arrival_and_ground_side_cell() {
     let side = {
         let rt = &mut scene.runtime;
         rt.simulation
-            .spawn_object_with_overlay_registry(
-                "MTNK",
-                &owner_name,
-                78,
-                76,
-                0,
-                &rt.resources.rules,
-                &rt.resources.overlay_registry,
-            )
+            .spawn_object_with_map_overlays("MTNK", &owner_name, 78, 76, 0, &rt.resources.rules)
             .unwrap()
     };
     sample(&scene, side, &cases[2]);

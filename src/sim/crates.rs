@@ -815,29 +815,29 @@ pub(crate) mod tests {
     const OPEN_LAND_KEYS: &str = "Foot=100%\nTrack=100%\nWheel=100%\nFloat=100%\n\
         Hover=100%\nAmphibious=100%\nFloatBeach=100%\n";
 
-    pub(crate) fn crate_registry() -> OverlayTypeRegistry {
-        let ini = IniFile::from_str(&format!(
-            "[OverlayTypes]\n0=TIB01\n1=SILVER\n2=WOOD\n3=WATER\n\
-             [TIB01]\nTiberium=yes\n[SILVER]\nCrate=yes\n\
-             [WOOD]\nCrate=yes\n[WATER]\nCrate=yes\n[Clear]\n{OPEN_LAND_KEYS}",
-        ));
-        OverlayTypeRegistry::from_ini(&ini, None)
-    }
-
     pub(crate) fn crate_ruleset(extra: &str) -> RuleSet {
-        let ini = IniFile::from_str(&format!(
-            "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
-             [CrateRules]\nCrateImg=SILVER\nWoodCrateImg=WOOD\nWaterCrateImg=WATER\n{extra}",
-        ));
-        RuleSet::from_ini(&ini).expect("rules")
+        standard_crate_rules_with_images("WOOD", "SILVER", "WATER", extra)
     }
 
-    pub(crate) fn crate_ruleset_with_images(
+    pub(super) fn standard_crate_rules_with_images(
         wood: &str,
         common: &str,
         water: &str,
         extra: &str,
     ) -> RuleSet {
+        crate_ruleset_with_images(
+            wood,
+            common,
+            water,
+            &format!(
+                "{extra}\n[OverlayTypes]\n0=TIB01\n1=SILVER\n2=WOOD\n3=WATER\n\
+                [TIB01]\nTiberium=yes\n[SILVER]\nCrate=yes\n\
+                [WOOD]\nCrate=yes\n[WATER]\nCrate=yes\n[Clear]\n{OPEN_LAND_KEYS}"
+            ),
+        )
+    }
+
+    fn crate_ruleset_with_images(wood: &str, common: &str, water: &str, extra: &str) -> RuleSet {
         let ini = IniFile::from_str(&format!(
             "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
              [CrateRules]\nCrateImg={common}\nWoodCrateImg={wood}\nWaterCrateImg={water}\n{extra}",
@@ -1006,14 +1006,14 @@ pub(crate) mod tests {
     #[test]
     fn gsi_01_04_crate_disabled_spends_no_rng_and_places_nothing() {
         let rules = crate_ruleset("CrateMinimum=1\nCrateMaximum=255\n");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
         let grid = PathGrid::test_all_passable(MAP, MAP);
         let mut sim = sim_with_grid(7);
         sim.install_fixture_path_grid(Some(&grid));
         sim.session.game_options_mut_for_test().crates = false;
         let rng_before = sim.scenario_rng.state();
 
-        let result = place_scenario_start_crates(&mut sim, &rules, &registry, 4);
+        let result = place_scenario_start_crates(&mut sim, &rules, registry, 4);
 
         assert_eq!(
             result,
@@ -1023,21 +1023,21 @@ pub(crate) mod tests {
                 visible: 0,
             }
         );
-        assert!(crate_cells(&sim, &registry).is_empty());
+        assert!(crate_cells(&sim, registry).is_empty());
         assert_eq!(sim.scenario_rng.state(), rng_before);
     }
 
     #[test]
     fn scenario_start_crate_missing_map_size_authority_invents_no_rectangle() {
         let rules = crate_ruleset("CrateMinimum=1\nCrateMaximum=1\n");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
         let grid = PathGrid::test_all_passable(MAP, MAP);
         let mut sim = sim_with_grid(0xBAD5_1E00);
         sim.install_fixture_path_grid(Some(&grid));
         sim.set_playfield_size_height_for_test(None);
         let before = sim.scenario_rng.state();
 
-        let result = place_scenario_start_crates(&mut sim, &rules, &registry, 1);
+        let result = place_scenario_start_crates(&mut sim, &rules, registry, 1);
 
         assert_eq!((result.accepted, result.visible), (0, 0));
         assert_eq!(sim.scenario_rng.state(), before);
@@ -1048,13 +1048,13 @@ pub(crate) mod tests {
     #[test]
     fn gsi_01_04_crate_success_spends_x_y_then_timer() {
         let rules = crate_ruleset("CrateMinimum=3\nCrateMaximum=255\n");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
         let grid = PathGrid::test_all_passable(MAP, MAP);
 
         let mut first = sim_with_grid(0xABCD);
         first.install_fixture_path_grid(Some(&grid));
         let mut replay = first.scenario_rng.clone();
-        place_scenario_start_crates(&mut first, &rules, &registry, 3);
+        place_scenario_start_crates(&mut first, &rules, registry, 3);
 
         // Three successful first attempts: X, Y, timer for each crate.
         for _ in 0..3 {
@@ -1070,19 +1070,19 @@ pub(crate) mod tests {
 
         let mut same_cursor = sim_with_grid(0xABCD);
         same_cursor.install_fixture_path_grid(Some(&grid));
-        place_scenario_start_crates(&mut same_cursor, &rules, &registry, 3);
+        place_scenario_start_crates(&mut same_cursor, &rules, registry, 3);
         let mut other_cursor = sim_with_grid(0x1111);
         other_cursor.install_fixture_path_grid(Some(&grid));
-        place_scenario_start_crates(&mut other_cursor, &rules, &registry, 3);
+        place_scenario_start_crates(&mut other_cursor, &rules, registry, 3);
 
         assert_eq!(
-            crate_cells(&first, &registry),
-            crate_cells(&same_cursor, &registry),
+            crate_cells(&first, registry),
+            crate_cells(&same_cursor, registry),
             "the same scenario cursor must scatter crates identically"
         );
         assert_ne!(
-            crate_cells(&first, &registry),
-            crate_cells(&other_cursor, &registry),
+            crate_cells(&first, registry),
+            crate_cells(&other_cursor, registry),
             "a different scenario cursor must scatter crates differently"
         );
     }
@@ -1093,7 +1093,7 @@ pub(crate) mod tests {
     #[test]
     fn place_crate_commits_at_the_requested_cell_with_one_timer_draw() {
         let rules = crate_ruleset("");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
         let grid = PathGrid::test_all_passable(MAP, MAP);
         let wood = registry.id_for_name("WOOD").unwrap();
         for (powerup, data) in [(Some(0u8), 0u8), (None, u8::MAX)] {
@@ -1101,7 +1101,7 @@ pub(crate) mod tests {
             sim.install_fixture_path_grid(Some(&grid));
             let mut replay = sim.scenario_rng.clone();
 
-            assert!(place_crate(&mut sim, &rules, &registry, (12, 14), powerup));
+            assert!(place_crate(&mut sim, &rules, registry, (12, 14), powerup));
 
             replay.next_range_u32_inclusive(0, 0x7fff_fffe);
             assert_eq!(sim.scenario_rng.state(), replay.state(), "{powerup:?}");
@@ -1115,7 +1115,7 @@ pub(crate) mod tests {
     #[test]
     fn gsi_01_04_crate_failed_attempt_spends_only_x_y_before_success_timer() {
         let rules = crate_ruleset("CrateMinimum=1\nCrateMaximum=1\n");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
         let grid = PathGrid::test_all_passable(MAP, MAP);
         let mut sim = sim_with_grid(0xA11CE);
         sim.install_fixture_path_grid(Some(&grid));
@@ -1138,17 +1138,17 @@ pub(crate) mod tests {
             .expect("overlay grid")
             .place_overlay(first.0, first.1, blocker, 0);
 
-        let result = place_scenario_start_crates(&mut sim, &rules, &registry, 1);
+        let result = place_scenario_start_crates(&mut sim, &rules, registry, 1);
 
         assert_eq!((result.accepted, result.visible), (1, 1));
-        assert_eq!(crate_cells(&sim, &registry), vec![second]);
+        assert_eq!(crate_cells(&sim, registry), vec![second]);
         assert_eq!(sim.scenario_rng.state(), replay.state());
     }
 
     #[test]
     fn gsi_01_04_crate_second_request_sees_first_overlay_immediately() {
         let rules = crate_ruleset("CrateMinimum=2\nCrateMaximum=2\n");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
         let grid = PathGrid::test_all_passable(MAP, MAP);
 
         // Seed 1671 yields (37,4), timer, (37,4), then retry (5,8).
@@ -1175,11 +1175,11 @@ pub(crate) mod tests {
         assert_eq!(retry, (5, 8));
         replay.next_range_u32_inclusive(0, 0x7fff_fffe);
 
-        let result = place_scenario_start_crates(&mut sim, &rules, &registry, 2);
+        let result = place_scenario_start_crates(&mut sim, &rules, registry, 2);
 
         assert_eq!((result.accepted, result.visible), (2, 2));
         assert_eq!(
-            crate_cells(&sim, &registry)
+            crate_cells(&sim, registry)
                 .into_iter()
                 .collect::<BTreeSet<_>>(),
             BTreeSet::from([first, retry])
@@ -1190,7 +1190,7 @@ pub(crate) mod tests {
     #[test]
     fn gsi_01_04_crate_one_thousand_failures_spend_exactly_two_thousand_draws() {
         let rules = crate_ruleset("CrateMinimum=1\nCrateMaximum=1\n");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
         let grid = PathGrid::test_all_passable(MAP, MAP);
         let mut sim = sim_with_grid(0xF411ED);
         sim.install_fixture_path_grid(Some(&grid));
@@ -1209,10 +1209,10 @@ pub(crate) mod tests {
             replay.next_range_u32_inclusive(1, u32::from(MAP - 1));
         }
 
-        let result = place_scenario_start_crates(&mut sim, &rules, &registry, 1);
+        let result = place_scenario_start_crates(&mut sim, &rules, registry, 1);
 
         assert_eq!((result.accepted, result.visible), (0, 0));
-        assert!(crate_cells(&sim, &registry).is_empty());
+        assert!(crate_cells(&sim, registry).is_empty());
         assert_eq!(sim.crate_authority.slots()[0], CrateSlot::default());
         assert_eq!(sim.scenario_rng.state(), replay.state());
     }
@@ -1220,7 +1220,7 @@ pub(crate) mod tests {
     #[test]
     fn gsi_01_04_crate_full_slot_array_stops_before_more_rng() {
         let rules = crate_ruleset("CrateMinimum=300\nCrateMaximum=300\n");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
         let grid = PathGrid::test_all_passable(MAP, MAP);
         let mut sim = sim_with_grid(0x5107_0256);
         sim.install_fixture_path_grid(Some(&grid));
@@ -1236,7 +1236,7 @@ pub(crate) mod tests {
             }
         }
 
-        let result = place_scenario_start_crates(&mut sim, &rules, &registry, 300);
+        let result = place_scenario_start_crates(&mut sim, &rules, registry, 300);
 
         assert_eq!(result.requested, 300);
         assert_eq!(
@@ -1258,7 +1258,7 @@ pub(crate) mod tests {
     #[test]
     fn scenario_start_crate_snap_skips_any_raw_ground_occupation_bit() {
         let rules = crate_ruleset("CrateMinimum=1\nCrateMaximum=1\n");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
         let grid = PathGrid::test_all_passable(MAP, MAP);
 
         for bit in [1, 2, 4, 8, 16, 32, 64, 128] {
@@ -1270,14 +1270,14 @@ pub(crate) mod tests {
                 .raw_cell_occupation
                 .mark_ground(drawn.0, drawn.1, bit);
 
-            let result = place_scenario_start_crates(&mut sim, &rules, &registry, 1);
+            let result = place_scenario_start_crates(&mut sim, &rules, registry, 1);
 
             assert_eq!(
                 (result.accepted, result.visible),
                 (1, 1),
                 "tested {bit:#04x}"
             );
-            let placed = crate_cells(&sim, &registry);
+            let placed = crate_cells(&sim, registry);
             assert_eq!(placed.len(), 1, "tested {bit:#04x}");
             let placed = placed[0];
             assert_eq!(
@@ -1301,7 +1301,7 @@ pub(crate) mod tests {
     #[test]
     fn crate_slot_any_raw_ground_occupation_bit_ghosts() {
         let rules = crate_ruleset("CrateMinimum=1\nCrateMaximum=1\n");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
         let grid = PathGrid::test_all_passable(MAP, MAP);
         let cell = (12, 13);
 
@@ -1314,7 +1314,7 @@ pub(crate) mod tests {
             let accepted = place_overlay_and_init_timer(
                 &mut sim,
                 &rules,
-                &registry,
+                registry,
                 0,
                 cell,
                 ForcedPostPrecheckFailure::None,
@@ -1326,7 +1326,7 @@ pub(crate) mod tests {
             );
             assert!(sim.crate_authority.slots()[0].cell_x != 0);
             assert_eq!(
-                crate_cells(&sim, &registry).contains(&cell),
+                crate_cells(&sim, registry).contains(&cell),
                 false,
                 "occupied crate Mark preserves the timed ghost"
             );
@@ -1434,14 +1434,14 @@ pub(crate) mod tests {
 
     #[test]
     fn scenario_start_crate_null_image_and_terrain_object_are_accepted_ghosts() {
-        let null_rules = crate_ruleset_with_images(
+        let null_rules = standard_crate_rules_with_images(
             "none",
             "SILVER",
             "WATER",
             "CrateMinimum=1\nCrateMaximum=1\nCrateRegen=3\n",
         );
         let ordinary_rules = crate_ruleset("CrateMinimum=1\nCrateMaximum=1\nCrateRegen=3\n");
-        let registry = crate_registry();
+        let registry = ordinary_rules.overlay_registry();
         let grid = PathGrid::test_all_passable(MAP, MAP);
 
         let mut null_sim = sim_with_grid(0xA011_0001);
@@ -1454,7 +1454,12 @@ pub(crate) mod tests {
             timer_draw,
             null_sim.session.binary_frame() as i32,
         );
-        let null_result = place_scenario_start_crates(&mut null_sim, &null_rules, &registry, 1);
+        let null_result = place_scenario_start_crates(
+            &mut null_sim,
+            &null_rules,
+            null_rules.overlay_registry(),
+            1,
+        );
         assert_eq!((null_result.accepted, null_result.visible), (1, 0));
         assert!(
             null_sim
@@ -1484,7 +1489,7 @@ pub(crate) mod tests {
             .cell_index_mut_for_test()
             .insert(cell, 77);
         let terrain_result =
-            place_scenario_start_crates(&mut terrain_sim, &ordinary_rules, &registry, 1);
+            place_scenario_start_crates(&mut terrain_sim, &ordinary_rules, registry, 1);
         assert_eq!((terrain_result.accepted, terrain_result.visible), (1, 0));
         assert_eq!(
             (
@@ -1498,7 +1503,7 @@ pub(crate) mod tests {
     #[test]
     fn crate_placement_forced_post_precheck_failures_are_timed_ghosts() {
         let rules = crate_ruleset("CrateMinimum=1\nCrateMaximum=1\nCrateRegen=3\n");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
         let grid = PathGrid::test_all_passable(MAP, MAP);
 
         for failure in [
@@ -1509,7 +1514,7 @@ pub(crate) mod tests {
             let mut sim = sim_with_grid(0xFA11_0000 + failure as u64);
             sim.install_fixture_path_grid(Some(&grid));
             let result =
-                place_scenario_start_crates_with_failure(&mut sim, &rules, &registry, 1, failure);
+                place_scenario_start_crates_with_failure(&mut sim, &rules, registry, 1, failure);
             assert_eq!((result.accepted, result.visible), (1, 0));
             let slot = sim.crate_authority.slots()[0];
             assert!(!slot.is_empty());
@@ -1527,9 +1532,13 @@ pub(crate) mod tests {
 
     #[test]
     fn crate_placement_mark_uses_water_first_numeric_identity_alias() {
-        let rules =
-            crate_ruleset_with_images("WOOD", "SILVER", "WOOD", "CrateMinimum=1\nCrateMaximum=1\n");
-        let registry = crate_registry();
+        let rules = standard_crate_rules_with_images(
+            "WOOD",
+            "SILVER",
+            "WOOD",
+            "CrateMinimum=1\nCrateMaximum=1\n",
+        );
+        let registry = rules.overlay_registry();
         let mut sim = sim_with_grid(0xA11A_5001);
         let cell = (7, 9);
         let terrain_cell = sim
@@ -1545,7 +1554,7 @@ pub(crate) mod tests {
         let result = validate_and_stamp_candidate(
             &mut sim,
             &rules.crate_rules,
-            &registry,
+            registry,
             cell,
             ForcedPostPrecheckFailure::None,
         );
@@ -1573,7 +1582,7 @@ pub(crate) mod tests {
             validate_and_stamp_candidate(
                 &mut zero_float,
                 &rules.crate_rules,
-                &registry,
+                registry,
                 cell,
                 ForcedPostPrecheckFailure::None,
             ),
@@ -1585,7 +1594,7 @@ pub(crate) mod tests {
     #[test]
     fn crate_placement_bridge_selects_full_deck_byte_and_bypasses_speed_zero() {
         let rules = crate_ruleset("CrateMinimum=1\nCrateMaximum=1\n");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
         let cell = (8, 11);
 
         let mut visible = sim_with_grid(0xB21D_0001);
@@ -1606,7 +1615,7 @@ pub(crate) mod tests {
             validate_and_stamp_candidate(
                 &mut visible,
                 &rules.crate_rules,
-                &registry,
+                registry,
                 cell,
                 ForcedPostPrecheckFailure::None,
             ),
@@ -1634,7 +1643,7 @@ pub(crate) mod tests {
             validate_and_stamp_candidate(
                 &mut non_object_deck,
                 &rules.crate_rules,
-                &registry,
+                registry,
                 cell,
                 ForcedPostPrecheckFailure::None,
             ),
@@ -1659,7 +1668,7 @@ pub(crate) mod tests {
             validate_and_stamp_candidate(
                 &mut object_deck,
                 &rules.crate_rules,
-                &registry,
+                registry,
                 cell,
                 ForcedPostPrecheckFailure::None,
             ),
@@ -1671,7 +1680,7 @@ pub(crate) mod tests {
     #[test]
     fn crate_placement_steep_slope_uses_exact_raw_b2_exception() {
         let ordinary_rules = crate_ruleset("CrateMinimum=1\nCrateMaximum=1\n");
-        let ordinary_registry = crate_registry();
+        let ordinary_registry = ordinary_rules.overlay_registry();
         let cell = (12, 12);
         let mut ordinary = sim_with_grid(0xB200_0001);
         ordinary
@@ -1685,7 +1694,7 @@ pub(crate) mod tests {
             validate_and_stamp_candidate(
                 &mut ordinary,
                 &ordinary_rules.crate_rules,
-                &ordinary_registry,
+                ordinary_registry,
                 cell,
                 ForcedPostPrecheckFailure::None,
             ),
@@ -1725,13 +1734,13 @@ pub(crate) mod tests {
         use crate::sim::world::TickLane;
         use std::sync::Arc;
 
-        let registry = OverlayTypeRegistry::from_ini(
-            &IniFile::from_str(
-                "[OverlayTypes]\n0=ROADBOX\n[ROADBOX]\nLand=Road\n[Road]\nFoot=37%\nTrack=100%\n",
-            ),
-            None,
+        let rules = crate_ruleset_with_images(
+            "ROADBOX",
+            "ROADBOX",
+            "ROADBOX",
+            "CrateMinimum=0\n[OverlayTypes]\n0=ROADBOX\n[ROADBOX]\nLand=Road\n[Road]\nFoot=37%\nTrack=100%\n",
         );
-        let rules = crate_ruleset_with_images("ROADBOX", "ROADBOX", "ROADBOX", "CrateMinimum=0\n");
+        let registry = rules.overlay_registry();
         let mut sim = sim_with_grid(0xDA7A_0020);
         sim.hash_state_every(std::num::NonZeroU64::MIN);
         // Mark is invoked below; autonomous crate spawning is outside this fixture.
@@ -1745,7 +1754,7 @@ pub(crate) mod tests {
                 validate_and_stamp_candidate(
                     &mut sim,
                     &rules.crate_rules,
-                    &registry,
+                    registry,
                     cell,
                     ForcedPostPrecheckFailure::None,
                 ),
@@ -1765,7 +1774,7 @@ pub(crate) mod tests {
         }
         let repeated = sim.overlay_grid.as_mut().unwrap().recalculate_runtime_cell(
             sim.resolved_terrain.as_mut().unwrap(),
-            &registry,
+            registry,
             cells[0],
         );
         assert!(!repeated.navigation_changed);
@@ -1777,7 +1786,7 @@ pub(crate) mod tests {
         // It must publish pending crate terrain before its next navigation reader.
         sim.commit_noncombat_aoe_receivers(
             &rules,
-            Some(&registry),
+            Some(registry),
             &[],
             crate::sim::world::FrameEffects::default(),
         );
@@ -1793,7 +1802,6 @@ pub(crate) mod tests {
             .advance_app_frame(
                 &[],
                 &rules,
-                Some(&registry),
                 67,
                 TickLane::Ordinary,
                 crate::sim::world::FrameEffects::default(),
@@ -1817,7 +1825,6 @@ pub(crate) mod tests {
             .advance_app_frame(
                 &[],
                 &rules,
-                Some(&registry),
                 67,
                 TickLane::Ordinary,
                 crate::sim::world::FrameEffects::default(),
@@ -2754,7 +2761,7 @@ pub(crate) mod tests {
     #[test]
     fn gsi_01_04_crate_mixed_surface_uses_drawn_movement_and_destination_image() {
         let rules = crate_ruleset("CrateMinimum=1\nCrateMaximum=1\n");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
         let grid = PathGrid::test_all_passable(MAP, MAP);
 
         for drawn_is_water in [true, false] {
@@ -2809,18 +2816,18 @@ pub(crate) mod tests {
             }
             sim.resolved_terrain = Some(terrain);
 
-            let result = place_scenario_start_crates(&mut sim, &rules, &registry, 1);
+            let result = place_scenario_start_crates(&mut sim, &rules, registry, 1);
 
             assert_eq!((result.accepted, result.visible), (1, 1));
             let expected_image = if drawn_is_water { "WOOD" } else { "WATER" };
             let drawn_image = if drawn_is_water { "WATER" } else { "WOOD" };
             assert_eq!(
-                cells_with_overlay(&sim, &registry, expected_image),
+                cells_with_overlay(&sim, registry, expected_image),
                 vec![destination],
                 "image must follow the snapped destination surface"
             );
             assert!(
-                cells_with_overlay(&sim, &registry, drawn_image).is_empty(),
+                cells_with_overlay(&sim, registry, drawn_image).is_empty(),
                 "image must not follow the drawn surface"
             );
             assert!(
@@ -2837,7 +2844,8 @@ pub(crate) mod tests {
 
     #[test]
     fn gsi_01_04_crate_snap_zero_reference_uses_live_frame_modulo() {
-        let registry = crate_registry();
+        let rules = crate_ruleset("");
+        let registry = rules.overlay_registry();
         let mut sim = sim_with_grid(1);
         let mut terrain = uniform_terrain(false);
         for cell in terrain.cells_mut_for_test() {
@@ -3002,10 +3010,10 @@ pub(crate) mod tests {
         let player_count = human_player_count(&sim);
         assert_eq!(player_count, 1);
         let rules = crate_ruleset("CrateMinimum=1\nCrateMaximum=255\n");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
         let grid = PathGrid::test_all_passable(MAP, MAP);
         sim.install_fixture_path_grid(Some(&grid));
-        let result = place_scenario_start_crates(&mut sim, &rules, &registry, player_count);
+        let result = place_scenario_start_crates(&mut sim, &rules, registry, player_count);
         assert_eq!(result.requested, 1);
         assert_eq!((result.accepted, result.visible), (1, 1));
     }
@@ -3013,7 +3021,7 @@ pub(crate) mod tests {
     #[test]
     fn scenario_start_crate_draws_exact_active_rectangle_not_session_extent_or_localsize() {
         let rules = crate_ruleset("CrateMinimum=1\nCrateMaximum=1\n");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
         let grid = PathGrid::test_all_passable(MAP, MAP);
         let mut sim = sim_with_grid(0x2468);
         sim.install_fixture_path_grid(Some(&grid));
@@ -3027,10 +3035,10 @@ pub(crate) mod tests {
         );
         replay.next_range_u32_inclusive(0, 0x7fff_fffe);
 
-        let result = place_scenario_start_crates(&mut sim, &rules, &registry, 1);
+        let result = place_scenario_start_crates(&mut sim, &rules, registry, 1);
 
         assert_eq!((result.accepted, result.visible), (1, 1));
-        assert_eq!(crate_cells(&sim, &registry), vec![expected]);
+        assert_eq!(crate_cells(&sim, registry), vec![expected]);
         assert!((1..=22).contains(&expected.0) && (1..=22).contains(&expected.1));
         assert_ne!(expected, (0, 0), "draw lies outside the 1x1 LocalSize");
         assert_eq!(sim.scenario_rng.state(), replay.state());

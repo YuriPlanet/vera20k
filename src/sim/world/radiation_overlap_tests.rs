@@ -21,7 +21,6 @@ fn advance(sim: &mut Simulation, rules: &RuleSet) -> super::SimFrameOutput {
         .advance_app_frame(
             &commands,
             rules,
-            None,
             33,
             TickLane::Ordinary,
             FrameEffects::default(),

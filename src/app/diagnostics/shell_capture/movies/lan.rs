@@ -1580,12 +1580,12 @@ impl LanCapture {
                         let incoming = "[ControlledPeer] Hello back"
                             .encode_utf16()
                             .collect::<Vec<_>>();
-                        lobby::service_event(
+                        lobby::append_chat(
                             state,
-                            LanServiceEvent::Chat(LanChatLine {
+                            LanChatLine {
                                 text: incoming.clone(),
                                 color: 0x0000_F0F0,
-                            }),
+                            },
                         );
                         ensure!(
                             state

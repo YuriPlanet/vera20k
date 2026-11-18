@@ -215,7 +215,7 @@ fn retail_soviet_tank_team_completes_its_stock_attack_script() {
                         "GAPOWR",
                         rx,
                         ry,
-                        Some(&scene.runtime.resources.overlay_registry),
+                        Some(scene.runtime.resources.rules.overlay_registry()),
                     )
                     .is_some_and(|preview| preview.valid)
                 })

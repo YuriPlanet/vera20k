@@ -442,15 +442,8 @@ fn retail_skirmish_chrono_warp_sinks_a_landed_harrier_to_terminal_cleanup() {
 
     fn frame(sim: &mut Simulation, rules: &RuleSet) {
         let due = sim.take_due_commands();
-        sim.advance_app_frame(
-            &due,
-            rules,
-            None,
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
-        .expect("ordinary skirmish frame");
+        sim.advance_app_frame(&due, rules, 67, TickLane::Ordinary, FrameEffects::default())
+            .expect("ordinary skirmish frame");
     }
 
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")

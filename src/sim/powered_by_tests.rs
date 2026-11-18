@@ -5,22 +5,18 @@
 use super::*;
 use crate::sim::world::ObjectAiCtx;
 
-fn scene() -> (Simulation, RuleSet, u64, u64) {
+fn scene(owner: &str) -> (Simulation, RuleSet, u64, u64) {
     let ini = crate::sim::arena_fixture::clear_ground_ini(
         "[BuildingTypes]\n0=PWR\n[VehicleTypes]\n0=DRONE\n\
          [PWR]\nStrength=500\nPower=100\n\
-         [DRONE]\nStrength=100\nSpeed=4\nPoweredBy=PWR\nPoweredUnit=yes\n\
+         [DRONE]\nStrength=100\nSpeed=4\nPoweredBy=PWR\nPoweredUnit=yes\nVoiceSelectDeactivated=OfflineVoice\n\
          Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\nMovementZone=Normal\n",
     );
-    let rules = RuleSet::from_ini(&ini).unwrap();
+    let rules = RuleSet::from_ini_with_sounds_for_test(&ini, &["OfflineVoice"]).unwrap();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 23);
     sim.intern_rule_type_ids(&rules);
-    let pwr = sim
-        .spawn_object("PWR", "Russians", 4, 4, 0, &rules)
-        .unwrap();
-    let drone = sim
-        .spawn_object("DRONE", "Russians", 14, 14, 0, &rules)
-        .unwrap();
+    let pwr = sim.spawn_object("PWR", owner, 4, 4, 0, &rules).unwrap();
+    let drone = sim.spawn_object("DRONE", owner, 14, 14, 0, &rules).unwrap();
     sim.resolve_type_handles(&rules);
     (sim, rules, pwr, drone)
 }
@@ -33,7 +29,7 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, frame: u32) {
 #[test]
 fn ares_powered_by_scans_every_fifteen_frames_and_toggles_through_the_shared_owners() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
-    let (mut sim, rules, pwr, drone) = scene();
+    let (mut sim, rules, pwr, drone) = scene("Russians");
     // ValidateThings100677B0: PoweredBy replaces the stock PoweredUnit flag.
     assert!(!rules.object("DRONE").unwrap().powered_unit);
     assert_eq!(sim.building_operational_state(pwr, &rules), Some(true));
@@ -92,7 +88,7 @@ fn ares_powered_by_scans_every_fifteen_frames_and_toggles_through_the_shared_own
 #[test]
 fn ares_deactivated_units_spark_only_without_power() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
-    let (mut sim, rules, _, drone) = scene();
+    let (mut sim, rules, _, drone) = scene("Russians");
     sim.substrate
         .entities
         .get_mut(drone)
@@ -131,12 +127,21 @@ fn ares_deactivated_units_spark_only_without_power() {
 #[test]
 fn ares_powered_by_power_loss_updates_team_selection_and_slaves() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
-    let (mut sim, rules, pwr, drone) = scene();
+    let (mut sim, rules, pwr, drone) = scene("Americans");
+    sim.session
+        .set_current_house_for_test(sim.interner.get("Americans"));
     visit(&mut sim, &rules, drone, 15);
     crate::sim::team_script_vm::join_team_for_test(&mut sim, &[drone], false, false);
     let slave_type = sim.interner.intern("DRONE");
+    assert!(sim.apply_command(
+        "Americans",
+        &crate::sim::command::Command::Select {
+            entity_ids: vec![drone],
+            additive: false,
+        },
+        Some(&rules),
+    ));
     let entity = sim.substrate.entities.get_mut(drone).unwrap();
-    entity.selection.set_selected_for_test(true);
     entity.slave_manager = Some(Box::new(crate::sim::slave_manager::SlaveManager::new(
         slave_type,
         std::iter::empty(),
@@ -159,6 +164,25 @@ fn ares_powered_by_power_loss_updates_team_selection_and_slaves() {
     assert!(sim.team_script_vm.team_for_member(drone).is_none());
     let timer = entity.slave_manager.as_ref().unwrap().ai_timer();
     assert_eq!((timer.start_frame(), timer.duration()), (-1, 10));
+    use crate::sim::world::LifecycleOutput::{FollowReleased, ObjectSelected};
+    assert_eq!(
+        sim.take_lifecycle_outputs_for_test()
+            .into_iter()
+            .filter(|event| matches!(event, FollowReleased { .. } | ObjectSelected { .. }))
+            .collect::<Vec<_>>(),
+        [
+            FollowReleased { stable_id: drone },
+            ObjectSelected { stable_id: drone },
+        ]
+    );
+    assert!(!sim.take_sound_events_for_test().iter().any(|event| matches!(
+        event,
+        crate::sim::world::SimSoundEvent::UnitVoiceRequested { owner, .. } if *owner == drone
+    )));
+    assert_eq!(
+        sim.selection_voice_request(&rules, drone, true),
+        Some("OfflineVoice")
+    );
 
     sim.substrate
         .entities

@@ -181,7 +181,7 @@ fn retail_placement_matches_original_cell_and_foundation_raster() {
         "GAPOWR",
         106,
         34,
-        Some(&scene.runtime.resources.overlay_registry),
+        Some(scene.runtime.resources.rules.overlay_registry()),
     )
     .unwrap();
     assert!(!preview.valid);
@@ -432,7 +432,7 @@ fn paid_refinery_centering_and_free_unit(
             name,
             origin.0,
             origin.1,
-            Some(&scene.runtime.resources.overlay_registry),
+            Some(scene.runtime.resources.rules.overlay_registry()),
         )
         .unwrap()
     };

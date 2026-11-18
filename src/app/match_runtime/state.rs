@@ -27,7 +27,8 @@ pub(crate) struct MatchState {
     /// a body that calls it an error rather than a desync.
     pub(crate) frame_stopped: bool,
     /// Physical byte transport and packet progress for an installed match.
-    /// Session owns the accepted participant roster and checksum history.
+    /// Session owns the accepted participant roster; `sim_runtime` (`SimHost`)
+    /// owns the checksum history.
     pub(crate) live_network: Option<crate::net::live_commands::LiveCommandSession>,
     /// LAN visit transport before the match, then discovery metadata while the
     /// same sockets are owned by live_network. Session owns admitted endpoints.
@@ -405,7 +406,6 @@ mod tests {
 /// Native current House A83D4C is saved67F802, loaded67F9F3 and swizzled67FA0E.
 /// Do not retain a separate app owner across Simulation replacement or infer it
 /// from selection/human flags. Save validation owns reference validity.
-/// Evidence: docs/research/PHASE3_CURRENT_HOUSE_IDENTITY_GHIDRA_REPORT.md.
 pub(crate) fn scenario_local_owner(simulation: &crate::sim::world::Simulation) -> Option<&str> {
     simulation
         .session()

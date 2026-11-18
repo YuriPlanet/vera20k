@@ -23,6 +23,8 @@ pub const SKIRMISH_AI_SLOT_COUNT: usize = SKIRMISH_PLAYER_SLOT_COUNT - 1;
 /// roster, and its lobbies list a colour for each
 /// ([`crate::rules::skirmish_colors`]).
 pub const NETWORK_PLAYER_SLOT_COUNT: usize = 30;
+// Each player of an online room is one of its relay's sources.
+const _: () = assert!(NETWORK_PLAYER_SLOT_COUNT <= vera20k_relay_protocol::MAX_PEERS as usize);
 /// VERA offline extension: the most player rows a Skirmish map may seat.
 ///
 /// The full House roster is split into three bands, all inside the native

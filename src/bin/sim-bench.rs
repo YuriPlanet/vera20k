@@ -451,7 +451,14 @@ fn spawn_armies(
                 simulation,
                 resources,
             } = &mut *runtime;
-            if let Some(id) = simulation.spawn_object(type_id, owner, rx, ry, 0, &resources.rules) {
+            if let Some(id) = simulation.spawn_object_with_map_overlays(
+                type_id,
+                owner,
+                rx,
+                ry,
+                0,
+                &resources.rules,
+            ) {
                 spawned.push(Spawned {
                     id,
                     house,

@@ -68,6 +68,7 @@ on:
       - 'src/app/persistence/**'
       - 'src/app/shell_wol/**'
       - 'src/app/window_icon.rs'
+      - 'src/app/worker.rs'
 
 # A new push to the same pull request replaces its unfinished run.
 concurrency:

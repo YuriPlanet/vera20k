@@ -25,7 +25,7 @@ pub enum StartupError {
     Aborted,
 }
 
-/// Immutable protocol snapshot, not another simulation/membership owner.
+/// The install-time admission every peer certifies before the start.
 /// Pairs bind shared raw setup row to constructed House. LAN source vectors
 /// are local-first, so their ordinal or socket address must never be hashed.
 /// Active rows are fixed at install after the native loading wait.

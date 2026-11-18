@@ -95,7 +95,6 @@ fn sinking_waterline_load_replaces_presentation_only_after_commit() {
         None,
     );
     let terrain = load_fixture_terrain();
-    let registry = OverlayTypeRegistry::empty();
     let mut presentation = SinkingWaterlines::default();
     presentation.restore([(id, 7), (999, 8)]);
     let outgoing = presentation.saved();
@@ -104,7 +103,7 @@ fn sinking_waterline_load_replaces_presentation_only_after_commit() {
     let outgoing_lights = lighting.anim_intensities().clone();
     let hash = sim.state_hash();
     let rng = sim.rng_state();
-    // Fail after deserialization and cache rebuild. No presentation can be
+    // Fail after snapshot decoding. No presentation can be
     // released from this unsuccessful candidate, and the running world stays.
     assert!(matches!(
         PreparedLoad::prepare_candidate(
@@ -112,10 +111,9 @@ fn sinking_waterline_load_replaces_presentation_only_after_commit() {
             Some(&sim),
             Some(LOAD_FIXTURE_MAP_HASH),
             Some(&rules),
-            Some(&terrain),
             None,
         ),
-        Err(PreparedLoadError::MissingOverlayRegistry)
+        Err(PreparedLoadError::MissingTerrainTemplate)
     ));
     assert_eq!(presentation.saved(), outgoing);
     assert_eq!(*lighting.anim_intensities(), outgoing_lights);
@@ -128,7 +126,6 @@ fn sinking_waterline_load_replaces_presentation_only_after_commit() {
         Some(LOAD_FIXTURE_MAP_HASH),
         Some(&rules),
         Some(&terrain),
-        Some(&registry),
     )
     .unwrap();
     assert_eq!(prepared.sinking_waterlines, [(id, waterline)]);

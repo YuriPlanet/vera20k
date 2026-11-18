@@ -1239,7 +1239,6 @@ impl Simulation {
     pub(super) fn planning_select_tail_node(
         &mut self,
         actor: u64,
-        voice_latch: bool,
         context: super::UninitContext<'_>,
     ) {
         if self.planning.select_expanding {
@@ -1254,7 +1253,7 @@ impl Simulation {
                 .get(member)
                 .is_some_and(|entity| entity.selection.is_selected());
             if !selected {
-                self.techno_select(member, voice_latch, context);
+                self.techno_select(member, context);
             }
         }
         self.planning.select_expanding = false;
