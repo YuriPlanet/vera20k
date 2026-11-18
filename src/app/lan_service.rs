@@ -15,7 +15,9 @@ use crate::net::global::{GlobalDestination, GlobalMessage};
 use crate::net::lan_messages::{
     LanCompatibility, LanMessage, LanMessageKind, LanNamedMessage, LanSessionProof, SessionScope,
 };
-use crate::net::reliable::{Delivery, LanConnectionConfig, LanConnections, RetryTiming};
+use crate::net::reliable::{
+    Delivery, LAN_PRODUCT_ID, LanConnectionConfig, LanConnections, RetryTiming,
+};
 use crate::net::udp::{DEFAULT_LAN_PORT, LanUdpTransport, UdpBindConfig};
 
 // VERA IPv4 setup lease: 1800 native16-ms wall buckets (28.8s), allowing
@@ -2059,7 +2061,10 @@ fn chat_line(
 }
 
 fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::Result<()> {
-    anyhow::ensure!(incoming.product_id == 0xaa04, "different LAN product");
+    anyhow::ensure!(
+        incoming.product_id == LAN_PRODUCT_ID,
+        "different LAN product"
+    );
     if state
         .match_state
         .lan_service

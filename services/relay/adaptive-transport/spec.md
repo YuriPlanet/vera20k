@@ -783,7 +783,7 @@ JITTERY 来自这个读者最近一个 `UPLINK` 的 `link.bit3`。它不改变�
 
 ### 13.2 集成测试
 
-用 `live_commands_tests.rs` 里的中继 + 双客户端框架，加 `fault_proxy` 注入以下场景：
+用端到端模拟框架 `services/relay-protocol/src/netsim/`（客户端和中继都是生产代码）注入以下场景：
 
 | 场景 | 断言 |
 |---|---|
