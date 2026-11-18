@@ -49,6 +49,7 @@ oracle families index their own fixtures and producers.
 | Capture and certify shell routes | [shell certification](shell_certification/README.md) |
 | Capture and certify tactical routes | [tactical certification](tactical_certification/README.md) |
 | Measure resident unit-atlas texture pages and sprite counts | [production map observation](map_observation.md#resident-unit-atlas-measurement) |
+| Check that a branch simulates and draws exactly like its base (sim-bench hashes, frame time, map_observation pixels) | [same as base](#same-as-base), `python3 -m tools.same_as_base` |
 | Validate retained map captures or compare exact production observations | [map observation](map_observation.md), `python -m tools.map_observation compare` |
 | Name scenario command targets, inspect timelines and assert observed effects | [named commands and inspection](map_observation.md#named-commands-and-outcome-inspection), `python -m tools.map_observation inspect` |
 | Load a chosen retail map, step, capture and exit | [map observation](map_observation.md), `python -m tools.map_observation` |
@@ -534,6 +535,35 @@ successful builds, and discovery verifies executable bytes. Cross-target and
 other custom-profile builds (such as `shipping`) still support explicit
 paths/labels; they are not auto-run by host tooling. Conventional target paths
 are not a fallback.
+
+## Same as base
+
+```sh
+python3 -m tools.same_as_base --ra2-dir "$RA2_DIR" --head feature/x \
+  --work /absolute/scratch/same-as-base
+```
+
+Checks that `--head` behaves exactly like `--base` (default: its merge-base with
+`upstream/main`, else `origin/main`), for a change that should alter nothing with
+retail data. It adds a detached worktree per ref under `--work`, gives each the same
+`config.toml` (the game folder and a private `settings_dir`, wiped before each
+capture) and builds `sim-bench` and `vera20k` in one labelled `--release` build
+through `cargo_run`. Then:
+
+- sim-bench's standard battle (`--scenario skirmish --client-timing`, 1v29 on the
+  `scale_map --starts 30` map, `--ticks` to shorten it) on both: `final_hash` and the
+  periodic hashes must match; mean, p95 and main-thread CPU frame times are printed.
+  sim-bench's state-isolation report on XMP03T4 gives the Rules config hash
+  (`rules_hash`) and a short played fixture; both must match.
+- `map_observation` captures of the [barracks profile](map_observation.barracks-output.example.json)
+  (units, building, construction and AI bases) at `--steps` and Options `--zooms`,
+  compared with `map_observation compare`; the first differing `frame.bgra` pixel is
+  printed. Mouse-wheel zoom is not covered: map_observation has no wheel gesture.
+
+It removes the worktrees with `git worktree remove` and retires both labels unless
+`--keep-labels`; the logs, captures and `summary.json` stay under `--work`. It exits
+0 when everything matches, 1 on a difference and 2 when a step failed. Two cold
+release builds and the battles take a while; let the build lock wait.
 
 ## Shell pitfalls
 
