@@ -416,6 +416,11 @@ pub(crate) struct PlacedPicture {
     pub sprite: PictureSprite,
     pub offset: [f32; 2],
     pub canvas_rect: [f32; 4],
+    /// The SHP frame format bit that lets the extended walker consume the
+    /// BUILDNGZ shape (`ShpSpriteEntry::extended`). A picture has no frame
+    /// format, so the caller sets it for the art whose SHP frames carry it:
+    /// building bodies and Buildup.
+    pub extended: bool,
 }
 
 /// Where an atlas key's frames are drawn from: the art section that declares
@@ -541,6 +546,7 @@ impl PictureSources {
             ],
             canvas_rect: [left, top, width as f32, height as f32],
             sprite,
+            extended: false,
         })
     }
 
@@ -937,6 +943,7 @@ mod tests {
             },
             offset: [0.0; 2],
             canvas_rect: [0.0; 4],
+            extended: false,
         };
         let pages = pack_picture_pages(
             vec![
@@ -1002,6 +1009,7 @@ mod tests {
             sprite: sprite.clone(),
             offset: [0.0; 2],
             canvas_rect: [0.0; 4],
+            extended: false,
         };
         let mut plain = placed(9);
         plain.sprite.hd = None;

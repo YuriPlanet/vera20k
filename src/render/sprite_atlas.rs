@@ -913,7 +913,7 @@ impl SpriteAtlas {
                         offset_x: picture.offset[0],
                         offset_y: picture.offset[1],
                         canvas_rect: picture.canvas_rect,
-                        extended: false,
+                        extended: picture.extended,
                         page: page_byte,
                         // The blitters' RGBA source mode (`sprite_source.wgsl`).
                         source_palette: 0,
@@ -3706,7 +3706,14 @@ pub(crate) fn prepare_sprite_atlas(
                 ramp,
             );
             match placed {
-                Some(placed) => placed_pictures.push(placed),
+                Some(mut placed) => {
+                    // Retail building bodies and Buildup frames are stored
+                    // with the extended format bit, so BUILDNGZ shapes their
+                    // Z (`0x00490B90`, `0x0043D290`); a building's pictures
+                    // keep that Z shape (docs/picture-model-art.md).
+                    placed.extended = shp_key_is_building_body(&placed.key, rules);
+                    placed_pictures.push(placed);
+                }
                 None => picture_unrenderable.push(key),
             }
             continue;
@@ -3830,6 +3837,18 @@ pub(crate) fn prepare_sprite_atlas(
             picture_unrenderable,
         },
     )
+}
+
+/// Whether `key` draws a building's body or its Buildup (`TYPE_MAKE`), the
+/// frames the extended walker shapes with BUILDNGZ.
+fn shp_key_is_building_body(key: &ShpSpriteKey, rules: Option<&RuleSet>) -> bool {
+    let type_id = key.type_id.strip_suffix("_MAKE").unwrap_or(&key.type_id);
+    key.palette_context.image_kind() == ShpImageKind::Object
+        && rules
+            .and_then(|rules| rules.object(type_id))
+            .is_some_and(|object| {
+                object.category == crate::rules::object_type::ObjectCategory::Building
+            })
 }
 
 /// Whether `key`'s frames take its house colour through `palette_choice`.

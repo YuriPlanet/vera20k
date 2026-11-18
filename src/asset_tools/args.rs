@@ -118,7 +118,8 @@ VERBS
   extract <NAME>       Write an asset's raw bytes to disk.
   export-picture <NAME>  Write an SHP as picture art (APNG and mask) for
                        Picture= (docs/picture-model-art.md). --palette, --out,
-                       --theater <NAME> to reach a theater's archives.
+                       --theater <T> (tem, sno, urb, lun, des, ubn) to reach
+                       a theater's archives.
   csf-get <KEY>        One string-table entry, with its normalisation flagged.
   csf-grep <TEXT>      Search keys and values of the string table.
   sound <NAME>         One audio-bag entry; --wav decodes it.
@@ -581,7 +582,14 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
             "--transparent-index" => {
                 cli.render.transparent_index = Some(number::<u8>(&mut args, "--transparent-index")?)
             }
-            "--theater" => cli.art.theater = value(&mut args, "--theater")?,
+            "--theater" => {
+                let theater = value(&mut args, "--theater")?;
+                if matches!(cli.verb, Verb::ExportPicture { .. }) {
+                    cli.theater = Some(theater_name(&theater));
+                } else {
+                    cli.art.theater = theater;
+                }
+            }
             "--image" => cli.art_image = value(&mut args, "--image")?,
             "--prefix" => cli.sound.prefix = Some(value(&mut args, "--prefix")?),
             "--wav" => cli.sound.wav = true,
@@ -594,12 +602,6 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
                 cli.compare.scale = Some(n);
             }
             "--house" => cli.render.house = Some(number::<u8>(&mut args, "--house")?),
-            "--theater" => {
-                if !matches!(cli.verb, Verb::ExportPicture { .. }) {
-                    return Err(flag_not_valid(&flag, &cli.verb));
-                }
-                cli.theater = Some(value(&mut args, "--theater")?.to_ascii_uppercase());
-            }
             "--palette" => {
                 let name = value(&mut args, "--palette")?;
                 cli.render.palette = Some(name.clone());
@@ -683,6 +685,21 @@ fn number<T: std::str::FromStr>(
     value(args, flag)?
         .parse::<T>()
         .map_err(|_| format!("{flag} needs a non-negative integer"))
+}
+
+/// A theater's full name from `--theater`'s short form (`tem`, `sno`, `urb`,
+/// `lun`, `des`, `ubn`) or its full name, upper case.
+fn theater_name(text: &str) -> String {
+    match text.to_ascii_lowercase().as_str() {
+        "tem" => "TEMPERATE",
+        "sno" => "SNOW",
+        "urb" => "URBAN",
+        "lun" => "LUNAR",
+        "des" => "DESERT",
+        "ubn" => "NEWURBAN",
+        _ => return text.to_ascii_uppercase(),
+    }
+    .to_owned()
 }
 
 fn flag_not_valid(flag: &str, verb: &Verb) -> String {

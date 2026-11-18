@@ -79,6 +79,12 @@ def capture_profile(source, step, zoom, wheel_zoom=None):
         profile.setdefault('cursor_position', [profile['width'] - 40, profile['height'] // 2])
         return profile
     profile['presentation'] = {'zoom': zoom, 'sidebar': 100}
+    # A zoomed view cannot park the cursor (cursor_position is in 100% frame
+    # pixels), and the post-load cursor sits at the view's centre; move the
+    # view off the profile's actors so it rests on open ground.
+    if 'camera_cell' in profile:
+        x, y = profile['camera_cell']
+        profile['camera_cell'] = [x + 6, y + 6]
     if wheel_zoom is not None:
         profile['presentation']['wheel_zoom'] = wheel_zoom
     return profile
