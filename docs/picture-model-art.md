@@ -395,10 +395,8 @@ current: say what was done, what was not, and what comes next.
 - Branch `feature/picture-model-art` (pushed to the `libi/vera20k` fork). It
   holds every chain merged; the side branches `feature/pm-*` it merged from
   can be ignored.
-- **All code is written but has not been compiled or run yet.** Every chain
-  was written with syntax checked by `rustfmt --edition 2024` and WGSL by
-  `naga` only. The first full compile is the next step and will need a round
-  of fixes.
+- Every chain is written, compiles (native and `--features wasm`), passes
+  its focused tests and has run in a match (see "Validation" below).
 
 ### Done (written, merged, pushed)
 
@@ -430,9 +428,8 @@ current: say what was done, what was not, and what comes next.
   map_observation pixels at Options and wheel zooms against a base ref);
   `presentation.wheel_zoom` in map_observation profiles.
 
-### In progress
+### Validation
 
-- Nothing being written; everything below is merged and pushed.
 - Compiles; lib tests run. Failures left on this machine all come from files
   missing in its retail folder, or fail on main too.
 - Production validation, `map_observation.barracks-output`, scratch game
@@ -453,12 +450,22 @@ current: say what was done, what was not, and what comes next.
   sim-bench final hash and rules hash as main after 9,000 ticks at 1v29;
   mean frame 3.74 ms against main's 4.09 ms; captures at Options zoom 100
   and 150 differ only by the ore field's run-to-run shimmer.
-- Per-chain off-state check, run at each chain's closing commit (f657ba0bc,
-  7329d45f0, 8c60674ec, 7b8c7b74d, c3245a66e) against its main base: every
-  run kept main's sim-bench final hash (`3e2256c96903b02d`) and rules hash
-  after 9,000 ticks at 1v29; mean frame within 0.15 ms of main (3.70–4.03
-  ms); the zoom-100 capture differs in 2–5 pixels, no more than two main runs
-  differ from each other (within the noise rule).
+- Per-chain off-state check, at the commit that closes each chain against
+  its main base. Chains 2 and 3 were written as one branch
+  (`feature/pm-doors-preview`), so one check closes both:
+
+  | Chain | Closing commit |
+  |---|---|
+  | 1 animations | f657ba0bc |
+  | 2 buildings, 3 infantry/SHP vehicles/projectiles | 7329d45f0 |
+  | 6 zoomed drawing | 8c60674ec |
+  | 4 voxel vehicles and aircraft | 7b8c7b74d |
+  | 5 building guns, voxel projectiles, debris | c3245a66e |
+
+  Every run kept main's sim-bench final hash (`3e2256c96903b02d`) and rules
+  hash after 9,000 ticks at 1v29; mean frame within 0.15 ms of main
+  (3.70–4.03 ms); the zoom-100 capture differs in 2–5 pixels, no more than
+  two main runs differ from each other (within the noise rule).
 
 ### Next steps, in order
 
@@ -477,18 +484,27 @@ current: say what was done, what was not, and what comes next.
 4. Done (see above). Off-state check: `python3 -m tools.same_as_base --ra2-dir <game>
    --head feature/picture-model-art --work <empty scratch dir>`; identical
    hashes and pixels are required.
-5. Fix the follow-ups below, then push.
+5. Done. The follow-ups below are fixed or recorded.
 
 ### Follow-ups found during writing
 
-- The model draw's GPU caches are keyed by `Arc` pointer; a new match can
-  reuse an old address and hit a stale cache. Key them by identity instead.
-- WebGL2: zoomed picture drawing is off (no depth `textureLoad` in GLSL);
-  model pages use Rgba8UnormSrgb plus R8Uint render targets, not yet verified
-  there.
-- The Options zoom alone now keeps the world zoom pass when picture art is
-  magnified; status text, band box and health bar timing follow that path and
-  need a visual check.
+- Fixed: the model draw's GPU caches were keyed by `Arc` address, which a
+  new match could reuse. `ModelFrame` now holds each cached model, so its
+  address can't be reused while an entry stands, and drops the model and its
+  entries once nothing else holds it (`release_unheld_models`).
+- Fixed: a type drawn from a declared model no longer asks the unit atlas for
+  its VXL (`RuleSet::draws_declared_model` in `unit_atlas::voxel_models`).
+- WebGL2, checked by reading wgpu 30 and the code, not yet run in a browser:
+  zoomed picture drawing and the model HD twin are off there
+  (`webgl_fallback`), and the twin is the only texture that reinterprets its
+  format (wgpu's GL backend lacks `DownlevelFlags::VIEW_FORMATS`). The model
+  page draws to `Rgba8UnormSrgb` and `R8Uint` targets with `Depth32Float`,
+  two colour targets and dynamic uniform offsets aligned to the device
+  limit, all of which GLES 3.0 / WebGL2 supports. `check --features wasm`
+  builds.
+- Options zoom 150 with picture art (`hd_opt150` capture): world, buildings,
+  units and cursor draw as at 1x. That capture has no selection, so the
+  health bar and band box on that path are still unseen.
 
 - VERA's own VXL path draws nothing for a building with `BarrelAnimIsVoxel=`
   and no `TurretAnimIsVoxel=`, where native draws the barrel (43DA80 arm
@@ -508,9 +524,6 @@ current: say what was done, what was not, and what comes next.
   where stock art would hold the old pitch until the facing changes. Turret
   shading differs slightly from the VXL's. Voxel projectiles and debris
   have not been seen in a match yet.
-- A type with a declared model still asks the unit atlas for its VXL and
-  logs "No voxel model for ... pictures stay undrawn"; harmless, but the
-  request should be skipped.
 
 ### Machine notes
 
