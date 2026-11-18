@@ -97,18 +97,22 @@ Two halves, both on the same flag.
   cover the type value, the global fallback, `.Water`, the negative ratio, the
   `AllowEMP=no` arm and the hover-shutdown fall-through. No residual on the
   ratio itself: a rules set that lowers it lowers the packet.
-- **`IsClearToMove` landing pre-check is ported, reduced to two arms**
-  (`Ext/Techno/Hooks.cpp:1043-1055`). `Simulation::landing_cell_clear` answers
-  false when the cell is outside the playfield, when
-  `MOVEMENT_ZONE_PASSABILITY[zone_type]` rejects the mover's `MovementZone`, or
-  when the `LandType` row gives its `SpeedType` a zero speed; the whole current
-  `Health` then goes before the ratio block. An unknown cell, type, `SpeedType`
-  or an unbound land row answers clear, keeping the previous packet.
-  Residual: native passes `onBridge` and reads the bridge deck's land/zone
-  bytes; VERA has no separate deck row, so a landing on a deck reads the cell's
-  stored bytes as they are. Trigger: a fall onto a bridge deck. Impact: the
-  deck's own land type decides instead of the deck's row. Frequency: rare.
-  Risk: low.
+- **`IsClearToMove` landing pre-check is ported** (`Ext/Techno/Hooks.cpp:1043-1055`).
+  `Simulation::landing_cell_clear` answers false when the cell is outside the
+  playfield, when `MOVEMENT_ZONE_PASSABILITY[zone_type]` rejects the mover's
+  `MovementZone`, or when the `LandType` row gives its `SpeedType` a zero speed;
+  the whole current `Health` then goes before the ratio block. An unknown cell,
+  type, `SpeedType` or an unbound land row answers clear, keeping the previous
+  packet.
+  `onBridge` is the cell's `ContainsBridge()` and, with level `-1`, moves the
+  call onto the deck (`0x0048353C..0x0048354E`): that branch is ported too —
+  a bridge cell skips both ground arms and reads the deck occupation byte
+  (`+0x128`) masked by the two ignore flags (`0xE0` then `0x5F`, leaving
+  `0x40`). So a mover lands on a deck over water its `SpeedType` could not
+  cross, and an occupied deck still refuses the landing. Regression test
+  `a_bridge_deck_landing_reads_the_deck_plane_not_the_water_ground`
+  (`src/sim/movement/parachute_descent.rs`). No residual on the deck arm: the
+  ground arms below the deck are deliberately not consulted, as native does.
 - **`HoverDrownable=no` still kills at the default rules**, because the
   default ratio is `1.0` and that packets the whole `Strength`. The key is a
   dependency of `FallingDownDamage`; it only prevents death once that ratio is
