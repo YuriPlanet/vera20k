@@ -1650,8 +1650,9 @@ impl Simulation {
     /// reconciles its `AnimClass` with `CanShowAnim`.
     ///
     /// RESIDUALS: native `IsImmobilized` is approximated by the chrono-warp and
-    /// transport-interior gates VERA models; the tunnel animation state is not
-    /// ported. A cumulative type's animation follows `AnimExt::ChangeAnimType`
+    /// transport-interior gates VERA models. The tunnel animation gate reads
+    /// the Tunnel locomotor's own state and has no `IsBurrowedState()` term
+    /// (burrow has no host here). A cumulative type's animation follows `AnimExt::ChangeAnimType`
     /// for the designated layer (`CumulativeAnimations.RestartOnChange` picks
     /// the proportional or the restart arm); the native per-instance
     /// `AnimClass` of every other layer is not modeled, because VERA shows one
@@ -2404,6 +2405,21 @@ impl Simulation {
             entity.cloak.as_ref().map_or(0, |cloak| cloak.state()),
             1 | 2
         );
+        // `TunnelLocomotionClass_Process_KillAnims @ 0x728F74` /
+        // `RestoreAnims @ 0x728E5F` (`Ext/Techno/Hooks.Misc.cpp:487-527`):
+        // effect animations are killed on the dug-in transition and restored
+        // when the tunnel reaches `PreDigOut`.
+        let owner_in_tunnel = entity
+            .locomotor
+            .as_ref()
+            .and_then(|locomotor| locomotor.tunnel_runtime())
+            .is_some_and(|runtime| {
+                matches!(
+                    runtime.state(),
+                    crate::sim::movement::TunnelState::DugIn
+                        | crate::sim::movement::TunnelState::Digging
+                )
+            });
         let position = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
         let world = crate::sim::anim_class::AnimWorldCoord {
             x: position.x,
@@ -2590,7 +2606,10 @@ impl Simulation {
             let anim_state = instance.animation_state(effect, false);
             let hidden =
                 list.has_active_type(&effect.animation_hide_if_attached_with, effects, false);
-            can_show.push(instance.animation_phase() && anim_state.show && !hidden);
+            // `CanShowAnim` (`AttachEffectClass.h:43-50`): the tunnel state is
+            // the last conjunct, hiding the animation while sunk or travelling.
+            can_show
+                .push(instance.animation_phase() && anim_state.show && !hidden && !owner_in_tunnel);
             state.push(anim_state);
         }
         // One cumulative type shows one animation no matter how many layers it
@@ -7453,6 +7472,91 @@ Duration=100
             sim.interner.resolve(live.type_id()).to_owned(),
             live.runtime_frame_for_test(),
         )
+    }
+
+    /// `AttachEffectClass::CanShowAnim` (`New/Entity/AttachEffectClass.h:43-50`)
+    /// with the tunnel hooks (`Ext/Techno/Hooks.Misc.cpp:487-527`): an effect
+    /// animation is killed once the tunnel reaches its dug-in state and comes
+    /// back when the unit starts to surface.
+    #[test]
+    fn a_dug_in_tunnel_hides_and_restores_its_effect_animation() {
+        let (mut sim, rules) = tunnel_anim_scene("", 51);
+        let target = spawn(&mut sim, &rules, "MOLE", "Americans", 20, 20);
+        sim.update_phobos_attach_effects(target, &rules);
+        let first = effect_anim_id(&sim, target).expect("the effect shows an animation");
+        set_tunnel_state(
+            &mut sim,
+            target,
+            crate::sim::movement::TunnelState::DiggingIn,
+        );
+        sim.update_phobos_attach_effects(target, &rules);
+        assert_eq!(
+            effect_anim_id(&sim, target),
+            Some(first),
+            "digging in still shows the animation"
+        );
+        set_tunnel_state(&mut sim, target, crate::sim::movement::TunnelState::DugIn);
+        sim.update_phobos_attach_effects(target, &rules);
+        assert_eq!(
+            effect_anim_id(&sim, target),
+            None,
+            "the dug-in transition kills the animation"
+        );
+        sim.update_phobos_attach_effects(target, &rules);
+        assert_eq!(
+            effect_anim_id(&sim, target),
+            None,
+            "CanShowAnim keeps it hidden while travelling"
+        );
+        set_tunnel_state(
+            &mut sim,
+            target,
+            crate::sim::movement::TunnelState::PreDigOut,
+        );
+        sim.update_phobos_attach_effects(target, &rules);
+        let back = effect_anim_id(&sim, target).expect("surfacing restores the animation");
+        assert_ne!(back, first, "the restored animation is a new instance");
+    }
+
+    /// A `Tunnel` locomotor target carrying one `Duration=100` effect whose
+    /// `Animation=AEONE`.
+    fn tunnel_anim_scene(
+        art_keys: &str,
+        seed: u64,
+    ) -> (Simulation, crate::rules::ruleset::RuleSet) {
+        let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "[Countries]\n0=Americans\n1=Russians\n\
+             [VehicleTypes]\n0=MOLE\n\
+             [MOLE]\nStrength=1000\nSpeed=6\nArmor=none\nLocomotor=Tunnel\n\
+             AttachEffect.AttachTypes=TUNNELE\n\
+             [AttachEffectTypes]\n0=TUNNELE\n\
+             [TUNNELE]\nDuration=100\nAnimation=AEONE\n"
+        ));
+        let mut rules = crate::rules::ruleset::RuleSet::from_ini(&ini).expect("tunnel anim rules");
+        let mut art = crate::rules::art_data::ArtRegistry::from_ini(
+            &crate::rules::ini_parser::IniFile::from_str(&format!(
+                "[AEONE]\nEnd=8\nRate=2\n{art_keys}"
+            )),
+        );
+        art.bind_anim_frame_count_for_test("AEONE", 8);
+        rules.replace_art_registry_for_test(art);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, seed);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        (sim, rules)
+    }
+
+    fn set_tunnel_state(sim: &mut Simulation, id: u64, state: crate::sim::movement::TunnelState) {
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .expect("live entity")
+            .locomotor
+            .as_mut()
+            .expect("Locomotor=Tunnel carries the runtime")
+            .tunnel_runtime_mut_for_test()
+            .expect("the Tunnel locomotor payload")
+            .set_state_and_timer_for_test(state, 0, 0);
     }
 
     /// `AttachEffectClass::CloakCheck` (`New/Entity/AttachEffectClass.cpp:446-453`)

@@ -321,6 +321,19 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   与本臂的 `GetLevel()` 行为一致；该路径由
   `type_conversion_in_air_tests::an_airborne_conversion_lands_on_a_bridge_deck_over_water`
   锁定。
+- **AE 的 tunnel 动画（2026-11-19）**：Phobos
+  `TunnelLocomotionClass_Process_KillAnims @ 0x728F74`
+  （`Ext/Techno/Hooks.Misc.cpp:487-504`，进入 `DugIn` 时对每个 AE 调
+  `SetAnimationTunnelState(false)`：`KillAnim()` + `IsInTunnel=true`）与
+  `RestoreAnims @ 0x728E5F`（`:506-527`，`State` 到 `PreDigOut` 时恢复可见），
+  以及 `CanShowAnim` 的末项 `!IsInTunnel`（`New/Entity/AttachEffectClass.h:49`），
+  已接线。`sim/attach_effect.rs` 每帧读 Tunnel locomotor 的 `TunnelState`，
+  `DugIn | Digging` 期间把 `can_show` 置假，`PreDigOut` 起恢复并重建动画；
+  `DiggingIn` 仍显示（与原生杀点一致）。测试
+  `a_dug_in_tunnel_hides_and_restores_its_effect_animation`。残余：原生
+  `inTunnel` 还并上 `IsBurrowedState()`（burrow 无对应宿主，VERA 无此状态），
+  以及 `TechnoExt::UpdateAttachEffects` 每帧只在 `!inTunnel` 时回写可见的写法——
+  两者等价于本实现按状态逐帧重算。
 - **AE 的 `CloakCheck`（2026-11-19）**：Phobos
   `AttachEffectClass::CloakCheck`（`New/Entity/AttachEffectClass.cpp:446-453`，
   `Cloaking`/`Cloaked` 都算隐身，隐身着且动画类型的 `DetachOnCloak=` 为真时
