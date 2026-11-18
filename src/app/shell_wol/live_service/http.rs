@@ -947,8 +947,8 @@ macro_rules! serial_driver {
 
     $($asynchronous)? fn session_failed(&mut self, error: RequestFailure, output: &Sender<Response>) -> bool {
         if let RequestFailure::UpgradeRequired(message) = error {
-            // The lobby keeps serving an outdated session's events, finish,
-            // leave and logout (docs/lobby-protocol.md), so it stays.
+            // A 426 refuses this request alone: the session stays, and its
+            // player hears once per sign-in that an update is needed.
             let _ = output.send(Response::Outdated { message });
             return false;
         }

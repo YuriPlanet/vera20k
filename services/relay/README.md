@@ -54,15 +54,17 @@ Each player gets eight handshakes/second, admitted or not, enough for paired
 old/new routes during renewal; Leave acknowledgements, which need no admission,
 share that budget. Leave for a room the relay no longer holds also has a
 relay-wide 512/second. Only permitted handshakes count toward the relay's
-8,192/second, room for the lobby's 256 sessions and an hour's 512 new guests each
-at their own rate. A Pull that reads the journal spends its sender's own
-256/second before it reads. Relay-wide input of 16,384 datagrams/second, and
-ordering output of as many packets, count only datagrams that authenticate and pass their sender's
-own limits, including the replay window and the 2,048 packet/second principal
-cap, so forged, junk or replayed traffic cannot spend capacity other players
-need. Rejecting one costs at most three HMACs. These packet caps are joined by
-actual output byte budgets: 2 MiB/second per sender and 64 MiB/second per
-room and relay. Rooms share each relay-wide total max-min fairly: every second,
+8,192/second: 1,024 players at their own rate, more than the lobby's sessions and
+an hour's new guests together (`../../docs/lobby-protocol.md`). A Pull that
+reads the journal spends its sender's own 256/second before it reads.
+Relay-wide input of 16,384 datagrams/second, and ordering output of as many
+packets, count only datagrams that authenticate and pass their sender's own
+limits, including the replay window and the 2,048 packet/second principal cap,
+so forged, junk or replayed traffic cannot spend capacity other players need.
+Rejecting one before any budget costs at most three HMACs; a CONFIRM within the
+handshake budget then checks its address cookie and, in a federated match, its
+roster. These packet caps are joined by actual output byte budgets: 2 MiB/second
+per sender and 64 MiB/second per room and relay. Rooms share each relay-wide total max-min fairly: every second,
 each room reserves what it asked for the second before, the largest asks cut to
 one level so the reservations fit, and spends past its reservation only what no
 room reserved. A flooding match therefore cannot take what others steadily use.
@@ -85,22 +87,18 @@ against the protocol crate of each stable release from `OLDEST_ADMITTED` (the
 lobby's lowest admitted version) on and of the newest dev build, and plays each
 against it, including a player the relay removes for silence.
 
-Clients from v0.2.4 read a Status, PauseStatus, Ready, Ack or Error
-longer than they know by its known prefix, and an unknown error code as an
-unknown reply. A canonical entry must keep its exact layout, because members
-that read it differently would desync. A client that cannot read the record at
-its cursor, or before the start any Status, for about 5 seconds ends the match
-and asks for a newer VERA20k; v0.2.3 and older stall instead. Extend replies
-only by appending fields, and add a record kind, departure reason or entry field
-only after every admitted release reads it. A new error code counts as
-unreadable too, so one the relay repeats while a client's cursor waits ends that
-client's match the same way. The turn-based transport (packed entries, turns,
-relay checksums; below) replaced the one-entry datagrams outright: clients and
-relays from before it cannot play together. So did the adaptive transport
-(UPLINK, below): its relay and clients ship together, and the lobby's lowest
-admitted version rose with it. A change that breaks admitted releases on purpose
-raises `OLDEST_ADMITTED` past them, the lobby raises its floor to match before
-the relay deploys, and the PR carries the `relay-compat-break` label.
+Clients read a Status, PauseStatus, Ready, Ack or Error longer than they know
+by its known prefix, and an unknown error code as an unknown reply. A canonical
+entry must keep its exact layout, because members that read it differently
+would desync. A client that cannot read the record at its cursor, or before the
+start any Status, for about 5 seconds ends the match and asks for a newer
+VERA20k. Extend replies only by appending fields, and add a record kind,
+departure reason or entry field only after every admitted release reads it. A
+new error code counts as unreadable too, so one the relay repeats while a
+client's cursor waits ends that client's match the same way. A change that
+breaks admitted releases on purpose raises `OLDEST_ADMITTED` past them, the
+lobby raises its floor to match before the relay deploys, and the PR carries
+the `relay-compat-break` label.
 
 Install the executable as `/usr/local/bin/vera20k-relay`, create the unprivileged
 `vera20k-relay` user, and install `vera20k-relay.service`. Allow UDP port 5000 in
@@ -134,7 +132,7 @@ These counts contain no player, endpoint, room identity, ticket or packet conten
 Use them to distinguish rate limits, expired grants and authentication failures
 from packet loss and client timeouts.
 
-Modern ordering uses authenticated control kind4 and a lobby-signed `VO1C` or
+Modern ordering uses authenticated control kind 4 and a lobby-signed `VO1C` or
 `VO2C` certificate (see `../../docs/lobby-protocol.md`). The relay orders a match of
 two or more sources, or of one whose `VO2C` flags bit 1 the lobby set: one person
 who watches AI play, ordered so that others can watch it
@@ -238,8 +236,8 @@ watermark when it is heard again. Clients repair gaps first by an UPLINK, then
 by the existing Pull after a grace of about an RTT plus a turn: a reply is a
 Status, then at most 32 entries packed.
 
-Synchronized pause is opt-in for every active match source. Ordering request5
-uses request ID0 to advertise support and query status; positive IDs carry an
+Synchronized pause is opt-in for every active match source. Ordering request 5
+uses request ID 0 to advertise support and query status; positive IDs carry an
 explicit desired state and expected epoch. Each source advertises once its
 match has started, and the room can pause after every active source has. The
 relay counts the asking source before it answers, so a PauseStatus whose
@@ -265,7 +263,7 @@ seconds old) from a player who cannot hold the current rate slows the clock to
 the fastest Game Speed rate that player holds, at least one row slower and at
 most two rows below the certificate's rate; a tick-cost reporter that holds the
 rate only draws slowly and catches up on its own. Under `VO1C` every active
-source must have reported, so no released client meets a marker it cannot read;
+source must have reported, so a member that may not read markers never meets one;
 under `VO2C` silent sources are ignored, and a certificate whose pacing flag is
 off keeps its rate. Each change appends an authenticated rate marker after the
 current head's frame end, `[10][seq][frame][rate LE u16][source]`, source 255
@@ -281,7 +279,7 @@ per-minute journal line counts the slowdowns as `slowdowns`, the raises as
 catching up each, as `catching_up_s`. A paused, rejoining or hidden game
 reports keeping up.
 
-Checksums: batches carry only commands, `[2]` then the EventPacketCodec packet.
+Checksums: batches carry only command records, not checksums.
 Every 15th frame each client sends its post-Logic checksum in the next UPLINK's
 checksum segment, with no reply: the newest sample and the one before, so one
 lost datagram loses nothing, and alone within 100 ms if no other UPLINK goes. The relay
@@ -348,7 +346,7 @@ packet of another version cancels that startup at once. A relay too old to
 know this drops the packet and cancels at its 3-minute loading limit. Relays of
 different link versions therefore never start a match together.
 
-The RAM hot cache retains4,096 entries/2 MiB per room under a64 MiB global
+The RAM hot cache retains 4,096 entries/2 MiB per room under a 64 MiB global
 budget. Across rooms, the relay evicts the oldest cached entry by its estimated
 frame due time. After a speed change, that estimate follows the same start clock
 as sealing, including a follower's clock corrections. Eviction from this cache
@@ -357,7 +355,7 @@ canonical frame first appends to the full-match disk journal. The data
 file uses a length prefix per entry and the separate offset index is also on
 disk; no full-match index grows in RAM. Push and Pull share one reader for the
 cache and journal, always from the recipient's independent sequence. Active
-journals therefore advertise oldest sequence1 throughout the match.
+journals therefore advertise oldest sequence 1 throughout the match.
 
 A short outage never removes a player. Healthy players continue; the returning
 player can replay from its old cursor even after every short hop ticket expired.
@@ -448,7 +446,7 @@ connection. Network silence never creates a Leave request.
 The unit owns `/var/lib/vera20k-relay` through `StateDirectory=vera20k-relay` and
 `StateDirectoryMode=0700`. The executable requires `STATE_DIRECTORY`, or an
 explicit absolute `VERA_RELAY_STATE_DIR` for local development. Journal files
-are mode0600 in a mode0700 directory named only from the16-byte signed room ID.
+are mode 0600 in a mode 0700 directory named only from the 16-byte signed room ID.
 They contain the plaintext batches and ordering metadata, never keys.
 Journal reservations share 8 GiB and never preallocate disk space. Each room
 reserves all departures, an hour of empty frame ends at its certified FPS
@@ -495,7 +493,7 @@ for 10 seconds (`SILENT_NOTICE_MS`; any authenticated packet counts, as for
 `ABSENT_MS`) is silent until it is heard again. While any source is silent, a
 player's Status ends, after the hop feedback, in `[silent sources u32]`; while
 none is, it ends at the feedback, so a match whose players all keep in touch
-sends no extra byte. Clients from v0.2.4 ignore it, as any appended field. A
+sends no extra byte. Clients ignore it, as any appended field. A
 field added after it later must come with `[silent sources u32]` always
 written, or a reader cannot tell the two apart.
 

@@ -1505,7 +1505,7 @@ fn opted_in_push_follows_the_clock_and_keeps_legacy_pull_unchanged() {
 
 /// A new process meets the batches of the one it replaces in the stream.
 /// As receipts of its own they would be refused, and its cursor stay on the
-/// first of them for good. tests/real/rejoin.mjs in the lobby plays this.
+/// first of them for good.
 #[test]
 fn a_replacing_process_takes_its_batch_counter_from_the_stream() {
     let key = SecretKey::new([74; 32]);
