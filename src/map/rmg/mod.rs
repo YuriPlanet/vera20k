@@ -27,6 +27,7 @@ pub mod theater_blocks;
 pub mod tiles;
 pub mod x87;
 
+pub use build::GeneratedMapRun;
 pub use description::SeedDescription;
 pub use grid::{DiamondScan, GridCell, RmgGrid};
 pub use options::RmgOptions;
@@ -40,7 +41,6 @@ pub use x87::{Gaussian, TruncF64};
 pub use crate::map::construction_trace::{RmgConstructionEvent, RmgConstructionOutcome};
 pub use crate::map::construction_trace::{RmgConstructionPhase, RmgConstructionTrace};
 use crate::map::map_file::MapFile;
-use crate::rng_continuation::MapGenRngContinuation;
 
 /// One stage of the generation pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -247,10 +247,6 @@ pub fn is_seed_selection(map_name: &str) -> bool {
 #[derive(Debug)]
 pub struct GeneratedMap {
     pub map_file: MapFile,
-    /// Exact `g_MapGenRng` continuation after this generation run. Successful
-    /// shell completion publishes it before retaining this presentation map;
-    /// launch-time `.SED` regeneration transfers its own new receipt.
-    pub mapgen_continuation: Option<MapGenRngContinuation>,
     /// Ordered native Building-constructor effects produced during this RMG
     /// run. Geometry is MapGen-owned; these events are replayed later on the
     /// appropriate Scenario owner (shell preview or match bootstrap).
@@ -266,15 +262,6 @@ pub struct GeneratedMap {
     /// VERA extension: what the map offers each start (`fairness`), for the
     /// dialog's readout. `None` for a map no generation run measured.
     pub fairness: Option<fairness::FairnessReport>,
-}
-
-impl GeneratedMap {
-    /// Transfer this run's process cursor exactly once without drawing from it.
-    pub fn take_mapgen_continuation(&mut self) -> MapGenRngContinuation {
-        self.mapgen_continuation
-            .take()
-            .expect("completed generation transfers its MapGen continuation once")
-    }
 }
 
 /// Walk `STAGE_ORDER`, dropping the stages this configuration skips: the island
@@ -454,7 +441,11 @@ mod tests {
         assert_eq!(dims(9, 0), (106, 106));
         assert_eq!(dims(30, 0), (193, 193));
         assert_eq!(dims(30, 3), (232, 232));
-        assert_eq!(dims(123, 3), (464, 464), "clamped to one hundred twenty players");
+        assert_eq!(
+            dims(123, 3),
+            (464, 464),
+            "clamped to one hundred twenty players"
+        );
     }
 
     #[test]
