@@ -290,6 +290,19 @@ pub enum OrderPace {
     CatchingUp = 2,
 }
 
+impl OrderPace {
+    /// Reads the pace byte of an UPLINK pace segment and of a forwarded
+    /// federation report.
+    pub(crate) fn parse(value: u8) -> Result<Self, RelayError> {
+        Ok(match value {
+            0 => Self::KeepingUp,
+            1 => Self::Behind,
+            2 => Self::CatchingUp,
+            _ => return Err(RelayError::Malformed),
+        })
+    }
+}
+
 /// The rates a match certified at `tick_hz` may be sealed at, fastest first:
 /// its own and at most two Game Speed rows slower. A player whose PC cannot
 /// keep up slows the match this far and no further.
@@ -1392,28 +1405,16 @@ impl OrderingRoom {
         Ok(())
     }
 
-    /// Stores a player's pace report, which `adjust_pace` acts on, and
-    /// returns its pace.
+    /// Stores a player's pace report, which `adjust_pace` acts on.
     /// A reader's pace segment (spec §3.2), the latest report wins; a zero
-    /// tick cost is none. The decoder checked the pace byte.
-    fn report_pace(
-        &mut self,
-        source: u8,
-        report: crate::link::PaceSegment,
-        now_ms: u64,
-    ) -> OrderPace {
-        let pace = match report.pace {
-            0 => OrderPace::KeepingUp,
-            1 => OrderPace::Behind,
-            _ => OrderPace::CatchingUp,
-        };
+    /// tick cost is none.
+    fn report_pace(&mut self, source: u8, report: crate::link::PaceSegment, now_ms: u64) {
         self.sources[usize::from(source)].pace = Some(PaceReport {
-            pace,
+            pace: report.pace,
             frames_per_second: report.frames_per_second,
             tick_micros: (report.tick_micros != 0).then_some(report.tick_micros),
             at_ms: now_ms,
         });
-        pace
     }
 
     /// Slows the clock while a player reports it cannot keep up: to the
@@ -6634,10 +6635,11 @@ impl RelayServer {
             ordering.report_checksums(ticket, &uplink.checksums, room.federation.as_ref());
             ordering.count_changes(&mut self.ordering_counts);
         }
-        if let Some(pace) = uplink.pace
-            && ordering.report_pace(ticket.source, pace, now_ms) != OrderPace::KeepingUp
-        {
-            self.ordering_counts.catching_up_s += 1;
+        if let Some(report) = uplink.pace {
+            ordering.report_pace(ticket.source, report, now_ms);
+            if report.pace != OrderPace::KeepingUp {
+                self.ordering_counts.catching_up_s += 1;
+            }
         }
         // §8 replies: only the error; else an ACK for any batch, even all
         // duplicates; else a STATUS for a probe.
