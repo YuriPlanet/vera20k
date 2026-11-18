@@ -16241,24 +16241,23 @@ Projectile=Invisible
         let mut interner = crate::sim::intern::StringInterner::new();
         // Mirror Simulation::intern_rule_type_ids (the production interning
         // pass) so the table sees every registry id.
-        for id in rules
+        let ids: Vec<_> = rules
             .infantry_ids
             .iter()
             .chain(&rules.vehicle_ids)
             .chain(&rules.aircraft_ids)
             .chain(&rules.building_ids)
-        {
-            interner.intern(id);
-        }
-        let table = crate::sim::type_handle_table::TypeHandleTable::build(&rules, &interner);
+            .map(|name| interner.intern(name))
+            .collect();
+        interner.bind_types(&rules);
 
-        // Completeness: every registry id in the fixture (E1, E2, MTNK, GAPOWR)
-        // has a [section], so none is an orphan type_ref.
-        assert_eq!(
-            table.orphan_count(),
-            0,
-            "no interned type id should fail to resolve to an object"
-        );
+        for id in ids {
+            assert!(
+                interner.type_handle(id, &rules).is_some(),
+                "{} has no object type",
+                interner.resolve(id),
+            );
+        }
 
         // Casing: a lowercased reference resolves to the same handle as the stored
         // uppercase id. The interner is case-insensitive, so the interning pass ("MTNK")
@@ -16266,7 +16265,10 @@ Projectile=Invisible
         let mtnk_lower = interner
             .get("mtnk")
             .expect("MTNK interned case-insensitively");
-        assert_eq!(table.handle_for(mtnk_lower), rules.type_handle("MTNK"));
+        assert_eq!(
+            interner.type_handle(mtnk_lower, &rules),
+            rules.type_handle("MTNK")
+        );
         assert!(
             rules.object("mtnk").is_some(),
             "lowercased object() resolves"
