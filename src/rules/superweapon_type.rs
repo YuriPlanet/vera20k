@@ -126,7 +126,7 @@ impl SuperWeaponKind {
     /// 1006CFB0 asks each type's HandlesType): SW_ChronoSphere (1006EF00),
     /// SW_ChronoWarp (100700A0), SW_NuclearMissile (10073350),
     /// SW_GeneticMutator (10072080), SW_PsychicDominator (10070980),
-    /// SW_SpyPlane (100757F0), SW_LightningStorm (10072C30), SW_ParaDrop
+    /// SW_PsychicReveal (100752E0), SW_SpyPlane (100757F0), SW_LightningStorm (10072C30), SW_ParaDrop
     /// (10073DA0: ParaDrop and AmerParaDrop). Its handler's
     /// Initialize, LoadFromINI,
     /// Activate and Flags replace the stock reads and Launch case; the other
@@ -139,6 +139,7 @@ impl SuperWeaponKind {
                 | Self::MultiMissile
                 | Self::GeneticConverter
                 | Self::PsychicDominator
+                | Self::PsychicReveal
                 | Self::SpyPlane
                 | Self::LightningStorm
                 | Self::ParaDrop
@@ -363,6 +364,13 @@ impl AresSuperWeaponEva {
                 "EVA_DropPodActivated",
                 "EVA_DropPodDetected",
             ],
+            // SW_PsychicReveal::Initialize100752F0 names only the ready line.
+            Some(kind) if kind.eq_ignore_ascii_case("PsychicReveal") => {
+                self.ready = eva
+                    .entry("EVA_PsychicRevealReady")
+                    .map(|entry| entry.name.clone());
+                return;
+            }
             // SW_SpyPlane::Initialize10075800 and SW_ParaDrop's (10073DC0)
             // name only the ready line.
             Some(kind)
@@ -782,13 +790,23 @@ pub struct SuperWeaponType {
     pub hunter_seeker: Option<crate::rules::hunter_seeker::HunterSeekerSettings>,
 }
 
-/// Whether an Ares handler's `SW.Range` keeps its custom (targeted) action:
-/// a read width below zero is a whole-map launch with no target
-/// (SW_SonarPulse 10075710, the PsychicReveal handler 10075360).
-fn ares_range_targets(section: &IniSection) -> bool {
-    crate::rules::ares_switch::ares_read(|| section.read_list("SW.Range", 0x800))
-        .and_then(|tokens| tokens.first().copied())
-        .is_none_or(|width| crate::rules::ini_value::parse_leading_f64(width) as f32 >= 0.0)
+/// Ares ReadRange10033698..100336F8. A single authored value has height 0,
+/// whereas an absent key leaves the previous range in place.
+fn read_ares_sw_range(section: &IniSection) -> Option<(f32, i32)> {
+    let tokens = section.read_list("SW.Range", 0x800)?;
+    let width = crate::rules::ini_value::parse_leading_f64(tokens.first()?) as f32;
+    let height = tokens
+        .get(1)
+        .map_or(0, |token| crate::rules::ini_value::crt_atoi(token));
+    Some((width, height))
+}
+
+fn sw_range_or_radius(range: (f32, i32), default_radius: i32) -> (f32, i32) {
+    if range.0 < 0.0 && range.1 < 0 {
+        (default_radius as f32, -1)
+    } else {
+        range
+    }
 }
 
 impl SuperWeaponType {
@@ -836,6 +854,16 @@ impl SuperWeaponType {
     /// The Ares types and reads apply only when the Rules are read the Ares
     /// way.
     pub fn from_ini_section(id: &str, section: &IniSection) -> Self {
+        // A standalone section has no earlier ranges or CombatDamage layer.
+        Self::from_ini_section_with_range(id, section, None, 3)
+    }
+
+    pub(crate) fn from_ini_section_with_range(
+        id: &str,
+        section: &IniSection,
+        processed_range: Option<(f32, i32)>,
+        psychic_reveal_radius: i32,
+    ) -> Self {
         let ares_way = crate::rules::ares_switch::ares_way();
         // Native reads Range and LineMultiplier before Type. The constructor
         // owns the zero defaults; keep the same current-value defaults here.
@@ -904,21 +932,21 @@ impl SuperWeaponType {
                 // SW_Protect::Initialize10074B60 installs the custom action
                 // and SW_Cursor=IronCurtain; VERA names that cursor by action.
                 SuperWeaponKind::Protect => Some("IronCurtain".to_string()),
-                // SW_SonarPulse::LoadFromINI10075710: no action for a whole-map
-                // pulse (a read SW.Range below zero), else the custom action
-                // with the constructor's Attack cursor.
-                SuperWeaponKind::SonarPulse => {
-                    ares_range_targets(section).then(|| "Attack".to_string())
-                }
-                // The PsychicReveal handler (HandlesType 100752E0: Type 11)
-                // writes Action in LoadFromINI10075360 every pass, whatever
-                // Action= says: none for a whole-map reveal, else the custom
-                // action with Initialize100752F0's SW_Cursor 0x54; VERA names
-                // that cursor by action. An unset SW.Range is the positive
-                // PsychicRevealRadius. Residual: the handler's launch (an
-                // SW.Range reveal) and Cursor= keep the stock reveal path.
-                SuperWeaponKind::PsychicReveal => {
-                    ares_range_targets(section).then(|| "PsychicReveal".to_string())
+                // Both LoadFromINI handlers overwrite Action (10075360, 10075710).
+                // The ordered rules reader supplies the retained range and
+                // CombatDamage radius; a standalone section reads its own range.
+                SuperWeaponKind::SonarPulse | SuperWeaponKind::PsychicReveal => {
+                    let range = processed_range
+                        .or_else(|| {
+                            crate::rules::ares_switch::ares_read(|| read_ares_sw_range(section))
+                        })
+                        .unwrap_or((-1.0, -1));
+                    let (cursor, fallback) = if kind == SuperWeaponKind::SonarPulse {
+                        ("Attack", 10)
+                    } else {
+                        ("PsychicReveal", psychic_reveal_radius.min(10))
+                    };
+                    (!(sw_range_or_radius(range, fallback).0 < 0.0)).then(|| cursor.to_owned())
                 }
                 // SW_EMPulse::LoadFromINI10071510 writes Action every pass:
                 // none for `EMPulse.TargetSelf`, else the custom action with
@@ -2093,6 +2121,9 @@ impl AresSuperWeaponLaunch {
     ) {
         let _ares = crate::rules::ares_switch::ares_reads();
         let is = |name: &str| kind.is_some_and(|kind| kind.eq_ignore_ascii_case(name));
+        if initialized && is("PsychicReveal") {
+            self.radar_event = false; // SW_PsychicReveal::Initialize100752FA.
+        }
         if initialized && is("SonarPulse") {
             // SW_SonarPulse::Initialize100756D0.
             self.radar_event = false;
@@ -2146,13 +2177,7 @@ impl AresSuperWeaponLaunch {
         self.radar_event = section.read_ares_bool("SW.CreateRadarEvent", self.radar_event);
         // 10033698..100336F8: ReadString(0x800); a first ','-strtok token
         // stores atof as binary32 and Height 0, a second token atoi.
-        if let Some(tokens) = section.read_list("SW.Range", 0x800)
-            && let Some(first) = tokens.first()
-        {
-            let width = crate::rules::ini_value::parse_leading_f64(first) as f32;
-            let height = tokens
-                .get(1)
-                .map_or(0, |token| crate::rules::ini_value::crt_atoi(token));
+        if let Some((width, height)) = read_ares_sw_range(section) {
             self.range = (width.to_bits(), height);
         }
         // 1003371E..10033780, after SW.Range.
@@ -2349,6 +2374,14 @@ impl AresSuperWeaponLaunch {
     /// negative.
     pub(crate) fn range(&self) -> (f32, i32) {
         (f32::from_bits(self.range.0), self.range.1)
+    }
+
+    /// SWRange's empty sentinel has both fields negative. Ares PsychicReveal
+    /// GetRange (10075250) substitutes min(PsychicRevealRadius, 10);
+    /// SonarPulse (10075680) substitutes 10. A lone authored -1 has Height
+    /// zero, so it requests the whole map.
+    pub(crate) fn range_or_radius(&self, default_radius: i32) -> (f32, i32) {
+        sw_range_or_radius(self.range(), default_radius)
     }
 
     pub(crate) fn protect_duration(&self) -> Option<i32> {
@@ -2864,14 +2897,18 @@ Type=BogusType
     fn ares_psychic_reveal_targets_unless_its_range_is_the_whole_map() {
         let _ares = crate::rules::ares_switch::read_ares_way(true);
         let ini = IniFile::from_str(
-            "[SpySatSpecial]\nType=PsychicReveal\nAction=Custom\nSW.Range=12\n\
+            "[CombatDamage]\nPsychicRevealRadius=2\n[SuperWeaponTypes]\n0=SpySatSpecial\n1=Plain\n2=Whole\n3=DefaultRange\n\
+             [SpySatSpecial]\nType=PsychicReveal\nAction=Custom\nSW.Range=12\n\
              [Plain]\nType=PsychicReveal\nAction=None\n\
-             [Whole]\nType=PsychicReveal\nAction=PsychicReveal\nSW.Range=-1\n",
+             [Whole]\nType=PsychicReveal\nAction=PsychicReveal\nSW.Range=-1\n\
+             [DefaultRange]\nType=PsychicReveal\nSW.Range=-1,-1\n",
         );
-        let action = |id| SuperWeaponType::from_ini_section(id, ini.section(id).unwrap()).action;
-        assert_eq!(action("SpySatSpecial").as_deref(), Some("PsychicReveal"));
-        assert_eq!(action("Plain").as_deref(), Some("PsychicReveal"));
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
+        let action = |id| rules.super_weapon(id).unwrap().action.as_deref();
+        assert_eq!(action("SpySatSpecial"), Some("PsychicReveal"));
+        assert_eq!(action("Plain"), Some("PsychicReveal"));
         assert_eq!(action("Whole"), None);
+        assert_eq!(action("DefaultRange"), Some("PsychicReveal"));
     }
 
     #[test]
