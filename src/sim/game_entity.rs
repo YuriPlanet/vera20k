@@ -3237,9 +3237,9 @@ impl GameEntity {
 
     /// Phobos `BulletClass_Logics_Extras`'s airborne reappear
     /// (`Ext/Bullet/Hooks.DetonateLogics.cpp:556-560`): after `Unlimbo` placed
-    /// the firer, raise `IsFallingDown` (`Object+0x8D`) alone. The Phobos
-    /// `TechnoExt::OnParachuted` pair has no VERA consumer yet
-    /// (`FallingDownDamage` is unported), so it is a recorded residual.
+    /// the firer, raise `IsFallingDown` (`Object+0x8D`) alone. The packet it
+    /// leads to is the ported `FallingDownDamage` model
+    /// (`Simulation::phobos_falling_damage`, `parachute_descent.rs:154`).
     #[cfg(feature = "phobos")]
     pub(crate) fn raise_falling_down(&mut self) {
         self.fall.begin_fall();

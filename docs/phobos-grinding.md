@@ -61,5 +61,10 @@ live on `GameEntity` and join the state hash only when nonzero.
 - Phobos' `Grinding_Weapon.Read<true>` uses `FindOrAllocate`: an unknown name
   creates an empty default weapon. VERA resolves the name against the rules
   set instead, so an unknown name resolves to no weapon and never fires.
-- `DoGrindingExtras` also adds the refund to the building's `AccumulatedIncome`
-  for `DisplayIncome`, which is a separate unported Phobos feature.
+- `DoGrindingExtras`' `AccumulatedIncome += refund` is wired
+  (`src/sim/grinding.rs:142`): the refund the grinder actually credited feeds
+  the building's `DisplayIncome` accumulator
+  (`src/sim/building_display_income.rs`), and the label is printed by the
+  existing `DisplayIncome=` owner. Regression test
+  `grinding_refund_feeds_the_display_income_accumulator`
+  (`src/sim/grinding_tests.rs:388`). No residual here.

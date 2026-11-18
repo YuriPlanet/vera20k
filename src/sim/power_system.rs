@@ -692,8 +692,8 @@ fn enhanced_power(
 /// Phobos `PhobosToolTip::GetPower`'s building arm (`Misc/PhobosToolTip.cpp:80-90`):
 /// `GetEnhancedPower(type, PowerBonus, CurrentPlayer)` plus the enhancer
 /// amounts minus the native drain. The tooltip has no plant, so a positive
-/// enhancer `Range` skips as `!pPowerPlant` does. The unit arm needs the
-/// `UnitPowerDrain` mechanism and stays out until that exists.
+/// enhancer `Range` skips as `!pPowerPlant` does. The non-building arm reads
+/// the type `Power=` behind `[General] UnitPowerDrain=` (`:706-713`).
 #[cfg(feature = "phobos")]
 pub(crate) fn cameo_power_delta(
     entities: &EntityStore,

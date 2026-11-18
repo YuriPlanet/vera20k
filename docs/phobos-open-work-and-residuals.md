@@ -202,6 +202,28 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
    Ares 的 ApplyPermaMC 调用点，Dominator 原生路径不变。
 
 ### 全局已知残渣（早前链条，仍需实机抽查）
+- **BuildLimitGroup 的 `RemoveProduction`**（`docs/phobos-build-limit-group.md`）：
+  Phobos `ReachedBuildLimit` / `BuildLimitGroupUpgradeCheck`
+  （`Ext/House/Body.cpp:782-800`）在灰化/CanBuild 查询里删同型队列，VERA 的两个
+  owner 都是纯查询（`sim::production::can_build::check_build_limit` 取
+  `&Simulation`，调用点含 UI 绘制与 sim 逻辑约 20 处），所以 `NotBuildableIfQueueMatch`
+  仍是唯一未接的读者。触发：组上限已满且队列里有同名份；影响：cameo 灰化但队列不被清空；
+  频率：玩家超额排队；风险：可能多完成几份。要接它得把灰化 owner 变成可变事务，
+  不能只在一处加 `&mut`。
+- **残渣文档已按 `src` 对齐（2026-11-18）**：`phobos-slaved.md`（`Slaved.OwnerWhenMasterKilled`
+  四值分派已接线并有 `slave_manager_cycle_tests` 覆盖）、`phobos-spawns-queue.md`
+  （`InitialSpawnsNumber=`）、`phobos-hover-drown.md`（`FallingDownDamage` /
+  `.Water` / `.AllowEMP`）、`phobos-projectile-au.md`（Tunnel locomotor 已安装）、
+  `phobos-tooltips-ui.md`（电力读数 / `SWShotsFormat` / `MaxWidth` 的 5 px 内边距）、
+  `phobos-grinding.md`（`AccumulatedIncome += refund`）。这些页面里的
+  “unported” 段此前已过时，不再作为残渣依据。
+- **Falling-down 的 `HoverDrownable=no` 落点（2026-11-18）**：hover 关机的非淹死臂
+  现在走 `FallingDownDamage` 的 ratio 模型
+  （`sim/movement/parachute_descent.rs:145-156`，回归测试
+  `a_non_drowning_hover_shutdown_takes_the_falling_down_ratio`），不再固定整
+  `Strength`。残余只剩 native 的 `IsClearToMove` 前置整血包
+  （`Ext/Techno/Hooks.cpp:1043-1055`）：VERA 没有落点格的移动区通行查询，属移动侧
+  的 owner，不是这条臂。
 - **飞机等级光照与风暴/支配者同时存在的顺序**：无残渣；飞机 `DrawIt` 臂改走
   `Simulation::lighting_aircraft_profile`（Dominator→核闪→Ion），与 Phobos
   `Ext/Techno/Hooks.Tint.cpp:320-338` 一致；jumpjet 臂保持 cell-lighting 的
