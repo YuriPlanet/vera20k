@@ -151,6 +151,13 @@ pub(crate) struct LineOfFireShot {
     /// the walk stops at the first sample below its cell's floor
     /// (`Ext/Bullet/Hooks.Obstacles.cpp:49`).
     pub subject_to_ground: bool,
+    /// Phobos `BulletType Level=` (`+0x29D`, `src/rules/projectile_type.rs:81`):
+    /// the only half of the Phobos gate that is a stock key.
+    pub phobos_level: bool,
+    /// Phobos `SubjectToLand=` / `SubjectToWater=` (`Nullable<bool>`,
+    /// `src/rules/phobos_bullet_terrain.rs`), the terrain predicate's subject.
+    pub phobos_subject_to_land: Option<bool>,
+    pub phobos_subject_to_water: Option<bool>,
     /// Ares BulletTypeExt `SubjectToBuildings` (`+0x8`).
     #[cfg(feature = "ares")]
     pub subject_to_solid: bool,
@@ -165,21 +172,54 @@ impl LineOfFireShot {
             subject_to_cliffs: projectile.is_some_and(|p| p.subject_to_cliffs),
             subject_to_walls: projectile.is_some_and(|p| p.subject_to_walls),
             subject_to_ground: projectile.is_some_and(|p| p.phobos_subject_to_ground()),
+            phobos_level: projectile.is_some_and(|p| p.level),
+            phobos_subject_to_land: projectile
+                .and_then(|p| p.phobos_subject_to_terrain.subject_to_land),
+            phobos_subject_to_water: projectile
+                .and_then(|p| p.phobos_subject_to_terrain.subject_to_water),
             #[cfg(feature = "ares")]
             subject_to_solid: projectile.is_some_and(|p| p.bullet_type_ext.subject_to_solid),
             parties,
         }
     }
 
-    /// 0x004CC10B's gate; Ares `SubjectToAnything` adds the buildings, and a
-    /// Phobos `SubjectToGround` projectile enters the walk on its own
-    /// (`Ext/Bullet/Hooks.Obstacles.cpp:34,67-72`).
-    fn subject_to_anything(&self) -> bool {
+    /// `0x004CC10B`'s stock gate: only these projectiles walk the line at all.
+    fn vanilla_scans(&self) -> bool {
         #[cfg(feature = "ares")]
         let solid = self.subject_to_solid;
         #[cfg(not(feature = "ares"))]
         let solid = false;
-        self.subject_to_cliffs || self.subject_to_walls || self.subject_to_ground || solid
+        self.subject_to_cliffs || self.subject_to_walls || solid
+    }
+
+    /// Phobos `BulletObstacleHelper::SubjectToObstacles`
+    /// (`Ext/Bullet/Hooks.Obstacles.cpp:82-88`): the two `Nullable` keys win
+    /// outright, otherwise the stock `Level` flag, and `FindFirstObstacle`'s
+    /// caller ORs its own `subjectToGround` in (`:41`).
+    fn phobos_scans(&self) -> bool {
+        self.phobos_subject_to_land.is_some()
+            || self.phobos_subject_to_water.is_some()
+            || self.phobos_level
+            || self.subject_to_ground
+    }
+
+    /// Phobos `SubjectToTerrain`'s cell arm (`Ext/Bullet/Hooks.Obstacles.cpp:90-110`)
+    /// at the `isTargetingCheck = true` call `TechnoClass::InRange` makes (`:222-237`):
+    /// a water or beach cell answers `SubjectToWater`, everything else
+    /// `SubjectToLand`. The `Level` floor branch is guarded by
+    /// `!isTargetingCheck`, so it cannot fire on this arm, and `.Detonate` is
+    /// only read when the check is false (the bullet's own flight).
+    fn phobos_terrain_blocks(&self, cell: &CellRef<'_>) -> bool {
+        let CellRef::Real(cell) = cell else {
+            return false;
+        };
+        let water = cell.land_type == crate::rules::terrain_rules::LandType::Water.as_index()
+            || cell.land_type == crate::rules::terrain_rules::LandType::Beach.as_index();
+        if water {
+            self.phobos_subject_to_water == Some(true)
+        } else {
+            self.phobos_subject_to_land == Some(true)
+        }
     }
 }
 
@@ -268,12 +308,6 @@ pub(crate) fn cell_blocks_line_of_fire<'a>(
     los: &LineOfFireInputs<'_>,
     mut lookup: impl FnMut((i16, i16)) -> CellRef<'a>,
 ) -> Option<CellRef<'a>> {
-    #[cfg(any(test, feature = "test-support"))]
-    LINE_SAMPLES.with_borrow_mut(|trace| {
-        if let Some(samples) = trace {
-            samples.push(probe.sample);
-        }
-    });
     let packed = (
         (probe.sample.x / LEPTONS_PER_CELL) as i16,
         (probe.sample.y / LEPTONS_PER_CELL) as i16,
@@ -484,7 +518,11 @@ pub(crate) fn walk_line_for_blocking_cell<'a>(
     interner: &StringInterner,
     los: &LineOfFireInputs<'_>,
 ) -> Option<CellRef<'a>> {
-    if !shot.subject_to_anything() {
+    // Native runs the stock walk first and only calls Phobos' `FindFirstObstacle`
+    // when it found nothing (`Ext/Bullet/Hooks.Obstacles.cpp:222-237`); both
+    // passes step the same sample sequence, so one loop with two predicates
+    // returns the same first cell.
+    if !shot.vanilla_scans() && !shot.phobos_scans() {
         return None;
     }
     let src = [src.0 as i32, src.1 as i32, src.2 as i32];
@@ -529,42 +567,57 @@ pub(crate) fn walk_line_for_blocking_cell<'a>(
     let mut offset = [0i32; 3];
     for _ in 0..steps {
         let sample = std::array::from_fn::<_, 3, _>(|i| src[i].wrapping_add(offset[i]));
-        if let Some(hit) = cell_blocks_line_of_fire(
-            CellObstructionProbe {
-                source: source.clone(),
-                target: target.clone(),
-                previous: previous.clone(),
-                sample: DriveCoord {
+        #[cfg(any(test, feature = "test-support"))]
+        LINE_SAMPLES.with_borrow_mut(|trace| {
+            if let Some(samples) = trace {
+                samples.push(DriveCoord {
                     x: sample[0],
                     y: sample[1],
                     z: sample[2],
+                });
+            }
+        });
+        if shot.vanilla_scans()
+            && let Some(hit) = cell_blocks_line_of_fire(
+                CellObstructionProbe {
+                    source: source.clone(),
+                    target: target.clone(),
+                    previous: previous.clone(),
+                    sample: DriveCoord {
+                        x: sample[0],
+                        y: sample[1],
+                        z: sample[2],
+                    },
+                    shot,
                 },
-                shot,
-            },
-            interner,
-            rules,
-            los,
-            lookup,
-        ) {
+                interner,
+                rules,
+                los,
+                lookup,
+            )
+        {
             return Some(hit);
         }
-        // Phobos `FindFirstObstacle`'s ground clause
-        // (`Ext/Bullet/Hooks.Obstacles.cpp:49`): after the cell predicate,
-        // a `SubjectToGround=` projectile stops at the first sample whose Z is
-        // below that cell's floor. The cell is the one the sample lands in,
-        // the native `pCellCur`.
+        // Phobos `FindFirstObstacle`'s body (`Ext/Bullet/Hooks.Obstacles.cpp:41-51`):
+        // the cell predicate, then the ground clause. Both read the cell the
+        // sample lands in, the native `pCellCur`.
         let current = lookup(packed(sample));
-        if shot.subject_to_ground
-            && let CellRef::Real(real) = &current
-            && let Ok(floor) = crate::util::lepton::ground_height_leptons(
-                real.level,
-                real.slope_type,
-                sample[0],
-                sample[1],
-            )
-            && sample[2] < floor
-        {
-            return Some(current);
+        if shot.phobos_scans() {
+            if shot.phobos_terrain_blocks(&current) {
+                return Some(current);
+            }
+            if shot.subject_to_ground
+                && let CellRef::Real(real) = &current
+                && let Ok(floor) = crate::util::lepton::ground_height_leptons(
+                    real.level,
+                    real.slope_type,
+                    sample[0],
+                    sample[1],
+                )
+                && sample[2] < floor
+            {
+                return Some(current);
+            }
         }
         //4CC2C2 reads previous before XYZ accumulators advance.
         previous = current;
@@ -797,8 +850,72 @@ mod tests {
         assert!(!blocked(0, true), "level with the floor is not below it");
     }
 
-    /// Ares `GetObstacle 1006E540` (`1006E5F5..1006E645`) raises a cell by 4
-    /// for the bridge bit 0x100 (`(Flags >> 6) & 4`), where 0x004CC360's
+    /// Phobos `SubjectToLand=` / `SubjectToWater=`
+    /// (`Ext/Bullet/Hooks.Obstacles.cpp:41,90-110`): the two keys put a
+    /// projectile into the obstacle walk on their own, and the cell's own
+    /// `LandType` picks which of them applies. `TechnoClass::InRange` passes
+    /// `isTargetingCheck = true`, so `.Detonate` cannot veto here, and the
+    /// `Level` branch is guarded by `!isTargetingCheck`.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn subject_land_and_water_put_a_projectile_into_the_walk() {
+        // The whole walked row carries one land type, so the first sample's
+        // cell already answers the predicate.
+        let blocks = |land: Option<bool>, water: Option<bool>, water_row: bool| {
+            let mut terrain = crate::map::resolved_terrain::test_grid(
+                8,
+                8,
+                crate::map::resolved_terrain::test_flat_cell,
+            );
+            if water_row {
+                let index = crate::rules::terrain_rules::LandType::Water.as_index();
+                for x in 0..8u16 {
+                    terrain.cell_mut_for_test(x, 1).unwrap().land_type = index;
+                }
+            }
+            let query = NativeCellQuery::canonical(&terrain);
+            walk_line_for_blocking_cell(
+                (384, 384, 0),
+                (7 * 256 + 128, 384, 0),
+                LineOfFireShot {
+                    phobos_subject_to_land: land,
+                    phobos_subject_to_water: water,
+                    ..Default::default()
+                },
+                RuleSet::empty_for_test(),
+                &query,
+                &StringInterner::new(),
+                &LineOfFireInputs::default(),
+            )
+            .is_some()
+        };
+        assert!(
+            !blocks(None, None, false),
+            "without the keys the walk stays stock"
+        );
+        assert!(
+            blocks(Some(true), None, false),
+            "SubjectToLand stops on a land cell"
+        );
+        assert!(
+            !blocks(Some(true), None, true),
+            "a water cell answers SubjectToWater, not SubjectToLand"
+        );
+        assert!(
+            blocks(None, Some(true), true),
+            "SubjectToWater stops on a water cell"
+        );
+        assert!(
+            !blocks(None, Some(true), false),
+            "a land cell leaves SubjectToWater alone"
+        );
+        assert!(
+            !blocks(Some(false), None, false),
+            "an explicit no does not enter the scan"
+        );
+    }
+
+    /// Ares `GetObstacle 1006E540` (`1006E5F5..1006E645`) raises a cell by 4 (`(Flags >> 6) & 4`), where 0x004CC360's
     /// `GetEffectiveHeight @ 0x00487D50` adds 4 for the anchor bit 0x80.
     #[cfg(feature = "ares")]
     #[test]

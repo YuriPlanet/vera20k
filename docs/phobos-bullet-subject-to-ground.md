@@ -42,18 +42,24 @@ the stock one.
 - Phobos replaces the *whole* `TechnoClass::InRange` obstacle call with
   `FindFirstObstacle`, whose gate is
   `SubjectToLand.isset() || SubjectToWater.isset() ? true : BulletType->Level`,
-  or `subjectToGround` (`Ext/Bullet/Hooks.Obstacles.cpp:34,67-72`). VERA keeps
-  the vanilla gate (`SubjectToCliffs || SubjectToWalls`, Ares
-  `SubjectToBuildings`) and adds only the ground clause, so a projectile that
-  relies on `SubjectToLand=`/`SubjectToWater=`/`Level=` entering the scan keeps
-  the vanilla gate. The two keys *are* read — `PhobosSubjectToTerrain`
-  (`src/rules/phobos_bullet_terrain.rs:26-59`, bound at
-  `src/rules/projectile_type.rs:154`) — but nothing consumes them yet: the
-  `reads_any()` half of Phobos's `SubjectToLand || SubjectToWater ? true : Level`
-  decision has no caller in the `InRange` gate.
-- The FLH-predicted source offset (`AddFLHToSourceCoords`, `:89-125`) is part
-  of the same helper and not ported; the scan starts at the raw source
+  or `subjectToGround` (`Ext/Bullet/Hooks.Obstacles.cpp:41,82-88`). **Ported for
+  this call site.** VERA runs the stock cell verdict and the Phobos cell
+  predicate over one sample sequence (`LineOfFireShot::vanilla_scans` /
+  `phobos_scans`, `phobos_terrain_blocks`): `SubjectToLand`/`SubjectToWater`
+  enter the walk on their own and the cell's own `LandType` (`Water`/`Beach` →
+  water key, everything else → land key) picks which applies. `InRange` passes
+  `isTargetingCheck = true`, so `.Detonate` cannot veto there, and the `Level`
+  floor branch is guarded by `!isTargetingCheck`, so it cannot fire on this arm
+  (it belongs to the bullet's flight). Test
+  `subject_land_and_water_put_a_projectile_into_the_walk`.
+- The FLH-predicted source offset (`AddFLHToSourceCoords`, `:89-125`), used when
+  `SubjectToGround` is set, is not ported; the scan starts at the raw source
   coordinate.
+- The bullet's own flight arm (`0x468C86` `BulletClass_ShouldExplode_Obstacles`,
+  `:130-160`) calls `GetObstacle` with `isTargetingCheck = false`, where
+  `.Detonate` decides between exploding and flying on. VERA's in-flight probe
+  still answers only the stock cell verdict, so the four terrain keys are inert
+  there (recorded, not a silent default).
 - The scan feeds only `InRange`, as natively; the bullet's own flight is
   governed by the trajectory keys.
 
@@ -62,3 +68,7 @@ the stock one.
 - `src/sim/combat/line_of_fire.rs` —
   `subject_to_ground_stops_the_walk_below_the_floor`: a sample at `Z = -16` over
   flat ground blocks only when the flag is set; `Z = 0` never blocks.
+- `src/sim/combat/line_of_fire.rs` —
+  `subject_land_and_water_put_a_projectile_into_the_walk`: `SubjectToLand` stops
+  a walk over a land row and leaves a water row alone; `SubjectToWater` does the
+  reverse; both unset or `=no` keeps the stock walk.
