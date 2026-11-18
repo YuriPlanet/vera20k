@@ -1140,7 +1140,7 @@ impl MultiplayerSetupState {
         &mut self,
         geometry: ShellListGeometry,
         work: impl FnOnce(&mut ListScrollInteraction, &mut usize),
-    ) -> bool {
+    ) {
         let before = self.roster_top(geometry.max_top);
         let mut top = before;
         work(&mut self.roster_scrollbar, &mut top);
@@ -1148,7 +1148,6 @@ impl MultiplayerSetupState {
         if top != before {
             self.popup.close();
         }
-        top != before
     }
     /// A press on the roster's scrollbar; `false` when it is not on it.
     pub(crate) fn roster_scroll_press(
@@ -1188,17 +1187,42 @@ impl MultiplayerSetupState {
     pub(crate) fn roster_scroll_pressed(&self) -> Option<ListScrollPart> {
         self.roster_scrollbar.pressed_part()
     }
-    /// The wheel over the roster: three places a notch.
-    pub(crate) fn roster_wheel(&mut self, geometry: ShellListGeometry, lines: f32) -> bool {
+    /// An open roster list owns the wheel even at its ends. Once it closes,
+    /// the same gesture over the roster scrolls the teams again.
+    pub(crate) fn wheel(
+        &mut self,
+        view: &SetupView,
+        layout: &MultiplayerSetupLayout,
+        x: i32,
+        y: i32,
+        lines: f32,
+    ) -> bool {
+        let Some(roster) = layout.roster_scroll(view) else {
+            return false;
+        };
+        if view.open_box.is_some() || view.map_offer_open || lines == 0.0 {
+            return false;
+        }
         let step = ((lines * 3.0).round() as i32).clamp(-30, 30);
         let step = if step == 0 {
             lines.signum() as i32
         } else {
             step
         };
-        self.scroll_roster(geometry, |_, top| {
-            *top = (*top as i32 - step).clamp(0, geometry.max_top as i32) as usize;
-        })
+        let wheel_top = |top: usize, max: usize| top.saturating_add_signed(-step as isize).min(max);
+        if let Some(mut popup) = self.popup_geometry(view, layout) {
+            if popup.rect.contains(x, y) {
+                popup.first = wheel_top(popup.first, popup.total - popup.visible_rows);
+                self.popup.top_index = popup.first;
+                popup.track_hot_row(&mut self.popup.hot_row, x, y);
+            }
+            return true;
+        }
+        if layout.roster_area.contains(x, y) {
+            self.scroll_roster(roster, |_, top| *top = wheel_top(*top, roster.max_top));
+            return true;
+        }
+        false
     }
     /// Whether the room looks for `file`'s briefing now: only the first time
     /// it shows that map.
@@ -1271,13 +1295,16 @@ impl MultiplayerSetupState {
         self.focused_control = CHAT;
         self.chat.edit.focused = true;
     }
-    pub(crate) fn cancel_pointer(&mut self) {
-        self.buttons = ShellButtonInteraction::default();
+    pub(crate) fn release_scrollbars(&mut self) {
         self.popup.cancel_pointer();
-        self.trackbar_hold = None;
-        self.row_drag = None;
         self.chat.list.scroll.cancel();
         self.roster_scrollbar.cancel();
+    }
+    pub(crate) fn cancel_pointer(&mut self) {
+        self.buttons = ShellButtonInteraction::default();
+        self.trackbar_hold = None;
+        self.row_drag = None;
+        self.release_scrollbars();
     }
 }
 
@@ -2239,10 +2266,9 @@ mod tests {
         }
         // The wheel scrolls three places a notch, no further than the last.
         let mut ui = MultiplayerSetupState::default();
-        let geometry = layout.roster_scroll(&view).unwrap();
-        ui.roster_wheel(geometry, -1.0);
+        ui.wheel(&view, &layout, area.x, area.y, -1.0);
         assert_eq!(ui.roster_top(scroll.max_top), 3);
-        ui.roster_wheel(geometry, -100.0);
+        ui.wheel(&view, &layout, area.x, area.y, -100.0);
         assert_eq!(ui.roster_top(scroll.max_top), scroll.max_top);
         // A room that fits shows no scrollbar.
         view.roster_scroll = (3, 0);
