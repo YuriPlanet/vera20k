@@ -2543,6 +2543,7 @@ impl WolCapture {
                     self.event(frame, "C2 Game Options: No France toggled");
                 }
                 if self.target == WolTarget::ModernTeams {
+                    use crate::app::input::multiplayer_setup as room_input;
                     use crate::ui::multiplayer_setup::{
                         BALANCE, SetupAction, SetupColumn, TEAM_COUNT,
                     };
@@ -2762,26 +2763,62 @@ impl WolCapture {
                                 .collect()
                         })
                         .unwrap_or_default();
-                    let roster = crate::app::input::multiplayer_setup::layout(state)
-                        .roster_scroll(&wide)
-                        .context("the roster's scroll")?;
+                    let layout = crate::app::input::multiplayer_setup::layout(state);
+                    let roster = layout.roster_scroll(&wide).context("the roster's scroll")?;
+                    // Release the roster thumb, then use the host's colour list.
+                    setup_click(state, roster.thumb.context("roster thumb")?);
+                    let (_, color) =
+                        row_combo(&wide, SetupColumn::Color, 0).context("host colour")?;
+                    let face = layout.control_rect(color.id).context("colour cell")?;
+                    setup_click(state, face);
+                    let popup = state
+                        .frontend
+                        .multiplayer_setup
+                        .as_ref()
+                        .and_then(|ui| ui.popup_geometry(&wide, &layout))
+                        .context("open colour list after releasing the roster thumb")?;
+                    let thumb = popup.thumb().context("colour list thumb")?;
+                    set_window_pointer_to_rect_center(state, thumb);
+                    room_input::cursor_moved(state);
+                    room_input::mouse(state, winit::event::MouseButton::Left, true);
+                    set_window_pointer_to_rect_center(state, popup.content());
+                    room_input::cursor_moved(state);
+                    room_input::mouse(state, winit::event::MouseButton::Left, false);
                     let ui = state
                         .frontend
                         .multiplayer_setup
-                        .as_mut()
+                        .as_ref()
                         .context("room page")?;
+                    ensure!(
+                        ui.popup.control == Some(color.id)
+                            && ui.popup.top_index > 0
+                            && setup_view(state)?.first_row == wide.first_row,
+                        "the colour thumb drag failed to scroll just the list"
+                    );
+                    // Reach the end, then scroll farther with a fractional trackpad delta.
+                    ensure!(
+                        room_input::wheel(state, -30.0) && room_input::wheel(state, -0.25),
+                        "the colour list did not take the wheel at its limit"
+                    );
+                    let ui = state
+                        .frontend
+                        .multiplayer_setup
+                        .as_ref()
+                        .context("room page")?;
+                    ensure!(
+                        ui.popup.control == Some(color.id)
+                            && ui.popup.top_index == popup.total - popup.visible_rows
+                            && setup_view(state)?.first_row == wide.first_row,
+                        "wheeling to the end of the colour list moved the roster or closed the list"
+                    );
+                    setup_click(state, face);
                     // A notch moves at most 30 places: four reach the foot.
                     for _ in 0..4 {
-                        ui.roster_wheel(roster, -100.0);
+                        room_input::wheel(state, -100.0);
                     }
                     let foot = setup_view(state)?;
-                    let ui = state
-                        .frontend
-                        .multiplayer_setup
-                        .as_mut()
-                        .context("room page")?;
                     for _ in 0..4 {
-                        ui.roster_wheel(roster, 100.0);
+                        room_input::wheel(state, 100.0);
                     }
                     let wide_captions: Vec<&str> = wide
                         .headers
