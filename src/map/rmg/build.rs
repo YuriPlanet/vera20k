@@ -543,6 +543,7 @@ fn generate_once(
                 centre_gems: value(Extra::CentreGems),
                 countryside: value(Extra::Countryside),
                 fences: value(Extra::Fences),
+                tech_building_amount: options.tech_building_amount,
                 derelict_amount: options.derelict_amount,
                 civilian_amount: options.civilian_amount,
                 animal_amount: options.animal_amount,
@@ -559,7 +560,6 @@ fn generate_once(
         urban_fill,
         urban_areas: urban,
         ares: objects.ares,
-        tech_building_amount: options.tech_building_amount,
     };
 
     observe(GenerationPointView {
@@ -1328,6 +1328,15 @@ mod tests {
             count_tech(&changed)
         );
 
+        assert!(
+            changed
+                .map_file
+                .entities
+                .iter()
+                .filter(|e| tech.iter().any(|kind| kind.name == e.type_id))
+                .all(|e| e.structure_online),
+            "tech buildings keep their stock power flag"
+        );
         let derelicts: Vec<_> = changed
             .map_file
             .entities
@@ -1369,6 +1378,70 @@ mod tests {
                 .map_file
                 .entities
                 .len()
+        );
+    }
+
+    #[test]
+    fn the_tech_slider_preserves_seeded_ore_and_starts() {
+        let tech = [TechType {
+            name: "CAOILD".into(),
+            footprint: vec![(0, 0), (0, 1)],
+        }];
+        let generate = |amount| {
+            generate_map(
+                &RmgOptions {
+                    tech_building_amount: amount,
+                    fair_starts: true,
+                    ..options(1, 0)
+                },
+                &RmgSettings::default(),
+                &resolved(),
+                &one_by_one(),
+                &GenerationObjects::tech(&tech, false),
+            )
+        };
+        let mut stock = generate(0);
+        let mut extra = generate(100);
+        assert!(extra.map_file.entities.len() > stock.map_file.entities.len());
+        let overlays = |map: &GeneratedMap| {
+            map.map_file
+                .overlays
+                .iter()
+                .map(|o| (o.rx, o.ry, o.overlay_id, o.frame))
+                .collect::<Vec<_>>()
+        };
+        assert!(!stock.map_file.overlays.is_empty());
+        assert_eq!(stock.start_waypoints, extra.start_waypoints);
+        assert!(overlays(&stock) == overlays(&extra), "the seed's ore moved");
+        assert_eq!(
+            stock.take_mapgen_continuation().into_native_parts(),
+            extra.take_mapgen_continuation().into_native_parts()
+        );
+    }
+
+    #[test]
+    fn a_type_two_map_with_no_fitting_tech_foundation_finishes() {
+        let tech = [TechType {
+            name: "Oversized".into(),
+            footprint: vec![(0, 0), (1024, 0)],
+        }];
+        let generated = generate_map(
+            &RmgOptions {
+                tech_building_amount: 100,
+                ..options(2, 0)
+            },
+            &RmgSettings::default(),
+            &resolved(),
+            &one_by_one(),
+            &GenerationObjects::tech(&tech, false),
+        );
+        assert!(!generated.start_waypoints.is_empty());
+        assert!(
+            !generated
+                .map_file
+                .entities
+                .iter()
+                .any(|e| e.type_id == "Oversized")
         );
     }
 

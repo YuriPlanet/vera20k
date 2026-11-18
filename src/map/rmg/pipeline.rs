@@ -139,9 +139,6 @@ pub struct PipelineInputs<'a> {
     /// Ares.dll is loaded for this generation: the game is read the Ares way
     /// (`GenerationObjects::ares`). The low-bridge decks follow it.
     pub ares: bool,
-    /// VERA extension: the Advanced Tech Buildings slider (0 = original's
-    /// own random count); above 0 it steers the neutral tech-building count.
-    pub tech_building_amount: i32,
 }
 
 /// Watches the grid between stages, for callers that draw the map as it builds.
@@ -383,7 +380,6 @@ pub fn run_pipeline(
                 local_rect,
                 stride: stride as i32,
                 cliff_back_impassability: inputs.cliff_back_impassability,
-                tech_amount: inputs.tech_building_amount,
             };
             let mut ctx = TechCtx {
                 grid: &mut *grid,
@@ -433,7 +429,6 @@ pub fn run_pipeline(
             local_rect,
             stride: stride as i32,
             cliff_back_impassability: inputs.cliff_back_impassability,
-            tech_amount: inputs.tech_building_amount,
         };
         let mut ctx = TechCtx {
             grid: &mut *grid,
@@ -665,20 +660,20 @@ pub fn run_pipeline(
         .iter()
         .map(|&(_, x, y)| (i32::from(x), i32::from(y)))
         .collect();
+    let mut ctx = super::fairness::FairCtx {
+        grid,
+        scratch,
+        ids: inputs.ids,
+        map_w,
+        local_rect,
+    };
+    let mut out = super::embellish::EmbellishOutput {
+        objects: &mut urban_area_objects,
+        trace: &mut construction_trace,
+        entity_base: structures.len() + tech_placements.len(),
+        terrain: &mut terrain,
+    };
     if inputs.embellish.any() {
-        let mut ctx = super::fairness::FairCtx {
-            grid: &mut *grid,
-            scratch: &*scratch,
-            ids: inputs.ids,
-            map_w,
-            local_rect,
-        };
-        let mut out = super::embellish::EmbellishOutput {
-            objects: &mut urban_area_objects,
-            trace: &mut construction_trace,
-            entity_base: structures.len() + tech_placements.len(),
-            terrain: &mut terrain,
-        };
         let paved = super::embellish::run(
             &mut ctx,
             &inputs.embellish,
@@ -687,30 +682,31 @@ pub fn run_pipeline(
             inputs.tech_types,
             &mut out,
         );
-        // The recalc every stage that paves is followed by (`0x0047CA80`).
         if paved {
-            lat_fixup::run(grid, inputs.ids);
+            lat_fixup::run(ctx.grid, inputs.ids);
         }
     }
-    let fairness = {
-        let mut ctx = super::fairness::FairCtx {
-            grid: &mut *grid,
-            scratch: &*scratch,
-            ids: inputs.ids,
-            map_w,
-            local_rect,
-        };
-        if inputs.fair_starts {
-            super::fairness::equalize_ore(&mut ctx, &starts, inputs.seed);
-        }
-        Some(super::fairness::measure(
-            &ctx,
-            &starts,
-            inputs.num_players,
-            unfilled_start_slots,
-            (inputs.sea_access, inputs.embellish.base_room != 0),
-        ))
-    };
+    if inputs.fair_starts {
+        super::fairness::equalize_ore(&mut ctx, &starts, inputs.seed);
+    }
+    let fairness = Some(super::fairness::measure(
+        &ctx,
+        &starts,
+        inputs.num_players,
+        unfilled_start_slots,
+        (inputs.sea_access, inputs.embellish.base_room != 0),
+    ));
+    // The sliders fill unoccupied sites after native generation, the Extras
+    // and Fair Starts. Their buildings cannot displace ore or pick another seed.
+    super::embellish::place_slider_objects(
+        &mut ctx,
+        &inputs.embellish,
+        &starts,
+        inputs.vera_catalog,
+        inputs.tech_types,
+        tech_placements.len(),
+        &mut out,
+    );
 
     // ---- Collect outputs for the emitter ----------------------------------
     structures.extend(
@@ -897,7 +893,6 @@ mod tests {
             local_rect: [2, 5, 70, 70],
             stride: STRIDE as i32,
             cliff_back_impassability: 2,
-            tech_amount: 0,
         };
         let tech_placements = {
             let mut ctx = TechCtx {

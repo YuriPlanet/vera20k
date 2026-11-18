@@ -3602,15 +3602,12 @@ mod tests {
             "the exported map must carry unpowered, damaged buildings"
         );
 
-        // Every neutral structure is powered down: a live plant would light a
-        // Neutral grid of its own and the Paris tower's `Power=-100`
-        // `EiffelBolt` would charge and fire on the players.
+        let tech = &prepared.tech_types;
         assert!(
             read.entities
                 .iter()
-                .filter(|e| e.category == crate::map::entities::EntityCategory::Structure)
-                .all(|e| !e.structure_online),
-            "every neutral structure is powered down"
+                .any(|e| { e.structure_online && tech.iter().any(|kind| kind.name == e.type_id) }),
+            "neutral tech buildings keep their power in the exported map"
         );
 
         // The Derelicts list covers Yuri's side too, not just Allied and

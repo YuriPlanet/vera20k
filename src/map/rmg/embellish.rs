@@ -36,6 +36,7 @@ const LANDMARK_SALT: u16 = 0x1A4D;
 const GEM_SALT: u16 = 0x6E35;
 const FARM_SALT: u16 = 0xFA43;
 const FENCE_SALT: u16 = 0xFE9C;
+const TECH_SALT: u16 = 0x7EC1;
 const DERELICT_SALT: u16 = 0x5B17;
 /// Independent streams for the three Neutral foot stages, so a player moving
 /// one slider never shifts the others' picks or any native stage's draws.
@@ -76,6 +77,8 @@ pub struct EmbellishArgs<'a> {
     pub centre_gems: u8,
     pub countryside: u8,
     pub fences: u8,
+    /// Advanced Tech Buildings raises the stock count toward 40.
+    pub tech_building_amount: i32,
     /// VERA extension: the Advanced Derelicts slider, 0 = none; stands neutral
     /// unpowered combat buildings over open ground.
     pub derelict_amount: i32,
@@ -110,10 +113,6 @@ impl EmbellishArgs<'_> {
         ]
         .iter()
         .any(|&value| value != 0)
-            || self.derelict_amount != 0
-            || self.civilian_amount != 0
-            || self.animal_amount != 0
-            || self.wild_amount != 0
     }
 }
 
@@ -193,6 +192,68 @@ pub fn run(
     if args.countryside != 0 {
         countryside(ctx, args, starts, &play, catalog, out);
     }
+    if args.fences != 0 {
+        town_fences(ctx, args, &play);
+    }
+    for fence in [args.farm_fence, args.town_fence].into_iter().flatten() {
+        link_fences(ctx, &play, fence);
+    }
+    paved
+}
+
+/// Add the optional population to the finished map. Each slider draws from
+/// its own seed. Occupancy is shared so two added objects cannot overlap.
+pub(super) fn place_slider_objects(
+    ctx: &mut FairCtx<'_>,
+    args: &EmbellishArgs<'_>,
+    starts: &[(i32, i32)],
+    catalog: &UrbanCatalog,
+    tech: &[TechType],
+    stock_tech: usize,
+    out: &mut EmbellishOutput<'_>,
+) {
+    let tech_target = if args.tech_building_amount > 0 {
+        (args.tech_building_amount.min(100) * 40 / 100).max(1)
+    } else {
+        0
+    };
+    let additional = (tech_target as usize).saturating_sub(stock_tech);
+    if (additional == 0 || tech.is_empty())
+        && args.derelict_amount <= 0
+        && args.civilian_amount <= 0
+        && args.animal_amount <= 0
+        && args.wild_amount <= 0
+    {
+        return;
+    }
+    let play: Vec<_> = ctx
+        .grid
+        .native_cells()
+        .filter(|&(x, y)| ctx.in_play(x, y))
+        .collect();
+    if play.is_empty() {
+        return;
+    }
+    if additional > 0 && !tech.is_empty() {
+        let mut rng = RmgRng::new(args.seed ^ TECH_SALT);
+        for _ in 0..additional {
+            let kind = &tech[rng.uniform(0, tech.len() as i32 - 1) as usize];
+            if kind.footprint.is_empty() {
+                continue;
+            }
+            // Like the native per-building placer (0x00595400), give each
+            // building a finite number of anchors. A full map receives fewer.
+            for _ in 0..100 {
+                let cell = play[rng.uniform(0, play.len() as i32 - 1) as usize];
+                if clear_of_starts(starts, cell, START_CLEARANCE)
+                    && site_fits(ctx, cell, &kind.footprint, 0, Also::Nothing)
+                {
+                    place_building(ctx, out, &kind.name, &kind.footprint, cell);
+                    break;
+                }
+            }
+        }
+    }
     if args.derelict_amount > 0 {
         derelicts(ctx, args, starts, &play, catalog, out);
     }
@@ -229,13 +290,6 @@ pub fn run(
             out,
         );
     }
-    if args.fences != 0 {
-        town_fences(ctx, args, &play);
-    }
-    for fence in [args.farm_fence, args.town_fence].into_iter().flatten() {
-        link_fences(ctx, &play, fence);
-    }
-    paved
 }
 
 /// Flat, unclaimed pavement of a town (the urban pass locks its districts):

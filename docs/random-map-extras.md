@@ -25,20 +25,16 @@ derelicts alike; where it overlaps the War Damage Extra, the worse health wins. 
 saved in the `.SED` (`VeraTechBuildings`, `VeraDerelicts`, `VeraDamage`) and ride in the share
 code; a code from before they existed reads back with all three at 0.
 
-Every neutral building is written `Powered=0`, tech buildings and towns included. **Neutral** is a
-house of its own, so a live power plant there lit a grid of its own, and the Paris tower's
-`Power=-100` `EiffelBolt` charged and fired on the players. Powered down, the neutral map is
-inert: the plants make no power, the armed buildings keep their weapons cold, and a player who
-captures one gets it back online under his own grid. Buildings without a `Power=` or `Powered=`
-line read the flag as no difference.
+The Tech Buildings slider keeps the seed's original placements and adds buildings on open
+ground toward the requested total. On a crowded map fewer may fit. Derelicts start powered
+down; tech buildings and towns keep their usual power.
 
 ## Advanced — neutral foot sliders
 
 Three more VERA sliders follow the building sliders in the Advanced scroll range. All are 0..100
 and default to 0, which adds nothing. Each scatters foot-sized units over clear open ground — and,
 for the types the rules say stand only on water, over open sea — away from the starts, on the
-**Neutral** house, from a random stream of its own, so moving one slider never changes what
-another one places, nor the land the seed made.
+**Neutral** house, from a random stream of its own. Objects share the available space. The seed keeps its terrain, ore and starts.
 
 | Slider | What it does |
 |---|---|
@@ -133,8 +129,9 @@ it, every option, the seed and the Extras, and ends in a check, so a mistyped co
 leaves out the map's description. Letters may be in either case, and `I`, `L` and `O` read as
 `1`, `1` and `0`. A code from another VERA20k version still reads, but the dialog warns that the
 map may differ, because another version's generator can build another map from the same options.
-The Advanced sliders ride in the code only when above 0, flagged so a code made before them
-exists still reads with all sliders at 0.
+New six-slider codes explicitly mark the population fields. Codes from before the sliders
+load with all six at zero. An early development build used the three-slider flag for six values.
+When the same bytes fit both formats, VERA reads the original three-slider layout.
 
 ## Code
 
@@ -145,7 +142,7 @@ exists still reads with all sliders at 0.
   rules into the catalog the spawn sliders draw from.
 - `src/map/rmg/build.rs` (`war_damage`, `apply_derelicts_and_damage`) and `src/map/rmg/settings.rs`
   (moods).
-- `src/map/rmg/phases/tech_buildings.rs`: the Tech Buildings slider.
+- `src/map/rmg/phases/tech_buildings.rs`: original tech placements. The Tech Buildings slider adds to them in `embellish.rs`.
 - `src/map/rmg/options.rs`: `.SED` keys and share codes.
 - `src/ui/skirmish_shell/layout.rs` and `state/random_map_setup.rs`: the Advanced rows and their
   scrollbar.
