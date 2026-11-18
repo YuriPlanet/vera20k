@@ -227,7 +227,8 @@ fn gate_piece(
         ignore_visibility: true,
         lighting: &lighting,
         house_colors: colors,
-        building_zshape: Some((0, 0)),
+        building_zshape: true,
+        model_frame: None,
     };
     let order = NativeDisplayOrder::from_world(&runtime.simulation, None);
     let mut planned = PlannedObjects::default();

@@ -565,15 +565,53 @@ pub fn building_gun_screen_offsets(
     recoil: [f32; 2],
 ) -> [[f32; 2]; 2] {
     let yaw = voxel_body_facing(voxel_facing_step(facing));
+    building_gun_translations(turret_offset, yaw, barrel_pitch, recoil).map(|translation| {
+        let screen = voxel_camera_view().transform_vector3(translation);
+        [screen.x, -screen.y]
+    })
+}
+
+/// [`building_gun_screen_offsets`] before the camera: the B8 turret's and C0
+/// barrel's translations in voxel space, `yaw` being the facing's matrix.
+fn building_gun_translations(
+    turret_offset: i32,
+    yaw: Mat4,
+    barrel_pitch: i8,
+    recoil: [f32; 2],
+) -> [Vec3; 2] {
     let translation = yaw.transform_vector3(Vec3::new((turret_offset / 8) as f32, 0.0, 0.0));
     let turret = translation - yaw.x_axis.truncate() * recoil[0];
     let pitched = voxel_barrel_pitch(Mat4::IDENTITY, barrel_pitch).transform_vector3(translation);
     let barrel = translation + yaw.transform_vector3(pitched - translation)
         - yaw.x_axis.truncate() * recoil[1];
-    [turret, barrel].map(|translation| {
-        let screen = voxel_camera_view().transform_vector3(translation);
-        [screen.x, -screen.y]
-    })
+    [turret, barrel]
+}
+
+/// VERA-only, experimental (`docs/picture-model-art.md`): the camera-space
+/// draw matrices of a building's B8 turret and C0 barrel (Building draw
+/// `43DA80`) for a declared model, each part's translation included: the
+/// turret turns by the facing, the barrel turns and pitches as its VXL draws
+/// ([`voxel_pitched_draw_rotation`] on level ground), each moved by
+/// [`building_gun_translations`]. A C0-only building (`has_turret` false)
+/// translates nothing, as its VXL draw does.
+pub(crate) fn building_gun_draw_matrices(
+    turret_offset: i32,
+    facing: u8,
+    barrel_pitch: i8,
+    recoil: [f32; 2],
+    has_turret: bool,
+) -> [Mat4; 2] {
+    let yaw = voxel_body_facing(voxel_facing_step(facing));
+    let [turret, barrel] = if has_turret {
+        building_gun_translations(turret_offset, yaw, barrel_pitch, recoil)
+    } else {
+        [Vec3::ZERO; 2]
+    };
+    let camera = voxel_camera_view();
+    [
+        camera * Mat4::from_translation(turret) * yaw,
+        camera * Mat4::from_translation(barrel) * voxel_barrel_pitch(yaw, barrel_pitch),
+    ]
 }
 
 #[cfg(all(test, tests_render_s_z))]

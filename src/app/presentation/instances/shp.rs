@@ -77,8 +77,11 @@ pub(crate) struct ShpInputs<'a> {
     pub ignore_visibility: bool,
     pub lighting: &'a crate::map::lighting::CellLightGrid,
     pub house_colors: &'a crate::map::houses::HouseColorMap,
-    /// The loaded BUILDNGZ frame's offset in its canvas.
-    pub building_zshape: Option<(i32, i32)>,
+    pub building_zshape: bool,
+    /// VERA-only, experimental (`docs/picture-model-art.md`): the frame's
+    /// model drawing, for a building whose voxel guns' art declares
+    /// `Model=`; None draws no model.
+    pub model_frame: Option<&'a std::cell::RefCell<crate::render::model_draw::ModelFrame>>,
 }
 
 /// `extra_light` is the class's
@@ -152,10 +155,8 @@ pub(crate) fn shp_inputs<'a>(
         ignore_visibility: match_state.sandbox_full_visibility,
         lighting: presentation.lighting.grid(),
         house_colors: presentation.effective_house_color_map(),
-        building_zshape: presentation
-            .building_zshape
-            .as_ref()
-            .map(|zshape| zshape.frame_offset),
+        building_zshape: presentation.building_zshape.is_some(),
+        model_frame: Some(&state.renderer.model_frame),
     })
 }
 
@@ -1163,8 +1164,55 @@ pub(crate) fn shp_visitor<'a>(
             }
         }
         if entity.category() == EntityCategory::Structure {
+            // VERA-only, experimental (docs/picture-model-art.md): guns whose
+            // art declares `Model=` draw the model; `Some(None)`, a refused
+            // model, draws nothing. None keeps the VXL path below.
+            let gun_model = object_type
+                .filter(|rules_obj| rules_obj.turret_anim_is_voxel)
+                .zip(rules)
+                .and_then(|(rules_obj, rules)| rules.building_gun_model(&rules_obj.id));
+            if let Some(Some(model)) = gun_model
+                && let (Some(rules_obj), Some(rules), Some(frame)) =
+                    (object_type, rules, input.model_frame)
+                && building_voxel_turret_visible(entity, rules_obj.artillary)
+            {
+                let (tint, light) = crate::app::presentation::lighting::techno_effect_light(
+                    entity,
+                    tint,
+                    selected_palette_light(),
+                    sim,
+                    Some(rules),
+                    crate::app::presentation::lighting::TechnoDraw::Voxel,
+                );
+                super::model_art::emit_building_gun_model(
+                    frame,
+                    rules,
+                    &rules_obj.id,
+                    model,
+                    super::model_art::BuildingGunDraw {
+                        turret_facing: render_pose.body,
+                        barrel_elevation: render_pose.barrel,
+                        recoil: render_pose.recoil.0,
+                        turret_offset: art_entry.map_or(0, |art| art.turret_offset),
+                        anchor: [
+                            sx + rules_obj.turret_anim_x as f32,
+                            sy + rules_obj.turret_anim_y as f32,
+                        ],
+                        lift_px,
+                        depth,
+                        tint,
+                        light,
+                        colour_word,
+                        draw_state,
+                        z_adjust: rules_obj.turret_anim_z_adjust,
+                        house: hc,
+                    },
+                    &mut building_pieces,
+                );
+            }
             // Building voxel guns remain inside their SHP hull's draw call.
             if let Some(rules_obj) = object_type
+                && gun_model.is_none()
                 && rules_obj.turret_anim_is_voxel
                 && building_voxel_turret_visible(entity, rules_obj.artillary)
                 && let Some(unit_atlas) = input.unit_atlas

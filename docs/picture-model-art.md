@@ -57,6 +57,28 @@ VXL and HVA are never opened, as a missing VXL does today.
 section also says `Voxel=yes`; the section is the one the VXL would be read
 through (the rules `Image=`, else the type's own name).
 
+The voxel art that is not a unit body takes `Model=` from these sections:
+
+- **Building voxel guns** (`TurretAnimIsVoxel=`): the art section named by
+  `TurretAnim=`; for a `BarrelAnimIsVoxel=` building whose `TurretAnim=` has
+  no `TUR` (its barrel is `VoxelBarrelFile=`), the building's own. The
+  model's `body` stands in for the turret VXL and its `barrel` for the barrel
+  VXL; a building without a turret VXL (no `TUR` in `TurretAnim=`) draws only
+  `barrel`. `TurretOffset=`, `TurretAnimX/Y/ZAdjust=`, recoil and the facing
+  place them as they place the VXLs. The building does not become a voxel
+  type.
+- **Voxel projectiles** (`Voxel=yes` BulletTypes): the `Image=` art section;
+  the `body` draws in its rest pose, turned along the velocity as the VXL is.
+  `Color=` colours the mask's red; `Flat=` keeps its blit.
+- **Debris** (`[VoxelAnims]`): the type's own `Image=` art section.
+  `VoxelIndex=` picks the mesh node it draws: the Nth node with a mesh, in
+  file order, from 0, that node's own meshes only, as it picks a VXL section.
+  A type that shares another's model (`ShareSource=` with a `Share*Data=`)
+  keeps the shared VXL.
+
+Each still needs a `body` node: its length is the model's scale
+(`ModelSize=`).
+
 For a building, `Buildup=`, `BibShape=` and a war factory's `DeployingAnim=`,
 `RoofDeployingAnim=`, `UnderDoorAnim=` and `UnderRoofDoorAnim=` (SHP names
 there, not AnimTypes) name pictures (`NAME.png`) when the building's section
@@ -253,14 +275,20 @@ against this list.
   shadows; `render_game` begins and `dispatch_draw_passes` encodes the
   frame's models (`RendererState::model_frame`). `vxl_raster` exposes the body
   draw matrix and `vxl_normals` the world light; the native model units per
-  lepton moved to `map::voxel_pose`. For shadows, node animations and
-  `NoSpawnAlt`: `instances::units` asks `model_units::declared_model_of` for
-  the drawn type's model (its `WO` name included), passes the voxel shadow
-  path's anchor and admission (`model_shadow_draw`) and shares its frame
-  rule (`animation_frames_with`, split out of `animation_frames_of`
-  unchanged); `unit_atlas::voxel_shadow_viewer` exposes the shadow types'
-  gate; `AircraftShadowPose` is `Copy`; `VoxelAssetCatalog` reads
-  `NAMEWO.glb` into `DeclaredModel::no_spawn_alt`.
+  lepton moved to `map::voxel_pose`.
+- Models, chain 5: `VoxelAssetCatalog::bind` also admits the models of
+  building guns, voxel projectiles and debris, leaves the building's and
+  debris' VXL/HVA requests unopened, hashes their models where their VXLs
+  were hashed, and answers `RuleSet::building_gun_model`, `projectile_model`
+  and `voxel_anim_declared_model`; `ModelFrame::request_nodes` draws a
+  building's guns or one mesh node (`ModelNodes`); `vxl_raster` gives the
+  building gun matrices (`building_gun_draw_matrices`, sharing
+  `building_gun_screen_offsets`' translations); `instances::shp` hands a
+  declared building's guns to `instances::model_art` before its VXL guns,
+  through `ShpInputs::model_frame`; `instances::projectiles` and
+  `instances::voxel_anims` take a texture with the body image
+  (`projectile_draw_instance_on`, `voxel_anim_draw_on`) so a declared model
+  places it on the model page.
 
 ## Verification
 
@@ -291,14 +319,15 @@ production run on a real map with converted art.
 - Chain 1: in progress.
 - Chains 4 and 5 (`Model=`), written, not yet compiled or run: keys and the
   model-loaded and tilt facts in the core crate; the GPU draw of voxel units'
-  and aircraft's bodies, turrets and barrels, posed by node animations at
-  their HVA frame numbers, with normal maps; their shadows; the bridge split
-  of their depth rectangle; the `NoSpawnAlt` `WO` model. Not yet: voxel
-  building turrets, voxel projectiles and debris (their VXL path stays).
-  Known residuals of the model draw: a shadow is the exact footprint of the
-  flattened mesh, not the two-pixel-wide columns `0x00756860` marks, and
-  takes no body mask (the body drawn after it covers it, so where native
-  leaves a high-flying Jumpjet's unmasked shadow over its own body, the model
-  shadow stays under it); an animated part's rectangle is the box of its
-  nodes' boxes, larger than its rest bounds; alpha-masked texels cast shadow;
-  the `WO` model is not in the config hash.
+  and aircraft's bodies, turrets and barrels. Not yet: model shadows (the
+  `shadow` node or body bounds), node animations (the rest pose draws),
+  normal maps (`NAME.normals.png`), the bridge split of a model's depth
+  rectangle, and the `NoSpawnAlt` `WO` model.
+- Chain 5, written, not yet compiled or run: building voxel guns, voxel
+  projectiles and debris draw declared models on the model page. Not yet:
+  a debris model's ground shadow (the VXL path's bottom-quad stencil; none
+  draws), node animations for the guns (the HVA frame counter; the rest pose
+  draws), a `ShareSource=` debris type from a declared model, and the guns of
+  a `BarrelAnimIsVoxel=` building without `TurretAnimIsVoxel=`, which no path
+  draws. Projectile and debris models take the model light, where their VXLs
+  light diffusely (`753C80`).

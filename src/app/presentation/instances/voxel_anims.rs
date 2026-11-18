@@ -189,6 +189,38 @@ pub(crate) fn voxel_anim_visitor<'a>(
             return;
         };
         let kind = rules.voxel_anim_type(piece.type_id());
+        // VERA-only, experimental (docs/picture-model-art.md): a type whose
+        // own `Image=` art declares `Model=` draws the model and has no VXL;
+        // a refused model draws nothing.
+        if let Some(declared) = rules.voxel_anim_declared_model(piece.type_id()) {
+            let Some(declared) = declared else {
+                return;
+            };
+            let palette = piece_palette(
+                piece,
+                kind,
+                sim,
+                presentation.effective_house_color_map(),
+                presentation.lighting.grid(),
+            );
+            let remap_row = palette.0;
+            if let Some(object) =
+                voxel_anim_draw_on(id, piece, kind, palette, &view, order, |section, matrix| {
+                    let body = super::model_art::voxel_anim_model_entry(
+                        &state.renderer.model_frame,
+                        rules,
+                        declared,
+                        section,
+                        matrix,
+                        remap_row,
+                    )?;
+                    Some((body, None))
+                })
+            {
+                objects.push(object);
+            }
+            return;
+        }
         let Some(model) = rules.voxel_anim_model(piece.type_id()) else {
             return;
         };
@@ -244,12 +276,37 @@ fn voxel_anim_draw_instance(
     id: u64,
     piece: &VoxelAnimObject,
     kind: &VoxelAnimType,
-    (remap_row, source_palette, palette_light): (u32, u32, PaletteLight),
+    palette: (u32, u32, PaletteLight),
     view: &DebrisView<'_>,
     order: &NativeDisplayOrder,
     objects: &mut PlannedObjects,
     render: impl FnOnce(i32, glam::Mat4) -> Option<(UnitSpriteEntry, Option<UnitSpriteEntry>)>,
-) -> Option<()> {
+) -> Option<PlannedObjectInstance> {
+    voxel_anim_draw_on(id, piece, kind, palette, view, order, |section, matrix| {
+        let (body, shadow) = render(section, matrix)?;
+        Some((
+            (ObjectTexture::UnitPosePage(body.page), body),
+            shadow.map(|shadow| (ObjectTexture::UnitPosePage(shadow.page), shadow)),
+        ))
+    })
+}
+
+/// A body (and shadow) image on the texture it was placed on.
+type PieceImage = (ObjectTexture, UnitSpriteEntry);
+
+/// [`voxel_anim_draw_instance`] whose `render` places the body and shadow on
+/// textures of its choosing: the pose page for a VXL, the model page for a
+/// declared model (`docs/picture-model-art.md`), which samples its RGBA
+/// texels (`source_palette` 0).
+fn voxel_anim_draw_on(
+    id: u64,
+    piece: &VoxelAnimObject,
+    kind: &VoxelAnimType,
+    (remap_row, source_palette, palette_light): (u32, u32, PaletteLight),
+    view: &DebrisView<'_>,
+    order: &NativeDisplayOrder,
+    render: impl FnOnce(i32, glam::Mat4) -> Option<(PieceImage, Option<PieceImage>)>,
+) -> Option<PlannedObjectInstance> {
     let parent = order.object_draw(id, SpriteEncoding::Voxel)?;
     let location = piece.world_coord();
     let (ground_z, deck) = super::foot_depth::floor_probe(view.terrain, location.x, location.y)?;
@@ -300,15 +357,20 @@ fn voxel_anim_draw_instance(
 }
 
 fn pose_piece(
-    entry: UnitSpriteEntry,
+    (target, entry): PieceImage,
     at: PieceGeometry,
     depth: f32,
     draw_state: DrawState,
     palette_light: PaletteLight,
     source_palette: u32,
 ) -> ObjectPieceInstance {
+    // A model page is RGBA: the blitters' RGBA source mode reads it.
+    let source_palette = match target {
+        ObjectTexture::ShpPage(_) => 0,
+        _ => source_palette,
+    };
     ObjectPieceInstance {
-        target: ObjectTexture::UnitPosePage(entry.page),
+        target,
         render_z: RenderZPolicy::ReadOnly,
         instance: SpriteInstance {
             position: [at.point[0] + entry.offset_x, at.point[1] + entry.offset_y],

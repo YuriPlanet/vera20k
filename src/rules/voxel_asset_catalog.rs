@@ -184,8 +184,10 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
 /// (at most 18): a missing one fails the whole load, as a missing indexed
 /// TUR VXL clears the main model at `5F8ACB`. Barrels and an ordinary
 /// turret are optional, as their VXL files are. Refusals are logged.
+/// `object` is None for art that is not a type's own voxel body (building
+/// guns, voxel projectiles, debris), which needs no indexed nodes.
 fn admit_declared_model(
-    object: &crate::rules::object_type::ObjectType,
+    object: Option<&crate::rules::object_type::ObjectType>,
     section: &str,
     decl: &crate::rules::art_data::ModelDecl,
     decoded: &mut BTreeMap<String, Option<(Arc<crate::assets::model_file::Model>, u64)>>,
@@ -224,11 +226,13 @@ fn admit_declared_model(
         );
         return None;
     };
-    let indexed = object.category == ObjectCategory::Vehicle
-        && object.has_turret
-        && object.turret_count > 0
-        && !object.is_gattling;
-    if indexed {
+    let indexed = object.filter(|object| {
+        object.category == ObjectCategory::Vehicle
+            && object.has_turret
+            && object.turret_count > 0
+            && !object.is_gattling
+    });
+    if let Some(object) = indexed {
         let count = object.turret_count.clamp(0, 18) as u32;
         if let Some(missing) = (0..count).find(|&i| model.part(ModelPart::Turret(i)).is_none()) {
             log::warn!(
@@ -305,6 +309,65 @@ fn no_spawn_alt_model(
         digest: fnv1a64(bytes),
         no_spawn_alt: None,
     })
+}
+
+/// VERA-only, experimental (`docs/picture-model-art.md`): `decl` of art
+/// section `section` for art that is not a type's own voxel body, admitted
+/// once per section ([`admit_declared_model`]) and shared by every building
+/// gun, projectile and debris type that reads the section.
+fn admit_section_model(
+    section: &str,
+    decl: &crate::rules::art_data::ModelDecl,
+    by_section: &mut BTreeMap<String, Option<Arc<DeclaredModel>>>,
+    decoded: &mut BTreeMap<String, Option<(Arc<crate::assets::model_file::Model>, u64)>>,
+    assets: &AssetManager,
+) -> Option<Arc<DeclaredModel>> {
+    by_section
+        .entry(section.to_ascii_uppercase())
+        .or_insert_with(|| admit_declared_model(None, section, decl, decoded, assets).map(Arc::new))
+        .clone()
+}
+
+/// VERA-only, experimental (`docs/picture-model-art.md`): the art section
+/// whose `Model=` stands in for a building's voxel guns, the B8 turret and
+/// C0 barrel BuildingType `45FA90` loads (names from `464438`/`46467E`,
+/// [`super::voxel_frame_catalog::building_voxel_read_names`]): the
+/// `TurretAnim=` section; else, for a `BarrelAnimIsVoxel=` building whose
+/// `TurretAnim=` holds no `TUR` (its C0 is `VoxelBarrelFile=`), the
+/// building's own. The model's `body` stands in for the turret and its
+/// `barrel` for the barrel.
+fn building_gun_model_decl<'a>(
+    rules: &'a RuleSet,
+    object: &crate::rules::object_type::ObjectType,
+) -> Option<(&'a str, &'a crate::rules::art_data::ModelDecl)> {
+    if object.category != ObjectCategory::Building
+        || !(object.turret_anim_is_voxel || object.barrel_anim_is_voxel)
+    {
+        return None;
+    }
+    let turret_anim = object.turret_anim.as_deref().unwrap_or("").trim();
+    if !turret_anim.is_empty()
+        && let Some(found) = rules.art().resolve_declared_model(turret_anim, turret_anim)
+    {
+        return Some(found);
+    }
+    let (turret, _) = super::voxel_frame_catalog::building_voxel_pair_names(turret_anim, None);
+    if turret.is_none() && object.barrel_anim_is_voxel {
+        rules
+            .art()
+            .resolve_declared_model(&object.id, &object.image)
+    } else {
+        None
+    }
+}
+
+/// The catalog-hash entry of a declared model: its file, `ModelSize=` and
+/// byte digest, so a machine with another file hashes differently.
+fn model_identity(declared: &DeclaredModel) -> Option<(String, Option<String>)> {
+    Some((
+        format!("MODEL:{}", declared.decl.file.to_ascii_uppercase()),
+        Some(format!("{}:{:016x}", declared.decl.size, declared.digest)),
+    ))
 }
 
 /// One native model resolver for gameplay, UnitModel and metadata consumers.
@@ -403,8 +466,22 @@ pub(crate) struct VoxelAssetCatalog {
     models: BTreeMap<(ObjectCategory, String), LoadedVoxelModel>,
     voxel_anims: Vec<Option<VoxelPart>>,
     /// Whether any type draws an admitted declared model, so the renderer
-    /// skips its model work outright when none does. Derived from `models`.
+    /// skips its model work outright when none does. Derived from `models`
+    /// and the three maps below.
     declared_models: bool,
+    /// VERA-only, experimental (`docs/picture-model-art.md`): building
+    /// types, by upper-case ID, whose voxel guns' art declares `Model=`
+    /// ([`building_gun_model_decl`]); None when it was refused, so the guns
+    /// draw nothing. Their VXL and HVA are not opened. Empty for retail art.
+    building_guns: BTreeMap<String, Option<Arc<DeclaredModel>>>,
+    /// The same for `Voxel=yes` projectile types whose `Image=` art declares
+    /// `Model=`, by upper-case ID. Bullet draw `46B0C0` reads their VXL by
+    /// name, outside the plan, so nothing here is hashed.
+    projectiles: BTreeMap<String, Option<Arc<DeclaredModel>>>,
+    /// The same for VoxelAnim types, by registry index, whose own `Image=`
+    /// art declares `Model=`. A type that shares another's data
+    /// (`ShareSource=`) keeps the shared VXL.
+    voxel_anim_models: BTreeMap<usize, Option<Arc<DeclaredModel>>>,
 }
 impl PartialEq for VoxelAssetCatalog {
     fn eq(&self, other: &Self) -> bool {
@@ -437,20 +514,23 @@ impl VoxelAssetCatalog {
                 // Only a declared model adds an entry, so a catalog without
                 // one hashes as it did before (docs/picture-model-art.md).
                 if let Some(declared) = model.declared_model() {
-                    parts.push(Some((
-                        format!("MODEL:{}", declared.decl.file.to_ascii_uppercase()),
-                        Some(format!("{}:{:016x}", declared.decl.size, declared.digest)),
-                    )));
+                    parts.push(model_identity(declared));
+                }
+                if *category == ObjectCategory::Building
+                    && let Some(Some(declared)) = self.building_guns.get(name)
+                {
+                    parts.push(model_identity(declared));
                 }
                 (format!("{category:?}:{name}"), parts)
             })
             .collect();
-        result.extend(
-            self.voxel_anims
-                .iter()
-                .enumerate()
-                .map(|(i, p)| (format!("VoxelAnim:{i}"), vec![part(p.as_ref())])),
-        );
+        result.extend(self.voxel_anims.iter().enumerate().map(|(i, p)| {
+            let mut parts = vec![part(p.as_ref())];
+            if let Some(Some(declared)) = self.voxel_anim_models.get(&i) {
+                parts.push(model_identity(declared));
+            }
+            (format!("VoxelAnim:{i}"), parts)
+        }));
         result
     }
     pub(crate) fn bind(rules: &RuleSet, assets: &AssetManager) -> Self {
@@ -462,7 +542,16 @@ impl VoxelAssetCatalog {
         let mut decoded = BTreeMap::new();
         let mut declared: BTreeMap<(ObjectCategory, String), Option<Arc<DeclaredModel>>> =
             BTreeMap::new();
+        // Chain 5: building guns, voxel projectiles and debris whose art
+        // declares `Model=`, each section admitted once.
+        let mut by_section = BTreeMap::new();
+        let mut building_guns: BTreeMap<String, Option<Arc<DeclaredModel>>> = BTreeMap::new();
         for object in rules.all_objects() {
+            if let Some((section, decl)) = building_gun_model_decl(rules, object) {
+                let admitted =
+                    admit_section_model(section, decl, &mut by_section, &mut decoded, assets);
+                building_guns.insert(object.id.to_ascii_uppercase(), admitted);
+            }
             let Some(image) = object.voxel_image_load() else {
                 continue;
             };
@@ -470,33 +559,70 @@ impl VoxelAssetCatalog {
             else {
                 continue;
             };
-            let admitted = admit_declared_model(object, section, decl, &mut decoded, assets);
+            let admitted = admit_declared_model(Some(object), section, decl, &mut decoded, assets);
             declared.insert(
                 (object.category, object.id.to_ascii_uppercase()),
                 admitted.map(Arc::new),
             );
         }
-        let unopened: BTreeSet<LibraryRequest> = if declared.is_empty() {
-            BTreeSet::new()
-        } else {
-            let is_declared = |object: &&crate::rules::object_type::ObjectType| {
-                declared.contains_key(&(object.category, object.id.to_ascii_uppercase()))
+        let mut voxel_anim_models: BTreeMap<usize, Option<Arc<DeclaredModel>>> = BTreeMap::new();
+        for (index, kind) in rules.voxel_anim_types_iter().enumerate() {
+            if kind.shares_data() {
+                continue;
+            }
+            if let Some((section, decl)) =
+                rules.art().resolve_declared_model(&kind.name, &kind.image)
+            {
+                let admitted =
+                    admit_section_model(section, decl, &mut by_section, &mut decoded, assets);
+                voxel_anim_models.insert(index, admitted);
+            }
+        }
+        let mut projectiles: BTreeMap<String, Option<Arc<DeclaredModel>>> = BTreeMap::new();
+        for kind in rules.projectiles_iter().filter(|kind| kind.voxel) {
+            let Some((section, decl)) = kind
+                .voxel_image_load()
+                .and_then(|image| rules.art().resolve_declared_model(&kind.id, image))
+            else {
+                continue;
             };
-            let mine = rules.voxel_model_plan.slot_requests(
-                rules
-                    .all_objects()
-                    .filter(|object| is_declared(object))
-                    .map(|object| &object.voxel_model_slots),
-            );
-            let others = rules.voxel_model_plan.slot_requests(
-                rules
-                    .all_objects()
-                    .filter(|object| !is_declared(object))
-                    .map(|object| &object.voxel_model_slots)
-                    .chain(rules.voxel_anim_types_iter().map(|kind| &kind.model_slots)),
-            );
-            mine.difference(&others).cloned().collect()
-        };
+            let admitted =
+                admit_section_model(section, decl, &mut by_section, &mut decoded, assets);
+            projectiles.insert(kind.id.to_ascii_uppercase(), admitted);
+        }
+        let unopened: BTreeSet<LibraryRequest> =
+            if declared.is_empty() && building_guns.is_empty() && voxel_anim_models.is_empty() {
+                BTreeSet::new()
+            } else {
+                let is_declared = |object: &&crate::rules::object_type::ObjectType| {
+                    let id = object.id.to_ascii_uppercase();
+                    (object.category == ObjectCategory::Building && building_guns.contains_key(&id))
+                        || declared.contains_key(&(object.category, id))
+                };
+                let anim_models = &voxel_anim_models;
+                let anims = |declared: bool| {
+                    rules
+                        .voxel_anim_types_iter()
+                        .enumerate()
+                        .filter(move |(index, _)| anim_models.contains_key(index) == declared)
+                        .map(|(_, kind)| &kind.model_slots)
+                };
+                let mine = rules.voxel_model_plan.slot_requests(
+                    rules
+                        .all_objects()
+                        .filter(|object| is_declared(object))
+                        .map(|object| &object.voxel_model_slots)
+                        .chain(anims(true)),
+                );
+                let others = rules.voxel_model_plan.slot_requests(
+                    rules
+                        .all_objects()
+                        .filter(|object| !is_declared(object))
+                        .map(|object| &object.voxel_model_slots)
+                        .chain(anims(false)),
+                );
+                mine.difference(&others).cloned().collect()
+            };
         let mut libraries = BTreeMap::new();
         let folder = crate::rules::retail_sources::FolderFiles::new(assets);
         let half_sizes =
@@ -574,6 +700,14 @@ impl VoxelAssetCatalog {
                         declared: declared.clone(),
                         ..Default::default()
                     },
+                    // A building whose guns are a declared model loads no
+                    // gun VXL; the model is not a main model, so IsVoxel
+                    // (6F9E10) and the tilt sizes stay as without one.
+                    None if object.category == ObjectCategory::Building
+                        && building_guns.contains_key(&key.1) =>
+                    {
+                        LoadedVoxelModel::default()
+                    }
                     None => model(&object.voxel_model_slots, &plan, &libraries),
                 };
                 (key, loaded)
@@ -602,11 +736,23 @@ impl VoxelAssetCatalog {
             .collect();
         let voxel_anims = rules
             .voxel_anim_types_iter()
-            .map(|kind| part(kind.model_slots.main, &plan, &libraries))
+            .enumerate()
+            .map(|(index, kind)| {
+                if voxel_anim_models.contains_key(&index) {
+                    None
+                } else {
+                    part(kind.model_slots.main, &plan, &libraries)
+                }
+            })
             .collect();
         let declared_models = models
             .values()
-            .any(|model| model.declared_model().is_some());
+            .any(|model| model.declared_model().is_some())
+            || building_guns
+                .values()
+                .chain(projectiles.values())
+                .chain(voxel_anim_models.values())
+                .any(Option::is_some);
         Self {
             bound: true,
             loaded,
@@ -614,6 +760,9 @@ impl VoxelAssetCatalog {
             models,
             voxel_anims,
             declared_models,
+            building_guns,
+            projectiles,
+            voxel_anim_models,
         }
     }
     /// VERA: the game-folder files that change the types' main models.
@@ -631,6 +780,33 @@ impl VoxelAssetCatalog {
     }
     pub(crate) fn voxel_anim(&self, index: usize) -> Option<&VoxelPart> {
         self.voxel_anims.get(index)?.as_ref()
+    }
+    /// VERA-only, experimental (`docs/picture-model-art.md`): the declared
+    /// model of building `type_id`'s voxel guns. None when its art declares
+    /// none (the VXL path); `Some(None)` when it was refused (nothing draws).
+    pub(crate) fn building_gun_model(&self, type_id: &str) -> Option<Option<&Arc<DeclaredModel>>> {
+        if self.building_guns.is_empty() {
+            return None;
+        }
+        crate::util::native_string::with_ascii_uppercase(type_id, |key| {
+            self.building_guns.get(key).map(Option::as_ref)
+        })
+    }
+    /// [`Self::building_gun_model`] for a voxel projectile type.
+    pub(crate) fn projectile_model(&self, type_id: &str) -> Option<Option<&Arc<DeclaredModel>>> {
+        if self.projectiles.is_empty() {
+            return None;
+        }
+        crate::util::native_string::with_ascii_uppercase(type_id, |key| {
+            self.projectiles.get(key).map(Option::as_ref)
+        })
+    }
+    /// [`Self::building_gun_model`] for the VoxelAnim type at `index`.
+    pub(crate) fn voxel_anim_declared_model(
+        &self,
+        index: usize,
+    ) -> Option<Option<&Arc<DeclaredModel>>> {
+        self.voxel_anim_models.get(&index).map(Option::as_ref)
     }
     pub(crate) fn contains(&self, object: TypeHandle) -> bool {
         self.by_handle
@@ -751,6 +927,60 @@ mod tests {
         rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
         assert!(loaded(&rules, "FULL"));
         assert!(!loaded(&rules, "SHORT"), "turret1 is missing");
+    }
+
+    /// A building's voxel guns and a debris type whose art declares
+    /// `Model=` take the model in place of their VXL (docs/picture-model-art.md,
+    /// chain 5): the building's gun from its `TurretAnim=` section, without
+    /// becoming a voxel type (6F9E10); a missing file is refused and draws
+    /// nothing; art without the key keeps the VXL path. The model's bytes
+    /// reach the config hash as its VXL's identity did.
+    #[test]
+    fn building_guns_and_debris_take_their_declared_models() {
+        let directory = crate::map::source::test_support::TestDirectory::new("declared-art-models");
+        let bind = |length: f32| {
+            let glb = crate::assets::model_file::test_glb::box_model(1.0, 1.0, length, &["barrel"]);
+            std::fs::write(directory.path().join("gun.glb"), &glb).unwrap();
+            let assets = AssetManager::from_loose_root_for_test(directory.path());
+            let art = IniFile::from_str(
+                "[GUNTUR]\nModel=gun.glb\nModelSize=100\n\
+                 [CHUNK]\nModel=gun.glb\nModelSize=60\n\
+                 [LOST]\nModel=lost.glb\nModelSize=60\n",
+            );
+            let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+                &IniFile::from_str(
+                    "[BuildingTypes]\n0=GUNBLD\n1=PLAINGUN\n\
+                     [GUNBLD]\nStrength=300\nTurretAnim=GUNTUR\nTurretAnimIsVoxel=yes\n\
+                     [PLAINGUN]\nStrength=300\nTurretAnim=NOTUR\nTurretAnimIsVoxel=yes\n\
+                     [VoxelAnims]\n0=CHUNK\n1=LOST\n2=PLAIN\n",
+                ),
+                &art,
+            )
+            .unwrap();
+            rules.install_art_fixture(ArtRegistry::from_ini(&art));
+            rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
+            rules
+        };
+        let rules = bind(2.0);
+        let gun = rules.building_gun_model("GUNBLD").unwrap().unwrap();
+        assert_eq!((gun.section.as_str(), gun.decl.size), ("GUNTUR", 100));
+        assert!(rules.building_gun_model("PLAINGUN").is_none());
+        assert!(!loaded(&rules, "GUNBLD"), "the guns are not a main model");
+        let anim = |name| rules.voxel_anim_type_id_by_name(name).unwrap();
+        let chunk = rules.voxel_anim_declared_model(anim("CHUNK")).unwrap();
+        assert_eq!(chunk.unwrap().decl.size, 60);
+        assert!(rules.voxel_anim_model(anim("CHUNK")).is_none());
+        assert!(matches!(
+            rules.voxel_anim_declared_model(anim("LOST")),
+            Some(None)
+        ));
+        assert!(rules.voxel_anim_declared_model(anim("PLAIN")).is_none());
+        assert!(rules.declares_models());
+        assert_ne!(
+            rules.simulation_config_hash(),
+            bind(3.0).simulation_config_hash(),
+            "another file is another identity"
+        );
     }
 
     #[test]

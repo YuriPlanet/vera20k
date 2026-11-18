@@ -7702,12 +7702,40 @@ impl RuleSet {
         self.voxel_assets.voxel_anim(id.0 as usize)
     }
 
+    /// VERA-only, experimental (`docs/picture-model-art.md`): the declared
+    /// model building `type_id` draws for its voxel guns. None when its art
+    /// declares none, so the VXL path draws; `Some(None)` when the model was
+    /// refused and the guns draw nothing.
+    pub fn building_gun_model(
+        &self,
+        type_id: &str,
+    ) -> Option<Option<&std::sync::Arc<crate::rules::voxel_asset_catalog::DeclaredModel>>> {
+        self.voxel_assets.building_gun_model(type_id)
+    }
+
+    /// [`Self::building_gun_model`] for the voxel projectile type `type_id`.
+    pub fn projectile_model(
+        &self,
+        type_id: &str,
+    ) -> Option<Option<&std::sync::Arc<crate::rules::voxel_asset_catalog::DeclaredModel>>> {
+        self.voxel_assets.projectile_model(type_id)
+    }
+
+    /// [`Self::building_gun_model`] for the VoxelAnim type `id`.
+    pub fn voxel_anim_declared_model(
+        &self,
+        id: VoxelAnimTypeId,
+    ) -> Option<Option<&std::sync::Arc<crate::rules::voxel_asset_catalog::DeclaredModel>>> {
+        self.voxel_assets.voxel_anim_declared_model(id.0 as usize)
+    }
+
     pub(crate) fn voxel_models_bound(&self) -> bool {
         self.voxel_assets.is_bound()
     }
 
     /// VERA-only, experimental (`docs/picture-model-art.md`): whether any
-    /// type draws an admitted `Model=` ([`crate::rules::voxel_asset_catalog::LoadedVoxelModel::declared_model`]).
+    /// type draws an admitted `Model=` ([`crate::rules::voxel_asset_catalog::LoadedVoxelModel::declared_model`],
+    /// building guns, voxel projectiles and debris included).
     /// False for retail data, so the renderer does no model work.
     pub fn declares_models(&self) -> bool {
         self.voxel_assets.declares_models()
