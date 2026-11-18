@@ -90,13 +90,18 @@ check ends the visit after that one shot, with the retained stage untouched.
 
 ## Residuals
 
-- The delayed-fire subsystem is unported: `HandleDelayedFireWithPauseSequence`
-  (`src/Ext/Techno/Body.cpp:699-749`, called from the unit firing update at
-  `src/Ext/Unit/Hooks.Firing.cpp:89` and `:103` and the infantry one at
-  `src/Ext/Infantry/Hooks.Firing.cpp:118`), its nine other `DelayedFire.*` keys,
-  the saved `DelayedFireTimer` / `DelayedFireWeaponIndex` /
-  `DelayedFireSequencePaused` fields, the `GetRangedRandomOrSingleValue` draw and
-  `CreateDelayedFireAnim`. VERA reads `DelayedFire.Duration` and
-  `DelayedFire.OnlyOnInitialBurst` only for the repeat gate, so a weapon with
-  `Duration` set keeps native's one shot per frame but neither pauses its firing
-  sequence nor plays the delayed-fire animation.
+- The delayed-fire subsystem this page used to call unported **is ported**;
+  `docs/phobos-delayed-fire.md` owns it. `HandleDelayedFireWithPauseSequence`
+  (`src/Ext/Techno/Body.cpp:699-749`) is
+  `sim::combat::world_fire::phobos_delayed_fire_pause_sequence`
+  (`src/sim/combat/world_fire.rs:617`) reached from `commit_fire_visit` (`:974`,
+  `:1292`), with the saved `DelayedFireTimer` / `DelayedFireWeaponIndex` /
+  `DelayedFireSequencePaused` fields on the firer (`start_phobos_delayed_fire`,
+  `:730`, cleared at `:741`). The pause flag is consumed by
+  `TechnoClass_AI_AnimationPaused` (`0x6FABC4`,
+  `src/sim/world/techno_ai.rs:3078`), which skips the generic Stage block, and
+  it is hashed (`src/sim/world/world_hash.rs:1754`). This page itself reads only
+  `DelayedFire.Duration` and `DelayedFire.OnlyOnInitialBurst`, for the repeat
+  gate that keeps native's one shot per frame. Its remaining residuals
+  (`CenterAnimOnFirer` using the object coordinate, `ExtraRange.Prefiring`) live
+  on the delayed-fire page, not here.

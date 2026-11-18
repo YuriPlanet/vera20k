@@ -8,10 +8,11 @@
 //! admission already bounds this feature: hovered or selected. The values
 //! themselves come from `sim::digital_display`, which owns every state read.
 //!
-//! Residual: `HealthBar.Permanent=` is not ported (its `0x6F5E37` hook keeps
-//! the disguise checks, adds a shroud test and `HealthBar.Permanent.PipScale`),
-//! so an idle techno never reaches the health-bar call and `ShowType=idle`
-//! never draws.
+//! `HealthBar.Permanent=` (`0x6F5E37`) is ported in that admission
+//! (`ui_overlays::health_strip_visibility`), so an idle techno of a
+//! `Permanent=yes` type does reach the call and `ShowType=idle` draws. Residual:
+//! native's permanent arm also adds a shroud test VERA's admission omits; the
+//! shroud plane still blacks the body out.
 //!
 //! The native text path is `DSurface::DrawTextA` with
 //! `Align | FullShadow | Background?`; VERA emits the same text through its

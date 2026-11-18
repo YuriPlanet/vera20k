@@ -87,10 +87,11 @@ Reached only for a BuildingType whose `PowersUp.Buildings` is non-empty
    - Multiple `Nums`: every slot must be at its threshold (`1 - factor` for
      the pItem slot, `limit` for others) and have no copy in production when
      `includeQueued`; otherwise Buildable.
-6. `NotBuildableIfQueueMatch` never changes either owner's return value;
-   only the unported `RemoveProduction` reads it. Queue presence in the
-   second pass is `FactoryClass::FindByOwnerAndProduct`, VERA's
-   `held_in_factory`.
+6. `NotBuildableIfQueueMatch` never changes either owner's return value, but it
+   joins `realReached` in the tail `RemoveProduction` prune: a type whose
+   `includeQueued` copy is queued while every slot sits under its limit still
+   drops that copy. Queue presence in the second pass is
+   `FactoryClass::FindByOwnerAndProduct`, VERA's `held_in_factory`.
 
 ## Native evidence (gamemd / Phobos hooks)
 

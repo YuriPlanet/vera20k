@@ -45,8 +45,12 @@ the stock one.
   or `subjectToGround` (`Ext/Bullet/Hooks.Obstacles.cpp:34,67-72`). VERA keeps
   the vanilla gate (`SubjectToCliffs || SubjectToWalls`, Ares
   `SubjectToBuildings`) and adds only the ground clause, so a projectile that
-  relies on `SubjectToLand=`/`SubjectToWater=`/`Level=` entering the scan is
-  still unported; those keys are not read yet.
+  relies on `SubjectToLand=`/`SubjectToWater=`/`Level=` entering the scan keeps
+  the vanilla gate. The two keys *are* read — `PhobosSubjectToTerrain`
+  (`src/rules/phobos_bullet_terrain.rs:26-59`, bound at
+  `src/rules/projectile_type.rs:154`) — but nothing consumes them yet: the
+  `reads_any()` half of Phobos's `SubjectToLand || SubjectToWater ? true : Level`
+  decision has no caller in the `InRange` gate.
 - The FLH-predicted source offset (`AddFLHToSourceCoords`, `:89-125`) is part
   of the same helper and not ported; the scan starts at the raw source
   coordinate.
