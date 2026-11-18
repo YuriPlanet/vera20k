@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- The lobby and LAN discovery are HTTPS/UDP; ACCESS_WIFI_STATE is for the
-         WifiManager locks multicast discovery needs (P8). -->
+    <!-- The lobby is HTTPS and LAN discovery is UDP broadcast;
+         ACCESS_NETWORK_STATE lets VeraActivity.bindLanNetwork find the Wi-Fi network. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
     <!-- Vulkan is the shipping renderer baseline, so a device without it cannot
          run the game. GLES-only devices are not supported yet (P4 decision). -->

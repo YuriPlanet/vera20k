@@ -11,20 +11,6 @@ fn setup_builders_match_complete_original_packets() {
     let sender = data["name"].as_str().unwrap();
     for case in data["setup_packets"].as_array().unwrap() {
         let message = match case["name"].as_str().unwrap() {
-            "roster" => LanMessage::roster(
-                sender,
-                &[
-                    data["game"].as_str().unwrap(),
-                    OPEN,
-                    CLOSED,
-                    WAITING,
-                    EASY_AI,
-                    MEDIUM_AI,
-                    HARD_AI,
-                    OPEN_OBSERVER,
-                ],
-            )
-            .unwrap(),
             "options_status" => LanMessage::options(
                 sender,
                 b"K1",
@@ -141,28 +127,7 @@ fn full_options_match_original_formatter_from_native_global_and_node_inputs() {
 }
 
 #[test]
-fn bounded_views_preserve_reserved_bytes_and_wide_names() {
-    let data = corpus();
-    let roster_case = data["setup_packets"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|case| case["name"] == "roster")
-        .unwrap();
-    let message = LanMessage::decode(&unhex(roster_case["payload"].as_str().unwrap())).unwrap();
-    assert_eq!(
-        message.roster_names().unwrap(),
-        [
-            "Game-ÿ",
-            OPEN,
-            CLOSED,
-            WAITING,
-            EASY_AI,
-            MEDIUM_AI,
-            HARD_AI,
-            OPEN_OBSERVER
-        ]
-    );
+fn bounded_views_preserve_text_and_reserved_bytes() {
     let options =
         LanMessage::options("Host", &[0xc1, 0x80, 0x80, 0x80], 0x87654321, 0xabcdef01).unwrap();
     let fields = options.options_fields().unwrap();
@@ -173,10 +138,6 @@ fn bounded_views_preserve_reserved_bytes_and_wide_names() {
     );
     assert!(LanMessage::options("Host", &[b'x'; 399], 0, 0).is_ok());
     assert!(LanMessage::options("Host", &[b'x'; 400], 0, 0).is_err());
-    let text = "Ω".repeat(195);
-    assert!(LanMessage::roster("Host", &[&text, "", "", "", "", "", "", ""]).is_ok());
-    let text = "Ω".repeat(196);
-    assert!(LanMessage::roster("Host", &[&text, "", "", "", "", "", "", ""]).is_err());
     let mut bytes = options.into_bytes();
     bytes[0x20] = 0xa5;
     assert_eq!(LanMessage::from_bytes(bytes).into_bytes(), bytes);

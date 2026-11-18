@@ -17,6 +17,7 @@ use crate::net::lan_messages::{
 };
 use crate::net::reliable::{Delivery, LanConnectionConfig, LanConnections, RetryTiming};
 use crate::net::udp::{DEFAULT_LAN_PORT, LanUdpTransport, UdpBindConfig};
+use crate::ui::lan_shell::LanSelectionChange;
 
 // VERA IPv4 setup lease: 1800 native16-ms wall buckets (28.8s), allowing
 // more than21 missed83-bucket announcements. Native5DF9E0 owns the same
@@ -194,7 +195,7 @@ impl LanService {
         ))
     }
 
-    pub(crate) fn open(_now: u32) -> std::io::Result<Self> {
+    pub(crate) fn open() -> std::io::Result<Self> {
         // IPv4 adaptation: limited broadcast on the OS-selected interface.
         // Explicit interface/target selection remains a separate transport
         // option; never reinterpret retail IPX DestNet/NetCard as IPv4 values.
@@ -1139,6 +1140,56 @@ impl LanService {
             transport.set_retry_timing(LOBBY_RETRY_TIMING, true);
         }
     }
+
+    /// The selection handlers' calls of `0x005DF9E0`. A click on another row
+    /// forces discovery, the game query and presence (the `0x549` handler at
+    /// `0x005DDD12`); its change test at `0x005DDCFF` skips the call for the
+    /// selected row. `0x005DB9B0` clamping a selection past the shortened list
+    /// forces only the query (`0x005DB9FF`).
+    fn select_game(&mut self, game_id: Option<u64>, change: LanSelectionChange) {
+        self.selected_game = game_id;
+        match change {
+            LanSelectionChange::Unchanged => {}
+            LanSelectionChange::Changed => {
+                self.discovery_timer = Default::default();
+                self.force_query = true;
+                self.force_presence = true;
+            }
+            LanSelectionChange::Clamped => self.force_query = true,
+        }
+    }
+
+    /// `0x005DF9E0`'s timers: the broadcasts due at `now`, each restarted.
+    fn due_broadcasts(&mut self, now: u32, host_setup: bool) -> DueBroadcasts {
+        use super::match_runtime::session::WallBucketTimer;
+        // A direct spawn has no lobby to discover or query; it only renews the
+        // admitted peers' setup leases.
+        let lobby = !self.preadmitted;
+        let due = DueBroadcasts {
+            discovery: lobby && self.discovery_timer.remaining(now) == 0 && !host_setup,
+            query: lobby && (self.force_query || self.query_timer.remaining(now) == 0),
+            presence: self.force_presence || self.presence_timer.remaining(now) == 0,
+        };
+        if due.discovery {
+            self.discovery_timer = WallBucketTimer::start(now, 120);
+        }
+        if due.query {
+            self.query_timer = WallBucketTimer::start(now, 35);
+            self.force_query = false;
+        }
+        if due.presence {
+            self.presence_timer = WallBucketTimer::start(now, 83);
+            self.force_presence = false;
+        }
+        due
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct DueBroadcasts {
+    discovery: bool,
+    query: bool,
+    presence: bool,
 }
 
 pub(crate) fn leave_setup(state: &mut AppState) {
@@ -1274,8 +1325,8 @@ fn reopen_lobby_on_new_network(state: &mut AppState) {
 }
 
 pub(crate) fn open(state: &mut AppState) {
-    // Deterministic hidden-window capture drivers own explicit service events.
-    // Their existing request/response transcript must not race real sockets.
+    // Every capture owns its service: scripted ones run without sockets, and
+    // live ones install theirs before clicking Network (movies/lan/live.rs).
     if state.platform.capture_client_size.is_some() {
         return;
     }
@@ -1286,10 +1337,7 @@ pub(crate) fn open(state: &mut AppState) {
     if state.match_state.lan_service.is_some() {
         return;
     }
-    let now = super::match_runtime::frame_pacer::frame_bucket(
-        super::match_runtime::frame_pacer::wall_clock_ms(),
-    );
-    match LanService::open(now).and_then(|mut service| {
+    match LanService::open().and_then(|mut service| {
         service.start_io_pump()?;
         Ok(service)
     }) {
@@ -1302,7 +1350,7 @@ pub(crate) fn open(state: &mut AppState) {
 }
 
 /// The LAN visit could not open its sockets, so nothing it shows works.
-/// Capture drivers run without sockets on purpose.
+/// Scripted captures run without sockets on purpose.
 pub(crate) fn unavailable(state: &AppState) -> bool {
     state.match_state.lan_service.is_none() && state.platform.capture_client_size.is_none()
 }
@@ -1828,8 +1876,13 @@ pub(crate) fn poll(state: &mut AppState, now_ms: u64) {
             break;
         };
         let mode = super::shell_network_setup::lan_go_receive_mode(state);
+        // gamemd's host reply wait (0x005DD6F8) also records a 0x10 map-file
+        // request. VERA guests transfer the map before GO and reply only 0x13.
         let accepted_kind = mode != super::shell_network_setup::LanGoReceiveMode::RepliesOnly
-            || matches!(incoming.payload.first(), Some(0x13 | 0x10));
+            || incoming
+                .payload
+                .get(..4)
+                .is_some_and(|kind| kind == LanMessageKind::ReadyToGo.raw().to_le_bytes());
         if accepted_kind && let Err(error) = receive(state, incoming, now) {
             log::debug!("Ignored LAN application packet: {error:#}");
         }
@@ -2374,13 +2427,9 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                         super::shell_network_setup::NetworkSetupEvent::CooperativeCampaign(text),
                     )?;
                 } else {
-                    options::receive_options(state, incoming.source, &message)?;
+                    // VERA sends the full options and roster as VS31 setup.
+                    anyhow::bail!("unknown LAN options text");
                 }
-            }
-        }
-        LanMessageKind::Roster => {
-            if state.frontend.network_setup_protocol.is_some() {
-                options::receive_roster(state, incoming.source, &message)?;
             }
         }
         LanMessageKind::PlayerChoices => {
@@ -2453,19 +2502,6 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                     .expect("visit")
                     .deferred_setup
                     .extend(deferred);
-            }
-        }
-        LanMessageKind::Unknown(0x10) => {
-            if let Some(source_index) = state
-                .match_state
-                .session
-                .network_endpoint_source(incoming.source)
-                && state.frontend.network_setup_protocol.is_some()
-            {
-                super::shell_network_setup::service_event(
-                    state,
-                    super::shell_network_setup::NetworkSetupEvent::GoMapRequested { source_index },
-                )?;
             }
         }
         LanMessageKind::ReadyToGo => {
@@ -2890,10 +2926,9 @@ fn lobby_request(
                 .expect("visit")
                 .discovery_timer = Default::default();
         }
-        LanServiceRequest::SelectGame { game_id, .. } => {
+        LanServiceRequest::SelectGame { game_id, change } => {
             let service = state.match_state.lan_service.as_mut().expect("visit");
-            service.selected_game = game_id;
-            service.force_query = true;
+            service.select_game(game_id, change);
             project_players(state);
         }
         LanServiceRequest::Join { game_id, observe } => {
@@ -2950,7 +2985,7 @@ fn lobby_request(
                 );
             }
         }
-        LanServiceRequest::NameChanged(_) => {
+        LanServiceRequest::NameChanged => {
             if let Some(service) = state.match_state.lan_service.as_mut() {
                 service.force_presence = true;
             }
@@ -4006,7 +4041,6 @@ fn poll_setup_leases(state: &mut AppState, now: u32) {
 }
 
 fn announce(state: &mut AppState, now: u32) {
-    use super::match_runtime::session::WallBucketTimer;
     if state.match_state.live_network.is_some() {
         return;
     }
@@ -4017,23 +4051,11 @@ fn announce(state: &mut AppState, now: u32) {
     let Some(service) = state.match_state.lan_service.as_mut() else {
         return;
     };
-    // A direct spawn has no lobby to discover or query; it only renews the
-    // admitted peers' setup leases below.
-    let lobby = !service.preadmitted;
-    let discovery = lobby && service.discovery_timer.remaining(now) == 0 && !host_setup;
-    let query = lobby && (service.force_query || service.query_timer.remaining(now) == 0);
-    let presence = service.force_presence || service.presence_timer.remaining(now) == 0;
-    if discovery {
-        service.discovery_timer = WallBucketTimer::start(now, 120);
-    }
-    if query {
-        service.query_timer = WallBucketTimer::start(now, 35);
-        service.force_query = false;
-    }
-    if presence {
-        service.presence_timer = WallBucketTimer::start(now, 83);
-        service.force_presence = false;
-    }
+    let DueBroadcasts {
+        discovery,
+        query,
+        presence,
+    } = service.due_broadcasts(now, host_setup);
     let name = local_name(state);
     let broadcast = GlobalDestination::Broadcast { port_override: 0 };
     if discovery && let Ok(message) = LanMessage::named(LanNamedMessage::Discovery, &name) {
@@ -4680,16 +4702,10 @@ fn gameplay_connections(
     let seed = session
         .network_start_seed()
         .ok_or_else(|| anyhow::anyhow!("LAN startup has no agreed seed"))?;
-    let mut config = LanConnectionConfig {
+    let config = LanConnectionConfig {
         max_peers: crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT - 1,
         ..Default::default()
     };
-    if session.network_return_context()
-        == Some(super::match_runtime::session::NetworkReturnContext::Wol)
-    {
-        // VERA-only relay extension; retail wire compatibility is not required.
-        config.max_peers = crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT - 1;
-    }
     let mut connections = LanConnections::new(config, timing);
     for (house, endpoint) in peers {
         connections.add_peer(house, endpoint)?;
@@ -4781,6 +4797,34 @@ mod tests {
         assert_eq!(reopened.last_seen, 12);
         assert_eq!(service.game(endpoint_id(other)).unwrap().last_seen, 11);
         assert_eq!(service.games.len(), 2);
+    }
+
+    /// The `0x549` handler broadcasts only for another row (`0x005DDCFF`);
+    /// the discovery rebuild's clamp sends the game query alone (`0x005DB9FF`).
+    #[test]
+    fn a_selection_forces_only_what_its_native_caller_forces() {
+        let mut service = service();
+        let all = DueBroadcasts {
+            discovery: true,
+            query: true,
+            presence: true,
+        };
+        let none = DueBroadcasts {
+            discovery: false,
+            query: false,
+            presence: false,
+        };
+        assert_eq!(service.due_broadcasts(10, false), all);
+        service.select_game(Some(1), LanSelectionChange::Unchanged);
+        assert_eq!(service.due_broadcasts(11, false), none);
+        service.select_game(Some(2), LanSelectionChange::Clamped);
+        let query = DueBroadcasts {
+            query: true,
+            ..none
+        };
+        assert_eq!(service.due_broadcasts(12, false), query);
+        service.select_game(Some(3), LanSelectionChange::Changed);
+        assert_eq!(service.due_broadcasts(13, false), all);
     }
 
     fn launch() -> crate::skirmish_launch::SkirmishLaunchSession {
@@ -5835,7 +5879,6 @@ mod tests {
         receiver.admitted_host = Some(("Host".into(), host));
         let messages = [
             LanMessage::options("Host", b"seed,map,options", 0, 0).unwrap(),
-            LanMessage::roster("Host", &["Host", "Guest", "", "", "", "", "", ""]).unwrap(),
             LanMessage::start_prompt("Host").unwrap(),
             LanMessage::go(10),
         ];

@@ -11,8 +11,8 @@ use crate::app::match_runtime::session::{
     MatchSession, NetworkAiOptions, NetworkMapMetadata, NetworkRosterEntry, NetworkVacancy,
 };
 use crate::app::shell_network_setup::{HostOptions, NetworkSetupEvent};
+use crate::net::lan_messages::game_name_hash;
 use crate::net::lan_messages::setup::{self, LanGameOptions, LanOptionsAi, LanOptionsHuman};
-use crate::net::lan_messages::{LanMessage, game_name_hash};
 use crate::rules::ini_value::{crt_atoi, strtok};
 use crate::skirmish_launch::{
     AiDifficulty, LaunchCountry, LaunchStartPosition, LaunchTeam, NETWORK_PLAYER_SLOT_COUNT,
@@ -260,16 +260,6 @@ fn queue_payload(
     Ok(admitted)
 }
 
-pub(super) fn receive_options(
-    state: &mut AppState,
-    source: SocketAddrV4,
-    message: &LanMessage,
-) -> Result<()> {
-    validate_host(state, source, message)?;
-    super::reject_setup_compatibility(state, &crate::i18n::tr("VERA:LanHostNoAgreement"));
-    anyhow::bail!("unscoped legacy full setup is not a VERA admission")
-}
-
 fn receive_options_text(
     state: &mut AppState,
     text: &[u8],
@@ -509,25 +499,6 @@ pub(super) fn receive_extended(
             Ok(())
         }
     }
-}
-
-pub(super) fn receive_roster(
-    state: &mut AppState,
-    source: SocketAddrV4,
-    message: &LanMessage,
-) -> Result<()> {
-    validate_host(state, source, message)?;
-    anyhow::bail!("unscoped native roster is not a VERA admission")
-}
-
-fn validate_host(state: &AppState, source: SocketAddrV4, message: &LanMessage) -> Result<()> {
-    let host = state
-        .match_state
-        .lan_service
-        .as_ref()
-        .and_then(|service| service.admitted_host.as_ref())
-        .ok_or_else(|| anyhow!("no admitted LAN host"))?;
-    validate_host_endpoint(&state.match_state.session, host, source, &message.name())
 }
 
 fn validate_host_endpoint(
@@ -916,6 +887,7 @@ fn parsed_roster(
 mod tests {
     use super::*;
     use crate::app::match_runtime::session::{NetworkReturnContext, NetworkRowKind};
+    use crate::net::lan_messages::LanMessage;
     use crate::skirmish_launch::SkirmishLaunchSession;
     use std::net::Ipv4Addr;
 
