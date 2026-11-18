@@ -13,8 +13,12 @@ use vera20k_relay_protocol::{
 use super::{LiveCommandError, StartupAgreement, StartupError};
 use crate::net::event_packet::{EVENT_PACKET_HEADER_LEN, EventPacketCodec};
 use crate::net::udp::LanUdpTransport;
-use crate::sim::command::{CommandRecord, ExitRecord, REMOVE_PLAYER_OPCODE};
-use crate::sim::command_queue::FrameInfo;
+use crate::sim::command::{
+    ADD_PLAYER_OPCODE, CommandRecord, EMPTY_OPCODE, ExitRecord, FRAME_SYNC_OPCODE,
+    GAME_SPEED_OPCODE, LATENCY_FUDGE_OPCODE, MESSAGE_OPCODE, PROCESS_TIME_OPCODE,
+    REMOVE_PLAYER_OPCODE, RESPONSE_TIME_OPCODE, TIMING_OPCODE,
+};
+use crate::sim::command_queue::{FRAMEINFO_EVENT_OPCODE, FrameInfo};
 use crate::sim::world::{
     NetworkCommandQueues, NetworkInterruption, NetworkQueueContext, NetworkQueuePass,
 };
@@ -1898,10 +1902,24 @@ impl SequencedSession {
     }
 }
 
+/// Whether a relay batch may carry the record. Batches leave out the packet
+/// headers, which every reader rebuilds, and the network control events the
+/// relay's own records and pacing replace (speed, departure, timing); the
+/// rest have no online producer.
 fn gameplay_opcode(opcode: u8) -> bool {
     !matches!(
         opcode,
-        0 | 0x0d | 0x19 | 0x1a | 0x1b | 0x1c | 0x1f | 0x20 | 0x21 | 0x23 | 0x24
+        FRAME_SYNC_OPCODE
+            | FRAMEINFO_EVENT_OPCODE
+            | GAME_SPEED_OPCODE
+            | REMOVE_PLAYER_OPCODE
+            | TIMING_OPCODE
+            | PROCESS_TIME_OPCODE
+            | LATENCY_FUDGE_OPCODE
+            | EMPTY_OPCODE
+            | MESSAGE_OPCODE
+            | RESPONSE_TIME_OPCODE
+            | ADD_PLAYER_OPCODE
     )
 }
 

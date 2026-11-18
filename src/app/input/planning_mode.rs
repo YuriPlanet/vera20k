@@ -1025,12 +1025,8 @@ mod tests {
             let Command::PlanningRecord { record } = &queued[0].payload else {
                 panic!("mobile self-click escaped Planning Mode");
             };
-            let decoded = crate::sim::command::MegaMissionRecord::decode(&{
-                let mut ordinary = record.clone();
-                ordinary.payload_mut()[22] = 0;
-                ordinary
-            })
-            .unwrap();
+            let (decoded, _) =
+                crate::sim::command::MegaMissionRecord::decode_planned(record).unwrap();
             assert!(matches!(
                 decoded.order,
                 crate::sim::command::MegaMissionOrder::Mission {
