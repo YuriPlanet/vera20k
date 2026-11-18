@@ -90,8 +90,10 @@ while the effect is held; see [AttachEffect](phobos-attach-effect.md).
 - Of `PossibleCellSpreadDetonate`'s members VERA reads only the AttachEffect
   lists; a warhead setting only an unread member skips the two buffer draws
   native makes per detonation, shifting the scenario RNG stream.
-- `CellSpread.Cylinder` has no reader, so the pass collects with a spherical
-  distance like the unported damage-area cylinder hooks.
+- `CellSpread.Cylinder` **is** read and consumed: the warhead key
+  (`rules/warhead_type.rs:1033`) reaches `sim::combat::combat_aoe`
+  (`:661`, `:715`), which measures the cylinder instead of the sphere. The
+  earlier "no reader" note here was stale.
 - Phobos' `MapClass_DamageArea` hook is gated on `InDamageArea`, which a
   bullet detonation clears; VERA's direct area calls always run the pass, so a
   warhead detonated both ways can visit its targets an extra time. Pre-existing.
