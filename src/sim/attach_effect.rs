@@ -1650,15 +1650,15 @@ impl Simulation {
     /// reconciles its `AnimClass` with `CanShowAnim`.
     ///
     /// RESIDUALS: native `IsImmobilized` is approximated by the chrono-warp and
-    /// transport-interior gates VERA models; `CloakCheck` and the tunnel
-    /// animation state are not ported. A cumulative type's animation follows
-    /// `AnimExt::ChangeAnimType` for the designated layer
-    /// (`CumulativeAnimations.RestartOnChange` picks the proportional or the
-    /// restart arm); the native per-instance `AnimClass` of every other layer
-    /// is not modeled, because VERA shows one animation per cumulative type.
-    /// `Animation.ResetOnReapply` retires the animation when the effect
-    /// refreshes or is reapplied, so the replacement is created on the next
-    /// pass of this walk rather than inside the attach call as native does.
+    /// transport-interior gates VERA models; the tunnel animation state is not
+    /// ported. A cumulative type's animation follows `AnimExt::ChangeAnimType`
+    /// for the designated layer (`CumulativeAnimations.RestartOnChange` picks
+    /// the proportional or the restart arm); the native per-instance
+    /// `AnimClass` of every other layer is not modeled, because VERA shows one
+    /// animation per cumulative type. `Animation.ResetOnReapply` retires the
+    /// animation when the effect refreshes or is reapplied, so the replacement
+    /// is created on the next pass of this walk rather than inside the attach
+    /// call as native does.
     /// `ShouldBeDiscardedNow`'s target facts for one entity, read once per
     /// frame before the AI walk. `needs_range` skips the weapon selection
     /// when no effect on the object reads inrange/outofrange.
@@ -2398,6 +2398,12 @@ impl Simulation {
             && (entity.category() != crate::map::entities::EntityCategory::Structure
                 || entity.building_online());
         let owner_house = entity.owner();
+        // `AttachEffectClass::CloakCheck` (`New/Entity/AttachEffectClass.cpp:446-453`):
+        // Cloaking or Cloaked counts as cloaked for the animation gate.
+        let owner_cloaked = matches!(
+            entity.cloak.as_ref().map_or(0, |cloak| cloak.state()),
+            1 | 2
+        );
         let position = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
         let world = crate::sim::anim_class::AnimWorldCoord {
             x: position.x,
@@ -2647,6 +2653,12 @@ impl Simulation {
             } else {
                 None
             };
+            // `AttachEffectClass::CreateAnim` (`:476-477`): a cloaked owner
+            // refuses to create an animation whose type asks for `DetachOnCloak`,
+            // and `CloakCheck` has already killed the live one.
+            let desired = desired.filter(|name| {
+                !(owner_cloaked && crate::sim::anim_class::anim_type_detach_on_cloak(rules, *name))
+            });
             self.maintain_phobos_attach_effect_anim(
                 &mut list.instances[instance_index],
                 desired,
@@ -7441,6 +7453,104 @@ Duration=100
             sim.interner.resolve(live.type_id()).to_owned(),
             live.runtime_frame_for_test(),
         )
+    }
+
+    /// `AttachEffectClass::CloakCheck` (`New/Entity/AttachEffectClass.cpp:446-453`)
+    /// with `CreateAnim`'s matching gate (`:476-477`): a cloaked owner kills an
+    /// effect animation whose type asks for `DetachOnCloak` and refuses to
+    /// create a new one until the object uncloaks.
+    #[test]
+    fn a_cloaked_owner_hides_a_detach_on_cloak_effect_animation() {
+        let (mut sim, rules) = cloak_anim_scene("", 41);
+        let target = spawn(&mut sim, &rules, "TARGET", "Americans", 20, 20);
+        sim.update_phobos_attach_effects(target, &rules);
+        let first = effect_anim_id(&sim, target).expect("the effect shows an animation");
+        set_cloak_state(&mut sim, target, 2);
+        sim.update_phobos_attach_effects(target, &rules);
+        assert_eq!(
+            effect_anim_id(&sim, target),
+            None,
+            "Cloaked kills the DetachOnCloak animation"
+        );
+        sim.update_phobos_attach_effects(target, &rules);
+        assert_eq!(
+            effect_anim_id(&sim, target),
+            None,
+            "and CreateAnim keeps refusing while cloaked"
+        );
+        set_cloak_state(&mut sim, target, 0);
+        sim.update_phobos_attach_effects(target, &rules);
+        let back = effect_anim_id(&sim, target).expect("uncloaking recreates the animation");
+        assert_ne!(back, first, "the recreated animation is a new instance");
+    }
+
+    /// `DetachOnCloak=no` (`Ext/AnimType/Body.cpp:112`, default true): the
+    /// animation type keeps its effect animation while the owner is cloaked.
+    #[test]
+    fn a_detach_on_cloak_opt_out_keeps_the_effect_animation_while_cloaked() {
+        let (mut sim, rules) = cloak_anim_scene("DetachOnCloak=no\n", 42);
+        let target = spawn(&mut sim, &rules, "TARGET", "Americans", 20, 20);
+        sim.update_phobos_attach_effects(target, &rules);
+        let first = effect_anim_id(&sim, target).expect("the effect shows an animation");
+        set_cloak_state(&mut sim, target, 2);
+        sim.update_phobos_attach_effects(target, &rules);
+        assert_eq!(
+            effect_anim_id(&sim, target),
+            Some(first),
+            "the opt-out keeps the same animation"
+        );
+        set_cloak_state(&mut sim, target, 0);
+        sim.update_phobos_attach_effects(target, &rules);
+        assert_eq!(effect_anim_id(&sim, target), Some(first));
+    }
+
+    /// A `Cloakable=yes` target that carries one `Duration=100` effect whose
+    /// `Animation=AEONE`; the art keys decide the animation type's cloak flag.
+    fn cloak_anim_scene(art_keys: &str, seed: u64) -> (Simulation, crate::rules::ruleset::RuleSet) {
+        let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "[General]\nCloakingStages=6\n\
+             [Countries]\n0=Americans\n1=Russians\n\
+             [VehicleTypes]\n0=TARGET\n\
+             [TARGET]\nStrength=1000\nSpeed=6\nArmor=none\n\
+             Cloakable=yes\nCloakingSpeed=3\n\
+             AttachEffect.AttachTypes=CLOAKAE\n\
+             [AttachEffectTypes]\n0=CLOAKAE\n\
+             [CLOAKAE]\nDuration=100\nAnimation=AEONE\n"
+        ));
+        let mut rules = crate::rules::ruleset::RuleSet::from_ini(&ini).expect("cloak anim rules");
+        let mut art = crate::rules::art_data::ArtRegistry::from_ini(
+            &crate::rules::ini_parser::IniFile::from_str(&format!(
+                "[AEONE]\nEnd=8\nRate=2\n{art_keys}"
+            )),
+        );
+        art.bind_anim_frame_count_for_test("AEONE", 8);
+        rules.replace_art_registry_for_test(art);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, seed);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        (sim, rules)
+    }
+
+    fn set_cloak_state(sim: &mut Simulation, id: u64, state: i32) {
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .expect("live entity")
+            .cloak
+            .as_mut()
+            .expect("Cloakable=yes carries the cloak runtime")
+            .set_state_for_test(state);
+    }
+
+    fn effect_anim_id(sim: &Simulation, id: u64) -> Option<crate::sim::anim_class::AnimId> {
+        sim.substrate
+            .entities
+            .get(id)
+            .expect("live entity")
+            .phobos_attach_effects()
+            .instances()
+            .iter()
+            .find_map(|instance| instance.anim)
     }
 
     /// One detonation of the `ADDCUM` warhead on `target`.
