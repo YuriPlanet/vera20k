@@ -1373,7 +1373,8 @@ impl ShellCaptureRequest {
         }
     }
 
-    /// Select only the diagnostic visit; never change the saved profile.
+    /// The provider this capture's WOL visit opens with (`prepare_state`);
+    /// none opens it online.
     pub(crate) fn wol_welcome_provider(&self) -> Option<crate::app::shell_wol::WolProvider> {
         match self.checkpoint.movies_target() {
             Some(movies::MoviesTarget::WolWelcome { provider, .. }) => Some(provider),
@@ -2540,7 +2541,6 @@ pub(crate) struct ShellCaptureSession {
     entry_sequence: Option<EntrySequenceState>,
     skirmish: Option<skirmish::SkirmishCapture>,
     movies: Option<movies::MoviesCapture>,
-    wol_welcome_provider_selected: bool,
     score: Option<score::ScoreCapture>,
     campaign_score: Option<score::CampaignScoreCapture>,
     outcome: Option<std::result::Result<(), String>>,
@@ -2671,7 +2671,6 @@ impl ShellCaptureSession {
             entry_sequence,
             skirmish,
             movies,
-            wol_welcome_provider_selected: false,
             score,
             campaign_score,
             outcome: None,
@@ -2722,6 +2721,7 @@ impl ShellCaptureSession {
         state.match_state.input.cursor_x = self.request.cursor_x as f32;
         state.match_state.input.cursor_y = self.request.cursor_y as f32;
         state.frontend.native_shell_ui = self.request.native_shell_ui();
+        state.frontend.wol_capture_provider = self.request.wol_welcome_provider();
         // As the Language list applies a pick; a language no file provides
         // fails the capture instead of drawing English under its name.
         let language = self
@@ -2839,26 +2839,6 @@ impl ShellCaptureSession {
                 ) == (self.request.width, self.request.height),
                 "latency capture surface changed from the requested dimensions"
             );
-        }
-        // A native visit opened with the retail welcome (`prepare_state`);
-        // the normal online visit has none and needs no selection.
-        if let Some(visit) = state.frontend.wol.as_mut()
-            && !self.wol_welcome_provider_selected
-            && matches!(visit.page, crate::app::shell_wol::WolPage::Welcome)
-            && let Some(provider) = self.request.wol_welcome_provider()
-        {
-            visit.set_provider(provider);
-            self.wol_welcome_provider_selected = true;
-            // Normal Online entry skips native persona I/O. Only after the
-            // explicit native diagnostic selection may its existing owner
-            // prefill and reopen the welcome.
-            crate::app::shell_wol::persona::enter_wol_main(state);
-            crate::app::App::reopen_wol_welcome(state);
-            // The ordinary reducer rearms the selected page's entry before
-            // any controlled driver reads its controls. Native fixtures are
-            // confined to the capture's separately marked profile.
-            crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
-            return Ok(());
         }
         if let Some(capture) = &mut self.skirmish {
             capture.after_present(state, rendered, self.frames_seen)?;

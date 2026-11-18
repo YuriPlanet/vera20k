@@ -5171,25 +5171,9 @@ mod tests {
     }
 
     #[test]
-    fn saved_test_preference_cannot_load_demo_games_in_ordinary_play() {
-        let saved_test_service = true;
-        assert_eq!(
-            super::super::provider_for_visit(saved_test_service, None),
-            service::WolProvider::Online
-        );
-        assert_eq!(
-            super::super::provider_for_visit(
-                saved_test_service,
-                Some(winit::dpi::PhysicalSize::new(800, 600)),
-            ),
-            service::WolProvider::TestService
-        );
-    }
-
-    #[test]
     fn normal_test_service_keeps_the_simplified_ui_and_only_vera20k_online() {
         let mut visit = crate::app::shell_wol::WolVisit::open(false);
-        visit.set_provider(service::WolProvider::TestService);
+        visit.provider = service::WolProvider::TestService;
         assert!(visit.modern_ui());
         let channels: Vec<_> = ["Lob_41_0", "Lob_41_1", "Lob_41_2"]
             .into_iter()

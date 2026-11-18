@@ -1943,9 +1943,6 @@ impl Category {
                 Setting::Checkbox(Check::MouseWheelZoom),
                 Setting::Checkbox(Check::LockCursor),
             ],
-            // The Offline Internet Test Service stays off every page: it swaps
-            // Internet for stand-in servers, so only `[VERA] WolTestService=`
-            // turns it on.
             Self::General if !HAS_HD_MAP_PREVIEWS => &[
                 Setting::List(List::Language),
                 Setting::Checkbox(Check::YrOriginalStyle),

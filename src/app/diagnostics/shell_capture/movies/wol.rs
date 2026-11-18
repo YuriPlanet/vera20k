@@ -144,7 +144,7 @@ pub enum WolTarget {
     InternetMenu,
     /// `0x113` Back: the channel left and a fresh `0x10E` settled.
     LobbyBack,
-    /// The Options page's offline test service: login to a settled 0x113.
+    /// The offline test service: login to a settled 0x113.
     TestServiceLobby,
     /// Modern lobby presentation with sealed local fixture data, no
     /// credentials, Tanya's row hovered.
@@ -1113,9 +1113,6 @@ impl WolCapture {
                         MainMenuCaptureSnapshot::from_state(state).scaled_as_reference(),
                     )? =>
             {
-                // The Options box, read when Internet opens the visit; the
-                // capture never writes the profile out.
-                state.persistence.options_profile.wol_test_service = self.target.test_service();
                 if self.target == WolTarget::BuddyFromMyInfo {
                     state.frontend.wol_test_credentials = vec![WolCredential {
                         slot: 1,
@@ -1179,12 +1176,6 @@ impl WolCapture {
                     return Ok(());
                 }
                 if self.target.my_info() {
-                    state
-                        .frontend
-                        .wol
-                        .as_mut()
-                        .context("WOL visit")?
-                        .set_provider(WolProvider::Controlled);
                     let rect = App::wol_welcome_layout(state)
                         .page
                         .button_rect(crate::ui::wol_shell::MY_INFORMATION)
@@ -1226,16 +1217,10 @@ impl WolCapture {
                         .button_rect(mode_button)
                         .context("mode button")?;
                     welcome_click(state, rect);
-                    self.event(frame, format!("0x10E {mode_name} (Options test service)"));
+                    self.event(frame, format!("0x10E {mode_name} (test service)"));
                     self.phase = WolPhase::ServiceLogin;
                     return Ok(());
                 }
-                state
-                    .frontend
-                    .wol
-                    .as_mut()
-                    .context("WOL visit")?
-                    .set_provider(WolProvider::Controlled);
                 let rect = App::wol_welcome_layout(state)
                     .page
                     .button_rect(mode_button)

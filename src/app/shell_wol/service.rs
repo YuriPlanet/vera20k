@@ -30,8 +30,8 @@ pub(crate) enum WolProvider {
     Unavailable,
     /// A diagnostics/test service drains requests and injects events.
     Controlled,
-    /// VERA's offline stand-in service ([`super::test_service`]), chosen by
-    /// the Options page's developer box.
+    /// VERA's offline stand-in service ([`super::test_service`]), which only
+    /// shell captures select.
     TestService,
 }
 

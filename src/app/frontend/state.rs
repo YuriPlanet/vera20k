@@ -151,6 +151,9 @@ pub(crate) struct FrontendState {
     /// `0x10E` and full controls instead of opening at the online sign-in,
     /// and a LAN guest's BD keeps Accept (`SetupDialog::modern`).
     pub(crate) native_shell_ui: bool,
+    /// A shell capture's WOL provider, which its Internet visit opens with.
+    /// Outside captures it is `None` and every visit opens online.
+    pub(crate) wol_capture_provider: Option<crate::app::shell_wol::WolProvider>,
     /// LAN lobby interaction/discovery; admitted participants belong to MatchSession.
     pub(crate) lan: Option<crate::app::shell_lan::LanShellRuntime>,
     pub(crate) network_setup_protocol:

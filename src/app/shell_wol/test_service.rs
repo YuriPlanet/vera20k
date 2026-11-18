@@ -1,8 +1,7 @@
-//! VERA's offline WOL test service: a developer stand-in behind the same
-//! request/event boundary a real service will use, chosen by
-//! `[VERA] WolTestService=`. It is not gamemd behavior: it lets
-//! the Internet screens (login `0x10F`, lobby `0x113`, setup C2/C9) be
-//! opened and clicked without a server.
+//! VERA's offline WOL test service: a stand-in behind the live service's
+//! request/event boundary, which only shell captures select. It is not
+//! gamemd behavior: it lets the Internet screens (login `0x10F`, lobby
+//! `0x113`, setup C2/C9) be opened and clicked without a server.
 //!
 //! It answers the visit's and the WOL setup's requests once no shell
 //! transition runs: like a real service, a reply arrives after the page that
