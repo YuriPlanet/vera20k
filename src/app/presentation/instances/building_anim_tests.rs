@@ -287,14 +287,16 @@ fn high_terrain_building_slots_keep_their_offsets_and_depth() {
     }
     let raised = emit(&sim, &rules, building, &atlas, &order);
     assert_eq!(flat.len(), raised.len());
+    // gamemd lifts the building and its slots by AdjustForZ alone.
+    let lift = crate::util::native_x87::adjust_for_z_standard(3744) as f32;
     for (flat, raised) in flat.iter().zip(&raised) {
         for (flat, raised) in flat.pieces.iter().zip(&raised.pieces) {
             assert_eq!(raised.instance.position[0], flat.instance.position[0]);
             assert_eq!(
                 raised.instance.position[1],
-                flat.instance.position[1] - 540.0
+                flat.instance.position[1] - lift
             );
-            assert_eq!(raised.instance.z_adjust, flat.instance.z_adjust - 540.0);
+            assert_eq!(raised.instance.z_adjust, flat.instance.z_adjust - lift);
             assert_eq!(raised.instance.depth, flat.instance.depth);
         }
     }

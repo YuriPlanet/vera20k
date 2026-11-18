@@ -33,6 +33,7 @@ profile = "yr" # yr | mo | auto | custom
 [graphics]
 extra_animations = true   # cosmetic effects: water/ore sparkles (future: laser pulses, particle trails)
 translucent_fog = false   # show terrain through fog; unseen enemy objects remain concealed
+high_terrain_building_lift = false   # true draws buildings on terrain level 15+ at their tile row; the original game draws them 1-2 px lower
 # Full screen, zoom and the original 4:3 shape are on the Options page (saved in VERA.INI).
 
 [gameplay]

@@ -209,6 +209,10 @@ pub struct GraphicsConfig {
     /// VERA presentation option: show terrain through translucent fog while
     /// concealing unseen enemy objects. Off by default for the retail look.
     pub translucent_fog: bool,
+    /// VERA presentation option: draw buildings on terrain level 15 and up at
+    /// their tile row (`locomotor_visual::building_terrain_correction`). Off
+    /// by default: the original game draws them 1-2 px lower.
+    pub high_terrain_building_lift: bool,
 }
 
 impl Default for GraphicsConfig {
@@ -216,6 +220,7 @@ impl Default for GraphicsConfig {
         Self {
             extra_animations: true,
             translucent_fog: false,
+            high_terrain_building_lift: false,
         }
     }
 }
@@ -416,6 +421,9 @@ impl GameConfig {
                 }
                 ("graphics", "translucent_fog") => {
                     parse_bool(value).map(|on| graphics.translucent_fog = on)
+                }
+                ("graphics", "high_terrain_building_lift") => {
+                    parse_bool(value).map(|on| graphics.high_terrain_building_lift = on)
                 }
                 ("gameplay", "input_delay_ticks") => {
                     parse_u32(value).map(|ticks| gameplay.input_delay_ticks = ticks)
@@ -949,6 +957,7 @@ extra_animations = false
         let config = GameConfig::parse(toml_str).expect("old configs keep loading");
         assert!(!config.graphics.extra_animations);
         assert!(!config.graphics.translucent_fog);
+        assert!(!config.graphics.high_terrain_building_lift);
     }
 
     #[test]
@@ -957,6 +966,15 @@ extra_animations = false
             GameConfig::parse("[paths]\nra2_dir = 'retail'\n[graphics]\ntranslucent_fog = true\n")
                 .unwrap();
         assert!(config.graphics.translucent_fog);
+    }
+
+    #[test]
+    fn high_terrain_building_lift_is_an_explicit_graphics_option() {
+        let config = GameConfig::parse(
+            "[paths]\nra2_dir = 'retail'\n[graphics]\nhigh_terrain_building_lift = true\n",
+        )
+        .unwrap();
+        assert!(config.graphics.high_terrain_building_lift);
     }
 
     #[test]

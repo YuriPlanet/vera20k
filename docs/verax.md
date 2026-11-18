@@ -8,8 +8,9 @@ cargo run --release --bin vera20k --features verax
 ```
 
 The `verax` feature currently compiles AutoLoad and Skirmish map hot reload.
-The translucent-fog option and foot-path overlay in "Origins and related
-first-party work" are adjacent VERA work, not VeraX features.
+The translucent-fog and high-terrain building lift options and the foot-path
+overlay in "Origins and related first-party work" are adjacent VERA work, not
+VeraX features.
 
 ## AutoLoad
 
@@ -54,6 +55,11 @@ related presentation work came from:
   the retail look) that keeps terrain visible through fog while concealing
   unseen enemy objects, enemy projectiles and walls. It is not gated by the
   `verax` feature.
+- **High-terrain building lift** is VERA's own client graphics option
+  (`[graphics] high_terrain_building_lift=true`, off by default to match the
+  original). From terrain level 15 up, the original game draws a building 1-2 px
+  below its tile row, and the tiles hide that sliver of its base. The option draws
+  the building at its tile row instead. It changes only the picture.
 - **Foot path steps** is a diagnostic overlay rather than an extension feature.
   In `dev-overlays` builds, `Ctrl+Shift+O` draws the remaining path cells and
   step labels for selected moving units (`src/app/diagnostics/debug_overlays.rs`).

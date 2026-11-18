@@ -523,9 +523,12 @@ mod tests {
         raised.location.z = 3744;
         let raised = frozen_building_pieces(&input, &raised);
         assert_eq!(raised.len(), pieces.len());
+        // FoggedObject 0x004D1E5B lifts by AdjustForZ alone.
+        let lift = (crate::util::native_x87::adjust_for_z_standard(3744)
+            - crate::util::native_x87::adjust_for_z_standard(104)) as f32;
         for (low, high) in pieces.iter().zip(&raised) {
-            assert_eq!(high.instance.position[1], low.instance.position[1] - 525.0);
-            assert_eq!(high.instance.z_adjust, low.instance.z_adjust - 525.0);
+            assert_eq!(high.instance.position[1], low.instance.position[1] - lift);
+            assert_eq!(high.instance.z_adjust, low.instance.z_adjust - lift);
             assert_eq!(high.instance.depth, low.instance.depth);
         }
     }
