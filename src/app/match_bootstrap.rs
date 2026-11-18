@@ -212,7 +212,8 @@ impl CampaignLaunchOptions {
 
     fn loose_scenario_file(&self, scenario: &str) -> Option<String> {
         let path = self.scenario_directory.as_ref()?.join(scenario);
-        path.is_file().then(|| path.to_string_lossy().into_owned())
+        let name = path.to_str()?;
+        crate::util::file_system::is_file(&path).then(|| name.to_owned())
     }
 }
 
@@ -286,16 +287,12 @@ impl PreparedCampaignStartup {
         }
         let campaign_index = usize::try_from(session.campaign_index()?).ok()?;
         let campaign = campaigns.get(campaign_index)?.clone();
+        let (scenario_file, scenario_directory) = source.restored_loose_lookup();
         Some(Self {
             campaign_index,
             campaign,
             scenario: session.map_name().to_owned(),
-            scenario_file: match source {
-                crate::map::source::LoadedMapSource::Loose { path, .. } => {
-                    Some(path.to_string_lossy().into_owned())
-                }
-                _ => None,
-            },
+            scenario_file: scenario_file.map(str::to_owned),
             mission_counter: session.campaign_mission_counter()?,
             difficulty: session.campaign_house_difficulties()?.0 as i32,
             // Reuse the saved session's existing options authority. A loose
@@ -303,12 +300,7 @@ impl PreparedCampaignStartup {
             launch_options: Some(CampaignLaunchOptions {
                 game_speed: session.game_options().game_speed,
                 build_off_ally: session.game_options().build_off_ally,
-                scenario_directory: match source {
-                    crate::map::source::LoadedMapSource::Loose { path, .. } => {
-                        path.parent().map(std::path::Path::to_path_buf)
-                    }
-                    _ => None,
-                },
+                scenario_directory: scenario_directory.map(std::path::Path::to_path_buf),
             }),
             carry_over: session.campaign_restart_carry_over(),
             play_action_movie: false,
@@ -981,8 +973,7 @@ mod tests {
         prepare_match_startup(correlation, accepted_session(), &mut clock)
     }
 
-    #[test]
-    fn saved_campaign_keeps_later_map_identity_for_restart_and_victory() {
+    fn restored_later_campaign() -> (crate::rules::campaigns::CampaignRegistry, Simulation) {
         use crate::sim::scenario_session::ScenarioDescriptor;
         use crate::sim::snapshot::GameSnapshot;
 
@@ -1004,6 +995,12 @@ mod tests {
         let restored = GameSnapshot::load(&bytes)
             .unwrap()
             .into_simulation_for_test();
+        (campaigns, restored)
+    }
+
+    #[test]
+    fn saved_campaign_keeps_later_map_identity_for_restart_and_victory() {
+        let (campaigns, restored) = restored_later_campaign();
         let source = crate::map::source::LoadedMapSource::Mix {
             logical_name: "SOV03UMD.MAP".into(),
             source_archive: "mapsmd03.mix".into(),
@@ -1050,6 +1047,52 @@ mod tests {
         assert_eq!(next.mission_counter(), 4);
         assert!(next.plays_action_movie());
         assert_eq!(clock.reads, 2, "only the two fresh starts sample a seed");
+    }
+
+    #[test]
+    fn saved_loose_campaign_restarts_from_the_current_install() {
+        let (campaigns, sim) = restored_later_campaign();
+        let mut clock = CountingClock {
+            value: 12,
+            reads: 0,
+        };
+        let mut restart = |path| {
+            let source = crate::map::source::LoadedMapSource::Loose {
+                path,
+                cache_lease: Default::default(),
+                payload_len: 12,
+                source_sha256: "saved-digest".into(),
+            };
+            PreparedCampaignStartup::from_saved_scenario(&campaigns, &sim, &source)
+                .unwrap()
+                .restart(1, 1, &mut clock)
+        };
+        // The physical filename can differ from the campaign's logical name.
+        let install =
+            crate::map::source::test_support::TestDirectory::new("saved-campaign-install");
+        install.write("Physical.map", b"[Map]");
+        let original = install.path().join("Physical.map");
+        assert_eq!(
+            restart(original.clone()).selected_map_file(),
+            original.to_str().unwrap()
+        );
+        let moved = install.path().join("moved");
+        std::fs::create_dir(&moved).unwrap();
+        std::fs::rename(&original, moved.join("Physical.map")).unwrap();
+        let retry = restart(original);
+        assert!(moved.join(retry.selected_map_file()).is_file());
+        assert_eq!(retry.selected_map_file(), "Physical.map");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            let path = std::ffi::OsStr::from_bytes(b"/game/\xff/Mission.map");
+            assert_eq!(restart(path.into()).selected_map_file(), "Mission.map");
+            assert_eq!(
+                restart(r"C:\other\Physical.map".into()).selected_map_file(),
+                "SOV03UMD.MAP"
+            );
+        }
     }
 
     #[test]
