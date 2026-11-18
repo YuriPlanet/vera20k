@@ -311,6 +311,16 @@ impl JumpjetRuntime {
         }
     }
 
+    /// Phobos `pJJLoco->LocomotionFacing.SetCurrent(DirStruct(facing))`
+    /// (`Ext/TechnoType/Body.cpp:686`): a spawn order snaps the locomotion
+    /// facing to the unit's spawn facing without a turn. Native writes
+    /// `SetCurrent`, which replaces the current and target bytes alike.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn phobos_set_locomotion_facing(&mut self, facing: u8, binary_frame: u32) {
+        self.flight
+            .set_locomotion_facing(u16::from(facing), binary_frame);
+    }
+
     /// The prologue both orders share (`0x0054B1C3..0x0054B21A`,
     /// `0x0054B4F2..0x0054B537`): a landing State 4 admitted is withdrawn
     /// before the destination moves. Native withdraws it through the owner's

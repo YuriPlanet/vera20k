@@ -520,3 +520,150 @@ fn create_unit_marks_all_infantry_bits_until_the_actual_effects() {
         "the actual-effects frame releases them"
     );
 }
+
+/// [`scene`] over a rules text that also defines a Fly aircraft (`ORCA`), an
+/// `AirportBound` Fly aircraft (`PLANE`) and a Jumpjet (`ZEP`), for
+/// `CreateUnit`'s per-locomotor spawn orders.
+#[cfg(feature = "phobos")]
+fn scene_air(make_lines: &str) -> (Simulation, RuleSet) {
+    const AIR_RULES: &str = "[Countries]\n0=Americans\n1=Russians\n2=Civilians\n\
+        [Sides]\nCivilian=Civilians\n\
+        [VehicleTypes]\n0=MTNK\n[InfantryTypes]\n[BuildingTypes]\n0=LAB\n\
+        [AircraftTypes]\n0=ORCA\n1=PLANE\n2=ZEP\n\
+        [Animations]\n0=MAKE\n1=SPAWN\n\
+        [MTNK]\nStrength=100\nSpeed=4\nSight=4\nPrimary=GUN\n\
+        [ORCA]\nStrength=200\nSpeed=8\nSight=6\n\
+        Locomotor={4A582746-9839-11D1-B709-00A024DDAFD1}\n\
+        [PLANE]\nStrength=200\nSpeed=8\nSight=6\n\
+        Locomotor={4A582746-9839-11D1-B709-00A024DDAFD1}\nAirportBound=yes\n\
+        [ZEP]\nStrength=200\nSpeed=8\nSight=6\n\
+        Locomotor={92612C46-F71F-11D1-AC9F-006008055BB5}\nJumpjetHeight=400\n\
+        [LAB]\nStrength=1000\nFoundation=1x1\n\
+        [Weapons]\n0=GUN\n[GUN]\nDamage=5\nROF=20\nRange=5\nWarhead=WH\nProjectile=PIFF\n\
+        [Warheads]\n0=WH\n[WH]\n\
+        [PIFF]\nInviso=yes\n\
+        [Clear]\nBuildable=yes\nFoot=100%\nTrack=100%\nWheel=100%\n";
+    let art_text = format!(
+        "[MAKE]\nRate=900\nEnd=1\nLoopCount=1\n{make_lines}\n\
+         [SPAWN]\nRate=900\nEnd=1\nLoopCount=1\n"
+    );
+    let art = IniFile::from_str(&art_text);
+    let rules_text = crate::sim::arena_fixture::clear_ground_ini(AIR_RULES);
+    let mut rules =
+        RuleSet::from_ini_with_fixed_art_for_test(&rules_text, &art).expect("create-unit rules");
+    let mut registry = ArtRegistry::from_ini(&art);
+    registry.bind_anim_frame_count_for_test("MAKE", 1);
+    registry.bind_anim_frame_count_for_test("SPAWN", 1);
+    rules.install_art_data(registry);
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x424932);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    sim.session.set_binary_frame_for_test(0);
+    (sim, rules)
+}
+
+/// The single spawned object of `name`, if any.
+#[cfg(feature = "phobos")]
+fn spawned<'a>(
+    sim: &'a Simulation,
+    rules: &RuleSet,
+    name: &str,
+) -> Option<&'a crate::sim::game_entity::GameEntity> {
+    sim.substrate
+        .entities
+        .values()
+        .find(|entity| {
+            sim.interner.resolve(entity.type_ref()) == name
+                && sim.object_type(entity.type_ref(), rules).is_some()
+        })
+}
+
+/// `Ext/TechnoType/Body.cpp:674-683`: a Fly spawn on a free cell takes
+/// `pFlyLoco->Move_To(pCell->GetCoordsWithBridge())`, so the destination is the
+/// cell centre and the aircraft starts moving.
+#[cfg(feature = "phobos")]
+#[test]
+fn a_fly_spawn_on_a_free_cell_is_ordered_to_the_cell_centre() {
+    let (mut sim, rules) =
+        scene_air("CreateUnit=ORCA\nCreateUnit.RandomFacing=no\nCreateUnit.SpawnHeight=1000\n");
+    let id = spawn_make(&mut sim, &rules, Some("Americans"));
+    drive(&mut sim, &rules, id);
+    let plane = spawned(&sim, &rules, "ORCA").expect("the ORCA constructs");
+    let fly = plane
+        .locomotor
+        .as_ref()
+        .and_then(|locomotor| locomotor.fly_runtime())
+        .expect("Fly locomotor");
+    assert!(fly.moving(), "Move_To marks the Fly loco moving");
+    let destination = fly.destination();
+    assert_eq!(
+        (destination.x, destination.y),
+        (20 * 256 + 128, 10 * 256 + 128),
+        "the destination is the cell's centre"
+    );
+}
+
+/// The same arm with `AirportBound=yes` and an empty cell: native calls
+/// `EnterIdleMode(false, true)` instead of `Move_To`, so the aircraft does not
+/// start moving.
+#[cfg(feature = "phobos")]
+#[test]
+fn an_airport_bound_fly_spawn_enters_idle_mode() {
+    let (mut sim, rules) =
+        scene_air("CreateUnit=PLANE\nCreateUnit.RandomFacing=no\nCreateUnit.SpawnHeight=1000\n");
+    let id = spawn_make(&mut sim, &rules, Some("Americans"));
+    drive(&mut sim, &rules, id);
+    let plane = spawned(&sim, &rules, "PLANE").expect("the PLANE constructs");
+    let fly = plane
+        .locomotor
+        .as_ref()
+        .and_then(|locomotor| locomotor.fly_runtime())
+        .expect("Fly locomotor");
+    assert!(
+        !fly.moving(),
+        "an AirportBound aircraft idles on a free cell"
+    );
+}
+
+/// `pCell->GetContent()`: a ground object on the spawn cell also takes the
+/// idle arm, so a Fly spawn does not queue a `Move_To` onto it.
+#[cfg(feature = "phobos")]
+#[test]
+fn a_fly_spawn_on_an_occupied_cell_enters_idle_mode() {
+    let (mut sim, rules) =
+        scene_air("CreateUnit=ORCA\nCreateUnit.RandomFacing=no\nCreateUnit.SpawnHeight=1000\n");
+    sim.spawn_object("MTNK", "Americans", 20, 10, 0, &rules)
+        .expect("a ground object on the spawn cell");
+    let id = spawn_make(&mut sim, &rules, Some("Americans"));
+    drive(&mut sim, &rules, id);
+    let plane = spawned(&sim, &rules, "ORCA").expect("the ORCA constructs");
+    let fly = plane
+        .locomotor
+        .as_ref()
+        .and_then(|locomotor| locomotor.fly_runtime())
+        .expect("Fly locomotor");
+    assert!(!fly.moving(), "cell content takes the EnterIdleMode arm");
+}
+
+/// `Ext/TechnoType/Body.cpp:686-687`: a Jumpjet spawn snaps its locomotion
+/// facing to `CreateUnit.Facing` before any movement order.
+#[cfg(feature = "phobos")]
+#[test]
+fn a_jumpjet_spawn_snaps_its_locomotion_facing() {
+    let (mut sim, rules) =
+        scene_air("CreateUnit=ZEP\nCreateUnit.RandomFacing=no\nCreateUnit.Facing=64\nCreateUnit.SpawnHeight=500\n");
+    let id = spawn_make(&mut sim, &rules, Some("Americans"));
+    drive(&mut sim, &rules, id);
+    let zep = spawned(&sim, &rules, "ZEP").expect("the ZEP constructs");
+    let frame = sim.session.binary_frame();
+    let jumpjet = zep
+        .locomotor
+        .as_ref()
+        .and_then(|locomotor| locomotor.jumpjet_runtime())
+        .expect("Jumpjet locomotor");
+    assert_eq!(
+        jumpjet.flight().facing().current(frame),
+        64,
+        "LocomotionFacing.SetCurrent(DirStruct(facing))"
+    );
+}
