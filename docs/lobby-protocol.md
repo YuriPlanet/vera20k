@@ -212,7 +212,11 @@ keeps the room settings. `map_metadata` is
 INI `digest` remains distinct from lowercase SHA-256 over the physical map bytes;
 online `map_digest` agreements compare `source_sha256`. `effective_digest` and
 `effective_map_digest` compare the parsed gameplay map after its applicable include
-expansion, so identical root bytes cannot conceal different local dependencies. `vacancies` is an array
+expansion, so identical root bytes cannot conceal different local dependencies. Until a
+game holds a verified copy of the map, its agreements carry map status 0, an empty
+`map_digest` and 64 zeros as `effective_map_digest` (0.3.5 and earlier sent the digests
+of an unverified copy); the lobby checks only their shape, since `start` compares the
+map digests of members at status 1 alone. `vacancies` is an array
 of `open`, `closed`, `observer` or `waiting`. A network map's display name keeps legacy
 Windows punctuation and fits the lobby's 256 UTF-8 bytes without control characters. A receiver resolves its own
 `launch.local_player_index` from the authenticated player; it never uses the host's.

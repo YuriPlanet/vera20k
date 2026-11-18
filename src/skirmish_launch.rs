@@ -485,11 +485,10 @@ pub struct SkirmishLaunchOptions {
     /// Left out while Off, as the bans are.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub teams: Option<u8>,
-    /// VERA's room Balance automatically: with Teams set online, the
-    /// host's game has the lobby balance the teams after each change of who
-    /// plays, and nobody picks a team. Only the room reads it. Left out while
-    /// off; LAN never sets it.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    /// Balance automatically, which 0.3.3 and 0.3.4 hosts send with Teams.
+    /// Read only so that their options parse; nothing reads it, and it is
+    /// never sent.
+    #[serde(default, skip_serializing)]
     pub auto_balance: bool,
     /// VERA's room join queue: the spectators who asked to play while no
     /// seat was free, by name, first first. The host's game seats the first
@@ -662,9 +661,9 @@ impl SkirmishLaunchOptions {
 }
 
 /// The options VERA's game room adds to gamemd's: Destroyable Bridges,
-/// In-game Allying, the bans, Teams and Balance automatically. LAN carries
-/// them beside the native options text, which has no field for them, and the
-/// room keeps them for its next game.
+/// In-game Allying, the bans and Teams. LAN carries them beside the native
+/// options text, which has no field for them, and the room keeps them for its
+/// next game.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RoomOptions {
@@ -676,9 +675,6 @@ pub struct RoomOptions {
     /// build differs.
     #[serde(skip)]
     pub teams: Option<u8>,
-    /// Online only, so LAN never carries it.
-    #[serde(skip)]
-    pub auto_balance: bool,
 }
 
 impl SkirmishLaunchOptions {
@@ -688,7 +684,6 @@ impl SkirmishLaunchOptions {
             ally_change_allowed: self.ally_change_allowed,
             bans: self.bans,
             teams: self.teams,
-            auto_balance: self.auto_balance,
         }
     }
 
@@ -697,7 +692,6 @@ impl SkirmishLaunchOptions {
         self.ally_change_allowed = room.ally_change_allowed;
         self.bans = room.bans;
         self.teams = room.teams;
-        self.auto_balance = room.auto_balance;
     }
 }
 
@@ -1420,6 +1414,18 @@ mod tests {
             serde_json::to_value(&older).unwrap(),
             serde_json::json!({"terrain_deformation": true})
         );
+    }
+
+    /// A 0.3.3 or 0.3.4 host's options still parse with its Balance
+    /// automatically, and the setting never goes out again.
+    #[test]
+    fn an_older_hosts_balance_automatically_parses_and_is_never_sent() {
+        let mut older = serde_json::to_value(SkirmishLaunchOptions::default()).unwrap();
+        older["teams"] = serde_json::json!(2);
+        older["auto_balance"] = serde_json::json!(true);
+        let read: SkirmishLaunchOptions = serde_json::from_value(older.clone()).unwrap();
+        older.as_object_mut().unwrap().remove("auto_balance");
+        assert_eq!(serde_json::to_value(&read).unwrap(), older);
     }
 
     /// A room sends its host's Superweapon Limit as the number, and a guest

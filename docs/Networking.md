@@ -559,11 +559,11 @@ or sign out; it then also drops an entry whose session is gone.
 
 Games 0.3.3 and 0.3.4 had a host setting, Balance automatically, that travels online as
 `launch.options.auto_balance` and had the lobby balance the room 5 seconds after who
-plays or the Teams count changed. Current games neither offer it nor send it. In a room
-whose older host has it on, a current guest still closes its seated players' Team lists
-and team headers' Join (a spectator's Join still asks to play, and that host's balance
-places it), as that host's own game does. A released guest in a current host's room
-sees the setting off; the host's Balance button still evens the teams.
+plays or the Teams count changed. Current games neither offer it nor send it. A current
+guest reads and ignores it in such a host's room, which cannot start anyway, since the
+versions differ; that host's own balance still moves the players. A released guest in a
+current host's room sees the setting off; the host's Balance button still evens the
+teams.
 
 A VERA room queues its spectators for seats. A spectator who asks to play while no seat
 is free, with a team header's Join Queue or, in a room without teams, as a newcomer who

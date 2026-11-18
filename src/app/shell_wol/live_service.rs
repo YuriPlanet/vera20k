@@ -2140,44 +2140,19 @@ fn send_chat(service: &mut LiveService, line: WolChatLine, mut to: Vec<String>, 
     service.command("chat", chat);
 }
 
+/// The map digests are the verified local source's. Without one the map
+/// status is 0, which proves nothing: the lobby checks only the shape, and a
+/// fixed impossible effective digest keeps it valid without claiming
+/// unverified expanded content.
 fn local_agreement(state: &mut AppState, revision: u64) -> Result<Value> {
-    let setup = state
-        .match_state
-        .session
-        .network_setup()
-        .ok_or_else(|| anyhow!("no setup"))?;
-    let file = setup
-        .selected_map_file
-        .as_deref()
-        .ok_or_else(|| anyhow!("no selected map"))?;
-    let map_digest = state
-        .match_state
-        .session
+    let session = &state.match_state.session;
+    let map_digest = session
         .network_local_map_source()
-        .and_then(|source| {
-            source
-                .physical_identity()
-                .map(|(_, digest)| digest.to_owned())
-        })
-        .or_else(|| {
-            crate::app::shell_network_setup::local_map_metadata(state, file)
-                .ok()
-                .map(|map| map.source_sha256)
-        })
-        .unwrap_or_default();
-    let effective_map_digest = state
-        .match_state
-        .session
+        .and_then(|source| source.physical_identity())
+        .map_or_else(String::new, |(_, digest)| digest.to_owned());
+    let effective_map_digest = session
         .network_local_map_effective_digest()
-        .map(str::to_owned)
-        .or_else(|| {
-            crate::app::shell_network_setup::local_map_metadata(state, file)
-                .ok()
-                .map(|m| m.effective_digest)
-        })
-        // Status0 carries no proof; a fixed impossible digest keeps the wire
-        // shape valid without claiming the host's unverified expanded content.
-        .unwrap_or_else(|| "0".repeat(64));
+        .map_or_else(|| "0".repeat(64), str::to_owned);
     let staging_digest = crate::app::shell_network_setup::maps::staging_digest(state);
     let agreement = crate::app::shell_network_setup::agreement::local(state)?;
     Ok(
@@ -2211,7 +2186,7 @@ fn local_map_status(state: &AppState, service: &LiveService) -> u8 {
     }
     u8::from(
         crate::map::source::valid_source_sha256(&expected.source_sha256)
-            && (state
+            && state
                 .match_state
                 .session
                 .network_local_map_source()
@@ -2219,13 +2194,6 @@ fn local_map_status(state: &AppState, service: &LiveService) -> u8 {
                 == Some((
                     expected.byte_length as usize,
                     expected.source_sha256.as_str(),
-                ))
-                || crate::app::shell_network_setup::local_map_metadata(state, file).is_ok_and(
-                    |actual| {
-                        actual.source_sha256 == expected.source_sha256
-                            && actual.byte_length == expected.byte_length
-                            && actual.effective_digest == expected.effective_digest
-                    },
                 )),
     )
 }
@@ -2247,29 +2215,26 @@ fn check_map_capacity(options: &wire::Options) -> Result<(), MapTooSmall> {
     Ok(())
 }
 
+/// The host's options for the lobby. The map is the one its session
+/// admitted when the host chose it, as LAN publishes it.
 fn options(state: &AppState) -> Result<wire::Options> {
     let session = &state.match_state.session;
     let launch = session
         .network_setup()
         .ok_or_else(|| anyhow!("no online setup"))?
         .clone();
-    let file = launch
-        .selected_map_file
-        .as_deref()
-        .ok_or_else(|| anyhow!("no selected map"))?;
-    let metadata =
-        crate::app::shell_network_setup::local_map_metadata(state, file).inspect_err(|_| {
-            log::warn!("Online host map metadata could not be prepared");
-        })?;
+    let map_metadata = session
+        .network_map_metadata()
+        .cloned()
+        .ok_or_else(|| anyhow!("no admitted map metadata"))?;
     let options = wire::Options {
         launch,
-        map_metadata: metadata.into(),
+        map_metadata,
         random_map: crate::app::shell_network_setup::maps::host_generated_manifest(state)?,
         vacancies: std::array::from_fn(|row| {
             session
                 .network_vacancy(row as u8)
                 .unwrap_or(crate::app::match_runtime::session::NetworkVacancy::Closed)
-                .into()
         }),
         observer_row: session.network_observer_row(),
         cooperative_difficulty: state
@@ -5467,12 +5432,14 @@ mod completion_tests {
     #[test]
     fn a_cooperative_campaign_reaches_the_guest_ahead_of_the_options_it_rides_in() {
         let launch = setup_session().network_setup().unwrap().clone();
+        let mut vacancies = vec!["open"; 30];
+        vacancies[29] = "observer";
         let mut value = json!({
             "launch": launch,
             "map_metadata": {"display_name": "Map", "player_capacity": 2, "official": true,
                 "byte_length": 1, "digest": "d", "source_sha256": "11".repeat(32),
                 "effective_digest": "aa".repeat(32)},
-            "vacancies": vec!["open"; 30],
+            "vacancies": vacancies,
             "observer_row": null,
             "cooperative_difficulty": 1,
             "seed": null,
@@ -5497,7 +5464,10 @@ mod completion_tests {
             [
                 NetworkSetupEvent::CooperativeCampaign(campaign),
                 NetworkSetupEvent::HostSetup(options),
-            ] if campaign == text && options.launch.local_player_index == 1
+            ] if campaign == text
+                && options.launch.local_player_index == 1
+                && options.vacancies[29]
+                    == crate::app::match_runtime::session::NetworkVacancy::OpenObserver
         ));
     }
 
