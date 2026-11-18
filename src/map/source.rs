@@ -97,22 +97,57 @@ pub fn portable_map_name(name: &str) -> &str {
     }
 }
 
+/// A logical file name: one that stays inside the folder it is joined to. No
+/// drive, root, `.` or `..` part, under both separator spellings whatever OS
+/// runs the game, so a name from a peer, a map, a mod or a saved game is
+/// admitted alike everywhere and can never name a host path or a network share.
+pub fn is_logical_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 1024
+        && !name.chars().any(char::is_control)
+        && !name.contains(':')
+        && name
+            .split(['/', '\\'])
+            .all(|part| !part.is_empty() && part != "." && part != "..")
+}
+
 /// A multiplayer map name is a VFS-relative logical identity, never a peer's
-/// host path. Check both separator spellings independently of the local OS so
-/// a LAN/online name has the same admission on every client. Absolute cache
-/// paths remain internal `LoadedMapSource` values and do not pass this boundary.
+/// host path, with the same admission on every client. Absolute cache paths
+/// remain internal `LoadedMapSource` values and do not pass this boundary.
 pub fn validate_network_map_name(name: &str) -> Result<()> {
     anyhow::ensure!(
-        !name.is_empty()
-            && name.len() <= 1024
-            && !name.chars().any(char::is_control)
-            && !name.contains(':')
-            && name
-                .split(['/', '\\'])
-                .all(|part| !part.is_empty() && part != "." && part != ".."),
+        is_logical_name(name),
         "invalid logical multiplayer map name"
     );
     Ok(())
+}
+
+/// Whether a loose map path a saved game recorded may be opened again. A save
+/// is a file from a stranger, so its path counts only inside a folder this game
+/// already reads maps from: [`local_map_path`]'s, or `launch_dir`, the folder an
+/// external launch named. Any other path, such as a network share or a device,
+/// is never touched: the test reads the path's text only, because asking the
+/// file system about a share already contacts it.
+pub fn saved_map_path_admitted(
+    ra2_dir: Option<&Path>,
+    launch_dir: Option<&Path>,
+    path: &Path,
+) -> bool {
+    let roots = mod_dir()
+        .into_iter()
+        .chain(ra2_dir)
+        .chain(downloaded_maps_dir())
+        .chain(launch_dir);
+    saved_map_path_admitted_in(roots, path)
+}
+
+fn saved_map_path_admitted_in<'a>(roots: impl IntoIterator<Item = &'a Path>, path: &Path) -> bool {
+    !path
+        .components()
+        .any(|part| matches!(part, std::path::Component::ParentDir))
+        && roots
+            .into_iter()
+            .any(|root| !root.as_os_str().is_empty() && path != root && path.starts_with(root))
 }
 
 /// Identity of the seed bytes consumed by the normal generated-map loader.
@@ -1632,6 +1667,21 @@ mod tests {
             Some((SOURCE_TEST_MAP.len(), SOURCE_TEST_MAP_SHA256))
         );
         assert!(load_map_by_name_or_path_with_assets(root.path(), absolute, &assets).is_ok());
+    }
+
+    #[test]
+    fn a_saved_map_path_counts_only_inside_a_map_folder() {
+        let game = Path::new("/games/ra2");
+        let admitted = |path: &Path| saved_map_path_admitted_in([game], path);
+        assert!(admitted(&game.join("Maps/mission.map")));
+        assert!(!admitted(&game.join("../outside/mission.map")));
+        assert!(!admitted(Path::new("/dev/zero")));
+        assert!(!admitted(Path::new(r"\\host\share\mission.map")));
+        assert!(!admitted(game), "the folder itself is no map");
+        assert!(
+            !saved_map_path_admitted_in([Path::new("")], Path::new("mission.map")),
+            "an unset folder admits nothing"
+        );
     }
 
     #[test]
