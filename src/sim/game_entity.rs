@@ -175,8 +175,8 @@ pub struct GameEntity {
     pub flashing: crate::sim::flashing::Flashing,
 
     // --- Render model (mutually exclusive) ---
-    /// True = VXL/HVA model, false = SHP sprite; effective art metadata is
-    /// authoritative. Only the constructor writes it ([`Self::is_voxel`]).
+    /// Whether this actor uses a VXL/HVA model. Construction and live type
+    /// changes resolve it from the type's effective art ([`Self::is_voxel`]).
     is_voxel: bool,
 
     /// Offline for want of a powering building (`TechnoClass+0x1C8`), a
