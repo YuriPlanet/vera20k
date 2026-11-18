@@ -389,16 +389,20 @@ impl RmgOptions {
         if ares {
             flags |= u8::from(options.urban_areas) << 2;
         }
-        // VERA: bit3 marks the extra Advanced slider bytes appended after the
-        // Extras, so codes made before they existed still read unchanged.
-        let has_sliders = options.tech_building_amount != 0
-            || options.derelict_amount != 0
-            || options.damage_amount != 0
-            || options.civilian_amount != 0
-            || options.animal_amount != 0
-            || options.wild_amount != 0;
-        if has_sliders {
-            flags |= 1 << 3;
+        let building_sliders = [
+            byte(options.tech_building_amount),
+            byte(options.derelict_amount),
+            byte(options.damage_amount),
+        ];
+        let population_sliders = [
+            byte(options.civilian_amount),
+            byte(options.animal_amount),
+            byte(options.wild_amount),
+        ];
+        if population_sliders != [0; 3] {
+            flags |= SHARE_BUILDING_SLIDERS | SHARE_POPULATION_SLIDERS;
+        } else if building_sliders != [0; 3] {
+            flags |= SHARE_BUILDING_SLIDERS;
         }
         let seed = options.seed_u16().to_le_bytes();
         let [major, minor, patch] = made_by.0;
@@ -436,18 +440,11 @@ impl RmgOptions {
             .rposition(|&value| value != 0)
             .map_or(0, |at| at + 1);
         bytes.extend_from_slice(&extras[..used]);
-        // VERA: the Advanced sliders, after the Extras and only when one is
-        // set (flagged in bit3). Six bytes now; a code from the three-slider
-        // version still reads because the decoder pads the missing ones with 0.
-        if has_sliders {
-            bytes.extend_from_slice(&[
-                byte(options.tech_building_amount),
-                byte(options.derelict_amount),
-                byte(options.damage_amount),
-                byte(options.civilian_amount),
-                byte(options.animal_amount),
-                byte(options.wild_amount),
-            ]);
+        if flags & SHARE_BUILDING_SLIDERS != 0 {
+            bytes.extend_from_slice(&building_sliders);
+        }
+        if flags & SHARE_POPULATION_SLIDERS != 0 {
+            bytes.extend_from_slice(&population_sliders);
         }
         bytes.push(share_check(&bytes));
 
@@ -511,24 +508,7 @@ impl RmgOptions {
         }
         let (version, bytes) = bytes.split_at(SHARE_VERSION_BYTES);
         let made_by = ShareVersion([version[0], version[1], version[2]]);
-        // VERA: bit3 of the flags byte marks slider bytes appended after the
-        // Extras. Peel them off first so the Extras parse over what remains,
-        // exactly as an old code (without them) would. Six bytes carry all the
-        // sliders; the earlier three-slider code is accepted with zeros.
-        let has_sliders = bytes[15] & (1 << 3) != 0;
-        let (sliders, bytes): (&[u8], &[u8]) = if has_sliders {
-            let extra = if bytes.len() >= SHARE_OPTION_BYTES + 6 {
-                6
-            } else if bytes.len() >= SHARE_OPTION_BYTES + 3 {
-                3
-            } else {
-                return None;
-            };
-            let split = bytes.len() - extra;
-            (&bytes[split..], &bytes[..split])
-        } else {
-            (&[], bytes)
-        };
+        let (extras, sliders) = share_extras_and_sliders(bytes[15], &bytes[SHARE_OPTION_BYTES..])?;
         let field = |at: usize| i32::from(bytes[at]);
         let mut options = Self {
             theater: field(0),
@@ -561,10 +541,7 @@ impl RmgOptions {
             options.urban_areas = bytes[15] & 4 != 0;
         }
         options.extras = super::extras::RmgExtras::default();
-        for (&extra, &value) in super::extras::Extra::ALL
-            .iter()
-            .zip(&bytes[SHARE_OPTION_BYTES..])
-        {
+        for (&extra, &value) in super::extras::Extra::ALL.iter().zip(extras) {
             options.extras.set(extra, value);
         }
         options.normalize();
@@ -601,6 +578,34 @@ const SHARE_DIGITS: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const SHARE_VERSION_BYTES: usize = 3;
 /// The option bytes every share code holds between its version and Extras.
 const SHARE_OPTION_BYTES: usize = 18;
+
+const SHARE_BUILDING_SLIDERS: u8 = 1 << 3;
+const SHARE_POPULATION_SLIDERS: u8 = 1 << 4;
+
+/// The original layout trims trailing zero Extras, then appends either no
+/// sliders or three building sliders. A development build also wrote six
+/// sliders with the three-slider flag. Prefer the original interpretation
+/// whenever both could have been emitted; new six-slider codes set both bits.
+fn share_extras_and_sliders(flags: u8, tail: &[u8]) -> Option<(&[u8], &[u8])> {
+    let count = match flags & (SHARE_BUILDING_SLIDERS | SHARE_POPULATION_SLIDERS) {
+        0 => 0,
+        SHARE_BUILDING_SLIDERS => {
+            let (extras, sliders) = tail.split_last_chunk::<3>()?;
+            let could_be_three = extras.len() <= super::extras::Extra::ALL.len()
+                && extras.last() != Some(&0)
+                && super::extras::Extra::ALL
+                    .iter()
+                    .zip(extras)
+                    .all(|(extra, &v)| v < extra.choices())
+                && sliders.iter().any(|&value| value != 0);
+            if could_be_three { 3 } else { 6 }
+        }
+        SHARE_POPULATION_SLIDERS => return None,
+        _ => 6,
+    };
+    let at = tail.len().checked_sub(count)?;
+    Some(tail.split_at(at))
+}
 
 /// A share code's check byte over its other bytes.
 fn share_check(bytes: &[u8]) -> u8 {
@@ -729,6 +734,34 @@ mod tests {
             .from_share_code(&plain.share_code(false), false)
             .expect("reads");
         assert!(back.extras.is_default() && !back.fair_starts);
+    }
+
+    #[test]
+    fn legacy_slider_codes_keep_their_extras() {
+        use crate::map::rmg::extras::Extra;
+
+        // Version 0.3.6, seed 42, Ore/Town/Mood Extras, then three building
+        // sliders. A development build also wrote six under the same flag.
+        let legacy_three = "VR1-001GC-00104-0G400-00000-20000-00002-1A001-0808S-695TR";
+        let legacy_six = "VR1-001GC-00104-0G400-00000-20000-00002-1A001-0808S-695GA-2GF8W";
+        for (code, population) in [(legacy_three, [0, 0, 0]), (legacy_six, [5, 10, 15])] {
+            let (read, version) = RmgOptions::default().from_share_code(code, false).unwrap();
+            assert_eq!(version, ShareVersion([0, 3, 6]));
+            assert_eq!(read.seed, 42);
+            assert_eq!(read.extras.get(Extra::Mood), 1);
+            assert_eq!(
+                [
+                    read.tech_building_amount,
+                    read.derelict_amount,
+                    read.damage_amount
+                ],
+                [25, 50, 75]
+            );
+            assert_eq!(
+                [read.civilian_amount, read.animal_amount, read.wild_amount],
+                population
+            );
+        }
     }
 
     /// A code made before the three Advanced sliders existed has neither the
