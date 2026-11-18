@@ -660,7 +660,30 @@ impl LiveService {
             .context("could not start online lobby worker")?;
         #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
         let browser_requests = http::start_browser(input, output, worker_stopping, service_url)?;
-        Ok(Self {
+        Ok(Self::with_worker(
+            lobby,
+            stopping,
+            requests,
+            responses,
+            #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+            browser_requests,
+        ))
+    }
+
+    /// The service over its lobby worker's channels, before any request.
+    #[cfg(any(
+        not(all(target_arch = "wasm32", target_os = "unknown")),
+        feature = "wasm-net"
+    ))]
+    fn with_worker(
+        lobby: String,
+        stopping: Arc<AtomicBool>,
+        requests: Sender<http::Request>,
+        responses: Receiver<http::Response>,
+        #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+        browser_requests: http::RequestOwner,
+    ) -> Self {
+        Self {
             #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
             _browser_requests: browser_requests,
             stopping,
@@ -702,7 +725,7 @@ impl LiveService {
             account_attempt: 0,
             deleting: None,
             watching: None,
-        })
+        }
     }
 
     /// The first lobby-upgrade refusal of this sign-in, as one notice; the
@@ -4529,47 +4552,14 @@ mod completion_tests {
     ) -> (LiveService, Receiver<http::Request>, Sender<http::Response>) {
         let (requests, input) = mpsc::channel();
         let (output, responses) = mpsc::channel();
-        let service = LiveService {
-            stopping: Arc::new(AtomicBool::new(false)),
+        let mut service = LiveService::with_worker(
+            "https://lobby.test".into(),
+            Arc::new(AtomicBool::new(false)),
             requests,
             responses,
-            next_request: 5,
-            auth_attempt: 0,
-            revision: 0,
-            accepted_options: None,
-            published_options: None,
-            start_preparation: None,
-            locally_refused_start: false,
-            last_ready_request: None,
-            pending_choices: None,
-            player_id: String::new(),
-            member_ids: BTreeMap::new(),
-            pending: None,
-            match_id: match_id.map(str::to_owned),
-            finishing: None,
-            leaving: None,
-            logging_out: None,
-            next_renewal_attempt: None,
-            relay_renewal_due: None,
-            maps: Default::default(),
-            translations: Translations::default(),
-            spawned: false,
-            back_to_room: false,
-            finish_result: None,
-            finish_winners: None,
-            finish_decided: None,
-            finish_opponents_left: false,
-            network_quality: None,
-            relay_timeout: RELAY_TIMEOUT,
-            outdated_notice: None,
-            left_for_match: false,
-            ladder_lookup: None,
-            lobby: "https://lobby.test".into(),
-            signing_in_remembered: false,
-            account_attempt: 0,
-            deleting: None,
-            watching: None,
-        };
+        );
+        service.next_request = 5;
+        service.match_id = match_id.map(str::to_owned);
         (service, input, output)
     }
 
