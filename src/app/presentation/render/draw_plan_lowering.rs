@@ -147,6 +147,8 @@ pub(crate) enum ObjectExtrasRun {
         /// the Rules were read the Ares way (`techno_extras_for_parent`).
         power_off: Option<u32>,
         rank: Option<u32>,
+        /// The rank's custom insignia SHP; `None` binds the stock PIPS strip.
+        rank_insignia: Option<String>,
         background: Option<u32>,
         shield_background: Option<u32>,
         fills: std::ops::Range<u32>,
@@ -487,6 +489,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     wrench,
                     power_off,
                     rank,
+                    rank_insignia: strip.rank_insignia,
                     background,
                     shield_background,
                     fills: start..end,
@@ -509,6 +512,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     wrench,
                     power_off,
                     rank,
+                    rank_insignia,
                     fills,
                     ..
                 }) = &strip
@@ -525,6 +529,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                         wrench: *wrench,
                         power_off: *power_off,
                         rank: *rank,
+                        rank_insignia: rank_insignia.clone(),
                         background: None,
                         shield_background: None,
                         fills: fills.start..fills.start,
@@ -583,6 +588,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                 wrench,
                 power_off,
                 rank,
+                rank_insignia,
                 background,
                 shield_background,
                 fills,
@@ -629,6 +635,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                         wrench,
                         power_off,
                         rank,
+                        rank_insignia,
                         background,
                         shield_background,
                         fills,
