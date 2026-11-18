@@ -297,6 +297,8 @@ impl CenteredShapeStrip {
     /// pixels, house-colour pixels in `ramp`. Each frame is its drawn
     /// rectangle at the origin a stored SHP frame has, centred by the
     /// `PictureSize=` canvas; an empty frame draws nothing, as an SHP's.
+    /// Only the Phobos placement preview calls it.
+    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
     pub(crate) fn from_picture_on_device(
         device: &wgpu::Device,
         queue: &wgpu::Queue,

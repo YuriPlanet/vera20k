@@ -294,6 +294,7 @@ impl GamePictureFrames {
 
     /// Whether any drawn pixel takes the owner's colour, so the frames
     /// differ by house.
+    #[cfg(test)]
     pub(crate) fn has_house_color(&self) -> bool {
         self.frames.iter().any(|frame| {
             frame
