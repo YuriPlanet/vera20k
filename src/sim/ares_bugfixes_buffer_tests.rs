@@ -32,7 +32,7 @@ fn ares_rules_lists_read_long_values_and_skip_unknown_names() {
     assert_eq!(rules.general.amer_paradrop.infantry, ["E1"]);
     assert_eq!(rules.general.amer_paradrop.counts, [3, 2]);
     assert_eq!(rules.general.base_unit_types, ["MCV"]);
-    assert_eq!(rules.build_const_types, ["YARD"]);
+    assert_eq!(rules.build_const_types(), ["YARD"]);
     assert_eq!(rules.general.ai_force_prediction_fudge, [5, 80]);
     assert!(rules.object("NOSUCH").is_none() && rules.object("NOYARD").is_none());
 }

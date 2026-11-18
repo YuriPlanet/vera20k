@@ -2439,7 +2439,7 @@ fn ares_place_starting_construction_yard(
     }
     let Some(yard) = crate::sim::ai_buildable::first_buildable_from_array(
         rules,
-        &rules.build_const_types,
+        rules.build_const_types(),
         &country_name,
         house.side_index(),
         sim.session.game_options().super_weapons,
