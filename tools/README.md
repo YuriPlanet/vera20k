@@ -560,7 +560,10 @@ through `cargo_run`. Then:
   then at each mouse-wheel view distance in `--wheel-zooms` (default `1.5`, any of
   0.8, 1, 1.25, 1.5; `''` for none) at Options zoom 100, through the profile's
   `presentation.wheel_zoom`. Each pair is compared with `map_observation compare`; the
-  first differing `frame.bgra` pixel is printed. Both refs need `wheel_zoom` support:
+  first differing `frame.bgra` pixel is printed. The base is captured a second
+  time to measure run-to-run noise (the ore field shimmers differently each run):
+  a setting passes when head differs from base in no more than twice the
+  base-to-base pixels plus 8, and in nothing but frame bytes. Both refs need `wheel_zoom` support:
   against an older base, pass `--wheel-zooms ''`.
 
 It removes the worktrees with `git worktree remove` and retires both labels unless

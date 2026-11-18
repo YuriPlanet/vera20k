@@ -103,6 +103,18 @@ def pixel_runs(zooms, wheel_zooms):
     return runs
 
 
+def differing_pixels(before, after):
+    """How many 4-byte pixels differ between two equal-sized frames."""
+    return sum(before[i:i + 4] != after[i:i + 4] for i in range(0, len(before), 4))
+
+
+def noise_allowance(base_noise):
+    """The differing pixels a head capture may show and still count as the
+    base's: what two base runs differ in, doubled, plus a few, since the
+    shimmering pixels land in different places each run."""
+    return 2 * base_noise + 8
+
+
 def first_difference(before, after, width):
     """(x, y, before_bgra, after_bgra) of the first differing pixel, or None."""
     if len(before) != len(after):
@@ -267,6 +279,11 @@ def main(argv=None):
                     outputs = [runs / f'{side.name}-{name}' for side in sides]
                     for side, output in zip(sides, outputs):
                         side.capture(profile, output, settings)
+                    # Some presentation (the ore field's shimmer) differs from
+                    # one run of the same build to the next; a second base
+                    # capture measures that noise.
+                    noise_output = runs / f'base-again-{name}'
+                    sides[0].capture(profile, noise_output, settings)
                     report = runs / f'compare-{name}.json'
                     run([sys.executable, '-m', 'tools.map_observation', 'compare', '--before',
                          outputs[0], '--after', outputs[1], '--output', report], sides[1].tree)
@@ -274,13 +291,18 @@ def main(argv=None):
                         raise Failure(f'map_observation compare wrote no report for {name}')
                     status = json.loads(report.read_text())
                     frames = [(o / 'child-output' / 'frame.bgra').read_bytes() for o in outputs]
+                    noise = (noise_output / 'child-output' / 'frame.bgra').read_bytes()
                     pixel = first_difference(*frames, width)
-                    row = {'run': name, 'compare': status['status'],
-                           'fields': [d['field'] for d in status['differences']][:10],
+                    differing = differing_pixels(*frames)
+                    base_noise = differing_pixels(frames[0], noise)
+                    within_noise = differing <= noise_allowance(base_noise)
+                    fields = [d['field'] for d in status['differences']]
+                    row = {'run': name, 'compare': status['status'], 'fields': fields[:10],
                            'errors': status['errors'], 'frame_identical': pixel is None,
-                           'first_pixel': pixel}
+                           'first_pixel': pixel, 'differing_pixels': differing,
+                           'base_to_base_pixels': base_noise, 'within_noise': within_noise}
                     summary['pixels'].append(row)
-                    if status['status'] != 'MATCH' or pixel:
+                    if status['errors'] or set(fields) - {'frame.bytes'} or not within_noise:
                         summary['differences'].append(f'pixels {name}')
     except (Failure, subprocess.CalledProcessError) as error:
         summary['errors'].append(str(error))
@@ -301,6 +323,8 @@ def main(argv=None):
                 print(f'[{name}] {line}')
     for row in summary.get('pixels', []):
         print(f'pixels {row["run"]}: compare={row["compare"]} frame_identical={row["frame_identical"]}'
+              f' differing={row["differing_pixels"]} base_to_base={row["base_to_base_pixels"]}'
+              f' within_noise={row["within_noise"]}'
               + (f' first_pixel={row["first_pixel"]}' if row['first_pixel'] else '')
               + (f' fields={row["fields"]}' if row['fields'] else '')
               + (f' errors={row["errors"]}' if row['errors'] else ''))

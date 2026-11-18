@@ -1,6 +1,7 @@
 import unittest
 
-from tools.same_as_base import PROFILE, capture_profile, first_difference, pixel_runs
+from tools.same_as_base import (PROFILE, capture_profile, differing_pixels, first_difference,
+                                 noise_allowance, pixel_runs)
 
 
 class SameAsBaseTests(unittest.TestCase):
@@ -28,6 +29,17 @@ class SameAsBaseTests(unittest.TestCase):
                          (1, 1, '00000000', '00000900'))
         self.assertIsNone(first_difference(before, before, 3))
 
+
+
+    def test_head_passes_within_the_base_runs_own_noise(self):
+        base = bytes(4 * 10)
+        head = bytearray(base)
+        head[0] = 1
+        head[8] = 1
+        self.assertEqual(differing_pixels(base, bytes(head)), 2)
+        # Two base runs that differ in one pixel let head differ in up to 10.
+        self.assertTrue(2 <= noise_allowance(1))
+        self.assertFalse(11 <= noise_allowance(1))
 
 if __name__ == '__main__':
     unittest.main()
