@@ -30,14 +30,6 @@ dự án.
 
 Gặp khó khăn? Xem [trang trợ giúp](https://vera20k.org/help) (tiếng Anh).
 
-Dự án đang được phát triển tích cực: chế độ skirmish đã chơi được trên Windows, macOS và Linux,
-chiến dịch chạy được một phần, và chế độ chơi mạng trực tuyến (thử nghiệm) nay đã có. Các phiên bản
-trước và những thay đổi trong từng phiên bản có trên
-[trang phát hành](https://github.com/YuriPlanet/vera20k/releases).
-
-Để chạy các trận skirmish hoặc chiến dịch YR một người chơi từ client CnCNet, xem
-[hướng dẫn cài client ngoại tuyến](integrations/cncnet/README.md).
-
 ## Mục tiêu dự án
 
 1. Giữ nguyên lối chơi, hình ảnh và không khí của Red Alert 2: Yuri's Revenge gốc.
@@ -132,6 +124,7 @@ thể hiện hình ảnh trò chơi thuộc sở hữu của Electronic Arts. VE
 Arts và không được Electronic Arts chứng thực.
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **Hãy đọc [thông báo pháp lý](LEGAL.md) trước khi chia sẻ, bán hoặc fork VERA20K.**

@@ -30,14 +30,6 @@ palabra sobre su rumbo.
 
 ¿Algo no funciona? Consulta la [página de ayuda](https://vera20k.org/es/help).
 
-Está en desarrollo activo: la escaramuza se puede jugar en Windows, macOS y Linux, las campañas
-funcionan en parte y el multijugador en línea (experimental) ya está disponible. Las versiones
-anteriores y lo que cambió en cada una están en la [página de
-versiones](https://github.com/YuriPlanet/vera20k/releases).
-
-Para iniciar escaramuzas o campañas de YR para un jugador desde un cliente de CnCNet, consulta la
-[configuración del cliente sin conexión](integrations/cncnet/README.md).
-
 ## Objetivos del proyecto
 
 1. Conservar la jugabilidad, el aspecto visual y la atmósfera del Red Alert 2: Yuri's Revenge
@@ -135,6 +127,7 @@ pantalla y el icono de la aplicación, la estrella roja de Red Alert 2, muestran
 propiedad de Electronic Arts. VERA20K no está afiliado a Electronic Arts ni cuenta con su respaldo.
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **Lee el [aviso legal](LEGAL.md) antes de compartir, vender o hacer un fork de VERA20K.**
