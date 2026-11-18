@@ -295,9 +295,15 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   测试 `sim/game_entity/type_conversion_in_air_tests.rs`（5 条，去掉调用后 4 条红）。
   残余：①`:787-791` 步兵的 `PlayAnim(Sequence::Paradrop)` 未播——VERA 的步兵
   序列 owner 由 `Doing`/部署与开火闩选择序列，没有逐对象一次性序列覆盖；仅表现，
-  落地与 `OnParachuted` 不受影响。②原生此臂传 `pCell->GetLevel()`，VERA 的
-  `landing_cell_verdict` 沿用落体臂的 `-1` 语义，故在桥面格上原生按地面平面判定、
-  VERA 按桥面占用判定（平地上两者等价）。
+  落地与 `OnParachuted` 不受影响。②已核实为等价（2026-11-19）：YRpp
+  `CellClass.h` 的 `GetLevel()` 返回 `Level + (ContainsBridge() ? BridgeLevels(4) : 0)`，
+  而原生 `0x004834E1..0x00483507` 取 `groundLevel == +0x11B` 走地面臂、取
+  `+0x11B + 4`（带 `has_bridge`）走桥面臂；`-1` 在 `0x00483529..0x0048353C` 同样落到
+  桥面臂。桥面格上两条语义都选 deck（`+0x128`，跳过 land 半段 `0x004835D5`），
+  非桥格都选 ground（`+0x124` 再过 land 半段），故 `landing_cell_verdict` 的 `-1`
+  与本臂的 `GetLevel()` 行为一致；该路径由
+  `type_conversion_in_air_tests::an_airborne_conversion_lands_on_a_bridge_deck_over_water`
+  锁定。
 - **BuildLimitGroup 的 `RemoveProduction`**（`docs/phobos-build-limit-group.md`）：
   已完成（2026-11-18）。灰化/`CanBuild` 的 owner 仍是纯查询，但两个 gate 都返回裁剪
   意图（`BuildLimitGroupGate`），队列入场 owner `queue_production` 调

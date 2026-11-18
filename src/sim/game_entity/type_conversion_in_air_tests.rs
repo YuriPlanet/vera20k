@@ -154,6 +154,61 @@ fn a_blocked_landing_cell_turns_the_fall_into_a_crash_death() {
     );
 }
 
+/// `:774-785`: the arm passes `pCell->GetLevel()` as the level, and YRpp folds
+/// the deck into it (`Level + (ContainsBridge() ? BridgeLevels : 0)`). Native
+/// `0x00483529..0x0048353C` sends both `-1` and `base + 4` to the deck arm,
+/// which reads `AltOccupationFlags(+0x128)` and skips the land half
+/// (`0x004835D5`), so a conversion over a bridge deck above water lands on the
+/// deck instead of taking the crash death the water ground would grant.
+#[test]
+fn an_airborne_conversion_lands_on_a_bridge_deck_over_water() {
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+        "[VehicleTypes]\n0=A\n1=B\n\
+         [A]\nStrength=100\nSpeed=4\nLocomotor=drive\n\
+         [B]\nStrength=100\nSpeed=4\nLocomotor=drive\n",
+    ))
+    .expect("drive rules");
+    for occupied_deck in [false, true] {
+        let (mut sim, id) = world(&rules);
+        airborne(&mut sim, id, 600);
+        {
+            let cell = sim
+                .resolved_terrain
+                .as_mut()
+                .expect("scene grid")
+                .cell_mut_for_test(10, 10)
+                .expect("the spawn cell");
+            // Reduced ZoneType 4 is the Water column: the ground plane alone
+            // would refuse the landing, the deck plane admits it.
+            cell.zone_type = 4;
+            cell.bridge_facts.raw_flags |= crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
+        }
+        if occupied_deck {
+            // A structure is the one bit both ignore masks leave.
+            sim.substrate.raw_cell_occupation.mark_deck(10, 10, 0x40);
+        }
+        convert(&mut sim, id, "B", &rules);
+        let entity = sim.entities().get(id).expect("converted body");
+        assert!(entity.is_falling_down(), "the body is let go");
+        if occupied_deck {
+            assert!(
+                entity.was_dropped_as_bomb(),
+                "an occupied deck refuses the landing"
+            );
+        } else {
+            assert!(
+                !entity.was_dropped_as_bomb(),
+                "the deck plane admits the landing over the water ground"
+            );
+            assert!(entity.on_parachuted());
+            assert!(
+                entity.on_bridge(),
+                "OnBridge copies the cell's ContainsBridge()"
+            );
+        }
+    }
+}
+
 /// The arm is gated on `IsInAir`: a grounded body converting types stays
 /// grounded and does not fall.
 #[test]
