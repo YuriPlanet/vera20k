@@ -287,23 +287,32 @@ impl crate::sim::world::Simulation {
     }
 
     /// `CellClass::IsClearToMove(pType->SpeedType, true, true, -1,
-    /// pType->MovementZone, -1, onBridge)` (`Ext/Techno/Hooks.cpp:1043-1055`):
-    /// the cell a falling unit lands on must admit it. VERA reads the two arms
-    /// that decide it here — the cell's reduced `ZoneType` against the mover's
-    /// `MovementZone` (`MOVEMENT_ZONE_PASSABILITY`, the matrix the zone
-    /// flood-fill uses) and the `LandType` row's speed for the mover's
-    /// `SpeedType` (a zero row is impassable). A cell outside the playfield is
-    /// not clear. An unknown cell, type or `SpeedType` answers clear so the
-    /// pre-existing ratio packet stands.
+    /// pType->MovementZone, -1, pCell->ContainsBridge())`
+    /// (`Ext/Techno/Hooks.cpp:1043-1055`): the cell a falling unit lands on
+    /// must admit it. VERA reads the two arms that decide it here — the cell's
+    /// reduced `ZoneType` against the mover's `MovementZone`
+    /// (`MOVEMENT_ZONE_PASSABILITY`, the matrix the zone flood-fill uses) and
+    /// the `LandType` row's speed for the mover's `SpeedType` (a zero row is
+    /// impassable) — plus the deck plane the hook's `onBridge` argument
+    /// selects.
     ///
-    /// RESIDUAL: the native call also passes `onBridge`, whose deck row these
-    /// two arms reach through the cell's own land/zone bytes; VERA has no
-    /// separate deck land row, so a landing on a bridge deck reads the deck
-    /// cell's bytes as it stores them.
+    /// `onBridge` is the cell's `ContainsBridge()` (`+0x140 & 0x100`), and
+    /// with level `-1` it moves the whole call onto the deck
+    /// (`0x0048353C..0x0048354E`): the deck occupation byte
+    /// (`AltOccupationFlags+0x128`) replaces the ground one and the land half
+    /// is skipped outright (`0x004835DE..0x004835F4`). So a mover may land on
+    /// a bridge deck over water its own `SpeedType` could never cross, which
+    /// the two ground arms would refuse. Both ignore flags are set, so
+    /// `0x00483558..0x00483572` masks the byte with `0xE0` then `0x5F` and
+    /// leaves only `0x40`.
+    ///
+    /// A cell outside the playfield is not clear. An unknown cell, type or
+    /// `SpeedType` answers clear so the pre-existing ratio packet stands.
     #[cfg(feature = "phobos")]
     fn landing_cell_clear(&self, id: u64, rules: &crate::rules::ruleset::RuleSet) -> bool {
         use crate::map::resolved_terrain::NativeCellQuery;
         use crate::rules::locomotor_type::SpeedType;
+        use crate::sim::occupancy::RawCellKey;
 
         let Some(entity) = self.substrate.entities.get(id) else {
             return true;
@@ -332,6 +341,17 @@ impl crate::sim::world::Simulation {
         };
         if resolved.outside_playfield {
             return false;
+        }
+        let contains_bridge = crate::sim::cell_rect::canonical_cell_ref(terrain, cell)
+            .bridge_flags_0x1180()
+            & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
+            != 0;
+        if contains_bridge {
+            let deck = self.substrate.raw_cell_occupation.bits_at(
+                RawCellKey::Real(rx, ry),
+                crate::sim::movement::locomotor::MovementLayer::Bridge,
+            );
+            return (deck & 0xE0) & 0x5F == 0;
         }
         if !crate::sim::pathfinding::passability::is_passable_for_zone(
             resolved.zone_type,
@@ -1321,5 +1341,48 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         let (clear, health) = land(None);
         assert!(clear, "a ground-classed cell is clear");
         assert_eq!(health, Some(300), "0.1 of Strength 1000 is a 100 packet");
+    }
+
+    /// `Ext/Techno/Hooks.cpp:1043-1055` passes `pCell->ContainsBridge()`, and
+    /// with level `-1` that moves the whole check onto the deck
+    /// (`0x0048353C..0x0048354E`, land half skipped at `0x004835DE`): the water
+    /// ground under the deck stops refusing the landing, and only the deck
+    /// occupation byte survives the two ignore masks (`0xE0`, then `0x5F`,
+    /// leaving `0x40`).
+    #[test]
+    fn a_bridge_deck_landing_reads_the_deck_plane_not_the_water_ground() {
+        let (mut sim, rules, id) = scene("", "", true);
+        // Reduced ZoneType 4 is the Water column, which the ground arms refuse
+        // for a Normal mover; the same cell with the Clear column is admitted.
+        {
+            let cell = sim
+                .resolved_terrain
+                .as_mut()
+                .expect("scene grid")
+                .cell_mut_for_test(10, 10)
+                .expect("water cell");
+            cell.zone_type = 4;
+        }
+        assert!(
+            !sim.landing_cell_clear(id, &rules),
+            "the water ground refuses the landing off a bridge"
+        );
+        sim.resolved_terrain
+            .as_mut()
+            .expect("scene grid")
+            .cell_mut_for_test(10, 10)
+            .expect("water cell")
+            .bridge_facts
+            .raw_flags |= crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
+        assert!(
+            sim.landing_cell_clear(id, &rules),
+            "the deck plane admits the same landing"
+        );
+        // A structure on the deck is the one bit both ignore masks leave.
+        sim.substrate.raw_cell_occupation.mark_deck(10, 10, 0x40);
+        assert!(
+            !sim.landing_cell_clear(id, &rules),
+            "an occupied deck refuses the landing"
+        );
     }
 }

@@ -235,8 +235,11 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   `Simulation::landing_cell_clear` 用 cell 的 reduced `ZoneType`（
   `MOVEMENT_ZONE_PASSABILITY`）加 `LandType` 行对 `SpeedType` 的零速判定，
   被挡的落点直接整血包（测试 `a_blocked_landing_cell_takes_the_whole_health_packet`）。
-  残余：native 传 `onBridge` 走桥面行，VERA 没有独立桥面行，落在桥面时按 cell
-  自存的 land/zone 字节判定。
+  `onBridge` 也已接线（2026-11-18 第三轮）：它取 cell 的 `ContainsBridge()`，level
+  `-1` 时整条判定移到桥面（`0x0048353C..0x0048354E`），跳过地面两条臂、只读桥面
+  occupation 字节按两个 ignore 掩码（`0xE0`→`0x5F`，剩 `0x40`）判定——落在水上桥
+  面的履带车不再整血（测试
+  `a_bridge_deck_landing_reads_the_deck_plane_not_the_water_ground`）。
 - **飞机等级光照与风暴/支配者同时存在的顺序**：无残渣；飞机 `DrawIt` 臂改走
   `Simulation::lighting_aircraft_profile`（Dominator→核闪→Ion），与 Phobos
   `Ext/Techno/Hooks.Tint.cpp:320-338` 一致；jumpjet 臂保持 cell-lighting 的
