@@ -8,6 +8,9 @@ struct Draw {
     // Model space to the page's clip space: the part's voxel draw matrix,
     // the model's scale and axes, and the image's place on the page.
     clip: mat4x4<f32>,
+    // Model space to the voxel camera's space, anchor-relative: the space the
+    // normals are in, for a normal map's tangent frame.
+    to_camera: mat4x4<f32>,
     // Model space to the voxel camera's space for normals (inverse transpose).
     normal0: vec4<f32>,
     normal1: vec4<f32>,
@@ -17,8 +20,8 @@ struct Draw {
     emissive: vec4<f32>,
     // xyz: the voxel world light in the camera's space; w: the Mask cutoff.
     light: vec4<f32>,
-    // z: alpha mode (0 opaque, 1 mask, 2 blend); w: 1 when `ramp` is the
-    // owner's house colour.
+    // x: 1 when `normal_texture` is a normal map; z: alpha mode (0 opaque,
+    // 1 mask, 2 blend); w: 1 when `ramp` is the owner's house colour.
     flags: vec4<u32>,
     // The owner's ramp, palette indices 16..31, linear colour.
     ramp: array<vec4<f32>, 16>,
@@ -29,6 +32,8 @@ struct Draw {
 @group(1) @binding(1) var emissive_texture: texture_2d<f32>;
 @group(1) @binding(2) var mask_texture: texture_2d<f32>;
 @group(1) @binding(3) var model_sampler: sampler;
+// A tangent-space normal map (glTF convention, +Y up), linear.
+@group(1) @binding(4) var normal_texture: texture_2d<f32>;
 
 struct VertexIn {
     @location(0) position: vec3<f32>,
@@ -42,6 +47,7 @@ struct VertexOut {
     @location(0) normal: vec3<f32>,
     @location(1) uv: vec2<f32>,
     @location(2) color: vec4<f32>,
+    @location(3) camera: vec3<f32>,
 }
 
 @vertex
@@ -52,12 +58,32 @@ fn vs_main(vertex: VertexIn) -> VertexOut {
     out.normal = normal * vertex.normal;
     out.uv = vertex.uv;
     out.color = vertex.color;
+    out.camera = (draw.to_camera * vec4<f32>(vertex.position, 1.0)).xyz;
     return out;
 }
 
 struct FragmentOut {
     @location(0) color: vec4<f32>,
     @location(1) index: u32,
+}
+
+// `n` bent by the tangent-space normal `t` in the cotangent frame the screen
+// derivatives of position (`dp1`, `dp2`) and UV (`duv1`, `duv2`) give, so no
+// tangent attribute is needed. The frame's second axis runs along +V, and a
+// glTF normal map's +Y runs along -V: its y is turned.
+fn bent_normal(n: vec3<f32>, t: vec3<f32>, dp1: vec3<f32>, dp2: vec3<f32>, duv1: vec2<f32>, duv2: vec2<f32>) -> vec3<f32> {
+    let dp2_perp = cross(dp2, n);
+    let dp1_perp = cross(n, dp1);
+    let tangent = dp2_perp * duv1.x + dp1_perp * duv2.x;
+    let bitangent = dp2_perp * duv1.y + dp1_perp * duv2.y;
+    let size = max(dot(tangent, tangent), dot(bitangent, bitangent));
+    if size <= 0.0 {
+        return n;
+    }
+    let scale = inverseSqrt(size);
+    let bent = mat3x3<f32>(tangent * scale, bitangent * scale, n) * vec3<f32>(t.x, -t.y, t.z);
+    let length_bent = length(bent);
+    return select(n, bent / length_bent, length_bent > 1e-6);
 }
 
 // A linear channel as an sRGB byte value, 0..255.
@@ -69,8 +95,14 @@ fn srgb_byte(linear: f32) -> f32 {
 
 @fragment
 fn fs_main(in: VertexOut) -> FragmentOut {
+    // Derivatives before any branch, in uniform control flow.
+    let dp1 = dpdx(in.camera);
+    let dp2 = dpdy(in.camera);
+    let duv1 = dpdx(in.uv);
+    let duv2 = dpdy(in.uv);
     // Every texture is sampled at level 0: the pages have no mips, and the
     // samples stay outside the branches below.
+    let normal_sample = textureSampleLevel(normal_texture, model_sampler, in.uv, 0.0).xyz * 2.0 - vec3<f32>(1.0);
     let base = draw.base_color * in.color * textureSampleLevel(base_texture, model_sampler, in.uv, 0.0);
     let mask = textureSampleLevel(mask_texture, model_sampler, in.uv, 0.0);
     let emissive = textureSampleLevel(emissive_texture, model_sampler, in.uv, 0.0).rgb * draw.emissive.rgb;
@@ -105,7 +137,10 @@ fn fs_main(in: VertexOut) -> FragmentOut {
         // plus the Schlick term of the halfway vector to the +Z viewer at
         // strength 3, where a page of 16 is the colour as it is.
         let size = max(length(in.normal), 1e-6);
-        let n = in.normal / size;
+        var n = in.normal / size;
+        if draw.flags.x != 0u {
+            n = bent_normal(n, normal_sample, dp1, dp2, duv1, duv2);
+        }
         let l = draw.light.xyz;
         let diffuse = max(dot(n, l), 0.0);
         let half_vector = normalize(l + vec3<f32>(0.0, 0.0, 1.0));

@@ -1299,6 +1299,14 @@ pub(crate) struct UnitModel {
     use_buffer: bool,
 }
 
+/// VERA-only, experimental (`docs/picture-model-art.md`): whether
+/// `type_id` draws a voxel shadow at all ([`ShadowModel::for_type`]), and if
+/// so whether its viewer is halved (`ConsideredAircraft=`), for a declared
+/// model's shadow.
+pub(crate) fn voxel_shadow_viewer(rules: &RuleSet, type_id: &str) -> Option<bool> {
+    ShadowModel::for_type(rules, type_id).map(|shadow| shadow.considered_aircraft)
+}
+
 #[derive(Clone, Copy)]
 struct ShadowModel {
     index: i32,

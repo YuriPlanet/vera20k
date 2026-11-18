@@ -83,14 +83,29 @@ not change. Without a mask the picture has no house colour and no unlit pixels.
 - Nodes by name: `body`, `turret` / `turretN`, `barrel` / `barrelN`, `shadow`.
   `turretN` / `barrelN` stand in for `TURN.VXL` / `BARLN.VXL` (`TurretCount=`).
 - Node animations (translation, rotation, scale) stand in for HVA frames.
+  A part takes the animation named for it (`body`, `turret`, `barrel1`, ...),
+  else the first animation not named for a part. Its frame count is the key
+  count of its channel with the most keys, and HVA frame `k` draws at that
+  channel's key `k`: export one key per HVA frame. The frame numbers are the
+  voxel parts' (`Foot+0x538` modulo the body's count; the turret's own
+  `Techno+0x148` modulo its count while the body's frame is 0; the barrel the
+  body's). A shadow draws at frame 0, as `0x00707280` samples HVA frame 0.
 - Materials: the base colour texture or factor, the normal texture, the emissive
   texture or factor (emissive parts are unlit), `alphaMode`. Metallic and
   roughness are ignored; light follows the game's voxel light.
 - The house-colour mask: `NAME.mask.png` beside the model, in the base colour
   texture's UV space, else none.
 - Sidecar files beside the model replace embedded images:
-  `NAME.texture.png` (base colour), `NAME.normals.png` (normal map),
+  `NAME.texture.png` (base colour), `NAME.normals.png` (normal map, glTF's
+  tangent-space convention, +Y up; the tangent frame is taken from the
+  screen derivatives of position and UV, so no tangents are needed),
   `NAME.mask.png`.
+- `NAMEWO.glb` beside `Model=NAME.glb` is the `NoSpawnAlt=` model, drawn
+  where the VXL path draws `%sWO` (a unit whose spawns are all away). It
+  scales so its own `body` is `ModelSize=` long and takes its own
+  `NAMEWO.*.png` sidecars. Without it the main model draws. It is read only
+  for a unit with `NoSpawnAlt=yes` whose art declares `Model=`, and it is
+  drawing only: the simulation takes nothing from it.
 - Refused: Draco or meshopt compression, KTX2/Basis textures, skins, morph
   targets. Ignored: cameras, lights, scenes other than the default.
 
@@ -159,9 +174,27 @@ so it sorts, shades and shadows by the same rules:
   brightness as a picture's does; the mask's green and emissive texels are
   unlit (index 240). The unit's piece draws that page through the SHP
   blitters' RGBA source mode with the unit's Z-read policy, its Z from the
-  drawn rectangle (`ZGradient::Vertical`). Nothing of a pose is kept between
+  drawn rectangle (`ZGradient::Vertical`). Over a bridge, a
+  `TooBigToFitUnderBridge=` unit's rectangle is two blits as `0x0073B2FE`
+  splits the composite: the rows above the bottom 16 flat and 5 lower, the
+  bottom 16 vertical, each seeded on its own (`native_z::voxel_depth_region`).
+  Nothing of a pose is kept between
   frames; only each model's meshes and textures stay on the GPU. The page
   starts at 1024 square and doubles after a frame whose images did not fit.
+- **Model shadows.** The `shadow` node's meshes, else the body's, at frame
+  0, flattened onto their lowest point and taken through the shadow key's
+  facing and slope matrix, as `0x00753F90` projects a VXL section's
+  bottom-face quad: camera z dropped, the viewer halved for
+  `ConsideredAircraft=` (`0x00707319`), then 3 pixels right (the light,
+  `0x00887420`). The GPU draws it as a mask on the model page, index 1 where
+  shadowed, in the rectangle `0x00754510`'s rule gives its extents. The
+  unit's piece hands it to the SHP shadow edit
+  (`SpriteAtlasEdit(page, Shadow)`), so darkening counts follow the native
+  rule. It takes each voxel shadow path's admission (`NoShadow=`, cloak,
+  sinking, Tunnel travel, the atlas's shadow types), anchor, facing, slope,
+  sort depth and Z adjustment: an aircraft's (`0x004148A0`), a lifted
+  Unit's (`0x0073C1D2..0x0073C5C4`) and a ground Unit's (`0x0073C5C4`). It
+  draws before the body, which covers it as the native body mask does.
 - **Model space.** glTF +Y is up, +Z forward, +X left. The model draws with
   +Z along the voxel hull's X, X along its Y and +Y along its Z, scaled so
   the `body` length is `ModelSize=` leptons in voxel units (one voxel is one
@@ -220,7 +253,14 @@ against this list.
   shadows; `render_game` begins and `dispatch_draw_passes` encodes the
   frame's models (`RendererState::model_frame`). `vxl_raster` exposes the body
   draw matrix and `vxl_normals` the world light; the native model units per
-  lepton moved to `map::voxel_pose`.
+  lepton moved to `map::voxel_pose`. For shadows, node animations and
+  `NoSpawnAlt`: `instances::units` asks `model_units::declared_model_of` for
+  the drawn type's model (its `WO` name included), passes the voxel shadow
+  path's anchor and admission (`model_shadow_draw`) and shares its frame
+  rule (`animation_frames_with`, split out of `animation_frames_of`
+  unchanged); `unit_atlas::voxel_shadow_viewer` exposes the shadow types'
+  gate; `AircraftShadowPose` is `Copy`; `VoxelAssetCatalog` reads
+  `NAMEWO.glb` into `DeclaredModel::no_spawn_alt`.
 
 ## Verification
 
@@ -251,8 +291,14 @@ production run on a real map with converted art.
 - Chain 1: in progress.
 - Chains 4 and 5 (`Model=`), written, not yet compiled or run: keys and the
   model-loaded and tilt facts in the core crate; the GPU draw of voxel units'
-  and aircraft's bodies, turrets and barrels. Not yet: model shadows (the
-  `shadow` node or body bounds), node animations (the rest pose draws),
-  normal maps (`NAME.normals.png`), the bridge split of a model's depth
-  rectangle, voxel building turrets, voxel projectiles and debris (their VXL
-  path stays), and the `NoSpawnAlt` `WO` model.
+  and aircraft's bodies, turrets and barrels, posed by node animations at
+  their HVA frame numbers, with normal maps; their shadows; the bridge split
+  of their depth rectangle; the `NoSpawnAlt` `WO` model. Not yet: voxel
+  building turrets, voxel projectiles and debris (their VXL path stays).
+  Known residuals of the model draw: a shadow is the exact footprint of the
+  flattened mesh, not the two-pixel-wide columns `0x00756860` marks, and
+  takes no body mask (the body drawn after it covers it, so where native
+  leaves a high-flying Jumpjet's unmasked shadow over its own body, the model
+  shadow stays under it); an animated part's rectangle is the box of its
+  nodes' boxes, larger than its rest bounds; alpha-masked texels cast shadow;
+  the `WO` model is not in the config hash.
