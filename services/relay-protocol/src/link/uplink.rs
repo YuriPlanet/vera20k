@@ -5,7 +5,8 @@ use super::codec::{FLAG_PACE, FLAG_PROBE, FLAG_PUSH, FLAG_RESTORING, PaceSegment
 use std::collections::VecDeque;
 
 use super::{LinkState, OrderingGap};
-use crate::{CONTROL, ClientSession, MAX_WIRE_PAYLOAD, RelayError};
+use crate::envelope::PACK_LIMIT;
+use crate::{CONTROL, ClientSession, RelayError};
 
 const UPLINK_HEARTBEAT_MS: u64 = 250;
 const COPY_SPACING_MS: u64 = 16;
@@ -405,9 +406,9 @@ impl ClientSession {
             batches: batches.iter().map(Vec::as_slice).collect(),
         };
         let mut uplink = uplink;
-        uplink.fit(MAX_WIRE_PAYLOAD);
+        uplink.fit(PACK_LIMIT);
         let fitting = uplink.batches.len();
-        let mut payload = Vec::with_capacity(MAX_WIRE_PAYLOAD);
+        let mut payload = Vec::with_capacity(PACK_LIMIT);
         uplink.encode(&mut payload);
         batches.truncate(fitting);
         self.encode(CONTROL, &payload, out)
@@ -733,7 +734,7 @@ impl ClientSession {
 mod tests {
     use super::*;
     use crate::link::decode_uplink;
-    use crate::{CLIENT_HEADER, HOP_TAG_LEN, OrderPace, OrderingCertificate, SecretKey, Ticket};
+    use crate::{HEADER_LEN, HOP_TAG_LEN, OrderPace, OrderingCertificate, SecretKey, Ticket};
 
     /// A ready, started session at 0 whose first PACK arrived, its uplink
     /// measured good.
@@ -845,7 +846,7 @@ mod tests {
     }
 
     fn decoded(datagram: &[u8]) -> Uplink<'_> {
-        decode_uplink(&datagram[CLIENT_HEADER..datagram.len() - HOP_TAG_LEN]).unwrap()
+        decode_uplink(&datagram[HEADER_LEN..datagram.len() - HOP_TAG_LEN]).unwrap()
     }
 
     fn link(session: &mut ClientSession) -> &mut crate::link::ClientLink {

@@ -303,11 +303,11 @@ mod tests {
         let mut uplink = quiet_uplink(1, 0, 0);
         uplink.first_batch_id = 1;
         uplink.batches = vec![&opaque, &opaque, &opaque];
-        uplink.fit(crate::MAX_WIRE_PAYLOAD);
+        uplink.fit(crate::envelope::PACK_LIMIT);
         assert_eq!(uplink.batches.len(), 2);
         let mut bytes = Vec::new();
         uplink.encode(&mut bytes);
-        assert!(bytes.len() <= crate::MAX_WIRE_PAYLOAD);
+        assert!(bytes.len() <= crate::envelope::PACK_LIMIT);
         uplink.fit(bytes.len() - 1);
         assert_eq!(uplink.batches.len(), 1);
     }

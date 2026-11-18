@@ -937,7 +937,7 @@ impl Federation {
                 || frame == 0
                 || if control {
                     match batch_id {
-                        RATE_BATCH => length != 3,
+                        RATE_BATCH => length != RATE_TAIL,
                         DESYNC_BATCH => length != DESYNC_TAIL,
                         // A new control batch bumps the link version (LINK_MAGIC).
                         _ => true,

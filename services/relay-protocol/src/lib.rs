@@ -48,17 +48,14 @@ pub const BROADCAST: u8 = 255;
 /// The largest DATA message a client relays.
 pub const MAX_PAYLOAD: usize = 640;
 pub const TICKET_LEN: usize = 98;
-/// The packing limit of PACK and UPLINK payloads, unchanged by the
-/// compaction (bandwidth-compaction spec §5.4).
-const MAX_WIRE_PAYLOAD: usize = envelope::PACK_LIMIT;
+/// A player ticket's first byte; a watch ticket's is `WATCH_TICKET_VERSION`.
+const TICKET_VERSION: u8 = 2;
 pub const MAX_DATAGRAM: usize = envelope::MAX_DATAGRAM;
 pub const MAX_TICKET_LIFETIME: u64 = 300;
 const TICKET_BODY_LEN: usize = 66;
-/// Hop envelope bytes before the payload, either direction (§6.1).
-const CLIENT_HEADER: usize = envelope::HEADER_LEN;
-#[cfg(test)]
-const SERVER_HEADER: usize = envelope::HEADER_LEN;
-use envelope::HOP_TAG_LEN;
+use envelope::{
+    CHALLENGE, CONFIRM, CONTROL, DATA, HEADER_LEN, HELLO, HOP_TAG_LEN, LEAVE_ACK, PING, READY,
+};
 /// A full HMAC-SHA256: ticket signatures and federation links.
 const MAC_LEN: usize = 32;
 const COOKIE_LEN: usize = 40;
@@ -72,19 +69,13 @@ const HANDSHAKES_PER_SECOND: u64 = 8192;
 const PLAYER_HANDSHAKES_PER_SECOND: u64 = 8;
 // Pulls that read the journal. A catching-up client sends about ten a second.
 const PLAYER_ARCHIVE_PULLS_PER_SECOND: u64 = 256;
+// One player's datagrams in, and its ordering datagrams out, each a second.
+const PLAYER_PACKETS_PER_SECOND: u64 = 2048;
 const PLAYER_BYTES_PER_SECOND: u64 = 2 * 1024 * 1024;
 const ROOM_BYTES_PER_SECOND: u64 = 64 * 1024 * 1024;
 const TOTAL_BYTES_PER_SECOND: u64 = 64 * 1024 * 1024;
 const LEAVES_PER_SECOND: u64 = 512;
 const LEAVE_GRACE: u64 = sequenced::ROOM_LIFETIME_MS.div_ceil(1000) + MAX_TICKET_LIFETIME;
-const HELLO: u8 = 0;
-const CONFIRM: u8 = 1;
-const DATA: u8 = 2;
-const PING: u8 = 3;
-const CONTROL: u8 = 4;
-const LEAVE_ACK: u8 = 5;
-const CHALLENGE: u8 = 0;
-const READY: u8 = 1;
 
 /// Server signing material or a single client's packet key. HTTPS credentials
 /// have their own owner; this value is only held in process memory.
@@ -134,7 +125,7 @@ pub struct Ticket {
 
 impl Ticket {
     pub fn parse(bytes: &[u8]) -> Result<Self, RelayError> {
-        if bytes.len() != TICKET_LEN || bytes[0] != 2 || bytes[17] >= MAX_PEERS {
+        if bytes.len() != TICKET_LEN || bytes[0] != TICKET_VERSION || bytes[17] >= MAX_PEERS {
             return Err(RelayError::Malformed);
         }
         let ticket = Self {
@@ -160,7 +151,7 @@ impl Ticket {
             return Err(RelayError::Malformed);
         }
         let mut bytes = [0; TICKET_LEN];
-        bytes[0] = 2;
+        bytes[0] = TICKET_VERSION;
         bytes[1..17].copy_from_slice(&self.room);
         bytes[17] = self.source;
         bytes[18..26].copy_from_slice(&self.expires.to_le_bytes());
@@ -581,7 +572,7 @@ fn handshake_incoming<'a>(
     bytes: &'a [u8],
     now: u64,
 ) -> Result<Incoming<'a>, RelayError> {
-    let body = &bytes[CLIENT_HEADER..bytes.len() - HOP_TAG_LEN];
+    let body = &bytes[HEADER_LEN..bytes.len() - HOP_TAG_LEN];
     if header.session != 0 || body.len() < TICKET_LEN {
         return Err(RelayError::Malformed);
     }
@@ -1113,7 +1104,7 @@ impl RelayServer {
             .admissions
             .get_mut(&message.ticket.player)
             .ok_or(RelayError::Unregistered)?;
-        if !admission.packets.permits(now, 1, 2048)
+        if !admission.packets.permits(now, 1, PLAYER_PACKETS_PER_SECOND)
             || !self
                 .ingress
                 .admit_part(&mut room.ingress, now, 1, INGRESS_PER_SECOND)
@@ -2136,7 +2127,7 @@ mod tests {
             server.process(a, &bytes, 1000),
             Err(RelayError::Replay)
         ));
-        bytes[CLIENT_HEADER] ^= 1;
+        bytes[HEADER_LEN] ^= 1;
         assert!(matches!(
             server.process(a, &bytes, 1000),
             Err(RelayError::Authentication)

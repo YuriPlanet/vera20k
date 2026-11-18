@@ -797,7 +797,7 @@ mod tests {
     fn packs(packets: &[ForwardDatagram]) -> Vec<(u64, u8)> {
         packets
             .iter()
-            .map(|packet| &packet.bytes[SERVER_HEADER..packet.bytes.len() - HOP_TAG_LEN])
+            .map(|packet| &packet.bytes[HEADER_LEN..packet.bytes.len() - HOP_TAG_LEN])
             .filter(|payload| payload[0] == PACK_EVENT)
             .map(|payload| super::super::pack::pack_v2_range(payload).unwrap())
             .collect()
@@ -958,7 +958,7 @@ mod tests {
         merge(&mut peer.push.as_mut().unwrap().retransmit, (1, 3));
         server.advance_clock(310, unix(310));
         let packets = server.drain_ordering_push(310, unix(310));
-        let pack = &packets[0].bytes[SERVER_HEADER..packets[0].bytes.len() - HOP_TAG_LEN];
+        let pack = &packets[0].bytes[HEADER_LEN..packets[0].bytes.len() - HOP_TAG_LEN];
         assert_eq!(super::super::pack::pack_v2_range(pack), Some((1, 2)));
         assert_eq!(stats(&server).packets_by_kind[3], 1);
         assert_eq!(stats(&server).retransmit_ranges, 0);
@@ -1013,7 +1013,7 @@ mod tests {
         let packets = server.drain_ordering_push(1600, unix(1600));
         let first_pack = packets
             .iter()
-            .map(|packet| &packet.bytes[SERVER_HEADER..packet.bytes.len() - HOP_TAG_LEN])
+            .map(|packet| &packet.bytes[HEADER_LEN..packet.bytes.len() - HOP_TAG_LEN])
             .find(|payload| payload[0] == PACK_EVENT)
             .unwrap();
         assert_eq!(super::super::pack::pack_v2_range(first_pack).unwrap().0, 1);

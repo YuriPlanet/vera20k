@@ -67,9 +67,13 @@ const RATE_EVENT: u8 = 10;
 const RATE_ENTRY_BYTES: usize = 16;
 const DESYNC_EVENT: u8 = 11;
 const DESYNC_ENTRY_BYTES: usize = 27;
-// A DESYNC record after its sequence and frame: sample frame u32, outlier
-// source u8 and checksum u32, other source u8 and checksum u32.
-pub(super) const DESYNC_TAIL: usize = DESYNC_ENTRY_BYTES - 13;
+/// Every canonical record's head: kind u8, sequence u64, frame u32.
+pub(super) const CANONICAL_HEAD: usize = 13;
+// A RATE record after its head: frames per second u16 and the slow source u8.
+pub(super) const RATE_TAIL: usize = RATE_ENTRY_BYTES - CANONICAL_HEAD;
+// A DESYNC record after its head: sample frame u32, outlier source u8 and
+// checksum u32, other source u8 and checksum u32.
+pub(super) const DESYNC_TAIL: usize = DESYNC_ENTRY_BYTES - CANONICAL_HEAD;
 // Consecutive history entries in one datagram, PACK v2 (compaction spec
 // §5.2, `pack.rs`).
 pub(super) const PACK_EVENT: u8 = 12;
@@ -2517,7 +2521,7 @@ mod tests {
 
     /// The batches of an encoded client UPLINK datagram.
     fn uplink_batches(datagram: &[u8]) -> Vec<Vec<u8>> {
-        crate::link::decode_uplink(&datagram[CLIENT_HEADER..datagram.len() - HOP_TAG_LEN])
+        crate::link::decode_uplink(&datagram[HEADER_LEN..datagram.len() - HOP_TAG_LEN])
             .unwrap()
             .batches
             .iter()
@@ -2956,7 +2960,7 @@ mod tests {
             .process_at(endpoint(&first), &bytes, unix(400), 400)
             .unwrap();
         assert_eq!(packets.len(), 2, "a status and one pack");
-        let payload = &packets[1].bytes[SERVER_HEADER..packets[1].bytes.len() - HOP_TAG_LEN];
+        let payload = &packets[1].bytes[HEADER_LEN..packets[1].bytes.len() - HOP_TAG_LEN];
         let history: Vec<_> = ordering(&server)
             .history
             .iter()
@@ -3603,7 +3607,7 @@ mod tests {
         pause_control(&mut server, &mut first, 1, 0, true, 300);
         let mut lost = None;
         for packet in server.drain_ordering_push(300, unix(300)) {
-            let payload = &packet.bytes[SERVER_HEADER..packet.bytes.len() - HOP_TAG_LEN];
+            let payload = &packet.bytes[HEADER_LEN..packet.bytes.len() - HOP_TAG_LEN];
             if payload[0] == PACK_EVENT {
                 lost = pack::decode_pack_v2(payload)
                     .unwrap()
@@ -3653,7 +3657,7 @@ mod tests {
             .unwrap();
         assert!(
             packets.iter().any(|packet| {
-                let payload = &packet.bytes[SERVER_HEADER..packet.bytes.len() - HOP_TAG_LEN];
+                let payload = &packet.bytes[HEADER_LEN..packet.bytes.len() - HOP_TAG_LEN];
                 payload[0] == PACK_EVENT && pack::decode_pack_v2(payload).unwrap().contains(&lost)
             }),
             "disk replay retains exactly the lost canonical marker bytes"
@@ -3931,7 +3935,7 @@ mod tests {
                     .position(|peer| endpoint(peer) == packet.endpoint)
                     .unwrap();
                 *per_peer.entry(index).or_insert(0) += 1;
-                if packet.bytes[SERVER_HEADER] == PACK_EVENT {
+                if packet.bytes[HEADER_LEN] == PACK_EVENT {
                     if index == 0 && !lost {
                         lost = true;
                         continue; // a real missing authenticated datagram
@@ -4164,7 +4168,7 @@ mod tests {
             .into_iter()
             .filter(|packet| packet.endpoint == reader_endpoint)
         {
-            let payload = &packet.bytes[SERVER_HEADER..packet.bytes.len() - HOP_TAG_LEN];
+            let payload = &packet.bytes[HEADER_LEN..packet.bytes.len() - HOP_TAG_LEN];
             if payload[0] == PACK_EVENT {
                 canonical = canonical.or(pack::decode_pack_v2(payload)
                     .unwrap()
@@ -4198,7 +4202,7 @@ mod tests {
         subscribe(&mut server, &mut reader, 1, 250_000);
         let replay = server.drain_ordering_push(250_000, unix(250_000));
         assert!(replay.iter().any(|packet| {
-            let payload = &packet.bytes[SERVER_HEADER..packet.bytes.len() - HOP_TAG_LEN];
+            let payload = &packet.bytes[HEADER_LEN..packet.bytes.len() - HOP_TAG_LEN];
             payload[0] == PACK_EVENT && pack::decode_pack_v2(payload).unwrap().contains(&canonical)
         }));
         for packet in replay {
@@ -6638,7 +6642,9 @@ impl RelayServer {
             .outgoing
             .permits(now, cost, PLAYER_BYTES_PER_SECOND)
             || !room.outgoing.permits(now, cost, ROOM_BYTES_PER_SECOND)
-            || !admission.order_packets.permits(now, packets, 2048)
+            || !admission
+                .order_packets
+                .permits(now, packets, PLAYER_PACKETS_PER_SECOND)
             || !room.order_packets.permits(now, packets, ROOM_ORDER_PACKETS)
         {
             return Err(RelayError::RateLimited);

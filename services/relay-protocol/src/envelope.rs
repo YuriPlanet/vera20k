@@ -44,8 +44,8 @@ pub const OVERHEAD: usize = HEADER_LEN + HOP_TAG_LEN;
 /// 699 bytes). PACKs keep their own smaller limit, `PACK_LIMIT`.
 pub const MAX_PAYLOAD: usize = 720;
 
-/// The packing limit of a PACK payload: 681 bytes (§5.3 rule 5, §5.4),
-/// unchanged so the packing makes the same number of packs.
+/// The packing limit of PACK and UPLINK payloads: 681 bytes (§5.3 rule 5,
+/// §5.4).
 pub const PACK_LIMIT: usize = 681;
 
 /// The largest envelope v3 datagram: `OVERHEAD + MAX_PAYLOAD`. A receive

@@ -21,14 +21,13 @@
 //! | DESYNC 11 | `[11][seq u64][frame u32][sample_frame u32][outlier u8][checksum u32][other u8][checksum u32]` |
 
 use super::{
-    BATCH_EVENT, DEPARTURE_EVENT, DESYNC_EVENT, FRAME_END_EVENT, ORDERING_BATCH_CAPACITY,
-    PACK_EVENT, PAUSE_EVENT, RATE_EVENT,
+    BATCH_EVENT, CANONICAL_HEAD, DEPARTURE_EVENT, DESYNC_EVENT, DESYNC_TAIL, FRAME_END_EVENT,
+    ORDERING_BATCH_CAPACITY, PACK_EVENT, PAUSE_EVENT, RATE_EVENT, RATE_TAIL,
 };
 use crate::envelope::PACK_LIMIT;
+use crate::link::Reader;
 use crate::{RelayError, varint};
 
-/// The canonical prefix: kind, sequence, frame.
-const CANONICAL_HEAD: usize = 13;
 const SAME_FRAME: u8 = 0;
 const NEXT_FRAME: u8 = 1 << 4;
 const FRAME_DELTA: u8 = 2 << 4;
@@ -242,13 +241,10 @@ pub(crate) fn pack_v2_range(pack: &[u8]) -> Option<(u64, u8)> {
     if pack.first() != Some(&PACK_EVENT) {
         return None;
     }
-    let mut reader = Reader {
-        bytes: pack,
-        offset: 1,
-    };
+    let mut reader = Reader(&pack[1..]);
     let base = reader.varint().ok()?;
     reader.varint().ok()?;
-    Some((base, reader.byte().ok()?))
+    Some((base, reader.u8().ok()?))
 }
 
 /// Reads one PACK v2 payload (from its `12` byte) into its canonical
@@ -281,20 +277,17 @@ pub fn decode_pack_v2(payload: &[u8]) -> Result<Vec<Vec<u8>>, RelayError> {
     if payload.first() != Some(&PACK_EVENT) || payload.len() > PACK_LIMIT {
         return Err(RelayError::Malformed);
     }
-    let mut reader = Reader {
-        bytes: payload,
-        offset: 1,
-    };
+    let mut reader = Reader(&payload[1..]);
     let base_seq = reader.varint()?;
-    let base_frame = u32::try_from(reader.varint()?).map_err(|_| RelayError::Malformed)?;
-    let count = reader.byte()?;
+    let base_frame = reader.varint_u32()?;
+    let count = reader.u8()?;
     if count == 0 {
         return Err(RelayError::Malformed);
     }
     let mut context = Context::new(base_frame);
     let mut records = Vec::with_capacity(usize::from(count));
     for index in 0..u64::from(count) {
-        let tag = reader.byte()?;
+        let tag = reader.u8()?;
         let kind = tag & 0x0F;
         let next_id = tag & NEXT_BATCH_ID != 0;
         if tag & RESERVED != 0 || (next_id && kind != BATCH_EVENT) {
@@ -315,14 +308,14 @@ pub fn decode_pack_v2(payload: &[u8]) -> Result<Vec<Vec<u8>>, RelayError> {
         .ok_or(RelayError::Malformed)?;
         context.frame = frame;
         let sequence = base_seq.checked_add(index).ok_or(RelayError::Malformed)?;
-        // The longest tail but a batch's: DESYNC's 14 bytes.
-        let mut record = Vec::with_capacity(CANONICAL_HEAD + 14);
+        // The longest tail but a batch's.
+        let mut record = Vec::with_capacity(CANONICAL_HEAD + DESYNC_TAIL);
         record.push(kind);
         record.extend_from_slice(&sequence.to_le_bytes());
         record.extend_from_slice(&frame.to_le_bytes());
         match kind {
             BATCH_EVENT => {
-                let source = reader.byte()?;
+                let source = reader.u8()?;
                 let id = if next_id {
                     context
                         .last_id(source)
@@ -349,8 +342,8 @@ pub fn decode_pack_v2(payload: &[u8]) -> Result<Vec<Vec<u8>>, RelayError> {
             }
             FRAME_END_EVENT => {}
             DEPARTURE_EVENT => {
-                let source = reader.byte()?;
-                match reader.byte()? {
+                let source = reader.u8()?;
+                match reader.u8()? {
                     0 => record.push(source),
                     1 => record.extend_from_slice(&[source, 1]),
                     _ => return Err(RelayError::Malformed),
@@ -360,42 +353,16 @@ pub fn decode_pack_v2(payload: &[u8]) -> Result<Vec<Vec<u8>>, RelayError> {
                 record.extend_from_slice(&reader.varint()?.to_le_bytes());
                 record.extend_from_slice(reader.take(2)?);
             }
-            RATE_EVENT => record.extend_from_slice(reader.take(3)?),
-            DESYNC_EVENT => record.extend_from_slice(reader.take(14)?),
+            RATE_EVENT => record.extend_from_slice(reader.take(RATE_TAIL)?),
+            DESYNC_EVENT => record.extend_from_slice(reader.take(DESYNC_TAIL)?),
             _ => return Err(RelayError::Malformed),
         }
         records.push(record);
     }
-    if reader.offset != payload.len() {
+    if !reader.is_empty() {
         return Err(RelayError::Malformed);
     }
     Ok(records)
-}
-
-struct Reader<'a> {
-    bytes: &'a [u8],
-    offset: usize,
-}
-
-impl<'a> Reader<'a> {
-    fn take(&mut self, length: usize) -> Result<&'a [u8], RelayError> {
-        let bytes = self
-            .bytes
-            .get(self.offset..self.offset + length)
-            .ok_or(RelayError::Malformed)?;
-        self.offset += length;
-        Ok(bytes)
-    }
-
-    fn byte(&mut self) -> Result<u8, RelayError> {
-        Ok(self.take(1)?[0])
-    }
-
-    fn varint(&mut self) -> Result<u64, RelayError> {
-        let (value, length) = varint::read(&self.bytes[self.offset..])?;
-        self.offset += length;
-        Ok(value)
-    }
 }
 
 #[cfg(test)]
