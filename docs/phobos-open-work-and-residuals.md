@@ -321,6 +321,19 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   与本臂的 `GetLevel()` 行为一致；该路径由
   `type_conversion_in_air_tests::an_airborne_conversion_lands_on_a_bridge_deck_over_water`
   锁定。
+- **`Animation.ResetOnReapply`（2026-11-19）**：Phobos
+  `AttachEffectClass::RefreshDuration`（`New/Entity/AttachEffectClass.cpp:549-555`）
+  末尾的 `KillAnim()` + `CanShowAnim()` 时 `CreateAnim()`，以及两条
+  “新时长更短、不刷新” 的重挂臂（`:928-934` 单体、`:991-997` 累积）已接线。
+  `sim/attach_effect.rs` 的 `AttachEffectInstance` 新增 `reset_anim` 闩：
+  `refresh(effect)`／`refresh_with` 的重挂入口与两处 else 臂在键为真且当前有
+  动画时置位，动画 owner `maintain_phobos_attach_effect_anim` 在其下一趟先
+  `destroy_anim_with_context` 再按 `CanShowAnim` 重建。测试
+  `a_reapply_restarts_the_animation_when_reset_on_reapply_is_set`、
+  `a_shorter_reapply_still_restarts_the_animation`、
+  `a_reapply_keeps_the_animation_without_reset_on_reapply`（键默认 false）。
+  残余：原生在挂接调用内立即 `CreateAnim()`，本实现的重建发生在该 techno 下一
+  帧的 `UpdateAttachEffects`，最多差一帧。
 - **AE 累积动画换类型（2026-11-19）**：Phobos `AnimExt::ChangeAnimType`
   （`Ext/Anim/Body.cpp:198-243`）与唯一调用者
   `AttachEffectClass::UpdateCumulativeAnim`（`New/Entity/AttachEffectClass.cpp:520-526`）
