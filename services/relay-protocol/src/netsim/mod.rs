@@ -849,7 +849,7 @@ impl Simulation {
         let report = self.report();
         if let Some(trace) = self.trace.as_mut() {
             trace.relay_history = self.relay.ordering_history(ROOM);
-            trace.mac_counts = self.relay.take_mac_failure_counts();
+            trace.session_alerts = self.relay.take_session_alerts();
             trace.client_mac_failures = self
                 .clients
                 .iter()

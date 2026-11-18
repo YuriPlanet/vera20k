@@ -877,24 +877,6 @@ pub struct OrderingCounts {
     pub offline_unsent_packets: u64,
 }
 
-/// Envelope v3 datagrams the relay dropped for their session or tag
-/// (compaction spec §6.4), since `take_mac_failure_counts` last read them.
-/// Statistics only: no count ever drops a datagram. No player, room or
-/// endpoint identity.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct MacFailureCounts {
-    /// Datagrams dropped for a wrong tag (§6.3), HELLO and CONFIRM
-    /// included, plus `unknown_sessions`.
-    pub failures: u64,
-    /// Of `failures`, datagrams with an unknown session, or session 0 on a
-    /// kind other than HELLO and CONFIRM: no key to verify, dropped without
-    /// an HMAC (§6.4 item 1).
-    pub unknown_sessions: u64,
-    /// Alerts: a session failed more than 4096 times within one fixed
-    /// 60-second window of `now` (§6.4 item 2). Each window alerts once.
-    pub session_alerts: u64,
-}
-
 /// Bound storage and packet rate; untrusted data never creates a room until
 /// both ticket authentication and UDP source reachability are established.
 pub struct RelayServer {
@@ -937,8 +919,8 @@ pub struct RelayServer {
     sessions: HashMap<u32, SessionSlot>,
     // Released sessions until they may be assigned again (spec §6.2).
     retired_sessions: HashMap<u32, u64>,
-    // Since `take_mac_failure_counts` last read them.
-    mac_counts: MacFailureCounts,
+    // Since `take_session_alerts` last read them.
+    session_alerts: u64,
     // What all watchers together may spend; players' budgets never pay
     // for watchers.
     watching: sequenced::watch::WatchBudgets,
@@ -974,7 +956,7 @@ impl RelayServer {
             retired_outcomes: HashMap::new(),
             sessions: HashMap::new(),
             retired_sessions: HashMap::new(),
-            mac_counts: MacFailureCounts::default(),
+            session_alerts: 0,
             watching: Default::default(),
             #[cfg(any(test, feature = "test-support"))]
             next_session: None,
@@ -1036,13 +1018,7 @@ impl RelayServer {
         }
         let header = envelope::peek(envelope::Direction::Up, bytes)?;
         let (message, leaving) = if matches!(header.kind, HELLO | CONFIRM) {
-            match handshake_incoming(&self.key, header, bytes, now) {
-                Err(RelayError::Authentication) => {
-                    self.mac_counts.failures += 1;
-                    return Err(RelayError::Authentication);
-                }
-                message => (message?, false),
-            }
+            (handshake_incoming(&self.key, header, bytes, now)?, false)
         } else {
             self.session_incoming(header, bytes, now)?
         };
@@ -1703,11 +1679,10 @@ impl RelayServer {
         bytes: &'a [u8],
         now: u64,
     ) -> Result<(Incoming<'a>, bool), RelayError> {
-        let Some(slot) = self.sessions.get(&header.session) else {
-            self.mac_counts.failures += 1;
-            self.mac_counts.unknown_sessions += 1;
-            return Err(RelayError::Unregistered);
-        };
+        let slot = self
+            .sessions
+            .get(&header.session)
+            .ok_or(RelayError::Unregistered)?;
         let (ticket, key, leaving) = match &slot.hop {
             SessionHop::Peer { room, source } => {
                 let peer = self
@@ -1759,8 +1734,8 @@ impl RelayServer {
         ))
     }
 
+    /// A wrong tag on a known session counts toward its alert (§6.4 item 2).
     fn count_session_failure(&mut self, session: u32, now: u64) {
-        self.mac_counts.failures += 1;
         let Some(slot) = self.sessions.get_mut(&session) else {
             return;
         };
@@ -1771,7 +1746,7 @@ impl RelayServer {
         }
         slot.failures += 1;
         if slot.failures == SESSION_ALERT_FAILURES + 1 {
-            self.mac_counts.session_alerts += 1;
+            self.session_alerts += 1;
         }
     }
 
@@ -1849,11 +1824,13 @@ impl ClientSession {
 }
 
 impl RelayServer {
-    /// Datagrams dropped for their session or tag since the last call
-    /// (compaction spec §6.4); the relay's journal reports them like
-    /// `take_ordering_counts`.
-    pub fn take_mac_failure_counts(&mut self) -> MacFailureCounts {
-        std::mem::take(&mut self.mac_counts)
+    /// Sessions that failed over 4096 tags within one fixed minute since
+    /// the last call (compaction spec §6.4 item 2). The dropped datagrams
+    /// themselves come back from `process_at` as errors, which the relay's
+    /// journal counts: `Authentication` for a wrong tag, `Unregistered` for
+    /// an unknown session.
+    pub fn take_session_alerts(&mut self) -> u64 {
+        std::mem::take(&mut self.session_alerts)
     }
 }
 
@@ -2166,7 +2143,6 @@ mod tests {
             Some(RelayError::Authentication)
         );
         assert_eq!(endpoint(&server), Some(old));
-        assert_eq!(server.take_mac_failure_counts().failures, 1);
         // The client's next datagram from its new address moves the hop.
         first.data(1, b"from new", &mut sent).unwrap();
         assert_eq!(server.process(new, &sent, 1000).unwrap().len(), 1);
@@ -2250,12 +2226,14 @@ mod tests {
                 .iter()
                 .any(|entry| entry.session == 0x0102_0304 && entry.leaving)
         );
-        server.process(endpoint, &bytes, released).ok();
+        assert_eq!(
+            server.process(endpoint, &bytes, released).err(),
+            Some(RelayError::Unregistered)
+        );
         assert_eq!(
             server.session_retired_until(0x0102_0304),
             Some(released + 600)
         );
-        assert_eq!(server.take_mac_failure_counts().unknown_sessions, 1);
     }
 
     #[test]

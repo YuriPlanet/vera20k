@@ -320,10 +320,17 @@ fn refused(trace: &Trace, client: usize, from_us: u64, to_us: u64) -> Vec<u64> {
 }
 
 /// §6.4 item 2: "合法包永远照常校验、照常接受" — no limit ever drops a
-/// datagram with a valid tag, so not one of any client is refused; and the
-/// forged ones change nothing (item 5): exact feedback windows, one stream.
+/// datagram with a valid tag, so not one of any client is refused; each
+/// forged one fails its tag on a known session and changes nothing (item
+/// 5): exact feedback windows, one stream.
 fn check_forged_flood(report: &Report, trace: &Trace, clients: usize, end_us: u64) {
     check_forgeries_inert(trace).unwrap();
+    assert!(
+        trace
+            .forged
+            .iter()
+            .all(|forged| forged.result == Err("Authentication".into()))
+    );
     for client in 0..clients {
         assert_eq!(
             refused(trace, client, 0, u64::MAX),
@@ -342,17 +349,9 @@ fn bc04_forgeries_from_another_address_change_nothing() {
         "warmup_ms": 0, "duration_ms": 12000, "apm": 120,
         "forgeries": [ { "client": 0, "from_ms": 3000, "to_ms": 8000, "per_second": 300 } ] }"#);
     check_forged_flood(&report, &trace, 2, 12_000_000);
-    // §6.4 item 2: each one a failure on a known session; 1500 stay under
-    // the 4096-a-window alert. Neither client saw a bad tag (item 6).
-    let counts = trace.mac_counts;
-    assert_eq!(
-        (
-            counts.failures,
-            counts.unknown_sessions,
-            counts.session_alerts
-        ),
-        (trace.forged.len() as u64, 0, 0)
-    );
+    // §6.4 item 2: 1500 failures stay under the 4096-a-window alert.
+    // Neither client saw a bad tag (item 6).
+    assert_eq!(trace.session_alerts, 0);
     assert_eq!(trace.client_mac_failures, [0, 0]);
 }
 
@@ -360,8 +359,7 @@ fn bc04_forgeries_from_another_address_change_nothing() {
 fn bc06_forgeries_from_many_ips_drop_none_of_the_sessions_datagrams() {
     // §6.4 item 2: eight IPs, 2000 forged a second on A's one session,
     // 6000 in 3 s, past the 4096-a-minute alert; each fails alone and A's
-    // own datagrams all pass. (The failure and alert counts are asserted
-    // through `MacFailureCounts` once that interface is merged.)
+    // own datagrams all pass.
     let (report, trace) = run(r#"{ "name": "bc06", "players": 2, "keep_wire_bytes": true,
         "warmup_ms": 0, "duration_ms": 10000, "apm": 300,
         "forgeries": [ { "client": 0, "from_ms": 3000, "to_ms": 6000, "per_second": 2000,
@@ -370,15 +368,7 @@ fn bc06_forgeries_from_many_ips_drop_none_of_the_sessions_datagrams() {
     check_forged_flood(&report, &trace, 2, 10_000_000);
     // §6.4 item 2: 3-6 s lies in one fixed 60 s window (unix seconds; the
     // run starts at 1_000_000, a boundary at 20 s): one alert.
-    let counts = trace.mac_counts;
-    assert_eq!(
-        (
-            counts.failures,
-            counts.unknown_sessions,
-            counts.session_alerts
-        ),
-        (trace.forged.len() as u64, 0, 1)
-    );
+    assert_eq!(trace.session_alerts, 1);
 }
 
 #[test]
