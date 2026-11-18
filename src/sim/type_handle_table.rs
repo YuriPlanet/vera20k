@@ -176,12 +176,20 @@ impl TypeHandleTable {
         match self.by_interned.get(id.index() as usize) {
             Some(&handle) if self.rules_serial == rules.serial() => {
                 debug_assert!(
-                    !live_read_check_enabled() || handle == rules.type_handle(interner.resolve(id)),
+                    !live_read_check_enabled()
+                        || interner
+                            .try_resolve(id)
+                            .is_none_or(|name| handle == rules.type_handle(name)),
                     "type table answers {handle:?} for {id:?}, unlike its name"
                 );
                 handle
             }
-            _ => rules.type_handle(interner.resolve(id)),
+            // An id this interner never produced (a fixture built against
+            // another interner) names no type. Native always holds a live type
+            // pointer, so there is no behaviour to preserve: answer the unknown
+            // type instead of panicking in `resolve`. `object_in_category`
+            // already reads its name this way.
+            _ => rules.type_handle(interner.try_resolve(id)?),
         }
     }
 
@@ -355,5 +363,27 @@ mod tests {
             assert!(typed(later, ObjectCategory::Aircraft).is_some());
             assert!(typed(InternedId::from_index(99), ObjectCategory::Vehicle).is_none());
         }
+    }
+
+    /// An id this interner never produced — the shape of a fixture entity built
+    /// against another interner — names no type. `handle` used to reach
+    /// `StringInterner::resolve`, which panics for a foreign id, so the whole
+    /// caller (the hover-shutdown landing arm's per-cell pass) died instead of
+    /// answering "unknown type".
+    #[test]
+    fn a_foreign_id_names_no_type_instead_of_panicking() {
+        let rules = tiny_rules();
+        let mut interner = StringInterner::new();
+        let e1 = interner.intern("E1");
+        let table = TypeHandleTable::build(&rules, &interner);
+        // An empty interner asked for index 1: the exact shape that panicked
+        // ("the len is 0 but the index is 1") on the fall-through past the
+        // table's own row.
+        let foreign = StringInterner::new();
+        let foreign_id = InternedId::from_index(1);
+        assert_eq!(table.handle(&foreign, foreign_id, &rules), None);
+        assert!(table.object(&foreign, foreign_id, &rules).is_none());
+        // The table's own set still answers for the id it holds.
+        assert_eq!(table.handle(&interner, e1, &rules), rules.type_handle("E1"));
     }
 }
