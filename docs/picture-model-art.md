@@ -47,10 +47,15 @@ numbers, so `Start=`, `End=`, `LoopStart=`, `Shadow=`, `Sequence=`,
 | `ModelSize=L` | the length of the model's `body` node along its forward axis, in its rest pose, in leptons (256 per cell); the whole model scales by the same factor | required with `Model=` |
 
 A value out of range is refused with an in-game message naming the section and
-key; a refused `Picture=` or `Model=` leaves the section with no art (it draws
-nothing), as a missing SHP or VXL does today. A file that is missing, cannot
-be read or cannot be drawn is told the same way. The match shows these once,
-when it has loaded: the first three, then how many more the log file lists.
+key; a refused `Picture=` leaves the section with no art (it draws nothing), as
+a missing SHP does today. `Model=` without a valid `ModelSize=` (1 to 1536,
+six cells) is refused and the section keeps its VXL path; a declared model
+that is missing or unreadable, or lacks a `body` node, draws nothing and its
+VXL and HVA are never opened, as a missing VXL does today.
+
+`Model=` takes effect for a type that loads a voxel model, that is whose art
+section also says `Voxel=yes`; the section is the one the VXL would be read
+through (the rules `Image=`, else the type's own name).
 
 For a building, `Buildup=`, `BibShape=` and a war factory's `DeployingAnim=`,
 `RoofDeployingAnim=`, `UnderDoorAnim=` and `UnderRoofDoorAnim=` (SHP names
@@ -107,6 +112,16 @@ simulation reads art.
 | Body art present in this theater (random maps) | `map/rmg/tech_catalog` | the declared picture |
 | Voxel model loaded (rocking, rockers) | `VoxelAssetCatalog::bind` (`6F9E10`) | `Model=` declared and the file loaded |
 | Tilt half sizes (slope tilt, fire coordinates) | `voxel_asset_catalog::voxel_tilt_half_sizes` (`6F3B6C`) | `body` bounds scaled by `ModelSize` |
+
+The tilt half sizes take the VXL section sizes the model stands in for:
+`size_x = round(ModelSize * u)` voxels along the body's glTF +Z and
+`size_y = round(width / length * ModelSize * u)` across its X, `u` being the
+native model units per lepton (`0x00B1D008`, about 0.16573), each held to 1..255;
+then `[size_y / 2 + 0.5, size_x / 2]` as for a VXL
+(`voxel_asset_catalog::model_tilt_half_sizes`). A unit with indexed guns
+(`TurretCount=`) needs a `turretN` node for each of them, as it needs each
+`TURN.VXL` (`5F865F`, `5F8ACB`). The config hash takes the model's file name,
+`ModelSize=` and a digest of its bytes.
 
 A declared file that is missing on one machine changes these values there, as a
 missing SHP does today; the config hash refuses that machine online and in

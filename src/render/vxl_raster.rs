@@ -437,12 +437,9 @@ fn voxel_draw_rotation_for_state(slope_type: u8, blend: Option<VxlSlopeBlend>, s
     }][usize::from(step)]
 }
 
-/// The double at `0x00B1D008`: model units per lepton. Static initializers
-/// `0x00735180`, `0x007351B0` and `0x007351D0` form `1 / (sqrt(2 * 256^2) / 60)`,
-/// a cell's 60-pixel width over its lepton diagonal, but take the root with
-/// the table square root `0x004CAC40`, so the value is not the exact quotient.
-/// Executed in `tools/voxel_oracle/barrel_pitch.py`.
-const TURRET_OFFSET_UNITS_PER_LEPTON: u64 = 0x3FC5_3694_862E_9021;
+/// The double at `0x00B1D008`: model units per lepton
+/// ([`crate::map::voxel_pose::MODEL_UNITS_PER_LEPTON_BITS`]).
+use crate::map::voxel_pose::MODEL_UNITS_PER_LEPTON_BITS as TURRET_OFFSET_UNITS_PER_LEPTON;
 
 /// `TurretOffset=` (`Type+0x720`) in model units, as `UnitClass::DrawVoxelBody`
 /// forms it before translating the turret along the hull's X column: `FILD`

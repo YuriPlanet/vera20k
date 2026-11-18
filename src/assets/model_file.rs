@@ -1310,15 +1310,17 @@ struct SamplerJson {
     interpolation: Option<String>,
 }
 
-#[cfg(all(test, tests_assets))]
-mod tests {
-    use super::*;
+/// A tiny `.glb` writer for tests of model readers, here and in the
+/// client's tests.
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_glb {
+    use super::{CHUNK_BIN, CHUNK_JSON, FLOAT, GLB_MAGIC};
     use serde_json::{Value, json};
 
     /// Collects float accessors into one BIN buffer and wraps a glTF JSON
     /// document around them.
     #[derive(Default)]
-    struct GlbBuilder {
+    pub struct GlbBuilder {
         bin: Vec<u8>,
         views: Vec<Value>,
         accessors: Vec<Value>,
@@ -1326,7 +1328,7 @@ mod tests {
 
     impl GlbBuilder {
         /// Adds `data` as a float accessor of `kind`; returns its index.
-        fn floats(&mut self, data: &[f32], kind: &str, components: usize) -> usize {
+        pub fn floats(&mut self, data: &[f32], kind: &str, components: usize) -> usize {
             let offset = self.bin.len();
             for value in data {
                 self.bin.extend_from_slice(&value.to_le_bytes());
@@ -1341,7 +1343,7 @@ mod tests {
             self.accessors.len() - 1
         }
 
-        fn build(self, mut doc: Value) -> Vec<u8> {
+        pub fn build(self, mut doc: Value) -> Vec<u8> {
             doc["asset"] = json!({ "version": "2.0" });
             doc["buffers"] = json!([{ "byteLength": self.bin.len() }]);
             doc["bufferViews"] = Value::Array(self.views);
@@ -1368,6 +1370,32 @@ mod tests {
             out
         }
     }
+
+    /// A model of one triangle-pair box mesh under a `body` node: the box
+    /// spans `width` along X, `height` along Y and `length` along Z (the
+    /// forward axis), centred on the origin; each name in `parts` adds a
+    /// node of that name carrying the same mesh.
+    pub fn box_model(width: f32, height: f32, length: f32, parts: &[&str]) -> Vec<u8> {
+        let (x, y, z) = (width / 2.0, height / 2.0, length / 2.0);
+        let mut builder = GlbBuilder::default();
+        let positions = builder.floats(&[-x, -y, -z, x, y, z, -x, y, z], "VEC3", 3);
+        let mut nodes = vec![json!({ "name": "body", "mesh": 0 })];
+        nodes.extend(parts.iter().map(|name| json!({ "name": name, "mesh": 0 })));
+        let roots: Vec<usize> = (0..nodes.len()).collect();
+        builder.build(json!({
+            "scene": 0,
+            "scenes": [{ "nodes": roots }],
+            "nodes": nodes,
+            "meshes": [{ "primitives": [{ "attributes": { "POSITION": positions } }] }]
+        }))
+    }
+}
+
+#[cfg(all(test, tests_assets))]
+mod tests {
+    use super::test_glb::GlbBuilder;
+    use super::*;
+    use serde_json::json;
 
     #[test]
     fn body_bounds_take_a_translated_child_but_not_the_turret() {

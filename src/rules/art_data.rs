@@ -120,6 +120,41 @@ fn parse_picture_decl(section_name: &str, section: &IniSection) -> Option<Pictur
     Some(PictureDecl { file, size })
 }
 
+/// VERA-only, experimental (`docs/picture-model-art.md`): an art section's
+/// `Model=` and `ModelSize=`. A section with one draws its voxel parts from
+/// the model and never opens its VXL or HVA.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ModelDecl {
+    /// `Model=`: the binary glTF (`.glb`) file name as written.
+    pub file: String,
+    /// `ModelSize=L`: the `body` node's rest length along its forward axis,
+    /// in leptons; the whole model scales by the same factor.
+    pub size: i32,
+}
+
+/// The largest `ModelSize=`: six cells, so the body's length stays within the
+/// 255 voxels a VXL section's size byte holds
+/// ([`crate::rules::voxel_asset_catalog::model_tilt_half_sizes`]).
+pub const MODEL_SIZE_MAX: i32 = 6 * 256;
+
+/// `section`'s [`ModelDecl`], if it declares `Model=` with a valid
+/// `ModelSize=`. A `Model=` without one is refused, logged, and the section
+/// keeps its VXL path.
+fn parse_model_decl(section_name: &str, section: &IniSection) -> Option<ModelDecl> {
+    let file = section.read_name("Model", 0x104)?.to_owned();
+    let size = section
+        .read_int_value("ModelSize")
+        .filter(|size| (1..=MODEL_SIZE_MAX).contains(size));
+    let Some(size) = size else {
+        log::warn!(
+            "[{section_name}] Model={file} needs ModelSize= from 1 to {MODEL_SIZE_MAX} leptons; \
+             the model is not used"
+        );
+        return None;
+    };
+    Some(ModelDecl { file, size })
+}
+
 /// Per-object art configuration parsed from an art.ini section.
 #[derive(Debug, Clone)]
 pub struct ArtEntry {
@@ -128,6 +163,8 @@ pub struct ArtEntry {
     pub image: Option<String>,
     /// VERA-only, experimental: `Picture=` and `PictureSize=`.
     pub picture: Option<PictureDecl>,
+    /// VERA-only, experimental: `Model=` and `ModelSize=`.
+    pub model: Option<ModelDecl>,
     /// Sidebar cameo/image override from `Cameo=`.
     pub cameo: Option<String>,
     /// Alternate sidebar cameo/image override from `AltCameo=`.
@@ -1521,6 +1558,7 @@ impl ArtRegistry {
             // (`0x00716C9C`, `0x00716D3F`, `char[256]`).
             let image: Option<String> = section.read_name("Image", 0x40).map(str::to_owned);
             let picture = parse_picture_decl(section_name, section);
+            let model = parse_model_decl(section_name, section);
             let cameo: Option<String> = section.read_name("Cameo", 0x100).map(str::to_owned);
             let alt_cameo: Option<String> = section.read_name("AltCameo", 0x100).map(str::to_owned);
             let cameo_pcx = section.read_ares_pcx_filename("CameoPCX");
@@ -1703,6 +1741,7 @@ impl ArtRegistry {
                 ArtEntry {
                     image,
                     picture,
+                    model,
                     cameo,
                     alt_cameo,
                     cameo_pcx,
@@ -2415,6 +2454,29 @@ impl ArtRegistry {
                 .and_then(|name| self.entries.get_key_value(name))
         })?;
         Some((section.as_str(), entry.picture.as_ref()?))
+    }
+
+    /// Whether art section `section` declares `Model=`, so its voxel parts
+    /// are the model's and its VXL and HVA are never opened
+    /// (docs/picture-model-art.md).
+    pub fn declares_model(&self, section: &str) -> bool {
+        self.get(section).is_some_and(|entry| entry.model.is_some())
+    }
+
+    /// The art section a voxel object's image resolves to and its `Model=`,
+    /// when that section declares one (docs/picture-model-art.md). `image`
+    /// is the name the VXL would be read through
+    /// ([`crate::rules::voxel_frame_catalog::voxel_image_id`]); the section is
+    /// that image's, else the type's own, as [`Self::resolve_metadata_entry`]
+    /// takes it.
+    pub fn resolve_declared_model(&self, type_id: &str, image: &str) -> Option<(&str, &ModelDecl)> {
+        let image = image.trim();
+        let base = if image.is_empty() { type_id } else { image };
+        let (section, entry) = [base, type_id].into_iter().find_map(|id| {
+            folded_entry_name(&self.entry_names, id)
+                .and_then(|name| self.entries.get_key_value(name))
+        })?;
+        Some((section.as_str(), entry.model.as_ref()?))
     }
 
     /// The files `decl`, declared in art section `section`, may load in

@@ -55,6 +55,14 @@ pub fn crash_fly_locomotor_matrix(step: u8, [sideways, forwards]: [f32; 2]) -> M
     affine::rotate_y(frame, sin, cos)
 }
 
+/// The double at `0x00B1D008`: model units (voxels) per lepton. Static
+/// initializers `0x00735180`, `0x007351B0` and `0x007351D0` form
+/// `1 / (sqrt(2 * 256^2) / 60)`, a cell's 60-pixel width over its lepton
+/// diagonal, but take the root with the table square root `0x004CAC40`, so the
+/// value is not the exact quotient. Executed in
+/// `tools/voxel_oracle/barrel_pitch.py`.
+pub const MODEL_UNITS_PER_LEPTON_BITS: u64 = 0x3FC5_3694_862E_9021;
+
 /// Drive4B0033..4B0117 / Jumpjet54DD48..54DE53 / Ship69F790..69F827 support offsets,
 /// `[x, y, z]` in whole voxels
 /// (`0x0054DD48..0x0054DE53`), as the original evaluates them: the table sine

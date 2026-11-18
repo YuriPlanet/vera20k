@@ -50,8 +50,15 @@ pub struct LoadedVoxelModel {
     auxiliary: Option<VoxelPart>,
     barrel: Option<VoxelPart>,
     indexed: Vec<(Option<VoxelPart>, Option<VoxelPart>)>,
+    declared: Option<Arc<DeclaredModel>>,
 }
 impl LoadedVoxelModel {
+    /// VERA-only, experimental (`docs/picture-model-art.md`): the model a
+    /// type whose art declares `Model=` draws instead of its VXL parts, which
+    /// are then all `None`. Present only when the model was admitted.
+    pub fn declared_model(&self) -> Option<&Arc<DeclaredModel>> {
+        self.declared.as_ref()
+    }
     pub fn main(&self) -> Option<&VoxelPart> {
         self.main.as_ref()
     }
@@ -76,10 +83,141 @@ impl LoadedVoxelModel {
 
 pub fn voxel_tilt_half_sizes(vxl: &VxlFile) -> Option<[f32; 2]> {
     let section = vxl.limbs.first()?;
-    Some([
-        f32::from(section.size_y) * 0.5 + 0.5,
-        f32::from(section.size_x) * 0.5,
-    ])
+    Some(tilt_half_sizes(section.size_x, section.size_y))
+}
+
+/// `TechnoTypeClass+0x360`/`+0x368` from the main section's sizes in voxels:
+/// `size_x` along the hull's forward axis, `size_y` across it.
+fn tilt_half_sizes(size_x: u8, size_y: u8) -> [f32; 2] {
+    [f32::from(size_y) * 0.5 + 0.5, f32::from(size_x) * 0.5]
+}
+
+/// VERA-only, experimental (`docs/picture-model-art.md`): the tilt half sizes
+/// of a declared model, as [`voxel_tilt_half_sizes`] takes them from a VXL.
+///
+/// No native constant relates a glTF model to voxels, so the model is first
+/// given the VXL section sizes it stands in for: `ModelSize=` leptons per body
+/// length along glTF +Z (forward), the same scale across glTF X, converted to
+/// voxels with the native model units per lepton (`0x00B1D008`,
+/// [`crate::map::voxel_pose::MODEL_UNITS_PER_LEPTON_BITS`]; one voxel is one
+/// model unit, as a section whose bounds span its size draws), rounded to
+/// whole voxels and held to a size byte's 1..=255:
+///
+/// `size_x = round(ModelSize * u)`,
+/// `size_y = round(width / length * ModelSize * u)`, `u = 0.16573…`.
+///
+/// The arithmetic is IEEE binary64 and rounds to integers, so every platform
+/// gets the same sizes. `None` when the body has no forward length.
+pub fn model_tilt_half_sizes(
+    bounds: crate::assets::model_file::ModelBounds,
+    model_size: i32,
+) -> Option<[f32; 2]> {
+    let length = f64::from(bounds.max[2]) - f64::from(bounds.min[2]);
+    let width = f64::from(bounds.max[0]) - f64::from(bounds.min[0]);
+    if !(length.is_finite() && width.is_finite() && length > 0.0) {
+        return None;
+    }
+    let voxels_per_lepton = f64::from_bits(crate::map::voxel_pose::MODEL_UNITS_PER_LEPTON_BITS);
+    let voxels = |leptons: f64| (leptons * voxels_per_lepton).round().clamp(1.0, 255.0) as u8;
+    let model_size = f64::from(model_size);
+    Some(tilt_half_sizes(
+        voxels(model_size),
+        voxels(width / length * model_size),
+    ))
+}
+
+/// VERA-only, experimental (`docs/picture-model-art.md`): an admitted
+/// `Model=` of one art section, decoded once at asset binding.
+#[derive(Debug)]
+pub struct DeclaredModel {
+    /// The art section that declares it.
+    pub section: String,
+    pub decl: crate::rules::art_data::ModelDecl,
+    pub model: Arc<crate::assets::model_file::Model>,
+    /// The tilt half sizes the simulation takes ([`model_tilt_half_sizes`]).
+    pub half_sizes: [f32; 2],
+    /// FNV-1a of the file's bytes: the catalog hashes it with the file name,
+    /// so a machine with another file is refused online.
+    digest: u64,
+}
+
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, &byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
+}
+
+/// VERA-only, experimental (`docs/picture-model-art.md`): read `decl` of art
+/// section `section` for `object`, standing in for ObjectType LoadVoxel
+/// `5F8110`. The model is admitted when the file decodes, has a `body` node
+/// with a forward length and, for a unit that loads indexed guns
+/// (`5F865F`), a `turretN` node for each of its first `TurretCount=` guns
+/// (at most 18): a missing one fails the whole load, as a missing indexed
+/// TUR VXL clears the main model at `5F8ACB`. Barrels and an ordinary
+/// turret are optional, as their VXL files are. Refusals are logged.
+fn admit_declared_model(
+    object: &crate::rules::object_type::ObjectType,
+    section: &str,
+    decl: &crate::rules::art_data::ModelDecl,
+    decoded: &mut BTreeMap<String, Option<(Arc<crate::assets::model_file::Model>, u64)>>,
+    assets: &AssetManager,
+) -> Option<DeclaredModel> {
+    use crate::assets::model_file::{Model, ModelPart};
+    let (model, digest) = decoded
+        .entry(decl.file.to_ascii_uppercase())
+        .or_insert_with(|| {
+            let Some(bytes) = assets.get_ref(&decl.file) else {
+                log::warn!(
+                    "[{section}] Model={} is not found; it draws nothing",
+                    decl.file
+                );
+                return None;
+            };
+            match Model::from_glb(bytes) {
+                Ok(model) => Some((Arc::new(model), fnv1a64(bytes))),
+                Err(error) => {
+                    log::warn!(
+                        "[{section}] Model={} cannot be read ({error}); it draws nothing",
+                        decl.file
+                    );
+                    None
+                }
+            }
+        })
+        .clone()?;
+    let Some(half_sizes) = model
+        .body_bounds()
+        .and_then(|bounds| model_tilt_half_sizes(bounds, decl.size))
+    else {
+        log::warn!(
+            "[{section}] Model={} has no body node with a forward length; it draws nothing",
+            decl.file
+        );
+        return None;
+    };
+    let indexed = object.category == ObjectCategory::Vehicle
+        && object.has_turret
+        && object.turret_count > 0
+        && !object.is_gattling;
+    if indexed {
+        let count = object.turret_count.clamp(0, 18) as u32;
+        if let Some(missing) = (0..count).find(|&i| model.part(ModelPart::Turret(i)).is_none()) {
+            log::warn!(
+                "[{section}] Model={} has no turret{missing} node for TurretCount={}; \
+                 it draws nothing",
+                decl.file,
+                object.turret_count
+            );
+            return None;
+        }
+    }
+    Some(DeclaredModel {
+        section: section.to_owned(),
+        decl: decl.clone(),
+        model,
+        half_sizes,
+        digest,
+    })
 }
 
 /// One native model resolver for gameplay, UnitModel and metadata consumers.
@@ -166,6 +304,7 @@ fn model(
                 )
             })
             .collect(),
+        declared: None,
     }
 }
 
@@ -211,6 +350,14 @@ impl VoxelAssetCatalog {
                     let (t, b) = model.indexed_parts(i);
                     parts.extend([part(t), part(b)]);
                 }
+                // Only a declared model adds an entry, so a catalog without
+                // one hashes as it did before (docs/picture-model-art.md).
+                if let Some(declared) = model.declared_model() {
+                    parts.push(Some((
+                        format!("MODEL:{}", declared.decl.file.to_ascii_uppercase()),
+                        Some(format!("{}:{:016x}", declared.decl.size, declared.digest)),
+                    )));
+                }
                 (format!("{category:?}:{name}"), parts)
             })
             .collect();
@@ -223,12 +370,58 @@ impl VoxelAssetCatalog {
         result
     }
     pub(crate) fn bind(rules: &RuleSet, assets: &AssetManager) -> Self {
+        // VERA-only, experimental (docs/picture-model-art.md): a voxel type
+        // whose image's art section declares `Model=` takes its parts from
+        // the model, admitted or not, and the VXL and HVA files only such
+        // types would read are never opened. Retail art declares none, so
+        // this map stays empty and nothing below changes.
+        let mut decoded = BTreeMap::new();
+        let mut declared: BTreeMap<(ObjectCategory, String), Option<Arc<DeclaredModel>>> =
+            BTreeMap::new();
+        for object in rules.all_objects() {
+            let Some(image) = object.voxel_image_load() else {
+                continue;
+            };
+            let Some((section, decl)) = rules.art().resolve_declared_model(&object.id, image)
+            else {
+                continue;
+            };
+            let admitted = admit_declared_model(object, section, decl, &mut decoded, assets);
+            declared.insert(
+                (object.category, object.id.to_ascii_uppercase()),
+                admitted.map(Arc::new),
+            );
+        }
+        let unopened: BTreeSet<LibraryRequest> = if declared.is_empty() {
+            BTreeSet::new()
+        } else {
+            let is_declared = |object: &&crate::rules::object_type::ObjectType| {
+                declared.contains_key(&(object.category, object.id.to_ascii_uppercase()))
+            };
+            let mine = rules.voxel_model_plan.slot_requests(
+                rules
+                    .all_objects()
+                    .filter(|object| is_declared(object))
+                    .map(|object| &object.voxel_model_slots),
+            );
+            let others = rules.voxel_model_plan.slot_requests(
+                rules
+                    .all_objects()
+                    .filter(|object| !is_declared(object))
+                    .map(|object| &object.voxel_model_slots)
+                    .chain(rules.voxel_anim_types_iter().map(|kind| &kind.model_slots)),
+            );
+            mine.difference(&others).cloned().collect()
+        };
         let mut libraries = BTreeMap::new();
         let folder = crate::rules::retail_sources::FolderFiles::new(assets);
         let half_sizes =
             |vxl: &VxlFile| voxel_tilt_half_sizes(vxl).map(|sizes| sizes.map(f32::to_bits));
         let requests: BTreeSet<_> = rules.voxel_model_plan.requests().cloned().collect();
         for request in requests {
+            if unopened.contains(&request) {
+                continue;
+            }
             let (vxl, hva) = crate::rules::art_data::voxel_asset_names(&request.image);
             let name = match request.kind {
                 LibraryKind::Vxl => vxl,
@@ -291,27 +484,35 @@ impl VoxelAssetCatalog {
         let models: BTreeMap<_, _> = rules
             .all_objects()
             .map(|object| {
-                (
-                    (object.category, object.id.to_ascii_uppercase()),
-                    model(&object.voxel_model_slots, &plan, &libraries),
-                )
+                let key = (object.category, object.id.to_ascii_uppercase());
+                let loaded = match declared.get(&key) {
+                    Some(declared) => LoadedVoxelModel {
+                        declared: declared.clone(),
+                        ..Default::default()
+                    },
+                    None => model(&object.voxel_model_slots, &plan, &libraries),
+                };
+                (key, loaded)
             })
             .collect();
         let by_handle = rules
             .all_objects()
             .map(|object| {
-                models[&(object.category, object.id.to_ascii_uppercase())]
-                    .main()
-                    .is_some()
+                let model = &models[&(object.category, object.id.to_ascii_uppercase())];
+                model.main().is_some() || model.declared_model().is_some()
             })
             .collect();
         let loaded = rules
             .all_objects()
             .filter_map(|object| {
-                let body = models[&(object.category, object.id.to_ascii_uppercase())].main()?;
+                let model = &models[&(object.category, object.id.to_ascii_uppercase())];
+                let half_sizes = match model.declared_model() {
+                    Some(declared) => Some(declared.half_sizes),
+                    None => voxel_tilt_half_sizes(model.main()?.vxl()),
+                };
                 Some((
                     object.id.to_ascii_uppercase(),
-                    voxel_tilt_half_sizes(body.vxl()).map(|v| v.map(f32::to_bits)),
+                    half_sizes.map(|v| v.map(f32::to_bits)),
                 ))
             })
             .collect();
@@ -402,6 +603,83 @@ mod tests {
         rules
             .type_handle(type_id)
             .is_some_and(|object| rules.object_has_loaded_voxel(object))
+    }
+
+    /// A type whose image's art declares `Model=` is loaded from its glb,
+    /// with tilt half sizes from the body's bounds and `ModelSize=`
+    /// (docs/picture-model-art.md); `Model=` without `ModelSize=` is refused
+    /// and that section keeps its VXL path; a type without the key keeps its
+    /// VXL path, which here finds no file.
+    #[test]
+    fn a_declared_model_is_loaded_with_tilt_sizes_from_its_body() {
+        let directory = crate::map::source::test_support::TestDirectory::new("declared-model");
+        let glb = crate::assets::model_file::test_glb::box_model(2.0, 1.0, 4.0, &[]);
+        std::fs::write(directory.path().join("tank.glb"), &glb).unwrap();
+        let assets = AssetManager::from_loose_root_for_test(directory.path());
+        let art = IniFile::from_str(
+            "[BODY]\nVoxel=yes\nModel=tank.glb\nModelSize=120\n\
+             [NOSIZE]\nVoxel=yes\nModel=tank.glb\n[PLAIN]\nVoxel=yes\n",
+        );
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[VehicleTypes]\n0=TEST\n1=NOSIZE\n2=PLAIN\n[TEST]\nImage=BODY\nStrength=300\n\
+                 [NOSIZE]\nStrength=300\n[PLAIN]\nStrength=300\n",
+            ),
+            &art,
+        )
+        .unwrap();
+        rules.install_art_fixture(ArtRegistry::from_ini(&art));
+        rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
+
+        assert!(loaded(&rules, "TEST"));
+        // 120 leptons are round(19.89) = 20 voxels long; the body is half as
+        // wide, round(9.94) = 10 voxels: [10 / 2 + 0.5, 20 / 2].
+        assert_eq!(rules.object_voxel_half_sizes("TEST"), Some([5.5, 10.0]));
+        let model = rules.loaded_voxel_model("TEST").unwrap();
+        assert!(model.main().is_none(), "no VXL part");
+        assert_eq!(model.declared_model().unwrap().decl.size, 120);
+        assert!(!rules.art().declares_model("NOSIZE"));
+        assert!(!loaded(&rules, "NOSIZE"), "its VXL path finds no file");
+        assert!(!loaded(&rules, "PLAIN"));
+        assert!(rules.object_voxel_half_sizes("PLAIN").is_none());
+    }
+
+    /// A unit with indexed guns needs a `turretN` node for each, as a missing
+    /// indexed TUR VXL clears the main model (5F865F, 5F8ACB); barrels stay
+    /// optional.
+    #[test]
+    fn a_declared_model_without_an_indexed_turret_node_is_not_loaded() {
+        let directory =
+            crate::map::source::test_support::TestDirectory::new("declared-model-turrets");
+        let body = crate::assets::model_file::test_glb::box_model;
+        std::fs::write(
+            directory.path().join("two.glb"),
+            body(1.0, 1.0, 1.0, &["turret0", "turret1"]),
+        )
+        .unwrap();
+        std::fs::write(
+            directory.path().join("one.glb"),
+            body(1.0, 1.0, 1.0, &["turret0"]),
+        )
+        .unwrap();
+        let assets = AssetManager::from_loose_root_for_test(directory.path());
+        let art = IniFile::from_str(
+            "[FULL]\nVoxel=yes\nModel=two.glb\nModelSize=100\n\
+             [SHORT]\nVoxel=yes\nModel=one.glb\nModelSize=100\n",
+        );
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[VehicleTypes]\n0=FULL\n1=SHORT\n\
+                 [FULL]\nTurret=yes\nTurretCount=2\nStrength=300\n\
+                 [SHORT]\nTurret=yes\nTurretCount=2\nStrength=300\n",
+            ),
+            &art,
+        )
+        .unwrap();
+        rules.install_art_fixture(ArtRegistry::from_ini(&art));
+        rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
+        assert!(loaded(&rules, "FULL"));
+        assert!(!loaded(&rules, "SHORT"), "turret1 is missing");
     }
 
     #[test]
