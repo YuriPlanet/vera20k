@@ -321,6 +321,26 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   与本臂的 `GetLevel()` 行为一致；该路径由
   `type_conversion_in_air_tests::an_airborne_conversion_lands_on_a_bridge_deck_over_water`
   锁定。
+- **AE 累积动画换类型（2026-11-19）**：Phobos `AnimExt::ChangeAnimType`
+  （`Ext/Anim/Body.cpp:198-243`）与唯一调用者
+  `AttachEffectClass::UpdateCumulativeAnim`（`New/Entity/AttachEffectClass.cpp:520-526`）
+  已落地。`sim/anim_class.rs` 新增 owner `Simulation::change_anim_type`：按
+  `percentThrough = Value / Type->End`（本实现以阶段偏移 `current_frame` 计），
+  新类型 `End==-1` 时按 `raw_shp_frame_count`（`Shadow=` 折半）解、`LoopEnd==-1`
+  取 `End`；随后换 Type、`Accum=0`/`UnableToContinue=false`/`Reverse=新类型`、
+  `Rate=`/`RandomRate=`（`ScenarioClass::Random.RandomRanged`，`0x004221F5`）/
+  `Normalized=` 经 `GameOptionsClass::GetAnimSpeed`、`Animation.Start(rate, ±1)` 的
+  帧延迟与方向；`restart` 时 `Value = reverse ? End : Start` 并调原生
+  `AnimClass::Start @ 0x00424CE0`（起始音 + `Middle`，`anim_start` 已有 owner）。
+  `sim/attach_effect.rs` 的 `maintain_phobos_attach_effect_anim` 新增 `retime`，
+  `CumulativeAnimations.RestartOnChange`（默认 true）决定比例续播或重启；同一
+  `AnimClass` 实例保留，不再销毁重建。测试
+  `a_cumulative_layer_change_retypes_the_same_animation_in_place`、
+  `a_cumulative_layer_change_restarts_when_the_type_asks_for_it`
+  （`AttachEffect.DurationOverrides` 让新层更短，承载实例保持被指定）。
+  残余：VERA 只为一个累积类型保留一个动画（被指定实例），原生每个持有
+  `Animation` 的实例各自换类型；`Start=` 非零的体会与原生差一个 `Start`（零售
+  ART 无该键）。
 - **BuildLimitGroup 的 `RemoveProduction`**（`docs/phobos-build-limit-group.md`）：
   已完成（2026-11-18）。灰化/`CanBuild` 的 owner 仍是纯查询，但两个 gate 都返回裁剪
   意图（`BuildLimitGroupGate`），队列入场 owner `queue_production` 调
