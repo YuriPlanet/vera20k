@@ -1,6 +1,8 @@
 # RFC 0001 附录：函数与表
 
-[RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的参考附录，版本 0.0.7，与正文在同一次提交中修改，不一致时以正文为准；规则只在正文中陈述，版本 1 的清单是待定问题 12。
+[English](0001-wasm-extension-modules-api.md)
+
+[RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的参考附录，版本 0.0.13，与正文在同一次提交中修改，不一致时以正文为准；规则只在正文中陈述，版本 1 的清单是待定问题 12。
 
 ## 目录
 
@@ -23,25 +25,18 @@
 | 种类 | 名称 | 内容 | 何时失效 |
 | --- | --- | --- | --- |
 | 0 | 模拟对象句柄 | 创建序号（1 到 2^48 − 1），单位、建筑、抛射体、所属方、小队、触发器、标签、修饰器、超级武器共用一个计数器 | 对象被移除；所属方从不 |
-| 1 | 类型引用 | `名字种类 << 32 | ID`（8.1）；ID 部分为 `0xFFFFFFFF` 时为该名字种类的通配引用，只用于 `find` 的 `Types` 范围 | 从不 |
-| 2 | 格子引用 | `x << 16 | y`，单位为格 | 从不 |
+| 1 | 类型引用 | `名字种类 << 32 \| ID`（8.1）；ID 部分为 `0xFFFFFFFF` 时为该名字种类的通配引用，只用于 `find` 的 `Types` 范围 | 从不 |
+| 2 | 格子引用 | `x << 16 \| y`，单位为格 | 从不 |
 | 3 | 路径点引用 | 路径点编号；接收格子的函数解析为其格子，不存在时为 `NotFound` | 从不 |
 | 4 | 全局规则引用 | 0：场景和全局规则（7.8） | 从不 |
 | 5 | 客户端节点句柄 | 本机节点序号，与创建序号分开 | 节点被删除或对局界面关闭 |
 | 6 | 客户端全局引用 | 1 镜头，2 本地设置，3 光标（7.10） | 从不 |
 
-- 句柄见 [RFC 5](0001-wasm-extension-modules.zh-CN.md#5-执行模型)；对 0 或已不存在的引用的调用见[错误模型](0001-wasm-extension-modules.zh-CN.md#3-加载与校验)。
-- SDK：TypeScript 中每种引用（`Techno`、`House`、`Projectile`、`Trigger`、`Node`……）是 `i64` 别名，`NO_HANDLE` 为 0；Rust 中是 newtype。
+TypeScript 引用为 `i64` 别名，Rust 为 newtype；`NO_HANDLE = 0`。
 
 ### ID
 
-`i32`，由 `lookup(kind, name)` 给出（[8.1](#81-名字种类lookup)），−1（`NO_ID`）表示“没有”，一经分配不变（[RFC 2](0001-wasm-extension-modules.zh-CN.md#2-来源mod-和地图)、[RFC 15](0001-wasm-extension-modules.zh-CN.md#15-性能)）。
-
-| 情况 | 结果 |
-| --- | --- |
-| 没有匹配的名字 | −1，`last_status()` 为 `NotFound` |
-| 传入 −1 | `NotFound` |
-| 超出种类范围的 ID | 非法参数 |
+`lookup(kind, name)` 返回稳定的 `i32` ID。无匹配时返回 `(−1, NotFound)`；传入 −1（`NO_ID`）返回 `NotFound`，其他越界 ID 为非法参数。名字种类见 [8.1](#81-名字种类lookup)。
 
 **变量 ID**（[RFC 6e](0001-wasm-extension-modules.zh-CN.md#6e-变量)）：
 
@@ -51,7 +46,7 @@
 | 100..149 | 红警 2 全局变量 0..49 |
 | 1000 起 | `vera.vars` 中的变量，按加载顺序（先 mod 后地图）和声明顺序 |
 
-属性 ID 按名字全局分配：同名属性在各引用种类上是同一个 ID，值类型按引用种类解释（例如 `X` 对对象是 lepton，对节点是像素）。事件种类、动作种类、客户端动作种类和属性的 API 名在各自的表中唯一。属性 ID、事件和动作种类编号：原版表项用原版编号，其余按表序由接口定义分配，只追加（[RFC 12](0001-wasm-extension-modules.zh-CN.md#12-版本与-abi)）。
+事件、动作、客户端动作和属性各表内名称唯一。同名属性共用 ID，值类型和单位按引用种类解释。属性、事件和动作保留原版编号；新增项按表序追加。
 
 ### 值
 
@@ -73,11 +68,11 @@
 
 ### 字符串与缓冲区
 
-- 字符串和字节是指向模块内存的“指针加长度”，UTF-8；名字比较按 ASCII 不区分大小写（[RFC 4](0001-wasm-extension-modules.zh-CN.md#4-确定性)）。
+- 字符串和字节缓冲区均传模块内存指针和长度。字符串按 UTF-8 编码，字节缓冲区按接口布局解释；名字比较按 ASCII 不区分大小写（[RFC 4](0001-wasm-extension-modules.zh-CN.md#4-确定性)）。
 - 返回数量的函数写入模块的缓冲区（`out`、`cap`），返回写入数量。
 - `len` 一律是字节数；`cap` 对字符串和字节是字节数，对引用缓冲区（`find`、`client_find` 的 `out`）是 `i64` 条目数；返回值的单位同 `cap`。`get_many`、`client_get_many` 的 `out` 至少容纳 `n × m` 个 `i64`。
 - `name_of`、`rules_get`、`client_storage_read` 返回完整长度；大于 `cap` 时什么也不写。
-- 搜索结果按创建序号排序；分页把上一页最后一个结果放进 `after`（[RFC 6c](0001-wasm-extension-modules.zh-CN.md#6c-对象属性与修饰器)）。
+- 分页返回 `(count, next, status)`。首页 `after=0`；续页沿用查询，只取排序键 ≥ `after` 的项。按 [8.2](#82-搜索范围find) 使用创建序号、所属方或格子下标、类型 ID 或稳定的修饰器加入序号。页满时 `next=页末键+1`，下一页可能为空；未满时 `next=0`。有效查询容量为零时返回 `(0, 0, Ok)`，不扫描。
 
 ### 状态
 
@@ -91,7 +86,9 @@ enum Status {
 }
 ```
 
-每个函数都设置 `last_status()`。停用模块的非法参数：越界的 ID 或下标、负的数量或容量、表外的枚举值、作用域与声明不符的变量、`trigger_create` 和 `action` 拒绝的动作参数（5.1）、非法筛选子句、在 `on_decide` 中调用写入函数。
+- ABI：取值或创建句柄时同时返回 `(value, status: i32)`；纯写操作返回状态，分页另返回续页位置。成功为 `Ok`，失败值依各接口的空值约定。
+- SDK：可只取值，也可一次取值和状态。无句柄动作直接给出状态；热路径使用标量或调用方的缓冲区。
+- 停用模块：ID 或下标越界、负数量或容量、表外枚举（探测函数对未知表项返回 0）、变量作用域错误、非法动作参数或筛选子句、在 `on_decide` 中写入。
 
 ### 随机数
 
@@ -136,7 +133,7 @@ struct EventRecord {      // 112 字节
 }
 ```
 
-每条都填 `key`、`kind`、`trigger`、`holder`、`frame`；第 4 节未列出的引用字段为 0（`house` 除外，见上），整数字段为 −1。
+每条都填 `key`、`kind`、`trigger`、`holder`、`frame`；第 4 节未列出的引用字段为 0（`house` 除外，见上），整型载荷字段为 −1；`reserved` 始终为 0。
 
 **决定记录**，在 `on_decide` 中原地读写（[RFC 6f](0001-wasm-extension-modules.zh-CN.md#6f-可决定事件)）：
 
@@ -175,10 +172,10 @@ struct Query {            // 64 字节，后接 clause_count 条 Clause
     cell: i64,            // 8   area 1：中心；area 2：左上角（格子引用）
     radius: i32,          // 16  area 1：lepton；area 2：宽（格）
     height: i32,          // 20  area 2：高（格）
-    type: i64,            // 24  类型引用；0 为任意；Types 范围中为种类通配引用或具体类型（8.2）
+    type: i64,            // 24  类型引用；Types 范围须为种类通配引用或具体类型（8.2）；其他范围 0 表示不限类型
     owner: i64,           // 32  所属方引用；0 为任意
     viewpoint: i64,       // 40  视点属性用的所属方（第 7 节）；0 为没有
-    after: i64,           // 48  分页：此引用之后的结果；0 为从头开始
+    after: i64,           // 48  分页：上一页返回的 next；0 为首页
     clause_count: i32,    // 56  至多 N（待定问题 7）
     reserved: i32,        // 60  0
 }
@@ -200,7 +197,7 @@ struct EventDef {         // 32 字节，后接 clause_count 条 Clause
     kind: i32,            // 0   事件种类
     op: i32,              // 4   轮询型事件：比较轮询值与 value 的 Op
     interval: i32,        // 8   轮询型事件：两次检查之间的帧数
-    id: i32,              // 12  类型、变量或 TeamType ID 参数；-1 为没有
+    id: i32,              // 12  属性、类型、变量或 TeamType ID 参数；-1 为没有
     value: i64,           // 16  数值参数（所属方下标、路径点、秒数、阈值……）
     clause_count: i32,    // 24  至多 N
     reserved: i32,        // 28  0
@@ -291,7 +288,7 @@ struct ProjectileStep {   // 56 字节：ProjectileFrame 的结果区
 }
 ```
 
-`get_many` 和 `client_get_many` 的 `out` 是按行排列的 `n × m` 个 `i64`：第 `i` 个引用的第 `j` 个属性在 `out[i * m + j]`；已不存在的引用整行写 0，`last_status()` 为 `Gone`。
+`get_many` 和 `client_get_many` 的 `out` 是按行排列的 `n × m` 个 `i64`：第 `i` 个引用的第 `j` 个属性在 `out[i * m + j]`；空引用或已消失的引用整行写 0，状态为 `Gone`。各项沿用单项读取的空值和状态；返回写入的槽数（含空值）和行优先顺序的首个非 `Ok` 状态，全部成功时为 `Ok`。有效空批次返回 `(0, Ok)`。
 
 ### 自定义段
 
@@ -319,12 +316,7 @@ offset: u32,              // 投递区在模块内存中的偏移
 bytes: u32,               // 投递区的字节数
 ```
 
-| 段 | 内容 |
-| --- | --- |
-| `vera.actions` | 名字到分派键（`i32`）的列表；供 `Action=Wasm:name`（[RFC 2](0001-wasm-extension-modules.zh-CN.md#2-来源mod-和地图)）和 `lookup(ModuleAction, name)` 使用 |
-| `vera.notify` | 模拟模块发送的通知名；加载时检查哈希冲突（[RFC 10](0001-wasm-extension-modules.zh-CN.md#10-客户端模块)） |
-| `vera.vars` | 仅模拟模块：每个变量的名字、作用域（0 全局、1 所属方、2 对象）、可见度（`Visibility`）、默认值（`i64`）（[RFC 6e](0001-wasm-extension-modules.zh-CN.md#6e-变量)） |
-| `vera.delivery` | 投递区在模块内存中的偏移和字节数；引擎在此写入事件记录、决定记录及结果区、客户端消息、客户端事件和通知数据，再交给 `on_events`、`on_decide`、`on_message` 或 `client_on_events`；单条消息的上限不超过投递区 |
+`vera.actions` 供 INI 和 `lookup(ModuleAction, name)` 分派；加载时检查 `vera.notify` 的名字哈希冲突。`vera.vars.scope` 为 0 全局、1 所属方、2 对象，可见度见 8.3。`vera.delivery` 供事件、决定及结果区、消息和通知共用；单条消息不得超过投递区容量。
 
 ### INI 键
 
@@ -332,12 +324,12 @@ bytes: u32,               // 投递区的字节数
 
 | 文件和节 | 键 | 值 | 默认 |
 | --- | --- | --- | --- |
-| 地图 `[Basic]` | `VeraMinVersion` | 版本号 | 没有 |
+| 地图 `[Basic]` | `VeraMinVersion` | 最低游戏版本；模块地图须填写 | 无默认值 |
 | 地图 `[VeraWasm]` | `Api` | `主.次`，同时说明 `vera:sim` 和 `vera:client` | 有模块时必需 |
 | 地图 `[VeraWasm]` | `RulesSize`、`UISize` | 对应模块解压后的字节数 | 没有该模块时不写 |
 | 地图 `[VeraWasm]` | `StorageId` | ASCII 名字 | 地图的文件名 |
 | 地图 `[VeraWasmRulesPack]`、`[VeraWasmUIPack]` | `1`、`2`…… | 标准 base64，每行一段；按编号从 1 起拼接后解码，再按 `IsoMapPack5` 的分块 LZO 格式解压 | — |
-| mod `rulesmd.ini` `[VeraWasm]` | `Api` | 同上 | 有模块时必需 |
+| mod `rulesmd.ini` `[VeraWasm]` | `Api` | `主.次`，与该 mod 模块的导入版本一致 | 有模块时必需 |
 | mod `rulesmd.ini` `[VeraWasm]` | `Budget`、`MapBudget` | mod 模块、地图模块每帧的额度 | 引擎默认值；引擎设上限 |
 | mod `rulesmd.ini` `[VeraWasm]` | `MapWasm` | `yes`、`no` | `yes` |
 | mod `rulesmd.ini` `[VeraWasm]` | `MapUI` | `overlay`、`full`、`no` | `overlay` |
@@ -347,7 +339,7 @@ bytes: u32,               // 投递区的字节数
 | 触发器节 | `Where<n>`、`Event<k>.Where<n>` | 筛选子句（[RFC 6a](0001-wasm-extension-modules.zh-CN.md#6a-触发器事件筛选子句和动作)）；`Where<n>` 属于第一个事件 | 没有 |
 | 触发器节 | `Action`、`Action<n>` | `Wasm:名字` 为模块动作；其他写作 `名字(目标,参数……)`，目标为 `ActionTarget` 名，参数按第 5 节“参数”列的顺序 | 没有 |
 | 触发器节 | `Decide` | `Wasm:名字`，决定处理函数 | 没有 |
-| 触发器节 | `House` | 国家名 | 0（主体的所属方） |
+| 触发器节 | `House` | 国家名 | 0（主体当时的所属方；无主体时为 Neutral） |
 | 触发器节 | `Difficulty` | `Easy`、`Normal`、`Hard` 的逗号列表 | 全部 |
 | 触发器节 | `Repeat` | `TagRepeat` 名：`OneTimeOr`、`OneTimeAnd`、`Repeating` | `OneTimeOr` |
 | `veraui.ini` | `[Layouts]`、布局节的 `Version`、`<布局>.<部件>` 节 | 见 [界面布局](../interface-layout.md)；部件键见 7.10 | — |
@@ -358,40 +350,39 @@ bytes: u32,               // 投递区的字节数
 
 ### 1.1 导入
 
-23 个。“可用于”：`init` 为 `vera_init`；`rules` 为 `on_rules`；`decide` 为 `on_decide`（调用其他函数会停用模块）；`all` 为其他调用；`init` 和 `rules` 中不可用的函数返回 `Unsupported`。
+“可用于”：`init` 为 `vera_init`；`rules` 为 `on_rules`；`decide` 为 `on_decide`（调用其他函数会停用模块）；`all` 为其他调用；`init` 和 `rules` 中不可用的函数返回 `Unsupported`。
 
 | # | 函数 | 签名 | 语义 | 可用于 |
 | --- | --- | --- | --- | --- |
-| 1 | `frame` | `() -> i32` | 当前帧号 | all、decide |
-| 2 | `random` | `(lo: i32, hi: i32) -> i32` | `[lo, hi]` 的整数，取自模块随机流；在 `on_decide` 中取自按（帧、主体的创建序号、事件种类）派生的子流，不改变主随机流；`lo > hi` 为非法参数 | all、decide |
+| 1 | `frame` | `() -> (i32, i32)` | 当前帧号 | all、decide |
+| 2 | `random` | `(lo: i32, hi: i32) -> (i32, i32)` | `[lo, hi]` 的整数，取自模块随机流；在 `on_decide` 中取自按（帧、主体的创建序号、事件种类）派生的子流，不改变主随机流；`lo > hi` 为非法参数 | all、decide |
 | 3 | `log` | `(ptr, len)` | 写一行游戏内日志 | init、rules、all、decide |
-| 4 | `last_status` | `() -> i32` | 上一次调用的 `Status` | init、rules、all、decide |
-| 5 | `has_kind` | `(table: i32, id: i32) -> i32` | 本引擎是否认识表 `table`（`Table`）中的 `id`：1 或 0 | init、rules、all、decide |
-| 6 | `lookup` | `(kind: i32, ptr, len) -> i32` | 名字解析为 ID（8.1）；没有时为 −1 和 `NotFound` | init、rules、all、decide |
-| 7 | `name_of` | `(kind: i32, id: i32, out: ptr, cap: i32) -> i32` | 把 ID 的名字写进 `out`，返回长度 | init、rules、all、decide |
-| 8 | `get` | `(ref: i64, prop: i32) -> i64` | 属性的有效值（含修饰器） | all、decide、rules（仅类型和全局规则引用） |
-| 9 | `get_many` | `(refs: ptr, n: i32, props: ptr, m: i32, out: ptr) -> i32` | `n` 个引用的 `m` 个属性，返回写入的值数 | all、decide、rules（仅类型和全局规则引用） |
-| 10 | `set` | `(ref: i64, prop: i32, value: i64) -> i32` | 经 owner 写一个属性；返回状态 | all、rules（仅类型和全局规则引用） |
-| 11 | `modify` | `(ref: i64, prop: i32, op: i32, value: i64, frames: i32, source: i64, group: i32) -> i64` | 加修饰器（`ModifierOp`），返回其句柄；`frames` 为负表示无限，`group` 为 0 表示不分组 | all |
-| 12 | `unmodify` | `(modifier: i64) -> i32` | 移除修饰器；已到期为 `Gone` | all |
-| 13 | `rules_get` | `(sec: ptr, sec_len, key: ptr, key_len, out: ptr, cap: i32) -> i32` | 键的原始字符串，返回长度；不存在为 −1 和 `NotFound` | all、decide、rules |
-| 14 | `rules_set` | `(sec: ptr, sec_len, key: ptr, key_len, val: ptr, val_len) -> i32` | 写一个键：`on_rules` 中任意键，对局中仅白名单（[RFC 8](0001-wasm-extension-modules.zh-CN.md#8-修改规则)），否则 `Refused` | all、rules |
-| 15 | `var_get` | `(scope: i64, var: i32) -> i64` | 读变量；`scope` 0 为全局，否则为所属方或对象引用 | all、decide |
-| 16 | `var_set` | `(scope: i64, var: i32, value: i64) -> i32` | 写变量，重置等待它的触发器的计时器 | all |
-| 17 | `find` | `(query: ptr, len, out: ptr, cap: i32) -> i32` | 搜索（`Query`），引用写进 `out`，返回数量 | all、decide |
-| 18 | `trigger_create` | `(def: ptr, len) -> i64` | 创建触发器（`TriggerDef`），返回句柄；路径点不存在为 0 和 `NotFound`；没有 Ares 时用 Ares 事件为 0 和 `Unsupported` | all |
-| 19 | `trigger_remove` | `(t: i64) -> i32` | 删除触发器及其所有实例（延迟） | all |
-| 20 | `trigger_bind` | `(t: i64, ref: i64) -> i32` | 绑定到对象、类型、武器、弹头或抛射体类型，或格子（只用于绑定列为“格子”的事件） | all |
-| 21 | `trigger_unbind` | `(t: i64, ref: i64) -> i32` | 解除一个绑定 | all |
-| 22 | `action` | `(kind: i32, target: i64, params: ptr, len) -> i64` | 执行动作（第 5 节，`ActionParams`）；返回创建的对象，否则为 0 | all |
-| 23 | `send_notify` | `(to: i64, id: i32, ptr, len) -> i32` | 通知所属方 `to` 的玩家；`to` 为 0 时发给观战者；超出大小或每帧条数为 `Refused` | all |
+| 4 | `has_kind` | `(table: i32, id: i32) -> i32` | 表 `table`（`Table`）中的 `id` 可用为 1，未知或本局关闭为 0 | init、rules、all、decide |
+| 5 | `lookup` | `(kind: i32, ptr, len) -> (i32, i32)` | 名字解析为 ID（8.1）；没有时为 −1 和 `NotFound` | init、rules、all、decide |
+| 6 | `name_of` | `(kind: i32, id: i32, out: ptr, cap: i32) -> (i32, i32)` | 把 ID 的名字写进 `out`，返回长度 | init、rules、all、decide |
+| 7 | `get` | `(ref: i64, prop: i32) -> (i64, i32)` | 属性的有效值（含修饰器） | all、decide、rules（仅类型和全局规则引用） |
+| 8 | `get_many` | `(refs: ptr, n: i32, props: ptr, m: i32, out: ptr) -> (i32, i32)` | `n` 个引用的 `m` 个属性，返回写入的值数 | all、decide、rules（仅类型和全局规则引用） |
+| 9 | `set` | `(ref: i64, prop: i32, value: i64) -> i32` | 经 owner 写一个属性；返回状态 | all、rules（仅类型和全局规则引用） |
+| 10 | `modify` | `(ref: i64, prop: i32, op: i32, value: i64, frames: i32, source: i64, group: i32) -> (i64, i32)` | 加修饰器（`ModifierOp`），返回其句柄；`frames` 为负表示无限，`group` 为 0 表示不分组 | all |
+| 11 | `unmodify` | `(modifier: i64) -> i32` | 移除修饰器；已到期为 `Gone` | all |
+| 12 | `rules_get` | `(sec: ptr, sec_len, key: ptr, key_len, out: ptr, cap: i32) -> (i32, i32)` | 键的原始字符串，返回长度；不存在为 −1 和 `NotFound` | all、decide、rules |
+| 13 | `rules_set` | `(sec: ptr, sec_len, key: ptr, key_len, val: ptr, val_len) -> i32` | 写一个键：`on_rules` 中任意键，对局中仅白名单（[RFC 8](0001-wasm-extension-modules.zh-CN.md#8-修改规则)），否则 `Refused` | all、rules |
+| 14 | `var_get` | `(scope: i64, var: i32) -> (i64, i32)` | 读变量；`scope` 0 为全局，否则为所属方或对象引用 | all、decide |
+| 15 | `var_set` | `(scope: i64, var: i32, value: i64) -> i32` | 写变量，重置等待它的触发器的计时器 | all |
+| 16 | `find` | `(query: ptr, len, out: ptr, cap: i32) -> (i32, i64, i32)` | 搜索（`Query`），引用写入 `out`，返回 (count, next, status)，见“字符串与缓冲区” | all、decide |
+| 17 | `trigger_create` | `(def: ptr, len) -> (i64, i32)` | 创建触发器（`TriggerDef`），返回句柄；路径点不存在为 0 和 `NotFound`；使用未启用的 Ares 事件（4.2）时为 (0, Unsupported) | all |
+| 18 | `trigger_remove` | `(t: i64) -> i32` | 删除触发器及其所有实例（延迟） | all |
+| 19 | `trigger_bind` | `(t: i64, ref: i64) -> i32` | 绑定到对象、类型、武器、弹头或抛射体类型，或格子（仅限 4.1 注明“绑定格子”的事件） | all |
+| 20 | `trigger_unbind` | `(t: i64, ref: i64) -> i32` | 解除一个绑定 | all |
+| 21 | `action` | `(kind: i32, target: i64, params: ptr, len) -> (i64, i32)` | 执行动作（第 5 节，`ActionParams`）；返回创建的对象，否则为 0 | all |
+| 22 | `send_notify` | `(to: i64, id: i32, ptr, len) -> i32` | 通知所属方 `to` 的玩家；`to` 为 0 时发给观战者；超出大小或每帧条数为 `Refused` | all |
 
 - `on_rules` 中对类型引用和全局规则引用的 `set` 等于以值的 INI 文本调用 `rules_set`；`get` 读到本层之前处理过的值。触发器、动作、变量、修饰器、`find` 和其他引用的读写返回 `Unsupported`。
 - 写入函数：`set`、`modify`、`unmodify`、`rules_set`、`var_set`、`trigger_create`、`trigger_remove`、`trigger_bind`、`trigger_unbind`、`action`、`send_notify`。
 
 ### 1.2 导出
 
-7 个，只导出用到的；时机见 [RFC 5](0001-wasm-extension-modules.zh-CN.md#5-执行模型)。
+按需导出；时机见 [RFC 5](0001-wasm-extension-modules.zh-CN.md#5-执行模型)。
 
 | 导出 | 签名 | 时机 | 层级 |
 | --- | --- | --- | --- |
@@ -411,48 +402,47 @@ bytes: u32,               // 投递区的字节数
 
 ### 2.1 导入
 
-21 个；读取只给出本玩家界面能显示的内容（第 7 节“客户端”列）。
+读取只给出本玩家界面能显示的内容（第 7 节“客户端”列）。
 
 | # | 函数 | 签名 | 语义 |
 | --- | --- | --- | --- |
-| 1 | `client_frame` | `() -> i32` | 最近算完的模拟帧号 |
-| 2 | `client_random` | `(lo: i32, hi: i32) -> i32` | 本机随机数，只用于显示 |
+| 1 | `client_frame` | `() -> (i32, i32)` | 最近算完的模拟帧号 |
+| 2 | `client_random` | `(lo: i32, hi: i32) -> (i32, i32)` | 本机随机数，只用于显示 |
 | 3 | `client_log` | `(ptr, len)` | 写游戏内控制台 |
-| 4 | `client_last_status` | `() -> i32` | 上一次调用的 `Status` |
-| 5 | `client_has_kind` | `(table: i32, id: i32) -> i32` | 同 `has_kind` |
-| 6 | `client_lookup` | `(kind: i32, ptr, len) -> i32` | 同 `lookup`；变量名和通知名查本局模拟模块声明过的 |
-| 7 | `client_name_of` | `(kind: i32, id: i32, out: ptr, cap: i32) -> i32` | 同 `name_of` |
-| 8 | `client_get` | `(ref: i64, prop: i32) -> i64` | 读属性；看不到的对象为 `Gone`，不可见的属性为空值和 `Refused` |
-| 9 | `client_get_many` | `(refs: ptr, n: i32, props: ptr, m: i32, out: ptr) -> i32` | 同 `get_many`，规则同上 |
-| 10 | `client_find` | `(query: ptr, len, out: ptr, cap: i32) -> i32` | 同 `find`，只返回本玩家能看到的 |
-| 11 | `client_var_get` | `(scope: i64, var: i32) -> i64` | 读变量，受可见度限制（[RFC 6e](0001-wasm-extension-modules.zh-CN.md#6e-变量)） |
-| 12 | `client_set` | `(ref: i64, prop: i32, value: i64) -> i32` | 写客户端拥有的引用的属性：节点、镜头、光标、本地设置；无权写的节点为 `Refused`（[RFC 10](0001-wasm-extension-modules.zh-CN.md#10-客户端模块)） |
-| 13 | `client_set_bytes` | `(ref: i64, prop: i32, ptr, len) -> i32` | 写字符串或字节属性（`Label`、`Art`、`Items`、`ItemProgress`……）；无权写的节点为 `Refused` |
-| 14 | `client_node_create` | `(kind: i32, parent: i64, props: ptr, len) -> i64` | 新建节点（`NodeKind`），初始属性为 `PropValue` 数组；`parent` 0 为顶层 |
-| 15 | `client_node_remove` | `(node: i64) -> i32` | 删除节点及子节点；无权删除的节点为 `Refused` |
-| 16 | `client_node_find` | `(ptr, len) -> i64` | 按 `Name` 找节点（7.10：INI 节点为当前布局中的部件名）；同名时为先创建的；没有为 0 |
-| 17 | `client_action` | `(kind: i32, target: i64, params: ptr, len) -> i32` | 执行本地动作（5.4，`ActionParams`） |
-| 18 | `client_send_order` | `(ptr, len) -> i32` | 发出标准玩家指令（`Order`），像玩家输入一样校验 |
-| 19 | `client_send_message` | `(ptr, len) -> i32` | 消息进入命令流，到达同一来源模拟模块的 `on_message`；观战者为 `Refused`；限大小和频率（[RFC 11](0001-wasm-extension-modules.zh-CN.md#11-联机)） |
-| 20 | `client_storage_read` | `(key: ptr, key_len, out: ptr, cap: i32) -> i32` | 读模块来源的存储，返回长度；没有为 −1 和 `NotFound`（[RFC 10](0001-wasm-extension-modules.zh-CN.md#10-客户端模块)） |
-| 21 | `client_storage_write` | `(key: ptr, key_len, data: ptr, data_len) -> i32` | 写存储；`data_len` 为 0 时删除该键；键 1..64 字节 ASCII，值 ≤ 16 KiB，每个来源 ≤ 256 个键、合计 ≤ 256 KiB；超出为 `Refused`，存储不变 |
+| 4 | `client_has_kind` | `(table: i32, id: i32) -> i32` | 同 `has_kind` |
+| 5 | `client_lookup` | `(kind: i32, ptr, len) -> (i32, i32)` | 同 `lookup`；变量名和通知名查本局模拟模块声明过的 |
+| 6 | `client_name_of` | `(kind: i32, id: i32, out: ptr, cap: i32) -> (i32, i32)` | 同 `name_of` |
+| 7 | `client_get` | `(ref: i64, prop: i32) -> (i64, i32)` | 读属性；看不到的对象为 `Gone`，不可见的属性为空值和 `Refused` |
+| 8 | `client_get_many` | `(refs: ptr, n: i32, props: ptr, m: i32, out: ptr) -> (i32, i32)` | 布局和批次状态同 `get_many`；逐项沿用 `client_get` 的可见度检查 |
+| 9 | `client_find` | `(query: ptr, len, out: ptr, cap: i32) -> (i32, i64, i32)` | 同 `find`，只返回本玩家能看到的 |
+| 10 | `client_var_get` | `(scope: i64, var: i32) -> (i64, i32)` | 读变量，受可见度限制（[RFC 6e](0001-wasm-extension-modules.zh-CN.md#6e-变量)） |
+| 11 | `client_set` | `(ref: i64, prop: i32, value: i64) -> i32` | 写客户端拥有的引用的属性：节点、镜头、光标、本地设置；无权写的节点为 `Refused`（[RFC 10](0001-wasm-extension-modules.zh-CN.md#10-客户端模块)） |
+| 12 | `client_set_bytes` | `(ref: i64, prop: i32, ptr, len) -> i32` | 写字符串或字节属性（`Label`、`Art`、`Items`、`ItemProgress`……）；无权写的节点为 `Refused` |
+| 13 | `client_node_create` | `(kind: i32, parent: i64, props: ptr, len) -> (i64, i32)` | 新建节点（`NodeKind`），初始属性为 `PropValue` 数组；`parent` 0 为顶层 |
+| 14 | `client_node_remove` | `(node: i64) -> i32` | 删除节点及子节点；无权删除的节点为 `Refused` |
+| 15 | `client_node_find` | `(ptr, len) -> (i64, i32)` | 按 `Name` 找节点（7.10：INI 节点为当前布局中的部件名）；同名时为先创建的；没有为 (0, NotFound) |
+| 16 | `client_action` | `(kind: i32, target: i64, params: ptr, len) -> i32` | 执行本地动作（5.4，`ActionParams`） |
+| 17 | `client_send_order` | `(ptr, len) -> i32` | 发出标准玩家指令（`Order`），像玩家输入一样校验 |
+| 18 | `client_send_message` | `(ptr, len) -> i32` | 消息进入命令流，到达同一来源模拟模块的 `on_message`；观战者为 `Refused`；限大小和频率（[RFC 11](0001-wasm-extension-modules.zh-CN.md#11-联机)） |
+| 19 | `client_storage_read` | `(key: ptr, key_len, out: ptr, cap: i32) -> (i32, i32)` | 读模块来源的存储，返回长度；没有为 −1 和 `NotFound`（[RFC 10](0001-wasm-extension-modules.zh-CN.md#10-客户端模块)） |
+| 20 | `client_storage_write` | `(key: ptr, key_len, data: ptr, data_len) -> i32` | 写存储；`data_len` 为 0 时删除该键；键 1..64 字节 ASCII，值 ≤ 16 KiB，每个来源 ≤ 256 个键、键和值合计 ≤ 256 KiB；超出为 `Refused`，存储不变 |
 
-`client_init` 中只可用 `client_lookup`、`client_name_of`、`client_has_kind`、`client_last_status`、`client_log`。
+`client_init` 中只可用 `client_lookup`、`client_name_of`、`client_has_kind`、`client_log`。
 
 ### 2.2 导出
 
-4 个。
+全部为 v1（阶段 2）。
 
-| 导出 | 签名 | 时机 | 层级 |
-| --- | --- | --- | --- |
-| `client_init` | `()` | SDK 从顶层代码生成；第一次其他调用之前一次 | v1（阶段 2） |
-| `client_on_start` | `()` | 对局界面建好、INI 布局读完后一次；重新加入的玩家在追赶完成后一次 | v1（阶段 2） |
-| `client_on_render` | `(dt: f32, alpha: f32)` | 每个渲染帧一次；`dt`、`alpha` 只用于显示 | v1（阶段 2） |
-| `client_on_events` | `(ptr, count: i32)` | 每个渲染帧一次，在 `client_on_render` 之前；`ClientEventRecord`（4.6） | v1（阶段 2） |
+| 导出 | 签名 | 时机 |
+| --- | --- | --- |
+| `client_init` | `()` | SDK 从顶层代码生成；第一次其他调用之前一次 |
+| `client_on_start` | `()` | 对局界面建好、INI 布局读完后一次；重新加入的玩家在追赶完成后一次 |
+| `client_on_render` | `(dt: f32, alpha: f32)` | 每个渲染帧一次；`dt`、`alpha` 只用于显示 |
+| `client_on_events` | `(ptr, count: i32)` | 每个渲染帧一次，在 `client_on_render` 之前；`ClientEventRecord`（4.6） |
 
 ## 3. SDK 对应
 
-每个包装函数只发起“宿主调用”列中的调用（[RFC 5a](0001-wasm-extension-modules.zh-CN.md#5a-语言与-sdk)）；下表为 TypeScript，Rust 用蛇形命名和带方法的 newtype（`t.health()`、`t.set_owner(h)`、`Var::get(scope, v)`；`where` 是关键字，写作 `where_prop`），名字均为占位。
+TypeScript 映射如下；Rust 使用 newtype 和蛇形命名（`where_prop`）。名称暂定。
 
 | 用途 | TypeScript | 宿主调用 |
 | --- | --- | --- |
@@ -460,23 +450,31 @@ bytes: u32,               // 投递区的字节数
 | 写属性 | `Techno.setOwner(t, h)`、`Techno.setMission(t, Mission.Hunt)`、`Trigger.setEnabled(t, false)` | `set` |
 | 批量读 | `Techno.read(list, [Prop.Health, Prop.Owner])` | `get_many` |
 | 字符串属性 | `House.name(h)` 返回 `string` | `get` 加 `name_of` |
-| 修饰器 | `Modifier.add(t, Prop.SpeedMultiplier, ModifierOp.Multiply, fixed(0.5), 150, src, 0)`、`Modifier.remove(m)` | `modify`、`unmodify` |
+| 修饰器 | `Modifier.multiply(t, Prop.SpeedMultiplier, fixed(0.5), 150)`；加值用 `Modifier.add`，覆盖用 `Modifier.override`，提前移除用 `Modifier.remove(m)` | `modify`、`unmodify` |
 | 动作 | 每个动作种类一个函数：`Action.nukeStrike(cell, house)`、`Action.launchSuperWeapon(house, type, cell)`、`Action.createObject(cell, type, house)`、`Action.addMoney(house, amount)` | `action` |
 | 触发器中的动作 | `ActionDef.damage(Target.Other, warhead, 50)`、`ActionDef.setVar(Target.Subject, v, 1)`：只构造 `ActionDef` | — |
-| 触发器 | `Trigger.on(Event.Fire).bind(ref).where(Prop.HealthPercent, Op.Lt, 30).whereVar(VarTarget.Subject, v, Op.Eq, 0).once().house(h).act(def).action(fn)`；可决定事件用 `.decide(fn)`；只有原版和原子动作时用 `.done()` | `.action`、`.decide`、`.done` 调用 `trigger_create`，再对每个 `.bind` 调用 `trigger_bind` |
+| 触发器 | `Trigger.on(event).bind(ref).immediate(def).enqueue(fn).done()`、`.decideSync(fn)` | `.decideSync`、`.done` 调用 `trigger_create`，再对每个 `.bind` 调用 `trigger_bind` |
+| 属性轮询 | `Trigger.onProperty(prop, op, value, interval)` | 构造一个 `PropertyPoll` 的 `EventDef`（4.4） |
 | 绑定 | `Trigger.bind(t, ref)`、`Trigger.unbind(t, ref)`、`Trigger.remove(t)`、`Trigger.bindAllTypes(t, NameKind.TechnoType)` | `trigger_bind`、`trigger_unbind`、`trigger_remove`；`bindAllTypes` 先 `find`（范围 `Types`，种类通配引用），再对每个类型调用一次 `trigger_bind` |
-| 变量 | `Var.id(name)`、`Var.get(scope, v)`、`Var.set(scope, v, value)`、`Var.local(n)`、`Var.global(n)`、`Var.GLOBAL` | `lookup`、`var_get`、`var_set` |
-| 名字 | `Rules.technoType("E1")`、`Rules.weapon("RedEye2")`、`Rules.superWeaponType("NukeSpecial")` 返回类型引用 | `lookup` |
+| 变量 | 声明生成 `Wave.get()`、`Panicked.get(unit)`、`ReinforcementsBought.set(house, 1)`；原版变量为 `Var.local(n).get()`、`Var.global(n).set(value)` | 初始化时缓存 `lookup` 的结果（原版用固定 ID）；访问时一次 `var_get` 或 `var_set`，客户端只有 `client_var_get` |
+| 名字 | `Rules.technoType("E1")`、`Rules.weapon("RedEye2")`、`Rules.superWeaponType("NukeSpecial")` 返回类型引用（含按国家名查类型的 `Rules.country(name)`） | `lookup` 成功时编码类型引用；未找到时 SDK 返回 `NO_HANDLE`，保留 `NotFound` 状态 |
 | 规则 | `Rules.get(section, key)`、`Rules.set(section, key, value)` | `rules_get`、`rules_set` |
-| 搜索 | `Find.objects().inRadius(cell, leptons).owner(h).where(...).first()`；`.all(buffer)`；`House.byName(name)` | `find`；`House.byName` 为 `lookup(Country)` 加带 `Country` 子句的 `find`，返回所属方下标最小的一个 |
+| 搜索 | `.first()` 或 `.page(buffer, after)`；`.country(americans)` 按国家筛选 | 每次一次 `find`；first 使用容量 1，空结果为 0。country 接受已解析的国家类型引用，生成 Country 相等子句 |
 | 其他 | `Cell.at(x, y)`、`Waypoint.cell(n)`（只编码引用）；`Notify.id(name)`、`Notify.send(to, id, data)` | —；`lookup`、`send_notify` |
 | 注册 | 顶层的 `onScenarioStart(fn)`、`onFrame(new Every(N), fn)`、`onMessage(fn)`、`namedAction(name, fn)`；客户端的 `onStart(fn)`、`onRender(fn)`、`onClientEvent(ClientEvent.Click, fn)` | SDK 生成的导出 |
 | 客户端 | `Ui.find(name)`、`Ui.create(NodeKind.Text, parent)`、`Node.setLabel(n, text)`、`Node.setVisible(n, v)`、`Client.viewer()`、`Client.sendMessage(data)`、`Client.order(...)`、`Storage.read(key)`、`Node.setItems(n, items)` | `client_*`，各一次；`Storage.read` 的值大于缓冲区时调用两次；`Node.setItems` 用 `\n` 连接条目后调用 `client_set_bytes` |
 
-- 模块动作和决定处理函数收到原地读取的 `EventRecord`、`DecideRecord` 视图；`DecideRecord` 的 `setResult(v)` 写 `result` 并把 `handled` 设为 1。
-- `Target` 即 `ActionTarget`（5.1），`VarTarget` 即子句的变量作用域（8.3），`NameKind` 即名字种类（8.1）。
-- 构建器：`.once()` 设为一次性，`.house(h)` 设所属方；`.where` 的第一个参数是 `Prop`，`.whereOther`、`.whereHouse` 判断另一方和所属方。`.action(fn)` 等于 `.act(ActionDef.module(fn)).done()`，`.decide(fn)` 设决定处理函数并结束构建；多个模块动作用 `.act(ActionDef.module(fn))` 加入。
-- `namedAction(name, fn)` 的 `name` 必须是字符串字面量，SDK 构建时提取它写入 `vera.actions`。
+- 事件视图仅在本次回调内有效。具名字段原地读取下表所示的 ABI 字段，沿用其单位与空值；公共字段沿用原名。决定视图读取内嵌事件，`setResult(v)` 写入 `result` 并置 `handled=1`。
+- `Target`、`VarTarget`、`NameKind` 分别见 5.1、8.3、8.1。`.once()` 设为一次性，`.house(h)` 指定所属方。`.where`、`.whereOther`、`.whereHouse` 分别检查主体、另一方和所属方的属性。
+- `.immediate(def)` 和 `.enqueue(fn)` 可重复。前者在触发点执行，后者在模块阶段投递。`.done()` 完成构建；可决定事件用 `.decideSync(fn)` 指定同步决定并完成构建。
+- `namedAction(name, fn)` 的名字必须是字符串字面量，构建时写入 `vera.actions`。
+
+| SDK 视图 | 具名字段 → 记录字段 |
+| --- | --- |
+| `TakeDamageEvent` | `victim → subject`，`attacker → other`，`damage → value`，`warhead → id` |
+| `FireEvent` | `shooter → subject`，`target → other`，`targetCell → cell`，`weaponSlot → value`，`weapon → id` |
+| `TargetChangedEvent` | `newTarget → other` |
+| `ClickEvent`（客户端） | `node → ref`，`itemIndex → value` |
 
 ## 4. 事件种类
 
@@ -486,76 +484,76 @@ bytes: u32,               // 投递区的字节数
 
 ### 4.1 原版事件 0..61
 
-类型 `R` 投递，`H` House 标签轮询，`L` Logic 标签轮询；字段 `S` subject，`O` other，`Hs` house；“持久”为会写持久状态；全部 `v1`，不可决定。
+类型 `R` 投递，`H` House 标签轮询，`L` Logic 标签轮询；字段 `S` subject，`O` other，`Hs` house；“持久”表示写入持久状态。H、L 均为全局绑定；R 默认绑定对象，例外见表。全部 `v1`，不可决定。
 
-| # | API 名称 | 参数 | 类型 | 字段 | 绑定 | 备注 |
-| --- | --- | --- | --- | --- | --- | --- |
-| 0 | — | — | — | — | — | 不公开；永不成立 |
-| 1 | `EnteredBy` | `value` 所属方下标（−1 任意） | R | S、O、保留的 Hs | 对象 | 持久 |
-| 2 | `SpiedBy` | 忽略 | R | S、O | 对象 | |
-| 3 | `ThievedBy` | `value` 所属方下标 | R | S、Hs | 对象 | |
-| 4 | `DiscoveredByPlayer` | 忽略 | R | S、O | 对象 | |
-| 5 | `HouseDiscovered` | `value` 所属方 | H | Hs | 全局 | |
-| 6 | `AttackedByAnyHouse` | 忽略 | R | S、O | 对象 | |
-| 7 | `DestroyedByAnyHouse` | 忽略 | R | S、O | 对象 | 需要击杀来源 |
-| 8 | `AnyEvent` | — | H | S | 全局 | |
-| 9 | `AllUnitsDestroyed` | `value` 所属方 | H | Hs | 全局 | |
-| 10 | `AllBuildingsDestroyed` | `value` 所属方 | H | Hs | 全局 | |
-| 11 | `AllDestroyed` | `value` 所属方 | H | Hs | 全局 | |
-| 12 | `CreditsExceed` | `value` 金钱 | H | Hs | 全局 | |
-| 13 | `ElapsedTime` | `value` 秒（×15 帧） | L | — | 全局 | |
-| 14 | `MissionTimerExpired` | — | L | — | 全局 | |
-| 15 | `BuildingsDestroyedCount` | `value` 数量 | H | Hs | 全局 | |
-| 16 | `UnitsDestroyedCount` | `value` 数量 | H | Hs | 全局 | |
-| 17 | `NoFactoriesLeft` | — | H | Hs | 全局 | |
-| 18 | `CiviliansEvacuated` | — | H | Hs | 全局 | |
-| 19 | `BuildBuildingType` | `value` BuildingType 下标 | H | Hs | 全局 | 持久；也接受 `id` |
-| 20 | `BuildUnitType` | `value` VehicleType 下标 | H | Hs | 全局 | 同 19 |
-| 21 | `BuildInfantryType` | `value` InfantryType 下标 | H | Hs | 全局 | 同 19 |
-| 22 | `BuildAircraftType` | `value` AircraftType 下标 | H | Hs | 全局 | 同 19 |
-| 23 | `TeamLeavesMap` | `id` TeamType | R | — | 全局 | |
-| 24 | `ZoneEntryBy` | `value` 所属方（−1 任意） | R | S、O、保留的 Hs | 对象 | |
-| 25 | `CrossesHorizontalLine` | 同 24 | R | O、保留的 Hs | 格子 | |
-| 26 | `CrossesVerticalLine` | 同 24 | R | O、保留的 Hs | 格子 | |
-| 27 | `GlobalIsSet` | `value` 0..49 | L | — | 全局 | |
-| 28 | `GlobalIsClear` | `value` 0..49 | L | — | 全局 | |
-| 29 | `DestroyedByAnythingNotInfiltrate` | 忽略 | R | S、O | 对象 | |
-| 30 | `LowPower` | `value` 所属方 | H | Hs | 全局 | |
-| 31 | `BridgeDestroyed` | 忽略 | R | `cell` | 格子 | |
-| 32 | `BuildingExists` | `value` BuildingType 下标 | H | Hs | 全局 | 持久 |
-| 33 | `SelectedByPlayer` | 忽略 | R | S | 对象 | 联机不引发；客户端形式 `SelectionChanged`（4.6） |
-| 34 | `ComesNearWaypoint` | `value` 路径点 | R | S | 对象 | 0x500 lepton 以内 |
-| 35 | `EnemyInSpotlight` | 忽略 | R | S | 对象 | |
-| 36 | `LocalIsSet` | `value` 0..99 | L | — | 全局 | |
-| 37 | `LocalIsClear` | `value` 0..99 | L | — | 全局 | |
-| 38 | `FirstDamagedCombat` | 忽略 | R | S、O | 对象 | 需要伤害来源 |
-| 39 | `HalfHealthCombat` | 忽略 | R | S、O | 对象 | |
-| 40 | `QuarterHealthCombat` | 忽略 | R | S、O | 对象 | |
-| 41 | `FirstDamagedAny` | 忽略 | R | S、O（可为 0） | 对象 | |
-| 42 | `HalfHealthAny` | 忽略 | R | S | 对象 | |
-| 43 | `QuarterHealthAny` | 忽略 | R | S | 对象 | |
-| 44 | `AttackedByHouse` | `value` 所属方数组下标 | R | S、O | 对象 | Ares 转换 Player@X |
-| 45 | `AmbientLightBelow` | `value` | L | — | 全局 | 环境光变化时检查 |
-| 46 | `AmbientLightAbove` | `value` | L | — | 全局 | 同 45 |
-| 47 | `ElapsedScenarioTime` | `value` 秒 | L | — | 全局 | |
-| 48 | `DestroyedByAnything` | 忽略 | R | S、O（可为 0） | 对象 | |
-| 49 | `PickupCrate` | 忽略 | R | S | 对象 | |
-| 50 | `PickupCrateAny` | 忽略 | L | — | 全局 | 有箱子被捡起时检查 |
-| 51 | `RandomDelay` | `value` 秒 | L | — | 全局 | 随机数 native |
-| 52 | `CreditsBelow` | `value` 金钱 | H | Hs | 全局 | |
-| 53 | `SpyAsHouse` | `value` 所属方 | R | S、Hs | 对象 | 持久 |
-| 54 | `SpyAsInfantry` | `value` InfantryType 下标 | R | S | 对象 | 持久 |
-| 55 | `NavalUnitsDestroyed` | `value` 所属方 | H | Hs | 全局 | |
-| 56 | `LandUnitsDestroyed` | `value` 所属方 | H | Hs | 全局 | |
-| 57 | `BuildingDoesNotExist` | `value` BuildingType 下标 | H | Hs | 全局 | |
-| 58 | `PowerFull` | `value` 所属方 | H | Hs | 全局 | |
-| 59 | `EnteredOrOverflownBy` | 同 1 | R | S、O、保留的 Hs | 对象 | |
-| 60 | `TechTypeExists` | `id` 类型，`value` 数量 | L | — | 全局 | |
-| 61 | `TechTypeDoesNotExist` | `id` 类型 | L | — | 全局 | |
+| # | API 名称 | 参数 | 类型 | 字段 | 绑定例外及备注 |
+| --- | --- | --- | --- | --- | --- |
+| 0 | — | — | — | — | 不公开；永不成立 |
+| 1 | `EnteredBy` | `value` 所属方下标（−1 任意） | R | S、O、保留的 Hs | 持久 |
+| 2 | `SpiedBy` | 忽略 | R | S、O |  |
+| 3 | `ThievedBy` | `value` 所属方下标 | R | S、Hs |  |
+| 4 | `DiscoveredByPlayer` | 忽略 | R | S、O |  |
+| 5 | `HouseDiscovered` | `value` 所属方 | H | Hs |  |
+| 6 | `AttackedByAnyHouse` | 忽略 | R | S、O |  |
+| 7 | `DestroyedByAnyHouse` | 忽略 | R | S、O | 需要击杀来源 |
+| 8 | `AnyEvent` | — | H | S |  |
+| 9 | `AllUnitsDestroyed` | `value` 所属方 | H | Hs |  |
+| 10 | `AllBuildingsDestroyed` | `value` 所属方 | H | Hs |  |
+| 11 | `AllDestroyed` | `value` 所属方 | H | Hs |  |
+| 12 | `CreditsExceed` | `value` 金钱 | H | Hs |  |
+| 13 | `ElapsedTime` | `value` 秒（×15 帧） | L | — |  |
+| 14 | `MissionTimerExpired` | — | L | — |  |
+| 15 | `BuildingsDestroyedCount` | `value` 数量 | H | Hs |  |
+| 16 | `UnitsDestroyedCount` | `value` 数量 | H | Hs |  |
+| 17 | `NoFactoriesLeft` | — | H | Hs |  |
+| 18 | `CiviliansEvacuated` | — | H | Hs |  |
+| 19 | `BuildBuildingType` | `value` BuildingType 下标 | H | Hs | 持久；也接受 `id` |
+| 20 | `BuildUnitType` | `value` VehicleType 下标 | H | Hs | 同 19 |
+| 21 | `BuildInfantryType` | `value` InfantryType 下标 | H | Hs | 同 19 |
+| 22 | `BuildAircraftType` | `value` AircraftType 下标 | H | Hs | 同 19 |
+| 23 | `TeamLeavesMap` | `id` TeamType | R | — | 绑定全局 |
+| 24 | `ZoneEntryBy` | `value` 所属方（−1 任意） | R | S、O、保留的 Hs |  |
+| 25 | `CrossesHorizontalLine` | 同 24 | R | O、保留的 Hs | 绑定格子 |
+| 26 | `CrossesVerticalLine` | 同 24 | R | O、保留的 Hs | 绑定格子 |
+| 27 | `GlobalIsSet` | `value` 0..49 | L | — |  |
+| 28 | `GlobalIsClear` | `value` 0..49 | L | — |  |
+| 29 | `DestroyedByAnythingNotInfiltrate` | 忽略 | R | S、O |  |
+| 30 | `LowPower` | `value` 所属方 | H | Hs |  |
+| 31 | `BridgeDestroyed` | 忽略 | R | `cell` | 绑定格子 |
+| 32 | `BuildingExists` | `value` BuildingType 下标 | H | Hs | 持久 |
+| 33 | `SelectedByPlayer` | 忽略 | R | S | 联机不引发；客户端形式 `SelectionChanged`（4.6） |
+| 34 | `ComesNearWaypoint` | `value` 路径点 | R | S | 0x500 lepton 以内 |
+| 35 | `EnemyInSpotlight` | 忽略 | R | S |  |
+| 36 | `LocalIsSet` | `value` 0..99 | L | — |  |
+| 37 | `LocalIsClear` | `value` 0..99 | L | — |  |
+| 38 | `FirstDamagedCombat` | 忽略 | R | S、O | 需要伤害来源 |
+| 39 | `HalfHealthCombat` | 忽略 | R | S、O |  |
+| 40 | `QuarterHealthCombat` | 忽略 | R | S、O |  |
+| 41 | `FirstDamagedAny` | 忽略 | R | S、O（可为 0） |  |
+| 42 | `HalfHealthAny` | 忽略 | R | S |  |
+| 43 | `QuarterHealthAny` | 忽略 | R | S |  |
+| 44 | `AttackedByHouse` | `value` 所属方数组下标 | R | S、O | Ares 转换 Player@X |
+| 45 | `AmbientLightBelow` | `value` | L | — | 环境光变化时检查 |
+| 46 | `AmbientLightAbove` | `value` | L | — | 同 45 |
+| 47 | `ElapsedScenarioTime` | `value` 秒 | L | — |  |
+| 48 | `DestroyedByAnything` | 忽略 | R | S、O（可为 0） |  |
+| 49 | `PickupCrate` | 忽略 | R | S |  |
+| 50 | `PickupCrateAny` | 忽略 | L | — | 有箱子被捡起时检查 |
+| 51 | `RandomDelay` | `value` 秒 | L | — | 随机数 native |
+| 52 | `CreditsBelow` | `value` 金钱 | H | Hs |  |
+| 53 | `SpyAsHouse` | `value` 所属方 | R | S、Hs | 持久 |
+| 54 | `SpyAsInfantry` | `value` InfantryType 下标 | R | S | 持久 |
+| 55 | `NavalUnitsDestroyed` | `value` 所属方 | H | Hs |  |
+| 56 | `LandUnitsDestroyed` | `value` 所属方 | H | Hs |  |
+| 57 | `BuildingDoesNotExist` | `value` BuildingType 下标 | H | Hs |  |
+| 58 | `PowerFull` | `value` 所属方 | H | Hs |  |
+| 59 | `EnteredOrOverflownBy` | 同 1 | R | S、O、保留的 Hs |  |
+| 60 | `TechTypeExists` | `id` 类型，`value` 数量 | L | — |  |
+| 61 | `TechTypeDoesNotExist` | `id` 类型 | L | — |  |
 
 ### 4.2 Ares 事件 62..88
 
-仅当 `rules.ares_form()`（而非只是 `rules.ares()`）时可用，否则 `trigger_create` 返回 0 和 `Unsupported`、`has_kind` 返回 0；全部 `v1`，不可决定；`R` 填 `subject`、绑定对象，`H`、`L` 为全局。
+仅当 `rules.ares_form()` 时可用，否则 `trigger_create` 返回 0 和 `Unsupported`、`has_kind` 返回 0；全部 `v1`，不可决定；`R` 填 `subject`、绑定对象，`H`、`L` 为全局。
 
 | # | API 名称 | 参数 | 类型 |
 | --- | --- | --- | --- |
@@ -589,52 +587,46 @@ bytes: u32,               // 投递区的字节数
 
 ### 4.3 新的投递型事件
 
+修饰器事件按目标绑定：对象绑定该对象；所属方为全局事件，填 `house`。
+
 编号属待定问题 5，在安全点引发；`对象+武器` 也可绑定到武器、弹头或抛射体类型（[RFC 6a](0001-wasm-extension-modules.zh-CN.md#6a-触发器事件筛选子句和动作)）；全部 `v1?`。
 
-| 事件 | 字段 | 引发时机 | 绑定 | 可决定 | 结果槽 |
-| --- | --- | --- | --- | --- | --- |
-| `TakeDamage` | `other` 来源（可为 0），`value` 护甲结算后的伤害，`id` 弹头，`x`、`y`、`z` 主体位置（lepton） | 伤害提交后 | 对象 | 是：伤害提交前 | 最终伤害 |
-| `HitByWarhead` | `id` 弹头，`value` 最终伤害，`other` 来源，`x`、`y`、`z` 主体位置（lepton） | 伤害被接收后；免疫的命中不算 | 对象 | 否 | — |
-| `AttackedBy` | `other` 攻击者，`value` 武器槽位（−1 无），`projectile`（可为 0） | 开火步骤后，在目标上 | 对象 | 否 | — |
-| `FatalDamage` | `other` 攻击者（可为 0），`value` 伤害，`id` 弹头，`x`、`y`、`z` 主体位置（lepton） | 致命伤害提交后、死亡流程前；死亡流程重新检查 | 对象 | 是：死亡流程中 | 死亡方式：位 0–31 为死亡武器 ID 加 1（0 无），位 32 产生幸存者，位 33 留下残骸 |
-| `Killed` | `other` 击杀者（可为 0），`id` 致死弹头（无为 −1），`x`、`y`、`z` 死亡位置（lepton） | 击杀记录后 | 对象 | 否 | — |
-| `Fire` | `other` 目标（可为 0），`cell` 目标格子（总会填入），`value` 武器槽位，`id` 武器，`projectile`（可为 0） | 射击完成后 | 对象+武器 | 是：射出前 | 射击方案条数；方案是结果区中的 `ProjectileSpec` 数组（[RFC 9](0001-wasm-extension-modules.zh-CN.md#9-示例抛射体弹道)） |
-| `SpawnFire` | `other` 子机，`value` 武器槽位，`projectile`；目标在 `cell` 或子机的 `Target` 属性 | 子机射击后 | 对象 | 否 | — |
-| `HitTarget` | `other` 目标，`value` 伤害，`id` 武器，`projectile` | 伤害提交后，在开火者上 | 对象+武器 | 否 | — |
-| `TargetChanged` | `other` 新目标（清除时为 0） | 目标设定或清除后 | 对象 | 是：在对象的回合里设定目标前；并行的索敌预答不引发 | 选中的目标引用（0 不选）；不能攻击的目标用原生结果；候选用 `find` 读 |
-| `ProjectileIncoming` | `projectile`，`other` 发射者（可为 0） | 抛射体被接纳后 | 对象 | 否 | — |
-| `Detonated` | `projectile`（投递时读出为不存在），`cell`，`other` 来源（可为 0），`id` 弹头，`x`、`y`、`z` 引爆点（lepton） | 引爆后 | 对象+武器 | 否 | — |
-| `Birth` | `other` 生产者（可为 0），`value` 生产时间（−1 无） | 对象放置后（生产、增援、生成） | 对象 | 否 | — |
-| `TransportEntered` | 在乘客（`subject`）上；`other` 载具或建筑，`value` 已占空间，`value2` 1 驻军 / 0 载员 | 进入完成后 | 对象 | 否 | — |
-| `TransportExited` | 同 `TransportEntered` | 离开完成后 | 对象 | 否 | — |
-| `PassengerAdded` | 在载具或建筑（`subject`）上；`other` 乘客，`value` 已占空间，`value2` 驻军标志 | 同 `TransportEntered` | 对象 | 否 | — |
-| `PassengerRemoved` | 同 `PassengerAdded` | 同 `TransportExited` | 对象 | 否 | — |
-| `Commanded` | 在单位（`subject`）上；`value` 指令（`Command`），`other` 目标对象（可为 0），`cell` 目标格子（可为 0），`value2` 指令序号（一次点击下给多个单位的同一条指令共用） | 模拟执行绑定对象的玩家或 AI 指令后 | 对象 | 否 | — |
-| `Crushed` | `other` 碾压者，`x`、`y`、`z` 位置（lepton） | 碾压后 | 对象 | 否 | — |
-| `HouseTransfer` | `house` 新所属方，`value` 1 为心控 | 转移前；转移重新检查 | 对象 | 否 | — |
-| `HouseTransferred` | `house` 原所属方，`value` 1 为心控 | 转移后 | 对象 | 否 | — |
-| `ModifierStart` | `modifier`，`value` 属性 ID，`other` 来源（可为 0） | 修饰器加入后 | 对象；所属方上的修饰器为全局，填 `house` | 否 | — |
-| `ModifierExpire` | `modifier`（投递后读出为不存在），`value` 属性 ID | 修饰器到期或移除后 | 对象；所属方上的修饰器为全局，填 `house` | 否 | — |
-| `ModifierStacks` | `modifier`，`value` 同组的新修饰器数 | 同组修饰器数增加后 | 对象；所属方上的修饰器为全局，填 `house` | 否 | — |
-| `Timer` | `value` 上次触发的帧 | 每 `interval` 帧 | 全局 | 否 | — |
-| `SuperWeaponLaunched` | `id` 超级武器类型，`house`，`cell` 目标 | 超级武器发射后 | 全局 | 否 | — |
-| `ProductionCancelled` | `house`，`id` 类型，`value` 退还的金钱 | 玩家或 AI 取消生产队列中的条目后 | 类型 | 否 | — |
+| 事件 | 字段 | 引发时机 | 绑定 | 决定时机 → 结果（— 为不可决定） |
+| --- | --- | --- | --- | --- |
+| `TakeDamage` | `other` 来源（可为 0），`value` 护甲结算后的伤害，`id` 弹头，`x`、`y`、`z` 主体位置（lepton） | 伤害提交后 | 对象 | 伤害提交前 → 最终伤害 |
+| `HitByWarhead` | `id` 弹头，`value` 最终伤害，`other` 来源，`x`、`y`、`z` 主体位置（lepton） | 伤害被接收后；免疫的命中不算 | 对象 | — |
+| `AttackedBy` | `other` 攻击者，`value` 武器槽位（−1 无），`projectile`（可为 0） | 开火步骤后，在目标上 | 对象 | — |
+| `FatalDamage` | `other` 攻击者（可为 0），`value` 伤害，`id` 弹头，`x`、`y`、`z` 主体位置（lepton） | 致命伤害提交后、死亡流程前；死亡流程重新检查 | 对象 | 死亡流程中 → 死亡方式：位 0–31 为死亡武器 ID 加 1（0 无），位 32 产生幸存者，位 33 留下残骸 |
+| `Killed` | `other` 击杀者（可为 0），`id` 致死弹头（无为 −1），`x`、`y`、`z` 死亡位置（lepton） | 击杀记录后 | 对象 | — |
+| `Fire` | `other` 目标（可为 0），`cell` 目标格子（总会填入），`value` 武器槽位，`id` 武器，`projectile`（可为 0） | 射击完成后 | 对象+武器 | 射出前 → 射击方案条数；方案是结果区中的 `ProjectileSpec` 数组（[RFC 9](0001-wasm-extension-modules.zh-CN.md#9-示例抛射体弹道)） |
+| `SpawnFire` | `other` 子机，`value` 武器槽位，`projectile`；目标在 `cell` 或子机的 `Target` 属性 | 子机射击后 | 对象 | — |
+| `HitTarget` | `other` 目标，`value` 伤害，`id` 武器，`projectile` | 伤害提交后，在开火者上 | 对象+武器 | — |
+| `TargetChanged` | `other` 新目标（清除时为 0） | 目标设定或清除后 | 对象 | 在对象的回合里设定目标前；并行的索敌预答不引发 → 选中的目标引用（0 不选）；不能攻击的目标用原生结果；候选用 `find` 读 |
+| `ProjectileIncoming` | `projectile`，`other` 发射者（可为 0） | 抛射体被接纳后 | 对象 | — |
+| `Detonated` | `projectile`（投递时读出为不存在），`cell`，`other` 来源（可为 0），`id` 弹头，`x`、`y`、`z` 引爆点（lepton） | 引爆后 | 对象+武器 | — |
+| `Birth` | `other` 生产者（可为 0），`value` 生产时间（−1 无） | 对象放置后（生产、增援、生成） | 对象 | — |
+| `TransportEntered` | 在乘客（`subject`）上；`other` 载具或建筑，`value` 已占空间，`value2` 1 驻军 / 0 载员 | 进入完成后 | 对象 | — |
+| `TransportExited` | 同 `TransportEntered` | 离开完成后 | 对象 | — |
+| `PassengerAdded` | 在载具或建筑（`subject`）上；`other` 乘客，`value` 已占空间，`value2` 驻军标志 | 同 `TransportEntered` | 对象 | — |
+| `PassengerRemoved` | 同 `PassengerAdded` | 同 `TransportExited` | 对象 | — |
+| `Commanded` | 在单位（`subject`）上；`value` 指令（`Command`），`other` 目标对象（可为 0），`cell` 目标格子（可为 0），`value2` 指令序号（一次点击下给多个单位的同一条指令共用） | 模拟执行绑定对象的玩家或 AI 指令后 | 对象 | — |
+| `Crushed` | `other` 碾压者，`x`、`y`、`z` 位置（lepton） | 碾压后 | 对象 | — |
+| `HouseTransfer` | `house` 新所属方，`value` 1 为心控 | 转移前；转移重新检查 | 对象 | — |
+| `HouseTransferred` | `house` 原所属方，`value` 1 为心控 | 转移后 | 对象 | — |
+| `ModifierStart` | `modifier`，`value` 属性 ID，`other` 来源（可为 0） | 修饰器加入后 | 修饰器目标 | — |
+| `ModifierExpire` | `modifier`（投递后读出为不存在），`value` 属性 ID | 修饰器到期或移除后 | 修饰器目标 | — |
+| `ModifierStacks` | `modifier`，`value` 同组的新修饰器数 | 同组修饰器数增加后 | 修饰器目标 | — |
+| `Timer` | `value` 上次触发的帧 | 每 `interval` 帧 | 全局 | — |
+| `SuperWeaponLaunched` | `id` 超级武器类型，`house`，`cell` 目标 | 超级武器发射后 | 全局 | — |
+| `ProductionCancelled` | `house`，`id` 类型，`value` 退还的金钱 | 玩家或 AI 取消生产队列中的条目后 | 类型 | — |
 
 ### 4.4 新的轮询型事件
 
-每 `interval` 帧检查，状态翻转时触发，按创建序号错开（[RFC 6a](0001-wasm-extension-modules.zh-CN.md#6a-触发器事件筛选子句和动作)），用 `op` 比较读数与 `value`；所属方事件为全局，填 `house`，其余为对象，填 `subject`；`value` 为触发时的读数；不可决定，全部 `v1?`。
+全部为 `v1?`，不可决定。采样间隔、错帧和触发边沿见 [RFC 6a](0001-wasm-extension-modules.zh-CN.md#6a-触发器事件筛选子句和动作)。默认以 `op` 比较读数与阈值 `EventDef.value`；记录中的 `value` 为实际读数。所属方事件填 `house`，为全局事件；对象事件填 `subject`。
 
 | 事件 | 读数 |
 | --- | --- |
-| `HealthPoll` | 生命值；`id` 为 1 时为百分比 |
-| `AmmoPoll` | 弹药数 |
-| `PassengersPoll` | 乘客数 |
-| `TransportSpacePoll` | 剩余空间 |
-| `StoragePoll` | 载矿量 |
-| `MissionPoll` | 当前任务等于 `value` |
-| `MovingPoll` | `value` 1 移动，0 停止 |
-| `LandTypePoll` | 所在格子的地形类型等于 `value` |
-| `HouseMoneyPoll` | 触发器所属方的可用金钱 |
+| `PropertyPoll` | `EventDef.id` 为属性 ID，`op`、`value`、`interval` 为比较运算、阈值和间隔。对象属性限 `Health`、`HealthPercent`、`Ammo`、`PassengerCount`、`TransportSpaceLeft`、`Storage`、`Mission`、`Moving`、`LandType`，取绑定对象；`Money` 取触发器所属方（全局事件）。其余属性在创建时拒绝。SDK 字段 `reading` 对应 `EventRecord.value`。 |
 | `HousePowerPoll` | 发电量减耗电量 |
 | `ModifierCountPoll` | 主体上组 `id` 中、来自本模块来源的修饰器数 |
 | `DistancePoll` | 到格子的距离（lepton）：`EventDef.value` 为格子或路径点引用，`op` 比较距离与 `id`（lepton） |
@@ -846,54 +838,51 @@ Ares 动作（未启用 Ares 时为 `Unsupported`）：
 
 ### 5.3 原子动作
 
-每种一个操作、一个 owner（[RFC 6](0001-wasm-extension-modules.zh-CN.md#6-五个概念)）；编号属待定问题 5；“仅代码”的种类需要变长数据，只能用 `action`。
+编号待定（问题 5）。“仅代码”动作通过 `action` 传变长数据。未注明返回句柄的动作值为 0，状态随调用返回。
 
-| 名称 | 目标 | 参数 | 返回 | 语义 | 随机数 | 层级 |
-| --- | --- | --- | --- | --- | --- | --- |
-| `FireWeapon` | 对象（射手） | `id` 武器，为 −1 时用 `value` 武器槽位（默认 0 主武器）；瞄准 `cell`，否则 `other`，否则当前目标，都没有为 `Gone` | — | 开火；当前无法开火为 `Refused` | native | v1? |
-| `LaunchSuperWeapon` | `House` | `id` 超级武器类型，`cell`（必需，缺少为非法参数） | — | 发射该所属方的超级武器 | native | v1? |
-| `SpawnAnim` | 格子 | `id` 动画 | — | 创建动画 | native | v1? |
-| `AttachAnim` | 对象 | `id` 动画，`value2` 帧数（负数直到移除） | — | 把动画附着在对象上 | native | v1 |
-| `Remove` | 对象 | — | — | 移除：不死亡、无幸存者、不计击杀 | none | v1? |
-| `Kill` | 对象 | `other` 来源（可选） | — | 经伤害流程击杀，伤害为当前生命、无视防御（有死亡动画和幸存者，击杀记给来源） | native | v1? |
-| `Damage` | 对象 | `id` 弹头，`value` 伤害；`other` 来源（可选） | — | 经弹头和护甲造成伤害，计击杀和经验 | native | v1? |
-| `SetHealth` | 对象 | `value` 生命点数 | — | 设定生命，不计击杀（同写 `Health`） | none | v1? |
-| `Heal` | 对象 | `value` 生命点数 | — | 回复生命，不计击杀 | none | v1? |
-| `CreateObject` | 格子，或工厂建筑 | `id` 类型；`house` 所属方；`arg` 初始任务（`Mission`，255 默认）；`other` 非 0 时复制其标签 | 新对象 | 创建完整对象；目标为建筑时经该工厂的原生出口离开（开门、驶出、前往集结点，出口被堵时等待），建筑不是能生产该类型类别的工厂时为 `Refused`，返回 0；其他目标放在格子上，格子被占为 `Refused`，返回 0 | native | v1? |
-| `SetMission` | 对象 | `arg` 任务，`cell` 或 `other` 为任务目标 | — | 像玩家指令一样排入任务；带格子的 `Move` 移到该格 | none | v1 |
-| `Teleport` | 对象 | `cell`，`arg` 目标格被占时的规则（`Blocked`） | — | 超时空式移动；`Nearby` 选附近格子，`Fail` 拒绝 | native | v1? |
-| `ClearTarget` | 对象 | — | — | 放弃当前目标 | none | v1? |
-| `ClearDisguise` | 对象 | — | — | 解除间谍或幻影坦克的伪装 | none | v1? |
-| `ClearMindControl` | 对象 | — | — | 解除心灵控制，还给原所属方 | none | v1? |
-| `AddExperience` | 对象 | `value` 经验点数 | — | 增加经验 | none | v1? |
-| `SetRank` | 对象 | `value` 等级（`Rank`） | — | 设定等级（同写 `Rank`） | none | v1? |
-| `AddMoney` | `House` | `value` 金额（可为负） | — | 增减金钱 | none | v1? |
-| `AllowType` | `House` | `id` 类型，`value` 1 允许 / 0 不允许 | — | 修改可建造列表 | none | v1? |
-| `SetOwner` | 对象 | `house` 新所属方 | — | 转移所属（同写 `Owner`） | none | v1? |
-| `SetAmmo` | 对象 | `value` 弹药 | — | 设定弹药（同写 `Ammo`） | none | v1? |
-| `AddAmmo` | 对象 | `value` 弹药 | — | 增加弹药 | none | v1? |
-| `AddPassenger` | 对象（载具） | `other` 乘客 | — | 乘客登上 | native | v1? |
-| `RemovePassenger` | 对象（载具） | `other` 乘客 | — | 乘客离开 | native | v1? |
-| `SetProperty` | 对象、`House` 或格子 | `id` 属性，`value` 值 | — | 写可写属性，同 `set` | none | v1 |
-| `Modify` | 对象或 `House` | `id` 属性，`arg` 运算（`ModifierOp`），`arg2` 组，`value` 值，`value2` 帧数；`other` 来源（可选） | 修饰器 | 加修饰器，同 `modify` | none | v1 |
-| `RemoveModifiers` | 对象或 `House` | `arg2` 组；`id` 非 −1 时只限该属性 | — | 移除本模块来源在该组的修饰器 | none | v1 |
-| `SetVar` | 对象、`House` 或 — | `id` 变量，`value` 值 | — | 写变量：对象作用域取目标对象，所属方作用域取 `House` 目标（为 0 时同 `ActionParams.house`），全局作用域忽略目标；同 `var_set` | none | v1 |
-| `DetonateWeapon` | 格子 | `id` 武器；`other` 来源（可选） | — | 在格子中心直接引爆武器，不生成抛射体 | native | v1? |
-| `DetonateWarhead` | 格子 | `id` 弹头，`value` 伤害；`other` 来源（可选） | — | 弹头范围伤害 | native | v1? |
-| `CreateProjectile` | 对象或格子（起点） | `extra` 一个 `ProjectileSpec`；`other` 来源（击杀和经验归属，可为 0） | 抛射体 | 从 `origin` 给出的位置创建抛射体，失败为 0；仅代码 | native | v1? |
-| `DetonateProjectile` | `Projectile` | — | — | 立即引爆 | native | later |
-| `RemoveProjectile` | `Projectile` | — | — | 移除，不引爆 | none | later |
-| `EndFor` | `House` | `arg` 结果（`Outcome`） | — | 让该所属方胜利或失败 | none | v1? |
-| `SetScore` | `House` | `value` 分数 | — | 设定分数 | none | v1? |
-| `AddScore` | `House` | `value` 分数 | — | 增加分数 | none | v1? |
-| `Log` | — | `text` | — | 写一行游戏内日志 | none | v1 |
-| `Convert` | 对象 | `id` 类型，`value2` 帧数（0 永久；大于 0 时到期变回） | — | 改变类型，同 Ares 类型转换；与传送和运动互斥 | native | v1? |
-| `Push` | 对象 | `cell` 方向目标，`value` 力度 | — | 被推动或抛起，叠加到移动上；与变形和传送互斥 | native | later |
-| `Module` | 不限 | `id` 分派键 | — | 运行模块动作，在模块阶段排队；INI 写作 `Action=Wasm:name` | none | v1 |
-| `CreateTeamUnlimited` | `House` | `id` TeamType | 小队 | 启动小队，不受 Max 限制（同脚本动作 18） | native | v1? |
-| `DisbandTeam` | — | `other` 小队 | — | 销毁小队，记录 AI 触发器结果，释放成员 | none | v1 |
-| `AddTeamMember` | 对象 | `other` 小队 | — | 加入小队，执行准入检查 | none | v1? |
-| `RemoveTeamMember` | 对象 | — | — | 离开所在小队 | none | v1? |
+| 名称 | 目标 | 参数 | 语义及非零返回值 | 随机数 | 层级 |
+| --- | --- | --- | --- | --- | --- |
+| `FireWeapon` | 对象（射手） | `id` 武器，为 −1 时用 `value` 武器槽位（默认 0 主武器）；瞄准 `cell`，否则 `other`，否则当前目标，都没有为 `Gone` | 开火；当前无法开火为 `Refused` | native | v1? |
+| `LaunchSuperWeapon` | `House` | `id` 超级武器类型，`cell`（必需，缺少为非法参数） | 发射该所属方的超级武器 | native | v1? |
+| `SpawnAnim` | 格子 | `id` 动画 | 创建动画 | native | v1? |
+| `AttachAnim` | 对象 | `id` 动画，`value2` 帧数（负数直到移除） | 把动画附着在对象上 | native | v1 |
+| `Remove` | 对象 | — | 移除：不死亡、无幸存者、不计击杀 | none | v1? |
+| `Kill` | 对象 | `other` 来源（可选） | 经伤害流程击杀，伤害为当前生命、无视防御（有死亡动画和幸存者，击杀记给来源） | native | v1? |
+| `Damage` | 对象 | `id` 弹头，`value` 伤害；`other` 来源（可选） | 经弹头和护甲造成伤害，计击杀和经验 | native | v1? |
+| `Heal` | 对象 | `value` 生命点数 | 回复生命，不计击杀 | none | v1? |
+| `CreateObject` | 格子，或工厂建筑 | `id` 类型；`house` 所属方；`arg` 初始任务（`Mission`，255 默认）；`other` 非 0 时复制其标签 | 成功返回新对象。工厂开门、驶出、前往集结点；出口堵塞则等待。工厂不能生产该类别或目标格已占用时返回 (0, Refused) | native | v1? |
+| `SetMission` | 对象 | `arg` 任务，`cell` 或 `other` 为任务目标 | 像玩家指令一样排入任务；带格子的 `Move` 移到该格 | none | v1 |
+| `Teleport` | 对象 | `cell`，`arg` 目标格被占时的规则（`Blocked`） | 超时空式移动；`Nearby` 选附近格子，`Fail` 拒绝 | native | v1? |
+| `ClearTarget` | 对象 | — | 放弃当前目标 | none | v1? |
+| `ClearDisguise` | 对象 | — | 解除间谍或幻影坦克的伪装 | none | v1? |
+| `ClearMindControl` | 对象 | — | 解除心灵控制，还给原所属方 | none | v1? |
+| `AddExperience` | 对象 | `value` 经验点数 | 增加经验 | none | v1? |
+| `AddMoney` | `House` | `value` 金额（可为负） | 增减金钱 | none | v1? |
+| `AllowType` | `House` | `id` 类型，`value` 1 允许 / 0 不允许 | 修改可建造列表 | none | v1? |
+| `SetOwner` | 对象 | `house` 新所属方 | 转移所属（同写 `Owner`） | none | v1? |
+| `AddAmmo` | 对象 | `value` 弹药 | 增加弹药 | none | v1? |
+| `AddPassenger` | 对象（载具） | `other` 乘客 | 乘客登上 | native | v1? |
+| `RemovePassenger` | 对象（载具） | `other` 乘客 | 乘客离开 | native | v1? |
+| `SetProperty` | 对象、`House` 或格子 | `id` 属性，`value` 值 | 写可写属性，同 `set` | none | v1 |
+| `Modify` | 对象或 `House` | `id` 属性，`arg` 运算（`ModifierOp`），`arg2` 组，`value` 值，`value2` 帧数；`other` 来源（可选） | 加修饰器，同 `modify`；返回修饰器 | none | v1 |
+| `RemoveModifiers` | 对象或 `House` | `arg2` 组；`id` 非 −1 时只限该属性 | 移除本模块来源在该组的修饰器 | none | v1 |
+| `SetVar` | 对象、`House` 或 — | `id` 变量，`value` 值 | 写变量：对象作用域取目标对象，所属方作用域取 `House` 目标（为 0 时同 `ActionParams.house`），全局作用域忽略目标；同 `var_set` | none | v1 |
+| `DetonateWeapon` | 格子 | `id` 武器；`other` 来源（可选） | 在格子中心直接引爆武器，不生成抛射体 | native | v1? |
+| `DetonateWarhead` | 格子 | `id` 弹头，`value` 伤害；`other` 来源（可选） | 弹头范围伤害 | native | v1? |
+| `CreateProjectile` | 对象或格子（起点） | `extra` 一个 `ProjectileSpec`；`other` 来源（击杀和经验归属，可为 0） | 从 `origin` 给出的位置创建抛射体，失败为 0；仅代码；返回抛射体 | native | v1? |
+| `DetonateProjectile` | `Projectile` | — | 立即引爆 | native | later |
+| `RemoveProjectile` | `Projectile` | — | 移除，不引爆 | none | later |
+| `EndFor` | `House` | `arg` 结果（`Outcome`） | 让该所属方胜利或失败 | none | v1? |
+| `SetScore` | `House` | `value` 分数 | 设定分数 | none | v1? |
+| `AddScore` | `House` | `value` 分数 | 增加分数 | none | v1? |
+| `Log` | — | `text` | 写一行游戏内日志 | none | v1 |
+| `Convert` | 对象 | `id` 类型，`value2` 帧数（0 永久；大于 0 时到期变回） | 改变类型，同 Ares 类型转换；与传送和运动互斥 | native | v1? |
+| `Push` | 对象 | `cell` 方向目标，`value` 力度 | 被推动或抛起，叠加到移动上；与变形和传送互斥 | native | later |
+| `Module` | 不限 | `id` 分派键 | 运行模块动作，在模块阶段排队；INI 写作 `Action=Wasm:name` | none | v1 |
+| `CreateTeamUnlimited` | `House` | `id` TeamType | 启动小队，不受 Max 限制（同脚本动作 18）；返回小队 | native | v1? |
+| `DisbandTeam` | — | `other` 小队 | 销毁小队，记录 AI 触发器结果，释放成员 | none | v1 |
+| `AddTeamMember` | 对象 | `other` 小队 | 加入小队，执行准入检查 | none | v1? |
+| `RemoveTeamMember` | 对象 | — | 离开所在小队 | none | v1? |
 
 ### 5.4 客户端动作种类
 
@@ -904,7 +893,7 @@ Ares 动作（未启用 Ares 时为 `Unsupported`）：
 | `PlaySound` | 格子或 0 | `id` 声音 | 本机播放；目标 0 时不定位 |
 | `PlaySpeech` | — | `text` EVA 名称 | 本机播放 EVA 语音 |
 | `CenterCamera` | 格子 | `value` 速度 | 移动本机镜头，同动作 48 |
-| `JumpCamera` | 格子 | — | 本机镜头跳转，同动作 112 |
+| `JumpCamera` | 格子 | — | `Camera.jumpTo(cell)` 跳转本机镜头；地图动作 112 保留原有投递范围 |
 | `HomeCamera` | — | — | 同动作 145 |
 | `Select` | — | `extra` 对象句柄数组，`value` 1 为追加 | 本地选择；只接受本玩家能选的对象 |
 | `FlashObject` | 对象 | `value` 帧数 | 对象在本机闪烁 |
@@ -917,7 +906,7 @@ Ares 动作（未启用 Ares 时为 `Unsupported`）：
 
 ### 6.1 定义
 
-INI，在 `on_rules` 中用 `rules_set` 写入，经原生读取器；这些节和它们列出的节写入 AI 文档（`AIMD.INI` 加地图），`rules_get` 读合并后的 AI 文档；运行时用 `lookup(TeamType, name)`、`lookup(ScriptType, name)`、`lookup(AiTrigger, name)` 返回的 ID 和对应的类型引用。
+AI 文档的读写层次见 [RFC 6d](0001-wasm-extension-modules.zh-CN.md#6d-ai)。运行时用 `lookup(TeamType, name)`、`lookup(ScriptType, name)`、`lookup(AiTrigger, name)` 返回的 ID 和对应的类型引用。
 
 | 节 | 内容 | 说明 |
 | --- | --- | --- |
@@ -1010,7 +999,7 @@ INI，在 `on_rules` 中用 `rules_set` 写入，经原生读取器；这些节�
 按引用种类分组。列：
 
 - **值**：[值类型](#值)。
-- **读写**：`R` 只读；`W` 随时可写，经 owner；`W(rules)` 仅 `on_rules`（`rules_set`，或对类型和全局规则引用 `set`，等同于以值的 INI 文本调用 `rules_set`）；`W(白名单)` 对局中可写的白名单候选（待定问题 11），其他时候同 `W(rules)`；不可写时 `set` 为 `Refused`。
+- **读写**：`R` 只读；`W` 经 owner 写入；`W(rules)` 仅在 `on_rules` 写入（类型或全局规则上的 `set` 等同 `rules_set`）；`W(白名单)` 另允许对局中写入已纳入白名单的键（待定问题 11）。不可写时返回 `Refused`。
 - **客户端**（[RFC 10](0001-wasm-extension-modules.zh-CN.md#10-客户端模块)）：`all` 同模拟；`own` 只对本玩家所属方及其对象，其他为空值和 `Refused`；`seen` 自己的全部，其他所属方中当前能看到的对象按 RFC 10 的限制，其他对象不存在；`sim` 仅模拟，客户端为空值和 `Unsupported`。
 - **视点**属性取决于视点所属方（筛选子句：触发器所属方；搜索：`viewpoint`；客户端：本玩家），直接 `get` 为 `Unsupported`（[RFC 6c](0001-wasm-extension-modules.zh-CN.md#6c-对象属性与修饰器)）；**派生**属性由引擎算出，只读；标为“派生，高”的需要搜索或射程判定，在筛选子句中求值时按费用计入所属模块的额度（[RFC 15](0001-wasm-extension-modules.zh-CN.md#15-性能)），其他派生属性的费用与读一个字段相同。
 
@@ -1023,7 +1012,7 @@ INI，在 `on_rules` 中用 `rules_set` 写入，经原生读取器；这些节�
 | `Type` | ref（类型） | R | seen（伪装的敌人为伪装类型） | v1 | 改类型用 `Convert` |
 | `Owner` | ref（所属方） | W | seen（伪装的敌人为伪装所属方） | v1 | 写入同 `SetOwner` |
 | `Category` | enum `Category` | R | seen | v1 | |
-| `Health` | int | W | seen | v1 | 写入同 `SetHealth` |
+| `Health` | int | W | seen | v1 | 写入设定生命值，不计击杀 |
 | `Strength` | int | R | seen | v1 | 最大生命 |
 | `HealthPercent` | int | R（派生） | seen | v1 | |
 | `X`、`Y`、`Z` | lepton | R | seen | v1 | |
@@ -1032,7 +1021,7 @@ INI，在 `on_rules` 中用 `rules_set` 写入，经原生读取器；这些节�
 | `LandType` | enum `LandType` | R（派生） | own | v1 | 所在格子的地形类型 |
 | `Mission` | enum `Mission` | W | own | v1 | 写入像玩家指令一样排入任务，无目标 |
 | `Target` | ref | R | own | v1 | 对象或格子；清除用 `ClearTarget` |
-| `Rank` | enum `Rank` | W | own | v1 | 写入同 `SetRank` |
+| `Rank` | enum `Rank` | W | own | v1 | 写入设定等级 |
 | `Experience` | int | R | own | v1 | 增加用 `AddExperience` |
 | `Ammo` | int | W | own | v1 | |
 | `Storage` | int | R | own | v1 | 载矿量 |
@@ -1091,14 +1080,7 @@ INI，在 `on_rules` 中用 `rules_set` 写入，经原生读取器；这些节�
 | `LaserTrailType` | id | −1 | 覆盖 | 激光拖尾；客户端为 `seen` | `LaserTrail.Type` | v1 |
 | `PowerOutage` | bool | 0 | 覆盖 | 所属方断电（所属方属性，7.5） | — | v1? |
 
-以动作表示的效果：
-
-| 效果 | 动作 |
-| --- | --- |
-| 附着动画 | `AttachAnim`（带帧数） |
-| 变成另一类型 | `Convert`（带帧数，到期变回） |
-| 运动（被抛起、被推动） | `Push`（later） |
-| 传送 | `Teleport` |
+附着动画、限时转换、推动和传送分别见 [5.3](#53-原子动作) 的 `AttachAnim`、`Convert`、`Push`、`Teleport`。
 
 **Phobos AttachEffect 键**仅在 Phobos 开关打开时读取，生效时在同一 owner 中按上表加入修饰器；其余键：
 
@@ -1153,7 +1135,7 @@ Phobos 键为 `—` 的属性随模块功能开启（[RFC 14](0001-wasm-extensio
 | 属性 | 值 | 读写 | 客户端 | 层级 | 说明 |
 | --- | --- | --- | --- | --- | --- |
 | `Name` | string | R | all | v1 | |
-| `Country` | ref（国家类型） | R | all | v1 | `House.byName` 为 `lookup(Country)` 加带 `Country` 子句的 `find`，取所属方下标最小的一个 |
+| `Country` | ref（国家类型） | R | all | v1 | 同一国家可对应多个所属方，按所属方下标分页 |
 | `Side` | int | R | all | v1 | |
 | `Index` | int | R | all | v1 | 所属方数组下标 |
 | `Money` | int | R | own | v1 | 修改用 `AddMoney` |
@@ -1184,12 +1166,12 @@ Phobos 键为 `—` 的属性随模块功能开启（[RFC 14](0001-wasm-extensio
 
 常用 INI 键的带类型形式（解析后的值），其他键用 `rules_get`（[RFC 8](0001-wasm-extension-modules.zh-CN.md#8-修改规则)）；客户端全部 `all`，下表全部 `v1`。
 
-| 属性 | 值 | 类型 | 读写 | 层级 |
-| --- | --- | --- | --- | --- |
-| `Name` | string | 任意类型 | R | v1 |
-| `Category` | enum `Category` | TechnoType | R | v1 |
-| `Buildable` | bool | TechnoType | R（视点）：视点所属方的前提条件已满足 | v1 |
-| `Enabled` | bool | AI 触发器 | W：启用或禁用 | v1 |
+| 属性 | 值 | 类型 | 读写 |
+| --- | --- | --- | --- |
+| `Name` | string | 任意类型 | R |
+| `Category` | enum `Category` | TechnoType | R |
+| `Buildable` | bool | TechnoType | R（视点）：视点所属方的前提条件已满足 |
+| `Enabled` | bool | AI 触发器 | W：启用或禁用 |
 
 下面两表中标了值类型的键也是同名属性：“使用时读取”中的为 `W(白名单)`，“构造时复制”中的为 `R`；列表和字符串键没有属性，只用 `rules_get`、`rules_set`。
 
@@ -1328,26 +1310,20 @@ Ares 和 Phobos 的键尚未分类。
 | `HideAnchor` | bool | `Decoration` | 在本机隐藏对象本身 |
 | `Number` | int | `Decoration` | 显示在对象上方的数字 |
 
-**INI 布局键**（`veraui.ini` 语法，[RFC 10](0001-wasm-extension-modules.zh-CN.md#10-客户端模块)；节点属性同名，`Value` 只在 INI 中有效）：
+**INI 布局键。** `Type` 取节点种类表中的 INI 名。`X`、`Y`、`Width`、`Height`、`Gap`、`Art` 与节点属性同义。`Hold` 取 [8.3](#83-枚举) 的九个位置；INI 的 `Label` 用于按钮和文本。
 
-| 键 | 含义 |
+| 布局专用键 | 取值 |
 | --- | --- |
-| `Type` | `Button`、`Text`、`Row`、`Column`、`CameoGrid`；新增 `List` |
-| `Hold` | `TopLeft`、`Top`、`TopRight`、`Left`、`Middle`、`Right`、`BottomLeft`、`Bottom`、`BottomRight` |
-| `X`、`Y`、`Width`、`Height` | 位置和尺寸 |
 | `Parts` | 行或列的子节点 |
-| `Gap` | 各部分间距（像素） |
-| `Label` | 按钮文字或 CSF 条目名；新增用于 `Text` |
-| `Art` | 图片名 |
-| `Command` | 键盘命令名（`StopObject`、`GuardObject`……） |
-| `Value` | 显示的数据来源：`Credits`、`Power`、`Drain`、`Name`、`Time`、`Kills`、`Losses` |
+| `Command` | 键盘命令名，如 `StopObject`、`GuardObject` |
+| `Value` | `Credits`、`Power`、`Drain`、`Name`、`Time`、`Kills`、`Losses` |
 | `Tab`、`Columns`、`Rows` | 图标网格 |
 
 **客户端全局引用**（种类 6）：
 
 | 引用 | 属性 | 值 | 读写 | 层级 |
 | --- | --- | --- | --- | --- |
-| 镜头 | `Cell` | ref（格子） | W：写入即跳转，同 `JumpCamera` | v1? |
+| 镜头 | `Cell` | ref（格子） | R：`Camera.cell()` 读取当前格子 | v1? |
 | 镜头 | `X`、`Y` | lepton | W：镜头中心，写入即跳转，钳制在地图内 | v1? |
 | 本地设置 | `Viewer` | ref（所属方） | R：本机所属方，观战者为 0 | v1 |
 | 本地设置 | `IsSpectator` | bool | R | v1 |
@@ -1360,31 +1336,31 @@ Ares 和 Phobos 的键尚未分类。
 
 ### 8.1 名字种类（`lookup`）
 
-| # | 种类 | 名字 | 说明 |
-| --- | --- | --- | --- |
-| 0 | `TechnoType` | 步兵、载具、飞行器和建筑类型 | |
-| 1 | `Weapon` | 武器 | |
-| 2 | `Warhead` | 弹头 | |
-| 3 | `Projectile` | 抛射体（BulletType） | |
-| 4 | `Anim` | 动画 | |
-| 5 | `VoxelAnim` | 体素动画 | |
-| 6 | `ParticleSystem` | 粒子系统 | |
-| 7 | `SuperWeapon` | 超级武器类型 | |
-| 8 | `Armor` | 护甲名称 | |
-| 9 | `Overlay` | 覆盖物 | |
-| 10 | `Sound` | 声音 | |
-| 11 | `Country` | 国家（HouseType） | |
-| 12 | `TeamType` | AI 小队类型 | |
-| 13 | `ScriptType` | 小队脚本 | |
-| 14 | `AiTrigger` | AI 触发器 | |
-| 15 | `Variable` | 变量（`vera.vars`；前缀 `mod.`、`map.` 指向另一方） | 返回变量 ID |
-| 16 | `Notify` | 通知（`vera.notify`） | 返回小写折叠后名字的 FNV-1a 哈希 |
-| 17 | `ModuleAction` | 模块动作和决定处理函数（本模块的 `vera.actions`；不接受前缀） | 返回分派键 |
-| 18 | `String` | 引擎已持有的字符串：`string` 属性返回的任何字符串（所属方名、类型名、`GameMode`……）、CSF 条目名、音乐、EVA 名称、地图中的触发器和标签 ID | 不存在为 `NotFound`；不新建字符串 |
-| 19 | `Property` | 属性名 | 返回属性 ID |
-| 20 | `EventKind` | 事件种类名 | |
-| 21 | `ActionKind` | 动作种类名 | |
-| 22 | `Hotkey` | 本模块注册的热键（客户端） | |
+| # | 种类 | 解析目标或特殊返回值 |
+| --- | --- | --- |
+| 0 | `TechnoType` | 步兵、载具、飞行器和建筑类型 |
+| 1 | `Weapon` | 武器 |
+| 2 | `Warhead` | 弹头 |
+| 3 | `Projectile` | 抛射体（BulletType） |
+| 4 | `Anim` | 动画 |
+| 5 | `VoxelAnim` | 体素动画 |
+| 6 | `ParticleSystem` | 粒子系统 |
+| 7 | `SuperWeapon` | 超级武器类型 |
+| 8 | `Armor` | 护甲名称 |
+| 9 | `Overlay` | 覆盖物 |
+| 10 | `Sound` | 声音 |
+| 11 | `Country` | 国家（HouseType） |
+| 12 | `TeamType` | AI 小队类型 |
+| 13 | `ScriptType` | 小队脚本 |
+| 14 | `AiTrigger` | AI 触发器 |
+| 15 | `Variable` | 变量（`vera.vars`；前缀 `mod.`、`map.` 指向另一方）；返回变量 ID |
+| 16 | `Notify` | 通知（`vera.notify`）；返回小写折叠后名字的 FNV-1a 哈希 |
+| 17 | `ModuleAction` | 模块动作和决定处理函数（本模块的 `vera.actions`；不接受前缀）；返回分派键 |
+| 18 | `String` | 引擎已持有的字符串：`string` 属性返回的任何字符串（所属方名、类型名、`GameMode`……）、CSF 条目名、音乐、EVA 名称、地图中的触发器和标签 ID；不存在为 `NotFound`；不新建字符串 |
+| 19 | `Property` | 属性名；返回属性 ID |
+| 20 | `EventKind` | 事件种类名 |
+| 21 | `ActionKind` | 动作种类名 |
+| 22 | `Hotkey` | 本模块注册的热键（客户端） |
 
 ### 8.2 搜索范围（`find`）
 

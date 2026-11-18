@@ -1,54 +1,34 @@
 # RFC 0001：Wasm 扩展模块
 
-本 RFC 目前只有这一个简体中文版本。英文译本在 RFC 定稿后再制作。
+[English](0001-wasm-extension-modules.md)
 
 | | |
 | --- | --- |
-| RFC 版本 | 0.0.7 |
+| RFC 版本 | 0.0.13 |
 | 状态 | 草案（Draft） |
 | 创建日期 | 2026-11-16 |
 | 涉及的 API | `vera:sim@1`、`vera:client@1`（提议） |
 
-**开发门槛。** 本 RFC 的某个版本被接受之前，这个功能的引擎代码一律不合入。在此之前，工作只限于讨论和修订本文档，以及为回答[待定问题](#待定问题)而做的一次性实验。这些实验放在引擎源码树之外，不合并。
+**草案阶段。** 接受 RFC 后才合入引擎代码；用于回答[待定问题](#待定问题)的实验放在引擎源码树外。
 
 ## 概要
 
-让 mod 和地图携带编译好的 WebAssembly 模块（`rules.wasm`、`ui.wasm`），由 VERA20k 在沙箱中运行。模块可以在规则读完后修改规则、响应触发器、执行动作、决定指定的游戏结果，并构建自己的界面。作者可以用任何能编译到 WebAssembly 的语言、用自己的工具编写模块，引擎只运行编译好的 `.wasm`。官方提供 TypeScript 和 Rust 两套 SDK。
-
-整个 API 只有五个概念：
-
-1. **对象和属性。** 单位、建筑、抛射体、所属方、格子、类型和规则都是引用，模块读写它们的属性；带持续时间的修饰器改变属性的有效值。
-2. **变量。** 带作用域（全局、所属方、单个对象）和可见度的整数。红警 2 的局部变量和全局变量是其中固定的特例。
-3. **事件。** 让触发器触发的东西，包括可决定事件：引擎在决策点同步询问模块，由模块给出结果。
-4. **动作。** 原版触发器动作、原子动作、AI 动作和模块动作，全部按编号排在一张表里。
-5. **界面节点**（只在客户端）。界面树中的节点和它们的属性。
-
-触发器仍然是红警 2 的触发器：事件加筛选子句加动作。标签只为兼容红警 2 而保留（地图触发器通过标签挂到对象上）。API 使用红警 2 modder 已经熟悉的术语：触发器、事件、动作、标签、任务、局部和全局变量、帧。
-
-[API 附录](0001-wasm-extension-modules-api.zh-CN.md)列出全部函数和全部表：事件种类、动作种类、属性和各种枚举。它只是参考：规则在本文中陈述。
-
-API 从第一次发布起就带版本。已发布的 API 版本在之后所有 VERA20k 版本中都能继续使用。
-
-## 动机
-
-INI 文件和地图触发器表达不了 modder 想要的很多东西：自定义弹道、波次逻辑、新的超级武器行为、任务目标面板。Ares 和 Phobos 为此加了很多键，但每个新想法仍然需要改引擎。脚本层让 modder 自己实现这些，同时引擎仍然是游戏状态唯一的 owner。
-
-API 一旦被 mod 依赖就无法收回，所以它必须公开设计、以带版本的小步增长，并用测试保证每个已发布版本一直能运行。冻结的部分越小越安全：所以函数只有几十个，而事件、动作和属性是可以只追加的数据表。
+mod 和地图可携带模拟模块 `rules.wasm` 和界面模块 `ui.wasm`。引擎在沙箱中加载编译好的模块。模拟模块通过属性、变量、事件和动作修改玩法，客户端模块通过节点构建界面。官方 SDK 为 TypeScript 和 Rust，其他语言按[模块 ABI](#5a-语言与-sdk)接入。函数签名、固定布局和编号见 [API 附录](0001-wasm-extension-modules-api.zh-CN.md)。
 
 ## 目标
 
 1. modder 不改引擎也能修改玩法和界面。
 2. 所有玩家运行相同的模拟模块并得到相同结果：在任何受支持的平台上（包括浏览器版）都不会不同步。
-3. 外部模块永远不会让游戏停下。出错的模块被停用，并告诉玩家原因。
-4. 任何模块都不能读文件、不能联网，任何模拟模块都不能读时钟；客户端模块得到的渲染计时只用于显示，并且按运算量而不是时间计量（第 3 节）。引擎从不泄露隐藏信息：客户端模块的读取只暴露本玩家自己的界面能显示的内容和可见度允许的变量（第 10 节），其他任何东西只能通过通知到达客户端。模拟模块选择把什么通知给玩家，由模块作者负责（第 11 节）。
-5. 没有模块时，游戏和现在完全一样。
+3. 开局前报告模块错误并拒绝开局；对局中模块出错时停用该模块，提示原因，对局继续。
+4. 模块不得访问文件或网络。模拟模块不得读取时钟；客户端渲染计时仅用于显示。按运算量计费。客户端只读本机可见状态和获准读取的变量；模拟模块自行决定通知内容。
+5. 没有模块、地图和 mod 也未使用扩展键时，沿用原版玩法。
 6. 只有少数对象或类型使用的模块不会拖慢 2 万单位规模的战斗。
 7. 红警 2 modder 从模板开始，几分钟内就能在游戏里看到改动效果。
 
 ## 非目标
 
 - 原生插件（`.dll`、`.so`），或在沙箱外加载任何东西。
-- 引擎里出现源代码。引擎从不解析、编译或解释任何源语言，也不内置任何语言运行时（见[备选方案](#备选方案)）。
+- 引擎里出现源代码。引擎从不解析、编译或解释任何源语言，也不内置任何语言运行时。
 - 暴露引擎内部：内存布局、原生地址、内部对象下标或存储槽位（句柄是对象的创建序号，第 5 节）、渲染器的图形 API。
 - 对局中新增对象类型。
 - 取代原版触发器系统。模块是在它的基础上扩展。
@@ -56,34 +36,13 @@ API 一旦被 mod 依赖就无法收回，所以它必须公开设计、以带�
 
 ## 术语
 
-凡是红警 2 已有的术语，API 都沿用。代码和 INI 中的名字以本表为准。
-
 | 术语 | 含义 |
 | --- | --- |
-| **扩展模块**（Extension module） | 一个编译好的 `.wasm` 文件。不叫“脚本”：红警 2 里的脚本指 AI 小队脚本（`[ScriptTypes]`）。 |
-| **引用**（Ref） | 一个 64 位整数，指向一个对象（单位、建筑、抛射体、所属方、小队、触发器、标签、修饰器、超级武器、客户端节点）、一个类型、一个格子或全局规则。0 表示“没有”。 |
-| **句柄**（Handle） | 指向对象的引用。模拟对象的句柄值为创建序号；客户端节点的句柄是本机的节点序号。 |
-| **属性**（Property） | 引用上的一个具名的值，用 `get` 读、用 `set` 写。属性表写明每个属性的值类型、何时可写、客户端能否看到、能否被修饰。 |
-| **修饰器**（Modifier） | 加在某个属性上、带持续时间的加、乘或覆盖，由 `modify` 创建。取代了旧版本中的“持续效果”，沿用 Phobos AttachEffect 的键。 |
-| **变量**（Variable） | 带作用域（全局、所属方、单个对象）和可见度的整数。红警 2 的局部变量和全局变量是全局作用域的固定特例。 |
-| **触发器**（Trigger） | 和地图里一样：一个或多个事件（必须全部成立）加一个或多个动作，属于某个所属方，带难度标志和原版的重复类型。VERA 增加可选的筛选子句。 |
-| **事件**（Event） | 让触发器触发的东西。原版事件编号含义不变。 |
-| **可决定事件**（Decidable event） | 事件表中标为可决定的事件。引擎在决策点同步调用模块的 `on_decide`，由模块写入结果槽来决定结果。 |
-| **筛选子句**（Filter clause） | 写在事件上的比较：主体、另一方、所属方的某个属性或某个变量与常量比较。引擎在投递前原生检查。 |
-| **动作**（Action） | 触发器执行的内容，或模块代码用 `action` 直接执行的游戏操作。原版动作编号不变。 |
-| **模块动作**（Module action） | 一种动作：在模块阶段运行模块中的一个函数。 |
-| **模块触发器**（Module trigger） | 至少带一个模块动作或可决定处理函数、由模块创建，或通过 `Wasm.Tags` 或 `trigger_bind` 绑定的触发器。带模块动作的地图触发器也算。 |
-| **标签**（Tag） | 把触发器挂到对象或格子（CellTag）上的东西。一个对象只有一个标签。只为兼容红警 2 而保留；模块把触发器绑定到对象时不用标签。 |
-| **任务**（Mission） | 对象的命令：Move、Attack、Guard、Area Guard、Hunt、Sleep 等。 |
-| **局部/全局变量**（Local / Global） | 和地图里一样的局部变量和全局变量。 |
-| **界面节点**（Node） | 客户端界面树中的一个节点，带种类和属性。 |
-| **帧**（Frame） | 模拟的一个逻辑帧，也是 `ROF`、`Rate`、计时器和修饰器持续时间的单位。 |
-| **渲染帧**（Render frame） | 某台机器上画出的一帧。不同步。 |
-| **House、Techno、Building、Vehicle、Infantry、Aircraft、Projectile、Weapon、Warhead** | 与 INI 文件中的含义相同。 |
-| **格子、lepton**（Cell、lepton） | 地图坐标。1 格等于 256 lepton。 |
-| **运算额度**（Operation budget） | 模块每帧可以做的工作量，以确定性的运算单位计量，有一个与记录数无关的每帧上限（第 5 节）。模块代码、它发起的宿主调用和它的筛选子句中派生属性的求值都计入。 |
-| **创建序号**（Creation serial） | 引擎在每个对象和抛射体创建时给它的一个编号，从不复用。它就是对象的句柄；跨对象时，搜索结果、决定请求和投递的记录都按它排序，与引擎如何存放对象、循环按什么顺序无关。 |
-| **安全点**（Safe point） | 不处在任何计算之中的时刻，VERA 新增的事件在这里引发，其触发器的原版动作和原子动作在这里执行。引擎在一点提交一批结果的步骤算作一次计算（第 5 节）。 |
+| 引用 / 句柄 | 引用表示对象、类型、格子、路径点或全局状态。模拟对象句柄为永不复用的创建序号，客户端节点使用本机序号；0 为空。 |
+| 触发器 / 标签 | 触发器包含事件、筛选和动作。原版地图通过标签将触发器挂到对象或格子；模块也可直接绑定。 |
+| 模块触发器 | 由模块创建、通过 `Wasm.Tags` 或 `trigger_bind` 绑定，或带模块动作或决定处理函数的触发器。 |
+| 安全点 | 一次计算之前、完成后或整批结果提交后，允许执行触发器立即动作的位置（第 5 节）。 |
+| 帧 / 渲染帧 | 游戏时长按模拟逻辑帧计；渲染帧为本机显示周期。地图距离以 lepton 计，1 格 = 256 lepton。 |
 
 ## modder 看到的样子
 
@@ -97,27 +56,7 @@ Mods/MyMod/
   ui.wasm        ; 界面模块
 ```
 
-地图以文本形式携带模块，方式和现在携带 `IsoMapPack5` 一样：压缩、base64 编码、按编号分行（编码和全部键见附录的 [INI 键](0001-wasm-extension-modules-api.zh-CN.md#ini-键)）。
-
-```ini
-[Basic]
-VeraMinVersion=0.9.0     ; 示例；更旧的版本拒绝这张地图并给出提示（第 11 节）
-
-[VeraWasm]
-Api=1.0                  ; 模块需要的 API 主版本.次版本（第 12 节）
-RulesSize=48213          ; 解码后的字节数，加载时校验
-UISize=9120
-StorageId=MyCampaign     ; 客户端存储（第 10 节）；默认为地图的文件名
-
-[VeraWasmRulesPack]
-1=eJzt3XlcVOX+B...
-2=...
-
-[VeraWasmUIPack]
-1=...
-```
-
-`asset` 工具增加命令：把模块嵌入地图、从地图中取出模块，以及运行和游戏相同的加载检查。
+地图在 `[VeraWasm]` 声明 API 和模块大小，在 `[VeraWasmRulesPack]`、`[VeraWasmUIPack]` 中嵌入压缩后按编号分行的 base64 数据。`asset` 负责嵌入、提取和加载校验。键、默认值与编码见[附录 INI 键](0001-wasm-extension-modules-api.zh-CN.md#ini-键)。
 
 ### 把触发器绑定到类型
 
@@ -142,17 +81,17 @@ Repeat=Repeating         ; TagRepeat 的取值
 
 ### 模块代码
 
-引擎只看到编译好的模块，源码和编译器都在作者自己的工具里。同一个模块分别用两套官方 SDK 写，INI 触发器和代码里创建的触发器做同样的事：
+引擎只看到编译好的模块，源码和编译器都在作者自己的工具里。下面分别用两套官方 SDK 表达同一行为。类型绑定在 INI 和代码中任选一处；若用上一节的 INI，只注册具名回调，省略代码中的触发器创建。
 
 ```ts
 // TypeScript（兼容 AssemblyScript）
 import { Trigger, Event, Prop, Op, Techno, Mission, Var, VarTarget, ActionDef, Target, Rules,
-         EventRecord, namedAction, onScenarioStart, onFrame, Every } from "@vera20k/sdk";
+         TakeDamageEvent, namedAction, onScenarioStart, onFrame, Every } from "@vera20k/sdk";
 
-const PANICKED = Var.id("Panicked");   // 顶层代码：在 vera_init 中只运行一次（第 3 节）；变量声明在项目的变量列表中，构建时写入 vera.vars
+import { Panicked } from "./generated/vars";
 
-function giPanic(e: EventRecord): void {
-  Techno.setMission(e.subject, Mission.Hunt);   // 一次宿主调用：set(subject, Mission, Hunt)
+function giPanic(e: TakeDamageEvent): void {
+  Techno.setMission(e.victim, Mission.Hunt);   // 一次宿主调用：set(subject, Mission, Hunt)
 }
 namedAction("giPanic", giPanic);       // 名字必须是字符串字面量：SDK 构建时静态提取，写入 vera.actions，INI 才能引用这个名字
 
@@ -160,13 +99,13 @@ onScenarioStart((): void => {
   Trigger.on(Event.TakeDamage)
     .bind(Rules.technoType("E1"))                  // 每个 E1 运行自己的实例（第 7 节）
     .where(Prop.HealthPercent, Op.Lt, 30)
-    .whereVar(VarTarget.Subject, PANICKED, Op.Eq, 0)
-    .act(ActionDef.setVar(Target.Subject, PANICKED, 1))   // 原子动作，在触发器触发时执行
-    .action(giPanic);                              // 调用 trigger_create 和 trigger_bind
+    .whereVar(VarTarget.Subject, Panicked, Op.Eq, 0)
+    .immediate(ActionDef.setVar(Target.Subject, Panicked, 1))   // 原子动作，在触发器触发时执行
+    .enqueue(giPanic).done();                              // 调用 trigger_create 和 trigger_bind
 });
 
 onFrame(new Every(15), (): void => {
-  if (Var.get(Var.GLOBAL, Var.local(3)) != 0) {    // 红警 2 局部变量 3
+  if (Var.local(3).get() != 0) {    // 红警 2 局部变量 3
     // ...
   }
 });
@@ -177,25 +116,26 @@ onFrame(new Every(15), (): void => {
 use vera20k_sdk::prelude::*;
 use vera20k_sdk as vera;
 
-static PANICKED: LazyVar = var!("Panicked");   // 惰性单元：在 vera_init 中解析，之后读出 VarId
+use generated::vars::PANICKED;
 
-fn gi_panic(e: &EventRecord) {
-    e.subject().set_mission(Mission::Hunt);
+fn gi_panic(e: &TakeDamageEvent) {
+    e.victim().set_mission(Mission::Hunt);
 }
 
 #[vera::on_scenario_start]
 fn start() {
+    let panic_action = named_action!("giPanic", gi_panic);
     Trigger::on(Event::TakeDamage)
         .bind(rules::techno_type("E1"))
         .where_prop(Prop::HealthPercent, Op::Lt, 30)    // where 是 Rust 关键字
         .where_var(VarTarget::Subject, PANICKED, Op::Eq, 0)
-        .act(ActionDef::set_var(Target::Subject, PANICKED, 1))
-        .action(named_action!("giPanic", gi_panic));
+        .immediate(ActionDef::set_var(Target::Subject, PANICKED, 1))
+        .enqueue(panic_action).done();
 }
 
 #[vera::on_frame(every = 15)]
 fn check_waves() {
-    if Var::get(Var::GLOBAL, Var::local(3)) != 0 {
+    if Var::local(3).get() != 0 {
         // ...
     }
 }
@@ -209,13 +149,11 @@ fn check_waves() {
 
 ```ts
 // TypeScript（兼容 AssemblyScript）
-import { Trigger, Event, Find, Prop, Op, Category, Techno, Action, EventRecord,
+import { Trigger, Event, Find, Prop, Op, Category, Action, FireEvent,
          NO_HANDLE, onScenarioStart } from "@vera20k/sdk";
 
-function nukeAtTarget(e: EventRecord): void {
-  let cell = Techno.cell(e.other);           // 目标对象此刻所在的格子；没有目标对象或它已不存在时为 NO_HANDLE
-  if (cell == NO_HANDLE) cell = e.cell;      // 否则用记录中的目标格子（Fire 总会填 cell）
-  Action.nukeStrike(cell, e.house);          // 原版动作 95；一次 action() 调用；e.house 是这次触发的所属方，作为发射方
+function nukeAtTarget(e: FireEvent): void {
+  Action.nukeStrike(e.targetCell, e.house);   // 事件记录保存的开火目标格；一次 action 调用
 }
 
 onScenarioStart((): void => {
@@ -224,7 +162,7 @@ onScenarioStart((): void => {
     .where(Prop.Category, Op.Ne, Category.Projectile)
     .first();                                    // 一次 find：创建序号最小的单位；没有时为 NO_HANDLE
   if (first != NO_HANDLE) {
-    Trigger.on(Event.Fire).bind(first).once().action(nukeAtTarget);
+    Trigger.on(Event.Fire).bind(first).once().enqueue(nukeAtTarget).done();
   }
 });
 ```
@@ -301,11 +239,11 @@ MapUI=overlay        ; overlay、full 或 no
 2. 解析模块，只接受来自 `vera:*` 接口的导入，且本版本支持其主版本并达到模块需要的次版本（第 12 节）；模拟模块只能导入 `vera:sim` 的函数，客户端模块只能导入以 `client_` 开头的 `vera:client` 函数，跨世界的导入一律拒绝；检查这些导入与模块所在 `[VeraWasm]` 节的 `Api=` 一致（大厅已经读过它；导入的模块名带版本，见[附录第 1 节](0001-wasm-extension-modules-api.zh-CN.md#1-模拟-abi)）；拒绝超出加载时形状上限（函数数量、单个函数体大小、局部变量、导入）的模块，这样地图无法在编译时拖住大厅；检查每个 `vera.*` 自定义段符合[附录中的布局](0001-wasm-extension-modules-api.zh-CN.md#自定义段)：以格式版本开头，名字是 ASCII，没有截断或多余的字节；
 3. 只接受白名单中的 Wasm 特性：MVP 核心，加上可变全局变量、符号扩展、不 trap 的浮点转整数、批量内存操作和多返回值。其他一切（SIMD、引用类型、垃圾回收、多内存、线程、64 位内存、异常、尾调用）都被拒绝，所以模块的全部状态就是内存、全局变量和一张函数表。带 `start` 段的模块被拒绝，所以实例化时不运行任何模块代码。浮点运算产生的 NaN 通过改写字节码（而不是引擎开关）规范化，这样每个引擎（包括浏览器的）得到相同的 NaN；
 4. 在同一次插桩中加入运算计量和调用深度计数。深度上限远低于每个受支持引擎的真实栈上限，所以深度递归在每台机器上都停在同一次调用。模块从不被重入（第 5 节），所以模块调用之间的引擎栈帧保持有界。引擎在实例化模块时分配它的内存上限，所以上限以内的 `memory.grow` 从不失败；无法分配它的宿主在加载时让对局失败（对局错误，见下文）；
-5. 检查生命周期需要的导出函数存在且签名正确，并检查 INI 中提到的每个模块动作和处理函数名（`Action=Wasm:name`）都在它所解析到的模块的 `vera.actions` 表中；INI 触发器中的事件、筛选子句（属性名、变量名）和原子动作也在这一步解析，无法解析的在大厅中报告；
-6. 检查 `vera.vars` 中的变量声明：名字在模块内唯一，作用域和可见度是表中的值，“视野内可见”只用于单个对象作用域。引擎按加载顺序（先 mod 的，再地图的）给每个变量分配 ID；
+5. 检查生命周期需要的导出函数存在且签名正确，并检查 INI 中提到的每个模块动作和处理函数名（`Action=Wasm:name`）都在它所解析到的模块的 `vera.actions` 表中；
+6. 检查 `vera.vars` 中的变量声明：名字在模块内唯一，作用域和可见度是表中的值，“视野内可见”只用于单个对象作用域。引擎按加载顺序（先 mod 的，再地图的）给每个变量分配 ID，再解析 INI 触发器的事件、筛选子句和原子动作。无法解析的名字在大厅中报告；
 7. 把本局的模拟模块（mod 的和地图的合在一起）在各自 `vera.notify` 自定义段中声明的通知名放在一起检查哈希冲突（第 10 节）。同一模块内的冲突拒绝该模块；mod 的名字与地图的名字之间的冲突拒绝地图的模块。提示中给出两个名字。哈希为 −1（`0xFFFFFFFF`）的名字拒绝声明它的模块。mod 和地图声明同一个名字不算冲突：两者得到同一个 ID，由 `Notify` 客户端事件的来源区分。
 
-**初始化函数。** SDK 把模块的顶层代码变成导出的初始化函数 `vera_init`（客户端模块中为 `client_init`）。引擎在模块的第一次其他调用之前调用它一次（导出了 `on_rules` 时在 `on_rules` 之前，否则在 `on_scenario_start` 之前；在客户端模块中，在 `client_on_start` 之前），读档后不再调用，因为模块内存已经恢复。在初始化函数中只有名字解析可用（`lookup`、`name_of`、`has_kind`、`last_status` 和 `log`），它们看到的是到此为止处理过的规则；其他宿主调用返回 `Unsupported`。初始化函数、`on_rules` 和 `on_scenario_start` 各有自己的一次性额度，比一帧的额度大（待定问题 7）。
+**初始化。** 首次回调前执行一次 SDK 生成的初始化函数；读档时跳过。初始化只能解析截至当前规则层的名字、探测表项或写日志。其余调用返回 `Unsupported`。初始化、`on_rules`、`on_scenario_start` 各有高于单帧额度的一次性额度。
 
 **失败。**
 
@@ -322,7 +260,7 @@ MapUI=overlay        ; overlay、full 或 no
 **被停用的模拟模块。** 对局继续。
 
 - 它创建的触发器被停用。在其他触发器中（地图触发器，或通过 `Wasm.Tags` 绑定的触发器），只跳过它的模块动作。它排队中的模块动作被丢弃。
-- 它在可决定事件链上的一环被跳过：由链中的下一环或原生结果生效，出错的那次调用也是如此。
+- 它在可决定事件链上的一环被跳过：上一环的结果传给下一环；首环取原生值。出错的那次调用也按此处理。
 - 它的模块弹道上的抛射体改为朝目标直线飞行。
 - 它做过的事保留下来：它创建的修饰器（照常到期）、它写入的变量和属性、它写入的规则和对局中的 `rules_set` 覆盖层、它写入的 AI 定义、它创建的触发器（处于停用状态），以及出错的那次调用已经做完的事。
 - 它的内存保留在快照和状态哈希中，停在它停止时的样子，所以存档和重连能重现它。
@@ -336,8 +274,7 @@ MapUI=overlay        ; overlay、full 或 no
 | `Refused` | 动作或写入被引擎规则拒绝（比如该格不能建造、该属性此时不可写），或原子动作的目标在其触发器执行时不适用（第 6b 节） |
 | `Unsupported` | 本局关闭的功能（例如没有 Ares 时的 Ares 动作），本引擎不认识的表项，或在不可用的地方发起的宿主调用 |
 
-- 对 0 或对象已不存在的引用发起的调用什么也不做。返回状态的函数返回 `Gone`；返回值的函数返回该值的空值（0 或 −1），并把 `last_status()`（客户端模块中为 `client_last_status()`）设为 `Gone`。它从不停用模块。
-- 每个函数都设置 `last_status()`：返回状态的函数同时直接返回它，返回引用、ID、数量或数值的函数只通过 `last_status()` 给出。
+- 调用当场返回结果。写操作返回状态；可失败的取值操作一次返回值和状态，例如读取金钱得到 (0, Ok) 表示余额为零，(0, Refused) 表示无权读取。对已消失对象的读取返回空值和 Gone，模块继续运行。批量读仍在一次调用内完成，具体签名见附录。
 - 由触发器执行的原子动作没有模块代码来接收它的状态：它的错误状态（`Refused`、`Gone` 或 `NotFound`）写入游戏内日志，该动作被跳过。除此之外什么也不发生。
 - 表明模块本身有问题的错误会停用模块：参数非法（包括 `trigger_create` 发现的动作非法参数和非法筛选子句，第 6b 节）、在 `on_decide` 中调用写入函数（第 6f 节）、trap、超出运算额度或调用深度。
 
@@ -357,21 +294,9 @@ MapUI=overlay        ; overlay、full 或 no
 
 ### 5. 执行模型
 
-**模拟模块的导出。** 一共七个，签名见[附录 1.2](0001-wasm-extension-modules-api.zh-CN.md#12-导出)。
+模拟模块按需导出[生命周期函数](0001-wasm-extension-modules-api.zh-CN.md#12-导出)。SDK 用记录的分派键调用模块动作，周期回调在 `frame % N == 0` 时按注册顺序执行。
 
-| 导出 | 时机 |
-| --- | --- |
-| `vera_init()` | 由 SDK 从顶层代码生成；在模块的第一次其他调用之前运行一次，读档后不再运行；其中只能做名字解析（第 3 节） |
-| `on_rules()` | 在模块所处的规则层位置运行一次（第 2 节）；可以用 `rules_set` 修改任意键和新增类型 |
-| `on_scenario_start()` | 场景开始时运行一次 |
-| `on_frame()` | 导出时每帧一次，在模块阶段的最后；SDK 在 `frame % N == 0` 的帧按注册顺序运行每个注册的函数 |
-| `on_events(ptr, count)` | 在模块阶段，对每个有排队记录的模块，在 `on_message` 之后、`on_frame` 之前，按顺序分一次或几次调用投递记录（见下文额度）；SDK 按每条记录的分派键运行对应的模块动作 |
-| `on_decide(ptr, count)` | 引擎在可决定事件的决策点提交结果时同步调用；`count` 通常为 1，只有引擎在一点提交一批结果时才更大（第 6f 节） |
-| `on_message(sender, ptr, len)` | 在模块阶段，同一来源的客户端模块发出的消息到达模拟时，每条消息一次；`sender` 是发送者的所属方，由引擎填写；消息字节由引擎写入投递区 |
-
-模块动作不是 Wasm 导出函数：每个模块动作有一个模块自选的 32 位分派键，SDK 生成的 `on_events` 据此分派（第 12 节）。客户端模块的四个导出见第 10 节。
-
-**模块代码在哪里运行。** 只在模拟的阶段内运行。本地代码（侧边栏、光标、界面、渲染、客户端读取）从不调用模拟模块；它们读取模拟最近一次算出的结果，就像侧边栏显示缓存的 `ProductionAllowed` 决定那样。
+模拟模块只在模拟阶段运行。界面、渲染和音频读取已提交的结果。
 
 **模块阶段。** 模拟帧里一个固定的阶段（待定问题 8），按模块加载顺序逐个模块执行（先 mod 的，再地图的）。先触发被推迟的连锁触发器（见下文）；然后每个模块依次收到它的 `on_message` 调用、它的 `on_events` 批次和 `on_frame`。
 
@@ -410,7 +335,7 @@ MapUI=overlay        ; overlay、full 或 no
 - 会超过任一上限的触发器被推迟：它在下一帧模块阶段开始时、排队的动作之前触发，带着它原有的载荷。它的原版动作和原子动作在那时执行，它的模块动作加入那一帧的批次。如果它在此期间被禁用或删除，就被丢弃；它的筛选子句重新检查，它的所属方是主体在那一刻的所属方，作用于已不存在的主体的动作得到 `Gone`。等待中的推迟触发器存档并计入哈希。
 - 只由原版事件和原版动作组成的连锁从不推迟，与原版中完全一样地运行（目标 5）。
 
-**高频事件只对绑定的对象引发。** 伤害、开火、命中、抛射体引爆、碾压和执行指令这类事件，以及所有可决定事件，只对绑定了触发器的对象或类型引发（第 6a 节）；没有“订阅所有对象”的用法。这是引擎对模块的硬上限之一（第 15 节）。
+**高频事件只对绑定的对象引发。** 伤害、开火、命中、抛射体引爆、碾压和执行指令这类事件，以及绑定范围为对象或类型的可决定事件，只对相应绑定引发（第 6a 节）；没有“订阅所有对象”的用法。这是引擎对模块的硬上限之一（第 15 节）。
 
 **存档。** 读档后，模块内存随快照恢复。初始化函数和 `on_scenario_start` 都不会再次运行，也没有 `on_load`。模块内存里的引用仍指向同样的对象，因为句柄是创建序号，不是存储位置。
 
@@ -422,23 +347,15 @@ MapUI=overlay        ; overlay、full 或 no
 - 一次调用不会被中途推迟：单次调用用完一整帧的额度时被停止，模块被停用（第 3 节）。
 - 每个模块每帧最多投递固定数量的记录。超出上限或因额度而没有投递的记录按顺序保留，存档并计入哈希，在下一帧最先投递，所以短时间的爆发只会让模块变慢，而不会让它被停用。积压超过固定帧数的记录量的模块会被停用并给出提示：它跟不上。
 - 每帧额度、队列上限、每次调用的记录条数和积压上限是待定问题 7。
-- 一个模块既不导出 `on_frame`，也没有带模块动作或决定处理函数的触发器，那它每帧的开销为零。
+- 没有 `on_frame`、待投递记录、消息或决定请求时，该帧不调用模块的对局回调。
 
 ### 5a. 语言与 SDK
 
 引擎和模块之间的约定只有 Wasm 接口：附录列出的函数，加上附录的表。任何语言，只要它的编译器产出的模块能通过加载检查，就能使用，引擎对所有模块一视同仁。
 
 - **官方 SDK：TypeScript 和 Rust。** 两者都由同一份接口定义和同一组机器可读的表（第 12 节）生成，提供相同的功能（名称按各自语言的命名习惯），并随 API 一起发布版本。每套都附带模板、构建命令、监视模式和示例。
-- **SDK 层。** SDK 从表生成带类型的包装函数，每个包装函数只发起[附录第 3 节](0001-wasm-extension-modules-api.zh-CN.md#3-sdk-对应)中列出的宿主调用（大多数恰好一次），开销和直接调用 `get`、`set` 或 `action` 相同：
-  - **属性：** Rust 写 `t.health()`、`t.set_owner(h)`；TypeScript 写 `Techno.health(t)`、`Techno.setOwner(t, h)`。批量读取写 `Techno.read(list, [Prop.Health, Prop.Owner])`，对应一次 `get_many`。字符串属性由 SDK 以字符串返回（`get` 加 `name_of`）。
-  - **动作：** 每个动作种类生成一个函数（`Action.launchSuperWeapon(...)`、`Action.nukeStrike(cell, house)`），对应一次 `action`。
-  - **触发器：** 构建器 `Trigger.on(Event.TakeDamage).bind(E1).where(Prop.HealthPercent, Op.Lt, 30).action(fn)`，或用 `.decide(fn)` 代替 `.action(fn)` 处理可决定事件；最后调用 `trigger_create` 和 `trigger_bind`。`.action(fn)` 和 `.decide(fn)` 结束构建；同一个触发器要多个模块动作时，用 `.act(ActionDef.module(fn))` 加入，再以 `.done()` 或 `.decide(fn)` 结束。SDK 还提供 `bindAllTypes`，把触发器显式绑定到某个名字种类的每个类型上（一次 `find` 加每个类型一次 `trigger_bind`）。
-  - **变量、搜索和通知：** `Var.get`、`Var.set`、`Find.objects()…`、`Notify.send(...)`。
-- **性能默认做法。** 两套官方 SDK 默认生成廉价的写法，模板和示例也照此编写（第 15 节）：
-  - 周期任务默认分散到多帧：`onFrame(new Every(N), fn)` 按对象或所属方错开，每帧只处理其中一份，而不是在同一帧做完全部；
-  - 读两个以上属性或两个以上对象时用一次 `get_many`；
-  - 能写成筛选子句的条件写进子句，由引擎在入队前检查，被筛掉的事件不跨越边界；
-  - 范围效果（光环）用长时修饰器，只在对象进入或离开范围时 `modify`、`unmodify`，不在每次扫描时重新加一遍。
+- SDK 按事件种类生成具名字段，原地读取投递记录。触发器用 `.immediate()` 指定立即动作、`.enqueue()` 排队、`.decideSync()` 同步决定（Rust 为 `decide_sync`）。包装函数与宿主调用逐项对应，见[附录 SDK 表](0001-wasm-extension-modules-api.zh-CN.md#3-sdk-对应)。
+
 - **TypeScript SDK。** 预先把 TypeScript 编译成 Wasm，模块足够小，可以嵌入地图。编译器是待定问题 2。它的 API 限定在 TypeScript 与 AssemblyScript 的共同子集内：
   - 不用 `any`，除 `T | null` 外不用联合类型，回调不捕获外部变量，不用 `try`/`catch`；
   - 把多个值组合在一起的参数是用构造函数创建的类或构建器，而不是对象形状或字面量；
@@ -449,9 +366,23 @@ MapUI=overlay        ; overlay、full 或 no
 
   这样同一份源码既能用 `tsc` 做类型检查，也能用 AssemblyScript 编译，本 RFC 中的示例在两者中都有效。
 - **Rust SDK。** 面向想要完全控制和更高性能的作者；引擎自己的兼容性测试用例也用它编写。引用是 newtype，可以带方法（`techno.health()`）。
-- **其他语言**（C、C++、Zig、Go……）直接调用附录列出的函数，并用机器可读的表生成自己的包装函数；绑定由社区维护。
+- **其他模组开发语言。** C、C++、Python、.NET（如 C#）、Go、Ruby、Elixir、Perl 和 Zig 均可按同一 ABI 接入。每种工具链都需要产出符合第 3 节约束的 Wasm 核心模块，按附录签名导入和导出函数。社区可用第 12 节的表生成对应语言的包装函数。需要解释器或运行时的工具链还须把它编入模块，并满足下述导入和体积限制。
 - **导入。** 模块只能导入 `vera:*` 接口。引擎不提供 WASI，项目也不发布 WASI 垫片。运行时依赖 WASI（时钟、随机数、文件）的语言，只有在它自己的工具链去掉这些导入时才能使用。
 - **体积和特性。** 以 Wasm 垃圾回收或其他被拒绝的特性（第 3 节）为目标的编译器，比如某些 Kotlin、Dart 和 Java 工具链，产出的模块无法通过加载检查。会把大型运行时或垃圾回收器打包进每个模块的语言，产出的文件更大，可能超过地图嵌入上限。这是作者工具链的取舍，与引擎无关。
+
+**宿主工具。** 独立工具可用以下绑定嵌入 Wasmtime。[Wasmtime 嵌入文档](https://docs.wasmtime.dev/lang.html)
+
+| 宿主语言 | Wasmtime 入口 |
+| --- | --- |
+| Rust | `wasmtime` crate |
+| C | `wasm.h`、`wasi.h`、`wasmtime.h` 头文件，可用 CMake 构建 |
+| C++ | `wasmtime.hh` 头文件 |
+| Python | PyPI 包 `wasmtime` |
+| .NET | NuGet 包 `Wasmtime` |
+| Go | `wasmtime-go` |
+| Ruby | `wasmtime` gem |
+| Elixir | Hex 包 `wasmex` |
+| Perl | CPAN 发行包 `Wasm` 中的 `Wasm::Wasmtime` |
 
 ### 6. 五个概念
 
@@ -463,20 +394,20 @@ MapUI=overlay        ; overlay、full 或 no
 | 动作 | `action`、`send_notify` | [动作种类](0001-wasm-extension-modules-api.zh-CN.md#5-动作种类) |
 | 界面节点（客户端） | `client_node_create`、`client_node_remove`、`client_node_find`、`client_set`、`client_set_bytes` | [客户端节点](0001-wasm-extension-modules-api.zh-CN.md#710-客户端节点) |
 
-另外几个函数是基础设施：`frame`、`random`、`log`、`last_status`、`has_kind`、`lookup`、`name_of`。
+另外几个函数是基础设施：`frame`、`random`、`log`、`has_kind`、`lookup`、`name_of`。
 
-- 函数是冻结的界面，数量固定。事件种类、动作种类、属性、名字种类、节点种类和其他枚举都是表：新的次版本只在表的末尾追加，从不修改或删除已有的表项。`has_kind(table, id)` 告诉模块当前引擎是否认识某个表项，模块可以据此在旧引擎上降级运行。
+- 函数是冻结的界面，数量固定。事件种类、动作种类、属性、名字种类、节点种类和其他枚举都是表：新的次版本只在表的末尾追加，从不修改或删除已有的表项。`has_kind(table, id)` 告诉模块当前引擎是否提供某个表项，模块可以据此在旧引擎上降级运行。
 - 每个原版动作和原子动作都调用引擎中该操作现有的实现；模块不会得到第二份实现。每个可写属性的写入同样走它现有的 owner。
 - 可决定事件以游戏概念命名（`TakeDamage`、`TargetChanged`），从不以原生函数命名，这样引擎重构后它们依然成立。
 - 对于非常频繁的决策，优先用数据而不是回调：目标优先级用修饰器改变 `TargetPriorityMultiplier` 属性，再配合 `TargetChanged` 事件。逐次调用的可决定事件留给不那么频繁的决策。
 
-**粒度。** 一个动作种类对应一个游戏操作，这个操作在引擎里有且只有一个 owner：发射武器、修饰属性、设置任务、修改生命、创建对象。更大的行为（比如一次空袭、一条心灵控制链）由作者用这些动作组合。
+每个动作只调用现有 owner 完成一个游戏操作。模块通过组合动作实现复杂行为。
 
-**坐标**可以作为任何动作的参数：目标、生成点、传送目的地。例如模块可以往任意格子扔核弹。不开放的是绕过 owner 的步骤，比如直接写已有对象的位置或内部字段。对象的位置关联着格子占用、碰撞、视野、所在地图层以及乘客关系，只有引擎自己的流程能保持它们一致，所以位置属性（`X`、`Y`、`Z`、`Cell`）只读，对象只能通过传送、运动动作或移动任务改变位置。抛射体是第 9 节第 4 层的例外：它们不占格子，引擎会钳制其位置，碰撞判定照常进行。
+**位置。** 动作接受目标格、生成点和目的地。对象位置属性只读，通过传送、运动动作或移动任务改变。第 9 节第 4 层允许设置抛射体位置，由引擎钳制并照常判定碰撞。
 
 ### 6a. 触发器：事件、筛选子句和动作
 
-一个触发器有一个或多个事件（必须全部成立），每个事件可以带筛选子句，有一个或多个动作，以及原版的一种重复类型。可决定事件的触发器另有一个决定处理函数（第 6f 节）。
+触发器至少有一个事件，全部成立才触发；每个事件可带筛选子句，重复类型沿用原版。动作和决定处理函数至少要有一项。只注册决定处理函数时，动作数可为 0，且必须恰有一个可决定事件（第 6f 节）。
 
 **订阅只通过触发器。** 模块收到事件的唯一途径是触发器，触发器有三个来源：
 
@@ -497,7 +428,7 @@ MapUI=overlay        ; overlay、full 或 no
   ```
 
 - 高频事件（伤害、开火、命中、抛射体引爆、碾压、执行指令）没有“所有对象”的订阅。真的需要全部对象时，SDK 的 `bindAllTypes` 把触发器逐个绑定到每个类型上，开销因此在代码里是明的；开销叠加层对这样的绑定给出警告（第 13 节）。
-- 格子绑定（代码中把触发器绑定到格子引用）只用于[附录 4.1](0001-wasm-extension-modules-api.zh-CN.md#41-原版事件-061)中绑定列为“格子”的事件；把其他事件的触发器绑定到格子是非法参数。地图的 CellTag 照原版处理。
+- 格子绑定（代码中把触发器绑定到格子引用）只用于[附录 4.1](0001-wasm-extension-modules-api.zh-CN.md#41-原版事件-061)中注明“绑定格子”的事件；把其他事件的触发器绑定到格子是非法参数。地图的 CellTag 照原版处理。
 - 和对象无关的全局事件（所属方事件、逻辑事件、`Timer`、`SuperWeaponLaunched`）不需要绑定。
 - 绑定到某个类型的触发器在每个绑定对象上以各自的实例运行（第 7 节）。
 
@@ -505,6 +436,7 @@ MapUI=overlay        ; overlay、full 或 no
 
 - **投递型事件**发生在某个时刻（受到伤害、武器开火、被摧毁）。触发器在那一刻触发；其中的原版动作和原子动作立即执行，模块动作则带着事件的载荷排队（第 5 节）。VERA 新增的投递型事件在安全点引发（第 5 节）。
 - **轮询型事件**描述一种状态（生命低于某值、金钱高于某值、变量等于某值）。引擎按触发器设定的间隔原生检查它们，这个间隔有下限（待定问题 7），事件在边沿触发：在状态变为成立的那次检查时触发，之后要等到某次检查时状态不成立，才会再次触发。对象在 `frame % interval == serial % interval` 的帧接受检查，`serial` 是它的创建序号；所属方的轮询改用所属方在所属方数组中的下标。投递型的 `Timer` 事件不错开：它从其触发器创建的那一帧算起，每个周期触发一次。
+- 普通属性统一用 `PropertyPoll`：例如每 15 帧检查 `HealthPercent < 30`，SDK 写作 `Trigger.onProperty(Prop.HealthPercent, Op.Lt, 30, 15).bind(E1).enqueue(onLowHealth).done()`。引擎直接读取属性并维护条件的边沿状态。需要额外参数、组合计算或写入时重置计时器的事件见附录 4.4。
 - **可决定事件**在事件表中标为“可决定”。带决定处理函数的触发器在决策点同步询问模块（第 6f 节）。
 - 每个事件都标明它所附着的对象（主体），以及涉及的另一个对象（如果有的话：攻击者、目标、载具、生产者）。
 - 记录的值都是整数或引用。伤害和原版一样是整数；模拟 API 中没有浮点值。
@@ -518,32 +450,16 @@ MapUI=overlay        ; overlay、full 或 no
 - 计算型的条件：常用的作为派生属性追加到属性表中（例如 `NearbyEnemyCount`、`TargetInRange`），其他的写成代码中的 `if`。条件之间的“或”、两个对象之间的比较、计数都写在代码里。
 - 红警 2 的变量事件（27、28、36、37）照常可用。
 
-**动作**可以是原版触发器动作、原子动作、AI 动作（第 6b 节）或模块动作。模块动作是模块收到普通事件的唯一途径。
-
-```ts
-// TypeScript（兼容 AssemblyScript）
-const PANICKED = Var.id("Panicked");   // 顶层代码：在 vera_init 中只运行一次（第 3 节）
-
-onScenarioStart((): void => {
-  Trigger.on(Event.TakeDamage)
-    .bind(Rules.technoType("E1"))                  // 每个 E1 运行自己的实例（第 7 节）
-    .where(Prop.HealthPercent, Op.Lt, 30)
-    .whereVar(VarTarget.Subject, PANICKED, Op.Eq, 0)
-    .act(ActionDef.setVar(Target.Subject, PANICKED, 1))   // 原子动作，在触发器触发时执行
-    .action(giPanic);                                  // 模块动作，排队到模块阶段
-});
-```
-
-版本 1 的候选连同各自的记录字段列在附录中：投递型事件见 [4.3](0001-wasm-extension-modules-api.zh-CN.md#43-新的投递型事件)（`TakeDamage`、`HitByWarhead`、`AttackedBy`、`FatalDamage`、`Killed`、`Fire`、`SpawnFire`、`HitTarget`、`Detonated`、`TargetChanged`、`ProjectileIncoming`、`Birth`、`TransportEntered`、`TransportExited`、`PassengerAdded`、`PassengerRemoved`、`Crushed`、`HouseTransfer`、`HouseTransferred`、`ModifierStart`、`ModifierStacks`、`ModifierExpire`、`Timer`、`SuperWeaponLaunched`、`Commanded`、`ProductionCancelled`），轮询型事件见 [4.4](0001-wasm-extension-modules-api.zh-CN.md#44-新的轮询型事件)（生命、弹药、乘客数、运载空间、载矿量、任务、是否移动、地形类型、所属方金钱、所属方电力、修饰器数量、距离、变量），只可决定的事件见 [4.5](0001-wasm-extension-modules-api.zh-CN.md#45-只可决定的事件)。哪些进入版本 1 是待定问题 12。
-
-**不进入引擎的：** INI 里的记录器、算子和表达式键。历史数据（比如某个攻击者累计造成的伤害）由模块记在变量或自己的内存里，并随之一起存档和计入哈希。INI 保持为数据，不变成一门编程语言。
+触发时执行原版、原子和 AI 动作，模块动作排队投递。见[绑定示例](#把触发器绑定到类型)。事件字段、绑定范围和版本层级见[附录事件表](0001-wasm-extension-modules-api.zh-CN.md#4-事件种类)。历史值由模块保存在变量或模块内存中；INI 不提供记录器、算子或表达式。
 
 ### 6b. 动作
 
 所有动作都在附录的[动作种类表](0001-wasm-extension-modules-api.zh-CN.md#5-动作种类)中按编号排列：原版动作 0..145（启用 Ares 时加上 146..149）、原子动作、AI 动作和模块动作。同一个种类有两种用法：
 
-- 模块代码用 `action(kind, target, params, len)` 直接执行，目标是一个明确的引用（对象、所属方、格子或抛射体；触发器、标签和小队放在参数的 `other` 中）。创建对象的动作返回新对象的句柄，其他动作返回 0；状态见 `last_status()`。
+- 模块代码用 `action(kind, target, params, len)` 直接执行，目标是一个明确的引用（对象、所属方、格子或抛射体；触发器、标签和小队放在参数的 `other` 中）。创建对象的动作返回新对象的句柄，其他动作的值为 0；两者都在同一次调用中返回状态。
 - 触发器的动作列表写的是同一个种类，加一个目标选择和参数（附录的[触发器定义](0001-wasm-extension-modules-api.zh-CN.md#固定布局)）。
+
+直接设定生命值、等级或弹药只定义一次写入语义：模块代码通过 `set` 写对应属性，触发器用 `SetProperty` 编码相同的写入，两者经过同一状态所有者。SDK 可生成带属性名的写入函数。增量、伤害归属和触发时才解析的参数各有游戏语义，保留相应动作。
 
 **原子动作**是瞬时的游戏操作，每个都有一个 owner：发射武器、发射超级武器、造成伤害、摧毁、移除、创建对象、传送、引爆弹头、写变量、修饰属性、让某个所属方结束游戏，等等（[附录 5.3](0001-wasm-extension-modules-api.zh-CN.md#53-原子动作)）。造成伤害走弹头和护甲规则，带来源，用于击杀归属和经验；直接设定生命值不计归属。传送到被占的格子时按规定的规则处理：选附近的格子，或动作失败。
 
@@ -558,7 +474,7 @@ onScenarioStart((): void => {
 
 - 参数放在一个固定布局里：一个 ID、两个小整数、两个整数值、一个格子、一个所属方、一个引用和一段文字（附录的[动作参数](0001-wasm-extension-modules-api.zh-CN.md#固定布局)）。只在模块代码中可用的动作（例如创建抛射体）另带一段变长数据。
 - 不用目标的动作（例如 `SetTechLevel` 或 `Log`）忽略目标。
-- 路径点以路径点引用给出（附录的[引用](0001-wasm-extension-modules-api.zh-CN.md#引用)）。`trigger_create` 把它解析为路径点所在的格子，因为路径点不会移动。地图上没有的路径点是地图数据错误，不是模块错误：`trigger_create` 返回 0 并设置 `NotFound`，不创建触发器并写入日志，模块保持启用。写在 INI 中时，它在加载时于大厅中报告。
+- 路径点以路径点引用给出（附录的[引用](0001-wasm-extension-modules-api.zh-CN.md#引用)）。`trigger_create` 把它解析为路径点所在的格子，因为路径点不会移动。地图上没有的路径点是地图数据错误，不是模块错误：`trigger_create` 返回 `(0, NotFound)`，不创建触发器并写入日志，模块保持启用。写在 INI 中时，它在加载时于大厅中报告。
 
 参数表达不了的部分由固定规则决定：
 
@@ -590,7 +506,7 @@ onScenarioStart((): void => {
 
 **派生属性和视点属性。** 有些属性是引擎算出来的：`HealthPercent`、`NearbyEnemyCount`、`TargetInRange`。还有少数属性取决于一个视点所属方（`Relation`、`Revealed`、`Buildable`、`Placeable`）：在筛选子句中，视点是触发器的所属方；在 `find` 中，视点是搜索的 `viewpoint` 字段；在客户端中，视点是本玩家。直接 `get` 它们时没有视点，返回 `Unsupported`。`Placeable` 还需要一个类型，所以只在 `find`（包括 `client_find`）中用查询的 `type` 求值，其他地方返回 `Unsupported`。
 
-**修饰器。** `modify(ref, prop, op, value, frames, source, group)` 在一个对象或所属方的可修饰属性上加一个修饰器，返回修饰器的句柄；`unmodify(modifier)` 提前移除它。
+**修饰器。** `modify(ref, prop, op, value, frames, source, group)` 在一个对象或所属方的可修饰属性上加一个修饰器，返回修饰器的句柄；`unmodify(modifier)` 提前移除它。SDK 用 `Modifier.add`、`Modifier.multiply`、`Modifier.override` 分别表示加、乘和覆盖，例如 `Modifier.multiply(unit, Prop.SpeedMultiplier, fixed(0.5), 150)`。三个入口都只调用一次 `modify`；可选的来源和组直接编码为整数，省略时均为 0。
 
 - 运算为加（`add`）、乘（`multiply`，定点数）和覆盖（`override`）。`frames` 为持续帧数，负数表示无限；`source` 是来源对象（用于击杀归属和来源规则），可为 0；`group` 是互斥组，0 表示不分组。
 - 叠加、互斥组和到期都由引擎持有，存档并计入哈希。默认的合成方式：有效值 = (基础值 + 全部加值) × 全部乘数，最新的覆盖修饰器再取代这个结果。对应 Phobos 键的属性（[附录 7.2](0001-wasm-extension-modules-api.zh-CN.md#72-可修饰属性)）不用这个公式，而是用 Phobos 自己的算法（运算顺序和取整），所以修饰器和等价的 Phobos 效果得到相同的值。有效值在修饰器加入、移除或到期时重新算出并缓存，读取时不再合成（第 15 节）。同一来源模块（mod 或地图，即修饰器的 `Origin` 属性）在同一个引用上用同一个组加入新修饰器时，替换该组中已有的修饰器。叠加上限和刷新规则是待定问题 13。
@@ -599,11 +515,11 @@ onScenarioStart((): void => {
 - 显示在对象上方的文字、数值或按钮属于客户端节点（第 10 节），不是修饰器。
 - 只要模块功能开启（第 14 节），修饰器的 owner 就可用，不论 Phobos 是否开启。Phobos AttachEffect 的 INI 键（类型、武器和弹头上的 `AttachEffect.*`，以及 `[AttachEffectTypes]`）只在 Phobos 开关打开时读取，所以原版玩法保持原样；读取后，它们创建的也是同一个 owner 中的修饰器。修饰器与 Phobos 共用的代码存在于每个构建中，由运行时开关开启（Phobos 的键由 Phobos 的开关开启，模块修饰器由模块功能开启），从不放在构建 feature 后面（第 14 节）。
 
-**搜索。** `find(query, len, out, cap)` 搜索对象、所属方、格子、类型、小队、触发器、标签、修饰器或超级武器，结果写入模块提供的缓冲区，返回写入的数量。
+**搜索。** `find(query, len, out, cap)` 搜索对象、所属方、格子、类型、小队、触发器、标签、修饰器或超级武器，结果写入模块提供的缓冲区，同时返回写入数量、续页位置和状态。
 
 - 范围：整张地图、一个格子加半径，或一个矩形；可按类型和所属方过滤；可带筛选子句，布局与触发器的相同，其中 `Subject` 是被检查的候选。
 - 结果按创建序号排序，这个规则不依赖引擎如何存放对象。有四种结果保持自己的顺序：格子按格子下标，所属方按所属方数组的顺序，修饰器按加入的顺序，类型按类型 ID。
-- 分页用“之后”字段：再次调用时传入上一页最后一个结果，就从它之后继续。
+- SDK 用 `.first()` 取首项，或用 `.page(buffer, after)` 把一页写入已有缓冲区。每页一次宿主调用；下一页按前一页末尾的排序位置继续，即使该对象已删除也有效。每页读取调用时的世界状态，刚新增且排序在游标之后的匹配项可在后续页出现。
 - 地图和格子的查询都是格子引用的属性：地形类型、高度、覆盖物、矿石、按移动类型是否可通行、是否已揭开、能否放置，以及 CellTag。
 - 原来的探测（对象能否向它当前的目标开火、当前目标是否在主武器射程内、某类型能否放在某格）变成派生属性和视点属性：`TargetInRange`、`CanFireAtTarget`、`Placeable`。对任意武器和任意目标的探测留到以后。“最近的可放置格子”用带 `Placeable=1` 子句的 `find` 加模块代码实现。
 
@@ -618,7 +534,7 @@ onScenarioStart((): void => {
 - **状态**是属性：小队的类型、脚本、脚本游标、是否成功；AI 触发器的启用状态；所属方的 AI 触发器总开关。写 `Script` 或 `Cursor` 就是修改运行中小队的脚本或跳到某一行。
 - **小队脚本动作**保持为一张编号表（附录 [6.2](0001-wasm-extension-modules-api.zh-CN.md#62-小队脚本动作)），作为 `[ScriptTypes]` 中的数据使用。
 
-全部通过引擎现有的 AI owner 完成。让 AI 学会使用 mod 新增的机制，留给后续 RFC。
+AI 操作统一经过现有 AI owner。
 
 ### 6e. 变量
 
@@ -626,7 +542,7 @@ onScenarioStart((): void => {
 
 - **作用域**：全局、所属方或单个对象。`var_get(scope, var)` 和 `var_set(scope, var, value)` 的 `scope` 为 0 表示全局，否则是一个所属方或对象引用。作用域与变量的声明不符属于非法参数。
 - **可见度**决定客户端能否读到它：私有（全局变量没有任何客户端能读；所属方变量只有该所属方的玩家能读；对象变量只有对象所属方的玩家能读）、盟友（再加上盟友）、视野内（单个对象作用域专用：再加上当前能看到该对象的玩家）、公开（所有人）。
-- **声明。** 模块在 Wasm 自定义段 `vera.vars` 中声明它的变量：名字、作用域、可见度和默认值。SDK 构建时按项目配置中的列表写入这个段。`lookup` 按名字给出变量 ID；变量名写在模块字节里，所以不算秘密。
+- **声明。** 模块在 Wasm 自定义段 `vera.vars` 中声明它的变量：名字、作用域、可见度和默认值。SDK 构建时按项目配置中的列表写入这个段。同一份声明生成模拟读写和客户端只读访问器：全局变量写作 `Wave.get()`，所属方和对象变量须传相应引用。访问器在初始化时解析并缓存本局 ID，筛选和原子动作也接受生成的变量名；客户端读取仍按可见度检查。动态跨来源引用继续通过名字解析。`lookup` 按名字给出变量 ID；变量名写在模块字节里，所以不算秘密。
 - **红警 2 的局部变量和全局变量**是固定的特例：全局作用域、私有、默认值 0，取值只有 0 和 1（写入非零值即为 1），使用固定的 ID（附录[变量 ID](0001-wasm-extension-modules-api.zh-CN.md#id)）。
 - 设置变量会像地图动作那样重置等待这个变量的触发器的计时器（事件 27、28、36、37，以及 `VariablePoll`）。
 - 对象作用域的变量随对象一起消失。所有变量由引擎持有，按引用索引放在旁路表中，存档并计入哈希（第 15 节）。
@@ -636,11 +552,11 @@ onScenarioStart((): void => {
 
 可决定事件取代了旧版本中的覆盖点。事件表有一列“可决定”，并写明结果槽的含义：例如 `TakeDamage` 的结果是最终伤害，`TargetChanged` 的结果是选中的目标，`FatalDamage` 的结果是死亡方式，`Fire` 的结果是一份射击方案。只可决定的事件（例如 `ProductionAllowed`、`CommandAllowed`）没有投递形式。
 
-- 带决定处理函数的触发器（SDK 中的 `.decide(fn)`）让事件在决策点以决定请求的形式引发，而不是在安全点投递。决定请求同样只对绑定的对象或类型引发，并经过筛选子句。
+- 带决定处理函数的触发器（SDK 中的 `.decideSync(fn)`）让事件在决策点以决定请求的形式引发，而不是在安全点投递。决定请求按附录事件表的绑定范围引发，并经过筛选子句；全局事件（如 `Defeat`）无需对象绑定。
 - 引擎在决策点同步调用 `on_decide(ptr, count)`。每个请求是一条固定大小的决定记录：事件记录，加上原生值、上一环的结果、结果槽和“已处理”标志（附录的[固定布局](0001-wasm-extension-modules-api.zh-CN.md#固定布局)）。需要更多空间的结果（射击方案、路径、抛射体的逐帧结果）写入请求附带的结果区。
 - 决策点只在引擎提交结果的那一点：对象自己的回合里设定目标、提交一次伤害、射出一次射击的地方。调用是同步的，按引擎提交结果的确定顺序进行。引擎从不为推测性或并行的预计算（索敌预答、寻路批次、追猎评分）发出决定请求，因为这些计算的答案可能被丢弃。
 - `count` 通常为 1。只有引擎本身在一点提交一批结果时（例如 `ProductionAllowed`），`count` 才可能大于 1：这批请求按主体的创建序号排列；投递区放不下全部请求和它们的结果区时，引擎按顺序分成多次调用，每次尽量填满投递区。每个请求的结果区大小按事件种类固定（待定问题 7）。
-- 处理函数只能调用读取函数（`frame`、`random`、`log`、`last_status`、`has_kind`、`lookup`、`name_of`、`get`、`get_many`、`rules_get`、`var_get`、`find`）。调用写入函数（`set`、`modify`、`unmodify`、`rules_set`、`var_set`、`trigger_*`、`action`、`send_notify`）属于编程错误，模块被停用：引擎正处在一次计算的中途。
+- 处理函数只可使用[导入表](0001-wasm-extension-modules-api.zh-CN.md#11-导入)标为 `decide` 的函数；调用写入函数会停用模块。
 - 处理函数可以在模块内存中保存自己的状态：调用只发生在提交点，按引擎的确定顺序，所以这份状态在每台机器上相同。处理函数中的 `random` 从派生子流取数（第 4 节），决定调用的次数不改变模块主随机流。
 - mod 和地图的链式规则见第 2 节，不重入和额度见第 5 节。
 - 侧边栏和 AI 这类本地或频繁的读者读取缓存的结果：例如 `ProductionAllowed` 每帧对每个所属方和每个绑定类型决定一次，侧边栏显示这个结果。
@@ -652,18 +568,21 @@ onScenarioStart((): void => {
 模块按地图的同一模型创建触发器：
 
 ```ts
-// TypeScript（兼容 AssemblyScript），写在一个模块动作 (e: EventRecord) 内部：
-const t = Trigger.on(Event.Killed)
-  .house(House.byName("Americans"))
-  .bind(e.subject)                      // 对象绑定：只作用于这辆运输车
-  .action(onConvoyLost);                // 结束构建：trigger_create + trigger_bind
-Trigger.setEnabled(t, false);           // 写触发器的 Enabled 属性：暂停，写 true 恢复
+// TypeScript（兼容 AssemblyScript），convoy 是要监视的运输车句柄：
+const americans = Rules.country("Americans");
+if (americans != NO_HANDLE) {
+  const house = Find.houses().country(americans).first();
+  if (house != NO_HANDLE) {
+    const t = Trigger.on(Event.Killed).house(house).bind(convoy).enqueue(onConvoyLost).done();
+    if (t != NO_HANDLE) Trigger.setEnabled(t, false);   // 暂停，写 true 恢复
+  }
+}
 
-Trigger.on(Event.CrossesHorizontalLine) // 格子事件（附录 4.1 绑定列为“格子”）
+Trigger.on(Event.CrossesHorizontalLine) // 格子事件（附录 4.1 注明“绑定格子”）
   .bind(Cell.at(40, 52))                // 格子绑定
-  .action(onLineCrossed);
+  .enqueue(onLineCrossed).done();
 
-Trigger.on(Event.TakeDamage).bind(Rules.technoType("E1")).action(giPanic);   // 同 Wasm.Tags=：每个 E1 运行自己的实例
+Trigger.on(Event.TakeDamage).bind(Rules.technoType("E1")).enqueue(giPanic).done();   // 同 Wasm.Tags=：每个 E1 运行自己的实例
 ```
 
 - 新建的触发器放进现有触发器运行时的列表，和地图里的放在一起，不另存一份。它们使用确定性的编号，不会和地图里的编号冲突，并随触发器运行时一起存档和计入哈希。
@@ -704,20 +623,20 @@ Trigger.on(Event.TakeDamage).bind(Rules.technoType("E1")).action(giPanic);   // 
 - 每个抛射体有 16 字节的模块数据（`Data0` 为第 0..7 字节，`Data1` 为第 8..15 字节，各为小端序 `i64`），存档并计入哈希。决定处理函数不能调用 `set`，所以 `ProjectileFrame` 通过 `ProjectileStep` 写回模块数据，处理函数仍然只读。
 - 在引爆点分裂：`Detonated` 记录带引爆点的坐标（附录 [4.3](0001-wasm-extension-modules-api.zh-CN.md#43-新的投递型事件)），模块动作用 `CreateProjectile` 以 `ProjectileSpec` 的绝对起点坐标在那里生成新的抛射体。记录中的抛射体此时已经不存在。
 
-**齐射。** 要一次发出多枚不同弹道的抛射体，就在武器的 `Fire` 事件上挂一个模块动作，用 `CreateProjectile` 动作生成它们，每枚有自己的类型、模块数据和起点偏移。要让它们沿不同的路径飞，需要以后的 `Launch`；在此之前，它们都沿原生弹道飞向各自的目标。这个动作从它的事件记录中读出射手、目标和原生抛射体（`subject`、`other`、`projectile`）。原生抛射体在单位更新时射出，模块生成的抛射体在模块阶段射出，所以它们比原生抛射体晚至多一帧的位移，取决于模块阶段放在哪里（待定问题 8）。
+**齐射。** 要一次发出多枚不同弹道的抛射体，就在武器的 `Fire` 事件上挂一个模块动作，用 `CreateProjectile` 动作生成它们，每枚有自己的类型、模块数据和起点偏移。要让它们沿不同的路径飞，需要以后的 `Launch`；在此之前，它们都沿原生弹道飞向各自的目标。这个动作从它的事件记录中读出射手、目标和原生抛射体（SDK 字段 `shooter`、`target`、`projectile`）。原生抛射体在单位更新时射出，模块生成的抛射体在模块阶段射出，所以它们比原生抛射体晚至多一帧的位移，取决于模块阶段放在哪里（待定问题 8）。
 
 **可决定的 `Fire`** 避免这段延迟。它的结果是一份射击方案：结果区中要生成的抛射体的列表，每枚带自己的类型、武器、目标、模块数据和起点偏移（附录的 `ProjectileSpec`），结果槽是条目数。
 
-- 引擎在原生射击本应射出的那一刻立即生成它们，不生成原生抛射体。空方案什么也不发射；“未处理”则保留原生射击。
+- 引擎在原生射击本应射出的那一刻立即生成它们，不生成原生抛射体。已处理的空方案什么也不发射；未处理则沿用上一环的结果，首环的输入为原生射击。
 - 这次射击的其他所有原生效果照常发生：射速计时器、弹药消耗和装填、连发计数、开火音效、枪口动画、后坐，以及开火时解除隐形或暴露。
 - 方案中的抛射体像原生抛射体一样引发 `ProjectileIncoming` 和目标的 `AttackedBy`。投递型的 `Fire` 事件仍然引发，其 `projectile` 为 0。
 - mod 和地图的模块都决定了这次射击时，地图的一环收到 mod 的方案，可以保留、修改或替换它。
 
 ### 10. 客户端模块
 
-**导出。** 客户端模块导出四个函数：`client_init()`（SDK 从顶层代码生成）、`client_on_start()`（对局界面建好、INI 布局读完之后一次）、`client_on_render(dt, alpha)`（每个渲染帧一次）和 `client_on_events(ptr, count)`（每个渲染帧一次，带本帧的客户端事件）。点击、悬停、热键、关闭、地图点击、选择变化和通知都是客户端事件种类（[附录 4.6](0001-wasm-extension-modules-api.zh-CN.md#46-客户端事件种类)）。
+引擎建立界面树并读取 INI 布局后调用客户端启动函数。每个渲染帧先投递事件，再调用渲染函数，见[客户端导出表](0001-wasm-extension-modules-api.zh-CN.md#22-导出)。
 
-**界面树。** 界面树由引擎持有，引擎负责布局和绘制。节点是客户端拥有的引用，有种类和属性（显示文字、图像、位置、可见性、可点击……）。模块用 `client_node_find` 按名字找到节点（INI 布局中的节点按部件名，即节名中布局前缀之后、`Parts=` 中写的名字，只在当前生效的布局中查找），用 `client_node_create` 和 `client_node_remove` 新建和删除节点，用 `client_set` 和 `client_set_bytes`（字符串属性）设置属性。修改按渲染帧批量提交，不会每帧重建整棵树。不暴露图形 API。
+**界面树。** 引擎持有节点并负责布局与绘制。模块按部件名查找当前生效布局中的节点（节名去掉布局前缀，即 `Parts=` 中的名字），创建或删除节点、修改属性。引擎按渲染帧批量提交修改。
 
 **节点所有权。** 每个节点记下创建它的来源：引擎和 mod 的 INI 布局、mod 的模块、地图的 INI 布局、地图的模块。
 
@@ -730,40 +649,12 @@ Trigger.on(Event.TakeDamage).bind(Rules.technoType("E1")).action(giPanic);   // 
 - **静态布局写在 INI 里**，语法和键与 `veraui.ini` 相同（`Type`、`Hold`、`X`、`Y`、`Width`、`Height`、`Parts`、`Label`）。本 RFC 新增 `List` 部件类型，以及 `Text` 部件的 `Label` 键。引擎在对局开始时读取，不需要预编译。没有动态部分的界面不需要模块。mod 和地图把布局节放在哪里是待定问题 14。
 - **动态部分写在模块代码里**：按名字找到节点后修改，或新建节点。
 
-```ini
-[Mission.Field]
-Parts=Messages,Timers,Banner,Powers,Clock,Objectives
-
-[Mission.Objectives]
-Type=Column
-Hold=TopRight
-Width=240
-Parts=ObjTitle,ObjList
-
-[Mission.ObjTitle]
-Type=Text
-Label=TXT_OBJECTIVES    ; Text 新增的键：字符串表中的一行，跟随游戏语言
-
-[Mission.ObjList]
-Type=List               ; 新增的部件类型
-```
-
-```ts
-// TypeScript（兼容 AssemblyScript）
-onStart((): void => {
-  Node.setItems(Ui.find("ObjList"), ["TXT_OBJ_RADAR", "TXT_OBJ_CONVOY"]);   // client_node_find + client_set_bytes
-  const wave = Ui.create(NodeKind.Column, 0);                               // client_node_create；0 表示顶层节点
-  Node.setHold(wave, Hold.BottomLeft);
-  Node.setLabel(Ui.create(NodeKind.Text, wave), "TXT_WAVE");
-});
-```
-
-React 或 JSX 风格的库可以放在 SDK 里：它在模块内部计算差异，再发出同样的调用，引擎完全不知道它的存在。这类库只能用于 TypeScript（AssemblyScript 没有闭包），不属于官方 API。
+INI 的节点种类、布局键和可写属性见[客户端节点表](0001-wasm-extension-modules-api.zh-CN.md#710-客户端节点)。TypeScript 可在模块内部使用 React 或 JSX 风格的库。
 
 **其他客户端功能：**
 
 - 单个对象的显示属性用一种节点表示：`Decoration` 节点挂在一个对象上（`Anchor` 属性），带图像、调色板、着色、附加动画、可见性，以及显示在对象上方的文字、数值或按钮。它们只影响本机的画面；会影响玩法的属性（如隐形）属于模拟模块。
-- 本地动作（`client_action`）：播放声音和 EVA 语音、移动镜头、本地选择、闪烁对象、显示一行消息、注册热键。镜头、光标和本地设置也是客户端拥有的引用：镜头的 `Cell` 和 `X`、`Y`（lepton）可以用 `client_set` 写（和镜头动作一样尚是 `v1?`），本地设置中哪些属性可写是待定问题 14。
+- 本地动作（`client_action`）：播放声音和 EVA 语音、移动镜头、本地选择、闪烁对象、显示一行消息、注册热键。镜头、光标和本地设置也是客户端拥有的引用：`Camera.cell()` 读取镜头格子；跳到格子用 `Camera.jumpTo(cell)`。精确到 lepton 的 `X`、`Y` 仍可写（均为 `v1?`），本地设置中哪些属性可写是待定问题 14。
 - 点在可点击节点上的鼠标不再传给地图。点在地图上的鼠标作为 `MapClick` 客户端事件到达模块，同时照常传给游戏；模块把光标的 `CaptureMapClick` 写为 1 时，地图点击只交给模块，不传给游戏。模块热键与游戏热键冲突时，游戏热键优先。客户端可以读光标的屏幕位置和光标下的格子（附录 7.10）。
 - 选中单位和点击按钮属于客户端事件。要改变游戏，模块发送一条消息，由模拟模块在 `on_message` 中处理，这样联机和回放都保持一致。
 - 客户端模块可以发出标准玩家指令（移动、攻击、部署、建造……，`client_send_order`），引擎像校验任何玩家输入一样校验它们。消息用于自定义逻辑。
@@ -782,16 +673,16 @@ React 或 JSX 风格的库可以放在 SDK 里：它在模块内部计算差异�
 
 - 名字只解析一次，换成 ID：`lookup` 对通知名返回一个通知 ID，即名字按 ASCII 折叠为小写（只折叠 `A` 到 `Z`）后的 UTF-8 字节的 32 位 FNV-1a 哈希，在每台机器上、在两侧都相同。哈希为 −1 的名字在加载时被拒绝（第 3 节第 7 步）。
 - 模拟模块要声明它发送的通知名：SDK 构建时按模块项目配置中的列表（属于 SDK 文档，不属于引擎 API），把这些名字写进 Wasm 自定义段 `vera.notify`。客户端模块不声明任何名字；已声明但没有任何客户端模块接收的名字不算错误。
-- 对模拟模块没有声明的名字，以及在客户端模块中对本局没有任何模拟模块声明过的名字，`lookup` 返回 −1 并设置 `NotFound`：引擎保存着已声明名字的表，所以客户端从不会靠哈希匹配到未声明的名字。加载时的冲突检查（第 3 节第 7 步）保证每个已声明的名字都有 ID。
+- 对模拟模块没有声明的名字，以及在客户端模块中对本局没有任何模拟模块声明过的名字，`lookup` 返回 `(−1, NotFound)`：引擎保存着已声明名字的表，所以客户端从不会靠哈希匹配到未声明的名字。加载时的冲突检查（第 3 节第 7 步）保证每个已声明的名字都有 ID。
 - `send_notify(to, id, ptr, len)` 发给所属方 `to` 的玩家的客户端；`to` 为 0 时发给每个观战者的客户端。那里的每个客户端模块都收到一个 `Notify` 客户端事件，带着 ID、数据和发送它的模块的来源。回放观看者收到他所观看视角的玩家的通知，或观战者的通知。单条通知的大小和每帧条数有上限（待定问题 7），超出时 `send_notify` 返回 `Refused`。
 - 观战者客户端的消息会被拒绝。
 
 **客户端读取**（`client_get`、`client_get_many`、`client_find`、`client_var_get`）只暴露本玩家自己的界面能显示的内容；其他任何东西都通过通知送达客户端。属性表的“客户端”一列逐个写明。
 
-- 本玩家自己的所属方和对象：一切，包括自己的超级武器；小队和修饰器对象除外，它们只属于模拟。
+- 本玩家的所属方和对象（含超级武器）可读取属性表中标为 all、own、seen 的项；标为 sim 的属性及小队、修饰器对象仅供模拟使用。
 - 其他所属方，包括盟友：只有公开信息（名字、国家、阵营、同盟关系、是否已战败、是否为人类玩家），没有金钱、电力、建筑、生产、科技等级、超级武器或统计数据。
 - 本玩家当前能看到的其他所属方的对象：只有类型、位置、所属方和生命，以及画面上看得到的染色和激光拖尾；没有乘客、目标、任务、等级、弹药、修饰器或真实的伪装身份。伪装的敌人读出来是它伪装成的样子（类型和所属方）。
-- 黑幕下的对象不出现，迷雾下本玩家当前看不到的其他所属方对象也不出现：引擎不保存“最后一次看到”的副本。隐形的敌人除非被侦测到，否则不出现。格子的地形类型和高度对客户端全部公开，因为地图文件本身就是公开的；格子的其他属性只对看得到的格子给出。
+- 黑幕下的对象不出现，迷雾下本玩家当前看不到的其他所属方对象也不出现：引擎不保存“最后一次看到”的副本。隐形的敌人除非被侦测到，否则不出现。格子的地形类型和高度对客户端全部公开，因为地图文件本身就是公开的；路径点编号也公开；其他格子属性遵守附录 7.6 的视野、视点或仅模拟限制。
 - 变量按它的可见度（第 6e 节）。触发器和标签只属于模拟。视点属性只以本玩家自己的所属方为视点。
 - 观战者的模块看到观战者能看到的范围，房间允许时为整张地图。观战者没有自己的所属方，所以只有在房间向观战者显示某个所属方的信息时，针对自己所属方的读取才有回答。
 - 客户端只能写客户端拥有的引用：节点、镜头、光标和本地设置。没有对模拟状态的写入，模拟也从不读取客户端的状态，客户端之间也没有直接的通道。
@@ -806,7 +697,7 @@ React 或 JSX 风格的库可以放在 SDK 里：它在模块内部计算差异�
 
 ```ts
 // ui.wasm — TypeScript（兼容 AssemblyScript）
-const BOUGHT = Var.id("ReinforcementsBought");   // 所属方作用域、私有可见度（声明在 rules.wasm 的 vera.vars 中）
+import { ReinforcementsBought } from "./generated/vars";
 const BUY_MESSAGE = new Uint8Array(1);           // 消息类型 1：购买
 BUY_MESSAGE[0] = 1;
 let buy: Node = 0;
@@ -815,28 +706,29 @@ onStart((): void => {
   buy = Ui.find("BuyReinforcements");            // veraui.ini 中的一个按钮
   Node.setClickable(buy, true);
 });
-onClientEvent(ClientEvent.Click, (e: ClientEventRecord): void => {
-  if (e.ref == buy) Client.sendMessage(BUY_MESSAGE);   // client_send_message
+onClientEvent(ClientEvent.Click, (e: ClickEvent): void => {
+  if (e.node == buy) Client.sendMessage(BUY_MESSAGE);   // client_send_message
 });
 onRender((dt: f32, alpha: f32): void => {
   const me = Client.viewer();                                   // 观战者为 NO_HANDLE
   if (me == NO_HANDLE) { Node.setVisible(buy, false); return; } // 观战者没有所属方：以 0（全局）读所属方变量是非法参数
-  Node.setVisible(buy, Var.get(me, BOUGHT) == 0);               // client_var_get：读本玩家自己所属方的私有变量是允许的
+  Node.setVisible(buy, ReinforcementsBought.get(me) == 0);               // client_var_get：读本玩家自己所属方的私有变量是允许的
 });
 ```
 
 ```ts
 // rules.wasm — TypeScript（兼容 AssemblyScript）
-const BOUGHT = Var.id("ReinforcementsBought");
+import { ReinforcementsBought } from "./generated/vars";
 const HTNK = Rules.technoType("HTNK");
 
 onMessage((sender: House, data: Uint8Array): void => {
   if (data.length != 1 || data[0] != 1) return;                         // 消息不可信：全部要校验
-  if (Var.get(sender, BOUGHT) != 0 || House.money(sender) < 2000) return;
+  if (HTNK == NO_HANDLE) return;
+  if (ReinforcementsBought.get(sender) != 0 || House.money(sender) < 2000) return;
   const tank = Action.createObject(Waypoint.cell(3), HTNK, sender);     // 格子被占时为 NO_HANDLE（Refused）
   if (tank == NO_HANDLE) return;                                        // 没造出来就不扣钱
   Action.addMoney(sender, -2000);
-  Var.set(sender, BOUGHT, 1);                                           // 客户端下一次读取时就能看到
+  ReinforcementsBought.set(sender, 1);                                           // 客户端下一次读取时就能看到
 });
 ```
 
@@ -856,13 +748,13 @@ onMessage((sender: House, data: Uint8Array): void => {
 ### 12. 版本与 ABI
 
 - 一份用 WIT 语法编写的接口定义是 API 的唯一来源，附带机器可读的表（事件种类、动作种类、属性、名字种类、节点种类和其他枚举）。项目自己的生成器由它们生成 Rust 和 TypeScript SDK 的包装函数、参考文档和兼容性检查；其他语言的绑定也从同样的表生成。WIT 只是接口描述语言：模块不使用 Component Model 的 canonical ABI。
-- 二进制接口是 core module ABI：core Wasm 模块的导入和导出、`i64` 引用和值、`i32` ID、字符串、字节和缓冲区用的指针加长度，以及由宿主写入模块所提供缓冲区的结果，函数返回写入的数量。原因：浏览器版可能使用的每个引擎，包括浏览器自带的引擎和解释器，都能运行 core 模块（待定问题 1）；宿主把搜索结果、记录和批量数据直接写进模块内存（第 15 节）；模块的全部状态都在线性内存、全局变量和表中，所以存档、状态哈希和重连都能完整捕获它（第 4 节）；AssemblyScript 能产出可以嵌入地图的小模块，它构建的是 core 模块（待定问题 2）；core 规范已经冻结。
-- **冻结的界面就是函数：**`vera:sim@1` 有 23 个导入函数和 7 个导出函数，`vera:client@1` 有 21 个导入函数和 4 个导出函数（[附录第 1 节](0001-wasm-extension-modules-api.zh-CN.md#1-模拟-abi)和[第 2 节](0001-wasm-extension-modules-api.zh-CN.md#2-客户端-abi)）。事件种类、动作种类、属性、名字种类、搜索范围、节点种类、客户端事件和动作种类，以及其他枚举，都是只追加的表，在次版本中追加；`has_kind` 让模块在不认识某个表项的旧引擎上降级运行。
+- 二进制接口是 core module ABI：core Wasm 模块的导入和导出、`i64` 引用和值、`i32` ID、字符串、字节和缓冲区用的指针加长度，以及由宿主写入模块缓冲区的批量结果；返回值、状态和续页位置见附录签名。
+- 冻结两个接口的导入和导出签名（[附录第 1 节](0001-wasm-extension-modules-api.zh-CN.md#1-模拟-abi)和[第 2 节](0001-wasm-extension-modules-api.zh-CN.md#2-客户端-abi)）。事件种类、动作种类、属性、名字种类、搜索范围、节点种类、客户端事件和动作种类，以及其他枚举，都是只追加的表，在次版本中追加；`has_kind` 让模块在不认识某个表项的旧引擎上降级运行。
 - 以后的某个主版本可以在 core ABI 之上增加一个 Component Model 适配层。已有模块继续使用 core ABI，不受影响。
 - 接口是带版本的包：`vera:sim@1`、`vera:client@1`。版本号是“主版本.次版本”。新的主版本不兼容，每个主版本都通过适配层永久保留；新的次版本只做增加。模块通过它的导入说明需要的主版本和最低次版本（导入的模块名为 `vera:sim@<主>.<次>` 或 `vera:client@<主>.<次>`），地图或 mod 在 `[VeraWasm] Api=` 中写明同样的版本。`vera:sim` 和 `vera:client` 共用一个版本号，总是一起发布，所以一个 `Api=` 同时说明两者。大厅用每个玩家的游戏检查 `Api=`；加载时检查模块的导入与 `Api=` 一致（第 3 节）。
 - 不稳定的接口放在 `vera:unstable/*` 下，需要显式开启，可以不经通知就改变。它们和 `0.x` 预览版都不是已发布的版本：不保留适配层，使用它们的模块只能在为之构建的那个版本上运行。
 - 每个已发布的版本都一直可用。旧版本是现行实现之上的薄适配层，从不是第二份实现。适配层从不把旧版本没有定义的值交给旧模块：该版本的表中没有的事件种类的记录不投递给它，该版本没有的属性对它不存在，更新的状态值或枚举值以该版本定义过的值交给它，具体对应关系按表写在接口定义中。
-- 对每个已发布的版本，CI 用仓库中提交的 Rust SDK 源码构建一组兼容性测试用例并运行它们；不提交 `.wasm` 二进制文件。破坏其中任何一个都会让构建失败。这组用例随每个版本增长，是对项目“每个修复一到三个回归测试”规则的有意例外。
+- CI 从仓库内的 Rust SDK 源码构建并运行各已发布版本的兼容性用例；不提交 Wasm 二进制。每次发布追加用例。
 - 计量单位、每个宿主函数的费用、默认额度和各项上限属于主版本的一部分，随主版本固定（第 4 节）。
 - 函数和表项可以弃用并向模块作者发出警告，但已发布的版本永不删除。
 - 已发布的函数、属性和表项永不改变单位或含义。要改变，就追加新的表项或发布新版本。
@@ -893,21 +785,7 @@ onMessage((sender: House, data: Uint8Array): void => {
 
 ### 15. 性能
 
-引擎只保留一份游戏状态。模块持有整数引用和 ID，需要数据时再读取；不会把游戏世界复制进模块内存。
-
-**基线。** 2 万单位、30 个所属方时，引擎的模拟现在就已经超出帧预算（[sim-thread](../sim-thread.md)），所以模块的每一项开销都计入预算，从不假定为免费。
-
-本节的规则分四部分：接口规则属于接口定义；实现要求是实现的验收标准；硬上限由引擎对模块强制执行；SDK 默认做法让作者默认就写出廉价的模块。
-
-**接口规则。** 它们依赖 core module ABI（第 12 节）：
-
-- **热路径用 ID，不用名字。** 类型、所属方国家、武器、弹头、抛射体、变量和通知的名字，以及附录列出的其他名字种类，都只用 `lookup` 解析一次，换成整数 ID，通常在 `vera_init`、`on_rules` 或 `on_scenario_start` 中完成；ID 一经分配就不再改变（第 2 节）。其他所有调用都传 ID 或引用。接受名字的调用（`lookup`、`rules_get`、`rules_set`）只用于初始化和不频繁的修改；SDK 会缓存 ID。
-- **一次调用读多个值。** `get_many` 在一次宿主调用中读 n 个引用的 m 个属性，写进模块的缓冲区。SDK 的批量读取（`Techno.read(list, props)`）就是它。
-- **每个模块每帧只在模块阶段投递**（第 5 节），以固定大小的记录投递，记录的布局属于接口定义。SDK 在模块内存中预留投递区，并在 `vera.delivery` 中说明它的大小；一次 `on_events` 调用至多投递固定条数的记录，也不超过投递区容量，`on_decide` 的请求放不下时分成多次调用（第 6f 节）。筛选子句在入队前检查，所以被筛掉的事件不产生任何跨边界的开销。
-- **搜索结果写进模块的缓冲区。** 引擎每次搜索都不分配内存。按创建序号排序的开销随结果的大小增长，而不是随整个世界的大小增长。分页用“之后”字段，不在引擎中保存游标。
-- **宿主调用按实际工作计费**（第 4 节），所以模块无法用看似廉价的调用拖住每台机器；轮询型事件有最小间隔，并且错开检查（第 6a 节）。
-- **SDK 不为每个事件分配对象。** 引用和 ID 都是值类型：在 TypeScript 中，引用是小于 2^53 的 `i64`，ID 是 `i32`；在 Rust 中，两者都是 newtype。SDK 原地读取记录。只有触发器构建器这类初始化调用才会创建对象。
-- **模块弹道的逐帧数据**直接写入模块内存中的结果区，再从中读回，每个抛射体几十字节。
+以 2 万单位、30 个所属方为性能基线（[模拟线程预算](../sim-thread.md)）。热路径用初始化时缓存的 ID 或引用；名字只用于初始化及低频规则修改。批量读取、分页和事件投递使用模块的缓冲区。搜索不分配内存，排序成本随结果数增长；抛射体逐帧数据直接写入模块结果区。SDK 原地读取事件，逐对象和逐事件均不分配包装对象。
 
 #### 15.1 实现要求
 
@@ -929,14 +807,14 @@ onMessage((sender: House, data: Uint8Array): void => {
 
 - **每帧运算额度。** 每个模块每帧一份，与记录数无关。锁步联机中最慢的机器决定整体速度，计量会让模块代码变慢，浏览器版还可能用解释器运行模块，所以额度按最慢的受支持平台确定：提议为该平台上约 2 ms 的运算量。超出额度的工作推迟到下一帧，记录留在队列中（第 5 节）；在积压上限内追不上的模块被停用并给出提示。
 - **内存上限。** 地图模块 16 MiB，mod 模块 32 MiB，绝对上限 64 MiB；引擎在实例化时分配（第 3 节）。
-- **只对绑定的对象和类型引发。** 高频事件和全部可决定事件只对绑定的对象或类型引发（第 5 节、第 6a 节）。`bindAllTypes` 在开销叠加层中给出警告（第 13 节）。
+- **按绑定范围引发。** 高频事件和绑定范围为对象或类型的可决定事件只对相应绑定引发；全局决定按事件表引发（第 5 节、第 6a 节）。`bindAllTypes` 在开销叠加层中给出警告（第 13 节）。
 - **派生属性计费。** 筛选子句中求值的派生属性（如 `NearbyEnemyCount`、`TargetInRange`）按费用计入所属模块的额度（第 6a 节）；附录的属性表标出费用高的派生属性。
 
 结果：写得不好的模块只会让它自己变慢，或者被停用；它无法拖住对局，也无法造成不同步。
 
 #### 15.3 SDK 默认做法
 
-官方 SDK 默认生成廉价的写法（第 5a 节）：周期任务分散到多帧，批量读取用 `get_many`，条件写进筛选子句，范围效果用长时修饰器，而不是每次扫描重新加一遍。
+SDK 与模板按对象或所属方错开周期任务。读多个对象或属性用一次 `get_many`；可在入队前判断的条件使用筛选子句。范围效果使用长时修饰器，仅在进入和离开范围时添加或移除。
 
 ## 流程
 
@@ -951,31 +829,14 @@ onMessage((sender: House, data: Uint8Array): void => {
 
 | 阶段 | 内容 |
 | --- | --- |
-| 1 | `rules.wasm`：七个导出、23 个导入函数；原版和新的事件与动作；筛选子句；属性和修饰器；变量；搜索；AI 动作和属性；类型标签绑定、对象绑定和触发器动作；首批两三个可决定事件（待定问题 10）；地图嵌入、`asset` 命令；TypeScript 和 Rust SDK 及模板 |
+| 1 | `rules.wasm`：原版和新的事件与动作；筛选子句；属性和修饰器；变量；搜索；AI 动作和属性；类型标签绑定、对象绑定和触发器动作；首批两三个可决定事件（待定问题 10）；地图嵌入、`asset` 命令；TypeScript 和 Rust SDK 及模板 |
 | 2 | `ui.wasm`：带 INI 布局的界面树、节点种类和属性、客户端事件、视野过滤、消息和通知 |
 | 3 | 用模块重做一个真实任务，外部 modder 试用，冻结版本 1 |
 | 以后 | 逐个增加更多可决定事件、模块弹道（`Launch`、`ProjectileFrame`）、对等调用、玩家界面模块 |
 
-## 备选方案
+## 设计范围
 
-- **由引擎运行 Lua**（Recoil 的做法）。对 modder 友好，但浮点和表遍历顺序的确定性要靠修改解释器保证，API 也会长成一个没有版本的全局命名空间。
-- **在引擎里内置语言运行时**（随 VERA20k 发布 Lua 或 JavaScript 运行时，供模块导入）。模块会更小，但引擎要永远维护一个语言运行时，并且每个 API 版本都要固定一个构建。不采用：语言留在作者的工具里。
-- **原生插件。** 无法移植到浏览器版，也没有沙箱。
-- **以 Component Model 及其 canonical ABI 作为二进制接口。** 出于第 12 节的原因不采用：浏览器不能原生运行组件；canonical ABI 通过模块内的分配传回结果；它的资源句柄放在模块内存之外、每个实例一张的表中；AssemblyScript 不产出组件；组件规范仍在变化。WIT 仍作为接口描述语言。
-- **实时投递所有事件**（Recoil 的做法：每个事件发生时立即调用脚本）。不采用：目标评分和寻路在工作线程上并行、推测性地运行，而一个模块的内存不能被同时进入；实时调用会在一次操作的中途重入模块并让它写入状态；引擎的执行顺序会变成 API 的一部分，为 2 万单位规模所做的重新排序会在版本之间改变 mod 的行为；每个事件都要付一次跨边界的开销。批量投递加上同步但只读的可决定事件覆盖了同样的需求。
-- **单独的“约束条件”概念**（0.0.6 及之前的版本：一组 `Cond.*` 函数）。不采用：事件上的筛选子句加上代码中的 `if` 覆盖了全部用法，而且子句和 `find` 共用一种布局。
-- **每个属性、每个动作各一个函数**（`Techno.health()`、`House.addMoney()` 等数百个导入）。不采用：每个函数都会成为冻结的界面，而表是只追加的数据，可以在次版本中增长，还能用 `has_kind` 探测。SDK 生成的包装函数让作者看到的写法和逐个函数一样。
-- **以某个所属方的视角做模拟查询**（所有读取结果按某个所属方能看到的范围过滤）。暂不采用：模拟读取能看到全部，客户端读取按视野过滤；只有视点属性带视点。
-- **由宿主保证可决定事件的处理函数是纯函数**（丢弃调用期间写入模块内存的状态，禁止取随机数）。不采用：决定调用只发生在提交点、按引擎的确定顺序，处理函数中的 `random` 用派生子流（第 4 节），以更低的代价让它的状态保持确定；宿主只禁止它调用写入函数。
-- **客户端模块之间直接发消息**（发给盟友或观战者）。不采用：玩家之间的所有通信都经过模拟，联机只保留一条通道。
-- **只增加 INI 键。** 简单需求仍然适用，够用时依然是首选，但表达不了通用逻辑。
-
-## 参考先例
-
-- **Recoil（Spring）。** 同步与非同步代码分离；非同步代码只能通过网络消息影响模拟；单对象的数值带可见度等级；代价高的回调只对脚本关注的对象触发。借鉴：不暴露底层图形 API；用带版本的包取代单一全局命名空间；回调需显式订阅。不借鉴：实时投递每个事件（见[备选方案](#备选方案)）。
-- **红警 3（SAGE）。** 在数据文件里把对象事件绑定到脚本函数，可以继承，处理函数收到对象本身。借鉴：在数据里绑定，而不是在代码里。
-- **Phobos。** 抛射体的 `Trajectory=` 类型；用于单对象修正的 AttachEffect，这里成为属性上的修饰器。
-- **社区的触发器、效果和约束条件设计**，在本 RFC 讨论期间分享。借鉴：触发器由事件、筛选和动作组成；投递型与轮询型事件；带类型参数的事件清单；瞬时动作和持续修正的清单。不借鉴：INI 里的记录器和算子，改由模块代码实现。
+使用 core Wasm 模块和版本化函数表。模拟可读完整状态，客户端按本机视野读取；跨客户端通信经过模拟。普通事件批量投递，同步决定可写模块内存并使用决定子随机流。沿用数据驱动的触发器、Phobos 弹道与 AttachEffect。
 
 ## 未来可能的方向
 
@@ -1012,6 +873,18 @@ onMessage((sender: House, data: Uint8Array): void => {
 17. **连锁上限。** 含有模块触发器、VERA 新增的事件或原子动作的连锁，每帧的深度上限，以及每帧这类连锁触发总次数的上限（第 5 节）。
 
 ## 修订记录
+
+- **0.0.13**（2026-11-18）：对齐触发器、查询返回值、事件默认字段和客户端可见度；修正绑定示例和加载校验顺序。
+
+- **0.0.12**（2026-11-18）：精简附录表列，合并共用规则和例外。
+
+- **0.0.11**（2026-11-18）：合并重复示例和接口说明，签名、布局、编号与版本层级集中在附录。
+
+- **0.0.10**（2026-11-18）：显式分页并按国家查所属方；同一次宿主调用返回值和状态；按声明生成变量访问器；客户端格子跳转统一为镜头动作；修饰器按运算命名。
+
+- **0.0.9**（2026-11-18）：合并等价属性写动作和同构属性轮询；SDK 按事件提供具名字段，在触发器构建器中区分立即动作、排队回调和同步决定。
+
+- **0.0.8**（2026-11-18）：补全模组开发语言的接入条件，列出宿主工具嵌入 Wasmtime 的九种语言绑定。
 
 - **0.0.7**（2026-11-17）：API 收拢为五个概念（对象和属性、变量、事件、动作、界面节点）和一组冻结的函数（模拟 23 个导入、7 个导出，客户端 21 个导入、4 个导出），事件、动作和属性成为只追加的表；约束条件改为筛选子句，标记改为带作用域和可见度的变量，持续效果改为属性上的修饰器，查询改为 `get`、`get_many` 和 `find`，覆盖点改为通过 `on_decide` 同步决定的可决定事件，AI 函数改为动作种类和属性；订阅只通过触发器，增加对象绑定；客户端改为节点、客户端事件和 `client_*` 函数，客户端消息只到达同一来源的模拟模块；SDK 从表生成包装函数；不采用实时投递、单独的约束条件和逐个函数的界面。
 - **0.0.6**（2026-11-16）：性能规则（第 15 节）；模块动作每个模块每帧批量执行，原版动作和原子动作在触发器触发时执行；以创建序号作为句柄和排序依据；安全点、批量段、不重入和连锁上限；原子动作的目标和失败处理；错误状态；通知 ID；客户端查询限于玩家界面能显示的内容；core module ABI，以 WIT 作为描述语言；文本重新组织：实现说明和提议历史移出 RFC，附录只作参考；英文版在 RFC 定稿前移除。
