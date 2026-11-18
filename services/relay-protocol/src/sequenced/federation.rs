@@ -1086,11 +1086,8 @@ impl RelayServer {
                 {
                     return Err(RelayError::Malformed);
                 }
-                let recipients = |peer: &Peer| {
-                    now.saturating_sub(peer.last_seen) <= 30
-                        && (target == BROADCAST || target == peer.ticket.source)
-                };
-                let cost = (room.peers.iter().filter(|peer| recipients(peer)).count()
+                let receives = |peer: &Peer| data_recipient(peer, source, target, now);
+                let cost = (room.peers.iter().filter(|peer| receives(peer)).count()
                     * (envelope::OVERHEAD + 1 + data.len())) as u64;
                 if !room.outgoing.permits(now, cost, ROOM_BYTES_PER_SECOND)
                     || !self.outgoing.admit_part(
@@ -1105,7 +1102,7 @@ impl RelayServer {
                 self.outgoing.charge_part(&mut room.outgoing, cost);
                 room.peers
                     .iter_mut()
-                    .filter(|peer| recipients(peer))
+                    .filter(|peer| receives(peer))
                     .map(|peer| {
                         server_packet(peer, DATA, source, data, now_ms, crate::link::SEND_OTHER)
                     })
