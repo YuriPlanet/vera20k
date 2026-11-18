@@ -213,8 +213,8 @@ half = { version = "2", default-features = false, features = ["num-traits"] }
 hashbrown = { version = "0.16", default-features = false, features = ["default-hasher", "inline-more"] }
 num-traits = { version = "0.2", features = ["libm"] }
 unicode-ident = "1"
-# Extension module tests write their modules in WAT.
-wat = "1"
+# `png` (picture art) brings bitflags; the client's other crates enable std.
+bitflags = { version = "2", features = ["std"] }
 
 # The native client's tungstenite -> rand enables chacha20's RNG support and
 # getrandom's std and sys_rng, and its handshake's sha1 -> hybrid-array enables

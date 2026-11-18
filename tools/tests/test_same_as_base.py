@@ -1,7 +1,7 @@
 import unittest
 
 from tools.same_as_base import (PROFILE, capture_profile, differing_pixels, first_difference,
-                                 noise_allowance, pixel_runs)
+                                 noise_allowance, pixel_runs, wheel_supported_runs)
 
 
 class SameAsBaseTests(unittest.TestCase):
@@ -20,6 +20,12 @@ class SameAsBaseTests(unittest.TestCase):
         self.assertEqual(pixel_runs('100', ''), [('zoom100', 100, None)])
         with self.assertRaises(ValueError):
             pixel_runs('100', '2')
+
+    def test_a_base_without_wheel_zoom_skips_the_wheel_runs(self):
+        runs = pixel_runs('100', '1.5')
+        self.assertEqual(wheel_supported_runs(runs, True), (runs, []))
+        self.assertEqual(wheel_supported_runs(runs, False),
+                         ([('zoom100', 100, None)], ['zoom100-wheel1.5']))
 
     def test_first_difference_names_the_pixel(self):
         before = bytes(4 * 6)

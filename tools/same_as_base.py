@@ -103,6 +103,22 @@ def pixel_runs(zooms, wheel_zooms):
     return runs
 
 
+def wheel_supported_runs(runs, base_has_wheel_zoom):
+    """The capture settings a base can run, and the names of those it can't:
+    a base whose map_observation predates `presentation.wheel_zoom` refuses
+    the wheel view distances, so they are skipped rather than failed."""
+    if base_has_wheel_zoom:
+        return runs, []
+    return ([run for run in runs if run[2] is None],
+            [run[0] for run in runs if run[2] is not None])
+
+
+def base_has_wheel_zoom(base):
+    """Whether `base`'s map_observation accepts `presentation.wheel_zoom`."""
+    return subprocess.run(['git', 'grep', '-q', 'wheel_zoom', base, '--',
+                           'tools/map_observation.py'], cwd=ROOT).returncode == 0
+
+
 def differing_pixels(before, after):
     """How many 4-byte pixels differ between two equal-sized frames."""
     return sum(before[i:i + 4] != after[i:i + 4] for i in range(0, len(before), 4))
@@ -269,6 +285,11 @@ def main(argv=None):
                 summary['differences'].append(f'sim periodic hash first differs at {first}')
         if not args.skip_pixels:
             summary['pixels'] = []
+            pixel_settings, skipped = wheel_supported_runs(pixel_settings,
+                                                           base_has_wheel_zoom(base))
+            if skipped:
+                summary['skipped'] = skipped
+                print(f'SKIPPED {",".join(skipped)}: the base has no wheel_zoom', flush=True)
             width = json.loads(args.profile.read_text())['width']
             for setting, zoom, wheel_zoom in pixel_settings:
                 for step in map(int, args.steps.split(',')):

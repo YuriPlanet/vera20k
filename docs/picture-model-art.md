@@ -527,7 +527,7 @@ current: say what was done, what was not, and what comes next.
 
 ### Machine notes
 
-- Retail data here: `RA2_DIR=/Users/libi/Documents/workspace/other/yr-retail/Yuri_s_Revenge_1.001`
+- Retail data here: `RA2_DIR=~/Documents/workspace/other/yr-retail/Yuri_s_Revenge_1.001`
   (the old `config.toml` path no longer exists). That folder has no
   `Hills.mmx`, so tests through the retail Battle fixture
   (`retail_ini_fixture.rs:525`) fail there; they are not about this work.
