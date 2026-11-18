@@ -187,14 +187,21 @@ unchanged).
 
 ## Residuals (trigger · impact · frequency · risk)
 
-- **`FireWhileMoving` `0x4D9510` not ported**: trigger = an `OpenTopped` unit
-  with passengers sets a destination while its carrier/passenger/weapon
-  `FireWhileMoving` AND is false; impact = passengers keep `LocomotorTarget` /
-  `TemporalImUsing` locks that Phobos would release; frequency = rare
-  (requires a chrono/magnetron passenger riding a carrier that moves while
-  firing is disallowed); risk = low, no wrong damage/range, only stale
-  locomotion/temporal locks. The key is still consumed by the `0x6FC5C7`
-  firing gate (5b).
+- **`FireWhileMoving` `0x4D9510`** **is ported**:
+  `Simulation::phobos_open_topped_release_locks` (`sim/passenger.rs`), called
+  from `Simulation::begin_foot_destination` (`sim/movement/navcom.rs`) as soon
+  as a non-null destination is admitted — the same `FootClass::SetDestination`
+  call, before the NavCom write rather than after it. A moving `OpenTopped`
+  Unit with passengers makes each passenger drop the locomotion link
+  (`TechnoClass+0x1D0`-style `lift.target()`) or the temporal one
+  (`TemporalImUsing`) it holds when the carrier's `OpenTopped.FireWhileMoving`,
+  the passenger's `OpenTransport.FireWhileMoving` or the selected weapon's own
+  `FireWhileMoving` says no. The weapon half reads `IsLocomotor=`/`Temporal=`
+  on the warhead through the shared `select_weapon_against` owner. Tests:
+  `sim::combat::phobos_open_transport_tests::
+  a_moving_open_topped_carrier_releases_a_rider_that_cannot_fire` and
+  `...::a_locomotor_weapon_without_fire_while_moving_releases_the_link`.
+  The key is also consumed by the `0x6FC5C7` firing gate (5b).
 - **`OpenTransport.*` companion keys**: ported by
   [`phobos-open-transport.md`](phobos-open-transport.md) (range, damage and
   the passenger `FireWhileMoving` term); the `0x4D9510` row above is the
