@@ -731,11 +731,12 @@ impl LiveRoundFlow {
             self.record(frame, "Real LAN loading reached synchronized gameplay");
             self.phase = RoundPhase::Running;
         }
-        // The host leaves its reopened room only after the guest came back
-        // and left again. Note the visit even while the room still slides in.
         let online = self.config.is_some();
         let host = self.input_host(core);
-        if host
+        // On LAN the guest rejoins the host after the room reopens. Note
+        // the visit even while the room still slides in.
+        if !online
+            && host
             && matches!(self.phase, RoundPhase::Returning | RoundPhase::LeaveRoom)
             && rendered == PresentedShell::NetworkSetup
             && state
@@ -1522,8 +1523,10 @@ impl LiveRoundFlow {
                     } else {
                         setup_settled(state, host)
                     })
+                    // Online the service reopens with everyone seated. A guest
+                    // can leave before the host draws that first roster.
                     && (!host
-                        || self.guest_back
+                        || (online || self.guest_back)
                             && state
                                 .match_state
                                 .session
@@ -1535,7 +1538,7 @@ impl LiveRoundFlow {
                 self.record(
                     frame,
                     if host {
-                        "Guest came back and left; host left the reopened room through Back"
+                        "Host left the reopened room through Back after the other seats cleared"
                     } else {
                         "Guest left the reopened room through Back"
                     },
