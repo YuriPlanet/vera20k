@@ -369,14 +369,6 @@ pub(crate) enum WolServiceEvent {
         id: i32,
         squad: Result<crate::ui::wol_lobby::WolSquad, u32>,
     },
-    /// The private sink's `P<scenario>` from a guest (`0x007A8BF3`).
-    #[expect(
-        dead_code,
-        reason = "a WOL backend delivers it; the test service's guest always has the map"
-    )]
-    PreviewRequested {
-        from: String,
-    },
     /// The create result and the channel's users.
     Created(Result<Vec<WolMember>, u32>),
     /// The page sinks: `ansi` for `0x007A9200`, otherwise the UTF-16
@@ -1119,7 +1111,6 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
         | WolServiceEvent::PlayerChoices { .. }
         | WolServiceEvent::PlayerReady { .. }
         | WolServiceEvent::MapStatus { .. }
-        | WolServiceEvent::PreviewRequested { .. }
         | WolServiceEvent::Created(_)
         | WolServiceEvent::Matches(_)
         | WolServiceEvent::WatchRefused(_)) => {

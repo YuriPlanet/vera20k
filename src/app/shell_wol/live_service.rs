@@ -2505,10 +2505,9 @@ fn request_setup(
     request: NetworkSetupRequest,
 ) -> Result<()> {
     match request {
-        // The staging and Cooperative C0 also travel in the host's options.
+        // Cooperative's C0 also travels in the host's options.
         NetworkSetupRequest::PublishOptions
         | NetworkSetupRequest::PublishRoster
-        | NetworkSetupRequest::PublishStartStaging(_)
         | NetworkSetupRequest::PublishCooperativeCampaign(_) => {
             service.publish_room_options(options(state)?);
         }
@@ -2646,19 +2645,6 @@ fn request_setup(
             "chat",
             json!({"text":String::from_utf16_lossy(&text),"to":[],"action":true}),
         ),
-        NetworkSetupRequest::Chat(text) => {
-            send_chat(service, None, WolChatLine::Say(text), Vec::new(), false);
-        }
-        // RESIDUAL: mode+64's C1 (0x005C2710) is not carried, as on LAN:
-        // VERA reads no round assignment after the publish, so guests keep
-        // their own.
-        NetworkSetupRequest::PublishCooperativeAssignments(_) => {}
-        NetworkSetupRequest::RequestPreview
-        | NetworkSetupRequest::OfferPreview
-        | NetworkSetupRequest::AcknowledgePreview
-        | NetworkSetupRequest::RequestPreviewFile
-        | NetworkSetupRequest::SendPreviewFile
-        | NetworkSetupRequest::RequestRandomMapImage => {}
         NetworkSetupRequest::RequestAcceptance
         | NetworkSetupRequest::BroadcastPings
         | NetworkSetupRequest::ObserverSlot { .. } => {}

@@ -223,19 +223,15 @@ network loading boundary. The target list is in
 `src/app/diagnostics/shell_capture/movies/lan.rs`.
 
 Set `[paths] settings_dir` to a separate private directory outside RA2_DIR.
-WOL persona fixtures require the same physical `.vera20k-lan-capture-root`
-marker described below in that settings directory before writing `wolinfoMD.ini`,
-and so does `lan-guest-random-map` before writing the received `RandMap.Sed` and
-`RandMap.img` into its `Maps` folder.
+WOL persona fixtures require a physical `.vera20k-lan-capture-root` file in that
+settings directory before writing `wolinfoMD.ini`, with exactly
+`VERA20k isolated shell capture fixture\n` (a trailing newline).
 Never point captures at the normal player profile.
 
-`lan-transfer-loading-first` writes the original `XMP29U2.MAP` bytes as
-`CONTROLLED.MAP` at the declared file-delivery boundary, then asserts the
-production parser's loose filename, length and SHA256. Its isolated retail
-directory must contain a physical `.vera20k-lan-capture-root` file with exactly
-`VERA20k isolated shell capture fixture\n` (a trailing newline). Existing map
-files are refused. Successful completion removes the unchanged file it created;
-the error/exit guard preserves any file another actor changed.
+The absent-map targets refuse a retail directory that already holds
+`CONTROLLED.MAP`. `lan-go-map-failure` takes GO with that map still missing:
+map preparation fails and the CE notice shows; `...-return` presses its OK
+back to BB.
 
 `lan-host-abort-return` and `lan-guest-abort-return` continue through InGame,
 actual pause/Abort controls and queued EXIT back to BB. The host-observer

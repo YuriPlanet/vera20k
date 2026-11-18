@@ -37,53 +37,6 @@ pub(crate) fn render_multiplayer_setup(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
-    if let Some((completed, total)) = state
-        .frontend
-        .network_setup_protocol
-        .as_ref()
-        .filter(|protocol| protocol.blocking_map_transfer())
-        .and_then(|protocol| protocol.transfer_progress())
-    {
-        crate::app::frontend::preview_zoom::close(state);
-        let (progress_meter, texts) =
-            crate::app::loading::pump::transfer_progress_draws(state, completed, total)?;
-        let smooth_art = state.smooth_online_menus();
-        let layout = crate::app::input::multiplayer_setup::layout(state);
-        let atlas = state
-            .frontend
-            .skirmish_shell_chrome
-            .as_ref()
-            .expect("setup art");
-        let mut art = Vec::new();
-        super::modals::push_message_box_backdrop_instances(
-            &mut art,
-            atlas,
-            &crate::ui::skirmish_shell::compute_layout_on(
-                layout.page.scale,
-                state.render_width(),
-                state.render_height(),
-            ),
-        );
-        return in_game_shell::render_shell_frame(
-            state,
-            encoder,
-            destination,
-            InGameShellFrame {
-                art,
-                controls: Vec::new(),
-                texts: Vec::new(),
-                label: "LAN map transfer",
-            },
-            ShellFrameArt::Launcher,
-            ShellFrameOverlay {
-                progress_meter,
-                texts,
-                smooth_art,
-                ..Default::default()
-            },
-            ShellFrameCursor::Hidden,
-        );
-    }
     let Some(view) = crate::app::shell_network_setup::view(state) else {
         crate::app::frontend::preview_zoom::close(state);
         return Ok(());
@@ -108,7 +61,7 @@ pub(crate) fn render_multiplayer_setup(
     } else {
         state.frontend.skirmish_preview_texture = None;
     }
-    let zoom_layout = ensure_zoom_texture(state, scale, !sliding && !view.preview_hidden);
+    let zoom_layout = ensure_zoom_texture(state, scale, !sliding);
     let heading = localized_label(state, view.page().title_key, view.page().title_key);
     let accept_highlight = state
         .frontend
@@ -749,27 +702,8 @@ pub(crate) fn render_multiplayer_setup(
                 layout.chat_text_scale(),
             ));
         }
-        // C9's 0x71F "Preview unavailable" after the host's Z3 (0x5E3D10),
-        // a left-aligned static at its template place.
-        if !sliding
-            && view.no_preview
-            && let Some(rect) = layout.no_preview
-        {
-            texts.push(text(
-                &localized_label(state, "TXT_NAT_NO_PREVIEW", "Preview unavailable"),
-                rect,
-                ShellAlign::NONE,
-                SHELL_LABEL_TEXT_RGB,
-                SHELL_CONTROL_TEXT_DEPTH,
-            ));
-        }
         if !sliding {
-            if let Some(preview) = state
-                .frontend
-                .skirmish_preview_texture
-                .as_ref()
-                .filter(|_| !view.preview_hidden)
-            {
+            if let Some(preview) = state.frontend.skirmish_preview_texture.as_ref() {
                 overlay.preview = build_preview_surface_instance(
                     layout.map_preview,
                     preview.width,

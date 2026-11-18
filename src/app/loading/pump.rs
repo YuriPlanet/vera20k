@@ -10,7 +10,6 @@
 //! in the private `tests` child.
 
 mod render;
-pub(crate) use render::transfer_progress_draws;
 
 #[cfg(all(test, tests_app))]
 mod tests;
@@ -1664,7 +1663,6 @@ pub(crate) fn clear_loading_state(state: &mut AppState) {
 
 fn reset_loading_presentation(state: &mut AppState) {
     state.renderer.performance_overlay.clear_simulation_rate();
-    state.frontend.loading_screen_atlas = None;
     state.frontend.loading_progress = LoadingProgressState::standard_skirmish();
 }
 
