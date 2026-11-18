@@ -1136,7 +1136,7 @@ impl RelayServer {
         } else {
             room.peers
                 .iter()
-                .filter(|peer| data_recipient(peer, &message, now))
+                .filter(|peer| data_recipient(peer, message.ticket.source, message.target, now))
                 .count()
         };
         let packet_bytes = envelope::OVERHEAD
@@ -1182,7 +1182,7 @@ impl RelayServer {
         }
         let mut output = Vec::with_capacity(recipients);
         for peer in &mut room.peers {
-            if data_recipient(peer, &message, now) {
+            if data_recipient(peer, message.ticket.source, message.target, now) {
                 output.push(server_packet(
                     peer,
                     DATA,
@@ -1625,12 +1625,12 @@ fn new_peer(
     }
 }
 
-/// Whether `peer` gets `message`'s DATA: another recently heard source it
-/// addresses.
-fn data_recipient(peer: &Peer, message: &Incoming<'_>, now: u64) -> bool {
-    peer.ticket.source != message.ticket.source
+/// A player DATA packet goes to other addressed peers heard from in the last
+/// 30 seconds, whether it arrived on a player hop or a federation link.
+fn data_recipient(peer: &Peer, source: u8, target: u8, now: u64) -> bool {
+    peer.ticket.source != source
         && now.saturating_sub(peer.last_seen) <= 30
-        && (message.target == BROADCAST || message.target == peer.ticket.source)
+        && (target == BROADCAST || target == peer.ticket.source)
 }
 
 /// One datagram on `peer`'s hop, logged at `now_ms` as `send_kind`
@@ -2110,6 +2110,26 @@ mod tests {
             server.process(a, &bytes, 2000),
             Err(RelayError::Unregistered)
         ));
+    }
+
+    #[test]
+    fn a_data_recipient_is_still_reachable_after_thirty_seconds() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 1);
+        let mut sender = client(&key, 1, 0);
+        let mut recipient = client(&key, 1, 1);
+        let from = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30001);
+        let to = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30002);
+        connect(&mut server, &mut sender, from);
+        connect(&mut server, &mut recipient, to);
+
+        let mut bytes = Vec::new();
+        sender.data(1, b"ping", &mut bytes).unwrap();
+        let at_limit = server.process(from, &bytes, 1030).unwrap();
+        assert_eq!(at_limit.len(), 1);
+        assert_eq!(at_limit[0].endpoint, to);
+        sender.data(1, b"ping", &mut bytes).unwrap();
+        assert!(server.process(from, &bytes, 1031).unwrap().is_empty());
     }
 
     #[test]

@@ -200,10 +200,11 @@ finishes loading must agree to the initial world before it starts. A player who
 never finishes loading leaves in the first frame once silent for 60 seconds, or 3
 minutes after the first client was ready; the native loading timeout leaves that
 departure to the relay. A match spread over several relays is cancelled instead.
-If a loading player's Ready reports a different initial world from the one its
-relay already took, or ready players on different relays report different
-worlds, the relay refuses the start for everyone at once with the existing
-agreement-mismatch error, instead of keeping the first ready players waiting.
+At each relay, a loading player's Ready must agree with the first player's
+initial world and signed match settings, including pacing. Only certificate
+expiry may change on renewal. If these checks fail, or ready players on
+different relays report different worlds, the relay refuses the start for
+everyone at once with the existing agreement-mismatch error.
 The other relays of such a match cancel through the coordinator, so their
 players may see an ordinary cancellation. A relay whose players have not sent
 Ready is still loading, not a mismatch. The refusal remains available to retries
@@ -519,10 +520,10 @@ A room named as games name rooms (`<name>'s_game`) takes the new host's name unl
 another open room has it; the room is listed to the new host's version and stays ranked
 or unranked as it was created. The chat stays, and it says who left and who hosts now. A
 room that comes back after its match without its host goes to its next player the same
-way, through `room_reopened`. A room with an older game in it, or a Quick Match room,
-closes as before, so an older game never meets `host_changed`; a game that does not know
-it would ignore it and leave the room once its host left. A rollback closes every such
-room again.
+way, through `room_reopened`. In a room with an older game in it, or a Quick Match
+room, the guests receive `channel_left` when the host leaves. Released games already
+close the room on that event. Rolling the lobby back can also show the old generic
+refusal before the close. A lobby from before host handover closes every such room.
 
 In a VERA room before its start, the host and every guest can press Lobby to look round
 the public lobby while staying in the room, and Back to Room shows the room again
@@ -661,18 +662,19 @@ mission: a watcher's game cannot yet rebuild their starts. A host chooses in Cre
 Game who may watch the room's games: everyone 2 minutes behind (the default), nobody,
 or everyone live. Quick Match and ranked games are always watched 2 minutes behind.
 
-One person who watches AI play alone would play without the relay, which then keeps no
-stream to watch ([above](#current-production-path)). When the room lets others watch,
-the person's game signed in with `Vera-Watch-AI: 1` and the match's relay lets watchers
-in, the lobby marks the match's certificate (VO2C flags bit 1,
-`OrderingCertificate::ordered_alone`) and the relay orders the match from its one
-source. That person's game then plays it through the relay as a match of two would
-(`LiveCommandSession::new`), with its command lead time, and losing the relay ends it.
-Watching is on by default, so such a match holds a relay ordering room and journal, one
-source's share, whether or not anyone watches; a host who turns watching off plays it
-without the relay. Every game built with this sends the header on `POST /v1/sessions`;
-a version cannot say it, since a nightly build names the next version before it has
-the code.
+A lone observer normally plays an AI match locally, so there is no stream for
+others to watch ([above](#current-production-path)). To make it watchable, the
+room must allow watching, the observer's game must advertise `Vera-Watch-AI: 1`
+at sign-in, and the selected relay must have both `watch: true` and
+`ordered_alone: true` in the lobby's fleet configuration.
+
+When all three apply, the lobby sets VO2C flags bit 1
+(`OrderingCertificate::ordered_alone`). The relay then orders that one source,
+and the game plays through it with the usual command lead time
+(`LiveCommandSession::new`). Even without a watcher, the match holds a relay
+ordering room and journal, and losing the relay ends it. The desktop client
+advertises support. Other clients keep local play for a lone observer until
+they advertise it too.
 
 The lobby's grant carries the match's start, its options and a watch ticket. The
 watcher's game downloads the map as a guest does, checks that its version and rules
@@ -737,10 +739,10 @@ no marked certificate, plays one person's match without the relay as before, and
 sees a match where only AI play listed. A lobby from before this marks no certificate,
 so one person watching AI play plays without the relay, unwatched, and it lists no such
 match. A lobby rolled back to before this will not sign a marked match's certificate
-again, so that match's relay ticket lapses and it ends with the lost connection, its
-watchers' too: roll the lobby back while none runs. A relay from before this refuses a
-marked certificate as malformed, and the game that sent it would wait at its start, so
-the relays go first: deploy them before the lobby, and roll the lobby back before them.
+again, so that match's relay ticket eventually expires. Enable `ordered_alone`
+only after upgrading the selected relay. Before a rollback, remove the field from
+the fleet configuration to keep new solo matches local. Wait for existing marked
+matches to end before rolling back the lobby or relay.
 
 ## Native behavior and deliberate bounds
 
