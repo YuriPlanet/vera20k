@@ -151,7 +151,8 @@ evenly, and count a backlog only beyond a whole turn.
 
 Clients send everything but Ready (request 0), Pull (2), Leave (3) and Pause
 (5) in one control request, UPLINK (8), scheduled by the client session
-(`services/relay/adaptive-transport/spec.md` holds the full rules):
+(`adaptive-transport/spec.md` holds the fields and scheduling rules,
+`bandwidth-compaction/spec.md` §7 this encoding):
 
 ```
 [8][flags][recv_next varint][down_high varint][down_bits u64][srtt_ms varint][base_ms varint][rttvar_ms varint][link]

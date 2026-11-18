@@ -281,19 +281,18 @@ Redundancy follows each player's measured link
 unacknowledged batches, the receive watermark, the per-hop receipt feedback,
 checksums and pace. The relay pushes each turn packed, with the reader's
 unacknowledged records piggybacked into the space the turn leaves. A good link
-sends each batch and turn once. A lossy or jittery link also gets 16 ms uplink
-copies and 8 ms downlink repeats. A congested link gets neither, and a silent
-one only probes. Losses that the receipt feedback shows are retransmitted by the
-relay; a lasting gap falls back to the existing replay reader. Clients and relay
-ship together: older clients are not supported.
+sends each batch and turn once. A lossy link also gets 16 ms uplink copies and
+8 ms downlink repeats; a jittery link gets only the downlink repeats. A congested
+link gets neither, and a silent one only probes. Losses that the receipt feedback
+shows are retransmitted by the relay; a lasting gap falls back to the existing
+replay reader. Clients and relay ship together: older clients are not supported.
 
 Every datagram uses the compact envelope
 (`services/relay/bandwidth-compaction/spec.md`): a 32-bit session the relay
 assigns at admission, a 32-bit hop sequence and a 4-byte truncated HMAC, 13 bytes
 in all. History packs encode each record relative to the previous one and decode
 alone. The receiving client rebuilds the same canonical records, so journal,
-replay and federation are unchanged. Measured traffic is in
-`services/relay/adaptive-transport/results.md`.
+replay and federation are unchanged.
 
 In a match played through one relay, any player
 can use the Pause key or Options' **Pause All Players** / **Resume All Players**
