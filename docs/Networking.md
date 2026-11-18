@@ -964,3 +964,21 @@ as the Create Game Watching choice's default does; Quick Match games
 records the match, the grant's delay, whether catch-up was seen and the frame it ended,
 the frames played after it, the views Tab went through, how far the right drag moved
 the view, and the exit route.
+
+The `lan-live-desync-host` and `lan-live-desync-guest` targets use the isolated setup
+of `lan-live-host` and `lan-live-guest` and check that a checksum mismatch ends a LAN
+match as in gamemd. After the shared 300-frame prefix each writes
+`<output>.prefix.json` and waits for its peer's damaged FRAMEINFO checksum; each must
+then get the out-of-sync dialog, press Stop and come back to the settled LAN lobby. The
+`lan-fault-proxy` tool does the damage and is absent from game builds; build it with
+`python -m tools.cargo_run -- build --profile fast -p vera20k-core --features
+test-support --bin lan-fault-proxy`. Start it first with `--host-proxy
+127.0.0.1:32120 --guest-proxy 127.0.0.1:32130 --host 127.0.0.1:32100 --guest
+127.0.0.1:32110 --timeout 1800`, then the host with `--lan-bind 127.0.0.1:32100
+--lan-peer 127.0.0.1:32130` and the guest with `--lan-bind 127.0.0.1:32110 --lan-peer
+127.0.0.1:32120`, so each player reaches the other only through the proxy. Once both
+prefix files exist, write `ARM` and a newline to the proxy's standard input: it then
+flips one bit of the checksum in the next command-free FRAMEINFO each way and passes
+every other datagram unchanged. Write `STOP` after both captures finish. The proxy
+prints one JSON line per step on standard output, and exits with an error if armed
+before it has seen both players past frame 300.

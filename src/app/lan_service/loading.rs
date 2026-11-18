@@ -195,7 +195,10 @@ pub(super) fn decode_progress(
     scope: Option<SessionScope>,
     incoming: GlobalMessageRef<'_>,
 ) -> anyhow::Result<Option<(usize, i32)>> {
-    anyhow::ensure!(incoming.product_id == 0xaa04, "different loading product");
+    anyhow::ensure!(
+        incoming.product_id == LAN_PRODUCT_ID,
+        "different loading product"
+    );
     let progress = if session
         .network_return_context()
         .map(|context| context.session_mode())
