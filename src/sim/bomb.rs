@@ -868,6 +868,90 @@ impl Simulation {
         log::info!("BOMB moved from {from} to {to}");
     }
 
+    /// Phobos `WarheadTypeExt::ExtData::IvanBombDetonate`
+    /// (`Ext/WarheadType/Detonate.cpp:944-978`), `DetonateOnOneUnit`'s arm
+    /// right after `Taunt` (`:239-240`): the bomb on the hit target — and, per
+    /// the options, the bombs its passengers, its garrison and the parasite
+    /// eating it carry — has its fuse cut to the current frame. Phobos writes
+    /// `pBomb->DetonationFrame`, the bomb's `+0x38` end frame that
+    /// `BombClass::IsTimerExpired @ 0x00438A70` compares
+    /// (`0x00438A7C..0x00438A81`: expired once `Frame > end`), so the carrier's
+    /// own `TechnoClass::AI_Update` fuse check
+    /// ([`Self::bomb_fuse_step`]) sets it off on its next visit.
+    ///
+    /// `IvanBomb.Detonate.AffectTypes=` filters by the planting techno's type
+    /// (empty means every type); `SameInvokerOnly=` keeps only the bombs this
+    /// detonation's own owner planted.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn phobos_ivan_bomb_detonate(
+        &mut self,
+        target: u64,
+        owner: Option<u64>,
+        warhead: &WarheadType,
+    ) {
+        let Some(entity) = self.substrate.entities.get(target) else {
+            return;
+        };
+        let mut carriers = vec![target];
+        if warhead.phobos_ivan_bomb_detonate_penetrates_transport
+            && let Some(cargo) = entity.passenger_role.cargo()
+        {
+            carriers.extend(cargo.passengers().iter().copied());
+        }
+        if warhead.phobos_ivan_bomb_detonate_penetrates_garrison
+            && entity.category() == EntityCategory::Structure
+        {
+            carriers.extend(entity.passenger_role.occupants().ids().iter().copied());
+        }
+        if warhead.phobos_ivan_bomb_detonate_affects_parasite
+            && let Some(parasite) = entity.parasite.eater()
+        {
+            carriers.push(parasite);
+        }
+        let frame = self.session.binary_frame() as i32;
+        let same_invoker_only = warhead.phobos_ivan_bomb_detonate_same_invoker_only;
+        let affect_types = &warhead.phobos_ivan_bomb_detonate_affect_types;
+        let mut cut = Vec::new();
+        for carrier in carriers {
+            let Some(bomb) = self
+                .substrate
+                .entities
+                .get(carrier)
+                .and_then(|entity| entity.bomb.as_ref())
+            else {
+                continue;
+            };
+            if same_invoker_only && owner.is_none_or(|owner| bomb.planter != Some(owner)) {
+                continue;
+            }
+            if !affect_types.is_empty() {
+                let planter_type = bomb
+                    .planter
+                    .and_then(|planter| self.substrate.entities.get(planter))
+                    .map(|planter| self.interner.resolve(planter.type_ref()));
+                let listed = planter_type.is_some_and(|name| {
+                    affect_types
+                        .iter()
+                        .any(|listed| listed.eq_ignore_ascii_case(name))
+                });
+                if !listed {
+                    continue;
+                }
+            }
+            cut.push(carrier);
+        }
+        for carrier in cut {
+            if let Some(bomb) = self
+                .substrate
+                .entities
+                .get_mut(carrier)
+                .and_then(|entity| entity.bomb.as_mut())
+            {
+                bomb.end_frame = frame;
+            }
+        }
+    }
+
     /// `BombClass::Defuse @ 0x004389B0`: remove the bomb and detach its cue
     /// through VocHandle405FD0 (`0x004389D6`), leaving the current clip's tail.
     pub(crate) fn bomb_defuse(

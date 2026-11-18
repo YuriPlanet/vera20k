@@ -89,8 +89,16 @@ while the effect is held; see [AttachEffect](phobos-attach-effect.md).
 
 - `PossibleCellSpreadDetonate` is reproduced member-for-member, `IvanBomb.Detonate`
   included, so the per-detonation draws and the pass's target set match Phobos.
-  `IvanBomb.Detonate`'s own effect (re-detonating the bombs stuck to a hit
-  target) is still unported; nothing else consumes the key.
+  `IvanBomb.Detonate`'s own effect **is** ported
+  (`sim::bomb::Simulation::phobos_ivan_bomb_detonate`, the arm right after
+  `Taunt`): the hit target's bomb — and, per
+  `PenetratesTransport`/`PenetratesGarrison`/`AffectsParasite`, those its
+  passengers, its garrison and its parasite carry — has the fuse cut to the
+  current frame, filtered by `AffectTypes` and `SameInvokerOnly`. Phobos writes
+  `pBomb->DetonationFrame = Unsorted::CurrentFrame`; that is the bomb's `+0x38`
+  end frame, the value `BombClass::IsTimerExpired @ 0x00438A70` compares
+  (`0x00438A7C..0x00438A81`: expired once `Frame > end`), so the carrier's own
+  fuse check sets it off on its next `TechnoClass::AI_Update` visit.
 - `CellSpread.Cylinder` **is** read and consumed: the warhead key
   (`rules/warhead_type.rs:1033`) reaches `sim::combat::combat_aoe`
   (`:661`, `:715`), which measures the cylinder instead of the sphere. The

@@ -36,6 +36,8 @@ C4Warhead=Super
 1=IvanWH
 2=BombDisarm
 3=Super
+4=IvanDet
+5=IvanDetIvanInvoker
 [IVAN]
 Strength=125
 Speed=4
@@ -106,6 +108,14 @@ CellSpread=1.5
 PercentAtMax=.25
 [Super]
 Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
+[IvanDet]
+Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
+IvanBomb.Detonate=yes
+[IvanDetIvanInvoker]
+Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
+IvanBomb.Detonate=yes
+IvanBomb.Detonate.AffectTypes=IVAN
+IvanBomb.Detonate.SameInvokerOnly=yes
 ";
 
 fn rules() -> RuleSet {
@@ -1683,4 +1693,81 @@ fn ivan_bomb_attach_to_center_moves_the_blast_off_the_buildings_location() {
     let ((x, y), stock, center) = blast_at(&rules_with(""));
     assert_eq!((x, y), stock, "unset keeps the carrier Location");
     assert_ne!(stock, center);
+}
+
+/// Phobos `WarheadTypeExt::ExtData::IvanBombDetonate`
+/// (`Ext/WarheadType/Detonate.cpp:944-978`): the hit target's bomb has its
+/// end frame (`+0x38`, what `IsTimerExpired` compares) cut to the current
+/// frame, so the carrier's own fuse check — `IsTimerExpired` fires once
+/// `Frame > end` — sets it off at the next frame. Other carriers' bombs keep
+/// their fuse.
+#[cfg(feature = "phobos")]
+#[test]
+fn ivan_bomb_detonate_cuts_only_the_hit_targets_fuse() {
+    let rules = rules();
+    let mut sim = sim(50);
+    let ivan = spawn(&mut sim, &rules, "IVAN", "Americans", 30, 10);
+    let hit = spawn(&mut sim, &rules, "HTNK", "Russians", 12, 10);
+    let other = spawn(&mut sim, &rules, "HTNK", "Russians", 16, 10);
+    sim.session.set_binary_frame_for_test(100);
+    sim.bomb_attach(ivan, Some(hit), None, &rules);
+    sim.bomb_attach(ivan, Some(other), None, &rules);
+    assert_eq!(bomb(&sim, hit).unwrap().end_frame, 550, "IvanTimedDelay on");
+    let warhead = rules.warhead("IvanDet").unwrap();
+    assert!(warhead.phobos_ivan_bomb_detonate, "the key is parsed");
+
+    sim.phobos_ivan_bomb_detonate(hit, Some(ivan), rules.warhead("IvanDet").unwrap());
+    assert_eq!(bomb(&sim, hit).unwrap().end_frame, 100, "cut to now");
+    assert_eq!(
+        bomb(&sim, other).unwrap().end_frame,
+        550,
+        "a bomb off the hit set keeps its fuse"
+    );
+
+    sim.session.set_binary_frame_for_test(101);
+    sim.bomb_fuse_step(
+        hit,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert!(bomb(&sim, hit).is_none(), "the blast took the record");
+    assert!(bomb(&sim, other).is_some(), "still ticking");
+}
+
+/// `IvanBomb.Detonate.AffectTypes=` keeps only bombs planted by a listed
+/// techno type, and `SameInvokerOnly=` only those planted by the detonation's
+/// own owner (`Detonate.cpp:948-956`).
+#[cfg(feature = "phobos")]
+#[test]
+fn ivan_bomb_detonate_filters_affect_types_and_the_invoker() {
+    let rules = rules();
+    let mut sim = sim(51);
+    let ivan_planter = spawn(&mut sim, &rules, "IVAN", "Americans", 30, 10);
+    let scout_planter = spawn(&mut sim, &rules, "SCOUT3", "Americans", 31, 10);
+    let own = spawn(&mut sim, &rules, "HTNK", "Russians", 10, 10);
+    let foreign_type = spawn(&mut sim, &rules, "HTNK", "Russians", 12, 10);
+    let foreign_planter = spawn(&mut sim, &rules, "HTNK", "Russians", 14, 10);
+    sim.session.set_binary_frame_for_test(100);
+    sim.bomb_attach(ivan_planter, Some(own), None, &rules);
+    sim.bomb_attach(scout_planter, Some(foreign_type), None, &rules);
+    sim.bomb_attach(ivan_planter, Some(foreign_planter), None, &rules);
+
+    let warhead = rules.warhead("IvanDetIvanInvoker").unwrap();
+    assert_eq!(warhead.phobos_ivan_bomb_detonate_affect_types, vec!["IVAN".to_string()]);
+    assert!(warhead.phobos_ivan_bomb_detonate_same_invoker_only);
+    sim.phobos_ivan_bomb_detonate(own, Some(ivan_planter), warhead);
+    sim.phobos_ivan_bomb_detonate(foreign_type, Some(ivan_planter), warhead);
+    sim.phobos_ivan_bomb_detonate(foreign_planter, None, warhead);
+    assert_eq!(bomb(&sim, own).unwrap().end_frame, 100, "listed and this owner");
+    assert_eq!(
+        bomb(&sim, foreign_type).unwrap().end_frame,
+        550,
+        "a SCOUT3 planter is not an AffectTypes member"
+    );
+    assert_eq!(
+        bomb(&sim, foreign_planter).unwrap().end_frame,
+        550,
+        "SameInvokerOnly drops the IVAN planter"
+    );
 }

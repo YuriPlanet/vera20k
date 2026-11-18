@@ -205,11 +205,17 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
    原先缺 `IvanBomb.Detonate`，因此只设该键的 warhead 少掉每次引爆的两次
    buffer 抽样，整条 scenario RNG 流错位。现在解析该键
    （`rules/warhead_type.rs` 的 `phobos_ivan_bomb_detonate`）并计入同一 owner 的
-   门。残余：该键自身的**效果**（让命中目标身上的疯狂伊文炸弹当场引爆，
-   `Detonate.cpp:957-1000` 的 `IvanBomb_Detonate*` 分支）未移植；触发：只设
-   `IvanBomb.Detonate=yes` 的 warhead；影响：没有炸弹被提前引爆；零售数据与
-   Phobos 默认值都是 no，须 mod 显式开启。回归测试
-   `crit_tests::ivan_bomb_detonate_is_a_possible_cell_spread_member`。
+   门。该键的**效果**已在本链后续实现：`sim::bomb::Simulation::phobos_ivan_bomb_detonate`
+   在 `DetonateOnOneUnit` 的 Taunt 臂之后（`Detonate.cpp:239-240`）把命中目标
+   （以及按 `PenetratesTransport`/`PenetratesGarrison`/`AffectsParasite` 选中的
+   乘客、驻军、寄生物）身上炸弹的引信切到当前帧——Phobos 写的
+   `pBomb->DetonationFrame` 就是原生 `+0x38` 的 end frame（`IsTimerExpired
+   0x00438A70` 在 `current > end` 时引爆），故载体自己的
+   `TechnoClass::AI_Update` 引信检查会在下一次访问点响；`AffectTypes`
+   按布雷者类型过滤，`SameInvokerOnly` 只留本次爆炸主自己埋的炸弹。回归测试
+   `crit_tests::ivan_bomb_detonate_is_a_possible_cell_spread_member`、
+   `sim::bomb::tests::ivan_bomb_detonate_cuts_only_the_hit_targets_fuse`、
+   `sim::bomb::tests::ivan_bomb_detonate_filters_affect_types_and_the_invoker`。
 8. **`[General] TunnelSpeed` 的读取点（本链，结论：休眠遗留，无消费者）**：
    `find-bytes` 定位字符串 VA `0x0083CA34`（在 `HoverDampen 0x0083CA28` 与
    `CrewEscape 0x0083CA40` 之间），其唯一 `imm32` 引用是 `push 0x83CA34` @
