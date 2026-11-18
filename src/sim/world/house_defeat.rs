@@ -1016,7 +1016,7 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return false;
         };
-        let occupants = entity.passenger_role.occupants().count();
+        let occupants = entity.passenger_role().occupants().count();
         let needs_engineer = object.needs_engineer;
         if !(first_owner != house || occupants > 0)
             || !object

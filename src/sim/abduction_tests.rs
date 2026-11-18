@@ -89,7 +89,7 @@ fn carried(sim: &Simulation, carrier: u64) -> Vec<u64> {
     sim.substrate
         .entities
         .get(carrier)
-        .and_then(|entity| entity.passenger_role.cargo())
+        .and_then(|entity| entity.passenger_role().cargo())
         .map_or_else(Vec::new, |cargo| cargo.passengers().to_vec())
 }
 
@@ -146,7 +146,7 @@ fn an_abductor_shot_takes_a_weakened_target_into_its_hold() {
         50,
         "the neutered bullet deals nothing"
     );
-    assert_eq!(abductee.passenger_role.transporter(), Some(catcher));
+    assert_eq!(abductee.passenger_role().transporter(), Some(catcher));
 }
 
 /// conductAbduction's refusals: `ImmuneToAbduction` (TechnoTypeExt +0x304)

@@ -219,7 +219,7 @@ fn vehicle_grinding_refunds_both_cargo_levels_and_removes_each_passenger() {
         assert!(!victim.lifecycle.object_alive(), "{id} must be UnInit");
         assert!(
             victim
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .is_none_or(|cargo| cargo.is_empty())
         );

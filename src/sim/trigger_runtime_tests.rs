@@ -1355,7 +1355,7 @@ fn action128_skips_only_passengers_with_a_transporter() {
         .entities
         .get_mut(reinforcement)
         .unwrap()
-        .passenger_role
+        .passenger_role_mut_for_test()
         .set_inside_transport(transport, false);
     let map = install_event_ingress_map(
         &mut sim,

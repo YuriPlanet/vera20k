@@ -566,7 +566,9 @@ fn infantry_deploy_and_loaded_transport_self_cursors_share_click_admission() {
             sim.entities_mut_for_test()
                 .get_mut(actor)
                 .unwrap()
-                .passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+                .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(
+                    cargo,
+                ));
         }
         for modifier in [
             OrderModifier::Normal,

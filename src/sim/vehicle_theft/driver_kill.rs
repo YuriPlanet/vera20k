@@ -370,7 +370,7 @@ impl Simulation {
             .substrate
             .entities
             .get(target)
-            .and_then(|actor| actor.passenger_role.cargo())
+            .and_then(|actor| actor.passenger_role().cargo())
             .map(|cargo| cargo.passengers().to_vec())
             .unwrap_or_default();
         match operator {
@@ -417,7 +417,7 @@ impl Simulation {
             .substrate
             .entities
             .get(target)
-            .map_or(0, |actor| actor.passenger_role.passenger_count());
+            .map_or(0, |actor| actor.passenger_role().passenger_count());
         for _ in 0..count {
             let result = depart_cargo_head(
                 self,
@@ -630,7 +630,7 @@ mod tests {
         assert!(vehicle.driver_killed());
         assert!(vehicle.attack_target.target().is_none());
         assert!(vehicle.navigation.nav_com().is_none());
-        assert_eq!(vehicle.passenger_role.passenger_count(), 0);
+        assert_eq!(vehicle.passenger_role().passenger_count(), 0);
         assert_eq!(vehicle.veterancy.raw(), NativeF32Bits::from_bits(0));
         assert!(
             sim.entities()
@@ -640,7 +640,7 @@ mod tests {
         );
         let passenger = sim.entities().get(rider).unwrap();
         assert!(
-            !passenger.lifecycle.in_limbo() && !passenger.passenger_role.is_inside_transport(),
+            !passenger.lifecycle.in_limbo() && !passenger.passenger_role().is_inside_transport(),
             "{operator_rule} ejects the other matching passenger alive"
         );
         assert!(!sim.can_capture(controller, host, &rules));
@@ -676,7 +676,7 @@ mod tests {
         let vehicle = sim.entities().get(host).unwrap();
         assert_eq!(sim.interner.resolve(vehicle.owner()), "Americans");
         assert!(!vehicle.driver_killed());
-        assert_eq!(vehicle.passenger_role.passenger_count(), 1);
+        assert_eq!(vehicle.passenger_role().passenger_count(), 1);
         assert!(sim.entities().get(driver).unwrap().lifecycle.in_limbo());
         assert!(sim.can_capture(controller, host, &rules));
         assert!(sim.can_be_perma_mind_controlled(host, &rules));

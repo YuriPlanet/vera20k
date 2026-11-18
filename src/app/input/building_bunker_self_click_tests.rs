@@ -351,7 +351,7 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
         assert!(!object.infantry_absorb && !object.unit_absorb && !object.gap_generator);
         assert!(object.factory_type().is_none());
         let b = sim.entities().get(bunker).unwrap();
-        assert!(b.bunker.occupant().is_none() && b.passenger_role.occupants().is_empty());
+        assert!(b.bunker.occupant().is_none() && b.passenger_role().occupants().is_empty());
         let terrain = sim.resolved_terrain().unwrap();
         for (x, y) in [(30, 85), (31, 85), (32, 85), (31, 86), (32, 86)] {
             let cell = terrain.cell(x, y).unwrap();
@@ -425,11 +425,11 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
         assert_eq!(b.bunker.occupant(), Some(tank));
         assert_eq!(t.bunker.link().installed_in(), Some(bunker));
         assert!(
-            b.passenger_role.occupants().is_empty(),
+            b.passenger_role().occupants().is_empty(),
             "tank link is not garrison+694"
         );
         assert!(
-            b.passenger_role
+            b.passenger_role()
                 .cargo()
                 .is_none_or(|cargo| cargo.is_empty())
         );

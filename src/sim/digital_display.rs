@@ -85,7 +85,7 @@ pub fn values_for_display(
         }
         DigitalInfoType::Passengers => (
             entity
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .map_or(0, |cargo| cargo.count()) as i32,
             object.passengers,
@@ -118,7 +118,7 @@ pub fn values_for_display(
                 return None;
             }
             (
-                entity.passenger_role.occupants().count(),
+                entity.passenger_role().occupants().count(),
                 i32::try_from(object.max_number_occupants).unwrap_or(i32::MAX),
             )
         }

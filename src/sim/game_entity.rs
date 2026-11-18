@@ -405,7 +405,7 @@ pub struct GameEntity {
     /// The passenger relation and cargo hold (`TechnoClass+0x114` CargoClass,
     /// `+0x11C` Transporter, `+0x82` InOpenToppedTransport), a
     /// [`PassengerRole`] that `sim::passenger` owns.
-    pub passenger_role: PassengerRole,
+    passenger_role: PassengerRole,
     /// Both ends of the tank-bunker reciprocal link, a [`BunkerLinks`] that
     /// `docking::bunker_link` owns.
     ///
@@ -1967,6 +1967,29 @@ impl GameEntity {
                 crate::rules::object_type::ObjectCategory::Vehicle
                     | crate::rules::object_type::ObjectCategory::Aircraft
             ))
+    }
+
+    /// This object's carrier, cargo hold and the building's separate garrison.
+    pub fn passenger_role(&self) -> &PassengerRole {
+        &self.passenger_role
+    }
+
+    /// Install a complete constructor or saved role supplied by a fixture.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_passenger_role_for_test(&mut self, role: PassengerRole) {
+        self.passenger_role = role;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn passenger_role_mut_for_test(&mut self) -> &mut PassengerRole {
+        &mut self.passenger_role
+    }
+
+    pub(crate) fn passenger_role_for_update(
+        &mut self,
+        _: crate::sim::passenger::PassengerWrite,
+    ) -> &mut PassengerRole {
+        &mut self.passenger_role
     }
 
     /// A VXL/HVA model (true) or an SHP sprite.

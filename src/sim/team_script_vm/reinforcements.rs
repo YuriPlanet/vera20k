@@ -714,7 +714,6 @@ impl Simulation {
                 .entities
                 .get_mut(member)
                 .unwrap()
-                .passenger_role
                 .set_inside_transport(plane, false);
         }
         //65DCF9 invokes Aircraft Commence41B870 directly, with no Ready
@@ -928,7 +927,6 @@ impl Simulation {
                         .entities
                         .get_mut(member)
                         .expect("loaded Full member")
-                        .passenger_role
                         .set_inside_transport(transport, false);
                 }
                 if air_transports && has_unload_script {

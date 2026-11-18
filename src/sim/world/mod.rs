@@ -5991,7 +5991,7 @@ impl Simulation {
                 );
             }
             if !entity.lifecycle.cell_marked()
-                || entity.passenger_role.is_inside_transport()
+                || entity.passenger_role().is_inside_transport()
                 // A Jumpjet's hold and cruise (states 2 and 3) move it with
                 // no Mark pair (0x0054D0FF..0x0054D134), so one flown onto a
                 // cliff answers Ground with no list entry, in gamemd too.

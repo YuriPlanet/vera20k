@@ -830,7 +830,7 @@ mod receiver {
             };
             if victim.lifecycle.in_limbo()
                 || victim.chrono_warp_latch()
-                || victim.passenger_role.inside_transport_id().is_some()
+                || victim.passenger_role().inside_transport_id().is_some()
             {
                 return;
             }

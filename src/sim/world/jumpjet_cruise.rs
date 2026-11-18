@@ -1317,7 +1317,7 @@ mod tests {
                 .entities
                 .get(building)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .occupants()
                 .ids(),
             &[id]

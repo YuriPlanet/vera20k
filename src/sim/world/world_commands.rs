@@ -2478,8 +2478,8 @@ impl Simulation {
                     return false;
                 }
                 let has_passengers = self.substrate.entities.get(*transport_id).is_some_and(|t| {
-                    !t.passenger_role.occupants().is_empty()
-                        || t.passenger_role
+                    !t.passenger_role().occupants().is_empty()
+                        || t.passenger_role()
                             .cargo()
                             .is_some_and(|cargo| !cargo.is_empty())
                 });

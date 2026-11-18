@@ -2253,7 +2253,7 @@ fn cloak_runtime_observation(
 fn temporal_observation(entity: &crate::sim::game_entity::GameEntity) -> Value {
     // Independent immutable owner queries: diagnostics neither transfer a
     // link nor infer a carrier relation from a cargo entry (or vice versa).
-    let cargo = entity.passenger_role.cargo().map(|cargo| {
+    let cargo = entity.passenger_role().cargo().map(|cargo| {
         let passengers: Vec<_> = cargo
             .passengers()
             .iter()
@@ -2262,7 +2262,7 @@ fn temporal_observation(entity: &crate::sim::game_entity::GameEntity) -> Value {
             .collect();
         json!({"count": cargo.count(), "passengers": passengers})
     });
-    let inside = entity.passenger_role.inside_transport().map(
+    let inside = entity.passenger_role().inside_transport().map(
         |(transport, open_topped)| json!({"transport": transport, "open_topped": open_topped}),
     );
     json!({"has_link": entity.temporal.has_link(),
@@ -5309,7 +5309,7 @@ mod tests {
             .entities_mut_for_test()
             .get_mut(fv)
             .unwrap()
-            .passenger_role
+            .passenger_role_mut_for_test()
             .cargo_mut()
             .unwrap();
         cargo.board_forced_chain(&[(cleg, 1.0)]);

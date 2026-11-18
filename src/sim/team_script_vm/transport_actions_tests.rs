@@ -183,7 +183,7 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
             sim.entities()
                 .get(transport)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .unwrap()
                 .passengers()
@@ -315,7 +315,7 @@ impl Fixture {
                 );
                 let entity = self.sim.substrate.entities.get_mut(transport).unwrap();
                 entity
-                    .passenger_role
+                    .passenger_role_mut_for_test()
                     .cargo_mut()
                     .expect("transport cargo")
                     .board_forced_chain(&[(passenger, 1.0)]);
@@ -324,7 +324,7 @@ impl Fixture {
                     .entities
                     .get_mut(passenger)
                     .unwrap()
-                    .passenger_role = PassengerRole::inside_for_test(transport, false);
+                    .set_passenger_role_for_test(PassengerRole::inside_for_test(transport, false));
                 passenger
             })
             .collect()
@@ -372,7 +372,7 @@ impl Fixture {
             .substrate
             .entities
             .get(transport)
-            .and_then(|entity| entity.passenger_role.cargo())
+            .and_then(|entity| entity.passenger_role().cargo())
             .map(|cargo| cargo.passengers().to_vec())
             .unwrap_or_default()
     }
@@ -838,7 +838,7 @@ impl OracleTeam {
                 );
                 cargo.set_passengers_for_test(vec![u64::MAX; count]);
                 cargo.set_passenger_sizes_for_test(vec![1.0; count]);
-                entity.passenger_role = PassengerRole::transport(cargo);
+                entity.set_passenger_role_for_test(PassengerRole::transport(cargo));
             }
             entity
                 .navigation

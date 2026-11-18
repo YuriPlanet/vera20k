@@ -1897,7 +1897,7 @@ fn a_factory_product_reconnects_to_its_ordered_transport_after_clearance() {
             .entities
             .get(product)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport()
             .is_some()
         {
@@ -1906,7 +1906,7 @@ fn a_factory_product_reconnects_to_its_ordered_transport_after_clearance() {
     }
     let unit = sim.substrate.entities.get(product).unwrap();
     assert_eq!(
-        unit.passenger_role.inside_transport(),
+        unit.passenger_role().inside_transport(),
         Some((transport, false))
     );
     assert!(
@@ -1918,7 +1918,7 @@ fn a_factory_product_reconnects_to_its_ordered_transport_after_clearance() {
             .entities
             .get(transport)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .passengers(),

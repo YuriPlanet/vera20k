@@ -5083,11 +5083,11 @@ impl Simulation {
             .iter()
             .copied()
             .for_each(&mut name);
-        if let Some(cargo) = listener.passenger_role.cargo() {
+        if let Some(cargo) = listener.passenger_role().cargo() {
             cargo.passengers().iter().copied().for_each(&mut name);
         }
         listener
-            .passenger_role
+            .passenger_role()
             .occupants()
             .ids()
             .iter()
@@ -5104,8 +5104,8 @@ impl Simulation {
             .for_each(&mut name);
         [
             listener.unit_follower(),
-            listener.passenger_role.inside_transport_id(),
-            listener.passenger_role.transporter(),
+            listener.passenger_role().inside_transport_id(),
+            listener.passenger_role().transporter(),
             listener.pending_entry(),
             listener.spawn_owner_id.owner(),
             listener.fire_particle_system.system(),
@@ -5518,7 +5518,7 @@ impl Simulation {
         // `removed` argument is set, so a cloaking rider stays aboard.
         let drops_passenger = control == PointerExpiryControl::Uninit
             && listener
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .is_some_and(|cargo| cargo.passengers().contains(&expired_id));
         // `0x007077EE..0x007077FD`, after the radio and cargo, whatever the
@@ -5586,7 +5586,7 @@ impl Simulation {
 
             // TechnoClass removes an expiring passenger from its CargoClass before
             // clearing its target/archive/manager reference family.
-            if drops_passenger && let Some(cargo) = listener.passenger_role.cargo_mut() {
+            if drops_passenger && let Some(cargo) = listener.cargo_mut() {
                 let _ = cargo.disembark(expired_id);
             }
             if drops_spawn_owner {
@@ -5704,9 +5704,9 @@ impl Simulation {
         let hull_gone =
             !expired_object_alive || expired_health == 0 || self.object_placement_scope_active();
         let clear_transporter =
-            hull_gone && listener.passenger_role.transporter() == Some(expired_id);
+            hull_gone && listener.passenger_role().transporter() == Some(expired_id);
         let clear_passenger_role =
-            hull_gone && listener.passenger_role.inside_transport_id() == Some(expired_id);
+            hull_gone && listener.passenger_role().inside_transport_id() == Some(expired_id);
         let clear_c4_source = listener
             .building
             .pending_c4_detonation
@@ -5730,7 +5730,7 @@ impl Simulation {
         let clear_occupant = listener.category() == EntityCategory::Structure
             && self.object_placement_scope_active()
             && listener
-                .passenger_role
+                .passenger_role()
                 .occupants()
                 .ids()
                 .contains(&expired_id);
@@ -5816,10 +5816,10 @@ impl Simulation {
             ammo.set_dock(None);
         }
         if clear_transporter {
-            listener.passenger_role.clear_transporter();
+            listener.clear_transporter();
         }
         if clear_passenger_role {
-            listener.passenger_role.clear_carrier_relation();
+            listener.clear_carrier_relation();
         }
         if clear_c4_source {
             listener.building.pending_c4_detonation.forget_source();
@@ -5836,10 +5836,7 @@ impl Simulation {
             listener.building.building_light.take();
         }
         if clear_occupant {
-            listener
-                .passenger_role
-                .occupants_mut()
-                .remove_expired(expired_id);
+            listener.remove_garrison_reference(expired_id);
         }
     }
 
@@ -7035,7 +7032,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get_mut(building_id)
-                .and_then(|entity| entity.passenger_role.cargo_mut())
+                .and_then(|entity| entity.cargo_mut())
                 .and_then(|cargo| cargo.unload_first())
                 .map(|(id, _)| id);
             let Some(passenger) = passenger else {
@@ -7324,7 +7321,7 @@ impl Simulation {
                     .substrate
                     .entities
                     .get_mut(stable_id)
-                    .and_then(|entity| entity.passenger_role.cargo_mut())
+                    .and_then(|entity| entity.cargo_mut())
                     .and_then(|cargo| cargo.unload_first())
                     .map(|(id, _)| id);
                 let Some(passenger) = passenger else {

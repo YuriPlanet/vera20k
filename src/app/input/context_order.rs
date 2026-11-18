@@ -3689,7 +3689,7 @@ fn self_deploy_is_blocked(
             && entity.bunker.link().installed_in().is_none()
             && !object.no_manual_unload()
             && entity
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .is_none_or(|cargo| cargo.is_empty()))
 }
@@ -8069,7 +8069,7 @@ mod tests {
         sim.entities_mut_for_test()
             .get_mut(reactor)
             .unwrap()
-            .passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+            .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(cargo));
         let hover = HoverTargetKindWithId {
             kind: HoverTargetKind::FriendlyStructure,
             stable_id: reactor,
@@ -8121,7 +8121,7 @@ mod tests {
         sim.entities_mut_for_test()
             .get_mut(ifv)
             .unwrap()
-            .passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+            .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(cargo));
         let hover = HoverTargetKindWithId {
             kind: HoverTargetKind::FriendlyUnit,
             stable_id: ifv,

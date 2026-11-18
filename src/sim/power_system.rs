@@ -820,7 +820,7 @@ fn recalculate_power_for_owner(
         let mut output_contribution: i32 = obj.power.max(0);
         let extra_output = obj.extra_power.output();
         if obj.absorbs_passengers() && extra_output > 0 {
-            let occupants = entity.passenger_role.cargo().map_or(0, |c| c.count()) as i32;
+            let occupants = entity.passenger_role().cargo().map_or(0, |c| c.count()) as i32;
             if occupants > 0 {
                 output_contribution =
                     output_contribution.wrapping_add(extra_output.wrapping_mul(occupants));
@@ -1502,7 +1502,9 @@ BuildSpeed=0.02
             let mut cargo = crate::sim::passenger::PassengerCargo::new(occupants, 0.0);
             cargo.set_passengers_for_test((0..occupants).map(|i| 100 + u64::from(i)).collect());
             cargo.set_passenger_sizes_for_test(vec![1.0; occupants as usize]);
-            building.passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+            building.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(
+                cargo,
+            ));
             store.insert(building);
             // Supply existing aggregate output with a signed-HP Power=1 source.
             store.insert(make_building(2, "PRIOR", "Owner", value("prior_output")));
