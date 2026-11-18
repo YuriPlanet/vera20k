@@ -664,10 +664,11 @@ or everyone live. Quick Match and ranked games are always watched 2 minutes behi
 
 One person who watches AI play alone would play without the relay, which then keeps no
 stream to watch ([above](#current-production-path)). When the room lets others watch,
-the person's game signed in with `Vera-Watch-AI: 1` and the match's relay lets watchers
-in, the lobby marks the match's certificate (VO2C flags bit 1,
-`OrderingCertificate::ordered_alone`) and the relay orders the match from its one
-source. That person's game then plays it through the relay as a match of two would
+the person's game signed in with `Vera-Watch-AI: 1`, and the selected relay has
+both `watch: true` and `ordered_alone: true` in the lobby's fleet configuration,
+the lobby marks the match's certificate (VO2C flags bit 1,
+`OrderingCertificate::ordered_alone`). The relay then orders the match from its one
+source. Without that relay capability, the lone observer plays locally. That person's game then plays it through the relay as a match of two would
 (`LiveCommandSession::new`), with its command lead time, and losing the relay ends it.
 Watching is on by default, so such a match holds a relay ordering room and journal, one
 source's share, whether or not anyone watches; a host who turns watching off plays it
@@ -738,10 +739,10 @@ no marked certificate, plays one person's match without the relay as before, and
 sees a match where only AI play listed. A lobby from before this marks no certificate,
 so one person watching AI play plays without the relay, unwatched, and it lists no such
 match. A lobby rolled back to before this will not sign a marked match's certificate
-again, so that match's relay ticket lapses and it ends with the lost connection, its
-watchers' too: roll the lobby back while none runs. A relay from before this refuses a
-marked certificate as malformed, and the game that sent it would wait at its start, so
-the relays go first: deploy them before the lobby, and roll the lobby back before them.
+again, so that match's relay ticket eventually expires. Enable `ordered_alone`
+only after upgrading the selected relay. Before a rollback, remove the field from
+the fleet configuration to keep new solo matches local. Wait for existing marked
+matches to end before rolling back the lobby or relay.
 
 ## Native behavior and deliberate bounds
 
