@@ -954,8 +954,6 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         map_label: super::map_display_name(state)
             .map_or_else(|| label(state, "GUI:None"), str::to_owned),
         selected_map_index: map_index,
-        no_preview: protocol.wol_no_preview().0,
-        preview_hidden: protocol.wol_no_preview().1,
         cooperative,
         cooperative_description: coop.as_ref().and_then(|coop| coop.description).map(
             |(campaign, stage)| {

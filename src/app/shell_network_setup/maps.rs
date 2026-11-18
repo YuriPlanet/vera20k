@@ -417,7 +417,7 @@ fn authored_preview_bounds(
 mod tests {
     use super::*;
     #[test]
-    fn verified_prefetch_preserves_local_preview_and_retires_legacy_waits() {
+    fn verified_prefetch_preserves_local_preview() {
         let dialog = crate::ui::multiplayer_setup::SetupDialog {
             host: false,
             flavor: crate::ui::multiplayer_setup::SetupFlavor::Lan,
@@ -426,27 +426,12 @@ mod tests {
         let mut local = super::super::NetworkSetupProtocol::new(dialog, false);
         local.local_map_verified = true;
         local.transfer_progress = Some((0, 100));
-        local.awaiting_preview_file = true;
-        local.preview_offer = Some(super::super::PreviewOffer {
-            guests: vec!["Guest".into()],
-            acknowledged: Vec::new(),
-            preview: crate::map::preview::DecodedPreview {
-                width: 1,
-                height: 1,
-                rgba: vec![0, 0, 0, 255],
-            },
-            deadline: std::time::Instant::now(),
-        });
         local.accept_verified_map_source();
         assert!(
             local.local_preview(),
             "local catalog preview was incorrectly replaced by an absent received preview"
         );
-        assert!(
-            local.transfer_progress.is_none()
-                && !local.awaiting_preview_file
-                && local.preview_offer.is_none()
-        );
+        assert!(local.transfer_progress.is_none());
         let mut received = super::super::NetworkSetupProtocol::new(dialog, false);
         received.accept_verified_map_source();
         assert!(

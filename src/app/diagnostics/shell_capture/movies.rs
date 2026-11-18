@@ -1903,13 +1903,6 @@ impl MoviesCapture {
         Ok(manifest)
     }
 
-    pub(super) fn cleanup(&mut self) -> Result<()> {
-        if let Some(lan) = self.lan.as_mut() {
-            lan.cleanup()?;
-        }
-        Ok(())
-    }
-
     pub(super) fn measurement_failure(&self) -> Option<String> {
         self.lan.as_ref()?.measurement_failure()
     }

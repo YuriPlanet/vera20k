@@ -30,9 +30,9 @@ pub(crate) use actions::{
 pub(crate) use view::view;
 pub(crate) use wol::{
     WolStartUser, balance_teams, guest_users_listed, kicked_key, local_left, map_status,
-    play_player_left, player_choices, player_ready, preview_request, resident_seed,
-    send_first_choices, user_joined, user_kicked, user_left, verify, verify_cursor_moved,
-    verify_layout, verify_mouse, verify_poll_scroll,
+    play_player_left, player_choices, player_ready, resident_seed, send_first_choices, user_joined,
+    user_kicked, user_left, verify, verify_cursor_moved, verify_layout, verify_mouse,
+    verify_poll_scroll,
 };
 
 use super::{App, AppState};
@@ -56,7 +56,6 @@ const QUIET_JOINS: std::time::Duration = std::time::Duration::from_secs(3);
 pub(crate) enum NetworkSetupRequest {
     PublishOptions,
     PublishRoster,
-    PublishCooperativeAssignments(Vec<[[i32; 2]; 8]>),
     /// Cooperative's campaign record, the `C0` text type `0x17` carries to
     /// every guest (`0x0049D680` through `0x005E3720`).
     PublishCooperativeCampaign(String),
@@ -64,24 +63,6 @@ pub(crate) enum NetworkSetupRequest {
     PrepareMapForHandoff {
         received_budget: i32,
     },
-    /// The guest's preview request: LAN type `0x1B` (`0x005E7586..0x005E759D`),
-    /// sent once per material map change it cannot verify; WOL `P<scenario
-    /// file>` privately to the first channel user (`0x007A81B8..0x007A8213`).
-    RequestPreview,
-    /// The host's `'W'` start staging, type `0x17` to every guest
-    /// (`0x005E3720`).
-    PublishStartStaging(String),
-    /// The guest's second `0x10` at GO, for a random map's `RandMap.img`.
-    RequestRandomMapImage,
-    /// The host's preview offer, type `0x19` to every guest (`0x005E8133`).
-    OfferPreview,
-    /// The host's `SendFileToClients("Preview.bin")` once every guest has
-    /// acknowledged the offer (`0x005E8471..0x005E847E`).
-    SendPreviewFile,
-    /// The guest's answer to an offer, type `0x1A` (`0x005E7920`).
-    AcknowledgePreview,
-    /// The guest's `0x10` for the offered `Preview.bin` (`0x00693B70`).
-    RequestPreviewFile,
     PlayerChoices {
         row: u8,
         slot: crate::skirmish_launch::SkirmishLocalSlot,
@@ -140,8 +121,8 @@ pub(crate) enum StartPhase {
 
 impl StartPhase {
     /// Native's drops while StartGame is pending: the parse's option texts,
-    /// `A` and `K` (`0x5E3E73..0x5E3E90`), a guest's `R` (`0x7A8260`) and the
-    /// host's preview answer. Preparing takes them:
+    /// `A` and `K` (`0x5E3E73..0x5E3E90`) and a guest's `R` (`0x7A8260`).
+    /// Preparing takes them:
     /// its guests' `A` and `K` on the final revision complete it, and an `R`
     /// cancels it.
     pub(crate) fn submitted(self) -> bool {
@@ -179,29 +160,16 @@ pub(crate) struct NetworkSetupProtocol {
     accept_eligible: bool,
     /// LAN5DD5E5/5DD690/5DD950: send admission, drain and reply phases.
     lan_go: Option<LanGoWait>,
-    map_transfer_pending: bool,
-    /// A random map's `RandMap.Sed` has arrived; its `RandMap.img` is the
-    /// second receive (`0x005DDA5D..0x005DDA68`).
-    awaiting_random_map_image: bool,
     transfer_progress: Option<(u32, u32)>,
     return_after_notice: bool,
-    /// The host's offer: the guests that answered and the 1800-bucket wait
-    /// (`0x005E81D0..0x005E8326`).
-    preview_offer: Option<PreviewOffer>,
-    /// A guest's offered `Preview.bin` is being received.
-    awaiting_preview_file: bool,
     /// The guest verified the host's map locally at its last change
     /// (`0x006951F0`).
     local_map_verified: bool,
     /// WOL C9: the verified map is a loose file on disk (`RawFileClass`
     /// exists, `0x005E7604..0x005E76E8`), so no local preview loads.
     local_map_loose: bool,
-    /// WOL C9's `0x71F` "Preview unavailable" is shown, and `0x468` hidden,
-    /// by the host's public `Z3` (`0x005E3D4E..0x005E3DC2`).
-    wol_no_preview: bool,
-    wol_preview_hidden: bool,
-    /// The guest's `[0xAC1154]` from the host's `Preview.bin`, numbered so
-    /// the renderer rebuilds its texture once per arrival.
+    /// The guest's `[0xAC1154]` from the host's preview, numbered so the
+    /// renderer rebuilds its texture once per arrival.
     received_preview: Option<(u32, crate::map::preview::DecodedPreview)>,
     /// Derived from the same admitted source as the received image.
     received_preview_bounds: Option<crate::map::preview::PreviewSourceBounds>,
@@ -384,16 +352,6 @@ pub(crate) fn observe_lan_go_transport(
     matches!(protocol.lan_go, Some(LanGoWait::Complete))
 }
 
-/// The host's offer as sent: the guests it went to (the node count is fixed
-/// at the send, `0xA8DA84`, and acks match by sender, `0x005E82D0`), and the
-/// preview the `'W'` described.
-struct PreviewOffer {
-    guests: Vec<String>,
-    acknowledged: Vec<String>,
-    preview: crate::map::preview::DecodedPreview,
-    deadline: Instant,
-}
-
 impl NetworkSetupProtocol {
     /// The host's options put the local player at `place`: the move to tell
     /// it, if any. The first options are none, and neither is the place the
@@ -430,16 +388,10 @@ impl NetworkSetupProtocol {
             start_requested: false,
             accept_eligible: false,
             lan_go: None,
-            map_transfer_pending: false,
-            awaiting_random_map_image: false,
             transfer_progress: None,
             return_after_notice: false,
-            preview_offer: None,
-            awaiting_preview_file: false,
             local_map_verified: false,
             local_map_loose: false,
-            wol_no_preview: false,
-            wol_preview_hidden: false,
             received_preview: None,
             received_preview_bounds: None,
             received_preview_count: 0,
@@ -571,12 +523,8 @@ impl NetworkSetupProtocol {
         self.transfer_progress
     }
 
-    pub(crate) fn blocking_map_transfer(&self) -> bool {
-        self.map_transfer_pending
-    }
-
-    /// The guest's preview when its map did not verify: the host's
-    /// `Preview.bin`, with its arrival number.
+    /// The guest's preview when its map did not verify: the host's, with its
+    /// arrival number.
     pub(crate) fn received_preview(&self) -> Option<(u32, &crate::map::preview::DecodedPreview)> {
         self.received_preview
             .as_ref()
@@ -589,11 +537,6 @@ impl NetworkSetupProtocol {
         self.local_map_verified && !self.local_map_loose
     }
 
-    /// C9's `0x71F` shows, and whether `0x468` is hidden.
-    pub(crate) fn wol_no_preview(&self) -> (bool, bool) {
-        (self.wol_no_preview, self.wol_preview_hidden)
-    }
-
     /// Physical resources were verified by the shared map/source owners.
     /// Keep any earlier qualified local preview; a received source without
     /// a chooser record instead uses the already-decoded received surface.
@@ -603,8 +546,6 @@ impl NetworkSetupProtocol {
             self.local_map_loose = true;
         }
         self.local_map_verified = true;
-        self.drop_preview_offer();
-        self.awaiting_preview_file = false;
     }
 
     pub(crate) fn received_preview_bounds(
@@ -626,11 +567,6 @@ impl NetworkSetupProtocol {
         }
         self.received_preview = None;
         self.received_preview_bounds = None;
-        self.awaiting_preview_file = false;
-    }
-
-    fn drop_preview_offer(&mut self) {
-        self.preview_offer = None;
     }
 }
 
@@ -1342,7 +1278,6 @@ fn leave_setup(state: &mut AppState) -> SetupDialog {
     state.frontend.network_setup_protocol = None;
     state.frontend.skirmish_preview_texture = None;
     state.frontend.skirmish_shell_state.choose_map_modal = None;
-    state.frontend.loading_screen_atlas = None;
     if !dialog.wol() {
         crate::app::lan_service::leave_setup(state);
     }

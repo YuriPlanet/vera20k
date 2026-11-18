@@ -4159,9 +4159,6 @@ fn setup_request(
     now: u32,
 ) -> anyhow::Result<bool> {
     use super::shell_network_setup::NetworkSetupRequest;
-    if let Some(admitted) = maps::setup_request(state, request)? {
-        return Ok(admitted);
-    }
     let message = match request {
         NetworkSetupRequest::Kick { name, keep_out } => {
             return state
@@ -4312,9 +4309,6 @@ fn setup_request(
             }
             short_options(state, text)?
         }
-        // RESIDUAL: mode+64's C1 (0x005C2710) is not encoded. VERA reads no
-        // round assignment after the publish, so guests keep their own.
-        NetworkSetupRequest::PublishCooperativeAssignments(_) => return Ok(true),
         NetworkSetupRequest::PrepareMapForHandoff { .. } => {
             if !state
                 .frontend
@@ -4364,8 +4358,7 @@ fn setup_request(
             super::shell_network_setup::mark_lan_go_packets_queued(state, now)?;
             return Ok(true);
         }
-        // The existing transfer owner must explicitly complete these; never
-        // invent a successful file handoff from a UI request.
+        // The WOL requests: a LAN setup queues none.
         _ => return Ok(false),
     };
     let require_rules = matches!(
