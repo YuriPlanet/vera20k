@@ -34,6 +34,13 @@ pub(crate) struct PictureHdPage {
 }
 
 impl PictureHdPage {
+    /// A page drawn on the GPU (a model page's HD twin,
+    /// `render::model_draw`): encoded colour that is opaque or empty, so
+    /// already premultiplied, with one level, and its index plane.
+    pub(crate) fn from_views(color: wgpu::TextureView, indices: wgpu::TextureView) -> Self {
+        Self { color, indices }
+    }
+
     pub(crate) fn new(device: &wgpu::Device, queue: &wgpu::Queue, page: &HdPage) -> Self {
         use wgpu::util::DeviceExt;
         let size = wgpu::Extent3d {

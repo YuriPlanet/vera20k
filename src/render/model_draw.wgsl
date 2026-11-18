@@ -124,12 +124,14 @@ fn fs_main(in: VertexOut) -> FragmentOut {
     let dp2 = dpdy(in.camera);
     let duv1 = dpdx(in.uv);
     let duv2 = dpdy(in.uv);
-    // Every texture is sampled at level 0: the pages have no mips, and the
-    // samples stay outside the branches below.
-    let normal_sample = textureSampleLevel(normal_texture, model_sampler, in.uv, 0.0).xyz * 2.0 - vec3<f32>(1.0);
-    let base = draw.base_color * in.color * textureSampleLevel(base_texture, model_sampler, in.uv, 0.0);
-    let mask = textureSampleLevel(mask_texture, model_sampler, in.uv, 0.0);
-    let emissive = textureSampleLevel(emissive_texture, model_sampler, in.uv, 0.0).rgb * draw.emissive.rgb;
+    // Textures carry mipmaps (model_draw.rs `rgba_texture`), sampled at the
+    // level the screen derivatives pick, so a texture shrunk to a few page
+    // pixels averages instead of breaking into noise. The samples stay in
+    // uniform control flow, before the branches below.
+    let normal_sample = textureSample(normal_texture, model_sampler, in.uv).xyz * 2.0 - vec3<f32>(1.0);
+    let base = draw.base_color * in.color * textureSample(base_texture, model_sampler, in.uv);
+    let mask = textureSample(mask_texture, model_sampler, in.uv);
+    let emissive = textureSample(emissive_texture, model_sampler, in.uv).rgb * draw.emissive.rgb;
     // A pixel at least half covered is drawn, as a picture's is; Mask uses
     // its own cutoff.
     let cutoff = select(0.5, draw.light.w, draw.flags.z == 1u);

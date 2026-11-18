@@ -260,8 +260,18 @@ so it sorts, shades and shadows by the same rules:
 - **Zoomed.** At 1x a picture draws at `PictureSize`. With the view magnified
   (wheel zoom or the Options zoom), chain 6 draws picture and model objects
   again after the magnification at the art's own resolution, depth-tested
-  against the battlefield's depth in their shader. Known residual: such an
-  object then draws over smoke and explosions in front of it.
+  against the battlefield's depth in their shader. A model has no stored HD
+  art: while the view is magnified (wheel zoom times Options zoom above 1),
+  the model page is drawn a second time each frame at that magnification
+  rounded up, at most 4x, into its HD twin with the same layout
+  (`model_draw::HdTwin`), which the atlas holds as the page's HD page, so
+  the zoomed draw takes model instances as it takes picture instances.
+  Model shadows keep their 1x pixels. Known residual: such an object then
+  draws over smoke and explosions in front of it.
+- **Model textures** carry mipmaps (each level the alpha-weighted mean of
+  the one above, in linear light for colour) and are sampled at the level
+  the screen derivatives pick, so a texture shrunk to a few pixels averages
+  instead of breaking into noise.
 
 ## Implementation chains
 

@@ -836,6 +836,23 @@ impl SpriteAtlas {
         !self.picture_hd_pages.is_empty()
     }
 
+    /// VERA-only, experimental: install or remove page `page`'s HD twin
+    /// drawn on the GPU (the model page's, `render::model_draw`).
+    pub(crate) fn set_picture_hd_page(
+        &mut self,
+        page: usize,
+        hd: Option<crate::render::picture_zoom::PictureHdPage>,
+    ) {
+        match hd {
+            Some(hd) => {
+                self.picture_hd_pages.insert(page, hd);
+            }
+            None => {
+                self.picture_hd_pages.remove(&page);
+            }
+        }
+    }
+
     /// VERA-only, experimental: page `page`'s HD twin, if it has one.
     pub(crate) fn picture_hd_page(
         &self,

@@ -135,6 +135,19 @@ pub(crate) fn begin_model_frame(state: &mut AppState) {
     if !state.rules().is_some_and(|rules| rules.declares_models()) {
         return;
     }
+    // How much the view magnifies the world: the wheel zoom times the
+    // Options zoom. Above 1 the model page gets an HD twin at about that
+    // multiple, which the zoomed draw takes (`render::picture_zoom`).
+    let options = state
+        .tactical_zoom()
+        .filter(|zoom| zoom.percent > 100)
+        .map_or(1.0, |zoom| zoom.scale());
+    let magnified = state.match_state.input.zoom_level.max(1.0) * options;
+    let hd_scale = if magnified > 1.01 {
+        magnified.ceil() as u32
+    } else {
+        1
+    };
     let renderer = &mut state.renderer;
     let Some(atlas) = state.match_state.match_presentation.sprite_atlas.as_mut() else {
         return;
@@ -143,6 +156,7 @@ pub(crate) fn begin_model_frame(state: &mut AppState) {
         &renderer.gpu.device,
         &renderer.batch_renderer,
         atlas,
+        hd_scale,
     );
 }
 

@@ -508,6 +508,86 @@ struct Page {
     color: wgpu::TextureView,
     indices: wgpu::TextureView,
     depth: wgpu::TextureView,
+    /// While the view is magnified, the page again at a whole multiple of
+    /// its resolution ([`HdTwin`]).
+    hd: Option<HdTwin>,
+}
+
+/// The model page drawn again at `scale` times its resolution, with the same
+/// layout, for the zoomed draw (`render::picture_zoom`): the sprite atlas
+/// holds it as the page's HD twin, so a model instance's UV addresses its
+/// sharp rectangle there. It is drawn every frame the view is magnified, in
+/// the format picture HD pages take: encoded colour (opaque or empty, so
+/// premultiplied) and the index plane at the same resolution.
+struct HdTwin {
+    scale: u32,
+    /// The colour's sRGB view, which the model pipeline draws into; the
+    /// atlas samples its plain view.
+    color: wgpu::TextureView,
+    indices: wgpu::TextureView,
+    depth: wgpu::TextureView,
+}
+
+impl HdTwin {
+    /// A twin of a page `side` pixels square, and the HD page the atlas
+    /// samples.
+    fn new(
+        device: &wgpu::Device,
+        side: u32,
+        scale: u32,
+    ) -> (Self, crate::render::picture_zoom::PictureHdPage) {
+        let size = wgpu::Extent3d {
+            width: side * scale,
+            height: side * scale,
+            depth_or_array_layers: 1,
+        };
+        let texture = |label, format, view_formats: &'static [wgpu::TextureFormat], usage| {
+            device.create_texture(&wgpu::TextureDescriptor {
+                label: Some(label),
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage,
+                view_formats,
+            })
+        };
+        let drawn = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING;
+        let color = texture(
+            "Model page HD twin",
+            wgpu::TextureFormat::Rgba8Unorm,
+            &[wgpu::TextureFormat::Rgba8UnormSrgb],
+            drawn,
+        );
+        let indices = texture(
+            "Model page HD twin indices",
+            wgpu::TextureFormat::R8Uint,
+            &[],
+            drawn,
+        );
+        let depth = texture(
+            "Model page HD twin depth",
+            wgpu::TextureFormat::Depth32Float,
+            &[],
+            wgpu::TextureUsages::RENDER_ATTACHMENT,
+        );
+        let indices_view = indices.create_view(&Default::default());
+        let sampled = crate::render::picture_zoom::PictureHdPage::from_views(
+            color.create_view(&Default::default()),
+            indices_view.clone(),
+        );
+        let twin = Self {
+            scale,
+            color: color.create_view(&wgpu::TextureViewDescriptor {
+                format: Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+                ..Default::default()
+            }),
+            indices: indices_view,
+            depth: depth.create_view(&Default::default()),
+        };
+        (twin, sampled)
+    }
 }
 
 /// The models drawn this frame and the GPU state that draws them. Empty, and
@@ -532,11 +612,15 @@ pub struct ModelFrame {
 impl ModelFrame {
     /// Start a frame that may draw declared models: forget the last frame's
     /// images, and hold a page in `atlas` big enough for the frame before.
+    /// With `hd_scale` above 1 (the view is magnified about that much), the
+    /// page also gets an HD twin at that multiple, at most 4, which the
+    /// zoomed draw samples.
     pub(crate) fn begin_frame(
         &mut self,
         device: &wgpu::Device,
         batch: &BatchRenderer,
         atlas: &mut SpriteAtlas,
+        hd_scale: u32,
     ) {
         self.placed.clear();
         self.keys.clear();
@@ -568,13 +652,36 @@ impl ModelFrame {
                     view_formats: &[],
                 })
                 .create_view(&Default::default());
+            if let Some(old) = self.page.take() {
+                atlas.set_picture_hd_page(old.index, None);
+            }
             self.page = atlas.install_model_page(texture).map(|index| Page {
                 index,
                 size: [side; 2],
                 color: color.create_view(&Default::default()),
                 indices: indices.create_view(&Default::default()),
                 depth,
+                hd: None,
             });
+        }
+        if let Some(page) = self.page.as_mut() {
+            // The twin's side stays within the device's texture limit; the
+            // WebGL2 fallback has no zoomed draw (`render::picture_zoom`).
+            let scale = hd_scale.min(4).min(limit / page.size[0].max(1));
+            let scale = if crate::render::gpu::webgl_fallback(device) {
+                1
+            } else {
+                scale
+            };
+            if scale <= 1 {
+                if page.hd.take().is_some() {
+                    atlas.set_picture_hd_page(page.index, None);
+                }
+            } else if page.hd.as_ref().is_none_or(|hd| hd.scale != scale) {
+                let (twin, sampled) = HdTwin::new(device, page.size[0], scale);
+                atlas.set_picture_hd_page(page.index, Some(sampled));
+                page.hd = Some(twin);
+            }
         }
         self.shelf = self
             .page
@@ -774,129 +881,204 @@ impl ModelFrame {
                 .entry(model)
                 .or_insert_with(|| GpuModel::upload(device, queue, gpu, &placed.model, assets));
         }
-        // One uniform block per primitive drawn.
-        let mut blocks: Vec<u8> = Vec::new();
-        let mut draws: Vec<(usize, usize, usize, [u32; 4], bool)> = Vec::new();
         let light = crate::render::vxl_normals::world_light();
         let vpl_curve = *self
             .vpl_curve
             .get_or_insert_with(|| vpl_page_brightness(assets));
-        for placed in &self.placed {
-            let key = Arc::as_ptr(&placed.model) as usize;
-            let Some(model) = self.models.get(&key) else {
-                continue;
-            };
-            let clip = page_clip(page.size, placed.corner, placed.rect);
-            let scissor = [
-                placed.corner[0],
-                placed.corner[1],
-                placed.rect[2] as u32,
-                placed.rect[3] as u32,
-            ];
-            let ramp = placed
-                .ramp
-                .map(|ramp| ramp.map(|color| color.map(srgb_to_linear)));
-            for &(node, to_camera, viewer) in &placed.draws {
-                let Some(primitives) = placed
-                    .model
-                    .model
-                    .nodes
-                    .get(node)
-                    .and_then(|node| node.mesh)
-                    .and_then(|mesh| model.meshes.get(mesh))
-                else {
-                    continue;
-                };
-                let normal = Mat3::from_mat4(to_camera);
-                let normal = if normal.determinant().abs() > f32::EPSILON {
-                    normal.inverse().transpose()
-                } else {
-                    Mat3::IDENTITY
-                };
-                for &primitive in primitives {
-                    let offset = blocks.len();
-                    if placed.shadow {
-                        write_shadow_block(&mut blocks, clip * to_camera);
-                    } else {
-                        let material = &model.materials[model.primitives[primitive].material];
-                        write_block(
-                            &mut blocks,
-                            clip * to_camera,
-                            to_camera,
-                            normal,
-                            material,
-                            (light, viewer, placed.light),
-                            ramp.as_ref(),
-                            &vpl_curve,
-                        );
-                    }
-                    blocks.resize(offset + gpu.stride as usize, 0);
-                    draws.push((offset, key, primitive, scissor, placed.shadow));
-                }
-            }
-        }
+        // One uniform block per primitive drawn: the page's, then its HD
+        // twin's (no shadows there: the zoomed draw takes none).
+        let mut blocks: Vec<u8> = Vec::new();
+        let lighting = (light, &vpl_curve);
+        let draws = page_draws(
+            &self.placed,
+            &self.models,
+            (page.size, 1),
+            gpu.stride,
+            lighting,
+            true,
+            &mut blocks,
+        );
+        let hd_draws = page.hd.as_ref().map(|hd| {
+            page_draws(
+                &self.placed,
+                &self.models,
+                (page.size, hd.scale),
+                gpu.stride,
+                lighting,
+                false,
+                &mut blocks,
+            )
+        });
         if draws.is_empty() {
             return;
         }
         gpu.reserve(device, blocks.len() as u64);
         queue.write_buffer(&gpu.uniforms, 0, &blocks);
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Model page"),
-            color_attachments: &[
-                Some(wgpu::RenderPassColorAttachment {
-                    view: &page.color,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                        store: wgpu::StoreOp::Store,
-                    },
-                }),
-                Some(wgpu::RenderPassColorAttachment {
-                    view: &page.indices,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                        store: wgpu::StoreOp::Store,
-                    },
-                }),
-            ],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &page.depth,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Discard,
-                }),
-                stencil_ops: None,
-            }),
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        let mut bound: Option<bool> = None;
-        for (offset, key, primitive, [x, y, width, height], shadow) in draws {
-            let Some(model) = self.models.get(&key) else {
+        let gpu = &*gpu;
+        record_page_pass(
+            encoder,
+            gpu,
+            &self.models,
+            [&page.color, &page.indices, &page.depth],
+            draws,
+            "Model page",
+        );
+        if let (Some(hd), Some(hd_draws)) = (&page.hd, hd_draws) {
+            record_page_pass(
+                encoder,
+                gpu,
+                &self.models,
+                [&hd.color, &hd.indices, &hd.depth],
+                hd_draws,
+                "Model page HD twin",
+            );
+        }
+    }
+}
+
+/// One primitive's draw on a page: its uniform block's offset, the model,
+/// the primitive, its scissor, and whether it is a shadow mask.
+type PageDraw = (usize, usize, usize, [u32; 4], bool);
+
+/// Append one uniform block per primitive `placed` draws to `blocks`, for a
+/// page laid out as the model page of `size` at `scale` times its resolution
+/// (the page itself at 1, its [`HdTwin`] above), and list the draws.
+fn page_draws(
+    placed: &[Placed],
+    models: &HashMap<usize, GpuModel>,
+    (size, scale): ([u32; 2], u32),
+    stride: u64,
+    (light, vpl_curve): (Vec3, &[f32; 32]),
+    with_shadows: bool,
+    blocks: &mut Vec<u8>,
+) -> Vec<PageDraw> {
+    let factor = scale as f32;
+    let target = size.map(|side| side * scale);
+    let mut draws = Vec::new();
+    for placed in placed {
+        if placed.shadow && !with_shadows {
+            continue;
+        }
+        let key = Arc::as_ptr(&placed.model) as usize;
+        let Some(model) = models.get(&key) else {
+            continue;
+        };
+        let corner = placed.corner.map(|side| side * scale);
+        let rect = placed.rect.map(|value| value * scale as i32);
+        // Camera space magnified, then onto the scaled slot.
+        let clip =
+            page_clip(target, corner, rect) * Mat4::from_scale(Vec3::new(factor, factor, 1.0));
+        let scissor = [corner[0], corner[1], rect[2] as u32, rect[3] as u32];
+        let ramp = placed
+            .ramp
+            .map(|ramp| ramp.map(|color| color.map(srgb_to_linear)));
+        for &(node, to_camera, viewer) in &placed.draws {
+            let Some(primitives) = placed
+                .model
+                .model
+                .nodes
+                .get(node)
+                .and_then(|node| node.mesh)
+                .and_then(|mesh| model.meshes.get(mesh))
+            else {
                 continue;
             };
-            if bound != Some(shadow) {
-                pass.set_pipeline(if shadow {
-                    &gpu.shadow_pipeline
+            let normal = Mat3::from_mat4(to_camera);
+            let normal = if normal.determinant().abs() > f32::EPSILON {
+                normal.inverse().transpose()
+            } else {
+                Mat3::IDENTITY
+            };
+            for &primitive in primitives {
+                let offset = blocks.len();
+                if placed.shadow {
+                    write_shadow_block(blocks, clip * to_camera);
                 } else {
-                    &gpu.pipeline
-                });
-                bound = Some(shadow);
+                    let material = &model.materials[model.primitives[primitive].material];
+                    write_block(
+                        blocks,
+                        clip * to_camera,
+                        to_camera,
+                        normal,
+                        material,
+                        (light, viewer, placed.light),
+                        ramp.as_ref(),
+                        vpl_curve,
+                    );
+                }
+                blocks.resize(offset + stride as usize, 0);
+                draws.push((offset, key, primitive, scissor, placed.shadow));
             }
-            let primitive = &model.primitives[primitive];
-            pass.set_scissor_rect(x, y, width, height);
-            pass.set_bind_group(0, &gpu.draws, &[offset as u32]);
-            if !shadow {
-                pass.set_bind_group(1, &model.materials[primitive.material].bind_group, &[]);
-            }
-            pass.set_vertex_buffer(0, primitive.vertices.slice(..));
-            pass.set_index_buffer(primitive.indices.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(0..primitive.count, 0, 0..1);
         }
+    }
+    draws
+}
+
+/// Clear `targets` (colour, index plane, depth) and draw `draws` into them.
+fn record_page_pass(
+    encoder: &mut wgpu::CommandEncoder,
+    gpu: &Gpu,
+    models: &HashMap<usize, GpuModel>,
+    [color, indices, depth]: [&wgpu::TextureView; 3],
+    draws: Vec<PageDraw>,
+    label: &str,
+) {
+    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some(label),
+        color_attachments: &[
+            Some(wgpu::RenderPassColorAttachment {
+                view: color,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+            }),
+            Some(wgpu::RenderPassColorAttachment {
+                view: indices,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+            }),
+        ],
+        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+            view: depth,
+            depth_ops: Some(wgpu::Operations {
+                load: wgpu::LoadOp::Clear(1.0),
+                store: wgpu::StoreOp::Discard,
+            }),
+            stencil_ops: None,
+        }),
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    });
+    let mut bound: Option<bool> = None;
+    for (offset, key, primitive, [x, y, width, height], shadow) in draws {
+        let Some(model) = models.get(&key) else {
+            continue;
+        };
+        if bound != Some(shadow) {
+            pass.set_pipeline(if shadow {
+                &gpu.shadow_pipeline
+            } else {
+                &gpu.pipeline
+            });
+            bound = Some(shadow);
+        }
+        let primitive = &model.primitives[primitive];
+        pass.set_scissor_rect(x, y, width, height);
+        pass.set_bind_group(0, &gpu.draws, &[offset as u32]);
+        if !shadow {
+            pass.set_bind_group(1, &model.materials[primitive.material].bind_group, &[]);
+        }
+        pass.set_vertex_buffer(0, primitive.vertices.slice(..));
+        pass.set_index_buffer(primitive.indices.slice(..), wgpu::IndexFormat::Uint32);
+        pass.draw_indexed(0..primitive.count, 0, 0..1);
     }
 }
 
@@ -1144,6 +1326,9 @@ impl Gpu {
             address_mode_v: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
+            // Textures carry mipmaps ([`rgba_texture`]): a texture shrunk to
+            // a few screen pixels averages instead of shimmering.
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
         let stride = DRAW_SIZE.next_multiple_of(u64::from(
@@ -1279,6 +1464,9 @@ fn draw_buffer(
     (uniforms, draws)
 }
 
+/// A texture of `rgba` with its full mipmap chain, each level the box
+/// average of the one above: in linear light for an sRGB `format` (colour),
+/// on the stored values otherwise (masks, normal maps).
 fn rgba_texture(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -1288,6 +1476,7 @@ fn rgba_texture(
     rgba: &[u8],
     format: wgpu::TextureFormat,
 ) -> wgpu::TextureView {
+    let (chain, levels) = mip_chain(width, height, rgba, format.is_srgb());
     device
         .create_texture_with_data(
             queue,
@@ -1298,7 +1487,7 @@ fn rgba_texture(
                     height,
                     depth_or_array_layers: 1,
                 },
-                mip_level_count: 1,
+                mip_level_count: levels,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format,
@@ -1306,9 +1495,72 @@ fn rgba_texture(
                 view_formats: &[],
             },
             wgpu::util::TextureDataOrder::LayerMajor,
-            rgba,
+            &chain,
         )
         .create_view(&Default::default())
+}
+
+/// `rgba` (`width` x `height`) followed by each smaller mip level down to
+/// 1 x 1, and the level count. A level's texel is the mean of the up to four
+/// texels it covers in the level above, colour weighted by alpha.
+fn mip_chain(width: u32, height: u32, rgba: &[u8], srgb: bool) -> (Vec<u8>, u32) {
+    let to_linear = |byte: u8| {
+        if srgb {
+            srgb_to_linear(byte)
+        } else {
+            f32::from(byte) / 255.0
+        }
+    };
+    let to_byte = |value: f32| {
+        let value = value.clamp(0.0, 1.0);
+        let encoded = if !srgb {
+            value
+        } else if value <= 0.003_130_8 {
+            value * 12.92
+        } else {
+            1.055 * value.powf(1.0 / 2.4) - 0.055
+        };
+        (encoded * 255.0).round() as u8
+    };
+    let mut chain = rgba.to_vec();
+    let mut level: Vec<u8> = rgba.to_vec();
+    let (mut w, mut h) = (width.max(1), height.max(1));
+    let mut levels = 1;
+    while w > 1 || h > 1 {
+        let (nw, nh) = ((w / 2).max(1), (h / 2).max(1));
+        let mut next = vec![0u8; (nw * nh * 4) as usize];
+        for y in 0..nh {
+            for x in 0..nw {
+                let mut sum = [0f32; 3];
+                let mut alpha = 0f32;
+                let mut count = 0f32;
+                for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                    let (sx, sy) = ((x * 2 + dx).min(w - 1), (y * 2 + dy).min(h - 1));
+                    let at = ((sy * w + sx) * 4) as usize;
+                    let a = f32::from(level[at + 3]) / 255.0;
+                    for (c, total) in sum.iter_mut().enumerate() {
+                        *total += to_linear(level[at + c]) * a;
+                    }
+                    alpha += a;
+                    count += 1.0;
+                }
+                let at = ((y * nw + x) * 4) as usize;
+                for (c, total) in sum.iter().enumerate() {
+                    next[at + c] = if alpha > 0.0 {
+                        to_byte(total / alpha)
+                    } else {
+                        0
+                    };
+                }
+                next[at + 3] = (alpha / count * 255.0).round() as u8;
+            }
+        }
+        chain.extend_from_slice(&next);
+        level = next;
+        (w, h) = (nw, nh);
+        levels += 1;
+    }
+    (chain, levels)
 }
 
 /// One material's values and textures.
@@ -1632,6 +1884,39 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A texture's mip chain halves down to 1 x 1, each texel the mean of the
+    /// texels it covers: colour in linear light for sRGB, weighted by alpha,
+    /// so an empty texel does not darken its neighbours.
+    #[test]
+    fn mip_levels_average_the_level_above() {
+        // 4 x 2: left half opaque sRGB 128 grey, right half clear.
+        let mut rgba = Vec::new();
+        for _ in 0..2 {
+            for x in 0..4 {
+                rgba.extend_from_slice(&if x < 2 {
+                    [128, 128, 128, 255]
+                } else {
+                    [0, 0, 0, 0]
+                });
+            }
+        }
+        let (chain, levels) = mip_chain(4, 2, &rgba, true);
+        assert_eq!(levels, 3);
+        assert_eq!(chain.len(), (4 * 2 + 2 + 1) * 4);
+        let level1 = &chain[32..40];
+        assert_eq!(
+            level1[..4],
+            [128, 128, 128, 255],
+            "opaque block keeps its colour"
+        );
+        assert_eq!(level1[4..], [0, 0, 0, 0]);
+        // Half covered: the colour stays 128, coverage halves.
+        assert_eq!(chain[40..44], [128, 128, 128, 128]);
+        // Linear values average as they are.
+        let (linear, _) = mip_chain(2, 1, &[0, 0, 0, 255, 200, 200, 200, 255], false);
+        assert_eq!(linear[8..12], [100, 100, 100, 255]);
     }
 
     /// The brightness curve is read from the VPL: a VPL whose pages leave
