@@ -315,8 +315,103 @@ production run on a real map with converted art.
 
 ## Status
 
-- Design: this file.
-- Chain 1: in progress.
+Progress notes for whoever continues, on any machine. Keep this section
+current: say what was done, what was not, and what comes next.
+
+### Where the work is
+
+- Branch `feature/picture-model-art` (pushed to the `libi/vera20k` fork). It
+  holds every chain merged; the side branches `feature/pm-*` it merged from
+  can be ignored.
+- **All code is written but has not been compiled or run yet.** Every chain
+  was written with syntax checked by `rustfmt --edition 2024` and WGSL by
+  `naga` only. The first full compile is the next step and will need a round
+  of fixes.
+
+### Done (written, merged, pushed)
+
+- Chain 1, animations: `Picture=`/`PictureSize=` keys; the APNG header read
+  in the core crate (frame count, End/LoopEnd/Middle, smudge size, bolt
+  height); `assets::picture_file` (header, decode with blend/dispose
+  compositing, encode); `render::picture_atlas` (shrink by coverage, crop,
+  mask classes, house ramp, page packing); picture pages in the sprite atlas
+  through the SHP blitters' RGBA mode; `asset export-picture`. Tests for the
+  header, compositing, anim facts, picture atlas and retail "no picture" ran
+  and passed before the later chains were merged.
+- Chains 2 and 3: building facts in the core crate (Buildup, rubble, random
+  map art presence); drawing of building bodies, Buildup, BibShape, factory
+  door art, building anims, infantry, SHP vehicles, projectiles, rubble and
+  the Phobos placement preview from pictures (`PictureRoutes` in
+  `sprite_atlas.rs`).
+- Chains 4 and 5, models: `assets::model_file` (glb decoder);
+  `Model=`/`ModelSize=` keys; model-loaded and tilt facts and their hash in
+  `VoxelAssetCatalog`; GPU draw on a model page of the sprite atlas
+  (`render::model_draw`, `instances::model_units`, `instances::model_art`)
+  for unit bodies, turrets and barrels, building voxel guns, voxel
+  projectiles and debris; node animations, normal maps, shadows, the bridge
+  split, `NAMEWO.glb`.
+- Chain 6: zoomed drawing of picture art (`render::picture_zoom`); off on
+  WebGL2.
+- In-game notices for art problems (`rules::art_problems`, shown once after
+  the match loads).
+- Tooling: `tools/same_as_base.py` (sim-bench hashes and frame times,
+  map_observation pixels at Options and wheel zooms against a base ref);
+  `presentation.wheel_zoom` in map_observation profiles.
+
+### In progress
+
+- Chain 5 residuals, on `feature/pm-chain5-residuals` (being written):
+  debris model ground shadow, building gun node animations, `ShareSource=`
+  debris from a declared model, `BarrelAnimIsVoxel=` without
+  `TurretAnimIsVoxel=`, diffuse light for projectile and debris models.
+
+### Next steps, in order
+
+1. Compile: `python3 -m tools.cargo_run -- check -p vera20k --lib --bins`,
+   then the same with tests (`test --no-run` for the touched groups); fix
+   every error; commit and push.
+2. Run the new tests and the touched modules' existing tests (focused, see
+   AGENTS.md), with `RA2_DIR` set and `VERA20K_REQUIRE_RETAIL_INI=1`; fix,
+   commit, push. Also `python -m tools.run_tests` for the Python tools, and
+   the wasm check in docs/wasm.md (sprite_atlas.rs is in its list).
+3. Production validation: `asset export-picture` a retail anim, a building
+   and an infantry type into a scratch game folder with a loose artmd.ini that
+   declares them; capture with map_observation and compare against the SHP
+   capture (they should match pixel for pixel at 1x). Then one glb vehicle in
+   a match.
+4. Off-state check: `python3 -m tools.same_as_base --ra2-dir <game>
+   --head feature/picture-model-art --work <empty scratch dir>`; identical
+   hashes and pixels are required.
+5. Fix the follow-ups below, then push.
+
+### Follow-ups found during writing
+
+- The model draw's GPU caches are keyed by `Arc` pointer; a new match can
+  reuse an old address and hit a stale cache. Key them by identity instead.
+- WebGL2: zoomed picture drawing is off (no depth `textureLoad` in GLSL);
+  model pages use Rgba8UnormSrgb plus R8Uint render targets, not yet verified
+  there.
+- The Options zoom alone now keeps the world zoom pass when picture art is
+  magnified; status text, band box and health bar timing follow that path and
+  need a visual check.
+
+### Machine notes
+
+- Retail data here: `RA2_DIR=/Users/libi/Documents/workspace/other/yr-retail/Yuri_s_Revenge_1.001`
+  (the old `config.toml` path no longer exists). That folder has no
+  `Hills.mmx`, so tests through the retail Battle fixture
+  (`retail_ini_fixture.rs:525`) fail there; they are not about this work.
+- Builds of all worktrees share one lock (`tools.cargo_run`) and wait for
+  each other.
+
+### Earlier per-chain notes
+
+- Chains 2 and 3, drawing: the sprite atlas draws building bodies, Buildup,
+  BibShape, factory door art and building anims, infantry and SHP vehicle
+  bodies, and projectiles from declared pictures, with their frame counts and building
+  render bounds taken from the pictures; the Phobos placement preview draws a
+  picture building's Buildup or body picture; not yet compiled.
+- Chain 6: picture art drawn (`render::picture_zoom`), written but not yet compiled or run; models follow with chain 4.
 - Chains 4 and 5 (`Model=`), written, not yet compiled or run: keys and the
   model-loaded and tilt facts in the core crate; the GPU draw of voxel units'
   and aircraft's bodies, turrets and barrels. Not yet: model shadows (the
