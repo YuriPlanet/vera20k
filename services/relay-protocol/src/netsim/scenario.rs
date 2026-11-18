@@ -36,7 +36,7 @@ pub struct Scenario {
     /// Commands per minute per player, Poisson.
     #[serde(default)]
     pub apm: f64,
-    /// Plaintext bytes one command adds to its batch (e2e-plan §1.2).
+    /// Plaintext bytes one command adds to its batch.
     #[serde(default = "default_command_bytes")]
     pub command_bytes: usize,
     #[serde(default)]

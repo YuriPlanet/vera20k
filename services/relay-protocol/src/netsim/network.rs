@@ -1,5 +1,5 @@
 //! One direction of one client's path: delay and jitter, random and burst
-//! loss, duplication, a bandwidth queue and outage windows (e2e-plan §1.1).
+//! loss, duplication, a bandwidth queue and outage windows.
 //! Times are virtual microseconds.
 
 use super::scenario::LinkSpec;

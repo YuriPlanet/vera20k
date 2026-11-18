@@ -95,6 +95,49 @@ pub enum OrderingGap {
     BehindStatus,
 }
 
+impl OrderingGap {
+    /// The gap of a reader at watermark `recv_next`, whose newest STATUS
+    /// named `status_next` and whose reorder buffer starts at
+    /// `first_buffered`; `None` when it has read all it knows of.
+    pub fn of(recv_next: u64, status_next: u64, first_buffered: Option<u64>) -> Option<Self> {
+        if first_buffered.is_some_and(|seq| seq > recv_next) {
+            Some(Self::Reordered)
+        } else if status_next > recv_next {
+            Some(Self::BehindStatus)
+        } else {
+            None
+        }
+    }
+}
+
+/// A player's reorder buffer keeps records `recv_next <= seq < recv_next +
+/// REORDER_WINDOW`, the first copy of each (spec §3.5).
+pub const REORDER_WINDOW: u64 = 256;
+
+// The cadences at which a client drives its `ClientSession`, in ms of the
+// session clock. The game's transport (`LanUdpTransport` and
+// `SequencedSession` in src/net) and the netsim's client both use these.
+
+/// READY_REQUEST resends until a STATUS with `started = 1` (spec §6.0).
+pub const READY_REQUEST_INTERVAL_MS: u64 = 125;
+/// PULLs while RESTORING, only while a gap remains (spec §6.7 item 7).
+pub const RESTORE_PULL_INTERVAL_MS: u64 = 100;
+/// One pace measurement a second (spec §6.3, pace segment).
+pub const PACE_INTERVAL_MS: u64 = 1_000;
+/// The hop keepalive PING of a ready hop that is not renewing (spec
+/// appendix A.4).
+pub const HOP_PING_INTERVAL_MS: u64 = 2_000;
+/// HELLO retries before readiness, and both hops' probes while renewing:
+/// about a second, 62 of the game's 16 ms service buckets.
+pub const HOP_HANDSHAKE_INTERVAL_MS: u64 = 992;
+/// A hop that has heard nothing from its relay for longer than this
+/// handshakes again (`forget_readiness`).
+pub const HOP_READINESS_TIMEOUT_MS: u64 = 10_000;
+/// The terminal LEAVE resends this often until its LEAVE_ACK, and gives up
+/// after `LEAVE_ATTEMPTS` sends (about a minute).
+pub const LEAVE_INTERVAL_MS: u64 = 256;
+pub const LEAVE_ATTEMPTS: u16 = 235;
+
 /// A snapshot of one client hop's uplink measurement and scheduler, and of
 /// its downlink receipt (spec §4, §5, §10.1). Durations are milliseconds of
 /// the caller's `now_ms` clock. State values are as of the last
@@ -267,8 +310,8 @@ impl ClientSession {
 
     /// READY_REQUEST (request 0, spec §6.0) at `now_ms`: the lobby-signed
     /// `certificate` and the start `agreement`, which must match any earlier
-    /// call. Before `started` the caller resends it every 125 ms, with no
-    /// PULL beside it; its
+    /// call. Before `started` the caller resends it every
+    /// [`READY_REQUEST_INTERVAL_MS`], with no PULL beside it; its
     /// STATUS replies give RTT samples and uplink loss feedback. Also sets
     /// `turn_ms` to [`crate::turn_ms`] of the certificate's rate until
     /// `set_ordering_turn_ms` changes it.
