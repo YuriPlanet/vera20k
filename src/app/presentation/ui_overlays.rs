@@ -1696,6 +1696,23 @@ fn phobos_insignia_draw<'a>(
     Some((shape, frame, (x, y), custom))
 }
 
+/// Ares.dll 0x1004E0F1..0x1004E149 checks the owner's ally mask for the
+/// viewer and compares the viewer to the observer house (0xAC1198).
+#[cfg(not(feature = "phobos"))]
+fn ares_insignia_visible(
+    sim: &crate::sim::world::Simulation,
+    owner: crate::sim::intern::InternedId,
+    viewer: Option<crate::sim::intern::InternedId>,
+    show_enemy: bool,
+) -> bool {
+    show_enemy
+        || viewer.is_some_and(|viewer| {
+            sim.house_alliances()
+                .is_allied(sim.interner(), owner, viewer)
+                || sim.session().is_observer_house(viewer)
+        })
+}
+
 /// Ares `TechnoClass_DrawVeterancy` (Ares.dll 1004E0C0, hook 0x70A990),
 /// which replaces the stock rank leaf; Phobos's `DrawInsignia` replaces it
 /// in turn. The rank shape, frame and custom SHP name, or `None`:
@@ -1718,7 +1735,6 @@ fn ares_insignia_draw<'a>(
     rules: &RuleSet,
     overlay: &'a crate::render::selection_overlay::SelectionOverlay,
     observer_id: Option<crate::sim::intern::InternedId>,
-    observer_present: bool,
 ) -> Option<(
     &'a crate::render::selection_overlay::CenteredShapeStrip,
     usize,
@@ -1726,21 +1742,10 @@ fn ares_insignia_draw<'a>(
 )> {
     use crate::sim::combat::veterancy::{raw_is_elite, raw_is_veteran};
     let insignia = &object.ares_insignia;
-    let seen = observer_present
-        || observer_id.is_some_and(|viewer| {
-            viewer == entity.owner()
-                || crate::sim::combat::combat_weapon::is_ally_by_object(
-                    Some(sim.house_alliances()),
-                    sim.interner(),
-                    viewer,
-                    entity.owner(),
-                )
-        });
-    if !seen
-        && !insignia
-            .show_enemy
-            .unwrap_or_else(|| rules.ares_enemy_insignia())
-    {
+    let show_enemy = insignia
+        .show_enemy
+        .unwrap_or_else(|| rules.ares_enemy_insignia());
+    if !ares_insignia_visible(sim, entity.owner(), observer_id, show_enemy) {
         return None;
     }
     let raw = entity.veterancy.raw();
@@ -2078,15 +2083,8 @@ pub(crate) fn techno_extras_for_parent(
         && !disguised
         && character != 5
         && let (Some(rules), Some(object)) = (rules, object)
-        && let Some((shape, frame, insignia)) = ares_insignia_draw(
-            sim,
-            entity,
-            object,
-            rules,
-            overlay,
-            observer_id,
-            observer.observer_present,
-        )
+        && let Some((shape, frame, insignia)) =
+            ares_insignia_draw(sim, entity, object, rules, overlay, observer_id)
     {
         let (dx, dy) = if entity.category() == EntityCategory::Infantry {
             (5.0, 2.0)
@@ -2869,6 +2867,28 @@ mod mind_control_pip_tests;
 
 #[cfg(all(test, tests_app_presentation))]
 mod tests {
+    #[cfg(not(feature = "phobos"))]
+    #[test]
+    fn ares_enemy_insignia_checks_the_owners_allies_and_the_observer_house() {
+        use super::ares_insignia_visible as visible;
+        let mut sim = crate::sim::world::Simulation::new();
+        let blue = sim.intern("Blue");
+        let red = sim.intern("Red");
+        sim.house_alliances_mut_for_test()
+            .entry("BLUE".into())
+            .or_default()
+            .insert("RED".into());
+
+        assert!(visible(&sim, blue, Some(red), false));
+        assert!(!visible(&sim, red, Some(blue), false));
+        assert!(visible(&sim, red, Some(blue), true));
+        assert!(!visible(&sim, red, None, false));
+
+        sim.session_mut_for_test()
+            .install_observer_houses_for_test(vec![blue]);
+        assert!(visible(&sim, red, Some(blue), false));
+    }
+
     /// Ares TechnoClass_DrawExtras_PowerOff (10049FE0, hook 0x6F526C): the
     /// owner sees its repairing building's wrench, an enemy only with
     /// `EnemyWrench=yes` (the default).
