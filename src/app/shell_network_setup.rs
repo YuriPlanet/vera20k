@@ -12,6 +12,8 @@ pub(crate) use cooperative::{
     CooperativeResume, chooser_rows as cooperative_chooser_rows, resume as resume_cooperative,
 };
 pub(crate) mod maps;
+#[cfg(all(test, tests_app))]
+mod network_build;
 mod service;
 pub(crate) use service::{
     HostOptions, NetworkSetupEvent, accept_network_map_source, accept_network_random_map_preview,
