@@ -1832,15 +1832,6 @@ impl ClientSession {
     pub fn mac_failures(&self) -> u64 {
         self.mac_failures
     }
-
-    /// Whether this hop's next sequence has reached
-    /// `envelope::RENEWAL_SEQUENCE` (2³² − 2¹⁶), so the client should renew
-    /// it now (§11 case 7), whatever its ticket's remaining lifetime. The
-    /// hop keeps sending until `u32::MAX`; past that every send is
-    /// `RelayError::CounterExhausted`.
-    pub fn sequence_wants_renewal(&self) -> bool {
-        self.sent + 1 >= u64::from(envelope::RENEWAL_SEQUENCE)
-    }
 }
 
 impl RelayServer {
@@ -1873,20 +1864,6 @@ pub struct SessionEntry {
     /// The sequence of the relay's next datagram on this hop; `None` once
     /// its ticket expired or a renewal replaced it.
     pub next_sequence: Option<u64>,
-}
-
-#[cfg(any(test, feature = "test-support"))]
-impl ClientSession {
-    /// Test support only: the next datagram this hop sends carries
-    /// sequence `next` (1..=`u32::MAX`), as if the hop had already sent
-    /// `next - 1`, so tests reach `envelope::RENEWAL_SEQUENCE` and
-    /// `CounterExhausted` (§6.1, §11 case 7) without sending billions. The
-    /// skipped sequences count as never sent for the hop's link
-    /// measurements. Use it between sends.
-    pub fn preset_next_sequence(&mut self, next: u32) {
-        assert!(next > 0, "hop sequences start at 1");
-        self.sent = u64::from(next) - 1;
-    }
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -1979,31 +1956,6 @@ impl RelayServer {
             "session {session:#x} is not free"
         );
         self.next_session = Some(session);
-    }
-
-    /// Test support only: the relay's next datagram on `session`'s hop
-    /// carries sequence `next` (1..=`u32::MAX`), so tests reach the end of
-    /// its counter (§6.1, §11 case 7). Past `u32::MAX` the relay stops
-    /// sending on that hop (§6.1). Returns false when no live hop holds
-    /// `session`.
-    pub fn preset_relay_sequence(&mut self, session: u32, next: u32) -> bool {
-        assert!(next > 0, "hop sequences start at 1");
-        let Some(SessionSlot {
-            hop: SessionHop::Peer { room, source },
-            ..
-        }) = self.sessions.get(&session)
-        else {
-            return false;
-        };
-        let Some(peer) = self.rooms.get_mut(room).and_then(|room| {
-            room.peers
-                .iter_mut()
-                .find(|peer| peer.ticket.source == *source)
-        }) else {
-            return false;
-        };
-        peer.sent = u64::from(next) - 1;
-        true
     }
 }
 
@@ -2303,10 +2255,8 @@ mod tests {
             &mut first,
             SocketAddrV4::new(Ipv4Addr::LOCALHOST, 31201),
         );
-        assert!(!first.sequence_wants_renewal());
-        first.preset_next_sequence(envelope::RENEWAL_SEQUENCE);
-        assert!(first.sequence_wants_renewal());
-        first.preset_next_sequence(u32::MAX);
+        // The next send is the hop's last sequence.
+        first.sent = u64::from(u32::MAX) - 1;
         let mut bytes = Vec::new();
         first.data(BROADCAST, b"last", &mut bytes).unwrap();
         assert_eq!(

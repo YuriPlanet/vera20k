@@ -52,13 +52,6 @@ pub const PACK_LIMIT: usize = 681;
 /// buffer of this size holds any valid datagram.
 pub const MAX_DATAGRAM: usize = OVERHEAD + MAX_PAYLOAD;
 
-/// The hop sequence at which a client starts a renewal: 2³² − 2¹⁶
-/// (§11 case 7). It keeps sending until `u32::MAX`; past that it refuses
-/// with `RelayError::CounterExhausted` (§6.1). The relay cannot renew: if
-/// its sequence on a hop ever runs out, it stops sending on that hop and
-/// the client renews by its disconnect path (§6.1).
-pub const RENEWAL_SEQUENCE: u32 = u32::MAX - 0xFFFF;
-
 /// Client to relay kinds (§6.1).
 pub const HELLO: u8 = 0;
 pub const CONFIRM: u8 = 1;
