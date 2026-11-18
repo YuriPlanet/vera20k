@@ -240,8 +240,11 @@ Status, then at most 32 entries packed.
 
 Synchronized pause is opt-in for every active match source. Ordering request5
 uses request ID0 to advertise support and query status; positive IDs carry an
-explicit desired state and expected epoch. Old clients and relays keep their
-existing behavior, and a mixed room cannot pause. Accepted transitions append
+explicit desired state and expected epoch. Each source advertises once its
+match has started, and the room can pause after every active source has. The
+relay counts the asking source before it answers, so a PauseStatus whose
+supported mask leaves the asker out means the room never pauses (a federated
+room, below), and the game stops asking. Accepted transitions append
 an authenticated canonical pause marker after the current head's frame end.
 That frame remains the barrier until an explicit resume appends its marker and
 displaces the paused wall time; buffered input retains its assigned frames.

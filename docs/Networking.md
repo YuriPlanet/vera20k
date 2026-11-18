@@ -287,7 +287,7 @@ alone. The receiving client rebuilds the same canonical records, so journal,
 replay and federation are unchanged. Measured traffic is in
 `services/relay/adaptive-transport/results.md`.
 
-When every active player and the relay support synchronized pause, any player
+In a match played through one relay, any player
 can use the Pause key or Options' **Pause All Players** / **Resume All Players**
 button, or type `/pause` or `/resume` as a whole line in match chat. Such a line
 goes out as chat to its recipients like any other, so they read who asked; in a
@@ -305,8 +305,7 @@ running; accepted gameplay inputs wait for their assigned frames after resume.
 Opening Options alone remains local. After a resume nobody can pause again for
 30 seconds. Confirming Leave resumes as needed until the queued EXIT executes.
 Shared paused time is excluded from the score-screen duration.
-This feature requires updated clients and relay;
-it is unavailable in a mixed-version room or a direct LAN match.
+A direct LAN match and a match spread over several relays cannot pause.
 
 Pushed clients use a local adaptive playout schedule based on socket receipt
 timestamps. It starts with no added buffer and can reserve at most 20 ms or one
@@ -338,10 +337,10 @@ within 30 seconds of that doubles the wait, up to five minutes. Every client
 shows "<player> is slowing the game down." and, once the match is back at its
 own speed, "Game speed is back to normal." A rate change is a marker in the
 stream, so only playout pacing changes: the simulation, its saves and replays
-keep the match's own frame rate, and a replay plays at that speed. It needs
-every active client to report; a room with an older client or one spread over
-several relays keeps its speed. Native lockstep instead slows every match to its
-slowest player (ProcessNetwork `0x00647BF4..0x00647E6D`).
+keep the match's own frame rate, and a replay plays at that speed. A match
+spread over several relays slows the same way; its first relay decides for all.
+Native lockstep instead slows every match to its slowest player (ProcessNetwork
+`0x00647BF4..0x00647E6D`).
 
 When the lobby admits a match on three or more relays with federation
 adjudication, a relay missing for ten minutes ends that match without a winner.
@@ -379,8 +378,8 @@ connection checks, loads its map and enters the match without a redraw.
 The game thread services that work and the crash/stall limits stay in effect.
 An older game can still fall silent in that window and be dropped before it
 starts.
-The relay and the packets are unchanged. Released games keep sending for a
-crashed or frozen game, so in a mixed room an older game is still never named.
+The relay and the packets are unchanged. A released game keeps sending for a
+crashed or frozen game, so it is never named.
 After ten minutes of silence the relay removes the player
 through the same stream. A game that has had no answer from the relay for that
 long, and 15 seconds more, releases its relay route and sends it nothing more:

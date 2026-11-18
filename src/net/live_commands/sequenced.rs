@@ -34,7 +34,6 @@ const MAX_FRAME_RECORDS: usize =
     MAX_FRAME_BATCHES * MAX_FEDERATED_RELAYS * OUT_LIST_CAPACITY + MAX_PEERS as usize;
 const SAMPLE_HISTORY: usize = 4096;
 const PAUSE_PROBE_INTERVAL_MS: i32 = 500;
-const PAUSE_COMPATIBILITY_PROBE_INTERVAL_MS: i32 = 5_000;
 const COMMAND_TRACE_HISTORY: usize = 256;
 // A relay record this build cannot read ends the match once it has held the
 // cursor, or before the start every Status, this long while the relay keeps
@@ -485,10 +484,11 @@ pub(super) struct SequencedSession {
     /// VERA: the current pause found this game catching up, and it has not
     /// reached the pause yet; see `take_caught_up_in_pause`.
     pause_found_behind: bool,
-    pause_relay_supported: bool,
     pause_supported_sources: u32,
     pause_active_sources: u32,
-    pause_probe_attempts: u8,
+    /// The relay will never pause this match: its players are on several
+    /// relays. This game stops asking.
+    pause_refused: bool,
     last_pause_control: Option<u32>,
     pause_request: Option<PauseRequest>,
     next_pause_request: u64,
@@ -613,10 +613,9 @@ impl SequencedSession {
             delivery: DeliveryCounts::default(),
             pause: CanonicalPause::default(),
             pause_found_behind: false,
-            pause_relay_supported: false,
             pause_supported_sources: 0,
             pause_active_sources: mask,
-            pause_probe_attempts: 0,
+            pause_refused: false,
             last_pause_control: None,
             pause_request: None,
             next_pause_request: 1,
@@ -824,7 +823,6 @@ impl SequencedSession {
         MultiplayerPauseStatus {
             available: self.started
                 && !self.failed()
-                && self.pause_relay_supported
                 && self.pause_active_sources != 0
                 && self.pause_supported_sources & self.pause_active_sources
                     == self.pause_active_sources,
@@ -968,12 +966,12 @@ impl SequencedSession {
             {
                 request.last_sent = Some(now);
             }
-        } else if !self.pause_status().available
-            && service_due(self.last_pause_control, now, self.pause_probe_interval())
+        } else if !self.pause_refused
+            && !self.pause_status().available
+            && service_due(self.last_pause_control, now, PAUSE_PROBE_INTERVAL_MS)
             && transport.control_ordering_pause(0, 0, false).is_ok()
         {
             self.last_pause_control = Some(now);
-            self.pause_probe_attempts = self.pause_probe_attempts.saturating_add(1);
         }
     }
 
@@ -988,16 +986,6 @@ impl SequencedSession {
         {
             // It rides the next UPLINK once; a lost one only goes stale.
             transport.queue_ordering_pace(pace, ran, tick_micros);
-        }
-    }
-
-    fn pause_probe_interval(&self) -> i32 {
-        if !self.pause_relay_supported && self.pause_probe_attempts >= 3 {
-            // Older relays ignore this extension. Keep overhead low without
-            // mistaking a lost capability reply for permanent incompatibility.
-            PAUSE_COMPATIBILITY_PROBE_INTERVAL_MS
-        } else {
-            PAUSE_PROBE_INTERVAL_MS
         }
     }
 
@@ -1183,7 +1171,11 @@ impl SequencedSession {
                 {
                     return Err(SequencedError::InvalidTimeline);
                 }
-                self.pause_relay_supported = true;
+                // The relay counts this source as supporting pause from its
+                // first probe on (relay `control_pause`), so a reply without
+                // it comes from a match the relay never pauses: one whose
+                // players are on several relays.
+                self.pause_refused |= supported_sources & (1 << self.local_source) == 0;
                 // Capabilities only accumulate and sources only depart. Old
                 // replies cannot undo a newer availability observation.
                 self.pause_supported_sources |= supported_sources;
@@ -1504,7 +1496,6 @@ impl SequencedSession {
                     // after every active source advertises support. That is
                     // sufficient proof even if all of our status replies were
                     // lost; departed sources can never rejoin this roster.
-                    self.pause_relay_supported = true;
                     self.pause_supported_sources |= self.pause_active_sources;
                     if !paused {
                         // Anchor resumed playout to this real socket receipt.

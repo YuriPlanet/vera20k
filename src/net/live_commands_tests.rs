@@ -4612,6 +4612,86 @@ fn sequenced_pause_stops_at_one_boundary_and_recovers_a_lost_resume() {
     );
 }
 
+/// A room whose players are on several relays answers a pause probe without
+/// this game's own source (relay `control_pause`): it never pauses, so the
+/// game stops asking. One still waiting for another player keeps asking.
+#[test]
+fn a_relay_room_that_cannot_pause_is_not_asked_again() {
+    use crate::net::udp::test_support::MAX_DATAGRAM;
+    use vera20k_relay_protocol::{OrderEvent, OrderStatus};
+
+    let (_, _, _, boundaries, socket, mut relay) = sequenced_pair();
+    let mut live = boundaries[0].live.borrow_mut();
+    let live = &mut *live;
+    let sent = || {
+        settle_loopback();
+        let mut bytes = [0; MAX_DATAGRAM + 1];
+        std::iter::from_fn(|| {
+            let (length, source) = socket.recv_from(&mut bytes).ok()?;
+            Some((source, bytes[..length].to_vec()))
+        })
+        .collect::<Vec<_>>()
+    };
+    // Only the relay's handshake reaches this game: HELLO, CHALLENGE, READY.
+    relay.advance_clock(16_000, 100);
+    for now in 1..=3 {
+        live.transport.service(now);
+        for (source, datagram) in sent() {
+            let std::net::SocketAddr::V4(source) = source else {
+                unreachable!()
+            };
+            for packet in relay
+                .process_at(source, &datagram, 100, 16_000)
+                .unwrap_or_default()
+            {
+                socket.send_to(&packet.bytes, packet.endpoint).unwrap();
+            }
+        }
+        settle_loopback();
+    }
+    assert!(live.transport.relay_ready());
+    let session = live.sequenced.as_mut().unwrap();
+    let mut service = |now: u32, event: Option<OrderEvent>| {
+        if let Some(event) = event {
+            live.transport.push_ordering_received_for_test(event);
+        }
+        session.service(&mut live.transport, now);
+        sent().len()
+    };
+    let started = OrderEvent::Status(OrderStatus {
+        head_frame: 0,
+        oldest_seq: 1,
+        next_seq: 1,
+        active_sources: 3,
+        tick_hz: 30,
+        start_delay_ms: 0,
+        started: true,
+        feedback: Default::default(),
+        watch_sample: None,
+        silent_sources: 0,
+    });
+    let pause_status = |supported_sources| OrderEvent::PauseStatus {
+        supported_sources,
+        active_sources: 3,
+        request_id: 0,
+        epoch: 0,
+        paused: false,
+        frame: 0,
+    };
+    assert_eq!(service(0, None), 1, "its Ready");
+    assert_eq!(service(1, Some(started)), 1, "the first probe");
+    assert_eq!(
+        service(501, Some(pause_status(0b01))),
+        1,
+        "the other player has not yet"
+    );
+    assert_eq!(service(1_001, Some(pause_status(0))), 0);
+    for now in (1_501..=6_001).step_by(500) {
+        assert_eq!(service(now, None), 0, "at {now} ms");
+    }
+    assert!(!session.pause_status().available);
+}
+
 #[test]
 fn sequenced_push_resubscribes_as_soon_as_a_renewed_lease_is_confirmed() {
     use crate::net::udp::{
