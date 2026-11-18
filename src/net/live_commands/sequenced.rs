@@ -6,10 +6,10 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use vera20k_relay_protocol::{
-    CHECKSUM_INTERVAL, ClientLinkStats, ORDERING_BATCH_CAPACITY, OrderEntry, OrderError,
-    OrderEvent, OrderPace, OrderingCertificate, OrderingGap, PACE_INTERVAL_MS,
-    READY_REQUEST_INTERVAL_MS, REORDER_WINDOW, RESTORE_PULL_INTERVAL_MS, WATCH_MARK_MS,
-    paced_rates,
+    CHECKSUM_INTERVAL, ClientLinkStats, MAX_FEDERATED_RELAYS, MAX_FRAME_BATCHES, MAX_PEERS,
+    ORDERING_BATCH_CAPACITY, OrderEntry, OrderError, OrderEvent, OrderPace, OrderingCertificate,
+    OrderingGap, PACE_INTERVAL_MS, READY_REQUEST_INTERVAL_MS, REORDER_WINDOW,
+    RESTORE_PULL_INTERVAL_MS, WATCH_MARK_MS, paced_rates,
 };
 
 use super::{LiveCommandError, StartupAgreement, StartupError};
@@ -20,14 +20,18 @@ use crate::sim::command::{
     GAME_SPEED_OPCODE, LATENCY_FUDGE_OPCODE, MESSAGE_OPCODE, PROCESS_TIME_OPCODE,
     REMOVE_PLAYER_OPCODE, RESPONSE_TIME_OPCODE, TIMING_OPCODE,
 };
-use crate::sim::command_queue::{FRAMEINFO_EVENT_OPCODE, FrameInfo};
+use crate::sim::command_queue::{FRAMEINFO_EVENT_OPCODE, FrameInfo, OUT_LIST_CAPACITY};
 use crate::sim::world::{
     NetworkCommandQueues, NetworkInterruption, NetworkQueueContext, NetworkQueuePass,
 };
 use crate::util::time::Instant;
 
 const BUFFERED_FRAMES: usize = 64;
-const MAX_FRAME_RECORDS: usize = 4096;
+// The most records a relay's frame carries: each federated relay's batches,
+// each batch at most a whole OutList (`decode_batch`), and one leaving record
+// per source.
+const MAX_FRAME_RECORDS: usize =
+    MAX_FRAME_BATCHES * MAX_FEDERATED_RELAYS * OUT_LIST_CAPACITY + MAX_PEERS as usize;
 const SAMPLE_HISTORY: usize = 4096;
 const PAUSE_PROBE_INTERVAL_MS: i32 = 500;
 const PAUSE_COMPATIBILITY_PROBE_INTERVAL_MS: i32 = 5_000;
@@ -451,7 +455,7 @@ struct Watch {
 #[derive(Debug)]
 pub(super) struct SequencedSession {
     watch: Option<Watch>,
-    houses: [Option<i8>; 30],
+    houses: [Option<i8>; MAX_PEERS as usize],
     local_source: u8,
     agreement: [u8; 32],
     /// The certificate's rate, which the simulation keeps.
@@ -495,7 +499,7 @@ pub(super) struct SequencedSession {
     latest_frame_receipt: Option<SequencedTiming>,
     assembling: CommittedFrame,
     frames: VecDeque<CommittedFrame>,
-    last_batch: [u64; 30],
+    last_batch: [u64; MAX_PEERS as usize],
     // Sources whose batch could not be read; each departed at that batch's
     // frame and the rest of its stream is ignored.
     refused: u32,
@@ -542,7 +546,7 @@ impl SequencedSession {
                     .ok_or(StartupError::InvalidAdmission)?,
             ),
         };
-        let mut houses = [None; 30];
+        let mut houses = [None; MAX_PEERS as usize];
         if let Some(source) = player_source {
             houses[usize::from(source)] = Some(local_house);
         }
@@ -581,7 +585,7 @@ impl SequencedSession {
     }
 
     fn with_roster(
-        houses: [Option<i8>; 30],
+        houses: [Option<i8>; MAX_PEERS as usize],
         local_source: u8,
         agreement: [u8; 32],
         fps: u16,
@@ -626,7 +630,7 @@ impl SequencedSession {
                 ..Default::default()
             },
             frames: VecDeque::new(),
-            last_batch: [0; 30],
+            last_batch: [0; MAX_PEERS as usize],
             refused: 0,
             restoring: false,
             last_restore_log: None,
@@ -1915,7 +1919,7 @@ fn watch_turn(fps: u16, delay_seconds: u32) -> u32 {
     released + 2 * (u32::from(fps) * WATCH_PULL_INTERVAL_MS / 1000).max(1)
 }
 
-fn roster_mask(houses: &[Option<i8>; 30]) -> u32 {
+fn roster_mask(houses: &[Option<i8>; MAX_PEERS as usize]) -> u32 {
     houses
         .iter()
         .enumerate()
@@ -1960,10 +1964,7 @@ fn decode_batch(bytes: &[u8], house: i8, frame: u32) -> Result<Vec<CommandRecord
             true
         })
         .map_err(|_| SequencedError::InvalidTimeline)?;
-    if invalid
-        || decoded.consumed_bytes != packet.len()
-        || records.len() > crate::sim::command_queue::OUT_LIST_CAPACITY
-    {
+    if invalid || decoded.consumed_bytes != packet.len() || records.len() > OUT_LIST_CAPACITY {
         return Err(SequencedError::InvalidTimeline);
     }
     Ok(records)
@@ -2579,6 +2580,59 @@ mod departure_tests {
             .collect();
         assert!(session.frames.len() > 2);
         assert_eq!(records, [(EXIT_OPCODE, 1)]);
+    }
+}
+
+#[cfg(all(test, tests_net))]
+mod frame_limit_tests {
+    use super::*;
+    use crate::sim::command::DESTRUCT_OPCODE;
+
+    /// The largest frame a federated match seals: each relay's whole share
+    /// of batches, every batch a full OutList, and every player leaving
+    /// after its last batch.
+    #[test]
+    fn the_largest_federated_frame_is_assembled() {
+        let mut houses = [None; 30];
+        for (source, house) in houses.iter_mut().enumerate() {
+            *house = Some(source as i8);
+        }
+        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let batches = MAX_FRAME_BATCHES * MAX_FEDERATED_RELAYS;
+        let mut sequence = 1..;
+        let mut receive = |entry| {
+            session
+                .receive(OrderEvent::Entry(entry), Instant::now())
+                .unwrap()
+        };
+        for index in 0..batches {
+            let source = (index % 30) as u8;
+            receive(OrderEntry::Batch {
+                sequence: sequence.next().unwrap(),
+                frame: 1,
+                source,
+                batch_id: (index / 30 + 1) as u64,
+                bytes: vec![DESTRUCT_OPCODE; OUT_LIST_CAPACITY],
+            });
+            if index + 30 >= batches {
+                receive(OrderEntry::Departure {
+                    sequence: sequence.next().unwrap(),
+                    frame: 1,
+                    source,
+                    lost: false,
+                });
+            }
+        }
+        receive(OrderEntry::FrameEnd {
+            sequence: sequence.next().unwrap(),
+            frame: 1,
+        });
+        session.assemble().unwrap();
+        assert_eq!(session.frames.len(), 1);
+        assert_eq!(
+            session.frames[0].records.len(),
+            batches * OUT_LIST_CAPACITY + 30
+        );
     }
 }
 
