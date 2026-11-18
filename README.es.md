@@ -30,14 +30,6 @@ palabra sobre su rumbo.
 
 ¿Algo no funciona? Consulta la [página de ayuda](https://vera20k.org/es/help).
 
-Está en desarrollo activo: la escaramuza se puede jugar en Windows, macOS y Linux, las campañas
-funcionan en parte y el multijugador en línea (experimental) ya está disponible. Las versiones
-anteriores y lo que cambió en cada una están en la [página de
-versiones](https://github.com/YuriPlanet/vera20k/releases).
-
-Para iniciar escaramuzas o campañas de YR para un jugador desde un cliente de CnCNet, consulta la
-[configuración del cliente sin conexión](integrations/cncnet/README.md).
-
 ## Objetivos del proyecto
 
 1. Conservar la jugabilidad, el aspecto visual y la atmósfera del Red Alert 2: Yuri's Revenge

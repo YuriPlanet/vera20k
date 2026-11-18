@@ -27,10 +27,6 @@ VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 
 遇到问题？请看[帮助页面](https://vera20k.org/zh/help)。
 
-项目正在积极开发中：遭遇战已可在 Windows、macOS 和 Linux 上游玩，战役已部分可用，现已支持在线联机游玩（实验性）。以往版本及各版本的更改，请见[发布页面](https://github.com/YuriPlanet/vera20k/releases)。
-
-如需通过 CnCNet 客户端启动 YR 单人遭遇战或战役，请参阅[离线客户端设置](integrations/cncnet/README.md)。
-
 ## 项目目标
 
 1. 保留原版《红色警戒2：尤里的复仇》的玩法、画面和氛围。

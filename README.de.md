@@ -31,14 +31,6 @@ das Projekt entwickelt.
 
 Kommst du nicht weiter? Schau auf der [Hilfeseite](https://vera20k.org/de/help) nach.
 
-Das Projekt ist in aktiver Entwicklung: Gefechte sind unter Windows, macOS und Linux spielbar,
-Kampagnen funktionieren teilweise, und der Online-Mehrspielermodus (experimentell) ist jetzt
-verfügbar. Frühere Versionen und was sich in jeder geändert hat, stehen auf der
-[Release-Seite](https://github.com/YuriPlanet/vera20k/releases).
-
-Wie du Einzelspieler-Gefechte oder Kampagnen von YR über einen CnCNet-Client startest, steht in der
-[Offline-Client-Einrichtung](integrations/cncnet/README.md).
-
 ## Projektziele
 
 1. Spielmechanik, Grafik und Atmosphäre des ursprünglichen Red Alert 2: Yuri's Revenge bewahren.

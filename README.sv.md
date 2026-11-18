@@ -30,14 +30,6 @@ ska gå.
 
 Fastnat? Läs [hjälpsidan](https://vera20k.org/sv/help).
 
-Projektet är under aktiv utveckling: skirmish går att spela på Windows, macOS och Linux, kampanjer
-fungerar delvis och flerspelarläget online (experimentellt) är nu tillgängligt. Tidigare versioner
-och vad som ändrades i varje finns på
-[releasesidan](https://github.com/YuriPlanet/vera20k/releases).
-
-För att starta skirmish-matcher eller kampanjer i YR för en spelare från en CnCNet-klient, se
-[installationen av offlineklienten](integrations/cncnet/README.md).
-
 ## Projektets mål
 
 1. Bevara spelmekaniken, utseendet och stämningen i originalversionen av Red Alert 2: Yuri's Revenge.

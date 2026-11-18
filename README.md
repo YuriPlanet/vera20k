@@ -31,13 +31,6 @@ VERA20K is made by gamers, for gamers, and gamers have the final say in where it
 
 Stuck? See the [help page](https://vera20k.org/help).
 
-It's in active development: skirmish is playable on Windows, macOS and Linux, campaigns partly
-work, and online multiplayer (experimental) is now available. Earlier versions and what changed in
-each are on the [releases page](https://github.com/YuriPlanet/vera20k/releases).
-
-To launch single-player YR skirmishes or campaigns from a CnCNet client, see the
-[offline client setup](integrations/cncnet/README.md).
-
 ## Project goals
 
 1. Keep the gameplay, visuals and atmosphere of the original Red Alert 2: Yuri's Revenge.

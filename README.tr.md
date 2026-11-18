@@ -30,14 +30,6 @@ oyuncular söylüyor.
 
 Takıldınız mı? [Yardım sayfasına](https://vera20k.org/tr/help) göz atın.
 
-Aktif geliştirme aşamasında: çatışma modu Windows, macOS ve Linux'ta oynanabiliyor, senaryolar
-kısmen çalışıyor ve çevrimiçi çok oyunculu mod (deneysel) artık kullanılabiliyor. Önceki sürümleri
-ve her birinde nelerin değiştiğini [sürümler
-sayfasında](https://github.com/YuriPlanet/vera20k/releases) bulabilirsiniz.
-
-Tek oyunculu YR çatışmalarını veya senaryolarını bir CnCNet istemcisinden başlatmak için
-[çevrimdışı istemci kurulumuna](integrations/cncnet/README.md) bakın.
-
 ## Projenin hedefleri
 
 1. Orijinal Red Alert 2: Yuri's Revenge'in oynanışını, görsellerini ve atmosferini korumak.
