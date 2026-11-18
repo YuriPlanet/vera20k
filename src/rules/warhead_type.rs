@@ -544,11 +544,35 @@ pub struct WarheadType {
     pub taunt: bool,
     /// Phobos `IvanBomb.Detonate=` (`Ext/WarheadType/Body.cpp`'s
     /// `IvanBomb_Detonate.Read`, default false): a hit target's attached
-    /// bombs detonate now (`Ext/WarheadType/Detonate.cpp:957-1000`). Its
-    /// effect is unported, but the key is a `PossibleCellSpreadDetonate`
-    /// member, so it still starts the per-target pass and its two draws.
+    /// bombs detonate now (`Ext/WarheadType/Detonate.cpp:944-978`). The key is
+    /// also a `PossibleCellSpreadDetonate` member, so it starts the
+    /// per-target pass and its two draws.
     #[cfg(feature = "phobos")]
     pub phobos_ivan_bomb_detonate: bool,
+    /// Phobos `IvanBomb.Detonate.PenetratesTransport=` (`Body.cpp`'s
+    /// `IvanBomb_Detonate_PenetratesTransport`, default false): the arm also
+    /// cuts the fuse of the bombs the target's passengers carry
+    /// (`Detonate.cpp:966-971`).
+    #[cfg(feature = "phobos")]
+    pub phobos_ivan_bomb_detonate_penetrates_transport: bool,
+    /// Phobos `IvanBomb.Detonate.PenetratesGarrison=` (default false): the
+    /// bombs the occupants of a hit Building carry (`Detonate.cpp:973-982`).
+    #[cfg(feature = "phobos")]
+    pub phobos_ivan_bomb_detonate_penetrates_garrison: bool,
+    /// Phobos `IvanBomb.Detonate.AffectsParasite=` (default false): the bomb
+    /// on the parasite eating a hit Foot (`Detonate.cpp:984-990`).
+    #[cfg(feature = "phobos")]
+    pub phobos_ivan_bomb_detonate_affects_parasite: bool,
+    /// Phobos `IvanBomb.Detonate.SameInvokerOnly=` (default false): only the
+    /// bombs planted by the detonation's own owner are cut
+    /// (`Detonate.cpp:950-956`).
+    #[cfg(feature = "phobos")]
+    pub phobos_ivan_bomb_detonate_same_invoker_only: bool,
+    /// Phobos `IvanBomb.Detonate.AffectTypes=` (default empty, no filter):
+    /// the planting techno's type must be listed for its bomb to go off
+    /// (`Detonate.cpp:948-953`).
+    #[cfg(feature = "phobos")]
+    pub phobos_ivan_bomb_detonate_affect_types: Vec<String>,
     /// Phobos `Ammo=` (`Body.cpp:452`, default 0): the per-target ammo delta,
     /// clamped to `0..type->Ammo` (`Ext/WarheadType/Detonate.cpp:221-222,
     /// 923-932`).
@@ -1169,6 +1193,23 @@ impl WarheadType {
             taunt: section.read_bool("Taunt", false),
             #[cfg(feature = "phobos")]
             phobos_ivan_bomb_detonate: section.read_bool("IvanBomb.Detonate", false),
+            #[cfg(feature = "phobos")]
+            phobos_ivan_bomb_detonate_penetrates_transport: section
+                .read_bool("IvanBomb.Detonate.PenetratesTransport", false),
+            #[cfg(feature = "phobos")]
+            phobos_ivan_bomb_detonate_penetrates_garrison: section
+                .read_bool("IvanBomb.Detonate.PenetratesGarrison", false),
+            #[cfg(feature = "phobos")]
+            phobos_ivan_bomb_detonate_affects_parasite: section
+                .read_bool("IvanBomb.Detonate.AffectsParasite", false),
+            #[cfg(feature = "phobos")]
+            phobos_ivan_bomb_detonate_same_invoker_only: section
+                .read_bool("IvanBomb.Detonate.SameInvokerOnly", false),
+            #[cfg(feature = "phobos")]
+            phobos_ivan_bomb_detonate_affect_types: section
+                .read_list("IvanBomb.Detonate.AffectTypes", 0x80)
+                .map(|list| list.iter().map(|name| name.to_string()).collect())
+                .unwrap_or_default(),
             #[cfg(feature = "phobos")]
             ammo: section.read_int("Ammo", 0),
             #[cfg(feature = "phobos")]

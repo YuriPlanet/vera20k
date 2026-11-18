@@ -508,6 +508,18 @@ pub(crate) fn detonate(
                 run.effects(),
             );
         }
+        // `DetonateOnOneUnit`'s `IvanBombDetonate(pOwner, pTarget)` arm
+        // (`Detonate.cpp:239-240`): right after the Taunt arm and before the
+        // shield modifiers, the bombs the target carries have their fuse cut
+        // to the current frame.
+        #[cfg(feature = "phobos")]
+        if warhead.phobos_ivan_bomb_detonate {
+            world.phobos_ivan_bomb_detonate(
+                target_id,
+                (source_id != 0).then_some(source_id),
+                warhead,
+            );
+        }
         // `DetonateOnOneUnit`'s `ApplyShieldModifiers(pTarget)`
         // (`Detonate.cpp:240`): after the PenetratesTransport arm and before
         // the attach-effect and crit blocks, so the receiver's damage hits
