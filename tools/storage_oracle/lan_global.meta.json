@@ -36,6 +36,6 @@
     "delete_receive": "0x0048B890",
     "failed_cleanup": "0x005402D0"
   },
-  "replay_command": "python -m tools.storage_oracle.lan_lobby --global-connection",
+  "replay_command": "python -m tools.storage_oracle.lan_global",
   "payload_sha256": "6fb91f2472a2e6a5e6b7a9c10ee7adacd513f73daad613211b3a92dd617895c0"
 }

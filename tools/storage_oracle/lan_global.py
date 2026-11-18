@@ -5,6 +5,7 @@ substituted. Original constructor, framing, receive, queue and route bodies run.
 No Python encoder or expected frame bytes. See generated .meta.json.
 """
 from collections import Counter
+from pathlib import Path
 import struct
 
 from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
@@ -15,7 +16,7 @@ from unicorn.x86_const import (
 
 from tools.native_oracle import (
     NATIVE_FPCW, NativeCallTrace, OracleError, STACK_BASE, STACK_SIZE,
-    provenance, run_checked,
+    finish_vectors, provenance, run_checked,
 )
 from tools.storage_oracle.shell_relayout import Machine, HEAP, HEAP_SIZE
 
@@ -552,3 +553,15 @@ def manager_metadata():
         entry_points={**{key: ENTRIES[key] for key in (
             'global_ctor', 'connection_ctor', 'comm_ctor', 'queue_send', 'queue_receive',
         )}, **MANAGER_ENTRIES})
+
+
+SOURCE_PATHS = {"global": Path(__file__),
+                "native_oracle": Path(__file__).parent.parent / "native_oracle.py",
+                "shared_machine": Path(__file__).with_name("shell_relayout.py")}
+
+
+if __name__ == "__main__":
+    finish_vectors(generate, Path(__file__).with_suffix(".json"), provenance=metadata,
+                   source_paths=SOURCE_PATHS)
+    finish_vectors(manager_timing_controls, Path(__file__).with_name("lan_manager_timing.json"),
+                   provenance=manager_metadata, source_paths=SOURCE_PATHS)
