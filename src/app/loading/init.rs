@@ -2512,18 +2512,17 @@ fn generated_full_init_ini(
         .map(|(id, _)| id)
         .ok_or_else(|| anyhow::anyhow!("RMG Full_Init requires the current first Country"))?;
     let geometry = crate::map::rmg::MapGeometry::from_options(options);
+    let (width, height) = geometry.map_size();
+    let [left, top, local_width, local_height] = geometry.local_size();
     let mut map = IniSection::new("Map".into());
     map.set(
         "Theater",
         crate::map::rmg::emit::theater_name(options.theater),
     );
-    map.set(
-        "Size",
-        &format!("0,0,{},{}", geometry.map_w, geometry.map_h),
-    );
+    map.set("Size", &format!("0,0,{width},{height}"));
     map.set(
         "LocalSize",
-        &format!("2,5,{},{}", geometry.gen_w, geometry.gen_h),
+        &format!("{left},{top},{local_width},{local_height}"),
     );
     map.set("Level", "4");
     let mut ini = IniFile::from_sections([map]);
