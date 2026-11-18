@@ -345,7 +345,10 @@ know this drops the packet and cancels at its 3-minute loading limit. Relays of
 different link versions therefore never start a match together.
 
 The RAM hot cache retains4,096 entries/2 MiB per room under a64 MiB global
-budget. Eviction from this cache does not evict match history: every complete
+budget. Across rooms, the relay evicts the oldest cached entry by its estimated
+frame due time. After a speed change, that estimate follows the same start clock
+as sealing, including a follower's clock corrections. Eviction from this cache
+does not evict match history: every complete
 canonical frame first appends to the full-match disk journal. The data
 file uses a length prefix per entry and the separate offset index is also on
 disk; no full-match index grows in RAM. Push and Pull share one reader for the
