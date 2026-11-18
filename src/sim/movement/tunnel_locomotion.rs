@@ -104,8 +104,23 @@ impl TunnelRuntime {
         Self::default()
     }
 
-    pub(crate) fn state(&self) -> TunnelState {
+    pub fn state(&self) -> TunnelState {
         self.state
+    }
+
+    /// `DigTimer.start` and `DigTimer.duration`. `Z_Adjust 0x729EDA` divides the
+    /// elapsed count by the total to get its interpolation fraction.
+    pub fn dig_timer(&self) -> (u32, u32) {
+        (self.timer_start, self.timer_duration)
+    }
+
+    /// Fixture seam for the presentation tests, which need one specific state
+    /// and timer without driving a whole `process` cycle.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_state_and_timer_for_test(&mut self, state: TunnelState, start: u32, duration: u32) {
+        self.state = state;
+        self.timer_start = start;
+        self.timer_duration = duration;
     }
 
     /// `In_Which_Layer 0x72A1A0`: `state == 4` is the only underground state.
