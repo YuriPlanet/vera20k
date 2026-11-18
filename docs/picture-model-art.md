@@ -451,16 +451,16 @@ current: say what was done, what was not, and what comes next.
   mean frame 3.74 ms against main's 4.09 ms; captures at Options zoom 100
   and 150 differ only by the ore field's run-to-run shimmer.
 - Per-chain off-state check, at the commit that closes each chain against
-  its main base. Chains 2 and 3 were written as one branch
-  (`feature/pm-doors-preview`) and their drawing landed in one commit
-  (fbb6a184f), so chain 2's data stage has its own check and the shared
-  drawing is checked once at 7329d45f0:
+  its main base. Chain 3's drawing merged at f88f256f6 (fbb6a184f also
+  draws building bodies); chain 2 closes after its door art and
+  placement preview at 7329d45f0, with its data stage checked on its own:
 
   | Chain | Closing commit |
   |---|---|
   | 1 animations | f657ba0bc |
-  | 2 buildings (Buildup, rubble, random maps) | c21c12b83 |
-  | 2 and 3 drawing (buildings, infantry/SHP vehicles/projectiles) | 7329d45f0 |
+  | 2 buildings, data stage (Buildup, rubble, random maps) | c21c12b83 |
+  | 2 buildings, doors and placement preview | 7329d45f0 |
+  | 3 infantry, SHP vehicles, projectiles | f88f256f6 |
   | 6 zoomed drawing | 8c60674ec |
   | 4 voxel vehicles and aircraft | 7b8c7b74d |
   | 5 building guns, voxel projectiles, debris | c3245a66e |
@@ -478,6 +478,17 @@ current: say what was done, what was not, and what comes next.
   `tools/map_observation.py`) at 540b740c7: wheel 0.8 byte-identical at all
   three steps; wheel 1.5 differs in 35–46 pixels, as many as two base runs
   differ from each other (31–51).
+  Main itself cannot take a wheel capture (its profile reader rejects
+  `wheel_zoom`), so this base differs from main only in the capture
+  harness, not in game code.
+- Sub-stage commits: chain 1 d8ef7b227, d02a65cd1, f657ba0bc; chain 2
+  069a40de0, ce4eb2abc, 46e41fc01, 71f4e39f6, 30ef67273, b0983cd06; chain 3
+  fbb6a184f; chain 6 522704da9, f9a020778; chains 4 and 5 26ccde003,
+  7144a78c6, 7b8c7b74d and the chain 5 residual branch. At the user's
+  request the logic was written and committed before compiling; the first
+  build and lib-test run followed (ba93ce979), its failures were fixed in
+  bb588c2db, and every later commit was made after its focused tests
+  passed.
 
 ### Next steps, in order
 
