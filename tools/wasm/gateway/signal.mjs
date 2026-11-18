@@ -28,15 +28,16 @@ function ipv6Groups(address) {
     ? groups.map(group => parseInt(group, 16)) : null;
 }
 
-/// One home network: a full public IPv4, or the /64 prefix of a public IPv6.
-export function groupKey(address) {
+/// One home network: a full public IPv4, or the /64 prefix of a public IPv6
+/// (`ipv6Prefix` 16-bit groups of it; 3 gives the /48).
+export function groupKey(address, ipv6Prefix = 4) {
   if (typeof address !== 'string') return null;
   const value = address.trim().replace(/^::ffff:(?=\d+\.)/i, '');
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(value)) {
     return value.split('.').every(part => Number(part) <= 255) ? `4:${value}` : null;
   }
   const groups = ipv6Groups(value);
-  return groups ? `6:${groups.slice(0, 4).map(group => group.toString(16)).join(':')}` : null;
+  return groups ? `6:${groups.slice(0, ipv6Prefix).map(group => group.toString(16)).join(':')}` : null;
 }
 
 /// The socket peer, or one configured header written by a trusted reverse
