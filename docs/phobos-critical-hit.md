@@ -95,6 +95,15 @@ while the effect is held; see [AttachEffect](phobos-attach-effect.md).
   (`rules/warhead_type.rs:1033`) reaches `sim::combat::combat_aoe`
   (`:661`, `:715`), which measures the cylinder instead of the sphere. The
   earlier "no reader" note here was stale.
-- Phobos' `MapClass_DamageArea` hook is gated on `InDamageArea`, which a
-  bullet detonation clears; VERA's direct area calls always run the pass, so a
-  warhead detonated both ways can visit its targets an extra time. Pre-existing.
+- Phobos' `MapClass_DamageArea` hook is gated on a per-`WarheadTypeExt` latch,
+  `InDamageArea`: `true` from the constructor (`Ext/WarheadType/Body.h:537`),
+  cleared right after the bullet hook's own `Detonate`
+  (`Ext/WarheadType/Hooks.cpp:18..19`, hook `0x46920B`) so the native area
+  damage that same bullet triggers does not run the pass twice, and re-armed at
+  `BulletClass_Logics_Extras` (`0x469AA4`,
+  `Ext/Bullet/Hooks.DetonateLogics.cpp:556`) for the detonations that follow.
+  VERA has no per-type latch and runs the pass for every direct area call, so a
+  warhead detonated both by a bullet and by a `DamageArea` reached from that
+  same detonation can visit its targets an extra time. No retail warhead is
+  known to reach both; the latch would add cross-call mutable state to a type
+  projection.

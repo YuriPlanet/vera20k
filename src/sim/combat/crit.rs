@@ -45,11 +45,18 @@
 //!   that receives non-zero damage, with the attacker's house. VERA keeps the
 //!   pass here on the same targets with per-target dice and no prefix draws,
 //!   so the targets and the order against the receivers differ.
-//! - Phobos gates its `MapClass_DamageArea` hook on `InDamageArea`, which the
-//!   bullet hook clears (`WarheadType/Hooks.cpp:18..19`, `39..52`). VERA runs
-//!   the pass for every direct area call, so a warhead detonated both by a
-//!   bullet and later by an external `DamageArea` can visit its targets an
-//!   extra time. Pre-existing; no retail warhead is known to reach both.
+//! - Phobos gates its `MapClass_DamageArea` hook on a per-`WarheadTypeExt`
+//!   latch, `InDamageArea`: `true` from the constructor
+//!   (`Ext/WarheadType/Body.h:537`), set `false` right after the bullet hook's
+//!   own `Detonate` (`Hooks.cpp:18..19`) so the native area damage the same
+//!   bullet triggers does not run the pass a second time, and set back `true`
+//!   at `BulletClass_Logics_Extras` (`0x469AA4`,
+//!   `Ext/Bullet/Hooks.DetonateLogics.cpp:556`) for the detonations that
+//!   follow. VERA has no per-type latch: every direct area call runs the pass,
+//!   so a warhead detonated both by a bullet and by an `DamageArea` reached
+//!   from that same detonation can visit its targets twice. Porting the latch
+//!   would add cross-call mutable state to a type projection; no retail
+//!   warhead is known to reach both paths.
 
 use super::effects::DeathEffects;
 use super::receiver_call::EntityDamageEvent;
