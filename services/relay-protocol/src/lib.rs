@@ -26,19 +26,17 @@ mod link;
 pub mod netsim;
 mod sequenced;
 pub mod varint;
-pub use link::{ClientLinkStats, HopFeedback, LinkState, OrderingGap, ReaderLinkStats, RecvWindow};
-pub use sequenced::federation::{
-    FEDERATION_LOST, FederationOutcome, MAX_FEDERATED_RELAYS, sign_federation_roster,
-};
-pub use sequenced::pack::{decode_pack_v2, encode_pack_v2};
+#[cfg(any(test, feature = "test-support"))]
+pub use link::ReaderLinkStats;
+pub use link::{ClientLinkStats, HopFeedback, LinkState, OrderingGap, RecvWindow};
+pub use sequenced::federation::{FEDERATION_LOST, FederationOutcome, MAX_FEDERATED_RELAYS};
 pub use sequenced::watch::{
     MAX_ROOM_WATCHERS, MAX_WATCH_DELAY_SECONDS, WATCH_TICKET_VERSION, WatchTicket,
 };
 pub use sequenced::{
-    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY,
-    ORDERING_CERTIFICATE_LEN, ORDERING_CERTIFICATE_V2_LEN, ORDERING_PULL_LIMIT, OrderEntry,
-    OrderError, OrderEvent, OrderPace, OrderStatus, OrderingCertificate,
-    is_ordering_certificate_len, paced_rates, turn_frames, turn_ms,
+    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY, OrderEntry,
+    OrderError, OrderEvent, OrderPace, OrderStatus, OrderingCertificate, paced_rates, turn_frames,
+    turn_ms,
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -1647,8 +1645,9 @@ fn server_packet(
     peer.sent = sequence;
     let pack =
         (kind == CONTROL && payload.first() == Some(&sequenced::PACK_EVENT)).then_some(payload);
-    peer.link
-        .record_send(peer.sent, pack, send_kind, bytes.len(), now_ms);
+    peer.link.record_send(peer.sent, pack, send_kind, now_ms);
+    #[cfg(any(test, feature = "test-support"))]
+    peer.link.count_send(send_kind, bytes.len());
     Ok(ForwardDatagram {
         endpoint: peer.endpoint,
         bytes,

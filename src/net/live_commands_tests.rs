@@ -3992,20 +3992,22 @@ fn sequenced_lost_first_uplink_is_resent_until_the_subscription_pushes() {
                     .unwrap_or_default(),
             );
         }
-        replies.extend(relay.drain_ordering_push(now_ms, unix));
+        let pushed = relay.drain_ordering_push(now_ms, unix);
+        // The relay pushes only to a subscribed reader.
+        if subscribed.is_none()
+            && pushed
+                .iter()
+                .any(|packet| packet.endpoint == second_address)
+        {
+            subscribed = Some(step);
+        }
+        replies.extend(pushed);
         for packet in replies {
             socket.send_to(&packet.bytes, packet.endpoint).unwrap();
         }
         settle_loopback();
         for (world, boundary) in worlds.iter_mut().zip(&boundaries) {
             production_frame(world, &rules, boundary);
-        }
-        if subscribed.is_none()
-            && relay
-                .reader_link_stats([17; 16], 1)
-                .is_some_and(|stats| stats.subscribed)
-        {
-            subscribed = Some(step);
         }
     }
     let (dropped, subscribed) = (dropped.unwrap(), subscribed.unwrap());

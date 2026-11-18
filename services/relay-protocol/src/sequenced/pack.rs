@@ -176,7 +176,7 @@ fn write_entry(record: &[u8], context: &mut Context, out: &mut Vec<u8>) -> Undo 
 /// frames non-decreasing, kinds and layouts as in the module table with
 /// `P` of 1..=`ORDERING_BATCH_CAPACITY` bytes. The relay's history only
 /// holds such records; anything else is a caller bug (debug assertion).
-pub fn encode_pack_v2(records: &[Vec<u8>], datagrams: usize) -> Vec<(Vec<u8>, usize)> {
+pub(crate) fn encode_pack_v2(records: &[Vec<u8>], datagrams: usize) -> Vec<(Vec<u8>, usize)> {
     let records: Vec<&[u8]> = records.iter().map(Vec::as_slice).collect();
     pack(&records, datagrams, true)
 }
@@ -273,7 +273,7 @@ pub(crate) fn pack_v2_range(pack: &[u8]) -> Option<(u64, u8)> {
 ///
 /// So every accepted pack is exactly what `encode_pack_v2` writes for its
 /// records.
-pub fn decode_pack_v2(payload: &[u8]) -> Result<Vec<Vec<u8>>, RelayError> {
+pub(crate) fn decode_pack_v2(payload: &[u8]) -> Result<Vec<Vec<u8>>, RelayError> {
     if payload.first() != Some(&PACK_EVENT) || payload.len() > PACK_LIMIT {
         return Err(RelayError::Malformed);
     }

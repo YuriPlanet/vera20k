@@ -24,8 +24,8 @@ pub(crate) use measure::{
 };
 
 use crate::{
-    ClientSession, OrderError, OrderEvent, OrderPace, OrderStatus, RelayError, RelayServer,
-    ReplayWindow, ServerEvent,
+    ClientSession, OrderError, OrderEvent, OrderPace, OrderStatus, RelayError, ReplayWindow,
+    ServerEvent,
 };
 
 /// A direction's link state (spec §5.2), first match wins: offline, then
@@ -189,6 +189,7 @@ pub struct ClientLinkStats {
 /// the newest admitted hop of that source. Counters are per hop: a renewed
 /// hop is a new `Peer` whose counters start from zero, while it keeps the
 /// measured loss, the state and their hold timers (spec §4.7).
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ReaderLinkStats {
     /// Whether this hop holds a push subscription (an UPLINK with PUSH within
@@ -588,7 +589,7 @@ impl ClientSession {
 }
 
 #[cfg(any(test, feature = "test-support"))]
-impl RelayServer {
+impl crate::RelayServer {
     /// Test support only, for tests that must start from a good downlink,
     /// such as the replay of spec appendix A: presets the downlink of
     /// `source`'s hop in `room` as measured, one fold done at 0‰, so the
@@ -609,9 +610,7 @@ impl RelayServer {
         peer.evaluate_reader(heard);
         true
     }
-}
 
-impl RelayServer {
     /// A snapshot of the downlink of `source`'s newest admitted hop in
     /// `room`; see [`ReaderLinkStats`]. `None` when the relay holds no such
     /// room or no admitted hop for that source.
@@ -806,8 +805,10 @@ pub(crate) struct ReaderLink {
     pub(crate) congested_at: Option<u64>,
     pub(crate) last_heard_ms: u64,
     pub(crate) clock: StateClock,
-    pub(crate) packets_by_kind: [u64; 5],
-    pub(crate) bytes_by_kind: [u64; 5],
+    #[cfg(any(test, feature = "test-support"))]
+    packets_by_kind: [u64; 5],
+    #[cfg(any(test, feature = "test-support"))]
+    bytes_by_kind: [u64; 5],
 }
 
 impl ReaderLink {
@@ -827,7 +828,9 @@ impl ReaderLink {
             congested_at: None,
             last_heard_ms: now_ms,
             clock,
+            #[cfg(any(test, feature = "test-support"))]
             packets_by_kind: [0; 5],
+            #[cfg(any(test, feature = "test-support"))]
             bytes_by_kind: [0; 5],
         }
     }
@@ -875,13 +878,12 @@ impl ReaderLink {
     }
 
     /// Logs one datagram sent on this hop (spec §4.2): `pack` is the control
-    /// payload when it is a PACK, `bytes` the whole datagram length.
+    /// payload when it is a PACK.
     pub(crate) fn record_send(
         &mut self,
         sequence: u64,
         pack: Option<&[u8]>,
         kind: u8,
-        bytes: usize,
         now_ms: u64,
     ) {
         let (first, count) = pack.map_or((0, 0), |pack| {
@@ -895,6 +897,11 @@ impl ReaderLink {
             kind,
             lost: false,
         };
+    }
+
+    /// Counts one datagram of `bytes` sent as `kind`, for `reader_link_stats`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn count_send(&mut self, kind: u8, bytes: usize) {
         self.packets_by_kind[usize::from(kind)] += 1;
         self.bytes_by_kind[usize::from(kind)] += bytes as u64;
     }

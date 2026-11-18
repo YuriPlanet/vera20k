@@ -12,10 +12,10 @@ pub(crate) mod pack;
 pub(crate) mod watch;
 
 /// A `VO1C` certificate; `VO2C` adds one flags byte.
-pub const ORDERING_CERTIFICATE_LEN: usize = 66;
-pub const ORDERING_CERTIFICATE_V2_LEN: usize = 67;
+const ORDERING_CERTIFICATE_LEN: usize = 66;
+const ORDERING_CERTIFICATE_V2_LEN: usize = 67;
 pub const ORDERING_BATCH_CAPACITY: usize = 512;
-pub const ORDERING_PULL_LIMIT: usize = 32;
+const ORDERING_PULL_LIMIT: usize = 32;
 const CERTIFICATE_MAGIC: &[u8; 4] = b"VO1C";
 const CERTIFICATE_DOMAIN: &[u8] = b"VERA20k relay ordering certificate v1\0";
 const CERTIFICATE_V2_MAGIC: &[u8; 4] = b"VO2C";
@@ -154,7 +154,7 @@ pub struct OrderingCertificate {
 }
 
 /// Either certificate length, for a READY payload's split.
-pub fn is_ordering_certificate_len(length: usize) -> bool {
+fn is_ordering_certificate_len(length: usize) -> bool {
     length == ORDERING_CERTIFICATE_LEN || length == ORDERING_CERTIFICATE_V2_LEN
 }
 
@@ -988,6 +988,7 @@ impl PushSubscription {
     }
 
     /// This subscription's part of `RelayServer::reader_link_stats`.
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) fn fill_stats(&self, stats: &mut crate::ReaderLinkStats) {
         stats.acked_next = self.acknowledged_next;
         stats.sent_next = self.sent_next;
