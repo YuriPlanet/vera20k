@@ -363,7 +363,7 @@ impl NetworkCommandBoundary for FrameClientBoundary<'_> {
                 "FRAMEINFO requires the host's checksum owner".to_owned(),
             )
         })?;
-        let info = crate::net::lockstep::FrameInfo::decode(record).ok_or_else(|| {
+        let info = crate::sim::command_queue::FrameInfo::decode(record).ok_or_else(|| {
             NetworkCommandError::Unavailable(
                 "network comparison received a non-FRAMEINFO record".to_owned(),
             )
@@ -634,7 +634,7 @@ pub(super) mod network_command_tests {
         let mut checksums = crate::sim::command_queue::FrameChecksumState::default();
         checksums.record_frame_checksum(0, 0);
         checksums.record_frame_checksum(255, expected ^ 2);
-        let info = crate::net::lockstep::FrameInfo {
+        let info = crate::sim::command_queue::FrameInfo {
             house_id: 0,
             event_frame: 256,
             checksum: expected ^ 1,

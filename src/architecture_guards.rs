@@ -1252,8 +1252,7 @@ fn sim_names_no_upper_layer_root_even_in_tests() {
         offenders.is_empty(),
         "sim/ references upper-layer root(s): {offenders:?}\n\
          Sim tests that need render/net live in those layers' boundary test \
-         modules (e.g. render::locomotor_visual tests, \
-         net::lockstep_sim_convergence_tests), never inside sim/."
+         modules (e.g. render::locomotor_visual tests), never inside sim/."
     );
 }
 
