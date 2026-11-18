@@ -777,11 +777,10 @@ pub(crate) fn check_build_limit(
 ///
 /// RESIDUAL: both native bodies also call `RemoveProduction` to prune queued
 /// copies when a group reaches its limit (`Body.cpp:896,943,962,995,1008,
-/// 1152,1179`). This gate is a query and does not mutate the queue. Trigger:
-/// a group at or over its limit with extra copies queued. Effect: the extra
-/// copies stay queued instead of being removed. Frequency: only when a
-/// player over-queues a grouped type. Risk: more copies complete than the
-/// group allows, unless the dequeue path re-checks `CanBuild`.
+/// 1152,1179`). This gate is a query and does not mutate the queue, so the
+/// prune runs from the queue-admission owner instead
+/// ([`phobos_trim_build_limit_group_queue`]); the `UpgradeCheck` arm's own
+/// prune (`Body.cpp:896-1008`) has no mutable caller yet.
 #[cfg(feature = "phobos")]
 struct BuildLimitGroupCensus {
     /// `Nums` after the ExtraLimit pass.
@@ -802,6 +801,8 @@ struct BuildLimitGroupCensus {
     /// `obj`'s own `BuildLimitGroup.Factor`.
     factor: i32,
     content_if_any: bool,
+    /// `BuildLimitGroup_NotBuildableIfQueueMatch`, type value over the global.
+    not_buildable: bool,
 }
 
 #[cfg(feature = "phobos")]
@@ -932,44 +933,87 @@ fn build_limit_group_census(
         content_if_any: group
             .content_if_any_match
             .unwrap_or(rules.phobos_globals.build_limit_group_content_if_any_match),
+        not_buildable: group.not_buildable_if_queue_match.unwrap_or(
+            rules
+                .phobos_globals
+                .build_limit_group_not_buildable_if_queue_match,
+        ),
     })
+}
+
+/// What `ReachedBuildLimit` answers and what it asks the queue owner to prune:
+/// a non-negative entry means "drop that many queued copies of the queried
+/// type", `-1` means every copy (`RemoveProduction @ Ext/House/Body.cpp:
+/// 768-784` calling `FactoryClass::RemoveFromQueue @ 0x004CA620`).
+#[cfg(feature = "phobos")]
+struct BuildLimitGroupGate {
+    reached: bool,
+    removals: Vec<i32>,
 }
 
 /// `HouseExt::ReachedBuildLimit @ Ext/House/Body.cpp:1036-1188`, the gate
 /// GreyCameo calls with `ignoreQueued=false`. It returns true on a
-/// queue-inclusive reach; `NotBuildableIfQueueMatch` only selects the
-/// `RemoveProduction` argument, never the return value, and the count is
+/// queue-inclusive reach; `NotBuildableIfQueueMatch` only widens the
+/// `RemoveProduction` calls, never the return value, and the count is
 /// `CountOwnedNow`. The multi-limit arm uses Phobos's
 /// `owned * (Factor - limits[i])` formula (mathematically different from
 /// `UpgradeCheck`'s `owned * Factor - limits[i]`; a Phobos defect kept here
-/// because it is what the grey-out sees).
+/// because it is what the grey-out sees). Every `reached` arm carries the
+/// trim native performs on the way out.
 #[cfg(feature = "phobos")]
-fn build_limit_group_reached(
+fn build_limit_group_gate(
     sim: &Simulation,
     rules: &RuleSet,
     owner: InternedId,
     obj: &ObjectType,
-) -> bool {
+) -> BuildLimitGroupGate {
+    let unreached = || BuildLimitGroupGate {
+        reached: false,
+        removals: Vec::new(),
+    };
     let group = &obj.phobos_build_limit_group;
     if group.types.is_empty() || group.nums.is_empty() {
-        return false;
+        return unreached();
     }
     let Some(c) = build_limit_group_census(sim, rules, owner, obj) else {
-        return false;
+        return unreached();
     };
     let factor = c.factor;
     if c.limits.len() == 1 {
         let mut count = 0i32;
         let mut queued = 0i32;
+        let mut inside = false;
         for i in 0..c.members.len() {
             count = count.wrapping_add(c.owned_now[i].wrapping_mul(c.member_factor[i]));
             queued = queued.wrapping_add(c.queued[i].wrapping_mul(c.member_factor[i]));
+            if c.members[i].eq_ignore_ascii_case(&obj.id) {
+                inside = true;
+            }
         }
         let num = count.wrapping_sub(c.limits[0]);
-        return num.wrapping_add(queued) >= 1i32.wrapping_sub(factor);
+        if num.wrapping_add(queued) < 1i32.wrapping_sub(factor) {
+            return unreached();
+        }
+        let removals = if inside {
+            vec![
+                num.wrapping_add(queued)
+                    .wrapping_add(factor)
+                    .wrapping_sub(1)
+                    / factor,
+            ]
+        } else if num >= 1i32.wrapping_sub(factor) || c.not_buildable {
+            vec![-1]
+        } else {
+            Vec::new()
+        };
+        return BuildLimitGroupGate {
+            reached: true,
+            removals,
+        };
     }
     let size = c.limits.len().min(c.members.len());
     let mut reached = true;
+    let mut real_reached = true;
     for i in 0..size {
         let queued = c.queued[i].wrapping_mul(c.member_factor[i]);
         let num = c.owned_now[i].wrapping_mul(c.member_factor[i].wrapping_sub(c.limits[i]));
@@ -977,17 +1021,106 @@ fn build_limit_group_reached(
         let with_queued = num.wrapping_add(queued);
         if item && with_queued >= 1i32.wrapping_sub(factor) {
             if c.content_if_any {
-                return true;
+                let removals = if num >= 1i32.wrapping_sub(factor) || c.not_buildable {
+                    vec![
+                        num.wrapping_add(queued)
+                            .wrapping_add(factor)
+                            .wrapping_sub(1)
+                            / factor,
+                    ]
+                } else {
+                    Vec::new()
+                };
+                return BuildLimitGroupGate {
+                    reached: true,
+                    removals,
+                };
+            } else if num < 1i32.wrapping_sub(factor) {
+                real_reached = false;
             }
         } else if !item && with_queued >= 0 {
             if c.content_if_any {
-                return true;
+                // Native takes the same `-1` in both sub-arms.
+                return BuildLimitGroupGate {
+                    reached: true,
+                    removals: vec![-1],
+                };
+            } else if num < 0 {
+                real_reached = false;
             }
         } else {
             reached = false;
         }
     }
-    reached
+    if !reached {
+        return unreached();
+    }
+    // `realReached || NotBuildableIfQueueMatch`: the trailing prune.
+    BuildLimitGroupGate {
+        reached: true,
+        removals: if real_reached || c.not_buildable {
+            vec![-1]
+        } else {
+            Vec::new()
+        },
+    }
+}
+
+/// The boolean half, for the read-only gates (`GreyCameo`, `CanBuild`).
+#[cfg(feature = "phobos")]
+fn build_limit_group_reached(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    obj: &ObjectType,
+) -> bool {
+    build_limit_group_gate(sim, rules, owner, obj).reached
+}
+
+/// `RemoveProduction @ Ext/House/Body.cpp:768-784`: resolve the queried type's
+/// own factory, then drop `num` queued copies (`-1` = all it holds). The held
+/// product stays; native's loop is a no-op once no queued copy is left.
+#[cfg(feature = "phobos")]
+fn phobos_remove_production(sim: &mut Simulation, owner: InternedId, obj: &ObjectType, num: i32) {
+    let Some(type_id) = sim.interner.get(&obj.id) else {
+        return;
+    };
+    let category = super::production_tech::production_category_for_object(obj);
+    let total = sim
+        .production
+        .factories()
+        .count_total(owner, category, type_id);
+    let count = if num >= 0 { num.min(total) } else { total };
+    for _ in 0..count {
+        if !sim
+            .production
+            .factories_mut()
+            .remove_one_queued(owner, category, type_id)
+        {
+            break;
+        }
+    }
+}
+
+/// The queue half of `ReachedBuildLimit`: native runs the trim inside the
+/// grey query, which is read-only here, so the queue-admission owner applies
+/// the same `RemoveProduction` calls before it inspects the limit
+/// (`queue_production` in `factory_lifecycle.rs`). A gate that did not reach
+/// trims nothing.
+#[cfg(feature = "phobos")]
+pub(crate) fn phobos_trim_build_limit_group_queue(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    obj: &ObjectType,
+) {
+    let gate = build_limit_group_gate(sim, rules, owner, obj);
+    if !gate.reached {
+        return;
+    }
+    for num in gate.removals {
+        phobos_remove_production(sim, owner, obj, num);
+    }
 }
 
 /// `HouseExt::BuildLimitGroupUpgradeCheck @ Ext/House/Body.cpp:802-1013`,

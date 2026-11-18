@@ -250,6 +250,10 @@ pub(crate) fn enqueue_selected(
     }
     let enqueue_order = sim.production.next_enqueue_order();
     let cost = sim.cost_of(owner_id, obj, rules);
+    // The trim `ReachedBuildLimit` performs on the way out of its grey query
+    // (`Ext/House/Body.cpp:768-784`); the query itself must stay read-only.
+    #[cfg(feature = "phobos")]
+    super::can_build::phobos_trim_build_limit_group_queue(sim, rules, owner_id, obj);
     let at_build_limit = check_build_limit(sim, rules, owner_id, obj);
     let outcome = sim.production.factories_mut().enqueue(
         owner_id,

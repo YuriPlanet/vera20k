@@ -203,13 +203,15 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 
 ### 全局已知残渣（早前链条，仍需实机抽查）
 - **BuildLimitGroup 的 `RemoveProduction`**（`docs/phobos-build-limit-group.md`）：
-  Phobos `ReachedBuildLimit` / `BuildLimitGroupUpgradeCheck`
-  （`Ext/House/Body.cpp:782-800`）在灰化/CanBuild 查询里删同型队列，VERA 的两个
-  owner 都是纯查询（`sim::production::can_build::check_build_limit` 取
-  `&Simulation`，调用点含 UI 绘制与 sim 逻辑约 20 处），所以 `NotBuildableIfQueueMatch`
-  仍是唯一未接的读者。触发：组上限已满且队列里有同名份；影响：cameo 灰化但队列不被清空；
-  频率：玩家超额排队；风险：可能多完成几份。要接它得把灰化 owner 变成可变事务，
-  不能只在一处加 `&mut`。
+  灰化/`CanBuild` 的 owner 仍是纯查询，但灰化臂的裁剪已接线（2026-11-18）——
+  `check_build_limit` 的 gate 返回裁剪意图（`BuildLimitGroupGate`），队列入场 owner
+  `queue_production` 调 `phobos_trim_build_limit_group_queue` 应用
+  （`FactoryRegistry::remove_one_queued`，对应 `FactoryClass::RemoveFromQueue
+  @ 0x004CA620`，不退款、保留 held 产物）。`NotBuildableIfQueueMatch` 因此有了读者
+  （`Body.cpp:1179` 的尾裁剪）。残余：`BuildLimitGroupUpgradeCheck`
+  （`Body.cpp:896-1008`）自己的四处裁剪仍无可变调用者，其 `CanBuild` owner 与 UI 共用。
+  触发：`PowersUp.Buildings` 项经 CanBuild 门超额排队；影响：这些副本留存；
+  频率：升级宿主 + 组上限同时使用的 mod；风险：低。
 - **残渣文档已按 `src` 对齐（2026-11-18）**：`phobos-slaved.md`（`Slaved.OwnerWhenMasterKilled`
   四值分派已接线并有 `slave_manager_cycle_tests` 覆盖）、`phobos-spawns-queue.md`
   （`InitialSpawnsNumber=`）、`phobos-hover-drown.md`（`FallingDownDamage` /
