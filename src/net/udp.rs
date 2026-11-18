@@ -34,10 +34,13 @@ pub fn browser_proxy_url() -> &'static str {
     }
 }
 
-use vera20k_relay_protocol::{ABSENT_MS, ClientSession, RelayError, ServerEvent};
+use vera20k_relay_protocol::{
+    ABSENT_MS, ClientSession, HOP_HANDSHAKE_INTERVAL_MS, HOP_PING_INTERVAL_MS,
+    HOP_READINESS_TIMEOUT_MS, LEAVE_ATTEMPTS, LEAVE_INTERVAL_MS, RelayError, ServerEvent,
+};
 pub use vera20k_relay_protocol::{
     CertificatePacing, MAX_PEERS as RELAY_MAX_PEERS, OrderingCertificate, Ticket as RelayTicket,
-    peer_endpoint as relay_peer_endpoint,
+    WatchTicket as RelayWatchTicket, peer_endpoint as relay_peer_endpoint,
 };
 
 #[cfg(any(test, feature = "test-support"))]
@@ -48,7 +51,7 @@ pub mod test_support {
 
 use super::global::{
     GLOBAL_HEADER_LEN, GlobalChannel, GlobalConfig, GlobalDestination, GlobalMessage,
-    GlobalReceiveError,
+    GlobalReceiveError, with_port_override,
 };
 use super::lan_messages::{SessionScope, ingame::LoadingProgressMessage};
 use super::reliable::{LanConnections, ReceiveError, ReceivedMessage, udp_checksum};
@@ -76,13 +79,23 @@ const IO_PUMP_INTERVAL: Duration = Duration::from_millis(6);
 // Scope admission precedes every global/private ACK, sequence and receive cache.
 const LAN_SCOPE_MAGIC: &[u8; 4] = b"VLS\x01";
 const LAN_SCOPE_HEADER_LEN: usize = 4 + 16 + 8;
-// Explicit Leave is resent every 16 wall buckets (256 ms) until the relay
-// acknowledges it. A relay that answers none of these attempts (about a
-// minute) is gone or unreachable: release the route rather than block every
-// later online admission. The relay then treats the place as a lost
-// connection, and the next match's newer generation supersedes it
-// (services/relay/README.md).
-const RELAY_LEAVE_ATTEMPTS: u16 = 235;
+// The relay session's cadences (`vera20k_relay_protocol`) in 16 ms wall
+// buckets. Explicit Leave is resent until the relay acknowledges it. A relay
+// that answers none of `LEAVE_ATTEMPTS` (about a minute) is gone or
+// unreachable: release the route rather than block every later online
+// admission. The relay then treats the place as a lost connection, and the
+// next match's newer generation supersedes it (services/relay/README.md).
+const RELAY_LEAVE_TICKS: u32 = (LEAVE_INTERVAL_MS / 16) as u32;
+const RELAY_PING_TICKS: u32 = (HOP_PING_INTERVAL_MS / 16) as u32;
+const RELAY_HANDSHAKE_TICKS: u32 = (HOP_HANDSHAKE_INTERVAL_MS / 16) as u32;
+const RELAY_READINESS_TICKS: u32 = (HOP_READINESS_TIMEOUT_MS / 16) as u32;
+// Whole buckets, so these ticks and the netsim's 16 ms bucket clock agree.
+const _: () = assert!(
+    LEAVE_INTERVAL_MS % 16 == 0
+        && HOP_PING_INTERVAL_MS % 16 == 0
+        && HOP_HANDSHAKE_INTERVAL_MS % 16 == 0
+        && HOP_READINESS_TIMEOUT_MS % 16 == 0
+);
 // The relay retires a started player it has not heard for `ABSENT_MS`
 // (`retire_absent`, services/relay-protocol/src/sequenced.rs), and drops a
 // lapsed ticket unanswered, so nothing tells a game that its place is gone.
@@ -90,6 +103,24 @@ const RELAY_LEAVE_ATTEMPTS: u16 = 235;
 // released, in 16 ms service buckets: the relay counts from this game's last
 // packet and the game from the relay's last answer.
 const RELAY_ABSENT_TICKS: i32 = ((ABSENT_MS + 15_000) / 16) as i32;
+// VERA: the I/O worker answers for a game thread held up by a long frame or
+// a loading step, but not for one that is gone. Once the game thread has not
+// called `service` for 60 seconds, in 16 ms worker buckets, the worker leaves
+// a live relay route alone, so the relay hears the silence a closed game
+// leaves ("not responding" after 10 more seconds, removal after `ABSENT_MS`).
+// Ordinary frames and loading steps service far more often; a frozen loader
+// is still dropped by the relay no sooner than 60 seconds after this.
+const GAME_STALL_TICKS: i32 = (60_000 / 16) as i32;
+// Set once a panic ends the game (`stop_io_after_crash`).
+static GAME_CRASHED: AtomicBool = AtomicBool::new(false);
+
+/// The game is ending with a panic: from now on no I/O worker sends or
+/// receives for it. The crash box can stay up for as long as nobody clicks
+/// it; until then the relay and LAN peers hear the silence of a closed game.
+/// No Leave goes out, so the launcher can still resume the match.
+pub fn stop_io_after_crash() {
+    GAME_CRASHED.store(true, Ordering::Release);
+}
 
 /// One admitted route progresses from the existing global loading channel to
 /// private gameplay. Loading peers may finish on different service passes.
@@ -352,11 +383,15 @@ struct UdpIo {
     // App play runs the IO pump: the relay session then times datagrams to
     // the millisecond. Manual-clock consumers time them by `service`.
     precise_relay_clock: bool,
+    // The game thread's last `service`, on the worker's clock when it runs
+    // one (`GAME_STALL_TICKS`).
+    game_serviced: u32,
 }
 
 struct IoPump {
     stop: Arc<AtomicBool>,
     worker: JoinHandle<()>,
+    wall_bucket: fn() -> u32,
 }
 
 /// A short read of the existing I/O owner. Do not hold this guard across a
@@ -447,6 +482,7 @@ impl LanUdpTransport {
             let mut io = self.lock();
             io.pending_report = UdpServiceReport::default();
             io.use_precise_relay_clock();
+            io.game_serviced = wall_bucket();
         }
         let io = Arc::clone(&self.io);
         let stop = Arc::new(AtomicBool::new(false));
@@ -462,15 +498,18 @@ impl LanUdpTransport {
                         }
                         // Sampling before lock acquisition could time packets
                         // with a stale frame-start sample after contention.
-                        let report = io.service(wall_bucket(), IO_PUMP_RECEIVE_BUDGET);
-                        io.pending_report.accumulate(report);
+                        io.background_pass(wall_bucket(), GAME_CRASHED.load(Ordering::Acquire));
                     }
                     // Scheduling request only; spurious/late wakes still
                     // recheck stop and resample the clock on the next pass.
                     thread::park_timeout(IO_PUMP_INTERVAL);
                 }
             })?;
-        self.pump = Some(IoPump { stop, worker });
+        self.pump = Some(IoPump {
+            stop,
+            worker,
+            wall_bucket,
+        });
         Ok(())
     }
 
@@ -606,6 +645,14 @@ impl LanUdpTransport {
     pub fn relay_expires(&self) -> Option<u64> {
         self.lock().relay_expires()
     }
+    /// A watcher's route (relay README "Watchers"): how far behind the
+    /// players its relay holds the stream. `None` for a player's route.
+    pub fn relay_watch_delay(&self) -> Option<u32> {
+        self.lock()
+            .relay
+            .as_ref()
+            .and_then(|route| route.session.watch_delay_seconds())
+    }
     /// The relay answered nothing for longer than it keeps a silent player's
     /// place, so the route was released: its match cannot be returned to.
     pub fn relay_absent(&self) -> bool {
@@ -616,14 +663,13 @@ impl LanUdpTransport {
     /// The UDP owner retains only this transport capability, never simulation.
     pub fn set_ordering_certificate(&mut self, certificate: Vec<u8>) -> io::Result<()> {
         let mut io = self.lock();
-        let route = io
-            .relay
-            .as_mut()
-            .filter(|route| route.retiring.is_none())
-            .ok_or_else(|| io::Error::other("no relay route"))?;
+        let route =
+            active_relay(&mut io.relay).ok_or_else(|| io::Error::other("no relay route"))?;
         let parsed = vera20k_relay_protocol::OrderingCertificate::parse(&certificate)
             .map_err(relay_io_error)?;
-        if parsed.sources_mask & (1 << route.session.source()) == 0 {
+        // A watcher has no source of its own (relay README "Watchers").
+        if !route.session.is_watching() && parsed.sources_mask & (1 << route.session.source()) == 0
+        {
             return Err(io::Error::other(
                 "ordering certificate excludes local source",
             ));
@@ -636,11 +682,8 @@ impl LanUdpTransport {
     /// this route. Set it before the pump answers the first challenge.
     pub fn set_federation_roster(&mut self, roster: &[u8]) -> io::Result<()> {
         let mut io = self.lock();
-        let route = io
-            .relay
-            .as_mut()
-            .filter(|route| route.retiring.is_none())
-            .ok_or_else(|| io::Error::other("no relay route"))?;
+        let route =
+            active_relay(&mut io.relay).ok_or_else(|| io::Error::other("no relay route"))?;
         route.session.set_federation(roster).map_err(relay_io_error)
     }
 
@@ -661,6 +704,20 @@ impl LanUdpTransport {
         })
     }
 
+    /// A watcher's Ready, resent by the caller until the start (relay README
+    /// "Watchers"); see `ClientSession::configure_watch_at`.
+    pub(super) fn configure_watch(&mut self, agreement: [u8; 32]) -> io::Result<()> {
+        self.send_ordering(|route, now_ms| {
+            let cert = route
+                .ordering_certificate
+                .as_ref()
+                .ok_or(RelayError::Unregistered)?;
+            route
+                .session
+                .configure_watch_at(cert, agreement, now_ms, &mut route.encoded)
+        })
+    }
+
     /// See `ClientSession::set_ordering_restore`.
     pub(super) fn set_ordering_restore(&mut self, restoring: bool) {
         if let Some(route) = self.lock().relay.as_mut() {
@@ -670,11 +727,7 @@ impl LanUdpTransport {
 
     /// Runs `apply` on the current relay session, if any.
     fn with_session<T>(&mut self, apply: impl FnOnce(&mut ClientSession) -> T) -> Option<T> {
-        self.lock()
-            .relay
-            .as_mut()
-            .filter(|route| route.retiring.is_none())
-            .map(|route| apply(&mut route.session))
+        active_relay(&mut self.lock().relay).map(|route| apply(&mut route.session))
     }
 
     /// See `ClientSession::seal_ordering_batch`.
@@ -684,14 +737,21 @@ impl LanUdpTransport {
             .map_err(relay_io_error)
     }
 
+    /// See `ClientSession::ordering_accepted_through`.
+    pub(super) fn ordering_accepted_through(&self) -> Option<u64> {
+        self.lock()
+            .relay
+            .as_ref()
+            .filter(|route| route.retiring.is_none())?
+            .session
+            .ordering_accepted_through()
+    }
+
     /// See `ClientSession::queue_ordering_checksums`.
     pub fn queue_ordering_checksums(&mut self, samples: &[(u32, u32)]) -> io::Result<()> {
         let mut io = self.lock();
-        let route = io
-            .relay
-            .as_mut()
-            .filter(|route| route.retiring.is_none())
-            .ok_or_else(|| io::Error::other("no relay route"))?;
+        let route =
+            active_relay(&mut io.relay).ok_or_else(|| io::Error::other("no relay route"))?;
         let now_ms = route.now_ms();
         route
             .session
@@ -720,7 +780,7 @@ impl LanUdpTransport {
         turn_ms: u32,
     ) {
         let mut io = self.lock();
-        let Some(route) = io.relay.as_mut().filter(|route| route.retiring.is_none()) else {
+        let Some(route) = active_relay(&mut io.relay) else {
             return;
         };
         let now_ms = route.now_ms();
@@ -733,7 +793,7 @@ impl LanUdpTransport {
     pub(super) fn poll_uplink(&mut self) -> io::Result<bool> {
         let mut io = self.lock();
         let io = &mut *io;
-        let Some(route) = io.relay.as_mut().filter(|route| route.retiring.is_none()) else {
+        let Some(route) = active_relay(&mut io.relay) else {
             return Ok(false);
         };
         let now_ms = route.now_ms();
@@ -748,7 +808,7 @@ impl LanUdpTransport {
     pub(super) fn poll_repair_pull(&mut self) -> io::Result<bool> {
         let mut io = self.lock();
         let io = &mut *io;
-        let Some(route) = io.relay.as_mut().filter(|route| route.retiring.is_none()) else {
+        let Some(route) = active_relay(&mut io.relay) else {
             return Ok(false);
         };
         let now_ms = route.now_ms();
@@ -804,11 +864,8 @@ impl LanUdpTransport {
     ) -> io::Result<()> {
         let mut io = self.lock();
         let io = &mut *io;
-        let route = io
-            .relay
-            .as_mut()
-            .filter(|route| route.retiring.is_none())
-            .ok_or_else(|| io::Error::other("no relay route"))?;
+        let route =
+            active_relay(&mut io.relay).ok_or_else(|| io::Error::other("no relay route"))?;
         let now_ms = route.now_ms();
         encode(route, now_ms).map_err(relay_io_error)?;
         io.primary
@@ -907,13 +964,19 @@ impl LanUdpTransport {
     /// In worker mode, the caller's now may predate lengthy Logic/render work.
     /// Never apply it to I/O state. Wake the sole physical service owner and
     /// consume its aggregate once; manual-clock consumers retain exact service.
+    /// Each call also tells the worker the game thread is still there.
     pub fn service(&mut self, now_ticks: u32) -> UdpServiceReport {
-        if self.pump.is_some() {
-            self.wake();
-            std::mem::take(&mut self.lock().pending_report)
-        } else {
-            self.lock().service(now_ticks, usize::MAX)
+        let wall_bucket = self.pump.as_ref().map(|pump| pump.wall_bucket);
+        let mut io = self.lock();
+        // Sampled under the lock, as the worker samples its own.
+        io.game_serviced = wall_bucket.map_or(now_ticks, |bucket| bucket());
+        if wall_bucket.is_none() {
+            return io.service(now_ticks, usize::MAX);
         }
+        let report = std::mem::take(&mut io.pending_report);
+        drop(io);
+        self.wake();
+        report
     }
 
     pub fn pop_received(&mut self) -> Option<ReceivedMessage> {
@@ -1001,6 +1064,12 @@ impl RelayRoute {
                 .push_back(ReceivedOrderEvent { event, received_at });
         }
     }
+}
+
+/// The route that takes new ordering traffic: a retiring route only resends
+/// its Leave until the relay acknowledges it.
+fn active_relay(relay: &mut Option<RelayRoute>) -> Option<&mut RelayRoute> {
+    relay.as_mut().filter(|route| route.retiring.is_none())
 }
 
 struct RelayRetirement {
@@ -1091,6 +1160,7 @@ impl UdpIo {
             lan_scope: None,
             pending_report: UdpServiceReport::default(),
             precise_relay_clock: false,
+            game_serviced: 0,
         })
     }
 
@@ -1439,6 +1509,28 @@ impl UdpIo {
         }
     }
 
+    /// One pass of the I/O worker (`start_io_pump`) at its own `now_ticks`.
+    /// After a crash it does nothing; while the game thread has not serviced
+    /// a live relay route for `GAME_STALL_TICKS` it leaves that route alone,
+    /// keepalive and UPLINK heartbeat included, until the game services again.
+    /// A route being retired keeps its Leave retries, and a LAN transport
+    /// keeps its worker: a hidden lobby or room is serviced only from here.
+    fn background_pass(&mut self, now_ticks: u32, crashed: bool) {
+        // Signed, as `absent`: a game sample a bucket newer is no stall. A
+        // hang across the 2^28-bucket wrap (49.7 days of uptime) goes unseen
+        // until the game services again.
+        let stalled = self
+            .relay
+            .as_ref()
+            .is_some_and(|route| route.retiring.is_none())
+            && now_ticks.wrapping_sub(self.game_serviced) as i32 > GAME_STALL_TICKS;
+        if crashed || stalled {
+            return;
+        }
+        let report = self.service(now_ticks, IO_PUMP_RECEIVE_BUDGET);
+        self.pending_report.accumulate(report);
+    }
+
     ///541820 drains received datagrams before servicing private connections.
     /// Ordinary private/global ACKs use primary UDP7B3C5B even when received on
     /// the alternate socket.48C2CB/53FEC3 select alternate only for manager+4C,
@@ -1471,8 +1563,8 @@ impl UdpIo {
             if let Some(retiring) = route.retiring.as_mut() {
                 let due = retiring
                     .last_sent
-                    .is_none_or(|last| now_ticks.wrapping_sub(last) >= 16);
-                leave_unacknowledged = due && retiring.attempts == RELAY_LEAVE_ATTEMPTS;
+                    .is_none_or(|last| now_ticks.wrapping_sub(last) >= RELAY_LEAVE_TICKS);
+                leave_unacknowledged = due && retiring.attempts == LEAVE_ATTEMPTS;
                 if due && !leave_unacknowledged {
                     retiring.last_sent = Some(now_ticks);
                     retiring.attempts += 1;
@@ -1498,7 +1590,7 @@ impl UdpIo {
             } else {
                 if route
                     .last_response
-                    .is_some_and(|last| now_ticks.wrapping_sub(last) > 625)
+                    .is_some_and(|last| now_ticks.wrapping_sub(last) > RELAY_READINESS_TICKS)
                 {
                     route.session.forget_readiness();
                 }
@@ -1512,9 +1604,9 @@ impl UdpIo {
                 // initial admission retry once a second; established routes ping
                 // every two seconds. These wall buckets never enter simulation.
                 let interval = if route.session.is_ready() && route.renewing.is_none() {
-                    125
+                    RELAY_PING_TICKS
                 } else {
-                    62
+                    RELAY_HANDSHAKE_TICKS
                 };
                 if route
                     .last_probe
@@ -1549,6 +1641,7 @@ impl UdpIo {
                 }
                 // The IO thread's UPLINK heartbeat while the game thread is
                 // held up (spec §6.6); the session knows when one is due.
+                // A game gone for good sends none (`background_pass`).
                 let now_ms = route.now_ms();
                 if route.renewing.is_none()
                     && route.session.heartbeat_uplink(now_ms, &mut route.encoded)
@@ -1732,6 +1825,14 @@ fn drain_socket(
                 report.malformed_datagrams += 1;
                 continue;
             }
+            Err(error) if cfg!(windows) && error.raw_os_error() == Some(10054) => {
+                // WSAECONNRESET: Winsock reports the ICMP port-unreachable an
+                // earlier sendto drew on this later recvfrom. No datagram was
+                // read and the socket stays usable; the ones behind it follow.
+                // learn.microsoft.com/windows/win32/api/winsock/nf-winsock-recvfrom
+                record_io_error(report, channel, UdpIoOperation::Receive, error);
+                continue;
+            }
             Err(error) => {
                 record_io_error(report, channel, UdpIoOperation::Receive, error);
                 break;
@@ -1797,10 +1898,13 @@ fn drain_socket(
                         }
                         continue;
                     }
+                    // The session yields a candidate only CHALLENGE and the
+                    // READY that promotes it; anything else is dropped.
                     ServerEvent::Payload { .. }
                     | ServerEvent::Ordering(_)
                     | ServerEvent::OrderingPack(_) => {
-                        unreachable!("candidate is promoted on READY")
+                        report.malformed_datagrams += 1;
+                        continue;
                     }
                 }
             }
@@ -1819,11 +1923,11 @@ fn drain_socket(
                 }
                 Ok(ServerEvent::Payload { source, bytes }) => {
                     route.last_response = Some(now_ticks);
-                    (
-                        bytes,
-                        relay_peer_endpoint(source).expect("authenticated source range"),
-                        None,
-                    )
+                    let Ok(source) = relay_peer_endpoint(source) else {
+                        report.malformed_datagrams += 1;
+                        continue;
+                    };
+                    (bytes, source, None)
                 }
                 Ok(ServerEvent::Ready) => {
                     route.last_response = Some(now_ticks);
@@ -1916,12 +2020,8 @@ fn drain_socket(
             //7B4038..408C stores a zero-port endpoint and the recvfrom port
             //separately;5418FB passes that override to53FCB0.
             let endpoint = SocketAddrV4::new(*source.ip(), 0);
-            if let Err(error) = global.receive(
-                endpoint,
-                source.port(),
-                frame,
-                now_ticks,
-                &mut |destination, ack| {
+            if let Err(error) =
+                global.receive(endpoint, source.port(), frame, &mut |destination, ack| {
                     send_global_frame(
                         ack_socket,
                         relay,
@@ -1933,8 +2033,8 @@ fn drain_socket(
                         ack,
                         report,
                     );
-                },
-            ) {
+                })
+            {
                 report.rejected_global += 1;
                 report.last_global_rejection = Some(error);
             }
@@ -1969,22 +2069,17 @@ fn send_global_frame(
 ) {
     match destination {
         GlobalDestination::Direct {
-            mut endpoint,
+            endpoint,
             port_override,
         } => {
-            if port_override != 0 {
-                endpoint.set_port(port_override);
-            }
+            let endpoint = with_port_override(endpoint, port_override);
             send_frame(
                 socket, relay, lan_scope, channel, queue, endpoint, frame, report,
             );
         }
         GlobalDestination::Broadcast { port_override } => {
             for &target in targets {
-                let mut endpoint = target;
-                if port_override != 0 {
-                    endpoint.set_port(port_override);
-                }
+                let endpoint = with_port_override(target, port_override);
                 send_frame(
                     socket, relay, lan_scope, channel, queue, endpoint, frame, report,
                 );
@@ -2203,7 +2298,7 @@ mod close_tests {
         );
         let mut decoded = GlobalChannel::new(GlobalConfig::default(), timing);
         decoded
-            .receive(binds.primary, 0, frame, 32, &mut |_, _| {
+            .receive(binds.primary, 0, frame, &mut |_, _| {
                 panic!("unreliable Departure must not request an ACK")
             })
             .unwrap();

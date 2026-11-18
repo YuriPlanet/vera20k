@@ -186,7 +186,18 @@ impl SoundPlaybackInputs<'_> {
             }
         };
         for event in events {
+            let resolved;
+            let event = if matches!(event, GameSoundEvent::TriggerAudio { .. }) {
+                let Some(value) = event.resolve_trigger_audio(registry, eva_registry) else {
+                    continue;
+                };
+                resolved = value;
+                &resolved
+            } else {
+                event
+            };
             match event {
+                GameSoundEvent::TriggerAudio { .. } => continue,
                 GameSoundEvent::UnitVoiceVisit { owner } => sfx.visit_unit_voice(*owner, registry),
                 GameSoundEvent::UnitVoiceDestroyed { owner } => sfx.destroy_unit_voice(*owner),
                 GameSoundEvent::UnitVoiceMoved { from, to } => sfx.move_unit_voice(*from, *to),

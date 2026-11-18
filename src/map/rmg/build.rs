@@ -167,14 +167,17 @@ pub struct GenerationObjects<'a> {
     /// The Ares urban catalog and Main draw, used when the options' urban
     /// switch is set.
     pub urban_areas: Option<super::phases::urban_areas::UrbanInputs<'a>>,
+    /// Ares.dll is loaded for this generation: the game is read the Ares way.
+    pub ares: bool,
 }
 
 impl<'a> GenerationObjects<'a> {
-    /// Tech buildings only.
-    pub fn tech(tech_types: &'a [TechType]) -> Self {
+    /// Tech buildings only; `ares` as [`Self::ares`].
+    pub fn tech(tech_types: &'a [TechType], ares: bool) -> Self {
         Self {
             tech_types,
             urban_areas: None,
+            ares,
         }
     }
 }
@@ -219,7 +222,8 @@ const VERA_URBAN_SALT: u16 = 0xB71D;
 /// switch keeps the seed's own presence and the native district count;
 /// VERA's opt-in passes presence 1 (`0x005A5020` never takes its early exit
 /// at 1 or more) and the Buildings slider (1..=100) as the fill, from one
-/// district up to most of the open land.
+/// district up to most of the open land. Ares' switch counts only when
+/// Ares.dll is loaded (the game is read the Ares way).
 fn urban_inputs<'a>(
     options: &RmgOptions,
     objects: &'a GenerationObjects<'a>,
@@ -229,14 +233,12 @@ fn urban_inputs<'a>(
     i32,
     Option<i32>,
 ) {
-    #[cfg(feature = "ares")]
-    if options.urban_areas {
+    if objects.ares && options.urban_areas {
         if objects.urban_areas.is_none() {
             log::warn!("random map: urban areas requested without an urban catalog");
         }
         return (objects.urban_areas.as_ref(), options.urban_presence, None);
     }
-    let _ = objects;
     if options.urban_enabled && options.urban_presence > 0 {
         return (Some(vera), 1, Some(options.urban_presence.min(100)));
     }
@@ -328,13 +330,13 @@ fn fair_candidates(
     };
     #[cfg(not(target_arch = "wasm32"))]
     if objects.urban_areas.is_none() && !others.is_empty() {
-        let tech_types = objects.tech_types;
+        let (tech_types, ares) = (objects.tech_types, objects.ares);
         return std::thread::scope(|scope| {
             let runs: Vec<_> = others
                 .iter()
                 .map(|candidate| {
                     scope.spawn(move || {
-                        let objects = GenerationObjects::tech(tech_types);
+                        let objects = GenerationObjects::tech(tech_types, ares);
                         generate_once(candidate, settings, resolved, blocks, &objects, &mut |_| {})
                     })
                 })
@@ -404,6 +406,67 @@ fn war_damage(
         let health = rng.uniform(RUINED_HEALTH.0, RUINED_HEALTH.1);
         if harmed && let Some(entity) = map_file.entities.get_mut(first_urban + index) {
             entity.health = health;
+        }
+    }
+}
+
+/// Mixed into the map seed for the Advanced damage slider's own draws.
+const DAMAGE_SALT: u16 = 0x2C93;
+
+/// VERA extension: the two Advanced building sliders' post-pass.
+///
+/// `derelict_amount` powers down and damages every building the Derelicts
+/// slider placed (`UrbanObject::derelict`). `damage_amount` then randomly
+/// damages every neutral building on the map — tech structures, towns, farms
+/// and derelicts alike — with a share and depth that grow with the slider, so
+/// the map reads as a city under war. 0 is a no-op, so a map generated with
+/// both sliders at 0 is byte-identical to before the sliders existed. Both
+/// use a stream of their own, separate from the War Damage Extra's, and take
+/// the worse health when the two overlap.
+fn apply_derelicts_and_damage(
+    map_file: &mut crate::map::map_file::MapFile,
+    structure_count: usize,
+    urban: &[super::phases::urban_areas::UrbanObject],
+    derelict_amount: i32,
+    damage_amount: i32,
+    seed: u16,
+) {
+    if derelict_amount <= 0 && damage_amount <= 0 {
+        return;
+    }
+    let mut rng = RmgRng::new(seed ^ DAMAGE_SALT);
+    const DAMAGED_MAX: i32 = 200;
+    const RUINED_MIN: i32 = 34;
+
+    // Derelicts: unpowered, in the damaged band. `entities` order is the
+    // emitted structures first, then the urban objects in placement order.
+    if derelict_amount > 0 {
+        for (index, object) in urban.iter().enumerate() {
+            if !object.derelict {
+                continue;
+            }
+            if let Some(entity) = map_file.entities.get_mut(structure_count + index) {
+                entity.structure_online = false;
+                entity.health = entity.health.min(rng.uniform(RUINED_MIN, DAMAGED_MAX));
+            }
+        }
+    }
+
+    // Global damage: the slider is the share of buildings harmed and the
+    // ceiling of their remaining health, so a higher value hurts more of the
+    // map and hurts each building worse.
+    if damage_amount > 0 {
+        let share = damage_amount.clamp(0, 100);
+        let ceiling = DAMAGED_MAX - (DAMAGED_MAX - RUINED_MIN) * share / 100;
+        for entity in map_file.entities.iter_mut() {
+            if entity.category != crate::map::entities::EntityCategory::Structure {
+                continue;
+            }
+            if rng.uniform(0, 99) < share {
+                entity.health = entity
+                    .health
+                    .min(rng.uniform(RUINED_MIN, ceiling.max(RUINED_MIN)));
+            }
         }
     }
 }
@@ -480,6 +543,11 @@ fn generate_once(
                 centre_gems: value(Extra::CentreGems),
                 countryside: value(Extra::Countryside),
                 fences: value(Extra::Fences),
+                tech_building_amount: options.tech_building_amount,
+                derelict_amount: options.derelict_amount,
+                civilian_amount: options.civilian_amount,
+                animal_amount: options.animal_amount,
+                wild_amount: options.wild_amount,
                 seed: options.seed_u16(),
                 fair_tech_type: &settings.extras.fair_tech,
                 farm_fence: resolved.fences[0],
@@ -491,6 +559,7 @@ fn generate_once(
         urban_presence,
         urban_fill,
         urban_areas: urban,
+        ares: objects.ares,
     };
 
     observe(GenerationPointView {
@@ -546,6 +615,14 @@ fn generate_once(
         options.extras.get(super::extras::Extra::Ruins),
         options.seed_u16(),
     );
+    apply_derelicts_and_damage(
+        &mut map_file,
+        output.structures.len(),
+        &output.urban_areas,
+        options.derelict_amount,
+        options.damage_amount,
+        options.seed_u16(),
+    );
 
     let generated = GeneratedMap {
         map_file,
@@ -553,7 +630,7 @@ fn generate_once(
         construction_trace: output.construction_trace,
         start_waypoints: output.waypoints,
         #[cfg(any(test, feature = "test-support"))]
-        stages_run: executed_stages(&options),
+        stages_run: executed_stages(&options, objects.ares),
         unfilled_start_slots: output.unfilled_start_slots,
         fairness: output.fairness,
     };
@@ -685,7 +762,7 @@ mod tests {
                 &RmgSettings::default(),
                 &resolved(),
                 &one_by_one(),
-                &GenerationObjects::tech(&[]),
+                &GenerationObjects::tech(&[], false),
             );
             Some(std::sync::Arc::new(generated))
         })
@@ -695,7 +772,6 @@ mod tests {
     /// Ares urban areas (hook 0x598FB8): the switch runs the stage, and each
     /// placed urban object follows the structures at the entity index its
     /// constructor row names.
-    #[cfg(feature = "ares")]
     #[test]
     fn urban_objects_follow_the_structures_with_matching_trace_rows() {
         use crate::map::rmg::RmgConstructionPhase;
@@ -721,6 +797,7 @@ mod tests {
                 catalog: &catalog,
                 main_draw: &main_draw,
             }),
+            ares: true,
         };
         let mut placed = 0;
         for seed in 1..=8 {
@@ -769,12 +846,34 @@ mod tests {
             &RmgSettings::default(),
             &resolved(),
             &one_by_one(),
-            &GenerationObjects::tech(&[]),
+            &GenerationObjects::tech(&[], false),
         );
         assert_eq!(generated.unfilled_start_slots, 0);
         let mut slots: Vec<u8> = generated.start_waypoints.iter().map(|w| w.0).collect();
         slots.sort_unstable();
         assert_eq!(slots, (0..30).collect::<Vec<u8>>());
+    }
+
+    /// VERA offline Skirmish: a one-hundred-twenty-player map places every start.
+    #[test]
+    fn a_one_hundred_twenty_player_map_places_every_start() {
+        let options = RmgOptions {
+            num_players: 120,
+            width: crate::map::rmg::MAX_SIZE_OPTION,
+            height: crate::map::rmg::MAX_SIZE_OPTION,
+            ..options(1, 0)
+        };
+        let generated = generate_map(
+            &options,
+            &RmgSettings::default(),
+            &resolved(),
+            &one_by_one(),
+            &GenerationObjects::tech(&[], false),
+        );
+        assert_eq!(generated.unfilled_start_slots, 0);
+        let mut slots: Vec<u8> = generated.start_waypoints.iter().map(|w| w.0).collect();
+        slots.sort_unstable();
+        assert_eq!(slots, (0..120).collect::<Vec<u8>>());
     }
 
     /// VERA extension: thirty players' islands survive the start threshold,
@@ -797,7 +896,7 @@ mod tests {
                 &settings,
                 &resolved,
                 &blocks,
-                &GenerationObjects::tech(&[]),
+                &GenerationObjects::tech(&[], false),
             );
             assert_eq!(
                 (
@@ -825,7 +924,7 @@ mod tests {
             &RmgSettings::default(),
             &resolved(),
             &one_by_one(),
-            &GenerationObjects::tech(&[]),
+            &GenerationObjects::tech(&[], false),
         );
         assert_eq!(generated.unfilled_start_slots, 0);
         assert_eq!(generated.start_waypoints.len(), 30);
@@ -870,7 +969,7 @@ mod tests {
                     &settings,
                     &resolved,
                     &blocks,
-                    &GenerationObjects::tech(&[]),
+                    &GenerationObjects::tech(&[], false),
                 );
                 assert_eq!(
                     (
@@ -930,7 +1029,7 @@ mod tests {
             seed: 4242,
             ..options(1, 0)
         };
-        let objects = GenerationObjects::tech(&[]);
+        let objects = GenerationObjects::tech(&[], false);
         let plain = generate_map(&base, &settings, &resolved, &blocks, &objects);
         assert!(!plain.stages_run.contains(&Stage::UrbanAreas));
         let urban = generate_map(
@@ -1089,7 +1188,7 @@ mod tests {
             name: "CAOILD".into(),
             footprint: square.to_vec(),
         }];
-        let objects = GenerationObjects::tech(&derrick);
+        let objects = GenerationObjects::tech(&derrick, false);
         let plain = generate_map(&options(1, 0), &settings, &resolved, &blocks, &objects);
         let decked = || {
             let mut options = options(1, 0);
@@ -1197,6 +1296,324 @@ mod tests {
         }
     }
 
+    /// VERA extension: the three Advanced building sliders. Tech Buildings
+    /// seats more neutral tech buildings, Derelicts stands unpowered combat
+    /// buildings, and Damage wrecks neutral buildings; all at 0 the map is
+    /// the original's.
+    #[test]
+    fn the_advanced_building_sliders_change_the_map() {
+        use crate::map::rmg::phases::urban_areas::{UrbanCatalog, UrbanStructure};
+        let blocks = one_by_one();
+        let resolved = resolved();
+        let square: Vec<(i16, i16)> = vec![(0, 0), (1, 0), (0, 1), (1, 1)];
+        let building = |name: &str| UrbanStructure {
+            name: name.into(),
+            footprint: Some(square.clone()),
+        };
+        let settings = RmgSettings {
+            vera_urban: UrbanCatalog {
+                derelicts: vec![building("GARAD"), building("GAREF"), building("GAWEAP")],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let tech = [
+            TechType {
+                name: "CAOILD".into(),
+                footprint: square.clone(),
+            },
+            TechType {
+                name: "CAAIRP".into(),
+                footprint: square.clone(),
+            },
+        ];
+        let objects = GenerationObjects::tech(&tech, false);
+        let plain = generate_map(&options(1, 0), &settings, &resolved, &blocks, &objects);
+
+        let mut steered = options(1, 0);
+        steered.tech_building_amount = 90;
+        steered.derelict_amount = 100;
+        steered.damage_amount = 100;
+        let changed = generate_map(&steered, &settings, &resolved, &blocks, &objects);
+
+        let count_tech = |map: &GeneratedMap| {
+            map.map_file
+                .entities
+                .iter()
+                .filter(|e| e.type_id == "CAOILD" || e.type_id == "CAAIRP")
+                .count()
+        };
+        assert!(
+            count_tech(&changed) > count_tech(&plain),
+            "the Tech Buildings slider seats more: {} -> {}",
+            count_tech(&plain),
+            count_tech(&changed)
+        );
+
+        assert!(
+            changed
+                .map_file
+                .entities
+                .iter()
+                .filter(|e| tech.iter().any(|kind| kind.name == e.type_id))
+                .all(|e| e.structure_online),
+            "tech buildings keep their stock power flag"
+        );
+        let derelicts: Vec<_> = changed
+            .map_file
+            .entities
+            .iter()
+            .filter(|e| e.type_id == "GARAD" || e.type_id == "GAREF" || e.type_id == "GAWEAP")
+            .collect();
+        assert!(
+            !derelicts.is_empty(),
+            "the Derelicts slider stands buildings"
+        );
+        assert!(
+            derelicts.iter().all(|e| !e.structure_online),
+            "every derelict is unpowered"
+        );
+        assert!(
+            derelicts.iter().all(|e| e.health < 256),
+            "every derelict is damaged"
+        );
+
+        let wrecked = |map: &GeneratedMap| {
+            map.map_file
+                .entities
+                .iter()
+                .filter(|e| {
+                    e.category == crate::map::entities::EntityCategory::Structure && e.health < 256
+                })
+                .count()
+        };
+        assert!(
+            wrecked(&changed) > wrecked(&plain),
+            "the Damage slider wrecks more buildings: {} -> {}",
+            wrecked(&plain),
+            wrecked(&changed)
+        );
+        // Repeats from the same options.
+        assert_eq!(
+            changed.map_file.entities.len(),
+            generate_map(&steered, &settings, &resolved, &blocks, &objects)
+                .map_file
+                .entities
+                .len()
+        );
+    }
+
+    #[test]
+    fn the_tech_slider_preserves_seeded_ore_and_starts() {
+        let tech = [TechType {
+            name: "CAOILD".into(),
+            footprint: vec![(0, 0), (0, 1)],
+        }];
+        let generate = |amount| {
+            generate_map(
+                &RmgOptions {
+                    tech_building_amount: amount,
+                    fair_starts: true,
+                    ..options(1, 0)
+                },
+                &RmgSettings::default(),
+                &resolved(),
+                &one_by_one(),
+                &GenerationObjects::tech(&tech, false),
+            )
+        };
+        let mut stock = generate(0);
+        let mut extra = generate(100);
+        assert!(extra.map_file.entities.len() > stock.map_file.entities.len());
+        let overlays = |map: &GeneratedMap| {
+            map.map_file
+                .overlays
+                .iter()
+                .map(|o| (o.rx, o.ry, o.overlay_id, o.frame))
+                .collect::<Vec<_>>()
+        };
+        assert!(!stock.map_file.overlays.is_empty());
+        assert_eq!(stock.start_waypoints, extra.start_waypoints);
+        assert!(overlays(&stock) == overlays(&extra), "the seed's ore moved");
+        assert_eq!(
+            stock.take_mapgen_continuation().into_native_parts(),
+            extra.take_mapgen_continuation().into_native_parts()
+        );
+    }
+
+    #[test]
+    fn a_type_two_map_with_no_fitting_tech_foundation_finishes() {
+        let tech = [TechType {
+            name: "Oversized".into(),
+            footprint: vec![(0, 0), (1024, 0)],
+        }];
+        let generated = generate_map(
+            &RmgOptions {
+                tech_building_amount: 100,
+                ..options(2, 0)
+            },
+            &RmgSettings::default(),
+            &resolved(),
+            &one_by_one(),
+            &GenerationObjects::tech(&tech, false),
+        );
+        assert!(!generated.start_waypoints.is_empty());
+        assert!(
+            !generated
+                .map_file
+                .entities
+                .iter()
+                .any(|e| e.type_id == "Oversized")
+        );
+    }
+
+    /// VERA extension: the three spawn sliders place civilian, animal and
+    /// buildable-unit foots on Neutral, in the category the rules registered
+    /// them under. Each slider has its own stream, so moving one never moves
+    /// another's picks, and all three repeat from the same options.
+    #[test]
+    fn the_neutral_foot_sliders_change_the_map() {
+        use crate::map::entities::EntityCategory;
+        use crate::map::rmg::phases::urban_areas::{SpawnFoots, UrbanCatalog};
+        let blocks = one_by_one();
+        let resolved = resolved();
+        let objects = GenerationObjects::tech(&[], false);
+        let settings = RmgSettings {
+            vera_urban: UrbanCatalog {
+                civilians: SpawnFoots {
+                    infantry: vec!["CIV1".into()],
+                    vehicles: vec!["BUS".into()],
+                    ..Default::default()
+                },
+                animals: SpawnFoots {
+                    infantry: vec!["COW".into()],
+                    vehicles: vec!["DNOA".into()],
+                    ..Default::default()
+                },
+                wild: SpawnFoots {
+                    infantry: vec!["E1".into(), "GI".into()],
+                    vehicles: vec!["MTNK".into()],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let plain = generate_map(&options(1, 0), &settings, &resolved, &blocks, &objects);
+        let mut steered = options(1, 0);
+        steered.civilian_amount = 100;
+        steered.animal_amount = 100;
+        steered.wild_amount = 100;
+        let changed = generate_map(&steered, &settings, &resolved, &blocks, &objects);
+
+        let owned = |map: &GeneratedMap, name: &str| {
+            map.map_file
+                .entities
+                .iter()
+                .filter(|e| e.type_id == name)
+                .all(|e| e.owner == "Neutral")
+        };
+        for name in ["CIV1", "BUS", "COW", "DNOA", "E1", "GI", "MTNK"] {
+            assert!(
+                changed.map_file.entities.iter().any(|e| e.type_id == name),
+                "the matching slider places {name}"
+            );
+            assert!(owned(&changed, name), "{name} stands on Neutral");
+        }
+        let category = |map: &GeneratedMap, name: &str| {
+            map.map_file
+                .entities
+                .iter()
+                .find(|e| e.type_id == name)
+                .map(|e| e.category)
+        };
+        assert_eq!(category(&changed, "CIV1"), Some(EntityCategory::Infantry));
+        assert_eq!(category(&changed, "BUS"), Some(EntityCategory::Unit));
+        assert_eq!(category(&changed, "COW"), Some(EntityCategory::Infantry));
+        assert_eq!(category(&changed, "DNOA"), Some(EntityCategory::Unit));
+        assert_eq!(category(&changed, "E1"), Some(EntityCategory::Infantry));
+        assert_eq!(category(&changed, "MTNK"), Some(EntityCategory::Unit));
+        // All zero places none of them: the original map is unchanged.
+        for name in ["CIV1", "BUS", "COW", "DNOA", "E1", "MTNK"] {
+            assert!(
+                !plain.map_file.entities.iter().any(|e| e.type_id == name),
+                "at 0 no {name} is added"
+            );
+        }
+        assert_eq!(
+            changed.map_file.entities.len(),
+            generate_map(&steered, &settings, &resolved, &blocks, &objects)
+                .map_file
+                .entities
+                .len()
+        );
+    }
+
+    /// VERA extension: water-only types (`SpeedType=Float` or
+    /// `MovementZone=Water`, as the Bront and every navy hull are) stand on
+    /// the map's water; the land types keep to its land. That is what makes a
+    /// raised Animals or Defenders slider fill the sea too.
+    #[test]
+    fn water_types_spawn_on_water_and_land_types_on_land() {
+        use crate::map::rmg::phases::urban_areas::{SpawnFoots, UrbanCatalog};
+        let blocks = one_by_one();
+        let resolved = resolved();
+        let objects = GenerationObjects::tech(&[], false);
+        let settings = RmgSettings {
+            vera_urban: UrbanCatalog {
+                animals: SpawnFoots {
+                    water_vehicles: vec!["DNOB".into()],
+                    ..Default::default()
+                },
+                wild: SpawnFoots {
+                    infantry: vec!["E1".into()],
+                    water_vehicles: vec!["DEST".into()],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut steered = options(1, 0);
+        steered.animal_amount = 100;
+        steered.wild_amount = 100;
+        let map = generate_map(&steered, &settings, &resolved, &blocks, &objects);
+
+        let water_at = |x: u16, y: u16| {
+            map.map_file
+                .cells
+                .iter()
+                .find(|cell| cell.rx == x && cell.ry == y)
+                .is_some_and(|cell| resolved.ids.is_water(cell.tile_index))
+        };
+        let (mut sea, mut land) = (0, 0);
+        for entity in &map.map_file.entities {
+            let here = water_at(entity.cell_x, entity.cell_y);
+            match entity.type_id.as_str() {
+                "DNOB" | "DEST" => {
+                    assert!(
+                        here,
+                        "{} stands on land at {},{}",
+                        entity.type_id, entity.cell_x, entity.cell_y
+                    );
+                    sea += 1;
+                }
+                "E1" => {
+                    assert!(
+                        !here,
+                        "E1 stands on water at {},{}",
+                        entity.cell_x, entity.cell_y
+                    );
+                    land += 1;
+                }
+                _ => {}
+            }
+        }
+        assert!(sea > 0, "the water types reach the sea");
+        assert!(land > 0, "the land types stay on land");
+    }
+
     /// VERA extension: an ore variant redraws the ore fields: the starts stay
     /// the seed's and so does nearly all the ground, each variant gives other
     /// fields, and a variant repeats.
@@ -1204,7 +1621,7 @@ mod tests {
     fn an_ore_variant_redraws_only_the_ore() {
         use crate::map::rmg::extras::Extra;
         let (settings, resolved, blocks) = (RmgSettings::default(), resolved(), one_by_one());
-        let objects = GenerationObjects::tech(&[]);
+        let objects = GenerationObjects::tech(&[], false);
         let variant = |value: u8| {
             let mut options = options(1, 0);
             options.extras.set(Extra::OreVariant, value);
@@ -1252,7 +1669,7 @@ mod tests {
             &RmgSettings::default(),
             &resolved(),
             &one_by_one(),
-            &GenerationObjects::tech(&[]),
+            &GenerationObjects::tech(&[], false),
         );
         let map = &generated.map_file;
         let thumbnail: Vec<u8> = (0..6 * 4 * 4).map(|byte| byte as u8 | 3).collect();
@@ -1353,7 +1770,7 @@ mod tests {
     #[test]
     fn fair_starts_even_the_ore_and_repeat() {
         let (settings, resolved, blocks) = (RmgSettings::default(), resolved(), one_by_one());
-        let objects = GenerationObjects::tech(&[]);
+        let objects = GenerationObjects::tech(&[], false);
         let fair = RmgOptions {
             fair_starts: true,
             ..options(1, 0)
@@ -1412,6 +1829,7 @@ mod tests {
                     catalog: &catalog,
                     main_draw: &|| 0,
                 }),
+                ares: false,
             },
         );
         assert_eq!(overlays(&searched), overlays(&one_by_one));
@@ -1430,7 +1848,7 @@ mod tests {
                 &settings,
                 &resolved,
                 &blocks,
-                &GenerationObjects::tech(&[]),
+                &GenerationObjects::tech(&[], false),
             );
             let tiles: Vec<i32> = g.map_file.cells.iter().map(|c| c.tile_index).collect();
             let overlays: Vec<(u16, u16, u8)> = g
@@ -1472,7 +1890,7 @@ mod tests {
                 &settings,
                 &resolved,
                 &blocks,
-                &GenerationObjects::tech(&types),
+                &GenerationObjects::tech(&types, false),
             );
             if !generated.construction_trace.events.is_empty() {
                 chosen = Some(generated);
@@ -1514,7 +1932,7 @@ mod tests {
                 &settings,
                 &resolved,
                 &blocks,
-                &GenerationObjects::tech(&types),
+                &GenerationObjects::tech(&types, false),
             );
             let emitted =
                 generated
@@ -1575,7 +1993,7 @@ mod tests {
             settings,
             resolved,
             blocks,
-            &GenerationObjects::tech(&[]),
+            &GenerationObjects::tech(&[], false),
             &mut |view| {
                 points.push(view.point());
                 snapshots.push(view.snapshot());
@@ -1797,7 +2215,7 @@ mod tests {
                 &settings,
                 &resolved,
                 &blocks,
-                &GenerationObjects::tech(&[]),
+                &GenerationObjects::tech(&[], false),
             )
             .map_file
             .cells
@@ -1835,7 +2253,7 @@ mod tests {
             &RmgSettings::default(),
             &resolved(),
             &one_by_one(),
-            &GenerationObjects::tech(&[]),
+            &GenerationObjects::tech(&[], false),
         )
     }
 
@@ -1853,7 +2271,7 @@ mod tests {
     ///
     /// The rock gate is checked on its observable product, never on
     /// `stages_run`: that field is assigned straight from
-    /// `executed_stages(&options)`, so comparing the two would compare one pure
+    /// `executed_stages(&options, ares)`, so comparing the two would compare one pure
     /// function against itself and could not fail.
     ///
     /// Only the OFF side is a per-cell assertion. How many rocks a temperate
@@ -2036,7 +2454,7 @@ mod tests {
                 &settings,
                 &resolved(),
                 &one_by_one(),
-                &GenerationObjects::tech(&[]),
+                &GenerationObjects::tech(&[], false),
                 &mut |view| {
                     if view.point() == GenerationPoint::Initial {
                         preview_has_no_synthetic_lighting = view.snapshot().map_file.ini.is_empty();

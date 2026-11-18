@@ -561,7 +561,6 @@ pub(super) fn abandon_production(
     // Phobos `FactoryClass_AbandonProduction_Phobos 0x4CA07A` nulls the
     // house's category pointer for a forbidden category or product, without
     // checking which factory abandoned it.
-    #[cfg(feature = "phobos")]
     clear_abandoned_parallel_factory(sim, rules, holder, owner);
     if let Some(abandoned) = sim.production.factories().pending_abandonment(holder) {
         settle_abandoned(sim, rules, owner, holder, abandoned, effects);
@@ -569,7 +568,6 @@ pub(super) fn abandon_production(
     sim.production.factories_mut().remove_factory(holder);
 }
 
-#[cfg(feature = "phobos")]
 fn clear_abandoned_parallel_factory(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -579,7 +577,7 @@ fn clear_abandoned_parallel_factory(
     let FactoryHolder::Building(_) = holder else {
         return;
     };
-    if !rules.parallel_ai_queues().allows_parallel() {
+    if !rules.parallel_ai_queues_act() {
         return;
     }
     let product = sim
@@ -1469,7 +1467,7 @@ pub struct FactoryRestoreError {
 /// limbo objects remain supported; manager pointers are not globally reciprocal.
 /// VERA-only: checks each held object's InLimbo, Marked and LogicVector facts and its
 /// spawn/slave links against the loaded store, their source of truth.
-pub fn validate_restored_factory_state(
+pub(crate) fn validate_restored_factory_state(
     sim: &Simulation,
     rules: &RuleSet,
 ) -> Result<(), FactoryRestoreError> {

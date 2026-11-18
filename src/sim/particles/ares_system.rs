@@ -370,7 +370,7 @@ fn update_spark(
             )
         {
             let held = rules.particle_type(ext.held_type);
-            let half = (pst.particle_cap as i32).max(0) / 2;
+            let half = pst.particle_cap.max(0) / 2;
             let count = sim
                 .particle_rng()
                 .next_range_i32_inclusive(0, half)
@@ -418,11 +418,10 @@ fn spawn_spark(
     let draws = [x, y, z].map(|draw| X::store_f32_masked_chop(X::load_i32(draw)));
     let [x, y, z] = draws.map(X::load_f32);
     let speed = crt_sqrt(X::add(X::add(X::mul(y, y), X::mul(x, x)), X::mul(z, z)));
-    // VERA keeps SpawnDirection as whole leptons; the DLL adds its floats.
-    let spawn_direction = pst.spawn_direction.to_array();
+    // The DLL adds the type's SpawnDirection floats.
     let mut direction = [0, 1, 2].map(|axis| {
         X::store_f32_masked_chop(X::add(
-            X::load_f32(X::store_f32_masked_chop(X::load_i32(spawn_direction[axis]))),
+            X::load_f32(pst.spawn_direction[axis]),
             X::load_f32(draws[axis]),
         ))
     });
@@ -750,16 +749,20 @@ fn update_smoke(
     rules: &RuleSet,
 ) {
     // 10027966..100279CB: any owner object (Ares tests the Object flag, not
-    // the stock Foot one) moves the system to its GetCoords plus the
-    // constructor's offset.
-    if let Some(owner) = sys
-        .owner_entity
-        .and_then(|owner| sim.substrate.entities.get(owner))
-    {
-        let origin = crate::sim::movement::ground_pose::object_get_coords(
-            owner,
-            sim.resolved_terrain.as_ref(),
-        );
+    // the stock Foot one), a VoxelAnim too, moves the system to its GetCoords
+    // plus the constructor's offset.
+    let cells = sim
+        .resolved_terrain
+        .as_ref()
+        .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+    let origin = sys.owner_entity.and_then(|owner| {
+        crate::sim::movement::ground_pose::target_get_coords(
+            crate::sim::combat::TargetKind::Entity(owner),
+            sim,
+            cells.as_ref(),
+        )
+    });
+    if let Some(origin) = origin {
         sys.coords = IVec3::new(
             sys.offset.x.wrapping_add(origin.x),
             sys.offset.y.wrapping_add(origin.y),
@@ -925,6 +928,11 @@ fn smoke_movement(ext: &mut AresParticleSystemExt, sim: &mut Simulation, rules: 
     }
     for smoke in &mut ext.smoke {
         let kind = rules.particle_type(smoke.type_id);
+        // RESIDUAL: stock code reads StartStateAI=, StateAIAdvance= and
+        // EndStateAI= as signed bytes (MOVSX); whether these Ares reads sign-
+        // extend (Ares.dll `0x100280D0`) is unchecked, and VERA takes them
+        // unsigned. Only values of 128 and up differ, which no retail type
+        // sets.
         let end = i32::from(kind.end_state_ai);
         if smoke.state < end {
             // The phase offsets the start and makes the period

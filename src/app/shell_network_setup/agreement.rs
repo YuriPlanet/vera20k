@@ -10,16 +10,16 @@ pub(crate) struct MultiplayerAgreement {
     pub rules_digest: String,
 }
 
+/// The build two games must share to play together: the package version and
+/// build.rs's hash of the sources and enabled Cargo features
+/// (docs/Networking.md, "Build check").
 pub(crate) fn version() -> String {
-    format!(
-        "{}:{}:{}{}{}{}",
+    concat!(
         env!("CARGO_PKG_VERSION"),
-        env!("VERA20K_NETWORK_BUILD"),
-        u8::from(crate::rules::ARES_BUILD),
-        u8::from(crate::rules::PHOBOS_ENABLED),
-        u8::from(crate::rules::NPATCH_ENABLED),
-        u8::from(crate::rules::NPBUG_ENABLED)
+        ":",
+        env!("VERA20K_NETWORK_BUILD")
     )
+    .to_owned()
 }
 
 pub(crate) fn local(state: &mut AppState) -> Result<MultiplayerAgreement> {
@@ -40,7 +40,7 @@ pub(crate) fn local(state: &mut AppState) -> Result<MultiplayerAgreement> {
         .options
         .host_rules
         .personal_rules()
-        .map_err(|error| anyhow!("the host's personal rules do not read: {error}"))?;
+        .map_err(|error| anyhow!("the host's rules do not read: {error}"))?;
     state.process_assets.use_personal_rules(room_rules);
     let seed_options = if crate::map::rmg::is_seed_selection(file) {
         let root = &state
@@ -63,11 +63,12 @@ pub(crate) fn local(state: &mut AppState) -> Result<MultiplayerAgreement> {
             .process_assets
             .manager()
             .ok_or_else(|| anyhow!("assets missing"))?;
+        let ares = state.process_assets.reads_ares_way();
         crate::map::source::load_network_map_ini(root, source_file, assets)
             .ok()
             .map(|loaded| {
                 let mut options = crate::map::rmg::RmgOptions::default();
-                options.apply_sed(&loaded.ini);
+                options.apply_sed(&loaded.ini, ares);
                 options.normalize();
                 options
             })
@@ -111,9 +112,9 @@ pub(crate) fn rules_differ_text(state: &AppState) -> String {
 }
 
 /// What this game changes from the original game, which other players'
-/// games must change the same way: its mod, `config.toml`'s INI roots and
-/// changed game files. `None` when it plays the original. Personal rules
-/// and Terrain Deformation never count: a room plays its host's
+/// games must change the same way: its mod, `config.toml`'s INI roots, the
+/// Ares setting when not Auto and changed game files. `None` when it plays the original. The Options
+/// switches never count: a room plays its host's
 /// (`HostRules`).
 pub(crate) fn own_changes_text(state: &AppState) -> Option<String> {
     use crate::i18n::{tr, tr_fill};
@@ -123,6 +124,16 @@ pub(crate) fn own_changes_text(state: &AppState) -> Option<String> {
     }
     if !state.process_assets.stock_ini_roots() {
         changes.push(tr("VERA:RulesChangeIniRoots"));
+    }
+    let ares = state.process_assets.ares_setting();
+    if ares != crate::util::ares_launch::AresSetting::Auto {
+        changes.push(tr_fill(
+            "VERA:RulesChangeAres",
+            &[(
+                "setting",
+                &crate::ui::main_menu_dialogs::options::ares_label(ares),
+            )],
+        ));
     }
     let files = state.process_assets.changed_game_files();
     if !files.is_empty() {

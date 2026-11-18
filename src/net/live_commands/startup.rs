@@ -1,9 +1,10 @@
 //! VERA startup certificate over one immutable install-time admission.
 //! Native Receive64A0C0 marks first FRAMESYNC64A3C9 and checks only the seed
 //! 64A5DD..5E8; Wait_For_Players648710 tallies against a changing node count649148..1F7.
-//! UDP/relay adaptation: certify the same frozen active set and canonical
-//! initial state before allowing that native barrier to release. Source:
-//! original gamemd.exe instructions. This is not a native consensus protocol.
+//! UDP/relay adaptation: certify the same frozen active set, canonical
+//! initial state, build and rules before allowing that native barrier to
+//! release. Source: original gamemd.exe instructions. This is not a native
+//! consensus protocol.
 
 use crate::net::reliable::Delivery;
 use std::num::NonZeroU32;
@@ -37,6 +38,11 @@ pub struct StartupAgreement {
     fps: u16,
     send_rate: u8,
     world_hash: u64,
+    /// VERA: digests of the build and the rules this game plays (the app's
+    /// `shell_network_setup::agreement`). The same initial world played by
+    /// another build or other rules desyncs later, so it never starts.
+    build: u64,
+    rules: u64,
 }
 
 impl StartupAgreement {
@@ -48,6 +54,8 @@ impl StartupAgreement {
         fps: u16,
         frame_send_rate: NonZeroU32,
         world_hash: u64,
+        version: &str,
+        rules_digest: &str,
     ) -> Result<Self, StartupError> {
         let mut houses: Vec<_> = houses.into_iter().collect();
         houses.sort_unstable_by_key(|&(row, _)| row);
@@ -96,6 +104,8 @@ impl StartupAgreement {
             fps,
             send_rate: frame_send_rate.get() as u8,
             world_hash,
+            build: digest64(version.as_bytes()),
+            rules: digest64(rules_digest.as_bytes()),
         })
     }
 
@@ -122,21 +132,21 @@ impl StartupAgreement {
 
     /// Each part of this client's start identity, for the report of a match
     /// that never started: two clients' reports show which part differs.
-    pub fn report_parts(&self) -> [(&'static str, u64); 7] {
+    pub fn report_parts(&self) -> [(&'static str, u64); 9] {
         let mut houses = Vec::with_capacity(2 * self.houses.len());
         for &(row, house) in &self.houses {
             houses.extend([row, house as u8]);
         }
-        let houses = crate::util::sha256::sha256_bytes(&houses);
-        let houses = u64::from_le_bytes(houses[..8].try_into().expect("a digest of 32 bytes"));
         [
-            ("setup_houses", houses),
+            ("setup_houses", digest64(&houses)),
             ("setup_active", u64::from(self.active)),
             ("setup_seed", u64::from(self.seed)),
             ("setup_max_ahead", self.max_ahead as u64),
             ("setup_fps", u64::from(self.fps)),
             ("setup_send_rate", u64::from(self.send_rate)),
             ("world", self.world_hash),
+            ("build", self.build),
+            ("rules", self.rules),
         ]
     }
 
@@ -149,7 +159,7 @@ impl StartupAgreement {
     }
 
     fn identity(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(24 + 2 * self.houses.len());
+        let mut bytes = Vec::with_capacity(40 + 2 * self.houses.len());
         bytes.push(self.houses.len() as u8);
         for &(row, house) in &self.houses {
             bytes.extend([row, house as u8]);
@@ -160,8 +170,15 @@ impl StartupAgreement {
         bytes.extend(self.fps.to_le_bytes());
         bytes.push(self.send_rate);
         bytes.extend(self.world_hash.to_le_bytes());
+        bytes.extend(self.build.to_le_bytes());
+        bytes.extend(self.rules.to_le_bytes());
         bytes
     }
+}
+
+fn digest64(bytes: &[u8]) -> u64 {
+    let digest = crate::util::sha256::sha256_bytes(bytes);
+    u64::from_le_bytes(digest[..8].try_into().expect("a digest of 32 bytes"))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -262,7 +279,7 @@ impl StartupHandshake {
     }
 
     pub(super) fn control(&self, kind: u8) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(30 + 2 * self.agreement.houses.len());
+        let mut bytes = Vec::with_capacity(46 + 2 * self.agreement.houses.len());
         bytes.extend(MAGIC);
         bytes.push(kind);
         bytes.push(self.local_row);

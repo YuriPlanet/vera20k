@@ -54,7 +54,7 @@ fn terrain_attack_scene() -> Option<(SimRuntime, u64, u64, u64)> {
     sim.session
         .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED)
         .unwrap();
-    sim.install_overlay_grid_for_load(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     let roster = crate::map::houses::parse_house_roster(&map, &rules.color_schemes, Some(&rules));
     bootstrap::initialize_map_roster_houses(&mut sim, &roster, &rules, Some(&map));
     bootstrap::initialize_campaign_current_house(&mut sim.session, &mut sim.houses, &map);
@@ -109,7 +109,7 @@ fn script1_tree_identity_survives_reload_then_expiry_advances_the_script() {
     };
     let sim = &runtime.simulation;
     let rules = &runtime.resources.rules;
-    let overlays = &runtime.resources.overlay_registry;
+    let overlays = runtime.resources.rules.overlay_registry();
     assert_eq!(
         sim.team_script_vm.team(team).unwrap().mission_target,
         Some(TeamTarget::Object(tree))
@@ -170,7 +170,7 @@ fn coordinate_attack_resolves_a_cell_focus_to_its_terrain_object() {
     };
     let sim = &mut runtime.simulation;
     let rules = &runtime.resources.rules;
-    let overlays = &runtime.resources.overlay_registry;
+    let overlays = runtime.resources.rules.overlay_registry();
     sim.team_assign_mission_target(
         team,
         Some(TeamTarget::Cell { x: 25, y: 20 }),
@@ -734,7 +734,9 @@ fn retail_all01_patrol_scripts_and_rules_use_the_production_readers() {
             .count(),
         27
     );
-    assert!(action_is_ported(16, crate::rules::ARES_BUILD));
+    for ares_way in [false, true] {
+        assert!(action_is_ported(16, ares_way));
+    }
 }
 
 const RULES: &str = "\
@@ -868,7 +870,9 @@ fn script17_replacement_and_next_visit_match_original_controls() {
             save_codec::deserialize(&save_codec::serialize(&sim.team_script_vm).unwrap()).unwrap();
         assert_eq!(restored.team(team), sim.team_script_vm.team(team));
     }
-    assert!(action_is_ported(17, crate::rules::ARES_BUILD));
+    for ares_way in [false, true] {
+        assert!(action_is_ported(17, ares_way));
+    }
 }
 
 #[test]
@@ -1394,7 +1398,9 @@ fn retail_all01_script59_inputs_fit_the_existing_ammunition_owner() {
             );
         }
     }
-    assert!(action_is_ported(59, crate::rules::ARES_BUILD));
+    for ares_way in [false, true] {
+        assert!(action_is_ported(59, ares_way));
+    }
 }
 
 /// Advance until `done` holds for the team, at most `frames` frames.
@@ -1515,11 +1521,13 @@ fn the_retail_scatter_script_runs_ported_actions() {
         .map(|action| action.action_id)
         .collect();
     assert_eq!(actions, [58, 21, 11]);
-    assert!(
-        actions
-            .iter()
-            .all(|&action| action_is_ported(action, crate::rules::ARES_BUILD))
-    );
+    for ares_way in [false, true] {
+        assert!(
+            actions
+                .iter()
+                .all(|&action| action_is_ported(action, ares_way))
+        );
+    }
     let running = vm
         .team_types
         .values()
@@ -1653,7 +1661,6 @@ fn attack_building_target(
 /// Stock only: Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook
 /// `0x0056BC54`) moves the row 21 writes away from the blocks these reads
 /// take ([`ares_threat_index_moves_a_pillbox_s_threat_off_its_cell`]).
-#[cfg(not(feature = "ares"))]
 #[test]
 fn the_threat_modes_read_each_building_s_getcoords_cell() {
     let rules = rules();
@@ -1832,12 +1839,14 @@ fn the_retail_tech_capture_scripts_run_ported_actions() {
         .collect();
     assert!(!capture.is_empty());
     for script in &capture {
-        assert!(
-            script
-                .actions
-                .iter()
-                .all(|action| action_is_ported(action.action_id, crate::rules::ARES_BUILD))
-        );
+        for ares_way in [false, true] {
+            assert!(
+                script
+                    .actions
+                    .iter()
+                    .all(|action| action_is_ported(action.action_id, ares_way))
+            );
+        }
     }
     let running = vm
         .team_types

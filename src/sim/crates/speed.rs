@@ -195,7 +195,6 @@ mod tests {
                 sim.substrate.display.submit(
                     id,
                     Some(crate::sim::world::display_layers::DisplayLayer::GROUND),
-                    &|_| 0,
                 );
                 let expected =
                     !already_upgraded && (rules.ares() || category != EntityCategory::Aircraft);
@@ -240,7 +239,6 @@ mod tests {
         }
     }
 
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn original_speed_effect_updates_live_foot_speed_for_every_recipient() {
         let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
@@ -327,7 +325,6 @@ mod tests {
                 sim.substrate.display.submit(
                     id,
                     Some(crate::sim::world::display_layers::DisplayLayer::GROUND),
-                    &|_| 0,
                 );
             }
             let center = DriveCoord {

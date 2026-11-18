@@ -117,7 +117,7 @@ impl Simulation {
         let Some(owner) = building.ares.ares_raid.owner_before_raid else {
             return;
         };
-        if !building.passenger_role.occupants().is_empty() {
+        if !building.passenger_role().occupants().is_empty() {
             return;
         }
         if self
@@ -160,9 +160,9 @@ impl Simulation {
         ) else {
             return false;
         };
-        if i64::from(target.passenger_role.occupants().count())
+        if i64::from(target.passenger_role().occupants().count())
             >= i64::from(target_type.max_number_occupants)
-            || source.passenger_role.occupants().is_empty()
+            || source.passenger_role().occupants().is_empty()
             || !target_type.can_be_occupied
             || !source_type
                 .building_type_ext()
@@ -204,35 +204,19 @@ impl Simulation {
         else {
             return;
         };
-        let free = max - i64::from(target.passenger_role.occupants().count());
+        let free = max - i64::from(target.passenger_role().occupants().count());
         let held = self.substrate.entities.get(source_id).map_or(0, |source| {
-            i64::from(source.passenger_role.occupants().count())
+            i64::from(source.passenger_role().occupants().count())
         });
         if free >= 0 {
             for _ in 0..free.min(held) {
-                let Some(occupant) = self
-                    .substrate
-                    .entities
-                    .get_mut(source_id)
-                    .and_then(|source| source.passenger_role.occupants_mut().remove_head())
-                else {
+                if !self.substrate.transfer_garrison_head(source_id, target_id) {
                     break;
-                };
-                if let Some(target) = self.substrate.entities.get_mut(target_id) {
-                    target.passenger_role.occupants_mut().add(occupant);
-                }
-                if let Some(occupant) = self.substrate.entities.get_mut(occupant) {
-                    occupant
-                        .passenger_role
-                        .set_inside_transport(target_id, false);
                 }
             }
         }
         if let Some(source) = self.substrate.entities.get_mut(source_id) {
-            let occupants = source.passenger_role.occupants_mut();
-            if occupants.fire_index() >= occupants.count() {
-                occupants.reset_fire_index();
-            }
+            source.repair_garrison_fire_index();
         }
         self.ares_eval_raid_status(source_id, rules, registry, effects);
     }

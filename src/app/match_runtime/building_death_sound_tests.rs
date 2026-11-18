@@ -292,10 +292,10 @@ fn history(
         target.lifecycle.object_alive() && target.lifecycle.cell_marked() && !target.in_limbo()
     );
     assert!(sim.logic_order().contains(&victim) && sim.logic_order().contains(&attacker));
-    assert!(target.passenger_role.occupants().is_empty());
+    assert!(target.passenger_role().occupants().is_empty());
     assert!(
         target
-            .passenger_role
+            .passenger_role()
             .cargo()
             .is_none_or(|cargo| cargo.is_empty())
     );

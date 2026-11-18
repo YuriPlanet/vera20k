@@ -20,9 +20,8 @@
 //! launched bullet.
 //!
 //! A game where Ares plays replaces the stock arm (`ares_prism_forwarding`):
-//! its oracle rows run in default builds only, and the `ares_prism_*` tests
+//! its oracle rows run in a stock game only, and the `ares_prism_*` tests
 //! below cover the replacement with the same fixture.
-#![cfg_attr(feature = "ares", allow(dead_code, unused_imports))]
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -32,7 +31,6 @@ use super::*;
 use crate::map::resolved_terrain::test_flat_ground_grid;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
-#[cfg(not(feature = "ares"))]
 use crate::rules::ruleset::PrismSupportRules;
 use crate::sim::combat::TargetKind;
 use crate::sim::combat::receiver_fixture::with_building_fire_stub;
@@ -481,9 +479,8 @@ fn slot_anim(sim: &Simulation, id: u64, slot: usize) -> Option<String> {
 /// and weapon-1 range of every tower the walk measures (Sqrt_Approx and ftol,
 /// elite range when elite); and no Scenario draw.
 #[test]
-// The stock PrismType support; Ares builds replace it
+// The stock PrismType support; an Ares game replaces it
 // (`techno_ai::ares_prism_forwarding`).
-#[cfg(not(feature = "ares"))]
 fn prism_recruitment_matches_the_original() {
     let golden = golden();
     let recruit = rows(&golden, "recruit");
@@ -672,9 +669,8 @@ fn prism_recruitment_matches_the_original() {
 /// is made real: RANGE by the target's distance, REARM by the rearm timer,
 /// CANT by a power outage.
 #[test]
-// The stock PrismType support; Ares builds replace it
+// The stock PrismType support; an Ares game replaces it
 // (`techno_ai::ares_prism_forwarding`).
-#[cfg(not(feature = "ares"))]
 fn prism_support_bonus_matches_the_original() {
     let golden = golden();
     let bonus = rows(&golden, "bonus");
@@ -804,9 +800,8 @@ fn prism_bonus_damage_matches_the_original() {
 /// made, with no check of drain, sale or power, no request and no Scenario
 /// draw; a countdown still running only counts down.
 #[test]
-// The stock PrismType support; Ares builds replace it
+// The stock PrismType support; an Ares game replaces it
 // (`techno_ai::ares_prism_forwarding`).
-#[cfg(not(feature = "ares"))]
 fn prism_support_beam_matches_the_original() {
     let golden = golden();
     let beam = rows(&golden, "beam");
@@ -899,9 +894,8 @@ fn apply_event(fixture: &mut Fixture, action: &str, building: u64) {
 /// supporter's Guard cadence decides when a tower with its own target turns
 /// master.
 #[test]
-// The stock PrismType support; Ares builds replace it
+// The stock PrismType support; an Ares game replaces it
 // (`techno_ai::ares_prism_forwarding`).
-#[cfg(not(feature = "ares"))]
 fn prism_cadence_matches_the_original() {
     let golden = golden();
     let cadence = rows(&golden, "cadence");
@@ -1061,7 +1055,6 @@ fn prism_cadence_matches_the_original() {
 /// entries is dropped, `rules::ini_parser`), so the replay gives it one key
 /// ReadGeneral does not read.
 #[test]
-#[cfg(not(feature = "ares"))]
 fn prism_general_reader_matches_the_original() {
     let golden = golden();
     let reader = rows(&golden, "reader");

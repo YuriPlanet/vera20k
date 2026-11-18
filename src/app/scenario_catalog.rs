@@ -25,6 +25,36 @@ pub(crate) struct VerifiedNetworkMap<'a> {
     pub source: LoadedMapSource,
 }
 
+impl VerifiedNetworkMap<'_> {
+    /// The record's title as network text, as a host publishes it
+    /// ([`ScenarioCatalog::network_map_metadata`]).
+    pub(crate) fn title(&self) -> String {
+        network_map_title(&self.record.display_name, &self.record.file_name)
+    }
+}
+
+// Legacy map headers widen each byte. In network display text, the Windows-1252
+// punctuation must be printable Unicode: the lobby rejects C0 and C1 controls.
+fn network_map_title(title: &str, file: &str) -> String {
+    const C1: [char; 32] = [
+        '€', '\0', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '\0', 'Ž', '\0', '\0',
+        '‘', '’', '“', '”', '•', '–', '—', '˜', '™', 'š', '›', 'œ', '\0', 'ž', 'Ÿ',
+    ];
+    let mut text: String = title
+        .chars()
+        .map(|ch| match ch {
+            '\u{80}'..='\u{9f}' => C1[ch as usize - 0x80],
+            _ => ch,
+        })
+        .filter(|ch| !ch.is_control())
+        .collect();
+    if text.is_empty() {
+        text.push_str(file);
+    }
+    text.truncate(text.floor_char_boundary(256));
+    text
+}
+
 fn network_map_digest(ini: &IniFile) -> String {
     // ReadString69536B/5E5339: original literals81BFE0/831898/83189C.
     ini.section_or_empty("Digest")
@@ -71,11 +101,14 @@ impl ScenarioCatalog {
 
     /// Host options describe the selected local record and its physical file.
     /// This never adds a chooser record or treats a filename as proof of bytes.
+    /// `ares`: Ares.dll is loaded (the game is read the Ares way), which a
+    /// seed's effective digest reads.
     pub(crate) fn network_map_metadata(
         &self,
         file: &str,
         root: &Path,
         assets: &AssetManager,
+        ares: bool,
     ) -> anyhow::Result<NetworkMapMetadata> {
         let record = self
             .records
@@ -85,27 +118,31 @@ impl ScenarioCatalog {
                 anyhow::anyhow!("selected network map has no local catalog record: {file}")
             })?;
         let loaded = crate::map::source::load_network_map_ini(root, &record.file_name, assets)?;
-        let digest = if record
-            .file_name
-            .eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED)
-        {
-            // The random-map record carries 0x005E84D0's option digest
-            // (0x005E8590), not a [Digest]; the .Sed holds the same block.
+        let room_limit = crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32;
+        let digest = if crate::map::rmg::is_seed_selection(file) {
             let mut options = crate::map::rmg::RmgOptions::default();
-            options.apply_sed(&loaded.ini);
+            options.apply_sed(&loaded.ini, ares);
+            anyhow::ensure!(
+                options.num_players <= room_limit,
+                "This random map has {} starts. Choose a seed with at most {room_limit} starts for a network room.",
+                options.num_players
+            );
+            // Seeds carry the generator's option digest (0x005E84D0); the
+            // guest reads the same options when it verifies the transferred file.
             options.native_digest()
         } else {
             network_map_digest(&loaded.ini)
         };
         Ok(NetworkMapMetadata {
-            display_name: record.display_name.clone(),
-            player_capacity: record.player_capacity,
+            display_name: network_map_title(&record.display_name, file),
+            player_capacity: record.player_capacity.min(room_limit),
             official: record.official,
             byte_length: physical_map_length(&loaded.source),
             digest,
             effective_digest: crate::map::source::effective_network_map_digest(
                 &loaded.ini,
                 crate::map::rmg::is_seed_selection(file),
+                ares,
             ),
             source_sha256: loaded
                 .source
@@ -126,7 +163,7 @@ impl ScenarioCatalog {
         root: &Path,
         assets: &AssetManager,
     ) -> Option<VerifiedNetworkMap<'_>> {
-        if file.eq_ignore_ascii_case("RandMap.Sed") {
+        if file.eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED) {
             return None;
         }
         for record in self
@@ -155,7 +192,7 @@ impl ScenarioCatalog {
             }
             if !metadata.effective_digest.is_empty()
                 && metadata.effective_digest
-                    != crate::map::source::effective_network_map_digest(&loaded.ini, false)
+                    != crate::map::source::effective_network_map_digest(&loaded.ini, false, false)
             {
                 continue;
             }
@@ -169,27 +206,34 @@ impl ScenarioCatalog {
 
     /// A transferred map has no synthetic chooser record. Its consumed bytes,
     /// native metadata and explicit start capacity must match the accepted map.
+    /// `ares`: Ares.dll is loaded (the game is read the Ares way), which a
+    /// seed's effective digest reads.
     pub(crate) fn verify_transferred_network_map(
         loaded: &crate::map::source::LoadedMapIni,
         metadata: &NetworkMapMetadata,
         seed: bool,
+        ares: bool,
     ) -> bool {
         if crate::map::source::validate_network_map_content(&loaded.ini, seed).is_err() {
             return false;
         }
         let (digest, capacity) = if seed {
             let mut options = crate::map::rmg::RmgOptions::default();
-            options.apply_sed(&loaded.ini);
+            options.apply_sed(&loaded.ini, ares);
             // RmgOptions::native_digest owns the option-block fold5E84D0;
             // compare consumed values before generation normalization. The
             // separate effective-map digest already normalizes its input.
             let digest = options.native_digest();
             options.normalize();
+            if options.num_players > crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32 {
+                return false;
+            }
             (digest, options.num_players)
         } else {
             (
                 network_map_digest(&loaded.ini),
-                crate::map::waypoints::skirmish_player_capacity(&loaded.ini),
+                crate::map::waypoints::skirmish_player_capacity(&loaded.ini)
+                    .min(crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32),
             )
         };
         loaded
@@ -203,21 +247,24 @@ impl ScenarioCatalog {
             && (metadata.digest.is_empty() || metadata.digest == digest)
             && capacity == metadata.player_capacity
             && metadata.effective_digest
-                == crate::map::source::effective_network_map_digest(&loaded.ini, seed)
+                == crate::map::source::effective_network_map_digest(&loaded.ini, seed, ares)
     }
 
+    /// `ares`: Ares.dll is loaded (the game is read the Ares way); see
+    /// [`Self::verify_transferred_network_map`].
     pub(crate) fn verify_network_map_input(
         &self,
         file: &str,
         metadata: &NetworkMapMetadata,
         root: &Path,
         assets: &AssetManager,
+        ares: bool,
     ) -> Option<crate::map::source::LoadedMapIni> {
         crate::map::source::validate_network_map_name(file).ok()?;
         let seed = crate::map::rmg::is_seed_selection(file);
         let verified = |name: &str| {
             let loaded = crate::map::source::load_network_map_ini(root, name, assets).ok()?;
-            Self::verify_transferred_network_map(&loaded, metadata, seed).then_some(loaded)
+            Self::verify_transferred_network_map(&loaded, metadata, seed, ares).then_some(loaded)
         };
         verified(file).or_else(|| {
             // VERA: the same map under another name or case, as a map received
@@ -312,7 +359,7 @@ mod tests {
             ..crate::map::rmg::RmgOptions::default()
         };
         options.normalize();
-        let bytes = options.to_sed_bytes();
+        let bytes = options.to_sed_bytes(false);
         root.write("RandMap.Sed", &bytes);
         let assets = AssetManager::from_loose_root_for_test(root.path());
         let catalog =
@@ -322,14 +369,14 @@ mod tests {
                 4,
             )]);
         let metadata = catalog
-            .network_map_metadata("RandMap.Sed", root.path(), &assets)
+            .network_map_metadata("RandMap.Sed", root.path(), &assets, false)
             .unwrap();
         assert_eq!(metadata.digest, options.native_digest());
         assert_eq!(metadata.byte_length, bytes.len() as i32);
         assert!(metadata.official);
         assert!(
             catalog
-                .verify_network_map_input("RandMap.Sed", &metadata, root.path(), &assets)
+                .verify_network_map_input("RandMap.Sed", &metadata, root.path(), &assets, false)
                 .is_some()
         );
         assert!(
@@ -339,6 +386,7 @@ mod tests {
                     &metadata,
                     root.path(),
                     &assets,
+                    false,
                 )
                 .is_none(),
             "a remote logical name must not select a host absolute path"
@@ -348,10 +396,10 @@ mod tests {
         // the normalized effective input, as normal UI generation also does.
         let mut raw = options.clone();
         raw.tiberium = 0;
-        let bytes = raw.to_sed_bytes();
+        let bytes = raw.to_sed_bytes(false);
         root.write("RandMap.Sed", &bytes);
         let metadata = catalog
-            .network_map_metadata("RandMap.Sed", root.path(), &assets)
+            .network_map_metadata("RandMap.Sed", root.path(), &assets, false)
             .unwrap();
         assert_ne!(metadata.digest, options.native_digest());
         assert_eq!(metadata.digest, raw.native_digest());
@@ -359,27 +407,66 @@ mod tests {
             metadata.effective_digest,
             crate::map::source::effective_network_map_digest(
                 &IniFile::from_bytes(&bytes).unwrap(),
-                true
+                true,
+                false
             )
         );
         assert!(
             catalog
-                .verify_network_map_input("RandMap.Sed", &metadata, root.path(), &assets)
+                .verify_network_map_input("RandMap.Sed", &metadata, root.path(), &assets, false)
                 .is_some()
         );
         let mut wrong = metadata.clone();
         wrong.digest = options.native_digest();
         assert!(
             catalog
-                .verify_network_map_input("RandMap.Sed", &wrong, root.path(), &assets)
+                .verify_network_map_input("RandMap.Sed", &wrong, root.path(), &assets, false)
                 .is_none()
         );
         wrong = metadata;
         wrong.effective_digest = "0".repeat(64);
         assert!(
             catalog
-                .verify_network_map_input("RandMap.Sed", &wrong, root.path(), &assets)
+                .verify_network_map_input("RandMap.Sed", &wrong, root.path(), &assets, false)
                 .is_none()
+        );
+        options.num_players = 120;
+        root.write("RandMap.Sed", &options.to_sed_bytes(false));
+        assert!(
+            catalog
+                .network_map_metadata("RandMap.Sed", root.path(), &assets, false)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn extended_authored_map_advertises_and_verifies_the_network_capacity() {
+        use std::fmt::Write;
+        let root = TestDirectory::new("extended-network-map");
+        let mut map = String::from(
+            "[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n[IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n[Basic]\nMaxPlayers=120\n[Waypoints]\n",
+        );
+        for slot in 0..120 {
+            writeln!(map, "{slot}={}", 1001 + slot).unwrap();
+        }
+        root.write("Wide.map", map.as_bytes());
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        let record = SkirmishScenarioRecord::concrete_from_ini(
+            0,
+            SkirmishScenarioSource::Synthetic,
+            "Wide.map",
+            &IniFile::from_str(&map),
+        );
+        assert_eq!(record.player_capacity, 120);
+        let catalog = ScenarioCatalog::from_records(vec![record]);
+        let metadata = catalog
+            .network_map_metadata("Wide.map", root.path(), &assets, false)
+            .unwrap();
+        assert_eq!(metadata.player_capacity, 30);
+        assert!(
+            catalog
+                .verify_network_map_input("Wide.map", &metadata, root.path(), &assets, false)
+                .is_some()
         );
     }
 
@@ -396,7 +483,7 @@ mod tests {
             &IniFile::from_bytes(map).unwrap(),
         );
         let metadata = ScenarioCatalog::from_records(vec![record])
-            .network_map_metadata("Lakes.map", host.path(), &host_assets)
+            .network_map_metadata("Lakes.map", host.path(), &host_assets, false)
             .unwrap();
 
         let guest = TestDirectory::new("kept-name-guest");
@@ -405,7 +492,13 @@ mod tests {
         guest.write("Lakes.yrm", b"[Map]\nTheater=SNOW\n");
         assert!(
             catalog
-                .verify_network_map_input("Lakes.map", &metadata, guest.path(), &guest_assets)
+                .verify_network_map_input(
+                    "Lakes.map",
+                    &metadata,
+                    guest.path(),
+                    &guest_assets,
+                    false
+                )
                 .is_none(),
             "another map under the kept name is not the host's"
         );
@@ -414,7 +507,13 @@ mod tests {
         guest.write("lakes-1A2B.YRM", map);
         assert!(
             catalog
-                .verify_network_map_input("Lakes.map", &metadata, guest.path(), &guest_assets)
+                .verify_network_map_input(
+                    "Lakes.map",
+                    &metadata,
+                    guest.path(),
+                    &guest_assets,
+                    false
+                )
                 .is_some()
         );
     }
@@ -422,7 +521,7 @@ mod tests {
     #[test]
     fn network_availability_matches_registered_name_size_and_native_digest_reader() {
         let root = TestDirectory::new("network-map-metadata");
-        let bytes = b"[Basic]\nName=Local title\n[Digest]\n1=CaseSensitive\n";
+        let bytes = b"[Basic]\nName=Commander\x92s map\n[Digest]\n1=CaseSensitive\n";
         root.write("CONTROLLED.MAP", bytes);
         let assets = AssetManager::from_loose_root_for_test(root.path());
         let ini = IniFile::from_bytes(bytes).unwrap();
@@ -434,14 +533,15 @@ mod tests {
         );
         let catalog = ScenarioCatalog::from_records(vec![record]);
         let metadata = catalog
-            .network_map_metadata("controlled.map", root.path(), &assets)
+            .network_map_metadata("controlled.map", root.path(), &assets, false)
             .unwrap();
-        assert_eq!(metadata.display_name, "Local title");
+        assert_eq!(metadata.display_name, "Commander’s map");
         assert_eq!(metadata.byte_length, bytes.len() as i32);
         let found = catalog
             .verify_network_map("controlled.map", &metadata, root.path(), &assets)
             .unwrap();
         assert_eq!(found.record.file_name, "CONTROLLED.MAP");
+        assert_eq!(found.title(), metadata.display_name);
         assert!(matches!(found.source, LoadedMapSource::Loose { .. }));
         let mut wrong = metadata.clone();
         wrong.byte_length += 1;

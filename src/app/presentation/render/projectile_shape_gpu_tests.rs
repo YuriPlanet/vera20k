@@ -274,7 +274,7 @@ fn compare_shape_corpus(
             ];
             let viewport = [size[0] as f32, size[1] as f32];
             let axis = DepthAxis::NONE;
-            let order = NativeDisplayOrder::from_display(sim.display_layers());
+            let order = NativeDisplayOrder::from_world(&sim, None);
             let object = projectile_draw_instance(
                 sim.projectiles().get(id).unwrap(),
                 &kind,
@@ -433,7 +433,7 @@ fn compare_shape_corpus(
             // is already gone. No storage-order rendering is admissible.
             assert!(sim.retire_non_entity_object(id, crate::sim::world::UninitContext::default()));
             assert!(sim.projectiles().get(id).is_some());
-            let removed_order = NativeDisplayOrder::from_display(sim.display_layers());
+            let removed_order = NativeDisplayOrder::from_world(&sim, None);
             assert!(
                 projectile_draw_instance(
                     sim.projectiles().get(id).unwrap(),

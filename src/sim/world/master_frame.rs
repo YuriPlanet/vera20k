@@ -148,6 +148,10 @@ pub(super) struct FrameInputs<'a> {
 }
 
 impl<'a> FrameInputs<'a> {
+    fn bound(rules: &'a RuleSet, tick_ms: u32, effects: FrameEffects<'a>) -> Self {
+        Self::new(rules, Some(rules.overlay_registry()), tick_ms, effects)
+    }
+
     pub(super) fn new(
         rules: &'a RuleSet,
         overlay_registry: Option<&'a OverlayTypeRegistry>,
@@ -306,14 +310,10 @@ impl Simulation {
                 if request.lane == TickLane::Ordinary {
                     frame.commands = self.admit_frame_commands(request.ingress, rules, effects);
                 }
-                // MainTick55DBC8 precedes Logic55DC9E (including trigger polling).
-                Self::sort_display_ground(
-                    &self.interner,
-                    &self.terrain_objects,
-                    &mut self.substrate,
-                    rules,
-                );
-                // MainTick55DBCD saves the post-input, post-sort world before Logic.
+                // MainTick55DBC8 sorts Ground here, before Logic55DC9E. The
+                // simulation keeps Ground unordered (`DisplayLayers::submit`);
+                // the picture sorts it (`Simulation::ground_draw_order`).
+                // MainTick55DBCD saves the post-input world before Logic.
                 effects.before_logic(self);
                 self.lifecycle_outputs.emit(LifecycleOutput::LogicVisit);
             }
@@ -457,6 +457,13 @@ impl Simulation {
             }
             FrameStep::LocalAnims => {
                 for id in self.substrate.anims.local_ids() {
+                    // No expiry reaches a presentation anim, which nothing
+                    // lists: it ends with its owner's UnInit instead
+                    // (`AnimConstructorInput::Presentation`).
+                    if self.presentation_anim_orphaned(id) {
+                        self.destroy_anim(id, rules);
+                        continue;
+                    }
                     frame.bridge_state_changed |= self
                         .visit_anim(id, rules, overlay_registry, effects)
                         .map_err(|error| {
@@ -837,6 +844,37 @@ impl Simulation {
         &mut self,
         commands: &[CommandEnvelope],
         rules: &RuleSet,
+        tick_ms: u32,
+        lane: TickLane,
+        effects: FrameEffects<'_>,
+    ) -> Result<SimFrameOutput, FrameAdvanceError> {
+        self.advance_and_collect_frame(
+            commands,
+            rules,
+            Some(rules.overlay_registry()),
+            tick_ms,
+            lane,
+            effects,
+        )
+    }
+
+    /// Exercise a frame whose fixture deliberately withholds overlay types.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn advance_app_frame_without_overlay_types_for_test(
+        &mut self,
+        commands: &[CommandEnvelope],
+        rules: &RuleSet,
+        tick_ms: u32,
+        lane: TickLane,
+        effects: FrameEffects<'_>,
+    ) -> Result<SimFrameOutput, FrameAdvanceError> {
+        self.advance_and_collect_frame(commands, rules, None, tick_ms, lane, effects)
+    }
+
+    fn advance_and_collect_frame(
+        &mut self,
+        commands: &[CommandEnvelope],
+        rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
         tick_ms: u32,
         lane: TickLane,
@@ -893,7 +931,6 @@ impl Simulation {
     pub fn resume_outcome_wait(
         &mut self,
         rules: &RuleSet,
-        overlay_registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Result<SimFrameOutput, FrameAdvanceError> {
         if self.pending_outcome_wait().is_none() {
@@ -907,7 +944,7 @@ impl Simulation {
         let Some(FrameContinuation::Outcome(mut pending)) = self.frame_continuation.take() else {
             unreachable!("checked House outcome continuation")
         };
-        let inputs = FrameInputs::new(rules, overlay_registry, pending.tick_ms, effects);
+        let inputs = FrameInputs::bound(rules, pending.tick_ms, effects);
         let result = self.run_late_region(inputs, &mut pending.frame, Some(pending.cursor))?;
         let output = self.complete_or_suspend_frame(pending.frame, result, inputs, None);
         self.unit_voice_visit_interest.clear();
@@ -959,6 +996,25 @@ impl Simulation {
     pub fn resume_after_network_failure(
         &mut self,
         rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) -> Result<SimFrameOutput, FrameAdvanceError> {
+        self.resume_failed_network_frame(rules, Some(rules.overlay_registry()), effects)
+    }
+
+    /// Resume a diagnostic replay with the same optional table its frame started with.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn resume_after_network_failure_for_test(
+        &mut self,
+        rules: &RuleSet,
+        overlay_registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> Result<SimFrameOutput, FrameAdvanceError> {
+        self.resume_failed_network_frame(rules, overlay_registry, effects)
+    }
+
+    fn resume_failed_network_frame(
+        &mut self,
+        rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Result<SimFrameOutput, FrameAdvanceError> {
@@ -989,7 +1045,6 @@ impl Simulation {
     pub fn leave_network_wait(
         &mut self,
         rules: &RuleSet,
-        overlay_registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Result<SimFrameOutput, FrameAdvanceError> {
         if !self.pending_network_wait() {
@@ -1005,7 +1060,7 @@ impl Simulation {
         };
         Ok(self.finish_aborted_network_frame(
             pending.frame,
-            FrameInputs::new(rules, overlay_registry, pending.tick_ms, effects),
+            FrameInputs::bound(rules, pending.tick_ms, effects),
         ))
     }
 
@@ -1028,7 +1083,6 @@ impl Simulation {
     pub fn resume_network_wait(
         &mut self,
         rules: &RuleSet,
-        overlay_registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Result<SimFrameOutput, FrameAdvanceError> {
         if !self.pending_network_wait() {
@@ -1042,7 +1096,7 @@ impl Simulation {
         let Some(FrameContinuation::Waiting(mut pending)) = self.frame_continuation.take() else {
             unreachable!("checked wait continuation")
         };
-        let inputs = FrameInputs::new(rules, overlay_registry, pending.tick_ms, effects);
+        let inputs = FrameInputs::bound(rules, pending.tick_ms, effects);
         let result =
             self.run_network_command_tail(inputs, &mut pending.frame, Some(pending.context));
         let result = match result {

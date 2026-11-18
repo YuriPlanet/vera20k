@@ -19,18 +19,22 @@ const VK_ESCAPE: u16 = 0x1b;
 const VK_SPACE: u16 = 0x20;
 const VK_DELETE: u16 = 0x2e;
 
-/// VERA's own commands that come with a key: Performance Stats Ctrl+Alt+F, Lock
+/// VERA's own commands that come with a key: Performance Stats Ctrl+Alt+F,
+/// Thread Stats Ctrl+Alt+G, Lock
 /// Cursor to Window Ctrl+Alt+L, Full Screen Alt+Enter, String Keys Ctrl+Alt+K,
-/// Edit Layout Ctrl+Alt+E, Formation Line F, Formation Lock O, Ferry J and
+/// Edit Layout Ctrl+Alt+E, Super Weapon Building Timers Ctrl+Alt+T, Formation
+/// Line F, Formation Lock O, Ferry J and
 /// Rotate Primary I.
 /// Retail `KEYBOARDMD.INI` binds none of these keys but F, which is its
 /// Follow; [`HotkeyBindings::move_follow_off_formation_key`] moves that.
-const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 10] = [
+const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 12] = [
     (HotkeyCommand::PerformanceStats, CTRL_BIT | ALT_BIT | 0x46),
+    (HotkeyCommand::ThreadStats, CTRL_BIT | ALT_BIT | 0x47),
     (HotkeyCommand::LockCursor, CTRL_BIT | ALT_BIT | 0x4c),
     (HotkeyCommand::FullScreen, ALT_BIT | 0x0d),
     (HotkeyCommand::StringKeys, CTRL_BIT | ALT_BIT | 0x4b),
     (HotkeyCommand::LayoutEdit, CTRL_BIT | ALT_BIT | 0x45),
+    (HotkeyCommand::SuperweaponTimers, CTRL_BIT | ALT_BIT | 0x54),
     (HotkeyCommand::FormationLine, FORMATION_LINE_KEY),
     (HotkeyCommand::FormationLock, 0x4f),
     (HotkeyCommand::Ferry, 0x4a),
@@ -101,9 +105,11 @@ pub(crate) enum HotkeyCommand {
     ScreenCapture,
     SetView(usize),
     /// VERA's built-in keys in the `vera20k` keyboard category, each with a
-    /// default in [`VERA_DEFAULT_KEYS`]. These four work on every screen
+    /// default in [`VERA_DEFAULT_KEYS`]. These five work on every screen
     /// ([`HotkeyBindings::window_command`]).
     PerformanceStats,
+    /// Show or hide the performance panel's Threads and Ticks rows.
+    ThreadStats,
     LockCursor,
     FullScreen,
     /// Swap the interface between each label's text and its string-table key
@@ -113,6 +119,11 @@ pub(crate) enum HotkeyCommand {
     /// drags the interface's parts (`input::layout_edit`). It comes with a
     /// default key like the four above but works in a match only.
     LayoutEdit,
+    /// In a match: show or hide the Super Weapon Building Timers, every
+    /// provider building's own Super countdown above it
+    /// (`presentation::ui_overlays`). In the `vera20k` keyboard category with
+    /// the Ctrl+Alt+T default.
+    SuperweaponTimers,
     /// Held while a left drag draws a formation line, or with Shift a
     /// block (`input::formation_line`). In the `vera20k` keyboard category
     /// with the F default.
@@ -133,21 +144,6 @@ pub(crate) enum HotkeyCommand {
     /// neutral unchanged) to tell players apart in large melee matches. Pure
     /// presentation; works in a match only.
     RelationColors,
-    /// VERA's own: install or remove the auto play host. Registered after the
-    /// retail commands so the original catalog indices are untouched.
-    ToggleAutoPlay,
-    /// VERA's own: flip only the forces half of an installed host, so the base
-    /// keeps building while the player takes the troops back, or the other way.
-    ToggleAutoPlayForces,
-    /// VERA's own: the production half on its own, the mirror of
-    /// [`Self::ToggleAutoPlayForces`]. With both keys bound the player has two
-    /// independent switches — the base and the army — and
-    /// [`Self::ToggleAutoPlay`] stays the one key that runs both.
-    AutoPlayBuild,
-    /// VERA's own: the abilities half on its own — the superweapon launches, a
-    /// paradrop and a spy plane among them — so a player can keep the army
-    /// running and fire the missile themselves.
-    AutoPlayAbilities,
     /// VeraX: load the selection into nearby transports. Registered in the
     /// `vera20k` keyboard category with the Ctrl+D default.
     AutoLoad,
@@ -538,8 +534,8 @@ impl HotkeyBindings {
             .unwrap_or(HotkeyResolution::Unhandled)
     }
 
-    /// VERA's every-screen commands (Performance Stats, Lock Cursor to Window,
-    /// Full Screen, String Keys), which the window owner runs before any
+    /// VERA's every-screen commands (Performance Stats, Thread Stats, Lock
+    /// Cursor to Window, Full Screen, String Keys), which the window owner runs before any
     /// screen's own keys. A binding on a key that types text, held without Ctrl
     /// or Alt, is left to the battle's hotkey dispatch, which serves the chat
     /// edit first, so text boxes keep their letters.
@@ -551,6 +547,7 @@ impl HotkeyBindings {
     ) -> Option<HotkeyCommand> {
         let HotkeyResolution::Command(
             command @ (HotkeyCommand::PerformanceStats
+            | HotkeyCommand::ThreadStats
             | HotkeyCommand::LockCursor
             | HotkeyCommand::FullScreen
             | HotkeyCommand::StringKeys),
@@ -958,60 +955,6 @@ mod tests {
         crate::test_fixture::json("tools/storage_oracle/keyboard_bindings.json")
     }
 
-    /// Auto play's key belongs to VERA's own category, and `category_key` is
-    /// what puts it there. The catalog entry has to spell the literal, so this
-    /// pins it against the constant the keyboard page is told about.
-    #[test]
-    fn auto_play_is_registered_in_veras_own_category() {
-        let row = catalog::registered_commands()
-            .iter()
-            .find(|row| row.command == HotkeyCommand::ToggleAutoPlay)
-            .expect("AutoPlay is registered");
-        assert_eq!(row.category_key, catalog::VERA_CATEGORY_KEY);
-        assert_eq!(row.ini_name, "AutoPlay");
-        // It ships unbound: KEYBOARDMD.INI has no entry for it, so nothing
-        // maps to it until the player assigns a key.
-        let defaults = HotkeyBindings::reload_from_ini_bytes(None);
-        assert!(
-            !defaults
-                .by_key
-                .values()
-                .any(|command| *command == HotkeyCommand::ToggleAutoPlay),
-            "auto play has no default key"
-        );
-    }
-
-    /// The three switches are three commands in the same category, each with
-    /// its own ini name, so a player can bind the base, the army and the
-    /// abilities to three different keys.
-    #[test]
-    fn every_auto_play_switch_is_registered_on_its_own() {
-        let registered = catalog::registered_commands();
-        for (command, name) in [
-            (HotkeyCommand::ToggleAutoPlay, "AutoPlay"),
-            (HotkeyCommand::AutoPlayBuild, "AutoPlayBuild"),
-            (HotkeyCommand::ToggleAutoPlayForces, "AutoPlayForces"),
-            (HotkeyCommand::AutoPlayAbilities, "AutoPlayAbilities"),
-        ] {
-            let row = registered
-                .iter()
-                .find(|row| row.command == command)
-                .unwrap_or_else(|| panic!("{name} is registered"));
-            assert_eq!(row.category_key, catalog::VERA_CATEGORY_KEY, "{name}");
-            assert_eq!(row.ini_name, name);
-        }
-        let defaults = HotkeyBindings::reload_from_ini_bytes(None);
-        assert!(
-            !defaults.by_key.values().any(|command| matches!(
-                command,
-                HotkeyCommand::AutoPlayBuild
-                    | HotkeyCommand::ToggleAutoPlayForces
-                    | HotkeyCommand::AutoPlayAbilities
-            )),
-            "the switches ship unbound"
-        );
-    }
-
     #[test]
     fn registered_catalog_matches_original_objects_and_metadata_getters() {
         let fixture = native_keyboard_fixture();
@@ -1019,11 +962,6 @@ mod tests {
         let catalog = catalog::retail_commands();
         assert_eq!(catalog.len(), 87);
         assert_eq!(catalog.len(), native.len());
-        // VERA's own commands are appended after the retail ones, so the
-        // registered catalog is longer and starts with this same prefix.
-        let registered = catalog::registered_commands();
-        assert!(registered.len() >= catalog.len());
-        assert!(registered.starts_with(catalog));
         for (index, (actual, expected)) in catalog.iter().zip(native).enumerate() {
             assert_eq!(expected["index"].as_u64(), Some(index as u64));
             assert_eq!(actual.ini_name, expected["ini_name"].as_str().unwrap());
@@ -1059,6 +997,9 @@ mod tests {
             writeln!(ini, "{}={key}", row["ini_name"].as_str().unwrap()).unwrap();
         }
         let loaded = HotkeyBindings::reload_from_ini_bytes(Some(ini.as_bytes()));
+        // The 87 retail rows, plus VERA's eight default keys above 0x256 and
+        // the two Formation keys, Ferry's J and Rotate Primary's I below 0x200.
+        assert_eq!(loaded.by_key.len(), 99);
         for (index, metadata) in catalog::retail_commands().iter().enumerate() {
             assert_eq!(
                 loaded.command_at(0x200 + index as u16),
@@ -1066,7 +1007,7 @@ mod tests {
             );
         }
         let saved = loaded.to_ini_string();
-        ini.push_str("FullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n");
+        ini.push_str("FullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nThreadStats=1607\nStringKeys=1611\nLockCursor=1612\nSuperweaponTimers=1620\n");
         let ini = ini.replacen(
             "[Hotkey]\n",
             "[Hotkey]\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\n",
@@ -1199,9 +1140,9 @@ mod tests {
         assert_eq!(startup.first_key(HotkeyCommand::Delete), Some(46));
         let serialized = startup.to_ini_string();
         #[cfg(feature = "verax")]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nThreadStats=1607\nStringKeys=1611\nLockCursor=1612\nSuperweaponTimers=1620\n";
         #[cfg(not(feature = "verax"))]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\nStopObject=83\nFullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\nStopObject=83\nFullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nThreadStats=1607\nStringKeys=1611\nLockCursor=1612\nSuperweaponTimers=1620\n";
         assert_eq!(serialized, expected);
         let mut reloaded = HotkeyBindings::reload_from_ini_bytes(Some(serialized.as_bytes()));
         assert_eq!(reloaded.command_at(46), None);
@@ -1422,6 +1363,7 @@ mod tests {
         let mut bindings = HotkeyBindings::from_ini_bytes(archive);
         for (command, key) in [
             (HotkeyCommand::PerformanceStats, 0x646),
+            (HotkeyCommand::ThreadStats, 0x647),
             (HotkeyCommand::LockCursor, 0x64c),
             (HotkeyCommand::FullScreen, 0x40d),
             (HotkeyCommand::StringKeys, 0x64b),

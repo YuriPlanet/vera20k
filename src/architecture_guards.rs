@@ -72,14 +72,10 @@ fn production_dependency_edges_match_frozen_ledger_inventory() {
     );
 }
 
-/// F09: `Simulation::advance_master_frame` and `advance_app_frame` accept
-/// swappable rules/map/path resources, so their production call sites are
-/// pinned — the master frame is reached only inside
-/// `sim/world/master_frame.rs`, the app frame only there and in
-/// `SimRuntime::advance_frame`. Every other
-/// caller must be `#[cfg(test)]` (the `advance_tick` fixture adapter and the
-/// replay `run_fixture*` runners are compile-time gated already); production
-/// and tooling advance exclusively through the bound-resource runtime.
+/// Production and tooling advance through `SimRuntime`, which supplies the
+/// match rules to the app frame. The rules supply its overlay types. Only
+/// fixture adapters drive a frame with explicitly substituted inputs. Pin the
+/// production call sites so new callers go through the bound runtime.
 #[test]
 fn master_frame_adapters_have_pinned_production_callers() {
     let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -137,7 +133,6 @@ fn raw_ini_walks_have_pinned_production_callers() {
             "registry_ids",
             &[
                 ("rules/ini_parser.rs", 1), // the definition
-                ("rules/overlay_types.rs", 1),
                 // Includes parse_registry copying already resolved stored IDs.
                 ("rules/ruleset.rs", 3),
                 ("rules/smudge_type.rs", 1),
@@ -425,6 +420,10 @@ fn engine_per_client_reads_have_pinned_callers() {
                 // sees a Super's timer line; only the timer drawing asks.
                 ("sim/superweapon/ares_presentation.rs", 1),
                 ("sim/superweapon/lightning_storm.rs", 1),
+                // building_super_charges: whose providers draw the countdown
+                // labels, and which lines an enemy's building may show; only
+                // the label capture (HudFacts) asks, which feeds drawing.
+                ("sim/superweapon/mod.rs", 1),
                 ("sim/superweapon/psychic_reveal.rs", 1),
                 ("sim/team_script_vm/actions.rs", 1),
                 ("sim/team_script_vm/reinforcements.rs", 2),
@@ -436,7 +435,7 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/world/gap_generator.rs", 1),
                 ("sim/world/house_defeat.rs", 9),
                 ("sim/world/jumpjet_cruise.rs", 1),
-                ("sim/world/lifecycle.rs", 6),
+                ("sim/world/lifecycle.rs", 7),
                 ("sim/world/mod.rs", 7),
                 ("sim/world/object_turn.rs", 1),
                 ("sim/world/planning.rs", 2),
@@ -465,7 +464,9 @@ fn engine_per_client_reads_have_pinned_callers() {
                 // IsTimerVisible's observer case, as for `current_house`.
                 ("sim/superweapon/ares_presentation.rs", 1),
                 ("sim/superweapon/mod.rs", 1),
-                ("sim/world/house_defeat.rs", 2),
+                // The third is `network_ai_alone`: it asks of every House,
+                // and each peer holds the same observer list from the room.
+                ("sim/world/house_defeat.rs", 3),
             ],
         ),
         (
@@ -527,7 +528,7 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/game_entity.rs", 3),
                 ("sim/miner/ore_scan.rs", 1),
                 ("sim/world/camera_home.rs", 1),
-                ("sim/world/lifecycle.rs", 8),
+                ("sim/world/lifecycle.rs", 9),
                 ("sim/world/object_entry.rs", 1),
             ],
         ),
@@ -540,7 +541,7 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/power_system.rs", 2),
                 ("sim/production/production_tech.rs", 1),
                 ("sim/trigger_runtime.rs", 1),
-                ("sim/world/lifecycle.rs", 11),
+                ("sim/world/lifecycle.rs", 12),
                 ("sim/world/mod.rs", 1),
                 ("sim/world/shroud_refresh.rs", 1),
                 ("sim/world/world_commands.rs", 1),
@@ -1254,8 +1255,7 @@ fn sim_names_no_upper_layer_root_even_in_tests() {
         offenders.is_empty(),
         "sim/ references upper-layer root(s): {offenders:?}\n\
          Sim tests that need render/net live in those layers' boundary test \
-         modules (e.g. render::locomotor_visual tests, \
-         net::lockstep_sim_convergence_tests), never inside sim/."
+         modules (e.g. render::locomotor_visual tests), never inside sim/."
     );
 }
 
@@ -1894,8 +1894,8 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         (
             "rules/personal_rules.rs",
             "set_terrain_deformation",
-            "VERA's own switch with no native member: the Options page's Terrain Deformation \
-             box, which the app passes in for the rules the next scenario reads",
+            "VERA's own switch with no native member: the skirmish Game Options' Terrain \
+             Deformation box, which the app passes in for the rules the next scenario reads",
         ),
         (
             "rules/superweapon_type.rs",

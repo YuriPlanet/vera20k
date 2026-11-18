@@ -183,7 +183,7 @@ fn thief_capture_normal_ai_changes_owner_and_retains_captor_type() {
 #[test]
 fn thief_capture_keeps_the_original_role_alliance_and_distance_gates() {
     use crate::sim::components::DriveCoord;
-    // EC6 alone cannot take a vehicle in an original build. Ares replaces
+    // EC6 alone cannot take a vehicle in a stock game. Ares replaces
     // the EC5 gate with its own admission; that is a separate feature.
     let (mut sim, rules, _) = scene();
     let actor = spawn(&mut sim, &rules, "VEHICLEONLY", "Americans", 15);

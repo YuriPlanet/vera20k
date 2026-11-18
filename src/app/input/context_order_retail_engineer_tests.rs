@@ -223,27 +223,11 @@ fn retail_camov02_alias_binds_damaged_art_and_engineer_repair_restores_normal() 
     // arrival and repair use their ordinary production transactions.
     let tank = runtime
         .simulation
-        .spawn_object_with_overlay_registry(
-            "MTNK",
-            &owner_name,
-            31,
-            60,
-            0,
-            rules,
-            &runtime.resources.overlay_registry,
-        )
+        .spawn_object_with_map_overlays("MTNK", &owner_name, 31, 60, 0, rules)
         .unwrap();
     let engineer = runtime
         .simulation
-        .spawn_object_with_overlay_registry(
-            "ENGINEER",
-            &owner_name,
-            32,
-            61,
-            0,
-            rules,
-            &runtime.resources.overlay_registry,
-        )
+        .spawn_object_with_map_overlays("ENGINEER", &owner_name, 32, 61, 0, rules)
         .unwrap();
     for (id, cell) in [(tank, (31, 60)), (engineer, (32, 61))] {
         let entity = runtime.simulation.entities().get(id).unwrap();
@@ -447,7 +431,7 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
         false,
         false,
         rules,
-        Some(&runtime.resources.overlay_registry),
+        Some(runtime.resources.rules.overlay_registry()),
         crate::sim::world::FrameEffects::default(),
     );
     let plant_entity = runtime

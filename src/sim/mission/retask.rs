@@ -82,9 +82,9 @@ impl Simulation {
     /// class override): the class setter `vt+0x480(0, 1)` (`0x0070F859`),
     /// class `vt+0x3C8(0)` (`0x0070F865`), ArchiveTarget (`+0x218`)
     /// cleared (`0x0070F871`), then `Assign_Mission(Guard)` (`0x0070F87B`).
-    /// Callers: the capture reset (`0x00471EA5`)
-    /// and the slave manager (the deploy hand-off `0x006B0D10` and the
-    /// release `0x006B0BC5`).
+    /// Callers include the capture reset (`0x00471EA5`), the slave manager
+    /// (the deploy hand-off `0x006B0D10` and the release `0x006B0BC5`) and
+    /// SetInOpenTransport (`0x00710484`, [`Self::enter_open_topped`]).
     pub(crate) fn reset_orders_to_guard(
         &mut self,
         id: u64,

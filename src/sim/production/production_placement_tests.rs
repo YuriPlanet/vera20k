@@ -3790,10 +3790,10 @@ fn sell_player_built_garrisoned_building_demolishes_and_ejects_alive() {
     let mut pax = crate::sim::game_entity::GameEntity::test_default(31, "E1", "Americans", 39, 40);
     pax.set_owner_for_test(amer_id);
     pax.set_type_ref_for_test(e1_id);
-    pax.passenger_role = PassengerRole::inside_for_test(30, false);
+    pax.set_passenger_role_for_test(PassengerRole::inside_for_test(30, false));
     sim.substrate.entities.insert(pax);
     if let Some(t) = sim.substrate.entities.get_mut(30) {
-        t.passenger_role.occupants_mut().add(31);
+        t.garrison_mut_for_test().add_for_test(31);
     }
     // Accepted Building AddOccupant52298D refreshes after the append.
     sim.refresh_spatial_threat(30, &rules, None);
@@ -3810,7 +3810,10 @@ fn sell_player_built_garrisoned_building_demolishes_and_ejects_alive() {
     let pax = sim.substrate.entities.get(31).expect("occupant exists");
     assert!(!pax.death.is_dying(), "occupant should not be dying");
     assert!(pax.health.current() > 0, "occupant should be alive");
-    assert!(pax.passenger_role.is_none(), "occupant role should be None");
+    assert!(
+        pax.passenger_role().is_none(),
+        "occupant role should be None"
+    );
 }
 
 #[test]
@@ -4332,7 +4335,6 @@ fn stock_yuri_cloning_vat_duplicates_a_successfully_placed_infantry() {
 /// infantry remains in limbo rather than being deleted or refunded.
 // Ares KickOutClones100127C0 deletes a refused clone instead
 // (`ares_kick_out_clones_follow_cloneable_cloned_as_and_delete_refusals`).
-#[cfg(not(feature = "ares"))]
 #[test]
 fn cloning_vat_keeps_a_refused_copy_in_limbo() {
     let scenario = IniFile::from_str("[NACLON]\nFactory=InfantryType\n");

@@ -313,6 +313,17 @@ fn occupy_weapons_are_infantry_keys() {
 /// read and keeps the constructor's -1.
 #[test]
 fn retail_particle_systems_bind_registered_particles() {
+    assert_retail_unbound_particle_systems(&["SmallGreySmokeSys"]);
+}
+
+/// [`retail_particle_systems_bind_registered_particles`] read the Ares way.
+#[test]
+fn retail_particle_systems_bind_registered_particles_read_the_ares_way() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    assert_retail_unbound_particle_systems(&[]);
+}
+
+fn assert_retail_unbound_particle_systems(expected: &[&str]) {
     let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
@@ -329,12 +340,7 @@ fn retail_particle_systems_bind_registered_particles() {
         .collect();
     // Retail names SmallGreySmokeSys only in DamageParticleSystems=, which
     // Ares reads Find-only (TechnoTypeClass_LoadFromINI_ListLength 1005BF90,
-    // hook 0x7125DF), so it allocates no such system.
-    let expected: &[&str] = if cfg!(feature = "ares") {
-        &[]
-    } else {
-        &["SmallGreySmokeSys"]
-    };
+    // hook 0x7125DF), so read the Ares way it allocates no such system.
     assert_eq!(unbound, expected);
 }
 
@@ -833,7 +839,7 @@ fn continued_process_keeps_the_rules_class_type_pointers() {
     assert_eq!(rules.general.warp_in.name, "WARPA");
     assert_eq!(rules.general.dead_bodies, ["BODYA"]);
     assert_eq!(rules.general.metallic_debris, ["DEBRISA"]);
-    assert_eq!(rules.build_const_types, ["GACNST"]);
+    assert_eq!(rules.build_const_types(), ["GACNST"]);
     assert_eq!(rules.crate_rules.crate_img.as_deref(), Some("CRATEA"));
     assert_eq!(rules.crate_rules.unit_crate_type.as_deref(), Some("UNITA"));
     assert_eq!(rules.crate_rules.maximum, 7);
@@ -902,7 +908,7 @@ fn scenario_reset_clears_the_rules_class_type_pointers_and_keeps_the_scalars() {
     assert_eq!(rules.general.warp_in.name, "");
     assert!(rules.general.dead_bodies.is_empty());
     assert!(rules.general.metallic_debris.is_empty());
-    assert!(rules.build_const_types.is_empty());
+    assert!(rules.build_const_types().is_empty());
     assert_eq!(rules.crate_rules.crate_img, None);
     assert_eq!(rules.crate_rules.unit_crate_type, None);
     assert_eq!(rules.crate_rules.maximum, 7);
@@ -995,24 +1001,23 @@ fn general_type_references_start_null() {
 /// reads kept the authored token.
 #[test]
 fn type_lists_name_the_type_the_factory_found() {
-    let long = "LONGBUILDINGNAMEOVER24BYTESX";
-    let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
-        "[BuildingTypes]\n0=GACNST\n1={long}\n[GACNST]\nFoundation=1x1\n\
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let long = "LONGBUILDINGNAMEOVER24BYTESX";
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[BuildingTypes]\n0=GACNST\n1={long}\n[GACNST]\nFoundation=1x1\n\
          [{long}]\nFoundation=1x1\n\
          [General]\nShipyard=gacnst\n[AI]\nBuildConst=gacnst\nBuildPower={long}\n"
-    )))
-    .unwrap();
+        )))
+        .unwrap();
 
-    assert_eq!(rules.shipyard_types, ["GACNST"]);
-    assert_eq!(rules.build_const_types, ["GACNST"]);
-    // Ares's Find-only Buf_AI read (1005B830, hook 0x672B0E) compares the
-    // whole token with the stored 24-byte ID, so the long name finds none.
-    let long_type: &[&str] = if cfg!(feature = "ares") {
-        &[]
-    } else {
-        &[&long[..24]]
-    };
-    assert_eq!(rules.build_power_types, long_type);
+        assert_eq!(rules.shipyard_types, ["GACNST"]);
+        assert_eq!(rules.build_const_types(), ["GACNST"]);
+        // Ares's Find-only Buf_AI read (1005B830, hook 0x672B0E) compares the
+        // whole token with the stored 24-byte ID, so the long name finds none.
+        let long_type: &[&str] = if ares_way { &[] } else { &[&long[..24]] };
+        assert_eq!(rules.build_power_types, long_type);
+    }
 }
 
 /// Retail RULESMD over ARTMD, alone and under each of the nine mode INIs
@@ -1022,8 +1027,8 @@ fn type_lists_name_the_type_the_factory_found() {
 /// deleted typed reads published, taken once on the base build. Each stack
 /// also runs after Full_Init's reset of the previous one's live state, as a
 /// later scenario does, and publishes the same references.
-// Ares reads these lists Find-only through ParseList (Misc/Bugfixes.Buffer.cpp).
-#[cfg(not(feature = "ares"))]
+// Read the stock way: Ares reads these lists Find-only through ParseList
+// (Misc/Bugfixes.Buffer.cpp).
 #[test]
 fn retail_published_references_are_pinned() {
     use crate::rules::retail_ini_fixture::{art_registry, retail_ini, retail_rules_and_art};
@@ -1302,7 +1307,7 @@ fn published_references(rules: &RuleSet, processed: &ProcessedRulesLayers) -> Ve
         "AI {:?}",
         (
             (
-                &rules.build_const_types,
+                rules.build_const_types(),
                 &rules.build_power_types,
                 &rules.build_refinery_types,
                 &rules.build_barracks_types,

@@ -51,7 +51,7 @@ impl Simulation {
                     actor.category(),
                     EntityCategory::Unit | EntityCategory::Infantry
                 )
-                || actor.passenger_role.transporter().is_some()
+                || actor.passenger_role().transporter().is_some()
             {
                 continue;
             }

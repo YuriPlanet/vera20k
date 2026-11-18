@@ -91,7 +91,7 @@ pub(crate) struct SimHost {
     /// and interner are synced from it. Release builds keep it only while the
     /// runtime is lent; debug builds take one with every frame, so every
     /// draw reads the frame as a lent tick's draw does.
-    presentation: Option<Arc<SimRuntime>>,
+    presentation: Option<Box<SimRuntime>>,
     /// The last world copy's world, which the next copy brings up to date
     /// instead of copying the world whole.
     spare: Option<crate::sim::world::Simulation>,
@@ -110,7 +110,7 @@ pub(crate) struct SimHost {
     /// What drawing reads (`presentation::frame`): captured from the home
     /// world on its first read after a write, and at [`Self::lend`] for the
     /// world the lent tick starts from. Every write route empties it.
-    frame: std::cell::OnceCell<Arc<PresentationFrame>>,
+    frame: std::cell::OnceCell<Box<PresentationFrame>>,
     /// Every object type the local sidebar has asked of this scenario's
     /// frames ([`Self::ask_sidebar_types`]), which each frame answers.
     sidebar_types: SidebarTypes,
@@ -351,13 +351,10 @@ impl SimHost {
     /// world is kept for the next copy to bring up to date
     /// (`Simulation::presentation_copy`).
     fn forget_frame(&mut self) {
-        // Freeing 20,000 records takes milliseconds; the pool does it.
-        if let Some(frame) = std::mem::take(&mut self.frame).into_inner() {
-            crate::sim::parallel::drop_on_pool(frame);
+        if let Some(frame) = self.frame.take() {
+            frame.retire();
         }
-        if let Some(copy) = self.presentation.take()
-            && let Ok(copy) = Arc::try_unwrap(copy)
-        {
+        if let Some(copy) = self.presentation.take() {
             self.spare = Some(copy.simulation);
         }
     }
@@ -382,7 +379,7 @@ impl SimHost {
             let viewer = runtime.simulation.session().current_house();
             let reuse = self.spare.take();
             let started = Instant::now();
-            self.presentation = Some(Arc::new(runtime.presentation_copy(viewer, reuse)));
+            self.presentation = Some(Box::new(runtime.presentation_copy(viewer, reuse)));
             let mut costs = self.snapshot_costs.get();
             costs.copy += started.elapsed();
             costs.copies += 1;
@@ -395,12 +392,12 @@ impl SimHost {
     /// last write.
     pub(crate) fn frame(&self) -> Option<&PresentationFrame> {
         if self.lent {
-            return self.frame.get().map(|frame| &**frame);
+            return self.frame.get().map(Box::as_ref);
         }
         let runtime = self.runtime.as_ref()?;
         Some(self.frame.get_or_init(|| {
             let started = Instant::now();
-            let frame = Arc::new(PresentationFrame::capture(runtime, &self.sidebar_types));
+            let frame = Box::new(PresentationFrame::capture(runtime, &self.sidebar_types));
             let mut costs = self.snapshot_costs.get();
             costs.capture += started.elapsed();
             costs.captures += 1;
@@ -643,6 +640,9 @@ type LentJob = (SimRuntime, SimJob, Option<SimWake>);
 fn run_jobs(jobs: &Handoff<Option<LentJob>>, returned: &Handoff<Returned>) {
     while let Some((mut runtime, job, wake)) = jobs.wait() {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| job(&mut runtime)));
+        // For the performance panel's Threads row, before the main thread
+        // can read it for this job.
+        crate::app::diagnostics::thread_load::note_simulation_thread();
         returned.put((runtime, result));
         if let Some(wake) = wake {
             wake();
@@ -764,8 +764,27 @@ const _: () = {
 #[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
-    use crate::net::lockstep::{ChecksumMismatch, FrameInfo, FrameInfoCompareGate};
+    use crate::sim::command_queue::{ChecksumMismatch, FrameInfo, FrameInfoCompareGate};
     use crate::sim::world::Simulation;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn returning_to_skirmish_can_write_rules_while_the_old_frame_is_being_freed() {
+        crate::sim::parallel::on_single_worker_for_test(|| {
+            let mut host = SimHost::default();
+            host.install(Some(SimRuntime::from_simulation(Simulation::new())));
+            host.ensure_frame();
+
+            // Score Continue retires the scenario and the Skirmish dialog immediately
+            // writes the process countries into the retained match's Rules.
+            host.write_sim(SimWrite::Lifecycle)
+                .unwrap()
+                .simulation
+                .retire_scenario_started();
+            let runtime = host.write_sim(SimWrite::Rules).unwrap();
+            let _rules = &mut runtime.resources_mut().rules;
+        });
+    }
 
     #[test]
     fn a_lent_runtime_serves_reads_from_the_frame_until_a_write_takes_it_back() {

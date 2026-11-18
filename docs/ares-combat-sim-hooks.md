@@ -1,7 +1,8 @@
 # Ares combat and simulation hooks
 
-Build with `--features ares`. These are the Ares 3.0 combat, simulation and
-INI hooks of the 2026-11-08 hook pass that no earlier chain had cited. Each
+These are the Ares 3.0 combat, simulation and INI hooks of the 2026-11-08 hook
+pass that no earlier chain had cited; every build takes them when the game plays
+Ares ([Ares](ares.md)). Each
 row gives the gamemd hook, the Ares.dll function, and what VERA20K does with
 it: ported (the Rust cites both addresses next to the code), equivalent
 (the engine already behaves as the hook does), not applicable, or residual
@@ -229,9 +230,9 @@ The laser waves have
 
 The Ares airburst has `ares_airburst_sends_one_child_to_each_cell_within_the_spread`
 and `ares_splits_send_cluster_children_to_nearby_technos_or_random_cells`
-(`sim::combat::airburst`), replacing the old check that Ares builds run no
-tail. Ares builds replace two stock native comparisons: the band-11 cell-spread
-oracle and the busy-factory redirect rows run only in stock builds, and the
+(`sim::combat::airburst`), replacing the old check that Ares runs no
+tail. Ares replaces two stock native comparisons: the band-11 cell-spread
+oracle and the busy-factory redirect rows run only without Ares, and the
 laser-birth corpus skips its width and support checks under Ares. The Ares
 behaviour has its own tests next to them (`ares_area_damage_walks_the_cell_spread_enumerator_ring_order`,
 `ares_busy_factory_exit_takes_another_type_that_can_build_the_product`,

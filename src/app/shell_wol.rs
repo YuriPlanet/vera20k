@@ -19,7 +19,6 @@
 
 pub(crate) mod buddies;
 pub(crate) mod buddy;
-pub(crate) mod chat_translation;
 mod live_service;
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 pub(crate) use live_service::lobby_base_url;
@@ -38,7 +37,6 @@ mod test_service;
 pub(crate) mod translation;
 
 pub(crate) use live_service::OnlineCleanup;
-pub(crate) use live_service::RELEASES_URL;
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
 pub(crate) use live_service::discard_spawned_visit;
 pub(crate) use live_service::keep_network_report;
@@ -52,7 +50,7 @@ pub(crate) use live_service::{
 };
 pub(crate) use login::{account_form_layout, combo_popup, login_layout, open_login_art};
 pub(crate) use service::{
-    NET_STATUS_LOST, WolApiStatus, WolHighScoreRecord, WolLadderRecord, WolLoginAccepted,
+    NET_STATUS_LOST, WolApiStatus, WolHighScoreRecord, WolLadderRecord, WolLoginAccepted, WolMatch,
     WolProvider, WolServer, WolServerList, WolServiceEvent, WolServiceRequest, request,
     service_event,
 };
@@ -159,8 +157,6 @@ pub(crate) enum WolPage {
     /// WOL Options `0x2BC` (and its Sound Options `0xD6`) over the hidden
     /// lobby.
     Options(Box<options::WolOptionsPage>),
-    /// VERA's Chat Translation page, over the hidden lobby.
-    ChatTranslation(Box<crate::ui::wol_chat_translation::WolChatTranslationPage>),
     /// The auto-login query `0x112` after a dialog login.
     AutoLoginQuery(Box<crate::ui::wol_persona::WolAutoLoginQuery>),
     /// The locale page `0xFE` during the connect.
@@ -244,6 +240,13 @@ pub(crate) struct WolVisit {
     /// VERA: why the last online match ended, until the chat the player
     /// lands in exists.
     problem_line: Option<String>,
+    /// VERA: whether the online lobby lets players watch matches, as its
+    /// list of them last answered (docs/lobby-protocol.md "Watching"); `None`
+    /// before the first answer.
+    lobby_watches: Option<bool>,
+    /// VERA: the lobby lets a room's players visit the public lobby, as
+    /// its sign-in answered (docs/lobby-protocol.md "Visiting the lobby").
+    lobby_visits: bool,
     /// VERA: BC6's Continue after a co-op mission: the stage the kept
     /// room's host takes when the room comes back. The runner's post-match
     /// entry drops it unless it waits for that room.
@@ -314,6 +317,8 @@ impl WolVisit {
             in_game: false,
             back_to_room: false,
             problem_line: None,
+            lobby_watches: None,
+            lobby_visits: false,
             cooperative_resume: None,
             connected: false,
             disconnected: false,
@@ -450,6 +455,27 @@ pub(crate) fn in_match(state: &AppState) -> bool {
         .is_some_and(|visit| visit.in_game)
 }
 
+/// VERA: whether the online lobby lets players watch matches, as its list of
+/// them last answered (docs/lobby-protocol.md "Watching"); `None` before the
+/// first answer.
+pub(crate) fn lobby_watches(state: &AppState) -> Option<bool> {
+    state
+        .frontend
+        .wol
+        .as_ref()
+        .and_then(|visit| visit.lobby_watches)
+}
+
+/// VERA: whether the online lobby lets a room's players visit the public
+/// lobby, as its sign-in answered; a lobby from before it does not.
+pub(crate) fn lobby_visits(state: &AppState) -> bool {
+    state
+        .frontend
+        .wol
+        .as_ref()
+        .is_some_and(|visit| visit.lobby_visits)
+}
+
 /// A WOL box (`0x005E2CD0` style 0) with a CSF body.
 pub(crate) fn message_box(state: &AppState, key: &str) -> crate::ui::wol_shell::WolMessageBox {
     service::message_box(state, key, false)
@@ -488,6 +514,19 @@ pub(crate) fn hold_problem_line(state: &mut AppState, text: String) {
         && visit.provider == WolProvider::Online
     {
         visit.problem_line = Some(text);
+    }
+}
+
+/// VERA: add `text` to the line waiting for the chat this online visit next
+/// lands in, or let it wait alone.
+pub(crate) fn add_problem_line(state: &mut AppState, text: String) {
+    if let Some(visit) = state.frontend.wol.as_mut()
+        && visit.provider == WolProvider::Online
+    {
+        visit.problem_line = Some(match visit.problem_line.take() {
+            Some(held) => format!("{held} {text}"),
+            None => text,
+        });
     }
 }
 
@@ -556,6 +595,12 @@ pub(crate) fn reenter_after_match(state: &mut AppState) {
         visit.back_to_room = false;
     }
     live_service::match_returned(state);
+    if !App::prepare_multiplayer_settings(
+        state,
+        crate::app::match_runtime::session::SessionMode::Wol,
+    ) {
+        return;
+    }
     persona::enter_wol_main(state);
     read_wol_settings(state);
     let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
@@ -773,10 +818,6 @@ impl App {
             options::cursor_moved(state);
             return;
         }
-        if chat_translation::page_open(state) {
-            chat_translation::cursor_moved(state);
-            return;
-        }
         if persona::page_open(state) {
             persona::cursor_moved(state);
             return;
@@ -836,10 +877,6 @@ impl App {
             options::mouse(state, true);
             return;
         }
-        if chat_translation::page_open(state) {
-            chat_translation::mouse(state, true);
-            return;
-        }
         if persona::page_open(state) {
             persona::mouse(state, true);
             return;
@@ -894,10 +931,6 @@ impl App {
         }
         if Self::wol_page_is_options(state) {
             options::mouse(state, false);
-            return;
-        }
-        if chat_translation::page_open(state) {
-            chat_translation::mouse(state, false);
             return;
         }
         if persona::page_open(state) {
@@ -967,10 +1000,10 @@ impl App {
             }
     }
 
-    /// Esc closes the login page's open name list or the Chat Translation
-    /// page's open language list.
+    /// Esc closes the login page's open name list or the Options page's open
+    /// translation list.
     pub(super) fn close_wol_open_list(state: &mut AppState) -> bool {
-        if chat_translation::close_list(state) {
+        if options::close_list(state) {
             return true;
         }
         let Some(login) = state

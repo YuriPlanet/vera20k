@@ -5,18 +5,21 @@
 //!
 //! The pages' modal loop dispatches without `IsDialogMessage`, so Enter,
 //! Escape and Tab do nothing, and its idle (`0x0077F900`) never closes the
-//! dialog.
+//! dialog; Escape only closes VERA's open translation list.
 
 use super::{WolPage, apply_wol_preferences};
 use crate::app::frontend::{shell_layout, shell_transition::ShellExitThen};
 use crate::app::{App, AppState};
+use crate::ui::chat_translation::ChatTranslation;
 use crate::ui::main_menu_dialogs::options::LauncherCue;
+use crate::ui::shell::combobox::ComboPress;
 use crate::ui::shell::sound::{
     SHELL_SOUND_PAGE, ShellSoundLayout, SoundButton, SoundControl, SoundState,
 };
 use crate::ui::wol_options::{
-    DIALOG, WolOptionsAction, WolOptionsLayout, WolOptionsState, WolPreferences,
+    DIALOG, TRANSLATE, WolOptionsAction, WolOptionsLayout, WolOptionsState, WolPreferences,
 };
+use crate::util::time::Instant;
 
 /// The open `0x2BC`, and `0xD6` while it runs over the hidden `0x2BC`.
 #[derive(Debug, Clone)]
@@ -106,7 +109,10 @@ fn page_mut(state: &mut AppState) -> Option<&mut WolOptionsPage> {
 /// `0x113` has slid out (`0x006071E0`) over the empty backdrop: the art,
 /// then `UI__BeginDialog(0x2BC)` and its init `0x497`.
 pub(crate) fn commit_open(state: &mut AppState) {
-    let ui = WolOptionsState::open(&state.frontend.wol_preferences);
+    let ui = WolOptionsState::open(
+        &state.frontend.wol_preferences,
+        state.persistence.options_profile.chat_translation,
+    );
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
@@ -124,7 +130,11 @@ pub(crate) fn commit_open(state: &mut AppState) {
 /// lobby (it slides in on its first paint), frees the art and focuses the
 /// chat edit (`0x0078BF1F`). OK commits the staged values and writes them
 /// with ObserverMode (`0x0077DFD0`); both results then apply (`0x0077E110`).
-pub(crate) fn commit_close(state: &mut AppState, staged: Option<WolPreferences>) {
+/// Changed translation settings are saved too.
+pub(crate) fn commit_close(
+    state: &mut AppState,
+    staged: Option<(WolPreferences, ChatTranslation)>,
+) {
     state.frontend.wol_options_art = None;
     state.frontend.wol_sound_options_art = None;
     let Some(visit) = state.frontend.wol.as_mut() else {
@@ -139,14 +149,20 @@ pub(crate) fn commit_close(state: &mut AppState, staged: Option<WolPreferences>)
         .frontend
         .shell_controller
         .reset_to(super::WOL_LOBBY_DIALOG, false);
-    if let Some(staged) = staged {
+    if let Some((staged, translate)) = staged {
         state.frontend.wol_preferences = staged;
         let profile = &mut state.persistence.options_profile;
         profile.wol_preferences = staged;
-        if let Some(config) = state.platform.game_config.as_ref()
-            && let Err(error) = profile.commit_wol_preferences(config.paths.settings_dir())
-        {
-            log::warn!("Could not save the WOL options: {error}");
+        let translate_changed = profile.chat_translation != translate;
+        profile.chat_translation = translate;
+        if let Some(config) = state.platform.game_config.as_ref() {
+            let dir = config.paths.settings_dir();
+            if let Err(error) = profile.commit_wol_preferences(dir) {
+                log::warn!("Could not save the WOL options: {error}");
+            }
+            if translate_changed && let Err(error) = profile.commit_chat_translation(dir) {
+                log::warn!("Could not save the chat translation settings: {error}");
+            }
         }
         state
             .frontend
@@ -192,9 +208,10 @@ pub(crate) fn commit_sound_back(state: &mut AppState) {
 
 fn dispatch(state: &mut AppState, action: WolOptionsAction) {
     match action {
-        WolOptionsAction::Ok(staged) => {
-            App::leave_shell_dialog(state, ShellExitThen::WolOptionsClose(Some(staged)))
-        }
+        WolOptionsAction::Ok(staged, translate) => App::leave_shell_dialog(
+            state,
+            ShellExitThen::WolOptionsClose(Some((staged, translate))),
+        ),
         WolOptionsAction::Cancel => {
             App::leave_shell_dialog(state, ShellExitThen::WolOptionsClose(None))
         }
@@ -231,9 +248,16 @@ pub(super) fn cursor_moved(state: &mut AppState) {
                 });
             }
             None => {
-                let over = options.control_at(x, y);
+                let popup = page.ui.translate_popup(&options);
+                // The open list covers the controls under it.
+                let over = options
+                    .control_at(x, y)
+                    .filter(|_| !popup.is_some_and(|popup| popup.rect.contains(x, y)));
                 page.ui.hovered = over;
                 page.ui.buttons.hovered = over.filter(|id| is_button(*id));
+                if let Some(popup) = popup {
+                    page.ui.translate_list.pointer_moved(popup, x, y);
+                }
             }
         }
     }
@@ -248,6 +272,7 @@ enum Press {
     Nothing,
     Button,
     Checkbox(Option<WolOptionsAction>),
+    List(ComboPress),
 }
 
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {
@@ -262,6 +287,7 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         return;
     };
     if !pressed {
+        page.ui.translate_list.cancel_pointer();
         let button = over.filter(|id| is_button(*id));
         let action = page
             .ui
@@ -274,24 +300,47 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         state.platform.window.request_redraw();
         return;
     }
-    let press = match over {
-        Some(id) if is_button(id) => {
-            page.ui.buttons.press(Some(id));
-            Press::Button
+    let scale = layout.page.scale;
+    let press = if let Some(popup) = page.ui.translate_popup(&layout) {
+        // The open list captures the press.
+        let press = page
+            .ui
+            .translate_list
+            .press_list(popup, x, y, Instant::now());
+        if let ComboPress::Pick(row) = press {
+            page.ui.pick_translate_row(row);
         }
-        // OwnerDraw_CheckBox 0x006163A0 admits only its 18x18 icon and
-        // toggles on the press.
-        Some(id)
-            if layout.checkbox_rect(id).is_some_and(|rect| {
-                crate::ui::skirmish_shell::checkbox_icon_rect(rect, layout.page.scale)
-                    .contains(x, y)
-            }) =>
-        {
-            Press::Checkbox(page.ui.toggle(id))
-        }
-        _ => {
-            page.ui.buttons.press(None);
-            Press::Nothing
+        Press::List(press)
+    } else {
+        match over {
+            Some(id) if is_button(id) => {
+                page.ui.buttons.press(Some(id));
+                Press::Button
+            }
+            Some(TRANSLATE) if let Some(translate) = layout.translate => {
+                let selected = Some(page.ui.translate_row());
+                Press::List(page.ui.translate_list.press_face(
+                    TRANSLATE,
+                    translate.list,
+                    scale,
+                    selected,
+                    x,
+                    y,
+                ))
+            }
+            // OwnerDraw_CheckBox 0x006163A0 admits only its 18x18 icon and
+            // toggles on the press; Translate in Matches draws the same way.
+            Some(id)
+                if layout.checkbox_rect(id).is_some_and(|rect| {
+                    crate::ui::skirmish_shell::checkbox_icon_rect(rect, scale).contains(x, y)
+                }) =>
+            {
+                Press::Checkbox(page.ui.toggle(id))
+            }
+            _ => {
+                page.ui.buttons.press(None);
+                Press::Nothing
+            }
         }
     };
     match press {
@@ -302,6 +351,12 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
             if let Some(action) = action {
                 dispatch(state, action);
             }
+        }
+        Press::List(press) => {
+            if let Some(cue) = press.cue() {
+                App::play_launcher_options_cue(state, LauncherCue::from(cue));
+            }
+            state.frontend.shell_status_line.repaint();
         }
         Press::Nothing => {}
     }
@@ -346,6 +401,16 @@ fn sound_mouse(state: &mut AppState, pressed: bool, x: i32, y: i32) {
         _ => {}
     }
     state.platform.window.request_redraw();
+}
+
+/// Escape closes the open translation list.
+pub(super) fn close_list(state: &mut AppState) -> bool {
+    let Some(page) = page_mut(state) else {
+        return false;
+    };
+    let open = page.ui.translate_list.control.is_some();
+    page.ui.translate_list.close();
+    open
 }
 
 /// The status help under the pointer: `0x2BC`'s `0x006040B0` rows; `0xD6`

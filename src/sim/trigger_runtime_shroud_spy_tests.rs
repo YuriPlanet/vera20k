@@ -351,7 +351,6 @@ fn retail_spy_house_entry_survives_restore_and_reaches_the_message_consumer() {
                 .advance_app_frame(
                     &std::mem::take(&mut commands),
                     &rules,
-                    Some(&registry),
                     67,
                     crate::sim::world::TickLane::Ordinary,
                     FrameEffects::default(),
@@ -688,12 +687,9 @@ fn grow_action_uses_current_map_then_known_objects_without_resetting_house_flags
     // Supply the AIR registration boundary. This check is about the map's
     // display cursor, not an emulated aircraft/locomotor transition.
     crate::sim::world::Simulation::submit_object_display(
-        &sim.interner,
-        &sim.terrain_objects,
         &mut sim.substrate,
         air,
         crate::sim::world::display_layers::DisplayLayer::AIR,
-        &rules,
     );
     sim.substrate
         .entities

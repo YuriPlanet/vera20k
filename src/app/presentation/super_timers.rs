@@ -18,6 +18,7 @@ use crate::rules::house_colors::{HouseColorIndex, NO_REMAP, house_text_rgb};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::superweapon::SuperTimerView;
+use crate::sim::world::Simulation;
 use crate::ui::game_screen::GameScreen;
 
 /// The bucket the host admits a tick on, in milliseconds: one `GameSpeed` 16 ms
@@ -38,6 +39,11 @@ const MAX_GAME_SPEED: u32 = 6;
 pub(crate) fn frames_per_second(game_speed: u32) -> i32 {
     let ms_per_tick = game_speed.clamp(1, MAX_GAME_SPEED) * TICK_BUCKET_MS;
     i32::try_from(1_000 / ms_per_tick.max(1)).unwrap_or(1).max(1)
+}
+
+/// The same rate for a caller that already holds the session.
+pub(crate) fn session_frames_per_second(sim: &Simulation) -> i32 {
+    frames_per_second(u32::try_from(sim.session().game_options().game_speed).unwrap_or(1))
 }
 /// The blackout lines' label, read through the string table (`0x00842A50`,
 /// `0x00734E60`).

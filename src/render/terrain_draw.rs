@@ -2,7 +2,7 @@
 //!
 //! Terrain DrawIt 0071C304/0071C34E reaches 004990E0/00497390: signed Z
 //! comparison precedes the u16 store, and shadow pixels halve the packed
-//! destination. See TERRAIN_STATIC_BODY_SHADOW_NATIVE_2026_09_09.md.
+//! destination.
 //! Live tactical Depth32Float remains the only Z authority. wgpu 27 requires
 //! full-size depth copies, so scissored MRT passes snapshot conservative rects
 //! into integer color and float depth scratch while live Z is not attached.
@@ -190,8 +190,10 @@ struct ReadOnlyReduction {
 pub(crate) struct PackedSurface {
     targets: Targets,
     stencil: packed::Stencil,
-    /// Surface pixels per camera pixel, whole: each camera pixel is a block.
-    scale: u32,
+    /// Surface pixels per camera pixel. Whole for the sidebars drawn at a
+    /// whole multiple; the sidebar's Large size is 1.5, whose pieces straddle
+    /// fractional surface pixels, so their rectangles round outward.
+    scale: f32,
 }
 
 pub(crate) struct TerrainDrawRenderer {
@@ -795,12 +797,12 @@ impl TerrainDrawRenderer {
         device: &wgpu::Device,
         color: &wgpu::Texture,
         depth: &wgpu::TextureView,
-        scale: u32,
+        scale: f32,
     ) -> PackedSurface {
         PackedSurface {
             targets: self.create_targets(device, color, depth),
             stencil: self.packed.create_stencil(color.size()),
-            scale: scale.max(1),
+            scale: scale.max(1.0),
         }
     }
 
@@ -1938,7 +1940,7 @@ mod webgl_shader_tests {
                 pad_camera_structs(&super::edit_source(true)),
             ),
             ("read-only resolve", super::resolve_source()),
-            ("packed composite", super::packed::packed_source(true)),
+            ("packed composite", super::packed::packed_source()),
             (
                 "packed SHP",
                 pad_camera_structs(&super::packed::raster_source(

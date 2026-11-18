@@ -26,9 +26,9 @@ For example, in German:
 Name=Deutsch
 
 [Strings]
-VERA:SaveSetup=Setup speichern
-VERA:CatchingUp[one]=Holt auf - {count} Frame zurück
-VERA:CatchingUp[other]=Holt auf - {count} Frames zurück
+VERA:ChooseMap=Karte wählen
+VERA:LobbyInGameRooms[one]={count} in einem Raum
+VERA:LobbyInGameRooms[other]={count} in Räumen
 ```
 
 | You see | What to do |
@@ -55,7 +55,7 @@ Put your file in the VERA20k settings folder, the one with `VERA.INI` in it:
 | macOS | `~/Library/Application Support/VERA20k/` |
 | Linux | `~/.local/share/VERA20k/` |
 
-Start the game and pick your language under **Options**, **Language**. Restart the game
+Start the game and pick your language under **Options**, **General**, **Language**. Restart the game
 each time you change the file.
 
 You can test a half-finished file. Lines you haven't translated yet show in English.

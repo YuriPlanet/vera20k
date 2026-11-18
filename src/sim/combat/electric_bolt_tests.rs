@@ -509,7 +509,6 @@ fn fatal_coil_bolt_releases_navigation_before_the_next_logic_reader() {
         sim.advance_app_frame(
             &[],
             rules,
-            None,
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -523,7 +522,6 @@ fn fatal_coil_bolt_releases_navigation_before_the_next_logic_reader() {
 
 // Ares simulates this Spark system itself (hooks 0x62DF05, 0x62FD60) and
 // builds no ParticleClass children.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass() {
     let Some((retail, assets)) = retail_with_bound_animation_assets() else {
@@ -578,7 +576,6 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
         .advance_app_frame(
             &[],
             rules,
-            None,
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -690,7 +687,6 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
         .advance_app_frame(
             &[],
             rules,
-            None,
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -818,7 +814,6 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
             sim.advance_app_frame(
                 &[],
                 rules,
-                None,
                 67,
                 TickLane::Ordinary,
                 crate::sim::world::FrameEffects::default(),
@@ -838,7 +833,6 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
             sim.advance_app_frame(
                 &[],
                 rules,
-                None,
                 67,
                 TickLane::Ordinary,
                 crate::sim::world::FrameEffects::default(),
@@ -895,7 +889,6 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
                 .advance_app_frame(
                     &[],
                     rules,
-                    None,
                     67,
                     TickLane::Ordinary,
                     crate::sim::world::FrameEffects::default(),

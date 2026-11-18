@@ -299,9 +299,9 @@ impl VoxelAssetCatalog {
             .unwrap_or(false)
     }
     pub(crate) fn half_sizes(&self, type_id: &str) -> Option<[f32; 2]> {
-        self.loaded
-            .get(&type_id.to_ascii_uppercase())?
-            .map(|bits| bits.map(f32::from_bits))
+        crate::util::native_string::with_ascii_uppercase(type_id, |key| {
+            self.loaded.get(key)?.map(|bits| bits.map(f32::from_bits))
+        })
     }
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn supply_loaded(&mut self, type_id: &str, object: TypeHandle) {

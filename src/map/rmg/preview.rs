@@ -50,7 +50,7 @@ const MARKER_SIZE: i32 = 4;
 const MARKER_RGB: [u8; 3] = [0xF0, 0x00, 0x00];
 const MARKER_ORIGIN_BIAS: i32 = -1;
 /// The original marks only the first eight waypoints, all a random map has.
-/// VERA marks every start of a random map for up to thirty players.
+/// VERA marks every start of a random map for the offline Skirmish rows.
 pub const MARKER_WAYPOINT_COUNT: u8 = super::MAX_PLAYERS as u8;
 
 /// Project a cell centre to the preview's coordinate space.
@@ -290,6 +290,32 @@ impl PreviewImage {
         }
     }
 
+    /// VERA extension: the image at half its width and height, each pixel the
+    /// rounded mean of the 2x2 block it covers; an odd last row or column
+    /// drops. A preview too large to send to other players is written so.
+    pub fn halved(&self) -> Self {
+        let (width, height) = (self.width / 2, self.height / 2);
+        let stride = self.width as usize * 4;
+        let mut rgba = Vec::with_capacity(width as usize * height as usize * 4);
+        for y in 0..height as usize {
+            for x in 0..width as usize {
+                let corner = 2 * y * stride + 2 * x * 4;
+                for channel in 0..4 {
+                    let sum: u32 = [0, 4, stride, stride + 4]
+                        .into_iter()
+                        .map(|offset| u32::from(self.rgba[corner + offset + channel]))
+                        .sum();
+                    rgba.push(((sum + 2) / 4) as u8);
+                }
+            }
+        }
+        Self {
+            width,
+            height,
+            rgba,
+        }
+    }
+
     /// The pixel at `(x, y)` as RGB, for tests that inspect output.
     #[cfg(test)]
     pub fn pixel(&self, x: u32, y: u32) -> Option<[u8; 3]> {
@@ -378,6 +404,21 @@ mod tests {
         let image = render_preview(&cells, &[]).expect("image");
         assert_eq!(image.width, ((max_col - min_col) * 2) as u32);
         assert_eq!(image.height, (max_row - min_row) as u32);
+    }
+
+    #[test]
+    fn halving_averages_each_block_and_drops_an_odd_edge() {
+        let mut image = PreviewImage {
+            width: 5,
+            height: 3,
+            rgba: vec![0; 5 * 3 * 4],
+        };
+        image.fill_rect(0, 0, 2, 2, [200, 100, 0]);
+        image.put_pixel(3, 1, [40, 80, 120]);
+        let half = image.halved();
+        assert_eq!((half.width, half.height, half.rgba.len()), (2, 1, 8));
+        assert_eq!(half.pixel(0, 0), Some([200, 100, 0]));
+        assert_eq!(half.pixel(1, 0), Some([10, 20, 30]));
     }
 
     #[test]

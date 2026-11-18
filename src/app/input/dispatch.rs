@@ -701,12 +701,15 @@ fn tactical_left_up(state: &mut AppState) {
         };
         match action {
             SelectAction::Click(sx, sy) => {
-                // Native TacticalPick6DA380 reads the retained
-                // Display registrations after the projected click
+                // Native TacticalPick6DA380 reads the Display
+                // registrations in draw order after the projected click
                 // gate. The ScreenSelection list belongs to band/type
                 // scope, not this pointer pick.
                 let click_order =
-                    crate::app::presentation::instances::tactical_entity_encounter_order(sim);
+                    crate::app::presentation::instances::tactical_entity_encounter_order(
+                        sim,
+                        state.rules(),
+                    );
                 let world_x: f32 =
                     sx / state.match_state.input.zoom_level + state.match_state.input.camera_x;
                 let world_y: f32 =
@@ -2419,12 +2422,33 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         // A chord runs in the window owner before this dispatch; a binding on
         // a typing key reaches here, after the chat edit.
         HotkeyCommand::PerformanceStats
+        | HotkeyCommand::ThreadStats
         | HotkeyCommand::LockCursor
         | HotkeyCommand::FullScreen
         | HotkeyCommand::StringKeys => run_window_command(state, command),
         // VERA: the mouse drags the interface's parts until Save, or until
         // the key comes again and puts them back.
         HotkeyCommand::LayoutEdit => crate::app::input::layout_edit::toggle(state),
+        // VERA: show or hide the countdown above every provider building.
+        // Presentation only, and saved under the same `[VERA]` key the old
+        // Options box wrote, so a match's choice seeds the next scenario.
+        HotkeyCommand::SuperweaponTimers => {
+            let timers = &mut state
+                .match_state
+                .match_presentation
+                .superweapon_building_timers;
+            *timers = !*timers;
+            let on = *timers;
+            state
+                .persistence
+                .options_profile
+                .superweapon_building_timers = on;
+            crate::app::persistence::options::persist_options_profile(state);
+            log::info!(
+                "Super weapon building timers: {}",
+                if on { "shown" } else { "hidden" }
+            );
+        }
         // A held key: `input::keyboard::in_game_key_edge` tracks it.
         HotkeyCommand::FormationLine => {}
         HotkeyCommand::FormationLock => {
@@ -2450,6 +2474,21 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
     }
 }
 
+/// The Performance Stats boxes follow the panel the keys showed or hid.
+fn follow_performance_stats(state: &mut AppState, shown: bool) {
+    if let Some(dialog) = state.frontend.options_dialog.as_mut() {
+        dialog.sync_performance_stats(shown);
+    }
+    if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
+        page.dialog.sync_performance_stats(shown);
+    }
+    crate::app::App::shell_menu_follow_performance_stats(state, shown);
+    log::info!(
+        "Performance stats: {}",
+        if shown { "shown" } else { "hidden" }
+    );
+}
+
 /// VERA's every-screen commands ([`HotkeyBindings::window_command`]): from the
 /// window owner's key handling on every screen, or from a battle's hotkey
 /// dispatch for a binding on a typing key.
@@ -2465,17 +2504,17 @@ pub(crate) fn run_window_command(state: &mut AppState, command: HotkeyCommand) {
         }
         HotkeyCommand::PerformanceStats => {
             let shown = state.renderer.performance_overlay.toggle();
-            if let Some(dialog) = state.frontend.options_dialog.as_mut() {
-                dialog.sync_performance_stats(shown);
+            follow_performance_stats(state, shown);
+        }
+        // The rows are the panel's: asking for them while it is hidden
+        // shows it.
+        HotkeyCommand::ThreadStats => {
+            let rows = state.renderer.performance_overlay.toggle_thread_rows();
+            if rows && !state.renderer.performance_overlay.is_visible() {
+                state.renderer.performance_overlay.set_visible(true);
+                follow_performance_stats(state, true);
             }
-            if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
-                page.dialog.sync_performance_stats(shown);
-            }
-            crate::app::App::shell_menu_follow_performance_stats(state, shown);
-            log::info!(
-                "Performance stats: {}",
-                if shown { "shown" } else { "hidden" }
-            );
+            log::info!("Thread stats: {}", if rows { "shown" } else { "hidden" });
         }
         HotkeyCommand::StringKeys => state.toggle_string_keys_view(),
         _ => return,
@@ -3534,7 +3573,6 @@ mod item83_selection_order_tests {
         sim.advance_app_frame(
             &[],
             RuleSet::empty_for_test(),
-            None,
             67,
             crate::sim::world::TickLane::Ordinary,
             crate::sim::world::FrameEffects::empty(),
@@ -4577,7 +4615,7 @@ fn deploy_key_commands(
     let first = selection.first().and_then(|&id| sim.entities().get(id));
     if let Some(building) = first.filter(|entity| {
         entity.category() == EntityCategory::Structure
-            && entity.passenger_role.occupants().count() > 0
+            && entity.passenger_role().occupants().count() > 0
     }) {
         return deploy_key_command(sim, rules, building.stable_id(), local_owner)
             .into_iter()
@@ -4656,7 +4694,7 @@ fn deploy_key_command(
         // Selection730B28..730B5E sends Event9 for an occupied Building.
         // Its native receiver owns NULL setters and Unload; self-click keeps
         // the separate MEGAMISSION/absorber admission in transport_orders.
-        EntityCategory::Structure => (!entity.passenger_role.occupants().is_empty()
+        EntityCategory::Structure => (!entity.passenger_role().occupants().is_empty()
             && local_owner.is_none_or(|owner| entity.owner() == owner))
         .then_some(Command::DeployMcv { entity_id }),
         EntityCategory::Infantry => Some(Command::ToggleInfantryDeploy { entity_id }),
@@ -5129,7 +5167,7 @@ mod deploy_key_tests {
         sim.entities_mut_for_test()
             .get_mut(transport)
             .unwrap()
-            .passenger_role = PassengerRole::transport(cargo);
+            .set_passenger_role_for_test(PassengerRole::transport(cargo));
 
         assert_eq!(
             deploy_key_command(&sim, Some(&rules), heli, sim.session().current_house()),
@@ -5206,7 +5244,7 @@ mod deploy_key_tests {
             sim.entities_mut_for_test()
                 .get_mut(transport)
                 .unwrap()
-                .passenger_role = PassengerRole::transport(cargo);
+                .set_passenger_role_for_test(PassengerRole::transport(cargo));
             let owner = sim
                 .session()
                 .current_house()
@@ -5281,7 +5319,7 @@ mod deploy_key_tests {
         sim.entities_mut_for_test()
             .get_mut(transport)
             .unwrap()
-            .passenger_role = PassengerRole::transport(cargo);
+            .set_passenger_role_for_test(PassengerRole::transport(cargo));
         let owner = sim.session().current_house();
         assert!(deploy_key_commands(&sim, Some(&rules), &[tank], owner).is_empty());
         assert_eq!(
@@ -5346,7 +5384,7 @@ mod deploy_key_tests {
         sim.entities_mut_for_test()
             .get_mut(reactor)
             .unwrap()
-            .passenger_role = PassengerRole::transport(cargo);
+            .set_passenger_role_for_test(PassengerRole::transport(cargo));
 
         assert!(
             deploy_key_commands(
@@ -6316,7 +6354,7 @@ mod control_group_tests {
             crate::sim::world::RevealOutcome::Revealed { .. }
         ));
         assert!(
-            crate::app::presentation::instances::tactical_entity_encounter_order(&sim)
+            crate::app::presentation::instances::tactical_entity_encounter_order(&sim, None)
                 .contains(&27)
         );
 
@@ -6378,7 +6416,7 @@ mod control_group_tests {
             crate::sim::world::RevealOutcome::Revealed { .. }
         ));
         assert!(
-            crate::app::presentation::instances::tactical_entity_encounter_order(&sim)
+            crate::app::presentation::instances::tactical_entity_encounter_order(&sim, None)
                 .contains(&27)
         );
 
@@ -6698,7 +6736,7 @@ mod control_group_tests {
         // the common CurrentPlayer-allied path implemented here.
         sim.fog_mut_for_test().mark_visible_for_owner(owner, 12, 10);
         let display_order =
-            crate::app::presentation::instances::tactical_entity_encounter_order(&sim);
+            crate::app::presentation::instances::tactical_entity_encounter_order(&sim, None);
         for id in [17, 18, 19] {
             assert!(
                 display_order.contains(&id),
@@ -6945,7 +6983,7 @@ mod control_group_tests {
         let mut groups = vec![Vec::new(); 10];
         groups[1] = vec![80];
         assert!(
-            crate::app::presentation::instances::tactical_entity_encounter_order(&sim)
+            crate::app::presentation::instances::tactical_entity_encounter_order(&sim, None)
                 .contains(&80),
             "the allied unit remains in the retained Display projection"
         );

@@ -530,7 +530,6 @@ fn a_captured_building_remembers_it() {
 /// Scatter's first draw, in that order.
 // Stock Building GetCrew44EB10 always draws for the Engineer; Ares1004C650
 // draws only with a positive Engineer chance.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn phase_b_interleaves_each_cells_roll_with_its_mark() {
     let rules = rules();
@@ -716,7 +715,6 @@ fn a_building_owing_no_survivor_draws_and_marks_nothing() {
 /// enemy planter; an allied planter only changes the odds.
 // Stock Building GetCrew44EB10 always draws for the Engineer; Ares1004C650
 // draws only with a positive Engineer chance.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn survivors_of_a_c4_charged_building_attack_an_enemy_planter() {
     let rules = rules();
@@ -814,7 +812,7 @@ fn load_absorbed(sim: &mut Simulation, rules: &RuleSet, building: u64, count: us
         .entities
         .get_mut(building)
         .unwrap()
-        .passenger_role = PassengerRole::transport(PassengerCargo::new(5, 0.0));
+        .set_passenger_role_for_test(PassengerRole::transport(PassengerCargo::new(5, 0.0)));
     (0..count)
         .map(|_| {
             let id = sim
@@ -829,14 +827,17 @@ fn load_absorbed(sim: &mut Simulation, rules: &RuleSet, building: u64, count: us
                     crate::sim::world::FrameEffects::default(),
                 )
                 .expect("absorbed infantry");
-            sim.substrate.entities.get_mut(id).unwrap().passenger_role =
-                PassengerRole::inside_for_test(building, false);
+            sim.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .set_passenger_role_for_test(PassengerRole::inside_for_test(building, false));
             let cargo = sim
                 .substrate
                 .entities
                 .get_mut(building)
                 .unwrap()
-                .passenger_role
+                .passenger_role_mut_for_test()
                 .cargo_mut()
                 .unwrap();
             cargo.board_forced_chain(&[(id, 1.0)]);
@@ -889,10 +890,10 @@ fn a_bio_reactor_releases_its_absorbed_infantry_before_its_crew() {
     assert_eq!(marks, expected_marks);
 
     let reactor_entity = sim.substrate.entities.get(reactor).unwrap();
-    assert!(reactor_entity.passenger_role.cargo().unwrap().is_empty());
+    assert!(reactor_entity.passenger_role().cargo().unwrap().is_empty());
     for id in absorbed {
         let passenger = sim.substrate.entities.get(id).expect("released alive");
-        assert!(passenger.passenger_role.is_none());
+        assert!(passenger.passenger_role().is_none());
         assert!(!passenger.lifecycle.in_limbo());
         assert_eq!((passenger.position.rx(), passenger.position.ry()), (10, 10));
         assert_eq!(queued(&sim, id), MissionId::from_known(MissionType::Hunt));
@@ -919,8 +920,7 @@ fn no_survivor_uninits_the_absorbed_infantry() {
         .set_for_test(Some(crate::sim::c4_plant::PendingC4Detonation::new(
             crate::sim::timer::CdTimer::started(0, 100),
             Some(planter),
-        ),
-    ));
+        )));
     let stats = |sim: &Simulation, house: &str| {
         let id = sim.interner.get(house).unwrap();
         *sim.houses[&id].stats()
@@ -1081,7 +1081,6 @@ fn hijacked_vehicle_returns_its_captor_without_an_escape_roll() {
 /// The vehicle's transferable Tag waits for the escaped infantry's death,
 /// rather than firing Unit744720's destruction prefix on the vehicle.
 // Stock Unit tail; Ares's SpawnSurvivors100464C0 attaches no Tag to the hijacker.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn hijacked_vehicle_preserves_its_transferable_tag_until_captor_death() {
     let rules = rules();
@@ -1243,7 +1242,6 @@ const ORDINARY: ReceiverCallFlags = ReceiverCallFlags {
 /// fixture's registered infantry types keeps this test about the binding.
 // Ares GetCrew1004C780 reads HouseType SideIndex (+BC), which this fixture's
 // undeclared countries leave at -1, and returns the Technician.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn renamed_general_crew_types_spawn_through_the_building_death_receiver() {
     let renamed = RULES
@@ -1311,14 +1309,17 @@ fn load_passengers(
         })
         .collect();
     for &id in passengers.iter().rev() {
-        sim.substrate.entities.get_mut(id).unwrap().passenger_role =
-            PassengerRole::inside_for_test(transport, open_topped);
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .set_passenger_role_for_test(PassengerRole::inside_for_test(transport, open_topped));
         let cargo = sim
             .substrate
             .entities
             .get_mut(transport)
             .unwrap()
-            .passenger_role
+            .passenger_role_mut_for_test()
             .cargo_mut()
             .expect("a transport");
         cargo.board_forced_chain(&[(id, 1.0)]);
@@ -1360,7 +1361,7 @@ fn cargo_len(sim: &Simulation, transport: u64) -> usize {
     sim.substrate
         .entities
         .get(transport)
-        .and_then(|entity| entity.passenger_role.cargo())
+        .and_then(|entity| entity.passenger_role().cargo())
         .map_or(0, |cargo| cargo.passengers().len())
 }
 
@@ -1368,7 +1369,6 @@ fn cargo_len(sim: &Simulation, transport: u64) -> usize {
 /// onto its cell in cargo order, uncredited; a computer's Hunt and a human's
 /// stay put.
 // Stock Unit tail (737F97..73838A); Ares replaces it with SpawnSurvivors100464C0.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn a_killing_hit_lets_the_passengers_out() {
     let rules = rules();
@@ -1386,7 +1386,7 @@ fn a_killing_hit_lets_the_passengers_out() {
         for &id in &passengers {
             let passenger = sim.substrate.entities.get(id).expect("escaped");
             assert!(passenger.lifecycle.object_alive() && !passenger.lifecycle.in_limbo());
-            assert!(passenger.passenger_role.is_none());
+            assert!(passenger.passenger_role().is_none());
             assert_eq!((passenger.position.rx(), passenger.position.ry()), (10, 10));
             assert_eq!(passenger.kill_record.killer(), None);
             assert!(!passenger.selection.is_selected());
@@ -1514,7 +1514,7 @@ fn a_dying_gunner_rider_resets_its_transports_weapon_mode() {
         .entities
         .get_mut(rider)
         .unwrap()
-        .passenger_role = PassengerRole::boarded_for_test(transport, false);
+        .set_passenger_role_for_test(PassengerRole::boarded_for_test(transport, false));
     assert_eq!(
         sim.substrate
             .entities
@@ -1767,8 +1767,29 @@ fn plan_moves_to(sim: &mut Simulation, rules: &RuleSet, ids: &[u64], cell: (u16,
 /// (`0x00738174`) inside the loop and must not pull in its own node partner.
 #[test]
 fn a_select_started_by_a_partners_tag_event_does_not_expand() {
-    let rules = rules();
+    selection_ejects_partner_passenger(false);
+}
+
+#[test]
+fn a_silent_power_loss_keeps_a_survivors_nested_selection_silent() {
+    selection_ejects_partner_passenger(true);
+}
+
+fn selection_ejects_partner_passenger(power_loss: bool) {
+    let _ares = crate::rules::ares_switch::read_ares_way(power_loss);
+    let mut ini = IniFile::from_str(RULES);
+    ini.merge(&IniFile::from_str(
+        "[E1]\nVoiceSelect=CrewReady\nPoweredBy=GAPOWR\n[APC]\nSurvivor.PassengerChance=100\n",
+    ));
+    let rules = RuleSet::from_ini_with_fixed_art_and_sounds_for_test(
+        &ini,
+        &IniFile::from_str(ART),
+        &["CrewReady"],
+    )
+    .unwrap();
     let mut sim = sim_on_arena(1, &rules);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
     let owner = sim.interner.intern("AlliedHuman");
     sim.session.set_current_house_for_test(Some(owner));
     let actor = spawn(&mut sim, &rules, "E1", "AlliedHuman", 20, 10);
@@ -1829,13 +1850,31 @@ fn a_select_started_by_a_partners_tag_event_does_not_expand() {
     sim.lifecycle_outputs.clear_for_test();
 
     let boundary = PlanningMode(true);
-    assert!(sim.techno_select(
-        actor,
-        true,
-        crate::sim::world::UninitContext::new(&rules, None).with_effects(
-            crate::sim::world::FrameEffects::default().with_local_planning(&boundary)
-        ),
-    ));
+    let effects = crate::sim::world::FrameEffects::default().with_local_planning(&boundary);
+    if power_loss {
+        assert!(rules.ares());
+        assert!(
+            !rules
+                .object("E1")
+                .unwrap()
+                .cloak_power()
+                .powered_by()
+                .is_empty()
+        );
+        let select = crate::sim::command::Command::Select {
+            entity_ids: vec![actor],
+            additive: false,
+        };
+        assert!(sim.apply_command("AlliedHuman", &select, Some(&rules)));
+        sim.session.set_binary_frame_for_test(15);
+        assert!(sim.update_ares_powered_by(actor, &rules, None, effects));
+        assert!(sim.entities().get(actor).unwrap().deactivated.is_offline());
+    } else {
+        assert!(sim.techno_select(
+            actor,
+            crate::sim::world::UninitContext::with_rules(&rules).with_effects(effects),
+        ));
+    }
     let selected = |sim: &Simulation, id: u64| {
         sim.substrate
             .entities
@@ -1852,6 +1891,17 @@ fn a_select_started_by_a_partners_tag_event_does_not_expand() {
     assert!(selected(&sim, passenger));
     assert!(!selected(&sim, escapee_partner));
     assert_eq!(logic_selects(&sim), [actor, apc, passenger]);
+    let passenger_spoke = |sim: &Simulation| {
+        sim.sound_events.iter().any(|event| {
+            matches!(
+                event,
+                crate::sim::world::SimSoundEvent::UnitVoiceRequested { owner, sound_id }
+                    if *owner == passenger && sound_id == "CrewReady"
+            )
+        })
+    };
+    assert_eq!(passenger_spoke(&sim), !power_loss);
+    sim.sound_events.clear_for_test();
     // The guard is clear again: a later Select of the escapee expands.
     sim.substrate
         .entities
@@ -1861,19 +1911,18 @@ fn a_select_started_by_a_partners_tag_event_does_not_expand() {
         .set_selected_for_test(false);
     assert!(sim.techno_select(
         passenger,
-        true,
         crate::sim::world::UninitContext::new(&rules, None).with_effects(
             crate::sim::world::FrameEffects::default().with_local_planning(&boundary)
         ),
     ));
     assert!(selected(&sim, escapee_partner));
+    assert!(passenger_spoke(&sim));
 }
 
 /// Retail `rulesmd.ini` and `artmd.ini` (the local `ini/`): the stock crew
 /// keys bind, and a power plant and an MCV killed through the production
 /// receiver leave stock crew with native health ranges.
 // The MCV crew takes the stock Unit tail; Ares's EjectSurvivor needs a map cell.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_rules_crew_the_power_plant_and_the_mcv() {
     let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
@@ -2024,7 +2073,7 @@ fn retail_dustbowl_crews_scatter_off_their_wrecks() {
             .into();
         let guard = keep_undefeated(sim, resources, mcv_cell);
         sim.resolve_type_handles(&resources.rules);
-        let registry = Some(&resources.overlay_registry);
+        let registry = Some(resources.rules.overlay_registry());
         let before = sim.substrate.entities.keys_sorted();
         kill_with(sim, &resources.rules, registry, plant, "Super", ORDINARY);
         kill_with(sim, &resources.rules, registry, mcv, "Super", ORDINARY);
@@ -2155,7 +2204,7 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
                         if i < 3 { ty + 1 } else { ty - 1 },
                         0,
                         rules,
-                        &resources.overlay_registry,
+                        resources.rules.overlay_registry(),
                     )
                     .unwrap_or_else(|| {
                         panic!(
@@ -2181,7 +2230,7 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
                 gi,
                 *transport,
                 crate::sim::passenger::BoardingArm::InfantryTransport,
-                Some(&resources.overlay_registry),
+                Some(resources.rules.overlay_registry()),
                 crate::sim::world::FrameEffects::default(),
             ));
         }
@@ -2198,7 +2247,7 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
             == rules.object("E1").unwrap().ifv_mode,
         "the IFV took its gunner's weapon"
     );
-    let registry = Some(&resources.overlay_registry);
+    let registry = Some(resources.rules.overlay_registry());
     for (_, transport, _, _) in &loads {
         kill_with(sim, rules, registry, *transport, "Super", ORDINARY);
     }
@@ -2211,7 +2260,7 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
                 gi.lifecycle.object_alive() && !gi.lifecycle.in_limbo(),
                 "{kind}"
             );
-            assert!(gi.passenger_role.is_none());
+            assert!(gi.passenger_role().is_none());
             assert_eq!(
                 (gi.position.rx(), gi.position.ry()),
                 *cell,
@@ -2302,7 +2351,7 @@ fn a_selected_mcvs_crewman_speaks_his_select_voice() {
         let mut sim = sim_on_arena(seed, &rules);
         let owner = sim.interner.intern("AlliedHuman");
         // Ares GetCrew1004C7F0 reads the actual Country's side, not only
-        // House.side_index. Keep this a valid retail Allied house in both builds.
+        // House.side_index. Keep this a valid retail Allied house either way.
         let country = sim.interner.intern("Americans");
         sim.houses
             .get_mut(&owner)
@@ -2498,7 +2547,7 @@ fn open_topped_death_clears_rider_flags_before_crashable_exit() {
             sim.entities()
                 .get(id)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .inside_transport(),
             Some((hull, true))
         );
@@ -2520,7 +2569,7 @@ fn open_topped_death_clears_rider_flags_before_crashable_exit() {
         sim.entities()
             .get(hull)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .count(),
@@ -2529,7 +2578,7 @@ fn open_topped_death_clears_rider_flags_before_crashable_exit() {
     for id in [rider, inner] {
         let passenger = sim.entities().get(id).unwrap();
         assert_eq!(
-            passenger.passenger_role.inside_transport(),
+            passenger.passenger_role().inside_transport(),
             Some((hull, false))
         );
         assert!(
@@ -2541,7 +2590,7 @@ fn open_topped_death_clears_rider_flags_before_crashable_exit() {
         sim.entities()
             .get(inner)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .is_some(),
         "a rider's own hold survives"
@@ -2650,7 +2699,7 @@ fn ares_fatal_vehicle_returns_saved_captor_pilot_and_existing_passenger() {
     for id in escaped.into_iter().chain([passenger]) {
         let entity = sim.entities().get(id).unwrap();
         assert!(entity.is_object_alive() && !entity.lifecycle.in_limbo());
-        assert!(entity.passenger_role.inside_transport().is_none());
+        assert!(entity.passenger_role().inside_transport().is_none());
         assert!(!entity.building_entry.should_enter_nearest_occupiable());
     }
 }

@@ -91,14 +91,13 @@ fn scene(root: &Path) -> (HeadlessScenario, u64) {
     let plant = candidates
         .into_iter()
         .find_map(|(x, y)| {
-            scene.runtime.simulation.spawn_object_with_overlay_registry(
+            scene.runtime.simulation.spawn_object_with_map_overlays(
                 "GAPOWR",
                 OWNER,
                 x,
                 y,
                 0,
                 &scene.runtime.resources.rules,
-                &scene.runtime.resources.overlay_registry,
             )
         })
         .expect("a clear physical foundation admits the stock power plant");
@@ -139,7 +138,7 @@ fn emit(
         &Default::default(),
     );
     let record = frame.object(plant).unwrap();
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let light = CellLightGrid::new();
     let cell = (building.position.rx(), building.position.ry());
     let coord = sim.anim_absolute_coord(id).unwrap();

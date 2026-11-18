@@ -110,6 +110,11 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // strip policy; Options' accept writes it out.
         self.persistence.options_profile.health_bars = mode;
     }
+    fn store_ares(&mut self, setting: crate::util::ares_launch::AresSetting) {
+        // Read at start, as the mod is: this launch keeps the setting it
+        // opened its files with. Options' accept writes it out.
+        self.persistence.options_profile.ares = setting;
+    }
     fn store_color_vision(&mut self, mode: crate::ui::main_menu_dialogs::options::ColorVisionMode) {
         // The final-frame pass reads the profile every frame, so the very next
         // frame is corrected; no atlas or ramp has to be rebuilt. Options'
@@ -174,6 +179,11 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // waiting, so the switch never cuts a line that is halfway said.
         self.persistence.options_profile.custom_end_game_movie = enabled;
     }
+    fn store_commander_feedback(&mut self, enabled: bool) {
+        // The clip layer's next pass reads it, so a match mutes or unmutes
+        // its commanders at once; muted, it still spends what it sees.
+        self.persistence.options_profile.commander_feedback = enabled;
+    }
     fn store_shift_queue(&mut self, shift_queue: bool) {
         // The next cameo press reads it; Options' accept writes it out.
         self.persistence.options_profile.shift_queue = shift_queue;
@@ -185,17 +195,6 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
     fn store_minimap_beacons(&mut self, enabled: bool) {
         // The next radar click reads it; Options' accept writes it out.
         self.persistence.options_profile.minimap_beacons = enabled;
-    }
-    fn store_terrain_deformation(&mut self, enabled: bool) {
-        // The next game's rules and every later network agreement read it;
-        // Options' accept writes it out.
-        self.persistence.options_profile.terrain_deformation = enabled;
-        self.process_assets.set_terrain_deformation(enabled);
-    }
-    fn store_superweapon_limit(&mut self, limit: u8) {
-        // As Terrain Deformation: the next game's rules read it.
-        self.persistence.options_profile.superweapon_limit = limit;
-        self.process_assets.set_superweapon_limit(i32::from(limit));
     }
     fn store_detailed_eva_text(&mut self, enabled: bool) {
         // Presentation only: the next EVA text line reads it.
@@ -596,8 +595,22 @@ impl App {
     /// Shared pre-dialog Session read: Skirmish at52E11E and LAN (including
     /// failed IPX admission) at52E37D. Preferences stay in their process
     /// caches; the original reads INI8870C0, not disk.
-    pub(crate) fn prepare_multiplayer_settings(state: &mut AppState) {
-        // VERA: setup screens start from the player's own personal rules,
+    /// VERA starts network selection from cold Rules so an earlier map cannot
+    /// add Countries or replace the choices a peer is about to accept.
+    pub(crate) fn prepare_multiplayer_settings(
+        state: &mut AppState,
+        mode: crate::app::match_runtime::session::SessionMode,
+    ) -> bool {
+        if mode.is_network()
+            && let Some(owner) = state.process_assets.native_rules_mut_with_tile_cache().0
+            && let Err(error) = owner.reset_for_network_match()
+        {
+            state.frontend.main_menu_shell_error = Some(format!(
+                "Could not prepare network rules. Restart the game and try again.\n{error}"
+            ));
+            return false;
+        }
+        // VERA: setup screens start from the player's own Options switches,
         // which a previous room's replaced; a room's agreement plays its
         // host's.
         state.process_assets.use_own_personal_rules();
@@ -614,12 +627,15 @@ impl App {
             .prepare_multiplayer_settings(&main);
         state.process_assets.refresh_multiplayer_country_bodies();
         // These are compatibility projections of the one process registry.
-        // A finished world can remain resident behind the shell, and rules()
-        // reads its resource projection, so refresh both consumers together.
+        // A finished world can remain resident behind the shell. Offline
+        // selection keeps its native retaining view; network selection uses
+        // the startup frontend projection and the freshly rebuilt Countries.
         if let Some(rules) = state.frontend.frontend_rules.as_mut() {
             state.process_assets.project_multiplayer_countries(rules);
         }
-        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Rules) {
+        if !mode.is_network()
+            && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Rules)
+        {
             state
                 .process_assets
                 .project_multiplayer_countries(&mut runtime.resources_mut().rules);
@@ -647,6 +663,7 @@ impl App {
             .multiplayer_shell_runtime
             .set_lobby_colors(lobby_colors);
         state.match_state.session.set_lobby_colors(lobby_colors);
+        true
     }
 
     /// The score page `0x108` owns the result screen once its model is set
@@ -753,17 +770,7 @@ impl App {
 
         state.frontend.score_page = None;
         state.frontend.score_art = None;
-        let side = model.side;
-        state.frontend.campaign_score_art = state.process_assets.manager().and_then(|assets| {
-            crate::render::main_menu_shell_chrome::build_campaign_score_art(
-                &state.renderer.gpu,
-                &state.renderer.batch_renderer,
-                assets,
-                side,
-                crate::app::frontend::shell_layout::art_key_screen_width(state),
-                state.process_assets.side_score_art(side),
-            )
-        });
+        Self::prepare_campaign_score_art(state, model.side);
         if state.frontend.campaign_score_art.is_none() {
             log::warn!(
                 "Could not prepare Campaign StandaloneScore background; Continue remains available"
@@ -800,6 +807,21 @@ impl App {
         }
     }
 
+    /// `ScoreArt__Load` (`0x0072D300`): prepare the active side's campaign
+    /// score art for the standalone and Cooperative result pages.
+    pub(super) fn prepare_campaign_score_art(state: &mut AppState, side: i32) {
+        state.frontend.campaign_score_art = state.process_assets.manager().and_then(|assets| {
+            crate::render::main_menu_shell_chrome::build_campaign_score_art(
+                &state.renderer.gpu,
+                &state.renderer.batch_renderer,
+                assets,
+                side,
+                crate::app::frontend::shell_layout::art_key_screen_width(state),
+                state.process_assets.side_score_art(side),
+            )
+        });
+    }
+
     /// Cooperative `+0xA4`'s campaign end (`0x00471420`): the side's score
     /// art again (`0x0072D300`, `ScoreArt__Load`), the empty backdrop, then
     /// dialog `0xBC7` with the texts its init writes. No theme changes.
@@ -808,16 +830,7 @@ impl App {
         model: crate::ui::campaign_score_shell::CampaignEndModel,
     ) {
         use crate::ui::campaign_score_shell::{CAMPAIGN_END_DIALOG, CampaignScorePage};
-        state.frontend.campaign_score_art = state.process_assets.manager().and_then(|assets| {
-            crate::render::main_menu_shell_chrome::build_campaign_score_art(
-                &state.renderer.gpu,
-                &state.renderer.batch_renderer,
-                assets,
-                model.side,
-                crate::app::frontend::shell_layout::art_key_screen_width(state),
-                state.process_assets.side_score_art(model.side),
-            )
-        });
+        Self::prepare_campaign_score_art(state, model.side);
         if state.frontend.campaign_score_art.is_none() {
             log::warn!("Could not prepare the campaign-end score art; Continue remains available");
         }
@@ -1137,7 +1150,12 @@ impl App {
     /// `0x0052E119`, `0x0052E168` -> `0x006AE2C0`). Its Back returns to
     /// Single Player either way (GameMode 0, state 1, `0x0052E175`).
     pub(super) fn enter_native_skirmish_from_single_player(state: &mut AppState) {
-        Self::prepare_multiplayer_settings(state);
+        if !Self::prepare_multiplayer_settings(
+            state,
+            crate::app::match_runtime::session::SessionMode::Skirmish,
+        ) {
+            return;
+        }
         // Prepare dialog 0x102 from the process-lifetime MIX list before
         // destroying its 0x100 source. Active YR's FUN_00534E50 registers the
         // neutral pair on that shared list before the shell SHPs are loaded.
@@ -1179,6 +1197,7 @@ impl App {
         state.frontend.shell_first_paint_slide = None;
         state.frontend.skirmish_shell_state.choose_map_modal = None;
         state.frontend.skirmish_shell_state.validation_modal = None;
+        state.frontend.skirmish_shell_state.game_options = None;
         state.frontend.skirmish_shell_state.open_combo_dropdown = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_drag = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_press = None;
@@ -1738,6 +1757,22 @@ impl App {
                     result == crate::ui::shell::modal::ModalResult::MessageBox(0),
                 );
             }
+            ShellMessageBoxPurpose::ModFiles(which) => {
+                Self::close_shell_message_box_from_controller(state);
+                Self::answer_mod_files(
+                    state,
+                    which,
+                    result == crate::ui::shell::modal::ModalResult::MessageBox(0),
+                );
+            }
+            ShellMessageBoxPurpose::ModMade(dir) => {
+                Self::close_shell_message_box_from_controller(state);
+                Self::answer_mod_made(
+                    state,
+                    &dir,
+                    result == crate::ui::shell::modal::ModalResult::MessageBox(0),
+                );
+            }
         }
     }
 
@@ -1980,6 +2015,10 @@ impl App {
             ShellExitThen::NetworkSetupBack(_) => {
                 crate::app::shell_network_setup::commit_back(state)
             }
+            ShellExitThen::NetworkSetupBackWithNotice { label, .. } => {
+                crate::app::shell_network_setup::commit_back(state);
+                crate::app::shell_lan::report_error(state, label);
+            }
             ShellExitThen::NetworkSetupChooseMap(_) => {
                 crate::app::shell_network_setup::open_choose_map(state)
             }
@@ -1987,7 +2026,7 @@ impl App {
                 crate::app::shell_network_setup::commit_start(state, agreed_seed)
             }
             ShellExitThen::SkirmishChooseMap => {
-                let mode_id = state.frontend.skirmish_shell_state.selected_mode_id;
+                let mode_id = state.frontend.skirmish_shell_state.selected_mode.id;
                 let record_index = Self::current_choose_map_record_index(state);
                 Self::open_choose_map_modal(state, mode_id, record_index);
             }
@@ -2013,12 +2052,6 @@ impl App {
                 crate::app::shell_wol::lobby::commit_create(state, observe)
             }
             ShellExitThen::WolOptionsOpen => crate::app::shell_wol::options::commit_open(state),
-            ShellExitThen::WolChatTranslationOpen => {
-                crate::app::shell_wol::chat_translation::commit_open(state)
-            }
-            ShellExitThen::WolChatTranslationClose(staged) => {
-                crate::app::shell_wol::chat_translation::commit_close(state, staged)
-            }
             ShellExitThen::WolOptionsClose(staged) => {
                 crate::app::shell_wol::options::commit_close(state, staged)
             }

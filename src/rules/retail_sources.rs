@@ -199,9 +199,10 @@ pub fn select_mode_ini(
 }
 
 /// Transient selected inputs, consumed when the process authority is constructed.
-/// `langrule` contains a successfully selected optional source; a physical
-/// absence and a selection/expansion failure are recorded separately. Present
-/// empty and unverified files retain their physical byte count and parsed root
+/// `langrule` contains a selected mod's optional source; with no mod selected,
+/// VERA ignores it so localized installations share the original rules.
+/// A physical absence and a selection/expansion failure are recorded separately.
+/// Present empty and unverified files retain their physical byte count and parsed root
 /// for the process owner's native Digest gate. ART is fixed and never enters
 /// the scenario layer stack. Audio definitions are separately selected and
 /// injected before Rules construction.
@@ -212,19 +213,29 @@ pub struct RetailRulesSources {
     langrule_selection_failure: Option<String>,
     pub artmd: SelectedIni,
     personal_rules: PersonalRules,
-    /// Startup mounted `ares.mix` (`AssetManager::ships_ares`).
+    /// The game is an Ares game (`AssetManager::ships_ares`): it mounted
+    /// `ares.mix`, or the player's Ares setting is On.
     ships_ares: bool,
+    /// The player's Ares setting is Off: no Ares key turns Ares on.
+    ares_keys_off: bool,
 }
 
 impl RetailRulesSources {
     pub fn select(assets: &AssetManager) -> Result<Self, String> {
         let rulesmd = select_ini(assets, assets.ini_roots().rules())?;
-        let (langrule, langrule_selection_failure) =
-            match select_optional_ini(assets, "langrule.ini") {
-                OptionalIniSelection::Absent => (None, None),
-                OptionalIniSelection::Selected(selected) => (Some(selected), None),
-                OptionalIniSelection::SelectionFailed(error) => (None, Some(error)),
-            };
+        // VERA's Original mode deliberately omits the optional LANGRULE pass
+        // of Load_Game_Rules (0x0052CD70) and Reset (0x00668B05). A selected
+        // mod keeps it, including its native Digest validation and layering.
+        let langrule = if assets.mod_selected() {
+            select_optional_ini(assets, "langrule.ini")
+        } else {
+            OptionalIniSelection::Absent
+        };
+        let (langrule, langrule_selection_failure) = match langrule {
+            OptionalIniSelection::Absent => (None, None),
+            OptionalIniSelection::Selected(selected) => (Some(selected), None),
+            OptionalIniSelection::SelectionFailed(error) => (None, Some(error)),
+        };
         let artmd = select_ini(assets, assets.ini_roots().art())?;
         Ok(Self {
             rulesmd,
@@ -233,6 +244,7 @@ impl RetailRulesSources {
             artmd,
             personal_rules: PersonalRules::default(),
             ships_ares: crate::rules::ares_switch::game_ships_ares(assets.ships_ares()),
+            ares_keys_off: assets.ares_setting() == crate::util::ares_launch::AresSetting::Off,
         })
     }
 
@@ -268,6 +280,7 @@ impl RetailRulesSources {
             ],
             self.personal_rules,
             self.ships_ares,
+            self.ares_keys_off,
         )
         .map_err(|error| format!("Native rules cold startup failed: {error}"))?;
         Ok(owner)
@@ -561,11 +574,22 @@ mod tests {
 
     #[test]
     fn optional_langrule_selection_preserves_absent_empty_and_bad_digest_sources() {
+        use crate::assets::asset_manager::{MediaArchiveMode, test_support::audio_test_install};
+
+        let install = audio_test_install("langrule-mod-install");
         let directory = TestDirectory::new("optional-langrule-physical-source");
         directory.write("rulesmd.ini", b"[General]\nBuildSpeed=.7\n");
         directory.write("artmd.ini", b"[TECH]\nFoundation=2x3\n");
 
-        let absent_assets = AssetManager::from_loose_root_for_test(directory.path());
+        let open = || {
+            AssetManager::with_mod(
+                install.path(),
+                Some(directory.path()),
+                MediaArchiveMode::STOCK_DIGITAL,
+            )
+            .unwrap()
+        };
+        let absent_assets = open();
         assert!(
             RetailRulesSources::select(&absent_assets)
                 .expect("required sources")
@@ -575,7 +599,7 @@ mod tests {
         );
 
         directory.write("langrule.ini", b"");
-        let empty_assets = AssetManager::from_loose_root_for_test(directory.path());
+        let empty_assets = open();
         let empty = RetailRulesSources::select(&empty_assets)
             .expect("required sources")
             .langrule
@@ -585,7 +609,7 @@ mod tests {
 
         let invalid = b"[General]\nBuildSpeed=.58\n[Digest]\n1=AAAAAAAAAAAAAAAAAAAAAAAAAAA=\n";
         directory.write("langrule.ini", invalid);
-        let invalid_assets = AssetManager::from_loose_root_for_test(directory.path());
+        let invalid_assets = open();
         let selected = RetailRulesSources::select(&invalid_assets)
             .expect("required sources")
             .langrule
@@ -594,49 +618,61 @@ mod tests {
         assert!(selected.ini.section("Digest").is_some());
     }
 
-    /// A game that ships `ares.mix` (Load_Bootstrap_AresMIX, hook
-    /// `0x0053029E`) selects its INIs with Ares' syntax in every build: a `+=`
-    /// list key is numbered as Ares numbers it. Without `ares.mix`, a build
-    /// without the `ares` feature keeps gamemd's syntax.
+    /// A selected mod that mounts `ares.mix` (Load_Bootstrap_AresMIX, hook
+    /// `0x0053029E`) selects its INIs with Ares' syntax. No mod ignores the
+    /// installed archive and keeps gamemd's syntax, unless the thread already
+    /// reads the Ares way.
     #[test]
     fn a_game_with_ares_mix_selects_its_rules_with_ares_syntax() {
         use crate::assets::asset_manager::MediaArchiveMode;
-        let directory =
-            crate::assets::asset_manager::test_support::audio_test_install("ares-mix-rules-syntax");
-        std::fs::write(
-            directory.path().join("rulesmd.ini"),
-            b"[BuildingTypes]\n+=GAPOWR\n",
-        )
-        .unwrap();
-        std::fs::write(
-            directory.path().join("artmd.ini"),
-            b"[GAPOWR]\nFoundation=2x2\n",
-        )
-        .unwrap();
-        let keys = || {
-            let assets =
-                AssetManager::new(directory.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
-            let sources = RetailRulesSources::select(&assets).unwrap();
-            let keys: Vec<String> = sources
-                .rulesmd
-                .ini
-                .section_or_empty("BuildingTypes")
-                .keys()
-                .map(str::to_owned)
-                .collect();
-            (assets.ships_ares(), sources.ships_ares, keys)
-        };
-        // A build with the `ares` feature reads every game the Ares way.
-        let feature = cfg!(feature = "ares");
-        let stock_key = if feature { "var_0" } else { "+" };
-        assert_eq!(keys(), (false, feature, vec![stock_key.to_owned()]));
-        directory.write_mix("ares.mix", "ares.txt", b"ares");
-        assert_eq!(keys(), (true, true, vec!["var_0".to_owned()]));
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            let directory = crate::assets::asset_manager::test_support::audio_test_install(
+                "ares-mix-rules-syntax",
+            );
+            std::fs::write(
+                directory.path().join("rulesmd.ini"),
+                b"[BuildingTypes]\n+=GAPOWR\n",
+            )
+            .unwrap();
+            std::fs::write(
+                directory.path().join("artmd.ini"),
+                b"[GAPOWR]\nFoundation=2x2\n",
+            )
+            .unwrap();
+            let mod_dir = TestDirectory::new("ares-rules-mod");
+            let keys = |selected_mod: bool| {
+                let assets = AssetManager::with_mod(
+                    directory.path(),
+                    selected_mod.then_some(mod_dir.path()),
+                    MediaArchiveMode::STOCK_DIGITAL,
+                )
+                .unwrap();
+                let sources = RetailRulesSources::select(&assets).unwrap();
+                let keys: Vec<String> = sources
+                    .rulesmd
+                    .ini
+                    .section_or_empty("BuildingTypes")
+                    .keys()
+                    .map(str::to_owned)
+                    .collect();
+                (assets.ships_ares(), sources.ships_ares, keys)
+            };
+            // A thread read the Ares way reads every game the Ares way.
+            let stock_key = if ares_way { "var_0" } else { "+" };
+            assert_eq!(keys(false), (false, ares_way, vec![stock_key.to_owned()]));
+            directory.write_mix("ares.mix", "ares.txt", b"ares");
+            assert_eq!(keys(false), (false, ares_way, vec![stock_key.to_owned()]));
+            assert_eq!(keys(true), (true, true, vec!["var_0".to_owned()]));
+        }
     }
 
     #[test]
     fn langrule_selection_expands_ares_includes_and_keeps_physical_root_for_digest() {
+        use crate::assets::asset_manager::{MediaArchiveMode, test_support::audio_test_install};
+
         let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let install = audio_test_install("langrule-include-install");
         let directory = TestDirectory::new("langrule-ares-include");
         directory.write("rulesmd.ini", b"[General]\nBuildSpeed=.7\n");
         directory.write("artmd.ini", b"[TECH]\nFoundation=2x3\n");
@@ -648,7 +684,12 @@ mod tests {
             "lang-extra.ini",
             b"[General]\nBuildSpeed=.4\n[ColorAdd]\nLANG0=7,8,9\n",
         );
-        let assets = AssetManager::from_loose_root_for_test(directory.path());
+        let assets = AssetManager::with_mod(
+            install.path(),
+            Some(directory.path()),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
         let selected = RetailRulesSources::select(&assets)
             .expect("required sources")
             .langrule
@@ -824,6 +865,9 @@ mod tests {
 
     #[test]
     fn random_map_catalog_uses_retained_root_langrule_and_fixed_art() {
+        use crate::assets::asset_manager::{MediaArchiveMode, test_support::audio_test_install};
+
+        let install = audio_test_install("rmg-langrule-install");
         let directory = TestDirectory::new("rmg-retained-rules");
         // TECH2 is registered so that Ares's Find-only list read (Buf_AI
         // 1005B830, hook 0x672B0E) resolves the langrule list too.
@@ -838,7 +882,12 @@ mod tests {
             b"[AI]\nNeutralTechBuildings=TECH2\n[Digest]\n1=CGLFHoNX2UiC0RYwRTmgBnJVpec=\n",
         );
         directory.write("artmd.ini", b"[TECH2]\nFoundation=2x3\n");
-        let assets = AssetManager::from_loose_root_for_test(directory.path());
+        let assets = AssetManager::with_mod(
+            install.path(),
+            Some(directory.path()),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
         let (_, _, owner) = load_startup_rules(&assets, Arc::default(), Default::default())
             .expect("startup")
             .into_parts();

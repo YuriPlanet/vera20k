@@ -2,7 +2,6 @@
 //! building entry, `0x00519D82..0x00519EA5`), through the production entry on
 //! retail rules. Ares replaces this arm (hook `0x519D9C`; see
 //! `sim::ares_rubble`'s tests), so these run without it.
-#![cfg(not(feature = "ares"))]
 use super::*;
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::mission::MissionId;

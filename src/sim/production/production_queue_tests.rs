@@ -228,7 +228,6 @@ fn busy_factory_exit_player_uses_house_order_without_moving_primary() {
 
 /// Stock type match; Ares admits NAWEAP
 /// ([`ares_busy_factory_exit_takes_another_type_that_can_build_the_product`]).
-#[cfg(not(feature = "ares"))]
 #[test]
 fn busy_factory_exit_skips_attached_different_type_and_non_guard_buildings() {
     let Some((mut sim, rules, owner)) = busy_factory_exit_world() else {
@@ -540,7 +539,6 @@ fn busy_factory_exit_without_an_alternate_refunds_player_product_and_promotes_qu
 
 /// Stock gamemd rows; Ares 100415E0 (hook 0x4444E2) admits other factory
 /// types they hold as refused candidates.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng() {
     use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -1108,7 +1106,6 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
         .advance_app_frame(
             std::slice::from_ref(&rally),
             &rules,
-            None,
             67,
             crate::sim::world::TickLane::Ordinary,
             crate::sim::world::FrameEffects::default().with_production_strip(&visits, &|_| {}),
@@ -1162,7 +1159,6 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
         .advance_app_frame(
             &due,
             &rules,
-            None,
             67,
             crate::sim::world::TickLane::Ordinary,
             crate::sim::world::FrameEffects::default().with_production_strip(&visits, &|_| {}),
@@ -1239,7 +1235,6 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
         .advance_app_frame(
             &due,
             &rules,
-            None,
             67,
             TickLane::Ordinary,
             FrameEffects::default()
@@ -1275,7 +1270,6 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
         .advance_app_frame(
             &due,
             &rules,
-            None,
             67,
             TickLane::Ordinary,
             FrameEffects::default().with_production_strip(&visits, &|_| {}),
@@ -1305,7 +1299,6 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
             .advance_app_frame(
                 &due,
                 &rules,
-                None,
                 67,
                 TickLane::Ordinary,
                 FrameEffects::default().with_production_strip(&visits, &|_| {}),

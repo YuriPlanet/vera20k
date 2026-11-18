@@ -339,7 +339,7 @@ pub(crate) fn controlled_transport_house(
     interner: &StringInterner,
     rider: &GameEntity,
 ) -> Option<InternedId> {
-    let transport = entities.get(rider.passenger_role.transporter()?)?;
+    let transport = entities.get(rider.passenger_role().transporter()?)?;
     let open_topped = interner
         .object_type(transport.type_ref(), rules)
         .is_some_and(|obj| obj.open_topped);
@@ -549,7 +549,7 @@ pub(crate) fn open_topped_cargo_range(
     let mut shortest = None;
     // Cargo owns the native head/+30 sequence. Neither limbo nor death
     // filters belong to this reader; boarded passengers are in limbo.
-    for &id in entity.passenger_role.cargo()?.passengers() {
+    for &id in entity.passenger_role().cargo()?.passengers() {
         let Some(passenger) = entities.get(id) else {
             break;
         };
@@ -1066,7 +1066,7 @@ pub fn attacker_facts(entity: &GameEntity, obj: &ObjectType) -> AttackerFacts {
         veterancy: entity.veterancy.rank(),
         current_weapon_number: entity.current_weapon_number(),
         open_transport_weapon: open_transport_weapon(
-            entity.passenger_role.in_open_transport(),
+            entity.passenger_role().in_open_transport(),
             obj,
         ),
         gattling_stage: entity.gattling.stage(),
@@ -1312,7 +1312,7 @@ pub(crate) fn is_occupied(entity: &GameEntity, obj: &ObjectType) -> bool {
     entity.category() == EntityCategory::Structure
         && obj.can_be_occupied
         && obj.can_occupy_fire
-        && entity.passenger_role.occupants().count() > 0
+        && entity.passenger_role().occupants().count() > 0
 }
 
 /// `BuildingClass @ 0x00458E00` (vt+0x404): half the shorter side of the
@@ -1338,7 +1338,7 @@ pub(crate) fn firing_occupant_id(entity: &GameEntity, obj: &ObjectType) -> Optio
     if !is_occupied(entity, obj) {
         return None;
     }
-    let occupants = entity.passenger_role.occupants();
+    let occupants = entity.passenger_role().occupants();
     // Native452742 uses signed DWORD. Unsafe negative/stale slots are not
     // representable object references; do not narrow a valid index to u8.
     occupants
@@ -1543,7 +1543,7 @@ mod tests {
             5,
             EntityCategory::Structure,
         );
-        host.passenger_role.occupants_mut().add(2);
+        host.garrison_mut_for_test().add_for_test(2);
         world.substrate.entities.insert(host);
         world
             .substrate
@@ -1660,7 +1660,7 @@ mod tests {
                 );
                 inside.veterancy.set_rank_for_test(veterancy);
                 entities.insert(inside);
-                building.passenger_role.occupants_mut().add(2);
+                building.garrison_mut_for_test().add_for_test(2);
             }
             entities.insert(building);
             let interner = crate::sim::intern::test_interner();
@@ -1689,35 +1689,38 @@ mod tests {
 
     #[test]
     fn slot_zero_warhead_flag_reads_the_exact_medium_and_wood_verses_at_the_live_tier() {
-        for medium in ["0%", "0.1%", "0.001"] {
-            let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
-                "[InfantryTypes]\n0=DOG\n[DOG]\nPrimary=BITE\nSecondary=SCANNER\nElitePrimary=ELITEBITE\n\
-                 [WeaponTypes]\n0=BITE\n1=SCANNER\n2=ELITEBITE\n\
-                 [BITE]\nProjectile=AG\nWarhead=SOFT\n[ELITEBITE]\nProjectile=AG\nWarhead=FULL\n\
-                 [SCANNER]\nProjectile=AA\nWarhead=FULL\n[AG]\nAA=no\nAG=yes\n[AA]\nAA=yes\nAG=yes\n\
-                 [SOFT]\nVerses=100%,100%,100%,100%,{medium},100%,0%,100%,100%,100%,100%\n\
-                 [FULL]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
-            ))).unwrap();
-            let obj = rules.object("DOG").unwrap();
-            let mut dog = GameEntity::test_default(1, "DOG", "Americans", 5, 5);
-            dog.set_category_for_test(EntityCategory::Infantry);
-            let entities = EntityStore::new();
-            let interner = crate::sim::intern::test_interner();
-            assert_eq!(
-                passive_scan_class_bits(&rules, obj, attacker_facts(&dog, obj), |index| {
-                    get_weapon(&dog, obj, index, &entities, &rules, &interner)
-                }),
-                0xBC,
-                "slot 0 AG and slot 1 AA+AG"
-            );
-            assert_eq!(
-                primary_warhead_spares_medium_and_wood(&rules, obj, 0),
-                !crate::rules::ARES_BUILD && medium != "0.001"
-            );
-            assert!(
-                !primary_warhead_spares_medium_and_wood(&rules, obj, 200),
-                "elite primary is resolved first"
-            );
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            for medium in ["0%", "0.1%", "0.001"] {
+                let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+                    "[InfantryTypes]\n0=DOG\n[DOG]\nPrimary=BITE\nSecondary=SCANNER\nElitePrimary=ELITEBITE\n\
+                     [WeaponTypes]\n0=BITE\n1=SCANNER\n2=ELITEBITE\n\
+                     [BITE]\nProjectile=AG\nWarhead=SOFT\n[ELITEBITE]\nProjectile=AG\nWarhead=FULL\n\
+                     [SCANNER]\nProjectile=AA\nWarhead=FULL\n[AG]\nAA=no\nAG=yes\n[AA]\nAA=yes\nAG=yes\n\
+                     [SOFT]\nVerses=100%,100%,100%,100%,{medium},100%,0%,100%,100%,100%,100%\n\
+                     [FULL]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+                ))).unwrap();
+                let obj = rules.object("DOG").unwrap();
+                let mut dog = GameEntity::test_default(1, "DOG", "Americans", 5, 5);
+                dog.set_category_for_test(EntityCategory::Infantry);
+                let entities = EntityStore::new();
+                let interner = crate::sim::intern::test_interner();
+                assert_eq!(
+                    passive_scan_class_bits(&rules, obj, attacker_facts(&dog, obj), |index| {
+                        get_weapon(&dog, obj, index, &entities, &rules, &interner)
+                    }),
+                    0xBC,
+                    "slot 0 AG and slot 1 AA+AG"
+                );
+                assert_eq!(
+                    primary_warhead_spares_medium_and_wood(&rules, obj, 0),
+                    !ares_way && medium != "0.001"
+                );
+                assert!(
+                    !primary_warhead_spares_medium_and_wood(&rules, obj, 200),
+                    "elite primary is resolved first"
+                );
+            }
         }
     }
 
@@ -2044,16 +2047,22 @@ mod tests {
         sim.interner = crate::sim::intern::test_interner();
         sim.substrate.entities.get_mut(1).unwrap().mind_control =
             MindControlLink::controlled_by_for_test(3);
-        sim.substrate.entities.get_mut(2).unwrap().passenger_role =
-            PassengerRole::inside_for_test(1, false);
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .set_passenger_role_for_test(PassengerRole::inside_for_test(1, false));
         let rider = sim.substrate.entities.get(2).unwrap();
         assert_eq!(
             controlled_transport_house(&sim.substrate.entities, &rules, &sim.interner, rider),
             None,
             "a garrison occupant or cargo rider stores no Transporter"
         );
-        sim.substrate.entities.get_mut(2).unwrap().passenger_role =
-            PassengerRole::boarded_for_test(1, true);
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .set_passenger_role_for_test(PassengerRole::boarded_for_test(1, true));
         let expected = sim.substrate.entities.get(3).unwrap().owner();
         let rider = sim.substrate.entities.get(2).unwrap();
         assert_eq!(

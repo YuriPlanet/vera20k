@@ -151,7 +151,6 @@ fn authored_follows_peer_changes_house_with_only_head_tagged() {
             .advance_app_frame(
                 commands,
                 rules,
-                Some(rules.overlay_registry()),
                 67,
                 TickLane::Ordinary,
                 FrameEffects::default(),
@@ -219,15 +218,8 @@ fn uninit_clears_incoming_unit_link_but_preserves_orphan_follower_byte_after_res
     );
     assert_eq!(sim.entities().get(head).unwrap().unit_follower(), None);
     assert!(sim.entities().get(tail).unwrap().is_unit_follower());
-    sim.advance_app_frame(
-        &[],
-        rules,
-        Some(rules.overlay_registry()),
-        67,
-        TickLane::Ordinary,
-        FrameEffects::default(),
-    )
-    .unwrap();
+    sim.advance_app_frame(&[], rules, 67, TickLane::Ordinary, FrameEffects::default())
+        .unwrap();
     assert!(
         sim.entities().get(middle).is_none(),
         "ordinary pending-delete drain"
@@ -277,7 +269,6 @@ fn a_follower_cycle_does_not_stop_the_frame() {
         sim.advance_app_frame(
             commands,
             rules,
-            Some(rules.overlay_registry()),
             67,
             TickLane::Ordinary,
             FrameEffects::default(),

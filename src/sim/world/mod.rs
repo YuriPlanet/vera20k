@@ -39,19 +39,13 @@ pub(crate) mod entry_test_fixture;
 mod frame_channel;
 mod frame_effects;
 mod idle_sleep;
-// A build that still carries Ares behind its feature sleeps nothing
-// (`Simulation::extension_steps_unsorted`), so these run once that
-// feature is gone.
-#[cfg(all(test, tests_sim_world_c_o, not(feature = "ares")))]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod idle_sleep_tests;
 mod network_commands;
 mod object_entry;
 mod queued_command;
 mod quiet_units;
-// A build that still carries Ares behind its feature sleeps nothing
-// (`Simulation::extension_steps_unsorted`), so these run once that
-// feature is gone.
-#[cfg(all(test, tests_sim_world_p_s, not(feature = "ares")))]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod quiet_units_tests;
 mod sinking;
 mod terrain_deformation;
@@ -112,7 +106,6 @@ mod fly_landing;
 mod fly_orders;
 mod fly_process;
 mod frame_error;
-mod ground_keys;
 mod lifecycle;
 mod master_frame;
 #[cfg(any(test, feature = "test-support"))]
@@ -619,10 +612,21 @@ pub struct AresUnitLostLine {
     pub radar_event: bool,
 }
 
+
+/// The native playback destination for a map-authored sound reference.
+#[derive(Debug, Clone)]
+pub enum TriggerSoundTarget {
+    Centered,
+    Eva,
+    Coordinate { coordinate: DriveCoord, flags: u32 },
+    Object { owner: u64, world: crate::sim::anim_class::AnimWorldCoord },
+}
+
 /// A sound event produced during simulation (combat, death, production).
 /// Pure data — no audio library dependency. Drained by the app layer each frame.
 #[derive(Debug, Clone)]
 pub enum SimSoundEvent {
+    TriggerAudio { reference: crate::rules::sound_ini::SoundReference, target: TriggerSoundTarget },
     /// PlanMgr638593 accepted an editing order; audio gates the local issuer.
     PlanningNodeAdded { owner: InternedId },
     /// TAction21 Execute6DD8B0 calls VoxQueueVoice752480 with its literal
@@ -1505,8 +1509,10 @@ pub struct Simulation {
     /// fixed-map construction uses `Random__Seed(0)`, matching the verified
     /// native fresh-process state; launch `.SED` generation installs its exact
     /// post-RMG continuation. Bridge repair consumes this stream; destruction
-    /// remains Scenario-owned. This cursor is not saved or checksummed; Rust
-    /// retains it across in-scenario restore and fresh Scenario handoff.
+    /// remains Scenario-owned. Offline this cursor is not saved or checksummed;
+    /// Rust retains it across in-scenario restore and fresh Scenario handoff.
+    /// Network starts seed it from the agreed match seed and hash it, since
+    /// bridge repair writes its chosen variant into authoritative overlays.
     /// Original Init_Random_Number_System52FC20 leaves this entire object
     /// unchanged; only random-map generation reseeds it at598996.
     #[serde(skip, default = "deserialized_process_rng_placeholder")]
@@ -1641,9 +1647,10 @@ pub struct Simulation {
     /// `ObjectClass+0x64`: the custom sound trigger action 99 gave an object
     /// (a Building or Terrain), keyed by stable id. Absent is the
     /// constructor's -1. Only `object_sound` writes it; the object's
-    /// destruction removes it.
+    /// destruction removes it. A network trigger retains the authored
+    /// name/slot so local playback availability cannot change idle admission.
     #[serde(default)]
-    object_custom_sounds: BTreeMap<u64, String>,
+    object_custom_sounds: BTreeMap<u64, crate::rules::sound_ini::SoundReference>,
     /// Test observation of each refinery unload gate. The dock commits the
     /// gate's smoke and SpecialAnim itself; the frame tail drops these.
     #[cfg(any(test, feature = "test-support"))]
@@ -1685,6 +1692,10 @@ pub struct Simulation {
     /// Batched target scans (`techno_ai::scan_batch`); `None` scans in
     /// native order. A save carries only the setting.
     pub(crate) scan_batch: Option<techno_ai::ScanBatch>,
+    /// Whether an effect anim that changes nothing but its picture runs as a
+    /// presentation anim (`anim_class::EffectAnims`); a new world makes every
+    /// anim in native order. A save carries the setting.
+    pub(crate) effect_anims: crate::sim::anim_class::EffectAnims,
     /// Retained native navigation base plane/raw movement rows plus the live
     /// derived hierarchy. ZoneGrid saves only its own retained base state;
     /// LoadContent67E8CD rebuilds hierarchy after bound Cell/object restoration.
@@ -3542,7 +3553,7 @@ impl Simulation {
     /// (`install_fresh_process_main`). In-scenario loading keeps the live
     /// seed and MapGen; the cold shell starts MapGen from the CRT Seed(0)
     /// object (native fixture in world/rng_routing_tests.rs).
-    pub fn retain_process_state_for_load(&mut self, process: SnapshotProcessState<'_>) {
+    pub(crate) fn retain_process_state_for_load(&mut self, process: SnapshotProcessState<'_>) {
         match process {
             SnapshotProcessState::Live(live) => {
                 self.session.record_random_seed(live.session.seed());
@@ -3626,9 +3637,9 @@ impl Simulation {
     /// `MouseClass::Load` dispatch at `0x005BE150` routes restored dimensions through
     /// `MapClass::Resize @ 0x00565C10`, whose unconditional call to
     /// `CellClass::Constructor @ 0x0047BBF0` reconstructs the fixed dummy in
-    /// place. The app resets a detached candidate before fallible restoration,
+    /// place. Player loads reset a detached candidate before fallible restoration,
     /// so a rejected transactional load cannot mutate the running world.
-    pub fn reconstruct_cellclass_dummy_for_map_resize(&mut self) {
+    pub(crate) fn reconstruct_cellclass_dummy_for_map_resize(&mut self) {
         self.effective_shared_cell_dummy()
             .reconstruct_for_map_resize();
         self.trigger_runtime.reconstruct_dummy_for_map_resize();
@@ -3638,6 +3649,16 @@ impl Simulation {
         self.substrate
             .raw_cell_occupation
             .reconstruct_dummy_for_map_resize();
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn retain_player_load_process_for_test(&mut self, process: SnapshotProcessState<'_>) {
+        self.retain_process_state_for_load(process);
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn reconstruct_map_dummy_for_test(&mut self) {
+        self.reconstruct_cellclass_dummy_for_map_resize();
     }
 
     /// Adopt the process-global CellClass identity already bound to a load's
@@ -3907,6 +3928,21 @@ impl Simulation {
     /// The loader's GameMode install, at startup or from an admitted save
     /// ([`ScenarioSession::set_game_mode`]).
     pub fn install_session_mode(&mut self, mode: crate::sim::scenario_session::ScenarioGameMode) {
+        if mode.is_network() && !self.session.game_mode().is_network() {
+            // VERA network adaptation: Init_Random_Number_System52FC20 seeds
+            // Scenario/Main, leaving process MapGen alone. MapGen598030 also
+            // supplies bridge repair's overlay variants, so a shared match
+            // must not inherit each client's unrelated RMG/repair history.
+            // Rejoin/watch use this same fresh start before replaying history.
+            // On a generated map this also replaces the post-RMG cursor the
+            // bootstrap installed (Generate598960 leaves MapGen advanced, and
+            // gamemd's repairs continue from it), so a generated network map's
+            // repair variants differ from gamemd's for the same map seed. The
+            // match seed is the one value every peer, rejoiner and watcher
+            // already holds. Truncated to 32 bits as for Scenario/Main, it gives
+            // MapGen their seeded state, from which it advances on its own.
+            self.mapgen_rng = SimRng::new(self.session.seed());
+        }
         self.session.set_game_mode(mode);
     }
 
@@ -3972,16 +4008,6 @@ impl Simulation {
         };
         state.make_multiplay_passive();
         true
-    }
-
-    /// The generated-map loader runs the final ore pass on the populated grid
-    /// outside the simulation and installs the result before play.
-    pub fn take_overlay_grid_for_load(&mut self) -> Option<crate::sim::overlay_grid::OverlayGrid> {
-        self.overlay_grid.take()
-    }
-
-    pub fn install_overlay_grid_for_load(&mut self, grid: crate::sim::overlay_grid::OverlayGrid) {
-        self.overlay_grid = Some(grid);
     }
 
     /// The authored loader runs the final InitCellAttributes sweep on the live
@@ -4088,16 +4114,8 @@ impl Simulation {
         &mut self,
         id: u64,
         layer: display_layers::DisplayLayer,
-        rules: Option<&RuleSet>,
     ) {
-        Self::submit_object_display(
-            &self.interner,
-            &self.terrain_objects,
-            &mut self.substrate,
-            id,
-            layer,
-            rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
-        );
+        Self::submit_object_display(&mut self.substrate, id, layer);
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -4708,6 +4726,7 @@ impl Simulation {
             path_batch: None,
             idle_sleep: Default::default(),
             scan_batch: None,
+            effect_anims: Default::default(),
             interner: crate::sim::intern::StringInterner::new(),
             type_tech_levels: TypeTechLevels::default(),
             rule_handles: None,
@@ -5986,7 +6005,7 @@ impl Simulation {
                 );
             }
             if !entity.lifecycle.cell_marked()
-                || entity.passenger_role.is_inside_transport()
+                || entity.passenger_role().is_inside_transport()
                 // A Jumpjet's hold and cruise (states 2 and 3) move it with
                 // no Mark pair (0x0054D0FF..0x0054D134), so one flown onto a
                 // cliff answers Ground with no list entry, in gamemd too.
@@ -6168,6 +6187,7 @@ impl Simulation {
         origin: glam::IVec3,
         admit_inline: bool,
         packets: &mut Vec<crate::sim::voxel_anim::VoxelDebrisSpawn>,
+        rules: &RuleSet,
     ) -> Result<(), crate::util::native_x87::NativeX87Error> {
         let stable_id = self.substrate.allocate_stable_id();
         let native_unique_id = self.next_native_runtime_id();
@@ -6180,9 +6200,17 @@ impl Simulation {
             origin,
             &mut self.scenario_rng,
         )?;
-        let spawn = crate::sim::voxel_anim::VoxelDebrisSpawn { object };
+        let attached_system = voxel_type
+            .attached_system
+            .as_deref()
+            .and_then(|name| rules.ps_type_id_by_name(name))
+            .map(|system_type| (system_type, origin));
+        let spawn = crate::sim::voxel_anim::VoxelDebrisSpawn {
+            object,
+            attached_system,
+        };
         if admit_inline {
-            self.admit_death_debris(std::iter::once(spawn));
+            self.admit_death_debris(std::iter::once(spawn), rules);
         } else {
             packets.push(spawn);
         }
@@ -6194,11 +6222,34 @@ impl Simulation {
     pub(crate) fn admit_death_debris(
         &mut self,
         spawns: impl IntoIterator<Item = crate::sim::voxel_anim::VoxelDebrisSpawn>,
+        rules: &RuleSet,
     ) {
         for spawn in spawns {
             let stable_id = spawn.object.stable_id();
             self.substrate.voxel_anims.insert(spawn.object);
             self.reveal_voxel_anim(stable_id);
+            // The constructor's tail (`0x00749864..0x007498BD`) builds the
+            // type's AttachedSystem at the input location, aimed at the cell
+            // there (Map565730), owned by the anim, with zero target coords
+            // (`0x00B1D188`) and no House, and keeps the result at +0x108.
+            // RESIDUAL: off the map, Map565730 gives the shared dummy cell to
+            // aim at; VERA passes no target, so the target coords stay zero.
+            if let Some((system_type, origin)) = spawn.attached_system {
+                let target = Self::map_coord_cell(&self.resolved_terrain, origin.x, origin.y)
+                    .map(|(x, y)| crate::sim::combat::TargetKind::Cell(x, y));
+                let system = self.spawn_particle_system(
+                    system_type,
+                    origin,
+                    target,
+                    Some(stable_id),
+                    glam::IVec3::ZERO,
+                    None,
+                    rules,
+                );
+                if let Some(piece) = self.substrate.voxel_anims.get_mut(stable_id) {
+                    piece.bind_attached_system(system);
+                }
+            }
         }
     }
 
@@ -7519,7 +7570,7 @@ impl Simulation {
     /// `restore_map_authority_after_snapshot_load` once rules and the overlay
     /// registry are bound. Rule animation lists are re-interned from names:
     /// an outgoing simulation's numeric IDs do not belong to this saved world.
-    pub fn rebuild_caches_after_load(
+    pub(crate) fn rebuild_caches_after_load(
         &mut self,
         mut resolved_terrain: ResolvedTerrainGrid,
         terrain_speed_config: terrain_speed::TerrainSpeedConfig,
@@ -8472,7 +8523,7 @@ impl ObjectSubstrate {
     }
 }
 
-#[cfg(all(test, any(tests_sim_world_t_z, tests_net, tests_sim_t_z)))]
+#[cfg(all(test, any(tests_sim_world_t_z, tests_sim_world_p_s, tests_sim_t_z)))]
 #[path = "world_tests.rs"]
 pub(crate) mod tests;
 
@@ -8576,6 +8627,9 @@ mod world_orders_bridge_repair_tests;
 #[cfg(all(test, tests_sim_world_p_s))]
 #[path = "rng_routing_tests.rs"]
 mod rng_routing_tests;
+
+#[cfg(all(test, tests_sim_world_p_s))]
+mod raw_record_convergence_tests;
 
 #[cfg(all(test, tests_sim_world_p_s))]
 #[path = "slice6_retask_tests.rs"]

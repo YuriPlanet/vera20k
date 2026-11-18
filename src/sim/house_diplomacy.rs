@@ -429,7 +429,7 @@ impl Simulation {
         let mode_permits = self
             .session
             .multiplayer_mode_class()
-            .is_some_and(crate::skirmish_modes::MpModeClass::permits_all_allied);
+            .is_some_and(|class| class.policy().permits_all_allied);
         if !mode_permits && !rules.general.allies_allowed {
             return;
         }
@@ -440,6 +440,13 @@ impl Simulation {
         }
         // 0x00501668..0x00501675.
         if self.session.computer_slot_has_team() {
+            return;
+        }
+        // VERA: in a match only AI play there is no human for the computers
+        // to turn on together (`Simulation::network_ai_alone`); Can_Ally
+        // refuses only an alliance that leaves no enemy, so two of three
+        // left would gang up on the third.
+        if self.network_ai_alone() {
             return;
         }
         let game_mode_nonzero = self.session.game_mode_nonzero();

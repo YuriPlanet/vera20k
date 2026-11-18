@@ -73,14 +73,7 @@ fn digest_checked_loose_map_uses_the_enabled_second_trigger_section() {
     sim.classify_map_triggers(&rules);
 
     let frame = sim
-        .advance_app_frame(
-            &[],
-            &rules,
-            None,
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
+        .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
         .unwrap();
     assert_eq!(
         sim.ready_outcome_for_owner(player)

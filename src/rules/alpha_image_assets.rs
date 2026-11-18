@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::shp_file::ShpFile;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 
 /// One loaded AlphaImage SHP, as AlphaShapeClass reads it.
@@ -89,13 +88,9 @@ pub struct AlphaImageCatalog {
 }
 
 impl AlphaImageCatalog {
-    pub(crate) fn bind(
-        rules: &RuleSet,
-        overlays: &OverlayTypeRegistry,
-        assets: &AssetManager,
-    ) -> Self {
+    pub(crate) fn bind(rules: &RuleSet, assets: &AssetManager) -> Self {
         let mut names = BTreeSet::new();
-        rules.visit_alpha_image_names(overlays, |name| {
+        rules.visit_alpha_image_names(|name| {
             if !name.is_empty() {
                 names.insert(name.to_string());
             }
@@ -125,7 +120,6 @@ mod tests {
     use super::{AlphaImage, AlphaImageCatalog};
     use crate::assets::asset_manager::{AssetManager, test_support::TestDirectory};
     use crate::rules::ini_parser::IniFile;
-    use crate::rules::overlay_types::OverlayTypeRegistry;
     use crate::rules::ruleset::RuleSet;
 
     /// One-frame SHP: a 61x31 canvas, frame 0 at (2,3) sized 2x2.
@@ -154,9 +148,8 @@ mod tests {
              [OverlayTypes]\n0=CRATE\n[CRATE]\nAlphaImage=NONE\n",
         );
         let rules = RuleSet::from_ini(&ini).expect("minimal AlphaImage rules");
-        let overlays = OverlayTypeRegistry::from_ini(&ini, None);
 
-        let catalog = AlphaImageCatalog::bind(&rules, &overlays, &assets);
+        let catalog = AlphaImageCatalog::bind(&rules, &assets);
 
         assert_eq!(
             catalog.get("PANEL").map(|image| &**image),

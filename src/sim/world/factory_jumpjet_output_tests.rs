@@ -134,14 +134,7 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
         let visits = sim.production.factories().strip_visits_for_test(owner);
         let effects = super::FrameEffects::default().with_production_strip(&visits, &|_| {});
         let output = sim
-            .advance_app_frame(
-                &due,
-                &rules,
-                Some(&registry),
-                TICK_MS,
-                super::TickLane::Ordinary,
-                effects,
-            )
+            .advance_app_frame(&due, &rules, TICK_MS, super::TickLane::Ordinary, effects)
             .expect("the ordinary app frame completes");
         let frame = sim.session.binary_frame();
         let log = radio::take_transmit_log();

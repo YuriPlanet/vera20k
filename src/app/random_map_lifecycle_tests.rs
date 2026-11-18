@@ -25,8 +25,8 @@ impl LoadingProgressSink for SilentProgress {
 }
 
 fn launch_session(seed_name: &str) -> SkirmishLaunchSession {
-    SkirmishLaunchSession {
-        mode: SkirmishLaunchMode {
+    SkirmishLaunchSession::from_rows(
+        SkirmishLaunchMode {
             class: crate::skirmish_modes::MpModeClass::Battle,
             id: 1,
             ui_name_key: "GUI:Battle".to_string(),
@@ -37,8 +37,8 @@ fn launch_session(seed_name: &str) -> SkirmishLaunchSession {
             allies_allowed: true,
             must_ally: false,
         },
-        selected_map_file: Some(seed_name.to_string()),
-        humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+        Some(seed_name.to_string()),
+        vec![crate::skirmish_launch::SkirmishHumanSlot {
             raw_slot_index: Some(0),
             name: "Player".to_string(),
             slot: SkirmishLocalSlot {
@@ -51,9 +51,8 @@ fn launch_session(seed_name: &str) -> SkirmishLaunchSession {
             },
             role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
         }],
-        local_player_index: 0,
-        ai_player_count: 1,
-        opponents: vec![SkirmishAiSlot {
+        0,
+        vec![SkirmishAiSlot {
             raw_slot_index: 1,
             country: LaunchCountry::Russia,
             country_random: false,
@@ -63,9 +62,8 @@ fn launch_session(seed_name: &str) -> SkirmishLaunchSession {
             team: LaunchTeam::None,
             difficulty: AiDifficulty::Easy,
         }],
-        pre_fill_house_roster: crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(1),
-        options: SkirmishLaunchOptions::default(),
-    }
+        SkirmishLaunchOptions::default(),
+    )
 }
 
 fn start_production_worker(
@@ -93,7 +91,7 @@ fn start_production_worker(
         prepared.settings,
         prepared.resolved_inputs,
         prepared.blocks,
-        super::shell_random_map::RandomMapObjects::tech(prepared.tech_types),
+        super::shell_random_map::RandomMapObjects::tech(prepared.tech_types, prepared.ares),
         shared_cell_dummy.clone(),
         decision,
     )
@@ -176,14 +174,18 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         description: "Unit 2 lifecycle".into(),
         ..Default::default()
     };
-    std::fs::write(seed_dir.join(seed_name), options.to_sed_bytes()).expect("write lifecycle .SED");
+    std::fs::write(
+        seed_dir.join(seed_name),
+        options.to_sed_bytes(native_rules.reads_ares_way()),
+    )
+    .expect("write lifecycle .SED");
     const MATCH_SEED: u32 = 0x0412_0419;
 
     // U2-02: collect cross-thread receipts from the production worker. Every
     // Generate enters the real generator once; accepting a valid preview adds
     // no run, while accepting an empty setup adds exactly one.
     let previous_selection = ChooseMapSelection {
-        mode_id: 1,
+        mode: 1.into(),
         record_index: Some(7),
     };
     let mut runtime = MultiplayerShellRuntime::initialize(
@@ -204,7 +206,6 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         options.clone(),
         Some(previous_selection),
         false,
-        true,
     ));
     generated_modal
         .as_mut()
@@ -293,13 +294,16 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
     assert_eq!(generation_entries, 2, "valid preview adds no worker run");
     assert!(randmap_img.is_file());
     assert!(!randmap_sed.exists(), "accepted caller follows teardown");
-    std::fs::write(&randmap_sed, committed.to_sed_bytes()).expect("accepted caller writes .SED");
+    std::fs::write(
+        &randmap_sed,
+        committed.to_sed_bytes(native_rules.reads_ares_way()),
+    )
+    .expect("accepted caller writes .SED");
 
     let mut empty_modal = Some(RandomMapSetupModalState::open(
         options.clone(),
         Some(previous_selection),
         false,
-        true,
     ));
     assert_eq!(
         empty_modal.as_ref().expect("empty modal").accept(),
@@ -351,7 +355,6 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         options.clone(),
         Some(previous_selection),
         false,
-        true,
     ));
     cancel_modal
         .as_mut()
@@ -423,7 +426,6 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         runtime.random_map_options_for_setup(),
         Some(previous_selection),
         false,
-        true,
     );
     assert_eq!(reopened.options, options);
     assert_eq!(reopened.previous_selection, Some(previous_selection));

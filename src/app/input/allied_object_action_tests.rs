@@ -86,6 +86,16 @@ fn picked_target(sim: &Simulation, target: u64) -> HoverTargetKindWithId {
 
 #[test]
 fn ares_no_manual_fire_object_click_keeps_native_movement_fallback() {
+    no_manual_fire_object_click(false);
+}
+
+#[test]
+fn ares_no_manual_fire_object_click_follows_the_key_in_an_ares_game() {
+    no_manual_fire_object_click(true);
+}
+
+fn no_manual_fire_object_click(ares_way: bool) {
+    let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
     let corpus = crate::test_fixture::json("tools/spatial_oracle/no_manual_fire.json");
     let rows = corpus["rows"].as_array().unwrap();
     for setting in [false, true] {
@@ -110,7 +120,7 @@ fn ares_no_manual_fire_object_click_keeps_native_movement_fallback() {
                 && case["alt"] == false
                 && row["no_manual_fire_native_reader_value"] == u64::from(setting)
         }) {
-            let expected = if crate::rules::ARES_BUILD {
+            let expected = if ares_way {
                 row
             } else {
                 rows.iter()
@@ -160,7 +170,7 @@ fn ares_no_manual_fire_object_click_keeps_native_movement_fallback() {
             }
         }
         let (sim, actor, _) = object_pair(&battle.rules, "MTNK", "enemy");
-        let effective = setting && crate::rules::ARES_BUILD;
+        let effective = setting && ares_way;
         let native_cell = rows
             .iter()
             .find(|row| {

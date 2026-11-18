@@ -175,8 +175,12 @@ placement preview, which the passes beside the tick keep: all are one tick
 late at most. An atlas refresh asked beside a tick (a growth published
 then) waits for the tick's tail.
 
-Still shared, read-only: `SimResources` (the rules, the terrain template, the
-overlay registry), which nothing writes once a match is loaded.
+The live world, its presentation copy and the captured frame share
+`SimResources` while the match runs. It holds the rules and the terrain
+template. The rules own the overlay types used by simulation and drawing.
+After an offline Skirmish, the setup dialog writes the current countries
+into the retained world's rules. The host releases both presentation references
+before it returns that world for a write.
 
 What the snapshot costs the main thread:
 
@@ -185,7 +189,7 @@ What the snapshot costs the main thread:
   object reads: an action line only for a selected or psychically detected
   object, the airstrike tint only for a Structure, a Carryall's cargo only
   for an Aircraft, the mind-control count only for a capture manager.
-- A frame that is replaced is freed on the pool
+- A retired frame's object records and draw caches are freed on the pool
   (`sim::parallel::drop_on_pool`), as is the old world copy's unsynced part.
 - The world copy's syncs run on the pool beside the clone of its other parts
   and the local player's fog.
@@ -243,10 +247,7 @@ Only one tick can run beside a draw, and each lent tick costs a published
 frame, so only the last frame of a service is lent. `service_match_runtime`
 runs every frame that is due within its catch-up budget (eight passes,
 eight milliseconds): at GameSpeed 0, which never waits, that is up to eight
-frames a draw. While the hand-off thread waits for the screen's next picture
-(`GpuContext::screen_busy`, VSync on), `about_to_wait` services one frame a
-turn until the picture is there, so the tick rate does not follow the
-refresh rate. A frame that another pass will follow
+frames a picture. A frame that another pass will follow
 (`LocalFramePacer::another_pass_follows`: another frame is due, and the
 budget is still open after this one's expected tick time) ticks inline, as
 it did before the thread, and publishes nothing, unless lending it is
@@ -330,8 +331,7 @@ Residuals:
   held, the arrow keys queue no scroll, since a held key release has not
   reached them yet.
 - At GameSpeed 0 the tick rate is bounded by the catch-up budget, eight
-  frames or eight milliseconds a draw, plus the frames serviced while the
-  screen's next picture is on its way. Running
+  frames or eight milliseconds a picture, as before the thread. Running
   those frames back to back on the simulation thread needs each frame's
   client inputs and its tail to leave the main thread's pass.
 - At 20,000 units and 30 houses (`sim-bench --scenario march

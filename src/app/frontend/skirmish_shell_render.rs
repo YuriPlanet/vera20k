@@ -6,6 +6,7 @@
 mod chrome;
 mod controls;
 mod draw_order;
+mod game_options;
 #[cfg(test)]
 use draw_order::{
     SkirmishShellDrawRole, choose_map_modal_semantic_draw_order,
@@ -139,9 +140,6 @@ const SHELL_CURSOR_DEPTH: f32 = 0.00001;
 const SHELL_BUTTON_TEXT_RGB_00000C05: [f32; 3] = [5.0 / 255.0, 12.0 / 255.0, 0.0];
 const SHELL_LABEL_TEXT_RGB: [f32; 3] = [1.0, 1.0, 0.0];
 const SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F: [f32; 3] = [0x9F as f32 / 255.0, 0.0, 0.0];
-const RANDMAP_SENTINEL_FILE_NAME: &str = "RandMap.Sed";
-
-const RANDMAP_PREVIEW_FILE_NAME: &str = "RandMap.img";
 const COMBODROPWIN_TEXT_INSET_X: i32 = 3;
 const COMBODROPWIN_TEXT_TRUNCATION_SCROLLBAR_RESERVE_PX: i32 = 20;
 // Owner-draw packed colors are 0x00BBGGRR. Runtime DirectDraw conversion is
@@ -253,7 +251,6 @@ fn build_skirmish_shell_instances(
     maps: &[MapMenuEntry],
     wave: Option<&ShellFrameWave>,
     leaving: bool,
-    load_setup_enabled: bool,
 ) -> Vec<SpriteInstance> {
     let mut instances = Vec::new();
 
@@ -416,26 +413,17 @@ fn build_skirmish_shell_instances(
                     shell.validation_modal.is_some(),
                 ),
                 (
+                    layout.game_options_button,
+                    OwnerDrawButton::GameOptions,
+                    false,
+                ),
+                (
                     layout.choose_map_button,
                     OwnerDrawButton::ChooseMap0x5aa,
                     false,
                 ),
-                (layout.save_setup_button, OwnerDrawButton::SaveSetup, false),
-                (
-                    layout.load_setup_button,
-                    OwnerDrawButton::LoadSetup,
-                    !load_setup_enabled,
-                ),
-                (
-                    layout.team_starts_button,
-                    OwnerDrawButton::TeamStarts,
-                    false,
-                ),
                 (layout.back_button, OwnerDrawButton::Back0x5c0, false),
-            ]
-            .into_iter()
-            .filter(|(rect, _, _)| rect.w > 0)
-            {
+            ] {
                 push_right_panel_button_shp(
                     &mut instances,
                     atlas,
@@ -784,7 +772,6 @@ fn render_skirmish_shell_with_atlas(
             state.frontend.scenario_catalog.shell_maps(),
             wave.as_ref(),
             leaving,
-            crate::app::App::skirmish_setup_saved(state),
         )
     };
     if preview_instance.is_some() {
@@ -799,8 +786,10 @@ fn render_skirmish_shell_with_atlas(
     let parent_showing = !message_box_up && choose_map_layout.is_none() && !leaving;
     // ComboDropWin is a popup over the dialog: its frame and rows go after
     // every dialog text, which this unbuffered pass paints in queue order.
+    // VERA's Game Options box takes the same place; the two never show at
+    // once, as each takes every press while it is open.
     let mut dropdown_instances = Vec::new();
-    let dropdown_text_draws = if parent_showing {
+    let mut dropdown_text_draws = if parent_showing {
         push_dropdown_instances(
             &mut dropdown_instances,
             atlas,
@@ -818,6 +807,17 @@ fn render_skirmish_shell_with_atlas(
     } else {
         Vec::new()
     };
+    if parent_showing && let Some(open) = state.frontend.skirmish_shell_state.game_options.as_ref()
+    {
+        game_options::push_game_options_box(
+            &mut dropdown_instances,
+            &mut dropdown_text_draws,
+            state,
+            atlas,
+            &crate::ui::skirmish_shell::game_options::GameOptionsLayout::over(&layout),
+            open,
+        );
+    }
     let parent_statics = if parent_showing {
         text::paint_skirmish_statics(state, &layout, sliding)
     } else {
@@ -2117,7 +2117,6 @@ pub(crate) use chrome::type3_button_frames;
 mod keyboard;
 mod lan_lobby;
 mod wol_buddy;
-mod wol_chat_translation;
 mod wol_lobby;
 mod wol_login;
 mod wol_my_info;
@@ -2127,7 +2126,6 @@ mod wol_persona;
 mod wol_quick_match;
 pub(crate) use lan_lobby::render_lan_lobby;
 pub(crate) use wol_buddy::paint_wol_buddy_children;
-pub(crate) use wol_chat_translation::paint_wol_chat_translation_children;
 pub(crate) use wol_lobby::{
     WolLobbyPaint, paint_wol_card_countries, paint_wol_lobby_children, paint_wol_lobby_popup,
     paint_wol_player_card,

@@ -96,7 +96,7 @@ pub(super) fn overfly(
     entity.mission_leaf.set_aircraft_action_latch(true);
     let target = entity.attack_target.target();
     let carrying = entity
-        .passenger_role
+        .passenger_role()
         .cargo()
         .is_some_and(|cargo| cargo.count() > 0);
     let Some(target) = target.filter(|_| carrying) else {

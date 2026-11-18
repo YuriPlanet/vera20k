@@ -116,7 +116,6 @@ impl SavedScenarioResources {
     pub fn into_restored_parts(
         self,
         rules: RuleSet,
-        overlay_registry: crate::rules::overlay_types::OverlayTypeRegistry,
         dummy: SharedCellDummy,
     ) -> Result<(SimResources, ProcessedRulesLayers, SavedMapMetadata), SavedTerrainError> {
         let terrain = self.terrain.restore_values(dummy)?;
@@ -124,7 +123,6 @@ impl SavedScenarioResources {
             SimResources {
                 rules,
                 terrain_template: Some(terrain),
-                overlay_registry,
             },
             self.processed_rules,
             self.map,
@@ -368,11 +366,7 @@ mod tests {
             .unwrap();
         assert_eq!(rules.simulation_config_hash(), expected_hash);
         let (restored, processed, _) = restored
-            .into_restored_parts(
-                rules,
-                crate::rules::overlay_types::OverlayTypeRegistry::empty(),
-                SharedCellDummy::fresh(),
-            )
+            .into_restored_parts(rules, SharedCellDummy::fresh())
             .unwrap();
         assert_eq!(
             restored.terrain_template.unwrap().cells(),

@@ -63,10 +63,14 @@ enum ModeHolder {
     World,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Also each row of the online options' `vacancies` (docs/lobby-protocol.md),
+/// whose lobby refuses any other value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum NetworkVacancy {
     Open,
     Closed,
+    #[serde(rename = "observer")]
     OpenObserver,
     ///5E8EA0's AC11B0: a roster name whose type3 node has not arrived.
     Waiting,
@@ -107,24 +111,10 @@ impl NetworkAiOptions {
     pub(crate) fn of(ai: &crate::skirmish_launch::SkirmishAiSlot) -> Self {
         Self {
             difficulty: ai.difficulty.as_i32(),
-            country: if ai.country_random {
-                -2
-            } else {
-                i32::from(ai.country.raw_index())
-            },
-            color: if ai.color_random {
-                -2
-            } else {
-                i32::from(ai.color_index)
-            },
-            start: match ai.start_position {
-                crate::skirmish_launch::LaunchStartPosition::Auto => -2,
-                crate::skirmish_launch::LaunchStartPosition::Position(index) => i32::from(index),
-            },
-            team: match ai.team {
-                crate::skirmish_launch::LaunchTeam::None => -2,
-                crate::skirmish_launch::LaunchTeam::Team(index) => i32::from(index),
-            },
+            country: ai.country_shell_value(),
+            color: ai.color_shell_value(),
+            start: ai.start_position.shell_value(),
+            team: ai.team.shell_value(),
         }
     }
 
@@ -167,7 +157,9 @@ pub(crate) struct PeerChoicesChange {
 
 /// Decoded full-options fields5E4F97..5E513F. Filename remains solely in
 /// the launch; player_capacity is rawA8BB0C, not effective831700 row capacity.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Online it is the options' `map_metadata` (docs/lobby-protocol.md), whose
+/// lobby refuses any other key.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct NetworkMapMetadata {
     pub display_name: String,
     pub player_capacity: i32,
@@ -202,7 +194,7 @@ impl NetworkMapMetadata {
     ///5E5500..5844: custom missing maps permit Accept and request transfer;
     /// RandMap.Sed bypasses physical availability.
     pub fn admission(&self, file: &str, local_present: bool) -> NetworkMapAdmission {
-        if local_present || file.eq_ignore_ascii_case("RandMap.Sed") {
+        if local_present || file.eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED) {
             NetworkMapAdmission::Present
         } else if self.official {
             NetworkMapAdmission::Unavailable
@@ -233,6 +225,8 @@ enum NetworkPhase {
         inactive_ai_options: [NetworkAiOptions; NETWORK_PLAYER_SLOT_COUNT],
         /// A8DA90 AI display pointers. Roster packets change these without
         /// changing Session's AI arrays; global packets may arrive reordered.
+        /// A WOL host's options are its roster (`'L'`, `0x5E8EA0`), so there
+        /// they set these from the AI arrays on the rows they send Closed.
         display_ai: [Option<crate::skirmish_launch::AiDifficulty>; NETWORK_PLAYER_SLOT_COUNT],
         /// Native831700/8316A4: prior capacity and independent reserved observer row.
         capacity: i32,
@@ -242,11 +236,11 @@ enum NetworkPhase {
         /// observer. Native diagnostics keep the one reserved row above.
         several_observers: bool,
         /// The host of a VERA room keeps one spectator row open after its
-        /// spectators while no AI plays: a game with observers has no AI
-        /// (`0x5EC9F0`'s TXT_NO_AI_WITH_OBSERVER).
+        /// spectators, AI playing or not: unlike gamemd's room, where a game
+        /// with observers has no AI (`0x5EC9F0`'s TXT_NO_AI_WITH_OBSERVER).
         open_spectators: bool,
-        /// The most people a VERA room holds, players and spectators, its
-        /// host's Create Game choice.
+        /// The most people a VERA room holds, players and spectators: its
+        /// host's Create Game Max players, then the team bar's Room size.
         people_limit: u8,
         /// A VERA room queues the spectators who ask to play while no seat
         /// is free (`launch.options.queue`), unless the online lobby
@@ -269,18 +263,11 @@ enum NetworkPhase {
     },
 }
 
+/// A packet the battle or the co-op round asks the LAN service to send.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum NetworkLoadingRequest {
-    ///69AE90's effective display percent; random-map milestones are already halved.
-    ReportProgress(i32),
-    Disconnect {
-        source_index: usize,
-        reason: i32,
-    },
+pub(crate) enum NetworkSendRequest {
     /// The kick proposal packet `0x1C` (0x0064AAE0) to every other node.
-    ProposeKick {
-        target_source: usize,
-    },
+    ProposeKick { target_source: usize },
     /// The in-battle chat packet `0x0C` (`0x0055EDBF..0x0055F04E`) to these
     /// participants. The packet's name and colour are the local player's.
     Chat {
@@ -289,13 +276,12 @@ pub(crate) enum NetworkLoadingRequest {
     },
     /// The taunt packet `0x1D` (`0x00536350`) to these participants; `byte`
     /// is `(country << 4) | n` at packet `+0x30`.
-    Taunt {
-        recipients: Vec<usize>,
-        byte: u8,
-    },
+    Taunt { recipients: Vec<usize>, byte: u8 },
     /// A beacon record `0x20`/`0x21` to every other node
     /// (`0x00430E0C..0x00430E4E`, `0x004313C2..0x004313F5`).
     Beacon(crate::net::lan_messages::ingame::BeaconRecord),
+    /// A beacon label `0x22` to every other node (`0x0043165E..0x00431678`).
+    BeaconText { house: i8, slot: i8, text: Vec<u16> },
     /// BC6's `0x26` to every node.
     CooperativeReady,
     /// BC6's `0x24` (Quit) to every node.
@@ -318,7 +304,10 @@ struct NetworkSession {
     /// The WOL start's tournament value and clan lists, taken at
     /// OnGameStart/Start Game Now for the accepted start.
     wol_start: WolStartTerms,
-    loading_requests: Vec<NetworkLoadingRequest>,
+    send_requests: Vec<NetworkSendRequest>,
+    /// 69AE90's effective display percents waiting for the LAN service;
+    /// random-map milestones are already halved.
+    loading_reports: Vec<i32>,
     /// Node addresses belong to the accepted participants, not discovery UI
     /// rows. Native node+28 is carried into697B70's House/connection binding.
     /// The IPv4 LAN adaptation uses the actual global-envelope source endpoint.
@@ -558,7 +547,8 @@ impl MatchSession {
         self.network = Some(NetworkSession {
             room: NetworkRoom::default(),
             wol_start: WolStartTerms::default(),
-            loading_requests: Vec::new(),
+            send_requests: Vec::new(),
+            loading_reports: Vec::new(),
             endpoints: Default::default(),
             map_metadata: None,
             local_map_source: None,
@@ -598,7 +588,7 @@ impl MatchSession {
         launch
             .opponents
             .sort_by_key(|opponent| opponent.raw_slot_index);
-        launch.rebuild_house_roster();
+        launch.use_live_house_rows();
         let network = self.network.as_mut().expect("network mode owns a visit");
         anyhow::ensure!(
             !matches!(network.phase, NetworkPhase::Frozen { .. }),
@@ -612,13 +602,7 @@ impl MatchSession {
             .collect();
         let inactive_choices =
             std::array::from_fn(|_| native_network_row_defaults(&launch.mode, false));
-        let display_ai = std::array::from_fn(|row| {
-            launch
-                .opponents
-                .iter()
-                .find(|ai| usize::from(ai.raw_slot_index) == row)
-                .map(|ai| ai.difficulty)
-        });
+        let display_ai = display_ai_rows(&launch);
         network.phase = NetworkPhase::Setup {
             display_ai,
             capacity: 8,
@@ -764,7 +748,6 @@ impl MatchSession {
         launch.humans = humans;
         launch.local_player_index = local_index;
         *admission = reordered_admission;
-        launch.rebuild_house_roster();
         Ok(())
     }
 
@@ -813,11 +796,10 @@ impl MatchSession {
             ready: false,
             map_status: 0,
         });
-        launch.rebuild_house_roster();
         self.keep_spectator_row()?;
-        // A newcomer who gets a seat in a VERA room with Teams set joins the
+        // A newcomer who gets a seat in a VERA room with teams joins the
         // team with the fewest players.
-        if self.host && self.network_teams().is_some() {
+        if self.host && self.network_team_room() {
             self.editable_network_setup()?.humans[index].slot.team = LaunchTeam::None;
             self.keep_players_on_teams()?;
         }
@@ -846,7 +828,6 @@ impl MatchSession {
         if index < launch.local_player_index {
             launch.local_player_index -= 1;
         }
-        launch.rebuild_house_roster();
         self.keep_spectator_row()
     }
 
@@ -894,6 +875,31 @@ impl MatchSession {
         Ok(change)
     }
 
+    /// VERA's host watching, or playing again from the spectators, as a
+    /// guest asking would ([`Self::accept_lan_peer_choices`]), with `choices`
+    /// its own.
+    pub(crate) fn move_network_host(
+        &mut self,
+        choices: SkirmishLocalSlot,
+        observer: bool,
+    ) -> anyhow::Result<PeerChoicesChange> {
+        anyhow::ensure!(
+            self.host && self.network_several_observers(),
+            "only VERA's host moves itself"
+        );
+        let launch = self
+            .network_setup()
+            .ok_or_else(|| anyhow::anyhow!("no network setup"))?;
+        let index = launch.local_player_index;
+        let row = launch.humans[index]
+            .raw_slot_index
+            .ok_or_else(|| anyhow::anyhow!("the host has no row"))?;
+        let mut change =
+            self.accept_peer_choices(index, row, choices, observer, PeerChoicePolicy::Lan)?;
+        change.options |= self.keep_players_on_teams()?;
+        Ok(change)
+    }
+
     /// LAN Type18 receiver5E0D1C..5E0F20: writes country and team directly,
     /// with the same color/start collision checks as WOL. It does not perform
     /// WOL's observer row moves or mode country/team validation; VERA's rooms
@@ -937,7 +943,9 @@ impl MatchSession {
         observer: bool,
         policy: PeerChoicePolicy<'_>,
     ) -> anyhow::Result<PeerChoicesChange> {
-        let was_observer = self.network_setup().expect("checked").humans[index].is_observer();
+        let launch = self.network_setup().expect("checked");
+        let was_observer = launch.humans[index].is_observer();
+        let own_move = index == launch.local_player_index;
         let observer_row = self.network_observer_row();
         let mut change = PeerChoicesChange::default();
         if was_observer && !observer {
@@ -963,7 +971,7 @@ impl MatchSession {
             } else {
                 observer_row.unwrap_or(row)
             };
-            self.set_network_row_kind(left, NetworkRowKind::OpenObserver)?;
+            self.change_network_row_kind(left, NetworkRowKind::OpenObserver, own_move)?;
             let free = self
                 .network_free_row(false)
                 .ok_or_else(|| anyhow::anyhow!("no Open row after 0x5E9510"))?;
@@ -986,7 +994,7 @@ impl MatchSession {
             if several && target.is_none() {
                 return Ok(change);
             }
-            self.set_network_row_kind(row, NetworkRowKind::Open)?;
+            self.change_network_row_kind(row, NetworkRowKind::Open, own_move)?;
             if let Some(target) = target {
                 // 0x7A89F4..0x7A8A6F: the node goes to [0x8316A4]; in VERA's
                 // rooms, to the open observer row 0x5E9240 found.
@@ -998,7 +1006,6 @@ impl MatchSession {
                     observer_row.unwrap_or(target)
                 });
             }
-            self.editable_network_setup()?.rebuild_house_roster();
             self.keep_spectator_row()?;
             return Ok(change);
         }
@@ -1213,7 +1220,6 @@ impl MatchSession {
             }
         }
         validate_network_option_rows(&candidate)?;
-        candidate.rebuild_house_roster();
         *launch = candidate;
         *vacancies = next_vacancies;
         *display_ai = next_ai;
@@ -1228,6 +1234,18 @@ impl MatchSession {
         &mut self,
         row: u8,
         kind: NetworkRowKind,
+    ) -> anyhow::Result<Option<crate::skirmish_launch::SkirmishHumanSlot>> {
+        self.change_network_row_kind(row, kind, false)
+    }
+
+    /// [`Self::set_network_row_kind`]; `own_move` lets VERA's host change
+    /// its own row as it moves itself between playing and watching
+    /// ([`Self::move_network_host`]).
+    fn change_network_row_kind(
+        &mut self,
+        row: u8,
+        kind: NetworkRowKind,
+        own_move: bool,
     ) -> anyhow::Result<Option<crate::skirmish_launch::SkirmishHumanSlot>> {
         anyhow::ensure!(self.host, "only the host may change participant row kinds");
         //5EC9F0 returns before any reset when the selected item pointer is unchanged.
@@ -1262,7 +1280,7 @@ impl MatchSession {
         };
         anyhow::ensure!(
             usize::from(row) < NETWORK_PLAYER_SLOT_COUNT
-                && launch.local_player().raw_slot_index != Some(row),
+                && (own_move || launch.local_player().raw_slot_index != Some(row)),
             "row change cannot replace the local participant"
         );
         let removed = if let Some(index) = launch
@@ -1326,13 +1344,9 @@ impl MatchSession {
             inactive_choices[index].team = native_network_row_defaults(&launch.mode, false).team;
             //5ED1B0 ->5EE510 runs after the clear above, including for Open
             //and Closed rows: the raw team array takes mode+2C last.
-            inactive_ai_options[index].team = match inactive_choices[index].team {
-                crate::skirmish_launch::LaunchTeam::None => -2,
-                crate::skirmish_launch::LaunchTeam::Team(team) => i32::from(team),
-            };
+            inactive_ai_options[index].team = inactive_choices[index].team.shell_value();
         }
         launch.ai_player_count = launch.opponents.len() as i32;
-        launch.rebuild_house_roster();
         Ok(removed)
     }
 
@@ -1379,7 +1393,6 @@ impl MatchSession {
         for choices in inactive_choices.iter_mut().take(usize::from(rows)) {
             (choices.country, choices.country_random) = set(choices.country);
         }
-        launch.rebuild_house_roster();
         Ok(())
     }
 
@@ -1415,7 +1428,6 @@ impl MatchSession {
         for choices in inactive_choices.iter_mut() {
             choices.country_random |= banned(choices.country);
         }
-        launch.rebuild_house_roster();
         Ok(())
     }
 
@@ -1467,7 +1479,6 @@ impl MatchSession {
                 inactive_choices[usize::from(row)] = choices;
             }
         }
-        launch.rebuild_house_roster();
         Ok(())
     }
 
@@ -1710,7 +1721,9 @@ impl MatchSession {
     /// values, never roster identity or its independent ready/map acknowledgements.
     /// The service adapter applies the packet's local-ready invalidation separately.
     /// A WOL Quick Match host applies the matchbot's options the same way
-    /// (`matchbot`, `0x007A6DE2..0x007A6DF3`).
+    /// (`matchbot`, `0x007A6DE2..0x007A6DF3`). In WOL the options also bind
+    /// the rows, as the roster `'L'` (`0x5E8EA0`) does, so they replace the
+    /// AI display rows too; a LAN guest takes those from its roster packet.
     pub(crate) fn accept_network_host_setup<const N: usize>(
         &mut self,
         mut incoming: SkirmishLaunchSession,
@@ -1734,6 +1747,7 @@ impl MatchSession {
                 NetworkPhase::Setup {
                     launch,
                     vacancies,
+                    display_ai,
                     capacity: retained_capacity,
                     observer_row: retained_observer_row,
                     ..
@@ -1762,8 +1776,16 @@ impl MatchSession {
             "host options cannot replace admitted participant identity or source order"
         );
         validate_network_option_rows(&incoming)?;
+        // SpeedNormalize (`0x005FB2E0`) indexes its table's eight columns
+        // with the stored speed; the setup offers 0..=6 and VERA's 8.
+        anyhow::ensure!(
+            u8::try_from(incoming.options.game_speed)
+                .is_ok_and(crate::sim::game_options::is_selectable_game_speed),
+            "host game speed {} is not a selectable speed",
+            incoming.options.game_speed
+        );
         incoming.opponents.sort_by_key(|ai| ai.raw_slot_index);
-        incoming.rebuild_house_roster();
+        incoming.use_live_house_rows();
         // A Teams count this build does not offer leaves Teams Off.
         incoming.options.teams = incoming
             .options
@@ -1782,6 +1804,16 @@ impl MatchSession {
         *launch = incoming;
         *vacancies = [NetworkVacancy::Open; NETWORK_PLAYER_SLOT_COUNT];
         vacancies[..N].copy_from_slice(&incoming_vacancies);
+        if return_context.session_mode() == SessionMode::Wol {
+            // The host sends each AI row it shows as Closed; Cooperative's
+            // start AI (`0x5C30C0`) fills AI arrays only, behind Open rows.
+            *display_ai = display_ai_rows(launch);
+            for (ai, vacancy) in display_ai.iter_mut().zip(vacancies.iter()) {
+                if *vacancy != NetworkVacancy::Closed {
+                    *ai = None;
+                }
+            }
+        }
         *retained_capacity = admitted_capacity;
         *retained_observer_row = observer_row;
         Ok(())
@@ -1804,7 +1836,6 @@ impl MatchSession {
             .get_mut(index)
             .ok_or_else(|| anyhow::anyhow!("unknown participant"))?
             .role = role;
-        launch.rebuild_house_roster();
         Ok(())
     }
 
@@ -2002,8 +2033,8 @@ impl MatchSession {
         Ok(launch.options.queue.len() != waited)
     }
 
-    /// Whether this is a VERA room whose mode seats its players on teams:
-    /// allying allowed, outside Cooperative and a clan room. Its rows list
+    /// Whether this is a VERA room whose mode policy seats players on teams
+    /// (`room_teams`), with allying allowed outside a clan room. Its rows list
     /// under team headers.
     pub(crate) fn network_team_room(&self) -> bool {
         let Some(NetworkPhase::Setup {
@@ -2015,7 +2046,7 @@ impl MatchSession {
             return false;
         };
         launch.mode.allies_allowed
-            && !launch.mode.class.uses_cooperative_setup()
+            && launch.mode.class.policy().room_teams
             && !self.network_room().clan
     }
 
@@ -2028,57 +2059,104 @@ impl MatchSession {
     }
 
     /// The host sets a VERA room's Teams: Off, or a count in
-    /// [`crate::skirmish_launch::ROOM_TEAMS`]. Every seated player then has
-    /// one of its teams. Off also turns Balance automatically off, and takes
-    /// the room back to gamemd's A to D: a player or AI on a team past D gets
-    /// the mode's default, as a guest's pick past D does.
+    /// [`crate::skirmish_launch::ROOM_TEAMS`]. With a count every seated
+    /// player then has one of its teams. Off makes the room one box,
+    /// free-for-all: every player and AI gets the mode's default team and
+    /// keeps it (`admit_network_team`), and a start two of them held goes
+    /// back to Random. Its bases are no longer shared, so the people seated
+    /// past the map's seats watch and its AI there leave.
     pub(crate) fn set_network_teams(&mut self, teams: Option<u8>) -> anyhow::Result<()> {
         anyhow::ensure!(self.host, "only the host sets the room's teams");
         let launch = self.editable_network_setup()?;
         let teams = teams.filter(|teams| crate::skirmish_launch::ROOM_TEAMS.contains(teams));
+        let was = launch.options.teams;
         launch.options.teams = teams;
-        launch.options.auto_balance &= teams.is_some();
-        if teams.is_none() {
+        if teams.is_none() && was.is_some() {
             let default = mode_default_team(&launch.mode);
             let humans = launch.humans.iter_mut().map(|human| &mut human.slot.team);
             for team in humans.chain(launch.opponents.iter_mut().map(|ai| &mut ai.team)) {
-                if matches!(*team, LaunchTeam::Team(letter) if letter >= crate::skirmish_launch::NATIVE_TEAMS)
+                *team = default;
+            }
+            // A start Team Starts gave a team's players together.
+            let seated = |human: &&mut crate::skirmish_launch::SkirmishHumanSlot| {
+                human.raw_slot_index.is_some() && !human.is_observer()
+            };
+            let mut starts: Vec<_> = launch
+                .humans
+                .iter_mut()
+                .filter(seated)
+                .map(|human| &mut human.slot.start_position)
+                .chain(launch.opponents.iter_mut().map(|ai| &mut ai.start_position))
+                .collect();
+            let held: Vec<_> = starts.iter().map(|start| **start).collect();
+            for start in &mut starts {
+                let shared = held.iter().filter(|held| **held == **start).count() > 1;
+                if shared
+                    && matches!(
+                        **start,
+                        crate::skirmish_launch::LaunchStartPosition::Position(_)
+                    )
                 {
-                    *team = default;
+                    **start = crate::skirmish_launch::LaunchStartPosition::Auto;
                 }
             }
-            launch.rebuild_house_roster();
         }
+        self.keep_to_map_seats()?;
+        self.keep_spectator_row()?;
         self.keep_players_on_teams().map(|_| ())
     }
 
-    /// Whether a VERA room with Teams set balances itself: the host's
-    /// Balance automatically. While it does, nobody picks a team.
-    pub(crate) fn network_auto_balance(&self) -> bool {
+    /// The team a player or AI takes in a VERA room with Teams Off: the
+    /// mode's default, no team unless the mode must ally.
+    pub(crate) fn network_default_team(&self) -> LaunchTeam {
+        self.network_setup()
+            .map_or(LaunchTeam::None, |launch| mode_default_team(&launch.mode))
+    }
+
+    /// Whether a VERA room seats more people than its map has starts: with
+    /// Teams set, in a mode whose players may share a start (every mode with
+    /// teams), a team's people share its bases where the map runs out of
+    /// starts (`teams::team_starts`), so the room's Max players, not its
+    /// map, bounds who plays and no team is ever full. Its rows past the
+    /// map's seats then seat people and AI too ([`Self::network_ai_seat`]).
+    pub(crate) fn network_shares_bases(&self) -> bool {
         self.network_teams().is_some()
             && self
                 .network_setup()
-                .is_some_and(|launch| launch.options.auto_balance)
+                .is_some_and(crate::skirmish_launch::SkirmishLaunchSession::shares_bases)
     }
 
-    /// The host turns Balance automatically on or off; it stays off while
-    /// Teams is Off.
-    pub(crate) fn set_network_auto_balance(&mut self, on: bool) -> anyhow::Result<()> {
-        anyhow::ensure!(self.host, "only the host sets how the room balances");
-        let teams = self.network_teams().is_some();
-        self.editable_network_setup()?.options.auto_balance = on && teams;
+    /// The host keeps a VERA room's players past the map's seats where they
+    /// can play: while it shares bases ([`Self::network_shares_bases`]).
+    /// Once it no longer does, its AI there leave and its people there watch
+    /// from those rows, in a mode that has spectators.
+    fn keep_to_map_seats(&mut self) -> anyhow::Result<()> {
+        if !self.host || !self.network_several_observers() {
+            return Ok(());
+        }
+        let shares = self.network_shares_bases();
+        let seats = self.network_player_row_limit();
+        let gone: Vec<u8> = self
+            .network_setup()
+            .into_iter()
+            .filter(|_| !shares)
+            .flat_map(|launch| &launch.opponents)
+            .map(|ai| ai.raw_slot_index)
+            .filter(|row| *row >= seats)
+            .collect();
+        for row in gone {
+            self.set_network_row_kind(row, NetworkRowKind::Open)?;
+        }
+        if shares || self.network_observer_row().is_none() {
+            return Ok(());
+        }
+        let launch = self.editable_network_setup()?;
+        for human in &mut launch.humans {
+            if human.raw_slot_index.is_some_and(|row| row >= seats) {
+                human.set_observer(true);
+            }
+        }
         Ok(())
-    }
-
-    /// How many players each team of a VERA room with Teams set seats: the
-    /// room's seats (the player rows its host has not removed) over its
-    /// teams, rounded up.
-    pub(crate) fn network_team_seats(&self) -> Option<usize> {
-        let teams = usize::from(self.network_teams()?);
-        let seats = (0..self.network_player_row_limit())
-            .filter(|row| self.network_vacancy(*row) != Some(NetworkVacancy::Closed))
-            .count();
-        Some(seats.div_ceil(teams))
     }
 
     /// The players on `team`: its seated people and AI.
@@ -2093,22 +2171,28 @@ impl MatchSession {
         people.count() + launch.opponents.iter().filter(|ai| ai.team == team).count()
     }
 
-    /// Whether `team` of a VERA room with Teams set has no seat left.
-    pub(crate) fn network_team_full(&self, team: u8) -> bool {
-        self.network_team_seats()
-            .is_some_and(|seats| self.network_team_players(team) >= seats)
-    }
-
-    /// A guest's own team pick in a VERA room with Teams set: no team, a
-    /// team past the room's count, a full team it is not on or, while the
-    /// room balances itself, any other team leaves it where it is, and a
-    /// spectator taking a seat then joins the team with the fewest players.
+    /// A guest's own seat and team pick in a VERA room with Teams set. A
+    /// person plays only on a team: one asking to play on none watches
+    /// instead, while a spectator row is open. No team or a team past the
+    /// room's count leaves it where it is, and a spectator taking a seat
+    /// then joins the team with the fewest players.
+    /// With Teams Off the room is free-for-all and nobody picks a team: a
+    /// pick keeps the mode's default ([`Self::network_default_team`]).
     /// The host's moves (`service::move_player`) skip this. Returns whether it
     /// changed the pick, so the host republishes the room and the guest's own
-    /// row shows its team again.
-    pub(crate) fn admit_network_team(&self, index: usize, choices: &mut SkirmishLocalSlot) -> bool {
+    /// row shows its place again.
+    pub(crate) fn admit_network_team(
+        &self,
+        index: usize,
+        choices: &mut SkirmishLocalSlot,
+        observer: &mut bool,
+    ) -> bool {
         let Some(teams) = self.network_teams() else {
-            return false;
+            if !self.network_team_room() {
+                return false;
+            }
+            let default = self.network_default_team();
+            return std::mem::replace(&mut choices.team, default) != default;
         };
         let Some(human) = self
             .network_setup()
@@ -2116,18 +2200,16 @@ impl MatchSession {
         else {
             return false;
         };
+        if !*observer
+            && choices.team == LaunchTeam::None
+            && (human.is_observer() || self.network_free_row(true).is_some())
+        {
+            *observer = true;
+            return true;
+        }
         let seated = !human.is_observer();
         let picked = choices.team;
-        let open = !self.network_auto_balance();
-        let admitted = match picked {
-            LaunchTeam::Team(team) => {
-                team < teams
-                    && (seated && human.slot.team == picked
-                        || open && !self.network_team_full(team))
-            }
-            LaunchTeam::None => false,
-        };
-        if !admitted {
+        if !matches!(picked, LaunchTeam::Team(team) if team < teams) {
             choices.team = if seated {
                 human.slot.team
             } else {
@@ -2192,9 +2274,6 @@ impl MatchSession {
             players[smallest] += 1;
             moved = true;
         }
-        if moved {
-            launch.rebuild_house_roster();
-        }
         Ok(moved)
     }
 
@@ -2236,11 +2315,11 @@ impl MatchSession {
                 SeatPick::Color(pick) => (*color, *random) = (pick, false),
             }
         }
-        launch.rebuild_house_roster();
         Ok(())
     }
 
-    /// A VERA room holds its people limit and lets no one else in.
+    /// A VERA room lets no one else in: it holds its host's Max players,
+    /// or its people and AI take all thirty rows.
     pub(crate) fn network_room_full(&self) -> bool {
         match self.network.as_ref().map(|network| &network.phase) {
             Some(NetworkPhase::Setup {
@@ -2248,8 +2327,24 @@ impl MatchSession {
                 people_limit,
                 several_observers: true,
                 ..
-            }) => launch.humans.len() >= usize::from(*people_limit),
+            }) => {
+                launch.humans.len() >= usize::from(*people_limit)
+                    || launch.humans.len() + launch.opponents.len() >= NETWORK_PLAYER_SLOT_COUNT
+            }
             _ => false,
+        }
+    }
+
+    /// A VERA room's Max players, players and spectators together, which
+    /// its host sets in the team bar's Room size.
+    pub(crate) fn network_people_limit(&self) -> Option<u8> {
+        match self.network.as_ref().map(|network| &network.phase) {
+            Some(NetworkPhase::Setup {
+                people_limit,
+                several_observers: true,
+                ..
+            }) => Some(*people_limit),
+            _ => None,
         }
     }
 
@@ -2283,14 +2378,17 @@ impl MatchSession {
         };
         let limit = i32::from(*people_limit);
         if self.network_spectators_welcome() {
-            return Some(limit);
+            // Spectators fill the rows the players and AI leave.
+            let rows = NETWORK_PLAYER_SLOT_COUNT.saturating_sub(launch.opponents.len());
+            return Some(limit.min(rows as i32));
         }
         let seats = (0..self.network_player_row_limit())
             .filter(|row| {
                 self.network_vacancy(*row) == Some(NetworkVacancy::Open)
                     || self.network_display_ai(*row).is_some()
             })
-            .count();
+            .count()
+            + self.network_spare_seats().count();
         Some(limit.min((launch.humans.len() + seats) as i32))
     }
 
@@ -2298,10 +2396,13 @@ impl MatchSession {
     /// when every seat is taken: the AI's on the last row. AI never fill a
     /// VERA room.
     pub(crate) fn network_newcomer_ai_seat(&self) -> Option<u8> {
+        // In a room with teams the newcomer watches first.
+        let watches = self.network_team_room() && self.network_free_row(true).is_some();
         if !self.host
             || !self.network_several_observers()
             || self.network_room_full()
             || !self.network_no_open_player_row()
+            || watches
         {
             return None;
         }
@@ -2335,7 +2436,7 @@ impl MatchSession {
     /// A VERA room's rows after a change on its host: an Open Observer row
     /// among the players opens for a player, and past them only the first
     /// free row after the last spectator stays open, while the host keeps
-    /// spectators and no AI plays.
+    /// spectators, AI playing or not.
     fn keep_spectator_row(&mut self) -> anyhow::Result<()> {
         let Some(NetworkSession {
             phase:
@@ -2352,17 +2453,19 @@ impl MatchSession {
         if !self.host {
             return Ok(());
         }
-        let open = self.network_spectators_welcome() && launch.opponents.is_empty();
-        let seated = |row: u8| {
+        let open = self.network_spectators_welcome();
+        // A person or, in a room sharing bases, an AI past the map's seats.
+        let held = |row: u8| {
             launch
                 .humans
                 .iter()
                 .any(|human| human.raw_slot_index == Some(row))
+                || self.network_display_ai(row).is_some()
         };
         let players = self.network_player_row_limit();
         let rows = NETWORK_PLAYER_SLOT_COUNT as u8;
         let after = (players..rows)
-            .filter(|row| seated(*row))
+            .filter(|row| held(*row))
             .last()
             .map_or(players, |row| row + 1);
         let spare = (open && after < rows).then_some(after);
@@ -2469,10 +2572,13 @@ impl MatchSession {
             };
             let session_mode = return_context.session_mode();
             let room = *room;
-            let changed = launch.mode != mode;
-            if changed && mode.class.uses_cooperative_setup() {
+            // Cooperative's +0x20 (`0x005C1A10`) clears the observer
+            // reservation whenever the mode becomes current: LAN and WOL setup
+            // (`0x005ED6FE`, `0x00791293`) call it without comparing with the
+            // previous mode, so a restored setup's first map pick clears it too.
+            if !mode.class.policy().observers_allowed {
                 *observer_row = None;
-            } //5C1A10
+            }
             let new_capacity = row_capacity(session_mode, room, &mode, capacity);
             let host_extra = i32::from(
                 *observer_row == launch.local_player().raw_slot_index
@@ -2491,7 +2597,10 @@ impl MatchSession {
             .local_player()
             .raw_slot_index;
         // A VERA room's players end at its player row limit, which the host's
-        // own observer row extends at every capacity.
+        // own observer row extends at every capacity. Its people past them
+        // watch there and its AI leave, unless it shares bases and keeps
+        // them.
+        candidate.keep_to_map_seats()?;
         let (old_rows, new_rows) = if several {
             (
                 i32::from(self.network_player_row_limit()),
@@ -2506,10 +2615,18 @@ impl MatchSession {
         if new_rows < old_rows {
             for row in new_rows..NETWORK_PLAYER_SLOT_COUNT as i32 {
                 let row = row as u8;
-                // VERA's rooms keep every observer row.
-                let retained_observer = (several || Some(row) == observer_row)
-                    && candidate.network_row_for_observer(row);
-                if Some(row) != local_row && !retained_observer {
+                // VERA's rooms keep every observer row, and one sharing
+                // bases its players too.
+                let setup = candidate.network_setup().unwrap();
+                let held = setup
+                    .humans
+                    .iter()
+                    .any(|human| human.raw_slot_index == Some(row))
+                    || setup.opponents.iter().any(|ai| ai.raw_slot_index == row);
+                let retained = (several || Some(row) == observer_row)
+                    && candidate.network_row_for_observer(row)
+                    || candidate.network_shares_bases() && held;
+                if Some(row) != local_row && !retained {
                     // Native's hidden eight-row suffix stays Open. Extended
                     // rows have no native slot and must remain closed until a
                     // later map explicitly makes them usable again, as must
@@ -2593,7 +2710,8 @@ impl MatchSession {
             .unwrap()
             .mode
             .class
-            .allows_observers();
+            .policy()
+            .observers_allowed;
         let default_observer = if new_capacity > 8 {
             NETWORK_PLAYER_SLOT_COUNT as u8 - 1
         } else {
@@ -2649,12 +2767,8 @@ impl MatchSession {
         //5EE510 writes A8B2FC even for rows whose display pointer is human
         //or vacant.5E9E70's start reset affects controls, not A8B2DC.
         for raw in inactive_ai_options {
-            raw.team = match human_team {
-                crate::skirmish_launch::LaunchTeam::None => -2,
-                crate::skirmish_launch::LaunchTeam::Team(team) => i32::from(team),
-            };
+            raw.team = human_team.shell_value();
         }
-        launch.rebuild_house_roster();
         candidate.keep_spectator_row()?;
         candidate.keep_players_on_teams()?;
         *self = candidate;
@@ -2679,7 +2793,6 @@ impl MatchSession {
             candidate.opponents = opponents;
             validate_network_rows(&candidate)?;
             candidate.opponents.sort_by_key(|ai| ai.raw_slot_index);
-            candidate.rebuild_house_roster();
             *launch = candidate;
         }
         Ok(())
@@ -2689,7 +2802,7 @@ impl MatchSession {
     /// order/identity, options and map cannot change at this seam.
     pub(crate) fn accept_network_assignments(
         &mut self,
-        resolved: SkirmishLaunchSession,
+        mut resolved: SkirmishLaunchSession,
     ) -> anyhow::Result<()> {
         let current = self.editable_network_setup()?;
         anyhow::ensure!(
@@ -2725,6 +2838,7 @@ impl MatchSession {
             resolved.house_roster_is_consistent(),
             "inconsistent resolved House roster"
         );
+        resolved.use_live_house_rows();
         *current = resolved;
         Ok(())
     }
@@ -2863,27 +2977,26 @@ impl MatchSession {
     }
 
     /// `0x005E9510`: no Open player row, including the host-observer row0
-    /// exception. Apply the same admitted row range as the actual allocator.
+    /// exception. Apply the same admitted row range as the actual allocator,
+    /// a room sharing bases' spare rows too.
     pub(crate) fn network_no_open_player_row(&self) -> bool {
-        if self.network_setup().is_none() {
-            return false;
-        }
-        !(0..self.network_player_row_limit())
-            .any(|row| self.network_vacancy(row) == Some(NetworkVacancy::Open))
+        self.network_setup().is_some() && self.network_free_row(false).is_none()
     }
 
     /// `0x005E9240`'s row for a new node: the first Open row for a player,
     /// the first open observer row for an observer, over all eight rows
     /// (all thirty in VERA's rooms, whose spectator rows follow the players).
+    /// A room sharing bases then seats a player in a spare row past the
+    /// map's seats ([`Self::network_spare_seats`]).
     pub(crate) fn network_free_row(&self, observer: bool) -> Option<u8> {
-        let wanted = if observer {
-            NetworkVacancy::OpenObserver
-        } else {
-            NetworkVacancy::Open
-        };
-        let rows = if observer && self.network_several_observers() {
+        if !observer {
+            return self
+                .network_open_seat()
+                .or_else(|| self.network_spare_seats().next());
+        }
+        let rows = if self.network_several_observers() {
             NETWORK_PLAYER_SLOT_COUNT as u8
-        } else if observer {
+        } else {
             self.network_setup_capacity()
                 .unwrap_or(0)
                 .max(8)
@@ -2892,20 +3005,56 @@ impl MatchSession {
                         .map_or(0, |row| i32::from(row) + 1),
                 )
                 .min(NETWORK_PLAYER_SLOT_COUNT as i32) as u8
-        } else {
-            self.network_player_row_limit()
         };
-        (0..rows).find(|row| self.network_vacancy(*row) == Some(wanted))
+        (0..rows).find(|row| self.network_vacancy(*row) == Some(NetworkVacancy::OpenObserver))
     }
 
-    /// A joining LAN node's row and role: [`Self::network_free_row`] for
-    /// what it asked. In a VERA room a player who finds every seat taken
-    /// watches while a spectator row is open, and one asking to watch where
-    /// no spectator row is open takes a free seat, as online joiners do.
+    /// The first Open row among the map's seats.
+    fn network_open_seat(&self) -> Option<u8> {
+        (0..self.network_player_row_limit())
+            .find(|row| self.network_vacancy(*row) == Some(NetworkVacancy::Open))
+    }
+
+    /// The seat the host's Add AI fills: the first Open one of the map's,
+    /// then, in a room sharing bases, a spare row past them. There the AI
+    /// starts on a teammate's start, beside them (`teams::team_starts`). A
+    /// VERA room's LAN options carry an AI on every row
+    /// (`LanGameOptions::all_ai_rows`), as the online launch does.
+    pub(crate) fn network_ai_seat(&self) -> Option<u8> {
+        self.network_open_seat()
+            .or_else(|| self.network_spare_seats().next())
+    }
+
+    /// The rows past the map's seats that seat a player in a room sharing
+    /// bases ([`Self::network_shares_bases`]), those no one holds or is
+    /// joining; none in any other room.
+    fn network_spare_seats(&self) -> impl Iterator<Item = u8> + '_ {
+        let rows = NETWORK_PLAYER_SLOT_COUNT as u8;
+        let first = if self.network_shares_bases() {
+            self.network_player_row_limit()
+        } else {
+            rows
+        };
+        (first..rows).filter(|row| {
+            !matches!(
+                self.network_vacancy(*row),
+                None | Some(NetworkVacancy::Waiting)
+            )
+        })
+    }
+
+    /// A joining node's row and role: [`Self::network_free_row`] for what it
+    /// asked. In a VERA room a player who finds every seat taken watches
+    /// while a spectator row is open, and one asking to watch where no
+    /// spectator row is open takes a free seat. In one with Teams set
+    /// everyone comes in watching, while a spectator row is open, and takes a
+    /// seat with a team header's Join ([`Self::admit_network_team`]); with
+    /// Teams Off the room is free-for-all and seats them as gamemd does.
     pub(crate) fn network_join_row(&self, observer: bool) -> Option<(u8, bool)> {
         if self.network_room_full() {
             return None;
         }
+        let observer = observer || self.network_teams().is_some();
         let other = || {
             self.network_several_observers()
                 .then(|| self.network_free_row(!observer))
@@ -2919,11 +3068,14 @@ impl MatchSession {
 
     /// `0x005E95E0`: the nodes, less an observer on the observer row (every
     /// observer in VERA's rooms), are more than
-    /// [`Self::network_slot_test_rows`].
+    /// [`Self::network_slot_test_rows`]. A room sharing bases seats more.
     pub(crate) fn network_over_capacity(&self) -> bool {
         let Some(launch) = self.network_setup() else {
             return false;
         };
+        if self.network_shares_bases() {
+            return false;
+        }
         let limit = self.network_slot_test_rows();
         let observer_row = self.network_observer_row();
         let several = self.network_several_observers();
@@ -3134,36 +3286,25 @@ impl MatchSession {
         assert_eq!(self.host, startup.host());
     }
 
-    pub(crate) fn take_network_loading_requests(&mut self) -> Vec<NetworkLoadingRequest> {
+    pub(crate) fn take_network_send_requests(&mut self) -> Vec<NetworkSendRequest> {
         self.network.as_mut().map_or_else(Vec::new, |network| {
-            std::mem::take(&mut network.loading_requests)
+            std::mem::take(&mut network.send_requests)
         })
     }
 
-    /// Borrowed synchronous loading drains only its own publications. All chat,
-    /// disconnect and other requests retain their existing FIFO/consumer.
+    /// Loading reports keep their own queue, so the held loader can send them
+    /// while the other requests wait for the ordinary service pass.
     pub(crate) fn take_network_loading_progress_reports(&mut self) -> Vec<i32> {
-        let mut reports = Vec::new();
-        if let Some(network) = self.network.as_mut() {
-            network.loading_requests.retain(|request| {
-                if let NetworkLoadingRequest::ReportProgress(percent) = request {
-                    reports.push(*percent);
-                    false
-                } else {
-                    true
-                }
-            });
-        }
-        reports
+        self.network.as_mut().map_or_else(Vec::new, |network| {
+            std::mem::take(&mut network.loading_reports)
+        })
     }
 
     pub(crate) fn report_network_loading_progress(&mut self, percent: i32) {
         if let Some(network) = self.network.as_mut()
             && matches!(network.phase, NetworkPhase::Frozen { .. })
         {
-            network
-                .loading_requests
-                .push(NetworkLoadingRequest::ReportProgress(percent));
+            network.loading_reports.push(percent);
         }
     }
 
@@ -3174,8 +3315,8 @@ impl MatchSession {
             && matches!(network.phase, NetworkPhase::Frozen { .. })
         {
             network
-                .loading_requests
-                .push(NetworkLoadingRequest::ProposeKick { target_source });
+                .send_requests
+                .push(NetworkSendRequest::ProposeKick { target_source });
         }
     }
 
@@ -3188,8 +3329,8 @@ impl MatchSession {
             )
         {
             network
-                .loading_requests
-                .push(NetworkLoadingRequest::Chat { recipients, text });
+                .send_requests
+                .push(NetworkSendRequest::Chat { recipients, text });
         }
     }
 
@@ -3201,8 +3342,18 @@ impl MatchSession {
             && matches!(network.phase, NetworkPhase::Frozen { .. })
         {
             network
-                .loading_requests
-                .push(NetworkLoadingRequest::Beacon(record));
+                .send_requests
+                .push(NetworkSendRequest::Beacon(record));
+        }
+    }
+
+    pub(crate) fn request_beacon_text(&mut self, house: i8, slot: i8, text: Vec<u16>) {
+        if let Some(network) = self.network.as_mut()
+            && matches!(network.phase, NetworkPhase::Frozen { .. })
+        {
+            network
+                .send_requests
+                .push(NetworkSendRequest::BeaconText { house, slot, text });
         }
     }
 
@@ -3211,8 +3362,8 @@ impl MatchSession {
             && matches!(network.phase, NetworkPhase::Frozen { .. })
         {
             network
-                .loading_requests
-                .push(NetworkLoadingRequest::Taunt { recipients, byte });
+                .send_requests
+                .push(NetworkSendRequest::Taunt { recipients, byte });
         }
     }
 
@@ -3282,15 +3433,12 @@ impl MatchSession {
             })
     }
 
-    /// `IPXManager::Delete_Connection 0x00540F00` and the node removal of
-    /// DestroyConnection (`0x005DAA8A`, `--[0xA8B54C]`): the participant
-    /// leaves the live membership and the transport is asked to drop it.
-    /// False when it is the local player or no longer connected.
-    pub(crate) fn disconnect_network_participant(
-        &mut self,
-        source_index: usize,
-        reason: i32,
-    ) -> bool {
+    /// DestroyConnection's node removal (`0x005DAA8A`, `--[0xA8B54C]`): the
+    /// participant leaves the live membership. Its private connection
+    /// (`IPXManager::Delete_Connection 0x00540F00`, called at `0x005DA85D`)
+    /// is removed by `network_match::destroy_connection`. False when it is
+    /// the local player or no longer connected.
+    pub(crate) fn disconnect_network_participant(&mut self, source_index: usize) -> bool {
         let Some(network) = self.network.as_mut() else {
             return false;
         };
@@ -3304,12 +3452,6 @@ impl MatchSession {
             return false;
         };
         connected.remove(position);
-        network
-            .loading_requests
-            .push(NetworkLoadingRequest::Disconnect {
-                source_index,
-                reason,
-            });
         true
     }
 
@@ -3329,7 +3471,8 @@ impl MatchSession {
         let network = self.network.as_mut()?;
         network.phase = NetworkPhase::Lobby;
         network.endpoints.clear();
-        network.loading_requests.clear();
+        network.send_requests.clear();
+        network.loading_reports.clear();
         network.map_metadata = None;
         network.local_map_source = None;
         network.local_map_effective_digest = None;
@@ -3404,7 +3547,7 @@ fn row_capacity(
     capacity: i32,
 ) -> i32 {
     let extended = capacity > 8 && !(session_mode == SessionMode::Wol && room.tournament_or_clan());
-    let mut capacity = capacity.min(mode.class.setup_player_limit().map_or(
+    let mut capacity = capacity.min(mode.class.policy().setup_player_limit.map_or(
         if extended {
             NETWORK_PLAYER_SLOT_COUNT as i32
         } else {
@@ -3419,7 +3562,7 @@ fn row_capacity(
             capacity = 2;
         }
     }
-    if mode.class.lists_in_skirmish()
+    if mode.class.policy().lists_in_skirmish
         && !(session_mode == SessionMode::Wol && room.tournament_or_clan())
     {
         capacity
@@ -3442,7 +3585,7 @@ fn host_extra_row(
     capacity: i32,
 ) -> bool {
     let wol_room = session_mode == SessionMode::Wol && room.tournament_or_clan();
-    if mode.class.lists_in_skirmish() && !wol_room {
+    if mode.class.policy().lists_in_skirmish && !wol_room {
         return true;
     }
     let limit = row_limit(session_mode, room);
@@ -3557,7 +3700,6 @@ pub(crate) fn apply_peer_choices(
         change.options = true;
     }
     launch.humans[index].slot = slot;
-    launch.rebuild_house_roster();
     change
 }
 
@@ -3597,9 +3739,9 @@ fn network_start_in_use(
     let crate::skirmish_launch::LaunchStartPosition::Position(position) = start else {
         return false;
     };
-    // VERA shared control: outside Cooperative a player may take a start
-    // other players hold, to share their House.
-    let shared = launch.mode.class != crate::skirmish_modes::MpModeClass::Cooperative;
+    // VERA shared control: when the mode policy enables shared starts, a player
+    // may take a start other players hold to share their House.
+    let shared = launch.mode.class.policy().shared_start_positions;
     !shared
         && launch
             .humans
@@ -3635,6 +3777,29 @@ fn native_network_row_defaults(
             crate::skirmish_launch::LaunchTeam::None
         },
     }
+}
+
+/// The AI display rows a setup's AI arrays give: each AI's difficulty on its
+/// row, unless a human holds that row, as the host's own rows show it
+/// ([`MatchSession::add_network_participant`] clears a row a human takes).
+fn display_ai_rows(
+    launch: &SkirmishLaunchSession,
+) -> [Option<crate::skirmish_launch::AiDifficulty>; NETWORK_PLAYER_SLOT_COUNT] {
+    std::array::from_fn(|row| {
+        let row = row as u8;
+        if launch
+            .humans
+            .iter()
+            .any(|human| human.raw_slot_index == Some(row))
+        {
+            return None;
+        }
+        launch
+            .opponents
+            .iter()
+            .find(|ai| ai.raw_slot_index == row)
+            .map(|ai| ai.difficulty)
+    })
 }
 
 /// Each packet owns one domain. Until both arrive, a display human and a raw
@@ -3691,12 +3856,22 @@ fn validate_network_rows(launch: &SkirmishLaunchSession) -> anyhow::Result<()> {
 
 /// A start's admission, shared by the first start and a co-op
 /// continuation: a consistent House roster, resolved assignments and an
-/// exact map.
+/// exact map. A Cooperative human sits in one of BC6's eight raw slots
+/// (`0x89E000[8]`), which the round after the mission indexes by row.
 fn admit_network_start_roster(launch: &SkirmishLaunchSession) -> anyhow::Result<()> {
     validate_network_rows(launch)?;
     anyhow::ensure!(
+        !launch.mode.class.uses_cooperative_setup()
+            || launch
+                .humans
+                .iter()
+                .filter_map(|human| human.raw_slot_index)
+                .all(|row| usize::from(row) < crate::net::lan_messages::cooperative::ROWS),
+        "a Cooperative human sits past the round's eight rows"
+    );
+    anyhow::ensure!(
         launch.house_roster_is_consistent(),
-        "network House constructor cache disagrees with the participant roster"
+        "network House constructors disagree with the participant rows"
     );
     crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(launch.clone())
         .map_err(|error| anyhow::anyhow!("network assignments unresolved: {error}"))?;
@@ -3747,7 +3922,6 @@ mod tests {
             })
             .collect();
         launch.local_player_index = 29;
-        launch.rebuild_house_roster();
         let mut session = MatchSession::default();
         session.enter_network(super::NetworkReturnContext::Wol);
         session
@@ -3757,7 +3931,7 @@ mod tests {
             .accept_network_host_setup(
                 launch.clone(),
                 [super::NetworkVacancy::Open; 30],
-                30,
+                120,
                 None,
                 false,
             )
@@ -3912,6 +4086,55 @@ mod tests {
         (guest.is_observer(), guest.raw_slot_index)
     }
 
+    /// An online guest takes its AI rows from each of the host's options,
+    /// which stand in for the roster `'L'` (`0x5E8EA0`): an AI the host adds
+    /// after the guest joined shows on the guest's row, one it removes leaves
+    /// it, and AI the host does not show stay hidden.
+    #[test]
+    fn an_online_guest_shows_the_ai_the_host_adds_and_removes() {
+        use super::{NetworkRowKind, NetworkVacancy};
+        use crate::skirmish_launch::AiDifficulty;
+        let mut host = vera_room();
+        let mut guest = MatchSession::default();
+        guest.enter_network(super::NetworkReturnContext::Wol);
+        guest
+            .accept_network_setup(network_fixture(), false, Some(7), true)
+            .unwrap();
+        // The host's options as the online service sends them: a row
+        // without a vacancy (a person or an AI) goes as Closed.
+        let send = |host: &MatchSession, guest: &mut MatchSession| {
+            let mut launch = host.network_setup().unwrap().clone();
+            launch.local_player_index = 1;
+            let vacancies: [NetworkVacancy; 30] = std::array::from_fn(|row| {
+                host.network_vacancy(row as u8)
+                    .unwrap_or(NetworkVacancy::Closed)
+            });
+            guest
+                .accept_network_host_setup(launch, vacancies, 4, Some(7), false)
+                .unwrap();
+        };
+        host.choose_network_row_kind(2, NetworkRowKind::Ai(AiDifficulty::Hard))
+            .unwrap();
+        send(&host, &mut guest);
+        assert_eq!(guest.network_display_ai(2), Some(AiDifficulty::Hard));
+        assert_eq!(guest.network_vacancy(2), None);
+        // Cooperative's start AI (`0x5C30C0`) stays behind the host's Open row.
+        let mut opponents = host.network_setup().unwrap().opponents.clone();
+        let mut start_ai = opponents[0].clone();
+        start_ai.raw_slot_index = 3;
+        opponents.push(start_ai);
+        host.apply_network_ai_preparation(None, Some(opponents))
+            .unwrap();
+        send(&host, &mut guest);
+        assert_eq!(guest.network_display_ai(3), None);
+        assert_eq!(guest.network_vacancy(3), host.network_vacancy(3));
+        host.choose_network_row_kind(2, NetworkRowKind::Open)
+            .unwrap();
+        send(&host, &mut guest);
+        assert_eq!(guest.network_display_ai(2), None);
+        assert_eq!(guest.network_vacancy(2), Some(NetworkVacancy::Open));
+    }
+
     /// The spectator row a VERA room keeps open: a guest who watches takes
     /// it and the next opens. With no seat open it keeps watching, and a
     /// LAN guest plays again from the first open seat.
@@ -3989,12 +4212,12 @@ mod tests {
         assert!(session.network_queue().is_empty());
     }
 
-    /// No AI plays while anyone watches (`0x5EC9F0`'s
-    /// TXT_NO_AI_WITH_OBSERVER): an AI closes the spectator row, and a
-    /// guest asking to watch keeps its seat. A room without spectators
-    /// closes it too; it follows a spectator who joins and leaves.
+    /// AI play while people watch, unlike in gamemd's room (`0x5EC9F0`'s
+    /// TXT_NO_AI_WITH_OBSERVER): an AI keeps the spectator row open, and a
+    /// guest asking to watch takes it. A room without spectators closes it;
+    /// it follows a spectator who joins and leaves.
     #[test]
-    fn a_vera_room_closes_its_spectator_row_for_ai_and_the_host() {
+    fn a_vera_room_keeps_its_spectator_row_for_ai_and_closes_it_for_the_host() {
         use super::NetworkRowKind;
         let mut session = vera_room();
         session
@@ -4003,10 +4226,15 @@ mod tests {
                 NetworkRowKind::Ai(crate::skirmish_launch::AiDifficulty::Easy),
             )
             .unwrap();
-        assert!(observer_rows(&session).is_empty());
+        assert_eq!(observer_rows(&session), [4]);
         let slot = session.network_setup().unwrap().humans[1].slot.clone();
         session
-            .accept_network_peer_choices(1, slot, true, None)
+            .accept_network_peer_choices(1, slot.clone(), true, None)
+            .unwrap();
+        assert_eq!(guest(&session), (true, Some(4)));
+        assert_eq!(session.network_setup().unwrap().opponents.len(), 1);
+        session
+            .accept_network_peer_choices(1, slot, false, None)
             .unwrap();
         assert_eq!(guest(&session), (false, Some(1)));
         session
@@ -4045,6 +4273,7 @@ mod tests {
         // Its Max players counts the spectators: two people fill it.
         session.set_network_people_limit(2).unwrap();
         assert_eq!(session.network_join_row(false), None);
+        assert!(session.network_room_full());
         session.set_network_people_limit(30).unwrap();
         session.set_network_spectators(false).unwrap();
         assert_eq!(session.network_join_row(false), None);
@@ -4066,7 +4295,8 @@ mod tests {
             session.choose_network_row_kind(row, easy).unwrap();
         }
         assert!(session.network_no_open_player_row());
-        assert_eq!(session.network_people_capacity(), Some(30));
+        // Spectators fill the rows the people and AI leave.
+        assert_eq!(session.network_people_capacity(), Some(28));
         session.set_network_spectators(false).unwrap();
         assert_eq!(session.network_people_capacity(), Some(4));
         // At its Max players the AI keep their seats.
@@ -4086,6 +4316,23 @@ mod tests {
             .map(|ai| ai.raw_slot_index)
             .collect();
         assert_eq!(ai_rows, [2]);
+    }
+
+    /// VERA's host may watch, from the spectator row, and play again from a
+    /// free seat, as a guest would.
+    #[test]
+    fn a_vera_room_host_watches_and_plays_again() {
+        let mut session = vera_room();
+        let host = |session: &MatchSession| {
+            let host = &session.network_setup().unwrap().humans[0];
+            (host.is_observer(), host.raw_slot_index)
+        };
+        let slot = session.network_setup().unwrap().humans[0].slot.clone();
+        session.move_network_host(slot.clone(), true).unwrap();
+        assert_eq!(host(&session), (true, Some(4)));
+        assert_eq!(observer_rows(&session), [5]);
+        session.move_network_host(slot, false).unwrap();
+        assert_eq!(host(&session), (false, Some(0)));
     }
 
     /// A larger map's players take the spectators' rows: they move on past
@@ -4207,30 +4454,70 @@ mod tests {
         assert_eq!(teams(&session), [Team(0), Team(0), Team(1)]);
     }
 
-    /// Four seats over two teams seat two a team. A guest cannot pick a
-    /// full team and keeps its own; the host still moves anyone.
+    /// With Teams set a VERA room shares bases, so no team is ever full: a
+    /// spectator asking to play once the map's four seats are taken sits
+    /// past them, and a smaller map keeps everyone seated and takes an AI
+    /// past its seats too, with a spectator seat after it. Teams Off makes
+    /// the people past the seats watch
+    /// from there, the AI leave and a start two players held go Random.
     #[test]
-    fn a_vera_room_guest_cannot_pick_a_full_team() {
+    fn a_vera_room_with_teams_seats_more_than_its_map() {
         use crate::skirmish_launch::LaunchTeam::Team;
+        let seated = |session: &MatchSession| -> Vec<bool> {
+            let humans = &session.network_setup().unwrap().humans;
+            humans.iter().map(|human| !human.is_observer()).collect()
+        };
         let mut session = vera_room();
         session.set_network_teams(Some(2)).unwrap();
-        newcomer(&mut session);
-        assert_eq!(teams(&session), [Team(0), Team(1), Team(0)]);
-        assert_eq!(session.network_team_seats(), Some(2));
-        let mut pick = session.network_setup().unwrap().humans[1].slot.clone();
-        assert!(!session.admit_network_team(1, &mut pick));
-        pick.team = Team(0);
-        assert!(session.admit_network_team(1, &mut pick));
-        assert_eq!(pick.team, Team(1));
+        for (name, row) in [("Third", 2), ("Fourth", 3), ("Fifth", 4)] {
+            let mut human = session.network_setup().unwrap().humans[1].clone();
+            human.name = name.into();
+            human.raw_slot_index = Some(row);
+            human.set_observer(row == 4);
+            session.add_network_participant(human).unwrap();
+        }
+        let mut pick = session.network_setup().unwrap().humans[4].slot.clone();
         pick.team = Team(0);
         session
-            .accept_network_peer_choices(1, pick, false, None)
+            .accept_network_peer_choices(4, pick, false, None)
             .unwrap();
-        assert_eq!(teams(&session), [Team(0), Team(0), Team(0)]);
+        assert_eq!(seated(&session), [true; 5]);
+        assert_eq!(teams(&session)[4], Team(0));
+        let mode = session.network_setup().unwrap().mode.clone();
+        session
+            .select_network_map(mode, "TWO.MAP".into(), 2)
+            .unwrap();
+        assert_eq!(seated(&session), [true; 5]);
+        let seat = session.network_ai_seat().unwrap();
+        assert!(seat >= 2);
+        session
+            .choose_network_row_kind(
+                seat,
+                super::NetworkRowKind::Ai(crate::skirmish_launch::AiDifficulty::Easy),
+            )
+            .unwrap();
+        // People may still watch, from the row after the AI's.
+        assert_eq!(observer_rows(&session), [seat + 1]);
+        let start = crate::skirmish_launch::LaunchStartPosition::Position(0);
+        session
+            .set_network_seat_picks(&[
+                (0, super::SeatPick::Start(start)),
+                (1, super::SeatPick::Start(start)),
+            ])
+            .unwrap();
+        session.set_network_teams(None).unwrap();
+        assert_eq!(seated(&session), [true, true, false, false, false]);
+        let launch = session.network_setup().unwrap();
+        assert!(launch.opponents.is_empty());
+        assert!(launch.humans[..2].iter().all(|human| {
+            human.slot.start_position == crate::skirmish_launch::LaunchStartPosition::Auto
+        }));
     }
 
     /// A VERA room has up to 15 teams, A to O, and a guest's online pick
-    /// past gamemd's D stays until Teams goes Off, back to A to D.
+    /// past gamemd's D stays until Teams goes Off, which makes the room
+    /// free-for-all: everyone on no team, a pick of none stays seated and a
+    /// pick of a team stays off it.
     #[test]
     fn a_vera_room_keeps_a_guest_past_d_until_teams_is_off() {
         use crate::skirmish_launch::LaunchTeam::{self, Team};
@@ -4239,13 +4526,51 @@ mod tests {
         assert_eq!(teams(&session), [Team(0), Team(1)]);
         let mut pick = session.network_setup().unwrap().humans[1].slot.clone();
         pick.team = Team(14);
-        assert!(!session.admit_network_team(1, &mut pick));
+        assert!(!session.admit_network_team(1, &mut pick, &mut false));
         session
             .accept_network_peer_choices(1, pick, false, None)
             .unwrap();
         assert_eq!(teams(&session), [Team(0), Team(14)]);
         session.set_network_teams(None).unwrap();
-        assert_eq!(teams(&session), [Team(0), LaunchTeam::None]);
+        assert_eq!(teams(&session), [LaunchTeam::None, LaunchTeam::None]);
+        let mut pick = session.network_setup().unwrap().humans[1].slot.clone();
+        let mut observer = false;
+        assert!(!session.admit_network_team(1, &mut pick, &mut observer));
+        assert!(!observer);
+        pick.team = Team(1);
+        assert!(session.admit_network_team(1, &mut pick, &mut observer));
+        assert_eq!((pick.team, observer), (LaunchTeam::None, false));
+    }
+
+    /// A VERA room with Teams set seats people only on a team: a newcomer
+    /// comes in watching, a player picking no team starts watching and a
+    /// spectator asking to play on none keeps watching, and a team's Join
+    /// seats it on that team.
+    #[test]
+    fn a_vera_room_with_teams_seats_people_only_on_a_team() {
+        use crate::skirmish_launch::LaunchTeam::{self, Team};
+        let mut session = vera_room();
+        session.set_network_teams(Some(4)).unwrap();
+        assert!(!teams(&session).contains(&LaunchTeam::None));
+        assert_eq!(session.network_join_row(false), Some((4, true)));
+        let mut pick = session.network_setup().unwrap().humans[1].slot.clone();
+        pick.team = LaunchTeam::None;
+        for watching in [false, true] {
+            let mut observer = false;
+            assert!(session.admit_network_team(1, &mut pick, &mut observer));
+            assert!(observer);
+            session
+                .accept_network_peer_choices(1, pick.clone(), observer, None)
+                .unwrap();
+            assert_eq!(guest(&session), (true, Some(4)), "{watching}");
+        }
+        pick.team = Team(2);
+        let mut observer = false;
+        assert!(!session.admit_network_team(1, &mut pick, &mut observer));
+        session
+            .accept_network_peer_choices(1, pick, observer, None)
+            .unwrap();
+        assert_eq!((guest(&session).0, teams(&session)[1]), (false, Team(2)));
     }
 
     /// In a mode that must ally, a player who watched and is seated again
@@ -4267,23 +4592,6 @@ mod tests {
             .accept_network_peer_choices(1, pick, false, None)
             .unwrap();
         assert_eq!(teams(&session), [Team(0), Team(1), Team(0)]);
-    }
-
-    #[test]
-    fn a_vera_room_that_balances_itself_takes_no_team_picks() {
-        use crate::skirmish_launch::LaunchTeam::Team;
-        let mut session = vera_room();
-        session.set_network_teams(Some(2)).unwrap();
-        session.set_network_auto_balance(true).unwrap();
-        assert_eq!(teams(&session), [Team(0), Team(1)]);
-        let mut pick = session.network_setup().unwrap().humans[1].slot.clone();
-        pick.team = Team(0);
-        assert!(session.admit_network_team(1, &mut pick));
-        assert_eq!(pick.team, Team(1));
-        // Teams Off turns it off, and without Teams it stays off.
-        session.set_network_teams(None).unwrap();
-        session.set_network_auto_balance(true).unwrap();
-        assert!(!session.network_auto_balance());
     }
 
     #[test]
@@ -4371,12 +4679,12 @@ mod tests {
             assert_eq!(session.network_connected_source_indices(), &[0, 1]);
             session.report_network_loading_progress(100);
             assert!(
-                !session.disconnect_network_participant(1, 1),
+                !session.disconnect_network_participant(1),
                 "local cannot time out itself"
             );
-            assert!(session.disconnect_network_participant(0, 1));
+            assert!(session.disconnect_network_participant(0));
             assert!(
-                !session.disconnect_network_participant(0, 1),
+                !session.disconnect_network_participant(0),
                 "disconnect is one-shot"
             );
             assert_eq!(session.network_connected_source_indices(), &[1]);
@@ -4385,16 +4693,7 @@ mod tests {
                 2,
                 "historical launch stays immutable"
             );
-            assert_eq!(
-                session.take_network_loading_requests(),
-                vec![
-                    super::NetworkLoadingRequest::ReportProgress(100),
-                    super::NetworkLoadingRequest::Disconnect {
-                        source_index: 0,
-                        reason: 1
-                    },
-                ]
-            );
+            assert_eq!(session.take_network_loading_progress_reports(), [100]);
             session.assert_network_start(prepared);
             assert_eq!(prepared.seed.value, 0x1234abcd);
             assert_eq!(prepared.launch_session().local_player_index, 1);
@@ -4669,7 +4968,6 @@ mod tests {
                 difficulty: crate::skirmish_launch::AiDifficulty::Easy,
             });
         launch.ai_player_count = 1;
-        launch.rebuild_house_roster();
         session
             .accept_network_setup(launch, false, None, false)
             .unwrap();
@@ -5055,8 +5353,7 @@ mod tests {
             .unwrap();
         let mut session = MatchSession::default();
         session.enter_network(super::NetworkReturnContext::Wol);
-        let mut launch = network_fixture();
-        launch.rebuild_house_roster();
+        let launch = network_fixture();
         session
             .accept_network_setup(launch.clone(), false, None, false)
             .unwrap();
@@ -5170,6 +5467,35 @@ mod tests {
         session.set_network_player_ready(1, false).unwrap();
         assert!(session.network_player_ready(0));
         assert!(!session.network_player_ready(1));
+    }
+
+    #[test]
+    fn host_options_with_a_speed_the_setup_never_offers_are_refused() {
+        let mut session = MatchSession::default();
+        session.enter_network(super::NetworkReturnContext::LanLobby);
+        session
+            .accept_network_setup(network_fixture(), false, Some(7), false)
+            .unwrap();
+        let accepted = session.clone();
+        let vacancies = [super::NetworkVacancy::Open; 8];
+        let with_speed = |speed| {
+            let mut incoming = accepted.network_setup().unwrap().clone();
+            incoming.options.game_speed = speed;
+            incoming
+        };
+        for speed in [-1, 7, 9] {
+            assert!(
+                session
+                    .accept_network_host_setup(with_speed(speed), vacancies, 4, Some(7), false)
+                    .is_err(),
+                "speed {speed}"
+            );
+            assert_eq!(session, accepted);
+        }
+        session
+            .accept_network_host_setup(with_speed(8), vacancies, 4, Some(7), false)
+            .unwrap();
+        assert_eq!(session.network_setup().unwrap().options.game_speed, 8);
     }
 
     #[test]
@@ -5342,5 +5668,41 @@ mod tests {
         assert!(!SessionMode::Campaign.is_network());
         assert!(!SessionMode::Skirmish.is_network());
         assert!(!SessionMode::Other.is_network());
+    }
+
+    #[test]
+    fn mode_policy_controls_team_room_and_clears_observer_row_when_disallowed() {
+        let mut session = vera_room();
+        assert!(session.network_team_room());
+        assert!(session.network_observer_row().is_some());
+
+        let mut coop = session.network_setup().unwrap().mode.clone();
+        coop.class = crate::skirmish_modes::MpModeClass::Cooperative;
+        coop.allies_allowed = true;
+        session
+            .select_network_map(coop, "COOP.MAP".into(), 2)
+            .unwrap();
+        assert!(!session.network_team_room());
+        assert_eq!(session.network_observer_row(), None);
+    }
+
+    /// Cooperative's +0x20 (`0x005C1A10`) clears the observer reservation
+    /// whenever the mode becomes current, so a host whose restored setup is
+    /// already Cooperative keeps no observer row from its first map pick.
+    #[test]
+    fn a_restored_cooperative_setup_keeps_no_observer_row() {
+        let mut launch = network_fixture();
+        launch.local_player_index = 0;
+        launch.mode.class = crate::skirmish_modes::MpModeClass::Cooperative;
+        let mode = launch.mode.clone();
+        let mut session = MatchSession::default();
+        session.enter_network(super::NetworkReturnContext::LanLobby);
+        session
+            .accept_network_setup(launch, true, Some(7), true)
+            .unwrap();
+        session
+            .select_network_map(mode, "COOP.MAP".into(), 2)
+            .unwrap();
+        assert_eq!(session.network_observer_row(), None);
     }
 }

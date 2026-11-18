@@ -119,7 +119,7 @@ pub(crate) fn recalc_base_plan(
 
     if let Some(build_const) = first_buildable_from_array(
         rules,
-        &rules.build_const_types,
+        rules.build_const_types(),
         country_name,
         side_index,
         super_weapons,
@@ -474,10 +474,11 @@ mod tests {
              [BAR]\nOwner=Americans,Russians,YuriCountry\nAIBuildThis=yes\nTechLevel=1\nFoundation=1x1\n\
              [WEAP]\nOwner=Americans,Russians,YuriCountry\nAIBuildThis=yes\nTechLevel=1\nFoundation=1x1\n\
              [RAD]\nOwner=Americans,Russians,YuriCountry\nAIBuildThis=no\nFoundation=1x1\n\
-             [TECH]\nOwner=Americans,Russians,YuriCountry\nAIBuildThis=no\nFoundation=1x1\n\
-             {extra_sections}"
+             [TECH]\nOwner=Americans,Russians,YuriCountry\nAIBuildThis=no\nFoundation=1x1"
         );
-        RuleSet::from_ini(&IniFile::from_str(&text)).expect("planner fixture")
+        let mut ini = IniFile::from_str(&text);
+        ini.merge(&IniFile::from_str(extra_sections));
+        RuleSet::from_ini(&ini).expect("planner fixture")
     }
 
     fn basic_rules(extra_registry: &str, extra_sections: &str) -> RuleSet {
@@ -640,17 +641,14 @@ mod tests {
     /// construction-yard seed marks its first entry selected (505714).
     #[test]
     fn ai_planning_count_keeps_counted_seed_candidates() {
-        let mut rules = basic_rules(
+        let rules = basic_rules(
             "7=COUNTED\n",
-            "[COUNTED]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nAIPlanningCount=2\n",
+            "[COUNTED]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nAIPlanningCount=2\n[AI]\nBuildConst=COUNTED\n",
         );
         assert_eq!(
             rules.object("COUNTED").unwrap().ai_planning_count,
             if crate::rules::NPATCH_ENABLED { 2 } else { 0 }
         );
-        // Exercise the existing BuildConst selector with this reader-created
-        // type, without relying on a duplicate physical [CON] INI section.
-        rules.build_const_types = vec!["COUNTED".to_owned()];
         let (plan, _) = generated_values(&rules, "Americans", 0, HouseDifficulty::Normal, 17);
         let index = rules.object("COUNTED").unwrap().base_plan_type_index;
         assert_eq!(
@@ -804,8 +802,7 @@ mod tests {
     /// and plans that last one, the second POW.
     #[test]
     fn recalc_pass_continues_past_remaining_zero() {
-        let mut rules = basic_rules("", "");
-        rules.build_const_types = vec!["RAD".to_owned()];
+        let rules = basic_rules("", "[AI]\nBuildConst=RAD\n");
         let (plan, _) = generated_values(&rules, "Americans", 0, HouseDifficulty::Hard, 9);
         assert_eq!(values(&plan), [1, 3, 4, 2, 0, 1]);
     }
@@ -950,7 +947,6 @@ mod tests {
     /// No building passes the House TechLevel, so the list is the power plant
     /// alone: shorter than the three seeds, with base defenses to insert.
     /// (Ares pads such a list to four with defense nodes instead.)
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn recalc_survives_a_list_shorter_than_its_three_seeds() {
         let rules = planner_rules(

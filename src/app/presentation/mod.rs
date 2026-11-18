@@ -3,6 +3,7 @@
 //! UI overlays, selection brackets, target lines, and the overlay render index.
 
 pub(crate) mod airstrike_lines;
+pub(crate) mod beacon_labels;
 pub(crate) mod build_text;
 pub(crate) mod building_anim;
 pub(crate) mod combat_lights;
@@ -16,7 +17,6 @@ pub(crate) mod field_parts;
 pub(crate) mod layout_parts;
 pub(crate) mod player_layout;
 pub(crate) mod fire_effects;
-#[cfg(feature = "ares")]
 pub(crate) mod flying_credits;
 pub(crate) mod frame;
 pub(crate) mod frame_scene;

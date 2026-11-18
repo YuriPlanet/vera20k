@@ -834,7 +834,7 @@ impl Simulation {
                             });
                     docks.then(|| {
                         if target.radio_contacts.has_free_or(actor_id)
-                            && target.passenger_role.passenger_count() == 0
+                            && target.passenger_role().passenger_count() == 0
                             && crate::sim::radio::receive::can_load_query(
                                 self, target_id, actor_id, rules,
                             ) == crate::sim::radio::RadioResponse::Roger
@@ -999,7 +999,7 @@ impl Simulation {
             return false;
         }
         let Some(first) = entity
-            .passenger_role
+            .passenger_role()
             .cargo()
             .and_then(|cargo| cargo.passengers().first())
             .and_then(|&first| self.substrate.entities.get(first))

@@ -42,10 +42,10 @@
 //! base coordinate instead (`0x00506329..0x0050640D`, [`SiteKey::InnerBase`]).
 //! Under Ares, `[BuildingType] AIInnerBase=` decides that in place of
 //! `CloakGenerator=` (HouseClass_FindPlaceToBuild_Evaluate, Ares.dll
-//! 10023860, hook 0x506306). RESIDUAL (default builds): the inner-base key is
-//! not taken, so a `CloakGenerator=` type takes the ordinary key. No retail
-//! BuildingType sets the key (`ai_base_building_tests.rs` checks the retail
-//! rules).
+//! 10023860, hook 0x506306). RESIDUAL (a game read the stock way): the
+//! inner-base key is not taken, so a `CloakGenerator=` type takes the
+//! ordinary key. No retail BuildingType sets the key
+//! (`ai_base_building_tests.rs` checks the retail rules).
 
 use crate::rules::object_type::ObjectType;
 use crate::rules::overlay_types::OverlayTypeRegistry;

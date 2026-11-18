@@ -355,9 +355,7 @@ impl Simulation {
         }
         // Cargo+114 is independent of Building occupants+684 (Ctor43B8DC).
         if obj.passengers > 0 {
-            ge.passenger_role = crate::sim::passenger::PassengerRole::transport(
-                crate::sim::passenger::PassengerCargo::new(obj.passengers as u32, obj.size_limit),
-            );
+            ge.install_passenger_hold(obj.passengers as u32, obj.size_limit);
         }
 
         // TechnoClass::Init_Managers — manager-owned children are committed
@@ -765,7 +763,7 @@ impl TypeFacts {
         if category == EntityCategory::Structure {
             self.building_hidden_occupancy = Some(Box::new(obj.hidden_occupancy));
             self.base_reservation_spacing = obj.base_reservation_spacing;
-            self.build_const_eligible = obj.build_const_eligible;
+            self.build_const_eligible = obj.build_const_eligible();
             self.base_plan_type_index = obj.base_plan_type_index;
             self.base_plan_is_defense = obj.is_base_defense;
             self.base_plan_has_undeploy_target = obj.undeploys_into.is_some();

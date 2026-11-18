@@ -404,8 +404,7 @@ fn spotlight_cone_geometry_matches_original_before_projection() {
     }
 }
 
-// An Ares build keeps the direct delete (`uninit_spotlight_for_parent_limbo`).
-#[cfg(not(feature = "ares"))]
+// An Ares game keeps the direct delete (`uninit_spotlight_for_parent_limbo`).
 #[test]
 fn spotlight_real_building_unlimbo_registers_the_child_and_limbo_cleans_both_owners() {
     use crate::sim::superweapon::chronosphere_tests::{place, world_with};

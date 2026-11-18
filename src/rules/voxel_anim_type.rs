@@ -245,18 +245,20 @@ fn read_angular_velocity(section: &IniSection, key: &str, default: NativeF64Bits
     if raw == 0.0 {
         return default;
     }
-    radians_from_degrees(raw)
+    // An out-of-range literal scans as infinity, which native would store as
+    // an infinite spin; VERA keeps the current value instead.
+    radians_from_degrees(raw).unwrap_or(default)
 }
 
 /// `FMUL qword [0x007F65E8]` / `FSTP qword` under the process's chop mode.
-fn radians_from_degrees(degrees: f64) -> NativeF64Bits {
-    let degrees = X87Chop53::load_f64(NativeF64Bits::from_bits(degrees.to_bits()))
-        .expect("ReadDouble returns a finite double");
+/// `None` for a non-finite angle.
+fn radians_from_degrees(degrees: f64) -> Option<NativeF64Bits> {
+    let degrees = X87Chop53::load_f64(NativeF64Bits::from_bits(degrees.to_bits())).ok()?;
     X87Chop53::store_f64(X87Chop53::mul(
         degrees,
-        X87Chop53::load_f64(DEGREES_TO_RADIANS).expect("pi/180 is finite"),
+        X87Chop53::load_f64(DEGREES_TO_RADIANS).ok()?,
     ))
-    .expect("an INI angle in degrees stays finite in radians")
+    .ok()
 }
 
 #[cfg(all(test, tests_rules_o_z))]

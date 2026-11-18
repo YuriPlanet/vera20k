@@ -338,7 +338,7 @@ fn retail_voxel_contact_cap_survives_snapshot_and_piece_retirement() {
         sim.resolved_terrain(),
     );
     let position = glam::IVec3::new(coord.x, coord.y, coord.z);
-    sim.emit_debris_voxel(type_id, kind, None, position, true, &mut Vec::new())
+    sim.emit_debris_voxel(type_id, kind, None, position, true, &mut Vec::new(), &rules)
         .unwrap();
     let piece = sim.voxel_anims().ids()[0];
     let warhead = sim.interner.intern("TankOGas");

@@ -733,7 +733,7 @@ fn board(sim: &mut Simulation, rules: &RuleSet, passenger: u64, carrier: u64, fr
         if sim
             .entities()
             .get(passenger)
-            .is_some_and(|entity| entity.passenger_role.is_inside_transport())
+            .is_some_and(|entity| entity.passenger_role().is_inside_transport())
         {
             break;
         }
@@ -743,7 +743,7 @@ fn board(sim: &mut Simulation, rules: &RuleSet, passenger: u64, carrier: u64, fr
         sim.entities()
             .get(carrier)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .passenger_count(),
         1
     );
@@ -1076,7 +1076,6 @@ fn a_deployed_gis_alt_over_the_ifv_skips_the_row() {
 /// click orders nothing and no longer selects the depot. Ares drops the
 /// `UnitRepair=` gate (hook `0x417E16`), so there the jet keeps Select
 /// (`sim::world::passenger_entry_tests`).
-#[cfg(not(feature = "ares"))]
 #[test]
 fn a_players_jet_over_the_players_service_depot_gets_no_enter() {
     let Some((retail, registry)) = retail() else {
@@ -1199,7 +1198,7 @@ fn a_loaded_carryall_offers_unload() {
     sim.entities_mut_for_test()
         .get_mut(carryall)
         .unwrap()
-        .passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+        .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(cargo));
     assert_eq!(
         unload(&sim),
         Some(Command::UnloadPassengers {

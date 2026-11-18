@@ -221,7 +221,7 @@ pub(crate) mod terrain_fire; // Ares terrain fire (Catch_Fire 0x71C5B0, 1004F530
 pub mod terrain_object;
 pub mod terrain_spawn;
 pub mod tiberium;
-pub mod tiberium_germinate;
+mod tiberium_germinate;
 
 // --- Per-match settings, per-player state ---
 pub mod game_options;

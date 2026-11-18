@@ -7,9 +7,15 @@
 //! Pacing is: the others forward their players' pace reports to the
 //! coordinator, whose rate changes reach them as entries in frame order.
 //! So are checksums: the others forward their players' reports, and only
-//! the coordinator compares them and decides a desync.
+//! the coordinator compares them and decides a desync. Every relay tells
+//! every other when it last heard its players, so each can name a silent
+//! one to its own (README "Silence").
 
 use super::*;
+
+mod outcome;
+pub(super) use outcome::Terminal;
+pub use outcome::{FEDERATION_LOST, FederationOutcome};
 
 pub const MAX_FEDERATED_RELAYS: usize = 6;
 const ROSTER_MAGIC: &[u8; 4] = b"VO1F";
@@ -17,11 +23,25 @@ const ROSTER_HEADER: usize = 21;
 const ROSTER_ENTRY: usize = 10;
 const ROSTER_WRAP: usize = 80;
 const WRAP_DOMAIN: &[u8] = b"VERA20k relay federation wrap v1\0";
+const ADJUDICATED_DOMAIN: &[u8] = b"VERA20k relay adjudicated federation roster v1\0";
 const ROSTER_DOMAIN: &[u8] = b"VERA20k relay federation roster v1\0";
+// The link version is the magic's digit, `VF<version>L`. Bump it whenever the
+// layout or meaning of an existing link kind changes: the FRAME header and its
+// entries, a coordinator control batch, DATA, PACE, CHECKSUM or SILENCE. A
+// relay refuses a packet it cannot read: one refused FRAME stalls the merged
+// stream, and refused reports leave desyncs and slow players unnoticed. Only a
+// new kind whose loss changes no result needs no bump; SILENCE_KIND was one,
+// as an older relay only leaves that silence untold. The 32-byte link header
+// and LINK_DOMAIN stay the same in every version, so a relay authenticates
+// another version's packet and refuses the startup.
 const LINK_DOMAIN: &[u8] = b"VERA20k relay federation link v1\0";
-pub(crate) const LINK_MAGIC: &[u8; 4] = b"VF1L";
+const LINK_MAGIC: &[u8; 4] = b"VF1L";
 const LINK_HEADER: usize = 32;
 const FRAME_KIND: u8 = 0;
+const CANCEL_START: u8 = 1;
+// VF2L FRAME flags. A pre-start or roomless link cannot renew a running match.
+const MATCH_FAILED: u8 = 2;
+const MATCH_STARTED: u8 = 4;
 // Link packets go out at least every 50 ms; a coordinator this quiet is gone.
 const COORDINATOR_SILENCE_MS: u64 = 10_000;
 const DATA_KIND: u8 = 1;
@@ -36,6 +56,12 @@ const CHECKSUM_KIND: u8 = 3;
 const CHECKSUM_FORWARD_ENTRY: usize = 9;
 // Reports a follower holds for one link pass; 64 fit one link datagram.
 pub(super) const FORWARD_CHECKSUMS: usize = 64;
+// VERA: every relay tells every other when it last heard its active players
+// (README "Silence"): source, LE age u32. A relay that never sends this
+// kind, an older one, has its players' silence left untold.
+const SILENCE_KIND: u8 = 4;
+const SILENCE_FORWARD_MS: u64 = 500;
+const SILENCE_ENTRY: usize = 5;
 const FRAME_HEADER: usize = 86;
 const ENTRY_HEADER: usize = 15;
 // A seal sends at once; this only paces startup, acks and clock samples.
@@ -57,6 +83,11 @@ pub(crate) const fn roster_len(relays: usize) -> usize {
 
 pub(crate) fn is_roster_len(length: usize) -> bool {
     (2..=MAX_FEDERATED_RELAYS).any(|relays| roster_len(relays) == length)
+}
+
+/// A link packet of any link version.
+pub(crate) fn is_link_packet(bytes: &[u8]) -> bool {
+    bytes.len() >= 4 && bytes[..2] == LINK_MAGIC[..2] && bytes[3] == LINK_MAGIC[3]
 }
 
 /// Layout shared with the lobby (docs/lobby-protocol.md): `VO1F`, room UUID16, relay
@@ -104,17 +135,25 @@ fn wrap_stream(key: &SecretKey, room: &[u8; 16], nonce: &[u8]) -> [u8; 32] {
     mac.finalize().into_bytes().into()
 }
 
-fn wrap_tag(key: &SecretKey, table: &[u8], index: u8, nonce: &[u8], wrapped: &[u8]) -> HmacSha256 {
-    let mut mac = key.mac(ROSTER_DOMAIN, table);
+fn wrap_tag(
+    key: &SecretKey,
+    domain: &[u8],
+    table: &[u8],
+    index: u8,
+    nonce: &[u8],
+    wrapped: &[u8],
+) -> HmacSha256 {
+    let mut mac = key.mac(domain, table);
     mac.update(&[index]);
     mac.update(nonce);
     mac.update(wrapped);
     mac
 }
 
-/// The lobby's signer, for tools and tests. Relay keys never reach clients;
-/// the coordinator is the first relay.
-pub fn sign_federation_roster(
+/// The lobby's roster signing, for this crate's tests. Relay keys never
+/// reach clients; the coordinator is the first relay.
+#[cfg(test)]
+fn sign_federation_roster(
     room: [u8; 16],
     relays: &[(SocketAddrV4, u32, &SecretKey)],
     link: &SecretKey,
@@ -135,7 +174,7 @@ pub fn sign_federation_roster(
         getrandom::fill(&mut nonce).map_err(|_| RelayError::EntropyUnavailable)?;
         let stream = wrap_stream(key, &room, &nonce);
         let wrapped: Vec<u8> = link.0.iter().zip(stream).map(|(a, b)| a ^ b).collect();
-        let tag = wrap_tag(key, &table, index as u8, &nonce, &wrapped)
+        let tag = wrap_tag(key, ROSTER_DOMAIN, &table, index as u8, &nonce, &wrapped)
             .finalize()
             .into_bytes();
         bytes.extend_from_slice(&nonce);
@@ -151,12 +190,15 @@ pub(super) struct LinkView {
     pub ready: u32,
     pub agreement: [u8; 32],
     pub cancelled: bool,
+    pub adjudicated_flags: u8,
     pub starts_at: Option<u64>,
     pub sealed: u32,
     // A follower's forwarded pace reports, encoded.
     pub paces: Vec<u8>,
     // A follower's players' checksum reports since its last pass.
     pub checksums: Vec<(u8, u32, u32)>,
+    // When this relay last heard its players, encoded.
+    pub silence: Vec<u8>,
 }
 
 struct Link {
@@ -174,11 +216,15 @@ struct Link {
     flights: VecDeque<(u64, u64)>,
     // Silent past a player's limit after the start; its sources departed.
     lost: bool,
+    // It reports when it last heard its players.
+    reports_silence: bool,
     sealed: u32,
     ready: u32,
     agreement: [u8; 32],
     cancelled: bool,
     start_at: u64,
+    // Local receipt time of VF2L proof the sender still has this started match.
+    heard_started: Option<u64>,
     // Their latest send time and when it arrived, echoed for clock samples.
     echo: Option<(u64, u64)>,
     // (round trip, their clock minus ours), best sample wins.
@@ -198,6 +244,9 @@ pub(crate) struct Federation {
     room: [u8; 16],
     own: u8,
     local: u32,
+    // VF2L is selected by the authenticated wrap tag, opaque to released games.
+    adjudicated: bool,
+    peer_failed: bool,
     link: SecretKey,
     links: Vec<Link>,
     // This relay's sealed contributions, (frame, encoded entry), from `outbox_base`.
@@ -207,6 +256,8 @@ pub(crate) struct Federation {
     slewed_ms: u64,
     // When a follower last forwarded its players' pace reports.
     paces_sent_ms: Option<u64>,
+    // When this relay last told the others when it heard its players.
+    silence_sent_ms: Option<u64>,
 }
 
 impl Federation {
@@ -215,6 +266,7 @@ impl Federation {
         key: &SecretKey,
         roster: &[u8],
         ticket: &Ticket,
+        outcomes_enabled: bool,
     ) -> Result<Self, RelayError> {
         let (room, relays) = roster_table(roster)?;
         if room != ticket.room {
@@ -224,17 +276,20 @@ impl Federation {
         let wraps = &roster[table.len()..];
         let mut own = None;
         for (index, wrap) in wraps.chunks_exact(ROSTER_WRAP).enumerate() {
-            if wrap_tag(key, table, index as u8, &wrap[..16], &wrap[16..48])
-                .verify_slice(&wrap[48..])
-                .is_ok()
-            {
+            let verifies = |domain| {
+                wrap_tag(key, domain, table, index as u8, &wrap[..16], &wrap[16..48])
+                    .verify_slice(&wrap[48..])
+                    .is_ok()
+            };
+            let adjudicated = outcomes_enabled && relays.len() >= 3 && verifies(ADJUDICATED_DOMAIN);
+            if adjudicated || verifies(ROSTER_DOMAIN) {
                 if own.is_some() {
                     return Err(RelayError::Authentication);
                 }
-                own = Some(index);
+                own = Some((index, adjudicated));
             }
         }
-        let own = own.ok_or(RelayError::Authentication)?;
+        let (own, adjudicated) = own.ok_or(RelayError::Authentication)?;
         if relays[own].1 & (1 << ticket.source) == 0 {
             return Err(RelayError::Authentication);
         }
@@ -259,11 +314,13 @@ impl Federation {
                 sent_next: 0,
                 flights: VecDeque::new(),
                 lost: false,
+                reports_silence: false,
                 sealed: 0,
                 ready: 0,
                 agreement: [0; 32],
                 cancelled: false,
                 start_at: 0,
+                heard_started: None,
                 echo: None,
                 samples: Vec::with_capacity(CLOCK_SAMPLES),
                 next_sample: 0,
@@ -275,12 +332,15 @@ impl Federation {
             room,
             own: own as u8,
             local: relays[own].1,
+            adjudicated,
+            peer_failed: false,
             link: SecretKey::new(link),
             links,
             outbox: VecDeque::new(),
             outbox_base: 0,
             slewed_ms: 0,
             paces_sent_ms: None,
+            silence_sent_ms: None,
         })
     }
 
@@ -289,8 +349,31 @@ impl Federation {
         self.roster == roster && self.local & (1 << source) != 0
     }
 
+    fn link_magic(&self) -> &'static [u8; 4] {
+        if self.adjudicated {
+            b"VF2L"
+        } else {
+            LINK_MAGIC
+        }
+    }
+
     pub(super) fn local(&self) -> u32 {
         self.local
+    }
+
+    /// The sources the roster homes on any of its relays.
+    pub(super) fn sources(&self) -> u32 {
+        self.links
+            .iter()
+            .fold(self.local, |mask, link| mask | link.sources)
+    }
+
+    /// Sources homed on the other relays that report their players' silence.
+    pub(super) fn reporting_silence(&self) -> u32 {
+        self.links
+            .iter()
+            .filter(|link| link.reports_silence)
+            .fold(0, |mask, link| mask | link.sources)
     }
 
     /// The first roster relay starts the match and decides its rate.
@@ -323,6 +406,14 @@ impl Federation {
             .iter()
             .filter(|link| link.agreement == *agreement)
             .fold(local_ready & self.local, |mask, link| mask | link.ready)
+    }
+
+    fn agreement_mismatch(&self, agreement: &[u8; 32]) -> bool {
+        // Before its first player sends Ready a relay advertises zeroes,
+        // which are not a proposal. A nonempty mask authenticates its choice.
+        self.links
+            .iter()
+            .any(|link| link.ready != 0 && link.agreement != *agreement)
     }
 
     /// Relays forwarding a player DATA packet from `source` to `target`.
@@ -365,13 +456,14 @@ impl Federation {
         kind: u8,
         payload: &[u8],
     ) -> Result<ForwardDatagram, RelayError> {
+        let magic = self.link_magic();
         let link = &mut self.links[position];
         link.sent = link
             .sent
             .checked_add(1)
             .ok_or(RelayError::CounterExhausted)?;
         let mut bytes = Vec::with_capacity(LINK_HEADER + payload.len() + MAC_LEN);
-        bytes.extend_from_slice(LINK_MAGIC);
+        bytes.extend_from_slice(magic);
         bytes.extend_from_slice(&self.room);
         bytes.push(self.own);
         bytes.extend_from_slice(&link.sent.to_le_bytes());
@@ -419,10 +511,24 @@ impl Federation {
 
     /// Startup: the coordinator starts once every relay reports the full
     /// roster ready, leaving its slowest link time to hear. The others place
-    /// the same start on their own clocks and keep slewing toward it. Only
-    /// the coordinator cancels, on any relay's request before its start; each
-    /// relay requests it once its own startup reaches the loading limit.
+    /// the same start on their own clocks and keep slewing toward it. Ordinary
+    /// cancellation goes through the coordinator, on any relay's request;
+    /// an agreement mismatch between relays refuses the start on each relay
+    /// itself, as does another link version (`federation_receive`). One
+    /// between two players of one relay refuses it there, and that cancelled
+    /// startup asks the coordinator to cancel everywhere.
+    /// Each relay requests cancellation once its loading limit is reached.
     pub(super) fn coordinate(&mut self, ordering: &mut OrderingRoom, now_ms: u64) {
+        // VERA's initial-world agreement has no native counterpart. Reject
+        // proved disagreement instead of treating the other relay as unready
+        // until the loading timeout. Keep checking cancelled starts: a late
+        // proof can replace a generic cancellation reason on this relay.
+        if ordering.starts_at.is_none()
+            && self.agreement_mismatch(&ordering.agreement)
+            && !ordering.agreement_mismatch
+        {
+            ordering.refuse_start(now_ms);
+        }
         if ordering.finished_at.is_some() {
             return;
         }
@@ -434,7 +540,7 @@ impl Federation {
         // survivors would have to agree on that frame, which the link format
         // cannot carry, so such a room ends only once its own players have
         // left and every other relay has been silent that long.
-        if ordering.starts_at.is_some() && self.links.len() > 1 {
+        if ordering.starts_at.is_some() && self.links.len() > 1 && !self.adjudicated {
             if ordering.active & self.local == 0
                 && self.links.iter().all(|link| {
                     link.echo
@@ -444,7 +550,7 @@ impl Federation {
                 ordering.abandon(now_ms);
                 return;
             }
-        } else if ordering.starts_at.is_some() {
+        } else if ordering.starts_at.is_some() && self.links.len() == 1 {
             for link in &mut self.links {
                 let heard = link.echo.map_or(ordering.created_ms, |(_, heard)| heard);
                 if link.lost || now_ms.saturating_sub(heard) < super::ABSENT_MS {
@@ -608,7 +714,11 @@ impl Federation {
                 };
                 let mut payload = Vec::with_capacity(FRAME_HEADER + entries.len());
                 payload.extend_from_slice(&(view.ready & self.local).to_le_bytes());
-                payload.push(u8::from(view.cancelled));
+                let mut flags = if view.cancelled { CANCEL_START } else { 0 };
+                if self.adjudicated {
+                    flags |= view.adjudicated_flags;
+                }
+                payload.push(flags);
                 payload.extend_from_slice(&start_at.to_le_bytes());
                 payload.extend_from_slice(&now_ms.to_le_bytes());
                 payload.extend_from_slice(&echo_ms.to_le_bytes());
@@ -675,7 +785,52 @@ impl Federation {
                 output.push(datagram);
             }
         }
+        if !view.silence.is_empty() {
+            let mut payload = vec![(view.silence.len() / SILENCE_ENTRY) as u8];
+            payload.extend_from_slice(&view.silence);
+            for position in 0..self.links.len() {
+                if !self.links[position].lost
+                    && let Ok(datagram) = self.packet(position, SILENCE_KIND, &payload)
+                {
+                    output.push(datagram);
+                }
+            }
+            self.silence_sent_ms = Some(now_ms);
+        }
         output
+    }
+
+    /// Whether this pass reports when this relay last heard its players.
+    fn silence_due(&self, now_ms: u64) -> bool {
+        self.silence_sent_ms
+            .is_none_or(|at| now_ms.saturating_sub(at) >= SILENCE_FORWARD_MS)
+    }
+
+    /// Another relay's report of when it last heard its players. A late copy
+    /// never makes a player's silence longer.
+    fn receive_silence(
+        &mut self,
+        position: usize,
+        payload: &[u8],
+        ordering: &mut OrderingRoom,
+        now_ms: u64,
+    ) -> Result<(), RelayError> {
+        let count = usize::from(*payload.first().ok_or(RelayError::Malformed)?);
+        let link = &mut self.links[position];
+        if payload.len() != 1 + count * SILENCE_ENTRY
+            || payload[1..]
+                .chunks_exact(SILENCE_ENTRY)
+                .any(|entry| entry[0] >= MAX_PEERS || link.sources & (1 << entry[0]) == 0)
+        {
+            return Err(RelayError::Malformed);
+        }
+        for entry in payload[1..].chunks_exact(SILENCE_ENTRY) {
+            let source = &mut ordering.sources[usize::from(entry[0])];
+            let heard = now_ms.saturating_sub(u64::from(read_u32(entry, 1)));
+            source.heard_ms = source.heard_ms.max(heard);
+        }
+        link.reports_silence = true;
+        Ok(())
     }
 
     /// The coordinator compares a follower's forwarded checksum reports
@@ -747,7 +902,14 @@ impl Federation {
         ordering: Option<&mut OrderingRoom>,
         now_ms: u64,
     ) -> Result<(), RelayError> {
-        if payload.len() < FRAME_HEADER || payload[4] > 1 {
+        if payload.len() < FRAME_HEADER
+            || payload[4]
+                > (if self.adjudicated {
+                    CANCEL_START | MATCH_FAILED | MATCH_STARTED
+                } else {
+                    CANCEL_START
+                })
+        {
             return Err(RelayError::Malformed);
         }
         let ack = read_u64(payload, 33);
@@ -776,8 +938,9 @@ impl Federation {
                 || frame == 0
                 || if control {
                     match batch_id {
-                        RATE_BATCH => length != 3,
+                        RATE_BATCH => length != RATE_TAIL,
                         DESYNC_BATCH => length != DESYNC_TAIL,
+                        // A new control batch bumps the link version (LINK_MAGIC).
                         _ => true,
                     }
                 } else if source >= MAX_PEERS || sources & (1 << source) == 0 {
@@ -799,7 +962,12 @@ impl Federation {
         }
         let link = &mut self.links[position];
         link.ready = read_u32(payload, 0) & sources;
-        link.cancelled |= payload[4] != 0;
+        let flags = payload[4];
+        link.cancelled |= flags & CANCEL_START != 0;
+        if flags & MATCH_STARTED != 0 {
+            link.heard_started = Some(now_ms);
+            self.peer_failed |= flags & MATCH_FAILED != 0;
+        }
         link.agreement = payload[53..85].try_into().unwrap();
         if link.index == 0 {
             link.start_at = read_u64(payload, 5);
@@ -878,11 +1046,25 @@ impl RelayServer {
             return Err(RelayError::RateLimited);
         }
         self.ingress.charge_part(&mut room.ingress, 1);
+        // Relays of two link versions cannot merge one stream, so each that
+        // reads the other's version refuses the startup itself. No relay can
+        // have started it: the coordinator never read the other's readiness.
+        if bytes[2] != federation.link_magic()[2] {
+            match room.ordering.as_mut() {
+                Some(ordering) => {
+                    if ordering.starts_at.is_none() && ordering.finished_at.is_none() {
+                        ordering.cancel(now_ms);
+                    }
+                }
+                None => room.ordering_cancelled = true,
+            }
+            return Err(RelayError::Malformed);
+        }
         match kind {
             FRAME_KIND => {
                 federation.receive_frame(position, payload, room.ordering.as_mut(), now_ms)?;
                 // Only the coordinator's cancel binds; it honours any request.
-                if payload[4] != 0
+                if payload[4] & CANCEL_START != 0
                     && room.ordering.is_none()
                     && (federation.own == 0 || federation.links[position].index == 0)
                 {
@@ -905,11 +1087,8 @@ impl RelayServer {
                 {
                     return Err(RelayError::Malformed);
                 }
-                let recipients = |peer: &Peer| {
-                    now.saturating_sub(peer.last_seen) <= 30
-                        && (target == BROADCAST || target == peer.ticket.source)
-                };
-                let cost = (room.peers.iter().filter(|peer| recipients(peer)).count()
+                let receives = |peer: &Peer| data_recipient(peer, source, target, now);
+                let cost = (room.peers.iter().filter(|peer| receives(peer)).count()
                     * (envelope::OVERHEAD + 1 + data.len())) as u64;
                 if !room.outgoing.permits(now, cost, ROOM_BYTES_PER_SECOND)
                     || !self.outgoing.admit_part(
@@ -924,7 +1103,7 @@ impl RelayServer {
                 self.outgoing.charge_part(&mut room.outgoing, cost);
                 room.peers
                     .iter_mut()
-                    .filter(|peer| recipients(peer))
+                    .filter(|peer| receives(peer))
                     .map(|peer| {
                         server_packet(peer, DATA, source, data, now_ms, crate::link::SEND_OTHER)
                     })
@@ -942,6 +1121,12 @@ impl RelayServer {
                 }
                 Ok(Vec::new())
             }
+            SILENCE_KIND => {
+                if let Some(ordering) = room.ordering.as_mut() {
+                    federation.receive_silence(position, payload, ordering, now_ms)?;
+                }
+                Ok(Vec::new())
+            }
             _ => Err(RelayError::Malformed),
         }
     }
@@ -956,9 +1141,11 @@ impl RelayServer {
             };
             if let Some(ordering) = room.ordering.as_mut() {
                 federation.coordinate(ordering, now_ms);
+                federation.settle(ordering, &self.key, now_ms, now);
             }
             let view = match room.ordering.as_mut() {
                 Some(ordering) => LinkView {
+                    adjudicated_flags: ordering.adjudicated_link_flags(now_ms),
                     ready: ordering.ready,
                     agreement: ordering.agreement,
                     cancelled: ordering.cancel_requested
@@ -971,8 +1158,14 @@ impl RelayServer {
                         ordering.local_paces(federation.local(), now_ms)
                     },
                     checksums: std::mem::take(&mut ordering.forward_checksums),
+                    silence: if federation.silence_due(now_ms) {
+                        ordering.local_silence(now_ms)
+                    } else {
+                        Vec::new()
+                    },
                 },
                 None => LinkView {
+                    adjudicated_flags: 0,
                     ready: 0,
                     agreement: [0; 32],
                     cancelled: room.ordering_cancelled,
@@ -980,6 +1173,7 @@ impl RelayServer {
                     sealed: 0,
                     paces: Vec::new(),
                     checksums: Vec::new(),
+                    silence: Vec::new(),
                 },
             };
             let datagrams = federation.frames(&view, now_ms);
@@ -1002,7 +1196,8 @@ impl RelayServer {
 #[cfg(test)]
 mod tests {
     use super::super::tests::{
-        TestDirectory, certificate, client, configure, connect, endpoint, events, pull, renew, unix,
+        TestDirectory, certificate, client, connect, endpoint, events, pull, renew, told_silent,
+        unix,
     };
     use super::*;
 
@@ -1019,12 +1214,15 @@ mod tests {
         clients: [ClientSession; 2],
         addresses: [SocketAddrV4; 2],
         links: Vec<(u64, usize, Vec<u8>)>,
+        link_delay_ms: [u64; 2],
         delivered: Vec<ForwardDatagram>,
         drop_first_copies: bool,
         // When each relay sent a link datagram carrying entries, and how
         // many of relay A's are still to be lost.
         carried: [Vec<u64>; 2],
         lose: usize,
+        // Relay B's silence reports are lost, as from an older relay.
+        untold: bool,
         now: u64,
     }
 
@@ -1035,6 +1233,14 @@ mod tests {
 
         /// A match whose players on unready relays connect but never send Ready.
         fn build(drop_first_copies: bool, ready: [bool; 2]) -> Self {
+            Self::with_agreements(drop_first_copies, ready, [[7; 32]; 2])
+        }
+
+        fn with_agreements(
+            drop_first_copies: bool,
+            ready: [bool; 2],
+            agreements: [[u8; 32]; 2],
+        ) -> Self {
             let keys = [SecretKey::new([11; 32]), SecretKey::new([12; 32])];
             let addresses = [
                 SocketAddrV4::new(Ipv4Addr::new(192, 0, 2, 1), 5000),
@@ -1057,10 +1263,12 @@ mod tests {
                 clients: [client(&keys[0], 0), client(&keys[1], 1)],
                 addresses,
                 links: Vec::new(),
+                link_delay_ms: [LINK_MS; 2],
                 delivered: Vec::new(),
                 drop_first_copies,
                 carried: [Vec::new(), Vec::new()],
                 lose: 0,
+                untold: false,
                 now: 0,
             };
             for relay in 0..2 {
@@ -1068,10 +1276,18 @@ mod tests {
                 game.clients[relay].set_federation(&roster).unwrap();
                 connect(&mut game.relays[relay], &mut game.clients[relay], clock);
                 if ready[relay] {
-                    configure(
+                    let mut bytes = Vec::new();
+                    game.clients[relay]
+                        .configure_ordering(
+                            &certificate(&keys[relay], 3, 2000),
+                            agreements[relay],
+                            &mut bytes,
+                        )
+                        .unwrap();
+                    events(
                         &mut game.relays[relay],
                         &mut game.clients[relay],
-                        &certificate(&keys[relay], 3, 2000),
+                        &bytes,
                         clock,
                     );
                 }
@@ -1106,9 +1322,13 @@ mod tests {
                     }
                     let lost = carries && from == 0 && self.lose > 0;
                     self.lose -= usize::from(lost);
-                    if !(self.drop_first_copies && copied || lost) {
-                        self.links
-                            .push((self.now + LINK_MS, 1 - from, datagram.bytes));
+                    let untold = from == 1 && self.untold && datagram.bytes[29] == SILENCE_KIND;
+                    if !(self.drop_first_copies && copied || lost || untold) {
+                        self.links.push((
+                            self.now + self.link_delay_ms[from],
+                            1 - from,
+                            datagram.bytes,
+                        ));
                     }
                 } else {
                     self.delivered.push(datagram);
@@ -1358,7 +1578,7 @@ mod tests {
             // Both relays seal whole turns from the same anchor.
             for relay in 0..2 {
                 let ordering = game.ordering(relay);
-                let (anchor, _) = ordering.pace.federated_anchor.unwrap_or((0, 0));
+                let (anchor, _) = ordering.pace.anchor.unwrap_or((0, 0));
                 assert_eq!(
                     (ordering.sealed - anchor) % turn_frames(ordering.pace.rate),
                     0,
@@ -1367,10 +1587,7 @@ mod tests {
                 );
             }
         }
-        assert_eq!(
-            game.ordering(0).pace.federated_anchor,
-            game.ordering(1).pace.federated_anchor
-        );
+        assert_eq!(game.ordering(0).pace.anchor, game.ordering(1).pace.anchor);
         assert_eq!(
             [game.ordering(0).pace.rate, game.ordering(1).pace.rate],
             [30, 30]
@@ -1391,6 +1608,25 @@ mod tests {
             .map(|(_, _, entry)| entry.unwrap().1)
             .collect();
         assert_eq!(markers, [30 << 8 | 1], "slowed to 30 for source 1");
+
+        // A shorter return path improves the follower's clock sample. The
+        // history eviction clock must move with its sealing clock.
+        let follower = game.ordering(1);
+        let frame = follower.head;
+        let start = follower.starts_at.unwrap();
+        let due = follower.frame_due_ms(frame);
+        game.link_delay_ms[0] = LINK_MS / 2;
+        for _ in 0..1000 {
+            game.step();
+        }
+        let follower = game.ordering(1);
+        let new_start = follower.starts_at.unwrap();
+        assert_ne!(start, new_start, "the improved sample slewed the clock");
+        assert_eq!(
+            due - start,
+            follower.frame_due_ms(frame) - new_start,
+            "same frame, before and after a clock correction"
+        );
     }
 
     /// Only the coordinator compares checksums: a follower forwards its
@@ -1521,6 +1757,35 @@ mod tests {
     }
 
     #[test]
+    fn a_relay_names_another_relays_silent_player_once_that_relay_reports_it() {
+        let told = |game: &mut Match, relay: usize| {
+            let clock = game.clock(relay);
+            told_silent(&mut game.relays[relay], &mut game.clients[relay], clock)
+        };
+        let mut game = Match::new(false);
+        // Relay B tells A nothing, as an older relay: however long B's
+        // player is silent, A names nobody.
+        game.untold = true;
+        game.play();
+        for _ in 0..SILENT_NOTICE_MS / 1000 + 2 {
+            game.now += 999;
+            game.step();
+        }
+        assert_eq!(told(&mut game, 0), 0);
+        // Once B tells, A names B's silent player until B hears it again.
+        game.untold = false;
+        for _ in 0..SILENCE_FORWARD_MS + LINK_MS {
+            game.step();
+        }
+        assert_eq!(told(&mut game, 0), 0b10);
+        assert_eq!(told(&mut game, 1), 0);
+        for _ in 0..SILENCE_FORWARD_MS + LINK_MS {
+            game.step();
+        }
+        assert_eq!(told(&mut game, 0), 0);
+    }
+
+    #[test]
     fn a_relay_departs_a_silent_relays_players_as_lost_and_plays_on() {
         let mut game = Match::new(false);
         game.play();
@@ -1597,6 +1862,165 @@ mod tests {
         );
         assert_eq!(latency[0], healthy[0]);
         assert_eq!(game.stream(0), game.stream(1));
+    }
+
+    #[test]
+    fn different_federated_start_agreements_refuse_both_players_promptly() {
+        let mut game = Match::with_agreements(false, [true; 2], [[7; 32], [8; 32]]);
+        for _ in 0..400 {
+            game.step();
+        }
+        for relay in 0..2 {
+            let ordering = game.ordering(relay);
+            assert!(ordering.starts_at.is_none() && ordering.finished_at.is_some());
+            assert_eq!(ordering.head, 0, "no gameplay frame may be published");
+            let clock = game.clock(relay);
+            assert!(matches!(
+                pull(&mut game.relays[relay], &mut game.clients[relay], 1, clock).as_slice(),
+                [OrderEvent::Error {
+                    code: OrderError::AgreementMismatch,
+                    ..
+                }]
+            ));
+            let mut bytes = Vec::new();
+            let current = game.clients[relay].ordering.as_ref().unwrap();
+            let (certificate, agreement) = (current.certificate.clone(), current.agreement);
+            game.clients[relay]
+                .configure_ordering(&certificate, agreement, &mut bytes)
+                .unwrap();
+            assert!(matches!(
+                events(
+                    &mut game.relays[relay],
+                    &mut game.clients[relay],
+                    &bytes,
+                    clock
+                )
+                .as_slice(),
+                [OrderEvent::Error {
+                    code: OrderError::AgreementMismatch,
+                    ..
+                }]
+            ));
+            bytes.clear();
+            game.clients[relay]
+                .test_uplink(None, clock, &mut bytes)
+                .unwrap();
+            assert!(matches!(
+                events(
+                    &mut game.relays[relay],
+                    &mut game.clients[relay],
+                    &bytes,
+                    clock
+                )
+                .as_slice(),
+                [OrderEvent::Error {
+                    code: OrderError::AgreementMismatch,
+                    ..
+                }]
+            ));
+        }
+        // Empty journals are reclaimed, but the refusal remains a tombstone.
+        game.step();
+        assert!(game.ordering(0).journal.is_none() && game.ordering(1).journal.is_none());
+    }
+
+    #[test]
+    fn a_late_different_ready_refuses_a_previously_unready_federated_relay() {
+        let mut game = Match::build(false, [true, false]);
+        for _ in 0..400 {
+            game.step();
+        }
+        assert!(game.ordering(0).finished_at.is_none());
+        let clock = game.clock(1);
+        let key = game.relays[1].key.clone();
+        let mut bytes = Vec::new();
+        game.clients[1]
+            .configure_ordering(&certificate(&key, 3, 2000), [8; 32], &mut bytes)
+            .unwrap();
+        events(&mut game.relays[1], &mut game.clients[1], &bytes, clock);
+        for _ in 0..400 {
+            game.step();
+        }
+        for relay in 0..2 {
+            assert!(game.ordering(relay).starts_at.is_none());
+            let clock = game.clock(relay);
+            assert!(matches!(
+                pull(&mut game.relays[relay], &mut game.clients[relay], 1, clock).as_slice(),
+                [OrderEvent::Error {
+                    code: OrderError::AgreementMismatch,
+                    ..
+                }]
+            ));
+        }
+    }
+
+    #[test]
+    fn a_follower_hearing_another_link_version_cancels_the_startup() {
+        // The follower's player has sent Ready, or not yet.
+        for ready in [[true; 2], [true, false]] {
+            let mut game = Match::build(false, ready);
+            // The coordinator's first packet, as a relay one link version on.
+            let clock = game.clock(0);
+            let mut bytes = game.relays[0]
+                .drain_federation(clock, unix(clock))
+                .remove(0)
+                .bytes;
+            bytes[2] += 1;
+            let signed = bytes.len() - MAC_LEN;
+            let federation = game.relays[0].rooms[&[5; 16]].federation.as_ref().unwrap();
+            let tag = federation
+                .link
+                .mac(LINK_DOMAIN, &bytes[..signed])
+                .finalize();
+            bytes[signed..].copy_from_slice(&tag.into_bytes());
+            let clock = game.clock(1);
+            assert_eq!(
+                game.relays[1]
+                    .process_at(game.addresses[0], &bytes, unix(clock), clock)
+                    .map(|_| ()),
+                Err(RelayError::Malformed)
+            );
+            assert!(ready[1] || game.relays[1].rooms[&[5; 16]].ordering_cancelled);
+            for _ in 0..400 {
+                game.step();
+            }
+            for relay in (0..2).filter(|&relay| ready[relay]) {
+                let ordering = game.ordering(relay);
+                assert!(
+                    ordering.starts_at.is_none() && ordering.finished_at.is_some(),
+                    "relay {relay}, ready {ready:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_ready_under_a_roster_homing_other_sources_than_the_certificate_is_refused() {
+        // Relay A homes both sources the certificate signs, B a third.
+        let keys = [SecretKey::new([11; 32]), SecretKey::new([12; 32])];
+        let address = |last| SocketAddrV4::new(Ipv4Addr::new(192, 0, 2, last), 5000);
+        let roster = sign_federation_roster(
+            [5; 16],
+            &[(address(1), 0b011, &keys[0]), (address(2), 0b100, &keys[1])],
+            &SecretKey::new([9; 32]),
+        )
+        .unwrap();
+        let mut relay = RelayServer::new(keys[0].clone(), 2);
+        let mut player = client(&keys[0], 0);
+        player.set_federation(&roster).unwrap();
+        connect(&mut relay, &mut player, 0);
+        let mut bytes = Vec::new();
+        player
+            .configure_ordering(&certificate(&keys[0], 0b011, 2000), [7; 32], &mut bytes)
+            .unwrap();
+        assert!(matches!(
+            events(&mut relay, &mut player, &bytes, 0).as_slice(),
+            [OrderEvent::Error {
+                code: OrderError::AgreementMismatch,
+                ..
+            }]
+        ));
+        assert!(relay.rooms[&[5; 16]].ordering.is_none());
     }
 
     #[test]

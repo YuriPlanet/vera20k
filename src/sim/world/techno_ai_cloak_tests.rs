@@ -1299,3 +1299,104 @@ fn a_cloak_granted_building_fades_out_and_a_sensor_beside_it_brings_it_back() {
     assert_eq!(visit(&mut sim), (0, 0, 0), "the sensor blocks a new cloak");
     assert_eq!(sim.sound_events.len(), sounds + 1);
 }
+
+/// Unlimbo `0x00440E99..0x00440F5B` builds `NaturalParticleSystem=` at
+/// Location plus `NaturalParticleLocation=` with no owner; UpdateCloak
+/// deletes it as the fade-out ends (`0x00454E7F..0x00454E9E`) and builds it
+/// again as the fade-in ends (`0x00454F72..0x0045500C`).
+#[test]
+fn a_natural_particle_system_goes_with_the_cloak_and_comes_back_with_it() {
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(
+            "[General]\nCloakingStages=9\n\
+             [VehicleTypes]\n0=DEST\n[BuildingTypes]\n0=GAPOWR\n\
+             [DEST]\nStrength=600\nSpeed=6\nSensors=yes\nSensorsSight=8\n\
+             [GAPOWR]\nStrength=750\nNaturalParticleSystem=Sys\n\
+             NaturalParticleLocation=10,20,30\n\
+             [Particles]\n0=Smk\n[Smk]\nBehavesLike=Smoke\nMaxEC=10\n\
+             [ParticleSystems]\n0=Sys\n[Sys]\nBehavesLike=Smoke\nHoldsWhat=Smk\n",
+        ),
+        &IniFile::from_str("[GAPOWR]\nFoundation=2x2\n"),
+    )
+    .expect("natural system rules");
+    let mut sim = Simulation::with_seed(0xC10A_C001);
+    sim.fog.set_width_for_test(64);
+    sim.fog.set_height_for_test(64);
+    sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
+        64, 2, 2, 56, 52,
+    ));
+    sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_retail_clear_grid(
+        64, 64,
+    ));
+    let bounds = sim.playfield_bounds.unwrap();
+    let (rx, ry) = (8u16..56)
+        .flat_map(|ry| (8u16..56).map(move |rx| (rx, ry)))
+        .find(|&(rx, ry)| bounds.contains_height_aware_packed(rx.into(), ry.into(), 0, 0))
+        .expect("interior mode-one cell");
+    let id = sim
+        .spawn_object_at_height("GAPOWR", "Soviet", rx, ry, 0, 0, &rules)
+        .unwrap();
+    let natural = |sim: &Simulation| {
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .building
+            .natural_particle_system
+            .system()
+    };
+    let first = natural(&sim).expect("Unlimbo builds the system");
+    let location = crate::sim::movement::ground_pose::position_world_coord(
+        &sim.substrate.entities.get(id).unwrap().position,
+    );
+    let expected = glam::IVec3::new(location.x + 10, location.y + 20, location.z + 30);
+    let sys = sim.particle_systems().get(first).unwrap();
+    assert_eq!((sys.coords(), sys.owner_entity()), (expected, None));
+
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .stealth_ability
+        .grant();
+    let visit = |sim: &mut Simulation| {
+        tick_stock_cloak_producer(
+            sim,
+            id,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .cloak
+            .as_ref()
+            .unwrap()
+            .state()
+    };
+    for _ in 0..15 {
+        visit(&mut sim);
+        assert_eq!(natural(&sim), Some(first));
+    }
+    assert_eq!(visit(&mut sim), 2);
+    assert_eq!(natural(&sim), None);
+    assert!(
+        sim.particle_systems().get(first).is_none(),
+        "deleted at once"
+    );
+
+    sim.spawn_object_at_height("DEST", "Americans", rx + 2, ry + 1, 0, 0, &rules)
+        .unwrap();
+    for _ in 0..16 {
+        visit(&mut sim);
+    }
+    assert_eq!(visit(&mut sim), 0);
+    let again = natural(&sim).expect("the fade-in builds it again");
+    assert_ne!(again, first);
+    assert_eq!(
+        sim.particle_systems().get(again).unwrap().coords(),
+        expected
+    );
+}

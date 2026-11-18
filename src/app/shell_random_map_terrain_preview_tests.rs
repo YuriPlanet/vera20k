@@ -43,7 +43,7 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
         prepared.settings,
         prepared.resolved_inputs,
         prepared.blocks,
-        RandomMapObjects::tech(prepared.tech_types),
+        RandomMapObjects::tech(prepared.tech_types, prepared.ares),
         crate::map::resolved_terrain::SharedCellDummy::fresh(),
         decision,
     )
@@ -182,7 +182,7 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
     let preview = crate::map::rmg::preview::render_preview(&final_colors, &[]).unwrap();
     let directory = crate::map::source::test_support::TestDirectory::new("terrain-preview");
     let mut modal = Some(crate::ui::skirmish_shell::RandomMapSetupModalState::open(
-        options, None, false, true,
+        options, None, false,
     ));
     modal
         .as_mut()
@@ -194,7 +194,7 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
         Some(directory.path()),
     );
     let pcx = crate::assets::pcx_file::PcxFile::from_bytes(
-        &std::fs::read(directory.path().join(RANDMAP_PREVIEW_FILE)).unwrap(),
+        &std::fs::read(directory.path().join(RANDMAP_PREVIEW)).unwrap(),
     )
     .unwrap();
     let rgb: Vec<_> = preview

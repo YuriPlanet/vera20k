@@ -165,15 +165,7 @@ fn retail_mtnk_body_light_follows_bridge_arrival_and_ground_side_cell() {
     let id = {
         let rt = &mut scene.runtime;
         rt.simulation
-            .spawn_object_with_overlay_registry(
-                "MTNK",
-                &owner_name,
-                75,
-                75,
-                0,
-                &rt.resources.rules,
-                &rt.resources.overlay_registry,
-            )
+            .spawn_object_with_map_overlays("MTNK", &owner_name, 75, 75, 0, &rt.resources.rules)
             .unwrap()
     };
     sample(&scene, id, &cases[0]);
@@ -204,15 +196,7 @@ fn retail_mtnk_body_light_follows_bridge_arrival_and_ground_side_cell() {
     let side = {
         let rt = &mut scene.runtime;
         rt.simulation
-            .spawn_object_with_overlay_registry(
-                "MTNK",
-                &owner_name,
-                78,
-                76,
-                0,
-                &rt.resources.rules,
-                &rt.resources.overlay_registry,
-            )
+            .spawn_object_with_map_overlays("MTNK", &owner_name, 78, 76, 0, &rt.resources.rules)
             .unwrap()
     };
     sample(&scene, side, &cases[2]);
@@ -220,9 +204,9 @@ fn retail_mtnk_body_light_follows_bridge_arrival_and_ground_side_cell() {
 
 /// Ares UnitClass_DrawVXL_Deactivated1004CEA0 (hook73C143): the dim factors
 /// replace the stock halving, EMP first, then the operator test.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_deactivate_dims_replace_the_stock_unit_halving() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n0=TANK\n1=ROBO\n[ROBO]\nOperator=_ANY_\n\
          [AudioVisual]\nDeactivateDimPowered=.25\n",

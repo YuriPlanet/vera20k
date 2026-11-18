@@ -108,12 +108,9 @@ same build as `tools/rules_oracle/ares_side_sidebar.py`):
 - A custom `AI.BaseDefenseCounts` vector shorter than the difficulty row is
   rejected by preflight as a missing difficulty; the native read past the
   vector is undefined data.
-- **Canopy layers.** The Ares canopy hook (`0x5F5ADD` -> `0x10047C80`)
-  takes the dropped type's own `Parachute.Anim`, then the Country's, before
-  the Side's. VERA reads the Country and Side layers but not the type key.
-- The Ares save layout gained the new fields; saves made before this change
-  do not load in Ares builds.
-- With Ares and NPatch compiled together, `Parachute.Anim` takes precedence
+- Saves hold the new fields; a save from an older build with the retired
+  `ares` feature does not load.
+- With Ares playing and NPatch compiled in, `Parachute.Anim` takes precedence
   over NPSE `VehicleParachute=` and the stock canopy. The installed DLL's
   hook order at the shared `0x5F5ADD` site is not separately proven.
 - The fourth side's sidebar geometry uses the existing nonzero (Soviet)

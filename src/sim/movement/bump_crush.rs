@@ -166,7 +166,7 @@ pub(crate) fn blocker_plane_source(
     if entity.death.is_dying() || !entity.lifecycle.cell_marked() {
         return None;
     }
-    if entity.passenger_role.is_inside_transport()
+    if entity.passenger_role().is_inside_transport()
         || crate::sim::occupancy::cell_list_layer_for_entity(entity, terrain).is_none()
     {
         return None;

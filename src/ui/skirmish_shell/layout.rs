@@ -1,5 +1,7 @@
 //! Dialog 0x102 shell layout recovered from gamemd.exe.
 
+use super::scroll::ScrollModel;
+use super::state::DropdownScrollbarPart;
 use crate::ui::shell::descriptor::{AnchorRule, LOW_HEADING_ANCHOR, MAP_TEXT_ANCHOR};
 pub use crate::ui::shell::geom::{RectPx, RightPanelRects};
 use crate::ui::shell::geom::{
@@ -251,14 +253,12 @@ pub struct SkirmishShellLayout {
     pub right_panel: RightPanelRects,
     pub right_panel_text: SkirmishRightPanelTextRects,
     pub start_button: RectPx,
+    /// gamemd's Choose Map (`0x5AA`), one tile down where VERA's Game Options
+    /// takes its tile.
     pub choose_map_button: RectPx,
-    /// VERA's Save Setup and Load Setup, on the two empty tiles under Choose
-    /// Map; gamemd's `0x102` has no such buttons.
-    pub save_setup_button: RectPx,
-    pub load_setup_button: RectPx,
-    /// VERA's Team Starts, on the tile under Load Setup where the panel has
-    /// one above Back; an empty rect where it has none (640x480).
-    pub team_starts_button: RectPx,
+    /// VERA's Game Options ([`super::game_options`]), on gamemd's Choose Map
+    /// tile under Start Game.
+    pub game_options_button: RectPx,
     pub back_button: RectPx,
     pub map_preview: RectPx,
     pub column_labels: SkirmishColumnLabelRects,
@@ -342,11 +342,24 @@ pub enum AdvancedField {
     /// Mountainous map types keep before cutting it into levels with cliffs.
     PlateauSize,
     Accessibility,
+    /// VERA extension (Advanced page 2): neutral tech-building amount.
+    TechBuildings,
+    /// VERA extension (Advanced page 2): derelict combat buildings amount.
+    Derelicts,
+    /// VERA extension (Advanced page 2): whole-map building damage level.
+    Damage,
+    /// VERA extension: extra civilian infantry and vehicles on Neutral.
+    Civilians,
+    /// VERA extension: `Name=Animal …` units on Neutral.
+    Animals,
+    /// VERA extension: player-buildable units left neutral and hostile.
+    Wild,
 }
 
 impl AdvancedField {
-    /// Row order in the Advanced view.
-    pub const ALL: [Self; 7] = [
+    /// Row order in the Advanced view: the original seven, then VERA's
+    /// sliders on the following pages.
+    pub const ALL: [Self; 13] = [
         Self::Water,
         Self::Hills,
         Self::Buildings,
@@ -354,10 +367,102 @@ impl AdvancedField {
         Self::OreFields,
         Self::PlateauSize,
         Self::Accessibility,
+        Self::TechBuildings,
+        Self::Derelicts,
+        Self::Damage,
+        Self::Civilians,
+        Self::Animals,
+        Self::Wild,
     ];
+
+    /// Sliders on a page. The dialog has room for the original seven rows.
+    pub const PAGE_SIZE: usize = 7;
+    pub const PAGE_COUNT: usize = 2;
 
     pub const fn row(self) -> usize {
         self as usize
+    }
+
+    /// The page this slider is on: the original seven first, then VERA's.
+    pub const fn page(self) -> usize {
+        self.row() / Self::PAGE_SIZE
+    }
+
+    /// The row within the page, used to index the seven dialog control rects.
+    pub const fn page_row(self) -> usize {
+        self.row() % Self::PAGE_SIZE
+    }
+
+    /// The Advanced view's native vertical scrollbar, to the right of the
+    /// reusable slider windows. Its span is exactly the sliders' span, so it
+    /// stays aligned at every page scale.
+    pub fn advanced_scrollbar_rect(layout: &RandomMapSetupLayout) -> RectPx {
+        let first = layout.advanced_control_rects[0];
+        let last = layout.advanced_control_rects[Self::PAGE_SIZE - 1];
+        RectPx::new(
+            first.x + first.w + 4,
+            first.y,
+            DropdownMetrics::scaled(layout.scale).scrollbar_w,
+            last.y + last.h - first.y,
+        )
+    }
+
+    /// The same scrollbar geometry the combo dropdowns use, with the seven
+    /// visible Advanced rows as its page size.
+    pub fn advanced_scrollbar_model(scale: ShellScale) -> ScrollModel {
+        ScrollModel::combo_at(Self::PAGE_SIZE as i32, DropdownMetrics::scaled(scale))
+    }
+
+    /// Thumb position for a scroll offset clamped to the available pages.
+    pub fn advanced_scrollbar_thumb(layout: &RandomMapSetupLayout, page: usize) -> RectPx {
+        let bar = Self::advanced_scrollbar_rect(layout);
+        let model = Self::advanced_scrollbar_model(layout.scale);
+        let thumb_h = model.thumb_height(Self::PAGE_SIZE, Self::ALL.len(), bar.h);
+        let top = page.min(Self::PAGE_COUNT - 1);
+        let thumb_y = model.thumb_y(bar, thumb_h, top, Self::PAGE_COUNT - 1);
+        RectPx::new(bar.x, thumb_y, bar.w, thumb_h)
+    }
+
+    /// Which part of the Advanced scrollbar a point is over.
+    pub fn advanced_scrollbar_part_at(
+        layout: &RandomMapSetupLayout,
+        page: usize,
+        x: i32,
+        y: i32,
+    ) -> Option<DropdownScrollbarPart> {
+        let bar = Self::advanced_scrollbar_rect(layout);
+        if !bar.contains(x, y) {
+            return None;
+        }
+        let button_h = DropdownMetrics::scaled(layout.scale).button_h;
+        if y < bar.y + button_h {
+            return Some(DropdownScrollbarPart::UpArrow);
+        }
+        if y >= bar.y + bar.h - button_h {
+            return Some(DropdownScrollbarPart::DownArrow);
+        }
+        let thumb = Self::advanced_scrollbar_thumb(layout, page);
+        Some(if thumb.contains(x, y) {
+            DropdownScrollbarPart::Thumb
+        } else {
+            DropdownScrollbarPart::Track
+        })
+    }
+
+    /// Scroll offset a track press or thumb drag maps to.
+    pub fn advanced_scrollbar_page_at_pointer(
+        layout: &RandomMapSetupLayout,
+        page: usize,
+        y: i32,
+    ) -> usize {
+        let bar = Self::advanced_scrollbar_rect(layout);
+        let thumb = Self::advanced_scrollbar_thumb(layout, page);
+        Self::advanced_scrollbar_model(layout.scale).top_index_at_pointer(
+            bar,
+            thumb.h,
+            Self::PAGE_COUNT - 1,
+            y,
+        )
     }
 
     /// The row label: the string table's own names where it has one.
@@ -370,6 +475,12 @@ impl AdvancedField {
             Self::OreFields => ("GUI:TiberiumFields", "Ore Fields"),
             Self::PlateauSize => ("VERA:RandomMapPlateauSize", "Plateau Size"),
             Self::Accessibility => ("GUI:Accessability", "Accessibility"),
+            Self::TechBuildings => ("VERA:RandomMapTechBuildings", "Tech Buildings"),
+            Self::Derelicts => ("VERA:RandomMapDerelicts", "Derelicts"),
+            Self::Damage => ("VERA:RandomMapDamage", "Damage"),
+            Self::Civilians => ("VERA:RandomMapCivilians", "Civilians"),
+            Self::Animals => ("VERA:RandomMapAnimals", "Animals"),
+            Self::Wild => ("VERA:RandomMapWild", "Neutral Defenders"),
         }
     }
 }
@@ -391,21 +502,23 @@ pub enum RandomMapSetupControl {
     Delete0x6c4,
     Cancel0x5c0,
     /// VERA: switches the option rows between the original controls and
-    /// the Advanced sliders (offline Skirmish only).
+    /// the Advanced sliders.
     AdvancedToggle,
     /// VERA: one of the Advanced view's sliders.
     Advanced(AdvancedField),
-    /// VERA: writes the generated map as a `.yrm` file (offline Skirmish
-    /// only).
+    /// VERA: the vertical scrollbar that pages the Advanced sliders.
+    AdvancedScrollbar,
+    /// VERA: writes the generated map as a `.yrm` file.
     ExportMap,
-    /// VERA: turns Fair Starts on or off (offline Skirmish only).
+    /// VERA: turns Fair Starts on or off.
     FairStartsToggle,
-    /// VERA: applies the next ready-made option set (offline Skirmish only).
+    /// VERA: applies the next ready-made option set.
     PresetCycle,
     /// VERA: a row of the Extras view, top down from 0.
     ExtrasRow(usize),
     /// Ares' Urban Areas box (`ARES_CHK_RMG_URBAN_AREAS`, Ares' dialog 261).
-    #[cfg(feature = "ares")]
+    /// Hit-tested only when Ares.dll is loaded (the game is read the Ares
+    /// way).
     UrbanAreas5000,
 }
 
@@ -489,8 +602,8 @@ pub struct RandomMapSetupLayout {
     pub progress_text: RectPx,
     pub progress_bar: RectPx,
     /// Ares' Urban Areas checkbox: `177, 192, 150, 14` in Ares' dialog 261
-    /// (RMGDialog.rc), which keeps every stock control's position.
-    #[cfg(feature = "ares")]
+    /// (RMGDialog.rc), which keeps every stock control's position. Drawn and
+    /// hit-tested only when Ares.dll is loaded (the game is read the Ares way).
     pub urban_areas: RectPx,
 }
 
@@ -524,9 +637,7 @@ pub fn translate_layout(mut layout: SkirmishShellLayout, dx: i32, dy: i32) -> Sk
     layout.right_panel_text.map_label = layout.right_panel_text.map_label.translate(dx, dy);
     layout.start_button = layout.start_button.translate(dx, dy);
     layout.choose_map_button = layout.choose_map_button.translate(dx, dy);
-    layout.save_setup_button = layout.save_setup_button.translate(dx, dy);
-    layout.load_setup_button = layout.load_setup_button.translate(dx, dy);
-    layout.team_starts_button = layout.team_starts_button.translate(dx, dy);
+    layout.game_options_button = layout.game_options_button.translate(dx, dy);
     layout.back_button = layout.back_button.translate(dx, dy);
     layout.map_preview = layout.map_preview.translate(dx, dy);
     layout.column_labels.players = layout.column_labels.players.translate(dx, dy);
@@ -732,7 +843,7 @@ pub fn compute_layout_for_rows(
     let start_base = dlu_rect(425, 149, 108, 23);
     let choose_base = dlu_rect(425, 176, 108, 23);
     let panel = right_panel_rects(screen_w, screen_h);
-    let choose_map_button =
+    let choose_map_tile =
         snap_button_biased_truncate(screen_w, screen_h, choose_base, panel, SDBTNANM_W);
     // The executed relayout places them at (635, 3, 163, 17), (650, 167, 136,
     // 17) and (650, 189, 136, 34) at 800x600.
@@ -768,12 +879,12 @@ pub fn compute_layout_for_rows(
     };
     let opponent_scrollbar = opponent_scrollbar_rect(&rows, SKIRMISH_ROW_COUNT);
     let back_button = back_rect(screen_w, panel);
-    let team_starts_tile = choose_map_button.translate(0, 3 * SDBTNBKGD_H);
-    let team_starts_button = if team_starts_tile.y + team_starts_tile.h <= back_button.y {
-        team_starts_tile
-    } else {
-        RectPx::new(0, 0, 0, 0)
-    };
+    // Not retail. VERA's Game Options takes gamemd's Choose Map tile, under
+    // Start Game, and Choose Map moves one tile down. Every panel has that
+    // tile free above Back, the six-tile one of the smallest window (640x480)
+    // too.
+    let game_options_button = choose_map_tile;
+    let choose_map_button = choose_map_tile.translate(0, SDBTNBKGD_H);
 
     SkirmishShellLayout {
         scale: ShellScale::RETAIL,
@@ -784,10 +895,7 @@ pub fn compute_layout_for_rows(
             screen_w, screen_h, start_base, panel, SDBTNANM_W,
         ),
         choose_map_button,
-        // Every panel keeps them above Back: it has six tiles at 640x480.
-        save_setup_button: choose_map_button.translate(0, SDBTNBKGD_H),
-        load_setup_button: choose_map_button.translate(0, 2 * SDBTNBKGD_H),
-        team_starts_button,
+        game_options_button,
         back_button,
         map_preview: right_static(
             AnchorRule::RightAnchor,
@@ -1093,7 +1201,6 @@ pub fn compute_random_map_setup_layout(screen_w: u32, screen_h: u32) -> RandomMa
         ),
         progress_text: dlu_rect(ptext_x, ptext_y, ptext_w, ptext_h),
         progress_bar: dlu_rect(pbar_x, pbar_y, pbar_w, pbar_h),
-        #[cfg(feature = "ares")]
         urban_areas: checkbox_dlu_rect(177, 192, 150, 14),
     }
 }
@@ -1101,11 +1208,13 @@ pub fn compute_random_map_setup_layout(screen_w: u32, screen_h: u32) -> RandomMa
 /// Topmost interactive control at `(x, y)`, or `None`.
 ///
 /// Tested in draw order: the option rows first, then the action row, then the
-/// right column — matching `choose_map_modal_button_at`.
+/// right column — matching `choose_map_modal_button_at`. `ares`: Ares.dll is
+/// loaded (the game is read the Ares way), which adds its Urban Areas box.
 pub fn random_map_setup_control_at(
     layout: &RandomMapSetupLayout,
     x: i32,
     y: i32,
+    ares: bool,
 ) -> Option<RandomMapSetupControl> {
     const ROW_CONTROLS: [RandomMapSetupControl; 6] = [
         RandomMapSetupControl::MapType0x405,
@@ -1141,72 +1250,80 @@ pub fn random_map_setup_control_at(
         .iter()
         .find(|(rect, _)| rect.contains(x, y))
         .map(|(_, control)| *control);
-    #[cfg(feature = "ares")]
-    let control = control.or_else(|| {
-        layout
-            .urban_areas
-            .contains(x, y)
-            .then_some(RandomMapSetupControl::UrbanAreas5000)
-    });
-    control
+    if ares {
+        control.or_else(|| {
+            layout
+                .urban_areas
+                .contains(x, y)
+                .then_some(RandomMapSetupControl::UrbanAreas5000)
+        })
+    } else {
+        control
+    }
 }
 
-/// [`random_map_setup_control_at`] for a dialog that may show the Advanced
-/// view (VERA): there the sliders take the option rows, and an `extended`
-/// dialog also has the Advanced/Basic toggle. With `extras` the Advanced
-/// rows are the Extras view's, by row.
+/// [`random_map_setup_control_at`] with VERA's buttons, for a dialog that may
+/// show the Advanced view: there the sliders take the option rows. With
+/// `extras` the Advanced rows are the Extras view's, by row.
 pub fn random_map_setup_control_at_view(
     layout: &RandomMapSetupLayout,
     x: i32,
     y: i32,
-    extended: bool,
     advanced: bool,
     extras: bool,
+    ares: bool,
+    advanced_page: usize,
 ) -> Option<RandomMapSetupControl> {
-    if extended && layout.advanced.contains(x, y) {
+    if layout.advanced.contains(x, y) {
         return Some(RandomMapSetupControl::AdvancedToggle);
     }
-    if extended && layout.export.contains(x, y) {
+    if layout.export.contains(x, y) {
         return Some(RandomMapSetupControl::ExportMap);
     }
-    if extended && layout.fair_starts.contains(x, y) {
+    if layout.fair_starts.contains(x, y) {
         return Some(RandomMapSetupControl::FairStartsToggle);
     }
-    if extended && layout.preset.contains(x, y) {
+    if layout.preset.contains(x, y) {
         return Some(RandomMapSetupControl::PresetCycle);
     }
     if !advanced {
-        return random_map_setup_control_at(layout, x, y);
+        return random_map_setup_control_at(layout, x, y, ares);
     }
-    if let Some(field) = AdvancedField::ALL
-        .into_iter()
-        .find(|field| layout.advanced_control_rects[field.row()].contains(x, y))
-    {
-        return Some(if extras {
-            RandomMapSetupControl::ExtrasRow(field.row())
-        } else {
-            RandomMapSetupControl::Advanced(field)
-        });
+    // VERA: the scrollbar belongs only to the Advanced sliders; the Extras
+    // view has its own paging row and keeps the same physical area.
+    if !extras && AdvancedField::advanced_scrollbar_rect(layout).contains(x, y) {
+        return Some(RandomMapSetupControl::AdvancedScrollbar);
+    }
+    if extras {
+        // The Extras view owns its own paging; a row is the seven reusable
+        // slider windows, so hit-test by raw row as before.
+        if let Some(field) = AdvancedField::ALL
+            .into_iter()
+            .take(AdvancedField::PAGE_SIZE)
+            .find(|field| layout.advanced_control_rects[field.row()].contains(x, y))
+        {
+            return Some(RandomMapSetupControl::ExtrasRow(field.row()));
+        }
+    } else if let Some(field) = AdvancedField::ALL.into_iter().find(|field| {
+        field.page() == advanced_page
+            && layout.advanced_control_rects[field.page_row()].contains(x, y)
+    }) {
+        return Some(RandomMapSetupControl::Advanced(field));
     }
     // Everything but the option rows hit-tests as in the basic view; Ares'
     // Urban Areas box sits under the seventh slider and is basic-only.
-    random_map_setup_control_at(layout, x, y).filter(|control| {
+    random_map_setup_control_at(layout, x, y, ares).filter(|control| {
         SETUP_BASIC_ROW_CONTROLS
             .iter()
             .all(|row_control| row_control != control)
-            && !is_ares_urban_areas_box(*control)
+            && !is_ares_urban_areas_box(*control, ares)
     })
 }
 
-/// Ares' Urban Areas box, which only the basic view shows.
-fn is_ares_urban_areas_box(control: RandomMapSetupControl) -> bool {
-    #[cfg(feature = "ares")]
-    return control == RandomMapSetupControl::UrbanAreas5000;
-    #[cfg(not(feature = "ares"))]
-    {
-        let _ = control;
-        false
-    }
+/// Ares' Urban Areas box, which only the basic view shows, when Ares.dll is
+/// loaded (the game is read the Ares way).
+fn is_ares_urban_areas_box(control: RandomMapSetupControl, ares: bool) -> bool {
+    ares && control == RandomMapSetupControl::UrbanAreas5000
 }
 
 const SETUP_BASIC_ROW_CONTROLS: [RandomMapSetupControl; 6] = [
@@ -1477,9 +1594,7 @@ impl ScaledRects for SkirmishShellLayout {
             right_panel_text: self.right_panel_text.scaled_rects(scale),
             start_button: self.start_button.scaled_rects(scale),
             choose_map_button: self.choose_map_button.scaled_rects(scale),
-            save_setup_button: self.save_setup_button.scaled_rects(scale),
-            load_setup_button: self.load_setup_button.scaled_rects(scale),
-            team_starts_button: self.team_starts_button.scaled_rects(scale),
+            game_options_button: self.game_options_button.scaled_rects(scale),
             back_button: self.back_button.scaled_rects(scale),
             map_preview: self.map_preview.scaled_rects(scale),
             column_labels: self.column_labels.scaled_rects(scale),
@@ -1548,7 +1663,6 @@ impl ScaledRects for RandomMapSetupLayout {
             status_help: self.status_help.scaled_rects(scale),
             progress_text: self.progress_text.scaled_rects(scale),
             progress_bar: self.progress_bar.scaled_rects(scale),
-            #[cfg(feature = "ares")]
             urban_areas: self.urban_areas.scaled_rects(scale),
         }
     }
@@ -1595,7 +1709,8 @@ pub fn compute_layout_on(scale: ShellScale, screen_w: u32, screen_h: u32) -> Ski
     if scale.is_retail() {
         compute_layout(screen_w, screen_h)
     } else {
-        compute_responsive_layout(screen_w, screen_h)
+        compute_layout_for_rows(SHELL_BASE_W as u32, SHELL_BASE_H as u32, SKIRMISH_ROW_COUNT)
+            .scaled_rects(scale)
     }
 }
 
@@ -1703,7 +1818,10 @@ mod tests {
     fn key_rects_match_800x600() {
         let layout = compute_layout(800, 600);
         assert_eq!(layout.start_button, RectPx::new(644, 241, 156, 42));
-        assert_eq!(layout.choose_map_button, RectPx::new(644, 283, 156, 42));
+        // VERA's Game Options takes gamemd's Choose Map tile; Choose Map
+        // moves one down.
+        assert_eq!(layout.game_options_button, RectPx::new(644, 283, 156, 42));
+        assert_eq!(layout.choose_map_button, RectPx::new(644, 325, 156, 42));
         assert_eq!(layout.map_preview, RectPx::new(644, 37, 144, 112));
         assert_eq!(layout.back_button, RectPx::new(644, 535, 156, 42));
     }
@@ -1714,7 +1832,8 @@ mod tests {
 
         assert_eq!(layout.screen, RectPx::new(112, 84, 800, 600));
         assert_eq!(layout.start_button, RectPx::new(756, 325, 156, 42));
-        assert_eq!(layout.choose_map_button, RectPx::new(756, 367, 156, 42));
+        assert_eq!(layout.game_options_button, RectPx::new(756, 367, 156, 42));
+        assert_eq!(layout.choose_map_button, RectPx::new(756, 409, 156, 42));
         assert_eq!(layout.map_preview, RectPx::new(756, 121, 144, 112));
         assert_eq!(layout.back_button, RectPx::new(756, 619, 156, 42));
         assert_eq!(layout.column_labels.players, RectPx::new(171, 118, 146, 16));
@@ -1728,19 +1847,10 @@ mod tests {
     fn key_rects_match_640x480_formula() {
         let layout = compute_layout(640, 480);
         assert_eq!(layout.start_button, RectPx::new(484, 241, 156, 42));
-        assert_eq!(layout.choose_map_button, RectPx::new(484, 283, 156, 42));
-        // VERA's Save Setup and Load Setup fill the two tiles above Back.
-        assert_eq!(layout.save_setup_button, RectPx::new(484, 325, 156, 42));
-        assert_eq!(layout.load_setup_button, RectPx::new(484, 367, 156, 42));
-        // Back takes the next tile at 640x480, so Team Starts has none there;
-        // at 800x600 it sits between Load Setup and Back.
-        assert_eq!(layout.team_starts_button.w, 0);
-        let roomy = compute_layout(800, 600);
-        assert_eq!(
-            roomy.team_starts_button.y,
-            roomy.load_setup_button.y + roomy.load_setup_button.h
-        );
-        assert!(roomy.team_starts_button.y + roomy.team_starts_button.h <= roomy.back_button.y);
+        // VERA's Game Options takes gamemd's Choose Map tile; Choose Map
+        // moves one down.
+        assert_eq!(layout.game_options_button, RectPx::new(484, 283, 156, 42));
+        assert_eq!(layout.choose_map_button, RectPx::new(484, 325, 156, 42));
         assert_eq!(layout.map_preview, RectPx::new(484, 37, 144, 112));
         assert_eq!(layout.back_button, RectPx::new(484, 409, 156, 42));
     }
@@ -1815,6 +1925,29 @@ mod tests {
         assert!(options_bottom < thirty.status_help.y);
     }
 
+    /// VERA's Game Options sits second in every panel, under Start Game, with
+    /// Choose Map a tile under it and above Back: on the smallest window,
+    /// 640x480, and on a page grown to thirteen rows.
+    #[test]
+    fn game_options_sits_second_in_every_panel() {
+        use super::{SDBTNBKGD_H, compute_layout_for_rows};
+        for layout in [
+            compute_layout(640, 480),
+            compute_layout_for_rows(800, 600, 30),
+        ] {
+            let column = [
+                layout.start_button,
+                layout.game_options_button,
+                layout.choose_map_button,
+            ];
+            for pair in column.windows(2) {
+                assert_eq!(pair[1], pair[0].translate(0, SDBTNBKGD_H));
+            }
+            let choose = layout.choose_map_button;
+            assert!(choose.y + choose.h <= layout.back_button.y);
+        }
+    }
+
     #[test]
     fn row_combo_rects_match_800x600_resource_geometry() {
         let layout = compute_layout(800, 600);
@@ -1871,28 +2004,56 @@ mod tests {
         let water = sliders[AdvancedField::Water.row()];
         let (cx, cy) = (water.x + water.w / 2, water.y + water.h / 2);
         assert_eq!(
-            random_map_setup_control_at_view(&setup, cx, cy, true, true, false),
+            random_map_setup_control_at_view(&setup, cx, cy, true, false, false, 0),
             Some(RandomMapSetupControl::Advanced(AdvancedField::Water))
         );
         assert_eq!(
-            random_map_setup_control_at_view(&setup, cx, cy, true, true, true),
+            random_map_setup_control_at_view(&setup, cx, cy, true, true, false, 0),
             Some(RandomMapSetupControl::ExtrasRow(AdvancedField::Water.row())),
             "the Extras view takes the sliders' rows"
         );
         assert_eq!(
-            random_map_setup_control_at_view(&setup, cx, cy, true, false, false),
+            random_map_setup_control_at_view(&setup, cx, cy, false, false, false, 0),
             Some(RandomMapSetupControl::MapType0x405),
             "the basic view keeps the original rows"
         );
         let toggle = (setup.advanced.x + 4, setup.advanced.y + 4);
         assert_eq!(
-            random_map_setup_control_at_view(&setup, toggle.0, toggle.1, true, false, false),
+            random_map_setup_control_at_view(&setup, toggle.0, toggle.1, false, false, false, 0),
             Some(RandomMapSetupControl::AdvancedToggle)
         );
+    }
+
+    /// VERA: the Advanced scrollbar sits beside the sliders, its thumb moves
+    /// between the two seven-row windows, and the Extras view keeps its rows.
+    #[test]
+    fn advanced_scrollbar_sits_beside_the_sliders_and_maps_to_pages() {
+        use super::DropdownScrollbarPart;
+        let setup = compute_random_map_setup_layout(800, 600);
+        let bar = AdvancedField::advanced_scrollbar_rect(&setup);
+        let sliders = setup.advanced_control_rects;
+        assert!(bar.x > sliders[0].x + sliders[0].w);
+        assert_eq!(bar.y, sliders[0].y);
+        assert_eq!(bar.y + bar.h, sliders[6].y + sliders[6].h);
+        let top = AdvancedField::advanced_scrollbar_thumb(&setup, 0);
+        let bottom = AdvancedField::advanced_scrollbar_thumb(&setup, 1);
+        assert!(top.y < bottom.y, "the thumb travels with the page");
+        let (px, py) = (bar.x + bar.w / 2, bar.y + bar.h / 2);
         assert_eq!(
-            random_map_setup_control_at_view(&setup, toggle.0, toggle.1, false, false, false),
-            None,
-            "network dialogs have no toggle"
+            random_map_setup_control_at_view(&setup, px, py, true, false, false, 0),
+            Some(RandomMapSetupControl::AdvancedScrollbar)
+        );
+        assert_eq!(
+            AdvancedField::advanced_scrollbar_part_at(&setup, 0, px, bar.y + 2),
+            Some(DropdownScrollbarPart::UpArrow)
+        );
+        assert_eq!(
+            AdvancedField::advanced_scrollbar_part_at(&setup, 0, px, bar.y + bar.h - 2),
+            Some(DropdownScrollbarPart::DownArrow)
+        );
+        assert_eq!(
+            AdvancedField::advanced_scrollbar_page_at_pointer(&setup, 0, bar.y + bar.h - 2),
+            1
         );
     }
 
@@ -1934,25 +2095,25 @@ mod tests {
 
         let (x, y) = centre(setup.control_rects[0]);
         assert_eq!(
-            random_map_setup_control_at(&setup, x, y),
+            random_map_setup_control_at(&setup, x, y, false),
             Some(RandomMapSetupControl::MapType0x405)
         );
         let (x, y) = centre(setup.control_rects[5]);
         assert_eq!(
-            random_map_setup_control_at(&setup, x, y),
+            random_map_setup_control_at(&setup, x, y, false),
             Some(RandomMapSetupControl::Players0x3eb)
         );
         let (x, y) = centre(setup.randomize);
         assert_eq!(
-            random_map_setup_control_at(&setup, x, y),
+            random_map_setup_control_at(&setup, x, y, false),
             Some(RandomMapSetupControl::Randomize0x621)
         );
         let (x, y) = centre(setup.generate);
         assert_eq!(
-            random_map_setup_control_at(&setup, x, y),
+            random_map_setup_control_at(&setup, x, y, false),
             Some(RandomMapSetupControl::Generate0x620)
         );
-        assert_eq!(random_map_setup_control_at(&setup, 0, 0), None);
+        assert_eq!(random_map_setup_control_at(&setup, 0, 0, false), None);
     }
 
     #[test]
@@ -2274,14 +2435,14 @@ mod tests {
         let face = setup.control_rects[0];
 
         assert_eq!(
-            random_map_setup_control_at(&setup, face.x + face.w / 2, face.y + 2),
+            random_map_setup_control_at(&setup, face.x + face.w / 2, face.y + 2, false),
             Some(RandomMapSetupControl::MapType0x405)
         );
         // The base dialog's own map-type spot is empty chrome once stretched: a
         // click there must not still land on the control.
         let base_face = base.control_rects[0];
         assert_eq!(
-            random_map_setup_control_at(&setup, base_face.x + 5, base_face.y + 2),
+            random_map_setup_control_at(&setup, base_face.x + 5, base_face.y + 2, false),
             None
         );
     }

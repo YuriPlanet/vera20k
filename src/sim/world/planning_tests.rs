@@ -2030,13 +2030,16 @@ fn a_tail_node_enemy_passes_the_select_gate_and_unselects_all() {
             .set_discovered_by_current_house_for_test(discovered);
         sim.lifecycle_outputs.clear_for_test();
 
-        assert!(sim.techno_select(
-            1,
-            false,
-            crate::sim::world::UninitContext::new(&rules, None).with_effects(
-                crate::sim::world::FrameEffects::default().with_local_planning(&PlanningMode)
-            ),
-        ));
+        assert!(
+            sim.techno_select(
+                1,
+                crate::sim::world::UninitContext::new(&rules, None).with_effects(
+                    crate::sim::world::FrameEffects::default()
+                        .with_local_planning(&PlanningMode)
+                        .without_selection_voice()
+                ),
+            )
+        );
         let selected: Vec<u64> = (1..=3)
             .filter(|&id| {
                 sim.substrate

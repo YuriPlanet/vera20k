@@ -1405,6 +1405,7 @@ CreateUnit.Owner=special
                     effect.world_z,
                     effect.z_adjust,
                     effect.owner_house,
+                    false,
                 )
                 .unwrap()
         };

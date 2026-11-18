@@ -59,49 +59,6 @@ fn transport() -> LanUdpTransport {
     .unwrap()
 }
 
-#[test]
-fn wol_catchup_pacing_uses_admitted_peer_progress_and_existing_rtt() {
-    let (mut live, _) = pair(73);
-    live.mode = LiveCommandMode::Wol;
-    let mut sim = Simulation::new();
-    let packet = crate::net::event_packet::EventPacketCodec::default()
-        .encode_packet(
-            &[],
-            crate::net::event_packet::EventPacketHeader::Vera {
-                frame_info: FrameInfo {
-                    house_id: 1,
-                    event_frame: 0,
-                    checksum: 0,
-                    timing_word: 0,
-                    delay: 0,
-                },
-                command_frontier: 0,
-            },
-            0,
-            crate::net::event_packet::NATIVE_EVENT_PACKET_CAPACITY,
-        )
-        .unwrap()
-        .bytes;
-    assert!(
-        live.exchange
-            .receive(1, &packet, 73, &mut sim.network_command_queues(), 0)
-            .unwrap()
-    );
-    live.exchange.record_peer_lag(1, 40, 60, 40);
-    assert_eq!(live.peers()[0].lag_frames(), 20);
-    assert_eq!(live.pacing_delay_millis(40), 20);
-    assert_eq!(live.pacing_delay_millis(30), 0);
-    assert!(
-        !live
-            .exchange
-            .receive(1, &packet, 73, &mut sim.network_command_queues(), 0)
-            .unwrap()
-    );
-    assert_eq!(live.pacing_delay_millis(40), 20);
-    live.remove_peer(1);
-    assert_eq!(live.pacing_delay_millis(40), 0);
-}
-
 // Pure native queue/probe fixtures declare their complete protocol snapshot.
 // The new certificate regressions below exercise real sockets and real hashes.
 fn fixture_agreement(
@@ -131,6 +88,8 @@ fn fixture_agreement(
         30,
         rate,
         0,
+        "",
+        "",
     )
     .unwrap()
 }
@@ -255,7 +214,6 @@ fn poll_pair(
                 now,
                 (now).wrapping_mul(16),
                 0,
-                0,
             )
             .unwrap();
         passes[1] = right
@@ -265,7 +223,6 @@ fn poll_pair(
                 10,
                 now,
                 (now).wrapping_mul(16),
-                0,
                 0,
             )
             .unwrap();
@@ -289,6 +246,46 @@ fn poll_pair(
         std::thread::yield_now();
     }
     (passes[0], passes[1])
+}
+
+/// Games that load the same world but would play it differently, another
+/// build or other rules, never certify one start; the start report names
+/// the part that differs.
+#[test]
+fn start_identity_differs_by_build_and_by_rules() {
+    let agreement = |version: &str, rules: &str| {
+        let rate = NonZeroU32::new(1).unwrap();
+        StartupAgreement::new(
+            [(0, 0), (1, 1)],
+            [0, 1],
+            73,
+            10,
+            30,
+            rate,
+            0,
+            version,
+            rules,
+        )
+        .unwrap()
+    };
+    let base = agreement("1.0:a:0000", "rules");
+    for (other, part) in [
+        (agreement("1.0:b:0000", "rules"), "build"),
+        (agreement("1.0:a:0000", "other"), "rules"),
+    ] {
+        assert_ne!(
+            other.sequencing_identity().unwrap().0,
+            base.sequencing_identity().unwrap().0
+        );
+        let differs: Vec<_> = base
+            .report_parts()
+            .into_iter()
+            .zip(other.report_parts())
+            .filter(|(ours, theirs)| ours != theirs)
+            .map(|(ours, _)| ours.0)
+            .collect();
+        assert_eq!(differs, [part]);
+    }
 }
 
 /// A real private-UDP cohort; the agreement is the install-time snapshot,
@@ -323,6 +320,8 @@ fn startup_cohort(active: &[u8], hashes: &[u64]) -> Vec<LiveCommandSession> {
                 30,
                 rate,
                 hashes[index],
+                "",
+                "",
             )
             .unwrap();
             LiveCommandSession::new(
@@ -363,7 +362,6 @@ fn full_and_majority_loading_rosters_require_the_same_frozen_world() {
                         100 + (start.elapsed().as_millis() / 16) as u32,
                         1600,
                         0,
-                        0,
                     )
                     .unwrap();
             }
@@ -395,7 +393,9 @@ fn full_and_majority_loading_rosters_require_the_same_frozen_world() {
             10,
             30,
             NonZeroU32::new(5).unwrap(),
-            0
+            0,
+            "",
+            ""
         ),
         Err(StartupError::NoMajority)
     );
@@ -419,7 +419,6 @@ fn full_and_majority_loading_rosters_require_the_same_frozen_world() {
                 10,
                 100,
                 1600,
-                0,
                 0,
             ) {
                 Err(LiveCommandError::Startup(StartupError::Mismatch)) => rejected[index] = true,
@@ -546,6 +545,8 @@ fn startup_ready_retries_after_release_and_old_scope_cannot_certify_rematch() {
         30,
         rate,
         Simulation::with_seed(73).state_hash(),
+        "",
+        "",
     )
     .unwrap();
     let mut clients = wires
@@ -581,7 +582,6 @@ fn startup_ready_retries_after_release_and_old_scope_cannot_certify_rematch() {
                     now,
                     now * 16,
                     0,
-                    0,
                 )
                 .unwrap();
         }
@@ -605,7 +605,6 @@ fn startup_ready_retries_after_release_and_old_scope_cannot_certify_rematch() {
                 10,
                 now,
                 now * 16,
-                0,
                 0,
             )
             .unwrap();
@@ -645,7 +644,6 @@ fn startup_ready_retries_after_release_and_old_scope_cannot_certify_rematch() {
                     10,
                     now,
                     now * 16,
-                    0,
                     0,
                 )
                 .unwrap();
@@ -688,7 +686,6 @@ fn startup_ready_retries_after_release_and_old_scope_cannot_certify_rematch() {
                 10,
                 now,
                 now * 16,
-                0,
                 0
             )
             .unwrap(),
@@ -737,7 +734,6 @@ fn startup_ready_retries_after_release_and_old_scope_cannot_certify_rematch() {
                 10,
                 now,
                 now * 16,
-                0,
                 0
             )
             .unwrap(),
@@ -756,7 +752,6 @@ fn startup_ready_retries_after_release_and_old_scope_cannot_certify_rematch() {
                     10,
                     now,
                     now * 16,
-                    0,
                     0,
                 )
                 .unwrap();
@@ -812,7 +807,6 @@ fn initial_barrier_off_cadence_and_positive_frame_use_one_native_queue() {
             10,
             1001,
             (1001_u32).wrapping_mul(16),
-            0,
             0
         )
         .unwrap(),
@@ -882,7 +876,6 @@ fn initial_response_histories_clear_only_on_successful_barrier_once() {
                 endpoint,
                 0,
                 &connection_prefix(0x1236, 2, sequence, 2),
-                now + 22,
                 &mut |_, _| {},
             )
             .unwrap();
@@ -919,7 +912,6 @@ fn initial_response_histories_clear_only_on_successful_barrier_once() {
                 10,
                 now,
                 now * 16,
-                0,
                 0
             )
             .unwrap(),
@@ -942,7 +934,6 @@ fn initial_response_histories_clear_only_on_successful_barrier_once() {
             10,
             1002,
             16032,
-            0,
             0
         )
         .unwrap(),
@@ -961,16 +952,8 @@ fn initial_response_histories_clear_only_on_successful_barrier_once() {
         },
     ] {
         assert_eq!(
-            live.poll(
-                &mut sim.network_command_queues(),
-                next,
-                10,
-                1200,
-                19200,
-                0,
-                0
-            )
-            .unwrap(),
+            live.poll(&mut sim.network_command_queues(), next, 10, 1200, 19200, 0)
+                .unwrap(),
             NetworkQueuePass::SkipDispatch
         );
         assert_eq!(live.connections().mean_response_time(1), Some(11));
@@ -1011,7 +994,6 @@ fn ordinary_wait_uses_private_response_history_with_larger_primary_global_mean()
             5,
             1000,
             16000,
-            0,
             0
         )
         .unwrap(),
@@ -1028,7 +1010,6 @@ fn ordinary_wait_uses_private_response_history_with_larger_primary_global_mean()
             5,
             1001,
             16016,
-            0,
             0
         )
         .unwrap(),
@@ -1058,13 +1039,7 @@ fn ordinary_wait_uses_private_response_history_with_larger_primary_global_mean()
     ));
     live.global_mut().service(1100, &mut |_, _| {});
     live.global_mut()
-        .receive(
-            peer,
-            0,
-            &connection_prefix(0x1236, 2, 0, 2),
-            1300,
-            &mut |_, _| {},
-        )
+        .receive(peer, 0, &connection_prefix(0x1236, 2, 0, 2), &mut |_, _| {})
         .unwrap();
     live.global_mut().service(1300, &mut |_, _| {});
     assert_eq!(live.connections().mean_response_time(1), Some(10));
@@ -1077,7 +1052,6 @@ fn ordinary_wait_uses_private_response_history_with_larger_primary_global_mean()
                 5,
                 1300 + frame,
                 (1300 + frame) * 16,
-                0,
                 0
             )
             .unwrap(),
@@ -1094,7 +1068,6 @@ fn ordinary_wait_uses_private_response_history_with_larger_primary_global_mean()
             5,
             1305,
             20880,
-            0,
             0
         )
         .unwrap(),
@@ -1141,7 +1114,6 @@ fn online_initial_probe_waits_for_the_online_table_boundary() {
         1000,
         16000,
         0,
-        0,
     )
     .unwrap();
     live.take_service_report();
@@ -1152,7 +1124,6 @@ fn online_initial_probe_waits_for_the_online_table_boundary() {
         1119,
         17904,
         0,
-        0,
     )
     .unwrap();
     assert_eq!(live.take_service_report().unwrap().sent_datagrams, 0);
@@ -1162,7 +1133,6 @@ fn online_initial_probe_waits_for_the_online_table_boundary() {
         10,
         1120,
         17920,
-        0,
         0,
     )
     .unwrap();
@@ -1202,7 +1172,6 @@ fn initial_probe_repeats_only_at_the_native_wall_clock_boundary() {
             10,
             1000,
             (1000_u32).wrapping_mul(16),
-            0,
             0
         )
         .unwrap(),
@@ -1232,7 +1201,6 @@ fn initial_probe_repeats_only_at_the_native_wall_clock_boundary() {
             10,
             1059,
             (1059_u32).wrapping_mul(16),
-            0,
             0
         )
         .unwrap(),
@@ -1246,7 +1214,6 @@ fn initial_probe_repeats_only_at_the_native_wall_clock_boundary() {
             10,
             1060,
             (1060_u32).wrapping_mul(16),
-            0,
             0
         )
         .unwrap(),
@@ -1264,7 +1231,6 @@ fn initial_probe_repeats_only_at_the_native_wall_clock_boundary() {
         1159,
         (1159_u32).wrapping_mul(16),
         0,
-        0,
     )
     .unwrap();
     assert_eq!(live.take_service_report().unwrap().sent_datagrams, 0);
@@ -1274,7 +1240,6 @@ fn initial_probe_repeats_only_at_the_native_wall_clock_boundary() {
         10,
         1160,
         (1160_u32).wrapping_mul(16),
-        0,
         0,
     )
     .unwrap();
@@ -1298,7 +1263,6 @@ fn ordinary_wait_uses_180_buckets_and_keeps_the_frame_send_complete() {
                 10,
                 2000,
                 (2000_u32).wrapping_mul(16),
-                0,
                 0,
             )
             .unwrap();
@@ -1325,7 +1289,6 @@ fn ordinary_wait_uses_180_buckets_and_keeps_the_frame_send_complete() {
             10,
             2000,
             (2000_u32).wrapping_mul(16),
-            0,
             0
         )
         .unwrap(),
@@ -1349,7 +1312,6 @@ fn ordinary_wait_uses_180_buckets_and_keeps_the_frame_send_complete() {
             10,
             2179,
             (2179_u32).wrapping_mul(16),
-            0,
             0
         )
         .unwrap(),
@@ -1363,7 +1325,6 @@ fn ordinary_wait_uses_180_buckets_and_keeps_the_frame_send_complete() {
             10,
             2180,
             (2180_u32).wrapping_mul(16),
-            0,
             0
         )
         .unwrap(),
@@ -1380,7 +1341,6 @@ fn ordinary_wait_uses_180_buckets_and_keeps_the_frame_send_complete() {
         2479,
         (2479_u32).wrapping_mul(16),
         0,
-        0,
     )
     .unwrap();
     assert_eq!(left.take_service_report().unwrap().sent_datagrams, 0);
@@ -1390,7 +1350,6 @@ fn ordinary_wait_uses_180_buckets_and_keeps_the_frame_send_complete() {
         10,
         2480,
         (2480_u32).wrapping_mul(16),
-        0,
         0,
     )
     .unwrap();
@@ -1439,7 +1398,18 @@ fn invalid_roster_context_and_initial_seed_are_explicit_failures() {
     // human. Once startup is admitted, losing the last peer also retains
     // the normal local-only transfer path (covered below).
     let mut one = LiveCommandSession::new(
-        StartupAgreement::new([(0, 0)], [0], 1, 10, 30, NonZeroU32::new(5).unwrap(), 0).unwrap(),
+        StartupAgreement::new(
+            [(0, 0)],
+            [0],
+            1,
+            10,
+            30,
+            NonZeroU32::new(5).unwrap(),
+            0,
+            "",
+            "",
+        )
+        .unwrap(),
         transport(),
         0,
         1,
@@ -1457,7 +1427,6 @@ fn invalid_roster_context_and_initial_seed_are_explicit_failures() {
             10,
             100,
             1600,
-            0,
             0
         )
         .unwrap(),
@@ -1511,7 +1480,6 @@ fn invalid_roster_context_and_initial_seed_are_explicit_failures() {
             10,
             1000,
             (1000_u32).wrapping_mul(16),
-            0,
             0
         ),
         Err(LiveCommandError::FrameSequence {
@@ -1528,7 +1496,6 @@ fn invalid_roster_context_and_initial_seed_are_explicit_failures() {
             1000,
             (1000_u32).wrapping_mul(16),
             0,
-            0,
         );
         let r = right.poll(
             &mut b.network_command_queues(),
@@ -1536,7 +1503,6 @@ fn invalid_roster_context_and_initial_seed_are_explicit_failures() {
             10,
             1000,
             (1000_u32).wrapping_mul(16),
-            0,
             0,
         );
         if matches!(
@@ -1573,7 +1539,6 @@ fn failed_retry_service_keeps_receiving_and_retains_its_diagnostic() {
             10,
             2000,
             (2000_u32).wrapping_mul(16),
-            0,
             0,
         )
         .unwrap();
@@ -1620,7 +1585,6 @@ fn failed_retry_service_keeps_receiving_and_retains_its_diagnostic() {
                 now,
                 (now).wrapping_mul(16),
                 0,
-                0,
             )
             .unwrap();
         assert_eq!(left.take_service_report().unwrap().failed_peer, Some(1));
@@ -1640,7 +1604,6 @@ fn failed_retry_service_keeps_receiving_and_retains_its_diagnostic() {
             10,
             2003,
             (2003_u32).wrapping_mul(16),
-            0,
             0
         )
         .unwrap(),
@@ -1665,7 +1628,6 @@ fn removing_the_last_peer_resumes_wait_and_keeps_local_transfer_running() {
             2000,
             (2000_u32).wrapping_mul(16),
             0,
-            0,
         )
         .unwrap();
     }
@@ -1682,7 +1644,6 @@ fn removing_the_last_peer_resumes_wait_and_keeps_local_transfer_running() {
             10,
             2001,
             (2001_u32).wrapping_mul(16),
-            0,
             0
         )
         .unwrap(),
@@ -1698,7 +1659,6 @@ fn removing_the_last_peer_resumes_wait_and_keeps_local_transfer_running() {
             10,
             2002,
             (2002_u32).wrapping_mul(16),
-            0,
             0
         )
         .unwrap(),
@@ -1717,7 +1677,6 @@ fn removing_the_last_peer_resumes_wait_and_keeps_local_transfer_running() {
                 10,
                 2003,
                 (2003_u32).wrapping_mul(16),
-                0,
                 0
             )
             .unwrap(),
@@ -1788,7 +1747,6 @@ impl NetworkCommandBoundary for Boundary {
             ahead,
             self.now.get(),
             (self.now.get()).wrapping_mul(16),
-            0,
             0,
         )
         .map(Some)
@@ -1870,9 +1828,9 @@ fn production_frame(sim: &mut Simulation, rules: &RuleSet, boundary: &Boundary) 
         .with_network_commands(boundary)
         .with_command_applied(&applied);
     if sim.pending_network_wait() {
-        sim.resume_network_wait(rules, None, effects).unwrap()
+        sim.resume_network_wait(rules, effects).unwrap()
     } else {
-        sim.advance_app_frame(&[], rules, None, 33, TickLane::Ordinary, effects)
+        sim.advance_app_frame(&[], rules, 33, TickLane::Ordinary, effects)
             .unwrap()
     }
 }
@@ -1977,6 +1935,53 @@ fn retail_infantry_plan_finishes_both_moves_over_lan() {
     }
 }
 
+/// One person watching AI play runs the match through the relay when the
+/// lobby marked its certificate, so that others can watch it; any other
+/// one-human match keeps local input.
+#[test]
+fn a_one_human_match_orders_through_the_relay_only_when_the_lobby_marked_it() {
+    use crate::net::udp::{
+        CertificatePacing, OrderingCertificate, RelayTicket,
+        test_support::{SecretKey, derive_packet_key},
+    };
+    let key = SecretKey::new([31; 32]);
+    let ticket = RelayTicket {
+        room: [27; 16],
+        player: [1; 16],
+        source: 0,
+        generation: 1,
+        expires: 300,
+        nonce: [3; 16],
+    }
+    .sign(&key)
+    .unwrap();
+    let rate = NonZeroU32::new(1).unwrap();
+    for alone in [false, true] {
+        let mut wire = transport();
+        wire.enable_relay(
+            SocketAddrV4::new(Ipv4Addr::LOCALHOST, 9),
+            &ticket,
+            *derive_packet_key(&key, &ticket).expose_for_https(),
+            [29; 32],
+        )
+        .unwrap();
+        let certificate = OrderingCertificate {
+            room: [27; 16],
+            sources_mask: 1,
+            tick_hz: 30,
+            expires: 86_500,
+            pacing: CertificatePacing::On,
+            ordered_alone: alone,
+        };
+        wire.set_ordering_certificate(certificate.sign(&key).unwrap())
+            .unwrap();
+        let agreement = StartupAgreement::new([(0, 0)], [0], 73, 10, 30, rate, 0, "", "").unwrap();
+        let live =
+            LiveCommandSession::new(agreement, wire, 0, 73, rate, LiveCommandMode::Wol).unwrap();
+        assert_eq!(live.uses_sequenced_lockstep(), alone, "marked: {alone}");
+    }
+}
+
 #[test]
 fn solo_wol_commands_apply_without_ahead_or_batching_across_timing_updates() {
     let (mut sim, rules, actor) = stop_scene();
@@ -1988,7 +1993,7 @@ fn solo_wol_commands_apply_without_ahead_or_batching_across_timing_updates() {
         .install_network_command_timing(0, std::num::NonZeroU8::new(10).unwrap(), [0]);
     let rate = NonZeroU32::new(10).unwrap();
     let agreement =
-        StartupAgreement::new([(0, 0)], [0], 73, 40, 30, rate, sim.state_hash()).unwrap();
+        StartupAgreement::new([(0, 0)], [0], 73, 40, 30, rate, sim.state_hash(), "", "").unwrap();
     let mut live =
         LiveCommandSession::new(agreement, transport(), 0, 73, rate, LiveCommandMode::Wol).unwrap();
     live.configure_precalculated_timing(40, 45);
@@ -3105,6 +3110,7 @@ fn sequenced_udp_paused_client_catches_up_without_stalling_healthy_commands() {
         tick_hz: 30,
         expires: 86_500,
         pacing: Default::default(),
+        ordered_alone: false,
     }
     .sign(&key)
     .unwrap();
@@ -3116,6 +3122,8 @@ fn sequenced_udp_paused_client_catches_up_without_stalling_healthy_commands() {
         30,
         NonZeroU32::new(1).unwrap(),
         worlds[0].state_hash(),
+        "",
+        "",
     )
     .unwrap();
     let boundaries: Vec<_> = (0..2u8)
@@ -3342,7 +3350,6 @@ fn sequenced_udp_paused_client_catches_up_without_stalling_healthy_commands() {
             && *applied),
         "a late order executes only at a future canonical frame"
     );
-    assert_eq!(boundaries[0].live.borrow().pacing_delay_millis(40), 0);
     drop(boundaries);
     drop(relay);
     std::fs::remove_dir_all(journal_dir).unwrap();
@@ -3380,6 +3387,7 @@ fn sequenced_service_ends_a_match_a_newer_relay_keeps_stalling() {
         tick_hz: 30,
         expires: 86_500,
         pacing: Default::default(),
+        ordered_alone: false,
     }
     .sign(&key)
     .unwrap();
@@ -3403,6 +3411,8 @@ fn sequenced_service_ends_a_match_a_newer_relay_keeps_stalling() {
         30,
         NonZeroU32::new(1).unwrap(),
         0,
+        "",
+        "",
     )
     .unwrap();
     let mut session = sequenced::SequencedSession::new(&agreement, &wire, 0).unwrap();
@@ -3489,9 +3499,9 @@ fn sequenced_match_ends_as_absent_once_its_silent_relay_route_is_released() {
             boundary.now.set(ticks);
             let effects = FrameEffects::empty().with_network_commands(boundary);
             if world.pending_network_wait() {
-                let _ = world.resume_network_wait(&rules, None, effects);
+                let _ = world.resume_network_wait(&rules, effects);
             } else {
-                let _ = world.advance_app_frame(&[], &rules, None, 33, TickLane::Ordinary, effects);
+                let _ = world.advance_app_frame(&[], &rules, 33, TickLane::Ordinary, effects);
             }
         }
     };
@@ -3573,6 +3583,7 @@ fn sequenced_unsent_batch_retries_when_the_relay_route_recovers() {
         tick_hz: 30,
         expires: 86_500,
         pacing: Default::default(),
+        ordered_alone: false,
     }
     .sign(&key)
     .unwrap();
@@ -3596,6 +3607,8 @@ fn sequenced_unsent_batch_retries_when_the_relay_route_recovers() {
         30,
         NonZeroU32::new(1).unwrap(),
         0,
+        "",
+        "",
     )
     .unwrap();
     let mut session = sequenced::SequencedSession::new(&agreement, &wire, 0).unwrap();
@@ -3750,16 +3763,27 @@ fn sequenced_unsent_batch_retries_when_the_relay_route_recovers() {
         "an unsent batch must not wait for the 100ms retransmission deadline"
     );
 
-    // The ACK was withheld from the app owner, so the batch's records stay
-    // in its local queue; the relay session alone owns the acceptance and
-    // resends nothing more (spec §6.4).
+    // The relay session owns the acceptance: it resends nothing more
+    // (spec §6.4), and the batch leaves OutList although this game never
+    // read the ACK, as when its full inbox drops one.
     session.service(&mut wire, recovered_at + 112);
     pump(&mut wire, &mut relay, recovered_at + 112);
     assert!(!drain_ack(&mut wire), "no retry of an acknowledged batch");
-    assert_eq!(session.sent_commands(), 0);
     assert_eq!(
         sim.network_command_queues().local_records().unwrap(),
         vec![&stop]
+    );
+    session.service_pending_commands(
+        &mut wire,
+        &mut sim.network_command_queues(),
+        recovered_at + 112,
+    );
+    assert_eq!(session.sent_commands(), 1);
+    assert!(
+        sim.network_command_queues()
+            .local_records()
+            .unwrap()
+            .is_empty()
     );
 }
 
@@ -3805,6 +3829,7 @@ fn sequenced_pair_with_second_hash_offset(offset: u64) -> SequencedPair {
         tick_hz: 30,
         expires: 86_500,
         pacing: Default::default(),
+        ordered_alone: false,
     }
     .sign(&key)
     .unwrap();
@@ -3818,6 +3843,8 @@ fn sequenced_pair_with_second_hash_offset(offset: u64) -> SequencedPair {
             30,
             NonZeroU32::new(1).unwrap(),
             world_hash.wrapping_add(u64::from(source) * offset),
+            "",
+            "",
         )
         .unwrap()
     };
@@ -3903,9 +3930,9 @@ fn sequenced_agreement_mismatch_names_itself_in_the_match_report() {
             let effects = FrameEffects::empty().with_network_commands(boundary);
             // This match is meant to fail; its report is what is checked.
             if world.pending_network_wait() {
-                let _ = world.resume_network_wait(&rules, None, effects);
+                let _ = world.resume_network_wait(&rules, effects);
             } else {
-                let _ = world.advance_app_frame(&[], &rules, None, 33, TickLane::Ordinary, effects);
+                let _ = world.advance_app_frame(&[], &rules, 33, TickLane::Ordinary, effects);
             }
         }
         if boundaries
@@ -3965,20 +3992,22 @@ fn sequenced_lost_first_uplink_is_resent_until_the_subscription_pushes() {
                     .unwrap_or_default(),
             );
         }
-        replies.extend(relay.drain_ordering_push(now_ms, unix));
+        let pushed = relay.drain_ordering_push(now_ms, unix);
+        // The relay pushes only to a subscribed reader.
+        if subscribed.is_none()
+            && pushed
+                .iter()
+                .any(|packet| packet.endpoint == second_address)
+        {
+            subscribed = Some(step);
+        }
+        replies.extend(pushed);
         for packet in replies {
             socket.send_to(&packet.bytes, packet.endpoint).unwrap();
         }
         settle_loopback();
         for (world, boundary) in worlds.iter_mut().zip(&boundaries) {
             production_frame(world, &rules, boundary);
-        }
-        if subscribed.is_none()
-            && relay
-                .reader_link_stats([17; 16], 1)
-                .is_some_and(|stats| stats.subscribed)
-        {
-            subscribed = Some(step);
         }
     }
     let (dropped, subscribed) = (dropped.unwrap(), subscribed.unwrap());
@@ -4254,6 +4283,7 @@ fn sequenced_push_advances_without_requests_and_repairs_a_lost_range() {
 
 #[test]
 fn sequenced_pause_stops_at_one_boundary_and_recovers_a_lost_resume() {
+    use crate::net::live_commands::MatchPauseChange;
     use crate::net::udp::test_support::MAX_DATAGRAM;
     use crate::sim::command::{Command, MEGAMISSION_OPCODE};
 
@@ -4394,6 +4424,22 @@ fn sequenced_pause_stops_at_one_boundary_and_recovers_a_lost_resume() {
         assert!(!world.pending_network_wait());
     }
     assert_eq!(worlds[0].state_hash(), worlds[1].state_hash());
+    // Only the other player is told who paused, once, though it lost the
+    // marker's first delivery.
+    let named: Vec<_> = boundaries
+        .iter()
+        .map(|boundary| boundary.live.borrow_mut().take_pause_changes())
+        .collect();
+    assert_eq!(
+        named,
+        [
+            vec![],
+            vec![MatchPauseChange {
+                house: 0,
+                paused: true
+            }]
+        ]
+    );
 
     let owner = worlds[0].interner.get("Alpha").unwrap();
     let record = worlds[0]
@@ -4466,6 +4512,20 @@ fn sequenced_pause_stops_at_one_boundary_and_recovers_a_lost_resume() {
             1
         );
     }
+    let named: Vec<_> = boundaries
+        .iter()
+        .map(|boundary| boundary.live.borrow_mut().take_pause_changes())
+        .collect();
+    assert_eq!(
+        named,
+        [
+            vec![MatchPauseChange {
+                house: 1,
+                paused: false
+            }],
+            vec![]
+        ]
+    );
     let mut compared_after_resume = 0;
     for (frame, hash) in &committed[0] {
         if let Some(other) = committed[1].get(frame) {
@@ -4798,8 +4858,8 @@ fn sequenced_fresh_batch_survives_one_lost_datagram_within_an_rto() {
             .live
             .borrow()
             .command_delivery_traces()
-            .last()
-            .is_some_and(|trace| trace.sent_at.is_some())
+            .next()
+            .is_some()
     };
     for step in 0..250 {
         let now_ms = 16_000 + step * 16;
@@ -4910,7 +4970,7 @@ fn sequenced_fresh_batch_survives_one_lost_datagram_within_an_rto() {
         .command_delivery_traces()
         .last()
         .expect("command batch traced");
-    assert!(trace.sent_at.is_some() && trace.assigned.is_some());
+    assert!(trace.assigned.is_some());
 }
 
 #[test]
@@ -5083,4 +5143,94 @@ fn sequenced_transport_sends_input_while_the_canonical_frontier_is_closed() {
     );
     assert_eq!(worlds[0].session().tick(), held_tick);
     assert_eq!(worlds[0].network_command_queues().local_len(), 0);
+}
+
+/// VERA: a player whose connection this game removed, as when it ran their
+/// EXIT, is not named when the relay, which may never have heard them leave,
+/// stops hearing them.
+#[test]
+fn a_removed_player_the_relay_stops_hearing_is_not_named() {
+    let (_, _, _, boundaries, _, _) = sequenced_pair();
+    let mut live = boundaries[0].live.borrow_mut();
+    let silent = |live: &mut LiveCommandSession, sources| {
+        live.sequenced.as_mut().unwrap().note_silent(sources);
+        live.take_connection_changes()
+    };
+    let named = |responding| {
+        [MatchConnectionChange {
+            house: 1,
+            responding,
+        }]
+    };
+    assert_eq!(silent(&mut live, 0b10), named(false));
+    assert_eq!(silent(&mut live, 0), named(true));
+    assert!(live.remove_peer(1));
+    assert!(silent(&mut live, 0b10).is_empty());
+}
+
+/// A relay that lost a running match's configuration (NotConfigured) stops its
+/// clock until it is configured again, but the match did start: a player lost
+/// meanwhile leaves a running match, not a start.
+#[test]
+fn a_running_match_its_relay_lost_is_not_startup_pending() {
+    use vera20k_relay_protocol::{OrderError, OrderEvent, OrderStatus};
+
+    let (_, _, _, boundaries, _, _) = sequenced_pair();
+    let mut live = boundaries[0].live.borrow_mut();
+    assert!(live.startup_pending());
+    live.transport
+        .push_ordering_received_for_test(OrderEvent::Status(OrderStatus {
+            head_frame: 0,
+            oldest_seq: 1,
+            next_seq: 1,
+            active_sources: 3,
+            tick_hz: 30,
+            start_delay_ms: 0,
+            started: true,
+            feedback: Default::default(),
+            watch_sample: None,
+            silent_sources: 0,
+        }));
+    live.service_transport(1);
+    assert!(!live.startup_pending());
+    live.transport
+        .push_ordering_received_for_test(OrderEvent::Error {
+            code: OrderError::NotConfigured,
+            expected: 0,
+        });
+    live.service_transport(2);
+    assert!(live.awaiting_initial_barrier(), "the relay's clock stopped");
+    assert!(!live.startup_pending());
+}
+
+/// The session that ends a match keeps it ended: poll reports the error once,
+/// and the match still reads as failed after it.
+#[test]
+fn a_reported_relay_failure_stays_with_its_session() {
+    use vera20k_relay_protocol::{OrderError, OrderEvent};
+
+    let (mut worlds, _, _, boundaries, _, _) = sequenced_pair();
+    let mut live = boundaries[0].live.borrow_mut();
+    live.transport
+        .push_ordering_received_for_test(OrderEvent::Error {
+            code: OrderError::HistoryGap,
+            expected: 0,
+        });
+    let mut queues = worlds[0].network_command_queues();
+    let context = NetworkQueueContext {
+        frame: 0,
+        checksum: 0,
+    };
+    let reported = live.poll(&mut queues, context, 10, 1, 16, 0);
+    assert!(matches!(
+        reported,
+        Err(LiveCommandError::Sequenced(SequencedError::HistoryExpired))
+    ));
+    assert!(live.has_terminal_network_error());
+    let again = live.poll(&mut queues, context, 10, 2, 32, 0);
+    assert!(matches!(again, Err(LiveCommandError::Failed)));
+    assert_eq!(
+        live.delivery_counters().unwrap().failure,
+        Some("history_expired")
+    );
 }

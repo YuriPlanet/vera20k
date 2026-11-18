@@ -70,6 +70,8 @@ Thumbs.db
 !/docs/phobos-building-queue.md
 !/docs/phobos-ai-dehardcode.md
 !/docs/phobos-parallel-ai-queues.md
+!/docs/phobos-power-surplus.md
+!/docs/phobos-target-zone.md
 !/docs/phobos-skirmish-unlimited-colors.md
 !/docs/phobos-superweapon-sidebar.md
 !/docs/phobos-prone-speed.md
@@ -118,6 +120,7 @@ Thumbs.db
 !/docs/primary-rotation.md
 !/docs/relation-colours.md
 !/docs/random-map-extras.md
+!/docs/spawn.md
 !/docs/color-vision-config.md
 !/docs/script-action-56.md
 !/docs/interface-layout.md
@@ -162,6 +165,7 @@ tools/vendor-eval/
 !/README.ru.md
 !/README.th.md
 !/README.tr.md
+!/README.vi.md
 !/LEGAL.md
 # Kept visible: a root CLAUDE.md would stop Claude Code reading AGENTS.md.
 !/CLAUDE.md

@@ -20,7 +20,7 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
     build_unit_instances(
         state,
         &mut objects,
-        &NativeDisplayOrder::from_display(sim.display_layers()),
+        &NativeDisplayOrder::from_world(sim, None),
     );
     let mut observations = Vec::new();
     let model_coverage = sim.entities().values()
@@ -32,7 +32,7 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
                     .map(|((_,layer,turret),count)| json!({"layer": format!("{layer:?}"), "turret": turret, "frames": count}))
                     .collect::<Vec<_>>()).unwrap_or_default();
             json!({"id": entity.stable_id(), "type": name, "voxel": entity.is_voxel(),
-                "limbo": entity.lifecycle.in_limbo(), "passenger": entity.passenger_role.is_inside_transport(),
+                "limbo": entity.lifecycle.in_limbo(), "passenger": entity.passenger_role().is_inside_transport(),
                 "atlas_frames": frames})
         }).collect::<Vec<_>>();
     for object in objects {

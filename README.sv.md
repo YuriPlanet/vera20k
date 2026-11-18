@@ -1,7 +1,7 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20K huvudbild" width="100%">
 
 <p align="center" dir="ltr">
-  <strong>Svenska</strong> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
+  <a href="README.vi.md" lang="vi">Tiếng Việt</a> · <strong>Svenska</strong> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Senaste körningen av bibliotekstesterna för Linux (startas manuellt)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Bibliotekstester för Linux" height="23" align="middle"></a>
@@ -103,7 +103,7 @@ VERA20K fungerar som standard precis som originalspelet. Varje ny funktion, äve
 moddar som Ares, måste vara avstängd tills den slås på med något av följande:
 
 - **En spelarinställning i VERA**, under **Options**, som sparas i avsnittet `[VERA]` i `VERA.INI`.
-- **Ett byggalternativ**, till exempel `--features ares` för de [Ares-tillägg](docs/ares.md) som stöds.
+- **Ett byggalternativ**, till exempel `--features phobos` för de [Phobos-tillägg](docs/phobos.md) som stöds.
 - **En INI-nyckel**, som sätts av en mod eller en karta.
 
 Inställningar för ljud, grafik och kontroller sparas i `VERA.INI`. Spelreglerna kommer från
@@ -136,6 +136,7 @@ appikonen, Red Alert 2:s röda stjärna, visar spelgrafik som ägs av Electronic
 ingen koppling till och stöds inte av Electronic Arts.
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **Läs [den juridiska informationen](LEGAL.md) innan du delar, säljer eller forkar VERA20K.**
 

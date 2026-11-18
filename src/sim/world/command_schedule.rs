@@ -19,7 +19,13 @@ use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::locomotor_type::MovementZone;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::command::{Command, CommandEnvelope};
+use crate::sim::command::{
+    ABSTRACT_OBJECT_TARGET_KIND, CELL_TARGET_KIND, Command, CommandEnvelope,
+    MEGAMISSION_ACTION_OFFSET, MEGAMISSION_DESTINATION_KIND_OFFSET,
+    MEGAMISSION_DESTINATION_VALUE_OFFSET, MEGAMISSION_OPCODE, MEGAMISSION_SECONDARY_KIND_OFFSET,
+    MEGAMISSION_SECONDARY_VALUE_OFFSET, MEGAMISSION_SOURCE_KIND_OFFSET,
+    MEGAMISSION_SOURCE_VALUE_OFFSET,
+};
 use crate::sim::intern::InternedId;
 use crate::sim::movement::group_destination;
 use crate::sim::movement::infantry_entry::InfantryEntryArgs;
@@ -813,13 +819,19 @@ impl Simulation {
     fn native_formation_key(
         record: &crate::sim::command::CommandRecord,
     ) -> Option<((u8, i32, u8, i32), u16, u16)> {
-        if record.opcode() != 4 || record.payload()[16] != 11 {
+        let p = record.payload();
+        if record.opcode() != MEGAMISSION_OPCODE
+            || p[MEGAMISSION_DESTINATION_KIND_OFFSET] != CELL_TARGET_KIND
+        {
             return None;
         }
-        let p = record.payload();
-        let destination = i32::from_le_bytes(p[12..16].try_into().ok()?);
+        let destination = i32::from_le_bytes(
+            p[MEGAMISSION_DESTINATION_VALUE_OFFSET..MEGAMISSION_DESTINATION_KIND_OFFSET]
+                .try_into()
+                .ok()?,
+        );
         let crate::sim::command::MegaMissionTarget::Cell { x, y } =
-            crate::sim::command::MegaMissionTarget::from_token(destination, 11)?
+            crate::sim::command::MegaMissionTarget::from_token(destination, CELL_TARGET_KIND)?
         else {
             return None;
         };
@@ -827,9 +839,13 @@ impl Simulation {
             //64CB42..64CB5C compares raw destination kind/DWORD. Different
             // tokens can project to the same WORD coordinates at6E6E20.
             (
-                p[5],
-                i32::from_le_bytes(p[7..11].try_into().ok()?),
-                p[11],
+                p[MEGAMISSION_ACTION_OFFSET],
+                i32::from_le_bytes(
+                    p[MEGAMISSION_SECONDARY_VALUE_OFFSET..MEGAMISSION_SECONDARY_KIND_OFFSET]
+                        .try_into()
+                        .ok()?,
+                ),
+                p[MEGAMISSION_SECONDARY_KIND_OFFSET],
                 destination,
             ),
             x as u16,
@@ -846,10 +862,17 @@ impl Simulation {
             });
         if let Some(record) = raw {
             let p = record.payload();
-            if record.opcode() != 4 || p[4] != 0x34 {
+            if record.opcode() != MEGAMISSION_OPCODE
+                || p[MEGAMISSION_SOURCE_KIND_OFFSET] != ABSTRACT_OBJECT_TARGET_KIND
+            {
                 return None;
             }
-            return u64::try_from(i32::from_le_bytes(p[0..4].try_into().ok()?)).ok();
+            return u64::try_from(i32::from_le_bytes(
+                p[MEGAMISSION_SOURCE_VALUE_OFFSET..MEGAMISSION_SOURCE_KIND_OFFSET]
+                    .try_into()
+                    .ok()?,
+            ))
+            .ok();
         }
         match command.formation_semantic()? {
             Command::Move { entity_id, .. } | Command::AttackMove { entity_id, .. } => {
@@ -963,17 +986,27 @@ impl Simulation {
     /// non-megamission scan, immediately before staged command execution.
     /// The group spread `0x0064CDA0` per run (`0x0064CB0A..0x0064CB60`): each Foot
     /// member's coordinates (Location) and source cell.
+    ///
+    /// VERA-only: in a LAN or WOL game a member whose order the network
+    /// ownership rule will refuse (`Simulation::network_actor_foreign`) is
+    /// left out, and a run left with fewer than two orders keeps its clicked
+    /// cells, as if `sender` had not ordered that member. Retail's member loop
+    /// (`0x0064CE59..0x0064CEDF`) tests only Foot and tube (`+0x684`), never
+    /// the owner, and `Execute_DoList` spreads every run of two or more
+    /// (`0x0064CBA4..0x0064CBDB`). Fixtures that skip the rule pass `None`.
     pub(super) fn adjust_staged_megamission_destinations(
         &self,
         commands: &mut [impl FormationCommand],
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        sender: Option<InternedId>,
     ) {
         let (Some(terrain), Some(zones)) =
             (self.resolved_terrain.as_ref(), self.zone_grid.as_ref())
         else {
             return;
         };
+        let sender = sender.map(|owner| self.interner.resolve(owner));
         let mut run_start = 0;
         while run_start < commands.len() {
             let Some(key) = Self::formation_key(&commands[run_start]) else {
@@ -984,7 +1017,8 @@ impl Simulation {
             while run_end < commands.len() && Self::formation_key(&commands[run_end]) == Some(key) {
                 run_end += 1;
             }
-            if run_end - run_start > 1 {
+            let mut orders = run_end - run_start;
+            if orders > 1 {
                 let clicked_target = (key.1 as i16, key.2 as i16);
                 //64CDE9 resolves the Cell;64CDF6 returns for the shared
                 // dummy before member collection or destination rewrites.
@@ -1002,6 +1036,10 @@ impl Simulation {
                     let Some(entity) = self.substrate.entities.get(entity_id) else {
                         continue;
                     };
+                    if sender.is_some_and(|owner| self.network_actor_foreign(owner, entity_id)) {
+                        orders -= 1;
+                        continue;
+                    }
                     if !matches!(
                         entity.category(),
                         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
@@ -1028,6 +1066,10 @@ impl Simulation {
                             crate::util::lepton::lepton_to_cell(navigation.y),
                         ),
                     });
+                }
+                if orders < 2 {
+                    run_start = run_end;
+                    continue;
                 }
                 let mut member_target: Option<GroupMemberTarget> = None;
                 let mut assignments = group_destination::distribute_group_destinations(
@@ -1232,6 +1274,15 @@ impl Simulation {
         .expect("component command dispatch must succeed")
     }
 
+    /// How Execute_DoList scans this session's DoList.
+    pub(super) fn command_dispatch_mode(&self) -> CommandDispatchMode {
+        if self.session.game_mode().command_queue_route() == super::CommandQueueRoute::Multiplayer {
+            CommandDispatchMode::Network
+        } else {
+            CommandDispatchMode::SinglePlayer
+        }
+    }
+
     pub(super) fn dispatch_owned_commands(
         &mut self,
         commands: &[CommandEnvelope],
@@ -1256,16 +1307,19 @@ impl Simulation {
         // One scan per command sender, in sender order. A sender is its
         // House's index, as in gamemd's House scan, unless players share
         // Houses (VERA): each of them then gets its own scan of that House.
+        // A watcher sends nothing, so no sender is its current player.
         let local_source = self.session.local_shared_house_source();
+        let watcher = self.session.watcher();
         let mut houses: Vec<_> = self
             .session
             .network_sources(self.houses.order().len())
             .filter_map(|(source, house)| {
                 let owner = *self.houses.order().get(house)?;
-                let current_player = match local_source {
-                    Some(local) => local == source,
-                    None => self.session.current_house() == Some(owner),
-                };
+                let current_player = !watcher
+                    && match local_source {
+                        Some(local) => local == source,
+                        None => self.session.current_house() == Some(owner),
+                    };
                 Some(
                     CommandDispatchHouse::new(owner, source, true)
                         .with_current_player(current_player),
@@ -1285,13 +1339,7 @@ impl Simulation {
             native_frame: self.session.binary_frame() as i32,
             execute_tick,
         };
-        let mode = if self.session.game_mode().command_queue_route()
-            == super::CommandQueueRoute::Multiplayer
-        {
-            CommandDispatchMode::Network
-        } else {
-            CommandDispatchMode::SinglePlayer
-        };
+        let mode = self.command_dispatch_mode();
         let mut host = WorldCommandHost {
             sim: self,
             rules,
@@ -1338,7 +1386,8 @@ fn write_formation_destination(
     .token() else {
         return;
     };
-    record.payload_mut()[12..16].copy_from_slice(&token.to_le_bytes());
+    record.payload_mut()[MEGAMISSION_DESTINATION_VALUE_OFFSET..MEGAMISSION_DESTINATION_KIND_OFFSET]
+        .copy_from_slice(&token.to_le_bytes());
 }
 
 impl FormationCommand for Command {
@@ -1439,9 +1488,13 @@ impl DoListHost<QueuedCommand> for WorldCommandHost<'_, '_, '_> {
             .compare_frame_info(record, self.sim.session.binary_frame() as i32)
     }
 
-    fn adjust_megamissions(&mut self, _house: CommandDispatchHouse, entries: &mut [QueuedCommand]) {
-        self.sim
-            .adjust_staged_megamission_destinations(entries, self.rules, self.overlay_registry);
+    fn adjust_megamissions(&mut self, house: CommandDispatchHouse, entries: &mut [QueuedCommand]) {
+        self.sim.adjust_staged_megamission_destinations(
+            entries,
+            self.rules,
+            self.overlay_registry,
+            Some(house.owner),
+        );
     }
 
     fn execute(

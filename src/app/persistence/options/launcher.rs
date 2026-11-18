@@ -47,20 +47,20 @@ pub(crate) fn launcher_values_from_profile(
         shift_queue: profile.shift_queue,
         auto_repair: profile.auto_repair,
         minimap_beacons: profile.minimap_beacons,
-        terrain_deformation: profile.terrain_deformation,
         // Off at the left end, then 2 at the first notch.
-        superweapon_limit_position: profile.superweapon_limit.saturating_sub(1),
         performance_stats: false,
         show_string_keys: profile.show_string_keys,
         skip_intro: profile.skip_intro,
         custom_end_game_banner: profile.custom_end_game_banner,
         custom_end_game_score: profile.custom_end_game_score,
         custom_end_game_movie: profile.custom_end_game_movie,
+        commander_feedback: profile.commander_feedback,
         detailed_eva_text: profile.detailed_eva_text,
         compact_super_timers: profile.compact_super_timers,
         sidebar: profile.sidebar,
         sidebar_columns: profile.sidebar_columns,
         health_bars: profile.health_bars,
+        ares: profile.ares,
         color_vision: profile.color_vision,
         // The slider's position is the stored level less the retail strength,
         // so gamemd's own bands sit at the left end.
@@ -114,6 +114,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_sidebar_columns(&mut self, columns: SidebarColumns);
     /// The `[VERA] HealthBars=` list's pick; presentation only.
     fn store_health_bars(&mut self, mode: HealthBarMode);
+    /// The `[VERA] Ares=` list's pick; the game reads it at its next start.
+    fn store_ares(&mut self, setting: crate::util::ares_launch::AresSetting);
     /// The `[VERA] ColorVisionMode=` list's pick; presentation only, read by
     /// the final frame pass on the very next frame.
     fn store_color_vision(&mut self, mode: ColorVisionMode);
@@ -147,12 +149,6 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_auto_repair(&mut self, enabled: bool);
     /// Place a beacon with a radar click in Place Beacon mode (`[VERA] MinimapBeacons=`).
     fn store_minimap_beacons(&mut self, enabled: bool);
-    /// Let explosions dent the ground from the next game on
-    /// (`[VERA] TerrainDeformation=`).
-    fn store_terrain_deformation(&mut self, enabled: bool);
-    /// Allow `limit` of each superweapon, each charging its own shot, from
-    /// the next game on; 0 is off (`[VERA] SuperweaponLimit=`).
-    fn store_superweapon_limit(&mut self, limit: u8);
     fn set_performance_stats(&mut self, shown: bool);
     /// Show each label's string-table key instead of its text.
     fn set_show_string_keys(&mut self, shown: bool);
@@ -163,6 +159,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_custom_end_game_score(&mut self, enabled: bool);
     /// Whether the exit lets the closing commander clip finish.
     fn store_custom_end_game_movie(&mut self, enabled: bool);
+    /// Whether computer commanders play their clips.
+    fn store_commander_feedback(&mut self, enabled: bool);
     /// VERA-only accessibility text rows; default off.
     fn store_detailed_eva_text(&mut self, enabled: bool);
     /// VERA's six-line super weapon timer list; default off.
@@ -186,6 +184,7 @@ pub(crate) fn dispatch_launcher_preview_event(
             operations.store_sidebar_columns(columns)
         }
         LauncherOptionsEvent::HealthBarModeSelected(mode) => operations.store_health_bars(mode),
+        LauncherOptionsEvent::AresSelected(setting) => operations.store_ares(setting),
         LauncherOptionsEvent::ColorVisionModeSelected(mode) => operations.store_color_vision(mode),
         LauncherOptionsEvent::DisplaySelected(display) => operations.set_display(display),
         LauncherOptionsEvent::LanguageSelected(tag) => operations.store_language(tag),
@@ -193,9 +192,11 @@ pub(crate) fn dispatch_launcher_preview_event(
             operations.set_full_screen(full_screen);
         }
         LauncherOptionsEvent::SetWindowSizeRequested => operations.restore_launch_window(),
-        // The in-game menu opens these dialogs itself (`app::input::pause_menu`).
+        // The in-game menu opens these dialogs, and starts the layout edit
+        // mode, itself (`app::input::pause_menu`).
         LauncherOptionsEvent::InGameKeyboardRequested
-        | LauncherOptionsEvent::InGameSoundRequested => {}
+        | LauncherOptionsEvent::InGameSoundRequested
+        | LauncherOptionsEvent::EditLayoutRequested => {}
         LauncherOptionsEvent::OriginalShapeChanged(original_shape) => {
             operations.store_original_shape(original_shape);
         }
@@ -230,12 +231,6 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::MinimapBeaconsChanged(enabled) => {
             operations.store_minimap_beacons(enabled);
         }
-        LauncherOptionsEvent::TerrainDeformationChanged(enabled) => {
-            operations.store_terrain_deformation(enabled);
-        }
-        LauncherOptionsEvent::SuperweaponLimitChanged(limit) => {
-            operations.store_superweapon_limit(limit);
-        }
         LauncherOptionsEvent::PerformanceStatsChanged(shown) => {
             operations.set_performance_stats(shown)
         }
@@ -253,6 +248,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         }
         LauncherOptionsEvent::CustomEndGameMovieChanged(enabled) => {
             operations.store_custom_end_game_movie(enabled);
+        }
+        LauncherOptionsEvent::CommanderFeedbackChanged(enabled) => {
+            operations.store_commander_feedback(enabled);
         }
         LauncherOptionsEvent::DetailedEvaTextChanged(enabled) => {
             operations.store_detailed_eva_text(enabled);
@@ -590,7 +588,6 @@ mod tests {
             skip_intro: true,
             mouse_wheel_zoom: true,
             shift_queue: true,
-            terrain_deformation: true,
             ..RetailOptionsProfile::default()
         });
         assert!(!booleans.tooltips);
@@ -600,6 +597,5 @@ mod tests {
         assert!(booleans.skip_intro);
         assert!(booleans.mouse_wheel_zoom);
         assert!(booleans.shift_queue);
-        assert!(booleans.terrain_deformation);
     }
 }

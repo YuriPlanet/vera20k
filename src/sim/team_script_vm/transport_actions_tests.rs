@@ -94,14 +94,7 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
     let mut cameras = Vec::new();
     for _ in 0..100 {
         let output = sim
-            .advance_app_frame(
-                &[],
-                &rules,
-                None,
-                67,
-                TickLane::Ordinary,
-                FrameEffects::default(),
-            )
+            .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
             .unwrap();
         cameras.extend(output.trigger_effects.into_iter().filter(|effect| {
             matches!(
@@ -145,14 +138,7 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     for _ in 0..250 {
         let output = sim
-            .advance_app_frame(
-                &[],
-                &rules,
-                None,
-                67,
-                TickLane::Ordinary,
-                FrameEffects::default(),
-            )
+            .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
             .unwrap();
         assert!(
             !output.trigger_effects.iter().any(|effect| matches!(
@@ -183,7 +169,7 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
             sim.entities()
                 .get(transport)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .unwrap()
                 .passengers()
@@ -315,7 +301,7 @@ impl Fixture {
                 );
                 let entity = self.sim.substrate.entities.get_mut(transport).unwrap();
                 entity
-                    .passenger_role
+                    .passenger_role_mut_for_test()
                     .cargo_mut()
                     .expect("transport cargo")
                     .board_forced_chain(&[(passenger, 1.0)]);
@@ -324,7 +310,7 @@ impl Fixture {
                     .entities
                     .get_mut(passenger)
                     .unwrap()
-                    .passenger_role = PassengerRole::inside_for_test(transport, false);
+                    .set_passenger_role_for_test(PassengerRole::inside_for_test(transport, false));
                 passenger
             })
             .collect()
@@ -372,7 +358,7 @@ impl Fixture {
             .substrate
             .entities
             .get(transport)
-            .and_then(|entity| entity.passenger_role.cargo())
+            .and_then(|entity| entity.passenger_role().cargo())
             .map(|cargo| cargo.passengers().to_vec())
             .unwrap_or_default()
     }
@@ -486,28 +472,30 @@ fn the_retail_transport_scripts_run_ported_actions() {
         return;
     };
     let vm = &sim.team_script_vm;
-    let mut transport_teams = 0;
-    let mut first_unported = std::collections::BTreeMap::new();
-    for team_type in vm.team_types.values() {
-        let actions = &vm.scripts[&team_type.script_id].actions;
-        if actions.iter().any(|action| action.action_id == 14) {
-            transport_teams += 1;
-            assert!(
-                actions
-                    .iter()
-                    .all(|action| action_is_ported(action.action_id, crate::rules::ARES_BUILD))
-            );
+    for ares_way in [false, true] {
+        let mut transport_teams = 0;
+        let mut first_unported = std::collections::BTreeMap::new();
+        for team_type in vm.team_types.values() {
+            let actions = &vm.scripts[&team_type.script_id].actions;
+            if actions.iter().any(|action| action.action_id == 14) {
+                transport_teams += 1;
+                assert!(
+                    actions
+                        .iter()
+                        .all(|action| action_is_ported(action.action_id, ares_way))
+                );
+            }
+            if let Some(action) = actions
+                .iter()
+                .find(|action| !action_is_ported(action.action_id, ares_way))
+            {
+                *first_unported.entry(action.action_id).or_insert(0) += 1;
+            }
         }
-        if let Some(action) = actions
-            .iter()
-            .find(|action| !action_is_ported(action.action_id, crate::rules::ARES_BUILD))
-        {
-            *first_unported.entry(action.action_id).or_insert(0) += 1;
-        }
+        assert_eq!(vm.team_types.len(), 163);
+        assert_eq!(transport_teams, 16);
+        assert!(first_unported.is_empty(), "{first_unported:?}");
     }
-    assert_eq!(vm.team_types.len(), 163);
-    assert_eq!(transport_teams, 16);
-    assert!(first_unported.is_empty(), "{first_unported:?}");
 }
 
 /// Through the production readers: the five retail AIMD TeamTypes whose
@@ -836,7 +824,7 @@ impl OracleTeam {
                 );
                 cargo.set_passengers_for_test(vec![u64::MAX; count]);
                 cargo.set_passenger_sizes_for_test(vec![1.0; count]);
-                entity.passenger_role = PassengerRole::transport(cargo);
+                entity.set_passenger_role_for_test(PassengerRole::transport(cargo));
             }
             entity
                 .navigation

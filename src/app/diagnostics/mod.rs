@@ -8,3 +8,4 @@ pub(crate) mod performance_overlay;
 pub(crate) mod shell_capture;
 pub(crate) mod state;
 pub(crate) mod tactical_capture;
+pub(crate) mod thread_load;

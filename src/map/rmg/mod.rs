@@ -110,9 +110,9 @@ const DIM_MIN: [i32; 7] = [70, 70, 70, 80, 90, 100, 100];
 const DIM_MAX: [i32; 7] = [80, 80, 80, 90, 100, 110, 120];
 /// The original's `NumPlayers` ceiling; the endpoint tables cover 2..=8.
 pub const NATIVE_MAX_PLAYERS: i32 = 8;
-/// VERA extension: random maps seat up to thirty players, the network and
-/// Skirmish seat count (`skirmish_launch::NETWORK_PLAYER_SLOT_COUNT`).
-pub const MAX_PLAYERS: i32 = crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32;
+/// VERA extension: random maps seat up to the offline Skirmish row count
+/// (`skirmish_launch::SKIRMISH_MAX_SLOT_COUNT`).
+pub const MAX_PLAYERS: i32 = crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT as i32;
 
 /// The original's largest Width/Height option ("Very Large").
 pub const NATIVE_MAX_SIZE_OPTION: i32 = 3;
@@ -127,7 +127,8 @@ pub const MAX_SIZE_OPTION: i32 = NATIVE_MAX_SIZE_OPTION + EXTENDED_SIZES.len() a
 ///
 /// 2..=8 read the original tables unchanged. Above eight (VERA extension) the
 /// eight-player endpoints grow with the square root of the player count, so
-/// each player keeps the eight-player map's area: 30 players get 193..232.
+/// each player keeps the eight-player map's area: 30 players get 193..232 and
+/// 120 players 387..464.
 /// Integer square roots keep it bit-identical on every platform.
 fn dimension_endpoints(players: i32) -> (i32, i32) {
     if players <= NATIVE_MAX_PLAYERS {
@@ -281,9 +282,10 @@ impl GeneratedMap {
 /// off every theater but temperate (whose LAT driver still scatters trees).
 ///
 /// `options` must already be normalized — `build::generate_map` normalizes its
-/// copy before calling this.
+/// copy before calling this. `ares`: Ares.dll is loaded for this generation
+/// (`build::GenerationObjects::ares`).
 #[cfg(any(test, feature = "test-support"))]
-pub fn executed_stages(options: &RmgOptions) -> Vec<Stage> {
+pub fn executed_stages(options: &RmgOptions, ares: bool) -> Vec<Stage> {
     STAGE_ORDER
         .iter()
         .copied()
@@ -294,7 +296,7 @@ pub fn executed_stages(options: &RmgOptions) -> Vec<Stage> {
             if *stage == Stage::Rocks && options.theater != 0 {
                 return false;
             }
-            if *stage == Stage::UrbanAreas && !options.urban_pass_runs() {
+            if *stage == Stage::UrbanAreas && !options.urban_pass_runs(ares) {
                 return false;
             }
             true
@@ -339,14 +341,17 @@ mod tests {
     fn rocks_run_only_in_the_temperate_theater() {
         // Temperate (theater 0) paints rocks; every other theater skips them,
         // but still runs trees.
-        let temperate = executed_stages(&RmgOptions::default());
+        let temperate = executed_stages(&RmgOptions::default(), false);
         assert!(temperate.contains(&Stage::Rocks));
         assert!(temperate.contains(&Stage::Trees));
         for theater in [1, 2, 3, 4] {
-            let stages = executed_stages(&RmgOptions {
-                theater,
-                ..Default::default()
-            });
+            let stages = executed_stages(
+                &RmgOptions {
+                    theater,
+                    ..Default::default()
+                },
+                false,
+            );
             assert!(
                 !stages.contains(&Stage::Rocks),
                 "theater {theater} must not paint rocks"
@@ -361,20 +366,26 @@ mod tests {
     #[test]
     fn island_passes_are_skipped_for_ordinary_map_types() {
         for map_type in [0, 1, 2] {
-            let stages = executed_stages(&RmgOptions {
-                map_type,
-                ..Default::default()
-            });
+            let stages = executed_stages(
+                &RmgOptions {
+                    map_type,
+                    ..Default::default()
+                },
+                false,
+            );
             assert!(
                 !stages.contains(&Stage::IslandPasses),
                 "map type {map_type} must not run the island passes"
             );
         }
         for map_type in [3, 4] {
-            let stages = executed_stages(&RmgOptions {
-                map_type,
-                ..Default::default()
-            });
+            let stages = executed_stages(
+                &RmgOptions {
+                    map_type,
+                    ..Default::default()
+                },
+                false,
+            );
             assert!(
                 stages.contains(&Stage::IslandPasses),
                 "map type {map_type} must run the island passes"
@@ -388,11 +399,14 @@ mod tests {
     fn executed_stages_preserve_the_pipeline_order() {
         for map_type in 0..=4 {
             for theater in 0..=4 {
-                let stages = executed_stages(&RmgOptions {
-                    map_type,
-                    theater,
-                    ..Default::default()
-                });
+                let stages = executed_stages(
+                    &RmgOptions {
+                        map_type,
+                        theater,
+                        ..Default::default()
+                    },
+                    false,
+                );
                 assert!(!stages.is_empty());
                 let positions: Vec<usize> = stages.iter().map(|s| position(*s)).collect();
                 assert!(
@@ -440,7 +454,7 @@ mod tests {
         assert_eq!(dims(9, 0), (106, 106));
         assert_eq!(dims(30, 0), (193, 193));
         assert_eq!(dims(30, 3), (232, 232));
-        assert_eq!(dims(99, 3), (232, 232), "clamped to thirty players");
+        assert_eq!(dims(123, 3), (464, 464), "clamped to one hundred twenty players");
     }
 
     #[test]

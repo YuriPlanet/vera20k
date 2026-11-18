@@ -878,14 +878,7 @@ impl SuppliedFootFixture {
                 sub_cell,
                 CellListInsertion::PrependNonBuilding,
             );
-            Simulation::submit_object_display(
-                &sim.interner,
-                &sim.terrain_objects,
-                &mut sim.substrate,
-                id,
-                DisplayLayer::GROUND,
-                rules,
-            );
+            Simulation::submit_object_display(&mut sim.substrate, id, DisplayLayer::GROUND);
         }
         sim.set_logic_order_for_test(logic);
         // The original row writes pose/layer controls AFTER Unlimbo. They do
@@ -939,12 +932,18 @@ impl SuppliedFootFixture {
                 "Ground Display",
             ),
         ] {
-            let expected: Vec<u64> = native_order
+            let mut actual = actual;
+            let mut expected: Vec<u64> = native_order
                 .as_array()
                 .unwrap()
                 .iter()
                 .map(|pointer| fixture.id(pointer).unwrap())
                 .collect();
+            // VERA keeps Ground as an unordered set (`DisplayLayers::submit`).
+            if list == "Ground Display" {
+                actual.sort_unstable();
+                expected.sort_unstable();
+            }
             assert_eq!(actual, expected, "supplied {list} registration order");
         }
         assert_rng(
@@ -2020,7 +2019,7 @@ fn original_retail_foot_stray_and_empty_rescue_home_complete_destination_transac
             &rules,
             row,
             super::super::ObjectAiCtx {
-                overlay_registry: Some(&scene.runtime.resources.overlay_registry),
+                overlay_registry: Some(scene.runtime.resources.rules.overlay_registry()),
                 ..Default::default()
             },
         );

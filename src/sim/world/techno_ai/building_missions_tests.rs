@@ -1407,7 +1407,7 @@ pub(super) fn retail_dustbowl_defence(
                 y,
                 0,
                 rules,
-                &resources.overlay_registry,
+                resources.rules.overlay_registry(),
             )?;
             let defence = sim
                 .spawn_object_with_overlay_registry(
@@ -1417,7 +1417,7 @@ pub(super) fn retail_dustbowl_defence(
                     y,
                     0,
                     rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
                 .expect("the defence stands where the MCV does");
             Some((defence, truck, x, y))
@@ -1435,7 +1435,7 @@ pub(super) fn retail_dustbowl_defence(
                     py,
                     0,
                     rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
             })
             .unwrap_or_else(|| panic!("room for {plant}"));
@@ -1491,7 +1491,7 @@ fn retail_spawn(
             cell.1,
             0,
             &resources.rules,
-            &resources.overlay_registry,
+            resources.rules.overlay_registry(),
         )
         .expect("spawns");
     sim.resolve_type_handles(&resources.rules);
@@ -1768,9 +1768,8 @@ fn retail_dustbowl_tesla_coil_charges_before_each_shot() {
 ///   `PrismSupportDelay=45` on its rearm timer.
 #[test]
 #[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
-// The stock PrismType support; Ares builds replace it
+// The stock PrismType support; an Ares game replaces it
 // (`techno_ai::ares_prism_forwarding`).
-#[cfg(not(feature = "ares"))]
 fn retail_dustbowl_prism_towers_forward_their_charge() {
     use crate::sim::world::DelayedFire;
     let (mut scenario, master, mcv, (x, y)) =
@@ -1794,7 +1793,7 @@ fn retail_dustbowl_prism_towers_forward_their_charge() {
                     py,
                     0,
                     &resources.rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
             })
             .expect("room for a second GAPOWR");
@@ -1979,60 +1978,28 @@ fn retail_dustbowl_ore_cell_spawn_admission_matches_native_gates() {
 
     // A defence refuses the ore cell through the live overlay table.
     assert!(
-        sim.spawn_object_with_overlay_registry(
-            "GAPILL",
-            "Americans",
-            69,
-            40,
-            0,
-            rules,
-            &resources.overlay_registry,
-        )
-        .is_none(),
+        sim.spawn_object_with_map_overlays("GAPILL", "Americans", 69, 40, 0, rules)
+            .is_none(),
         "Is_Clear_To_Build refuses a building on an ore overlay"
     );
 
     // Through the live table the ore cell admits infantry and vehicles, and
     // the infantryman stands on his requested cell.
     let engineer = sim
-        .spawn_object_with_overlay_registry(
-            "E2",
-            "Americans",
-            69,
-            40,
-            0,
-            rules,
-            &resources.overlay_registry,
-        )
+        .spawn_object_with_map_overlays("E2", "Americans", 69, 40, 0, rules)
         .expect("ore admits infantry through the live overlay table");
     let placed = sim.substrate.entities.get(engineer).unwrap();
     assert_eq!((placed.position.rx(), placed.position.ry()), (69, 40));
     assert!(
-        sim.spawn_object_with_overlay_registry(
-            "SMCV",
-            "Russians",
-            69,
-            41,
-            0,
-            rules,
-            &resources.overlay_registry,
-        )
-        .is_some(),
+        sim.spawn_object_with_map_overlays("SMCV", "Russians", 69, 41, 0, rules)
+            .is_some(),
         "ore admits vehicles through the live overlay table"
     );
 
     // On the overlay-free ground both classes stand.
     assert!(
-        sim.spawn_object_with_overlay_registry(
-            "GAPILL",
-            "Americans",
-            76,
-            40,
-            0,
-            rules,
-            &resources.overlay_registry,
-        )
-        .is_some(),
+        sim.spawn_object_with_map_overlays("GAPILL", "Americans", 76, 40, 0, rules)
+            .is_some(),
         "overlay-free Rough ground admits a building"
     );
 }

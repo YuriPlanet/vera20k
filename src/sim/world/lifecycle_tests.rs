@@ -556,7 +556,7 @@ fn receiver_garrison_survivor_keeps_height_aware_playfield_membership() {
     {
         let passenger = sim.substrate.entities.get_mut(passenger_id).unwrap();
         passenger.set_type_ref_for_test(passenger_type);
-        passenger.passenger_role = PassengerRole::inside_for_test(building_id, false);
+        passenger.set_passenger_role_for_test(PassengerRole::inside_for_test(building_id, false));
     }
     {
         let building = sim.substrate.entities.get_mut(building_id).unwrap();
@@ -564,7 +564,7 @@ fn receiver_garrison_survivor_keeps_height_aware_playfield_membership() {
         building
             .type_facts
             .set_foundation_for_test("2x2".to_string().into());
-        building.passenger_role.occupants_mut().add(passenger_id);
+        building.garrison_mut_for_test().add_for_test(passenger_id);
     }
     assert!(matches!(
         sim.try_reveal_entity_with_context(
@@ -2844,7 +2844,7 @@ fn particle_logic_membership_uses_the_object_local_guard_and_rebuilds_it() {
     let mut sim = Simulation::new();
     insert_particle_system(&mut sim, 7);
 
-    assert!(sim.reveal_particle_system(7, crate::rules::ruleset::RuleSet::empty_for_test()));
+    assert!(sim.reveal_particle_system(7));
     assert!(
         sim.substrate
             .particle_systems
@@ -2854,7 +2854,7 @@ fn particle_logic_membership_uses_the_object_local_guard_and_rebuilds_it() {
     );
     assert_eq!(sim.live_object_order_snapshot(), vec![7]);
 
-    assert!(sim.reveal_particle_system(7, crate::rules::ruleset::RuleSet::empty_for_test()));
+    assert!(sim.reveal_particle_system(7));
     assert_eq!(sim.live_object_order_snapshot(), vec![7]);
 
     sim.substrate
@@ -2892,8 +2892,11 @@ fn open_topped_direct_registration_keeps_hidden_passenger_live() {
     let _ = sim.reveal(2);
 
     assert_eq!(sim.techno_limbo(1), super::ConcealOutcome::Concealed);
-    sim.substrate.entities.get_mut(1).unwrap().passenger_role =
-        PassengerRole::inside_for_test(99, true);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(99, true));
 
     assert!(sim.register_open_topped_passenger(1));
     let passenger = sim.substrate.entities.get(1).unwrap();
@@ -2919,8 +2922,11 @@ fn destructor_takes_a_dead_open_topped_rider_out_of_logic() {
     let _ = sim.reveal(1);
     let _ = sim.reveal(2);
     assert_eq!(sim.techno_limbo(1), super::ConcealOutcome::Concealed);
-    sim.substrate.entities.get_mut(1).unwrap().passenger_role =
-        PassengerRole::inside_for_test(2, true);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(2, true));
     assert!(sim.register_open_topped_passenger(1));
 
     sim.uninit(1);
@@ -2944,8 +2950,11 @@ fn logic_visit_of_a_dead_open_topped_rider_does_not_uninit_it_again() {
     let _ = sim.reveal(1);
     let _ = sim.reveal(2);
     assert_eq!(sim.techno_limbo(1), super::ConcealOutcome::Concealed);
-    sim.substrate.entities.get_mut(1).unwrap().passenger_role =
-        PassengerRole::inside_for_test(2, true);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(2, true));
     assert!(sim.register_open_topped_passenger(1));
     sim.uninit(1);
 
@@ -3507,11 +3516,21 @@ fn lifecycle_authority_transport_uninits_passengers_in_cargo_order_before_carrie
     let mut cargo = PassengerCargo::new(5, 1.0);
     cargo.board_forced_chain(&[(2, 1.0)]);
     cargo.board_forced_chain(&[(3, 1.0)]);
-    sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
-    sim.substrate.entities.get_mut(2).unwrap().passenger_role =
-        PassengerRole::inside_for_test(1, false);
-    sim.substrate.entities.get_mut(3).unwrap().passenger_role =
-        PassengerRole::inside_for_test(1, false);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::transport(cargo));
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(1, false));
+    sim.substrate
+        .entities
+        .get_mut(3)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(1, false));
     sim.lifecycle_test_events.clear();
 
     sim.uninit(1);
@@ -3532,7 +3551,7 @@ fn lifecycle_authority_transport_uninits_passengers_in_cargo_order_before_carrie
             .entities
             .get(2)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .is_none()
     );
     assert!(
@@ -3540,7 +3559,7 @@ fn lifecycle_authority_transport_uninits_passengers_in_cargo_order_before_carrie
             .entities
             .get(3)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .is_none()
     );
     let cargo = sim
@@ -3548,7 +3567,7 @@ fn lifecycle_authority_transport_uninits_passengers_in_cargo_order_before_carrie
         .entities
         .get(1)
         .unwrap()
-        .passenger_role
+        .passenger_role()
         .cargo()
         .unwrap();
     assert!(cargo.passengers().is_empty());
@@ -3560,7 +3579,7 @@ fn lifecycle_authority_transport_uninits_passengers_in_cargo_order_before_carrie
             .entities
             .get(1)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .occupants()
             .fire_index(),
         0
@@ -3576,17 +3595,23 @@ fn nested_transport_uninit_keeps_inner_cargo_until_its_recursive_transaction() {
     let _ = sim.reveal(1);
     let mut outer = PassengerCargo::new(12, 6.0);
     outer.board_forced_chain(&[(2, 3.0)]);
-    sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(outer);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::transport(outer));
     let mut inner = PassengerCargo::new(5, 2.0);
     inner.board_forced_chain(&[(3, 1.0)]);
     let entity = sim.substrate.entities.get_mut(2).unwrap();
-    entity.passenger_role = PassengerRole::transport(inner);
-    entity.passenger_role.set_inside_transport(1, false);
+    entity.set_passenger_role_for_test(PassengerRole::transport(inner));
+    entity
+        .passenger_role_mut_for_test()
+        .set_inside_transport(1, false);
     sim.substrate
         .entities
         .get_mut(3)
         .unwrap()
-        .passenger_role
+        .passenger_role_mut_for_test()
         .set_inside_transport(2, true);
 
     sim.uninit(1);
@@ -3596,7 +3621,7 @@ fn nested_transport_uninit_keeps_inner_cargo_until_its_recursive_transaction() {
     for id in [1, 2, 3] {
         let entity = sim.substrate.entities.get(id).unwrap();
         assert!(!entity.lifecycle.object_alive());
-        assert_eq!(entity.passenger_role.inside_transport_id(), None);
+        assert_eq!(entity.passenger_role().inside_transport_id(), None);
     }
     for id in [1, 2] {
         assert!(
@@ -3604,7 +3629,7 @@ fn nested_transport_uninit_keeps_inner_cargo_until_its_recursive_transaction() {
                 .entities
                 .get(id)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .unwrap()
                 .is_empty()
@@ -3642,15 +3667,17 @@ fn nested_transport_parent_expiry_preserves_its_independent_cargo() {
             let mut cargo = PassengerCargo::new(5, 2.0);
             cargo.board_forced_chain(&[(3, 1.0)]);
             let entity = sim.substrate.entities.get_mut(2).unwrap();
-            entity.passenger_role = PassengerRole::transport(cargo);
+            entity.set_passenger_role_for_test(PassengerRole::transport(cargo));
             if inside {
-                entity.passenger_role.set_inside_transport(1, false);
+                entity
+                    .passenger_role_mut_for_test()
+                    .set_inside_transport(1, false);
             }
             sim.substrate
                 .entities
                 .get_mut(3)
                 .unwrap()
-                .passenger_role
+                .passenger_role_mut_for_test()
                 .set_inside_transport(2, true);
 
             let announce_expiry = |sim: &mut Simulation| {
@@ -3667,7 +3694,7 @@ fn nested_transport_parent_expiry_preserves_its_independent_cargo() {
             } else {
                 announce_expiry(&mut sim);
             }
-            let role = &sim.substrate.entities.get(2).unwrap().passenger_role;
+            let role = sim.substrate.entities.get(2).unwrap().passenger_role();
             assert_eq!(
                 role.inside_transport(),
                 if inside && retain_inside {
@@ -3684,7 +3711,7 @@ fn nested_transport_parent_expiry_preserves_its_independent_cargo() {
                     .entities
                     .get(3)
                     .unwrap()
-                    .passenger_role
+                    .passenger_role()
                     .inside_transport(),
                 Some((2, true))
             );
@@ -4477,7 +4504,7 @@ fn completed_empty_smoke_limbo_clears_every_matching_techno_before_late_drain() 
     }
     for id in [4, 5] {
         insert_particle_system(&mut sim, id);
-        assert!(sim.reveal_particle_system(id, crate::rules::ruleset::RuleSet::empty_for_test()));
+        assert!(sim.reveal_particle_system(id));
     }
     sim.substrate
         .particle_systems
@@ -4632,7 +4659,6 @@ fn completed_empty_smoke_limbo_clears_every_matching_techno_before_late_drain() 
 
 // Ares simulates this Smoke system itself (hooks 0x62DF05, 0x62FD60) and
 // builds no ParticleClass children.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn particle_system_physical_disposal_removes_retained_child_air_entries() {
     let rules =
@@ -4696,11 +4722,21 @@ fn expiring_mixed_size_passenger_updates_transport_total_exactly() {
     let mut cargo = PassengerCargo::new(5, 0.0);
     cargo.board_forced_chain(&[(2, 3.0)]);
     cargo.board_forced_chain(&[(3, 1.0)]);
-    sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
-    sim.substrate.entities.get_mut(2).unwrap().passenger_role =
-        PassengerRole::inside_for_test(1, false);
-    sim.substrate.entities.get_mut(3).unwrap().passenger_role =
-        PassengerRole::inside_for_test(1, false);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::transport(cargo));
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(1, false));
+    sim.substrate
+        .entities
+        .get_mut(3)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(1, false));
 
     sim.uninit(2);
 
@@ -4709,7 +4745,7 @@ fn expiring_mixed_size_passenger_updates_transport_total_exactly() {
         .entities
         .get(1)
         .unwrap()
-        .passenger_role
+        .passenger_role()
         .cargo()
         .unwrap();
     assert_eq!(cargo.passengers(), vec![3]);
@@ -5900,9 +5936,8 @@ fn homing_ground_impact_reaches_damage_and_cleanup_through_runtime_frame() {
             );
         }
         let mut runtime = SimRuntime::from_simulation(sim);
-        runtime.resources_mut().rules = RuleSet::from_ini(&ini).unwrap();
-        runtime.resources_mut().overlay_registry =
-            crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, Some(&art));
+        runtime.resources_mut().rules =
+            RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
 
         let _ = runtime
             .advance_frame(
@@ -6816,7 +6851,7 @@ fn gsi_05_04_combat_fatal_garrison_recursion_keeps_cell_target() {
     {
         let passenger = sim.substrate.entities.get_mut(passenger_id).unwrap();
         passenger.set_type_ref_for_test(passenger_type);
-        passenger.passenger_role = PassengerRole::inside_for_test(building_id, false);
+        passenger.set_passenger_role_for_test(PassengerRole::inside_for_test(building_id, false));
     }
     {
         let building = sim.substrate.entities.get_mut(building_id).unwrap();
@@ -6825,7 +6860,7 @@ fn gsi_05_04_combat_fatal_garrison_recursion_keeps_cell_target() {
             .type_facts
             .set_foundation_for_test("2x2".to_string().into());
         building.health.set_for_test(10);
-        building.passenger_role.occupants_mut().add(passenger_id);
+        building.garrison_mut_for_test().add_for_test(passenger_id);
     }
     assert!(matches!(
         sim.try_reveal_entity_with_context(
@@ -9553,7 +9588,7 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
 }
 
 #[test]
-fn pre_logic_save_observes_input_and_ground_order_before_first_tick() {
+fn pre_logic_save_observes_input_and_unsorted_ground_before_first_tick() {
     use super::{FrameEffects, TickLane, display_layers::DisplayLayer};
     use crate::sim::command::{Command, CommandEnvelope};
 
@@ -9602,9 +9637,11 @@ fn pre_logic_save_observes_input_and_ground_order_before_first_tick() {
     let loaded = GameSnapshot::load(&saved.into_inner().expect("reached pre-Logic save")).unwrap();
     assert_eq!(loaded.sim.session().tick(), 0);
     assert_eq!(loaded.sim.session().game_options().game_speed, 2);
+    // The simulation no longer sorts Ground before Logic
+    // (`DisplayLayers::submit`): the moved members keep their places.
     assert_eq!(
         loaded.sim.substrate.display.members(DisplayLayer::GROUND),
-        [2, 3, 4, 1]
+        [1, 2, 3, 4]
     );
     assert_eq!(runtime.simulation.session().tick(), 1);
 }
@@ -9628,8 +9665,9 @@ fn display_lifecycle_is_independent_of_logic_and_survives_production_save() {
         sim.substrate.display.members(DisplayLayer::GROUND),
         [1, 2, 3, 4]
     );
-    // Coordinates change without resubmitting. MainTick's single adjacent
-    // pass has a different result from either Logic order or a full sort.
+    // Coordinates change without resubmitting: the simulation's Ground
+    // keeps its members where they are, and only the draw order follows
+    // the keys (`Simulation::ground_draw_order`).
     for id in 1..=4 {
         sim.substrate
             .entities
@@ -9638,47 +9676,31 @@ fn display_lifecycle_is_independent_of_logic_and_survives_production_save() {
             .position
             .set_rx_for_test(7 - id as u16);
     }
-    let before_sort = sim.state_hash();
-    Simulation::sort_display_ground(
-        &sim.interner,
-        &sim.terrain_objects,
-        &mut sim.substrate,
-        crate::rules::ruleset::RuleSet::empty_for_test(),
-    );
-    assert_ne!(sim.state_hash(), before_sort);
     assert_eq!(
         sim.substrate.display.members(DisplayLayer::GROUND),
-        [2, 3, 4, 1]
+        [1, 2, 3, 4]
     );
+    assert_eq!(sim.ground_draw_order(None), [4, 3, 2, 1]);
     let bytes = GameSnapshot::save(&sim, 0, 0, "display-order", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
     restored.restore_after_snapshot_load().unwrap();
     assert_eq!(
         restored.substrate.display.members(DisplayLayer::GROUND),
-        [2, 3, 4, 1]
-    );
-    Simulation::sort_display_ground(
-        &restored.interner,
-        &restored.terrain_objects,
-        &mut restored.substrate,
-        crate::rules::ruleset::RuleSet::empty_for_test(),
-    );
-    assert_eq!(
-        restored.substrate.display.members(DisplayLayer::GROUND),
-        [3, 4, 2, 1]
+        [1, 2, 3, 4]
     );
     let hash = restored.state_hash();
+    // A removal swaps the last member into the hole.
     restored.object_conceal(2);
     assert_eq!(
         restored.substrate.display.members(DisplayLayer::GROUND),
-        [3, 4, 1]
+        [1, 4, 3]
     );
     assert_eq!(restored.substrate.logic.as_slice(), [1, 3, 4]);
     assert_ne!(hash, restored.state_hash());
     restored
         .substrate
         .display
-        .submit(999, Some(DisplayLayer::TOP), &|_| 0);
+        .submit(999, Some(DisplayLayer::TOP));
     assert!(matches!(
         restored.restore_after_snapshot_load(),
         Err(SnapshotRestoreError::MissingDisplayIdentity { object_id: 999 })
@@ -9807,7 +9829,6 @@ fn mixed_display_lifecycle_matches_original_sequences_and_save_restore() {
                 "submit" => match actors[id as usize - 1]["kind"].as_str().unwrap() {
                     "unit" | "building" => Simulation::submit_entity_display(
                         &sim.interner,
-                        &sim.terrain_objects,
                         &mut sim.substrate,
                         &sim.resolved_terrain,
                         id,
@@ -9815,7 +9836,7 @@ fn mixed_display_lifecycle_matches_original_sequences_and_save_restore() {
                         None,
                     ),
                     "particle" => {
-                        sim.reveal_particle_system(id, &rules);
+                        sim.reveal_particle_system(id);
                     }
                     "terrain" => {
                         sim.register_terrain_object(id, &rules);
@@ -9837,12 +9858,8 @@ fn mixed_display_lifecycle_matches_original_sequences_and_save_restore() {
                 "remove" => {
                     sim.substrate.display.remove(id);
                 }
-                "sort" => Simulation::sort_display_ground(
-                    &sim.interner,
-                    &sim.terrain_objects,
-                    &mut sim.substrate,
-                    &rules,
-                ),
+                // The simulation keeps Ground unordered (`DisplayLayers::submit`).
+                "sort" => {}
                 "coordinates" => {
                     let xyz: [i32; 3] =
                         std::array::from_fn(|i| step["xyz"][i].as_i64().unwrap() as i32);
@@ -9866,38 +9883,26 @@ fn mixed_display_lifecycle_matches_original_sequences_and_save_restore() {
                 _ => unreachable!(),
             }
             for layer in 0..5 {
-                let expected: Vec<u64> = expected[layer]
+                let mut expected: Vec<u64> = expected[layer]
                     .as_array()
                     .unwrap()
                     .iter()
                     .map(|i| i.as_u64().unwrap() + 1)
                     .collect();
-                assert_eq!(
-                    sim.substrate
-                        .display
-                        .members(DisplayLayer::from_index(layer as u8).unwrap()),
-                    expected,
-                    "{name}: {step}"
-                );
+                let layer = DisplayLayer::from_index(layer as u8).unwrap();
+                let mut members = sim.substrate.display.members(layer).to_vec();
+                // Ground is a set: compare its membership.
+                if layer == DisplayLayer::GROUND {
+                    expected.sort_unstable();
+                    members.sort_unstable();
+                }
+                assert_eq!(members, expected, "{name}: {step}");
             }
         }
         let bytes = GameSnapshot::save(&sim, 0, 0, "mixed-display", 0);
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
         restored.restore_after_snapshot_load().unwrap();
         assert_eq!(restored.state_hash(), sim.state_hash(), "{name}");
-        Simulation::sort_display_ground(
-            &sim.interner,
-            &sim.terrain_objects,
-            &mut sim.substrate,
-            &rules,
-        );
-        Simulation::sort_display_ground(
-            &restored.interner,
-            &restored.terrain_objects,
-            &mut restored.substrate,
-            &rules,
-        );
-        assert_eq!(restored.state_hash(), sim.state_hash(), "{name}: next sort");
         for id in 1..=actors.len() as u64 {
             if restored.substrate.entities.contains(id) {
                 // Corpus entities were submitted directly, independently of
@@ -9922,9 +9927,7 @@ fn jumpjet_process_compares_live_layer_queries_not_cached_registration() {
     sim.try_reveal_entity(id, common_raw_request(3, 3, 0, 128, 128));
     // Explicit stale display cache witness. Native compares its two +74
     // queries and leaves this history alone while the Process answer is stable.
-    sim.substrate
-        .display
-        .submit(id, Some(DisplayLayer::TOP), &|_| 0);
+    sim.substrate.display.submit(id, Some(DisplayLayer::TOP));
     sim.tick_air_movement_with_cell_lists_one(
         id,
         crate::rules::ruleset::RuleSet::empty_for_test(),
@@ -9948,7 +9951,6 @@ fn jumpjet_process_compares_live_layer_queries_not_cached_registration() {
         .set_exact_z_leptons_for_test(Some(600));
     Simulation::complete_jumpjet_display_process(
         &sim.interner,
-        &sim.terrain_objects,
         &mut sim.substrate,
         &sim.resolved_terrain,
         id,
@@ -9965,7 +9967,6 @@ fn jumpjet_process_compares_live_layer_queries_not_cached_registration() {
     entity.position.set_exact_z_leptons_for_test(Some(0));
     Simulation::complete_jumpjet_display_process(
         &sim.interner,
-        &sim.terrain_objects,
         &mut sim.substrate,
         &sim.resolved_terrain,
         id,
@@ -9977,8 +9978,8 @@ fn jumpjet_process_compares_live_layer_queries_not_cached_registration() {
 
 /// Fly's phase tail (4CD4DE) resubmits Display after callbacks that may have
 /// UnInit an owner (landing retry's C4 receiver). Mark5F5850 refuses the
-/// Limbo owner; store removal expires the Display registration so the next
-/// Ground sort cannot meet a removed identity.
+/// Limbo owner; store removal expires the Display registration so no later
+/// Ground walk meets a removed identity.
 #[test]
 fn display_registration_expires_with_a_resubmitted_uninit_owner() {
     use super::display_layers::DisplayLayer;
@@ -9990,7 +9991,6 @@ fn display_registration_expires_with_a_resubmitted_uninit_owner() {
     assert!(sim.substrate.entities.get(id).unwrap().lifecycle.in_limbo());
     Simulation::submit_entity_display(
         &sim.interner,
-        &sim.terrain_objects,
         &mut sim.substrate,
         &sim.resolved_terrain,
         id,
@@ -10004,12 +10004,7 @@ fn display_registration_expires_with_a_resubmitted_uninit_owner() {
     sim.process_pending_delete();
     assert!(!sim.substrate.entities.contains(id));
     assert_eq!(sim.substrate.display.layer_of(id), None);
-    Simulation::sort_display_ground(
-        &sim.interner,
-        &sim.terrain_objects,
-        &mut sim.substrate,
-        crate::rules::ruleset::RuleSet::empty_for_test(),
-    );
+    assert_eq!(sim.ground_draw_order(None), Vec::<u64>::new());
 }
 
 /// `TechnoClass::Unlimbo` snaps the barrel elevation level (`0x006F6DC3`) and
@@ -10180,9 +10175,16 @@ fn aircraft_destructor_kills_its_passengers() {
     insert_entity(&mut sim, 2, EntityCategory::Infantry);
     let mut cargo = PassengerCargo::new(5, 1.0);
     cargo.board_forced_chain(&[(2, 1.0)]);
-    sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
-    sim.substrate.entities.get_mut(2).unwrap().passenger_role =
-        PassengerRole::inside_for_test(1, false);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::transport(cargo));
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(1, false));
 
     sim.finalize_and_remove_common(1, super::UninitContext::default(), 1);
 
@@ -10210,14 +10212,24 @@ fn detach_all_false_keeps_a_rider_in_its_transports_cargo() {
     let _ = sim.reveal(1);
     let mut cargo = PassengerCargo::new(5, 1.0);
     cargo.board_forced_chain(&[(2, 1.0)]);
-    sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
-    sim.substrate.entities.get_mut(2).unwrap().passenger_role =
-        PassengerRole::inside_for_test(1, true);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::transport(cargo));
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(1, true));
 
     sim.detach_all(2, false, super::UninitContext::default());
 
     let transport = sim.substrate.entities.get(1).unwrap();
-    assert_eq!(transport.passenger_role.cargo().unwrap().passengers(), &[2]);
+    assert_eq!(
+        transport.passenger_role().cargo().unwrap().passengers(),
+        &[2]
+    );
 }
 
 /// The Restore inside the expiry broadcast (`TechnoClass::PointerExpired`

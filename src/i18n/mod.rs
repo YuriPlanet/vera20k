@@ -19,9 +19,9 @@
 //! Name=Deutsch
 //!
 //! [Strings]
-//! VERA:SaveSetup=Setup speichern
-//! VERA:CatchingUp[one]=Holt auf - {count} Frame zurück
-//! VERA:CatchingUp[other]=Holt auf - {count} Frames zurück
+//! VERA:ChooseMap=Karte wählen
+//! VERA:LobbyInGameRooms[one]={count} in einem Raum
+//! VERA:LobbyInGameRooms[other]={count} in Räumen
 //! ; One of the game's own labels.
 //! GUI:Ok=OK
 //! ```
@@ -750,7 +750,10 @@ pub fn choices() -> Vec<LanguageChoice> {
 /// The index in `available` of the best language for `preferred` (most
 /// preferred first): the first preference any language shares a language
 /// with, and among those the one that also shares its script, then region.
-fn best_match<'a>(available: &[&str], preferred: impl Iterator<Item = &'a str>) -> Option<usize> {
+pub(crate) fn best_match<'a>(
+    available: &[&str],
+    preferred: impl Iterator<Item = &'a str>,
+) -> Option<usize> {
     let available: Vec<Option<Subtags>> = available.iter().map(|tag| Subtags::of(tag)).collect();
     preferred.filter_map(Subtags::of).find_map(|wanted| {
         available
@@ -923,13 +926,27 @@ fn missing(key: &str) -> String {
 /// a value is never read for names itself: a player called `{count}` stays
 /// `{count}`. A `{name}` with no value stays as it is.
 pub fn fill(text: &str, values: &[(&str, &dyn Display)]) -> String {
+    filled(text, values).0
+}
+
+/// [`fill`], or `None` when `text` names a value `values` lacks: for text
+/// whose values come from outside VERA, such as the lobby's lines, whose
+/// sender's own text stands in for a line this game cannot fill.
+pub fn fill_all(text: &str, values: &[(&str, &dyn Display)]) -> Option<String> {
+    let (out, complete) = filled(text, values);
+    complete.then_some(out)
+}
+
+/// [`fill`]'s text, and whether every `{name}` in `text` had a value.
+fn filled(text: &str, values: &[(&str, &dyn Display)]) -> (String, bool) {
     let mut out = String::with_capacity(text.len());
+    let mut complete = true;
     let mut rest = text;
     while let Some(open) = rest.find('{') {
         out.push_str(&rest[..open]);
         let after = &rest[open + 1..];
-        let value = after.find('}').and_then(|close| {
-            let name = &after[..close];
+        let name = after.find('}').map(|close| (close, &after[..close]));
+        let value = name.and_then(|(close, name)| {
             let value = values.iter().find(|(key, _)| *key == name)?.1;
             Some((close, value))
         });
@@ -939,13 +956,14 @@ pub fn fill(text: &str, values: &[(&str, &dyn Display)]) -> String {
                 rest = &after[close + 1..];
             }
             None => {
+                complete &= name.is_none();
                 out.push('{');
                 rest = after;
             }
         }
     }
     out.push_str(rest);
-    out
+    (out, complete)
 }
 
 /// `text` in the pseudo-language: letters swapped for accented look-alikes,
@@ -1449,13 +1467,19 @@ mod tests {
     }
 
     /// A value is never read for names: a player called `{count}` keeps the
-    /// name, and a name with no value stays as it is.
+    /// name, and a name with no value stays as it is, or leaves no text where
+    /// every name needs one. A `{` with no `}` is text.
     #[test]
     fn fill_puts_each_value_in_once() {
         let values: [(&str, &dyn Display); 2] = [("name", &"{count}"), ("count", &3)];
         assert_eq!(
             fill("{name} has {count} {rest}", &values),
             "{count} has 3 {rest}"
+        );
+        assert_eq!(fill_all("{name} has {count} {rest}", &values), None);
+        assert_eq!(
+            fill_all("{name} has {count} {", &values).as_deref(),
+            Some("{count} has 3 {")
         );
     }
 
@@ -1491,7 +1515,7 @@ mod tests {
         // A rewrite does.
         std::fs::write(
             &file,
-            "[Language]\nName=Test\n[Strings]\nVERA:SaveSetup=S\n",
+            "[Language]\nName=Test\n[Strings]\nVERA:ChooseMap=S\n",
         )
         .unwrap();
         assert_ne!(language_file_stamp(Some(&dir), None), before);
@@ -1509,12 +1533,12 @@ mod tests {
         std::fs::create_dir_all(&source).unwrap();
         std::fs::write(
             settings.join("vera20k.xx.ini"),
-            "[Language]\nName=Settings\n[Strings]\nVERA:SaveSetup=Settings\n",
+            "[Language]\nName=Settings\n[Strings]\nVERA:ChooseMap=Settings\n",
         )
         .unwrap();
         std::fs::write(
             source.join("vera20k.xx.ini"),
-            "[Language]\nName=Source\n[Strings]\nVERA:SaveSetup=Source\n",
+            "[Language]\nName=Source\n[Strings]\nVERA:ChooseMap=Source\n",
         )
         .unwrap();
         let languages = languages_with_source(Some(&settings), Some(&source));
@@ -1523,7 +1547,7 @@ mod tests {
             .find(|language| language.tag == "xx")
             .unwrap();
         assert_eq!(
-            xx.strings.get("VERA:SAVESETUP").map(String::as_str),
+            xx.strings.get("VERA:CHOOSEMAP").map(String::as_str),
             Some("Source")
         );
         std::fs::remove_dir_all(&root).unwrap();
@@ -1584,7 +1608,7 @@ mod tests {
 
     #[test]
     fn the_check_lists_untranslated_texts_missing_forms_and_values() {
-        let file = "[Language]\nName=Русский\n[Strings]\nVERA:CatchingUp[one]=Догоняем\nVERA:PlayersOnline=Игроки\nVERA:Bogus=?\nNoEquals\n";
+        let file = "[Language]\nName=Русский\n[Strings]\nVERA:LobbyInGameRooms[one]={count} в комнате\nVERA:PlayersOnline=Игроки\nVERA:Bogus=?\nNoEquals\n";
         assert!(!check("russian.ini", file).complete());
         let report = check("vera20k.ru.ini", file);
         assert!(!report.complete());
@@ -1597,7 +1621,7 @@ mod tests {
         assert!(
             report
                 .missing_forms
-                .contains(&"VERA:CatchingUp[few]".to_owned())
+                .contains(&"VERA:LobbyInGameRooms[few]".to_owned())
         );
         assert!(
             report

@@ -137,7 +137,7 @@ fn a_run_on_coordinates_no_cell_token_expresses_keeps_its_records() {
         .map(super::QueuedCommand::from_envelope)
         .collect();
     let before = run.clone();
-    sim.adjust_staged_megamission_destinations(&mut run, &rules, Some(&registry));
+    sim.adjust_staged_megamission_destinations(&mut run, &rules, Some(&registry), None);
     assert_eq!(run, before);
 
     sim.apply_due_commands(&records, &rules, 0, Some(&registry), Default::default());
@@ -203,7 +203,7 @@ fn a_moving_member_takes_its_probe_ray_from_its_head() {
         .unwrap();
     assert!(loco.ensure_installed_track_state());
     assert!(loco.store_track_head(TrackFamily::Drive, Some(DriveCoord::cell(16, 16, 0))));
-    sim.adjust_staged_megamission_destinations(&mut commands, &rules, Some(&registry));
+    sim.adjust_staged_megamission_destinations(&mut commands, &rules, Some(&registry), None);
     let destination = |command: &CommandEnvelope| match command.payload {
         Command::Move {
             target_rx,
@@ -259,7 +259,7 @@ fn planning_flags_use_the_production_group_destination_distributor() {
         })
         .collect();
     let mut ordinary = commands.clone();
-    sim.adjust_staged_megamission_destinations(&mut ordinary, &rules, Some(&registry));
+    sim.adjust_staged_megamission_destinations(&mut ordinary, &rules, Some(&registry), None);
     assert!(
         ordinary
             .iter()
@@ -283,7 +283,7 @@ fn planning_flags_use_the_production_group_destination_distributor() {
     let destination = i32::from_le_bytes(record.payload()[12..16].try_into().unwrap());
     record.payload_mut()[12..16].copy_from_slice(&(destination + 65536 * 1000).to_le_bytes());
     let before = distinct.clone();
-    sim.adjust_staged_megamission_destinations(&mut distinct, &rules, Some(&registry));
+    sim.adjust_staged_megamission_destinations(&mut distinct, &rules, Some(&registry), None);
     assert_eq!(
         distinct, before,
         "raw destination identity, not projected geometry, owns the run"
@@ -299,15 +299,13 @@ fn planning_flags_use_the_production_group_destination_distributor() {
                 CommandEnvelope::new(owner, 1, Command::PlanningRecord { record })
             })
             .collect();
-        sim.adjust_staged_megamission_destinations(&mut planned, &rules, Some(&registry));
+        sim.adjust_staged_megamission_destinations(&mut planned, &rules, Some(&registry), None);
         for (actual, expected) in planned.iter().zip(&ordinary) {
             let Command::PlanningRecord { record } = &actual.payload else {
                 unreachable!()
             };
             assert_eq!(record.payload()[22], flag);
-            let mut ordinary_record = record.clone();
-            ordinary_record.payload_mut()[22] = 0;
-            let decoded = MegaMissionRecord::decode(&ordinary_record).unwrap();
+            let (decoded, _) = MegaMissionRecord::decode_planned(record).unwrap();
             let Command::Move {
                 target_rx,
                 target_ry,

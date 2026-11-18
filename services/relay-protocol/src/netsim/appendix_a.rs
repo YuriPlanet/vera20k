@@ -1,4 +1,4 @@
-//! Spec appendix A replayed packet by packet (e2e-plan §2.3): two clients
+//! Spec appendix A replayed packet by packet: two clients
 //! at 30 Hz, 20 ms each way without jitter, A starting at t = 0 and B 30 ms
 //! later, commands at 480 (A) and 950 (B), A leaving at 1480 and B at 2000;
 //! lost are B's second UPLINK and the relay's turn 3 pack to B. Clients
@@ -92,6 +92,7 @@ fn status(record: &WireRecord) -> (u32, u64, u64, u32, u16, u32, bool, Feedback)
             start_delay_ms,
             started,
             feedback,
+            ..
         } => (
             *head_frame,
             *oldest_seq,

@@ -278,7 +278,6 @@ fn admitted_laser_births_match_original_building_and_unit_callers() {
 
 /// FireAt `0x006FF549..0x006FF571`: an infantryman's (LUNR's) house-colour
 /// laser is 2 wide like a Unit's; an explicit-colour one keeps 1.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn an_infantry_house_color_laser_is_two_wide() {
     for (house_color, width) in [(true, 2), (false, 1)] {
@@ -506,7 +505,6 @@ fn direct_laser_keeps_explicit_source_and_native_constructor_defaults() {
 #[test]
 // The stock support beam; an Ares supporter without a support target does
 // not beam (`techno_ai::ares_prism_forwarding`).
-#[cfg(not(feature = "ares"))]
 fn production_frame_orders_laser_update_before_delayed_support_birth() {
     let rules = fixture_rules(&json!({}));
     let mut sim = Simulation::new();
@@ -545,7 +543,6 @@ fn production_frame_orders_laser_update_before_delayed_support_birth() {
         .advance_app_frame(
             &[],
             &rules,
-            None,
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -656,7 +653,6 @@ fn retail_delayed_main_uses_preclear_count_and_failed_admission_emits_no_laser()
             .advance_app_frame(
                 &[],
                 rules,
-                None,
                 67,
                 TickLane::Ordinary,
                 crate::sim::world::FrameEffects::default(),

@@ -115,6 +115,10 @@ where
         // gamemd.exe ParticleClass::AI_Gas (0x0062BD50), 62C2C2..62C2DC:
         // read the parent system's +FC source House regardless of its own
         // BehavesLike. Smoke, Fire and Spark retain that same reference.
+        // RESIDUAL: a Gas or Fire child of a host of another behaviour (mod
+        // data only) damages with the rules-only context below, not the
+        // frame's: its kills' sounds wait for the next flush, and the overlay
+        // table and extension callbacks (bounty text) are absent.
         ParticleBehavesLike::Gas => super::gas::tick_particle(
             p,
             sim,
@@ -527,6 +531,72 @@ mod tests {
         assert!(target.damage_smoke_system_id.system().is_some());
         assert_eq!(sim.particle_systems().get(host).unwrap().particles.len(), 1);
     }
+
+    /// `ParticleClass::AI_Gas` hurts a tree with defenses on (IgnoreDefenses
+    /// 0 at `0x0062C2DC..0x0062C300`): the Wood warhead's Verses apply.
+    #[test]
+    fn gas_damage_to_a_tree_goes_through_the_warhead_verses() {
+        use crate::sim::terrain_object::TerrainObjectState;
+        let ini = crate::sim::arena_fixture::clear_ground_ini(
+            "[Countries]\n0=Americans\n1=Russians\n\
+             [TerrainTypes]\n0=TREE01\n[TREE01]\nStrength=100\nArmor=wood\n\
+             [ParticleSystems]\n0=HOST\n[HOST]\nBehavesLike=Gas\nHoldsWhat=CLOUD\n\
+             [Particles]\n0=CLOUD\n\
+             [CLOUD]\nBehavesLike=Gas\nMaxEC=100\nMaxDC=1\nDamage=60\nWarhead=WOODWH\n\
+             StateAIAdvance=3\nEndStateAI=10\nDeleteOnStateLimit=no\n\
+             [Warheads]\n0=WOODWH\n[WOODWH]\nWood=yes\n\
+             Verses=100%,100%,100%,100%,100%,100%,50%,100%,100%,100%,100%\n",
+        );
+        let rules = RuleSet::from_ini(&ini).unwrap();
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+        sim.session.set_binary_frame_for_test(1);
+        let tree = 700;
+        let tree_ref = sim.interner.intern("TREE01");
+        sim.terrain_objects
+            .objects_mut_for_test()
+            .insert(tree, TerrainObjectState::for_test(tree, tree_ref, 20, 20));
+        sim.terrain_objects
+            .cell_index_mut_for_test()
+            .insert((20, 20), tree);
+        let at = sim
+            .terrain_objects
+            .objects()
+            .get(&tree)
+            .unwrap()
+            .world_coord();
+        let host = sim
+            .spawn_particle_system(
+                rules.ps_type_id_by_name("HOST").unwrap(),
+                IVec3::new(at.x, at.y, 0),
+                None,
+                None,
+                IVec3::ZERO,
+                None,
+                &rules,
+            )
+            .unwrap();
+        let kind = rules.p_type_id_by_name("CLOUD").unwrap();
+        let cloud = Particle::new(
+            kind,
+            IVec3::new(at.x, at.y, at.z),
+            IVec3::ZERO,
+            rules.particle_type(kind),
+            &mut sim,
+        );
+        let system = sim.substrate.particle_systems.get_mut(host).unwrap();
+        system.done_spawning = true;
+        system.particles.push(cloud);
+        assert!(tick_particle_system(
+            &mut sim,
+            &rules,
+            host,
+            crate::sim::world::UninitContext::with_rules(&rules),
+        ));
+        assert_eq!(
+            sim.terrain_objects.objects().get(&tree).unwrap().health(),
+            70
+        );
+    }
     use crate::rules::ini_parser::IniFile;
     use crate::rules::particle_system_type::ParticleSystemTypeId;
     use crate::rules::particle_type::ParticleTypeId;
@@ -537,16 +607,18 @@ mod tests {
 
     #[test]
     fn mixed_hosts_preserve_gas_source_house_for_allied_and_enemy_receivers() {
-        // Ares runs Smoke and Spark hosts itself (hooks 0x62DF05, 0x62FD60)
-        // and never visits their ParticleClass children.
-        let behaviors: &[&str] = if crate::rules::ARES_BUILD {
-            &["Fire"]
-        } else {
-            &["Smoke", "Fire", "Spark"]
-        };
-        for &behavior in behaviors {
-            let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
-                "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=TARGET\n\
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            // Ares runs Smoke and Spark hosts itself (hooks 0x62DF05, 0x62FD60)
+            // and never visits their ParticleClass children.
+            let behaviors: &[&str] = if ares_way {
+                &["Fire"]
+            } else {
+                &["Smoke", "Fire", "Spark"]
+            };
+            for &behavior in behaviors {
+                let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+                    "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=TARGET\n\
                  [TARGET]\nStrength=100\nArmor=light\n\
                  [ParticleSystems]\n0=HOST\n[HOST]\nBehavesLike={behavior}\n\
                  [Particles]\n0=CLOUD\n[CLOUD]\nBehavesLike=Gas\nMaxEC=100\n\
@@ -554,62 +626,63 @@ mod tests {
                  EndStateAI=10\nDeleteOnStateLimit=no\n[Warheads]\n0=PSYCH\n\
                  [PSYCH]\nPsychedelic=yes\n\
                  Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
-            ));
-            let rules = RuleSet::from_ini(&ini).unwrap();
-            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
-            sim.session.set_binary_frame_for_test(1);
-            let owner = sim.interner.intern("Americans");
-            let host = sim
-                .spawn_particle_system(
-                    rules.ps_type_id_by_name("HOST").unwrap(),
-                    IVec3::ZERO,
-                    None,
-                    None,
-                    IVec3::ZERO,
-                    Some(owner),
-                    &rules,
-                )
-                .unwrap();
-            sim.substrate
-                .particle_systems
-                .get_mut(host)
-                .unwrap()
-                .done_spawning = true;
-            let mut targets = Vec::new();
-            for (country, x) in [("Americans", 20), ("Russians", 24)] {
-                let target = sim
-                    .spawn_object("TARGET", country, x, 20, 0, &rules)
+                ));
+                let rules = RuleSet::from_ini(&ini).unwrap();
+                let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+                sim.session.set_binary_frame_for_test(1);
+                let owner = sim.interner.intern("Americans");
+                let host = sim
+                    .spawn_particle_system(
+                        rules.ps_type_id_by_name("HOST").unwrap(),
+                        IVec3::ZERO,
+                        None,
+                        None,
+                        IVec3::ZERO,
+                        Some(owner),
+                        &rules,
+                    )
                     .unwrap();
-                let kind = rules.p_type_id_by_name("CLOUD").unwrap();
-                let cloud = Particle::new(
-                    kind,
-                    IVec3::new(i32::from(x) * 256 + 128, 5248, 0),
-                    IVec3::ZERO,
-                    rules.particle_type(kind),
-                    &mut sim,
-                );
                 sim.substrate
                     .particle_systems
                     .get_mut(host)
                     .unwrap()
-                    .particles
-                    .push(cloud);
-                targets.push(target);
+                    .done_spawning = true;
+                let mut targets = Vec::new();
+                for (country, x) in [("Americans", 20), ("Russians", 24)] {
+                    let target = sim
+                        .spawn_object("TARGET", country, x, 20, 0, &rules)
+                        .unwrap();
+                    let kind = rules.p_type_id_by_name("CLOUD").unwrap();
+                    let cloud = Particle::new(
+                        kind,
+                        IVec3::new(i32::from(x) * 256 + 128, 5248, 0),
+                        IVec3::ZERO,
+                        rules.particle_type(kind),
+                        &mut sim,
+                    );
+                    sim.substrate
+                        .particle_systems
+                        .get_mut(host)
+                        .unwrap()
+                        .particles
+                        .push(cloud);
+                    targets.push(target);
+                }
+                assert!(tick_particle_system(
+                    &mut sim,
+                    &rules,
+                    host,
+                    crate::sim::world::UninitContext::with_rules(&rules),
+                ));
+                assert!(
+                    !sim.entities().get(targets[0]).unwrap().berserk.is_active(),
+                    "{behavior}: the source house protects its ally from Psychedelic"
+                );
+                assert!(
+                    sim.entities().get(targets[1]).unwrap().berserk.is_active(),
+                    "{behavior}: the enemy control must reach the same real damage receiver"
+                );
             }
-            assert!(tick_particle_system(
-                &mut sim,
-                &rules,
-                host,
-                crate::sim::world::UninitContext::with_rules(&rules),
-            ));
-            assert!(
-                !sim.entities().get(targets[0]).unwrap().berserk.is_active(),
-                "{behavior}: the source house protects its ally from Psychedelic"
-            );
-            assert!(
-                sim.entities().get(targets[1]).unwrap().berserk.is_active(),
-                "{behavior}: the enemy control must reach the same real damage receiver"
-            );
         }
     }
 
@@ -635,9 +708,7 @@ mod tests {
         let stable_id = sim.substrate.allocate_stable_id();
         system.stable_id = stable_id;
         sim.substrate.particle_systems.insert(system);
-        assert!(
-            sim.reveal_particle_system(stable_id, crate::rules::ruleset::RuleSet::empty_for_test())
-        );
+        assert!(sim.reveal_particle_system(stable_id));
         stable_id
     }
 

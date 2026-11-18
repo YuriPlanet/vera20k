@@ -2,12 +2,11 @@
 
 A VERA feature; in the original game a player's buildings wait for the wrench.
 
-Tick **Auto Repair** on the Gameplay page of Options. From then on each of
-your damaged buildings starts repairing by itself, as if you had clicked it
-with the wrench. It is off by default, takes effect at once and is saved with
-your other options (`[VERA] AutoRepair=` in the options file). The box is in
-the main menu's Options; the Options menu inside a match is the original
-game's and does not have it.
+Tick **Auto Repair** on the Gameplay page of Options, in the main menu or in
+the menu Escape opens during a match. From then on each of your damaged
+buildings starts repairing by itself, as if you had clicked it with the wrench.
+It is off by default, takes effect at once and is saved with your other options
+(`[VERA] AutoRepair=` in the options file).
 
 ## What it does
 

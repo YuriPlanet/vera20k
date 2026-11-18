@@ -11,7 +11,6 @@ use crate::map::basic::BasicSection;
 use crate::map::houses::HouseRoster;
 use crate::render::radar::minimap::MinimapRenderer;
 use crate::render::selection_overlay::SelectionOverlay;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::ui::game_screen::GameScreen;
 use crate::ui::sidebar::SidebarTab;
 
@@ -65,7 +64,6 @@ pub(crate) fn fallback_map_load_result() -> init::MapLoadResult {
             simulation: None,
             overlays: Vec::new(),
             terrain_objects: Vec::new(),
-            overlay_registry: OverlayTypeRegistry::empty(),
             house_roster: HouseRoster::default(),
             rules: None,
             map_lighting_config: crate::map::lighting::LightingConfig::default(),
@@ -148,13 +146,12 @@ pub(crate) fn install_world_presentation(
         .match_state
         .sim_runtime
         .runtime()
-        .map(|runtime| runtime.resources.overlay_registry.clone());
+        .map(|runtime| runtime.resources.rules.retain_overlay_registry());
 
     state.match_state.match_presentation.combat_lights.clear();
     state.renderer.performance_overlay.clear_simulation_rate();
     state.match_state.match_presentation.lasers.clear_on_load();
-    // Still on the feature: moves with the flying credits (`presentation::flying_credits`).
-    #[cfg(feature = "ares")]
+    // Empty unless a bounty or ProduceCashDisplay queued labels, which only Ares does.
     state
         .match_state
         .match_presentation
@@ -320,6 +317,16 @@ pub(crate) fn install_world_presentation(
     // VERA relation colours start each scenario off, in the player colours.
     state.match_state.match_presentation.relation_colors = false;
     state.match_state.match_presentation.relation_color_map = None;
+    // VERA's Super Weapon Building Timers start from the saved switch; a
+    // match's own hotkey flips it from there.
+    let saved_timers = state
+        .persistence
+        .options_profile
+        .superweapon_building_timers;
+    state
+        .match_state
+        .match_presentation
+        .superweapon_building_timers = saved_timers;
     state.match_state.match_presentation.house_roster = map.house_roster;
     state.process_assets.csf = assets.csf;
     state.match_state.match_presentation.theater_name = map.theater_name;
@@ -350,7 +357,8 @@ pub(crate) fn install_world_presentation(
         .as_ref()
         .map(|grid| {
             let runtime = state.match_state.sim_runtime.runtime();
-            let overlay_registry = runtime.map(|runtime| &runtime.resources.overlay_registry);
+            let overlay_registry =
+                runtime.map(|runtime| runtime.resources.rules.overlay_registry());
             let rules = runtime.map(|runtime| &runtime.resources.rules);
             let overlay_data = build_minimap_overlay_data(
                 state.match_state.match_presentation.overlays.as_slice(),
@@ -399,6 +407,21 @@ pub(crate) fn install_world_presentation(
             assets,
             rules.digital_display_types().types(),
         );
+    }
+    // Ares/Phobos `Insignia` SHPs, retained once per match like the
+    // TechnoTypeExt's SHPStruct pointers.
+    if let Some(assets) = state.process_assets.manager()
+        && let Some(rules) = state
+            .match_state
+            .sim_runtime
+            .runtime()
+            .map(|runtime| &runtime.resources.rules)
+        && let Some(overlay) = state
+            .match_state
+            .match_presentation
+            .selection_overlay
+            .as_mut()
+    {
         overlay.load_insignia_shapes(
             &state.renderer.gpu.device,
             &state.renderer.gpu.queue,
@@ -408,15 +431,15 @@ pub(crate) fn install_world_presentation(
         );
     }
     // Ares `IvanBomb.Image` SHPs, retained once per match like the
-    // WeaponTypeExt's SHPStruct pointers.
-    // Still on the feature: moves with the selection overlay's Ares art.
-    #[cfg(feature = "ares")]
+    // WeaponTypeExt's SHPStruct pointers, when the Rules were read the Ares
+    // way: the bomb clock draws them then (`techno_extras_for_parent`).
     if let Some(assets) = state.process_assets.manager()
         && let Some(rules) = state
             .match_state
             .sim_runtime
             .runtime()
             .map(|runtime| &runtime.resources.rules)
+        && rules.ares_form()
         && let Some(overlay) = state
             .match_state
             .match_presentation
@@ -441,7 +464,8 @@ pub(crate) fn install_world_presentation(
         .borrow_mut()
         .reset();
     // Full_Init 687BB2 -> Init_BeaconArt 4309D0, after 68781F mounted the
-    // side's MIX group; each row's ColorScheme is its House's (+0x16054).
+    // side's MIX group; each row's ColorScheme is its House's (+0x16054),
+    // whose Convert Init_Theater rebuilt from UNIT%s.PAL (534D77).
     let beacon_side = crate::app::presentation::sidebar_render::current_sidebar_side(state);
     let beacon_ares = state.rules().is_some_and(|rules| rules.ares());
     state.match_state.match_presentation.beacon_art =
@@ -461,6 +485,11 @@ pub(crate) fn install_world_presentation(
                     *runtime.resources.rules.house_color_ramps.ramp(index)
                 })
                 .collect();
+            let unit_palette = crate::map::theater::load_theater_unit_and_iso_palettes(
+                assets,
+                &state.match_state.match_presentation.theater_name,
+            )
+            .map(|(unit, _)| unit);
             Some(crate::render::beacon_art::BeaconArt::new(
                 &state.renderer.gpu.device,
                 &state.renderer.gpu.queue,
@@ -468,6 +497,7 @@ pub(crate) fn install_world_presentation(
                 assets,
                 beacon_side,
                 beacon_ares,
+                unit_palette.as_ref(),
                 &ramps,
             ))
         });
@@ -614,11 +644,11 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             simulation.publish_scenario_started();
             simulation.batch_path_searches();
             simulation.batch_target_scans();
+            simulation.present_effect_anims();
             simulation.sleep_idle_objects_in_match();
             crate::sim::runtime::SimRuntime {
                 simulation,
                 resources: crate::sim::runtime::SimResources {
-                    overlay_registry: result.scenario.overlay_registry,
                     terrain_template: result.scenario.resolved_terrain,
                     rules,
                 }
@@ -829,7 +859,11 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                     .simulation
                     .restore_campaign_carry_over(record, &runtime.resources.rules);
             }
-            crate::app::lan_service::install_gameplay(state).map_err(|error| error.to_string())
+            let installed = crate::app::lan_service::install_gameplay(state);
+            if installed.is_ok() {
+                install_watcher(state);
+            }
+            installed.map_err(|error| error.to_string())
         }
         crate::app::match_bootstrap::LoadingStartup::Replay { .. } => {
             state.match_state.startup.clear();
@@ -891,6 +925,20 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         }
     }
     crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+}
+
+/// VERA watching (docs/Networking.md "Watching"): the live session that
+/// `install_gameplay` made says whether this game watches its match. Its world
+/// is then a watcher's before its first frame: it sends nothing, also in the
+/// seat of the player it follows, whose sight it starts with, and Tab may
+/// change its view (`match_runtime::watching`).
+fn install_watcher(state: &mut AppState) {
+    if !crate::app::match_runtime::watching::active(state) {
+        return;
+    }
+    if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
+        runtime.simulation.install_watcher();
+    }
 }
 
 /// Build overlay classification data for the minimap from map overlay entries.

@@ -282,7 +282,6 @@ fn authored_drain_provider_commands_effects_and_saved_phase_follow_native_conver
         .advance_app_frame(
             &commands,
             &rules,
-            None,
             33,
             crate::sim::world::TickLane::Ordinary,
             FrameEffects::for_sound(&boundary),

@@ -572,10 +572,10 @@ fn projected_options(
         .iter()
         .map(|human| LanOptionsHuman {
             name: human.name.clone(),
-            country: super::country_value(human),
-            color: super::color_value(human),
-            start: start_value(human.slot.start_position),
-            team: team_value(human.slot.team),
+            country: human.slot.country_shell_value(human.is_observer()),
+            color: human.slot.color_shell_value(),
+            start: human.slot.start_position.shell_value(),
+            team: human.slot.team.shell_value(),
         })
         .collect();
     let ai = std::array::from_fn(|row| {
@@ -616,6 +616,9 @@ fn projected_options(
         map_digest: metadata.digest.clone(),
         humans,
         ai,
+        // VERA's room seats AI past a small map's seats while it shares
+        // bases (`MatchSession::network_ai_seat`).
+        all_ai_rows: session.network_several_observers(),
     })
 }
 
@@ -677,7 +680,7 @@ fn parse_options(
         digest,
         ..map_metadata
     };
-    let mut fields = strtok(tail, &[',', ':']);
+    let mut fields = strtok(tail, &[',', ':']).peekable();
     loop {
         let name = fields
             .next()
@@ -718,11 +721,18 @@ fn parse_options(
         start: -2,
         team: -2,
     }; NETWORK_PLAYER_SLOT_COUNT];
-    for row in 0..if map_metadata.player_capacity > 8 {
+    // A map of up to eight players carries gamemd's eight AI rows; VERA's
+    // room carries all thirty on any map (`LanGameOptions::all_ai_rows`),
+    // so rows past the eighth follow while the text has them.
+    let required = if map_metadata.player_capacity > 8 {
         NETWORK_PLAYER_SLOT_COUNT as u8
     } else {
         8
-    } {
+    };
+    for row in 0..NETWORK_PLAYER_SLOT_COUNT as u8 {
+        if row >= required && fields.peek().is_none() {
+            break;
+        }
         let mut next_int = || {
             fields
                 .next()
@@ -760,7 +770,7 @@ fn parse_options(
     ensure!(fields.next().is_none(), "extra LAN AI fields");
     launch.ai_player_count = opponents.len() as i32;
     launch.opponents = opponents;
-    launch.rebuild_house_roster();
+    launch.use_live_house_rows();
     let vacancies = std::array::from_fn(|row| {
         session
             .network_vacancy(row as u8)
@@ -827,18 +837,6 @@ pub(super) fn decoded_choices(
     Ok(slot)
 }
 
-pub(super) fn start_value(start: LaunchStartPosition) -> i32 {
-    match start {
-        LaunchStartPosition::Auto => -2,
-        LaunchStartPosition::Position(index) => i32::from(index),
-    }
-}
-pub(super) fn team_value(team: LaunchTeam) -> i32 {
-    match team {
-        LaunchTeam::None => -2,
-        LaunchTeam::Team(index) => i32::from(index),
-    }
-}
 pub(super) fn decoded_difficulty(value: i32) -> Result<AiDifficulty> {
     match value {
         0 => Ok(AiDifficulty::Hard),
@@ -948,7 +946,6 @@ mod tests {
         launch.local_player_index = usize::from(!host);
         launch.options.game_speed = 4;
         launch.options.starting_credits = 9000;
-        launch.rebuild_house_roster();
         let mut session = MatchSession::default();
         session.enter_network(NetworkReturnContext::LanLobby);
         session
@@ -973,6 +970,34 @@ mod tests {
         session
     }
 
+    /// A VERA room's options carry an AI past the eighth row on a map of up
+    /// to eight players, where gamemd's text carries eight.
+    #[test]
+    fn a_vera_room_carries_ai_past_the_eighth_row_on_a_small_map() {
+        let (host, guest) = (fixture(true), fixture(false));
+        let mut options = projected_options(&host, 3, 0).unwrap();
+        options.ai[9] = LanOptionsAi {
+            difficulty: 2,
+            country: 0,
+            color: 3,
+            start: -2,
+            team: -2,
+        };
+        let modes = crate::skirmish_modes::stock_skirmish_modes();
+        let ai_rows = |options: &LanGameOptions<NETWORK_PLAYER_SLOT_COUNT>| {
+            let (options, _, _) = parse_options(&guest, &modes, &options.encode()).unwrap();
+            options
+                .launch
+                .opponents
+                .iter()
+                .map(|ai| (ai.raw_slot_index, ai.difficulty))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ai_rows(&options), []);
+        options.all_ai_rows = true;
+        assert_eq!(ai_rows(&options), [(9, AiDifficulty::Easy)]);
+    }
+
     #[test]
     fn extended_options_and_roster_retain_thirtieth_participant() {
         let mut host = fixture(true);
@@ -987,7 +1012,6 @@ mod tests {
                 human
             })
             .collect();
-        launch.rebuild_house_roster();
         host.accept_network_setup(launch.clone(), true, None, false)
             .unwrap();
         host.select_network_map(launch.mode.clone(), "thirty.map".into(), 30)

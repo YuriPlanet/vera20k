@@ -121,8 +121,8 @@ fn advance_lethal_shot(sim: &mut Simulation, rules: &RuleSet, attacker: u64, vic
 
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, and
 // Ares simulates the SparkSys itself (hooks 0x62DF05, 0x62FD60) with its own
-// draws, so this stock golden only holds without either capability.
-#[cfg(not(any(feature = "phobos", feature = "ares")))]
+// draws, so this stock golden holds only in a stock game without Phobos.
+#[cfg(not(feature = "phobos"))]
 #[test]
 fn ordinary_lethal_fire_commits_debris_animations_and_sparks_once() {
     let rules = consequence_rules();
@@ -190,7 +190,7 @@ fn ordinary_fatal_transport_finishes_cargo_lifecycle_before_consequence_admissio
     let (mut sim, attacker, carrier) = consequence_world();
     let passenger = sim.substrate.allocate_stable_id();
     let mut entity = GameEntity::test_default(passenger, "TARGET", "Soviet", 8, 5);
-    entity.passenger_role = PassengerRole::inside_for_test(carrier, false);
+    entity.set_passenger_role_for_test(PassengerRole::inside_for_test(carrier, false));
     sim.substrate.entities.insert(entity);
     let mut cargo = PassengerCargo::new(1, 1.0);
     cargo.board_forced_chain(&[(passenger, 1.0)]);
@@ -198,7 +198,7 @@ fn ordinary_fatal_transport_finishes_cargo_lifecycle_before_consequence_admissio
         .entities
         .get_mut(carrier)
         .unwrap()
-        .passenger_role = PassengerRole::transport(cargo);
+        .set_passenger_role_for_test(PassengerRole::transport(cargo));
     sim.lifecycle_test_events.clear();
     advance_lethal_shot(&mut sim, &rules, attacker, carrier);
     assert!(sim.substrate.entities.get(passenger).is_none());

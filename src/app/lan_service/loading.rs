@@ -224,10 +224,10 @@ pub(super) fn decode_progress(
     Ok(source.map(|source| (source, progress.percent())))
 }
 
-/// One encoder/recipient policy shared with the normal MatchSession request
-/// drain.51-byte native progress is lossy below100 and reliable per remote at
-/// terminal100 (69AF45..69B013); LAN adds its existing accepted scope envelope.
-pub(super) fn progress_packets(
+/// The loading report's encoder and recipients.51-byte native progress is lossy
+/// below100 and reliable per remote at terminal100 (69AF45..69B013); LAN adds
+/// its existing accepted scope envelope.
+fn progress_packets(
     session: &MatchSession,
     scope: Option<SessionScope>,
     percent: i32,
@@ -333,7 +333,7 @@ impl LanService {
         Ok(Some(source))
     }
 
-    pub(super) fn queue_loading_progress(
+    fn queue_loading_progress(
         &mut self,
         session: &MatchSession,
         percent: i32,
@@ -351,19 +351,16 @@ impl LanService {
         }
     }
 
-    fn drain_loading_reports(&mut self, session: &mut MatchSession) -> anyhow::Result<()> {
-        let mut reports = session.take_network_loading_progress_reports().into_iter();
-        while let Some(percent) = reports.next() {
-            match self.queue_loading_progress(session, percent) {
-                Ok(true) => {}
-                Ok(false) => session.report_network_loading_progress(percent),
-                Err(error) => {
-                    session.report_network_loading_progress(percent);
-                    for pending in reports {
-                        session.report_network_loading_progress(pending);
-                    }
-                    return Err(error);
-                }
+    /// The one drain of the session's loading reports, for the held loader
+    /// and the ordinary service pass alike. A full setup FIFO keeps a report
+    /// for the next pass; an error drops the rest and the caller fails the load.
+    pub(super) fn drain_loading_reports(
+        &mut self,
+        session: &mut MatchSession,
+    ) -> anyhow::Result<()> {
+        for percent in session.take_network_loading_progress_reports() {
+            if !self.queue_loading_progress(session, percent)? {
+                session.report_network_loading_progress(percent);
             }
         }
         Ok(())
@@ -403,8 +400,6 @@ mod tests {
 
     #[test]
     fn controlled_loading_retains_report_intents_without_masking_a_broken_live_service() {
-        use crate::app::match_runtime::session::NetworkLoadingRequest;
-
         let (mut service, mut session, _, _, _, _) = super::super::loading_test_pair();
         let mut rows = LoadingProgressRowSnapshot::from_launch_session(
             session.network_setup().unwrap(),
@@ -419,11 +414,8 @@ mod tests {
             controlled.milestone(100, &mut rows).unwrap();
         }
         assert_eq!(
-            session.take_network_loading_requests(),
-            [
-                NetworkLoadingRequest::ReportProgress(30),
-                NetworkLoadingRequest::ReportProgress(100)
-            ],
+            session.take_network_loading_progress_reports(),
+            [30, 100],
             "controlled LAN/WOL drivers must still see the actual terminal report"
         );
         let transport = service.transport.take().unwrap();
@@ -707,7 +699,7 @@ mod tests {
             .unwrap();
         let rate = NonZeroU32::new(5).unwrap();
         let agreement =
-            StartupAgreement::new([(0, 0), (1, 1)], [0, 1], 77, 10, 30, rate, 0).unwrap();
+            StartupAgreement::new([(0, 0), (1, 1)], [0, 1], 77, 10, 30, rate, 0, "", "").unwrap();
         let mut live =
             LiveCommandSession::new(agreement, transport, 0, 77, rate, LiveCommandMode::Lan)
                 .unwrap();
@@ -913,5 +905,15 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn failed_loading_report_is_dropped_not_retried() {
+        let (mut host, mut session, _, _, _, _) = super::super::loading_test_pair();
+        host.setup_scope = None;
+        session.report_network_loading_progress(30);
+        session.report_network_loading_progress(100);
+        assert!(host.drain_loading_reports(&mut session).is_err());
+        assert!(session.take_network_loading_progress_reports().is_empty());
     }
 }

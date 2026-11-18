@@ -40,7 +40,8 @@ pub use opponent_scroll::{
 pub use choose_map::{
     ChooseMapContext, ChooseMapListPress, ChooseMapModalState, ChooseMapPrompt,
     ChooseMapPromptAnswer, ChooseMapPromptButton, ChooseMapPromptKind, ChooseMapSelection,
-    FAVORITES_ROW, ONLINE_MAPS_ROW, SEARCH_MAX_CHARS, ai_rows_beyond_limit_occupied, favorite_key,
+    FAVORITES_ROW, ONLINE_MAPS_ROW, SEARCH_MAX_CHARS, SkirmishModeSelection,
+    ai_rows_beyond_limit_occupied, favorite_key,
 };
 pub(crate) use player_name::CountryMenuCatalog;
 pub use player_name::{
@@ -60,22 +61,22 @@ pub use random_map_extras::{
 };
 pub use random_map_setup::{
     ADVANCED_RANGE, AcceptOutcome, CUSTOM_PRESET_SLOTS, MainRngRanged, PLAYERS_RANGE,
-    RandomMapPreset, RandomMapSetupModalState,
-    SETUP_COMBO_ROWS, SetupCombo, SetupComboItem, setup_combo_items,
+    RandomMapPreset, RandomMapSetupModalState, SETUP_COMBO_ROWS, SetupCombo, SetupComboItem,
+    setup_combo_items,
 };
 pub use saved_seed_browser::{
     SAVED_SEED_DESCRIPTION_MAX_UNITS, SavedSeedBrowserRow, SavedSeedBrowserState,
     SavedSeedDescriptionEdit, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
 };
 pub use saved_setup::{SkirmishSavedSetup, SkirmishSetupComputer, SkirmishSetupSeat};
-pub use team_starts::{apply_team_starts, starts_by_team};
+pub use team_starts::starts_by_team;
 pub use trackbars::{
     SkirmishTrackbarBounds, handle_option_mouse_down, handle_option_mouse_move,
     handle_option_mouse_up, handle_option_mouse_wheel, trackbar_visual_value,
 };
 
 use crate::skirmish_launch::{
-    AiDifficulty, HOUSE_COLOR_COUNT, LaunchCountry, LaunchStartPosition, NETWORK_PLAYER_SLOT_COUNT,
+    AiDifficulty, HOUSE_COLOR_COUNT, LaunchCountry, LaunchStartPosition, SKIRMISH_MAX_SLOT_COUNT,
 };
 
 use self::player_name::inactive_ai_team_default;
@@ -87,11 +88,8 @@ use super::layout::{ChooseMapModalButton, ColorComboId, SkirmishCheckboxId, Skir
 pub enum OwnerDrawButton {
     StartGame0x617,
     ChooseMap0x5aa,
-    /// VERA's Save Setup and Load Setup ([`SkirmishSavedSetup`]).
-    SaveSetup,
-    LoadSetup,
-    /// VERA's Team Starts ([`apply_team_starts`]).
-    TeamStarts,
+    /// VERA's Game Options ([`super::game_options`]).
+    GameOptions,
     Back0x5c0,
 }
 
@@ -101,9 +99,8 @@ pub enum SkirmishShellAction {
     StartGame,
     BackOrExit,
     ChooseMap,
-    SaveSetup,
-    LoadSetup,
-    TeamStarts,
+    /// The app opens the box on the rules the profile keeps.
+    GameOptions,
     SelectColor(ColorComboId),
     SelectMap(usize),
 }
@@ -169,12 +166,14 @@ pub enum SkirmishHoverTarget {
     FlagPicture,
     GameTypeLabel0x6ec,
     ScenarioLabel0x5a8,
+    /// A control of the open Game Options box, which covers the page.
+    GameOptions(super::game_options::GameOptionsControl),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChooseMapHoverTarget {
     ModeList0x6eb,
-    ModeListRow0x6eb { mode_id: i32 },
+    ModeListRow0x6eb { mode: SkirmishModeSelection },
     MapList0x553,
     Preview0x468,
     StatusHelp0x695,
@@ -317,7 +316,7 @@ fn default_opponents(first_country: LaunchCountry) -> Vec<SkirmishShellOpponent>
         LaunchCountry::Germany,
     ];
 
-    (0..NETWORK_PLAYER_SLOT_COUNT - 1)
+    (0..SKIRMISH_MAX_SLOT_COUNT - 1)
         .map(|idx| {
             let country = countries[idx % countries.len()];
             let row_type = if idx == 0 {

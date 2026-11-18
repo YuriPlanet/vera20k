@@ -617,6 +617,17 @@ impl Simulation {
         )
     }
 
+    /// VERA: a network match in which every human watches, as VERA's room
+    /// starts while two or more AI play: no House is a human's but an
+    /// observer's. gamemd's rooms never start one.
+    pub(crate) fn network_ai_alone(&self) -> bool {
+        self.session.game_mode().is_network()
+            && !self.houses.order().iter().any(|owner| {
+                !self.session.is_observer_house(*owner)
+                    && self.houses.get(owner).is_some_and(|house| house.is_human())
+            })
+    }
+
     /// MPlayer_Defeated4FC3DE..6B7's decision: `None` while hostile
     /// survivors and a human remain, else each outcome viewpoint and whether
     /// it wins.
@@ -649,15 +660,20 @@ impl Simulation {
                             .is_allied(&self.interner, *right, *left))
             })
         });
-        if !all_allied && alive.len() != 1 && living_humans != 0 {
+        // VERA: in a match only AI play, no human's defeat ends it; it ends
+        // when one side is left.
+        if !all_allied && alive.len() != 1 && (living_humans != 0 || self.network_ai_alone()) {
             return None;
         }
-        //4FC5DD/5EC: both class virtuals are true only for Cooperative
-        //(5C4EE0/5C4EF0); ordinary5C0E40 returns false.4FC62C's final
-        //human scan intentionally does not filter passive Houses.
+        // 0x004FC5DD/5EC: both class virtuals return true only for Cooperative
+        // (0x005C4EE0/0x005C4EF0); ordinary 0x005C0E40 returns false. 0x004FC62C's
+        // final human scan intentionally does not filter passive Houses. VERA
+        // gates shared allied victory via ModePolicy::shared_allied_victory.
         let cooperative_shared_win = self.session.game_mode().is_network()
-            && self.session.multiplayer_mode_class()
-                == Some(crate::skirmish_modes::MpModeClass::Cooperative)
+            && self
+                .session
+                .multiplayer_mode_class()
+                .is_some_and(|class| class.policy().shared_allied_victory)
             && (all_allied || alive.len() == 1)
             && self
                 .houses
@@ -1000,7 +1016,7 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return false;
         };
-        let occupants = entity.passenger_role.occupants().count();
+        let occupants = entity.passenger_role().occupants().count();
         let needs_engineer = object.needs_engineer;
         if !(first_owner != house || occupants > 0)
             || !object

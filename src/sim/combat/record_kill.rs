@@ -61,7 +61,7 @@ fn award_kill_experience(
     };
     // Branch 1: a passenger firing from an OpenTopped transport pays its
     // transporter (the `+0x82`/`+0x11C` pair).
-    let open_transporter = killer.passenger_role.open_transport_id();
+    let open_transporter = killer.passenger_role().open_transport_id();
     let recipient = if let Some(transporter) = open_transporter.and_then(trainable_cost) {
         Some(transporter)
     } else if killer_type.trainable {
@@ -172,7 +172,7 @@ fn award_ares_kill_experience(
     let killer_ext = killer_type.ares_veterancy();
     let killer_house = killer.owner();
     let mut promote_now = false;
-    let recipient = if let Some(transporter_id) = killer.passenger_role.open_transport_id() {
+    let recipient = if let Some(transporter_id) = killer.passenger_role().open_transport_id() {
         let transporter = entities.get(transporter_id)?;
         let transporter_type = interner.object_type(transporter.type_ref(), rules)?;
         let transporter_ext = transporter_type.ares_veterancy();
@@ -194,7 +194,7 @@ fn award_ares_kill_experience(
         }
     } else if killer_type.gunner {
         let gunner = killer
-            .passenger_role
+            .passenger_role()
             .cargo()
             .and_then(|cargo| cargo.passengers().first().copied());
         if killer_type.trainable

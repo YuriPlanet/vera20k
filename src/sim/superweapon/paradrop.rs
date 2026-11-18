@@ -579,7 +579,7 @@ fn board_passengers(
             continue;
         };
         if let Some(rider) = sim.substrate.entities.get_mut(passenger) {
-            rider.passenger_role.set_inside_transport(plane, false);
+            rider.set_inside_transport(plane, false);
         }
         if !sim.substrate.entities.contains(plane) {
             return;

@@ -811,7 +811,7 @@ mod pickup_tests;
 
 #[cfg(all(test, tests_sim_c_g))]
 mod tests {
-    use super::super::tests::{crate_registry, crate_ruleset};
+    use super::super::tests::crate_ruleset;
     use super::*;
 
     /// Entire Scenario RNG state, not merely the chosen result: rejection draws
@@ -852,7 +852,7 @@ mod tests {
                 rules.crate_rules.crate_img = Some("WOOD".into());
                 rules.crate_rules.water_crate_img = Some("WOOD".into());
             }
-            let registry = crate_registry();
+            let registry = rules.overlay_registry();
             let mut rng = SimRng::new(input["seed"].as_u64().unwrap_or(31));
             assert_eq!(
                 rng.native_state_hex(),
@@ -862,7 +862,7 @@ mod tests {
             let selection = select_pickup_outcome(
                 &mut rng,
                 &rules,
-                &registry,
+                registry,
                 registry.id_for_name("WOOD"),
                 input["selection"].as_u64().unwrap_or(10) as u8,
                 input["mode"].as_i64() != Some(0),

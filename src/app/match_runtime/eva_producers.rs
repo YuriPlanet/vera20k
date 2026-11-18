@@ -275,7 +275,7 @@ pub(crate) fn super_weapon_detected_allowed(
 /// The lines the capture block speaks on the local machine
 /// (`BuildingClass::ChangeOwner 0x004483FB..0x0044848F`), in native order:
 /// a `NeedsEngineer=` building says `tech_lost_event` (`EVA_TechBuildingLost`,
-/// in Ares builds the type's `LostEvaEvent`, hook `0x0044840B`) when the OLD
+/// when Ares plays the type's `LostEvaEvent`, hook `0x0044840B`) when the OLD
 /// owner is local (`0x00448415`) and then queues the type's
 /// `CaptureEvaEvent=` when the NEW owner is local (`0x0044842F..0x00448459`);
 /// any other building says `EVA_BuildingCaptured` once the radar event was
@@ -721,15 +721,12 @@ mod tests {
         u64,
         u64,
     )> {
-        use crate::rules::overlay_types::OverlayTypeRegistry;
         use crate::sim::house_state::HouseState;
         use crate::sim::overlay_grid::OverlayGrid;
         use crate::sim::runtime::{SimResources, SimRuntime};
         use crate::sim::world::Simulation;
 
         let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")?;
-        let overlays =
-            OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
         let rules = retail.rules;
         let mut sim = Simulation::with_seed(0x4F93_E000);
         sim.intern_rule_type_ids(&rules);
@@ -758,7 +755,10 @@ mod tests {
         // no ore (SlaveManager6B0062). Supply map-like ore east of the
         // target's 2x2 foundation, through the shared overlay/recalc owner,
         // so ordinary slaves work while the real attacker closes in.
-        let ore_id = overlays.id_for_name("TIB01").expect("stock ore overlay");
+        let ore_id = rules
+            .overlay_registry()
+            .id_for_name("TIB01")
+            .expect("stock ore overlay");
         let mut ore = OverlayGrid::new(32, 32);
         for ry in 19..=21 {
             for rx in 23..=25 {
@@ -767,7 +767,7 @@ mod tests {
                     sim.resolved_terrain_mut_for_test()
                         .as_mut()
                         .expect("arena terrain"),
-                    &overlays,
+                    rules.overlay_registry(),
                     (rx, ry),
                 );
             }
@@ -787,9 +787,7 @@ mod tests {
         let attacker = sim
             .spawn_object_at_height("CLEG", "Americans", 6, 20, 0, 0, &rules)
             .expect("stock hostile Chrono Legionnaire");
-        let mut resources = SimResources::empty();
-        resources.rules = rules;
-        resources.overlay_registry = overlays;
+        let resources = SimResources::new(rules);
         Some((
             SimRuntime {
                 simulation: sim,
@@ -1023,9 +1021,9 @@ mod tests {
 
     /// Ares `InfiltratedBy @ 10012000`: each applied arm speaks its lines in
     /// order, all behind the radar event.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_infiltration_lines_follow_each_applied_arm() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::sim::spy_infiltration::{AresInfiltrationArms, InfiltrationEffect};
         let effect = InfiltrationEffect::Ares(AresInfiltrationArms {
             radar_reset: Some(false),
@@ -1054,9 +1052,9 @@ mod tests {
 
     /// The StolenTech arm (`10012000`) plays the owner's
     /// `EVA_TechnologyStolen` and the spy's two lines, after the outage's.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_stolen_tech_lines_follow_the_power_outage() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::sim::spy_infiltration::{AresInfiltrationArms, InfiltrationEffect};
         let effect = InfiltrationEffect::Ares(AresInfiltrationArms {
             power_outage: true,

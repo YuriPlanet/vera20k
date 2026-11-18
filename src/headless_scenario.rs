@@ -36,51 +36,53 @@ use crate::skirmish_launch::{AiDifficulty, LaunchCountry, SkirmishLaunchSession}
 
 /// A Battle session on `selected_map_file`: the local player against one
 /// computer house for each of `opponents` (its country and difficulty), every
-/// house on a start the launch draws. The lobby allows seven opponents.
+/// house on a start the launch draws.
 pub fn battle_session(
     selected_map_file: &str,
     opponents: &[(LaunchCountry, AiDifficulty)],
 ) -> SkirmishLaunchSession {
-    battle_session_for_country(selected_map_file, opponents, LaunchCountry::America)
-}
+    use crate::skirmish_launch::{
+        BATTLE_MODE_ID, LaunchStartPosition, LaunchTeam, SkirmishAiSlot, SkirmishLaunchMode,
+        SkirmishLaunchOptions, SkirmishLocalSlot,
+    };
 
-/// The same session with the local house's country chosen by the caller.
-///
-/// One harness plays the same map as the Allies, the Soviets and Yuri in
-/// parallel; the local slot is the only thing that changes.
-pub fn battle_session_for_country(
-    selected_map_file: &str,
-    opponents: &[(LaunchCountry, AiDifficulty)],
-    local_country: LaunchCountry,
-) -> SkirmishLaunchSession {
-    battle_session_with_options(
-        selected_map_file,
-        opponents,
-        local_country,
-        crate::skirmish_launch::SkirmishLaunchOptions::default(),
+    SkirmishLaunchSession::from_rows(
+        SkirmishLaunchMode::stock(BATTLE_MODE_ID).expect("stock Battle row"),
+        Some(selected_map_file.to_string()),
+        vec![crate::skirmish_launch::SkirmishHumanSlot {
+            raw_slot_index: Some(0),
+            name: "Player".to_string(),
+            slot: SkirmishLocalSlot {
+                country: LaunchCountry::America,
+                country_random: false,
+                color_index: 0,
+                color_random: false,
+                start_position: LaunchStartPosition::Auto,
+                team: LaunchTeam::None,
+            },
+            role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
+        }],
+        0,
+        opponents
+            .iter()
+            .enumerate()
+            .map(|(slot, &(country, difficulty))| SkirmishAiSlot {
+                raw_slot_index: (slot + 1) as u8,
+                country,
+                country_random: false,
+                color_index: slot as u8 + 1,
+                color_random: false,
+                start_position: LaunchStartPosition::Auto,
+                team: LaunchTeam::None,
+                difficulty,
+            })
+            .collect(),
+        SkirmishLaunchOptions::default(),
     )
 }
 
-/// The same session with the skirmish options named.
-///
-/// Starting credits and the starting unit count decide the whole opening, so a
-/// run that reports its result without them cannot be compared with another.
-pub fn battle_session_with_options(
-    selected_map_file: &str,
-    opponents: &[(LaunchCountry, AiDifficulty)],
-    local_country: LaunchCountry,
-    options: crate::skirmish_launch::SkirmishLaunchOptions,
-) -> SkirmishLaunchSession {
-    battle_session_with_seats(
-        selected_map_file,
-        opponents,
-        local_country,
-        options,
-        crate::skirmish_launch::LaunchTeam::None,
-    )
-}
-
-/// The same session with the computer houses' `LaunchTeam` named.
+/// The same session with the local country, the skirmish options and the
+/// computer houses' `LaunchTeam` named.
 ///
 /// A retail Skirmish setup stores a team per seat, and `launch_alliance_map`
 /// (`sim::scenario_bootstrap`) allies every seat on the same team. A setup whose
@@ -97,14 +99,14 @@ pub fn battle_session_with_seats(
     ai_team: crate::skirmish_launch::LaunchTeam,
 ) -> SkirmishLaunchSession {
     use crate::skirmish_launch::{
-        BATTLE_MODE_ID, LaunchStartPosition, LaunchTeam, PreFillHouseRoster, SkirmishAiSlot,
-        SkirmishLaunchMode, SkirmishLaunchOptions, SkirmishLocalSlot,
+        BATTLE_MODE_ID, LaunchStartPosition, LaunchTeam, SkirmishAiSlot, SkirmishLaunchMode,
+        SkirmishLocalSlot,
     };
 
-    SkirmishLaunchSession {
-        mode: SkirmishLaunchMode::stock(BATTLE_MODE_ID).expect("stock Battle row"),
-        selected_map_file: Some(selected_map_file.to_string()),
-        humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+    SkirmishLaunchSession::from_rows(
+        SkirmishLaunchMode::stock(BATTLE_MODE_ID).expect("stock Battle row"),
+        Some(selected_map_file.to_string()),
+        vec![crate::skirmish_launch::SkirmishHumanSlot {
             raw_slot_index: Some(0),
             name: "Player".to_string(),
             slot: SkirmishLocalSlot {
@@ -117,9 +119,8 @@ pub fn battle_session_with_seats(
             },
             role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
         }],
-        local_player_index: 0,
-        ai_player_count: opponents.len() as i32,
-        opponents: opponents
+        0,
+        opponents
             .iter()
             .enumerate()
             .map(|(slot, &(country, difficulty))| SkirmishAiSlot {
@@ -133,9 +134,8 @@ pub fn battle_session_with_seats(
                 difficulty,
             })
             .collect(),
-        pre_fill_house_roster: PreFillHouseRoster::from_compact_skirmish(opponents.len()),
         options,
-    }
+    )
 }
 
 /// A loaded scenario plus the per-tick inputs `advance_tick` needs.
@@ -336,6 +336,11 @@ fn load_with_assets(
         cold_rules_owner = owner;
         &mut cold_rules_owner
     };
+    if game_mode.is_network() {
+        native_rules_owner
+            .reset_for_network_match()
+            .map_err(|error| format!("reset network Rules: {error}"))?;
+    }
     // ThemeClass::ReadINI720590 is process data even without an output device.
     // Keep the existing headless archive stack: THEMEMD.MIX and the preserved
     // RA2 THEME.MIX extension were mounted at startup; this route has no shell
@@ -354,8 +359,8 @@ fn load_with_assets(
         Some(&launch.session().mode.override_file),
     )?;
     // This headless entry has no MainMenuTypedCodes owner or THETEAM input.
-    // It shares the process Rules owner (including LANGRULE Digest reads), but
-    // cannot admit Full_Init's mode-5 TMCJ4F route.
+    // It shares the process Rules owner; this no-mod entry skips LANGRULE
+    // and cannot admit Full_Init's mode-5 TMCJ4F route.
     let (mut rules, _, art_ini, native_rules_receipt) = native_rules_owner
         .load_scenario(
             crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
@@ -376,7 +381,6 @@ fn load_with_assets(
     let theater = theater::load_theater(assets, &map.header.theater)
         .ok_or_else(|| format!("load theater {}", map.header.theater))?;
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
-    let overlay_registry = rules.overlay_registry().clone();
     let house_roster = crate::map::houses::parse_house_roster(
         &map.ini,
         rules.color_schemes.as_slice(),
@@ -461,7 +465,7 @@ fn load_with_assets(
             Some(&theater),
             Some(&assets),
             Some(&rules.terrain_rules),
-            Some(&overlay_registry),
+            Some(rules.overlay_registry()),
             true,
             rules.general.cliff_back_impassability,
             &mut scenario_fill_ranged,
@@ -473,16 +477,13 @@ fn load_with_assets(
     // Pending authored Fill has no eager Tile##Anim list. Bind damage-fire
     // roots now and let the authored host bind each actually reached map Anim
     // synchronously before its native constructor spends an ID.
-    let scheduler_roots =
-        crate::map::resolved_terrain::scheduler_anim_roots(&rules, &overlay_registry, &[]);
-    rules
-        .bind_scheduler_anim_assets(
-            &scheduler_roots,
-            &assets,
-            theater.extension,
-            &map.header.theater,
-        )
-        .map_err(|error| format!("bind authoritative animation assets: {error}"))?;
+    let scheduler_roots = crate::map::resolved_terrain::scheduler_anim_roots(&rules, &[]);
+    rules.bind_scheduler_anim_assets(
+        &scheduler_roots,
+        &assets,
+        theater.extension,
+        &map.header.theater,
+    );
     // Every other AnimClass producer and the building animations: tolerant pass,
     // after the strict one, which rewrites the scheduler-owned set wholesale.
     let tolerant_roots = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&rules);
@@ -517,9 +518,9 @@ fn load_with_assets(
         theater.extension,
         crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
     );
-    rules.bind_alpha_images(&overlay_registry, &assets);
+    rules.bind_alpha_images(&assets);
     let overlay_shp_ids = crate::rules::effect_asset_catalog::resolved_overlay_shp_ids(
-        &overlay_registry,
+        rules.overlay_registry(),
         &assets,
         theater.extension,
         &map.header.theater,
@@ -531,7 +532,7 @@ fn load_with_assets(
     };
     let signed_new_ini_format = map.basic.new_ini_format.unwrap_or(0);
     let cliff_back_impassability = rules.general.cliff_back_impassability;
-    let output = crate::sim::runtime::finalize_and_populate_staged_authored_scenario(
+    let resolved_terrain = crate::sim::runtime::finalize_and_populate_staged_authored_scenario(
         &mut sim,
         &mut map,
         terrain_fill,
@@ -539,7 +540,6 @@ fn load_with_assets(
         &assets,
         &mut rules,
         native_rules_owner,
-        &overlay_registry,
         &overlay_shp_ids,
         signed_new_ini_format,
         true,
@@ -558,30 +558,25 @@ fn load_with_assets(
         },
     )
     .map_err(|error| format!("finalize authored headless load: {error}"))?;
-    let resolved_terrain = output.resolved_terrain;
-    let overlay_grid = output.overlay_grid;
     // Match the ordinary app's pre-launch binding: production options need
     // identities for unspawned types too, and snapshots carry this interner.
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.install_team_ai_registry(&team_ai_registry, &rules);
-    let _launch_result = crate::sim::scenario_bootstrap::
-        apply_pre_fill_scenario_prefix_launch_session_with_overlay_registry(
+    let _launch_result =
+        crate::sim::scenario_bootstrap::apply_pre_fill_scenario_prefix_launch_session(
             &mut sim,
             &map,
             &house_roster,
             &rules,
             &resolved_terrain,
             &launch,
-            &overlay_registry,
             &scenario_prefix_projection,
         );
     let post_map = crate::sim::runtime::finalize_constructed_scenario(
         &mut sim,
         &map,
         &rules,
-        &overlay_registry,
-        overlay_grid,
         &house_roster,
         Some(&launch),
     )
@@ -597,7 +592,6 @@ fn load_with_assets(
         runtime: crate::sim::runtime::SimRuntime {
             simulation: sim,
             resources: std::sync::Arc::new(crate::sim::runtime::SimResources {
-                overlay_registry,
                 terrain_template: None,
                 rules,
             }),
@@ -692,7 +686,7 @@ mod retail_construction_tests {
             (extent, extent),
             "Fill allocates the extent the descriptor announced"
         );
-        crate::sim::runtime::populate_staged_scenario_with_generated_inits(
+        crate::sim::runtime::populate_staged_fixture(
             &mut sim,
             map,
             &resolved,
@@ -2016,7 +2010,7 @@ mod retail_construction_tests {
                 let team = sim.team_script_vm.team(team_id);
                 let aboard = infantry.iter().all(|&id| {
                     sim.entities().get(id).is_some_and(|entity| {
-                        entity.passenger_role.inside_transport_id() == Some(transport)
+                        entity.passenger_role().inside_transport_id() == Some(transport)
                     })
                 });
                 if loaded.is_none() && aboard {
@@ -2065,7 +2059,7 @@ mod retail_construction_tests {
                                     None => "out",
                                 },
                                 entity.navigation.nav_com(),
-                                if entity.passenger_role.is_inside_transport() {
+                                if entity.passenger_role().is_inside_transport() {
                                     " aboard"
                                 } else {
                                     ""
@@ -2337,7 +2331,7 @@ mod retail_construction_tests {
             crate::sim::build_site::can_place_building_at(
                 sim,
                 &placing.rules,
-                Some(&placing.overlay_registry),
+                Some(placing.rules.overlay_registry()),
                 natbnk,
                 (x, y),
                 None,
@@ -2847,7 +2841,7 @@ mod retail_construction_tests {
                         crate::sim::build_site::can_place_building_at(
                             sim,
                             &resources.rules,
-                            Some(&resources.overlay_registry),
+                            Some(resources.rules.overlay_registry()),
                             yard,
                             (x, y),
                             None,

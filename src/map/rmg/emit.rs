@@ -315,6 +315,7 @@ mod tests {
         assert_eq!(building.type_id, "CAHOSP");
         assert_eq!(building.owner, "Neutral");
         assert_eq!(building.health, 256);
+        assert!(building.structure_online);
         assert_eq!(building.category, EntityCategory::Structure);
         assert_eq!((building.cell_x, building.cell_y), (25, 25));
 
@@ -339,12 +340,16 @@ mod tests {
 
     /// Architecture invariant: the simulation must never depend on the
     /// generator. Generation is pre-play map construction.
+    ///
+    /// A test module is exempt: `world/world_hash.rs` builds a map through the
+    /// generator so the MapGen cursor can be named among the hash differences,
+    /// and a test is not a code path the game runs.
     #[test]
     fn sim_does_not_reference_the_generator() {
         let mut offenders = Vec::new();
         for path in rust_files(&crate::test_fixture::checkout_root().join("src/sim")) {
             let text = std::fs::read_to_string(&path).unwrap_or_default();
-            if text.contains("map::rmg") {
+            if names_generator_outside_tests(&text) {
                 offenders.push(path.display().to_string());
             }
         }
@@ -352,6 +357,57 @@ mod tests {
             offenders.is_empty(),
             "sim/ must not depend on the map generator: {offenders:?}"
         );
+    }
+
+    /// Whether shipped code names the generator. Test modules sit at the
+    /// file's top level and are named `tests` or `…_tests`, so a top-level
+    /// `mod` opens one and a top-level `}` closes it; an indented `mod` is a
+    /// module inside a function and changes nothing.
+    fn names_generator_outside_tests(text: &str) -> bool {
+        let mut in_tests = false;
+        for line in text.lines() {
+            if !line.starts_with(' ') && !line.starts_with('\t') {
+                let body = line.trim_end();
+                if body.starts_with("mod ") || body.starts_with("pub mod ") {
+                    // `mod tests;` declares another file, so this one holds no
+                    // body to close and keeps the state it had.
+                    if !body.ends_with(';') {
+                        in_tests = is_test_module(body);
+                    }
+                } else if body == "}" || body == "};" {
+                    in_tests = false;
+                }
+            }
+            if !in_tests && line.contains("map::rmg") {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn is_test_module(declaration: &str) -> bool {
+        let name = declaration
+            .trim_start_matches("pub ")
+            .trim_start_matches("mod ")
+            .split(|c: char| !c.is_alphanumeric() && c != '_')
+            .next()
+            .unwrap_or_default();
+        name == "tests" || name.ends_with("_tests")
+    }
+
+    #[test]
+    fn the_generator_check_reads_only_shipped_code() {
+        assert!(names_generator_outside_tests(
+            "fn hash() { let _ = crate::map::rmg::RmgOptions::default(); }\n"
+        ));
+        assert!(!names_generator_outside_tests(
+            "#[cfg(all(test, tests_world))]\nmod world_tests {\n    \
+             fn map() { crate::map::rmg::emit::empty_map_file(); }\n}\n"
+        ));
+        assert!(names_generator_outside_tests(
+            "#[cfg(test)]\nmod tests {\n    fn map() {}\n}\n\
+             fn ship() { let _ = crate::map::rmg::X; }\n"
+        ));
     }
 
     fn rust_files(root: &std::path::Path) -> Vec<std::path::PathBuf> {

@@ -18,7 +18,7 @@
 //! `--scenario match` plays the middle of a multiplayer match instead (see
 //! `sim_bench_match`): the map loads as a Battle against `--computers`
 //! computer houses (by default the most the lobby admits on the map, at most
-//! 29), the other start waypoints get human players' houses, and every house
+//! 119 offline), the other start waypoints get human players' houses, and every house
 //! has a finished base, harvesters, factories that keep building and a mixed
 //! army. Their own AI plays the computer houses; a script plays the human
 //! ones, sending their armies at the nearest bases in squads until those
@@ -37,6 +37,12 @@
 //! launch's local house sits the match out, as in the match scenario, and no
 //! command is issued. `--ticks` defaults to 9000, ten minutes of game time.
 //!
+//! `--watchers N` (skirmish only) plays the match VERA's room starts when
+//! everyone in it watches while only AI play: the launch seats N watching
+//! humans ahead of the computer houses and loads the map as a LAN game, so
+//! the watchers' Houses are observers. The run reports each House's defeat
+//! as it happens and stops once the match is decided.
+//!
 //! The run is deterministic for a given map, seed and arguments: the final
 //! `Simulation::state_hash` (and the optional periodic hashes, taken outside
 //! the timed region) identify the simulation result, so two builds can be
@@ -46,6 +52,14 @@
 //! The periodic hashes
 //! are timed on their own, which measures what each hashing frame also takes.
 //! The scenarios' own work (choosing each frame's commands) is not timed.
+//!
+//! `--state-isolation-report <new.json>` compares process lifetimes through
+//! the production headless loader. Run once in a fresh process, then again
+//! with `--prior-map <map>` (repeatable), and compare the reports' `target`
+//! values. Use the same map, seed, `--isolation-mode lan|wol`,
+//! `--isolation-humans 1|2`, computers and tick count. This exercises Rules,
+//! world construction and ordinary frames; app input and transport need the
+//! live LAN capture described in docs/Networking.md.
 //! A frame that fails ends the run with its error, after the CSV, summary and
 //! periodic hashes of the frames before it; `final_hash` is then left out.
 //!
@@ -104,6 +118,7 @@
 //! Build with `cargo build --release -p vera20k-core --bin sim-bench`; timings from a debug
 //! build are not meaningful.
 
+mod sim_bench_isolation;
 mod sim_bench_match;
 
 use std::io::Write;
@@ -119,7 +134,9 @@ use vera20k_core::sim::command::{Command, CommandEnvelope};
 use vera20k_core::sim::intern::InternedId;
 use vera20k_core::sim::movement::PathBatchStats;
 use vera20k_core::sim::runtime::SimRuntime;
+use vera20k_core::sim::scenario_bootstrap::MatchLaunchDescriptor;
 use vera20k_core::sim::scenario_session::ScenarioGameMode;
+use vera20k_core::skirmish_launch::{NETWORK_PLAYER_SLOT_COUNT, SkirmishLaunchSession};
 
 use sim_bench_match::MatchScenario;
 
@@ -159,9 +176,14 @@ struct Args {
     sleep_check: bool,
     frame_profile: bool,
     lan: bool,
+    watchers: usize,
     frame_hashes: Option<PathBuf>,
     client_timing: bool,
     presentation_frame: bool,
+    isolation_report: Option<PathBuf>,
+    prior_maps: Vec<String>,
+    isolation_mode: Option<ScenarioGameMode>,
+    isolation_humans: usize,
 }
 
 impl Args {
@@ -202,9 +224,14 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
         sleep_check: false,
         frame_profile: false,
         lan: false,
+        watchers: 0,
         frame_hashes: None,
         client_timing: false,
         presentation_frame: false,
+        isolation_report: None,
+        prior_maps: Vec::new(),
+        isolation_mode: None,
+        isolation_humans: 1,
     };
     let mut march_flag = None;
     while let Some(flag) = argv.next() {
@@ -256,12 +283,23 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
             "--serial-paths" => args.serial_paths = true,
             "--frame-profile" => args.frame_profile = true,
             "--lan" => args.lan = true,
+            "--watchers" => args.watchers = number(value()?)? as usize,
             "--frame-hashes" => args.frame_hashes = Some(PathBuf::from(value()?)),
             "--client-timing" => args.client_timing = true,
             "--serial-scans" => args.serial_scans = true,
             "--no-sleep" => args.no_sleep = true,
             "--sleep-check" => args.sleep_check = true,
             "--presentation-frame" => args.presentation_frame = true,
+            "--state-isolation-report" => args.isolation_report = Some(PathBuf::from(value()?)),
+            "--prior-map" => args.prior_maps.push(value()?),
+            "--isolation-mode" => {
+                args.isolation_mode = Some(match value()?.as_str() {
+                    "lan" => ScenarioGameMode::Lan,
+                    "wol" => ScenarioGameMode::Wol,
+                    _ => return Err("--isolation-mode needs lan or wol".into()),
+                });
+            }
+            "--isolation-humans" => args.isolation_humans = number(value()?)? as usize,
             other => return Err(format!("unrecognised argument {other}")),
         }
     }
@@ -274,21 +312,35 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
     if args.houses.is_some_and(|houses| houses < 2) || args.types.is_empty() {
         return Err("need at least two houses and one unit type".to_string());
     }
+    if args.watchers > 0 {
+        if args.scenario != ScenarioKind::Skirmish {
+            return Err("--watchers is a skirmish option".to_string());
+        }
+        // Observers exist only in a network game.
+        args.lan = true;
+    }
     let marched = args.scenario == ScenarioKind::March;
-    if marched && args.computers.is_some() {
+    if marched && args.computers.is_some() && args.isolation_report.is_none() {
         return Err("--computers is a match and skirmish option".to_string());
     }
     if !marched && let Some(flag) = march_flag {
         return Err(format!("{flag} is a march option"));
     }
+    if args.isolation_report.is_none()
+        && (!args.prior_maps.is_empty()
+            || args.isolation_mode.is_some()
+            || args.isolation_humans != 1)
+    {
+        return Err("state-isolation options need --state-isolation-report".into());
+    }
     Ok(args)
 }
 
-/// `--computers`, by default the most the skirmish lobby admits on the map:
-/// it refuses more players than the map's capacity (`MapCapacityExceeded`,
+/// `--computers`, by default the most the offline Skirmish shell admits on the
+/// map: it refuses more players than the map's capacity (`MapCapacityExceeded`,
 /// `TXT_SCENARIO_TOO_SMALL`). More would seat houses the map has no start
-/// for. A map's `[Basic] MaxPlayers` (9 to 30) raises it past the eight
-/// retail starts, up to 29 computer houses beside the local one.
+/// for. A map's `[Basic] MaxPlayers` (9 to 120) raises it past the eight
+/// retail starts, up to 119 computer houses beside the local one.
 fn seated_computers(args: &Args) -> Result<usize, String> {
     let assets =
         AssetManager::new(&args.ra2_dir, MediaArchiveMode::STOCK_DIGITAL).map_err(|error| {
@@ -299,9 +351,14 @@ fn seated_computers(args: &Args) -> Result<usize, String> {
         })?;
     let map = load_map_ini_by_name_or_path_with_assets(&args.ra2_dir, &args.map, &assets)
         .map_err(|error| format!("read map {}: {error}", args.map))?;
+    let cap = if args.lan {
+        NETWORK_PLAYER_SLOT_COUNT.saturating_sub(args.watchers.max(1))
+    } else {
+        sim_bench_match::COMPUTERS
+    };
     let most = usize::try_from(skirmish_player_capacity(&map.ini) - 1)
         .unwrap_or(0)
-        .min(sim_bench_match::COMPUTERS);
+        .min(cap);
     match args.computers {
         Some(computers) if computers > most => Err(format!(
             "{} admits at most {most} computer houses beside the local one",
@@ -394,7 +451,14 @@ fn spawn_armies(
                 simulation,
                 resources,
             } = &mut *runtime;
-            if let Some(id) = simulation.spawn_object(type_id, owner, rx, ry, 0, &resources.rules) {
+            if let Some(id) = simulation.spawn_object_with_map_overlays(
+                type_id,
+                owner,
+                rx,
+                ry,
+                0,
+                &resources.rules,
+            ) {
                 spawned.push(Spawned {
                     id,
                     house,
@@ -504,6 +568,10 @@ trait Frames {
     fn state_hash(&self) -> u64;
     /// After each completed frame, with every completed frame's time.
     fn completed(&mut self, tick: u64, times: &[Duration]);
+    /// Whether the run ends before its last tick.
+    fn finished(&self) -> bool {
+        false
+    }
 }
 
 struct Bench<'a> {
@@ -514,6 +582,80 @@ struct Bench<'a> {
     keep_frame: bool,
     frame: Option<SimRuntime>,
     paths: PathTotals,
+    /// `--watchers`: the match's defeats and decision, reported as they happen.
+    watch: Option<Watch>,
+}
+
+/// The Houses already reported defeated, and whether the match is decided.
+#[derive(Default)]
+struct Watch {
+    defeated: Vec<InternedId>,
+    decided: bool,
+}
+
+impl Watch {
+    fn report(&mut self, runtime: &SimRuntime, tick: u64) {
+        let sim = &runtime.simulation;
+        for &owner in sim.houses().order() {
+            let Some(house) = sim.houses().get(&owner) else {
+                continue;
+            };
+            if house.is_defeated() && !self.defeated.contains(&owner) {
+                self.defeated.push(owner);
+                let kind = if house.is_human() {
+                    "watcher"
+                } else {
+                    "computer"
+                };
+                println!("tick={tick} defeated {} ({kind})", sim.resolve(owner));
+            }
+        }
+        if !self.decided && sim.network_match_winners().is_some() {
+            self.decided = true;
+            let left: Vec<_> = sim
+                .houses()
+                .order()
+                .iter()
+                .filter(|owner| {
+                    sim.houses()
+                        .get(owner)
+                        .is_some_and(|house| !house.is_defeated() && !house.multiplay_passive())
+                })
+                .map(|owner| sim.resolve(*owner))
+                .collect();
+            println!("tick={tick} match decided, left: {}", left.join(", "));
+        }
+    }
+}
+
+/// `--watchers`' launch: `watchers` observing humans in the first rows, then
+/// the computer houses, as VERA's room seats a match where only AI play.
+fn watched_session(
+    map: &str,
+    computers: usize,
+    watchers: usize,
+) -> Result<SkirmishLaunchSession, String> {
+    if watchers + computers > NETWORK_PLAYER_SLOT_COUNT || computers < 2 {
+        return Err(format!(
+            "--watchers needs two computer houses or more and at most {NETWORK_PLAYER_SLOT_COUNT} rows in all"
+        ));
+    }
+    let mut session = battle_session(map, &sim_bench_match::COMPUTER_ROSTER[..computers]);
+    let template = session.humans[0].clone();
+    session.humans = (0..watchers)
+        .map(|row| {
+            let mut human = template.clone();
+            human.name = format!("Watcher{row}");
+            human.raw_slot_index = Some(row as u8);
+            human.set_observer(true);
+            human.slot.color_index = 8;
+            human
+        })
+        .collect();
+    for computer in &mut session.opponents {
+        computer.raw_slot_index += watchers as u8 - 1;
+    }
+    Ok(session)
 }
 
 /// The path batch's passes summed over the completed frames; no passes while
@@ -578,9 +720,16 @@ impl Frames for Bench<'_> {
         self.runtime.simulation.state_hash()
     }
 
+    fn finished(&self) -> bool {
+        self.watch.as_ref().is_some_and(|watch| watch.decided)
+    }
+
     fn completed(&mut self, tick: u64, times: &[Duration]) {
         if let Some(pass) = self.runtime.simulation.path_batch_stats() {
             self.paths.add(pass);
+        }
+        if let Some(watch) = &mut self.watch {
+            watch.report(self.runtime, tick + 1);
         }
         if matches!(self.plan, Plan::March(_)) || (tick + 1) % PROGRESS_EVERY != 0 {
             return;
@@ -638,6 +787,9 @@ fn run_frames(
             measured.frame_records.push((tick + 1, hash, checksum));
         }
         frames.completed(tick, &measured.times);
+        if frames.finished() {
+            break;
+        }
     }
     (measured, Ok(()))
 }
@@ -735,15 +887,21 @@ fn main() -> Result<(), String> {
             eprintln!(
                 "usage: sim-bench [--ra2-dir <retail path>] [--map Death.mmx] \
                  [--scenario march|match|skirmish] [--seed S] [--units 20000] [--houses N] \
-                 [--computers N (match, skirmish; default the map's most, at most 29)] \
+                 [--computers N (match, skirmish; default the map's most, at most 119)] \
                  [--ticks 300 (match: 1800, skirmish: 9000)] \
                  [--types E1,E2,MTNK,HTNK] [--order-spread 30] [--return-at T] (march) \
                  [--hash-every N] [--frame-hash-every 15] [--csv <path>] [--serial-paths] [--serial-scans] \
-                 [--frame-profile] [--lan] [--frame-hashes <path>] [--client-timing]"
+                 [--frame-profile] [--lan] [--watchers N (skirmish)] [--frame-hashes <path>] \
+                 [--client-timing] \
+                 [--state-isolation-report <new.json> --prior-map <map> \
+                 --isolation-mode lan|wol --isolation-humans 1|2]"
             );
             std::process::exit(2);
         }
     };
+    if args.isolation_report.is_some() {
+        return sim_bench_isolation::run(&args);
+    }
     let computers = match args.scenario {
         ScenarioKind::March => 0,
         ScenarioKind::Match | ScenarioKind::Skirmish => seated_computers(&args)?,
@@ -760,6 +918,21 @@ fn main() -> Result<(), String> {
                 sim_bench_match::session(&args.map, computers),
             )?
         }
+        ScenarioKind::Skirmish if args.watchers > 0 => headless_scenario::load_with_launch_and_ini(
+            &args.ra2_dir,
+            &args.map,
+            args.seed,
+            MatchLaunchDescriptor::from_resolved(watched_session(
+                &args.map,
+                computers,
+                args.watchers,
+            )?)
+            .map_err(|error| format!("resolve Battle launch: {error}"))?,
+            &Default::default(),
+            ScenarioGameMode::Lan,
+            None,
+            None,
+        )?,
         ScenarioKind::Skirmish => headless_scenario::load_session(
             &args.ra2_dir,
             &args.map,
@@ -773,6 +946,8 @@ fn main() -> Result<(), String> {
     if !args.serial_scans {
         scenario.runtime.simulation.batch_target_scans();
     }
+    // As a real match's handoff does (`app::loading::transitions`).
+    scenario.runtime.simulation.present_effect_anims();
     scenario
         .runtime
         .simulation
@@ -800,7 +975,10 @@ fn main() -> Result<(), String> {
         }
         ScenarioKind::Skirmish => {
             let simulation = &mut scenario.runtime.simulation;
-            if let Some(local) = simulation.session().current_house() {
+            // A watcher's House is an observer, which its first defeat check defeats.
+            if args.watchers == 0
+                && let Some(local) = simulation.session().current_house()
+            {
                 simulation.make_house_multiplay_passive(local);
             }
             let ticks = args.ticks.map_or(SKIRMISH_TICKS, NonZeroU64::get);
@@ -855,6 +1033,7 @@ fn main() -> Result<(), String> {
             keep_frame: args.presentation_frame,
             frame: None,
             paths: PathTotals::default(),
+            watch: (args.watchers > 0).then(Watch::default),
         };
         let (measured, frames) = run_frames(
             &mut bench,

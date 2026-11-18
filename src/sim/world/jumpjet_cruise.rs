@@ -150,6 +150,34 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         [xy[0], xy[1], z]
     }
     fn set_location(&mut self, coord: [i32; 3]) {
+        // VERA-only deviation. The hold and the cruise write Location with
+        // +0x74 clear and no Mark pair (Update's step `0x0054D55A..D607`, and
+        // State3_Translate's arrival snap, `0x0054BFF0`), so a cell-list link
+        // that a Mark pair from outside the locomotor gave the owner stays in
+        // the cell it leaves. Trigger: `TechnoClass::ChangeOwner`'s pair
+        // (`0x00701674`, `0x00701691`) when mind control takes a Jumpjet
+        // cruising below two levels; rare. In gamemd that cell keeps the link
+        // and its raw 0x20, a blocker nothing occupies, while the Jumpjet lives
+        // and after it dies; here the next entry walk of that cell would then
+        // fail the frame. So the owner leaves that cell through
+        // `MapClass::Pick_Up` (`0x005687F0`) first, and the blocker goes with
+        // it. Lifted phases, touchdown and the crash relocation unlink first.
+        // RESIDUAL: Pick_Up picks the raw plane by height, so one that climbed
+        // to deck height before leaving keeps the ground 0x20, as gamemd does;
+        // and an OnBridge change since the capture misses the linked list.
+        let position = &self.owner().position;
+        let here = (position.rx(), position.ry());
+        let there = self.cell_of([coord[0], coord[1]]);
+        if (i32::from(here.0), i32::from(here.1)) != (i32::from(there.0), i32::from(there.1))
+            && self
+                .sim
+                .substrate
+                .occupancy
+                .contains_entity(here.0, here.1, self.stable_id)
+        {
+            self.sim
+                .foot_pick_up(self.stable_id, self.rules, self.registry);
+        }
         foot_set_location(
             &mut self.sim.substrate.entities,
             self.stable_id,
@@ -599,7 +627,6 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         self.mark(true);
         Simulation::submit_entity_display(
             &self.sim.interner,
-            &self.sim.terrain_objects,
             &mut self.sim.substrate,
             &self.sim.resolved_terrain,
             self.stable_id,
@@ -1042,10 +1069,10 @@ mod tests {
             .expect("Move_To on the fixture map");
     }
 
-    fn touchdown_crate_fixture() -> (Simulation, RuleSet, OverlayTypeRegistry) {
+    fn touchdown_crate_fixture() -> (Simulation, RuleSet) {
         let mut sim = hovering_jumpjet(0x40);
         let rules = crate::sim::crates::tests::crate_ruleset("");
-        let registry = crate::sim::crates::tests::crate_registry();
+        let registry = rules.overlay_registry();
         sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(24, 16));
         let wood = registry.id_for_name("WOOD").unwrap();
         sim.overlay_grid
@@ -1073,19 +1100,19 @@ mod tests {
             .with_destination_for_test(DriveCoord::cell(10, 10, 0));
         Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, 1);
         sim.substrate.air_slots.set_holder((10, 10), Some(1));
-        (sim, rules, registry)
+        (sim, rules)
     }
 
     /// Supply an admitted State4 entry after Update. Owner callbacks remain
     /// production calls, including the vanished-deck DropAsBomb below.
-    fn descend_once(sim: &mut Simulation, rules: &RuleSet, registry: &OverlayTypeRegistry) -> i32 {
+    fn descend_once(sim: &mut Simulation, rules: &RuleSet) -> i32 {
         sim.with_jumpjet_process(1, |runtime, sim| {
             let mut host = CruiseHost {
                 sim,
                 frame: 0,
                 trig: TrigTable::embedded(),
                 rules,
-                registry: Some(registry),
+                registry: Some(rules.overlay_registry()),
                 frame_effects: FrameEffects::default(),
                 stable_id: 1,
                 touched_down: false,
@@ -1104,7 +1131,7 @@ mod tests {
 
     #[test]
     fn a_jumpjet_that_starts_falling_at_touchdown_does_not_finish_landing() {
-        let (mut sim, rules, registry) = touchdown_crate_fixture();
+        let (mut sim, rules) = touchdown_crate_fixture();
         let e = sim.substrate.entities.get_mut(1).unwrap();
         e.on_bridge.store(true);
         e.position
@@ -1116,7 +1143,7 @@ mod tests {
             10,
             crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS,
         ));
-        assert_eq!(descend_once(&mut sim, &rules, &registry), STATE_DESCEND);
+        assert_eq!(descend_once(&mut sim, &rules), STATE_DESCEND);
         let e = sim.substrate.entities.get(1).unwrap();
         assert!(
             e.is_falling_down(),
@@ -1124,7 +1151,7 @@ mod tests {
         );
         assert_eq!(
             sim.overlay_grid.as_ref().unwrap().cell(10, 10).overlay_id,
-            registry.id_for_name("WOOD"),
+            rules.overlay_registry().id_for_name("WOOD"),
             "aborted touchdown must not collect its crate"
         );
         assert!(!e.lift.may_end());
@@ -1161,7 +1188,7 @@ mod tests {
             ("healthy", false),
             ("health_zero", false),
         ] {
-            let (mut sim, rules, registry) = touchdown_crate_fixture();
+            let (mut sim, rules) = touchdown_crate_fixture();
             let e = sim.substrate.entities.get_mut(1).unwrap();
             e.crash.set_crashing_for_test(true);
             e.drop_credit.set_being_manipulated_for_test(true);
@@ -1173,7 +1200,7 @@ mod tests {
                 _ => {}
             }
             let rng = sim.scenario_rng.native_state_hex();
-            let phase = descend_once(&mut sim, &rules, &registry);
+            let phase = descend_once(&mut sim, &rules);
             let e = sim.substrate.entities.get(1).unwrap();
             let runtime = e.locomotor.as_ref().unwrap().jumpjet_runtime().unwrap();
             assert_eq!(
@@ -1290,7 +1317,7 @@ mod tests {
                 .entities
                 .get(building)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .occupants()
                 .ids(),
             &[id]
@@ -1368,6 +1395,55 @@ mod tests {
             assert!(!sim.substrate.occupancy.contains_entity(rx, ry, 1));
             assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(rx, ry), 0);
         }
+    }
+
+    /// Mind control taking a Jumpjet unit that cruises below two levels:
+    /// `TechnoClass::ChangeOwner`'s Mark pair (`0x00701674`, `0x00701691`)
+    /// links it in its cell's ground list, and the cruise then moves it with
+    /// no Mark pair (`0x0054D134`). The cell it leaves keeps no link, which
+    /// would outlive the Jumpjet.
+    #[test]
+    fn a_cruising_jumpjet_linked_by_a_capture_leaves_no_link_behind() {
+        let mut sim = hovering_jumpjet(0x40);
+        let russians = sim.interner.intern("Russians");
+        for (house, side) in [(sim.interner.intern("Americans"), 0), (russians, 1)] {
+            sim.houses
+                .register(crate::sim::house_state::HouseState::new(
+                    house, side, None, true, 0, 10,
+                ));
+        }
+        {
+            let entity = sim.substrate.entities.get_mut(1).expect("jumpjet");
+            entity.set_foot_occupation_enabled(true);
+            entity.lifecycle.set_in_limbo_for_test(false);
+            entity.lifecycle.set_cell_marked_for_test(true);
+            // Unlimbo's threat publication, which ChangeOwner withdraws.
+            entity.cached_spatial_threat.publish(0);
+        }
+        Simulation::set_object_height_unmarked(&mut sim.substrate, &sim.resolved_terrain, 1, 100);
+        assert!(!sim.substrate.occupancy.contains_entity(10, 10, 1));
+
+        sim.change_owner(1, russians);
+        assert!(
+            sim.substrate.occupancy.contains_entity(10, 10, 1),
+            "the capture's Mark(PUT) links it"
+        );
+        // Its new owner sends it on.
+        order_east(&mut sim);
+        for frame in 0..80 {
+            sim.session.set_binary_frame_for_test(1001 + frame);
+            sim.tick_air_movement_with_cell_lists_one(
+                1,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
+                None,
+                crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
+        }
+        let position = sim.substrate.entities.get(1).expect("jumpjet").position;
+        assert_ne!((position.rx(), position.ry()), (10, 10), "it flew on");
+        assert!(!sim.substrate.occupancy.contains_entity(10, 10, 1));
+        assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(10, 10), 0);
     }
 
     /// Before the locomotor owned this tick, VERA's air adapter cycled an idle
@@ -1806,7 +1882,7 @@ mod tests {
                     cell.1,
                     64,
                     &resources.rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
                 .expect("spawns on open ground");
             sim.resolve_type_handles(&resources.rules);
@@ -1923,7 +1999,7 @@ mod tests {
                     y,
                     64,
                     &resources.rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
                 .expect("Kirov spawns");
             let reactor = sim
@@ -1934,7 +2010,7 @@ mod tests {
                     y - 1,
                     0,
                     &resources.rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
                 .expect("reactor spawns");
             sim.resolve_type_handles(&resources.rules);
@@ -2019,7 +2095,7 @@ mod tests {
                 sim.techno_limbo_with_rules(
                     rocketeer,
                     &resources.rules,
-                    Some(&resources.overlay_registry),
+                    Some(resources.rules.overlay_registry()),
                 ),
                 crate::sim::world::ConcealOutcome::Concealed,
             );
@@ -2035,7 +2111,7 @@ mod tests {
                     crate::sim::build_site::can_place_building_at(
                         sim,
                         &resources.rules,
-                        Some(&resources.overlay_registry),
+                        Some(resources.rules.overlay_registry()),
                         plant_type,
                         (px as i16, py as i16),
                         Some(owner),
@@ -2054,7 +2130,7 @@ mod tests {
                     y,
                     64,
                     &resources.rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
                 .expect("Kirov spawns");
             sim.resolve_type_handles(&resources.rules);
@@ -2140,7 +2216,7 @@ mod tests {
                     y,
                     64,
                     &resources.rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
                 .expect("Floating Disc spawns");
             let tank = sim
@@ -2151,7 +2227,7 @@ mod tests {
                     y,
                     0,
                     &resources.rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
                 .expect("tank spawns");
             sim.resolve_type_handles(&resources.rules);

@@ -772,6 +772,11 @@ pub fn kill_award_points(
 ///
 /// The value is stored as bits, so no float reaches sim state.
 ///
+/// The arithmetic is the masked model's, so an infinite `VeteranRatio=` or
+/// `VeteranCap=` (ReadDouble scans `1e999` as infinity) plays as native does:
+/// an award over an infinite ratio adds zero, and a NaN sum takes the clamp,
+/// since `TEST AH, 0x41` sees C0 and C3 set.
+///
 /// Native execution: `tools/spatial_oracle/veterancy_add.py`.
 pub fn accumulate(
     raw: NativeF32Bits,
@@ -780,32 +785,27 @@ pub fn accumulate(
     veteran_ratio: f64,
     veteran_cap: f64,
 ) -> NativeF32Bits {
-    use crate::util::native_x87::{NativeF64Bits, X87Chop53, X87Ordering};
+    use crate::util::native_x87::{MaskedX87Chop53 as M, MaskedX87Ordering, NativeF64Bits};
     if points <= 0 {
         return raw;
     }
-    let cap = X87Chop53::load_f64(NativeF64Bits::from_bits(veteran_cap.to_bits()))
-        .expect("finite VeteranCap");
-    let denominator = X87Chop53::mul(
-        X87Chop53::load_i32(recipient_cost),
-        X87Chop53::load_f64(NativeF64Bits::from_bits(veteran_ratio.to_bits()))
-            .expect("finite VeteranRatio"),
+    let cap = M::load_f64(NativeF64Bits::from_bits(veteran_cap.to_bits()));
+    let denominator = M::mul(
+        M::load_i32(recipient_cost),
+        M::load_f64(NativeF64Bits::from_bits(veteran_ratio.to_bits())),
     );
-    // A zero denominator divides a positive award to +INF, which the compare
+    // A +0 denominator divides a positive award to +INF, which the compare
     // sends to the clamp: the object stores `VeteranCap` on its first kill.
-    let Ok(delta) = X87Chop53::div(X87Chop53::load_i32(points), denominator) else {
-        return X87Chop53::store_f32_masked_chop(cap);
-    };
-    let sum = X87Chop53::add(
-        delta,
-        X87Chop53::load_f32(raw).expect("a stored veterancy is finite"),
-    );
-    let stored = if X87Chop53::compare(sum, cap) == X87Ordering::Less {
+    // A -0 one (`VeteranRatio=-0`) gives -INF, which `FDIVP` and the compare
+    // store as native does.
+    let delta = M::div(M::load_i32(points), denominator);
+    let sum = M::add(delta, M::load_f32(raw));
+    let stored = if M::compare(sum, cap) == MaskedX87Ordering::Less {
         sum
     } else {
         cap
     };
-    X87Chop53::store_f32_masked_chop(stored)
+    M::store_f32_masked_chop(stored)
 }
 
 #[cfg(all(test, tests_sim_combat_d_z))]
@@ -922,6 +922,17 @@ mod tests {
     fn gsi_08_12_zero_award_does_not_move_the_accumulator() {
         let start = accumulate(NativeF32Bits::POSITIVE_ZERO, 700, 900, RATIO, CAP);
         assert_eq!(accumulate(start, 700, 0, RATIO, CAP).bits(), start.bits());
+    }
+
+    /// An infinite ratio makes the award zero and an infinite cap never
+    /// clamps, as in native, instead of stopping the game.
+    #[test]
+    fn an_infinite_ratio_or_cap_plays_as_native() {
+        let start = accumulate(NativeF32Bits::POSITIVE_ZERO, 700, 900, RATIO, CAP);
+        assert_eq!(accumulate(start, 700, 900, f64::INFINITY, CAP), start);
+        // Ten ranks' worth: the stock cap would stop it at 2.0.
+        let uncapped = accumulate(start, 700, 21000, RATIO, f64::INFINITY);
+        assert!(f32::from_bits(uncapped.bits()) > CAP as f32);
     }
 
     /// `HasWeaponAbility @ 0x0070D0D0`: an elite inherits the veteran list,

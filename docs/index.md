@@ -20,7 +20,7 @@ Source paths below are under `src/`. The workspace has two crates:
 - `vera20k` (`Cargo.toml`) contains the app, renderer, UI, audio, asset tools and
   game executable. It re-exports core's modules.
 
-- `sim/` — all game state and deterministic gameplay. Auto play, an agent issuing the player's own commands, is described in [autoplay.md](autoplay.md); the internal three-layer contract behind it is [ai-layers.md](ai-layers.md).
+- `sim/` — all game state and deterministic gameplay.
 - `render/` — the wgpu renderer.
 - `app/` — window, input, loading and saving; wires sim, render, ui, audio and net together.
 - `ui/` — menus, dialogs, in-game screens and the sidebar.
@@ -72,9 +72,10 @@ simulation, session and network command owners.
 - [Map format](map-format.md): bigger maps and maps for up to 30 players, for people who write map editors and tools.
 - [Primary rotation](primary-rotation.md): select several factories and press I to have them take turns being the primary.
 - [Random map Extras](random-map-extras.md): share codes, presets and choices that add to a generated map, and `RMGMD.INI [Extras]` for a mod's own.
+- [External launches](spawn.md): `vera20k --probe` and `--generate-map`, which a launcher runs before a `-SPAWN` match, and the browser's `probe()` and `generate_map()`.
 - [Relation colours](relation-colours.md): press Alt+A to draw your side blue, your allies green and your enemies red.
 - [SHP building turrets](ini-shp-turret-anims.md): the rules keys for a building turret drawn as a 32-frame animation.
 - [Sidebar build-list columns](sidebar-columns.md): the Options list that lays three to five build pictures a row inside the sidebar's own width.
-- [Terrain deformation](terrain-deformation.md): the Options box that lets explosions dent the ground and nukes leave craters.
-- [Superweapon Limit](superweapon-limit.md): the Options slider that allows up to 20 of each superweapon, each charging its own shot, and the `SuperWeaponPerBuilding=` key.
+- [Terrain deformation](terrain-deformation.md): the skirmish Game Options box that lets explosions dent the ground and nukes leave craters.
+- [Superweapon Limit](superweapon-limit.md): the skirmish Game Options slider that allows up to 20 of each superweapon, each charging its own shot, and the `SuperWeaponPerBuilding=` key.
 - [Stock rules retail leaves off](dormant-stock-rules.md): `Assaulter=`, `CanDetonateTimeBomb=` and other gamemd keys only a mod or map switches on.

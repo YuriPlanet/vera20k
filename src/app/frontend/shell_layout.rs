@@ -36,14 +36,26 @@ pub(crate) fn window_takes_fitted_shell(size: (u32, u32)) -> bool {
 }
 
 /// How much a menu's software cursor grows: with a fitted menu's art, by the
-/// same factor. An active-game shell draws its cursor in the match frame,
-/// which the match zoom scales instead.
+/// same factor, and half that in VERA's online lobby and its rooms, whose
+/// text is smaller. An active-game shell draws its cursor in the match
+/// frame, which the match zoom scales instead.
 pub(crate) fn menu_cursor_scale(state: &AppState) -> f32 {
-    if state.frontend.screen == crate::ui::game_screen::GameScreen::InGame || !fills_window(state) {
+    if state.frontend.screen == crate::ui::game_screen::GameScreen::InGame {
         return 1.0;
     }
-    let (width, height) = shell_screen_size(state);
-    crate::ui::shell::geom::ShellScale::from_screen(width as i32, height as i32).factor()
+    let fitted = if fills_window(state) {
+        let (width, height) = shell_screen_size(state);
+        crate::ui::shell::geom::ShellScale::from_screen(width as i32, height as i32).factor()
+    } else {
+        1.0
+    };
+    let route = state.frontend.shell_route;
+    let vera_online = (route.wol_lobby() && crate::app::shell_wol::lobby::modern_lobby(state))
+        || (route.network_setup() && {
+            let dialog = crate::app::shell_network_setup::dialog(state);
+            dialog.wol() && dialog.modern
+        });
+    if vera_online { fitted * 0.5 } else { fitted }
 }
 
 /// Main menu dialog `0xE2`.

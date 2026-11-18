@@ -67,7 +67,6 @@ pub struct SelectionOverlay {
     repair_wrench: Option<CenteredShapeStrip>,
     /// POWEROFF.SHP, which only Ares draws (TechnoClass_DrawExtras_PowerOff
     /// 10049FE0, hook 0x6F526C).
-    #[cfg(feature = "ares")]
     power_off: Option<CenteredShapeStrip>,
     /// Full PIPS: health, rank, raw garrison Pip values and self-heal.
     /// Native LoadPipAssets 5F76B0 binds AC147C; both use Convert 87F6C4.
@@ -77,12 +76,10 @@ pub struct SelectionOverlay {
     /// Phobos then draws that display with the game font.
     #[cfg(feature = "phobos")]
     digital_shapes: Vec<Option<CenteredShapeStrip>>,
-    /// Phobos custom insignia SHPs keyed by their normalized file name.
-    #[cfg(feature = "phobos")]
+    /// Ares/Phobos custom insignia SHPs keyed by their normalized file name.
     insignia_shapes: std::collections::HashMap<String, CenteredShapeStrip>,
     /// Ares `IvanBomb.Image` SHPs keyed by their file name, MOUSEPAL like
     /// the BOMBCURS.SHP they replace; a name that did not load is absent.
-    #[cfg(feature = "ares")]
     ares_bomb_images: std::collections::HashMap<String, CenteredShapeStrip>,
 }
 
@@ -490,7 +487,6 @@ impl SelectionOverlay {
         });
         // POWEROFF.SHP by name (0x0045E970, beside WRENCH.SHP); Ares draws
         // it through the same MOUSEPAL Convert.
-        #[cfg(feature = "ares")]
         let power_off = assets.and_then(|assets| {
             CenteredShapeStrip::from_assets_on_device(
                 device,
@@ -526,14 +522,11 @@ impl SelectionOverlay {
             bomb_clock,
             talk_bubble,
             repair_wrench,
-            #[cfg(feature = "ares")]
             power_off,
             pips,
             #[cfg(feature = "phobos")]
             digital_shapes: Vec::new(),
-            #[cfg(feature = "phobos")]
             insignia_shapes: std::collections::HashMap::new(),
-            #[cfg(feature = "ares")]
             ares_bomb_images: std::collections::HashMap::new(),
         }
     }
@@ -542,7 +535,7 @@ impl SelectionOverlay {
     /// `read<SHPStruct*>` (Ares.dll 10040640) loads the file at Rules read
     /// and keeps the pointer; TechnoClass_DrawExtras_IvanBombImage
     /// (10056CC0, hook 0x6F523C) draws it through BOMBCURS's MOUSEPAL convert.
-    #[cfg(feature = "ares")]
+    /// The match loader calls it when the Rules were read the Ares way.
     pub(crate) fn load_ares_bomb_images(
         &mut self,
         device: &wgpu::Device,
@@ -576,9 +569,9 @@ impl SelectionOverlay {
     }
 
     /// The bomb image for a carrier whose `IvanBomb.Image` candidates are
-    /// `names`: the last that loaded, else BOMBCURS.SHP.
+    /// `names`: the last that loaded, else BOMBCURS.SHP. Runs in every game:
+    /// the caller passes no names unless the Rules were read the Ares way.
     pub(crate) fn bomb_image(&self, names: &[String]) -> Option<&CenteredShapeStrip> {
-        #[cfg(feature = "ares")]
         if let Some(strip) = names
             .iter()
             .rev()
@@ -586,7 +579,6 @@ impl SelectionOverlay {
         {
             return Some(strip);
         }
-        let _ = names;
         self.bomb_clock()
     }
 
@@ -632,9 +624,9 @@ impl SelectionOverlay {
     }
 
     /// Load every TechnoType/`[InsigniaTypes]` insignia SHP once per match.
-    /// Phobos loads each `Promotable<SHPStruct*>` through the SHP reader with
-    /// `PALETTE.PAL` and retains the pointer for the match.
-    #[cfg(feature = "phobos")]
+    /// Ares and Phobos load each `Promotable<SHPStruct*>` through the SHP
+    /// reader, draw it with `PALETTE.PAL` (Ares 1004E1FD's 0x87F6C4) and
+    /// retain the pointer for the match.
     pub(crate) fn load_insignia_shapes(
         &mut self,
         device: &wgpu::Device,
@@ -644,6 +636,7 @@ impl SelectionOverlay {
         rules: &crate::rules::ruleset::RuleSet,
     ) {
         let mut names = std::collections::BTreeSet::new();
+        #[cfg(feature = "phobos")]
         for object in rules.all_objects() {
             let insignia = &object.phobos_insignia;
             for variant in std::iter::once(&insignia.base)
@@ -653,8 +646,15 @@ impl SelectionOverlay {
                 names.extend(variant.images.iter().flatten().cloned());
             }
         }
+        #[cfg(feature = "phobos")]
         for entry in rules.insignia_types().entries() {
             names.extend(entry.images.iter().flatten().cloned());
+        }
+        // Ares's own draw runs only without Phobos's DrawInsignia, and its
+        // keys are read only the Ares way.
+        #[cfg(not(feature = "phobos"))]
+        for object in rules.all_objects().filter(|_| rules.ares_form()) {
+            names.extend(object.ares_insignia.images.iter().flatten().cloned());
         }
         for name in names {
             let strip = CenteredShapeStrip::from_assets_on_device(
@@ -666,7 +666,7 @@ impl SelectionOverlay {
                 "palette.pal",
             );
             if strip.is_none() {
-                log::warn!("Phobos insignia: cannot load {name}");
+                log::warn!("insignia: cannot load {name}");
             }
             if let Some(strip) = strip {
                 self.insignia_shapes.insert(name, strip);
@@ -675,7 +675,6 @@ impl SelectionOverlay {
     }
 
     /// One custom insignia SHP by normalized file name, when loaded.
-    #[cfg(feature = "phobos")]
     pub(crate) fn insignia_shape(&self, name: &str) -> Option<&CenteredShapeStrip> {
         self.insignia_shapes.get(name)
     }
@@ -695,7 +694,6 @@ impl SelectionOverlay {
     }
 
     /// The power-off marker art (POWEROFF.SHP), when the assets have it.
-    #[cfg(feature = "ares")]
     pub fn power_off(&self) -> Option<&CenteredShapeStrip> {
         self.power_off.as_ref()
     }

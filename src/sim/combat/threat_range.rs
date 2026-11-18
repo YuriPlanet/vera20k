@@ -185,7 +185,9 @@ pub enum ScanMission {
     /// callsite passes `-1`, and a non-`-1` arg6 rejects any candidate whose
     /// cell is in a different component under the attacker's own
     /// `MovementZone=` (`0x006F7E7E`-`0x006F7E9C`). A hunter reaches the far
-    /// side of the map but not the far side of a river.
+    /// side of the map but not the far side of a river, unless Phobos plays
+    /// and its type's `TargetZoneScanType` lets it
+    /// (`combat::greatest_threat::zone_admits`).
     ///
     /// **Mask 0 is a scan TOPOLOGY, not a radius.** The jump at `0x006F8FE2`
     /// lands past the airborne pre-pass *and* past the expanding-ring cell walk
@@ -615,7 +617,8 @@ GuardRange=9\n\n\
                     .as_u64()
                     .unwrap();
                 passenger.set_gunner_selection_for_test(current as i32, -1);
-                passenger.passenger_role = PassengerRole::inside_for_test(1, open_topped);
+                passenger
+                    .set_passenger_role_for_test(PassengerRole::inside_for_test(1, open_topped));
                 entities.insert(passenger);
                 cargo.board_forced_chain(&[(id, 1.0)]);
             }
@@ -623,7 +626,7 @@ GuardRange=9\n\n\
             transport
                 .veterancy
                 .set_rank_for_test(veterancy(lookup(input, defaults, "veterancy")));
-            transport.passenger_role = PassengerRole::transport(cargo);
+            transport.set_passenger_role_for_test(PassengerRole::transport(cargo));
             let interner = crate::sim::intern::test_interner();
             let obj = rules.object("TRN").unwrap();
 

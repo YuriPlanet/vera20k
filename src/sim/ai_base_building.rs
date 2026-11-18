@@ -146,7 +146,6 @@ impl Hash for HouseAiProduction {
 
 /// Phobos' per-house factory building pointers, one slot per producing
 /// building category (`HouseExt::Factory_*Type`).
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AiFactorySlot {
     Building,
@@ -156,7 +155,6 @@ pub(crate) enum AiFactorySlot {
     Aircraft,
 }
 
-#[cfg(feature = "phobos")]
 impl AiFactorySlot {
     const fn index(self) -> usize {
         match self {
@@ -239,12 +237,10 @@ impl HouseAiProduction {
     }
     /// Phobos `BuildingClass_Update_Factory_Phobos @ 0x4502F4` remembers the
     /// first factory building of a category; a second one consults it.
-    #[cfg(feature = "phobos")]
     pub(crate) fn parallel_factory(&self, slot: AiFactorySlot) -> Option<u64> {
         self.parallel_factories[slot.index()]
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn set_parallel_factory(&mut self, slot: AiFactorySlot, building: Option<u64>) {
         self.parallel_factories[slot.index()] = building;
     }
@@ -253,12 +249,25 @@ impl HouseAiProduction {
     /// `0x44531F`) clear the pointer only while it still names the same
     /// factory building. `FactoryClass_AbandonProduction` (`0x4CA07A`) has no
     /// such test and uses [`Self::set_parallel_factory`] instead.
-    #[cfg(feature = "phobos")]
     pub(crate) fn clear_parallel_factory(&mut self, slot: AiFactorySlot, building: u64) {
         let entry = &mut self.parallel_factories[slot.index()];
         if *entry == Some(building) {
             *entry = None;
         }
+    }
+
+    /// Phobos `HouseExt::OnDetach`, which its `AnnounceInvalidPointer` hook
+    /// (`0x7258D0`) runs on every house for a removed building: each slot
+    /// that names the building is cleared. Answers whether one did.
+    pub(crate) fn forget_parallel_factory(&mut self, building: u64) -> bool {
+        let mut named = false;
+        for entry in &mut self.parallel_factories {
+            if *entry == Some(building) {
+                *entry = None;
+                named = true;
+            }
+        }
+        named
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -803,14 +812,17 @@ fn append_perimeter_run(
 }
 
 /// The power splice gates of `AI_Choose_Building` (`0x004FE6F6..0x004FE8A6`):
-/// the building's drain would exceed the house's output (less `+0x160B4`,
-/// which only the constructor writes, zero), it is not a `BuildConst=` type,
+/// the building's drain would exceed the house's output less its spare power
+/// (`+0x160B4`, [`PowerState::power_surplus`]: zero unless Phobos'
+/// `EnablePowerSurplus` is on), it is not a `BuildConst=` type,
 /// it drains power, no blackout remains and no powered building is being
 /// drained (`+0x577B`). Returns the plant's BuildingType index: the side 0
 /// house's `GDIPowerPlant=`, the side 2 house's `ThirdPowerPlant=`, any other
 /// side's `NodAdvancedPower=` when `0x00505360` admits it, else
 /// `NodRegularPower=`. In a game read the Ares way, [`ares_power_plant`]
 /// chooses instead.
+///
+/// [`PowerState::power_surplus`]: crate::sim::power_system::PowerState::power_surplus
 fn power_plant_to_splice(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -820,9 +832,13 @@ fn power_plant_to_splice(
     let side = sim.houses.get(&owner)?.side_index();
     let power = sim.power_states.get(&owner).cloned().unwrap_or_default();
     let drain = crate::sim::power_system::native_building_power_drain(ty.power);
-    let short = power.total_drain().wrapping_add(drain) > power.total_output();
+    // `0x004FE6FC..0x004FE71D`: dword SUB, ADD and a signed compare.
+    let output = power
+        .total_output()
+        .wrapping_sub(power.power_surplus(rules));
+    let short = power.total_drain().wrapping_add(drain) > output;
     if !short
-        || ty.build_const_eligible
+        || ty.build_const_eligible()
         || drain <= 0
         || power.blackout_remaining(sim.session.binary_frame()) > 0
         || power.has_drained_power_source()

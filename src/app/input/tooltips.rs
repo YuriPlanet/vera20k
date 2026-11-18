@@ -238,7 +238,7 @@ fn tactical_world_tip_text(
     world: (f32, f32),
     cursor_coordinates: bool,
 ) -> String {
-    tactical_world_tip_text_for_viewer(view, rules, csf, world, cursor_coordinates, None)
+    tactical_world_tip_text_for_viewer(view, rules, csf, world, cursor_coordinates, None, None)
 }
 
 fn tactical_world_tip_text_for_viewer(
@@ -248,6 +248,7 @@ fn tactical_world_tip_text_for_viewer(
     world: (f32, f32),
     cursor_coordinates: bool,
     translucent_viewer: Option<crate::sim::intern::InternedId>,
+    frame: Option<&crate::app::presentation::frame::PresentationFrame>,
 ) -> String {
     let Some((terrain, viewer)) = view.resolved_terrain().zip(view.session().current_house())
     else {
@@ -266,17 +267,26 @@ fn tactical_world_tip_text_for_viewer(
     ) {
         return text;
     }
-    // ProcessClickCoords692300 uses TacticalPick6DA380's retained Display
-    // registrations. Share the normal click owner, including live admission
-    // and foundation fallback, instead of keeping a tooltip object pointer.
+    // ProcessClickCoords692300 uses TacticalPick6DA380's Display
+    // registrations, in the frame's draw order. Share the normal click owner,
+    // including live admission and foundation fallback, instead of keeping a
+    // tooltip object pointer.
     let sim = view.simulation();
+    let own_order;
+    let order = match frame {
+        Some(frame) => frame.display_order(sim).ordered(),
+        None => {
+            own_order = sim.display_draw_order(Some(rules));
+            &own_order
+        }
+    };
     let picked = crate::app::input::entity_pick::pick_entity_at_point(
         crate::app::input::entity_pick::PresentedWorld {
             sim,
             rules: Some(rules),
             translucent_viewer,
         },
-        sim.display_layers().ordered_ids(),
+        order.iter().map(|(_, id)| id),
         Some(view.fog()),
         Some(view.interner().resolve(viewer)),
         world.0,
@@ -430,7 +440,7 @@ fn unit_turret_tip_text(
     }
     let tip = |key: &str| csf.map_or_else(|| key.to_owned(), |csf| csf.text(key).into_owned());
     let passenger = entity
-        .passenger_role
+        .passenger_role()
         .cargo()
         .and_then(|cargo| cargo.passengers().first())
         .and_then(|&id| view.entities().get(id))
@@ -490,6 +500,7 @@ fn tactical_tip_text(state: &AppState) -> String {
         world,
         input.cursor_coordinates,
         translucent_viewer,
+        state.match_state.sim_runtime.frame(),
     )
 }
 
@@ -1376,7 +1387,7 @@ mod tests {
                     if sim
                         .entities()
                         .get(id)
-                        .is_some_and(|entity| entity.passenger_role.is_inside_transport())
+                        .is_some_and(|entity| entity.passenger_role().is_inside_transport())
                     {
                         break;
                     }
@@ -1384,7 +1395,7 @@ mod tests {
                 assert!(
                     sim.entities()
                         .get(id)
-                        .is_some_and(|entity| entity.passenger_role.is_inside_transport()),
+                        .is_some_and(|entity| entity.passenger_role().is_inside_transport()),
                     "{passenger} boards the IFV"
                 );
             }
@@ -1509,7 +1520,8 @@ mod tests {
             sim.entities().get(entity_id).unwrap(),
         );
 
-        let order = crate::app::presentation::instances::tactical_entity_encounter_order(&sim);
+        let order =
+            crate::app::presentation::instances::tactical_entity_encounter_order(&sim, None);
         assert_eq!(
             crate::app::input::entity_pick::pick_entity_at_point(
                 sim.entities(),

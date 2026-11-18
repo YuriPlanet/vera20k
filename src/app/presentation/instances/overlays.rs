@@ -431,23 +431,6 @@ pub(crate) fn build_display_effect_instances(
         input.render_size[1] as f32 / z2,
     );
     let admission = input.tactical_admission();
-    // NPSE Paradrop C2FA75/C2F939 attaches either retained canopy type; Ares
-    // `[Side] Parachute.Anim=` adds its own attached type.
-    let mut parachute_names = vec![
-        input.rules.general.parachute_shp.as_deref(),
-        if crate::rules::NPATCH_ENABLED {
-            input.rules.general.vehicle_parachute.as_deref()
-        } else {
-            None
-        },
-    ];
-    #[cfg(feature = "ares")]
-    parachute_names.extend(input.rules.side_parachute_animations().map(Some));
-    let parachute_types = parachute_names
-        .into_iter()
-        .flatten()
-        .filter_map(|name| sim.interner().get(name))
-        .collect::<Vec<_>>();
     let local_owner = input.local_owner;
     // Only the members this loop draws, filed once for the frame; Display
     // still supplies the order. Particles have their own AIR registrations,
@@ -505,10 +488,11 @@ pub(crate) fn build_display_effect_instances(
         };
         // Paradrop creates a retained Anim, whose GetCoords resolves its
         // owner-relative75-lepton lift. Draw it at its own Display encounter.
-        let is_parachute = parachute_types
-            .iter()
-            .copied()
-            .any(|ty| parachute_canopy_owner(anim, ty).is_some());
+        // Paradrop5F5AF1 retains the canopy at Object+88. Ares10047C60
+        // changes its type, and another attached effect can share its art.
+        let is_parachute = anim
+            .owner_entity()
+            .is_some_and(|owner| input.frame.parachute_animation(owner) == Some(stable_id));
         let type_name: &str = sim.interner().resolve(anim.type_id());
         let AnimTypeArt {
             config,
@@ -844,17 +828,6 @@ pub(super) fn presentation_anim_frame_count(
     })
 }
 
-/// The object a canopy hangs on: an owner-attached anim of the
-/// retained `Parachute=` or NPSE `VehicleParachute=` type.
-fn parachute_canopy_owner(
-    anim: &crate::sim::anim_class::AnimObject,
-    parachute_type: crate::sim::intern::InternedId,
-) -> Option<u64> {
-    (anim.type_id() == parachute_type)
-        .then_some(anim.owner_entity())
-        .flatten()
-}
-
 /// `UpdateConditionalAnimDrawingLogic`'s offset for one attach-effect
 /// animation: identify the effect instance that owns the anim, then sum every
 /// `Animation.DrawOffsetN` rule whose `RequiredTypes` set is satisfied. Zero
@@ -1055,12 +1028,6 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
             None
         };
 
-        let track_y_offset: f32 = if overlay_flags.map(|f| f.track).unwrap_or(false) {
-            TRACK_OVERLAY_Y_OFFSET
-        } else {
-            0.0
-        };
-
         let z: u8 = input
             .terrain
             .and_then(|terrain| terrain.cell(entry.rx, entry.ry))
@@ -1071,7 +1038,6 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
             .and_then(|terrain| terrain.cell(entry.rx, entry.ry))
             .map_or(0, |cell| cell.bridge_facts.raw_flags);
         let screen_y: f32 = screen_y
-            + track_y_offset
             + super::bridges::cell_overlay_y_offset(live_overlay_id, live_flags, live_overlay_data);
 
         // No LocalSize gate: gamemd draws overlays on border filler cells like
@@ -1177,13 +1143,10 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
     }
 }
 
-/// FA2 IsoView.cpp:5955-5956: track overlays render +CellHeight (15px) lower.
-const TRACK_OVERLAY_Y_OFFSET: f32 = 15.0;
-
 /// The cells whose overlay body [`build_cell_overlay_bodies`] can admit for
 /// `camera`/`viewport` when every sprite lies in `art`. Its `in_view` box and
-/// margin grow to a rubble sprite's size; the track offset moves the anchor
-/// down and [`super::bridges::cell_overlay_y_offset`] up by at most 31 px.
+/// margin grow to a rubble sprite's size; [`super::bridges::cell_overlay_y_offset`]
+/// moves the anchor up by at most 31 px.
 fn overlay_body_window(
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
     art: crate::render::cell_window::ArtExtent,
@@ -1194,7 +1157,7 @@ fn overlay_body_window(
     crate::render::cell_window::CellWindow::covering(
         crate::render::cell_window::AnchorBounds {
             left: camera[0] - 2.0 * margin,
-            top: camera[1] - 2.0 * margin - TRACK_OVERLAY_Y_OFFSET,
+            top: camera[1] - 2.0 * margin,
             right: camera[0] + viewport[0] + margin,
             bottom: camera[1] + viewport[1] + margin
                 - super::bridges::BRIDGE_BODY_Y_OFFSET_STATE_9_TO_17,
@@ -1394,6 +1357,7 @@ pub(crate) fn build_overlay_instances(
         }
         // Ordinary native Ground6D97D0 -> Terrain71CC50/71C1B0 admits live
         // static art independently of anchor exploration; ABuffer clips pixels.
+        // An animated type draws in its Display slot instead (6D8DB0).
 
         // Terrain Render71CD30 reads the retained Location through GetCoords
         // 5F65A0; DrawIt71C1B0 applies AdjustForZ to that retained height.
@@ -1505,7 +1469,9 @@ pub(crate) fn build_overlay_instances(
                 })
             })
             .collect();
-        ground_objects.push(PlannedObjectInstance::object(parent, pieces));
+        let mut planned = PlannedObjectInstance::object(parent, pieces);
+        planned.static_tree = !is_animated;
+        ground_objects.push(planned);
     }
 }
 
@@ -1576,28 +1542,33 @@ pub(crate) fn build_weapon_wave_instances(
         state.match_state.input.camera_y,
     ]
     .map(|value| value.floor() as i32);
-    #[cfg(feature = "ares")]
-    let Some(frame) = state.match_state.sim_runtime.frame() else {
-        return;
+    let rules = &state
+        .match_state
+        .sim_runtime
+        .presentation()
+        .expect("the wave owner's runtime")
+        .resources
+        .rules;
+    // Ares' wave hooks draw when Ares plays, the answer under which the sim
+    // registers a wave's weapon (`Wave::with_ares_weapon`).
+    let ares = rules.ares();
+    let ares_frame = if ares {
+        let Some(frame) = state.match_state.sim_runtime.frame() else {
+            return;
+        };
+        Some(frame)
+    } else {
+        None
     };
-    #[cfg(feature = "ares")]
-    let blend = {
-        let rules = &state
-            .match_state
-            .sim_runtime
-            .presentation()
-            .expect("the wave owner's runtime")
-            .resources
-            .rules;
-        let colors = &state.match_state.match_presentation.house_color_map;
-        move |wave: &crate::sim::wave::Wave| {
+    let colors = &state.match_state.match_presentation.house_color_map;
+    let blend = move |wave: &crate::sim::wave::Wave| match ares_frame {
+        Some(frame) => {
             crate::app::presentation::fire_effects::ares_wave_blend(sim, frame, rules, colors, wave)
         }
+        None => crate::render::wave_geometry::WaveBlend::Native,
     };
-    #[cfg(not(feature = "ares"))]
-    let blend = |_: &crate::sim::wave::Wave| crate::render::wave_geometry::WaveBlend::Native;
     for (id, draw) in crate::app::presentation::fire_effects::build_weapon_wave_draws(
-        sim, observer, camera, blend,
+        sim, observer, camera, ares, blend,
     ) {
         use crate::app::presentation::render::draw_plan_lowering::{
             ObjectBodyDraw, PlannedObjectInstance,

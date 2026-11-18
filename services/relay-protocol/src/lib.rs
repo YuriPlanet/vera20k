@@ -8,6 +8,8 @@
 //! assigns (§6.2). Relayed DATA is plaintext (§3.2). Domain-separated
 //! HMAC-SHA256 uses RustCrypto's constant-time verification:
 //! https://docs.rs/hmac/0.12.1/hmac/ . Neither key type prints secret bytes.
+//! A watcher's hop holds a v3 watch ticket of the same length instead
+//! (`WatchTicket`, README "Watchers").
 
 use std::collections::HashMap;
 use std::fmt;
@@ -24,14 +26,21 @@ mod link;
 pub mod netsim;
 mod sequenced;
 pub mod varint;
-pub use link::{ClientLinkStats, HopFeedback, LinkState, OrderingGap, ReaderLinkStats, RecvWindow};
-pub use sequenced::federation::{MAX_FEDERATED_RELAYS, sign_federation_roster};
-pub use sequenced::pack::{decode_pack_v2, encode_pack_v2};
+#[cfg(any(test, feature = "test-support"))]
+pub use link::ReaderLinkStats;
+pub use link::{
+    ClientLinkStats, HOP_HANDSHAKE_INTERVAL_MS, HOP_PING_INTERVAL_MS, HOP_READINESS_TIMEOUT_MS,
+    HopFeedback, LEAVE_ATTEMPTS, LEAVE_INTERVAL_MS, LinkState, OrderingGap, PACE_INTERVAL_MS,
+    READY_REQUEST_INTERVAL_MS, REORDER_WINDOW, RESTORE_PULL_INTERVAL_MS, RecvWindow,
+};
+pub use sequenced::federation::{FEDERATION_LOST, FederationOutcome, MAX_FEDERATED_RELAYS};
+pub use sequenced::watch::{
+    MAX_ROOM_WATCHERS, MAX_WATCH_DELAY_SECONDS, WATCH_MARK_MS, WATCH_TICKET_VERSION, WatchTicket,
+};
 pub use sequenced::{
-    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY, ORDERING_CERTIFICATE_LEN,
-    ORDERING_CERTIFICATE_V2_LEN, ORDERING_PULL_LIMIT, OrderEntry, OrderError, OrderEvent,
-    OrderPace, OrderStatus, OrderingCertificate, is_ordering_certificate_len, paced_rates,
-    turn_frames, turn_ms,
+    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY, OrderEntry,
+    OrderError, OrderEvent, OrderPace, OrderStatus, OrderingCertificate, paced_rates, turn_frames,
+    turn_ms,
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -41,17 +50,14 @@ pub const BROADCAST: u8 = 255;
 /// The largest DATA message a client relays.
 pub const MAX_PAYLOAD: usize = 640;
 pub const TICKET_LEN: usize = 98;
-/// The packing limit of PACK and UPLINK payloads, unchanged by the
-/// compaction (bandwidth-compaction spec §5.4).
-const MAX_WIRE_PAYLOAD: usize = envelope::PACK_LIMIT;
+/// A player ticket's first byte; a watch ticket's is `WATCH_TICKET_VERSION`.
+const TICKET_VERSION: u8 = 2;
 pub const MAX_DATAGRAM: usize = envelope::MAX_DATAGRAM;
 pub const MAX_TICKET_LIFETIME: u64 = 300;
 const TICKET_BODY_LEN: usize = 66;
-/// Hop envelope bytes before the payload, either direction (§6.1).
-const CLIENT_HEADER: usize = envelope::HEADER_LEN;
-#[cfg(test)]
-const SERVER_HEADER: usize = envelope::HEADER_LEN;
-use envelope::HOP_TAG_LEN;
+use envelope::{
+    CHALLENGE, CONFIRM, CONTROL, DATA, HEADER_LEN, HELLO, HOP_TAG_LEN, LEAVE_ACK, PING, READY,
+};
 /// A full HMAC-SHA256: ticket signatures and federation links.
 const MAC_LEN: usize = 32;
 const COOKIE_LEN: usize = 40;
@@ -65,19 +71,13 @@ const HANDSHAKES_PER_SECOND: u64 = 8192;
 const PLAYER_HANDSHAKES_PER_SECOND: u64 = 8;
 // Pulls that read the journal. A catching-up client sends about ten a second.
 const PLAYER_ARCHIVE_PULLS_PER_SECOND: u64 = 256;
+// One player's datagrams in, and its ordering datagrams out, each a second.
+const PLAYER_PACKETS_PER_SECOND: u64 = 2048;
 const PLAYER_BYTES_PER_SECOND: u64 = 2 * 1024 * 1024;
 const ROOM_BYTES_PER_SECOND: u64 = 64 * 1024 * 1024;
 const TOTAL_BYTES_PER_SECOND: u64 = 64 * 1024 * 1024;
 const LEAVES_PER_SECOND: u64 = 512;
 const LEAVE_GRACE: u64 = sequenced::ROOM_LIFETIME_MS.div_ceil(1000) + MAX_TICKET_LIFETIME;
-const HELLO: u8 = 0;
-const CONFIRM: u8 = 1;
-const DATA: u8 = 2;
-const PING: u8 = 3;
-const CONTROL: u8 = 4;
-const LEAVE_ACK: u8 = 5;
-const CHALLENGE: u8 = 0;
-const READY: u8 = 1;
 
 /// Server signing material or a single client's packet key. HTTPS credentials
 /// have their own owner; this value is only held in process memory.
@@ -127,7 +127,7 @@ pub struct Ticket {
 
 impl Ticket {
     pub fn parse(bytes: &[u8]) -> Result<Self, RelayError> {
-        if bytes.len() != TICKET_LEN || bytes[0] != 2 || bytes[17] >= MAX_PEERS {
+        if bytes.len() != TICKET_LEN || bytes[0] != TICKET_VERSION || bytes[17] >= MAX_PEERS {
             return Err(RelayError::Malformed);
         }
         let ticket = Self {
@@ -153,7 +153,7 @@ impl Ticket {
             return Err(RelayError::Malformed);
         }
         let mut bytes = [0; TICKET_LEN];
-        bytes[0] = 2;
+        bytes[0] = TICKET_VERSION;
         bytes[1..17].copy_from_slice(&self.room);
         bytes[17] = self.source;
         bytes[18..26].copy_from_slice(&self.expires.to_le_bytes());
@@ -227,7 +227,8 @@ struct ReplayWindow {
 }
 
 impl ReplayWindow {
-    fn accept(&mut self, sequence: u64) -> Result<(), RelayError> {
+    /// Returns whether the accepted sequence advanced the high watermark.
+    fn accept(&mut self, sequence: u64) -> Result<bool, RelayError> {
         if sequence == 0 {
             return Err(RelayError::Replay);
         }
@@ -239,14 +240,22 @@ impl ReplayWindow {
                 (self.seen << advance) | 1
             };
             self.maximum = sequence;
-            return Ok(());
+            return Ok(true);
         }
         let behind = self.maximum - sequence;
         if behind >= 128 || self.seen & (1u128 << behind) != 0 {
             return Err(RelayError::Replay);
         }
         self.seen |= 1u128 << behind;
-        Ok(())
+        Ok(false)
+    }
+
+    /// Adaptive feedback reports the newest 64 receipts (spec §4.1).
+    fn feedback_window(&self) -> RecvWindow {
+        RecvWindow {
+            high: self.maximum,
+            bits: self.seen as u64,
+        }
     }
 }
 
@@ -255,7 +264,6 @@ pub struct ClientSession {
     ticket: Ticket,
     key: SecretKey,
     sent: u64,
-    received: ReplayWindow,
     probe: Option<u64>,
     ready: bool,
     // Assigned by the READY answering this hop's CONFIRM (spec §6.2).
@@ -303,18 +311,21 @@ impl ClientSession {
     /// A hop for `ticket` under its `packet_key`. `_payload_key` is the
     /// match key the lobby still grants; relayed traffic is plaintext
     /// (compaction spec §3.2), so it is accepted and not used, and the lobby
-    /// needs no change.
+    /// needs no change. A watch ticket makes a watcher's hop
+    /// (`is_watching`).
     pub fn new(
         ticket: &[u8],
         packet_key: [u8; 32],
         _payload_key: [u8; 32],
     ) -> Result<Self, RelayError> {
         Ok(Self {
-            ticket: Ticket::parse(ticket)?,
+            ticket: match ticket.first() {
+                Some(&WATCH_TICKET_VERSION) => WatchTicket::parse(ticket)?.hop(),
+                _ => Ticket::parse(ticket)?,
+            },
             ticket_bytes: ticket.try_into().map_err(|_| RelayError::Malformed)?,
             key: SecretKey::new(packet_key),
             sent: 0,
-            received: ReplayWindow::default(),
             probe: None,
             ready: false,
             session: None,
@@ -421,7 +432,7 @@ impl ClientSession {
         payload: &[u8],
         out: &mut Vec<u8>,
     ) -> Result<(), RelayError> {
-        if !self.ready {
+        if !self.ready || self.is_watching() {
             return Err(RelayError::Unregistered);
         }
         if payload.is_empty()
@@ -503,8 +514,7 @@ impl ClientSession {
                 Ok(ServerEvent::Challenge(payload))
             }
             READY if payload.is_empty() => {
-                self.received.accept(sequence)?;
-                self.hop_heard(sequence);
+                self.hop.heard(sequence, self.clock_ms)?;
                 if claim {
                     self.session = Some(header.session);
                 }
@@ -512,8 +522,7 @@ impl ClientSession {
                 Ok(ServerEvent::Ready)
             }
             CONTROL if self.ready => {
-                self.received.accept(sequence)?;
-                self.hop_heard(sequence);
+                self.hop.heard(sequence, self.clock_ms)?;
                 if payload.first() == Some(&sequenced::PACK_EVENT) {
                     return Ok(ServerEvent::OrderingPack(
                         self.receive_ordering_pack(payload)?,
@@ -529,8 +538,7 @@ impl ClientSession {
             }
             // `[source u8][data]`, plaintext (spec §3.2, §6.1).
             DATA if self.ready && payload.len() > 1 && payload[0] < MAX_PEERS => {
-                self.received.accept(sequence)?;
-                self.hop_heard(sequence);
+                self.hop.heard(sequence, self.clock_ms)?;
                 Ok(ServerEvent::Payload {
                     source: payload[0],
                     bytes: &payload[1..],
@@ -558,14 +566,15 @@ struct Incoming<'a> {
 
 /// A HELLO or CONFIRM (spec §6.1): `[ticket 98]`, then for CONFIRM
 /// `[cookie 40][roster]`. The ticket's signature and expiry are checked and
-/// the hop key derived from it before the envelope tag.
+/// the hop key derived from it before the envelope tag. A watch ticket
+/// comes back as its hop's view, `source` `WATCH_SOURCE`.
 fn handshake_incoming<'a>(
     key: &SecretKey,
     header: envelope::Header,
     bytes: &'a [u8],
     now: u64,
 ) -> Result<Incoming<'a>, RelayError> {
-    let body = &bytes[CLIENT_HEADER..bytes.len() - HOP_TAG_LEN];
+    let body = &bytes[HEADER_LEN..bytes.len() - HOP_TAG_LEN];
     if header.session != 0 || body.len() < TICKET_LEN {
         return Err(RelayError::Malformed);
     }
@@ -579,8 +588,14 @@ fn handshake_incoming<'a>(
     {
         return Err(RelayError::Malformed);
     }
-    let ticket = Ticket::parse(ticket_bytes)?;
-    key.mac(TICKET_DOMAIN, &ticket_bytes[..TICKET_BODY_LEN])
+    let (ticket, domain) = match ticket_bytes[0] {
+        WATCH_TICKET_VERSION => (
+            WatchTicket::parse(ticket_bytes)?.hop(),
+            sequenced::watch::WATCH_TICKET_DOMAIN,
+        ),
+        _ => (Ticket::parse(ticket_bytes)?, TICKET_DOMAIN),
+    };
+    key.mac(domain, &ticket_bytes[..TICKET_BODY_LEN])
         .verify_slice(&ticket_bytes[TICKET_BODY_LEN..])
         .map_err(|_| RelayError::Authentication)?;
     if ticket.expires > now.saturating_add(MAX_TICKET_LIFETIME) || ticket.expires <= now {
@@ -740,7 +755,6 @@ struct Peer {
     // This hop's key in `RelayServer::sessions` (spec §6.2).
     session: u32,
     endpoint: SocketAddrV4,
-    received: ReplayWindow,
     sent: u64,
     last_seen: u64,
     // After its LEAVE the hop accepts only LEAVE, until this second
@@ -766,6 +780,10 @@ enum SessionHop {
         source: u8,
     },
     Leaving(Box<LeavingHop>),
+    /// A watcher of `room` (README "Watchers").
+    Watcher {
+        room: [u8; 16],
+    },
 }
 
 struct SessionSlot {
@@ -794,6 +812,8 @@ struct Room {
     // Only an explicit signed Leave before the first ordering Ready sets this.
     // Prevent a delayed Ready from recreating an already canceled startup.
     ordering_cancelled: bool,
+    // Read-only hops apart from the players (README "Watchers").
+    watchers: Vec<sequenced::watch::Watcher>,
 }
 
 #[derive(Clone, Copy)]
@@ -829,6 +849,12 @@ pub struct OrderingCounts {
     pub pull_replies: u64,
     /// Matches this relay ended with a DESYNC record.
     pub desyncs: u64,
+    /// Ended games whose receipt could not be saved or retained under the
+    /// bounded handoff budget. The lobby cannot rate one lacking evidence.
+    pub outcome_handoff_drops: u64,
+    /// Startups this relay cancelled because a Ready, on it or on another
+    /// relay of the match, proved a different initial world.
+    pub start_mismatches: u64,
     /// Reader downlink (spec §10.2). Pushed datagrams and their bytes by
     /// send-log kind: 0 status, 1 new pack, 2 repeat, 3 retransmission,
     /// 4 tail probe.
@@ -896,12 +922,26 @@ pub struct RelayServer {
     ended_orderings: HashMap<[u8; 16], u64>,
     // Since `take_ordering_counts` last read them.
     ordering_counts: OrderingCounts,
+    // The ordering bytes the last pass over every room counted, plus what
+    // was reserved or sealed since (`reserve_ordering`), so a reservation
+    // needs no count of every room. Freed bytes leave it at the next pass:
+    // it overcounts, and only an exact count refuses or evicts. Growth no
+    // reservation covers, such as a federated frame, joins it at that pass.
+    ordering_estimate: usize,
+    // An operational reporter owns durable delivery of marked VO1F outcomes.
+    federation_outcomes_enabled: bool,
+    // A retired room needs only its unacknowledged receipt until the writer
+    // can save it. At most one cohort of max_rooms, outside gameplay quotas.
+    retired_outcomes: HashMap<[u8; 16], FederationOutcome>,
     // Every live or leaving hop by its session (spec §6.2).
     sessions: HashMap<u32, SessionSlot>,
     // Released sessions until they may be assigned again (spec §6.2).
     retired_sessions: HashMap<u32, u64>,
     // Since `take_mac_failure_counts` last read them.
     mac_counts: MacFailureCounts,
+    // What all watchers together may spend; players' budgets never pay
+    // for watchers.
+    watching: sequenced::watch::WatchBudgets,
     // Test support: the next session assigned (`preset_next_session`).
     #[cfg(any(test, feature = "test-support"))]
     next_session: Option<u32>,
@@ -929,9 +969,13 @@ impl RelayServer {
             journal_directory: None,
             ended_orderings: HashMap::new(),
             ordering_counts: OrderingCounts::default(),
+            ordering_estimate: 0,
+            federation_outcomes_enabled: false,
+            retired_outcomes: HashMap::new(),
             sessions: HashMap::new(),
             retired_sessions: HashMap::new(),
             mac_counts: MacFailureCounts::default(),
+            watching: Default::default(),
             #[cfg(any(test, feature = "test-support"))]
             next_session: None,
         }
@@ -985,7 +1029,7 @@ impl RelayServer {
         // sender's own limits, so forged, junk or replayed datagrams cannot
         // spend capacity other players need. Rejecting one costs at most
         // three HMACs. No source-address map grows under spoofed UDP traffic.
-        if bytes.starts_with(sequenced::federation::LINK_MAGIC) {
+        if sequenced::federation::is_link_packet(bytes) {
             return self.federation_receive(bytes, now, now_millis);
         }
         let header = envelope::peek(envelope::Direction::Up, bytes)?;
@@ -997,9 +1041,20 @@ impl RelayServer {
                 }
                 message => (message?, false),
             }
+        } else if let Some(SessionSlot {
+            hop: SessionHop::Watcher { room },
+            ..
+        }) = self.sessions.get(&header.session)
+        {
+            let room = *room;
+            return self.watch_datagram(source, header, bytes, room, now, now_millis);
         } else {
             self.session_incoming(header, bytes, now)?
         };
+        // Watchers never reach a player's path (README "Watchers").
+        if message.ticket.source == sequenced::watch::WATCH_SOURCE {
+            return self.watch_handshake(source, &message, now, now_millis);
+        }
         if message.kind == CONTROL && message.payload == [sequenced::LEAVE_REQUEST] {
             return self.ordering_leave(source, &message, now, now_millis);
         }
@@ -1040,11 +1095,10 @@ impl RelayServer {
         else {
             return Err(RelayError::Unregistered);
         };
-        room.peers[index].received.accept(message.sequence)?;
+        room.peers[index].link.heard(message.sequence, now_millis)?;
         // NAT rebinding: an authenticated, fresh datagram moves the hop
         // (spec §6.2 "换地址", §6.4 item 5).
         room.peers[index].endpoint = source;
-        room.peers[index].link.heard(message.sequence, now_millis);
         // Any datagram of the hop ends the reader's offline state (§5.1);
         // push still waits for its subscription.
         room.peers[index].evaluate_reader(now_millis);
@@ -1052,7 +1106,7 @@ impl RelayServer {
             .admissions
             .get_mut(&message.ticket.player)
             .ok_or(RelayError::Unregistered)?;
-        if !admission.packets.permits(now, 1, 2048)
+        if !admission.packets.permits(now, 1, PLAYER_PACKETS_PER_SECOND)
             || !self
                 .ingress
                 .admit_part(&mut room.ingress, now, 1, INGRESS_PER_SECOND)
@@ -1077,7 +1131,7 @@ impl RelayServer {
         } else {
             room.peers
                 .iter()
-                .filter(|peer| data_recipient(peer, &message, now))
+                .filter(|peer| data_recipient(peer, message.ticket.source, message.target, now))
                 .count()
         };
         let packet_bytes = envelope::OVERHEAD
@@ -1123,7 +1177,7 @@ impl RelayServer {
         }
         let mut output = Vec::with_capacity(recipients);
         for peer in &mut room.peers {
-            if data_recipient(peer, &message, now) {
+            if data_recipient(peer, message.ticket.source, message.target, now) {
                 output.push(server_packet(
                     peer,
                     DATA,
@@ -1155,6 +1209,7 @@ impl RelayServer {
         // (spec §6.2 "释放").
         let mut expired = Vec::new();
         self.rooms.retain(|_, room| {
+            sequenced::watch::prune_watchers(room, now);
             room.peers.retain_mut(|peer| {
                 if peer.ticket.expires > now {
                     return true;
@@ -1183,13 +1238,19 @@ impl RelayServer {
         let released: Vec<u32> = self
             .sessions
             .iter()
-            .filter(|(_, slot)| match &slot.hop {
+            .filter(|(session, slot)| match &slot.hop {
                 SessionHop::Leaving(hop) => hop.until <= now,
                 SessionHop::Peer { room, source } => self
                     .rooms
                     .get(room)
                     .and_then(|room| room.peers.iter().find(|peer| peer.ticket.source == *source))
                     .is_none_or(|peer| peer.left_until.is_some_and(|until| until <= now)),
+                SessionHop::Watcher { room } => self.rooms.get(room).is_none_or(|room| {
+                    !room
+                        .watchers
+                        .iter()
+                        .any(|watcher| watcher.session == **session)
+                }),
             })
             .map(|(session, _)| *session)
             .collect();
@@ -1200,6 +1261,8 @@ impl RelayServer {
         self.admissions
             .retain(|_, admission| admission.retain_until > now);
         self.ended_orderings.retain(|_, expires| *expires > now);
+        self.retired_outcomes
+            .retain(|_, receipt| now <= receipt.expires_at());
         self.unadmitted_handshakes.clear();
         self.ingress.allocate(
             now,
@@ -1335,6 +1398,7 @@ impl RelayServer {
                 &self.key,
                 roster,
                 &message.ticket,
+                self.federation_outcomes_enabled,
             )?),
         };
         let cost = envelope::OVERHEAD as u64;
@@ -1391,11 +1455,10 @@ impl RelayServer {
                 peer.link.carry_path(&previous.link);
                 replaced = Some(previous);
             }
-            if message.sequence <= peer.received.maximum && peer.endpoint != source {
+            if message.sequence <= peer.link.highest_received() && peer.endpoint != source {
                 return Err(RelayError::Replay);
             }
-            peer.received.accept(message.sequence)?;
-            peer.link.heard(message.sequence, now_ms);
+            peer.link.heard(message.sequence, now_ms)?;
             peer.evaluate_reader(now_ms);
             if peer.endpoint != source {
                 // A confirmed new path must opt in before receiving history.
@@ -1413,8 +1476,7 @@ impl RelayServer {
             )?
         } else {
             let mut peer = new_peer(message, session, source, now, now_ms);
-            peer.received.accept(message.sequence)?;
-            peer.link.heard(message.sequence, now_ms);
+            peer.link.heard(message.sequence, now_ms)?;
             let reply = server_packet(
                 &mut peer,
                 READY,
@@ -1441,13 +1503,17 @@ impl RelayServer {
         }
         // The replaced hop keeps its session for LEAVE: a client that quits
         // before the new READY arrives leaves from it (spec §6.2 "续期").
+        // The client moves to the new hop on that READY, so the session is
+        // released a ticket lifetime after the old ticket expires, 300 to 600
+        // seconds from now (`prune` already dropped an expired peer): time
+        // for the client's minute of Leave retries.
         if let Some(old) = replaced
             && let Some(slot) = self.sessions.get_mut(&old.session)
         {
             slot.hop = SessionHop::Leaving(Box::new(LeavingHop {
                 ticket: old.ticket,
                 key: old.key.clone(),
-                until: now.saturating_add(LEAVE_GRACE),
+                until: old.ticket.expires.saturating_add(MAX_TICKET_LIFETIME),
             }));
         }
         let mut admission = prior.unwrap_or(Admission {
@@ -1543,7 +1609,6 @@ fn new_peer(
         key: message.key.clone(),
         session,
         endpoint,
-        received: ReplayWindow::default(),
         sent: 0,
         last_seen: now,
         left_until: None,
@@ -1552,12 +1617,12 @@ fn new_peer(
     }
 }
 
-/// Whether `peer` gets `message`'s DATA: another recently heard source it
-/// addresses.
-fn data_recipient(peer: &Peer, message: &Incoming<'_>, now: u64) -> bool {
-    peer.ticket.source != message.ticket.source
+/// A player DATA packet goes to other addressed peers heard from in the last
+/// 30 seconds, whether it arrived on a player hop or a federation link.
+fn data_recipient(peer: &Peer, source: u8, target: u8, now: u64) -> bool {
+    peer.ticket.source != source
         && now.saturating_sub(peer.last_seen) <= 30
-        && (message.target == BROADCAST || message.target == peer.ticket.source)
+        && (target == BROADCAST || target == peer.ticket.source)
 }
 
 /// One datagram on `peer`'s hop, logged at `now_ms` as `send_kind`
@@ -1572,11 +1637,7 @@ fn server_packet(
     now_ms: u64,
     send_kind: u8,
 ) -> Result<ForwardDatagram, RelayError> {
-    let sequence = peer
-        .sent
-        .checked_add(1)
-        .filter(|sequence| *sequence <= u64::from(u32::MAX))
-        .ok_or(RelayError::CounterExhausted)?;
+    let sequence = next_relay_sequence(peer.sent)?;
     let bytes = if kind == DATA {
         let mut data = Vec::with_capacity(1 + payload.len());
         data.push(source);
@@ -1588,12 +1649,22 @@ fn server_packet(
     peer.sent = sequence;
     let pack =
         (kind == CONTROL && payload.first() == Some(&sequenced::PACK_EVENT)).then_some(payload);
-    peer.link
-        .record_send(peer.sent, pack, send_kind, bytes.len(), now_ms);
+    peer.link.record_send(peer.sent, pack, send_kind, now_ms);
+    #[cfg(any(test, feature = "test-support"))]
+    peer.link.count_send(send_kind, bytes.len());
     Ok(ForwardDatagram {
         endpoint: peer.endpoint,
         bytes,
     })
+}
+
+/// The relay's next sequence on a hop that has sent `sent`. The relay never
+/// renews a hop: past `u32::MAX` it stops sending on it (compaction spec
+/// §6.1).
+fn next_relay_sequence(sent: u64) -> Result<u64, RelayError> {
+    sent.checked_add(1)
+        .filter(|sequence| *sequence <= u64::from(u32::MAX))
+        .ok_or(RelayError::CounterExhausted)
 }
 
 /// An envelope v3 relay datagram (spec §6.1). Callers bound `payload` to
@@ -1648,6 +1719,8 @@ impl RelayServer {
                 (peer.ticket, peer.key.clone(), peer.left_until.is_some())
             }
             SessionHop::Leaving(hop) => (hop.ticket, hop.key.clone(), true),
+            // `process_at` hands watchers' datagrams to `watch_datagram`.
+            SessionHop::Watcher { .. } => return Err(RelayError::Unregistered),
         };
         let payload = match envelope::open(envelope::Direction::Up, &key, bytes) {
             Ok((_, payload)) => payload,
@@ -1763,15 +1836,6 @@ impl ClientSession {
     pub fn mac_failures(&self) -> u64 {
         self.mac_failures
     }
-
-    /// Whether this hop's next sequence has reached
-    /// `envelope::RENEWAL_SEQUENCE` (2³² − 2¹⁶), so the client should renew
-    /// it now (§11 case 7), whatever its ticket's remaining lifetime. The
-    /// hop keeps sending until `u32::MAX`; past that every send is
-    /// `RelayError::CounterExhausted`.
-    pub fn sequence_wants_renewal(&self) -> bool {
-        self.sent + 1 >= u64::from(envelope::RENEWAL_SEQUENCE)
-    }
 }
 
 impl RelayServer {
@@ -1807,25 +1871,12 @@ pub struct SessionEntry {
 }
 
 #[cfg(any(test, feature = "test-support"))]
-impl ClientSession {
-    /// Test support only: the next datagram this hop sends carries
-    /// sequence `next` (1..=`u32::MAX`), as if the hop had already sent
-    /// `next - 1`, so tests reach `envelope::RENEWAL_SEQUENCE` and
-    /// `CounterExhausted` (§6.1, §11 case 7) without sending billions. The
-    /// skipped sequences count as never sent for the hop's link
-    /// measurements. Use it between sends.
-    pub fn preset_next_sequence(&mut self, next: u32) {
-        assert!(next > 0, "hop sequences start at 1");
-        self.sent = u64::from(next) - 1;
-    }
-}
-
-#[cfg(any(test, feature = "test-support"))]
 impl RelayServer {
     /// Test support only: every hop in the session table (§6.2), ordered by
     /// session. A hop is in it from its accepted CONFIRM until
-    /// `LEAVE_GRACE` seconds after its LEAVE, its ticket's expiry or the
-    /// accepted CONFIRM of its renewal (§6.2).
+    /// `LEAVE_GRACE` seconds after its LEAVE or its ticket's expiry, or, once
+    /// a renewal's CONFIRM replaced it, until `MAX_TICKET_LIFETIME` seconds
+    /// after its ticket's expiry (§6.2).
     pub fn session_table(&self) -> Vec<SessionEntry> {
         let mut table: Vec<_> = self
             .sessions
@@ -1857,6 +1908,23 @@ impl RelayServer {
                     leaving: true,
                     next_sequence: None,
                 }),
+                SessionHop::Watcher { room } => {
+                    let watcher = self
+                        .rooms
+                        .get(room)?
+                        .watchers
+                        .iter()
+                        .find(|watcher| watcher.session == *session)?;
+                    Some(SessionEntry {
+                        session: *session,
+                        room: *room,
+                        source: watcher.ticket.source,
+                        endpoint: Some(watcher.endpoint),
+                        expires: watcher.ticket.expires,
+                        leaving: false,
+                        next_sequence: Some(watcher.sent + 1),
+                    })
+                }
             })
             .collect();
         table.sort_unstable_by_key(|entry| entry.session);
@@ -1892,31 +1960,6 @@ impl RelayServer {
             "session {session:#x} is not free"
         );
         self.next_session = Some(session);
-    }
-
-    /// Test support only: the relay's next datagram on `session`'s hop
-    /// carries sequence `next` (1..=`u32::MAX`), so tests reach the end of
-    /// its counter (§6.1, §11 case 7). Past `u32::MAX` the relay stops
-    /// sending on that hop (§6.1). Returns false when no live hop holds
-    /// `session`.
-    pub fn preset_relay_sequence(&mut self, session: u32, next: u32) -> bool {
-        assert!(next > 0, "hop sequences start at 1");
-        let Some(SessionSlot {
-            hop: SessionHop::Peer { room, source },
-            ..
-        }) = self.sessions.get(&session)
-        else {
-            return false;
-        };
-        let Some(peer) = self.rooms.get_mut(room).and_then(|room| {
-            room.peers
-                .iter_mut()
-                .find(|peer| peer.ticket.source == *source)
-        }) else {
-            return false;
-        };
-        peer.sent = u64::from(next) - 1;
-        true
     }
 }
 
@@ -1957,6 +2000,44 @@ mod tests {
             Ok(ServerEvent::Ready)
         ));
         assert!(client.is_ready());
+    }
+
+    #[test]
+    fn downlink_feedback_reports_64_sequences_but_rejects_replays_across_128() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 1);
+        let mut client = client(&key, 1, 0);
+        connect(
+            &mut server,
+            &mut client,
+            SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30001),
+        );
+        let session = client.session().unwrap();
+        let packet_key = client.key.clone();
+        let packet = |sequence| encode_server(&packet_key, DATA, session, sequence, &[1, 42]);
+
+        client.receive(&packet(200)).unwrap();
+        assert_eq!(client.link_stats().down, RecvWindow { high: 200, bits: 1 });
+        // Fresh deliveries 1 and 63 behind appear in feedback. At ages 64
+        // and 127 they still reach the game exactly once, outside feedback.
+        for sequence in [199, 137, 136, 73] {
+            let bytes = packet(sequence);
+            assert!(matches!(
+                client.receive(&bytes),
+                Ok(ServerEvent::Payload { .. })
+            ));
+            assert_eq!(client.receive(&bytes).unwrap_err(), RelayError::Replay);
+        }
+        assert_eq!(client.receive(&packet(72)).unwrap_err(), RelayError::Replay);
+        let stats = client.link_stats();
+        assert_eq!(
+            stats.down,
+            RecvWindow {
+                high: 200,
+                bits: (1 << 63) | 3
+            }
+        );
+        assert_eq!(stats.datagrams_received, 6); // READY and five DATA
     }
 
     #[test]
@@ -2001,7 +2082,7 @@ mod tests {
             server.process(a, &bytes, 1000),
             Err(RelayError::Replay)
         ));
-        bytes[CLIENT_HEADER] ^= 1;
+        bytes[HEADER_LEN] ^= 1;
         assert!(matches!(
             server.process(a, &bytes, 1000),
             Err(RelayError::Authentication)
@@ -2012,6 +2093,26 @@ mod tests {
             server.process(a, &bytes, 2000),
             Err(RelayError::Unregistered)
         ));
+    }
+
+    #[test]
+    fn a_data_recipient_is_still_reachable_after_thirty_seconds() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 1);
+        let mut sender = client(&key, 1, 0);
+        let mut recipient = client(&key, 1, 1);
+        let from = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30001);
+        let to = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30002);
+        connect(&mut server, &mut sender, from);
+        connect(&mut server, &mut recipient, to);
+
+        let mut bytes = Vec::new();
+        sender.data(1, b"ping", &mut bytes).unwrap();
+        let at_limit = server.process(from, &bytes, 1030).unwrap();
+        assert_eq!(at_limit.len(), 1);
+        assert_eq!(at_limit[0].endpoint, to);
+        sender.data(1, b"ping", &mut bytes).unwrap();
+        assert!(server.process(from, &bytes, 1031).unwrap().is_empty());
     }
 
     #[test]
@@ -2117,7 +2218,8 @@ mod tests {
             .unwrap();
         connect(&mut server, &mut renewed, endpoint);
         // The renewal takes the hop over; the old session takes only LEAVE
-        // until its grace ends, then retires (spec §6.2 "续期", "释放").
+        // until a ticket lifetime after its ticket expired (1200), then
+        // retires (spec §6.2 "续期", "释放").
         let table = server.session_table();
         assert_eq!(table.len(), 2);
         let old = table
@@ -2130,7 +2232,14 @@ mod tests {
             server.process(endpoint, &bytes, 1000).err(),
             Some(RelayError::Unregistered)
         );
-        let released = 1000 + LEAVE_GRACE;
+        let released = 1200 + MAX_TICKET_LIFETIME;
+        server.process(endpoint, &bytes, released - 1).ok();
+        assert!(
+            server
+                .session_table()
+                .iter()
+                .any(|entry| entry.session == 0x0102_0304 && entry.leaving)
+        );
         server.process(endpoint, &bytes, released).ok();
         assert_eq!(
             server.session_retired_until(0x0102_0304),
@@ -2150,10 +2259,8 @@ mod tests {
             &mut first,
             SocketAddrV4::new(Ipv4Addr::LOCALHOST, 31201),
         );
-        assert!(!first.sequence_wants_renewal());
-        first.preset_next_sequence(envelope::RENEWAL_SEQUENCE);
-        assert!(first.sequence_wants_renewal());
-        first.preset_next_sequence(u32::MAX);
+        // The next send is the hop's last sequence.
+        first.sent = u64::from(u32::MAX) - 1;
         let mut bytes = Vec::new();
         first.data(BROADCAST, b"last", &mut bytes).unwrap();
         assert_eq!(

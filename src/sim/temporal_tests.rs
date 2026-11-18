@@ -467,8 +467,13 @@ fn native_update_corpus() {
                 set_elite(&mut sim, id);
             }
             if attacker.open_topped == 1 {
-                sim.substrate.entities.get_mut(id).unwrap().passenger_role =
-                    crate::sim::passenger::PassengerRole::inside_for_test(transport, true);
+                sim.substrate
+                    .entities
+                    .get_mut(id)
+                    .unwrap()
+                    .set_passenger_role_for_test(
+                        crate::sim::passenger::PassengerRole::inside_for_test(transport, true),
+                    );
             }
             if let Some(coords) = attacker.coords {
                 place(&mut sim, id, coords);
@@ -1349,9 +1354,7 @@ fn a_super_holds_only_while_no_provider_is_online() {
 /// A game Ares turned on in by a key, with its Rules read the stock way
 /// (no `ares.mix`), holds no SWTypeExt data, so its superweapons stay
 /// stock (`RuleSet::ares_form`): the house is granted its Supers
-/// and one that is not `IsPowered=` charges on. A build with the `ares`
-/// feature reads every game the Ares way and has no such game.
-#[cfg(not(feature = "ares"))]
+/// and one that is not `IsPowered=` charges on.
 #[test]
 fn a_stock_read_game_with_an_ares_key_keeps_stock_superweapons() {
     let rules = rules_from(
@@ -2613,10 +2616,10 @@ fn a_warped_transport_admits_no_one() {
     let cleg2 = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 12);
     for carrier in [fortress, reactor] {
         let entity = sim.substrate.entities.get_mut(carrier).unwrap();
-        if entity.passenger_role.cargo().is_none() {
-            entity.passenger_role = crate::sim::passenger::PassengerRole::transport(
+        if entity.passenger_role().cargo().is_none() {
+            entity.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(
                 crate::sim::passenger::PassengerCargo::new(5, 0.0),
-            );
+            ));
         }
     }
     let admits = |sim: &Simulation, carrier: u64| {

@@ -896,45 +896,50 @@ mod tests {
 
     #[test]
     fn self_attach_effect_uses_retained_type_reader_and_build_gate() {
-        let root = IniFile::from_str(
-            "[VehicleTypes]\n0=SELF_TEST\n[Animations]\n0=GLOW\n\
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            let root = IniFile::from_str(
+                "[VehicleTypes]\n0=SELF_TEST\n[Animations]\n0=GLOW\n\
             [SELF_TEST]\nStrength=100\nAttachEffect.Duration=3\nAttachEffect.Delay=2\n\
             AttachEffect.InitialDelay=2\nAttachEffect.Cloakable=yes\nAttachEffect.Animation=GLOW\n",
-        );
-        let read = |extra: &str| {
-            let mut layers = RulesLayerStack::new(root.clone());
-            layers.push(RulesLayerKind::Scenario, IniFile::from_str(extra));
-            RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap()
-        };
-        let rules = read(
-            "[SELF_TEST]\nAttachEffect.Duration=junk\nAttachEffect.InitialDelay=0\nCloakable.Allowed=no\n",
-        );
-        let kind = rules.object("SELF_TEST").unwrap();
-        if crate::rules::ARES_BUILD {
-            let effect = kind.self_attach_effect().unwrap();
-            assert_eq!(
-                (effect.duration(), effect.delay(), effect.initial_delay()),
-                (3, 2, 0)
             );
-            assert!(effect.cloakable());
-            assert_eq!(effect.animation(), Some("GLOW"));
-            assert!(!kind.cloak_allowed());
-            assert_ne!(
-                rules.simulation_config_hash(),
-                read("[SELF_TEST]\nAttachEffect.Duration=5\n").simulation_config_hash()
+            let read = |extra: &str| {
+                let mut layers = RulesLayerStack::new(root.clone());
+                layers.push(RulesLayerKind::Scenario, IniFile::from_str(extra));
+                RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap()
+            };
+            let rules = read(
+                "[SELF_TEST]\nAttachEffect.Duration=junk\nAttachEffect.InitialDelay=0\nCloakable.Allowed=no\n",
             );
-        } else {
-            assert!(kind.self_attach_effect().is_none());
-            assert!(kind.cloak_allowed());
+            let kind = rules.object("SELF_TEST").unwrap();
+            if ares_way {
+                let effect = kind.self_attach_effect().unwrap();
+                assert_eq!(
+                    (effect.duration(), effect.delay(), effect.initial_delay()),
+                    (3, 2, 0)
+                );
+                assert!(effect.cloakable());
+                assert_eq!(effect.animation(), Some("GLOW"));
+                assert!(!kind.cloak_allowed());
+                assert_ne!(
+                    rules.simulation_config_hash(),
+                    read("[SELF_TEST]\nAttachEffect.Duration=5\n").simulation_config_hash()
+                );
+            } else {
+                assert!(kind.self_attach_effect().is_none());
+                assert!(kind.cloak_allowed());
+            }
         }
     }
 
     #[test]
     fn attach_effect_production_layers_retain_registry_references_and_feature_gate() {
-        // All fifteen descriptor keys go through the retained production
-        // processor, including invalid/missing later reads and Anim Find.
-        let root = IniFile::from_str(
-            "[Warheads]\n0=ATTACH_WH\n1=DEFAULT_WH\n\
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            // All fifteen descriptor keys go through the retained production
+            // processor, including invalid/missing later reads and Anim Find.
+            let root = IniFile::from_str(
+                "[Warheads]\n0=ATTACH_WH\n1=DEFAULT_WH\n\
              [Animations]\n0=AE_VISUAL\n\
              [ATTACH_WH]\nEMP.Duration=7\nAffectsOwner=yes\n\
              AttachEffect.Duration=5\nAttachEffect.Cumulative=yes\n\
@@ -945,89 +950,90 @@ mod tests {
              AttachEffect.ROFMultiplier=3\nAttachEffect.SpeedMultiplier=4\n\
              AttachEffect.Cloakable=yes\nAttachEffect.Delay=9\nAttachEffect.InitialDelay=11\n\
              [DEFAULT_WH]\nCellSpread=0\n",
-        );
-        let scenario = "[ATTACH_WH]\nAttachEffect.Duration=junk\n\
+            );
+            let scenario = "[ATTACH_WH]\nAttachEffect.Duration=junk\n\
                         AttachEffect.Animation=UNREGISTERED\nAttachEffect.SpeedMultiplier=\n";
-        let read = |source: IniFile, scenario: &str| {
-            let mut layers = RulesLayerStack::new(source);
-            layers.push(RulesLayerKind::Scenario, IniFile::from_str(scenario));
-            RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap()
-        };
-        let rules = read(root.clone(), scenario);
-        let changed = read(root.clone(), "[ATTACH_WH]\nAttachEffect.Duration=6\n");
-        let cleared = read(root, "[ATTACH_WH]\nAttachEffect.Animation=<none>\n");
-        if crate::rules::ARES_BUILD {
-            let wh = rules.warhead("ATTACH_WH").unwrap().ares_rules().unwrap();
-            assert_eq!(wh.duration(), 7, "existing EMP state remains independent");
-            assert!(wh.can_affect_house(true, true, true, false));
-            let ae = wh.attach_effect();
-            assert_eq!(ae.duration, 5);
-            assert!(ae.cumulative);
-            assert_eq!(ae.animation(), Some("AE_VISUAL"));
-            assert!(ae.anim_reset_on_reapply);
-            assert!(ae.temporal_hides_anim);
-            assert!(ae.penetrates_iron_curtain);
-            assert!(ae.force_decloak);
-            assert!(ae.discard_on_entry);
-            assert_eq!(ae.firepower, NativeF64Bits::from_bits(2.0_f64.to_bits()));
-            assert_eq!(ae.armor, NativeF64Bits::from_bits(0.5_f64.to_bits()));
-            assert_eq!(ae.rof, NativeF64Bits::from_bits(3.0_f64.to_bits()));
-            assert_eq!(ae.speed, NativeF64Bits::from_bits(4.0_f64.to_bits()));
-            assert!(ae.cloakable);
-            assert_eq!((ae.delay, ae.initial_delay), (9, 11));
-            assert!(!ae.visual_combat_path());
-            assert_eq!(
-                rules
-                    .warhead("DEFAULT_WH")
-                    .unwrap()
-                    .ares_rules()
-                    .unwrap()
-                    .attach_effect(),
-                &AttachEffectRules::default(),
-                "constructor defaults do not come from retail tuning"
-            );
-            assert_eq!(
-                cleared
-                    .warhead("ATTACH_WH")
-                    .unwrap()
-                    .ares_rules()
-                    .unwrap()
-                    .attach_effect()
-                    .animation(),
-                None,
-                "successful native none clears the retained reference"
-            );
-            assert_ne!(
-                rules.simulation_config_hash(),
-                changed.simulation_config_hash()
-            );
-            assert_ne!(
-                rules.simulation_config_hash(),
-                cleared.simulation_config_hash()
-            );
-        } else {
-            for candidate in [&rules, &changed, &cleared] {
-                assert!(
-                    candidate
+            let read = |source: IniFile, scenario: &str| {
+                let mut layers = RulesLayerStack::new(source);
+                layers.push(RulesLayerKind::Scenario, IniFile::from_str(scenario));
+                RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap()
+            };
+            let rules = read(root.clone(), scenario);
+            let changed = read(root.clone(), "[ATTACH_WH]\nAttachEffect.Duration=6\n");
+            let cleared = read(root, "[ATTACH_WH]\nAttachEffect.Animation=<none>\n");
+            if ares_way {
+                let wh = rules.warhead("ATTACH_WH").unwrap().ares_rules().unwrap();
+                assert_eq!(wh.duration(), 7, "existing EMP state remains independent");
+                assert!(wh.can_affect_house(true, true, true, false));
+                let ae = wh.attach_effect();
+                assert_eq!(ae.duration, 5);
+                assert!(ae.cumulative);
+                assert_eq!(ae.animation(), Some("AE_VISUAL"));
+                assert!(ae.anim_reset_on_reapply);
+                assert!(ae.temporal_hides_anim);
+                assert!(ae.penetrates_iron_curtain);
+                assert!(ae.force_decloak);
+                assert!(ae.discard_on_entry);
+                assert_eq!(ae.firepower, NativeF64Bits::from_bits(2.0_f64.to_bits()));
+                assert_eq!(ae.armor, NativeF64Bits::from_bits(0.5_f64.to_bits()));
+                assert_eq!(ae.rof, NativeF64Bits::from_bits(3.0_f64.to_bits()));
+                assert_eq!(ae.speed, NativeF64Bits::from_bits(4.0_f64.to_bits()));
+                assert!(ae.cloakable);
+                assert_eq!((ae.delay, ae.initial_delay), (9, 11));
+                assert!(!ae.visual_combat_path());
+                assert_eq!(
+                    rules
+                        .warhead("DEFAULT_WH")
+                        .unwrap()
+                        .ares_rules()
+                        .unwrap()
+                        .attach_effect(),
+                    &AttachEffectRules::default(),
+                    "constructor defaults do not come from retail tuning"
+                );
+                assert_eq!(
+                    cleared
                         .warhead("ATTACH_WH")
                         .unwrap()
                         .ares_rules()
-                        .is_none()
+                        .unwrap()
+                        .attach_effect()
+                        .animation(),
+                    None,
+                    "successful native none clears the retained reference"
+                );
+                assert_ne!(
+                    rules.simulation_config_hash(),
+                    changed.simulation_config_hash()
+                );
+                assert_ne!(
+                    rules.simulation_config_hash(),
+                    cleared.simulation_config_hash()
+                );
+            } else {
+                for candidate in [&rules, &changed, &cleared] {
+                    assert!(
+                        candidate
+                            .warhead("ATTACH_WH")
+                            .unwrap()
+                            .ares_rules()
+                            .is_none()
+                    );
+                }
+                // The whole configuration hash deliberately includes raw source
+                // identity, even for unconsumed keys (RuleSet::source_ini_hash).
+                // Ignoring extension state does not erase different INI inputs.
+                assert_ne!(rules.source_ini_hash(), changed.source_ini_hash());
+                assert_ne!(rules.source_ini_hash(), cleared.source_ini_hash());
+                assert_ne!(
+                    rules.simulation_config_hash(),
+                    changed.simulation_config_hash()
+                );
+                assert_ne!(
+                    rules.simulation_config_hash(),
+                    cleared.simulation_config_hash()
                 );
             }
-            // The whole configuration hash deliberately includes raw source
-            // identity, even for unconsumed keys (RuleSet::source_ini_hash).
-            // Ignoring extension state does not erase different INI inputs.
-            assert_ne!(rules.source_ini_hash(), changed.source_ini_hash());
-            assert_ne!(rules.source_ini_hash(), cleared.source_ini_hash());
-            assert_ne!(
-                rules.simulation_config_hash(),
-                changed.simulation_config_hash()
-            );
-            assert_ne!(
-                rules.simulation_config_hash(),
-                cleared.simulation_config_hash()
-            );
         }
     }
 

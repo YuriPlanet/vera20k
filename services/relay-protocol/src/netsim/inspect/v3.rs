@@ -353,6 +353,13 @@ pub fn server_datagram(bytes: &[u8]) -> Result<Datagram, String> {
                         _ => return Err("STATUS started".into()),
                     };
                     let feedback = feedback(&mut reader)?;
+                    // A player's silent sources, absent while the relay
+                    // heard every player lately (relay README "Silence").
+                    let silent_sources = if reader.at == reader.bytes.len() {
+                        0
+                    } else {
+                        reader.u32("silent_sources")?
+                    };
                     reader.end("STATUS v3")?;
                     detail = Detail::Status {
                         head_frame,
@@ -363,6 +370,7 @@ pub fn server_datagram(bytes: &[u8]) -> Result<Datagram, String> {
                         start_delay_ms,
                         started,
                         feedback,
+                        silent_sources,
                     };
                     "STATUS"
                 }

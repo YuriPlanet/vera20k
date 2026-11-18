@@ -1245,6 +1245,7 @@ mod tests {
                 constraints_blocked: false,
                 ares_refusal: None,
                 ready_shots: 0,
+                ares_show_cameo: true,
                 display,
             }];
             let cameos = sidebar::cameo_order::CameoStrips::layout_fixture(&[], &[], &supers);

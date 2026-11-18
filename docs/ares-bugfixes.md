@@ -1,12 +1,12 @@
 # Optional Ares gameplay bugfixes
 
-Build with `--features ares`. Ares 3.0 corrects a set of gamemd behaviours
+Ares 3.0 corrects a set of gamemd behaviours
 in `Misc/Bugfixes.cpp`, `Misc/Bugfixes.Safeguards.cpp`,
 `Misc/Bugfixes.Buffer.cpp` and `Misc/Bugfixes.Perf.cpp`; these take no INI
-keys. Default builds keep the original behaviour, bugs included. Each Rust
-port sits in the engine owner of the hooked gamemd function, behind
-`cfg(feature = "ares")` or the per-game switch `RuleSet::ares` (on when the
-game's data uses Ares, see `rules::ares_switch`), with the Ares.dll function
+keys. Every build makes these corrections when the game plays Ares
+([Ares](ares.md)); other games keep the original behaviour, bugs included. Each Rust
+port sits in the engine owner of the hooked gamemd function, behind the game's
+Ares switch (`rules::ares_switch`), with the Ares.dll function
 and the gamemd hook cited next to it. Part 2 (the Buffer and Perf rows at
 the end of the table) also has `sim::ares_bugfixes_buffer_tests` and
 `sim::combat::ares_cliff_tests`.
@@ -18,7 +18,7 @@ allocated for it. Retail registers its list names, except WCLBOLT2 (so the
 Weather Controller shows two bolts) and the systems only DamageParticleSystems
 names (SmallGreySmokeSys). Fixtures that relied on the allocation now
 register their names, and the oracle tests of the original allocation order
-are `cfg(not(feature = "ares"))`.
+run without Ares.
 
 Focused tests: `sim::ares_bugfixes_tests`, plus Ares cases in the owners'
 tests: `techno_ai` (airborne target), `capture_manager_tests` (building
@@ -26,7 +26,7 @@ fate), `unit_repair_seek_tests` (repair bay), `failed_yard_repack_tests`
 (forced MCV Put), `transport_unload` (gunner), `temporal_tests` (Top layer),
 `tesla_charging_tests` (Unit charger), `lifecycle_tests` (wave wall),
 `burst` (kept index). Stock oracle tests whose rows encode a fixed bug take
-the Ares expectation or skip those rows under `ares`: the burst-index
+the Ares expectation or skip those rows when Ares plays: the burst-index
 oracles, `deploy_tests` (Unload return), `recruit_oracle_tests` (rows whose
 squared distances overflow), `genetic_converter_tests` (refused MakeInfantry
 rows) and the client's `pending_production_tests`.
@@ -34,7 +34,7 @@ rows) and the client's `pending_production_tests`.
 Status: **ported**; **presentation** (draws, sounds, UI text: not ported
 unless noted); **n/a** (crash guard for a state VERA cannot reach, or
 DLL/CRT/memory/logging/save plumbing); **equivalent** (VERA already behaves
-as Ares in both builds); **residual** (gameplay, but its host is unported);
+as Ares in every game); **residual** (gameplay, but its host is unported);
 **superweapon** (handed to the superweapon chain).
 
 | gamemd hook | Ares.dll | What Ares changes | Status |
@@ -70,7 +70,7 @@ as Ares in both builds); **residual** (gameplay, but its host is unported);
 | `0x4D5782` | `1005C9F0` | Approach_Target does not chase a passively acquired Target | ported: `foot_approach::approach_foot_target` |
 | `0x4D9EE1` | `1005CA30` | A unit is sold at the depot's dock coordinate | ported: `production::foot_can_be_sold` ([ares-reverse-engineering.md](ares-reverse-engineering.md)) |
 | `0x4DB87E` | `1005CA50` | A Foot's parasite takes its new Location | ported: `ground_pose::foot_set_location` |
-| `0x4FA2E0` | `1005CC10` | SetThreat rejects a negative index | ported: `house_threat::HouseSpatialThreat::adjust` skips a kernel outside its grid in an Ares build, the rebuild's inline kernel too, which natively writes past the grid |
+| `0x4FA2E0` | `1005CC10` | SetThreat rejects a negative index | ported: `house_threat::HouseSpatialThreat::adjust` skips a kernel outside its grid when Ares plays, the rebuild's inline kernel too, which natively writes past the grid |
 | `0x5005CC`, `0x50067C`, `0x5007BE` | `1005CBD0`, `1005CB30`, `1005CBF0` | The infantry production-request flag no longer falls through to the vehicle flag | ported (presentation): `app::sidebar_projection` cameo prediction |
 | `0x50928C` | `1005CC30` | The empty Factory is not deleted (broken destructor) | n/a: Ares leaks the Factory; VERA keeps deleting it (no visible difference) |
 | `0x51DF27` | `1005CD50` | A Teleporter's Limbo clears its Teleport locomotor's Marked coordinate | ported: `lifecycle::techno_limbo_with_context` |
@@ -136,14 +136,14 @@ as Ares in both builds); **residual** (gameplay, but its host is unported);
 | `0x75D660`, `0x75DAE6` | `1005C080`, `1005C0E0` | WarheadType AnimList, DebrisMaximums, DebrisTypes through ParseList at `0x75D660`; the later debris reads skipped | ported: `process_warhead_family`, `WarheadType::debris_maximums` |
 | `0x772462` | `1005C0F0` | WeaponType `Anim=` through ParseList | ported: `process_weapon_family` |
 | `0x511D16` | `1005BE70` | Country veteran lists through ParseList | ported earlier (`process_house_family`) |
-| `0x4750EC`, `0x475107` | `1005BED0`, `1005BEF0` | ReadHouseTypesList (Owner, RequiredHouses, ForbiddenHouses, SecretHouses) reads into the 0x800 buffer | ported: `object_type` house lists; residual: Phobos `SuperWeaponSidebar.*Houses` (same reader) keep 0x80 in an ares+phobos build |
+| `0x4750EC`, `0x475107` | `1005BED0`, `1005BEF0` | ReadHouseTypesList (Owner, RequiredHouses, ForbiddenHouses, SecretHouses) reads into the 0x800 buffer | ported: `object_type` house lists; residual: Phobos `SuperWeaponSidebar.*Houses` (same reader) keep 0x80 in a `phobos` build when the game plays Ares |
 | `0x47527C`, `0x475297` | `1005BED0`, `1005BEF0` | GetAlliesBitfield buffer | ported earlier (`read_houses_list`) |
 | `0x7274AF`, `0x7274C8`, `0x727529`, `0x727544` | `1005BED0`, `1005BEF0`, `1005C070` | Trigger `[Events]`/`[Actions]` lines read into the 0x800 buffer | n/a: the INI loader (`0x00525A60`) keeps 511 bytes of a line, so a value never fills the original 512-byte buffer |
 | `0x6A9348` | `1005BF00` | Cameo tooltip formatted with `_TRUNCATE` | n/a: buffer guard; VERA builds the tooltip as a String |
 | `0x70CAD8` | `1005BF80` | A railgun line that meets the ground no longer rolls the destroyable-cliff collapse there | ported: `railgun::line_damage` |
 | `0x489562` | `1005BE20` | DamageArea rolls the impact cell's destroyable cliff (RandomRanged(0,99) < CollapseChance), after the airborne receivers and before the spread walk | ported: `world_receiver::collect_area` |
 | `0x48A634`, `0x5FF86E`, `0x422FCC`, `0x550BCA`, `0x62CEC9`, `0x6D7847`, `0x420F40` | `1005E090`, `1005E190`, `1005E020`, `1005E0B0`, `1005E170`, `1005E1B0`, `1005E000` | Detail effects (warhead flash, spotlights, anims, lasers, particles, pixel sparkles, alpha shapes) stay on while the frame rate meets the game speed's target (`RulesExt::DetailsCurrentlyEnabled` `1002A6C0`: `fps >= 60/clamp(GameSpeed,1,6)` before the Rules hysteresis is asked) | presentation: not ported; `app::presentation::detail::DetailState` has no game-speed input |
-| `0x551A30` | `1005E0D0` | The Ground layer's single adjacent Y-sort pass becomes a full `std::sort` of one fifteenth of the layer per frame (`CurrentFrame % 15`, a quarter chunk overlap, the last window to the end) | presentation: not ported; only draw order and the hashed Ground order change, and no gameplay reader depends on that order (crate recipients) |
+| `0x551A30` | `1005E0D0` | The Ground layer's single adjacent Y-sort pass becomes a full `std::sort` of one fifteenth of the layer per frame (`CurrentFrame % 15`, a quarter chunk overlap, the last window to the end) | n/a: VERA's simulation keeps Ground unordered and its picture sorts the whole layer every frame (`Simulation::ground_draw_order`), which this fix approaches |
 | `0x5F6612` | `1005E140` | UnInit announces the object's expiry only when Limbo fails; a successful Limbo's own Destroy(1) broadcast is the only one | residual: VERA keeps both broadcasts and their order around Limbo's steps; a difference shows only where a listener treats the repeat or the earlier broadcast differently (the dead-building anim slot); separate lifecycle mechanism |
 | `0x725A1F` | `1005E040` | A `[General] Behind=` anim's expiry is not announced to the anim listeners | n/a: only its owner holds a Behind anim, and the owner drops it before destroying it (`techno_ai` behind indicator) |
 | `0x6F90F8`, `0x707EEA`, `0x70133E`, `0x458E1E` | `1005E210`, `1005E1D0`, `1005E1F0`, `1005E070` | `max`/`min` macros no longer call GetWeaponRange / GetFoundationWidth twice | n/a: the same results (`70133E`'s second passenger scan recomputes the same minimum) |

@@ -612,9 +612,7 @@ fn particle_frame_boundary_fixture(frame_count: u16) -> (Simulation, RuleSet) {
         system.set_done_spawning_for_test(true);
         system
     });
-    assert!(
-        sim.reveal_particle_system(stable_id, crate::rules::ruleset::RuleSet::empty_for_test())
-    );
+    assert!(sim.reveal_particle_system(stable_id));
     (sim, rules)
 }
 
@@ -628,7 +626,6 @@ fn app_and_headless_frames_hash_identically_for_particle_frame_timing() {
             .advance_app_frame(
                 &[],
                 &rules,
-                None,
                 67,
                 TickLane::Ordinary,
                 crate::sim::world::FrameEffects::default(),
@@ -1107,7 +1104,6 @@ fn app_frame_output_transfers_pre_tick_sound_exactly_once_without_hash_change() 
         .advance_app_frame(
             &[],
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            None,
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -1123,7 +1119,6 @@ fn app_frame_output_transfers_pre_tick_sound_exactly_once_without_hash_change() 
         .advance_app_frame(
             &[],
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            None,
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -1135,7 +1130,7 @@ fn app_frame_output_transfers_pre_tick_sound_exactly_once_without_hash_change() 
 
 #[test]
 fn app_frame_output_finalizes_overlay_navigation_and_delivers_updates_once() {
-    let (rules, overlays) = gsi_04_07_wall_sell_rules(false, false);
+    let (rules, _) = gsi_04_07_wall_sell_rules(false, false);
     let mut sim = Simulation::new();
     sim.hash_state_every(std::num::NonZeroU64::MIN);
     sim.resolved_terrain = Some(gsi_04_10_clear_terrain(4, 4));
@@ -1148,10 +1143,9 @@ fn app_frame_output_finalizes_overlay_navigation_and_delivers_updates_once() {
         .place_owned_wall(2, 2, 2, 0x23, owner);
 
     let deferred = sim
-        .advance_app_frame(
+        .advance_app_frame_without_overlay_types_for_test(
             &[],
             &rules,
-            None,
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -1169,7 +1163,6 @@ fn app_frame_output_finalizes_overlay_navigation_and_delivers_updates_once() {
         .advance_app_frame(
             &[],
             &rules,
-            Some(&overlays),
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -1190,7 +1183,6 @@ fn app_frame_output_finalizes_overlay_navigation_and_delivers_updates_once() {
         .advance_app_frame(
             &[],
             &rules,
-            Some(&overlays),
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -1208,7 +1200,6 @@ fn terminal_app_frame_finalizes_overlay_updates_before_hash() {
          [ORE]\nTiberium=yes\n[WALL]\nWall=yes\nStrength=100\n",
     );
     let rules = RuleSet::from_ini(&ini).expect("terminal overlay rules");
-    let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
     let mut terrain = gsi_04_10_clear_terrain(2, 1);
     terrain
         .cell_mut_for_test(0, 0)
@@ -1231,7 +1222,6 @@ fn terminal_app_frame_finalizes_overlay_updates_before_hash() {
         .advance_app_frame(
             &[exit],
             &rules,
-            Some(&overlays),
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -1267,7 +1257,6 @@ fn terminal_app_frame_finalizes_overlay_updates_before_hash() {
         .advance_app_frame(
             &[],
             &rules,
-            Some(&overlays),
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -2251,7 +2240,7 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
         carrier.set_owner_for_test(enemy);
         carrier.set_type_ref_for_test(sim.interner.intern("BOOMER"));
         carrier.health.set_for_test(carrier_hp);
-        carrier.passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+        carrier.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(cargo));
         sim.substrate.entities.insert(carrier);
         let _ = sim.reveal(10);
 
@@ -2263,7 +2252,9 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
             EntityCategory::Infantry,
         );
         passenger.set_is_voxel_for_test(false);
-        passenger.passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(10, false);
+        passenger.set_passenger_role_for_test(
+            crate::sim::passenger::PassengerRole::inside_for_test(10, false),
+        );
         sim.substrate.entities.insert(passenger);
 
         let mut listener = GameEntity::test_default_of_category(
@@ -2462,7 +2453,7 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
             .entities
             .get(10)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .passengers(),
@@ -3388,7 +3379,6 @@ fn sonic_wave_test_rules(range: u8) -> RuleSet {
     .expect("Sonic Wave fixture")
 }
 
-#[cfg(not(feature = "ares"))]
 fn sonic_tail_order_test_rules() -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n0=DLPH\n1=LATER\n2=TARGET\n\n\
@@ -3996,7 +3986,6 @@ fn guard_infantry_acquire_return_fire_and_finish_a_duel() {
 }
 
 // Ares WaveClass_Update damages before the update; see the ares_wave tests.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn sonic_fire_registers_immediately_but_later_techno_fires_before_wave_tail_ai() {
     let rules = sonic_tail_order_test_rules();
@@ -4149,7 +4138,6 @@ fn sonic_fire_registers_immediately_but_later_techno_fires_before_wave_tail_ai()
 }
 
 // Ares WaveClass_Update damages before the update; see the ares_wave tests.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn sonic_cell_fire_wave_damage_selects_level_two_bridge_plane() {
     // Range6 cannot reach this six-cell horizontal separation plus the
@@ -8255,13 +8243,9 @@ fn repro_second_vehicle_ordered_onto_an_occupied_cell() {
 /// only on the frames its Guard handler runs (every 14 to 16 frames here) and
 /// an idle building never: the mission AI counter and a building's tint
 /// sample, which change every frame, are written without a note. The logs'
-/// readers (the blocker plane, the kept Ground keys and the expiry listener
+/// readers (the blocker plane and the expiry listener
 /// index) re-read every object named, so when each walk borrowed every
 /// entity, a 20k-object world was re-read almost whole every frame.
-// A build that still carries Ares behind its feature sleeps nothing
-// (`Simulation::extension_steps_unsorted`), so this runs once that
-// feature is gone.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn idle_objects_stay_out_of_the_touch_logs() {
     use crate::sim::entity_store::TouchReader;
@@ -8369,7 +8353,7 @@ fn repro_group_move_of_eight_vehicles_to_one_cell() {
     // (a) What the group-destination distributor rewrites each command to.
     // Same &self read the tick performs, run before any tick mutates state.
     let mut staged = commands.clone();
-    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None);
+    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None, None);
     let assigned: Vec<(u64, (u16, u16))> = staged
         .iter()
         .filter_map(|c| match &c.payload {
@@ -8522,7 +8506,7 @@ fn repro_group_move_short_range_traces_every_tick() {
         .collect();
 
     let mut staged = commands.clone();
-    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None);
+    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None, None);
     println!("--- repro_group_move_short_range_traces_every_tick ---");
     println!("(a) distributor assignments:");
     for c in &staged {
@@ -8653,7 +8637,7 @@ fn repro_two_moving_vehicles_pass_through_each_other() {
     // Different targets => different formation keys => runs of length 1 =>
     // the group-destination distributor cannot touch either command.
     let mut staged = commands.clone();
-    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None);
+    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None, None);
     println!("--- repro_two_moving_vehicles_pass_through_each_other ---");
     for c in &staged {
         if let Command::Move {
@@ -9250,6 +9234,7 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
             glam::IVec3::new(1280, 2560, 0),
             true,
             &mut deferred,
+            &rules,
         )
         .expect("in domain");
     }
@@ -9544,7 +9529,7 @@ fn group_spread(sim: &Simulation, rules: &RuleSet, ids: &[u64]) -> Vec<(u16, u16
         .iter()
         .map(|&id| cmd_envelope(sim, "Americans", 1, move_command(id, (20, 20))))
         .collect::<Vec<_>>();
-    sim.adjust_staged_megamission_destinations(&mut staged, rules, None);
+    sim.adjust_staged_megamission_destinations(&mut staged, rules, None, None);
     staged
         .iter()
         .map(|command| match command.payload {
@@ -9738,6 +9723,122 @@ fn a_captured_war_factory_takes_its_contact_along() {
     }
 }
 
+/// VoxelAnim ctor `0x00749864..0x007498BD` builds the type's AttachedSystem
+/// at the input location, owned by the anim; Smoke `0x0062ED49..0x0062EDB5`
+/// then follows that non-Building Object owner plus the constructor's offset.
+#[test]
+fn voxel_anim_builds_its_attached_system_and_smoke_follows_the_anim() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[Particles]\n0=Smk\n[ParticleSystems]\n0=Sys\n[Smk]\nBehavesLike=Smoke\nMaxEC=10\n\
+         [Sys]\nBehavesLike=Smoke\nHoldsWhat=Smk\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::with_seed(17);
+    let mut kind = crate::rules::voxel_anim_type::VoxelAnimType::with_defaults("DEBRIS");
+    kind.attached_system = Some("Sys".to_owned());
+    let origin = IVec3::new(1280, 2560, 0);
+    sim.emit_debris_voxel(
+        crate::rules::voxel_anim_type::VoxelAnimTypeId(0),
+        &kind,
+        None,
+        origin,
+        true,
+        &mut Vec::new(),
+        &rules,
+    )
+    .unwrap();
+    let id = sim.voxel_anims().ids()[0];
+    let system = sim.voxel_anims().get(id).unwrap().attached_system();
+    let system = system.expect("the constructor's tail builds AttachedSystem");
+    let sys = sim.particle_systems().get(system).unwrap();
+    assert_eq!(sys.owner_entity(), Some(id));
+    assert_eq!(sys.coords(), origin);
+    let offset = sys.offset();
+
+    let moved = origin + IVec3::new(512, -256, 300);
+    sim.substrate
+        .voxel_anims
+        .get_mut(id)
+        .unwrap()
+        .set_location_for_test(moved);
+    crate::sim::particles::system_ai::tick_particle_system(
+        &mut sim,
+        &rules,
+        system,
+        crate::sim::world::UninitContext::with_rules(&rules),
+    );
+    assert_eq!(
+        sim.particle_systems().get(system).unwrap().coords(),
+        moved + offset
+    );
+}
+
+/// A live DEBRIS VoxelAnim whose type names a Smoke `AttachedSystem=`, built
+/// through the constructor: the world, its rules, the anim and its system.
+fn voxel_anim_with_attached_smoke() -> (Simulation, RuleSet, u64, u64) {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[Particles]\n0=Smk\n[ParticleSystems]\n0=Sys\n[VoxelAnims]\n0=DEBRIS\n\
+         [Smk]\nBehavesLike=Smoke\nMaxEC=10\n[Sys]\nBehavesLike=Smoke\nHoldsWhat=Smk\n\
+         [DEBRIS]\nAttachedSystem=Sys\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::with_seed(17);
+    let kind = rules.voxel_anim_type_id_by_name("DEBRIS").unwrap();
+    sim.emit_debris_voxel(
+        kind,
+        rules.voxel_anim_type(kind),
+        None,
+        IVec3::new(1280, 2560, 0),
+        true,
+        &mut Vec::new(),
+        &rules,
+    )
+    .unwrap();
+    let id = sim.voxel_anims().ids()[0];
+    let system = sim
+        .voxel_anims()
+        .get(id)
+        .unwrap()
+        .attached_system()
+        .unwrap();
+    (sim, rules, id, system)
+}
+
+/// The anim's expiry (`0x00749A11`) takes the generic arm of
+/// `DispatchPointerExpiredCleanup @ 0x007258D0` (`0x00725925`), so its
+/// system's PointerExpired (`0x0062FE90`) drops the owner and stops spawning.
+#[test]
+fn a_dying_voxel_anim_ends_its_attached_system() {
+    let (mut sim, rules, id, system) = voxel_anim_with_attached_smoke();
+    sim.uninit_with_rules(id, &rules);
+    let sys = sim.particle_systems().get(system).unwrap();
+    assert_eq!(sys.owner_entity(), None);
+    assert!(sys.done_spawning());
+}
+
+/// A save holding a live anim's AttachedSystem loads: the system's owner is
+/// in the VoxelAnim store, which Smoke's owner lookup resolves.
+#[test]
+fn a_voxel_anims_attached_system_survives_a_save() {
+    let (sim, _rules, id, system) = voxel_anim_with_attached_smoke();
+    let bytes =
+        crate::sim::snapshot::GameSnapshot::save_validated(&sim, 17, 23, "attached system", 0);
+    let mut restored = crate::sim::snapshot::GameSnapshot::load_validated(&bytes, 17, 23, "")
+        .expect("the anim owner resolves")
+        .sim;
+    restored
+        .restore_after_snapshot_load()
+        .expect("restore the anim and its system");
+    assert_eq!(
+        restored
+            .particle_systems()
+            .get(system)
+            .unwrap()
+            .owner_entity(),
+        Some(id)
+    );
+}
+
 /// Callback-disabled damage fixtures may deliver after another constructor;
 /// they retain the original constructor IDs and spend no second RNG/ID draws.
 #[test]
@@ -9746,8 +9847,16 @@ fn deferred_voxel_delivery_keeps_constructor_identity_without_spending_again() {
     let kind = crate::rules::voxel_anim_type::VoxelAnimType::with_defaults("DEBRIS");
     let type_id = crate::rules::voxel_anim_type::VoxelAnimTypeId(0);
     let mut packets = Vec::new();
-    sim.emit_debris_voxel(type_id, &kind, None, glam::IVec3::ZERO, false, &mut packets)
-        .unwrap();
+    sim.emit_debris_voxel(
+        type_id,
+        &kind,
+        None,
+        glam::IVec3::ZERO,
+        false,
+        &mut packets,
+        &RuleSet::empty_for_test(),
+    )
+    .unwrap();
     assert_eq!(packets.len(), 1);
     let id = packets[0].object.stable_id();
     let native_id = packets[0].object.native_unique_id();
@@ -9759,7 +9868,7 @@ fn deferred_voxel_delivery_keeps_constructor_identity_without_spending_again() {
     let cursor = sim.native_identity_cursor();
     let rng = sim.scenario_rng.logical_state();
     let stable_cursor = sim.next_stable_object_id();
-    sim.admit_death_debris(packets);
+    sim.admit_death_debris(packets, &RuleSet::empty_for_test());
     assert_eq!(
         sim.voxel_anims().get(id).unwrap().native_unique_id(),
         native_id

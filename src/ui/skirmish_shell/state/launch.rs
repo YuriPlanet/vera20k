@@ -2,11 +2,10 @@
 
 use crate::map::scenario_menu::MapMenuEntry;
 use crate::skirmish_launch::{
-    LaunchStartPosition, LaunchTeam, LaunchValidationError, NETWORK_PLAYER_SLOT_COUNT,
-    PreFillHouseRoster, SkirmishAiSlot, SkirmishLaunchMode, SkirmishLaunchSession,
-    SkirmishLocalSlot,
+    LaunchStartPosition, LaunchTeam, LaunchValidationError, SKIRMISH_MAX_SLOT_COUNT,
+    SkirmishAiSlot, SkirmishLaunchMode, SkirmishLaunchSession, SkirmishLocalSlot,
 };
-use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
+use crate::skirmish_modes::SkirmishGameMode;
 
 use super::SkirmishShellState;
 
@@ -16,8 +15,9 @@ fn launch_start_position(
 ) -> Result<LaunchStartPosition, LaunchValidationError> {
     match start_position {
         LaunchStartPosition::Auto => Ok(LaunchStartPosition::Auto),
-        // VERA's maps with more than eight starts list them up to thirty.
-        LaunchStartPosition::Position(position) if position < NETWORK_PLAYER_SLOT_COUNT as u8 => {
+        // VERA's maps with more than eight starts list them up to
+        // SKIRMISH_MAX_SLOT_COUNT.
+        LaunchStartPosition::Position(position) if position < SKIRMISH_MAX_SLOT_COUNT as u8 => {
             Ok(LaunchStartPosition::Position(position))
         }
         LaunchStartPosition::Position(position) => {
@@ -113,9 +113,12 @@ pub fn pack_launch_session_without_start_validation(
         .get(state.selected_map_idx)
         .ok_or(LaunchValidationError::NoSelectedMap)?;
     let selected_mode =
-        mode_by_id(modes, state.selected_mode_id).ok_or(LaunchValidationError::NoSelectedMode {
-            mode_id: state.selected_mode_id,
-        })?;
+        state
+            .selected_mode
+            .resolve(modes)
+            .ok_or(LaunchValidationError::NoSelectedMode {
+                mode_id: state.selected_mode.id,
+            })?;
 
     let local = SkirmishLocalSlot {
         country: state.player_country,
@@ -177,21 +180,17 @@ pub fn pack_launch_session_without_start_validation(
     options.harvester_truce = false;
     options.multi_engineer = false;
 
-    let mut session = SkirmishLaunchSession {
-        mode: SkirmishLaunchMode::from_game_mode(selected_mode),
-        selected_map_file: Some(selected_map.file_name.clone()),
-        humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+    Ok(SkirmishLaunchSession::from_rows(
+        SkirmishLaunchMode::from_game_mode(selected_mode),
+        Some(selected_map.file_name.clone()),
+        vec![crate::skirmish_launch::SkirmishHumanSlot {
             raw_slot_index: Some(0),
             name: state.player_name_edit.text.clone(),
             slot: local,
             role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
         }],
-        local_player_index: 0,
-        ai_player_count: opponents.len() as i32,
+        0,
         opponents,
-        pre_fill_house_roster: PreFillHouseRoster::from_compact_skirmish(0),
         options,
-    };
-    session.rebuild_house_roster();
-    Ok(session)
+    ))
 }

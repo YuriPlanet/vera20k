@@ -130,22 +130,21 @@ impl PreparedSavedGame {
         saved.terrain().validate()?;
         if saved.terrain().dimensions()
             != (
-                snapshot.sim.session().map_width(),
-                snapshot.sim.session().map_height(),
+                snapshot.session().map_width(),
+                snapshot.session().map_height(),
             )
         {
             return Err(PreparedLoadError::Resources(
                 "saved terrain and scenario dimensions disagree".into(),
             ));
         }
-        let theater_name = snapshot.sim.session().theater().to_owned();
+        let theater_name = snapshot.session().theater().to_owned();
         let theater = theater::load_theater(assets, &theater_name).ok_or_else(|| {
             PreparedLoadError::Resources(format!("cannot load theater {theater_name}"))
         })?;
         let mut rules = view
             .rules_owner
             .project_saved_scenario_rules(saved.processed_rules())?;
-        let overlay_registry = rules.overlay_registry().clone();
         init_helpers::bind_rules_art_metadata(
             &mut rules,
             view.rules_owner.fixed_art(),
@@ -155,7 +154,6 @@ impl PreparedSavedGame {
         );
         init_helpers::bind_rules_asset_closure(
             &mut rules,
-            &overlay_registry,
             saved.scheduler_anim_roots(),
             &[],
             assets,
@@ -185,7 +183,6 @@ impl PreparedSavedGame {
         // OverlayLoad5FEB45 and MouseLoad5BE668 can replace the restored
         // shape policy. Refresh this immutable projection from the same
         // incoming record, rather than retaining its pre-load registry.
-        let overlay_registry = rules.overlay_registry().clone();
         init_helpers::bind_rules_art_metadata(
             &mut rules,
             view.rules_owner.fixed_art(),
@@ -195,7 +192,6 @@ impl PreparedSavedGame {
         );
         init_helpers::bind_rules_asset_closure(
             &mut rules,
-            &overlay_registry,
             saved.scheduler_anim_roots(),
             &[],
             assets,
@@ -204,17 +200,13 @@ impl PreparedSavedGame {
             crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Saved,
         )
         .map_err(|error| PreparedLoadError::Resources(error.to_string()))?;
-        // The saved hash was checked above against the unchanged incoming
-        // Type state. TerrainTypeLoad71E22D now binds even a ctor-null list;
-        // carry that legitimate same-envelope mutation into runtime admission.
-        snapshot.rules_hash = rules.simulation_config_hash();
         // Only a live-value capture can run the native user-file Cell reset.
         // Baseline-only headless payloads remain on their separate adapter.
         let saved_land = saved.terrain().user_load_land_values()?;
         let (mut resources, processed_rules, map) =
-            saved.into_restored_parts(rules, overlay_registry, SharedCellDummy::fresh())?;
+            saved.into_restored_parts(rules, SharedCellDummy::fresh())?;
         let rules = &resources.rules;
-        let overlay_types = &resources.overlay_registry;
+        let overlay_types = rules.overlay_registry();
         let terrain_speed =
             crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::from_general(
                 rules.general.tracked_uphill,
@@ -254,9 +246,10 @@ impl PreparedSavedGame {
                 .expect("saved terrain restored")
                 .clone(),
             terrain_speed,
-            overlay_types,
-            Some(&mut bind_loaded_cells),
-            Some(saved_land),
+            crate::sim::snapshot::PlayerSaveCells::Saved {
+                land: saved_land,
+                prepare_assets: &mut bind_loaded_cells,
+            },
         )?;
         resources
             .terrain_template
@@ -345,7 +338,6 @@ impl PreparedSavedGame {
             theater.extension,
             theater_name,
             Some(rules),
-            &resources.overlay_registry,
             map.house_colors(),
             Some(&theater.unit_palette),
             Some(&theater.iso_palette),
@@ -359,7 +351,6 @@ impl PreparedSavedGame {
             theater.extension,
             theater_name,
             rules,
-            &resources.overlay_registry,
             Some(&theater.iso_palette),
             Some(&theater.unit_palette),
             Some(&theater.tiberium_palette),

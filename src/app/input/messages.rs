@@ -43,23 +43,27 @@ pub(crate) fn post_trigger_message(state: &mut AppState, csf_key: &str) {
     // existing House owner supplies that side; a later scenario-side change
     // independent of the current House remains a separate retained-field gap.
     // Ares `TActionClass_Execute_MessageColor @ 0x1002FA80` reads the saved
-    // Scenario.PlayerSideIndex instead.
-    #[cfg(feature = "ares")]
-    let side = runtime.simulation.session().scenario_side();
-    #[cfg(not(feature = "ares"))]
-    let side = runtime
-        .simulation
-        .session()
-        .current_house()
-        .and_then(|owner| runtime.simulation.houses().get(&owner))
-        .map_or(0, |house| i32::from(house.side_index()));
+    // Scenario.PlayerSideIndex instead. Its `[Side] MessageTextColor=` lives
+    // in the SideExt only Rules read the Ares way hold.
     let rules = &runtime.resources.rules;
-    #[cfg(feature = "ares")]
-    let rgb = ares_message_text_rgb(rules, side).unwrap_or_else(|| {
+    let ares = rules.ares_form();
+    let side = if ares {
+        runtime.simulation.session().scenario_side()
+    } else {
+        runtime
+            .simulation
+            .session()
+            .current_house()
+            .and_then(|owner| runtime.simulation.houses().get(&owner))
+            .map_or(0, |house| i32::from(house.side_index()))
+    };
+    let rgb = if ares {
+        ares_message_text_rgb(rules, side).unwrap_or_else(|| {
+            trigger_message_rgb(&rules.color_schemes, side, rules.skirmish_colors())
+        })
+    } else {
         trigger_message_rgb(&rules.color_schemes, side, rules.skirmish_colors())
-    });
-    #[cfg(not(feature = "ares"))]
-    let rgb = trigger_message_rgb(&rules.color_schemes, side, rules.skirmish_colors());
+    };
     let timeout = message_delay_timeout_ms(rules.general.message_delay_minutes);
     post_localized_message(
         state,
@@ -89,7 +93,6 @@ fn message_delay_buckets(delay: crate::util::native_x87::NativeF64Bits) -> i32 {
 /// Ares `[Side] MessageTextColor=`: the stored runtime ColorScheme index (two
 /// schemes per `[Colors]` entry) resolves to that entry. `-1`/an
 /// out-of-range entry leaves the stock side-priority path unchanged.
-#[cfg(feature = "ares")]
 fn ares_message_text_rgb(rules: &crate::rules::ruleset::RuleSet, side: i32) -> Option<[f32; 3]> {
     let index = rules.side_message_text_color_index(side)?;
     if index < 0 {
@@ -870,14 +873,9 @@ pub(crate) fn post_cooperative_save_result(state: &mut AppState, saved: bool) {
     post_grey_row(state, key, true, false);
 }
 
-/// A row in `GadgetClass::GetColorScheme` (`0x004E12D0`, "Grey"), flags
-/// 0x16, `MessageDelay * 900`; `text` is a CSF key when `localize`.
-fn post_grey_row(state: &mut AppState, text: &str, localize: bool, silent: bool) {
-    let Some(rules) = state.rules() else {
-        return;
-    };
-    let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
-    let rgb = crate::rules::color_scheme::scheme_entry_by_name(&rules.color_schemes, "Grey")
+/// `GadgetClass::GetColorScheme`'s "Grey" (`0x004E12D0`) as a row colour.
+fn grey_rgb(rules: &crate::rules::ruleset::RuleSet) -> [f32; 3] {
+    crate::rules::color_scheme::scheme_entry_by_name(&rules.color_schemes, "Grey")
         .and_then(|entry| u8::try_from(entry).ok())
         .map_or(MESSAGE_RGB_SYSTEM, |entry| {
             crate::rules::house_colors::house_text_rgb(
@@ -885,7 +883,17 @@ fn post_grey_row(state: &mut AppState, text: &str, localize: bool, silent: bool)
                 crate::rules::house_colors::HouseColorIndex(entry),
             )
             .map(|channel| f32::from(channel) / 255.0)
-        });
+        })
+}
+
+/// A row in `GadgetClass::GetColorScheme` (`0x004E12D0`, "Grey"), flags
+/// 0x16, `MessageDelay * 900`; `text` is a CSF key when `localize`.
+fn post_grey_row(state: &mut AppState, text: &str, localize: bool, silent: bool) {
+    let Some(rules) = state.rules() else {
+        return;
+    };
+    let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
+    let rgb = grey_rgb(rules);
     post_message(
         state,
         &crate::ui::messages::MessagePost {
@@ -899,9 +907,10 @@ fn post_grey_row(state: &mut AppState, text: &str, localize: bool, silent: bool)
     );
 }
 
-/// A relay speed change (`network_match::post_speed_changes`). gamemd has
-/// no such line, so `text` is VERA's own, not a CSF key.
-pub(crate) fn post_match_speed(state: &mut AppState, text: &str) {
+/// A change to the relay's shared timeline (`network_match`): a speed
+/// change, or another player's shared pause or resume. gamemd has no such
+/// lines, so `text` is VERA's own, not a CSF key.
+pub(crate) fn post_relay_notice(state: &mut AppState, text: &str) {
     post_grey_row(state, text, false, false);
 }
 
@@ -909,6 +918,56 @@ pub(crate) fn post_match_speed(state: &mut AppState, text: &str) {
 /// (`pause_menu::chat_command`); `text` is VERA's own, not a CSF key.
 pub(crate) fn post_chat_command_answer(state: &mut AppState, text: &str) {
     post_grey_row(state, text, false, false);
+}
+
+/// VERA: what online play and a replay are doing, as silent Grey rows
+/// ([`crate::ui::messages::MessageList::show_notice`]): the game server
+/// connection, the shared pause and the replay. Each frame of a match brings
+/// them up to date, also while a pause holds Main_Tick and the rows' expiry.
+/// A replay's hint expires as any row does; the other notices stay while
+/// their state lasts. gamemd has none of these, so the texts are VERA's own.
+pub(crate) fn show_status_notices(state: &mut AppState) {
+    use crate::ui::messages::NoticeSlot;
+    if state.frontend.screen != GameScreen::InGame {
+        return;
+    }
+    let Some(rules) = state.rules() else {
+        return;
+    };
+    let rgb = grey_rgb(rules);
+    let delay_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
+    let network =
+        crate::app::match_runtime::network_match::recovery_notice(state).map(crate::i18n::tr);
+    let pause = crate::app::input::pause_menu::multiplayer_control(state)
+        .and_then(|control| control.status)
+        .map(crate::i18n::tr);
+    let diagnostics = &state.match_state.match_diagnostics;
+    let replay_ms = if diagnostics.playback_playing() {
+        delay_ms
+    } else {
+        None
+    };
+    let replay = diagnostics.playback_status();
+    sync_view(state);
+    let now = message_now_ms(state);
+    let font = &state.renderer.bit_font;
+    let list = &mut state.match_state.match_presentation.message_list;
+    for (slot, text, timeout_ms) in [
+        (NoticeSlot::Network, network, None),
+        (NoticeSlot::Pause, pause, None),
+        (NoticeSlot::Replay, replay, replay_ms),
+    ] {
+        let post = text
+            .as_deref()
+            .map(|text| crate::ui::messages::MessagePost {
+                prefix: None,
+                text,
+                rgb,
+                timeout_ms,
+                silent: true,
+            });
+        list.show_notice(slot, post.as_ref(), now, &|s| font.text_width(s) as i32);
+    }
 }
 
 /// VERA: a match whose `veraui.ini` had lines the game could not use says so
@@ -1182,8 +1241,10 @@ fn message_instances(
     let mut texts = Vec::new();
     // Draw 0x005D49A0 paints the edit label first, whole: its reveal flag
     // is never set and the chat cursor character 0 draws no caret.
+    // A hidden edit (the beacon label's) draws nothing, nor its composition.
     let edit = list
         .edit_line()
+        .filter(|edit| !edit.hidden)
         .map(|edit| crate::ui::messages::Message::edit_row(&edit));
     // The open composition follows the typed text (`app::input::ime`).
     let composition = edit.as_ref().zip(composition).map(|(row, units)| {
@@ -1269,9 +1330,9 @@ mod tests {
         assert_eq!(movie_subtitle_post("zero", 0, rgb).timeout_ms, Some(0));
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_refusal_post_uses_localized_message_owner_colour_and_expiry() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::ini_parser::IniFile;
         use crate::rules::native_processing::RulesLayerStack;
         use crate::rules::superweapon_type::AresSuperWeaponMessage;
@@ -1808,13 +1869,14 @@ mod tests {
     }
 }
 
-#[cfg(all(test, tests_app_input_d_z, feature = "ares"))]
+#[cfg(all(test, tests_app_input_d_z))]
 mod ares_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
 
     #[test]
     fn fourth_side_message_text_color_resolves_to_its_colors_entry() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let mut colors = String::from("[Colors]\n");
         for index in 0..11 {
             colors.push_str(&format!("C{index}={},{},{}\n", index, index, index));

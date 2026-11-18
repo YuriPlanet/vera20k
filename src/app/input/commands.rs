@@ -2155,9 +2155,7 @@ mod tests {
         assert_eq!(issued.frame_stamp(), 23);
         assert_eq!(&issued.payload()[..4], &[0, 0, 1, 0]);
         assert_eq!(
-            crate::net::lockstep::SynchronizedCommand::opaque(issued)
-                .decode_for_simulation(&sim, 23)
-                .unwrap(),
+            sim.decode_native_command_record(&issued, 23).unwrap(),
             CommandEnvelope::new(local, 23, Command::SellWallAtCell { x: 0, y: 1 })
         );
 

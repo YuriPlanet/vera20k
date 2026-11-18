@@ -1917,8 +1917,8 @@ pub(crate) fn commit_entities(
                     .substrate
                     .entities
                     .get(attacker_id)
-                    .filter(|source| source.passenger_role.in_open_transport())
-                    .and_then(|source| source.passenger_role.transporter())
+                    .filter(|source| source.passenger_role().in_open_transport())
+                    .and_then(|source| source.passenger_role().transporter())
                     .unwrap_or(attacker_id)
             } else {
                 attacker_id
@@ -2046,8 +2046,23 @@ pub(crate) fn commit_entities(
         // The global Rules+714 request442706 uses direct Location+9C, not
         // virtual+48/GetCoords. Read here instead of latching admission and
         // coordinates before callbacks. Flush before Building's own response.
-        // Residual outside this no-emitter route: result2's non-null gap
-        // generator +30C/+E8 multiplication at4426AC precedes this gate.
+        // Result 2 (NowYellow) enters at 0x004426AC, ahead of this gate: a set
+        // NaturalParticleSystem= link (+0x30C) has its spawn timer (+0xE8)
+        // multiplied by 1.5. Result 3 enters after it, at 0x004426C8.
+        if receive_state == damage::DamageState::Yellow
+            && let Some(system) = world
+                .substrate
+                .entities
+                .get(target_id)
+                .filter(|target| {
+                    target.category() == EntityCategory::Structure
+                        && target.lifecycle.object_alive()
+                })
+                .and_then(|target| target.building.natural_particle_system.system())
+            && let Some(sys) = world.substrate.particle_systems.get_mut(system)
+        {
+            sys.slow_spawning_at_yellow();
+        }
         if matches!(
             receive_state,
             damage::DamageState::Yellow | damage::DamageState::Red
@@ -2910,7 +2925,7 @@ fn finish_concrete_death(
             .substrate
             .entities
             .get(dead_id)
-            .and_then(|entity| entity.passenger_role.transporter())
+            .and_then(|entity| entity.passenger_role().transporter())
         {
             world.remove_gunner(rules, transporter, Some(dead_id));
         }
@@ -3596,6 +3611,7 @@ fn continue_area_damage(
                     position,
                     inline,
                     &mut death.voxel_debris,
+                    rules,
                 ) {
                     log::warn!("barrel debris did not construct: {error}");
                 }
@@ -3734,7 +3750,7 @@ fn ares_damage_occupants(
         return false;
     };
     let ext = object.building_type_ext();
-    let occupants = building.passenger_role.occupants().ids().to_vec();
+    let occupants = building.passenger_role().occupants().ids().to_vec();
     let pass_through = f64::from_bits(ext.uc_pass_through.bits());
     if occupants.is_empty() || pass_through <= 0.0 {
         return false;
@@ -3755,10 +3771,7 @@ fn ares_damage_occupants(
         crate::sim::world::UninitContext::new(rules, overlay_registry).with_effects(run.effects());
     if fatal_rate > 0.0 && world.scenario_rng.random_double() < fatal_rate {
         if let Some(building) = world.substrate.entities.get_mut(building_id) {
-            building
-                .passenger_role
-                .occupants_mut()
-                .remove_expired(victim);
+            building.remove_garrison_reference(victim);
         }
         if let Some(event) = world.substrate.entities.get(victim).and_then(|entity| {
             death_announcement_event(
@@ -3799,10 +3812,7 @@ fn ares_damage_occupants(
         effects.under_attack_events.append(&mut pings);
     }
     if let Some(building) = world.substrate.entities.get_mut(building_id) {
-        let occupants = building.passenger_role.occupants_mut();
-        if occupants.fire_index() >= occupants.count() {
-            occupants.reset_fire_index();
-        }
+        building.repair_garrison_fire_index();
     }
     world.ares_eval_raid_status(building_id, rules, overlay_registry, run.effects());
     true
@@ -4209,6 +4219,7 @@ impl crate::sim::voxel_anim::VoxelDebrisHost for WarheadDebrisHost<'_, '_> {
             origin,
             admit_inline,
             self.voxels,
+            self.rules,
         )
     }
 }

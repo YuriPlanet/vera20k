@@ -17,7 +17,6 @@ use crate::render::batch::{BatchRenderer, BatchTexture, InstanceBufferPool, Spri
 use crate::render::bridge_atlas::BridgeAtlas;
 use crate::render::overlay_atlas::OverlayAtlas;
 use crate::render::tactical_draw_plan::RenderZPolicy;
-use crate::render::tile_atlas::TileAtlas;
 
 use super::merge_passes;
 use super::terrain_picture::{GroundFrame, TERRAIN_STREAMS, TerrainInputs, TerrainStep};
@@ -52,6 +51,8 @@ pub(super) struct DrawPassData<'a> {
     /// streams.
     pub terrain: &'a [SpriteInstance],
     pub smudge: &'a [SpriteInstance],
+    /// Per smudge, the terrain tiles drawn before it.
+    pub smudge_cuts: &'a [u32],
     pub bridge_shadows: &'a [SpriteInstance],
     pub object_layers: &'a [super::draw_plan_lowering::ObjectLayerPass; 5],
     pub fogged_objects: &'a super::draw_plan_lowering::ObjectLayerPass,
@@ -466,27 +467,14 @@ pub(super) fn dispatch_draw_passes(
             continue;
         }
         pass.set_scissor_rect(x, y, width, height);
-        // --- Step 1: Terrain (Z-depth pipeline for per-pixel depth from TMP Z-data) ---
-        draw_pooled_zdepth(
+        // --- Step 1: Terrain tiles (Z-depth pipeline for per-pixel depth
+        // from TMP Z-data), each cell's smudge right after its tile ---
+        draw_tiles_and_smudges(
             &mut pass,
             &state.renderer.batch_renderer,
             pool,
-            state.match_state.match_presentation.tile_atlas.as_ref(),
-            "terrain",
-        );
-
-        // --- Step 1.5: Smudges (static decals: craters + scorches) ---
-        // The native terrain-tile pass dispatches each cell's smudge right after
-        // blitting that cell's tile, so smudges land in the terrain layer — well
-        // before the cell-content layer that draws overlays. Drawing them after
-        // overlays instead put every crater and scorch mark on top of the ore and
-        // walls it should be lying under.
-        draw_pooled_passthrough_overlay(
-            &mut pass,
-            &state.renderer.batch_renderer,
-            pool,
-            state.match_state.match_presentation.overlay_atlas.as_ref(),
-            "smudge",
+            &state.match_state.match_presentation,
+            data.smudge_cuts,
         );
     }
     if terrain_step != TerrainStep::Restore {
@@ -608,6 +596,12 @@ pub(super) fn dispatch_draw_passes(
 
     // Native base terrain6D3470 calls FoggedObject::DrawAll4D1890 before
     // the live Building6D9920 sweep. Snapshots never enter Display layers.
+    // Residual: native draws them before the cell content6D3290 too; here
+    // the kept terrain picture already holds the cell bodies and the overlay
+    // shadows precede them. Both sides read and write Z, so only equal-Z ties
+    // and an overlay (bridge) shadow nearer than a remembered building's
+    // pixel differ: native darkens that pixel, VERA shows the shadowed ground.
+    // Fog of war only; no gameplay effect.
     if !data.fogged_objects.runs.is_empty() {
         drop(pass);
         state
@@ -645,11 +639,26 @@ pub(super) fn dispatch_draw_passes(
         pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
     }
 
+    // Native6D3AC0 -> Ground6D97D0 draws static trees backward, after the
+    // cell content6D3290 and before the tile shadows6D3040 (dormant on
+    // retail, above) and the building bases.
     // Native6D9920 ->43CEA0/43D290 draws Ground's building bases into the
     // background before rally6D4648. These ranges draw only here; Display's
     // building branch6D916C requests the dynamic turret43DA80 instead. Anim
     // slots and voxel turrets keep their independent later Display positions.
-    if !data.object_layers[2].building_base_runs.is_empty() {
+    for (phase, runs) in [
+        (
+            merge_passes::ObjectDrawPhase::StaticTree,
+            &data.object_layers[2].static_tree_runs,
+        ),
+        (
+            merge_passes::ObjectDrawPhase::BuildingBase,
+            &data.object_layers[2].building_base_runs,
+        ),
+    ] {
+        if runs.is_empty() {
+            continue;
+        }
         drop(pass);
         state
             .renderer
@@ -657,7 +666,7 @@ pub(super) fn dispatch_draw_passes(
             .note_external_passes(encoder, 1);
         merge_passes::draw_native_object_pass(
             encoder,
-            super::merge_passes::ObjectDrawPhase::BuildingBase,
+            phase,
             view,
             &world_depth,
             &mut state.renderer.terrain_draw_renderer,
@@ -975,14 +984,15 @@ pub(super) fn dispatch_draw_passes(
     // Ares Tactical_Draw_FlyingStrings hooks 6D4684, right after the radial
     // indicators 6D467F and before BeaconManager 6D46B6, and draws the copied
     // signed credit labels (->10064430) with the shared GAME.FNT passthrough.
-    #[cfg(feature = "ares")]
-    draw_pooled_ui_passthrough(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        Some(state.renderer.bit_font.atlas()),
-        "bounty_text",
-    );
+    if state.rules().is_some_and(|rules| rules.ares()) {
+        draw_pooled_ui_passthrough(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            Some(state.renderer.bit_font.atlas()),
+            "bounty_text",
+        );
+    }
 
     // BeaconManager Draw 430AC0 (6D46B6) precedes BandBox. Its flags 600
     // bypass A and Z; each House row has its own Convert strip.
@@ -999,6 +1009,27 @@ pub(super) fn dispatch_draw_passes(
                 );
             }
         }
+    }
+    // BeaconClass::Draw 430250's label boxes (`beacon_labels`): black fill,
+    // House-colour outline, then GAME.FNT text.
+    let beacon_label_solid = state
+        .match_state
+        .match_presentation
+        .selection_overlay
+        .as_ref()
+        .map(|overlay| overlay.white_texture());
+    for (texture, key) in [
+        (beacon_label_solid, "beacon_label_fill"),
+        (beacon_label_solid, "beacon_label_outline"),
+        (Some(state.renderer.bit_font.atlas()), "beacon_label_text"),
+    ] {
+        draw_pooled_ui_passthrough(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            texture,
+            key,
+        );
     }
     // BandBox6DA180 is between the two rally passes (native6D46BD).
     // Wheel zoom defers its screen-pixel border until after resampling;
@@ -1486,18 +1517,43 @@ pub(crate) fn draw_software_cursor(
 // Draw helpers — thin wrappers around BatchRenderer methods with atlas lookup
 // ---------------------------------------------------------------------------
 
-/// Draw a pooled buffer with the Z-depth pipeline (per-pixel frag_depth).
-/// Uses the tile atlas's pre-built zdepth bind group (color + R8 depth textures).
-fn draw_pooled_zdepth<'a>(
+/// The walk-ordered terrain tiles with each smudge after the tiles `cuts`
+/// counts for it. `CellOverlay_TileDraw @ 0x00480350` blits a cell's tile,
+/// then its smudge (`0x004804F5`, flags 0xE00: no Z read or write), inside
+/// the tile walk: the tiles walked later still cover it where their Z
+/// passes, and it lies under the cell-content layer that draws overlays.
+fn draw_tiles_and_smudges<'a>(
     pass: &mut wgpu::RenderPass<'a>,
     batch: &'a BatchRenderer,
     pool: &'a InstanceBufferPool,
-    atlas: Option<&'a TileAtlas>,
-    key: &'static str,
+    presentation: &'a crate::app::presentation::state::MatchPresentationState,
+    cuts: &[u32],
 ) {
-    if let (Some(a), Some((buf, count))) = (atlas, pool.get(key)) {
-        batch.draw_with_buffer_zdepth(pass, &a.zdepth_bind_group, buf, count);
+    let tiles = presentation.tile_atlas.as_ref().zip(pool.get("terrain"));
+    let smudges = presentation.overlay_atlas.as_ref().zip(pool.get("smudge"));
+    let draw_tiles = |pass: &mut wgpu::RenderPass<'a>, range: std::ops::Range<u32>| {
+        if let Some((atlas, (buffer, count))) = tiles {
+            let range = range.start.min(count)..range.end.min(count);
+            batch.draw_zdepth_range(pass, &atlas.zdepth_bind_group, buffer, range);
+        }
+    };
+    let mut drawn = 0;
+    let mut smudge = 0;
+    if let Some((atlas, (buffer, count))) = smudges {
+        let count = count.min(cuts.len() as u32);
+        while smudge < count {
+            let cut = cuts[smudge as usize];
+            let run = cuts[smudge as usize..count as usize]
+                .iter()
+                .take_while(|&&next| next == cut)
+                .count() as u32;
+            draw_tiles(pass, drawn..cut.max(drawn));
+            drawn = cut.max(drawn);
+            batch.draw_passthrough_range(pass, &atlas.texture, buffer, smudge, run);
+            smudge += run;
+        }
     }
+    draw_tiles(pass, drawn..u32::MAX);
 }
 
 /// Draw a pooled buffer with LessEqual depth test, depth write ON.
@@ -1550,19 +1606,6 @@ fn draw_pooled_with_camera(
     }
 }
 
-/// Draw decals with depth bypassed, using the shared overlay atlas.
-fn draw_pooled_passthrough_overlay<'a>(
-    pass: &mut wgpu::RenderPass<'a>,
-    batch: &'a BatchRenderer,
-    pool: &'a InstanceBufferPool,
-    atlas: Option<&'a OverlayAtlas>,
-    key: &'static str,
-) {
-    if let (Some(a), Some((buf, count))) = (atlas, pool.get(key)) {
-        batch.draw_passthrough_range(pass, &a.texture, buf, 0, count);
-    }
-}
-
 /// Wheel zoom's boundary between world pixels and the screen-fixed band box.
 fn composite_world_with_drag_rect(
     device: &wgpu::Device,
@@ -1582,6 +1625,36 @@ fn composite_world_with_drag_rect(
         pass.set_scissor_rect(tactical[0], tactical[1], tactical[2], tactical[3]);
         draw_pooled_ui_passthrough(&mut pass, batch, pool, drag, "drag");
     }
+}
+
+/// The wheel-zoomed world, resampled once from world pixels into the window
+/// after the Options zoom scaled the frame there (`app::frame`), instead of
+/// only through the frame. VERA-only: stock YR has no world zoom. Whatever the
+/// frame drew over the battlefield keeps showing at the frame's pixels
+/// (`WorldZoomPass::draw_window_copy`); the battlefield's window-pixel text and
+/// the cursor go over this (`window_ui`). It draws only when the frame's
+/// `set_view` kept a window copy (`render::mod`).
+pub(crate) fn draw_world_window_copy(
+    state: &AppState,
+    encoder: &mut wgpu::CommandEncoder,
+    view: &wgpu::TextureView,
+) {
+    let (Some(zoom), Some(world)) = (
+        state.tactical_zoom(),
+        state.renderer.world_zoom_pass.as_ref(),
+    ) else {
+        return;
+    };
+    let gpu = &state.renderer.gpu;
+    world.draw_window_copy(
+        &gpu.device,
+        &gpu.queue,
+        encoder,
+        view,
+        state.renderer.combat_light_renderer.composition_texture(),
+        zoom,
+        crate::app::input::camera::tactical_viewport_px(state),
+    );
 }
 
 /// VERA's ground marks: world-surface stores at neutral A, before wheel zoom.

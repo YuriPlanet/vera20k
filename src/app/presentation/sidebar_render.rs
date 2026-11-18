@@ -66,11 +66,9 @@ pub(crate) fn advance_sidebar_credits(state: &mut AppState, visits: u64) {
     else {
         return;
     };
-    if sim
-        .interner()
-        .get(&owner_name)
-        .is_some_and(|owner| sim.session().is_observer_house(owner))
-    {
+    if sim.interner().get(&owner_name).is_some_and(|owner| {
+        crate::app::presentation::observer_strip::shows_observer_sidebar(sim, owner)
+    }) {
         // The observer's counter shows the time the match has run
         // (`0x004A2614..0x004A2678`): Scenario +0x61C plus the running span
         // since +0x614, over 60, set at once and silent.
@@ -1035,13 +1033,14 @@ pub(crate) fn active_minimap_screen_rect(state: &AppState) -> crate::ui::sidebar
 // ---------------------------------------------------------------------------
 
 /// Keep VERA's smooth sidebar (`render::sidebar_smoothing`) at this frame's
-/// draw scale, or drop its copies when the option is off or the sidebar draws
-/// at its own pixels.
+/// draw scale, or drop its copies when the option is off, the sidebar draws
+/// at its own pixels, or the scale is not a whole one (xBR has no 1.5x).
 pub(crate) fn prepare_smooth_sidebar(state: &mut AppState) {
     let scale = state
         .smooth_sidebar()
         .then(|| state.sidebar_frame().draw_scale())
-        .filter(|&scale| scale > 1);
+        .filter(|scale| *scale >= 2.0 && scale.fract() == 0.0)
+        .map(|scale| scale as u32);
     let side = current_sidebar_side(state);
     let (gpu, batch) = (&state.renderer.gpu, &state.renderer.batch_renderer);
     let presentation = &mut state.match_state.match_presentation;

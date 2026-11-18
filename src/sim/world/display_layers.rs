@@ -1,18 +1,16 @@
 //! DisplayClass's five persistent LayerClass vectors (8A0360, stride 24).
 //!
 //! Display membership is independent of Logic membership and cell occupation.
-//! Crate effects read Ground directly, so rebuilding or fully sorting these
-//! lists in presentation changes simulation state. Only the ordered vectors
-//! are serialized/hashed, without the local anims only this game draws (a
-//! LAN or online MoveFlash); the ID-to-layer index is derived and never iterated
-//! to decide gameplay. The Ground members' kept sort keys (`ground_keys`) are
-//! derived too. Native comparisons: crate_ground_membership.json.
+//! Crate effects read Ground membership directly. Ground is kept as an
+//! unordered set (a sim-scale deviation, see `DisplayLayers::submit`); the
+//! picture sorts it. Only the vectors are serialized/hashed, without the local
+//! anims only this game draws (a LAN or online MoveFlash); the ID-to-layer and
+//! Ground index maps are derived and never iterated to decide gameplay.
+//! Native membership comparisons: crate_ground_membership.json.
 
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 
-use super::ground_keys::{GroundKeys, GroundSortKeys, ReadContext};
-use crate::sim::touch_log::Touched;
 use crate::util::lookup_hash::LookupMap;
 
 /// Native layer index; -1 (no display) is represented by `None`.
@@ -58,47 +56,123 @@ impl DisplayLayer {
     }
 }
 
+/// A member's layer and its place in submission order
+/// ([`DisplayLayers::submission_order`]).
+#[derive(Debug, Clone, Copy)]
+struct Registration {
+    layer: DisplayLayer,
+    order: u64,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct DisplayLayers {
     layers: [Vec<u64>; 5],
     /// Rebuilt from the vectors on deserialize; updated only by submit/remove.
-    registered: LookupMap<u64, DisplayLayer>,
-    /// What the Ground members' key reads kept, in lockstep with Ground.
-    ground_keys: GroundKeys,
+    registered: LookupMap<u64, Registration>,
+    /// Shared submissions so far: the next shared member's place in
+    /// submission order ([`Self::submission_order`]). Derived like
+    /// `registered`, never saved or hashed.
+    submissions: u64,
+    /// Ground member -> its index in the Ground vector. Derived like
+    /// `registered`, so a Ground removal swaps instead of shifting.
+    ground_index: LookupMap<u64, u32>,
+    /// The local anims on Ground (`crate::sim::anim_class::is_local_anim_id`),
+    /// in submission order. Kept apart so that a swap on their removal never
+    /// moves a shared member: every game holds the shared Ground vector in
+    /// the same order. Never saved or hashed.
+    local_ground: Vec<u64>,
 }
 
 impl DisplayLayers {
+    /// `layer`'s members. Ground is a set in no particular order (see
+    /// [`Self::submit`]) and leaves out its local anims
+    /// ([`Self::local_ground`]); the other layers keep their submission order.
     pub fn members(&self, layer: DisplayLayer) -> &[u64] {
         &self.layers[usize::from(layer.0)]
     }
 
-    pub fn layer_of(&self, id: u64) -> Option<DisplayLayer> {
-        self.registered.get(&id).copied()
+    /// The local anims on Ground, in submission order.
+    pub fn local_ground(&self) -> &[u64] {
+        &self.local_ground
     }
 
+    /// Each layer's members, Ground followed by its local anims.
+    fn walk(&self) -> impl Iterator<Item = (DisplayLayer, &[u64])> {
+        let ground = usize::from(DisplayLayer::GROUND.0);
+        self.layers
+            .iter()
+            .enumerate()
+            .flat_map(move |(index, members)| {
+                let local: &[u64] = if index == ground {
+                    &self.local_ground
+                } else {
+                    &[]
+                };
+                [members.as_slice(), local].map(|slice| (DisplayLayer(index as u8), slice))
+            })
+    }
+
+    pub fn layer_of(&self, id: u64) -> Option<DisplayLayer> {
+        self.registered
+            .get(&id)
+            .map(|registration| registration.layer)
+    }
+
+    /// `id`'s place in submission order, what the picture orders by where
+    /// gamemd's vectors keep it: equal Ground keys (Ground551A90 inserts
+    /// after them, and neither Display4A9770 nor Layer551A30 reorders
+    /// them, `0x00551A67` JGE) and every other layer (5519B0 appends). A
+    /// shared submit takes the odd place after every earlier submit; a local
+    /// anim's ([`crate::sim::anim_class::is_local_anim_id`]) takes
+    /// [`Self::unshared_order`], so only shared submits advance the count and
+    /// every game numbers its shared members alike. After a load the saved
+    /// vectors' order numbers them: Ground ties then follow the saved swap
+    /// order until their members submit again.
+    pub fn submission_order(&self, id: u64) -> Option<u64> {
+        self.registered
+            .get(&id)
+            .map(|registration| registration.order)
+    }
+
+    /// The place in submission order of a draw made now that no other game
+    /// sees: after every shared member submitted so far and before the next
+    /// one. Equal places fall to the draws' ids.
+    pub fn unshared_order(&self) -> u64 {
+        self.submissions.saturating_mul(2)
+    }
+
+    /// Every member, layer by layer, each layer as [`Self::members`] holds it.
     pub fn ordered_ids(&self) -> impl Iterator<Item = &u64> {
-        self.layers.iter().flatten()
+        self.walk().flat_map(|(_, members)| members)
     }
 
     /// [`Self::ordered_ids`] with each member's layer, for a caller that
     /// would otherwise look every member up in [`Self::layer_of`].
     pub fn members_in_order(&self) -> impl Iterator<Item = (DisplayLayer, u64)> + '_ {
-        self.layers.iter().enumerate().flat_map(|(index, members)| {
-            let layer = DisplayLayer(index as u8);
-            members.iter().map(move |&id| (layer, id))
-        })
+        self.walk()
+            .flat_map(|(layer, members)| members.iter().map(move |&id| (layer, id)))
     }
 
     /// Display4A9720 removes any old registration before querying/inserting the
-    /// selected layer. Ground551A90 inserts before the first strictly greater
-    /// key; equal keys stay ahead of a newly submitted object. Other layers
-    /// append (5519B0). Allocation failure leaves the object unregistered.
-    pub fn submit(
-        &mut self,
-        id: u64,
-        layer: Option<DisplayLayer>,
-        keys: &impl GroundSortKeys,
-    ) -> bool {
+    /// selected layer. Other layers append (5519B0). Allocation failure leaves
+    /// the object unregistered.
+    ///
+    /// Sim-scale deviation: Ground551A90 inserts before the first member
+    /// whose GetYSort key is strictly greater, and Layer551A30 bubbles the
+    /// vector one adjacent pass each frame (MainTick55DBC8). Here Ground is an
+    /// unordered set: a submit appends and a removal swaps the last member
+    /// into the hole. Only the picture orders Ground by key
+    /// (`Simulation::ground_draw_order`), on the presentation side; the
+    /// simulation reads Ground in this deterministic set order: crate radius
+    /// effects, whose per-object writes are independent of each other, the
+    /// network checksum, and RefreshTechnoShroud4ADFF0
+    /// (`refresh_techno_shroud`), which reveals each member's sight in this
+    /// order instead of roughly GetYSort order and, when a reveal removes a
+    /// member, skips the member swapped into its place rather than the next
+    /// one. Dropping the ordered insert and pass took 6-7% off the main
+    /// thread's time in a `--release` sim-bench at 20,000 units and 30
+    /// houses.
+    pub fn submit(&mut self, id: u64, layer: Option<DisplayLayer>) -> bool {
         if id == 0 {
             return false;
         }
@@ -110,88 +184,72 @@ impl DisplayLayers {
         if members.try_reserve(1).is_err() || self.registered.try_reserve(1).is_err() {
             return false;
         }
-        let index = if layer == DisplayLayer::GROUND {
-            // Compare5F6220 reads new, then existing. GetYSort is pure, so
-            // the new object's key is read once for the whole scan.
-            let (new_key, kept) = keys.read(id);
-            let index = self.ground_keys.first_greater(members, new_key, keys);
-            self.ground_keys.insert(index, id, new_key, kept);
-            index
+        let local = crate::sim::anim_class::is_local_anim_id(id);
+        let order = self.submissions.saturating_mul(2) | u64::from(!local);
+        if layer == DisplayLayer::GROUND && local {
+            if self.local_ground.try_reserve(1).is_err() {
+                return false;
+            }
+            self.local_ground.push(id);
         } else {
-            members.len()
-        };
-        members.insert(index, id);
-        self.registered.insert(id, layer);
-        debug_assert_eq!(
-            self.ground_keys.len(),
-            self.members(DisplayLayer::GROUND).len()
-        );
+            if layer == DisplayLayer::GROUND {
+                if self.ground_index.try_reserve(1).is_err() {
+                    return false;
+                }
+                self.ground_index.insert(id, members.len() as u32);
+            }
+            members.push(id);
+        }
+        self.registered.insert(id, Registration { layer, order });
+        if !local {
+            self.submissions += 1;
+        }
         true
     }
 
-    /// Display4A9770: first-match stable erase in the cached layer, then scan
-    /// all layers if that lookup fails. The normal owner cannot produce a
-    /// stale cache; the fallback also has an original-executable witness.
+    /// Display4A9770: erase from the cached layer, then scan all layers if
+    /// that lookup fails. The normal owner cannot produce a stale cache; the
+    /// fallback also has an original-executable witness. Ground swaps its
+    /// last member into the hole ([`Self::submit`]); other layers keep their
+    /// order.
     pub fn remove(&mut self, id: u64) -> bool {
-        let Some(layer) = self.registered.remove(&id) else {
+        let Some(Registration { layer, .. }) = self.registered.remove(&id) else {
             return false;
         };
-        let cached = usize::from(layer.0);
-        let ground = usize::from(DisplayLayer::GROUND.0);
-        if let Some(index) = position_of(&self.layers[cached], id) {
-            self.layers[cached].remove(index);
-            if cached == ground {
-                self.ground_keys.remove(index, id);
-            }
-        } else {
-            for (layer, members) in self.layers.iter_mut().enumerate() {
-                if let Some(index) = position_of(members, id) {
-                    members.remove(index);
-                    if layer == ground {
-                        self.ground_keys.remove(index, id);
-                    }
-                }
+        if !self.erase(usize::from(layer.0), id) {
+            for layer in 0..self.layers.len() {
+                self.erase(layer, id);
             }
         }
         true
     }
 
-    /// Forget the kept Ground key reads whose inputs may have changed (see
-    /// `GroundKeys::forget_changed`).
-    pub(crate) fn forget_changed_ground_keys(
-        &mut self,
-        context: ReadContext,
-        touched: impl IntoIterator<Item = Touched>,
-    ) {
-        self.ground_keys.forget_changed(context, touched);
-    }
-
-    /// Layer551A30, called at MainTick55DBC8 before Logic55DC9E: one
-    /// left-to-right adjacent pass, not a stable full sort.
-    pub fn sort_ground_pass(&mut self, keys: &impl GroundSortKeys) {
-        let members = &mut self.layers[usize::from(DisplayLayer::GROUND.0)];
-        let Some(&first) = members.first() else {
-            return;
-        };
-        // GetYSort is pure: after a swap the carried member stays on the left
-        // of the next comparison, so its key is reused rather than reread.
-        let mut left_key = self.ground_keys.key(0, first, keys);
-        for right in 1..members.len() {
-            let right_key = self.ground_keys.key(right, members[right], keys);
-            if right_key < left_key {
-                members.swap(right - 1, right);
-                self.ground_keys.swap(right - 1, right);
-            } else {
-                left_key = right_key;
+    /// Erase `id` from `layer`'s vector; whether it was there.
+    fn erase(&mut self, layer: usize, id: u64) -> bool {
+        if layer == usize::from(DisplayLayer::GROUND.0) {
+            if crate::sim::anim_class::is_local_anim_id(id) {
+                let Some(index) = self.local_ground.iter().position(|&member| member == id) else {
+                    return false;
+                };
+                self.local_ground.remove(index);
+                return true;
             }
+            let Some(index) = self.ground_index.remove(&id) else {
+                return false;
+            };
+            let members = &mut self.layers[layer];
+            members.swap_remove(index as usize);
+            if let Some(&moved) = members.get(index as usize) {
+                self.ground_index.insert(moved, index);
+            }
+            return true;
         }
-    }
-
-    /// Whether the kept Ground keys move in lockstep with the Ground members.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn ground_keys_aligned(&self) -> bool {
-        self.ground_keys
-            .aligned_with(&self.layers[usize::from(DisplayLayer::GROUND.0)])
+        let members = &mut self.layers[layer];
+        let Some(index) = position_of(members, id) else {
+            return false;
+        };
+        members.remove(index);
+        true
     }
 
     /// The layers as the hash and saves see them: without the local anims
@@ -244,20 +302,32 @@ impl<'de> Deserialize<'de> for DisplayLayers {
             return Ok(Self::default());
         }
         let mut registered = LookupMap::default();
+        let mut submissions = 0u64;
         for (layer, members) in layers.iter().enumerate() {
             for &id in members {
-                if id == 0 || registered.insert(id, DisplayLayer(layer as u8)).is_some() {
+                let registration = Registration {
+                    layer: DisplayLayer(layer as u8),
+                    order: submissions * 2 + 1,
+                };
+                submissions += 1;
+                if id == 0 || registered.insert(id, registration).is_some() {
                     return Err(serde::de::Error::custom(
                         "null or duplicate display identity",
                     ));
                 }
             }
         }
-        let ground_keys = GroundKeys::unknown(&layers[usize::from(DisplayLayer::GROUND.0)]);
+        let ground_index = layers[usize::from(DisplayLayer::GROUND.0)]
+            .iter()
+            .enumerate()
+            .map(|(index, &id)| (id, index as u32))
+            .collect();
         Ok(Self {
             layers,
             registered,
-            ground_keys,
+            submissions,
+            ground_index,
+            local_ground: Vec::new(),
         })
     }
 }
@@ -266,8 +336,11 @@ impl<'de> Deserialize<'de> for DisplayLayers {
 mod tests {
     use super::*;
 
+    /// The native sequences' memberships: Ground is a set here
+    /// ([`DisplayLayers::submit`]), so each layer is compared as one and the
+    /// native sort pass changes nothing.
     #[test]
-    fn original_registration_removal_and_adjacent_sort_sequences() {
+    fn original_registration_and_removal_sequences_keep_native_membership() {
         let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
             "tools/spatial_oracle/crate_ground_membership.json",
         ))
@@ -295,61 +368,72 @@ mod tests {
                 .zip(row["after_steps"].as_array().unwrap())
             {
                 let id = step["actor"].as_u64().map_or(0, |index| index + 1);
-                let key = |id: u64| {
-                    let xyz = coords[id as usize - 1];
-                    xyz[0].wrapping_add(xyz[1])
-                };
                 match step["op"].as_str().unwrap() {
                     "submit" => {
-                        display.submit(id, Some(DisplayLayer::GROUND), &key);
+                        display.submit(id, Some(DisplayLayer::GROUND));
                     }
                     "remove" => {
                         display.remove(id);
                     }
-                    "sort" => display.sort_ground_pass(&key),
+                    "sort" => {}
                     "coordinates" => {
                         coords[id as usize - 1] =
                             std::array::from_fn(|i| step["xyz"][i].as_i64().unwrap() as i32);
                     }
                     "cached_layer" => {
-                        display.registered.insert(
-                            id,
-                            DisplayLayer::from_index(step["layer"].as_u64().unwrap() as u8)
-                                .unwrap(),
-                        );
+                        let layer = DisplayLayer::from_index(step["layer"].as_u64().unwrap() as u8)
+                            .unwrap();
+                        display
+                            .registered
+                            .insert(id, Registration { layer, order: 0 });
                     }
                     op => panic!("unexpected {op}"),
                 }
+                let sorted = |members: Vec<u64>| {
+                    let mut members = members;
+                    members.sort_unstable();
+                    members
+                };
                 let layers: Vec<Vec<u64>> = display
                     .layers
                     .iter()
-                    .map(|members| members.iter().map(|id| id - 1).collect())
+                    .map(|members| sorted(members.iter().map(|id| id - 1).collect()))
+                    .collect();
+                let native: Vec<Vec<u64>> = observed["layers"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|members| {
+                        sorted(
+                            members
+                                .as_array()
+                                .unwrap()
+                                .iter()
+                                .map(|id| id.as_u64().unwrap())
+                                .collect(),
+                        )
+                    })
                     .collect();
                 let registered: Vec<i32> = (1..=coords.len() as u64)
                     .map(|id| display.layer_of(id).map_or(-1, |layer| i32::from(layer.0)))
                     .collect();
-                assert_eq!(
-                    serde_json::json!(layers),
-                    observed["layers"],
-                    "{name}: {step}"
-                );
+                assert_eq!(layers, native, "{name}: {step}");
                 assert_eq!(
                     serde_json::json!(registered),
                     observed["registered"],
                     "{name}: {step}"
                 );
-                assert!(display.ground_keys_aligned(), "{name}: {step}");
             }
         }
     }
 
-    /// Removal compares 32 members at a time: members at the blocks' edges
-    /// and in the tail leave, and the rest keep their order.
+    /// Air removal compares 32 members at a time: members at the blocks'
+    /// edges and in the tail leave, and the rest keep their order.
     #[test]
     fn remove_finds_members_at_block_edges() {
         let mut display = DisplayLayers::default();
         for id in 1..=70 {
-            assert!(display.submit(id, Some(DisplayLayer::GROUND), &|_| 0));
+            assert!(display.submit(id, Some(DisplayLayer::AIR)));
         }
         // From the back, so each still sits at index id - 1: the tail's last
         // and first members, then the last and first of each block.
@@ -358,8 +442,32 @@ mod tests {
             assert!(display.remove(id));
         }
         let staying: Vec<u64> = (1..=70).filter(|id| !leaving.contains(id)).collect();
-        assert_eq!(display.members(DisplayLayer::GROUND), staying);
-        assert!(display.ground_keys_aligned());
+        assert_eq!(display.members(DisplayLayer::AIR), staying);
+    }
+
+    /// Ground removals swap, so the shared members' order depends on every
+    /// removal before it: a local anim (one only this game draws) must not
+    /// be among them, or two games would hold, hash and checksum their
+    /// shared members in different orders.
+    #[test]
+    fn local_ground_anims_never_move_shared_members() {
+        let local = 1 << 56;
+        assert!(crate::sim::anim_class::is_local_anim_id(local));
+        let mut here = DisplayLayers::default();
+        let mut there = DisplayLayers::default();
+        for id in [1, local, 2, 3] {
+            here.submit(id, Some(DisplayLayer::GROUND));
+        }
+        for id in [1, 2, 3] {
+            there.submit(id, Some(DisplayLayer::GROUND));
+        }
+        assert_eq!(here.local_ground(), [local]);
+        here.remove(local);
+        assert_eq!(here.members(DisplayLayer::GROUND), [1, 2, 3]);
+        assert_eq!(
+            here.members(DisplayLayer::GROUND),
+            there.members(DisplayLayer::GROUND)
+        );
     }
 
     #[test]
@@ -371,7 +479,7 @@ mod tests {
             (4, DisplayLayer::AIR),
             (2, DisplayLayer::TOP),
         ] {
-            assert!(display.submit(id, Some(layer), &|_| 0));
+            assert!(display.submit(id, Some(layer)));
         }
         let bytes = crate::util::save_codec::serialize(&display).unwrap();
         let mut restored: DisplayLayers = crate::util::save_codec::deserialize(&bytes).unwrap();
@@ -380,10 +488,10 @@ mod tests {
             [3, 1, 4, 2]
         );
         assert!(restored.remove(3));
-        assert!(restored.submit(2, Some(DisplayLayer::GROUND), &|_| 0));
+        assert!(restored.submit(2, Some(DisplayLayer::GROUND)));
         assert_eq!(restored.members(DisplayLayer::GROUND), [1, 2]);
         assert!(restored.members(DisplayLayer::TOP).is_empty());
-        assert!(!restored.submit(1, None, &|_| panic!("no layer has no sort getter")));
+        assert!(!restored.submit(1, None));
         assert_eq!(restored.members(DisplayLayer::GROUND), [2]);
         for malformed in [
             "[[],[],[1,1],[],[]]",

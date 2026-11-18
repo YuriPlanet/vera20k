@@ -73,11 +73,11 @@ const ORE_REACH: i32 = 40;
 const DEPLOY_PAD: i32 = 3;
 /// Houses a house attacks: its nearest living ones.
 const FRONTS: usize = 3;
-/// Computer houses at most: one at every start of a 30-start map
-/// (`tools.scale_map --starts 30`) but the local house's, filling the
-/// lobby's `NETWORK_PLAYER_SLOT_COUNT` slots. A map with fewer starts seats
+/// Computer houses at most: one at every start of a 120-start map
+/// (`tools.scale_map --starts 120`) but the local house's, filling the offline
+/// Skirmish rows (`SKIRMISH_MAX_SLOT_COUNT`). A map with fewer starts seats
 /// fewer.
-pub(crate) const COMPUTERS: usize = 29;
+pub(crate) const COMPUTERS: usize = vera20k_core::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT - 1;
 /// The default run, two minutes of game time, in which the armies reach the
 /// nearest bases.
 pub(crate) const TICKS: u64 = 1800;
@@ -459,9 +459,14 @@ fn place_building(
             simulation,
             resources,
         } = &mut *runtime;
-        if let Some(id) =
-            simulation.spawn_object(type_id, owner, x as u16, y as u16, 0, &resources.rules)
-        {
+        if let Some(id) = simulation.spawn_object_with_map_overlays(
+            type_id,
+            owner,
+            x as u16,
+            y as u16,
+            0,
+            &resources.rules,
+        ) {
             for cy in y - 1..=y + height {
                 for cx in x - 1..=x + width {
                     ground.reserved.insert(cx, cy);
@@ -493,9 +498,14 @@ fn place_mobile(
             simulation,
             resources,
         } = &mut *runtime;
-        if let Some(id) =
-            simulation.spawn_object(type_id, owner, x as u16, y as u16, 0, &resources.rules)
-        {
+        if let Some(id) = simulation.spawn_object_with_map_overlays(
+            type_id,
+            owner,
+            x as u16,
+            y as u16,
+            0,
+            &resources.rules,
+        ) {
             return Some((id, (dx, dy)));
         }
     }
@@ -597,7 +607,7 @@ impl MatchScenario {
                 let ore = sim
                     .overlay_grid()
                     .and_then(|grid| grid.cell(cell.rx, cell.ry).overlay_id)
-                    .and_then(|id| runtime.resources.overlay_registry.flags(id))
+                    .and_then(|id| runtime.resources.rules.overlay_registry().flags(id))
                     .is_some_and(|flags| flags.tiberium);
                 if ore {
                     ground.ore.insert(x, y);

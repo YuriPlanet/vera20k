@@ -58,14 +58,13 @@ fn replay_selector_events(entity: &mut GameEntity, object: &ObjectType, events: 
     let before_delay = entity.turret_selection.charge_turret_delay;
     for event in events.as_array().unwrap() {
         assert_eq!(event["event"], "set_gunner", "unexpected native event");
-        entity.set_gunner_weapon(int(event, "mode"), object, crate::rules::ARES_BUILD);
+        entity.set_gunner_weapon(int(event, "mode"), object, false);
     }
     assert_eq!(entity.rearm_timer.timer(), before_timer);
     assert_eq!(entity.turret_selection.charge_turret_delay, before_delay);
 }
 
 // The installed Ares SwitchGunner hook uses WeaponCount instead of eighteen.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn gunner_constructor_and_selector_match_original_components() {
     let native = corpus();
@@ -93,7 +92,6 @@ fn gunner_constructor_and_selector_match_original_components() {
 }
 
 // The installed Ares SwitchGunner hook uses WeaponCount instead of eighteen.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn native_selector_ignores_turret_count_and_gattling_gates() {
     let native = corpus();
@@ -222,7 +220,7 @@ fn ares_passenger_turret_follows_the_passenger_count() {
     let turret = |passengers: usize| {
         let mut entity = GameEntity::test_default(1, "IFV", "A", 1, 1);
         entity
-            .passenger_role
+            .passenger_role_mut_for_test()
             .ensure_hold()
             .set_passengers_for_test((10..10 + passengers as u64).collect());
         entity.update_passenger_turret(object);

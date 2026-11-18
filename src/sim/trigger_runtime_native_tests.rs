@@ -1169,7 +1169,6 @@ fn damage_source_event44_matches_original_registered_house_index() {
 
 // The stock tag section of 5F5390; Ares replaces it (hook 0x5F57B5, see the
 // ares tests).
-#[cfg(not(feature = "ares"))]
 #[test]
 fn surviving_object_damage_tag_ingress_matches_original_call_admission() {
     use super::tests::{
@@ -1666,9 +1665,7 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
     );
     roots.sort();
     roots.dedup();
-    rules
-        .bind_scheduler_anim_assets(&roots, &assets, theater.extension, &map.header.theater)
-        .expect("physical selected building SHP bounds");
+    rules.bind_scheduler_anim_assets(&roots, &assets, theater.extension, &map.header.theater);
     for name in ["YAPPET_E", "YAPPET_F", "YAPPET_G", "YAPPET_H"] {
         assert!(
             rules
@@ -1769,15 +1766,8 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
         .0;
     let identity = sim.super_weapons[&owner][&dominator].native_unique_id();
     for _ in 0..15 {
-        sim.advance_app_frame(
-            &[],
-            &rules,
-            None,
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
-        .unwrap();
+        sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+            .unwrap();
     }
     assert_eq!(sim.session.binary_frame(), 15);
     assert_eq!(sim.entities().get(reactor).unwrap().health.current(), 769);
@@ -1790,15 +1780,8 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
     );
     assert!(!sim.super_weapons[&owner][&dominator].is_suspended());
     sim.trigger_runtime.action_trace.clear();
-    sim.advance_app_frame(
-        &[],
-        &rules,
-        None,
-        67,
-        TickLane::Ordinary,
-        FrameEffects::default(),
-    )
-    .unwrap();
+    sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+        .unwrap();
     assert_eq!(sim.trigger_runtime.action_trace, vec![(129, 7), (63, 364)]);
     let reactor = sim.entities().get(reactor).unwrap();
     assert_eq!(
@@ -1857,15 +1840,8 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
     assert!(!before_pause.is_empty());
     assert!(before_pause.iter().all(|(_, _, paused)| !paused));
     sim.trigger_runtime.action_trace.clear();
-    sim.advance_app_frame(
-        &[],
-        &rules,
-        None,
-        67,
-        TickLane::Ordinary,
-        FrameEffects::default(),
-    )
-    .unwrap();
+    sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+        .unwrap();
     let paused = super_slots(&sim);
     assert!(!paused.is_empty());
     assert!(paused.iter().all(|(_, _, paused)| *paused));

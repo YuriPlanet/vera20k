@@ -815,6 +815,20 @@ impl IniSection {
         self.read_phobos_nullable_with(key, current, parse_ares_int)
     }
 
+    /// Phobos `Valueable<int>`: `INI_EX::ReadInteger` is ReadString(2048),
+    /// then `Read<int, 1>`, whose `Parser<int, 1>::Parse`
+    /// (`src/Utilities/Parser.h` at c783774a) converts only the text before
+    /// the first comma, through the `Parser<int>::TryParse` it shares with
+    /// Ares (`$%d` included): the [`scan_ares_fields`] scan with one slot.
+    /// Absent, empty and failed reads keep the current value.
+    pub fn read_phobos_int(&self, key: &str, current: i32) -> i32 {
+        self.read_string_with(key, 2048, current, |current, raw| {
+            let mut value = [current];
+            scan_ares_fields(raw, &mut value);
+            value[0]
+        })
+    }
+
     /// Phobos `Valueable<ColorStruct>` (`INI_EX::Read3Bytes`, then
     /// `Parser<BYTE,3>` at `src/Utilities/TemplateDef.h`): a comma-separated
     /// `R,G,B` needs all three channels inside `0..=255`. Absent, empty and
@@ -1170,16 +1184,20 @@ impl IniSection {
 
     /// `0x00476340` (ParticleSystemType `SpawnDirection=`): ReadString into
     /// 0x200 bytes, then three `strtok(",")` tokens through CRT `atof`
-    /// ([`parse_leading_f64`]) into a float vector. Absent keeps `default`;
-    /// a missing token reads as 0 where native passes NULL to `atof`.
-    pub fn read_float_tokens(&self, key: &str, default: [f32; 3]) -> [f32; 3] {
+    /// ([`parse_leading_f64`]) into a float vector, each stored with `FSTP
+    /// float` (`0x004763A1`, `0x004763B7`, `0x004763D8`). Absent keeps
+    /// `default`; a missing token reads as 0 where native passes NULL to `atof`.
+    pub fn read_float_tokens(&self, key: &str, default: [NativeF32Bits; 3]) -> [NativeF32Bits; 3] {
         let Some(tokens) = self.read_list(key, 0x200) else {
             return default;
         };
         std::array::from_fn(|index| {
-            tokens
+            let value = tokens
                 .get(index)
-                .map_or(0.0, |token| parse_leading_f64(token) as f32)
+                .map_or(0.0, |token| parse_leading_f64(token));
+            MaskedX87Chop53::store_f32_masked_chop(MaskedX87Chop53::load_f64(
+                NativeF64Bits::from_bits(value.to_bits()),
+            ))
         })
     }
 
@@ -1404,17 +1422,18 @@ impl IniSection {
     /// Otherwise the value is a CELL count that the reader converts to leptons:
     /// `FMUL double ptr [0x007E1710]` at `0x0047464C`, where that address holds
     /// `0x4070000000000000` = `256.0`, then `Math__ftol @ 0x007C5F00`, whose
-    /// control word `0x0E7F` selects chop. `f64 as i32` truncates toward zero
-    /// like it does. Fixed-point `to_num::<i32>()` instead floors toward −∞;
-    /// it is not interchangeable with this reader's chop conversion.
+    /// control word `0x0E7F` selects chop. Fixed-point `to_num::<i32>()`
+    /// instead floors toward −∞; it is not interchangeable with this reader's
+    /// chop conversion.
     ///
-    /// Two residuals at the extremes, both out of reach of retail data:
+    /// `Math__ftol` executes `FISTP qword` and the caller keeps only the low
+    /// dword, so from 8388608 cells on the leptons wrap, and past 2^63 (or at
+    /// `±inf`) `FISTP` stores integer-indefinite, whose low dword is zero. A
+    /// host's `Range=2147483647` (2^31 cells after the binary32 scan) is
+    /// therefore 0 leptons, as in gamemd, not a range over the whole map.
     ///
-    /// * `Math__ftol` executes `FISTP qword` and the caller keeps only the low
-    ///   dword, so a magnitude past `i32` WRAPS while `f64 as i32` saturates.
-    ///   That band starts at |value| >= 8388608 cells and ends at 2^63, beyond
-    ///   which `FISTP` stores integer-indefinite and the low dword is zero.
-    ///   `±inf` therefore yields 0 natively against `i32::MAX` here.
+    /// One residual, out of reach of any data:
+    ///
     /// * A NaN never reaches `ftol` at all: `FCOM` against `-1.0` sets C3 for
     ///   unordered as well as equal, and the `TEST AH,0x40` at `0x0047463E`
     ///   takes the sentinel exit, returning the caller's default. Rust returns
@@ -1433,7 +1452,7 @@ impl IniSection {
             if parsed == -1.0 {
                 current
             } else {
-                (parsed * 256.0) as i32
+                crate::util::native_x87::X87Chop53::ftol_f64_low_masked(parsed * 256.0)
             }
         })
     }
@@ -2093,6 +2112,20 @@ fn leading_float_token(s: &str) -> Option<&str> {
 mod tests {
     use super::{crt_atoi, parse_leading_f32, strtok, truncate_native_bytes};
     use crate::rules::ini_parser::{IniFile, IniSection};
+    use crate::util::native_x87::NativeF32Bits;
+
+    /// Phobos' `Read<int, 1>` converts the text before the first comma, so a
+    /// hex value with more text after it still reads, and a piece of 128
+    /// bytes or more fails its `%[^,]` scan into 0x80 bytes and keeps the
+    /// value.
+    #[test]
+    fn phobos_integer_reader_converts_the_first_comma_piece() {
+        for (value, expected) in [("Ah ,0".to_owned(), 10), (format!("{:0>128},1", 7), -1)] {
+            let ini = IniFile::from_str(&format!("[AI]\nKey={value}\n"));
+            let ai = ini.section("AI").expect("section");
+            assert_eq!(ai.read_phobos_int("Key", -1), expected, "{value:?}");
+        }
+    }
 
     #[test]
     fn ares_integer_reader_retains_failed_values_and_uses_ares_dollar_decimal() {
@@ -2368,62 +2401,64 @@ mod tests {
 
     #[test]
     fn read_houses_list_matches_native_exact_lookup_and_default_controls() {
-        let native = crate::test_fixture::json(if crate::rules::ARES_BUILD {
-            "tools/input_oracle/ares_allies_reader.json"
-        } else {
-            "tools/input_oracle/campaign_start_houses.json"
-        });
-        let controls = &native["allies_reader_controls"];
-        assert_eq!(controls["delimiter_hex"], "2c00");
-        let names: Vec<_> = controls["registry"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|value| value.as_str().unwrap())
-            .collect();
-        let rows = controls["rows"].as_array().unwrap();
-        assert_eq!(rows.len(), 27);
-        for row in rows {
-            let mut ini = IniFile::empty();
-            let section = ini.projection_section_mut("Control");
-            for (key, value) in row["sections"]["Control"].as_object().unwrap() {
-                section.set(key, value.as_str().unwrap());
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            let native = crate::test_fixture::json(if ares_way {
+                "tools/input_oracle/ares_allies_reader.json"
+            } else {
+                "tools/input_oracle/campaign_start_houses.json"
+            });
+            let controls = &native["allies_reader_controls"];
+            assert_eq!(controls["delimiter_hex"], "2c00");
+            let names: Vec<_> = controls["registry"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_str().unwrap())
+                .collect();
+            let rows = controls["rows"].as_array().unwrap();
+            assert_eq!(rows.len(), 27);
+            for row in rows {
+                let mut ini = IniFile::empty();
+                let section = ini.projection_section_mut("Control");
+                for (key, value) in row["sections"]["Control"].as_object().unwrap() {
+                    section.set(key, value.as_str().unwrap());
+                }
+                let actual = section.read_houses_list(
+                    "Allies",
+                    row["default"].as_u64().unwrap() as u32,
+                    |name| names.iter().position(|candidate| *candidate == name),
+                );
+                assert_eq!(actual, row["result"].as_u64().unwrap() as u32, "{row}");
             }
-            let actual = section.read_houses_list(
-                "Allies",
-                row["default"].as_u64().unwrap() as u32,
-                |name| names.iter().position(|candidate| *candidate == name),
-            );
-            assert_eq!(actual, row["result"].as_u64().unwrap() as u32, "{row}");
         }
     }
 
     #[test]
     fn read_houses_list_matches_extended_native_buffer_controls() {
-        let native = crate::test_fixture::json("tools/input_oracle/ares_allies_reader.json");
-        let feature = if crate::rules::ARES_BUILD {
-            "ares"
-        } else {
-            "stock"
-        };
-        for row in native["extended_controls"].as_array().unwrap() {
-            // Exercise ReadString's buffer limit directly. Physical INI line
-            // admission belongs to the lexer, independently of this reader.
-            let mut ini = IniFile::empty();
-            let section = ini.projection_section_mut("Control");
-            section.set("Allies", row["value"].as_str().unwrap());
-            let names = row["registry"].as_array().unwrap();
-            let actual = section.read_houses_list("Allies", 0, |name| {
-                names
-                    .iter()
-                    .position(|candidate| candidate.as_str() == Some(name))
-            });
-            assert_eq!(
-                actual,
-                row["observations"][feature]["result"].as_u64().unwrap() as u32,
-                "{} ({feature})",
-                row["name"],
-            );
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            let native = crate::test_fixture::json("tools/input_oracle/ares_allies_reader.json");
+            let feature = if ares_way { "ares" } else { "stock" };
+            for row in native["extended_controls"].as_array().unwrap() {
+                // Exercise ReadString's buffer limit directly. Physical INI line
+                // admission belongs to the lexer, independently of this reader.
+                let mut ini = IniFile::empty();
+                let section = ini.projection_section_mut("Control");
+                section.set("Allies", row["value"].as_str().unwrap());
+                let names = row["registry"].as_array().unwrap();
+                let actual = section.read_houses_list("Allies", 0, |name| {
+                    names
+                        .iter()
+                        .position(|candidate| candidate.as_str() == Some(name))
+                });
+                assert_eq!(
+                    actual,
+                    row["observations"][feature]["result"].as_u64().unwrap() as u32,
+                    "{} ({feature})",
+                    row["name"],
+                );
+            }
         }
     }
 
@@ -2469,11 +2504,15 @@ mod tests {
     /// `0x00476340` reads three `atof` tokens.
     #[test]
     fn read_float_tokens_atofs_three_tokens() {
-        let ini = sec("[S]\nV=0.5, -1,2e1\nShort=3\n");
+        let ini = sec("[S]\nV=0.5, -1,2e1\nShort=3\nChop=0.1\n");
         let s = ini.section("S").unwrap();
-        assert_eq!(s.read_float_tokens("V", [9.0; 3]), [0.5, -1.0, 20.0]);
-        assert_eq!(s.read_float_tokens("Short", [9.0; 3]), [3.0, 0.0, 0.0]);
-        assert_eq!(s.read_float_tokens("MISSING", [9.0; 3]), [9.0; 3]);
+        let read = |key| s.read_float_tokens(key, [NativeF32Bits::from_bits(9.0f32.to_bits()); 3]);
+        let floats = |values: [f32; 3]| values.map(|v| NativeF32Bits::from_bits(v.to_bits()));
+        assert_eq!(read("V"), floats([0.5, -1.0, 20.0]));
+        assert_eq!(read("Short"), floats([3.0, 0.0, 0.0]));
+        assert_eq!(read("MISSING"), floats([9.0; 3]));
+        // FSTP float chops: 0.1 stores 0x3DCCCCCC, not the nearest 0x3DCCCCCD.
+        assert_eq!(read("Chop")[0].bits(), 0x3DCC_CCCC);
     }
 
     /// `0x00476420` tokenizes where `read_coord3` scans: stock
@@ -2612,6 +2651,15 @@ mod tests {
         assert_eq!(s.read_range("B", -1), 1280, "5 cells");
         assert_eq!(s.read_range("C", -1), 102, "0.4 cells is 102.4 leptons");
         assert_eq!(s.read_range("MISSING", 7), 7); // absent -> default (sentinel -1.0)
+    }
+
+    /// `Math__ftol` keeps only the low dword of the qword conversion.
+    #[test]
+    fn read_range_keeps_the_native_low_dword() {
+        let ini = sec("[S]\nA=2147483647\nB=1e999\n");
+        let s = ini.section("S").unwrap();
+        assert_eq!(s.read_range("A", -1), 0);
+        assert_eq!(s.read_range("B", -1), 0);
     }
 
     /// The scratch seed is the section name's CRCEngine hash; these are the

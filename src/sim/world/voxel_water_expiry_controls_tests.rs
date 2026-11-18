@@ -25,6 +25,7 @@ fn piece_with_prior(runtime: &mut SimRuntime, z: i32, duration: i32) -> u64 {
         glam::IVec3::new(19972, 28836, 0),
         true,
         &mut Vec::new(),
+        rules,
     )
     .unwrap();
     let ids = sim.voxel_anims().ids();
@@ -86,7 +87,7 @@ fn tire_water_expiry_requires_strictly_below_the_deck_plane() {
         assert_eq!(sim.display_layers().layer_of(id), None);
         sim.process_pending_delete_with(
             &resources.rules,
-            Some(&resources.overlay_registry),
+            Some(resources.rules.overlay_registry()),
             super::FrameEffects::default(),
             1,
             sim.session.started(),
@@ -156,7 +157,7 @@ fn tire_out_of_domain_update_deletes_without_water_expiry_effects() {
     assert_eq!(sim.display_layers().layer_of(id), None);
     sim.process_pending_delete_with(
         &resources.rules,
-        Some(&resources.overlay_registry),
+        Some(resources.rules.overlay_registry()),
         super::FrameEffects::default(),
         1,
         sim.session.started(),

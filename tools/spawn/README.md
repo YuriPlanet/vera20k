@@ -85,8 +85,13 @@ A launcher can copy `version`, `rules_digest` and `map.source_sha256` into
 `name` (the `[Countries]` ID), `label` (its `UIName=` text), `side` (its `[Sides]`
 index) and `selectable` (the menu offers it), so a launcher can offer a mod's
 countries as the game does.
-`rules_digest` is Battle's. A network launch plays each player's own `VERARULES.INI`
-(up to 8 KB) and Terrain Deformation, which the digest covers.
+`rules_digest` is Battle's. A network launch plays each player's own Terrain Deformation
+and Superweapon Limit, which the digest covers. Without these keys, players whose
+builds or rules differ still never play together: a relay launch ends at its start
+with `agreement_mismatch`, a direct one as the launcher notes below say.
+`[Settings] Ares=Auto|On|Off` replaces the player's [Ares setting](../../docs/ares.md#the-ares-setting)
+for that launch (an unknown value plays Auto); the probe does not read spawn.ini, so
+pass the same with `--ares <Auto|On|Off>`, or it reports VERA.INI's.
 `[Settings] GameMode` selects an `MPModesMD.ini` row by id (default 1): a network
 launch takes a stock row, and a one-human launch any row of the `MPModesMD.ini` the
 game loaded, or row 1 when the id has none, so a
@@ -111,7 +116,11 @@ Only `[Settings] Port` must be reachable (UDP) for every other participant;
 VERA binds its alternate receive socket on an ephemeral port because no VERA
 traffic uses it. Each participant must start within about 29 s of the others
 (the LAN setup lease); a participant whose spawn.ini differs in any shared
-field derives another session scope and is treated as not responding.
+field, or whose own Terrain Deformation or Superweapon Limit differs, derives
+another session scope and is treated as not responding. One that shares the
+scope but runs another VERA20k build or other rules files ends the launch at
+once, naming that participant in `spawn_result.json`. `ExpectedVersion` and
+`ExpectedRulesDigest` refuse before any of this, with the reason.
 
 ## Recorded runs (2026-10-28, macOS, hidden windows)
 

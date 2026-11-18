@@ -686,23 +686,25 @@ mod tests {
     fn weapon_ammo_cost_uses_ares_retained_integer_reader_only_when_enabled() {
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
         use crate::rules::ruleset::RuleSet;
-
-        let mut layers = RulesLayerStack::new(IniFile::from_str(
-            "[InfantryTypes]\n0=PROBE\n[PROBE]\nPrimary=PAIR\nSecondary=FREE\n[PAIR]\nAmmo=2\n[FREE]\nAmmo=0\n",
-        ));
-        layers.push(
-            RulesLayerKind::Scenario,
-            IniFile::from_str("[PAIR]\nAmmo=invalid\n"),
-        );
-        let rules = RuleSet::from_rules_layers(&layers).unwrap();
-        assert_eq!(
-            rules.weapon("PAIR").unwrap().ammo_cost(),
-            if cfg!(feature = "ares") { 2 } else { 1 }
-        );
-        assert_eq!(
-            rules.weapon("FREE").unwrap().ammo_cost(),
-            if cfg!(feature = "ares") { 0 } else { 1 }
-        );
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            let mut layers = RulesLayerStack::new(IniFile::from_str(
+                "[InfantryTypes]\n0=PROBE\n[PROBE]\nPrimary=PAIR\nSecondary=FREE\n[PAIR]\nAmmo=2\n[FREE]\nAmmo=0\n",
+            ));
+            layers.push(
+                RulesLayerKind::Scenario,
+                IniFile::from_str("[PAIR]\nAmmo=invalid\n"),
+            );
+            let rules = RuleSet::from_rules_layers(&layers).unwrap();
+            assert_eq!(
+                rules.weapon("PAIR").unwrap().ammo_cost(),
+                if ares_way { 2 } else { 1 }
+            );
+            assert_eq!(
+                rules.weapon("FREE").unwrap().ammo_cost(),
+                if ares_way { 0 } else { 1 }
+            );
+        }
     }
 
     /// Retail `RevealOnFire=` through the production reader: the constructor's

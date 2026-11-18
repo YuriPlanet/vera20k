@@ -52,6 +52,11 @@ pub(crate) const LAUNCHER_LABEL_SPECS: [(&str, &str); 29] = [
     ("TXT_FASTEST", "Fastest"),
 ];
 
+/// Retail captions `0xD5` itself never shows, for the in-game menu's Options
+/// column: its Back, and the menu's own Game Controls page.
+const IN_GAME_LABEL_SPECS: [(&str, &str); 2] =
+    [("GUI:Back", "Back"), ("GUI:GameControls", "Game Controls")];
+
 /// VERA's own captions and status help on this page, as labels of VERA's
 /// language files ([`crate::i18n`]): the retail string table has nothing for
 /// full screen, zoom, the battle shape or the Red Alert 2 loading screen and
@@ -91,7 +96,7 @@ pub(crate) const SMOOTH_ONLINE_MENUS_HELP: &str = "VERA:SmoothOnlineMenusHelp";
 pub(crate) const HAS_VSYNC: bool = !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
 pub(crate) const VSYNC_LABEL: &str = "VERA:VSync";
 pub(crate) const VSYNC_HELP: &str = "VERA:VSyncHelp";
-/// The Interface page's HD Map Previews (`app::map_picture`). The browser
+/// The General page's HD Map Previews (`app::map_picture`). The browser
 /// build cannot start the hidden run that draws a map's picture.
 pub(crate) const HAS_HD_MAP_PREVIEWS: bool =
     !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
@@ -101,7 +106,13 @@ pub(crate) const SHIFT_QUEUE_LABEL: &str = "VERA:ShiftQueue";
 pub(crate) const AUTO_REPAIR_LABEL: &str = "VERA:AutoRepair";
 /// The two category pages retail's string table has no band name for.
 pub(crate) const CONTROLS_LABEL: &str = "VERA:Controls";
-pub(crate) const DEVELOPER_OPTIONS_LABEL: &str = "VERA:DeveloperOptions";
+pub(crate) const GENERAL_LABEL: &str = "VERA:General";
+/// The in-game menu's Options button, and the Back that ends its column.
+pub(crate) const IN_GAME_OPTIONS_HELP: &str = "VERA:InGameOptionsHelp";
+pub(crate) const IN_GAME_OPTIONS_BACK_HELP: &str = "VERA:InGameOptionsBackHelp";
+/// What a greyed control says on the in-game menu: a setting the next game
+/// starts with ([`LauncherTrackbarId::fixed_in_match`]), or Check for Updates.
+pub(crate) const NOT_IN_MATCH_HELP: &str = "VERA:NotInMatchHelp";
 pub(crate) const SKIP_INTRO_LABEL: &str = "VERA:SkipIntro";
 pub(crate) const SKIP_INTRO_HELP: &str = "VERA:SkipIntroHelp";
 pub(crate) const PERFORMANCE_STATS_LABEL: &str = "VERA:PerformanceStats";
@@ -121,6 +132,9 @@ pub(crate) const CUSTOM_END_GAME_SCORE_LABEL: &str = "VERA:CustomEndGameScore";
 pub(crate) const CUSTOM_END_GAME_SCORE_HELP: &str = "VERA:CustomEndGameScoreHelp";
 pub(crate) const CUSTOM_END_GAME_MOVIE_LABEL: &str = "VERA:CustomEndGameMovie";
 pub(crate) const CUSTOM_END_GAME_MOVIE_HELP: &str = "VERA:CustomEndGameMovieHelp";
+/// VERA's commander box (`docs/ini-commander-personalities.md`).
+pub(crate) const COMMANDER_FEEDBACK_LABEL: &str = "VERA:CommanderFeedback";
+pub(crate) const COMMANDER_FEEDBACK_HELP: &str = "VERA:CommanderFeedbackHelp";
 /// VERA's accessibility box: retail's string table has nothing for it.
 pub(crate) const DETAILED_EVA_TEXT_LABEL: &str = "VERA:DetailedEvaText";
 pub(crate) const DETAILED_EVA_TEXT_HELP: &str = "VERA:DetailedEvaTextHelp";
@@ -129,19 +143,29 @@ pub(crate) const COMPACT_SUPER_TIMERS_LABEL: &str = "VERA:CompactSuperTimers";
 pub(crate) const COMPACT_SUPER_TIMERS_HELP: &str = "VERA:CompactSuperTimersHelp";
 pub(crate) const SHIFT_QUEUE_HELP: &str = "VERA:ShiftQueueHelp";
 pub(crate) const AUTO_REPAIR_HELP: &str = "VERA:AutoRepairHelp";
-/// VERA's terrain deformation box (`docs/terrain-deformation.md`).
-pub(crate) const TERRAIN_DEFORMATION_LABEL: &str = "VERA:TerrainDeformation";
-pub(crate) const TERRAIN_DEFORMATION_HELP: &str = "VERA:TerrainDeformationHelp";
-/// VERA's Superweapon Limit slider (`docs/superweapon-limit.md`).
-pub(crate) const SUPERWEAPON_LIMIT_LABEL: &str = "VERA:SuperweaponLimit";
-pub(crate) const SUPERWEAPON_LIMIT_HELP: &str = "VERA:SuperweaponLimitHelp";
-/// Its plaque at the left end.
-pub(crate) const SUPERWEAPON_LIMIT_OFF: &str = "VERA:SuperweaponLimitOff";
 pub(crate) const DISPLAY_LABEL: &str = "VERA:Display";
 pub(crate) const DISPLAY_HELP: &str = "VERA:DisplayHelp";
 /// VERA's health-bar list. The retail string table has nothing for it.
 pub(crate) const HEALTH_BARS_LABEL: &str = "VERA:HealthBars";
 pub(crate) const HEALTH_BARS_HELP: &str = "VERA:HealthBarsHelp";
+pub(crate) const ARES_LABEL: &str = "VERA:AresSetting";
+pub(crate) const ARES_HELP: &str = "VERA:AresSettingHelp";
+
+/// The `[VERA] Ares=` list's rows, top to bottom; the first is the default.
+pub(crate) fn ares_choices() -> Vec<crate::util::ares_launch::AresSetting> {
+    use crate::util::ares_launch::AresSetting;
+    vec![AresSetting::Auto, AresSetting::On, AresSetting::Off]
+}
+
+/// The `[VERA] Ares=` list's row text.
+pub(crate) fn ares_label(setting: crate::util::ares_launch::AresSetting) -> String {
+    use crate::util::ares_launch::AresSetting;
+    crate::i18n::tr(match setting {
+        AresSetting::Auto => "VERA:AresSettingAuto",
+        AresSetting::On => "VERA:AresSettingOn",
+        AresSetting::Off => "VERA:AresSettingOff",
+    })
+}
 /// VERA's strength slider for the `[Colors]` team-colour bands. Retail's
 /// string table has nothing for it.
 pub(crate) const HOUSE_COLOR_STRENGTH_LABEL: &str = "VERA:HouseColorStrength";
@@ -152,17 +176,23 @@ pub(crate) const COLOR_VISION_LABEL: &str = "VERA:ColorVision";
 pub(crate) const COLOR_VISION_HELP: &str = "VERA:ColorVisionHelp";
 /// The Display list's first row: the window system's own choice.
 pub(crate) const DISPLAY_AUTO_LABEL: &str = "VERA:DisplayAuto";
-/// VERA's Language list on the Interface page. Its rows are each language's
+/// VERA's Language list on the General page. Its rows are each language's
 /// own name for itself, so they need no translation.
 pub(crate) const LANGUAGE_LABEL: &str = "VERA:Language";
 pub(crate) const LANGUAGE_HELP: &str = "VERA:LanguageHelp";
-/// The Developer page's Check for Updates: the desktop updater
+/// The General page's Check for Updates: the desktop updater
 /// (`app::updater`) checks once the dialog has slid out. The browser build
-/// has no updater.
+/// has no updater, and the in-game menu shows it greyed: no slide-out
+/// happens there.
 pub(crate) const HAS_CHECK_FOR_UPDATES: bool =
     !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
 pub(crate) const CHECK_FOR_UPDATES_LABEL: &str = "VERA:CheckForUpdates";
 pub(crate) const CHECK_FOR_UPDATES_HELP: &str = "VERA:CheckForUpdatesHelp";
+/// The Interface page's Edit Layout: in a match the menu closes and the
+/// layout edit mode (`app::input::layout_edit`) takes the mouse, as the Edit
+/// Layout key does. The main menu has no match screen, so it shows it greyed.
+pub(crate) const EDIT_LAYOUT_LABEL: &str = "VERA:LayoutEdit";
+pub(crate) const EDIT_LAYOUT_HELP: &str = "VERA:EditLayoutHelp";
 /// The column's Mods button, which opens VERA's Mods page
 /// (`ui::mods_shell`). The browser build has no Mods folder.
 pub(crate) const HAS_MODS: bool = !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
@@ -183,8 +213,16 @@ pub(crate) enum LauncherButton {
     Exit(LauncherParentResult),
     /// A category in the right-hand column: shows that category's page.
     Category(Category),
-    /// Check for Updates on the Developer page.
+    /// The in-game menu's Options, under its Game Controls: the main menu's
+    /// column takes the menu's place, on its first page.
+    InGameOptions,
+    /// The foot of that column, where Resume stands on the menu: the menu
+    /// and its Game Controls page again.
+    InGameBack,
+    /// Check for Updates on the General page.
     CheckForUpdates,
+    /// Edit Layout on the Interface page.
+    EditLayout,
     /// The Esc menu's Set Window Size: the window goes back to how a launch opens it.
     SetWindowSize,
     /// The in-game menu's Keyboard, which opens gamemd's in-game `0xA3`.
@@ -200,7 +238,11 @@ impl LauncherButton {
     pub(crate) const fn on_page(self) -> bool {
         matches!(
             self,
-            Self::CheckForUpdates | Self::SetWindowSize | Self::InGameKeyboard | Self::InGameSound
+            Self::CheckForUpdates
+                | Self::EditLayout
+                | Self::SetWindowSize
+                | Self::InGameKeyboard
+                | Self::InGameSound
         )
     }
 }
@@ -635,6 +677,9 @@ pub(crate) enum LauncherComboId {
     ColorVision,
     /// The `[VERA] Language=` list: VERA's interface language.
     Language,
+    /// The `[VERA] Ares=` list: the Ares extension setting, from the next
+    /// start (`util::ares_launch::AresSetting`).
+    Ares,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -656,6 +701,10 @@ pub(crate) struct LauncherOptionsLabels {
     pub(crate) sound_volume: String,
     pub(crate) voice_volume: String,
     pub(crate) blank: String,
+    /// [`IN_GAME_LABEL_SPECS`]: the in-game Options column's Back, and the
+    /// menu's Game Controls page.
+    pub(crate) back: String,
+    pub(crate) game_controls: String,
     low: String,
     high: String,
     easy: String,
@@ -670,7 +719,13 @@ impl LauncherOptionsLabels {
             let (key, fallback) = LAUNCHER_LABEL_SPECS[index];
             csf(key).unwrap_or_else(|| fallback.to_string())
         };
+        let in_game = |index: usize| {
+            let (key, fallback) = IN_GAME_LABEL_SPECS[index];
+            csf(key).unwrap_or_else(|| fallback.to_string())
+        };
         Self {
+            back: in_game(0),
+            game_controls: in_game(1),
             options: label(0),
             main_menu: label(1),
             keyboard: label(2),
@@ -719,11 +774,6 @@ pub(crate) enum LauncherTrackbarId {
     /// the level minus [`crate::rules::house_colors::STRENGTH_MIN`], so the
     /// retail strength is position 0 and the strongest is position 9.
     HouseColorStrength,
-    /// VERA's own slider: how many of each superweapon a player may build,
-    /// each building charging its own shot. Position 0 is off, position `n`
-    /// a limit of `n + 1`, so the first notch allows two. Saved; the next
-    /// game's rules read it, as Terrain Deformation's do.
-    SuperweaponLimit,
     /// The in-game menu's Game Speed, the slider of gamemd's Game Controls
     /// (`0xBBB` control `0x529`). No main-menu page has it and the profile
     /// pack leaves it out: the menu sets it up with
@@ -742,7 +792,6 @@ impl LauncherTrackbarId {
             Self::HouseColorStrength => {
                 crate::rules::house_colors::STRENGTH_MAX - crate::rules::house_colors::STRENGTH_MIN
             }
-            Self::SuperweaponLimit => crate::rules::personal_rules::SUPERWEAPON_LIMIT_MAX - 1,
         }
     }
 
@@ -751,16 +800,21 @@ impl LauncherTrackbarId {
     pub(crate) const fn plaque_reserve(self) -> i32 {
         match self {
             Self::Detail | Self::Difficulty | Self::Scroll | Self::GameSpeed => 0,
-            Self::Score
-            | Self::Sound
-            | Self::Voice
-            | Self::HouseColorStrength
-            | Self::SuperweaponLimit => 50,
+            Self::Score | Self::Sound | Self::Voice | Self::HouseColorStrength => 50,
         }
     }
 
     const fn is_audio(self) -> bool {
         matches!(self, Self::Score | Self::Sound | Self::Voice)
+    }
+
+    /// Whether a running match keeps it as the match began: the campaign
+    /// difficulty is taken when a game starts, and the team colour strength is
+    /// baked into a battle's colour tables when it loads, so the in-game menu
+    /// shows them greyed. gamemd's in-game menu has no Difficulty either, so a
+    /// mission's restart keeps its own.
+    pub(crate) const fn fixed_in_match(self) -> bool {
+        matches!(self, Self::Difficulty | Self::HouseColorStrength)
     }
 }
 
@@ -791,10 +845,6 @@ pub(crate) enum LauncherCheckboxId {
     /// VERA's own box: the player's damaged buildings are sent the Repair
     /// order by themselves (`app::input::auto_repair`). It applies at once.
     AutoRepair,
-    /// VERA's own box: explosions dent open ground as in Tiberian Sun and a
-    /// nuke leaves a crater. Saved; the next game's rules read it, so a match
-    /// already running keeps its own.
-    TerrainDeformation,
     /// VERA's local camera option: the wheel changes battle view distance.
     MouseWheelZoom,
     /// VERA-only alternative controls: left selects, right commands.
@@ -856,6 +906,10 @@ pub(crate) enum LauncherCheckboxId {
     /// losing clip before the score page opens and the battle is torn down.
     /// Read when the match ends, so it needs no live apply either.
     CustomEndGameMovie,
+    /// VERA's box: the computer commanders a mod or map adds play their clips
+    /// in the radar in skirmish. On by default; the clip layer reads it every
+    /// pass, so unticking it in a match silences them at once.
+    CommanderFeedback,
     /// VERA-only accessibility box: detailed EVA text rows, default off.
     DetailedEvaText,
     /// VERA's box: the super weapon timer list shows six lines and pages the
@@ -893,6 +947,8 @@ pub(crate) enum LauncherOptionsEvent {
     SidebarColumnsSelected(SidebarColumns),
     /// The Health Bars list's pick, applied at once like Sidebar.
     HealthBarModeSelected(HealthBarMode),
+    /// The `[VERA] Ares=` list's pick, played from the next start.
+    AresSelected(crate::util::ares_launch::AresSetting),
     /// The Colour Vision list's pick, applied to the very next frame.
     ColorVisionModeSelected(ColorVisionMode),
     /// The Display list's pick, applied to the window at once.
@@ -906,7 +962,6 @@ pub(crate) enum LauncherOptionsEvent {
     YrOriginalStyleChanged(bool),
     ShiftQueueChanged(bool),
     AutoRepairChanged(bool),
-    TerrainDeformationChanged(bool),
     MouseWheelZoomChanged(bool),
     RightClickOrdersChanged(bool),
     MinimapBeaconsChanged(bool),
@@ -923,12 +978,11 @@ pub(crate) enum LauncherOptionsEvent {
     CustomEndGameBannerChanged(bool),
     CustomEndGameScoreChanged(bool),
     CustomEndGameMovieChanged(bool),
+    CommanderFeedbackChanged(bool),
     DetailedEvaTextChanged(bool),
     CompactSuperTimersChanged(bool),
     /// VERA's team-colour strength, as the level the profile stores.
     HouseColorStrengthChanged(u8),
-    /// VERA's Superweapon Limit as the profile stores it, 0 while off.
-    SuperweaponLimitChanged(u8),
     ScorePreview(f32),
     SoundPreview(f32),
     VoicePreview(f32),
@@ -936,6 +990,9 @@ pub(crate) enum LauncherOptionsEvent {
     /// (`app::input::pause_menu`).
     InGameKeyboardRequested,
     InGameSoundRequested,
+    /// Edit Layout, which the in-game menu routes the same way: it closes and
+    /// the layout edit mode starts.
+    EditLayoutRequested,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -984,7 +1041,6 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) shift_queue: bool,
     pub(crate) auto_repair: bool,
     pub(crate) minimap_beacons: bool,
-    pub(crate) terrain_deformation: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
     pub(crate) performance_stats: bool,
     /// `[VERA] ShowStringKeys=`, the String Keys box, then each toggle.
@@ -999,6 +1055,9 @@ pub(crate) struct LauncherOptionsValues {
     /// The exit waits for the closing commander clip; see
     /// [`LauncherCheckboxId::CustomEndGameMovie`].
     pub(crate) custom_end_game_movie: bool,
+    /// The commanders' clips are allowed; see
+    /// [`LauncherCheckboxId::CommanderFeedback`].
+    pub(crate) commander_feedback: bool,
     /// The accessibility box; see [`LauncherCheckboxId::DetailedEvaText`].
     pub(crate) detailed_eva_text: bool,
     /// The timer box; see [`LauncherCheckboxId::CompactSuperTimers`].
@@ -1009,6 +1068,8 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) sidebar_columns: SidebarColumns,
     /// The Health Bars list's choice; like Sidebar, it applies at once.
     pub(crate) health_bars: HealthBarMode,
+    /// The Ares list's choice; it applies from the next start, as a mod does.
+    pub(crate) ares: crate::util::ares_launch::AresSetting,
     /// The Colour Vision list's choice; reads every frame, so it applies at
     /// once without rebuilding anything.
     pub(crate) color_vision: ColorVisionMode,
@@ -1016,9 +1077,6 @@ pub(crate) struct LauncherOptionsValues {
     /// [`crate::rules::house_colors::STRENGTH_MIN`] less than the level the
     /// profile stores. Position 0 is gamemd's own bands.
     pub(crate) house_color_position: u8,
-    /// VERA's Superweapon Limit as the slider's position
-    /// ([`LauncherTrackbarId::SuperweaponLimit`]).
-    pub(crate) superweapon_limit_position: u8,
     pub(crate) score_position: u8,
     pub(crate) sound_position: u8,
     pub(crate) voice_position: u8,
@@ -1048,21 +1106,21 @@ impl Default for LauncherOptionsValues {
             shift_queue: false,
             auto_repair: false,
             minimap_beacons: false,
-            terrain_deformation: false,
             performance_stats: false,
             show_string_keys: false,
             skip_intro: false,
             custom_end_game_banner: false,
             custom_end_game_score: false,
             custom_end_game_movie: false,
+            commander_feedback: true,
             detailed_eva_text: false,
             compact_super_timers: false,
             sidebar: SidebarSize::Normal,
             sidebar_columns: SidebarColumns::Two,
             health_bars: HealthBarMode::Vanilla,
+            ares: crate::util::ares_launch::AresSetting::Auto,
             color_vision: ColorVisionMode::Off,
             house_color_position: 0,
-            superweapon_limit_position: 0,
             score_position: 4,
             sound_position: 7,
             voice_position: 7,
@@ -1158,6 +1216,9 @@ pub(crate) struct OptionsDialogState {
     game_speed_names: Vec<String>,
     /// The in-game menu's Sound button caption. Set with the speed.
     in_game_sound_label: String,
+    /// Whether the dialog is the in-game menu's, set with the speed: a
+    /// running match greys what it keeps as it began.
+    in_match: bool,
     /// The list that is open, if any.
     open_combo: Option<LauncherComboId>,
     launcher_audio_available: bool,
@@ -1216,9 +1277,6 @@ impl OptionsDialogState {
         values.house_color_position = values
             .house_color_position
             .min(LauncherTrackbarId::HouseColorStrength.maximum());
-        values.superweapon_limit_position = values
-            .superweapon_limit_position
-            .min(LauncherTrackbarId::SuperweaponLimit.maximum());
         // The 0x497 init sets each trackbar's range and position; every change
         // sends WM_HSCROLL (0x0061E609..0x0061E6AF), whose handler
         // (0x0055FF68) names the position (tables 0x0082A248 / 0x0082A254 /
@@ -1242,6 +1300,7 @@ impl OptionsDialogState {
             game_speed_caption: String::new(),
             game_speed_names: Vec::new(),
             in_game_sound_label: String::new(),
+            in_match: false,
             open_combo: None,
             launcher_audio_available,
             capture: None,
@@ -1287,16 +1346,25 @@ impl OptionsDialogState {
 
     /// Whether a trackbar window is enabled: `0x00560361..0x00560467` (as
     /// `0x6B6300` does for its own three) enables the audio ones only with an
-    /// output device (`Audio__HasOutputDevice @ 0x00407000`).
+    /// output device (`Audio__HasOutputDevice @ 0x00407000`). VERA's in-game
+    /// menu also greys the ones a match keeps as it began.
     pub(crate) const fn trackbar_enabled(&self, id: LauncherTrackbarId) -> bool {
-        !id.is_audio() || self.launcher_audio_available
+        (!id.is_audio() || self.launcher_audio_available) && !(self.in_match && id.fixed_in_match())
     }
 
     /// Whether a button window is enabled: BBB's init disables its Sound
     /// button without an output device (`0x004E2201..0x004E2223`), and the
-    /// in-game page's Sound button stands for it.
+    /// in-game page's Sound button stands for it. VERA's Check for Updates
+    /// leaves the main menu for the update check
+    /// (`ShellExitThen::UpdateCheck`), which a match has no place for, and
+    /// Edit Layout arranges a match screen, which only a match has.
     pub(crate) const fn button_enabled(&self, id: LauncherButton) -> bool {
-        !matches!(id, LauncherButton::InGameSound) || self.launcher_audio_available
+        match id {
+            LauncherButton::InGameSound => self.launcher_audio_available,
+            LauncherButton::CheckForUpdates => !self.in_match,
+            LauncherButton::EditLayout => self.in_match,
+            _ => true,
+        }
     }
 
     /// gamemd-derived: the parent snapshot consumed by
@@ -1320,9 +1388,10 @@ impl OptionsDialogState {
         }
     }
 
-    /// Give the in-game menu's Game Speed slider its caption, the name of
-    /// each position's speed and where it stands, and the Sound button its
-    /// caption. A position past the slider's end shows as its first.
+    /// Make this the in-game menu's dialog: give its Game Speed slider its
+    /// caption, the name of each position's speed and where it stands, and
+    /// the Sound button its caption. A position past the slider's end shows
+    /// as its first.
     pub(crate) fn set_in_game_controls(
         &mut self,
         speed_caption: String,
@@ -1338,6 +1407,7 @@ impl OptionsDialogState {
             speed_position
         };
         self.in_game_sound_label = sound_label;
+        self.in_match = true;
     }
 
     pub(crate) fn trackbar_position(&self, id: LauncherTrackbarId) -> u8 {
@@ -1350,16 +1420,6 @@ impl OptionsDialogState {
             LauncherTrackbarId::Sound => self.values.sound_position,
             LauncherTrackbarId::Voice => self.values.voice_position,
             LauncherTrackbarId::HouseColorStrength => self.values.house_color_position,
-            LauncherTrackbarId::SuperweaponLimit => self.values.superweapon_limit_position,
-        }
-    }
-
-    /// The Superweapon Limit the slider stands at, as the profile stores
-    /// it: 0 at the left end, then 2 up.
-    pub(crate) const fn superweapon_limit(&self) -> u8 {
-        match self.values.superweapon_limit_position {
-            0 => 0,
-            position => position + 1,
         }
     }
 
@@ -1376,10 +1436,6 @@ impl OptionsDialogState {
     pub(crate) fn trackbar_plaque_text(&self, id: LauncherTrackbarId) -> String {
         match id {
             LauncherTrackbarId::HouseColorStrength => self.house_color_strength().to_string(),
-            LauncherTrackbarId::SuperweaponLimit => match self.superweapon_limit() {
-                0 => crate::i18n::tr(SUPERWEAPON_LIMIT_OFF),
-                limit => limit.to_string(),
-            },
             _ => self.trackbar_position(id).to_string(),
         }
     }
@@ -1400,7 +1456,6 @@ impl OptionsDialogState {
             LauncherTrackbarId::Sound => &mut self.values.sound_position,
             LauncherTrackbarId::Voice => &mut self.values.voice_position,
             LauncherTrackbarId::HouseColorStrength => &mut self.values.house_color_position,
-            LauncherTrackbarId::SuperweaponLimit => &mut self.values.superweapon_limit_position,
         };
         if *slot == position {
             return;
@@ -1449,13 +1504,6 @@ impl OptionsDialogState {
                     .push(LauncherOptionsEvent::HouseColorStrengthChanged(
                         position + crate::rules::house_colors::STRENGTH_MIN,
                     ))
-            }
-            LauncherTrackbarId::SuperweaponLimit => {
-                self.pending_events
-                    .push(LauncherOptionsEvent::Cue(LauncherCue::GenericClick));
-                let limit = self.superweapon_limit();
-                self.pending_events
-                    .push(LauncherOptionsEvent::SuperweaponLimitChanged(limit));
             }
         }
     }
@@ -1527,7 +1575,6 @@ impl OptionsDialogState {
             LauncherCheckboxId::YrOriginalStyle => &mut self.values.yr_original_style,
             LauncherCheckboxId::ShiftQueue => &mut self.values.shift_queue,
             LauncherCheckboxId::AutoRepair => &mut self.values.auto_repair,
-            LauncherCheckboxId::TerrainDeformation => &mut self.values.terrain_deformation,
             LauncherCheckboxId::MouseWheelZoom => &mut self.values.mouse_wheel_zoom,
             LauncherCheckboxId::RightClickOrders => &mut self.values.right_click_orders,
             LauncherCheckboxId::MinimapBeacons => &mut self.values.minimap_beacons,
@@ -1544,6 +1591,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::CustomEndGameBanner => &mut self.values.custom_end_game_banner,
             LauncherCheckboxId::CustomEndGameScore => &mut self.values.custom_end_game_score,
             LauncherCheckboxId::CustomEndGameMovie => &mut self.values.custom_end_game_movie,
+            LauncherCheckboxId::CommanderFeedback => &mut self.values.commander_feedback,
             LauncherCheckboxId::DetailedEvaText => &mut self.values.detailed_eva_text,
             LauncherCheckboxId::CompactSuperTimers => &mut self.values.compact_super_timers,
         };
@@ -1567,9 +1615,6 @@ impl OptionsDialogState {
             LauncherCheckboxId::AutoRepair => self
                 .pending_events
                 .push(LauncherOptionsEvent::AutoRepairChanged(checked)),
-            LauncherCheckboxId::TerrainDeformation => self
-                .pending_events
-                .push(LauncherOptionsEvent::TerrainDeformationChanged(checked)),
             LauncherCheckboxId::MouseWheelZoom => self
                 .pending_events
                 .push(LauncherOptionsEvent::MouseWheelZoomChanged(checked)),
@@ -1618,6 +1663,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::CustomEndGameMovie => self
                 .pending_events
                 .push(LauncherOptionsEvent::CustomEndGameMovieChanged(checked)),
+            LauncherCheckboxId::CommanderFeedback => self
+                .pending_events
+                .push(LauncherOptionsEvent::CommanderFeedbackChanged(checked)),
             LauncherCheckboxId::DetailedEvaText => self
                 .pending_events
                 .push(LauncherOptionsEvent::DetailedEvaTextChanged(checked)),
@@ -1690,6 +1738,15 @@ impl OptionsDialogState {
         self.open_combo = None;
         self.pending_events
             .push(LauncherOptionsEvent::SidebarColumnsSelected(columns));
+    }
+
+    /// The Ares list publishes its pick for the profile; the game reads it at
+    /// its next start.
+    pub(crate) fn select_ares(&mut self, setting: crate::util::ares_launch::AresSetting) {
+        self.values.ares = setting;
+        self.open_combo = None;
+        self.pending_events
+            .push(LauncherOptionsEvent::AresSelected(setting));
     }
 
     /// The Health Bars list publishes its pick at once too.
@@ -1793,9 +1850,9 @@ impl OptionsDialogState {
 /// The dialog's pages, top to bottom in the right-hand column under retail's
 /// Keyboard. Retail `0xD5` lays its controls out in four bands whose headings
 /// (`GUI:DisplayOptions`, `GUI:GameOptions`, `GUI:UIOptions`,
-/// `GUI:AudioOptions`) name the first four pages; VERA adds the last two.
-/// Picking a page swaps the controls in place; one set of values covers them
-/// all.
+/// `GUI:AudioOptions`) name the first four pages; VERA adds Controls and
+/// General. Picking a page swaps the controls in place; one set of values
+/// covers them all, and the in-game menu shows the same pages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Category {
     Display,
@@ -1803,18 +1860,22 @@ pub enum Category {
     Interface,
     Audio,
     Controls,
-    Developer,
+    General,
+    /// The in-game menu's first page, which its own Game Controls button
+    /// shows: gamemd's Game Controls (`0xBBB`) settings and the three volumes
+    /// of its Sound child, each also on its own page. No column button.
+    GameControls,
 }
 
 impl Category {
-    /// Every page, in the column's order.
+    /// Every page of the column, in its order.
     pub(crate) const ALL: [Self; 6] = [
         Self::Display,
         Self::Gameplay,
         Self::Interface,
         Self::Audio,
         Self::Controls,
-        Self::Developer,
+        Self::General,
     ];
 
     /// The page's controls, top to bottom.
@@ -1823,63 +1884,51 @@ impl Category {
         use LauncherComboId as List;
         use LauncherTrackbarId as Slider;
         match self {
+            // The sliders stand above VSync, which the browser build lacks, so
+            // both builds put them in the same place: at 640x480's 0.8 fit a
+            // slider's place decides whether it keeps its frame art (the note
+            // on the row pitches in `shell`).
             Self::Display if !HAS_VSYNC => &[
                 Setting::List(List::Zoom),
                 Setting::List(List::Display),
                 Setting::Slider(Slider::HouseColorStrength),
                 Setting::List(List::ColorVision),
+                Setting::Slider(Slider::Detail),
                 Setting::Checkbox(Check::FullScreen),
                 Setting::Checkbox(Check::OriginalShape),
-                Setting::Checkbox(Check::YrOriginalStyle),
+                Setting::Checkbox(Check::PerformanceStats),
             ],
             Self::Display => &[
                 Setting::List(List::Zoom),
                 Setting::List(List::Display),
                 Setting::Slider(Slider::HouseColorStrength),
                 Setting::List(List::ColorVision),
+                Setting::Slider(Slider::Detail),
                 Setting::Checkbox(Check::FullScreen),
                 Setting::Checkbox(Check::VSync),
                 Setting::Checkbox(Check::OriginalShape),
-                Setting::Checkbox(Check::YrOriginalStyle),
+                Setting::Checkbox(Check::PerformanceStats),
             ],
             Self::Gameplay => &[
-                Setting::Slider(Slider::Detail),
                 Setting::Slider(Slider::Difficulty),
-                Setting::Checkbox(Check::TargetLines),
-                Setting::Checkbox(Check::ShowHidden),
                 Setting::Checkbox(Check::ShiftQueue),
                 Setting::Checkbox(Check::AutoRepair),
-                Setting::Checkbox(Check::TerrainDeformation),
-                Setting::Slider(Slider::SuperweaponLimit),
+                Setting::List(List::Ares),
                 Setting::Checkbox(Check::CustomEndGameBanner),
                 Setting::Checkbox(Check::CustomEndGameScore),
                 Setting::Checkbox(Check::CustomEndGameMovie),
-            ],
-            Self::Interface if !HAS_HD_MAP_PREVIEWS => &[
-                Setting::List(List::Language),
-                Setting::List(List::Sidebar),
-                Setting::List(List::SidebarColumns),
-                Setting::List(List::HealthBars),
-                Setting::Checkbox(Check::Tooltips),
-                Setting::Checkbox(Check::CompactSuperTimers),
-                Setting::Checkbox(Check::VeraIcon),
-                Setting::Checkbox(Check::HdRadar),
-                Setting::Checkbox(Check::SmoothSidebar),
-                Setting::Checkbox(Check::SmoothOnlineMenus),
-                Setting::Checkbox(Check::DetailedEvaText),
+                Setting::Checkbox(Check::CommanderFeedback),
             ],
             Self::Interface => &[
-                Setting::List(List::Language),
                 Setting::List(List::Sidebar),
                 Setting::List(List::SidebarColumns),
-                Setting::List(List::HealthBars),
-                Setting::Checkbox(Check::Tooltips),
-                Setting::Checkbox(Check::CompactSuperTimers),
-                Setting::Checkbox(Check::VeraIcon),
                 Setting::Checkbox(Check::HdRadar),
                 Setting::Checkbox(Check::SmoothSidebar),
-                Setting::Checkbox(Check::SmoothOnlineMenus),
-                Setting::Checkbox(Check::HdMapPreviews),
+                Setting::List(List::HealthBars),
+                Setting::Checkbox(Check::Tooltips),
+                Setting::Checkbox(Check::TargetLines),
+                Setting::Checkbox(Check::ShowHidden),
+                Setting::Checkbox(Check::CompactSuperTimers),
                 Setting::Checkbox(Check::DetailedEvaText),
             ],
             Self::Audio => &[
@@ -1897,82 +1946,24 @@ impl Category {
             // The Offline Internet Test Service stays off every page: it swaps
             // Internet for stand-in servers, so only `[VERA] WolTestService=`
             // turns it on.
-            Self::Developer => &[
-                Setting::Checkbox(Check::PerformanceStats),
+            Self::General if !HAS_HD_MAP_PREVIEWS => &[
+                Setting::List(List::Language),
+                Setting::Checkbox(Check::YrOriginalStyle),
+                Setting::Checkbox(Check::SmoothOnlineMenus),
+                Setting::Checkbox(Check::VeraIcon),
                 Setting::Checkbox(Check::SkipIntro),
                 Setting::Checkbox(Check::ShowStringKeys),
             ],
-        }
-    }
-
-    /// The status help for the page's button, a VERA language-file label:
-    /// retail's string table has nothing for VERA's pages. The browser build
-    /// leaves out what it lacks.
-    pub(crate) const fn help(self) -> &'static str {
-        match self {
-            Self::Display => "VERA:DisplayPageHelp",
-            Self::Gameplay => "VERA:GameplayPageHelp",
-            Self::Interface if HAS_HD_MAP_PREVIEWS => "VERA:InterfacePageHelp",
-            Self::Interface => "VERA:InterfacePageHelpBrowser",
-            Self::Audio => "VERA:AudioPageHelp",
-            Self::Controls => "VERA:ControlsPageHelp",
-            Self::Developer if HAS_CHECK_FOR_UPDATES => "VERA:DeveloperPageHelp",
-            Self::Developer => "VERA:DeveloperPageHelpBrowser",
-        }
-    }
-
-    /// The category's page on the in-game menu: what a running match can use
-    /// of all the main menu's categories. Controls is the page the menu opens
-    /// on, under the template's own Game Controls button: the settings of
-    /// gamemd's Game Controls (`0xBBB`) with the three volumes of its Sound
-    /// child, so the ones a player reaches for mid-match are one Escape away.
-    /// Game Options and Display Options have a tab each.
-    pub(crate) const fn in_game_settings(self) -> &'static [Setting] {
-        use LauncherCheckboxId as Check;
-        use LauncherComboId as List;
-        use LauncherTrackbarId as Slider;
-        match self {
-            Self::Gameplay => &[
-                Setting::Slider(Slider::Detail),
-                Setting::List(List::HealthBars),
-                Setting::Checkbox(Check::CompactSuperTimers),
-                Setting::Checkbox(Check::RightClickOrders),
-                Setting::Checkbox(Check::MinimapBeacons),
-                Setting::Checkbox(Check::ShiftQueue),
-                Setting::Checkbox(Check::AutoRepair),
-                Setting::Checkbox(Check::MouseWheelZoom),
-                Setting::Checkbox(Check::LockCursor),
-            ],
-            Self::Display if !HAS_VSYNC => &[
-                Setting::List(List::Zoom),
-                Setting::List(List::Display),
-                Setting::List(List::Sidebar),
-                Setting::List(List::SidebarColumns),
-                Setting::List(List::ColorVision),
+            Self::General => &[
                 Setting::List(List::Language),
-                Setting::Checkbox(Check::FullScreen),
-                Setting::Checkbox(Check::OriginalShape),
                 Setting::Checkbox(Check::YrOriginalStyle),
-                Setting::Checkbox(Check::HdRadar),
-                Setting::Checkbox(Check::SmoothSidebar),
-                Setting::Checkbox(Check::PerformanceStats),
+                Setting::Checkbox(Check::SmoothOnlineMenus),
+                Setting::Checkbox(Check::HdMapPreviews),
+                Setting::Checkbox(Check::VeraIcon),
+                Setting::Checkbox(Check::SkipIntro),
+                Setting::Checkbox(Check::ShowStringKeys),
             ],
-            Self::Display => &[
-                Setting::List(List::Zoom),
-                Setting::List(List::Display),
-                Setting::List(List::Sidebar),
-                Setting::List(List::SidebarColumns),
-                Setting::List(List::ColorVision),
-                Setting::List(List::Language),
-                Setting::Checkbox(Check::FullScreen),
-                Setting::Checkbox(Check::VSync),
-                Setting::Checkbox(Check::OriginalShape),
-                Setting::Checkbox(Check::YrOriginalStyle),
-                Setting::Checkbox(Check::HdRadar),
-                Setting::Checkbox(Check::SmoothSidebar),
-                Setting::Checkbox(Check::PerformanceStats),
-            ],
-            Self::Controls => &[
+            Self::GameControls => &[
                 Setting::Slider(Slider::GameSpeed),
                 Setting::Slider(Slider::Scroll),
                 Setting::Slider(Slider::Score),
@@ -1982,16 +1973,22 @@ impl Category {
                 Setting::Checkbox(Check::ShowHidden),
                 Setting::Checkbox(Check::Tooltips),
             ],
-            _ => &[],
         }
     }
 
-    /// [`Self::help`] for the page's tab on the in-game menu.
-    pub(crate) const fn in_game_help(self) -> &'static str {
+    /// The status help for the page's column button, a VERA language-file
+    /// label: retail's string table has nothing for VERA's pages. It says
+    /// what the page is for rather than listing its rows. Game Controls has
+    /// no column button.
+    pub(crate) const fn help(self) -> Option<&'static str> {
         match self {
-            Self::Gameplay => "VERA:InGameGameplayHelp",
-            Self::Display => "VERA:InGameDisplayHelp",
-            _ => self.help(),
+            Self::Display => Some("VERA:DisplayPageHelp"),
+            Self::Gameplay => Some("VERA:GameplayPageHelp"),
+            Self::Interface => Some("VERA:InterfacePageHelp"),
+            Self::Audio => Some("VERA:AudioPageHelp"),
+            Self::Controls => Some("VERA:ControlsPageHelp"),
+            Self::General => Some("VERA:GeneralPageHelp"),
+            Self::GameControls => None,
         }
     }
 }
@@ -2212,6 +2209,38 @@ mod tests {
         }
         assert_eq!(state.values, before);
         assert!(state.drain_output().events.is_empty());
+    }
+
+    /// The in-game menu greys what a match keeps as it began, and a press
+    /// there changes nothing. The main menu's dialog still takes them.
+    #[test]
+    fn a_match_greys_what_it_keeps_and_ignores_presses_on_it() {
+        let mut main_menu = state(true);
+        let mut in_match = state(true);
+        in_match.set_in_game_controls(String::new(), Vec::new(), 0, String::new());
+        let before = in_match.values;
+        for id in [
+            LauncherTrackbarId::Difficulty,
+            LauncherTrackbarId::HouseColorStrength,
+        ] {
+            // The track's far end, which the main menu's dialog jumps to.
+            let end = frame(179 - id.plaque_reserve(), 7, 180, 24);
+            in_match.trackbar_mouse_down(id, end);
+            main_menu.trackbar_mouse_down(id, end);
+            assert!(!in_match.trackbar_enabled(id) && main_menu.trackbar_enabled(id));
+            assert_ne!(
+                main_menu.trackbar_position(id),
+                in_match.trackbar_position(id),
+                "{id:?}"
+            );
+        }
+        assert_eq!(in_match.values, before);
+        assert!(in_match.drain_output().events.is_empty());
+        assert!(!in_match.button_enabled(LauncherButton::CheckForUpdates));
+        assert!(main_menu.button_enabled(LauncherButton::CheckForUpdates));
+        // What the match does take still changes.
+        in_match.checkbox_mouse_down(LauncherCheckboxId::ShiftQueue, frame(5, 5, 18, 18));
+        assert_ne!(in_match.values.shift_queue, before.shift_queue);
     }
 
     #[test]
@@ -2558,9 +2587,10 @@ mod tests {
         assert_eq!(state.display_choices().len(), 4);
     }
 
-    /// Every control is on exactly one page: one the table leaves out could
-    /// not be reached, and one listed twice would show twice. The diagnostic
-    /// test service is on none.
+    /// Every control is on exactly one page of the column: one the table
+    /// leaves out could not be reached, and one listed twice would show
+    /// twice. The diagnostic test service is on none. The in-game Game
+    /// Controls page repeats rows of the column, Game Speed aside.
     #[test]
     fn every_control_is_on_exactly_one_page() {
         use LauncherCheckboxId as Check;
@@ -2579,6 +2609,7 @@ mod tests {
             List::HealthBars,
             List::ColorVision,
             List::Language,
+            List::Ares,
         ]
         .map(Setting::List)
         .into_iter()
@@ -2591,7 +2622,6 @@ mod tests {
                 Slider::Sound,
                 Slider::Voice,
                 Slider::HouseColorStrength,
-                Slider::SuperweaponLimit,
             ]
             .map(Setting::Slider),
         )
@@ -2615,13 +2645,13 @@ mod tests {
                 Check::HdMapPreviews,
                 Check::ShiftQueue,
                 Check::AutoRepair,
-                Check::TerrainDeformation,
                 Check::PerformanceStats,
                 Check::ShowStringKeys,
                 Check::SkipIntro,
                 Check::CustomEndGameBanner,
                 Check::CustomEndGameScore,
                 Check::CustomEndGameMovie,
+                Check::CommanderFeedback,
                 Check::DetailedEvaText,
                 Check::CompactSuperTimers,
             ]
@@ -2633,5 +2663,11 @@ mod tests {
             assert_eq!(pages, 1, "{setting:?}");
         }
         assert_eq!(placed.len(), every.len());
+        for setting in Category::GameControls.settings() {
+            assert!(
+                *setting == Setting::Slider(Slider::GameSpeed) || placed.contains(setting),
+                "{setting:?}"
+            );
+        }
     }
 }

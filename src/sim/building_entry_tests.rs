@@ -150,11 +150,14 @@ fn absorb(sim: &mut Simulation, rules: &RuleSet, building: u64, count: usize) {
                 crate::sim::world::FrameEffects::default(),
             )
             .expect("absorbed infantry");
-        sim.substrate.entities.get_mut(id).unwrap().passenger_role =
-            PassengerRole::inside_for_test(building, false);
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .set_passenger_role_for_test(PassengerRole::inside_for_test(building, false));
         let building = sim.substrate.entities.get_mut(building).unwrap();
         building
-            .passenger_role
+            .passenger_role_mut_for_test()
             .cargo_mut()
             .unwrap()
             .board_forced_chain(&[(id, 1.0)]);
@@ -245,7 +248,7 @@ fn install_state(sim: &Simulation, bunker: u64) -> (BunkerState, Option<u64>) {
 
 fn cargo_passengers(sim: &Simulation, building: u64) -> Vec<u64> {
     entity(sim, building)
-        .passenger_role
+        .passenger_role()
         .cargo()
         .unwrap()
         .passengers()
@@ -254,7 +257,7 @@ fn cargo_passengers(sim: &Simulation, building: u64) -> Vec<u64> {
 
 fn occupants(sim: &Simulation, building: u64) -> Vec<u64> {
     entity(sim, building)
-        .passenger_role
+        .passenger_role()
         .occupants()
         .ids()
         .to_vec()
@@ -709,7 +712,10 @@ fn a_bio_reactor_unload_command_reveals_its_passenger() {
                 .should_enter_absorber()
         );
         assert!(run_until(&mut sim, &rules, &grid, 300, |sim| {
-            entity(sim, passenger).passenger_role.inside_transport_id() == Some(reactor)
+            entity(sim, passenger)
+                .passenger_role()
+                .inside_transport_id()
+                == Some(reactor)
         }));
     }
     assert_eq!(sim.houses[&owner].tracking().infantry(), 0);
@@ -733,7 +739,7 @@ fn a_bio_reactor_unload_command_reveals_its_passenger() {
         );
     }
     let cargo_lifo = entity(&sim, reactor)
-        .passenger_role
+        .passenger_role()
         .cargo()
         .unwrap()
         .passengers()
@@ -772,7 +778,7 @@ fn a_bio_reactor_unload_command_reveals_its_passenger() {
         let _ = sim.advance_tick(&[], Some(&rules), Some(&grid), None, 33);
         record_departures(&sim, &mut departed);
         if entity(&sim, reactor)
-            .passenger_role
+            .passenger_role()
             .cargo()
             .is_some_and(|cargo| cargo.is_empty())
             && departed.len() == passengers.len()
@@ -782,7 +788,7 @@ fn a_bio_reactor_unload_command_reveals_its_passenger() {
     }
     assert!(
         entity(&sim, reactor)
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .is_empty()
@@ -861,7 +867,10 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
     let passenger = spawn(&mut sim, &rules, "INIT", "YuriCountry", 10, 10);
     assert!(seek(&mut sim, &rules, passenger));
     assert!(run_until(&mut sim, &rules, &grid, 300, |sim| {
-        entity(sim, passenger).passenger_role.inside_transport_id() == Some(reactor)
+        entity(sim, passenger)
+            .passenger_role()
+            .inside_transport_id()
+            == Some(reactor)
     }));
     assert_eq!(
         sim.sound_events
@@ -944,7 +953,7 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
         block_foot(&mut sim, cell, true);
     }
 
-    let held = serde_json::to_value(entity(&sim, reactor).passenger_role.cargo()).unwrap();
+    let held = serde_json::to_value(entity(&sim, reactor).passenger_role().cargo()).unwrap();
     let health = entity(&sim, passenger).health.current();
     let mut expected_rng = sim.scenario_rng.clone();
     expected_rng.next_range_u32_inclusive(0, 2);
@@ -957,12 +966,14 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
         crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
-        serde_json::to_value(entity(&sim, reactor).passenger_role.cargo()).unwrap(),
+        serde_json::to_value(entity(&sim, reactor).passenger_role().cargo()).unwrap(),
         held,
         "the failed search reinserts the popped passenger at the cargo head"
     );
     assert_eq!(
-        entity(&sim, passenger).passenger_role.inside_transport_id(),
+        entity(&sim, passenger)
+            .passenger_role()
+            .inside_transport_id(),
         Some(reactor)
     );
     assert!(entity(&sim, passenger).lifecycle.in_limbo());
@@ -1027,7 +1038,7 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
     );
     assert!(
         entity(&sim, reactor)
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .is_empty()
@@ -1089,7 +1100,7 @@ fn a_bio_reactor_unlimbo_failure_keeps_the_placement_draw_and_restores_cargo() {
     let reactor = spawn(&mut sim, &rules, "YAPOWR", "YuriCountry", 16, 10);
     absorb(&mut sim, &rules, reactor, 1);
     let passenger = entity(&sim, reactor)
-        .passenger_role
+        .passenger_role()
         .cargo()
         .unwrap()
         .passengers()[0];
@@ -1123,7 +1134,8 @@ fn a_bio_reactor_unlimbo_failure_keeps_the_placement_draw_and_restores_cargo() {
     expected_rng.next_range_u32_inclusive(0, 2);
     let expected_state = expected_rng.logical_state();
 
-    let cargo_before = serde_json::to_value(entity(&sim, reactor).passenger_role.cargo()).unwrap();
+    let cargo_before =
+        serde_json::to_value(entity(&sim, reactor).passenger_role().cargo()).unwrap();
     let health_before = entity(&sim, passenger).health.current();
     sim.substrate
         .entities
@@ -1146,10 +1158,13 @@ fn a_bio_reactor_unlimbo_failure_keeps_the_placement_draw_and_restores_cargo() {
 
     let released = entity(&sim, passenger);
     assert_eq!(
-        serde_json::to_value(entity(&sim, reactor).passenger_role.cargo()).unwrap(),
+        serde_json::to_value(entity(&sim, reactor).passenger_role().cargo()).unwrap(),
         cargo_before
     );
-    assert_eq!(released.passenger_role.inside_transport_id(), Some(reactor));
+    assert_eq!(
+        released.passenger_role().inside_transport_id(),
+        Some(reactor)
+    );
     assert!(released.lifecycle.in_limbo());
     assert_eq!(released.health.current(), health_before);
     assert_eq!(sim.scenario_rng.logical_state(), expected_state);
@@ -1168,7 +1183,7 @@ fn a_bio_reactor_scan_uses_location_cell_on_a_multi_cell_foundation() {
     let reactor = spawn(&mut sim, &rules, "YAPOWR", "YuriCountry", 16, 10);
     absorb(&mut sim, &rules, reactor, 1);
     let passenger = entity(&sim, reactor)
-        .passenger_role
+        .passenger_role()
         .cargo()
         .unwrap()
         .passengers()[0];
@@ -1236,7 +1251,7 @@ fn a_bio_reactor_scan_uses_location_cell_on_a_multi_cell_foundation() {
 
     assert!(
         entity(&sim, reactor)
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .is_empty()
@@ -1261,7 +1276,7 @@ fn a_bio_reactor_scan_uses_infantry_cell_entry_with_building_height() {
     let reactor = spawn(&mut sim, &rules, "YAPOWR", "YuriCountry", 16, 10);
     absorb(&mut sim, &rules, reactor, 1);
     let passenger = entity(&sim, reactor)
-        .passenger_role
+        .passenger_role()
         .cargo()
         .unwrap()
         .passengers()[0];
@@ -1309,7 +1324,7 @@ fn a_bio_reactor_relaxed_scan_wraps_from_octant_seven() {
     let reactor = spawn(&mut sim, &rules, "YAPOWR", "YuriCountry", 16, 10);
     absorb(&mut sim, &rules, reactor, 1);
     let passenger = entity(&sim, reactor)
-        .passenger_role
+        .passenger_role()
         .cargo()
         .unwrap()
         .passengers()[0];
@@ -1369,7 +1384,7 @@ fn a_bio_reactor_relaxed_scan_wraps_from_octant_seven() {
 
     assert!(
         entity(&sim, reactor)
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .is_empty()
@@ -1408,7 +1423,10 @@ fn a_player_control_only_bio_reactor_owner_does_not_clear_the_seek_latch() {
     let passenger = spawn(&mut sim, &rules, "INIT", "YuriCountry", 10, 10);
     assert!(seek(&mut sim, &rules, passenger));
     assert!(run_until(&mut sim, &rules, &grid, 300, |sim| {
-        entity(sim, passenger).passenger_role.inside_transport_id() == Some(reactor)
+        entity(sim, passenger)
+            .passenger_role()
+            .inside_transport_id()
+            == Some(reactor)
     }));
     assert!(
         entity(&sim, passenger)
@@ -1449,7 +1467,10 @@ fn absorbed_infantry_tracking_is_restored_after_building_death_and_sale() {
         let passenger = spawn(&mut sim, &rules, "INIT", "YuriCountry", 10, 10);
         assert!(seek(&mut sim, &rules, passenger));
         assert!(run_until(&mut sim, &rules, &grid, 300, |sim| {
-            entity(sim, passenger).passenger_role.inside_transport_id() == Some(reactor)
+            entity(sim, passenger)
+                .passenger_role()
+                .inside_transport_id()
+                == Some(reactor)
         }));
         let infantry_type = entity(&sim, passenger).type_ref();
         assert_eq!(sim.houses[&owner].tracking().infantry(), 0);
@@ -1528,7 +1549,7 @@ fn a_bio_reactor_unload_only_dirties_power_for_positive_extra_power() {
 
         assert!(
             entity(&sim, reactor)
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .unwrap()
                 .is_empty(),
@@ -1562,7 +1583,7 @@ fn a_seeker_whose_reactor_dies_gives_up_and_can_be_recruited() {
         !entity(sim, infantry).building_entry.seeking()
     }));
     let foot = entity(&sim, infantry);
-    assert!(foot.passenger_role.is_none());
+    assert!(foot.passenger_role().is_none());
     assert_ne!(
         foot.mission.current(),
         MissionId::from_known(MissionType::Enter)
@@ -1593,19 +1614,19 @@ fn a_seeker_beaten_to_the_last_slot_gives_up() {
     }));
 
     assert!(run_until(&mut sim, &rules, &grid, 900, |sim| {
-        entity(sim, near).passenger_role.inside_transport_id() == Some(reactor)
+        entity(sim, near).passenger_role().inside_transport_id() == Some(reactor)
             && !entity(sim, far).building_entry.seeking()
     }));
     assert_eq!(
         entity(&sim, reactor)
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .count(),
         5
     );
     let foot = entity(&sim, far);
-    assert!(foot.passenger_role.is_none());
+    assert!(foot.passenger_role().is_none());
     assert_ne!(
         foot.mission.current(),
         MissionId::from_known(MissionType::Enter)
@@ -1661,7 +1682,7 @@ fn a_full_bio_reactor_takes_an_arriving_contact() {
     .unwrap();
 
     assert_eq!(
-        entity(&sim, foot).passenger_role.inside_transport_id(),
+        entity(&sim, foot).passenger_role().inside_transport_id(),
         Some(reactor)
     );
     assert_eq!(cargo_passengers(&sim, reactor).len(), 6);
@@ -1717,7 +1738,7 @@ fn a_unit_absorber_takes_a_unit_arriving_on_its_foundation() {
     .unwrap();
 
     assert_eq!(
-        entity(&sim, tank).passenger_role.inside_transport_id(),
+        entity(&sim, tank).passenger_role().inside_transport_id(),
         Some(absorber)
     );
     assert_eq!(cargo_passengers(&sim, absorber), [tank]);
@@ -1774,7 +1795,7 @@ fn a_foot_retasked_to_move_stays_out_of_the_old_absorber() {
         let commands = sim.take_due_commands();
         sim.advance_tick(&commands, Some(&rules), Some(&grid), None, 33);
         assert!(
-            !entity(&sim, foot).passenger_role.is_inside_transport(),
+            !entity(&sim, foot).passenger_role().is_inside_transport(),
             "he went into the old absorber"
         );
         let (rx, ry) = cell(&sim);
@@ -1874,9 +1895,8 @@ fn the_nearest_own_bunker_with_room_takes_an_occupier() {
             .entities
             .get_mut(near)
             .unwrap()
-            .passenger_role
-            .occupants_mut()
-            .add(id);
+            .garrison_mut_for_test()
+            .add_for_test(id);
     }
     sim.substrate
         .entities
@@ -2003,8 +2023,7 @@ fn two_occupiers_garrison_in_arrival_order_and_fire_in_that_order() {
     for (index, expected) in [(0, near), (1, far)] {
         let building = sim.substrate.entities.get_mut(bunker).unwrap();
         building
-            .passenger_role
-            .occupants_mut()
+            .garrison_mut_for_test()
             .set_fire_index_for_test(index);
         assert_eq!(
             crate::sim::combat::combat_weapon::firing_occupant_id(entity(&sim, bunker), object),
@@ -2034,9 +2053,8 @@ fn an_occupier_turned_away_at_a_full_bunker_gives_up() {
             .entities
             .get_mut(bunker)
             .unwrap()
-            .passenger_role
-            .occupants_mut()
-            .add(id);
+            .garrison_mut_for_test()
+            .add_for_test(id);
     }
 
     assert!(run_until(&mut sim, &rules, &grid, 900, |sim| {
@@ -2044,7 +2062,7 @@ fn an_occupier_turned_away_at_a_full_bunker_gives_up() {
     }));
     let foot = entity(&sim, infantry);
     assert!(!foot.lifecycle.in_limbo());
-    assert!(foot.passenger_role.is_none());
+    assert!(foot.passenger_role().is_none());
     assert_ne!(
         foot.mission.current(),
         MissionId::from_known(MissionType::Capture)
@@ -2732,7 +2750,7 @@ fn script64_enters_a_neutral_civilian_building_outside_the_own_house_list() {
             .should_enter_nearest_occupiable()
     );
     assert!(run_until(&mut sim, &rules, &grid, 600, |sim| {
-        entity(sim, occupier).passenger_role.inside_transport_id() == Some(civilian)
+        entity(sim, occupier).passenger_role().inside_transport_id() == Some(civilian)
     }));
     assert!(
         entity(&sim, occupier)
@@ -2894,12 +2912,12 @@ fn ares_armory_unload_kicks_out_its_trainee_on_guard() {
         .entities
         .get_mut(trainee)
         .unwrap()
-        .passenger_role = PassengerRole::inside_for_test(armory, false);
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(armory, false));
     sim.substrate
         .entities
         .get_mut(armory)
         .unwrap()
-        .passenger_role
+        .passenger_role_mut_for_test()
         .cargo_mut()
         .unwrap()
         .board_forced_chain(&[(trainee, 1.0)]);
@@ -2914,7 +2932,7 @@ fn ares_armory_unload_kicks_out_its_trainee_on_guard() {
     );
     assert!(
         entity(&sim, armory)
-            .passenger_role
+            .passenger_role()
             .cargo()
             .is_none_or(|cargo| cargo.is_empty())
     );

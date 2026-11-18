@@ -697,17 +697,16 @@ fn ares_chrono_warp_blows_up_an_unplaceable_building() {
 }
 
 /// The lambda's `Force_Track(-1, coordsUnitSource)` (1006F4D0; Drive
-/// 0x4B0C40 stores it as head and destination) outlives the warp: nothing
-/// in the Teleport states (0x7192F0), its END (0x719EE0) or the Foot AI
-/// tail resets the piggybacked Drive, so once it is active again its
-/// Process (0x4B0500 -> Process_Movement 0x4B2630) paths to the source
-/// cell and the tank drives back, as gamemd with Ares does.
-// Fails on main with the feature (the tank stays at its landing), from
-// before the superweapons moved to the switch; stays on the feature so
-// the default suite does not carry it until it is fixed.
-#[cfg(feature = "ares")]
+/// 0x4B0C40 stores it as HeadTo at 0x4B0CFE and Destination at 0x4B0D43)
+/// outlives the warp until Teleport's END (0x719EE0) restores Drive. On
+/// Drive's next Process (0x4B0500 -> Process_Movement 0x4B2630),
+/// Find_Path (0x4D3920 -> Run_AStar 0x4CBBA0) starts at Foot vt+0x4C
+/// (0x4DBDF0 -> Head_To_Coord 0x4AFCC0), which is still the source, so
+/// AStar (0x429BF3..0x429C0A) returns NULL for start == goal and
+/// Find_Path (0x4D4044) calls Stop_Driver (0x4D55C0 -> Stop_Moving
+/// 0x4AFE00), clearing Destination and leaving the tank at its landing.
 #[test]
-fn ares_warped_tank_heads_back_to_its_source() {
+fn ares_warped_tank_stays_at_its_landing() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::sim::movement::track_process::TrackFamily;
@@ -739,11 +738,13 @@ fn ares_warped_tank_heads_back_to_its_source() {
     let entity = sim.substrate.entities.get(tank).unwrap();
     assert_eq!((entity.position.rx(), entity.position.ry()), target);
     assert_eq!(drive(&sim), Some(Some(here)));
+    step(&mut sim, &rules);
+    assert_eq!(drive(&sim), Some(None));
     for _ in 0..60 {
         step(&mut sim, &rules);
     }
     let entity = sim.substrate.entities.get(tank).unwrap();
-    assert_ne!((entity.position.rx(), entity.position.ry()), target);
+    assert_eq!((entity.position.rx(), entity.position.ry()), target);
 }
 
 /// SW_SpyPlane (Initialize 10075800, LoadFromINI 10075880, Activate
@@ -813,7 +814,7 @@ fn ares_american_paradrop_sends_its_vehicles_in_one_plane() {
         panic!("one plane: {}", planes.len());
     };
     let cargo: Vec<_> = plane
-        .passenger_role
+        .passenger_role()
         .cargo()
         .unwrap()
         .passengers()

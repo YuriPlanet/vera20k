@@ -144,8 +144,16 @@ pub(crate) fn service(state: &mut crate::app::AppState) {
     for command in commands {
         apply(state, command);
     }
-    if let Some(runtime) = state.match_state.sim_runtime.runtime() {
-        state.match_state.sandbox_full_visibility = runtime.simulation.debug_reveal_map();
+    if let Some(reveal) = state
+        .match_state
+        .sim_runtime
+        .runtime()
+        .map(|runtime| runtime.simulation.debug_reveal_map())
+    {
+        // A watcher on the observer's sidebar keeps the whole map whatever
+        // the trainer says.
+        state.match_state.sandbox_full_visibility =
+            reveal || crate::app::match_runtime::watching::whole_map(state);
     }
 }
 
@@ -180,7 +188,9 @@ fn set_flags(state: &mut crate::app::AppState, flags: CheatFlags) {
     runtime
         .simulation
         .apply_debug_tools(&runtime.resources.rules);
-    state.match_state.sandbox_full_visibility = runtime.simulation.debug_reveal_map();
+    let reveal = runtime.simulation.debug_reveal_map();
+    state.match_state.sandbox_full_visibility =
+        reveal || crate::app::match_runtime::watching::whole_map(state);
 }
 
 pub(crate) fn toggle_reveal(state: &mut crate::app::AppState) {

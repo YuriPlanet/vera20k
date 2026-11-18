@@ -4,6 +4,8 @@ const path = require('node:path');
 const vm = require('node:vm');
 const test = require('node:test');
 
+const RELAY = '203.0.113.1:5000';
+
 function fixture({worker = false} = {}) {
   const sockets = [], timers = new Map();
   const clock = {now: 0}, workerClock = {now: 0};
@@ -62,12 +64,12 @@ function fixture({worker = false} = {}) {
   }};
 }
 
-test('compiled origin and separate channels carry unchanged bounded datagrams', () => {
+test('compiled origin and separate channels carry unchanged bounded datagrams to the grant\'s relay', () => {
   const {api, sockets} = fixture();
-  const primary = api.veraSocketOpen('wss://wss.vera20k.com', 'primary', 827);
-  const alternate = api.veraSocketOpen('ws://localhost:8788', 'alternate', 827);
-  assert.equal(sockets[0].url, 'wss://wss.vera20k.com/game/primary');
-  assert.equal(sockets[1].url, 'ws://localhost:8788/game/alternate');
+  const primary = api.veraSocketOpen('wss://wss.vera20k.com', 'primary', RELAY, 827);
+  const alternate = api.veraSocketOpen('ws://localhost:8788', 'alternate', RELAY, 827);
+  assert.equal(sockets[0].url, `wss://wss.vera20k.com/game/primary/${RELAY}`);
+  assert.equal(sockets[1].url, `ws://localhost:8788/game/alternate/${RELAY}`);
   assert.equal(api.veraSocketSend(primary, Uint8Array.of(0, 255)), 1);
   assert.equal(api.veraSocketReceive(primary), null);
   sockets[0].opened();
@@ -83,15 +85,17 @@ test('compiled origin and separate channels carry unchanged bounded datagrams', 
   assert.equal(api.veraSocketSend(primary, bytes), 1);
   assert.equal(api.veraSocketSend(primary, new Uint8Array(828)), 2);
   assert.equal(sockets[0].sent.length, 1);
-  assert.throws(() => api.veraSocketOpen('ws://remote.example', 'primary', 827));
-  assert.throws(() => api.veraSocketOpen('wss://remote.example/other', 'primary', 827));
+  assert.throws(() => api.veraSocketOpen('ws://remote.example', 'primary', RELAY, 827));
+  assert.throws(() => api.veraSocketOpen('wss://remote.example/other', 'primary', RELAY, 827));
+  assert.throws(() => api.veraSocketOpen('wss://remote.example', 'primary', 'relay.example:5000', 827));
+  assert.throws(() => api.veraSocketOpen('wss://remote.example', 'primary', `${RELAY}/x`, 827));
   api.veraSocketClose(primary);
   api.veraSocketClose(alternate);
 });
 
 test('a datagram viewing shared Wasm memory is sent without reconnecting', () => {
   const {api, sockets} = fixture();
-  const id = api.veraSocketOpen('wss://proxy.example', 'primary', 827);
+  const id = api.veraSocketOpen('wss://proxy.example', 'primary', RELAY, 827);
   sockets[0].opened();
   const view = new Uint8Array(new SharedArrayBuffer(4));
   view.set([9, 8, 7, 6]);
@@ -102,7 +106,7 @@ test('a datagram viewing shared Wasm memory is sent without reconnecting', () =>
 
 test('reconnect changes only the physical route and rejects stale connection callbacks', () => {
   const {api, sockets, timers, runTimer} = fixture();
-  const id = api.veraSocketOpen('wss://proxy.example', 'primary', 827);
+  const id = api.veraSocketOpen('wss://proxy.example', 'primary', RELAY, 827);
   const old = sockets[0];
   old.opened();
   assert.equal(api.veraSocketTakeRouteChange(id), true);
@@ -131,18 +135,19 @@ test('reconnect changes only the physical route and rejects stale connection cal
   assert.equal(api.veraSocketSend(id, Uint8Array.of(1)), 2);
 });
 
-test('receive overflow and malformed messages reset the route without unbounded storage', () => {
+test('a full receive queue loses the arriving datagram; a malformed message resets the route', () => {
   const {api, sockets, timers} = fixture();
-  const id = api.veraSocketOpen('wss://proxy.example', 'primary', 2048);
+  const id = api.veraSocketOpen('wss://proxy.example', 'primary', RELAY, 2048);
   sockets[0].opened();
   api.veraSocketTakeRouteChange(id);
   // The byte bound is reached before the packet-count bound for large packets.
   for (let i = 0; i < 128; i++) sockets[0].packet(new Uint8Array(2048));
   sockets[0].packet([1]);
-  assert.equal(sockets[0].closed, true);
+  assert.equal(sockets[0].closed, undefined);
+  assert.equal(api.veraSocketTakeRouteChange(id), false);
+  for (let i = 0; i < 128; i++) assert.equal(api.veraSocketReceive(id).byteLength, 2048);
   assert.equal(api.veraSocketReceive(id), null);
-  assert.equal(api.veraSocketTakeRouteChange(id), true);
-  const other = api.veraSocketOpen('wss://proxy.example', 'alternate', 827);
+  const other = api.veraSocketOpen('wss://proxy.example', 'alternate', RELAY, 827);
   sockets[1].opened();
   sockets[1].onmessage({data: 'not a datagram'});
   assert.equal(sockets[1].closed, true);
@@ -154,7 +159,7 @@ test('receive overflow and malformed messages reset the route without unbounded 
 
 test('each received datagram reports how long it waited for the game loop', () => {
   const {api, sockets, clock} = fixture();
-  const id = api.veraSocketOpen('wss://proxy.example', 'primary', 827);
+  const id = api.veraSocketOpen('wss://proxy.example', 'primary', RELAY, 827);
   sockets[0].opened();
   clock.now = 1000;
   sockets[0].packet([1]);
@@ -170,7 +175,7 @@ test('each received datagram reports how long it waited for the game loop', () =
 
 test('repeated connection failures retry within two seconds', () => {
   const {api, sockets, runTimer} = fixture();
-  const id = api.veraSocketOpen('wss://proxy.example', 'primary', 827);
+  const id = api.veraSocketOpen('wss://proxy.example', 'primary', RELAY, 827);
   for (const delay of [250, 500, 1000, 2000, 2000]) {
     sockets.at(-1).onclose();
     runTimer(delay);
@@ -181,8 +186,8 @@ test('repeated connection failures retry within two seconds', () => {
 
 test('a Worker owns the sockets, times arrivals on its clock and reports send backlog', () => {
   const {api, sockets, clock, workerClock, runTimer} = fixture({worker: true});
-  const id = api.veraSocketOpen('wss://proxy.example', 'primary', 827);
-  assert.equal(sockets[0].url, 'wss://proxy.example/game/primary');
+  const id = api.veraSocketOpen('wss://proxy.example', 'primary', RELAY, 827);
+  assert.equal(sockets[0].url, `wss://proxy.example/game/primary/${RELAY}`);
   assert.equal(api.veraSocketSend(id, Uint8Array.of(1)), 1);
   sockets[0].opened();
   assert.equal(api.veraSocketTakeRouteChange(id), true);
@@ -198,7 +203,7 @@ test('a Worker owns the sockets, times arrivals on its clock and reports send ba
   assert.equal(api.veraSocketSend(id, new Uint8Array(200)), 1, 'the reported backlog');
   sockets[0].onclose();
   runTimer(250);
-  assert.equal(sockets[1].url, 'wss://proxy.example/game/primary');
+  assert.equal(sockets[1].url, `wss://proxy.example/game/primary/${RELAY}`);
   api.veraSocketClose(id);
   assert.equal(sockets[1].closed, true);
 });

@@ -525,7 +525,7 @@ struct ReadySlot {
 #[derive(Clone, Debug, PartialEq)]
 struct BatchedSearch {
     key: FootSearchKey,
-    found: Result<Vec<(u16, u16)>, MovePathFailure>,
+    found: Result<Vec<i32>, MovePathFailure>,
 }
 
 /// What a core search reads from its request and its mover besides the
@@ -692,7 +692,7 @@ impl Simulation {
         &mut self,
         request: &FootPathRequest,
         goal: DriveCoord,
-    ) -> Option<Result<Vec<(u16, u16)>, MovePathFailure>> {
+    ) -> Option<Result<Vec<i32>, MovePathFailure>> {
         let id = request.entity_id;
         if !self
             .path_batch

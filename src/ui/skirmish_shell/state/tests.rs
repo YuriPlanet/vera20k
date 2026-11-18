@@ -138,7 +138,7 @@ fn choose_map_modal_open_filters_and_highlights_current_record() {
         &layout,
     );
 
-    assert_eq!(modal.selected_mode_id, 1);
+    assert_eq!(modal.selected_mode.id, 1);
     assert_eq!(modal.filtered_record_indices, vec![0, 1]);
     assert_eq!(modal.highlighted_filtered_index, Some(1));
     assert_eq!(modal.selected_record_index(), Some(1));
@@ -165,7 +165,7 @@ fn choose_map_modal_select_mode_rebuilds_map_list_by_filter() {
 
     assert!(modal.select_mode(9, &modes, &records, &layout));
 
-    assert_eq!(modal.selected_mode_id, 9);
+    assert_eq!(modal.selected_mode.id, 9);
     assert_eq!(modal.filtered_record_indices, vec![1]);
     assert_eq!(modal.selected_record_index(), Some(1));
     assert_eq!(modal.map_top_index, 0);
@@ -193,14 +193,14 @@ fn choose_map_modal_cancel_restores_saved_selection_accept_uses_highlight() {
     assert_eq!(
         modal.accept_selection(),
         Some(ChooseMapSelection {
-            mode_id: 1,
+            mode: 1.into(),
             record_index: Some(1),
         })
     );
     assert_eq!(
         modal.cancel_selection(),
         ChooseMapSelection {
-            mode_id: 1,
+            mode: 1.into(),
             record_index: Some(0),
         }
     );
@@ -553,7 +553,7 @@ fn skirmish_status_help_includes_flag_and_right_panel_static_targets() {
 fn a_downloaded_map_waits_for_ok_before_use_map_goes_on() {
     let prompt = |kind| ChooseMapPrompt {
         selection: ChooseMapSelection {
-            mode_id: 1,
+            mode: 1.into(),
             record_index: Some(0),
         },
         pressed: None,
@@ -748,7 +748,7 @@ fn hovered_choose_map_modal_control_resolves_0x6b_status_targets() {
             layout.mode_list.x + 1,
             layout.mode_list.y + 1
         ),
-        Some(ChooseMapHoverTarget::ModeListRow0x6eb { mode_id: 1 })
+        Some(ChooseMapHoverTarget::ModeListRow0x6eb { mode: 1.into() })
     );
     assert_eq!(
         hovered_choose_map_modal_control(
@@ -983,6 +983,22 @@ fn launch_session_packs_selected_map_and_enabled_slots() {
     assert_eq!(session.options.mcv_redeploy, shell.mcv_redeploy);
 }
 
+/// A map declaring one hundred twenty starts fills every offline Skirmish row: one
+/// human plus the one hundred nineteen computer rows, then Neutral and Special.
+#[test]
+fn a_one_hundred_twenty_start_map_packs_every_offline_row() {
+    let mut shell = SkirmishShellState::default();
+    shell.player_name_edit.text = "Commander".to_string();
+    for opponent in &mut shell.opponents {
+        opponent.row_type = SkirmishAiRowType::Easy;
+    }
+    let maps = [test_map_entry_with_starts("wide.map", 120)];
+    let modes = stock_skirmish_modes();
+    let session = launch_session(&shell, &maps, &modes, false).expect("session");
+    assert_eq!(session.opponents.len(), 119);
+    assert_eq!(session.pre_fill_house_roster().created_house_count(), 122);
+}
+
 /// SkirmishDialog's packing forces Fog of War off, Bridge Destruction on,
 /// Harvester Truce off and MultiEngineer off (`0x006AD88F..0x006AD8A4`),
 /// whatever `[MultiplayerDialogSettings]` set.
@@ -1013,7 +1029,7 @@ fn launch_session_forces_the_dialogs_fixed_session_options() {
 #[test]
 fn launch_session_preserves_selected_team_game_mode_id() {
     let mut shell = SkirmishShellState {
-        selected_mode_id: 9,
+        selected_mode: 9.into(),
         ..Default::default()
     };
     let maps = [test_map_entry("team.yrm")];
@@ -1030,7 +1046,7 @@ fn launch_session_preserves_selected_team_game_mode_id() {
 #[test]
 fn launch_session_does_not_synthesize_unknown_mode() {
     let shell = SkirmishShellState {
-        selected_mode_id: 99,
+        selected_mode: 99.into(),
         ..Default::default()
     };
     let maps = [test_map_entry("map.mmx")];
@@ -1225,7 +1241,7 @@ fn raw_pack_retains_sparse_ai_house_slots_before_compaction() {
     );
     assert_eq!(
         packed
-            .pre_fill_house_roster
+            .pre_fill_house_roster()
             .ai_slots()
             .iter()
             .map(|slot| (slot.slot_index, slot.valid))
@@ -1242,7 +1258,7 @@ fn raw_pack_retains_sparse_ai_house_slots_before_compaction() {
         ]
     );
     assert_eq!(packed.required_start_count(), 3);
-    assert_eq!(packed.pre_fill_house_roster.created_house_count(), 5);
+    assert_eq!(packed.pre_fill_house_roster().created_house_count(), 5);
 }
 
 #[test]
@@ -1263,7 +1279,7 @@ fn launch_session_rejects_same_explicit_team() {
 #[test]
 fn team_game_must_ally_omits_team_none_combo_item() {
     let mut shell = SkirmishShellState {
-        selected_mode_id: 9,
+        selected_mode: 9.into(),
         ..Default::default()
     };
     repair_teams_for_selected_mode(&mut shell, &stock_skirmish_modes());
@@ -1283,7 +1299,7 @@ fn team_game_must_ally_omits_team_none_combo_item() {
 #[test]
 fn ffa_combo_keeps_explicit_teams_despite_allies_disabled() {
     let mut shell = SkirmishShellState {
-        selected_mode_id: 2,
+        selected_mode: 2.into(),
         ..Default::default()
     };
     repair_teams_for_selected_mode(&mut shell, &stock_skirmish_modes());
@@ -1536,7 +1552,7 @@ fn ai_type_none_applies_inactive_combo_defaults() {
 #[test]
 fn ai_type_none_uses_ffa_inactive_team_default() {
     let mut shell = SkirmishShellState {
-        selected_mode_id: 2,
+        selected_mode: 2.into(),
         ..Default::default()
     };
     repair_teams_for_selected_mode(&mut shell, &stock_skirmish_modes());
@@ -1556,7 +1572,7 @@ fn ai_type_none_uses_ffa_inactive_team_default() {
 #[test]
 fn mode_refresh_reselects_native_local_and_ai_team_defaults() {
     let mut shell = SkirmishShellState {
-        selected_mode_id: 9,
+        selected_mode: 9.into(),
         player_team: 1,
         ..Default::default()
     };
@@ -1567,7 +1583,7 @@ fn mode_refresh_reselects_native_local_and_ai_team_defaults() {
     assert_eq!(shell.player_team, 0);
     assert_eq!(shell.opponents[0].team, 3);
 
-    shell.selected_mode_id = 2;
+    shell.selected_mode = 2.into();
     shell.player_team = 2;
     repair_teams_for_selected_mode(&mut shell, &stock_skirmish_modes());
 
@@ -1578,7 +1594,7 @@ fn mode_refresh_reselects_native_local_and_ai_team_defaults() {
 #[test]
 fn ffa_mode_refresh_defaults_every_ai_team_to_none_and_disables_the_team_column() {
     let mut shell = SkirmishShellState {
-        selected_mode_id: 2,
+        selected_mode: 2.into(),
         ..Default::default()
     };
     for opponent in &mut shell.opponents {
@@ -1608,7 +1624,7 @@ fn ffa_mode_refresh_defaults_every_ai_team_to_none_and_disables_the_team_column(
 #[test]
 fn battle_mode_enables_the_team_column_for_local_and_active_rows_only() {
     let mut shell = SkirmishShellState {
-        selected_mode_id: 1,
+        selected_mode: 1.into(),
         ..Default::default()
     };
     shell.opponents[0].row_type = SkirmishAiRowType::Easy;
@@ -1629,7 +1645,7 @@ fn battle_mode_enables_the_team_column_for_local_and_active_rows_only() {
 fn disabled_team_combo_cannot_be_opened_or_reselected_in_free_for_all() {
     let layout = compute_layout(800, 600);
     let mut shell = SkirmishShellState {
-        selected_mode_id: 2,
+        selected_mode: 2.into(),
         ..Default::default()
     };
     shell.opponents[0].row_type = SkirmishAiRowType::Easy;
@@ -2399,10 +2415,10 @@ fn choose_map_help_keys_match_the_native_table() {
     }
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn ares_country_catalog_sorts_hides_and_exposes_flag_and_status() {
     use crate::rules::ini_parser::IniFile;
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let ini = IniFile::from_str(
         "[Countries]\n0=Low\n1=High\n2=Hidden\n3=Custom\n\
          [Low]\nMultiplay=yes\nUIName=NAME:Low\nListIndex=10\n\
@@ -2469,8 +2485,9 @@ fn ares_country_catalog_sorts_hides_and_exposes_flag_and_status() {
     );
 }
 
-/// VERA's Load Setup puts back what Save Setup kept, clearing the page's own
-/// claims first; a saved choice the page does not offer leaves Random.
+/// VERA's last setup goes back on the page as it was kept, clearing the
+/// page's own claims first; a saved choice the page does not offer leaves
+/// Random.
 #[test]
 fn saved_setup_loads_back_through_the_combo_rules() {
     use SkirmishComboId as Id;
@@ -2536,46 +2553,8 @@ fn saved_setup_loads_back_through_the_combo_rules() {
     assert_eq!(shown.computers[1].seat.start, LaunchStartPosition::Auto);
 }
 
-/// VERA's Team Starts fills the Start column through the combo rules: each
-/// playing row gets its own start, allies neighbouring ones, and a row that
-/// does not play keeps Random.
-#[test]
-fn team_starts_seat_allies_together_on_the_page() {
-    use SkirmishComboId as Id;
-    use SkirmishComboItem as Item;
-    let maps = [test_map_entry_with_starts("four.map", 4)];
-    let mut shell = controlled_country_shell();
-    initialize_rows_for_selected_map(&mut shell, &maps);
-    for (id, item) in [
-        (Id::Team(0), Item::Team(0)),
-        (Id::AiType(0), Item::AiType(SkirmishAiRowType::Hard)),
-        (Id::Team(1), Item::Team(1)),
-        (Id::AiType(1), Item::AiType(SkirmishAiRowType::Hard)),
-        (Id::Team(2), Item::Team(0)),
-        (Id::AiType(2), Item::AiType(SkirmishAiRowType::None)),
-        // A claim the fill must free: the player holds the start it gives
-        // to another row.
-        (Id::Start(0), Item::Start(LaunchStartPosition::Position(1))),
-    ] {
-        apply_combo_selection_for_test(&mut shell, id, item);
-    }
-    // West pair (0, 1) and east pair (2, 3).
-    let starts = [(10, 10), (10, 30), (90, 10), (90, 30)];
-    apply_team_starts(&mut shell, &maps, &starts, None);
-    let start = |row| match selected_combo_item(&shell, Id::Start(row)) {
-        Some(Item::Start(LaunchStartPosition::Position(start))) => Some(start),
-        _ => None,
-    };
-    let (player, enemy, ally) = (start(0), start(1), start(2));
-    let west = |start: Option<u8>| start.expect("a playing row has a start") < 2;
-    assert_eq!(west(player), west(ally), "allies share a side");
-    assert_ne!(west(player), west(enemy), "the enemy takes the other");
-    assert_ne!(player, ally);
-    assert_eq!(start(3), None, "a closed row keeps Random");
-}
-
-/// Save and Load reach every computer row the map seats, not only the rows
-/// VERA's scrollbar shows.
+/// Keeping a setup and putting it back reach every computer row the map
+/// seats, not only the rows VERA's scrollbar shows.
 #[test]
 fn saved_setup_keeps_computer_rows_scrolled_out_of_view() {
     let maps = [test_map_entry_with_starts("thirty.mmx", 30)];

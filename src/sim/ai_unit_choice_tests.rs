@@ -8,11 +8,9 @@
 //! qualify (`TeamScriptState::wants_members`) rests on instruction reading.
 
 use super::*;
-#[cfg(not(feature = "ares"))]
 use crate::sim::ai_team_creation::tests::{Draws, events, index};
 use crate::sim::ai_team_creation::tests::{dword, flag, native_draws, rows};
 use crate::sim::house_state::HouseState;
-#[cfg(not(feature = "ares"))]
 use serde_json::Value;
 
 /// HouseChooseInfantry4FEEE0 counts Foot4DA230's free objects without an HP
@@ -203,7 +201,6 @@ fn a_class_no_team_needs_still_draws_once() {
 
 // Ares 100216A0 (hooks 0x4FEA60, 0x4FEEE0, 0x4FF210) draws
 // `RandomRanged(0, 99)` first (`ares_the_choice_draws_a_percent`).
-#[cfg(not(feature = "ares"))]
 #[test]
 fn the_choosers_match_the_original() {
     for (number, row) in rows("choosers").iter().enumerate() {
@@ -276,7 +273,6 @@ fn the_choosers_match_the_original() {
 /// The executed gate (`0x004FEE59..0x004FEE89`) at the boundary draws of
 /// each `FillEarliestTeamProbability`, the stock 100 among them: the earliest
 /// team's type exactly when the native compare falls through.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn the_fill_earliest_gate_takes_the_native_draws() {
     let corpus = crate::test_fixture::json("tools/unit_draw_oracle.json");

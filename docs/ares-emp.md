@@ -1,7 +1,7 @@
 # Ares ground, airborne and building EMP
 
-This optional chain requires the compile-time `ares` feature. Default builds do
-not read the extension keys or run its Bullet/AI producers. It covers every Foot
+Every build runs this chain when the game plays Ares ([Ares](ares.md)). Other
+games do not use the extension keys or run its Bullet/AI producers. It covers every Foot
 victim but a Tunnel mover: Drive, Walk, Hover, Ship, Teleport, Fly, Jumpjet and
 Rocket, human or AI, in or out of a Team, with Spawn, Slave or Capture managers,
 a held Magnetron victim or a Temporal warp, harvesters, falling and
@@ -243,7 +243,7 @@ is Warhead sparkle, then the nullable Type override, then retained
 `[General]EMPulseSparkles`. An explicitly null Type override blocks that fallback.
 The General pointer uses the existing RulesClass pointer reader/retainer.
 The same retained Warhead, Type and General names enter
-`effect_asset_catalog::anim_class_roots` only in Ares builds. The app's existing
+`effect_asset_catalog::anim_class_roots` only in a game read the Ares way. The app's existing
 tolerant SHP binder supplies their physical frame bounds before Anim construction;
 its scheduler-bound set also supplies the renderer's effect-atlas roots. ART
 metadata existing by name alone does not supply those bounds. This is a required
@@ -333,14 +333,14 @@ while Techno70EFD0 reports positive EMP; PoweredUnit100454F0 additionally requir
 a matching counted PowersUnit building without EMP in the existing House building
 order. This gate protects power-center recovery callers as well as EMP expiry,
 before orders, locomotor or sound change. The EMP caller no longer repeats a
-weaker aggregate-count check. Default builds retain original70FBE0 behavior.
+weaker aggregate-count check. Other games retain original70FBE0 behavior.
 Unit746C90's independent DeathFrame override and custom PoweredBy/other extension
 dependencies are outside this ordinary live-victim chain.
 
 The existing Unit `can_deploy_slash_unload` owner applies the positive-EMP
 virtual veto700E47..700E53 (live Unit746C90 ->70EFD0). This protects an already
 commenced human Unload and autonomous AI deployment through the same Deploy7393CC
-caller, before MCV conversion can discard the EMP victim. Default builds retain
+caller, before MCV conversion can discard the EMP victim. Other games retain
 their existing constructor-zero path; active-retail EMP producer reachability
 is not inferred from this shared native consumer. The separate DeathFrame virtual
 override remains outside the ordinary live-ground chain.
@@ -422,7 +422,7 @@ magnitude to its exact decimal rational using the existing big-integer dependenc
 adjusting one ULP toward zero only when needed. Overflow remains infinity and
 signed zero retains its sign. This policy matches the native reader controls;
 arbitrary long-decimal/legacy CRT intermediate double rounding remains unproven.
-It does not implement a second lexical parser or change default-build readers.
+It does not implement a second lexical parser or change the readers of a game without Ares.
 
 Duration math uses the existing deterministic PC53 arithmetic/conversion owner.
 Ares CRT100772B0 converts out-of-i32 values to INT_MIN, unlike the stock qword/low32

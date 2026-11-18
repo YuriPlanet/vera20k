@@ -129,7 +129,11 @@ pub(super) fn reload(scene: &mut HeadlessScenario) {
         rules,
     );
     loaded
-        .restore_map_authority_after_snapshot_load(rules, &runtime.resources.overlay_registry, None)
+        .restore_map_authority_after_snapshot_load(
+            rules,
+            runtime.resources.rules.overlay_registry(),
+            None,
+        )
         .unwrap();
     loaded.intern_rule_type_ids(rules);
     loaded.resolve_type_handles(rules);

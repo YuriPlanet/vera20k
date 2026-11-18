@@ -447,8 +447,8 @@ impl IniFile {
     /// on that call: a last line without a line feed is not loaded.
     /// Executed controls: tools/storage_oracle/ini_crc (`unterminated_last_*`).
     /// Loading into an INI that already holds sections (the `0x00525BFA` arm)
-    /// puts that last entry before testing the flag. An Ares build loads its
-    /// included files that way (`IniFile::merge_load`). RESIDUAL: loose
+    /// puts that last entry before testing the flag. A game read the Ares way
+    /// loads its included files that way (`IniFile::merge_load`). RESIDUAL: loose
     /// `*.PKT` map catalogs merge that way too (`0x00699B58`); VERA reads them
     /// as fresh files.
     pub fn from_bytes(data: &[u8]) -> Result<Self, RulesError> {
@@ -671,7 +671,7 @@ impl IniFile {
 
     /// Compatibility overlay: later exact keys replace earlier ones. Without
     /// Ares this is also the include extension's policy, not native
-    /// PutString528660 parity; an Ares build loads includes through
+    /// PutString528660 parity; a game read the Ares way loads includes through
     /// `IniFile::merge_load`.
     /// Residual: overlapping loose PKT files (699B58) can retain a cached
     /// duplicate pair across insertion, then change selection on a later sort.

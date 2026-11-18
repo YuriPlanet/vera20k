@@ -26,7 +26,6 @@ use crate::ui::shell::descriptor::{AnchorRule, DialogId};
 use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale};
 use crate::ui::shell::layout::{anchor_rect, status_line_rect};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
-use crate::ui::skirmish_shell::SavedSeedDescriptionEdit;
 
 pub(crate) const DIALOG: DialogId = DialogId(0x0113);
 
@@ -41,8 +40,8 @@ pub(crate) const PAGE_BUTTON: u16 = 0x5C2;
 /// The online page's Quick Match: the welcome's control.
 pub(crate) const QUICK_MATCH: u16 = crate::ui::wol_shell::QUICK_MATCH;
 pub(crate) const BACK: u16 = 0x686;
-/// VERA's sidebar button under Options; no retail control has this id.
-pub(crate) const CHAT_TRANSLATION: u16 = 0x7E00;
+/// VERA: Back to Room, while this player visits the lobby from a game room.
+pub(crate) const BACK_TO_ROOM: u16 = 0x7E30;
 pub(crate) const REFRESH: u16 = 0x55D;
 pub(crate) const EMOTE: u16 = 0x3ED;
 pub(crate) const LOBBIES: u16 = 0x53D;
@@ -108,9 +107,8 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
 
 /// The normal VERA lobby keeps core play and Options. It has no welcome
 /// `0x10E`, so its third row is that page's Quick Match (`0x6E0`, its caption
-/// and tooltip) and Options moves to the fourth, with VERA's Chat Translation
-/// under it. The retail page above remains the owner for legacy service
-/// diagnostics.
+/// and tooltip) and Options moves to the fourth. The retail page above
+/// remains the owner for legacy service diagnostics.
 const ONLINE_PAGE: MenuPageSpec = MenuPageSpec {
     stacked: &[
         button(CREATE, 111, "GUI:CreateGame", "STT:LobbyButtonNew"),
@@ -122,21 +120,29 @@ const ONLINE_PAGE: MenuPageSpec = MenuPageSpec {
             "STT:WOLWelcomeQuickMatch",
         ),
         button(OPTIONS, 193, "GUI:WOLOptions", "STT:WOLLobbyOptions"),
-        button(
-            CHAT_TRANSLATION,
-            222,
-            crate::ui::wol_chat_translation::TITLE_KEY,
-            crate::ui::wol_chat_translation::BUTTON_HELP_KEY,
-        ),
     ],
     ..PAGE
+};
+
+/// The online page while this player visits the lobby from a game room
+/// (docs/lobby-protocol.md "Visiting the lobby"): Join Game, which leaves
+/// that room, Options and Back to Room. Its Back goes back to the room too,
+/// so it says nothing of the online menu.
+const ONLINE_VISIT_PAGE: MenuPageSpec = MenuPageSpec {
+    stacked: &[
+        button(JOIN, 111, "GUI:JoinGame", "STT:LobbyButtonJoin"),
+        button(OPTIONS, 138, "GUI:WOLOptions", "STT:WOLLobbyOptions"),
+        button(BACK_TO_ROOM, 166, "VERA:BackToRoom", ""),
+    ],
+    back: button(BACK, 332, "GUI:Back", ""),
+    ..ONLINE_PAGE
 };
 
 /// Record `+0xD5`: the retail page's top panel holds the lobby list. The
 /// online page shows no list, so it keeps the family's warning monitor
 /// there, as the other online pages do.
 pub(crate) fn keeps_top_panel(page: &MenuPageSpec) -> bool {
-    *page != ONLINE_PAGE
+    *page != ONLINE_PAGE && *page != ONLINE_VISIT_PAGE
 }
 
 /// The game list's header buttons and the player list's, with captions.
@@ -545,12 +551,12 @@ pub(crate) enum WolLobbyAction {
     ObserverChanged(bool),
     /// `0x61F`: WOL Options `0x2BC`.
     Options,
-    /// The online page's Chat Translation page.
-    ChatTranslation,
     /// `0x5C2`: the page dialog `0xCF` (`0x0078BA3E`).
     Page,
     /// The online page's Quick Match: the Quick Match runner `0x0079FC40`.
     QuickMatch,
+    /// VERA: a lobby visitor back to their game room.
+    BackToRoom,
     /// Buddy List, Clan, Tournament and News run dialogs or web pages that
     /// are later chains.
     Unported(u16),
@@ -561,6 +567,9 @@ pub(crate) enum WolLobbyAction {
 #[derive(Debug, Clone)]
 pub(crate) struct WolLobbyState {
     modern: bool,
+    /// VERA: this player visits the lobby from a game room
+    /// ([`Self::set_visiting`]).
+    visiting: bool,
     pub(crate) chat: LanChatState,
     pub(crate) lobby_rows: Vec<WolLobbyRow>,
     pub(crate) game_rows: Vec<WolGameRow>,
@@ -589,12 +598,11 @@ impl WolLobbyState {
     pub(crate) fn new(observer: bool, modern: bool) -> Self {
         Self {
             modern,
-            chat: LanChatState {
-                edit: SavedSeedDescriptionEdit {
-                    focused: true,
-                    ..Default::default()
-                },
-                ..Default::default()
+            visiting: false,
+            chat: {
+                let mut chat = LanChatState::default();
+                chat.edit.focused = true;
+                chat
             },
             lobby_rows: Vec::new(),
             game_rows: Vec::new(),
@@ -621,7 +629,17 @@ impl WolLobbyState {
     }
 
     pub(crate) fn page_spec(&self) -> &'static MenuPageSpec {
-        if self.modern { &ONLINE_PAGE } else { &PAGE }
+        match (self.modern, self.visiting) {
+            (true, true) => &ONLINE_VISIT_PAGE,
+            (true, false) => &ONLINE_PAGE,
+            (false, _) => &PAGE,
+        }
+    }
+
+    /// This player visits the lobby from a game room: the page offers Back
+    /// to Room.
+    pub(crate) fn set_visiting(&mut self, visiting: bool) {
+        self.visiting = visiting;
     }
 
     pub(crate) fn is_modern(&self) -> bool {
@@ -874,6 +892,7 @@ impl WolLobbyState {
         Some(match control {
             CREATE => WolLobbyAction::Create,
             JOIN => WolLobbyAction::Join,
+            BACK_TO_ROOM => WolLobbyAction::BackToRoom,
             BACK => WolLobbyAction::Back,
             REFRESH => WolLobbyAction::Refresh,
             SORT_ALPHA | SORT_PING | SORT_RESLOCK | SORT_PASSWORD | SORT_GAMETYPE => {
@@ -896,7 +915,6 @@ impl WolLobbyState {
                 WolLobbyAction::ObserverChanged(self.observer)
             }
             OPTIONS => WolLobbyAction::Options,
-            CHAT_TRANSLATION if self.modern => WolLobbyAction::ChatTranslation,
             PAGE_BUTTON => WolLobbyAction::Page,
             QUICK_MATCH if self.modern => WolLobbyAction::QuickMatch,
             BUDDY | CLAN | TOURNAMENT | NEWS => WolLobbyAction::Unported(control),
@@ -998,10 +1016,7 @@ mod tests {
         let mut lobby = WolLobbyState::new(false, true);
         let layout = WolLobbyLayout::new(800, 600, lobby.page_spec());
         let controls: Vec<_> = layout.page.buttons.iter().map(|button| button.id).collect();
-        assert_eq!(
-            controls,
-            [CREATE, JOIN, QUICK_MATCH, OPTIONS, CHAT_TRANSLATION, BACK]
-        );
+        assert_eq!(controls, [CREATE, JOIN, QUICK_MATCH, OPTIONS, BACK]);
         let retail = WolLobbyLayout::new(800, 600, &PAGE);
         assert_eq!(layout.control_rect(QUICK_MATCH), retail.control_rect(BUDDY));
         assert_eq!(layout.control_rect(OPTIONS), retail.control_rect(CLAN));
@@ -1109,6 +1124,7 @@ mod tests {
             limit_icon: None,
             ping: -1,
             tag: None,
+            watch: false,
         };
         let mut lobby = WolLobbyState::new(false, false);
         lobby.replace_games(vec![row("a"), row("b")]);

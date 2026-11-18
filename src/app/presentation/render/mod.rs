@@ -47,9 +47,9 @@ mod placement_gpu_tests;
 mod status_gpu_tests;
 #[cfg(all(test, tests_app_presentation_render))]
 mod target_laser_gpu_tests;
-pub(crate) use draw_passes::draw_software_cursor;
 #[cfg(test)]
 pub(crate) use draw_passes::{draw_bridge_shadows, draw_pooled_cell_bodies};
+pub(crate) use draw_passes::{draw_software_cursor, draw_world_window_copy};
 pub(crate) mod draw_plan_lowering;
 mod merge_passes;
 pub(crate) mod minimap_transaction;
@@ -244,24 +244,26 @@ pub(crate) fn render_game(
     if z == 1.0 {
         state.renderer.world_zoom_pass = None;
     } else {
+        // When the Options zoom scales the frame, the world also goes
+        // straight into the window (`draw_world_window_copy`). At 100% (the
+        // Original shape's bars) the frame's world is already the window's.
+        let window_copy = state.tactical_zoom().is_some_and(|zoom| zoom.percent > 100);
         let renderer = &mut state.renderer;
         let gpu = &renderer.gpu;
         let target = [sw as u32, sh as u32];
-        if let Some(pass) = renderer.world_zoom_pass.as_mut() {
-            pass.set_view(&gpu.device, &gpu.queue, target, z);
-        } else {
-            renderer.world_zoom_pass = Some(crate::render::upscale_pass::WorldZoomPass::new(
+        let pass = renderer.world_zoom_pass.get_or_insert_with(|| {
+            crate::render::upscale_pass::WorldZoomPass::new(
                 &gpu.device,
                 &gpu.queue,
                 gpu.surface_format,
                 target,
                 z,
-            ));
-        }
-        renderer.batch_renderer.set_native_world_resolution(
-            &gpu.queue,
-            renderer.world_zoom_pass.as_ref().unwrap().source_size(),
-        );
+            )
+        });
+        pass.set_view(&gpu.device, &gpu.queue, target, z, window_copy);
+        renderer
+            .batch_renderer
+            .set_native_world_resolution(&gpu.queue, pass.source_size());
     }
     let world_camera = state.renderer.batch_renderer.camera_uniform();
 
@@ -421,8 +423,8 @@ pub(crate) fn render_game(
         crate::app::radar_movie::end_radar_sound_loop(state);
     }
     // Ares DisplayCredits ages its labels in the same composite, unless the
-    // chrono screen's 4F4480 interception suppresses it.
-    #[cfg(feature = "ares")]
+    // chrono screen's 4F4480 interception suppresses it. Empty unless the
+    // sim emitted Ares bounty text, so this runs in every game.
     if !chrono_holds {
         let credits = state
             .match_state
@@ -683,7 +685,7 @@ pub(crate) fn render_game(
         || !ui.tactical_line_calls.is_empty()
         || !ui.target_line.is_empty()
         || !radials.draws.is_empty();
-    #[cfg(feature = "ares")]
+    // Empty unless the sim emitted Ares bounty text, so this runs in every game.
     let animated = animated || !presentation.flying_credits.get_mut().is_empty();
     presentation.tactical_composite.record_contents(animated);
     let bolt_lines = presentation.electric_bolts.shown(viewport.camera);
@@ -796,6 +798,7 @@ pub(crate) fn render_game(
             cell_body_draws: &world.cell_body_draws,
             terrain: &world.terrain.normal,
             smudge: &world.smudge,
+            smudge_cuts: &world.smudge_cuts,
             bridge_shadows: &world.bridge_body_shadow,
             object_layers: &world.object_layers,
             fogged_objects: &world.fogged_objects,
@@ -1002,8 +1005,14 @@ fn upload_to_gpu(
             None => ui.software_cursor.as_slice().into(),
         };
 
-    #[cfg(feature = "ares")]
-    let bounty_text = {
+    // BeaconClass::Draw's label boxes (`beacon_labels`), in frame pixels.
+    let (beacon_label_fill, beacon_label_outline, beacon_label_text) =
+        crate::app::presentation::beacon_labels::instances(state);
+
+    // Ares DisplayCredits' labels draw when Ares plays, the answer under
+    // which the sim pays a bounty (`sim::combat::record_kill`).
+    let ares = state.rules().is_some_and(|rules| rules.ares());
+    let bounty_text = if ares {
         let presentation = &state.match_state.match_presentation;
         if presentation.chrono_screen.overrides_tactical_draw() {
             Vec::new()
@@ -1019,6 +1028,8 @@ fn upload_to_gpu(
                 [left, top, width, height],
             )
         }
+    } else {
+        Vec::new()
     };
 
     // The sidebar's streams scroll with the UI camera, and its text with it
@@ -1073,13 +1084,17 @@ fn upload_to_gpu(
     pool.upload("super_timer_text", &super_timer_text);
     pool.upload("build_text_fill", &build_text_fill);
     pool.upload("build_text_text", &build_text_text);
-    #[cfg(feature = "ares")]
-    pool.upload("bounty_text", &bounty_text);
+    if ares {
+        pool.upload("bounty_text", &bounty_text);
+    }
 
     // UI overlays
     for (house, beacons) in ui.beacons.iter().enumerate() {
         pool.upload_page("beacons", house, beacons);
     }
+    pool.upload("beacon_label_fill", &beacon_label_fill);
+    pool.upload("beacon_label_outline", &beacon_label_outline);
+    pool.upload("beacon_label_text", &beacon_label_text);
     pool.upload("drag", &ui.drag);
     pool.upload("ground_marks", &ui.ground_marks);
     pool.upload_strokes("ground_strokes", &ui.ground_strokes);

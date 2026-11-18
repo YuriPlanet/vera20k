@@ -20,6 +20,85 @@ use crate::rules::voxel_frame_catalog::{
 use crate::sim::world::Simulation;
 
 #[test]
+fn water_voxel_draw_switches_live_cell_model_and_preserves_bridge_dispatch() {
+    use crate::map::resolved_terrain::{NativeCellQuery, test_flat_cell, test_grid};
+    use crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch;
+    use crate::rules::terrain_rules::LandType;
+
+    let Some(retail) = retail_battle_rules_for_map_with_patch(
+        "Hills.mmx",
+        &IniFile::from_str("[ROBO]\nWaterImage=MTNK\nIsSimpleDeployer=yes\nUnloadingClass=HTNK\n"),
+    ) else {
+        return;
+    };
+    let rules = &retail.rules;
+    let terrain = test_grid(40, 40, |x, y| {
+        let mut cell = test_flat_cell(x, y);
+        cell.land_type = if x == 10 {
+            LandType::Water.as_index()
+        } else {
+            LandType::Beach.as_index()
+        };
+        cell
+    });
+    let cells = NativeCellQuery::isolated(&terrain);
+    let mut sim = Simulation::new();
+    // Use the placed identity. Held constructors keep Location=(0,0,0)
+    // until Reveal commits their caller's coordinates (Object5F3993).
+    let id = sim
+        .spawn_object("ROBO", "Americans", 10, 10, 0, rules)
+        .unwrap();
+    let record = ObjectRecord::of_test_sim(&sim, rules, id);
+    let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&record.position);
+    assert_eq!(
+        (
+            rules.ares(),
+            rules.object("ROBO").unwrap().water_image(),
+            record.on_bridge(),
+            cells.land_type(cells.lookup_world(x, y)),
+        ),
+        (
+            true,
+            Some("MTNK"),
+            false,
+            i32::from(LandType::Water.as_index())
+        ),
+        "the production rules and frame supply the water-draw inputs"
+    );
+    let draw = |sim: &Simulation| {
+        unit_body_draw(
+            &ObjectRecord::of_test_sim(sim, rules, id),
+            sim.interner(),
+            Some(rules),
+            EntityDrawBand::Ground,
+            sim.session().binary_frame(),
+            crate::render::draw_state::ObserverDrawContext::default(),
+            Some(&cells),
+        )
+        .map(|(model, body)| (model.into_owned(), body))
+        .unwrap()
+    };
+    let (model, body) = draw(&sim);
+    assert_eq!(model, "MTNK");
+    assert!(matches!(body, BodyDraw::Turret { .. }));
+    sim.entities_mut_for_test()
+        .get_mut(id)
+        .unwrap()
+        .set_unit_simple_deploy_for_test(true, false, false);
+    assert_eq!(draw(&sim).0, "MTNK", "water wins over deployed art");
+    sim.entities_mut_for_test()
+        .get_mut(id)
+        .unwrap()
+        .set_on_bridge(true);
+    assert_eq!(draw(&sim).0, "HTNK");
+    let unit = sim.entities_mut_for_test().get_mut(id).unwrap();
+    unit.set_on_bridge(false);
+    unit.set_unit_simple_deploy_for_test(false, false, false);
+    unit.position.set_rx_for_test(11);
+    assert_eq!(draw(&sim).0, "ROBO", "beach is outside the Water hook");
+}
+
+#[test]
 fn normal_fly_pose_uses_strict_pitch_speed_gate_and_secondary_turn_sign() {
     use crate::rules::retail_ini_fixture::retail_battle_rules;
     use crate::sim::movement::{FacingClass, facing_class::RotationDirection};
@@ -53,6 +132,7 @@ fn normal_fly_pose_uses_strict_pitch_speed_gate_and_secondary_turn_sign() {
             EntityDrawBand::Top,
             sim.session().binary_frame(),
             crate::render::draw_state::ObserverDrawContext::default(),
+            None,
         )
         .expect("stock Spy Plane passes production body admission");
         assert_eq!(model, "SPYP");
@@ -145,6 +225,7 @@ fn body_draw_against_seed(
         EntityDrawBand::Ground,
         sim.session().binary_frame(),
         crate::render::draw_state::ObserverDrawContext::default(),
+        None,
     ) else {
         return Ok(None);
     };
@@ -275,6 +356,7 @@ Turret=yes
         ground,
         frame,
         crate::render::draw_state::ObserverDrawContext::default(),
+        None,
     )
     .expect("the miner is not in a deploy transition");
     let hull = entity.body_facing_current(frame);
@@ -565,7 +647,7 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
             .layer_of(plane.stable_id())
             .and_then(super::super::helpers::layer_draw_band)
             .unwrap();
-        let parent = NativeDisplayOrder::from_display(sim.display_layers())
+        let parent = NativeDisplayOrder::from_world(&sim, None)
             .object_draw(plane.stable_id(), SpriteEncoding::Voxel)
             .unwrap();
         let record = crate::app::presentation::frame::PresentationFrame::capture(
@@ -654,6 +736,7 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
                 *band,
                 *binary_frame,
                 crate::render::draw_state::ObserverDrawContext::default(),
+                None,
             )
             .unwrap();
             assert_eq!(model, "SPYP");
@@ -1083,7 +1166,8 @@ fn retail_mirage_unit_route_matches_original_observer_dispatch() {
                 Some(rules),
                 EntityDrawBand::Ground,
                 frame,
-                observer
+                observer,
+                None,
             )
             .is_some(),
             voxel,
@@ -1253,6 +1337,7 @@ fn a_tanks_body_draw_looks_no_type_up_by_name() {
         EntityDrawBand::Ground,
         sim.session().binary_frame(),
         crate::render::draw_state::ObserverDrawContext::default(),
+        None,
     )
     .expect("a Grizzly draws a voxel body");
     assert_eq!(model, "MTNK");

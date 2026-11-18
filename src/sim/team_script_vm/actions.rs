@@ -1648,7 +1648,7 @@ impl Simulation {
                     && self
                         .object_type(entity.type_ref(), rules)
                         .is_some_and(|object| {
-                            i64::from(entity.passenger_role.passenger_count())
+                            i64::from(entity.passenger_role().passenger_count())
                                 < i64::from(object.passengers)
                         })
             })
@@ -1755,7 +1755,7 @@ impl Simulation {
                     .object_type(entity.type_ref(), rules)
                     .is_some_and(|object| {
                         i64::from(object.passengers)
-                            > i64::from(entity.passenger_role.passenger_count())
+                            > i64::from(entity.passenger_role().passenger_count())
                     })
             })
         });
@@ -1807,7 +1807,7 @@ impl Simulation {
                 entity,
                 self.team_member_initiated(team_id, member),
                 self.object_placement_scope_active(),
-            ) || entity.passenger_role.passenger_count() == 0
+            ) || entity.passenger_role().passenger_count() == 0
             {
                 continue;
             }

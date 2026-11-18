@@ -57,7 +57,8 @@ pub(crate) fn requested_state(
         DiplomacyRequest::SidebarButton
             if !mode.is_nonzero()
                 || (mode.is_network()
-                    && mode_class.is_some_and(MpModeClass::restates_mission_for_diplomacy)) =>
+                    && mode_class
+                        .is_some_and(|class| class.policy().restates_mission_for_diplomacy)) =>
         {
             RequestedState::MissionBriefing
         }

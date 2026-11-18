@@ -8,6 +8,10 @@
 //! observer sees this strip, and the list leaves out every observer's House
 //! where native leaves out `[0xAC1198]` alone. With one observer the two
 //! agree; the maintainer chose to keep this for several (2026-11-15).
+//!
+//! A VERA watcher on its observer step (Tab after the last player) sees it
+//! too, with the time counter, in the place of the player it last followed,
+//! who stays listed ([`shows_observer_sidebar`]).
 
 use crate::app::AppState;
 use crate::assets::csf_file::{CsfArg, format_csf};
@@ -34,15 +38,24 @@ pub(crate) struct ObserverHouse {
     pub(crate) defeated: bool,
 }
 
-/// The observer strip's Houses while `local` is an observer's House, `None`
-/// for a player. `SidebarClass::Init @ 0x006A5310` lists, only in a LAN or
+/// Whether the local player, whose House is `local`, is shown the observer's
+/// sidebar: that House is an observer's, or this process watches on its
+/// observer step (`ScenarioSession::watcher_observes`). The rest of what a
+/// watcher sees and hears stays the followed player's.
+pub(crate) fn shows_observer_sidebar(sim: &Simulation, local: InternedId) -> bool {
+    let session = sim.session();
+    session.is_observer_house(local) || session.watcher_observes()
+}
+
+/// The observer strip's Houses while the local player, whose House is
+/// `local`, is shown the observer's sidebar, `None` otherwise. `SidebarClass::Init @ 0x006A5310` lists, only in a LAN or
 /// online game, the human Houses in House-array order that are neither
 /// MultiplayPassive nor the observer, at most eight (`0x006A55B7..`). Init
 /// runs at every scenario start and load; nothing it reads changes during a
 /// match, so the list is read again each frame.
 pub(crate) fn observer_houses(sim: &Simulation, local: InternedId) -> Option<Vec<ObserverHouse>> {
     let session = sim.session();
-    if !session.is_observer_house(local) {
+    if !shows_observer_sidebar(sim, local) {
         return None;
     }
     if !matches!(

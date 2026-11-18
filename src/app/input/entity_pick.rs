@@ -93,6 +93,10 @@ impl PickSource for &EntityStore {
 
 pub(crate) trait PickWorld: PickSource {
     fn simulation(&self) -> &crate::sim::world::Simulation;
+    /// The rules the Ground draw order reads (`Simulation::ground_draw_order`).
+    fn rules(&self) -> Option<&RuleSet> {
+        None
+    }
 }
 impl PickSource for &crate::sim::world::Simulation {
     fn entities(&self) -> &EntityStore {
@@ -177,6 +181,9 @@ impl PickSource for PresentedWorld<'_> {
 impl PickWorld for PresentedWorld<'_> {
     fn simulation(&self) -> &crate::sim::world::Simulation {
         self.sim
+    }
+    fn rules(&self) -> Option<&RuleSet> {
+        self.rules
     }
 }
 pub(crate) fn presented<'a>(
@@ -292,12 +299,17 @@ fn hover_object_in_frame(
             );
             debug_assert_eq!(
                 picked,
-                pick(&mut sim.display_layers().ordered_ids()),
+                pick(
+                    &mut crate::app::presentation::instances::display_draw_ids(sim, source.rules())
+                        .iter()
+                ),
                 "the pick's pre-filter passed by the object at {world_x}, {world_y}"
             );
             picked
         }
-        None => pick(&mut sim.display_layers().ordered_ids()),
+        None => pick(
+            &mut crate::app::presentation::instances::display_draw_ids(sim, source.rules()).iter(),
+        ),
     };
     let stable_id = match picked? {
         CellObjectMember::Entity(id) => id,
@@ -960,16 +972,15 @@ fn type_selection_matches(
     rules: Option<&RuleSet>,
     interner: Option<&crate::sim::intern::StringInterner>,
 ) -> bool {
-    #[cfg(feature = "ares")]
-    if let (Some(rules), Some(interner)) = (rules, interner) {
+    if let (Some(rules), Some(interner)) = (rules, interner)
+        && rules.ares()
+    {
         return rules
             .type_selection_key(left.1.into(), interner.resolve(left.0))
             .eq_ignore_ascii_case(
                 rules.type_selection_key(right.1.into(), interner.resolve(right.0)),
             );
     }
-    #[cfg(not(feature = "ares"))]
-    let _ = (rules, interner);
     left.0 == right.0
 }
 
@@ -1684,6 +1695,7 @@ mod tests {
             frame(&sim).object(second).unwrap(),
             health_hover_target(pick(&sim, second)),
             Some("Player"),
+            rules.ares(),
         ));
         sim.entities_mut_for_test()
             .get_mut(first)
@@ -1696,6 +1708,7 @@ mod tests {
                 frame(&sim).object(first).unwrap(),
                 health_hover_target(pick(&sim, first)),
                 Some("Player"),
+                rules.ares(),
             ),
             "the lock removes hover, not selected health bars"
         );
@@ -2356,7 +2369,8 @@ mod tests {
             let world = crate::render::locomotor_visual::screen_position(&entity);
             sim.entities_mut_for_test().insert(entity);
             sim.resubmit_entity_display_for_test(1);
-            let order = crate::app::presentation::instances::tactical_entity_encounter_order(&sim);
+            let order =
+                crate::app::presentation::instances::tactical_entity_encounter_order(&sim, None);
 
             let expected = admitted.then_some(1);
             assert_eq!(

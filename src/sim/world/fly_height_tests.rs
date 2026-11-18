@@ -91,11 +91,18 @@ fn fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
     if flag("loaded") {
         assert_eq!(sim.substrate.allocate_stable_id(), 2);
         insert_entity(&mut sim, 2, EntityCategory::Infantry);
-        sim.substrate.entities.get_mut(2).unwrap().passenger_role =
-            PassengerRole::inside_for_test(1, false);
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .set_passenger_role_for_test(PassengerRole::inside_for_test(1, false));
         let mut cargo = PassengerCargo::new(1, 0.0);
         cargo.board_forced_chain(&[(2, 1.0)]);
-        sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .set_passenger_role_for_test(PassengerRole::transport(cargo));
     }
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     entity
@@ -913,7 +920,6 @@ fn fly_takeoff_phase_matches_native_display_reordering_and_gates() {
         other.locomotor = loco;
         Simulation::submit_entity_display(
             &sim.interner,
-            &sim.terrain_objects,
             &mut sim.substrate,
             &sim.resolved_terrain,
             1,
@@ -922,7 +928,6 @@ fn fly_takeoff_phase_matches_native_display_reordering_and_gates() {
         );
         Simulation::submit_entity_display(
             &sim.interner,
-            &sim.terrain_objects,
             &mut sim.substrate,
             &sim.resolved_terrain,
             peer,
@@ -995,7 +1000,6 @@ fn fly_nonlandable_phase_matches_native_without_display_resubmission() {
         other.locomotor = loco;
         Simulation::submit_entity_display(
             &sim.interner,
-            &sim.terrain_objects,
             &mut sim.substrate,
             &sim.resolved_terrain,
             1,
@@ -1004,7 +1008,6 @@ fn fly_nonlandable_phase_matches_native_without_display_resubmission() {
         );
         Simulation::submit_entity_display(
             &sim.interner,
-            &sim.terrain_objects,
             &mut sim.substrate,
             &sim.resolved_terrain,
             peer,
@@ -1068,7 +1071,6 @@ fn fly_nonlandable_production_tick_replaces_landing_target_and_restores() {
     let (mut sim, rules) = takeoff_fixture(&row);
     Simulation::submit_entity_display(
         &sim.interner,
-        &sim.terrain_objects,
         &mut sim.substrate,
         &sim.resolved_terrain,
         1,

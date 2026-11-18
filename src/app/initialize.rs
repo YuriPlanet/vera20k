@@ -142,6 +142,39 @@ fn startup_window_projection(
     )
 }
 
+/// Gives the window's class a black background brush, or takes it away again.
+///
+/// Windows paints a window with its class brush when it shows or resizes it.
+/// winit registers its class with none and shows a window before it sizes and
+/// places it, so until the first swapchain present, seconds into startup, the
+/// window would show black and white patches of whatever its surface held.
+/// Startup sets the brush before it shows the window and takes it away where
+/// it presents its first frame. The window keeps its black until a frame
+/// replaces it; a brush left on would blank it between frames on every resize.
+#[cfg(windows)]
+fn black_window_background(window: &Window, black: bool) {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows_sys::Win32::Graphics::Gdi::{BLACK_BRUSH, GetStockObject};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GCLP_HBRBACKGROUND, SetClassLongPtrW};
+
+    let Ok(handle) = window.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::Win32(handle) = handle.as_raw() else {
+        return;
+    };
+    let hwnd = handle.hwnd.get() as *mut std::ffi::c_void;
+    // SAFETY: `hwnd` is winit's live window, and a stock brush is never freed.
+    unsafe {
+        let brush = if black {
+            GetStockObject(BLACK_BRUSH) as isize
+        } else {
+            0
+        };
+        SetClassLongPtrW(hwnd, GCLP_HBRBACKGROUND, brush);
+    }
+}
+
 /// What the startup error card says about the player's own files.
 #[derive(Debug, Default)]
 pub(crate) struct StartupFiles {
@@ -157,7 +190,7 @@ pub(crate) struct StartupFiles {
 pub(crate) enum StartupProblem {
     /// config.toml could not be read or parsed.
     ConfigFile,
-    /// The settings folder, VERA.INI or VERARULES.INI could not be prepared;
+    /// The settings folder or VERA.INI could not be prepared;
     /// the folder, when it is known.
     Settings(Option<std::path::PathBuf>),
 }
@@ -312,6 +345,9 @@ impl App {
         // A `-SPAWN` test run's opt-in invisible window (tools/spawn/README.md).
         hidden_spawn_window: bool,
         mod_switch: Option<&crate::app::mods::ModSwitch>,
+        // A `-SPAWN` launch file's `[Settings] Ares=`, which this launch plays
+        // instead of VERA.INI's.
+        spawn_ares: Option<crate::util::ares_launch::AresSetting>,
     ) -> Result<InitializationStep> {
         // One parsed retail profile snapshot yields two ordered products: the
         // independent frontend size selected after the early Video read, and the later
@@ -329,39 +365,16 @@ impl App {
             .inspect_err(|error| startup_problem = Some(StartupProblem::of_config_load(error)))
             .and_then(|config| {
                 if capture_dimensions.is_none() {
-                    let prepared = (|| -> Result<crate::rules::personal_rules::PersonalRules> {
-                        crate::app::persistence::profile_file::import_legacy(&config.paths)
-                            .map_err(|error| {
-                                anyhow::Error::new(error).context(crate::i18n::tr_fill(
-                                    "VERA:CannotPrepareFile",
-                                    &[("file", &"VERA.INI")],
-                                ))
-                            })?;
-                        let bytes = crate::app::persistence::rules_profile::load_or_create(
-                            config.paths.settings_dir(),
-                        )
-                        .with_context(|| {
-                            crate::i18n::tr_fill(
-                                "VERA:CannotPrepareFile",
-                                &[("file", &"VERARULES.INI")],
-                            )
-                        })?;
-                        crate::rules::personal_rules::PersonalRules::from_bytes(&bytes)
-                            .with_context(|| {
-                                crate::i18n::tr_fill(
-                                    "VERA:CannotReadFile",
-                                    &[("file", &"VERARULES.INI")],
-                                )
-                            })
-                    })();
-                    match prepared {
-                        Ok(rules) => personal_rules = rules,
-                        Err(error) => {
-                            startup_problem = Some(StartupProblem::Settings(Some(
-                                config.paths.settings_dir().to_owned(),
-                            )));
-                            return Err(error);
-                        }
+                    let imported =
+                        crate::app::persistence::profile_file::import_legacy(&config.paths);
+                    if let Err(error) = imported {
+                        startup_problem = Some(StartupProblem::Settings(Some(
+                            config.paths.settings_dir().to_owned(),
+                        )));
+                        return Err(anyhow::Error::new(error).context(crate::i18n::tr_fill(
+                            "VERA:CannotPrepareFile",
+                            &[("file", &"VERA.INI")],
+                        )));
                     }
                 }
                 Ok(config)
@@ -388,6 +401,11 @@ impl App {
         let options_profile = options_load.retained_profile;
         personal_rules.set_terrain_deformation(options_profile.terrain_deformation);
         personal_rules.set_superweapon_limit(i32::from(options_profile.superweapon_limit));
+        // The Ares setting holds for the whole launch, as the mod does.
+        let ares_setting = spawn_ares.unwrap_or(options_profile.ares);
+        if ares_setting != crate::util::ares_launch::AresSetting::Auto {
+            log::info!("Ares setting for this start: {}", ares_setting.ini_value());
+        }
         // Before the first CSF load below, which layers this language over it.
         crate::i18n::init(
             game_config
@@ -400,13 +418,22 @@ impl App {
         crate::i18n::set_show_string_keys(options_profile.show_string_keys);
         // After the language is known: a mod that cannot be used is refused
         // in it. A sealed capture takes no mod from config.toml, as it takes
-        // no VERA.INI or VERARULES.INI.
-        let mods = game_config
+        // no VERA.INI.
+        let mut mods = game_config
             .as_ref()
             .map(|config| {
                 crate::app::mods::begin(&config.paths, mod_switch, capture_dimensions.is_some())
             })
             .unwrap_or_default();
+        // VERARULES.INI is no longer read: a file that still holds settings
+        // is named once the main menu is up, in the language just chosen.
+        if capture_dimensions.is_none()
+            && let Some(config) = &game_config
+            && let Some(text) =
+                crate::app::persistence::rules_profile::retire(config.paths.settings_dir())
+        {
+            mods.add_rules_file_notice(text);
+        }
         crate::map::source::set_mod_dir(mods.dir().map(std::path::Path::to_owned));
         let (window_width, window_height, window_visible) =
             startup_window_projection(profile_screen, capture_dimensions);
@@ -448,12 +475,15 @@ impl App {
         } else {
             super::WINDOW_TITLE
         };
+        // On Windows the window opens hidden and is shown, painted black, once
+        // winit has sized and placed it (`black_window_background`).
+        let show_when_placed = cfg!(windows) && window_visible;
         let mut window_attrs: WindowAttributes = WindowAttributes::default()
             .with_title(title)
             .with_inner_size(inner_size)
             .with_resizable(!capture)
             .with_fullscreen(fullscreen)
-            .with_visible(window_visible)
+            .with_visible(window_visible && !show_when_placed)
             .with_active(window_visible);
         // A player window shrinks no further than gamemd's smallest mode,
         // 640x480, the view every zoom step keeps.
@@ -512,6 +542,11 @@ impl App {
         // the cursor, before the startup splash; from the first frame after it,
         // `show_os_cursor_only_without_game_cursor` owns the cursor.
         window.set_cursor_visible(false);
+        #[cfg(windows)]
+        if show_when_placed {
+            black_window_background(&window, true);
+            window.set_visible(true);
+        }
         #[cfg(target_os = "macos")]
         if let Some(icon) = &window_icon {
             icon.set_dock_icon();
@@ -524,6 +559,18 @@ impl App {
             event_loop.owned_display_handle(),
             capture || hidden_spawn_window,
         )?;
+        // On the processor, building the renderers and reaching the first
+        // picture can take minutes, and the window stays blank until then: a
+        // player is told why while the start goes on.
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        if let Some(adapter) = gpu.software_renderer() {
+            log::warn!(
+                "{adapter} is a software renderer: no graphics card and driver qualified, so the processor draws and the game will be very slow"
+            );
+            if !capture && !hidden_spawn_window {
+                crate::app::system_dialog::report_software_renderer(adapter);
+            }
+        }
         let quickplay_allowed = replay_retail_directory.is_none();
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         let pending = (
@@ -546,6 +593,7 @@ impl App {
                 profile_screen,
                 external_launch,
                 quickplay_allowed,
+                ares_setting,
             )
         };
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
@@ -573,6 +621,7 @@ impl App {
         launch_window_size: ScreenSize,
         external_launch: bool,
         quickplay_allowed: bool,
+        ares_setting: crate::util::ares_launch::AresSetting,
     ) -> Result<InitializationStep> {
         let batch_renderer: BatchRenderer = BatchRenderer::new(&gpu);
         let status_screen_fill = batch_renderer.create_texture(&gpu, &[255; 4], 1, 1);
@@ -604,10 +653,14 @@ impl App {
         let sidebar_layout_spec = SidebarChromeLayoutSpec::stock();
         let mut startup_asset_manager = game_config.as_ref().and_then(|config| {
             startup_asset_or_error(
-                AssetManager::with_mod(
+                AssetManager::with_mod_and_ares(
                     &config.paths.ra2_dir,
                     mods.dir(),
                     startup_options.media_archive_mode,
+                    ares_setting,
+                    crate::assets::asset_manager::ArchiveFamily::for_ini_profile(
+                        config.ini.profile,
+                    ),
                 )
                 .and_then(|assets| assets.with_ini_roots(&config.ini))
                     .with_context(|| crate::i18n::tr("VERA:CannotLoadArchives")),
@@ -720,6 +773,8 @@ impl App {
                 Err(err) => log::warn!("Initial startup present deferred: {err:#}"),
             }
         }
+        #[cfg(windows)]
+        black_window_background(&window, false);
         if external_launch {
             log::info!("External launch: process-start splash skipped");
         }
@@ -737,7 +792,8 @@ impl App {
                         .unwrap_or_default(),
                 )
                 .with_personal_rules(personal_rules)
-                .with_mod_dir(mods.dir().map(Path::to_path_buf));
+                .with_mod_dir(mods.dir().map(Path::to_path_buf))
+                .with_ares_setting(ares_setting);
             process_assets.csf = startup_csf;
             let (startup_rules, startup_rules_projection) = startup_asset_manager
                 .as_ref()
@@ -1054,7 +1110,6 @@ impl App {
                     screen_shake: Default::default(),
                     line_trails: Default::default(),
                     lasers: Default::default(),
-                    #[cfg(feature = "ares")]
                     flying_credits: Default::default(),
                     talk_bubble: Default::default(),
                     electric_bolts: Default::default(),
@@ -1116,6 +1171,7 @@ impl App {
                     house_color_map: HashMap::new(),
                     house_roster: HouseRoster::default(),
                     relation_colors: false,
+                    superweapon_building_timers: false,
                     relation_color_map: None,
                     relation_color_generation: 0,
                     lighting: Default::default(),
@@ -1254,6 +1310,7 @@ impl App {
                 room_limits: Default::default(),
                 wol_room_name: None,
                 wol_room_unranked: false,
+                wol_room_watching: crate::ui::wol_lobby::RoomWatching::Delayed,
                 lan_rematch: None,
                 network_setup_protocol: None,
                 wol_welcome_art: None,
@@ -1391,12 +1448,12 @@ pub(crate) fn quickplay_launch_session(
         log::warn!("RA2_QUICKPLAY needs the MPModesMD.ini Battle row; not launching");
         return None;
     };
-    Some(SkirmishLaunchSession {
-        mode: SkirmishLaunchMode::from_game_mode(battle),
-        selected_map_file: Some(selected_map),
+    Some(SkirmishLaunchSession::from_rows(
+        SkirmishLaunchMode::from_game_mode(battle),
+        Some(selected_map),
         // The local House takes the player name, so naming it after the
         // country lets a fixture map's `Americans`-owned objects spawn.
-        humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+        vec![crate::skirmish_launch::SkirmishHumanSlot {
             raw_slot_index: Some(0),
             name: "Americans".to_string(),
             slot: SkirmishLocalSlot {
@@ -1411,13 +1468,11 @@ pub(crate) fn quickplay_launch_session(
             },
             role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
         }],
-        local_player_index: 0,
+        0,
         // An empty AI house is still a contender: its automatic defeat would
         // award victory to the fixture owner and end the comparison session.
-        ai_player_count: 0,
-        opponents: Vec::new(),
-        pre_fill_house_roster: crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(0),
-        options: SkirmishLaunchOptions {
+        Vec::new(),
+        SkirmishLaunchOptions {
             // VERA developer shortcut: fixture maps carry their own objects.
             // Both native starting-force gates must be off: UnitCount=0 alone
             // still adds an MCV at each start and reveals an extra radar area.
@@ -1425,7 +1480,7 @@ pub(crate) fn quickplay_launch_session(
             unit_count: 0,
             ..SkirmishLaunchOptions::default()
         },
-    })
+    ))
 }
 
 #[cfg(all(test, tests_app))]
@@ -1513,7 +1568,7 @@ mod tests {
         assert_eq!(session.required_start_count(), 1);
         assert!(
             session
-                .pre_fill_house_roster
+                .pre_fill_house_roster()
                 .ai_slots()
                 .iter()
                 .all(|slot| !slot.valid)
@@ -1558,7 +1613,9 @@ mod tests {
                     team: LaunchTeam::None,
                     difficulty: AiDifficulty::Easy,
                 });
-                session.pre_fill_house_roster = PreFillHouseRoster::from_compact_skirmish(1);
+                session.set_recorded_house_roster_for_test(
+                    PreFillHouseRoster::from_compact_skirmish(1),
+                );
             }
             let descriptor = MatchLaunchDescriptor::from_resolved(session).unwrap();
             let mut loaded =

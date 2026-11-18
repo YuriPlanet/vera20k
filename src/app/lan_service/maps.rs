@@ -7,10 +7,10 @@
 //! Source decoding, generated W staging and cache installation have one shared
 //! owner with WOL in shell_network_setup::maps and map::source.
 
+use crate::util::time::{Duration, Instant};
 use std::net::SocketAddrV4;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
-use crate::util::time::{Duration, Instant};
 
 use anyhow::{Result, anyhow, ensure};
 
@@ -72,21 +72,11 @@ impl Key {
             .session
             .network_map_metadata()
             .ok_or_else(|| anyhow!("map transfer has no metadata"))?;
-        let seed = crate::map::rmg::is_seed_selection(file);
-        ensure!(
-            seed == generated.is_some(),
-            "generated map transfer manifest differs from selection"
-        );
-        let total = usize::try_from(metadata.byte_length)?;
-        ensure!(
-            crate::map::source::valid_source_sha256(&metadata.source_sha256)
-                && crate::map::source::valid_source_sha256(&metadata.effective_digest)
-                && total > 0
-                && total <= TransferResource::Map.limit(),
-            "invalid map transfer identity"
-        );
+        // `Transfers::selected` checks the manifest against the selection
+        // (`shared::accept_generated_manifest`) before it keeps this key.
+        let total = shared::transfer_length(metadata)?;
         let mut assets = vec![Asset {
-            resource: if seed {
+            resource: if crate::map::rmg::is_seed_selection(file) {
                 TransferResource::Seed
             } else {
                 TransferResource::Map
@@ -95,12 +85,6 @@ impl Key {
             total,
         }];
         if let Some(manifest) = &generated {
-            ensure!(
-                crate::map::source::valid_source_sha256(&manifest.preview.source_sha256)
-                    && manifest.preview.byte_length > 0
-                    && manifest.preview.byte_length <= TransferResource::Preview.limit(),
-                "invalid generated preview identity"
-            );
             assets.push(Asset {
                 resource: TransferResource::Preview,
                 digest: manifest.preview.source_sha256.clone(),
@@ -1121,7 +1105,7 @@ mod tests {
         let mut options = crate::map::rmg::RmgOptions::default();
         options.seed = 1234;
         options.normalize();
-        let mut bytes = options.to_sed_bytes();
+        let mut bytes = options.to_sed_bytes(false);
         bytes.extend_from_slice(b"\n;");
         bytes.extend(std::iter::repeat_n(b'x', WINDOW_BYTES));
         let key = key(TransferResource::Seed, &bytes);
@@ -1200,7 +1184,7 @@ mod tests {
             panic!("received seed INI");
         };
         let mut decoded = crate::map::rmg::RmgOptions::default();
-        decoded.apply_sed(&ini);
+        decoded.apply_sed(&ini, false);
         decoded.normalize();
         assert_eq!(decoded, options);
     }

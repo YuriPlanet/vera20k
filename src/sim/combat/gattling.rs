@@ -154,7 +154,7 @@ impl GattlingState {
 
     /// `IncreaseGattlingStage(ticks) @ 0x0070DE70`.
     ///
-    /// `ares_cycle` is `None` for gamemd's body and, in Ares builds, the
+    /// `ares_cycle` is `None` for gamemd's body and, in an Ares game, the
     /// type's `Gattling.Cycle`: TechnoClass_UpdateGattling_Cycle (Ares.dll
     /// 1004B6C0, hook 0x70DEBA) replaces the cap test, so a cyclic type at
     /// the cap restarts at stage 0 with the loop hard-stopped (`0x405D40` on

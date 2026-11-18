@@ -1,6 +1,6 @@
 //! A wire checker that reads every datagram's bytes by the specs and calls
-//! no production decoder, so it is also an independent check of the format
-//! (e2e-plan §1.3): the compacted wire of services/relay/bandwidth-
+//! no production decoder, so it is also an independent check of the format:
+//! the compacted wire of services/relay/bandwidth-
 //! compaction/spec.md ("compaction spec"), envelope v3 (§6.1), PACK v2
 //! (§5.2, §5.3), the varint ordering messages (§7) and plaintext batches
 //! (§3.1), carrying the adaptive transport's messages
@@ -110,6 +110,9 @@ pub enum Detail {
         start_delay_ms: u32,
         started: bool,
         feedback: Feedback,
+        /// VERA: the sources the relay has not heard from lately, 0 when
+        /// the STATUS has none (relay README "Silence").
+        silent_sources: u32,
     },
     Ack {
         batch_id: u64,

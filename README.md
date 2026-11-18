@@ -1,7 +1,7 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20K hero image" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <strong>English</strong>
+  <a href="README.vi.md" lang="vi">Tiếng Việt</a> · <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <strong>English</strong>
 </p>
 <p align="center" dir="ltr">
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Latest Linux library test run (run manually)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Linux library tests" height="23" align="middle"></a>
@@ -103,8 +103,9 @@ VERA20K plays like the original game by default. New features, including extensi
 mods such as Ares, stay off until they are turned on with one of:
 
 - **A VERA player option**, in **Options**, saved under `[VERA]` in `VERA.INI`.
-- **A build option**, such as `--features ares` for the supported [Ares extensions](docs/ares.md).
-- **An INI key**, set by a mod or a map.
+- **A build option**, such as `--features phobos` for the supported [Phobos extensions](docs/phobos.md).
+- **An INI key**, set by a mod or a map. Ares keys, or a mod that ships `ares.mix`, turn on
+  the supported [Ares extensions](docs/ares.md).
 
 Sound, graphics and controls are saved in `VERA.INI`. Gameplay rules come from lobby
 settings, mods or maps.
@@ -136,6 +137,7 @@ icon, Red Alert 2's red star, show game art owned by Electronic Arts. VERA20K is
 with or endorsed by Electronic Arts.
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **Read the [legal notice](LEGAL.md) before you share, sell or fork VERA20K.**
 

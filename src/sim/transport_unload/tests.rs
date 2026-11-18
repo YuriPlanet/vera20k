@@ -203,7 +203,7 @@ impl Fixture {
                 .substrate
                 .entities
                 .get_mut(transport)
-                .and_then(|t| t.passenger_role.cargo_mut())
+                .and_then(|t| t.passenger_role_mut_for_test().cargo_mut())
                 .expect("transport cargo");
             assert!(cargo.can_accept(1.0), "cargo accepts passenger {i}");
             cargo.board_forced_chain(&[(pax, 1.0)]);
@@ -212,7 +212,10 @@ impl Fixture {
                 .entities
                 .get_mut(pax)
                 .expect("passenger")
-                .passenger_role = PassengerRole::boarded_for_test(transport, open_topped);
+                .set_passenger_role_for_test(PassengerRole::boarded_for_test(
+                    transport,
+                    open_topped,
+                ));
             ids.push(pax);
         }
         ids
@@ -245,7 +248,7 @@ impl Fixture {
             .substrate
             .entities
             .get(transport)
-            .and_then(|t| t.passenger_role.cargo())
+            .and_then(|t| t.passenger_role().cargo())
             .map(|c| c.passengers().to_vec())
             .unwrap_or_default()
     }
@@ -430,7 +433,6 @@ fn check_vehicle_transport_trip(mut fx: Fixture, carrier_type: &str, passenger_t
 /// without claiming native equivalence of the whole transport mission.
 /// Stock only: Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook
 /// `0x0056BC54`) moves the nine slots this publication writes.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn vehicle_unload_republishes_threat_and_foot_coefficient_before_movement() {
     use crate::sim::house_state::HouseState;
@@ -1469,7 +1471,7 @@ fn aircraft_unload_keeps_the_transporter_until_the_aircraft_goes() {
     ));
     let transporter = |fx: &Fixture| {
         let soldier = fx.sim.substrate.entities.get(soldier).unwrap();
-        soldier.passenger_role.transporter()
+        soldier.passenger_role().transporter()
     };
     assert_eq!(transporter(&fx), Some(shad), "boarding sets it");
     Simulation::set_object_height_unmarked(
@@ -1571,7 +1573,7 @@ fn relaxed_pass_drives_vehicle_passenger_to_the_fnpc_cell() {
         .substrate
         .entities
         .get_mut(bfrt)
-        .and_then(|t| t.passenger_role.cargo_mut())
+        .and_then(|t| t.passenger_role_mut_for_test().cargo_mut())
         .expect("transport cargo");
     assert!(cargo.can_accept(1.0), "cargo accepts the vehicle");
     cargo.board_forced_chain(&[(bggy, 1.0)]);
@@ -1580,7 +1582,7 @@ fn relaxed_pass_drives_vehicle_passenger_to_the_fnpc_cell() {
         .entities
         .get_mut(bggy)
         .expect("passenger")
-        .passenger_role = PassengerRole::inside_for_test(bfrt, true);
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(bfrt, true));
     // Already facing NE (0x20): state 0 keeps that heading, so the
     // state-3 scan starts at octant 5; the strict pass fails
     // everywhere (ring two is water) and the relaxed restart accepts octant
@@ -1703,7 +1705,7 @@ fn vehicle_passenger_leaves_with_its_turret_on_the_exit_direction() {
         .substrate
         .entities
         .get_mut(bfrt)
-        .and_then(|t| t.passenger_role.cargo_mut())
+        .and_then(|t| t.passenger_role_mut_for_test().cargo_mut())
         .expect("transport cargo");
     assert!(cargo.can_accept(1.0), "cargo accepts the vehicle");
     cargo.board_forced_chain(&[(bggy, 1.0)]);
@@ -1712,7 +1714,7 @@ fn vehicle_passenger_leaves_with_its_turret_on_the_exit_direction() {
         .entities
         .get_mut(bggy)
         .expect("passenger")
-        .passenger_role = PassengerRole::inside_for_test(bfrt, true);
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(bfrt, true));
     assert!(fx.apply(Command::UnloadPassengers { transport_id: bfrt }));
 
     let order = fx.run_until_revealed(&[bggy], 200);
@@ -1835,7 +1837,7 @@ fn vehicle_passenger_off_the_playfield_exit_lands_on_raised_in_playfield_ground(
         .substrate
         .entities
         .get_mut(bfrt)
-        .and_then(|t| t.passenger_role.cargo_mut())
+        .and_then(|t| t.passenger_role_mut_for_test().cargo_mut())
         .expect("transport cargo");
     assert!(cargo.can_accept(1.0), "cargo accepts the vehicle");
     cargo.board_forced_chain(&[(bggy, 1.0)]);
@@ -1844,7 +1846,7 @@ fn vehicle_passenger_off_the_playfield_exit_lands_on_raised_in_playfield_ground(
         .entities
         .get_mut(bggy)
         .expect("passenger")
-        .passenger_role = PassengerRole::inside_for_test(bfrt, true);
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(bfrt, true));
     fx.sim
         .substrate
         .entities
@@ -2320,7 +2322,7 @@ fn cargo_departure_ground_reveal_rejection_preserves_route_retry_state() {
             {
                 let carrier = fx.sim.substrate.entities.get_mut(transport).unwrap();
                 carrier.set_gunner_selection_for_test(99, -1);
-                let cargo = carrier.passenger_role.cargo_mut().unwrap();
+                let cargo = carrier.passenger_role_mut_for_test().cargo_mut().unwrap();
                 // Admission-time size differs from current E1 Size=1.
                 let mut sizes = cargo.passenger_sizes().to_vec();
                 sizes[0] = 7.0;
@@ -2332,7 +2334,7 @@ fn cargo_departure_ground_reveal_rejection_preserves_route_retry_state() {
                     .entities
                     .get(transport)
                     .unwrap()
-                    .passenger_role
+                    .passenger_role()
                     .cargo(),
             )
             .unwrap();
@@ -2362,7 +2364,7 @@ fn cargo_departure_ground_reveal_rejection_preserves_route_retry_state() {
             }
             let carrier = fx.sim.substrate.entities.get(transport).unwrap();
             assert_eq!(
-                serde_json::to_value(carrier.passenger_role.cargo()).unwrap(),
+                serde_json::to_value(carrier.passenger_role().cargo()).unwrap(),
                 held
             );
             assert_eq!(
@@ -2373,7 +2375,7 @@ fn cargo_departure_ground_reveal_rejection_preserves_route_retry_state() {
                 if aircraft { (99, -1) } else { (1, 2) }
             );
             let pax = fx.sim.substrate.entities.get(passenger).unwrap();
-            assert_eq!(pax.passenger_role.inside_transport_id(), Some(transport));
+            assert_eq!(pax.passenger_role().inside_transport_id(), Some(transport));
             assert!(pax.lifecycle.in_limbo());
             assert_eq!(pax.lifecycle.cell_marked(), !already_revealed);
             assert!(!pax.in_logic_vector.is_member());
@@ -2606,7 +2608,7 @@ fn retail_bfrt_ejects_while_turning_and_resumes_after_save() {
                             .entities
                             .get(passenger)
                             .unwrap()
-                            .passenger_role
+                            .passenger_role()
                             .transporter()
                             .is_none(),
                         ejection["transporter_cleared"].as_bool().unwrap(),

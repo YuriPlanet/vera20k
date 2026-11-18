@@ -83,7 +83,7 @@ fn a_tanks_turn_and_a_load_store_no_building_state() {
 /// pointer, so moving it into every build costs the seldom part 8 bytes.
 #[cfg(all(
     target_pointer_width = "64",
-    not(any(feature = "ares", feature = "phobos", feature = "debug-tools"))
+    not(any(feature = "phobos", feature = "debug-tools"))
 ))]
 #[test]
 fn the_object_record_stays_under_its_ceiling() {
@@ -227,10 +227,6 @@ fn a_fire_visit_without_a_target_keeps_its_deliveries() {
 /// due (a mission handler re-arming its clock): each hand-out copies an
 /// object a presentation frame still shares, so a step that writes nothing
 /// must not take one.
-// A build that still carries Ares behind its feature sleeps nothing
-// (`Simulation::extension_steps_unsorted`), so this runs once that
-// feature is gone.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn an_idle_turn_hands_its_object_out_only_on_a_due_timer() {
     let (mut sim, rules, tank, plant) = scene();

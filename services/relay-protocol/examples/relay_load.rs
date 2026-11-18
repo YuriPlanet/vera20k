@@ -20,7 +20,6 @@ use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use vera20k_relay_protocol::envelope::MAX_DATAGRAM;
 use vera20k_relay_protocol::netsim::adaptive_client::AdaptiveClient;
-use vera20k_relay_protocol::netsim::client::HeadlessClient;
 use vera20k_relay_protocol::netsim::network::Rng;
 use vera20k_relay_protocol::{
     ClientSession, MAX_TICKET_LIFETIME, OrderingCertificate, SecretKey, Ticket, derive_packet_key,
@@ -210,6 +209,7 @@ fn run_room(options: &Options, key: &SecretKey, room_index: usize, started: Inst
         tick_hz: options.tick_hz,
         expires,
         pacing: Default::default(),
+        ordered_alone: false,
     }
     .sign(key)
     .expect("certificate");
@@ -297,9 +297,7 @@ fn drive(players: &mut [Player], timing: Timing, mut rng: Rng) -> Stats {
                 stats.datagrams_received += 1;
                 stats.bytes_received += length as u64;
                 let at_us = elapsed_us();
-                player
-                    .client
-                    .deliver(&buffer[..length], at_us / 1000, at_us);
+                player.client.deliver(&buffer[..length], at_us / 1000);
                 player.flush(&mut stats);
             }
             let at_us = elapsed_us();
@@ -346,9 +344,7 @@ fn drive(players: &mut [Player], timing: Timing, mut rng: Rng) -> Stats {
         }
         stats.decode_errors += log.refused.values().sum::<u64>();
         stats.mac_failures += player.client.mac_failures();
-        if let Some(link) = player.client.link_stats() {
-            stats.resends += link.rto_timeouts;
-        }
+        stats.resends += player.client.link_stats().rto_timeouts;
         if !player.client.started()
             || log
                 .advances

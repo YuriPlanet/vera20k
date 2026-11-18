@@ -51,6 +51,8 @@ pub enum Verb {
 pub struct Cli {
     pub ra2_dir: Option<PathBuf>,
     pub all_mixes: bool,
+    /// `--ares`: the player's Ares setting the game opens with.
+    pub ares: crate::util::ares_launch::AresSetting,
     pub verb: Verb,
     pub find: FindOptions,
     pub ls: LsOptions,
@@ -132,13 +134,17 @@ ini-expand
                        --all-mixes widens tooling lookup only, not game mounting.
 
 GLOBAL OPTIONS
-  --ini-profile <yr|mo|auto|custom>  ini-roots/get/type only; overrides [ini] as a unit.
+  --ini-profile <yr|mo|auto|custom>  ini-roots/get/type: overrides [ini] as a unit.
+                       Archive verbs: mo mounts MO's renamed startup archives.
   --rules-ini <NAME> --art-ini <NAME> --ai-ini <NAME>
                        Custom profile requires all three plain INI basenames.
   --ra2-dir <PATH>     Retail install root. Overrides $RA2_DIR and config.toml.
   --all-mixes          Also mount archives the game's startup path skips.
                        Tooling-only: hits found this way are not what the game
                        would resolve.
+  --ares <Auto|On|Off> The Ares setting the game opens with. Default Auto, which
+                       reads the installation without its ares.mix; On reads
+                       it as an Ares game (string tables, audio bags, INIs).
   -h, --help           This text.
 
 find
@@ -180,7 +186,7 @@ palette-for
 
 csf-get / csf-grep
   --source <NAME>      Inspect one raw .csf. Default: the active game table
-                       (ra2md.csf; Ares builds also apply its supplements).
+                       (ra2md.csf; an Ares game also applies its supplements).
   --raw                Also report the stored text before normalisation.
   --limit/--offset     Paging. Default limit 50.
 
@@ -222,6 +228,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
     let mut cli = Cli {
         ra2_dir: None,
         all_mixes: false,
+        ares: Default::default(),
         verb: Verb::Help,
         find: FindOptions::default(),
         ls: LsOptions::default(),
@@ -334,6 +341,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
             && !matches!(
                 flag.as_str(),
                 "--ra2-dir"
+                    | "--ares"
                     | "--all-mixes"
                     | "--ini-profile"
                     | "--rules-ini"
@@ -349,6 +357,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
             && !matches!(
                 flag.as_str(),
                 "--ra2-dir"
+                    | "--ares"
                     | "--all-mixes"
                     | "--strict"
                     | "--max-depth"
@@ -363,6 +372,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
             && !matches!(
                 flag.as_str(),
                 "--ra2-dir"
+                    | "--ares"
                     | "--ini-profile"
                     | "--rules-ini"
                     | "--art-ini"
@@ -394,11 +404,21 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
             }
             "--ra2-dir" => cli.ra2_dir = Some(PathBuf::from(value(&mut args, "--ra2-dir")?)),
             "--all-mixes" => cli.all_mixes = true,
+            "--ares" => {
+                let text = value(&mut args, "--ares")?;
+                cli.ares = crate::util::ares_launch::AresSetting::parse(&text)
+                    .ok_or_else(|| format!("--ares takes Auto, On or Off, not {text:?}"))?;
+            }
             "--ini-profile" | "--rules-ini" | "--art-ini" | "--ai-ini" => {
-                if !matches!(
+                let ini_verb = matches!(
                     cli.verb,
                     Verb::IniGet { .. } | Verb::IniType { .. } | Verb::IniRoots
-                ) {
+                );
+                // Archive verbs take only a profile, which selects the
+                // archive family the game mounts for it (MO's renamed MIXes).
+                let archive_verb =
+                    !matches!(cli.verb, Verb::IniExpand { .. }) && flag == "--ini-profile";
+                if !ini_verb && !archive_verb {
                     return Err(flag_not_valid(&flag, &cli.verb));
                 }
                 let config = cli.ini_roots.get_or_insert_with(Default::default);
@@ -663,6 +683,11 @@ mod tests {
             custom.ini_roots.unwrap().resolve(|_| true).unwrap().names(),
             ["r.ini", "a.ini", "i.ini"]
         );
+        let extract = parse(args(&["extract", "aimo.ini", "--ini-profile", "mo"])).unwrap();
+        assert_eq!(
+            extract.ini_roots.unwrap().profile,
+            crate::util::ini_roots::IniProfile::Mo
+        );
         for words in [
             vec![
                 "ini-roots",
@@ -674,7 +699,7 @@ mod tests {
             vec!["ini-roots", "--ini-profile", "mo", "--ai-ini", "aimd.ini"],
             vec!["ini-roots", "--ini-profile", "unknown"],
             vec!["ini-roots", "--out", "somewhere"],
-            vec!["find", "r.ini", "--ini-profile", "mo"],
+            vec!["find", "r.ini", "--ai-ini", "aimo.ini"],
             vec!["ini-expand", "r.ini", "--ini-profile", "mo"],
             vec!["ini-roots", "--strict"],
             vec!["ini-roots", "--source-only"],
@@ -771,6 +796,18 @@ mod tests {
             .err()
             .expect("a flag as a value is an error");
         assert!(err.contains("--filter needs a value"), "got {err}");
+    }
+
+    #[test]
+    fn ares_takes_the_players_setting() {
+        use crate::util::ares_launch::AresSetting;
+        assert_eq!(
+            parse(args(&["csf-get", "x"])).unwrap().ares,
+            AresSetting::Auto
+        );
+        let cli = parse(args(&["csf-get", "x", "--ares", "on"])).unwrap();
+        assert_eq!(cli.ares, AresSetting::On);
+        assert!(parse(args(&["csf-get", "x", "--ares", "maybe"])).is_err());
     }
 
     #[test]

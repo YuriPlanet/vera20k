@@ -1,7 +1,8 @@
 # Optional Ares stealth, power sources, radar jammers and sensor arrays
 
-Build with `--features ares`. Default builds ignore every key below and keep
-the stock cloak, Robot Tank, radar and sensor-array behaviour.
+When a game plays Ares ([Ares](ares.md)), every build plays the keys below.
+Other games ignore them and keep the stock cloak, Robot Tank, radar and
+sensor-array behaviour.
 
 ```ini
 [SUBX]                     ; TechnoType

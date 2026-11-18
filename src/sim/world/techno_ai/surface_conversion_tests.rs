@@ -4,6 +4,13 @@ use crate::rules::terrain_rules::LandType;
 
 #[test]
 fn surface_conversion_ai_handles_water_beach_bridge_and_land_in_place() {
+    for ares in [false, true] {
+        let _scope = crate::rules::ares_switch::read_ares_way(ares);
+        check_surface_conversion(ares);
+    }
+}
+
+fn check_surface_conversion(ares: bool) {
     let ini = crate::sim::arena_fixture::clear_ground_ini(
         "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=LAND\n1=WATER\n\
          [LAND]\nStrength=100\nSpeed=5\nSpeedType=Hover\nMovementZone=Amphibious\n\
@@ -14,6 +21,7 @@ fn surface_conversion_ai_handles_water_beach_bridge_and_land_in_place() {
          Locomotor={4A582742-9839-11d1-B709-00A024DDAFD1}\n",
     );
     let rules = RuleSet::from_ini(&ini).unwrap();
+    assert_eq!(rules.ares(), ares);
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 29);
     let id = sim
         .spawn_object("LAND", "Americans", 10, 10, 0, &rules)

@@ -259,12 +259,12 @@ impl RadiationTypeCatalog {
             level_factor: entry.level_factor.unwrap_or(rules.level_factor),
             // The global readers widen the scanned double through f32 into
             // the stored fixed value; a type read takes the same path.
-            light_factor: SimFixed::from_num(
+            light_factor: SimFixed::saturating_from_num(
                 entry
                     .light_factor
                     .unwrap_or(rules.light_factor.to_num::<f64>()) as f32,
             ),
-            tint_factor: SimFixed::from_num(
+            tint_factor: SimFixed::saturating_from_num(
                 entry
                     .tint_factor
                     .unwrap_or(rules.tint_factor.to_num::<f64>()) as f32,

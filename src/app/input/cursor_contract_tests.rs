@@ -134,6 +134,16 @@ fn ares_vehicle_capture_cursor_shares_manual_action_and_preserves_shift_selectio
 
 #[test]
 fn ares_no_manual_fire_native_modifier_cursors_use_the_shared_action() {
+    no_manual_fire_modifier_cursors(false);
+}
+
+#[test]
+fn ares_no_manual_fire_modifier_cursors_follow_the_key_in_an_ares_game() {
+    no_manual_fire_modifier_cursors(true);
+}
+
+fn no_manual_fire_modifier_cursors(ares_way: bool) {
+    let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
     let corpus = crate::test_fixture::json("tools/spatial_oracle/no_manual_fire.json");
     let rows = corpus["rows"].as_array().unwrap();
     for setting in [false, true] {
@@ -152,9 +162,9 @@ fn ares_no_manual_fire_native_modifier_cursors_use_the_shared_action() {
             .filter(|row| row["no_manual_fire_native_reader_value"] == u64::from(setting))
         {
             let case = &row["input"];
-            // The same authored key is ignored by the default build. Its
+            // A game not read the Ares way ignores the same authored key. Its
             // expected result is the actual DLL control with the flag off.
-            let expected = if crate::rules::ARES_BUILD {
+            let expected = if ares_way {
                 row
             } else {
                 rows.iter()
@@ -556,7 +566,9 @@ fn infantry_deploy_and_loaded_transport_self_cursors_share_click_admission() {
             sim.entities_mut_for_test()
                 .get_mut(actor)
                 .unwrap()
-                .passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+                .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(
+                    cargo,
+                ));
         }
         for modifier in [
             OrderModifier::Normal,

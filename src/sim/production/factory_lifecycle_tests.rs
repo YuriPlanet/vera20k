@@ -79,14 +79,12 @@ fn paid_destroyer_runs_shipyard_production_animation_through_idle_recovery() {
     };
     let mut rules = retail.rules;
     crate::map::theater::load_theater(&mut assets, "TEMPERATE").expect("retail temperate assets");
-    rules
-        .bind_scheduler_anim_assets(
-            &["GAYARD_A".into(), "GAYARD_C".into(), "GAYARD_D".into()],
-            &assets,
-            "tem",
-            "TEMPERATE",
-        )
-        .expect("production animation bounds come from physical retail SHPs");
+    rules.bind_scheduler_anim_assets(
+        &["GAYARD_A".into(), "GAYARD_C".into(), "GAYARD_D".into()],
+        &assets,
+        "tem",
+        "TEMPERATE",
+    );
     let mut sim = Simulation::with_seed(0x4441_7500);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -131,10 +129,7 @@ fn paid_destroyer_runs_shipyard_production_animation_through_idle_recovery() {
     let cost = sim.cost_of(owner, rules.object("DEST").unwrap(), &rules);
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: std::sync::Arc::new(SimResources {
-            rules,
-            ..SimResources::empty()
-        }),
+        resources: std::sync::Arc::new(SimResources::new(rules)),
     };
     for _ in 0..8 {
         runtime
@@ -692,10 +687,7 @@ pub(super) fn retail_barracks_sale_runtime(
     Some((
         SimRuntime {
             simulation: sim,
-            resources: std::sync::Arc::new(SimResources {
-                rules,
-                ..SimResources::empty()
-            }),
+            resources: std::sync::Arc::new(SimResources::new(rules)),
         },
         owner,
         2,
@@ -1065,10 +1057,7 @@ fn selling_last_retail_barracks_keeps_paid_head_before_map_exit() {
         );
         let mut restored = crate::sim::runtime::SimRuntime {
             simulation: restored,
-            resources: std::sync::Arc::new(crate::sim::runtime::SimResources {
-                rules: rules.clone(),
-                ..crate::sim::runtime::SimResources::empty()
-            }),
+            resources: std::sync::Arc::new(crate::sim::runtime::SimResources::new(rules.clone())),
         };
         let spent_at_sale = runtime.simulation.houses[&owner].economy().spent_credits();
         let mut sale_visits = 0;
@@ -1461,10 +1450,7 @@ fn paid_boris_delivery_requests_its_creation_cue_once_at_the_delivered_location(
     assert!(cost > 0);
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: std::sync::Arc::new(SimResources {
-            rules,
-            ..SimResources::empty()
-        }),
+        resources: std::sync::Arc::new(SimResources::new(rules)),
     };
     let mut product = None;
     let mut cues = Vec::new();

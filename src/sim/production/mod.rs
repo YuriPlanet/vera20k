@@ -35,10 +35,8 @@ pub use self::factory::{
     category_for_object, time_to_build, type_base_build_time, type_build_time,
 };
 pub(crate) use self::factory_lifecycle::enqueue_selected;
-pub(crate) use self::factory_lifecycle::suspend_production;
-pub use self::factory_lifecycle::{
-    FactoryRestoreError, ready_building_entity_for_owner, validate_restored_factory_state,
-};
+pub(crate) use self::factory_lifecycle::{suspend_production, validate_restored_factory_state};
+pub use self::factory_lifecycle::{FactoryRestoreError, ready_building_entity_for_owner};
 pub use self::factory_lifecycle::{
     ProductionCancellation, cancel_production_for_owner, enqueue_by_type,
 };
@@ -122,7 +120,7 @@ mod industrial_plant_retail_tests;
 
 // Ares 3.0 10014390 (hook 0x446E9F) gives a non-harvester FreeUnit
 // Area_Guard instead (`production_placement_tests`).
-#[cfg(all(test, tests_sim_production, not(feature = "ares")))]
+#[cfg(all(test, tests_sim_production))]
 mod free_unit_harvest_retail_tests;
 
 #[cfg(all(test, tests_sim_production))]

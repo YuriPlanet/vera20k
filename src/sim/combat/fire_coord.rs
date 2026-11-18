@@ -875,10 +875,10 @@ fn open_topped_port_coordinate(
 ) -> Option<FireCoordinate> {
     let entities = &world.substrate.entities;
     let rider = entities.get(snap.stable_id)?;
-    let transport_id = rider.passenger_role.open_transport_id()?;
+    let transport_id = rider.passenger_role().open_transport_id()?;
     let transport = entities.get(transport_id)?;
     let port = transport
-        .passenger_role
+        .passenger_role()
         .cargo()?
         .passengers()
         .iter()

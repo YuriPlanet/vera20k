@@ -5,7 +5,7 @@ use super::*;
 /// it past the ceiling copies more than drawing needs.
 #[cfg(all(
     target_pointer_width = "64",
-    not(any(feature = "ares", feature = "phobos", feature = "debug-tools"))
+    not(any(feature = "phobos", feature = "debug-tools"))
 ))]
 #[test]
 fn the_draw_record_stays_under_its_ceiling() {
@@ -15,7 +15,7 @@ fn the_draw_record_stays_under_its_ceiling() {
 
 #[cfg(all(
     target_pointer_width = "64",
-    not(any(feature = "ares", feature = "phobos", feature = "debug-tools"))
+    not(any(feature = "phobos", feature = "debug-tools"))
 ))]
 const CEILING: usize = 816;
 
@@ -51,11 +51,8 @@ fn a_frame_finds_records_by_id_and_keeps_one_display_order() {
         assert_eq!(frame.object(id).map(|record| record.stable_id()), Some(id));
     }
     assert!(frame.object(8).is_none() && frame.object(21).is_none());
-    let order = frame.display_order(sim.display_layers());
-    assert!(std::ptr::eq(
-        order,
-        frame.display_order(sim.display_layers())
-    ));
+    let order = frame.display_order(&sim);
+    assert!(std::ptr::eq(order, frame.display_order(&sim)));
 }
 
 /// The building walk lists exactly the Structure records, in stable-id

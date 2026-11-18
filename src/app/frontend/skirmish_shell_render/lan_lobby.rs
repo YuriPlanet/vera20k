@@ -205,6 +205,7 @@ pub(crate) fn render_lan_lobby(
                 composition,
                 rect,
                 lobby.enabled && lobby.caret_visible(now),
+                SHELL_LABEL_TEXT_RGB,
                 SHELL_CONTROL_TEXT_DEPTH,
                 scale,
             );

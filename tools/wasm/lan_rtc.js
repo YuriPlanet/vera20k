@@ -5,6 +5,9 @@
   const MAX_PACKETS = 256;
   const MAX_QUEUED_BYTES = 256 * 1024;
   const MAX_SEND_BYTES = 256 * 1024;
+  // Candidates kept until their description arrives; a peer that never sends
+  // one cannot grow the queue past this.
+  const MAX_EARLY_CANDIDATES = 32;
   const BROADCAST = 0xffffffff;
   // Peer frame: source port, destination port (big endian), then the datagram.
   const HEADER = 4;
@@ -113,7 +116,9 @@
         signal({type: 'signal', to: from, data: {description: peer.pc.localDescription.toJSON()}});
       }
     } else if (type === 'answer') await accept(peer, data.description);
-    else if (data.candidate && !peer.pc.remoteDescription) peer.candidates.push(data.candidate);
+    else if (data.candidate && !peer.pc.remoteDescription) {
+      if (peer.candidates.length < MAX_EARLY_CANDIDATES) peer.candidates.push(data.candidate);
+    }
     else if (data.candidate) await peer.pc.addIceCandidate(data.candidate);
   }
 

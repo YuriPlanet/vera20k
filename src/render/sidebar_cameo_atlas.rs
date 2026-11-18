@@ -68,26 +68,31 @@ impl SidebarCameoAtlas {
     }
 
     pub fn superweapon(&self, type_id: &str) -> Option<&SidebarCameoEntry> {
-        self.superweapon_entries.get(&type_id.to_ascii_uppercase())
+        crate::util::native_string::with_ascii_uppercase(type_id, |key| {
+            self.superweapon_entries.get(key)
+        })
     }
 
     pub fn get(&self, type_id: &str) -> Option<&SidebarCameoEntry> {
-        self.entries.get(&type_id.to_ascii_uppercase())
+        crate::util::native_string::with_ascii_uppercase(type_id, |key| self.entries.get(key))
     }
 
     /// Loaded-art admission for the shared alternate-cameo selector.
     pub fn has_alternate(&self, type_id: &str) -> bool {
-        self.alt_entries.contains_key(&type_id.to_ascii_uppercase())
+        crate::util::native_string::with_ascii_uppercase(type_id, |key| {
+            self.alt_entries.contains_key(key)
+        })
     }
 
     /// The cameo `TechnoTypeClass::GetCameo @ 0x00712040` returns: the
     /// type's `AltCameo=` image when `alt` holds and it loaded
     /// (`pAltCameo != NULL`), else its plain cameo.
     pub fn cameo(&self, type_id: &str, alt: bool) -> Option<&SidebarCameoEntry> {
-        let key = type_id.to_ascii_uppercase();
-        alt.then(|| self.alt_entries.get(&key))
-            .flatten()
-            .or_else(|| self.entries.get(&key))
+        crate::util::native_string::with_ascii_uppercase(type_id, |key| {
+            alt.then(|| self.alt_entries.get(key))
+                .flatten()
+                .or_else(|| self.entries.get(key))
+        })
     }
 }
 
@@ -1125,13 +1130,12 @@ mod tests {
         dir.write(name, &bytes);
     }
 
-    /// Runs for a game Ares plays in and one it does not, in every build (a
-    /// build with the `ares` feature reads every fixture the Ares way).
+    /// Runs for a game Ares plays in and one it does not.
     #[test]
     fn cameo_pcx_feature_gate_embedded_palette_and_packed_key() {
         for ares in [false, true] {
             let _ares = crate::rules::ares_switch::read_ares_way(ares);
-            assert_eq!(cameo_rules().ares(), ares || cfg!(feature = "ares"));
+            assert_eq!(cameo_rules().ares(), ares);
             cameo_pcx_case();
         }
     }
@@ -1311,8 +1315,7 @@ mod tests {
         assert_eq!([promoted.canvas_width, promoted.canvas_height], [2, 2]);
     }
 
-    /// Runs for a game Ares plays in and one it does not, in every build (a
-    /// build with the `ares` feature reads every fixture the Ares way).
+    /// Runs for a game Ares plays in and one it does not.
     #[test]
     fn superweapon_pcx_key_and_shp_fallback_share_the_projected_identity() {
         for ares in [false, true] {

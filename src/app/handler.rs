@@ -576,6 +576,9 @@ impl ApplicationHandler for App {
                 .map(|request| request.retail_dir.as_path()),
             self.spawn_request.is_some() && Self::spawn_hidden_window_requested(),
             self.mod_switch.as_ref(),
+            self.spawn_request
+                .as_ref()
+                .and_then(|request| request.ares_setting),
         );
         let result = if capture_dimensions.is_some() {
             result.and_then(super::initialize::InitializationStep::finish_synchronously)
@@ -753,17 +756,36 @@ impl ApplicationHandler for App {
         let Some(state) = &mut self.state else { return };
         state.sync_cursor_space();
         // Playback has presentation-only input. Exit is local and never
-        // schedules EventClass EXIT or changes the recorded simulation.
-        if state.match_state.match_diagnostics.is_replay_playback() {
+        // schedules EventClass EXIT or changes the recorded simulation. A
+        // watcher's is presentation-only too: it gives no orders, Tab follows
+        // the next player, Escape leaves the match and its mouse moves the
+        // view.
+        let replay = state.match_state.match_diagnostics.is_replay_playback();
+        let watching = !replay
+            && state.frontend.screen == GameScreen::InGame
+            && crate::app::match_runtime::watching::active(state);
+        if replay || watching {
             match &event {
-                WindowEvent::CloseRequested => {
+                WindowEvent::CloseRequested if replay => {
                     event_loop.exit();
                     return;
                 }
                 WindowEvent::KeyboardInput { event, .. } => {
                     if let PhysicalKey::Code(code) = event.physical_key {
-                        if code == KeyCode::Escape && event.state.is_pressed() {
-                            event_loop.exit();
+                        let pressed = event.state.is_pressed();
+                        if replay && code == KeyCode::Escape {
+                            if pressed {
+                                event_loop.exit();
+                            }
+                        } else if watching
+                            && crate::app::match_runtime::watching::key(
+                                state,
+                                code,
+                                pressed,
+                                event.repeat,
+                            )
+                        {
+                            // Escape and Tab are the watcher's own.
                         } else if matches!(
                             code,
                             KeyCode::ArrowLeft
@@ -771,7 +793,7 @@ impl ApplicationHandler for App {
                                 | KeyCode::ArrowUp
                                 | KeyCode::ArrowDown
                         ) {
-                            if event.state.is_pressed() {
+                            if pressed {
                                 state.match_state.input.keys_held.insert(code);
                             } else {
                                 state.match_state.input.keys_held.remove(&code);
@@ -784,6 +806,18 @@ impl ApplicationHandler for App {
                     state.set_cursor_from_window(position.x as f32, position.y as f32);
                     return;
                 }
+                WindowEvent::MouseInput {
+                    state: button_state,
+                    button,
+                    ..
+                } if watching => {
+                    crate::app::match_runtime::watching::mouse(
+                        state,
+                        *button,
+                        button_state.is_pressed(),
+                    );
+                    return;
+                }
                 WindowEvent::MouseWheel { delta, .. } => {
                     let lines = match delta {
                         MouseScrollDelta::LineDelta(_, y) => *y,
@@ -794,7 +828,9 @@ impl ApplicationHandler for App {
                     crate::app::input::camera::apply_zoom(state, lines);
                     return;
                 }
-                WindowEvent::Resized(_)
+                // A watcher's window closes as a player's does.
+                WindowEvent::CloseRequested
+                | WindowEvent::Resized(_)
                 | WindowEvent::ScaleFactorChanged { .. }
                 | WindowEvent::Focused(_)
                 | WindowEvent::Occluded(_)
@@ -1348,6 +1384,24 @@ impl ApplicationHandler for App {
                     }
                     return;
                 }
+                // VERA's Game Options box takes the keys over the page;
+                // Escape and Enter close it, as they close the room's.
+                if screen == ScreenPage::Skirmish
+                    && state.frontend.skirmish_shell_state.game_options.is_some()
+                {
+                    if event.state.is_pressed()
+                        && !event.repeat
+                        && matches!(
+                            event.physical_key,
+                            PhysicalKey::Code(
+                                KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter
+                            )
+                        )
+                    {
+                        Self::close_skirmish_game_options(state);
+                    }
+                    return;
+                }
                 if let PhysicalKey::Code(code) = event.physical_key {
                     // ESC always reaches the handler when in-game (even when paused)
                     // so the player can toggle pause regardless of diagnostic GUI focus.
@@ -1893,6 +1947,17 @@ impl ApplicationHandler for App {
                 {
                     return;
                 }
+                if screen == ScreenPage::NetworkSetup
+                    && state
+                        .frontend
+                        .skirmish_shell_state
+                        .choose_map_modal
+                        .is_none()
+                    && crate::app::input::multiplayer_setup::wheel(state, lines)
+                {
+                    state.platform.window.request_redraw();
+                    return;
+                }
                 if screen == ScreenPage::Mods {
                     Self::handle_mods_wheel(state, lines);
                     return;
@@ -1952,9 +2017,6 @@ impl ApplicationHandler for App {
                         event_loop.set_control_flow(ControlFlow::Poll);
                         state.platform.window.request_redraw();
                     }
-                    Ok(FrameRenderOutcome::ScreenBusy) => {
-                        state.platform.redraw_gate.hold_busy_draw();
-                    }
                     Ok(_) => {}
                     Err(err) => {
                         log::error!("Render: {:#}", err);
@@ -1991,6 +2053,10 @@ impl ApplicationHandler for App {
             // One completed startup slice per event-loop pass, including the
             // final admission. Ordinary input starts only with the full state.
             return;
+        }
+        // For the performance panel's Ticks row.
+        if let Some(state) = self.state.as_mut() {
+            state.platform.frame_pacer.count_loop_turn();
         }
         // A tick on the simulation thread has ended (its wake brought this
         // call): finish it, replay the window events it held, then service
@@ -2062,6 +2128,7 @@ impl ApplicationHandler for App {
                 crate::app::input::sound::poll_scroll_repeat(state),
                 Self::poll_movie_list_scroll(state),
                 Self::poll_mods_scroll(state),
+                Self::poll_mod_files(state),
                 Self::poll_choose_map_scroll(state),
                 Self::poll_skirmish_opponent_scroll(state),
                 // Captures replay sealed input; they never read the library.
@@ -2226,8 +2293,21 @@ impl ApplicationHandler for App {
                 event_loop.set_control_flow(if deferred {
                     ControlFlow::Poll
                 } else {
-                    ControlFlow::WaitUntil(Instant::now() + std::time::Duration::from_millis(8))
+                    ControlFlow::WaitUntil(Self::match_service_wake(state, Instant::now()))
                 });
+            } else if Self::online_start_runs_while_hidden(state) {
+                // The relay is installed before its RTT barrier. Its IO
+                // worker cannot advance the lobby, map or Ready on our behalf.
+                crate::app::lan_service::poll(
+                    state,
+                    crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+                );
+                Self::drive_shell_exit(state);
+                crate::app::loading::pump::advance_hidden_network_loading(state);
+                event_loop.set_control_flow(ControlFlow::WaitUntil(Self::match_service_wake(
+                    state,
+                    Instant::now(),
+                )));
             } else if state.platform.frame_pacer.render_deferred() {
                 event_loop.set_control_flow(ControlFlow::Poll);
                 state.platform.window.request_redraw();
@@ -2258,9 +2338,10 @@ impl ApplicationHandler for App {
                     {
                         return;
                     }
-                    event_loop.set_control_flow(ControlFlow::WaitUntil(
-                        Instant::now() + crate::app::match_runtime::frame_pacer::SERVICE_WAKE,
-                    ));
+                    event_loop.set_control_flow(ControlFlow::WaitUntil(Self::match_service_wake(
+                        state,
+                        Instant::now(),
+                    )));
                 } else {
                     // Nothing on screen to keep fresh: draw no frames until a
                     // window event (including the un-occlude edge). The shell's
@@ -2270,30 +2351,6 @@ impl ApplicationHandler for App {
                     event_loop.set_control_flow(
                         shell_scroll_wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil),
                     );
-                }
-            } else if state.renderer.gpu.screen_busy() {
-                // The game never waits for the screen: while the hand-off
-                // thread waits for the next picture, the match is serviced,
-                // one frame a turn so the draw is never more than a frame
-                // late, and the thread's wake brings the draw. A completed
-                // frame means more may be due (GameSpeed 0 always is), so go
-                // again at once; otherwise the service wake is a fallback.
-                let pass = Self::service_match_runtime(state, event_loop, true, false, false);
-                if pass.quit_requested {
-                    return;
-                }
-                state
-                    .platform
-                    .frame_pacer
-                    .count_frames_without_present(pass.completed_frames);
-                if pass.completed_frames > 0 {
-                    event_loop.set_control_flow(ControlFlow::Poll);
-                } else {
-                    let fallback =
-                        Instant::now() + crate::app::match_runtime::frame_pacer::SERVICE_WAKE;
-                    event_loop.set_control_flow(ControlFlow::WaitUntil(
-                        shell_scroll_wake.map_or(fallback, |service| service.min(fallback)),
-                    ));
                 }
             } else if state.platform.redraw_gate.next_pass(Instant::now())
                 == crate::app::match_runtime::redraw_gate::NextPass::Probe
@@ -2326,7 +2383,10 @@ impl ApplicationHandler for App {
                             );
                             state.platform.window.request_redraw();
                         } else {
-                            let wake = state.platform.redraw_gate.probe_wake(now);
+                            // The next frame's due time wakes the loop too,
+                            // so its tick and picture come on time.
+                            let frame_due = Self::next_local_frame_due(state, now);
+                            let wake = state.platform.redraw_gate.probe_wake(now, frame_due);
                             event_loop.set_control_flow(ControlFlow::WaitUntil(
                                 shell_scroll_wake.map_or(wake, |service| service.min(wake)),
                             ));
