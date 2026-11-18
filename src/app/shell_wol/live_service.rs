@@ -151,8 +151,6 @@ impl OnlineCleanup {
         assert!(self.retired.is_none(), "one online exit owner at a time");
         self.logout_receipt = None;
         service.auth_attempt = service.auth_attempt.wrapping_add(1);
-        service.start_preparation = None;
-        service.pending_choices = None;
         if let Some(pending) = service.pending.take()
             && service.match_id.is_none()
         {
@@ -269,17 +267,11 @@ pub(super) struct LiveService {
     next_request: u64,
     auth_attempt: u64,
     revision: u64,
-    // Canonical received options only; MatchSession remains the editable owner.
-    accepted_options: Option<Value>,
-    // The latest ordinary host publication. A legacy refusal may only change
-    // the editable room while this exact snapshot is still current.
-    published_options: Option<(u64, Value)>,
+    room: RoomAgreement,
     start_preparation: Option<StartPreparation>,
     /// The local reason was already shown. The ordered lobby stream will echo
     /// the cancellation before announcing another match.
     locally_refused_start: bool,
-    last_ready_request: Option<(u64, u64)>,
-    pending_choices: Option<PendingChoices>,
     player_id: String,
     member_ids: BTreeMap<String, String>,
     pending: Option<PendingStart>,
@@ -444,8 +436,42 @@ impl RetryingCommand {
     }
 }
 
+/// What this game agreed with its room's host, and its requests the host has
+/// yet to answer. A new room, the room's `channel_left` and a host handover
+/// each start it afresh.
+#[derive(Default)]
+struct RoomAgreement {
+    /// Canonical received options only; MatchSession remains the editable owner.
+    accepted_options: Option<Value>,
+    /// The latest ordinary host publication. A legacy refusal may only change
+    /// the editable room while this exact snapshot is still current.
+    published_options: Option<(u64, Value)>,
+    /// The latest `ready` request and the options revision it answered.
+    last_ready_request: Option<(u64, u64)>,
+    pending_choices: Option<PendingChoices>,
+}
+
+impl RoomAgreement {
+    /// This game is done with the room before its `channel_left`: its
+    /// publication and choices wait for no answer. The accepted options
+    /// stay, so a late options echo still compares with them.
+    fn stop_waiting(&mut self) {
+        self.published_options = None;
+        self.pending_choices = None;
+    }
+
+    /// The choices request the host did not answer in time, which then waits
+    /// no longer.
+    fn choices_unanswered(&mut self, now: Instant) -> bool {
+        self.pending_choices
+            .take_if(|choices| now >= choices.deadline)
+            .is_some()
+    }
+}
+
 /// The expected echo of one outgoing local choice, retained across earlier
-/// full-options updates until the host accepts it or its request fails.
+/// full-options updates until the host accepts it, its request fails or this
+/// game is done with the room.
 struct PendingChoices {
     request_id: u64,
     expected_human: Value,
@@ -669,12 +695,9 @@ impl LiveService {
             next_request: 1,
             auth_attempt: 0,
             revision: 0,
-            accepted_options: None,
-            published_options: None,
+            room: RoomAgreement::default(),
             start_preparation: None,
             locally_refused_start: false,
-            last_ready_request: None,
-            pending_choices: None,
             player_id: String::new(),
             member_ids: BTreeMap::new(),
             pending: None,
@@ -717,11 +740,12 @@ impl LiveService {
     fn publish_room_options(&mut self, options: wire::Options) {
         let options = json!(options);
         let id = self.command_with_id("options", json!({"options": &options}));
-        self.published_options = Some((id, options));
+        self.room.published_options = Some((id, options));
     }
 
     fn is_room_publication(&self, id: u64) -> bool {
-        self.published_options
+        self.room
+            .published_options
             .as_ref()
             .is_some_and(|(sent, _)| *sent == id)
     }
@@ -735,7 +759,8 @@ impl LiveService {
         if !self.is_room_publication(id) {
             return false;
         }
-        self.published_options
+        self.room
+            .published_options
             .take()
             .is_some_and(|(_, sent)| !watches && current().as_ref() == Some(&sent))
     }
@@ -974,7 +999,6 @@ impl LiveService {
     }
 
     fn begin_leave(&mut self, now: Instant) {
-        self.published_options = None;
         if self.leaving.is_none() {
             self.leaving = Some(self.retrying_command("leave", json!({}), now));
         }
@@ -1023,7 +1047,7 @@ impl LiveService {
     }
 
     fn clear_cleanup(&mut self) {
-        self.published_options = None;
+        self.room.published_options = None;
         self.locally_refused_start = false;
         self.finishing = None;
         self.leaving = None;
@@ -1486,12 +1510,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                 }
             }
         }
-        if service
-            .pending_choices
-            .as_ref()
-            .is_some_and(|choices| Instant::now() >= choices.deadline)
-        {
-            service.pending_choices = None;
+        if service.room.choices_unanswered(Instant::now()) {
             restore_accepted_options(state, &service);
             notice(state, &tr("VERA:ChoicesNotAcknowledged"));
         }
@@ -1645,6 +1664,15 @@ fn cancel_pending(state: &mut AppState, service: &mut LiveService) {
         // Retire either ownership location when this start is canceled.
         crate::app::lan_service::close(state);
     }
+}
+
+/// This game is done with its room (it left, signed out or lost the lobby,
+/// or the room closed) or with a watch's start: the map transfer and any
+/// start stop, and nothing waits for the host's answer.
+fn end_room(state: &mut AppState, service: &mut LiveService) {
+    maps::cancel(state, service);
+    cancel_pending(state, service);
+    service.room.stop_waiting();
 }
 
 /// The report of the online match whose transport just returned, for that
@@ -2003,8 +2031,7 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             }
         }
         WolServiceRequest::LeaveChannel => {
-            maps::cancel(state, service);
-            cancel_pending(state, service);
+            end_room(state, service);
             service.leave_room(Instant::now());
         }
         WolServiceRequest::MatchReturned => {
@@ -2016,8 +2043,7 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             service.match_returned(match_report(state), Instant::now());
         }
         WolServiceRequest::Logout => {
-            maps::cancel(state, service);
-            cancel_pending(state, service);
+            end_room(state, service);
             service.auth_attempt = service.auth_attempt.wrapping_add(1);
             service.begin_logout(Instant::now());
             crate::app::lan_service::close(state);
@@ -2053,8 +2079,7 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
         WolServiceRequest::LadderRecords(names) => service.look_up_ladder(names, false),
         WolServiceRequest::HighScores(names) => service.look_up_ladder(names, true),
         WolServiceRequest::CancelWait => {
-            maps::cancel(state, service);
-            cancel_pending(state, service);
+            end_room(state, service);
             service.auth_attempt = service.auth_attempt.wrapping_add(1);
             if let Some(visit) = state.frontend.wol.as_mut() {
                 visit.authenticated = false;
@@ -2358,7 +2383,7 @@ fn accepted_choices_match(accepted: &Value, human: &Value) -> bool {
 }
 
 fn restore_accepted_options(state: &mut AppState, service: &LiveService) {
-    let Some(accepted) = service.accepted_options.clone() else {
+    let Some(accepted) = service.room.accepted_options.clone() else {
         return;
     };
     let result = decode::<wire::Options>(accepted)
@@ -2386,8 +2411,9 @@ pub(crate) fn local_choices_agreed(state: &AppState) -> bool {
         return true;
     };
     visit.live_service.as_ref().is_some_and(|service| {
-        service.pending_choices.is_none()
+        service.room.pending_choices.is_none()
             && service
+                .room
                 .accepted_options
                 .as_ref()
                 .is_some_and(|accepted| local_choices_match(&state.match_state.session, accepted))
@@ -2466,9 +2492,10 @@ fn request_setup(
             // A Quick Match host drops `R` (`0x007A8260`), so no options
             // answer it.
             let answered = !crate::app::shell_network_setup::quick_match(state);
-            service.pending_choices = (answered
+            service.room.pending_choices = (answered
                 && !switch
                 && !service
+                    .room
                     .accepted_options
                     .as_ref()
                     .is_some_and(|accepted| accepted_choices_match(accepted, &expected_human)))
@@ -2508,7 +2535,7 @@ fn request_setup(
             let mut payload = local_agreement(state, service.revision)?;
             payload["ready"] = json!(ready);
             let id = service.command_with_id("ready", payload);
-            service.last_ready_request = Some((id, service.revision));
+            service.room.last_ready_request = Some((id, service.revision));
         }
         NetworkSetupRequest::MapStatus(status) => {
             let mut payload = local_agreement(state, service.revision)?;
@@ -2519,9 +2546,9 @@ fn request_setup(
         }
         NetworkSetupRequest::StartGame { users } => {
             if service.start_preparation.is_none() {
-                service.published_options = None;
+                service.room.published_options = None;
                 let snapshot = canonical_options(&options(state)?)?;
-                let revision = (service.accepted_options.as_ref() == Some(&snapshot))
+                let revision = (service.room.accepted_options.as_ref() == Some(&snapshot))
                     .then_some(service.revision);
                 let publication_request = if revision.is_none() {
                     Some(service.command_with_id("options", json!({"options":snapshot})))
@@ -2547,8 +2574,7 @@ fn request_setup(
             }
         }
         NetworkSetupRequest::Leave => {
-            maps::cancel(state, service);
-            cancel_pending(state, service);
+            end_room(state, service);
             service.leave_room(Instant::now());
         }
         // Older lobbies take no keep_out, so only a host's own kick sends it.
@@ -2762,7 +2788,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             }
         }
         http::Response::CommandCompleted { id, operation } => match operation {
-            "options" if service.is_room_publication(id) => service.published_options = None,
+            "options" if service.is_room_publication(id) => service.room.published_options = None,
             "finish" => service.finish_completed(id),
             "leave" => service.leave_completed(id),
             "logout" => service.logout_completed(id),
@@ -2816,15 +2842,16 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             }
             "choices"
                 if service
+                    .room
                     .pending_choices
                     .as_ref()
                     .is_some_and(|choices| choices.request_id == id) =>
             {
-                service.pending_choices = None;
+                service.room.pending_choices = None;
                 restore_accepted_options(state, service);
                 notice(state, &tr("VERA:ChoicesRefused"));
             }
-            "ready" if service.last_ready_request == Some((id, service.revision)) => {
+            "ready" if service.room.last_ready_request == Some((id, service.revision)) => {
                 if failure != http::CommandFailure::Retryable {
                     // The lobby refused these settings, usually because the
                     // room has already moved on: the guest's automatic
@@ -2916,8 +2943,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             {
                 return;
             }
-            maps::cancel(state, service);
-            cancel_pending(state, service);
+            end_room(state, service);
             // The native disconnect: a box over the lobby, or none where the
             // runner has no lobby (Quick Match), which then gets one at the
             // welcome.
@@ -2934,8 +2960,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 state,
                 &tr("VERA:OnlineSessionEndedWhileLoading"),
             );
-            maps::cancel(state, service);
-            cancel_pending(state, service);
+            end_room(state, service);
             // The bearer session is definitively gone; a new login has no
             // authority to retry cleanup for the old server session.
             service.clear_cleanup();
@@ -3286,10 +3311,7 @@ fn apply_event(
         "joined" | "created" | "room_reopened" => {
             let joined: wire::Joined = decode(payload)?;
             service.revision = 0;
-            service.accepted_options = None;
-            service.published_options = None;
-            service.last_ready_request = None;
-            service.pending_choices = None;
+            service.room = RoomAgreement::default();
             service.start_preparation = None;
             service.left_for_match = false;
             service.member_ids = joined
@@ -3333,12 +3355,8 @@ fn apply_event(
                     &tr("VERA:OnlineRoomClosedWhileLoading"),
                 );
             }
-            service.accepted_options = None;
-            service.published_options = None;
-            service.last_ready_request = None;
-            service.pending_choices = None;
-            maps::cancel(state, service);
-            cancel_pending(state, service);
+            end_room(state, service);
+            service.room = RoomAgreement::default();
             if let Some(visit) = state.frontend.wol.as_mut()
                 && visit.in_game
             {
@@ -3381,10 +3399,7 @@ fn apply_event(
                 channel: Option<wire::Channel>,
             }
             let p: Payload = decode(payload)?;
-            service.accepted_options = None;
-            service.published_options = None;
-            service.last_ready_request = None;
-            service.pending_choices = None;
+            service.room = RoomAgreement::default();
             service.start_preparation = None;
             maps::cancel(state, service);
             service_event(
@@ -3434,7 +3449,7 @@ fn apply_event(
             if p.revision < service.revision {
                 return Ok(());
             }
-            let changed = p.revision != service.revision || service.accepted_options.is_none();
+            let changed = p.revision != service.revision || service.room.accepted_options.is_none();
             let canonical = canonical_options(&p.options)?;
             if let Some(start) = service.start_preparation.as_mut()
                 && !start.accept_options(p.revision, &canonical)
@@ -3445,15 +3460,16 @@ fn apply_event(
             }
             service.revision = p.revision;
             if service
+                .room
                 .pending_choices
                 .as_ref()
                 .is_some_and(|choices| choices.answered_by(&canonical))
             {
-                service.pending_choices = None;
+                service.room.pending_choices = None;
             }
-            service.accepted_options = Some(canonical);
+            service.room.accepted_options = Some(canonical);
             if changed {
-                service.last_ready_request = None;
+                service.room.last_ready_request = None;
                 crate::app::shell_network_setup::invalidate_network_agreement(state)?;
             }
             let generated = p.options.random_map.clone();
@@ -4060,8 +4076,7 @@ fn fail_watch(state: &mut AppState, service: &mut LiveService, key: &str) {
 
 fn cancel_watch_start(state: &mut AppState, service: &mut LiveService) {
     service.stop_watching();
-    maps::cancel(state, service);
-    cancel_pending(state, service);
+    end_room(state, service);
     if state.match_state.session.network_setup().is_some()
         || state.frontend.network_setup_protocol.is_some()
     {
@@ -4575,12 +4590,9 @@ mod completion_tests {
             next_request: 5,
             auth_attempt: 0,
             revision: 0,
-            accepted_options: None,
-            published_options: None,
+            room: RoomAgreement::default(),
             start_preparation: None,
             locally_refused_start: false,
-            last_ready_request: None,
-            pending_choices: None,
             player_id: String::new(),
             member_ids: BTreeMap::new(),
             pending: None,
@@ -5705,6 +5717,42 @@ mod completion_tests {
         );
         launch.options.teams = Some(2);
         assert!(pending.answered_by(&json!({"launch":launch})));
+    }
+
+    /// What `end_room` stops for a guest who left the room, signed out or
+    /// lost the lobby before the host answered: the answer's time running out
+    /// restores no settings and shows no notice. Its call sites need an
+    /// `AppState`, which unit tests cannot build.
+    #[test]
+    fn a_room_this_game_is_done_with_waits_for_no_answer() {
+        let (mut service, _input, _output) = control_service(None);
+        let deadline = Instant::now() + RELAY_TIMEOUT;
+        let waiting = |service: &mut LiveService| {
+            service.room.published_options = Some((7, json!({})));
+            service.room.pending_choices = Some(PendingChoices {
+                request_id: 8,
+                expected_human: json!({}),
+                expected_random: json!({}),
+                deadline,
+            });
+        };
+        service.room.accepted_options = Some(json!({}));
+        waiting(&mut service);
+        assert!(
+            service.room.choices_unanswered(deadline),
+            "still in the room"
+        );
+        waiting(&mut service);
+        service.room.stop_waiting();
+        assert!(!service.room.choices_unanswered(deadline));
+        assert!(
+            !service.is_room_publication(7),
+            "a late refusal changes nothing"
+        );
+        assert!(
+            service.room.accepted_options.is_some(),
+            "a late options echo still compares"
+        );
     }
 
     #[test]
