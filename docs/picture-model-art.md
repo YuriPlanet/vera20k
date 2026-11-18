@@ -432,27 +432,27 @@ current: say what was done, what was not, and what comes next.
 
 ### In progress
 
-- Compiles; lib tests run (see the commit log for the failures that came
-  from missing retail files on this machine and the three fixed ones).
-- Production validation done for pictures (`ce7da48c3`): GI
-  (`Picture=GI.png`) and the Allied power plant (`Picture=GAPOWR.png`, body
-  `GGPOWR.png`, Buildup `GTPOWRMK.png`, all from `asset export-picture`) in
-  `map_observation.barracks-output` at steps 300, 1200 and 2200 keep the SHP
-  run's simulation state hash, and their frames differ from it only in the 3
-  to 7 ore-field pixels two SHP runs also differ in. The building run found
-  and fixed a missing BUILDNGZ shape on picture buildings.
-- Off-state check, first run: base and head give the same sim-bench final
-  hash (9,000 ticks, 1v29) and rules hash; 100% frames differ only in ore-field
-  noise. Its frame times ran beside other builds and are being re-measured
-  quietly; the 150% captures failed on a cursor over a unit and are being
-  rerun with the camera moved.
-- Next: model validation (a glb vehicle in a match). It needs a glb; port
-  `asset export-mesh` from `feature/mesh-render` (VXL to glb) for that.
-- `asset export-model <NAME> [--palette P] [--out DIR] [--theater T]`
-  (`asset_tools::verb_export_model`), written, not yet compiled: VXL body,
-  turret and barrel at HVA frame 0 as `body`/`turret`/`barrel` nodes of
-  exposed voxel faces, palette `COLOR_0`, table normals, house colour by
-  `NAME.mask.png`; reports the `ModelSize=` that keeps the VXL's tilt sizes.
+- Nothing being written; everything below is merged and pushed.
+- Compiles; lib tests run. Failures left on this machine all come from files
+  missing in its retail folder, or fail on main too.
+- Production validation, `map_observation.barracks-output`, scratch game
+  folders with a loose artmd.ini:
+  - Pictures: GI (`Picture=GI.png`) and the Allied power plant
+    (`Picture=GAPOWR.png`, body `GGPOWR.png`, Buildup `GTPOWRMK.png`) from
+    `asset export-picture` keep the SHP run's simulation state hash at steps
+    300, 1200 and 2200; frames differ only in the ore-field pixels two SHP
+    runs also differ in.
+  - Models: the Grizzly (`[GTNK] Model=GTNK.glb`, `ModelSize=247`) from
+    `asset export-model` draws its body, turret, barrel, house colour and
+    shadow close to the voxel picture, with the same simulation state hash
+    (the exporter's ModelSize keeps the VXL's tilt sizes).
+  - Zoomed drawing: GI exported at 2x (`export-picture --scale 2`,
+    `PictureSize=78,66`) at wheel view distance 0.8 is drawn sharp at window
+    resolution where the SHP run shows magnified pixels; same state hash.
+- Off-state check (`tools.same_as_base`, machine otherwise idle): same
+  sim-bench final hash and rules hash as main after 9,000 ticks at 1v29;
+  mean frame 3.74 ms against main's 4.09 ms; captures at Options zoom 100
+  and 150 differ only by the ore field's run-to-run shimmer.
 
 ### Next steps, in order
 
@@ -463,12 +463,12 @@ current: say what was done, what was not, and what comes next.
    AGENTS.md), with `RA2_DIR` set and `VERA20K_REQUIRE_RETAIL_INI=1`; fix,
    commit, push. Also `python -m tools.run_tests` for the Python tools, and
    the wasm check in docs/wasm.md (sprite_atlas.rs is in its list).
-3. Done for pictures; models remain. Production validation: `asset export-picture` a retail anim, a building
+3. Done (see above). Production validation: `asset export-picture` a retail anim, a building
    and an infantry type into a scratch game folder with a loose artmd.ini that
    declares them; capture with map_observation and compare against the SHP
    capture (they should match pixel for pixel at 1x). Then one glb vehicle in
    a match.
-4. Off-state check: `python3 -m tools.same_as_base --ra2-dir <game>
+4. Done (see above). Off-state check: `python3 -m tools.same_as_base --ra2-dir <game>
    --head feature/picture-model-art --work <empty scratch dir>`; identical
    hashes and pixels are required.
 5. Fix the follow-ups below, then push.
@@ -488,6 +488,13 @@ current: say what was done, what was not, and what comes next.
   and no `TurretAnimIsVoxel=`, where native draws the barrel (43DA80 arm
   0x43E5D9..0x43E795); the model path matches VERA. Dormant in retail rules;
   a separate issue, not part of this feature.
+
+- Chain 5's art (building voxel guns, voxel projectiles, debris) has not
+  been seen in a match yet; export a gun or debris VXL with
+  `asset export-model` and capture a scene that shows it.
+- A type with a declared model still asks the unit atlas for its VXL and
+  logs "No voxel model for ... pictures stay undrawn"; harmless, but the
+  request should be skipped.
 
 ### Machine notes
 

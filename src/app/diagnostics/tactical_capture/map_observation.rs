@@ -69,9 +69,11 @@ struct MapPresentationProfile {
     smooth_sidebar: bool,
     /// Optional mouse-wheel view distance (`MouseWheelZoom=`), as the
     /// multiple of the stock view a wheel notch selects
-    /// (`ViewDistanceTier::scale`): 0.8, 1, 1.25 or 1.5.
+    /// (`ViewDistanceTier::scale`): 0.8, 1, 1.25 or 1.5. An f64, so the
+    /// receipt echoes the profile's decimal exactly (an f32 0.8 reads back
+    /// as 0.800000011920929).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    wheel_zoom: Option<f32>,
+    wheel_zoom: Option<f64>,
 }
 
 impl MapPresentationProfile {
@@ -96,7 +98,7 @@ impl MapPresentationProfile {
             .map(|scale| {
                 ViewDistanceTier::ALL
                     .into_iter()
-                    .find(|tier| tier.scale() == scale)
+                    .find(|tier| tier.scale() == scale as f32)
                     .with_context(|| {
                         format!("presentation.wheel_zoom {scale} must be 0.8, 1, 1.25 or 1.5")
                     })

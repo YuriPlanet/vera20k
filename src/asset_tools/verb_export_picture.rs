@@ -8,7 +8,9 @@
 //! so the game puts each back on the owner's ramp at the same step. Indices
 //! 240–254 keep their colour and are marked green (unlit). Everything else
 //! takes its palette colour. Declared with `Picture=`, such a picture draws as
-//! its SHP does. Files made from retail art stay on the player's machine.
+//! its SHP does. `--scale N` writes it at N times the resolution (each pixel
+//! N x N), to be declared with `PictureSize=` the SHP's canvas. Files made
+//! from retail art stay on the player's machine.
 //!
 //! ## Dependency rules
 //! - Part of `asset_tools/`: depends on `assets/` only.
@@ -108,8 +110,25 @@ pub fn run(
         pictures.push(picture);
         masks.push(mask);
     }
+    // `--scale N`: N x N copies of each pixel, the 1x art at N times its
+    // resolution for `PictureSize=` (width, height) and the zoomed drawing.
+    let scale = opts.scale.unwrap_or(1).clamp(1, 8);
+    let enlarge = |frame: &Vec<u8>| -> Vec<u8> {
+        if scale == 1 {
+            return frame.clone();
+        }
+        let mut out = Vec::with_capacity(frame.len() * (scale * scale) as usize);
+        for y in 0..height * scale {
+            for x in 0..width * scale {
+                let at = (((y / scale) * width + x / scale) * 4) as usize;
+                out.extend_from_slice(&frame[at..at + 4]);
+            }
+        }
+        out
+    };
     let encode = |frames: &[Vec<u8>]| {
-        crate::assets::picture_file::encode_frames(width, height, frames)
+        let frames: Vec<Vec<u8>> = frames.iter().map(enlarge).collect();
+        crate::assets::picture_file::encode_frames(width * scale, height * scale, &frames)
             .map_err(|error| fail(format!("encoding {stem}: {error}")))
     };
     let dir = opts.out.join(PICTURE_SUBDIR);
