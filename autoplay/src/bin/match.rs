@@ -726,6 +726,10 @@ fn main() -> Result<(), String> {
         // Match the frame-zero setup that standalone ReplayPlayback reconstructs.
         sim.batch_path_searches();
         sim.batch_target_scans();
+        // The normal App turns effect anims into presentation before frame zero
+        // (app::loading::transitions), and ReplayStartup refuses to capture
+        // without it: the standalone player presents them the same way.
+        sim.present_effect_anims();
         sim.sleep_idle_objects_in_match();
         sim.hash_state_every(PLAY_HASH_INTERVAL);
         let mut log = ReplayLog::new(ReplayHeader {

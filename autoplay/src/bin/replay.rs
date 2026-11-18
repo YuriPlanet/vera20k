@@ -190,10 +190,9 @@ fn run() -> Result<(), String> {
     let map_file = resolve_map(&args, &replay.header.map_name, &map_sha256)?;
     session.selected_map_file = Some(map_file.clone());
 
-    // The rules the game actually played: retail sources plus the player's own
-    // VERARULES.INI and the two Options switches that reach the rules. Without
-    // them the rules hash differs from the replay's, and no analysis of that
-    // replay would be honest.
+    // The rules the game actually played: retail sources plus the two Options
+    // switches that reach the rules. Without them the rules hash differs from
+    // the replay's, and no analysis of that replay would be honest.
     let mut rules_owner = load_rules_owner(&args.ra2_dir)?;
     let launch = vera20k_core::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(
         session.clone(),
@@ -232,7 +231,7 @@ fn run() -> Result<(), String> {
             return Err(format!(
                 "{} was recorded with rules/art hash {recorded_rules_hash:#018x}; this build \
                  produces {current_rules_hash:#018x}. That hash covers the loaded INI layers \
-                 (rules, art, the player's VERARULES.INI), so a reader that cannot reproduce it \
+                 (rules, art, the player's Options switches), so a reader that cannot reproduce it \
                  is reading a different ruleset. Replay it with the build that recorded it, or \
                  pass --allow-rules-mismatch to let the recorded state hashes decide: every \
                  frame that hashed is then compared, and the report says where they stop \
@@ -657,9 +656,8 @@ fn resolve_map(args: &Args, map_name: &str, map_sha256: &str) -> Result<String, 
 }
 
 /// The rules authority the game itself would build on this machine: the retail
-/// sources with the player's own `VERARULES.INI` layered over each scenario's
-/// root and LANDRULE, plus the two Options switches the app folds into it
-/// before the first scenario (`app::initialize`).
+/// sources with the two Options switches the app folds into it before the first
+/// scenario (`app::initialize`).
 ///
 /// This is what makes a replay from the *installed* game replayable: the
 /// recorded `rules_hash` covers those layers, so a reader without them is
@@ -679,19 +677,15 @@ fn load_rules_owner(ra2_dir: &Path) -> Result<NativeRulesProcessOwner, String> {
         .map_err(|error| format!("build the rules authority: {error}"))
 }
 
-/// `VERARULES.INI` from the settings folder, with the app's own defaults when
-/// it is absent, and the two switches the Options page stores in `VERA.INI`.
+/// The two switches the Options page stores in `VERA.INI`, with the app's own
+/// defaults when it is absent.
 fn personal_rules_from_settings() -> PersonalRules {
     let Ok(dir) = vera20k_core::util::config::default_settings_dir() else {
         return PersonalRules::default();
     };
-    let mut rules = match find_ini(&dir, "VERARULES.INI") {
-        Some(path) => match std::fs::read(&path) {
-            Ok(bytes) => PersonalRules::from_bytes(&bytes).unwrap_or_default(),
-            Err(_) => PersonalRules::default(),
-        },
-        None => PersonalRules::default(),
-    };
+    // VERARULES.INI was retired for New Mod; the two switches a player can
+    // still set live in VERA.INI, which is the only layer left to read.
+    let mut rules = PersonalRules::default();
     if let Some(path) = find_ini(&dir, "VERA.INI")
         && let Ok(bytes) = std::fs::read(&path)
         && let Ok(ini) = IniFile::from_bytes(&bytes)
