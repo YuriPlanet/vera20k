@@ -15,6 +15,7 @@ extern "C" {
         token: Option<&str>,
         body: Option<&str>,
         limit: u32,
+        headers: Option<&str>,
     ) -> js_sys::Promise;
     #[wasm_bindgen(js_namespace = globalThis, js_name = veraLobbyCancel)]
     fn cancel(id: u32);
@@ -46,12 +47,14 @@ impl Client {
             return Err(RequestFailure::Status(0));
         }
         let body = body.map(Value::to_string);
+        let headers = (path == "/v1/sessions").then(|| json!(sign_in_headers()).to_string());
         let value = JsFuture::from(fetch(
             self.browser,
             path,
             self.token.as_deref(),
             body.as_deref(),
             MAX_BODY_BYTES as u32,
+            headers.as_deref(),
         ))
         .await
         // Fetch errors can include URLs or server text. Retain only the existing

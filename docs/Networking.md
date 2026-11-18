@@ -112,6 +112,19 @@ status page says the games differ (`VERA:MatchStartMismatch`), the log records b
 hashes, and the search goes on after the stage timeout; the host only times out. This
 adds nothing to what game, lobby and relay exchange.
 
+Every game names its version and build when it signs in (`Vera-Version` and `Vera-Build`,
+docs/lobby-protocol.md "Sign-in headers"); the browser's sends every sign-in header the
+desktop's does but federation (`live_service::http::sign_in_headers`). The lobby compares
+two games' builds when both name one, else their versions. Two games that both name a
+build therefore see no room or match to watch from another build, and Quick Match does
+not pair them, where the start would be refused. Where one names no build, such as a
+released game, which names only its version in its User-Agent, their versions decide as
+before, and two builds of one version can still meet and be refused at the start. A
+lobby that does not read the headers ignores them, and a rollback of game or lobby
+compares versions again. The browser gateway must forward them: an older one
+refuses them at its CORS check, failing a newer browser package's sign-in, so the
+gateway ships first.
+
 The lobby lists only rooms of the player's own version, and the matchbot pairs only
 equal versions, so a game the lobby calls old asks its player to update. A 426 at
 sign-in, the first 426 to a signed-in request (`Outdated`) and the lobby's
