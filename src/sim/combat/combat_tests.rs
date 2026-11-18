@@ -888,7 +888,7 @@ fn gsi_04_05_null_attacker_building_hit_keeps_the_attacker_index() {
 /// `TechnoClass::ReceiveDamage @ 0x00701900`: an ordinary sourced area hit,
 /// even under an Iron Curtain, resolves no receiver outcome (no Techno
 /// gates, impact light, anger or threat tail), and a WaveClass caller's
-/// shared damage stays unchanged (`wave_post_object_damage` is `None`).
+/// shared damage stays unchanged.
 #[test]
 fn retail_bridge_repair_hut_area_hit_returns_before_the_techno_receiver() {
     use crate::sim::superweapon::invulnerability::{InvulnKind, InvulnerabilityState};
@@ -930,34 +930,16 @@ fn retail_bridge_repair_hut_area_hit_returns_before_the_techno_receiver() {
             .is_none()
         };
         assert!(resolve(&sim), "IC {iron_curtain}: no receiver outcome");
-        #[cfg(feature = "phobos")]
-        let wave = wave_post_object_damage(
-            &event,
-            &sim.substrate.entities,
+        let (_, _, packet) = world_receiver::commit_receiver(
+            &mut sim,
+            &mut world_receiver::ReceiverRun::default(),
+            combat_aoe::AreaDamageReceiver::Entity(event),
             &rules,
-            &sim.interner,
-            &sim.houses,
-            &sim.house_alliances,
-            false,
-            0,
-            None,
-            Some(&sim),
-        );
-        #[cfg(not(feature = "phobos"))]
-        let wave = wave_post_object_damage(
-            &event,
-            &sim.substrate.entities,
-            &rules,
-            &sim.interner,
-            &sim.houses,
-            &sim.house_alliances,
-            false,
-            0,
             None,
         );
         assert_eq!(
-            wave, None,
-            "IC {iron_curtain}: the Wave packet is untouched"
+            packet, 100,
+            "IC {iron_curtain}: the hut kept the incoming packet"
         );
     }
     sim.commit_noncombat_aoe_hits(

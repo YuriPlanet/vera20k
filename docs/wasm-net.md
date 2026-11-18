@@ -115,6 +115,6 @@ Rust 验证通过 `python3 -m tools.cargo_run -- test -p <crate> --lib <filter>`
 
 实际双客户端完整比赛、浏览器与未修改桌面端的相同已提交帧摘要、临时断线后的追赶、明确退局及再开局仍是必要的运行验收。只有通过这些流程，才能声称联网可玩；构建成功或 UDP echo 不足以证明它们。验证结果随交付说明报告，不在此文档保留运行日志。
 
-互联测试两端必须有相同源码和 feature 集合：既有 build identity 包含全部 Cargo feature。本方案不放宽该校验；对应浏览器联网包的桌面测试端应使用 `--no-default-features --features wasm-net` 构建，仍选择原生网络实现。不能直接假定现成的旧桌面安装包能加入新构建。
+互联测试两端必须有相同源码和 feature 集合：既有 build identity 包含测试分组和线程池（`wasm-threads`，见[构建校验](Networking.md#build-check)）以外的全部 Cargo feature。本方案不放宽该校验；对应浏览器联网包的桌面测试端应使用 `--no-default-features --features wasm-net` 构建，仍选择原生网络实现。不能直接假定现成的旧桌面安装包能加入新构建。
 
 本轮接入现有在线对战和可选的浏览器间局域网（见上文），不提供与桌面互通的网页局域网、任意 IP 直连、CnCNet、新协议、随机地图生成或刷新页面后恢复模拟。浏览器后台节流、长时间同步资源操作和 WS 队头阻塞仍需实机观察；原 relay 的进程重启恢复边界保持不变。30 个协议 source 不代表浏览器已达到 30 人和 20,000 单位性能目标。

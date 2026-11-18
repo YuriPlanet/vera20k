@@ -126,7 +126,6 @@ fn snapshot(
     if !service.setup_roster_complete(session)
         || !protocol.editable()
         || protocol.lan_go_send_pending()
-        || (!transfer && protocol.blocking_map_transfer())
         || (!transfer && protocol.transfer_progress().is_some())
         || session.network_start_seed().is_none()
     {

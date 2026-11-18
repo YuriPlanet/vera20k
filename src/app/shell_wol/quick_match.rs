@@ -358,7 +358,6 @@ pub(super) fn run(state: &mut AppState) {
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
-    visit.in_game = false;
     let globals = &mut visit.quick_match;
     globals.failure = 0;
     globals.set(stage::IDLE, None);
@@ -367,7 +366,7 @@ pub(super) fn run(state: &mut AppState) {
     globals.opponent = None;
     globals.lobby = None;
     globals.search = None;
-    lobby::open_quick_match_runner(state);
+    lobby::open_runner(state, lobby::Runner::QuickMatch);
 }
 
 /// The refusal that names the changed game files (`{files}`).

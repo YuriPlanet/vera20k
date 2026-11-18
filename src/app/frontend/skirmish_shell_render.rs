@@ -35,31 +35,6 @@ pub(crate) use preview::{
     SkirmishPreviewTexture, is_random_map_sentinel_entry, start_marker_picture,
 };
 
-/// The preview the setup dialog shows for `file`, decoded the way BC's own
-/// preview is: the LAN host's `[0xAC1154]` for its preview upload.
-pub(crate) fn decode_network_map_preview(
-    state: &AppState,
-    file: &str,
-) -> Option<crate::map::preview::DecodedPreview> {
-    let entry = state
-        .frontend
-        .scenario_catalog
-        .shell_maps()
-        .iter()
-        .find(|entry| entry.file_name.eq_ignore_ascii_case(file))?;
-    let ra2_dir = state
-        .platform
-        .game_config
-        .as_ref()
-        .map(|config| config.paths.ra2_dir.as_path())
-        .or_else(|| {
-            state
-                .process_assets
-                .manager()
-                .map(|assets| assets.ra2_dir())
-        });
-    preview::decode_preview_for_map_entry(entry, ra2_dir, state.process_assets.manager())
-}
 pub(crate) use text::{
     combo_item_label, skirmish_right_panel_label_strings, skirmish_selected_map_name,
 };

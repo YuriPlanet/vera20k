@@ -108,6 +108,8 @@ offers one-click Continue on the next visit; other browsers ask for the folder a
 parallel work on a Rayon pool of Web Workers. It combines with `--network` and
 `--lan`, and needs a pinned nightly, because the standard library has to be
 rebuilt with Wasm atomics. Desktop and default browser builds stay on stable.
+The option stays out of the [build check](Networking.md#build-check): a threaded
+package plays with the same package built without it.
 
 ```sh
 rustup toolchain install nightly-2026-10-15 --profile minimal --component rust-src --target wasm32-unknown-unknown

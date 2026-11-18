@@ -78,9 +78,6 @@ pub(crate) struct WolLobbyGlobals {
     pub(crate) page_last_control: u16,
     /// `[0xB76478..0xB76480]`: the in-match page's reply prefill window.
     pub(crate) page_reply_window: crate::ui::wol_page::PageReplyWindow,
-    /// `[0xB78608]`: the options sink's preview-request stamp in 16 ms
-    /// buckets, first set by its one-time init (`0x007A7EA0..0x007A7ED3`).
-    pub(crate) preview_stamp: Option<u32>,
     /// The ladder table `0xB77D80` (`[0xB77E0C]` outside mode 3; `0x00780110`
     /// clears only the clan and mode-3 tables) and the high-score table
     /// `0xB76640`, keyed by the ASCII-lowered name the lookups use
@@ -1632,10 +1629,12 @@ fn new_runner(
     })
 }
 
-/// The Buddy List runner's entry (`0x0079F140`, steps 1-2): a runner with
-/// no `0x113` and the chat-lobby list behind `TXT_REQ_CHANLIST`
-/// (`0x0077EF90(0, 0)`, the 30 s wait `0x0077F120`).
-pub(super) fn open_buddy_runner(state: &mut AppState) {
+/// A runner with no `0x113` and the chat-lobby list behind
+/// `TXT_REQ_CHANLIST` (`0x0077EF90(0, 0)`, the 30 s wait `0x0077F120`): the
+/// Buddy List runner's entry (`0x0079F140`, steps 1-2) and the Quick Match
+/// runner's lobby list (`0x0079FCF0..0x0079FD35`), whose entry cleared the
+/// observer preference (`0x0079FC40..0x0079FC5D`).
+pub(super) fn open_runner(state: &mut AppState, runner: Runner) {
     let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
@@ -1643,37 +1642,8 @@ pub(super) fn open_buddy_runner(state: &mut AppState) {
     visit.in_game = false;
     visit.page = WolPage::Lobby;
     visit.lobby = Some(new_runner(
-        Runner::Buddy,
+        runner,
         observer,
-        false,
-        Instant::now(),
-        !visit.legacy_ui,
-    ));
-    if state.match_state.session.network_return_context().is_none() {
-        state
-            .match_state
-            .session
-            .enter_network(crate::app::match_runtime::session::NetworkReturnContext::Wol);
-    }
-    state.frontend.wol_login_art = None;
-    state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
-    let _ = App::ensure_skirmish_shell_chrome(state);
-    show_wait(state, "TXT_REQ_CHANLIST");
-    request(state, WolServiceRequest::ListChannels { kind: 0, flags: 0 });
-    state.platform.window.request_redraw();
-}
-
-/// The Quick Match runner's lobby list (`0x0079FCF0..0x0079FD35`): a
-/// runner with no `0x113` and the chat-lobby list behind
-/// `TXT_REQ_CHANLIST` (`0x0077EF90(0, 0)`, the 30 s wait `0x0077F120`).
-pub(super) fn open_quick_match_runner(state: &mut AppState) {
-    let Some(visit) = state.frontend.wol.as_mut() else {
-        return;
-    };
-    visit.page = WolPage::Lobby;
-    visit.lobby = Some(new_runner(
-        Runner::QuickMatch,
-        false,
         false,
         Instant::now(),
         !visit.legacy_ui,
@@ -3810,20 +3780,6 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                 && let Err(error) = setup::player_ready(state, &from, value)
             {
                 log::warn!("WOL readiness from {from}: {error:#}");
-            }
-        }
-        WolServiceEvent::PreviewRequested { from } => {
-            // 0x7A82F8..0x7A833C: only from a user of this channel.
-            let member = lobby_mut(state)
-                .expect("checked")
-                .members
-                .iter()
-                .any(|member| member.name.eq_ignore_ascii_case(&from));
-            if member
-                && in_setup_channel(state)
-                && let Err(error) = setup::preview_request(state)
-            {
-                log::warn!("WOL preview request from {from}: {error:#}");
             }
         }
         WolServiceEvent::MapStatus { from, status } => {
