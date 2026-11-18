@@ -453,6 +453,12 @@ current: say what was done, what was not, and what comes next.
   sim-bench final hash and rules hash as main after 9,000 ticks at 1v29;
   mean frame 3.74 ms against main's 4.09 ms; captures at Options zoom 100
   and 150 differ only by the ore field's run-to-run shimmer.
+- Per-chain off-state check, run at each chain's closing commit (f657ba0bc,
+  7329d45f0, 8c60674ec, 7b8c7b74d, c3245a66e) against its main base: every
+  run kept main's sim-bench final hash (`3e2256c96903b02d`) and rules hash
+  after 9,000 ticks at 1v29; mean frame within 0.15 ms of main (3.70–4.03
+  ms); the zoom-100 capture differs in 2–5 pixels, no more than two main runs
+  differ from each other (within the noise rule).
 
 ### Next steps, in order
 
