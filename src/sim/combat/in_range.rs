@@ -765,6 +765,7 @@ pub(crate) fn compute_range_target(
             interner,
             cells,
             los,
+            entities,
         );
     }
 
@@ -797,6 +798,7 @@ pub(crate) fn compute_range_target(
         interner,
         cells,
         los,
+        entities,
     )
 }
 
@@ -815,9 +817,16 @@ fn line_of_fire_clear(
     interner: &StringInterner,
     cells: &NativeCellQuery<'_>,
     los: &LineOfFireInputs<'_>,
+    entities: Option<&crate::sim::entity_store::EntityStore>,
 ) -> bool {
     #[cfg(not(feature = "ares"))]
     let _ = target;
+    #[cfg(feature = "phobos")]
+    let phobos = phobos_scan_input(
+        attacker, target, weapon, src, target_xyz, rules, interner, cells, entities,
+    );
+    #[cfg(not(feature = "phobos"))]
+    let phobos = None;
     line_of_fire::line_of_fire_blocking_cell(
         src,
         target_xyz,
@@ -836,8 +845,109 @@ fn line_of_fire_clear(
         cells,
         interner,
         los,
+        phobos,
     )
     .is_none()
+}
+
+/// Phobos `TechnoClass_InRange_Obstacles`'s ground arm
+/// (`Ext/Bullet/Hooks.Obstacles.cpp:226-237`): a `SubjectToGround=` projectile
+/// scans from the *predicted* firing point, built by
+/// [`crate::util::flh_transform::phobos_flh_source`].
+///
+/// `AddFLHToSourceCoords` (`:89-125`) clears `subjectToGround` for a firer that
+/// is airborne, targets something airborne, or rides a transporter (`:92-97`);
+/// mobility itself stays allowed, because every `GameEntity` here is a Techno
+/// (native tests only `AbstractFlags::Foot`). The source is the *cell's* own
+/// coordinate, with the bridge deck rise when the firer stands on one, and the
+/// weapon FLH comes from the slot that holds the weapon `InRange` is checking
+/// (`GetWeapon(SelectWeapon(target))->FLH`).
+#[cfg(feature = "phobos")]
+#[allow(clippy::too_many_arguments)]
+fn phobos_scan_input(
+    attacker: &GameEntity,
+    target: RangeTarget<'_>,
+    weapon: &WeaponType,
+    src: (i64, i64, i64),
+    target_xyz: (i64, i64, i64),
+    rules: &RuleSet,
+    interner: &StringInterner,
+    cells: &NativeCellQuery<'_>,
+    entities: Option<&crate::sim::entity_store::EntityStore>,
+) -> Option<line_of_fire::PhobosScanInput> {
+    let projectile = rules.weapon_projectile(weapon)?;
+    if !projectile.phobos_subject_to_ground() {
+        return None;
+    }
+    let air = |entity: &GameEntity| {
+        crate::sim::world::entity_layer(entity, Some(cells.terrain()), Some((rules, interner)))
+            == crate::sim::world::display_layers::DisplayLayer::AIR
+    };
+    let target_in_air = match target {
+        RangeTarget::Techno(entity) => air(entity),
+        _ => false,
+    };
+    if air(attacker) || target_in_air || attacker.passenger_role.transporter().is_some() {
+        return Some(line_of_fire::PhobosScanInput {
+            source: src,
+            subject_to_ground: false,
+        });
+    }
+    let Some(obj) = interner.object_type(attacker.type_ref(), rules) else {
+        return Some(line_of_fire::PhobosScanInput {
+            source: src,
+            subject_to_ground: true,
+        });
+    };
+    let cell = cells.lookup_world(src.0 as i32, src.1 as i32);
+    let Some((x, y, mut z)) = native_cell_own_coords(cell, cells) else {
+        return Some(line_of_fire::PhobosScanInput {
+            source: src,
+            subject_to_ground: true,
+        });
+    };
+    // `pTechno->OnBridge ? pCell->GetCoordsWithBridge() : pCell->GetCoords()`.
+    if attacker.on_bridge() {
+        z = z.wrapping_add(i64::from(BRIDGE_DECK_HEIGHT_LEPTONS));
+    }
+    let turret_offset = obj.has_turret.then(|| {
+        crate::sim::combat::fire_coord::firer_art(rules, obj)
+            .map_or([0, 0, 0], |art| art.turret_offset)
+    });
+    // `GetWeapon(SelectWeapon(target))`: the slot whose weapon `InRange` checks.
+    let slot = entities.and_then(|entities| {
+        (0..3).find(|&index| {
+            combat_weapon::get_weapon(attacker, obj, index, entities, rules, interner)
+                .is_some_and(|candidate| candidate.id == weapon.id)
+        })
+    });
+    let flh = obj.weapon_flh(
+        i32::from(slot.unwrap_or(0)),
+        crate::sim::combat::gattling::is_elite(attacker),
+    );
+    let source = crate::util::flh_transform::phobos_flh_source(
+        [
+            i32::try_from(x).unwrap_or(0),
+            i32::try_from(y).unwrap_or(0),
+            i32::try_from(z).unwrap_or(0),
+        ],
+        [
+            i32::try_from(target_xyz.0).unwrap_or(0),
+            i32::try_from(target_xyz.1).unwrap_or(0),
+            i32::try_from(target_xyz.2).unwrap_or(0),
+        ],
+        turret_offset,
+        (flh.forward, flh.lateral, flh.height),
+        weapon.burst != 1,
+    );
+    Some(line_of_fire::PhobosScanInput {
+        source: (
+            i64::from(source[0]),
+            i64::from(source[1]),
+            i64::from(source[2]),
+        ),
+        subject_to_ground: true,
+    })
 }
 
 /// Resolve target coords for the 3D path. Applies LowFlying ground-snap on

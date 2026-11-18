@@ -226,3 +226,126 @@ pub fn native_building_barrel_world_delta(
     let ftol = |value: f32| X87Chop53::ftol_f64_low_masked(f64::from(value));
     Some((ftol(origin.x), ftol(-origin.y), ftol(origin.z)))
 }
+
+/// Phobos `BulletObstacleHelper::AddFLHToSourceCoords`
+/// (`Ext/Bullet/Hooks.Obstacles.cpp:89-125`): the firing point a
+/// `SubjectToGround=` bullet is assumed to start from when `InRange` scans for
+/// ground obstacles.
+///
+/// This is NOT `GetFLH`. Native builds
+///
+/// ```text
+/// M = RotZ((float)-atan2(target.Y - source.Y, target.X - source.X))
+///     . T(TurretOffset)              only when the firer HasTurret()
+///     . T(FLH.X, Burst == 1 ? FLH.Y : 0, FLH.Z)
+/// out = cell == source + ( (int)M.X, -(int)M.Y, (int)M.Z )
+/// ```
+///
+/// from `Matrix3D::GetIdentity`, so the heading is *predicted* from the
+/// target vector instead of read from the retained facing, the pivot is the
+/// type's `TurretOffset` rather than the live turret index, and the lateral
+/// term is centred whenever the weapon's `Burst` exceeds one (Phobos centres it
+/// to stop the firer pacing between two candidate positions).
+///
+/// `source` is the cell's own coordinate (`CellClass::GetCoords`, or
+/// `GetCoordsWithBridge` when the firer is on a bridge), not the object's.
+/// `center_lateral` carries the `Burst > 1` answer; the native equality test
+/// between the slot's weapon and the weapon being checked is trivially true for
+/// `InRange`, which passes the selected weapon's own slot.
+pub fn phobos_flh_source(
+    source: [i32; 3],
+    target: [i32; 3],
+    turret_offset: Option<[i32; 3]>,
+    flh: (i32, i32, i32),
+    center_lateral: bool,
+) -> [i32; 3] {
+    use crate::util::direction_tables::native_atan2_f32;
+    use crate::util::native_affine::{rotate_z, translate_xyz};
+    use crate::util::native_x87::X87Chop53;
+
+    // `Math::atan2` (the 0x004CAE30 double wrapper) stores both arguments as
+    // f32 first, and the caller negates the result before storing it as a
+    // float for `Matrix3D::RotateZ`.
+    let store_i32 = |value: i32| {
+        X87Chop53::store_f32(X87Chop53::load_i32(value))
+            .expect("every i32 is representable in the verified normal f32 domain")
+    };
+    let radians = native_atan2_f32(
+        store_i32(target[1].wrapping_sub(source[1])),
+        store_i32(target[0].wrapping_sub(source[0])),
+    );
+    let radians = -f32::from_bits(
+        X87Chop53::store_f32(radians)
+            .expect("the atan table answers finite radians")
+            .bits(),
+    );
+    let (sin, cos) = radians.sin_cos();
+    let matrix = rotate_z(glam::Mat4::IDENTITY, sin, cos);
+    let matrix = match turret_offset {
+        Some(offset) => translate_xyz(
+            matrix,
+            [offset[0] as f32, offset[1] as f32, offset[2] as f32],
+        ),
+        None => matrix,
+    };
+    let lateral = if center_lateral { 0 } else { flh.1 };
+    let matrix = translate_xyz(matrix, [flh.0 as f32, lateral as f32, flh.2 as f32]);
+    let origin = matrix.col(3);
+    let ftol = |value: f32| X87Chop53::ftol_f64_low_masked(f64::from(value));
+    [
+        source[0].wrapping_add(ftol(origin.x)),
+        source[1].wrapping_add(ftol(origin.y).wrapping_neg()),
+        source[2].wrapping_add(ftol(origin.z)),
+    ]
+}
+
+#[cfg(test)]
+mod phobos_source_tests {
+    use super::phobos_flh_source;
+
+    /// A target due east leaves `RotZ(0)`, so the offset is the raw
+    /// `(FLH.X, FLH.Y, FLH.Z)` translate and the Y term is negated on the way
+    /// out (`-(int)M.Y`).
+    #[test]
+    fn a_target_on_the_x_axis_leaves_the_raw_translate() {
+        let source = [1000, 2000, 0];
+        let out = phobos_flh_source(source, [1000 + 1024, 2000, 0], None, (64, 32, 16), false);
+        assert_eq!(out, [1000 + 64, 2000 - 32, 16]);
+    }
+
+    /// Above one `Burst` the native centres the lateral term, so only the
+    /// forward and height terms survive the same rotation.
+    #[test]
+    fn a_burst_weapon_centres_the_lateral_term() {
+        let source = [1000, 2000, 0];
+        let out = phobos_flh_source(source, [1000 + 1024, 2000, 0], None, (64, 32, 16), true);
+        assert_eq!(out, [1000 + 64, 2000, 16]);
+    }
+
+    /// A target due +Y turns the `-atan2` into `-pi/2`, where `RotZ` maps the
+    /// forward term onto `-Y`; the native `-(int)M.Y` then lands it back toward
+    /// the target.
+    #[test]
+    fn a_target_on_the_y_axis_rotates_the_forward_term() {
+        let source = [1000, 2000, 0];
+        let out = phobos_flh_source(source, [1000, 2000 + 1024, 0], None, (64, 0, 0), false);
+        assert_eq!(out, [1000, 2000 + 64, 0]);
+    }
+
+    /// `HasTurret()` adds the pivot as a post-rotation translate, so it rides
+    /// the predicted frame instead of world X. The f32 cosine at `-pi/2` is
+    /// not exactly zero, and native truncates rather than rounds, so the
+    /// pivot's X term lands one lepton short.
+    #[test]
+    fn the_turret_pivot_rides_the_predicted_frame() {
+        let source = [1000, 2000, 0];
+        let out = phobos_flh_source(
+            source,
+            [1000, 2000 + 1024, 0],
+            Some([40, 8, 0]),
+            (64, 0, 0),
+            false,
+        );
+        assert_eq!(out, [1000 + 7, 2000 + 104, 0]);
+    }
+}

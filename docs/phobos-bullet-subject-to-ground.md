@@ -52,19 +52,25 @@ the stock one.
   floor branch is guarded by `!isTargetingCheck`, so it cannot fire on this arm
   (it belongs to the bullet's flight). Test
   `subject_land_and_water_put_a_projectile_into_the_walk`.
-- The FLH-predicted source offset (`AddFLHToSourceCoords`, `:89-125`) is not
-  ported, so the ground clause still samples from the raw source coordinate.
-  Native keeps `subjectToGround` only for a Foot firer that is not `IsInAir()`,
-  against a target that is not `IsInAir()`, with no `Transporter` (`:92-97`);
-  any miss clears the flag and returns the raw source. Otherwise it builds
+- The FLH-predicted source offset (`AddFLHToSourceCoords`, `:89-125`) is
+  **ported for this call site**. `sim::combat::in_range::phobos_scan_input`
+  keeps `subjectToGround` only for a firer that is not `IsInAir()`, against a
+  target that is not `IsInAir()`, with no `Transporter` (`:92-97`); any miss
+  clears the flag and keeps the raw source. Otherwise it builds
   `identity → RotateZ((float)-atan2(dy, dx)) → ApplyTurretOffset` (only under
-  `HasTurret()`) `→ Translate(FLH.X, Burst == 1 ? FLH.Y : 0, FLH.Z)`, then returns
-  the *cell* centre (`OnBridge` → `GetCoordsWithBridge()`) plus
-  `((int)x, -(int)y, (int)z)`. Two terms differ from `GetFLH`: the heading is
-  predicted from the target vector rather than read from the retained facing, and
-  a `Burst` above 1 centres the lateral term instead of alternating it.
+  `HasTurret()`) `→ Translate(FLH.X, Burst == 1 ? FLH.Y : 0, FLH.Z)` over the
+  *cell's* own coordinate (`OnBridge` adds the deck rise) plus
+  `((int)x, -(int)y, (int)z)` — `util::flh_transform::phobos_flh_source`. Two
+  terms differ from `GetFLH`: the heading is predicted from the target vector
+  instead of the retained facing, and a `Burst` above 1 centres the lateral term
+  instead of alternating it. `InRange` now runs two passes, as native does: the
+  stock walk from the raw source first, then this one from the predicted source
+  (`PhobosScanInput`, `walk_arm`). Residuals: the weapon FLH comes from the slot
+  whose weapon id matches the one `InRange` checks (native reads
+  `GetWeapon(SelectWeapon(target))->FLH`), and the `TurretOffset` pivot is the
+  art triple without a building's installed-upgrade `HasTurret`.
 - `FindFirstObstacle` samples `maxDelta + isTargetingCheck` points (`:64`), so
-  `InRange` also tests the target's own cell; VERA's merged walk stops at its
+  `InRange` also tests the target's own cell; VERA's walk stops at its
   existing sample count, which has not been compared against that bound.
 - After the scan, the same hook runs the spawner's position search (`:239-252`):
   a null result with `SpawnManager`, the Foot bit and `!IsInAir()` moves the
@@ -88,3 +94,12 @@ the stock one.
   `subject_land_and_water_put_a_projectile_into_the_walk`: `SubjectToLand` stops
   a walk over a land row and leaves a water row alone; `SubjectToWater` does the
   reverse; both unset or `=no` keeps the stock walk.
+- `src/sim/combat/line_of_fire.rs` —
+  `the_phobos_pass_walks_from_the_predicted_source`: the second pass starts at
+  the given source, so a shot level with the floor from the raw coordinate
+  stops on the first sample when handed a source below it.
+- `src/util/flh_transform.rs` — `phobos_source_tests`: an axis-aligned target
+  leaves the raw translate (Y negated), `Burst > 1` centres the lateral term,
+  a +Y target turns the forward term, and the turret pivot rides the predicted
+  frame (one lepton short on X, because f32 `cos(-pi/2)` is nonzero and native
+  truncates).
