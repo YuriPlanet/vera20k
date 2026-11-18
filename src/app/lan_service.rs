@@ -15,6 +15,7 @@ use crate::net::global::{GlobalDestination, GlobalMessage};
 use crate::net::lan_messages::{
     LanCompatibility, LanMessage, LanMessageKind, LanNamedMessage, LanSessionProof, SessionScope,
 };
+use crate::net::live_commands::LiveCommandMode;
 use crate::net::reliable::{Delivery, LanConnectionConfig, LanConnections, RetryTiming};
 use crate::net::udp::{DEFAULT_LAN_PORT, LanUdpTransport, UdpBindConfig};
 
@@ -3552,15 +3553,17 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
         .runtime()
         .ok_or_else(|| anyhow::anyhow!("LAN startup has no constructed world"))?
         .simulation;
-    let timing = state
+    let startup_transport = state
         .match_state
         .lan_service
         .as_ref()
         .and_then(|service| service.transport.as_ref())
-        .ok_or_else(|| anyhow::anyhow!("LAN startup transport is already owned by a match"))?
-        .retry_timing();
-    let (local_house, seed, connections) =
-        gameplay_connections(&state.match_state.session, sim, timing)?;
+        .ok_or_else(|| anyhow::anyhow!("LAN startup transport is already owned by a match"))?;
+    let (local_house, seed, connections) = gameplay_connections(
+        &state.match_state.session,
+        sim,
+        startup_transport.retry_timing(),
+    )?;
     let host_house = if state.match_state.session.host() {
         local_house
     } else {
@@ -3651,7 +3654,12 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("active human has no shared setup row"))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
-    let online_timing = if state.match_state.session_mode() == SessionMode::Wol {
+    let mode = if state.match_state.session_mode() == SessionMode::Wol {
+        LiveCommandMode::Wol
+    } else {
+        LiveCommandMode::Lan
+    };
+    let online_timing = if mode == LiveCommandMode::Wol {
         Some(
             state
                 .match_state
@@ -3666,15 +3674,8 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
     // Freeze shared setup-row/House bindings and loading-survivor set exactly
     // once. The existing canonical world hash includes the installed shared
     // timing rows; no first probe, vote or local clock can replace this value.
-    let ordering_clock = state
-        .match_state
-        .lan_service
-        .as_ref()
-        .and_then(|service| service.transport.as_ref())
-        .and_then(|transport| transport.ordering_certificate())
-        .map(|bytes| crate::net::udp::OrderingCertificate::parse(&bytes))
-        .transpose()?
-        .filter(|cert| cert.relay_orders());
+    let ordering_clock =
+        crate::net::live_commands::relay_clock(mode, startup_transport, full_houses.len())?;
     let frame_send_rate = ordering_clock.map_or_else(
         || online_timing.map_or(5, |timing| timing.frame_send_rate as u32),
         |_| 1,
@@ -3769,11 +3770,8 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
         local_house,
         seed,
         rate,
-        if state.match_state.session_mode() == SessionMode::Wol {
-            crate::net::live_commands::LiveCommandMode::Wol
-        } else {
-            crate::net::live_commands::LiveCommandMode::Lan
-        },
+        mode,
+        ordering_clock,
     )?;
     if state
         .match_state
@@ -6259,6 +6257,7 @@ mod tests {
             seed,
             rate,
             LiveCommandMode::Wol,
+            None,
         )
         .expect("the production connected roster must install its two-of-three certificate");
         assert_eq!(live.primary_addr().unwrap(), address);

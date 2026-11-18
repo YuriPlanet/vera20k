@@ -23,6 +23,10 @@ pub enum StartupError {
     Mismatch,
     #[error("startup lost a required participant before agreement")]
     Aborted,
+    /// VERA: the lobby's certificate names more or fewer players than the
+    /// match admitted ([`super::relay_clock`]).
+    #[error("the lobby's match clock names a different number of players than this match")]
+    ClockRoster,
 }
 
 /// Immutable protocol snapshot, not another simulation/membership owner.
@@ -109,8 +113,8 @@ impl StartupAgreement {
         })
     }
 
-    pub(super) fn is_original_singleton(&self) -> bool {
-        self.houses.len() == 1
+    pub(super) fn original_houses(&self) -> usize {
+        self.houses.len()
     }
 
     /// The relay clock requires the entire originally certified membership.

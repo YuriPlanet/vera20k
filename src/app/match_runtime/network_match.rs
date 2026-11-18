@@ -1560,6 +1560,7 @@ mod tests {
             19,
             std::num::NonZeroU32::new(2).unwrap(),
             LiveCommandMode::Lan,
+            None,
         )
         .unwrap();
         let wrong_port = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30124);
@@ -1659,6 +1660,7 @@ mod tests {
                     19,
                     NonZeroU32::new(5).unwrap(),
                     LiveCommandMode::Wol,
+                    None,
                 )
                 .unwrap()
             });
@@ -1803,6 +1805,8 @@ mod tests {
         transport
             .set_ordering_certificate(certificate.to_vec())
             .unwrap();
+        let clock =
+            crate::net::live_commands::relay_clock(LiveCommandMode::Wol, &transport, 2).unwrap();
         let mut live = crate::net::live_commands::LiveCommandSession::new(
             crate::net::live_commands::StartupAgreement::new(
                 [(0, 1), (1, 0)],
@@ -1821,6 +1825,7 @@ mod tests {
             19,
             NonZeroU32::new(1).unwrap(),
             LiveCommandMode::Wol,
+            clock,
         )
         .unwrap();
         assert!(live.uses_sequenced_lockstep());
@@ -1975,11 +1980,19 @@ mod tests {
             "",
         )
         .unwrap();
-        let mut first =
-            LiveCommandSession::new(agreement.clone(), first, 0, 19, rate, LiveCommandMode::Wol)
-                .unwrap();
+        let mut first = LiveCommandSession::new(
+            agreement.clone(),
+            first,
+            0,
+            19,
+            rate,
+            LiveCommandMode::Wol,
+            None,
+        )
+        .unwrap();
         let mut second =
-            LiveCommandSession::new(agreement, second, 2, 19, rate, LiveCommandMode::Wol).unwrap();
+            LiveCommandSession::new(agreement, second, 2, 19, rate, LiveCommandMode::Wol, None)
+                .unwrap();
         let probe = crate::net::command_exchange::CommandExchange::new([0, 2])
             .unwrap()
             .frame_probe(

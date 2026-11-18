@@ -522,17 +522,13 @@ pub(super) struct SequencedSession {
 }
 
 impl SequencedSession {
+    /// `cert` is the transport's certificate, as `super::relay_clock` read it.
     pub(super) fn new(
         agreement: &StartupAgreement,
         transport: &LanUdpTransport,
         local_house: i8,
+        cert: &OrderingCertificate,
     ) -> Result<Self, LiveCommandError> {
-        let cert = OrderingCertificate::parse(
-            &transport
-                .ordering_certificate()
-                .ok_or(StartupError::InvalidAdmission)?,
-        )
-        .map_err(|_| StartupError::InvalidAdmission)?;
         let watch_delay = transport.relay_watch_delay();
         let player_source = match watch_delay {
             Some(_) => None,

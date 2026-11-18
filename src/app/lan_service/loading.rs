@@ -700,9 +700,16 @@ mod tests {
         let rate = NonZeroU32::new(5).unwrap();
         let agreement =
             StartupAgreement::new([(0, 0), (1, 1)], [0, 1], 77, 10, 30, rate, 0, "", "").unwrap();
-        let mut live =
-            LiveCommandSession::new(agreement, transport, 0, 77, rate, LiveCommandMode::Lan)
-                .unwrap();
+        let mut live = LiveCommandSession::new(
+            agreement,
+            transport,
+            0,
+            77,
+            rate,
+            LiveCommandMode::Lan,
+            None,
+        )
+        .unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
         let mut now = loading_bucket();
         let mut controls = 0;
