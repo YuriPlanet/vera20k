@@ -302,11 +302,11 @@ pub(crate) fn player_choices(
     )
 }
 
-/// The VERA lobby's `balance` event, its answer to the host's `/balance` or
-/// Balance automatically (no native counterpart): a team for each named
-/// player. It has `player_choices`' gates but waits, as the host's own edits
-/// do, from its Start click, and acts only in a mode that lets players ally
-/// outside a clan room, where the team combos show.
+/// The VERA lobby's `balance` event, its answer to the host's `/balance`
+/// (no native counterpart): a team for each named player. It has
+/// `player_choices`' gates but waits, as the host's own edits do, from its
+/// Start click, and acts only in a mode that lets players ally outside a clan
+/// room, where the team combos show.
 pub(crate) fn balance_teams(state: &mut AppState, teams: &[(String, u8)]) -> anyhow::Result<()> {
     if crate::app::shell_wol::in_match(state)
         || super::start_phase(state).in_progress()

@@ -2581,7 +2581,7 @@ impl WolCapture {
                     let team_list = row_combo(&view, SetupColumn::Team, 0)
                         .is_some_and(|(_, combo)| combo.enabled);
                     ensure!(
-                        !session.network_auto_balance() && view.enabled(BALANCE) && team_list,
+                        view.enabled(BALANCE) && team_list,
                         "setting Teams online closed the Team lists or Balance"
                     );
                     let captions: Vec<&str> = view
