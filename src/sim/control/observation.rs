@@ -399,7 +399,7 @@ impl<'a> Observation<'a> {
         self.sim
             .entities()
             .get(entity_id)
-            .map_or(0, |entity| entity.passenger_role.passenger_count())
+            .map_or(0, |entity| entity.passenger_role().passenger_count())
     }
 
     /// The transport this object is inside, if any.
@@ -410,7 +410,7 @@ impl<'a> Observation<'a> {
         self.sim
             .entities()
             .get(entity_id)
-            .and_then(|entity| entity.passenger_role.inside_transport_id())
+            .and_then(|entity| entity.passenger_role().inside_transport_id())
     }
 
     /// The bales in a harvester's hold.
@@ -1015,7 +1015,7 @@ impl<'a> Observation<'a> {
             // is absent on a building, which would leave every bunker off the
             // list. The room here is `MaxOccupants=` minus who is inside.
             let taken =
-                u32::try_from(entity.passenger_role.occupants().count()).unwrap_or(u32::MAX);
+                u32::try_from(entity.passenger_role().occupants().count()).unwrap_or(u32::MAX);
             let room = ty.max_number_occupants.saturating_sub(taken);
             if room == 0 {
                 return None;
@@ -1256,7 +1256,7 @@ impl<'a> Observation<'a> {
     /// carrier from an empty one.
     pub fn passengers(&self, entity_id: u64) -> usize {
         self.sim.entities().get(entity_id).map_or(0, |entity| {
-            entity.passenger_role.occupants().count().max(0) as usize
+            entity.passenger_role().occupants().count().max(0) as usize
         })
     }
 

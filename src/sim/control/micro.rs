@@ -136,7 +136,7 @@ impl MicroTable {
                     || entry.health.current() <= 0
                 {
                     Some(FallbackReason::Gone)
-                } else if entry.passenger_role.inside_transport().is_some()
+                } else if entry.passenger_role().inside_transport().is_some()
                     || entry.mind_control.controller().is_some()
                 {
                     Some(FallbackReason::Gone)

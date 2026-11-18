@@ -1008,7 +1008,7 @@ fn capture_value(rules: &RuleSet, ty: &ObjectType, short_of_income: bool) -> u8 
 /// unlocks what a lab unlocks and a yard hands over a side. Zero is the
 /// derrick's answer, and the derrick is an income the tree never offered.
 fn built_capture_value(rules: &RuleSet, ty: &ObjectType) -> u8 {
-    if ty.build_const_eligible
+    if ty.build_const_eligible()
         || rules.build_tech_types.iter().any(|name| *name == ty.id)
         || ty.super_weapon.is_some()
         || ty.super_weapon2.is_some()
@@ -1671,7 +1671,7 @@ pub(super) fn sell_hard_to_hold(
         // A captured yard is not sold, it is packed. It is the one building that
         // is worth more as a unit: the maker drives home and becomes a second
         // base, while the refund is a fraction of what a second yard is worth.
-        if ty.build_const_eligible {
+        if ty.build_const_eligible() {
             log::info!(
                 "auto play: pack the captured yard {} at {:?} for the drive home",
                 ty.id,
@@ -2592,7 +2592,7 @@ fn enemy_structure_cell(
         if ty.category != ObjectCategory::Building {
             continue;
         }
-        if ty.build_const_eligible {
+        if ty.build_const_eligible() {
             return Some(enemy.cell);
         }
         first.get_or_insert(enemy.cell);
@@ -3185,7 +3185,7 @@ mod tests {
                 .substrate
                 .entities
                 .get(shack)
-                .map_or(0, |b| b.passenger_role.occupants().count());
+                .map_or(0, |b| b.passenger_role().occupants().count());
             if boarded == 1 {
                 break;
             }

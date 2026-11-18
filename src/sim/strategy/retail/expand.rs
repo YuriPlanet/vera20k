@@ -91,7 +91,7 @@ pub(super) fn makes_a_yard(rules: &RuleSet, ty: &ObjectType) -> bool {
     ty.deploys_into
         .as_deref()
         .and_then(|name| rules.object(name))
-        .is_some_and(|yard| yard.build_const_eligible)
+        .is_some_and(|yard| yard.build_const_eligible())
 }
 
 /// Whether a yard stands: `BuildConst=` eligible is the rules' own mark for
@@ -559,7 +559,7 @@ fn yard_type<'r>(rules: &'r RuleSet, obs: &Observation<'_>) -> Option<&'r Object
         .filter_map(|(maker, _)| {
             rules
                 .object(maker.deploys_into.as_deref()?)
-                .filter(|yard| yard.build_const_eligible)
+                .filter(|yard| yard.build_const_eligible())
         })
         .next()
 }

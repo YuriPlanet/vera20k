@@ -687,7 +687,7 @@ impl<'a, 'b> Placement<'a, 'b> {
             if ty.category != crate::rules::object_type::ObjectCategory::Building {
                 continue;
             }
-            if ty.build_const_eligible {
+            if ty.build_const_eligible() {
                 anchors.push(entity.cell);
             } else if !(ty.capturable || ty.can_be_occupied) {
                 // Ground the yard grows on is ground the house built. A

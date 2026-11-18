@@ -297,7 +297,7 @@ fn holds_a_captured_yard_of(
     house: &HouseState,
     required: u32,
 ) -> bool {
-    rules.build_const_types.iter().any(|name| {
+    rules.build_const_types().iter().any(|name| {
         let Some(id) = sim.interner.get(name) else {
             return false;
         };

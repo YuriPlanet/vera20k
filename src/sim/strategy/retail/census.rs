@@ -376,7 +376,7 @@ impl Traits {
             combat: crate::rules::unit_role::is_army(rules, ty),
             harvester: ty.resource_gatherer,
             refinery: ty.resource_destination,
-            yard: ty.build_const_eligible,
+            yard: ty.build_const_eligible(),
             yard_maker: super::expand::makes_a_yard(rules, ty),
             engineer: ty.engineer,
             infiltrator: ty.infiltrate,
