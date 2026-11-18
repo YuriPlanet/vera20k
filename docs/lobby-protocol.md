@@ -223,12 +223,13 @@ Starting requires at least two playing participants, counting the actual
 watch, and with two or more AI everyone in the room may watch. The map's
 `player_capacity` must cover every playing human and AI row, or with Teams set
 (`launch.options.teams`), where a team's players share its bases, one start for each
-team that has players or AI and one for each playing participant on no team. Before
-publishing, the host checks this limit and tells the room the map is too small. A lobby
-from before this refuses options past the map's capacity with `invalid_options`, and a
-start with both observers and AI with 409 `not_ready`; one from before AI-only games
-refuses a start where every human watches with 409 `not_ready`. `start.users` contains
-exactly the canonical human names, including observers, and never includes AI rows.
+team that has players or AI and one for each playing participant on no team. The host's
+game checks this limit before publishing; past it, it tells the host the map is too small
+and publishes nothing. A lobby from before this refuses options past the map's capacity
+with `invalid_options`, and a start with both observers and AI with 409 `not_ready`; one
+from before AI-only games refuses a start where every human watches with 409 `not_ready`.
+`start.users` contains exactly the canonical human names, including observers, and never
+includes AI rows.
 
 Event kinds and payloads:
 

@@ -52,7 +52,7 @@ pub(crate) enum NetworkSetupEvent {
     },
     #[expect(
         dead_code,
-        reason = "the network transport, outside this change, delivers these packets"
+        reason = "neither transport carries C1 (0x005C2710); see PublishCooperativeAssignments"
     )]
     CooperativeAssignments(Vec<[[i32; 2]; 8]>),
     /// The host's `C0` campaign text (packet `0x17` at `+0x2F`).
@@ -99,11 +99,6 @@ pub(crate) enum NetworkSetupEvent {
     },
     HostLeft,
     Kicked,
-    #[expect(
-        dead_code,
-        reason = "the network transport, outside this change, delivers these packets"
-    )]
-    Chat(LanChatLine),
     /// WOL OnGameStart (`CChatEventSink+0x5C`, `0x7A7C80`) with the server's
     /// user list and the ping table `0xB7790C` the timing block reads.
     GameStarted {
@@ -936,7 +931,6 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 shell_transition::ShellExitThen::NetworkSetupBack(dialog),
             );
         }
-        NetworkSetupEvent::Chat(line) => crate::app::shell_lan::append_room_chat(state, line),
         NetworkSetupEvent::GameStarted { users, pings } => {
             super::wol::game_started(state, users, pings)?;
         }
