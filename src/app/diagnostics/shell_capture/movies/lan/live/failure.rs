@@ -3,10 +3,8 @@
 //! time, packets, commands and simulation advancement stay with the game.
 
 use super::*;
-use crate::app::match_runtime::sim_host::SimWrite;
-
-mod startup;
 use crate::app::match_runtime::network_match;
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::net::live_commands::{LiveWaitInfo, LiveWaitKind};
 use crate::sim::command::{Command, CommandRecord, EXIT_OPCODE, REMOVE_PLAYER_OPCODE};
 use crate::sim::rng::SimRngLogicalState;
@@ -16,7 +14,6 @@ pub(super) enum Mode {
     Timeout,
     Quit,
     Desync,
-    Startup,
 }
 
 struct HeldWait {
@@ -71,7 +68,6 @@ pub(super) struct FailureCapture {
     returned: Option<Value>,
     last_live: Option<Value>,
     checksum: Option<HeldChecksum>,
-    startup: Option<startup::StartupCapture>,
 }
 
 impl FailureCapture {
@@ -95,7 +91,6 @@ impl FailureCapture {
             returned: None,
             last_live: None,
             checksum: None,
-            startup: None,
         }
     }
 
@@ -150,9 +145,6 @@ impl FailureCapture {
         render: u32,
         route: &mut Vec<Value>,
     ) -> Result<bool> {
-        if self.mode == Mode::Startup {
-            return self.observe_startup(state, render, route);
-        }
         if self.mode == Mode::Desync {
             return self.observe_checksum(state, render, route);
         }
@@ -680,30 +672,22 @@ impl FailureCapture {
                 && state.frontend.loading_session.is_none(),
             "EA Quit retained setup/loading"
         );
-        if self.mode == Mode::Startup {
-            ensure!(
-                sim.session().tick() == held.tick.wrapping_add(1)
-                    && state.match_state.network_failure.is_none()
-                    && sim.pending_network_interruption().is_none(),
-                "startup OK did not retire its modal after exactly one aborted tick"
-            );
-        }
         self.returned = Some(
             json!({"native_frame":sim.session().binary_frame(),"tick":sim.session().tick(),"held_frame":held.frame,
             "held_tail_commits":sim.session().binary_frame().wrapping_sub(held.frame),"live_owner_retired":true,"lan_service_retained":true,
             "network_wait_cleared":true,"pending_exit":false,"reopened_room":room}),
         );
         route.push(json!({"render_frame":render,"native_frame":sim.session().binary_frame(),
-            "action":if self.mode == Mode::Startup { "startup ConnectionFailed OK returned to settled lobby after one held-tail commit" } else if room { "EA Quit returned to the host's reopened room after one held-tail commit" } else { "EA Quit returned to settled lobby after one held-tail commit" },"online":online}));
+            "action":if room { "EA Quit returned to the host's reopened room after one held-tail commit" } else { "EA Quit returned to settled lobby after one held-tail commit" },"online":online}));
         Ok(true)
     }
 
     pub(super) fn receipt(&self) -> Value {
-        json!({"expected_network_failure":if self.mode == Mode::Startup {"externally killed original host before full startup certification; real EA votes and ConnectionFailed OK"} else if self.mode == Mode::Desync {"external real FRAMEINFO checksum corruption after a shared prefix"} else {"external peer disappearance after a real shared prefix"},
+        json!({"expected_network_failure":if self.mode == Mode::Desync {"external real FRAMEINFO checksum corruption after a shared prefix"} else {"external peer disappearance after a real shared prefix"},
             "mode":format!("{:?}",self.mode),"peer_house":self.peer_house,"peer_source":self.peer_source,
             "sent_commands_before":self.sent_before,"remove_player_admissions":self.remove_admissions,"dialog":self.dialog,"removed":self.removed,
             "remove_player":self.remove_player,"remove_player_seen_frame":self.remove_player_frame,"death":self.death,"quit":self.quit,"returned":self.returned,
-            "last_live":self.last_live,"startup":self.startup.as_ref().map(startup::StartupCapture::receipt),
+            "last_live":self.last_live,
             "checksum":self.checksum.as_ref().map(|held|json!({"house":held.mismatch.house_id,"event_frame":held.mismatch.event_frame,
                 "delay":held.mismatch.delay,"history_index":held.mismatch.history_index,"local_checksum":held.mismatch.local_checksum,
                 "remote_checksum":held.mismatch.remote_checksum,"held_frame":held.frame,"held_tick":held.tick,

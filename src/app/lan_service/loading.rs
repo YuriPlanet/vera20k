@@ -129,26 +129,12 @@ impl<'a> LoadingNetworkService<'a> {
             }
             match decode_progress(self.session, scope, incoming) {
                 Ok(Some((source, percent))) => {
-                    let sequence = incoming.sequence;
-                    let applied = super::super::loading::pump::accept_network_loading_progress_row(
+                    super::super::loading::pump::accept_network_loading_progress_row(
                         self.session,
                         rows,
                         source,
                         percent,
                     );
-                    if let Some(displayed) = rows
-                        .participants
-                        .get(source)
-                        .and_then(|row| row.remote_progress.as_ref())
-                    {
-                        global.observe_loading_application(
-                            source,
-                            sequence,
-                            percent,
-                            displayed.current_percent(),
-                            applied,
-                        );
-                    }
                 }
                 Ok(None) => {}
                 Err(error) => log::debug!("Ignored loading progress: {error:#}"),
@@ -620,17 +606,6 @@ mod tests {
         let (mut host, host_session, _, mut guest, mut guest_session, _) =
             super::super::loading_test_pair();
         let guest_address = guest.transport.as_ref().unwrap().primary_addr().unwrap();
-        host.transport
-            .as_mut()
-            .unwrap()
-            .global_mut()
-            .observe_loading();
-        guest
-            .transport
-            .as_mut()
-            .unwrap()
-            .global_mut()
-            .observe_loading();
         let mut guest_rows = LoadingProgressRowSnapshot::from_launch_session(
             guest_session.network_setup().unwrap(),
             crate::rules::skirmish_colors::SkirmishColorMode::VANILLA,
@@ -765,42 +740,6 @@ mod tests {
         assert_eq!(controls, slots);
         assert!(host.pending_setup.is_empty());
         assert_eq!(live.global().queued_send_count(), 0);
-        let log = live.global().loading_observation().unwrap().clone();
-        assert!(!log.overflowed());
-        let (sequence, destination) = log
-            .records()
-            .iter()
-            .find_map(|r| match r {
-                crate::net::global::LoadingObservation::Admitted {
-                    sequence,
-                    destination,
-                    percent: 100,
-                    reliable: true,
-                } => Some((*sequence, *destination)),
-                _ => None,
-            })
-            .expect("actual terminal admission");
-        assert!(log.records().iter().any(|r|matches!(r,crate::net::global::LoadingObservation::Retired{sequence:s,destination:d} if *s==sequence && *d==destination)),
-            "a zero queue alone is not ACK proof");
-        let records = guest
-            .transport
-            .as_ref()
-            .unwrap()
-            .global()
-            .loading_observation()
-            .unwrap()
-            .records()
-            .to_vec();
-        assert!(records.iter().any(|r| matches!(
-            r,
-            crate::net::global::LoadingObservation::Applied {
-                source: 0,
-                percent: 100,
-                displayed,
-                applied: true,
-                ..
-            } if *displayed == 100.0
-        )));
 
         //A delayed native lossy report can arrive AFTER100 was ACKed. It
         //must reach the existing row admission owner without reopening wait.
@@ -848,28 +787,6 @@ mod tests {
                 .global()
                 .queued_receive_count(),
             0
-        );
-        assert!(
-            guest
-                .transport
-                .as_ref()
-                .unwrap()
-                .global()
-                .loading_observation()
-                .unwrap()
-                .records()
-                .iter()
-                .any(|r| matches!(
-                    r,
-                    crate::net::global::LoadingObservation::Applied {
-                        source: 0,
-                        percent: 98,
-                        displayed,
-                        applied: false,
-                        ..
-                    } if *displayed == 100.0
-                )),
-            "actual delayed98 was observed after the same row owner retained terminal100"
         );
         let mut fresh = LoadingProgressRowSnapshot::from_launch_session(
             guest_session.network_setup().unwrap(),
