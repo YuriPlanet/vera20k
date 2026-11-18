@@ -128,7 +128,7 @@ pub const MAX_SIZE_OPTION: i32 = NATIVE_MAX_SIZE_OPTION + EXTENDED_SIZES.len() a
 /// 2..=8 read the original tables unchanged. Above eight (VERA extension) the
 /// eight-player endpoints grow with the square root of the player count, so
 /// each player keeps the eight-player map's area: 30 players get 193..232 and
-/// 120 players 346..415.
+/// 120 players 387..464.
 /// Integer square roots keep it bit-identical on every platform.
 fn dimension_endpoints(players: i32) -> (i32, i32) {
     if players <= NATIVE_MAX_PLAYERS {

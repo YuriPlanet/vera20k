@@ -1387,6 +1387,9 @@ impl App {
             Some(previous),
             available,
         );
+        if state.frontend.shell_route.network_setup() {
+            modal.use_network_player_limit();
+        }
         modal.ares = ares;
         // VERA: the player's own presets, for the Presets button.
         if let Some(dir) = Self::random_map_dir(state) {

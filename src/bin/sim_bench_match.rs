@@ -77,7 +77,7 @@ const FRONTS: usize = 3;
 /// (`tools.scale_map --starts 120`) but the local house's, filling the offline
 /// Skirmish rows (`SKIRMISH_MAX_SLOT_COUNT`). A map with fewer starts seats
 /// fewer.
-pub(crate) const COMPUTERS: usize = 119;
+pub(crate) const COMPUTERS: usize = vera20k_core::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT - 1;
 /// The default run, two minutes of game time, in which the armies reach the
 /// nearest bases.
 pub(crate) const TICKS: u64 = 1800;

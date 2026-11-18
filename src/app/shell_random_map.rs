@@ -321,7 +321,7 @@ pub(crate) struct RandomMapGenerationJob {
     accept_on_finish: bool,
 }
 
-/// Provenance-bearing copy of the eight Scenario start-staging cells written
+/// Provenance-bearing copy of the Scenario start-staging cells written
 /// by the accepted random-map setup run.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct AcceptedRmgStartStaging {
@@ -359,23 +359,6 @@ impl AcceptedRmgStartStaging {
             selected_map_file.is_some_and(|file| file.eq_ignore_ascii_case(RANDMAP_SED));
         (random_map && staging.defined_cells().next().is_some())
             .then(|| Self::from_scenario_staging(staging))
-    }
-
-    fn from_generated(generated: &crate::map::rmg::GeneratedMap) -> Self {
-        // VERA: every start of a random map for up to thirty players.
-        let mut slots = [None; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT];
-        for &(slot, rx, ry) in &generated.start_waypoints {
-            if let Some(entry) = slots.get_mut(usize::from(slot)) {
-                *entry = Some(crate::map::waypoints::Waypoint {
-                    index: u32::from(slot),
-                    rx,
-                    ry,
-                });
-            }
-        }
-        Self {
-            starts: slots.into_iter().flatten().collect(),
-        }
     }
 
     pub(crate) fn into_waypoint_table(
@@ -564,7 +547,7 @@ impl RandomMapGenerationRetention {
 
     pub(super) fn accept_setup(&mut self, selected_map_file: &str) {
         self.accepted_launch = self.candidate.take().map(|generated| {
-            let start_staging = AcceptedRmgStartStaging::from_generated(&generated);
+            let start_staging = AcceptedRmgStartStaging::from_scenario_staging(&self.generated_header);
             (
                 selected_map_file.to_owned(),
                 AcceptedRandomMapLaunch {

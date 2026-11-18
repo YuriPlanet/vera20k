@@ -110,21 +110,24 @@ impl ScenarioCatalog {
                 anyhow::anyhow!("selected network map has no local catalog record: {file}")
             })?;
         let loaded = crate::map::source::load_network_map_ini(root, &record.file_name, assets)?;
-        let digest = if record
-            .file_name
-            .eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED)
-        {
-            // The random-map record carries 0x005E84D0's option digest
-            // (0x005E8590), not a [Digest]; the .Sed holds the same block.
+        let room_limit = crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32;
+        let digest = if crate::map::rmg::is_seed_selection(file) {
             let mut options = crate::map::rmg::RmgOptions::default();
             options.apply_sed(&loaded.ini, ares);
+            anyhow::ensure!(
+                options.num_players <= room_limit,
+                "This random map has {} starts. Choose a seed with at most {room_limit} starts for a network room.",
+                options.num_players
+            );
+            // Seeds carry the generator's option digest (0x005E84D0); the
+            // guest reads the same options when it verifies the transferred file.
             options.native_digest()
         } else {
             network_map_digest(&loaded.ini)
         };
         Ok(NetworkMapMetadata {
             display_name: network_map_title(&record.display_name, file),
-            player_capacity: record.player_capacity,
+            player_capacity: record.player_capacity.min(room_limit),
             official: record.official,
             byte_length: physical_map_length(&loaded.source),
             digest,
@@ -214,11 +217,15 @@ impl ScenarioCatalog {
             // separate effective-map digest already normalizes its input.
             let digest = options.native_digest();
             options.normalize();
+            if options.num_players > crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32 {
+                return false;
+            }
             (digest, options.num_players)
         } else {
             (
                 network_map_digest(&loaded.ini),
-                crate::map::waypoints::skirmish_player_capacity(&loaded.ini),
+                crate::map::waypoints::skirmish_player_capacity(&loaded.ini)
+                    .min(crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32),
             )
         };
         loaded

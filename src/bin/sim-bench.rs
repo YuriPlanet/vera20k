@@ -18,7 +18,7 @@
 //! `--scenario match` plays the middle of a multiplayer match instead (see
 //! `sim_bench_match`): the map loads as a Battle against `--computers`
 //! computer houses (by default the most the lobby admits on the map, at most
-//! 29), the other start waypoints get human players' houses, and every house
+//! 119 offline), the other start waypoints get human players' houses, and every house
 //! has a finished base, harvesters, factories that keep building and a mixed
 //! army. Their own AI plays the computer houses; a script plays the human
 //! ones, sending their armies at the nearest bases in squads until those
@@ -136,7 +136,7 @@ use vera20k_core::sim::movement::PathBatchStats;
 use vera20k_core::sim::runtime::SimRuntime;
 use vera20k_core::sim::scenario_bootstrap::MatchLaunchDescriptor;
 use vera20k_core::sim::scenario_session::ScenarioGameMode;
-use vera20k_core::skirmish_launch::{SKIRMISH_MAX_SLOT_COUNT, SkirmishLaunchSession};
+use vera20k_core::skirmish_launch::{NETWORK_PLAYER_SLOT_COUNT, SkirmishLaunchSession};
 
 use sim_bench_match::MatchScenario;
 
@@ -351,9 +351,14 @@ fn seated_computers(args: &Args) -> Result<usize, String> {
         })?;
     let map = load_map_ini_by_name_or_path_with_assets(&args.ra2_dir, &args.map, &assets)
         .map_err(|error| format!("read map {}: {error}", args.map))?;
+    let cap = if args.lan {
+        NETWORK_PLAYER_SLOT_COUNT.saturating_sub(args.watchers.max(1))
+    } else {
+        sim_bench_match::COMPUTERS
+    };
     let most = usize::try_from(skirmish_player_capacity(&map.ini) - 1)
         .unwrap_or(0)
-        .min(sim_bench_match::COMPUTERS);
+        .min(cap);
     match args.computers {
         Some(computers) if computers > most => Err(format!(
             "{} admits at most {most} computer houses beside the local one",
@@ -623,9 +628,9 @@ fn watched_session(
     computers: usize,
     watchers: usize,
 ) -> Result<SkirmishLaunchSession, String> {
-    if watchers + computers > SKIRMISH_MAX_SLOT_COUNT || computers < 2 {
+    if watchers + computers > NETWORK_PLAYER_SLOT_COUNT || computers < 2 {
         return Err(format!(
-            "--watchers needs two computer houses or more and at most {SKIRMISH_MAX_SLOT_COUNT} rows in all"
+            "--watchers needs two computer houses or more and at most {NETWORK_PLAYER_SLOT_COUNT} rows in all"
         ));
     }
     let mut session = battle_session(map, &sim_bench_match::COMPUTER_ROSTER[..computers]);

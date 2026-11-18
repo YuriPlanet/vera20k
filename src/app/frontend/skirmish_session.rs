@@ -1129,7 +1129,7 @@ impl MultiplayerShellRuntime {
             state.player_color_claimed = false;
         }
 
-        for (opponent, persisted) in state.opponents.iter_mut().zip(self.snapshot.slots) {
+        for (opponent, persisted) in state.opponents.iter_mut().zip(self.snapshot.slots.iter()) {
             opponent.row_type = ai_row_type_from_persisted(persisted.row_type);
             opponent.enabled = opponent.row_type.is_active();
             if let Some(difficulty) = opponent.row_type.difficulty() {

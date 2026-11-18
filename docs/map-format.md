@@ -106,6 +106,9 @@ listed without markers.
 
 ## Playing online
 
+Offline Skirmish can seat all 120 players. A network room can use the same authored
+map with up to 30 players. Random-map seeds with more than 30 starts play offline.
+
 A big map is sent to players who don't have it like any other map, up to the
 lobby's 8 MiB limit for a map file ([lobby protocol](lobby-protocol.md)).
 Everyone in a match runs the same VERA20k version, so all of them read the map the

@@ -215,7 +215,7 @@ pub enum AcceptOutcome {
 
 /// The Players slider's range in steps of 1. The original runs 2..8
 /// (`TBM_SETRANGE` at `0x0059722C`; no `0x4AB`); VERA's runs to the offline
-/// Skirmish row count in every dialog.
+/// Skirmish row count. A network dialog keeps the room’s player limit.
 pub const PLAYERS_RANGE: TrackbarRange = TrackbarRange::new(2, crate::map::rmg::MAX_PLAYERS, 1);
 
 /// VERA extension: a ready-made option set the Presets button applies in one
@@ -326,6 +326,7 @@ impl RandomMapPreset {
 pub struct RandomMapSetupModalState {
     /// The working option set the controls edit.
     pub options: RmgOptions,
+    pub players_range: TrackbarRange,
     /// True once Generate has run and no option has changed since.
     pub generated: bool,
     /// True while the synchronous generate block owns the dialog.
@@ -458,6 +459,7 @@ impl RandomMapSetupModalState {
         );
         let mut modal = Self {
             options,
+            players_range: PLAYERS_RANGE,
             generated: false,
             generating: false,
             saved_seed_buttons_enabled: saved_seeds_available,
@@ -486,6 +488,17 @@ impl RandomMapSetupModalState {
         };
         modal.options.normalize();
         modal
+    }
+
+    /// A room can publish start staging for its network seats only.
+    pub fn use_network_player_limit(&mut self) {
+        self.players_range.max = crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32;
+        self.options.num_players = self.options.num_players.min(self.players_range.max);
+    }
+
+    fn normalize_options(&mut self) {
+        self.options.normalize();
+        self.options.num_players = self.options.num_players.min(self.players_range.max);
     }
 
     /// An option edit made by the Extras view.
@@ -563,7 +576,9 @@ impl RandomMapSetupModalState {
     /// the value changed; the slider then clicks (GenericClick, `0x0061E6DD`),
     /// since `0x105` never turns its cue off (`0x4AE`).
     pub fn press_players(&mut self, x: i32, y: i32, window: RectPx, scale: ShellScale) -> bool {
-        let press = PLAYERS_RANGE.press_in(self.options.num_players, x, y, window, scale);
+        let press = self
+            .players_range
+            .press_in(self.options.num_players, x, y, window, scale);
         self.players_hold = press.hold(());
         match press {
             TrackbarPress::Jump(value) => self.change_num_players(value),
@@ -575,7 +590,7 @@ impl RandomMapSetupModalState {
     /// device `x`. Returns whether the value changed.
     pub fn drag_players(&mut self, x: i32, window: RectPx, scale: ShellScale) -> bool {
         self.players_hold.is_some_and(|hold| hold.dragging)
-            && self.change_num_players(PLAYERS_RANGE.value_at_in(x, window, scale))
+            && self.change_num_players(self.players_range.value_at_in(x, window, scale))
     }
 
     /// The slider notifies (`WM_HSCROLL`, case `0x00596B04`) only when its
@@ -665,7 +680,7 @@ impl RandomMapSetupModalState {
     }
 
     fn on_option_changed(&mut self) {
-        self.options.normalize();
+        self.normalize_options();
         self.generated = false;
         self.generated_preview = None;
         self.preset = None;
@@ -764,7 +779,7 @@ impl RandomMapSetupModalState {
     /// player set, so they show the seed's.
     pub fn adopt_saved_seed(&mut self, options: RmgOptions) {
         self.options = options;
-        self.options.normalize();
+        self.normalize_options();
         self.advanced_values = None;
         self.advanced_hold = None;
         self.advanced_scroll_hold = false;
@@ -1359,14 +1374,13 @@ mod tests {
         assert!(some.is_enabled(RandomMapSetupControl::Delete0x6c4));
     }
 
-    /// VERA extension: every dialog, LAN and online too, keeps thirty
-    /// players, the sizes past Very Large, the added theaters and VERA's
-    /// switches, and offers their controls.
+    /// Both dialogs offer the extended controls. A network room retains its
+    /// 30-player limit when it opens a 120-player offline seed.
     #[test]
-    fn every_dialog_offers_thirty_players_large_sizes_and_vera_switches() {
+    fn network_dialog_keeps_thirty_players_when_opening_an_offline_seed() {
         let mut options = RmgOptions {
             seed: 1,
-            num_players: 30,
+            num_players: 120,
             width: 7,
             height: 7,
             theater: 3,
@@ -1383,6 +1397,11 @@ mod tests {
         assert_eq!(modal.combo_items(SetupCombo::Size).len(), 8);
         assert!(modal.is_enabled(RandomMapSetupControl::AdvancedToggle));
         assert!(modal.is_enabled(RandomMapSetupControl::PresetCycle));
+        assert_eq!(modal.options.num_players, 120);
+        modal.use_network_player_limit();
+        assert_eq!(modal.options.num_players, 30);
+        modal.adopt_saved_seed(options);
+        assert_eq!(modal.options.num_players, 30);
         modal.set_num_players(12);
         assert_eq!(modal.options.num_players, 12);
     }

@@ -541,11 +541,71 @@ pub(crate) fn scan_cell_rect(rect: CellRect, mut visit: impl FnMut(i32, i32) -> 
 /// word widens to 128 bits ([`crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CellReservationGrid {
+    #[serde(with = "saved_reservations")]
     masks: BTreeMap<(u16, u16), u128>,
     /// Native save iterates allocated CellClass pointers only. The process-global
     /// fallback CellClass is reconstructed cleared during load/Resize.
     #[serde(skip)]
     dummy_mask: u128,
+}
+
+// Saves have always held a map from (u16, u16) to a 32-bit reservation word.
+// A real cell uses at most ten coordinate bits. The top two bits of the saved
+// x select the group of 32 houses; group zero keeps the original key and word.
+// This changes neither the save layout nor the bytes for an ordinary game.
+mod saved_reservations {
+    use std::collections::BTreeMap;
+
+    use serde::{Deserialize, Deserializer, Serializer, ser::SerializeMap};
+
+    const GROUP_SHIFT: u32 = u16::BITS - 2;
+    const _: () = assert!(crate::map::cell_index::MAX_CELL_SIDE <= 1 << GROUP_SHIFT);
+
+    fn words(cells: &BTreeMap<(u16, u16), u128>) -> impl Iterator<Item = ((u16, u16), u32)> + '_ {
+        cells.iter().flat_map(|(&(x, y), &mask)| {
+            let mut remaining = mask;
+            std::iter::from_fn(move || {
+                if remaining == 0 {
+                    return None;
+                }
+                let group = remaining.trailing_zeros() / u32::BITS;
+                let shift = group * u32::BITS;
+                let word = (remaining >> shift) as u32;
+                remaining &= !(u128::from(u32::MAX) << shift);
+                Some(((x | ((group as u16) << GROUP_SHIFT), y), word))
+            })
+        })
+    }
+
+    pub(super) fn serialize<S: Serializer>(
+        cells: &BTreeMap<(u16, u16), u128>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(words(cells).count()))?;
+        for (key, word) in words(cells) {
+            map.serialize_entry(&key, &word)?;
+        }
+        map.end()
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<BTreeMap<(u16, u16), u128>, D::Error> {
+        let mut cells = BTreeMap::new();
+        for ((saved_x, y), word) in BTreeMap::<(u16, u16), u32>::deserialize(deserializer)? {
+            let x = saved_x & (u16::MAX >> 2);
+            let group = u32::from(saved_x >> GROUP_SHIFT);
+            if x >= crate::map::cell_index::MAX_CELL_SIDE
+                || y >= crate::map::cell_index::MAX_CELL_SIDE
+            {
+                return Err(serde::de::Error::custom("invalid reservation cell"));
+            }
+            if word != 0 {
+                *cells.entry((x, y)).or_default() |= u128::from(word) << (group * u32::BITS);
+            }
+        }
+        Ok(cells)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -740,7 +800,7 @@ impl CellReservationGrid {
         result
     }
 
-    pub(crate) fn entries(&self) -> impl Iterator<Item = (u16, u16, u128)> + '_ {
+    pub(crate) fn entries(&self) -> impl ExactSizeIterator<Item = (u16, u16, u128)> + '_ {
         self.masks.iter().map(|(&(rx, ry), &mask)| (rx, ry, mask))
     }
 
@@ -1164,9 +1224,7 @@ pub fn cell_is_in_playfield_leptons(
 /// five-bit alias (`-2` is bit 30), so they never reach a widened bit.
 fn reservation_mask(reservation_arg: i32) -> u128 {
     // Players + Neutral/Special + reserved slots fill the 128-bit word.
-    const _: () = assert!(
-        crate::skirmish_launch::SKIRMISH_HOUSE_SLOT_COUNT <= u128::BITS as usize
-    );
+    const _: () = assert!(crate::skirmish_launch::SKIRMISH_HOUSE_SLOT_COUNT <= u128::BITS as usize);
     match reservation_arg {
         -1 => 0,
         arg if arg < 0 => 1u128 << ((arg as u32) & 0x1F),
