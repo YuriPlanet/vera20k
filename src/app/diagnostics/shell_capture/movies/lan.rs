@@ -787,9 +787,7 @@ impl LanCapture {
             .as_array()
             .context("native timing corpus")?
             .iter()
-            .find(|row| {
-                row["name"] == "p2_zero" && row["role"] == if host { "host" } else { "guest" }
-            })
+            .find(|row| row["name"] == "p2_zero")
             .context("native zero-response timing control")?;
         let response = row["responses"][0].as_u64().context("native response")? as u32;
         let protocol = row["protocol"].as_i64().context("native protocol")? as i32;

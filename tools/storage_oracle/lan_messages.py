@@ -11,7 +11,7 @@ import struct
 from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_EBX, UC_X86_REG_EBP,
                                UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_EDI, UC_X86_REG_ESP)
 
-from tools.native_oracle import STACK_BASE, STACK_SIZE, OracleError, provenance, run_checked
+from tools.native_oracle import STACK_BASE, STACK_SIZE, OracleError, finish_vectors, provenance, run_checked
 from tools.storage_oracle.shell_relayout import Machine
 
 
@@ -151,10 +151,10 @@ def start_timing_case(name, host, completed, responses):
     if len(reads) != len(responses):
         raise OracleError(f'{name}: unused declared ResponseTime observations')
     sp = machine.uc.reg_read(UC_X86_REG_ESP)
-    retry_delta, max_retries, timeout, apply_global = [machine.r32(sp + 4 + 4*i) for i in range(4)]
+    retry_delta, max_retries, timeout = [machine.r32(sp + 4 + 4*i) for i in range(3)]
     return dict(name=name, host=host, completed=completed, entry=f'{entry:08X}',
                 responses=responses, reads=len(reads), retry_delta=retry_delta,
-                max_retries=max_retries, timeout=timeout, apply_global=apply_global)
+                max_retries=max_retries, timeout=timeout)
 
 
 def start_timings():
@@ -260,3 +260,8 @@ def metadata():
 SOURCE_PATHS = {'packets': Path(__file__),
                 'native_oracle': Path(__import__('tools.native_oracle', fromlist=['x']).__file__),
                 'shared_machine': Path(__import__('tools.storage_oracle.shell_relayout', fromlist=['x']).__file__)}
+
+
+if __name__ == '__main__':
+    finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=metadata,
+                   source_paths=SOURCE_PATHS)
