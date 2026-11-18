@@ -452,12 +452,15 @@ current: say what was done, what was not, and what comes next.
   and 150 differ only by the ore field's run-to-run shimmer.
 - Per-chain off-state check, at the commit that closes each chain against
   its main base. Chains 2 and 3 were written as one branch
-  (`feature/pm-doors-preview`), so one check closes both:
+  (`feature/pm-doors-preview`) and their drawing landed in one commit
+  (fbb6a184f), so chain 2's data stage has its own check and the shared
+  drawing is checked once at 7329d45f0:
 
   | Chain | Closing commit |
   |---|---|
   | 1 animations | f657ba0bc |
-  | 2 buildings, 3 infantry/SHP vehicles/projectiles | 7329d45f0 |
+  | 2 buildings (Buildup, rubble, random maps) | c21c12b83 |
+  | 2 and 3 drawing (buildings, infantry/SHP vehicles/projectiles) | 7329d45f0 |
   | 6 zoomed drawing | 8c60674ec |
   | 4 voxel vehicles and aircraft | 7b8c7b74d |
   | 5 building guns, voxel projectiles, debris | c3245a66e |
@@ -469,9 +472,12 @@ current: say what was done, what was not, and what comes next.
 - Final off-state check after the follow-up fixes and merging main
   (74b9d8187 against 8b6897245): same final and rules hash; mean frame 3.82
   ms against main's 4.14 ms; Options zoom 100 and 150 at steps 300, 1200
-  and 2200 within the noise rule. The wheel-zoom capture is skipped because
-  main's map_observation has no `wheel_zoom` yet; it runs once this branch
-  is on main.
+  and 2200 within the noise rule. Main's map_observation has no
+  `wheel_zoom`, so the wheel capture ran against main plus only this
+  branch's `wheel_zoom` capture support (`map_observation.rs` and
+  `tools/map_observation.py`) at 540b740c7: wheel 0.8 byte-identical at all
+  three steps; wheel 1.5 differs in 35–46 pixels, as many as two base runs
+  differ from each other (31–51).
 
 ### Next steps, in order
 
