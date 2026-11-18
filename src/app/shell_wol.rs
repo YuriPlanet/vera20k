@@ -44,14 +44,12 @@ pub(crate) use live_service::retire_visit_for_exit;
 pub(crate) use live_service::{
     DecodedRelayGrant, begin_spawned_match, decode_external_relay_grant, end_spawned_match,
 };
-pub(crate) use live_service::{
-    local_choices_agreed, online_cleanup_pending, online_exit_ready, online_match_id,
-};
+pub(crate) use live_service::{local_choices_agreed, online_cleanup_pending, online_match_id};
 pub(crate) use login::{account_form_layout, combo_popup, login_layout, open_login_art};
 pub(crate) use service::{
     NET_STATUS_LOST, SERVER_STATUS_READY, WolApiStatus, WolHighScoreRecord, WolLadderRecord,
     WolLoginAccepted, WolMatch, WolProvider, WolServer, WolServerList, WolServiceEvent,
-    WolServiceRequest, request, service_event,
+    WolServiceRequest, service_event,
 };
 pub(crate) use test_service::{
     WolTestGuest, default_buddies as test_service_buddies,
