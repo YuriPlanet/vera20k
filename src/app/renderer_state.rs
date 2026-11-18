@@ -34,6 +34,10 @@ pub(crate) struct RendererState {
     pub(crate) upscale_pass: Option<crate::render::upscale_pass::UpscalePass>,
     /// Wheel zoom resolves the native world before adding screen-fixed UI.
     pub(crate) world_zoom_pass: Option<crate::render::upscale_pass::WorldZoomPass>,
+    /// VERA-only, experimental (docs/picture-model-art.md): picture art at
+    /// its own resolution over the magnified world, made by the first frame
+    /// that has some to draw.
+    pub(crate) picture_zoom: Option<crate::render::picture_zoom::PictureZoomPass>,
     /// The sidebar's own surface, made by the first match frame and following
     /// the frame and the Sidebar size (`render_game`).
     pub(crate) sidebar_surface: Option<crate::app::presentation::sidebar_surface::SidebarSurface>,

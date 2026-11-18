@@ -146,6 +146,18 @@ impl WorldZoomPass {
         self.surface.depth_view()
     }
 
+    /// Frame pixels per world pixel.
+    pub(crate) fn scale(&self) -> f32 {
+        self.scale
+    }
+
+    /// With a window copy: the frame, and the frame as `composite` left it,
+    /// the copy's mask. VERA-only, experimental (docs/picture-model-art.md):
+    /// the picture art drawn over the window reads them too.
+    pub(crate) fn window_copy_frames(&self) -> Option<(&wgpu::Texture, &wgpu::Texture)> {
+        Some((self.surface.color_texture(), self.world_frame.as_ref()?))
+    }
+
     pub(crate) fn world_clip(&self, [x, y, w, h]: [u32; 4]) -> [u32; 4] {
         let left = (x as f32 / self.scale).floor() as u32;
         let top = (y as f32 / self.scale).floor() as u32;

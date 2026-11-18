@@ -9,6 +9,10 @@
 //! pixels (the mask's red) take the owner's ramp by brightness before upload.
 //! The SHP blitters, their shaders and their Z, shadow and light rules are
 //! the ones every SHP draws through; nothing here changes them.
+//!
+//! Art above 1x also keeps each frame at its own resolution, for the zoomed
+//! draw (`render::picture_zoom`): the same crop, `scale` times larger, on HD
+//! twins of its pages laid out at the same normalised coordinates.
 
 use crate::assets::pal_file::Color;
 use crate::assets::picture_file::{PictureError, PictureFrames};
@@ -40,6 +44,11 @@ enum MaskClass {
 pub(crate) struct GamePictureFrames {
     pub canvas: [u32; 2],
     frames: Vec<GameFrame>,
+    /// The picture's pixels per game pixel on each axis.
+    scale: u32,
+    /// VERA-only, experimental: with `scale` above 1, each frame at the
+    /// picture's own resolution, its alpha as decoded; empty for 1x art.
+    full: Vec<GameFrame>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +63,20 @@ struct GameFrame {
 pub(crate) struct PictureSprite {
     /// The drawn rectangle's place on the canvas, as a stored SHP frame's.
     pub origin: [u32; 2],
+    pub size: [u32; 2],
+    pub rgba: Vec<u8>,
+    pub indices: Vec<u8>,
+    /// The same rectangle at the picture's own resolution, for art above 1x.
+    pub hd: Option<HdSprite>,
+}
+
+/// VERA-only, experimental: a sprite's rectangle at the picture's own
+/// resolution, `scale` picture pixels per game pixel. Its RGBA is
+/// premultiplied (holes are 0, so filtering never darkens an edge) and its
+/// index plane holds the sprite's index-plane values per picture pixel.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct HdSprite {
+    pub scale: u32,
     pub size: [u32; 2],
     pub rgba: Vec<u8>,
     pub indices: Vec<u8>,
@@ -118,7 +141,28 @@ impl GamePictureFrames {
                 shrink_frame(rgba, mask, size[0], canvas, scale)
             })
             .collect();
-        Ok(Self { canvas, frames })
+        let full = if scale > 1 {
+            picture
+                .frames
+                .iter()
+                .enumerate()
+                .map(|(index, rgba)| GameFrame {
+                    rgba: rgba.clone(),
+                    classes: match mask {
+                        Some(mask) => mask.frames[index].chunks_exact(4).map(mask_class).collect(),
+                        None => vec![MaskClass::Plain; rgba.len() / 4],
+                    },
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        Ok(Self {
+            canvas,
+            frames,
+            scale,
+            full,
+        })
     }
 
     pub(crate) fn frame_count(&self) -> usize {
@@ -159,9 +203,56 @@ impl GamePictureFrames {
                 indices.push(index);
             }
         }
+        let hd = self.hd_sprite(frame, [left, top], size, ramp);
         Some(PictureSprite {
             origin: [left, top],
             size,
+            rgba,
+            indices,
+            hd,
+        })
+    }
+
+    /// Frame `frame`'s canvas rectangle at `origin`, `size` game pixels, at
+    /// the picture's own resolution; None for 1x art. A picture pixel is
+    /// drawn when at least half covered, as `shrink` counts it.
+    fn hd_sprite(
+        &self,
+        frame: usize,
+        origin: [u32; 2],
+        size: [u32; 2],
+        ramp: Option<&[Color; RAMP_SIZE]>,
+    ) -> Option<HdSprite> {
+        let source = self.full.get(frame)?;
+        let scale = self.scale;
+        let width = self.canvas[0] * scale;
+        let hd_size = size.map(|side| side * scale);
+        let pixels = (hd_size[0] * hd_size[1]) as usize;
+        let (mut rgba, mut indices) = (Vec::with_capacity(pixels * 4), Vec::with_capacity(pixels));
+        for y in origin[1] * scale..origin[1] * scale + hd_size[1] {
+            for x in origin[0] * scale..origin[0] * scale + hd_size[0] {
+                let at = (y * width + x) as usize;
+                let pixel = &source.rgba[at * 4..at * 4 + 4];
+                if u32::from(pixel[3]) * 2 < 255 {
+                    rgba.extend_from_slice(&[0; 4]);
+                    indices.push(0);
+                    continue;
+                }
+                let (color, index) = match (source.classes[at], ramp) {
+                    (MaskClass::Unlit, _) => ([pixel[0], pixel[1], pixel[2]], UNLIT_INDEX),
+                    (MaskClass::House, Some(ramp)) => {
+                        let color = house_ramp_color([pixel[0], pixel[1], pixel[2], 255], ramp);
+                        ([color.r, color.g, color.b], LIT_INDEX)
+                    }
+                    _ => ([pixel[0], pixel[1], pixel[2]], LIT_INDEX),
+                };
+                rgba.extend_from_slice(&[color[0], color[1], color[2], 255]);
+                indices.push(index);
+            }
+        }
+        Some(HdSprite {
+            scale,
+            size: hd_size,
             rgba,
             indices,
         })
@@ -487,14 +578,76 @@ pub(crate) struct PicturePage {
     pub rgba: Vec<u8>,
     pub indices: Vec<u8>,
     pub sprites: Vec<(PlacedPicture, [u32; 2])>,
+    /// VERA-only, experimental: for a page of art above 1x, its twin at the
+    /// art's own resolution (`render::picture_zoom`).
+    pub hd: Option<HdPage>,
+}
+
+/// A picture page `scale` times larger: each sprite's [`HdSprite`] at
+/// `scale` times its place on the 1x page, so a UV on one page addresses the
+/// same picture point on the other.
+pub(crate) struct HdPage {
+    pub scale: u32,
+    pub size: [u32; 2],
+    /// Premultiplied RGBA, level 0.
+    pub rgba: Vec<u8>,
+    pub indices: Vec<u8>,
+}
+
+impl HdPage {
+    /// The mip levels the zoomed draw samples: down to one texel per game
+    /// pixel (`log2(scale)` halvings), each the 2x2 mean of the level above
+    /// (premultiplied, so holes do not darken edges). Their RGBA one after
+    /// another, level 0 first, and the count.
+    pub(crate) fn mip_chain(&self) -> (Vec<u8>, u32) {
+        let levels = (self.scale.ilog2() + 1).min(self.size[0].max(self.size[1]).ilog2() + 1);
+        let mut chain = self.rgba.clone();
+        let (mut level, mut size) = (self.rgba.clone(), self.size);
+        for _ in 1..levels {
+            let next = size.map(|side| (side / 2).max(1));
+            let mut out = Vec::with_capacity((next[0] * next[1] * 4) as usize);
+            for y in 0..next[1] {
+                for x in 0..next[0] {
+                    let mut sum = [0u32; 4];
+                    for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                        let sx = (x * 2 + dx).min(size[0] - 1);
+                        let sy = (y * 2 + dy).min(size[1] - 1);
+                        let at = ((sy * size[0] + sx) * 4) as usize;
+                        for channel in 0..4 {
+                            sum[channel] += u32::from(level[at + channel]);
+                        }
+                    }
+                    out.extend(sum.map(|total| ((total + 2) / 4) as u8));
+                }
+            }
+            chain.extend_from_slice(&out);
+            (level, size) = (out, next);
+        }
+        (chain, levels)
+    }
 }
 
 /// Pack `pictures` onto pages no wider or taller than `max_side`, tallest
 /// first in shelves. A sprite larger than a page is left out, logged.
-pub(crate) fn pack_picture_pages(
-    mut pictures: Vec<PlacedPicture>,
-    max_side: u32,
-) -> Vec<PicturePage> {
+///
+/// Art of each scale above 1 packs onto pages of its own, a page side of at
+/// most `max_side / scale` so its HD twin fits too, with one empty game
+/// pixel between sprites so the twin's filtering stays inside each sprite.
+pub(crate) fn pack_picture_pages(pictures: Vec<PlacedPicture>, max_side: u32) -> Vec<PicturePage> {
+    let mut by_scale: std::collections::BTreeMap<u32, Vec<PlacedPicture>> = Default::default();
+    for picture in pictures {
+        let scale = picture.sprite.hd.as_ref().map_or(1, |hd| hd.scale);
+        by_scale.entry(scale).or_default().push(picture);
+    }
+    by_scale
+        .into_iter()
+        .flat_map(|(scale, group)| pack_scale(group, max_side / scale, scale))
+        .collect()
+}
+
+/// [`pack_picture_pages`] for pictures of one `scale`.
+fn pack_scale(mut pictures: Vec<PlacedPicture>, max_side: u32, scale: u32) -> Vec<PicturePage> {
+    let gap = u32::from(scale > 1);
     pictures.sort_by_key(|picture| std::cmp::Reverse(picture.sprite.size[1]));
     let mut placed: Vec<Vec<(PlacedPicture, [u32; 2])>> = Vec::new();
     let mut extents: Vec<[u32; 2]> = Vec::new();
@@ -520,8 +673,8 @@ pub(crate) fn pack_picture_pages(
         let extent = extents.last_mut().unwrap();
         *extent = [extent[0].max(x + width), extent[1].max(y + height)];
         placed.last_mut().unwrap().push((picture, [x, y]));
-        x += width;
-        shelf = shelf.max(height);
+        x += width + gap;
+        shelf = shelf.max(height + gap);
     }
     placed
         .into_iter()
@@ -529,26 +682,72 @@ pub(crate) fn pack_picture_pages(
         .map(|(sprites, size)| {
             let mut rgba = vec![0; (size[0] * size[1] * 4) as usize];
             let mut indices = vec![0; (size[0] * size[1]) as usize];
-            for (picture, [x, y]) in &sprites {
-                let [width, height] = picture.sprite.size;
-                for row in 0..height {
-                    let to = ((y + row) * size[0] + x) as usize;
-                    let from = (row * width) as usize;
-                    rgba[to * 4..(to + width as usize) * 4].copy_from_slice(
-                        &picture.sprite.rgba[from * 4..(from + width as usize) * 4],
-                    );
-                    indices[to..to + width as usize]
-                        .copy_from_slice(&picture.sprite.indices[from..from + width as usize]);
-                }
+            for (picture, at) in &sprites {
+                let sprite = &picture.sprite;
+                blit(
+                    &mut rgba,
+                    &mut indices,
+                    size[0],
+                    *at,
+                    sprite.size,
+                    &sprite.rgba,
+                    &sprite.indices,
+                );
             }
+            let hd = (scale > 1).then(|| {
+                let hd_size = size.map(|side| side * scale);
+                let mut rgba = vec![0; (hd_size[0] * hd_size[1] * 4) as usize];
+                let mut indices = vec![0; (hd_size[0] * hd_size[1]) as usize];
+                for (picture, at) in &sprites {
+                    if let Some(hd) = &picture.sprite.hd {
+                        let at = at.map(|side| side * scale);
+                        blit(
+                            &mut rgba,
+                            &mut indices,
+                            hd_size[0],
+                            at,
+                            hd.size,
+                            &hd.rgba,
+                            &hd.indices,
+                        );
+                    }
+                }
+                HdPage {
+                    scale,
+                    size: hd_size,
+                    rgba,
+                    indices,
+                }
+            });
             PicturePage {
                 size,
                 rgba,
                 indices,
                 sprites,
+                hd,
             }
         })
         .collect()
+}
+
+/// Copy a `size` sprite's RGBA and index plane to `at` on a page
+/// `page_width` wide.
+fn blit(
+    page_rgba: &mut [u8],
+    page_indices: &mut [u8],
+    page_width: u32,
+    [x, y]: [u32; 2],
+    [width, height]: [u32; 2],
+    rgba: &[u8],
+    indices: &[u8],
+) {
+    let width = width as usize;
+    for row in 0..height {
+        let to = ((y + row) * page_width + x) as usize;
+        let from = (row as usize) * width;
+        page_rgba[to * 4..(to + width) * 4].copy_from_slice(&rgba[from * 4..(from + width) * 4]);
+        page_indices[to..to + width].copy_from_slice(&indices[from..from + width]);
+    }
 }
 
 #[cfg(all(test, tests_render_a_r))]
@@ -634,6 +833,7 @@ mod tests {
                 size,
                 rgba: vec![value; (size[0] * size[1] * 4) as usize],
                 indices: vec![LIT_INDEX; (size[0] * size[1]) as usize],
+                hd: None,
             },
             offset: [0.0; 2],
             canvas_rect: [0.0; 4],
@@ -663,5 +863,81 @@ mod tests {
         // Frame 0 sits on row 2 of the second page; nothing is beside frame 1.
         assert_eq!(pages[1].rgba[(2 * 3) * 4], 10);
         assert_eq!(pages[1].indices[2], 0);
+    }
+
+    /// A 2x picture's sprite keeps its 1x crop at picture resolution
+    /// (premultiplied holes, unlit indices), and 2x sprites pack onto a page
+    /// of their own whose HD twin holds each at twice its 1x place, so the
+    /// 1x entry's UV addresses its HD rectangle unchanged.
+    #[test]
+    fn hd_sprites_keep_the_crop_and_sit_at_the_same_uv_on_the_twin_page() {
+        const RED: [u8; 4] = [200, 0, 0, 255];
+        const NONE: [u8; 4] = [0; 4];
+        // Canvas 2x1 of a 4x2 picture: the left game pixel has three of four
+        // pixels drawn (drawn), the right one has one (a hole at 1x).
+        let rows = [[RED, NONE, RED, NONE], [RED, RED, NONE, NONE]];
+        let unlit = [0, 255, 0, 255];
+        let mask_rows = [[[0; 4]; 4], [[0; 4], unlit, [0; 4], [0; 4]]];
+        let shrunk = GamePictureFrames::shrink(
+            &picture(4, 2, vec![rows.concat().concat()]),
+            Some(&picture(4, 2, vec![mask_rows.concat().concat()])),
+            Some([2, 1]),
+        )
+        .unwrap();
+        let sprite = shrunk.sprite(0, None).unwrap();
+        assert_eq!((sprite.origin, sprite.size), ([0, 0], [1, 1]));
+        let hd = sprite.hd.clone().unwrap();
+        assert_eq!((hd.scale, hd.size), (2, [2, 2]));
+        assert_eq!(hd.rgba, [RED, NONE, RED, RED].concat());
+        assert_eq!(hd.indices, [LIT_INDEX, 0, LIT_INDEX, UNLIT_INDEX]);
+
+        let placed = |frame: u16| PlacedPicture {
+            key: crate::render::sprite_atlas::ShpSpriteKey {
+                palette_context: crate::render::sprite_atlas::ShpPaletteContext::GlobalAnim,
+                type_id: "BOOM".into(),
+                facing: 0,
+                frame,
+                house_color: crate::rules::house_colors::HouseColorIndex(0),
+            },
+            sprite: sprite.clone(),
+            offset: [0.0; 2],
+            canvas_rect: [0.0; 4],
+        };
+        let mut plain = placed(9);
+        plain.sprite.hd = None;
+        let pages = pack_picture_pages(vec![placed(0), plain, placed(1)], 8);
+        assert_eq!(pages.len(), 2, "1x and 2x art pack apart");
+        assert!(pages[0].hd.is_none());
+        let page = &pages[1];
+        // One empty game pixel between 2x sprites.
+        let places: Vec<[u32; 2]> = page.sprites.iter().map(|(_, at)| *at).collect();
+        assert_eq!((places, page.size), (vec![[0, 0], [2, 0]], [3, 1]));
+        let twin = page.hd.as_ref().unwrap();
+        assert_eq!((twin.scale, twin.size), (2, [6, 2]));
+        // The second sprite's u is 2/3 on both pages: HD column 4.
+        let row = |y: usize, x: usize| &twin.rgba[(y * 6 + x) * 4..(y * 6 + x + 1) * 4];
+        assert_eq!(
+            (row(0, 4), row(0, 5), row(1, 5)),
+            (&RED[..], &NONE[..], &RED[..])
+        );
+        assert_eq!(twin.indices[6 + 5], UNLIT_INDEX);
+        assert_eq!(row(0, 2), &NONE[..], "the gap stays empty");
+    }
+
+    /// An HD page's mips stop at one texel per game pixel and average
+    /// premultiplied texels, so a hole does not darken its drawn neighbour.
+    #[test]
+    fn hd_mips_average_premultiplied_texels_down_to_game_pixels() {
+        let page = HdPage {
+            scale: 2,
+            size: [2, 2],
+            rgba: [[200, 0, 0, 255], [0; 4], [0; 4], [200, 0, 0, 255]].concat(),
+            indices: vec![LIT_INDEX, 0, 0, LIT_INDEX],
+        };
+        let (chain, levels) = page.mip_chain();
+        assert_eq!(levels, 2);
+        assert_eq!(chain[..16], page.rgba[..]);
+        // Premultiplied mean: colour 100 at alpha 128 is 200 once divided.
+        assert_eq!(chain[16..], [100, 0, 0, 128]);
     }
 }

@@ -195,7 +195,4 @@ production run on a real map with converted art.
 
 - Design: this file.
 - Chain 1: in progress.
-- Chains 2 and 3, drawing: the sprite atlas draws building bodies, Buildup,
-  BibShape and building anims, infantry and SHP vehicle bodies, and
-  projectiles from declared pictures, with their frame counts and building
-  render bounds taken from the pictures; not yet compiled.
+- Chain 6: picture art drawn (`render::picture_zoom`), written but not yet compiled or run; models follow with chain 4.

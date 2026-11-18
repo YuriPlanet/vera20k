@@ -747,6 +747,9 @@ pub struct SpriteAtlas {
     /// VERA-only, experimental: the RGBA picture pages among `pages`
     /// (`render::picture_atlas`), which bind no palette rows.
     picture_pages: HashSet<usize>,
+    /// VERA-only, experimental: the HD twins of the picture pages of art
+    /// above 1x, by page (`render::picture_zoom`). Empty without such art.
+    picture_hd_pages: HashMap<usize, crate::render::picture_zoom::PictureHdPage>,
 }
 
 fn push_effect_name(effect_names: &mut Vec<String>, name: &str) {
@@ -823,7 +826,22 @@ impl SpriteAtlas {
             growth_indices: HashMap::new(),
             palettes,
             picture_pages: HashSet::new(),
+            picture_hd_pages: HashMap::new(),
         }
+    }
+
+    /// VERA-only, experimental (`docs/picture-model-art.md`): whether any
+    /// picture page has an HD twin, which the zoomed draw needs.
+    pub(crate) fn has_picture_hd_pages(&self) -> bool {
+        !self.picture_hd_pages.is_empty()
+    }
+
+    /// VERA-only, experimental: page `page`'s HD twin, if it has one.
+    pub(crate) fn picture_hd_page(
+        &self,
+        page: usize,
+    ) -> Option<&crate::render::picture_zoom::PictureHdPage> {
+        self.picture_hd_pages.get(&page)
     }
 
     /// VERA-only, experimental (`docs/picture-model-art.md`): add `pictures`
@@ -858,6 +876,15 @@ impl SpriteAtlas {
             );
             self.pages.push(SpriteAtlasPage { texture });
             self.picture_pages.insert(index);
+            // The zoomed draw reads depth, which the WebGL2 fallback cannot.
+            if let Some(hd) = &page.hd
+                && !crate::render::gpu::webgl_fallback(device)
+            {
+                self.picture_hd_pages.insert(
+                    index,
+                    crate::render::picture_zoom::PictureHdPage::new(device, queue, hd),
+                );
+            }
             let [width, height] = page.size.map(|side| side as f32);
             for (picture, [x, y]) in page.sprites {
                 let [w, h] = picture.sprite.size.map(|side| side as f32);
