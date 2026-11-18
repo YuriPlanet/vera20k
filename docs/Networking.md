@@ -99,8 +99,9 @@ files, the theater INIs or their tiles were compared is another version and is
 refused by the build check first; a rollback returns to the earlier digest for everyone
 on that build. Quick Match plays the original game, and the matchbot pairs without the
 rules hash, so a client ends its search before it queues with a message saying what to
-turn off: a mod in use; `[ini]` roots or a `theater_suffix` in config.toml other than
-YR's; an [Ares setting](ares.md#the-ares-setting) other than Auto; game-folder files that change a compared INI (Rules, Art, AI, MPModesMD and the mode INIs, CoopCampMD,
+turn off, for the first of what it changes from the original game
+(`agreement::original_game_changes`): a mod in use; `[ini]` roots or a
+`theater_suffix` in config.toml other than YR's; an [Ares setting](ares.md#the-ares-setting) other than Auto; game-folder files that change a compared INI (Rules, Art, AI, MPModesMD and the mode INIs, CoopCampMD,
 the theater INIs) or a theater's tiles from the retail copy; a copy from a retail
 archive (`langmd.mix`, `language.mix`, `expandmd01.mix`, `ra2md.mix`, `ra2.mix`) counts as
 the original, another INI is compared with the retail archives' own entry, else
@@ -678,8 +679,9 @@ door, the native rules hash (LAN's join check, online the room's `ex_info`), lea
 the switches out, while the rules
 digest compares the ones each game plays. When the door
 still refuses a join because the rules files differ, or the digest a start, each game
-says what it changes from the original game, its mod, `config.toml`'s INI roots and
-changed game files, or that it plays the original (`agreement::rules_differ_text`);
+says what it changes from the original game, its mod, `config.toml`'s INI roots, its
+Ares setting other than Auto and changed game files (`agreement::original_game_changes`),
+or that it plays the original (`agreement::rules_differ_text`);
 retail's text for it sends the player to Westwood. Nothing more is exchanged for
 that. A game of another build is refused at the build check first, so no released
 game reads `host_rules`; a lobby from before it refuses the field with 400
