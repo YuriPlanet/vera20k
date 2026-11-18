@@ -489,9 +489,16 @@ current: say what was done, what was not, and what comes next.
   0x43E5D9..0x43E795); the model path matches VERA. Dormant in retail rules;
   a separate issue, not part of this feature.
 
-- Chain 5's art (building voxel guns, voxel projectiles, debris) has not
-  been seen in a match yet; export a gun or debris VXL with
-  `asset export-model` and capture a scene that shows it.
+- Chain 5, building voxel guns, seen in a match
+  (`map_observation.grand-cannon`, `[GTGCANTUR] Model=GTGCANTUR.glb`,
+  `ModelSize=326` from `asset export-model GTGCANTUR`): the turret and
+  barrel draw from the model and the simulation state hash is unchanged, but
+  the barrel is posed wrong: it points flatter and higher and looks shorter
+  than the VXL barrel. `building_gun_draw_matrices` follows the VXL path's
+  facing, pitch and translations, so the difference is likely where the
+  exported barrel's geometry sits relative to its pivot (the barrel VXL's
+  bounds and HVA against the turret's). Unit barrels (the Grizzly) draw
+  right. Voxel projectiles and debris have not been seen in a match yet.
 - A type with a declared model still asks the unit atlas for its VXL and
   logs "No voxel model for ... pictures stay undrawn"; harmless, but the
   request should be skipped.

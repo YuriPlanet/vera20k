@@ -1,6 +1,7 @@
 //! `asset export-model <NAME>`: a voxel unit as model art
 //! (`docs/picture-model-art.md`, "Model: NAME.glb"): `<out>/model/NAME.glb`
-//! from `NAME.VXL`, `NAMETUR.VXL` and `NAMEBARL.VXL` and their HVAs, and
+//! from `NAME.VXL`, `NAMETUR.VXL` and `NAMEBARL.VXL` and their HVAs (for the
+//! building gun GTGCANTUR, its barrel GTGCANBARL), and
 //! `<out>/model/NAME.mask.png` beside it when the unit has house colour.
 //!
 //! Each VXL becomes one node: `body`, `turret`, `barrel`. Every section of a
@@ -111,7 +112,16 @@ pub fn run(
         hint: Some(format!("run `asset find {stem}.VXL`")),
     })?;
     let turret = read_part(asset_manager, &format!("{stem}TUR"))?;
-    let barrel = read_part(asset_manager, &format!("{stem}BARL"))?;
+    // A building's voxel gun (`TurretAnim=NAMETUR`) keeps its barrel in the
+    // file with TUR turned to BARL (`voxel_frame_catalog`'s pair names); the
+    // model then draws `body` as the turret and `barrel` as the barrel.
+    let barrel = match read_part(asset_manager, &format!("{stem}BARL"))? {
+        Some(barrel) => Some(barrel),
+        None => match stem.strip_suffix("TUR") {
+            Some(base) => read_part(asset_manager, &format!("{base}BARL"))?,
+            None => None,
+        },
+    };
     let palette_name = opts.palette.as_deref().unwrap_or(DEFAULT_PALETTE);
     let palette = asset_manager
         .get_ref(palette_name)
