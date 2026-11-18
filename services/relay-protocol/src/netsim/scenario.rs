@@ -147,7 +147,7 @@ fn default_duration_ms() -> u64 {
     60_000
 }
 /// A move command's records, the batch without the version byte and
-/// FRAME_INFO header (bandwidth-compaction spec §2: "指令本体 约 19").
+/// FRAME_INFO header (bandwidth-compaction spec §4, appendix A: 19 B).
 fn default_command_bytes() -> usize {
     19
 }
