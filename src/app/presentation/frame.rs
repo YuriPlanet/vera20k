@@ -151,7 +151,6 @@ struct Answers {
     building_online: bool,
     has_airstrike_marker: bool,
     building_cloak_stage: u8,
-    native_cloak_offset_words: i32,
     driver_killed: bool,
     #[cfg(feature = "phobos")]
     is_power_plant_enhancer_active: bool,
@@ -181,7 +180,6 @@ impl Answers {
             building_online: entity.building_online(),
             has_airstrike_marker: entity.has_airstrike_marker(),
             building_cloak_stage: entity.building_cloak_stage(),
-            native_cloak_offset_words: entity.native_cloak_offset_words(),
             driver_killed: entity.driver_killed(),
             #[cfg(feature = "phobos")]
             is_power_plant_enhancer_active: entity.is_power_plant_enhancer_active(),
@@ -784,10 +782,6 @@ impl ObjectRecord {
         self.answers.building_cloak_stage
     }
 
-    pub(crate) fn native_cloak_offset_words(&self) -> i32 {
-        self.answers.native_cloak_offset_words
-    }
-
     pub(crate) fn driver_killed(&self) -> bool {
         self.answers.driver_killed
     }
@@ -869,9 +863,6 @@ impl crate::render::snapshot::SnapshotObject for ObjectRecord {
     }
     fn building_cloak_stage(&self) -> u8 {
         self.answers.building_cloak_stage
-    }
-    fn native_cloak_offset_words(&self) -> i32 {
-        self.answers.native_cloak_offset_words
     }
     fn is_warped_out(&self) -> bool {
         self.answers.is_warped_out
