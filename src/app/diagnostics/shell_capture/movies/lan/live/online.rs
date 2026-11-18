@@ -577,10 +577,6 @@ impl LiveRoundFlow {
                     )? =>
             {
                 LanCapture::isolated_root(state)?;
-                ensure!(
-                    !state.persistence.options_profile.wol_test_service,
-                    "online capture requires the offline WOL test service to be disabled"
-                );
                 click_main_menu(
                     state,
                     crate::ui::main_menu_shell::MainMenuControlId::WwOnline0x684,

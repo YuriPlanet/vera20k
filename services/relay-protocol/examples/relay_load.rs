@@ -22,7 +22,8 @@ use vera20k_relay_protocol::envelope::MAX_DATAGRAM;
 use vera20k_relay_protocol::netsim::adaptive_client::AdaptiveClient;
 use vera20k_relay_protocol::netsim::network::Rng;
 use vera20k_relay_protocol::{
-    ClientSession, MAX_TICKET_LIFETIME, OrderingCertificate, SecretKey, Ticket, derive_packet_key,
+    ClientSession, FRAME_RATES, MAX_TICKET_LIFETIME, OrderingCertificate, SecretKey, Ticket,
+    derive_packet_key,
 };
 
 /// `ClientSession::new` still takes the lobby's payload key; batches are
@@ -83,8 +84,8 @@ fn options() -> Result<Options, String> {
     if !(2..=30).contains(&options.players) {
         return Err("--players must be 2..=30".into());
     }
-    if ![90, 60, 45, 30, 20, 15, 12, 10].contains(&options.tick_hz) {
-        return Err("--tick-hz must be 90, 60, 45, 30, 20, 15, 12 or 10".into());
+    if !FRAME_RATES.contains(&options.tick_hz) {
+        return Err(format!("--tick-hz must be one of {FRAME_RATES:?}"));
     }
     // Tickets cannot outlive MAX_TICKET_LIFETIME, and this tool never renews.
     if options.warmup + options.seconds + 30 > MAX_TICKET_LIFETIME {
