@@ -95,7 +95,7 @@ fn scene() -> Option<(SimRuntime, u64)> {
     sim.resolve_type_handles(&rules);
     // Supplied ordinary human roster; authored entities still go through the
     // same Scenario population/placement-scope owner used by app loading.
-    crate::sim::runtime::populate_staged_scenario_with_generated_inits(
+    crate::sim::runtime::populate_staged_fixture(
         &mut sim,
         &map,
         &terrain,

@@ -78,17 +78,16 @@ fn scene(resource_name: &str, map_patch: &str) -> Option<(Simulation, RuleSet)> 
             .unwrap()
             .unwrap();
     assert_eq!(view.overlay_data, 11);
+    *sim.overlay_grid_mut_for_test() = Some(grid);
     crate::sim::runtime::initialize_native_tiberium_queues(
         &mut sim,
         &map.basic,
         &map.special_flags,
         &rules,
         &overlays,
-        Some(&grid),
         (32, 32),
     )
     .unwrap();
-    sim.install_overlay_grid_for_load(grid);
     assert!(sim.rebuild_dynamic_navigation(&rules));
     sim.install_waypoints(&map.waypoints);
     sim.initialize_trigger_definitions(&map, &Default::default(), None, None, None);

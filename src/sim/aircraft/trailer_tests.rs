@@ -27,7 +27,7 @@ fn retail_trailer_world(trailer: &str, delay: i32) -> Option<(Simulation, RuleSe
         0
     );
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
-    sim.install_overlay_grid_for_load(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     sim.session.set_binary_frame_for_test(103);
     let plane = sim
         .spawn_object_at_height("PDPLANE", "Americans", 12, 12, 0, 0, &rules)

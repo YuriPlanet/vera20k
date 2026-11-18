@@ -54,7 +54,7 @@ fn terrain_attack_scene() -> Option<(SimRuntime, u64, u64, u64)> {
     sim.session
         .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED)
         .unwrap();
-    sim.install_overlay_grid_for_load(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     let roster = crate::map::houses::parse_house_roster(&map, &rules.color_schemes, Some(&rules));
     bootstrap::initialize_map_roster_houses(&mut sim, &roster, &rules, Some(&map));
     bootstrap::initialize_campaign_current_house(&mut sim.session, &mut sim.houses, &map);

@@ -8,9 +8,7 @@ use std::path::Path;
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::pal_file::Palette;
-use crate::map::basic::BridgeDestroyabilityMode;
 use crate::map::houses::HouseColorMap;
-use crate::map::map_file::MapFile;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::terrain::TerrainGrid;
 use crate::map::theater::{self, TileImage, TileKey};
@@ -441,42 +439,6 @@ pub(crate) struct PresentationManifest {
     pub(crate) unit_atlas: Option<UnitAtlas>,
     pub(crate) sprite_atlas: Option<SpriteAtlas>,
     pub(crate) palette_set: Option<crate::render::palette_textures::PaletteSet>,
-}
-
-/// Populate the already-staged gameplay owner with map object sections.
-///
-/// The caller creates this exact Simulation before Fill and keeps it through
-/// authored overlay finalization.  This helper deliberately cannot construct a
-/// replacement owner.
-pub(crate) fn populate_staged_app_scenario<F>(
-    sim: &mut Simulation,
-    map_data: &MapFile,
-    resolved_terrain: &ResolvedTerrainGrid,
-    theater_name: &str,
-    rules: &RuleSet,
-    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
-    bridge_destroyability_mode: BridgeDestroyabilityMode,
-    descriptor: &crate::sim::scenario_session::ScenarioDescriptor,
-    generated_inits: Option<&crate::sim::world::GeneratedTechnoInitTable>,
-    initialize_houses_before_objects: F,
-) -> Result<(), crate::sim::runtime::ScenarioPopulationError>
-where
-    F: FnOnce(&mut Simulation),
-{
-    crate::sim::runtime::populate_staged_scenario_with_generated_inits(
-        sim,
-        map_data,
-        resolved_terrain,
-        theater_name,
-        rules,
-        overlay_registry,
-        overlay_grid,
-        bridge_destroyability_mode,
-        descriptor,
-        generated_inits,
-        initialize_houses_before_objects,
-    )
 }
 
 /// Build the voxel and SHP sprite atlases, and the palette set, for a fully

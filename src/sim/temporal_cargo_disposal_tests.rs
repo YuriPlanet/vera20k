@@ -35,7 +35,7 @@ impl Scene {
 
         let mut sim = Simulation::with_seed(0x71a9c4);
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-        sim.install_overlay_grid_for_load(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+        *sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         for name in ["Americans", "Russians"] {

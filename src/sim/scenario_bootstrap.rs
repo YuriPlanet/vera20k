@@ -5816,14 +5816,14 @@ mod tests {
                 let native_before_map = sim.native_unique_ids.as_ref().unwrap().current_raw();
                 let mut terrain = techno_constructor_flat_start_terrain(96);
                 let overlay_grid = crate::sim::overlay_grid::OverlayGrid::new(96, 96);
-                crate::sim::runtime::populate_staged_scenario_with_generated_inits(
+                crate::sim::runtime::populate_staged_fixture(
                     &mut sim,
                     &map,
                     &terrain,
                     "TEMPERATE",
                     &rules,
                     Some(&overlays),
-                    Some(&overlay_grid),
+                    Some(overlay_grid),
                     crate::map::basic::BridgeDestroyabilityMode::SkirmishOrMultiplayer {
                         bridge_destruction: true,
                     },
@@ -7416,14 +7416,12 @@ mod tests {
         let _crate_timer = reference.next_range_u32_inclusive(0, 0x7FFF_FFFE);
         // The queues are built where the load builds them, before the post-map
         // tail, which leaves them alone.
-        let overlay_grid_for_queues = sim.overlay_grid.clone();
         let _ = crate::sim::runtime::initialize_native_tiberium_queues(
             &mut sim,
             &map.basic,
             &map.special_flags,
             &rules,
             &overlays,
-            overlay_grid_for_queues.as_ref(),
             (SIZE, SIZE),
         );
         let output = sim

@@ -282,7 +282,7 @@ fn retail_rock_shadow_admits_generated_live_and_restored_overlay() {
     );
     let mut sim = Simulation::new();
     sim.install_resolved_terrain_for_new_map(terrain.clone());
-    sim.install_overlay_grid_for_load(grid);
+    *sim.overlay_grid_mut_for_test() = Some(grid);
     let point = crate::map::terrain::iso_to_screen(4, 4, 0);
     let build = |sim: &Simulation, atlas: &BridgeAtlas| {
         let mut instances = Vec::new();
