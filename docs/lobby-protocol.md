@@ -680,9 +680,10 @@ not know.
 - `Vera-Version: <MAJOR.MINOR.PATCH>`: its version. Released games name it in
   `User-Agent: VERA20k/<version> multiplayer-client`, which the lobby reads when this
   header is absent; a browser cannot set its User-Agent.
-- `Vera-Build: <build>`: the agreement `version` its `ready` and `map_status` carry,
-  1–128 characters of `0-9A-Za-z.:_+-`, which two builds of one version (two nightlies,
-  or a nightly and the release) do not share.
+- `Vera-Build: <build>`: the agreement `version` its `ready` and `map_status` carry
+  ([build check](Networking.md#build-check)), 1–128 characters of `0-9A-Za-z.:_+-`,
+  which two builds of one version (two nightlies, or a nightly and the release) do not
+  share.
 - `Vera-Language: <tag>`: its player's language, a BCP 47 tag of two or three letters
   and at most three subtags such as `zh-CN`. The operator's welcome, notice and
   maintenance message come in that language when the operator wrote it: the translation
