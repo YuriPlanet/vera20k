@@ -8,10 +8,9 @@ then compares:
   `tools.scale_map` map, client timing) by `final_hash`, and the state-isolation
   report's Rules config hash (`rules_hash`) on XMP03T4; frame times are printed.
 - pixels: `tools.map_observation` hidden-window captures at each step and
-  Options zoom, compared with `map_observation compare` (which checks
+  Options zoom, then at each mouse-wheel view distance (`--wheel-zooms`, at
+  Options zoom 100), compared with `map_observation compare` (which checks
   `frame.bgra` byte for byte); the first differing pixel is named.
-
-Mouse-wheel zoom is not covered: map_observation has no wheel gesture.
 
     python3 -m tools.same_as_base --ra2-dir /path/to/game --head feature/x \\
         --work /absolute/scratch/folder
@@ -29,6 +28,8 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+from tools.map_observation import WHEEL_ZOOMS
 
 ROOT = Path(__file__).resolve().parent.parent
 CONTRACT = 'src/app/diagnostics/tactical_capture/contract.v2.json'
@@ -64,13 +65,28 @@ def default_base(head):
     raise Failure('no upstream/main or origin/main to take the merge-base of; pass --base')
 
 
-def capture_profile(source, step, zoom):
+def capture_profile(source, step, zoom, wheel_zoom=None):
     """The profile captured at `step`: commands from later steps dropped."""
     profile = json.loads(Path(source).read_text())
     profile['ticks'] = step
     profile['commands'] = [c for c in profile.get('commands', []) if c['issue_after_step'] < step]
     profile['presentation'] = {'zoom': zoom, 'sidebar': 100}
+    if wheel_zoom is not None:
+        profile['presentation']['wheel_zoom'] = wheel_zoom
     return profile
+
+
+def pixel_runs(zooms, wheel_zooms):
+    """(name, Options zoom, wheel zoom or None) of each capture setting: every
+    Options zoom at the stock view, then every wheel view distance at zoom 100."""
+    runs = [(f'zoom{zoom}', zoom, None) for zoom in map(int, filter(None, zooms.split(',')))]
+    for text in filter(None, wheel_zooms.split(',')):
+        wheel = float(text)
+        if wheel not in WHEEL_ZOOMS:
+            raise ValueError(f'wheel zoom {text} must be one of {WHEEL_ZOOMS}')
+        wheel = int(wheel) if wheel.is_integer() else wheel
+        runs.append((f'zoom100-wheel{wheel:g}', 100, wheel))
+    return runs
 
 
 def first_difference(before, after, width):
@@ -164,6 +180,9 @@ def main(argv=None):
     parser.add_argument('--ticks', type=int, help='sim-bench ticks (default: its skirmish 9000)')
     parser.add_argument('--steps', default='300,1200,2200', help='capture steps')
     parser.add_argument('--zooms', default='100,150', help='Options zoom percents')
+    parser.add_argument('--wheel-zooms', default='1.5',
+                        help="mouse-wheel view distances (0.8, 1, 1.25 or 1.5) captured at "
+                             "Options zoom 100; '' for none")
     parser.add_argument('--profile', type=Path, default=PROFILE, help='map_observation profile')
     parser.add_argument('--skip-sim', action='store_true')
     parser.add_argument('--skip-pixels', action='store_true')
@@ -172,6 +191,10 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if not args.ra2_dir or not Path(args.ra2_dir, 'ra2md.mix').is_file():
         parser.error('--ra2-dir (or RA2_DIR) must be the retail game folder')
+    try:
+        pixel_settings = pixel_runs(args.zooms, args.wheel_zooms)
+    except ValueError as error:
+        parser.error(f'--zooms/--wheel-zooms: {error}')
     work = args.work.resolve()
     if work.exists() and any(work.iterdir()):
         parser.error(f'{work} must be new or empty')
@@ -217,11 +240,12 @@ def main(argv=None):
         if not args.skip_pixels:
             summary['pixels'] = []
             width = json.loads(args.profile.read_text())['width']
-            for zoom in map(int, args.zooms.split(',')):
+            for setting, zoom, wheel_zoom in pixel_settings:
                 for step in map(int, args.steps.split(',')):
-                    name = f'zoom{zoom}-step{step}'
+                    name = f'{setting}-step{step}'
                     profile = work / f'profile-{name}.json'
-                    profile.write_text(json.dumps(capture_profile(args.profile, step, zoom), indent=1))
+                    profile.write_text(json.dumps(
+                        capture_profile(args.profile, step, zoom, wheel_zoom), indent=1))
                     outputs = [runs / f'{side.name}-{name}' for side in sides]
                     for side, output in zip(sides, outputs):
                         side.capture(profile, output, settings)

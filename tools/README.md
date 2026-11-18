@@ -557,8 +557,11 @@ through `cargo_run`. Then:
   (`rules_hash`) and a short played fixture; both must match.
 - `map_observation` captures of the [barracks profile](map_observation.barracks-output.example.json)
   (units, building, construction and AI bases) at `--steps` and Options `--zooms`,
-  compared with `map_observation compare`; the first differing `frame.bgra` pixel is
-  printed. Mouse-wheel zoom is not covered: map_observation has no wheel gesture.
+  then at each mouse-wheel view distance in `--wheel-zooms` (default `1.5`, any of
+  0.8, 1, 1.25, 1.5; `''` for none) at Options zoom 100, through the profile's
+  `presentation.wheel_zoom`. Each pair is compared with `map_observation compare`; the
+  first differing `frame.bgra` pixel is printed. Both refs need `wheel_zoom` support:
+  against an older base, pass `--wheel-zooms ''`.
 
 It removes the worktrees with `git worktree remove` and retires both labels unless
 `--keep-labels`; the logs, captures and `summary.json` stay under `--work`. It exits
