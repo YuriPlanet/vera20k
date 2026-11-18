@@ -1192,7 +1192,8 @@ mod tests {
             .expect("retail names an ore overlay")[0];
         // The arena fixture carries no overlay grid, so the map's own answer for
         // "ore stands here" is installed the way a load does.
-        sim.install_overlay_grid_for_load(crate::sim::overlay_grid::OverlayGrid::new(128, 128));
+        *sim.overlay_grid_mut_for_test() =
+            Some(crate::sim::overlay_grid::OverlayGrid::new(128, 128));
         for y in field.1..field.1 + 4 {
             for x in field.0..field.0 + 4 {
                 sim.overlay_grid
