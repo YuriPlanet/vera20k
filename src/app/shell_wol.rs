@@ -561,7 +561,7 @@ pub(crate) fn open_lobby(state: &mut AppState, postmatch: bool) {
         .is_some_and(|lobby| lobby.runner == lobby::Runner::Buddy);
     match (buddy_mode, postmatch, buddy_runner) {
         (true, false, true) => buddy::stopped(state),
-        (true, _, _) => buddy::open(state),
+        (true, _, _) => lobby::open_runner(state, lobby::Runner::Buddy),
         (false, _, _) => lobby::open(state, postmatch),
     }
 }

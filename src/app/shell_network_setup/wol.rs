@@ -3,6 +3,7 @@
 //! the StartGame/OnGameStart handshake, the WOL chat line and the readiness
 //! clearing native WOL performs on option edits.
 
+use super::actions::queue;
 use super::chat_notice as message;
 use super::*;
 use crate::skirmish_launch::LaunchTeam;
@@ -42,34 +43,9 @@ impl App {
         observer_row: Option<u8>,
     ) {
         local.slot = unset_choices();
-        let Some(mode) = state.frontend.skirmish_modes.first().cloned() else {
-            return;
-        };
-        let launch = SkirmishLaunchSession::from_rows(
-            crate::skirmish_launch::SkirmishLaunchMode::from_game_mode(&mode),
-            None,
-            vec![local],
-            0,
-            Vec::new(),
-            state
-                .frontend
-                .skirmish_shell_state
-                .launch_options_base
-                .clone(),
-        );
-        let dialog = super::setup_dialog(state, false, SetupFlavor::Wol);
-        if let Err(error) = install_setup(
-            state,
-            launch,
-            dialog,
-            [NetworkVacancy::Open; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT],
-            observer_row,
-        ) {
-            log::error!("Could not admit WOL join: {error:#}");
-            open_service_lobby(state, dialog);
-            return;
-        }
-        if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+        if App::open_joined_setup(state, local, observer_row, SetupFlavor::Wol)
+            && let Some(protocol) = state.frontend.network_setup_protocol.as_mut()
+        {
             protocol.accept_eligible = true;
         }
     }
@@ -627,12 +603,6 @@ pub(crate) fn play_player_left(state: &mut AppState) {
         .and_then(|rules| rules.general.player_left_sound())
         .map(str::to_owned);
     App::play_shell_ui_sound_by_id(state, sound.as_deref());
-}
-
-fn queue(state: &mut AppState, request: NetworkSetupRequest) {
-    if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
-        protocol.requests.push(request);
-    }
 }
 
 /// `005E9850`: clear every acceptance but the host's and enable Accept on C9.

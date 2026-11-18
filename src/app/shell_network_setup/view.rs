@@ -271,9 +271,10 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let host_name = protocol.wol_host.as_deref();
     let local = launch.humans.get(launch.local_player_index)?;
     let room = session.network_room();
+    let dialog = super::dialog(state);
     // 0x4E5C5B..0x4E5C90, 0x4E5FD5..0x4E6004: a WOL clan room hides every
     // team combo and the team header 0x794.
-    let clan_room = profile_is_wol(state) && room.clan;
+    let clan_room = dialog.wol() && room.clan;
     let map_index = local_map_index(state);
     let listing = room_listing(state)?;
     let RoomListing {
@@ -320,7 +321,6 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let ai_seat = (host && ai_allowed)
         .then(|| session.network_ai_seat())
         .flatten();
-    let dialog = super::dialog(state);
     // VERA's roster holds the rows its page fits; a native page always has
     // its eight row controls, hidden past the room's rows.
     let rows = if dialog.modern {
@@ -902,7 +902,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         locked: protocol.locked,
         // C2's lockout (0x78F85E..0x78F907, 0x79132A..0x7913D1): Short Game
         // checked and disabled in a tournament or clan room.
-        short_game_locked: host && profile_is_wol(state) && room.tournament_or_clan(),
+        short_game_locked: host && dialog.wol() && room.tournament_or_clan(),
         team_header: !no_team_lists,
         accept_enabled: accept_enabled(state),
         start_requested: protocol.start_requested
@@ -1083,10 +1083,6 @@ fn listed_rows(
         group(SetupGroup::Spectators, spectators.len(), spectators);
     }
     listed
-}
-
-fn profile_is_wol(state: &AppState) -> bool {
-    state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol
 }
 
 #[cfg(all(test, tests_app))]
