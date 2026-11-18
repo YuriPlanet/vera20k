@@ -56,7 +56,7 @@ function shares(maximum) {
 }
 
 export function createGateway({
-  lobby, relays, origin, allowHttp = false, clientIpHeader, lobbyKey, lanSignal,
+  lobby, relays, legacyRelay, origin, allowHttp = false, clientIpHeader, lobbyKey, lanSignal,
 }) {
   const upstream = originUrl(lobby, allowHttp);
   const allowed = originUrl(origin, true).origin;
@@ -68,6 +68,13 @@ export function createGateway({
   const routes = new Map();
   for (const [relay, endpoint] of endpoints) {
     for (const channel of ['primary', 'alternate']) routes.set(`/game/${channel}/${relay}`, endpoint);
+  }
+  // A browser bundle from before relay paths opens /game/<channel> alone. While
+  // such pages may still be open, an operator names the one relay they reach.
+  if (legacyRelay !== undefined) {
+    const endpoint = endpoints.find(([relay]) => relay === legacyRelay)?.[1];
+    if (!endpoint) throw new Error('VERA_LEGACY_RELAY must be one of VERA_RELAYS');
+    for (const channel of ['primary', 'alternate']) routes.set(`/game/${channel}`, endpoint);
   }
   if (lobbyKey !== undefined && !(typeof lobbyKey === 'string' && lobbyKey.length >= 32)) {
     throw new Error('VERA_GATEWAY_KEY needs at least 32 characters');
@@ -330,6 +337,7 @@ export function gatewayOptionsFromEnv(env) {
   return {
     lobby: env.VERA_LOBBY_URL ?? 'https://lobby.vera20k.org',
     relays: (env.VERA_RELAYS ?? '').split(',').map(relay => relay.trim()).filter(Boolean),
+    legacyRelay: env.VERA_LEGACY_RELAY?.trim() || undefined,
     origin: env.VERA_WEB_ORIGIN,
     allowHttp: env.VERA_ALLOW_LOCAL_HTTP === '1',
     clientIpHeader: env.VERA_CLIENT_IP_HEADER?.toLowerCase() || undefined,
