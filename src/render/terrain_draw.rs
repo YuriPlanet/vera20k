@@ -1940,7 +1940,7 @@ mod webgl_shader_tests {
                 pad_camera_structs(&super::edit_source(true)),
             ),
             ("read-only resolve", super::resolve_source()),
-            ("packed composite", super::packed::packed_source(true)),
+            ("packed composite", super::packed::packed_source()),
             (
                 "packed SHP",
                 pad_camera_structs(&super::packed::raster_source(

@@ -1,26 +1,20 @@
-// Original leaves: 004950C0/00495250/00494F20 and displaced 00495590/00495730.
+// Original leaves: 004950C0/00495250/00494F20 and warp 004953F0/00495590/00495730.
 // Goldens: tools/procedural_drawing_oracle/translucent_blitter_a.json.
 struct Params {
     rect: vec4u,
-    surface_width: u32,
     selector: u32,
-    offset_words: i32,
+    // 0 when the leaf reads its own word. Otherwise 4, plus the parity of the
+    // tactical top (bit 1) and of the clipped left edge from the tactical
+    // left (bit 0): see `warp_words`.
+    warp: u32,
     reads_depth: u32,
 };
 @group(0) @binding(0) var old_words: texture_2d<u32>;
 @group(0) @binding(1) var old_depth: texture_2d<f32>;
 @group(0) @binding(2) var source_words: texture_2d<u32>;
 @group(0) @binding(3) var candidates: texture_2d<f32>;
-@group(0) @binding(4) var<storage, read_write> results: array<u32>;
-@group(0) @binding(5) var<uniform> params: Params;
+@group(0) @binding(4) var<uniform> params: Params;
 
-fn inside(p: vec2u) -> bool {
-    return all(p >= params.rect.xy) && all(p < params.rect.xy + params.rect.zw);
-}
-fn local_index(p: vec2u) -> u32 {
-    let q = p - params.rect.xy;
-    return q.y * params.rect.z + q.x;
-}
 fn admitted(p: vec2u) -> bool {
     return (textureLoad(source_words, vec2i(p), 0).r & 0x10000u) != 0u
         && (params.reads_depth == 0u || i32(textureLoad(candidates, vec2i(p), 0).r) < decoded_native_z(textureLoad(old_depth, vec2i(p), 0).r));
@@ -40,49 +34,25 @@ fn blend(source: u32, destination: u32) -> u32 {
     let d = (destination >> 2u) & 0x39e7u;
     return select(s + d * 3u, s * 3u + d, selector == 2u) & 0xffffu;
 }
-fn neighbor_linear(p: vec2u) -> i32 {
-    return i32(p.y * params.surface_width + p.x) + params.offset_words;
+// The warp leaves blend with the word `warp` to the right (MOV AX,[EDI+EAX*2]
+// at 0049549D) and store to their own. Bit_Blit 004373B0 seeds the warp from
+// the first row y, relative to the A-buffer's top (the tactical top), and the
+// clipped left x: ((y & 1) << 1) | ((y ^ x) & 1) (004374A3..004374B7), then
+// XORs it with 3 every row (004378F9). RLE_Blit 00437A10 does the same
+// (00437D09..00437D20, 00437E45), so row y's warp is the seed formula at y.
+fn warp_words(y: u32) -> u32 {
+    if params.warp == 0u { return 0u; }
+    let row = (y ^ (params.warp >> 1u)) & 1u;
+    return (row << 1u) | (row ^ (params.warp & 1u));
 }
-fn neighbor_of(linear: i32) -> vec2i {
-    return vec2i(linear % i32(params.surface_width), linear / i32(params.surface_width));
-}
-// A non-negative offset reads only snapshot words, never an earlier store of
-// this transaction, so the resolve fragment blends it directly.
+// A warp of 0..3 reads a word this span has not stored yet: the snapshot.
+// RESIDUAL: within three words of the surface's right edge the native read
+// runs on into the next row; this one stops at the row's last word. Only the
+// ripple of a cloaking voxel at the right screen edge can differ, by 1-3 px.
 fn snapshot_word(p: vec2u) -> u32 {
-    let destination = textureLoad(old_words, neighbor_of(neighbor_linear(p)), 0).r;
+    let x = min(p.x + warp_words(p.y), textureDimensions(old_words).x - 1u);
+    let destination = textureLoad(old_words, vec2u(x, p.y), 0).r;
     return blend(textureLoad(source_words, vec2i(p), 0).r & 0xffffu, destination);
-}
-fn resolve_pixel(p: vec2u) {
-    if !admitted(p) { return; }
-    let linear = neighbor_linear(p);
-    let neighbor = neighbor_of(linear);
-    var destination = textureLoad(old_words, neighbor, 0).r;
-    // Earlier stores in this exact native span are visible to a negative offset.
-    if linear >= 0 && inside(vec2u(neighbor)) && admitted(vec2u(neighbor)) {
-        destination = results[local_index(vec2u(neighbor))];
-    }
-    results[local_index(p)] = blend(textureLoad(source_words, vec2i(p), 0).r & 0xffffu, destination);
-}
-@compute @workgroup_size(64)
-fn cs_main(@builtin(global_invocation_id) invocation: vec3u,
-    @builtin(num_workgroups) groups: vec3u) {
-    // WGSL num_workgroups gives the actual dispatch grid. Local size is64x1x1,
-    // so this visits each linear pixel/residue once even across multiple rows.
-    // https://www.w3.org/TR/WGSL/#builtin-values
-    let index = invocation.x + invocation.y * (groups.x * 64u);
-    // Only negative offsets dispatch. Independent residue chains preserve
-    // native left-to-right, top-to-bottom word order without imposing a
-    // serial whole-frame GPU dispatch.
-    let stride = u32(-params.offset_words);
-    if index >= stride { return; }
-    let start = params.rect.y * params.surface_width + params.rect.x;
-    let end = (params.rect.y + params.rect.w - 1u) * params.surface_width + params.rect.x + params.rect.z;
-    var linear = start + ((index + stride - (start % stride)) % stride);
-    while linear < end {
-        let p = vec2u(linear % params.surface_width, linear / params.surface_width);
-        if inside(p) { resolve_pixel(p); }
-        linear += stride;
-    }
 }
 @vertex
 fn vs_main(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
@@ -94,9 +64,7 @@ struct Resolve { @location(0) color: vec4f, @builtin(frag_depth) depth: f32 };
 fn fs_resolve(@builtin(position) position: vec4f) -> Resolve {
     let p = vec2u(position.xy);
     if !admitted(p) { discard; }
-    var word = snapshot_word(p);
-    if params.offset_words < 0 { word = results[local_index(p)]; }
-    return Resolve(vec4f(retail_linear(word),1.0), stored_native_depth(i32(textureLoad(candidates,vec2i(p),0).r)));
+    return Resolve(vec4f(retail_linear(snapshot_word(p)),1.0), stored_native_depth(i32(textureLoad(candidates,vec2i(p),0).r)));
 }
 struct Clear { @location(0) word: u32, @location(1) candidate: f32 };
 @fragment

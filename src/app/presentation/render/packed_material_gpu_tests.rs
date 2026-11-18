@@ -48,10 +48,15 @@ fn retained_mobile_translucency_matches_original_packed_words() {
             assert!(!groups.is_empty());
             for (rgb, all_cases) in groups {
                 for cases in all_cases.chunks(512) {
-                    let size = [8, cases.len() as u32 * 3];
-                    // Native inputs contain a guarded nineteen-word destination window.
-                    // An eight-word pitch and a three-row block preserve the +/-8 controls
-                    // without treating a signed surface-word offset as a horizontal UV.
+                    // Each case has a two-row block of an eight-word surface. A
+                    // warp case sits where Bit_Blit 0x004373B0's row and clipped
+                    // left parities give the warp its native leaf read: row 2y
+                    // plus d >> 1, left column 2 plus (d ^ d >> 1) & 1.
+                    let size = [8, cases.len() as u32 * 2];
+                    let place = |y: usize, row: &Value| {
+                        let warp = row["displacement"].as_u64().unwrap() as usize;
+                        (y * 2 + (warp >> 1), 2 + ((warp ^ (warp >> 1)) & 1))
+                    };
                     let indices: Vec<u8> = cases
                         .iter()
                         .flat_map(|row| {
@@ -59,16 +64,16 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                             let middle = row
                                 .get("overlap_sources")
                                 .map_or(0, |source| source[1].as_u64().unwrap() as u8);
-                            (0..24).map(move |word| match word {
-                                10 | 12 => index,
-                                11 => middle,
+                            (0..16).map(move |word| match word {
+                                2 | 4 => index,
+                                3 => middle,
                                 _ => 0,
                             })
                         })
                         .collect();
                     let a: Vec<u8> = cases
                         .iter()
-                        .flat_map(|row| [row["a"].as_u64().unwrap() as u8; 24])
+                        .flat_map(|row| [row["a"].as_u64().unwrap() as u8; 16])
                         .collect();
                     for format in [
                         wgpu::TextureFormat::Bgra8UnormSrgb,
@@ -133,6 +138,7 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                             .iter()
                             .enumerate()
                             .flat_map(|(y, row)| {
+                                let (drawn, left) = place(y, row);
                                 let bits = row["selector_bits"].as_u64().unwrap();
                                 let opacity = match bits & 6 {
                                     2 => 0.75,
@@ -159,21 +165,17 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                                             RenderZPolicy::ReadOnly
                                         },
                                         instance: SpriteInstance {
-                                            position: [2.0, (y * 3 + 1) as f32],
+                                            position: [left as f32, drawn as f32],
                                             size: [3.0, 1.0],
-                                            uv_origin: [0.25, (y * 3 + 1) as f32 / size[1] as f32],
+                                            uv_origin: [0.25, (y * 2) as f32 / size[1] as f32],
                                             uv_size: [3.0 / 8.0, 1.0 / size[1] as f32],
                                             tint: [1.0; 3],
                                             alpha: 1.0,
-                                            z_adjust: (4096 - (32768 - (y * 3 + 1) as i32)) as f32,
+                                            z_adjust: (4096 - (32768 - drawn as i32)) as f32,
                                             palette_light: native_light(row),
                                             source_palette,
                                             draw_state: DrawState {
                                                 fx_flags: FX_CLOAK,
-                                                native_offset_words: row["displacement"]
-                                                    .as_i64()
-                                                    .unwrap()
-                                                    as i32,
                                                 fx_params: [opacity, bits as f32, 1.0, 0.0],
                                                 ..Default::default()
                                             },
@@ -234,6 +236,7 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                             .iter()
                             .enumerate()
                             .flat_map(|(y, row)| {
+                                let (drawn, left) = place(y, row);
                                 row["prior_depths"]
                                     .as_array()
                                     .unwrap()
@@ -241,13 +244,13 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                                     .enumerate()
                                     .filter(|(_, depth)| depth.as_u64().unwrap() < 65535)
                                     .map(move |(x, depth)| SpriteInstance {
-                                        position: [(2 + x) as f32, (y * 3 + 1) as f32],
+                                        position: [(left + x) as f32, drawn as f32],
                                         size: [1.0; 2],
                                         uv_size: [1.0; 2],
                                         tint: [1.0; 3],
                                         alpha: 1.0,
                                         z_adjust: (depth.as_u64().unwrap() as i32
-                                            - (32768 - (y * 3 + 1) as i32))
+                                            - (32768 - drawn as i32))
                                             as f32,
                                         palette_light: PaletteLight::plain(1, 1000),
                                         ..Default::default()
@@ -268,12 +271,13 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                                     ..Default::default()
                                 }
                             };
-                            raw.push(seed([0.0, (y * 3) as f32], [8.0, 3.0], word));
-                            let displacement = row["displacement"].as_i64().unwrap() as i32;
-                            if displacement != 0 {
-                                let guard = 10 + displacement;
+                            raw.push(seed([0.0, (y * 2) as f32], [8.0, 2.0], word));
+                            // The native window's guard word at the warp read.
+                            let warp = row["displacement"].as_u64().unwrap() as usize;
+                            if warp != 0 {
+                                let (drawn, left) = place(y, row);
                                 raw.push(seed(
-                                    [(guard % 8) as f32, (y * 3) as f32 + (guard / 8) as f32],
+                                    [(left + warp) as f32, drawn as f32],
                                     [1.0; 2],
                                     word ^ 0x07e0,
                                 ));
@@ -361,8 +365,9 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                         ];
                         let output = gpu.finish(encoder, &reads, size);
                         for (y, row) in cases.iter().enumerate() {
+                            let (drawn, left) = place(y, row);
                             for x in 0..3 {
-                                let offset = ((y * 3 + 1) * 8 + 2 + x) * 4;
+                                let offset = (drawn * 8 + left + x) * 4;
                                 assert_eq!(
                                     &output[0][offset..offset + 4],
                                     &encoded(row["colors"][x].as_u64().unwrap() as u16, format),

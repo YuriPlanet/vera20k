@@ -627,11 +627,6 @@ pub struct Seldom {
     /// Techno Scenario word (Unit735454 / Building43BA15). May wrap or duplicate;
     /// stable handles remain the reference and storage authority.
     native_unique_id: i32,
-    /// Native Techno+24C float bits, initialized to zero by6F2D62 and
-    /// preserved by native persistence (70C32A). Only visual-character4 reads
-    /// this displacement through70BE50; no simulation/RNG/timer consumer.
-    /// Retain the raw datum, not a renderer-owned reconstructed animation.
-    native_cloak_displacement: crate::util::native_x87::NativeF32Bits,
     /// Techno+3D0: TechnoClass::Constructor `0x006F2B40` clears it at
     /// `0x006F2F3D`; UnitClass::Mission_Harvest `0x0073E5E0` sets/clears it at
     /// `0x0073E8FA`/`0x0073E925`, and the repair depot reads it at
@@ -1579,22 +1574,6 @@ impl GameEntity {
             .map_or(0, crate::sim::cloak_disguise::CloakRuntime::building_stage)
     }
 
-    /// `Techno70BE50`: actual COM410220 reads Abstract+10, then native7C5F00
-    /// truncates retained+24C. Wrapping signed addition precedes IDIV400.
-    /// Offset is RGB565 words, not world coordinates or a per-frame RNG draw.
-    /// Original executed controls: translucent_blitter_a.json/ cloak_offsets.
-    pub fn native_cloak_offset_words(&self) -> i32 {
-        use crate::util::native_x87::{NativeF32Bits, X87Chop53};
-        let displacement = if self.native_cloak_displacement == NativeF32Bits::POSITIVE_ZERO {
-            0
-        } else {
-            X87Chop53::load_f32(self.native_cloak_displacement)
-                .map(X87Chop53::ftol_i32_low_masked)
-                .unwrap_or(0)
-        };
-        self.native_unique_id.wrapping_add(displacement) % 400
-    }
-
     pub(crate) fn door_phase(&self) -> crate::sim::door::DoorPhase {
         self.door.phase()
     }
@@ -2438,7 +2417,6 @@ impl GameEntity {
                 #[cfg(feature = "debug-tools")]
                 debug_log: None,
                 native_unique_id,
-                native_cloak_displacement: crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO,
                 useless: false,
                 production_start_price: 0,
                 ares: Sparse::default(),
@@ -3091,37 +3069,6 @@ mod tests {
                 entity.visual_character(row["stage"].as_i64().unwrap() as i32, false, owned, query),
                 row["character"].as_u64().unwrap() as u8,
                 "native control {row}"
-            );
-        }
-    }
-
-    #[test]
-    fn native_cloak_offset_matches_original_identity_float_and_wrap_controls() {
-        let native = native_cloak_fixture();
-        let rows = native["cloak_offsets"].as_array().unwrap();
-        assert_eq!(rows.len(), 14);
-        let mut entity = GameEntity::test_default(777, "MTNK", "Americans", 10, 20);
-        for row in rows {
-            entity.native_unique_id = row["native_unique_id"].as_i64().unwrap() as i32;
-            let hex = row["raw_f32_hex"].as_str().unwrap();
-            let bytes: [u8; 4] =
-                std::array::from_fn(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).unwrap());
-            entity.native_cloak_displacement =
-                crate::util::native_x87::NativeF32Bits::from_bits(u32::from_le_bytes(bytes));
-            assert_eq!(
-                entity.native_cloak_offset_words(),
-                row["offset_words"].as_i64().unwrap() as i32,
-                "native control {row}"
-            );
-            let saved = crate::util::save_codec::serialize(&entity).unwrap();
-            let restored: GameEntity = crate::util::save_codec::deserialize(&saved).unwrap();
-            assert_eq!(
-                restored.native_cloak_displacement,
-                entity.native_cloak_displacement
-            );
-            assert_eq!(
-                restored.native_cloak_offset_words(),
-                entity.native_cloak_offset_words()
             );
         }
     }

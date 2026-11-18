@@ -1992,7 +1992,7 @@ fn emit_building_anims(
         // DrawIt422CA0 -> 4AED70 retains the Anim's Convert selector. Reducing
         // it to alpha loses the indexed palette/A lookup and packed RGB565
         // blend (spatial_oracle/building_anim_translucency). The inherited
-        // cloak/offset/effect composition is a separate, unresolved owner.
+        // cloak/effect composition is a separate, unresolved owner.
         // The shared pass builder replaces this material for the shadow.
         let (alpha, draw_state) = if flags & 6 != 0
             && anim_entry.is_some_and(|entry| entry.source_palette != 0)

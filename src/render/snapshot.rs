@@ -24,7 +24,6 @@ pub(crate) trait SnapshotObject {
     fn veterancy(&self) -> &crate::sim::combat::veterancy::Veterancy;
     fn sinking(&self) -> bool;
     fn building_cloak_stage(&self) -> u8;
-    fn native_cloak_offset_words(&self) -> i32;
     fn is_warped_out(&self) -> bool;
     fn is_warping_in(&self) -> bool;
     /// `GameEntity::visual_character`'s screen answer for the local player.
