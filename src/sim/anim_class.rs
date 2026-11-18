@@ -680,6 +680,11 @@ impl AnimObject {
     }
 
     #[cfg(any(test, feature = "test-support"))]
+    pub fn runtime_frame_for_test(&self) -> i32 {
+        self.runtime.current_frame
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
     pub fn world_coord_mut_for_test(&mut self) -> &mut AnimWorldCoord {
         &mut self.world_coord
     }
@@ -4478,6 +4483,97 @@ impl Simulation {
                 entity.damage_fires.anim_ids[slot] = None;
             }
         }
+    }
+
+    /// Phobos `AnimExt::ChangeAnimType` (`Ext/Anim/Body.cpp:198-243`), the
+    /// retype one live anim takes when its cumulative `AttachEffectType`
+    /// layer count picks another body
+    /// (`New/Entity/AttachEffectClass.cpp:520-526`) instead of a destroy and
+    /// re-create.
+    ///
+    /// In order: the fraction travelled through the old body
+    /// (`Value / Type->End`, `1.0` for a zero-length body where native divides
+    /// by zero), the new type's `End`/`LoopEnd` resolved when the art reader
+    /// left them at -1, the type swap, `resetLoops` re-arming
+    /// `RemainingIterations` as `static_cast<byte>(LoopCount)`, `Accum = 0`,
+    /// `UnableToContinue = false`, `Reverse =` the new type's own byte, the
+    /// fresh `Rate=`/`RandomRate=` pick (`0x004221F5`) normalized by
+    /// `Normalized=`, and finally either a restart at the new body's first
+    /// frame (`Value = Reverse ? End : Start`, then `AnimClass::Start`) or the
+    /// proportional frame `int(End * fraction)`.
+    ///
+    /// VERA stores the stage offset the constructor writes rather than native's
+    /// absolute `Value`, so the proportional arm is exact for the retail
+    /// `Start=0` bodies and the restart arm re-arms the same offset a fresh
+    /// construction would. A body with a nonzero `Start=` lands within one
+    /// `Start` of native in both arms; no retail ART sets that key.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn change_anim_type(
+        &mut self,
+        id: AnimId,
+        new_type: InternedId,
+        reset_loops: bool,
+        restart: bool,
+        rules: &RuleSet,
+    ) -> bool {
+        let Some(object) = self.substrate.anims.get(id) else {
+            return false;
+        };
+        // The native caller retypes only when the resolved name differs.
+        if object.type_id == new_type {
+            return false;
+        }
+        let old_end = object.effective_end;
+        let value = object.runtime.current_frame;
+        let fraction = if old_end == 0 {
+            1.0
+        } else {
+            f64::from(value) / f64::from(old_end)
+        };
+        let name = self.interner.resolve(new_type).to_ascii_uppercase();
+        let Some(config) = rules.art().anim_runtime_config(&name).cloned() else {
+            return false;
+        };
+        let Ok((effective_end, effective_loop_end)) = effective_bounds(&name, &config) else {
+            return false;
+        };
+        let reverse = config.reverse;
+        let rate = Self::choose_anim_rate(&self.session, &mut self.scenario_rng, &config);
+        let now = self.session.binary_frame() as i32;
+        let stop_sound_id = config
+            .stop_sound
+            .as_deref()
+            .map(|sound| self.interner.intern(sound));
+        let frame = if restart {
+            if reverse {
+                effective_loop_end.wrapping_sub(1)
+            } else {
+                0
+            }
+        } else {
+            (f64::from(effective_end) * fraction) as i32
+        };
+        let Some(object) = self.substrate.anims.get_mut(id) else {
+            return false;
+        };
+        object.type_id = new_type;
+        object.effective_end = effective_end;
+        object.effective_loop_end = effective_loop_end;
+        object.stop_sound_id = stop_sound_id;
+        object.runtime.frame_step = if reverse { -1 } else { 1 };
+        object.runtime.current_frame = frame;
+        object.runtime.rate_reload = rate;
+        object.runtime.frame_timer = CdTimer::started(now, i32::from(rate));
+        if reset_loops {
+            object.runtime.loop_remaining = config.loop_count as u8;
+        }
+        // `pAnim->Start()` in the restart arm is native `AnimClass::Start
+        // @ 0x00424CE0` (start sound + `Middle`), not the frame-rate
+        // `Animation.Start(rate, direction)` line above it.
+        if restart {
+            let _ = self.anim_start(id, &config, rules, None, FrameEffects::empty());
+        }
+        true
     }
 
     fn choose_anim_rate(

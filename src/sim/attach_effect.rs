@@ -1607,14 +1607,14 @@ impl Simulation {
     /// phase, expired effects are removed, and each surviving effect
     /// reconciles its `AnimClass` with `CanShowAnim`.
     ///
-    /// RESIDUALS: `DiscardOn` belongs to its own slice, so nothing is discarded
-    /// here yet; native `IsImmobilized` is approximated by the chrono-warp and
+    /// RESIDUALS: native `IsImmobilized` is approximated by the chrono-warp and
     /// transport-interior gates VERA models; `CloakCheck` and the tunnel
-    /// animation state are not ported; a cumulative type's animation is
-    /// rebuilt when the layer count changes instead of going through
-    /// `AnimExt::ChangeAnimType`, so `CumulativeAnimations.RestartOnChange=no`
-    /// still restarts; `Animation.ResetOnReapply` does not restart a refreshed
-    /// effect's animation.
+    /// animation state are not ported; `Animation.ResetOnReapply` does not
+    /// restart a refreshed effect's animation. A cumulative type's animation
+    /// follows `AnimExt::ChangeAnimType` for the designated layer
+    /// (`CumulativeAnimations.RestartOnChange` picks the proportional or the
+    /// restart arm); the native per-instance `AnimClass` of every other layer
+    /// is not modeled, because VERA shows one animation per cumulative type.
     /// `ShouldBeDiscardedNow`'s target facts for one entity, read once per
     /// frame before the AI walk. `needs_range` skips the weapon selection
     /// when no effect on the object reads inrange/outofrange.
@@ -2598,9 +2598,15 @@ impl Simulation {
             } else {
                 owner_house
             };
+            let retime = if effect.cumulative && !effect.cumulative_animations.is_empty() {
+                Some(effect.cumulative_animations_restart_on_change)
+            } else {
+                None
+            };
             self.maintain_phobos_attach_effect_anim(
                 &mut list.instances[instance_index],
                 desired,
+                retime,
                 AttachEffectAnimTarget {
                     owner: id,
                     house,
@@ -2635,12 +2641,16 @@ impl Simulation {
 
     /// `CreateAnim` / `KillAnim`: keep exactly `desired` alive on the effect.
     /// Phobos creates the animation at the owner's location, attaches it with
-    /// `SetOwnerObject`, and holds its loops; a changed cumulative type is
-    /// rebuilt here because `AnimExt::ChangeAnimType` has no VERA owner yet.
+    /// `SetOwnerObject`, and holds its loops. `AttachEffectClass::UpdateCumulativeAnim`
+    /// (`New/Entity/AttachEffectClass.cpp:520-526`) retypes a running animation
+    /// through `AnimExt::ChangeAnimType` when the layer count picks another
+    /// body, so a `Some(retime)` call keeps the same `AnimClass` instead of
+    /// rebuilding it.
     fn maintain_phobos_attach_effect_anim(
         &mut self,
         instance: &mut AttachEffectInstance,
         desired: Option<&str>,
+        retime: Option<bool>,
         target: AttachEffectAnimTarget,
         rules: &crate::rules::ruleset::RuleSet,
     ) {
@@ -2658,7 +2668,19 @@ impl Simulation {
                         .eq_ignore_ascii_case(name)
                 })
             });
-            if !keeps {
+            // `AttachEffectClass::UpdateCumulativeAnim`
+            // (`New/Entity/AttachEffectClass.cpp:520-526`): a picked body that
+            // differs from the running one is retyped in place
+            // (`ChangeAnimType(pAnim, pAnimType, false, RestartOnChange)`),
+            // never destroyed and rebuilt.
+            let retyped = match (keeps, retime, desired) {
+                (false, Some(restart), Some(name)) => {
+                    let type_name = self.interner.intern(name);
+                    self.change_anim_type(anim, type_name, false, restart, rules)
+                }
+                _ => false,
+            };
+            if !keeps && !retyped {
                 self.destroy_anim_with_context(anim, rules);
                 instance.anim = None;
             }
@@ -7252,5 +7274,153 @@ Duration=100
             "the new country's list attached"
         );
         assert_eq!(sim.substrate.entities.get(tank).unwrap().owner(), russians);
+    }
+
+    /// Phobos `AttachEffectClass::UpdateCumulativeAnim`
+    /// (`New/Entity/AttachEffectClass.cpp:520-526`): a layer count that picks
+    /// another body retypes the running animation in place through
+    /// `AnimExt::ChangeAnimType` (`Ext/Anim/Body.cpp:198-243`) instead of
+    /// destroying and re-creating it. With `RestartOnChange=no` the retype
+    /// keeps the fraction the old body had travelled.
+    #[test]
+    fn a_cumulative_layer_change_retypes_the_same_animation_in_place() {
+        let (mut sim, rules) = cumulative_anim_scene(
+            "CumulativeAnimations=AEONE,AETWO\nCumulativeAnimations.RestartOnChange=no\n",
+            21,
+        );
+        let target = spawn(&mut sim, &rules, "TARGET", "Americans", 20, 20);
+        sim.update_phobos_attach_effects(target, &rules);
+        let (anim, name, _frame) = cumulative_anim(&sim, target);
+        assert_eq!(name, "AEONE", "one layer picks the first body");
+        // Half of the eight frames behind us.
+        sim.substrate
+            .anims
+            .get_mut(anim)
+            .expect("the running effect animation")
+            .runtime_mut_for_test()
+            .current_frame = 4;
+        add_layer_from_warhead(&mut sim, "ADDCUM", target, &rules);
+        assert_eq!(attach_count(&sim, target), 2, "the second layer attached");
+        sim.update_phobos_attach_effects(target, &rules);
+        let (after, name, frame) = cumulative_anim(&sim, target);
+        assert_eq!(after, anim, "the retype keeps the same anim instance");
+        assert_eq!(name, "AETWO", "two layers pick the second body");
+        assert_eq!(
+            frame, 6,
+            "int(End=12 * fraction 4/8) keeps the travelled fraction"
+        );
+    }
+
+    /// The same retype with the key's default (`RestartOnChange=yes`) re-arms
+    /// the new body at its first frame.
+    #[test]
+    fn a_cumulative_layer_change_restarts_when_the_type_asks_for_it() {
+        let (mut sim, rules) = cumulative_anim_scene("CumulativeAnimations=AEONE,AETWO\n", 22);
+        let target = spawn(&mut sim, &rules, "TARGET", "Americans", 20, 20);
+        sim.update_phobos_attach_effects(target, &rules);
+        let (anim, name, _frame) = cumulative_anim(&sim, target);
+        assert_eq!(name, "AEONE");
+        sim.substrate
+            .anims
+            .get_mut(anim)
+            .expect("the running effect animation")
+            .runtime_mut_for_test()
+            .current_frame = 4;
+        add_layer_from_warhead(&mut sim, "ADDCUM", target, &rules);
+        sim.update_phobos_attach_effects(target, &rules);
+        let (after, name, frame) = cumulative_anim(&sim, target);
+        assert_eq!(after, anim, "the default still retypes in place");
+        assert_eq!(name, "AETWO");
+        assert_eq!(frame, 0, "RestartOnChange=yes re-arms the first frame");
+    }
+
+    /// `TARGET` attaches one `CUM` layer; `ADDCUM` adds a second.
+    fn cumulative_anim_scene(
+        effect_keys: &str,
+        seed: u64,
+    ) -> (Simulation, crate::rules::ruleset::RuleSet) {
+        let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "[Countries]\n0=Americans\n1=Russians\n\
+             [VehicleTypes]\n0=TARGET\n\
+             [TARGET]\nStrength=1000\nSpeed=6\nArmor=none\n\
+             AttachEffect.AttachTypes=CUM\n\
+             [Warheads]\n0=ADDCUM\n\
+             [ADDCUM]\n{ALL_HIT}AttachEffect.AttachTypes=CUM\n\
+             AttachEffect.DurationOverrides=50\n\
+             [AttachEffectTypes]\n0=CUM\n\
+             [CUM]\nDuration=100\nCumulative=yes\n{effect_keys}"
+        ));
+        let mut rules =
+            crate::rules::ruleset::RuleSet::from_ini(&ini).expect("cumulative anim rules");
+        let mut art = crate::rules::art_data::ArtRegistry::from_ini(
+            &crate::rules::ini_parser::IniFile::from_str(
+                "[AEONE]\nEnd=8\nRate=2\n[AETWO]\nEnd=12\nRate=2\n",
+            ),
+        );
+        art.bind_anim_frame_count_for_test("AEONE", 8);
+        art.bind_anim_frame_count_for_test("AETWO", 12);
+        rules.replace_art_registry_for_test(art);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, seed);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        (sim, rules)
+    }
+
+    /// The designated cumulative instance's animation: its id, type name and
+    /// committed frame.
+    fn cumulative_anim(
+        sim: &Simulation,
+        target: u64,
+    ) -> (crate::sim::anim_class::AnimId, String, i32) {
+        let list = sim
+            .substrate
+            .entities
+            .get(target)
+            .expect("live entity")
+            .phobos_attach_effects();
+        let anim = list
+            .instances()
+            .iter()
+            .find_map(|instance| instance.anim)
+            .expect("the cumulative effect shows an animation");
+        let live = sim.substrate.anims.get(anim).expect("live animation");
+        (
+            anim,
+            sim.interner.resolve(live.type_id()).to_owned(),
+            live.runtime_frame_for_test(),
+        )
+    }
+
+    /// One detonation of the `ADDCUM` warhead on `target`.
+    fn add_layer_from_warhead(
+        sim: &mut Simulation,
+        warhead: &str,
+        target: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) {
+        let warhead = sim.interner.intern(warhead);
+        let impacted = {
+            let entity = sim.substrate.entities.get(target).expect("live entity");
+            crate::sim::movement::ground_pose::object_get_coords(
+                entity,
+                sim.resolved_terrain.as_ref(),
+            )
+        };
+        let detonation = crate::sim::projectile::ProjectileDetonation {
+            projectile_id: u64::MAX,
+            source_id: target,
+            target: crate::sim::projectile::ProjectileTarget::Entity(target),
+            impact: crate::sim::projectile::ProjectileCoord::new(
+                impacted.x, impacted.y, impacted.z,
+            ),
+            payload: crate::sim::projectile::ProjectilePayload::new(1, warhead, None, false),
+            reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
+        };
+        sim.commit_attach_effect_detonations(
+            &[detonation],
+            rules,
+            None,
+            crate::sim::world::FrameEffects::empty(),
+        );
     }
 }
