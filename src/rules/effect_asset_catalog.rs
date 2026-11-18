@@ -428,6 +428,10 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     insert(&rules.general.force_shield_invoke_anim);
     insert(&rules.general.ion_blast_anim);
     insert(&rules.general.ion_beam_anim);
+    // `[AudioVisual] Dig=`: the type the Tunnel locomotor's four dig/dig-out
+    // `AnimClass` constructions pass (`0x00728F6F`, `0x00729360`,
+    // `0x00729459`, `0x00729A2F`). Empty in retail rulesmd.ini.
+    insert(&rules.general.dig_anim);
     // The Chronosphere's source loop and both Chrono Warp blasts
     // (`sim::superweapon::chronosphere`).
     insert(&rules.general.chrono_placement_anim);
@@ -1185,12 +1189,14 @@ TurretAnim=S
 ",
         );
         let rules = RuleSet::from_ini(&ini).expect("rules");
-        assert!(rules.anim_type_names.contains("S"), "fixture anim registers");
+        assert!(
+            rules.anim_type_names.contains("S"),
+            "fixture anim registers"
+        );
         let roots = tolerant_anim_class_roots(&rules);
         assert!(
             roots.iter().any(|name| name == "S"),
             "the rules TurretAnim name joins the roots: {roots:?}"
         );
     }
-
 }

@@ -2358,6 +2358,12 @@ pub struct GeneralRules {
     pub ion_blast_anim: String,
     /// General IonBeam, Rules+29C: ctor665A24=null, reader66DCDD..66DD0D.
     pub ion_beam_anim: String,
+    /// `[AudioVisual] Dig=` (`RulesClass+0x294`), the animation the Tunnel
+    /// locomotor constructs at its four dig/dig-out transitions
+    /// (`0x00728F6F`, `0x00729360`, `0x00729459`, `0x00729A2F`). The
+    /// constructor default is a null type (`0x00665A10`) and retail
+    /// `rulesmd.ini` leaves the key unset, so nothing is constructed there.
+    pub dig_anim: String,
     /// CombatDamage IonCannonDamage, Rules+490: ctor665CD4=700;
     /// ReadInt5276D0/current default at66BBF8..66BC12, unclamped.
     pub ion_cannon_damage: i32,
@@ -3192,6 +3198,7 @@ impl Default for GeneralRules {
             dominator_damage: 50,
             ion_blast_anim: String::new(),
             ion_beam_anim: String::new(),
+            dig_anim: String::new(),
             ion_cannon_damage: 700,
             spotlight: SpotlightRules::default(),
             force_shield_radius: 10,
@@ -4576,6 +4583,7 @@ impl GeneralRules {
             // The native Process state supplies all four IonBlast inputs.
             ion_blast_anim: defaults.ion_blast_anim.clone(),
             ion_beam_anim: defaults.ion_beam_anim.clone(),
+            dig_anim: defaults.dig_anim.clone(),
             ion_cannon_damage: defaults.ion_cannon_damage,
             spotlight: defaults.spotlight,
             force_shield_radius: general.read_int("ForceShieldRadius", 10),
@@ -5602,6 +5610,7 @@ impl RuleSet {
         rules.general.ion_cannon_damage = damage;
         rules.general.ion_blast_anim = blast.to_string();
         rules.general.ion_beam_anim = beam.to_string();
+        rules.general.dig_anim = processed.dig_anim().to_string();
         let (ambient_rate, ambient_step) = processed.ambient_change_inputs();
         (
             rules.general.ambient_change_rate_nonzero,
@@ -9711,6 +9720,7 @@ impl RuleSet {
             .hash(&mut hasher);
         self.general.ion_blast_anim.hash(&mut hasher);
         self.general.ion_beam_anim.hash(&mut hasher);
+        self.general.dig_anim.hash(&mut hasher);
         self.bridge_warheads.ion_cannon_name.hash(&mut hasher);
         #[cfg(feature = "phobos")]
         {

@@ -264,14 +264,17 @@ fn deck_coords(sim: &Simulation, (x, y): (u16, u16)) -> [i32; 3] {
     coords
 }
 
-/// `AnimClass::AnimClass @ 0x00421EA0` with the superweapons' row `(type,
-/// &coord, delay 0, loopCount 1, drawFlags 0x600, zAdjust 0, reverse 0)` at
-/// a world coordinate (leptons) its caller computed: the invoke anims above,
-/// the Chronosphere's (`0x006CB431`, `0x006CC5C5..0x006CC674`), the Psychic
-/// Dominator's (`0x0053AEE5`, `0x0053B139`) and the Lightning Storm's clouds,
-/// bolts and debris (`0x0053A237`, `0x0053A387`, `0x0053A68B`). An empty name
-/// or an art type that never bound constructs nothing.
-pub(super) fn spawn_super_anim(
+/// `AnimClass::AnimClass @ 0x00421EA0` with the `(type, &coord, delay 0,
+/// loopCount 1, drawFlags 0x600, zAdjust 0, reverse 0)` row at a world
+/// coordinate (leptons) its caller computed: the superweapons' invoke anims
+/// above, the Chronosphere's (`0x006CB431`, `0x006CC5C5..0x006CC674`), the
+/// Psychic Dominator's (`0x0053AEE5`, `0x0053B139`), the Lightning Storm's
+/// clouds, bolts and debris (`0x0053A237`, `0x0053A387`, `0x0053A68B`) and the
+/// Tunnel locomotor's four dig/dig-out transitions (`0x00728F6F`,
+/// `0x00729360`, `0x00729459`, `0x00729A2F` — all the same row and the
+/// `RulesClass+0x294` / `[AudioVisual] Dig=` type). An empty name or an art
+/// type that never bound constructs nothing.
+pub(crate) fn spawn_super_anim(
     sim: &mut Simulation,
     rules: &RuleSet,
     anim_name: &str,
