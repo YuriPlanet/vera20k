@@ -449,9 +449,8 @@ const ONLINE_STATUS_INSET: i32 = 10;
 
 /// `online` is VERA's online lobby on Red Alert 2's box art: no clan or
 /// observer box (the lobby's own Observe box still seats an observer); Room
-/// name, Password, Limit Screen Resolution, Max players, Allow spectators,
-/// Ranked game and Watching in the field column clear of the art's Tesla
-/// Trooper, and the status line inside the frame.
+/// name, Password and Max players share a field column to the right of the
+/// Tesla Trooper, with four checkbox rows below.
 pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> WolCreateGameLayout {
     let dialog = menu_box(screen_w, screen_h);
     let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
@@ -478,35 +477,41 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
     if !online {
         return layout;
     }
-    // Room name and Password, then the five option rows at the native
-    // 17-unit pitch, and the buttons under the last of them.
-    let row = |y| child(133, y, 140, 12);
-    let caption = |y| child(11, y + 1, 113, 12);
-    let password_label = caption(58);
-    let password = row(58);
-    let check = |y| RectPx::new(password.x, child(34, y, 234, 14).y, password.w, clan.h);
-    let watching = check(147);
+    // Use the shell's 210x21 value-plaque trackbar for the field width.
+    let row = |y, h| RectPx::new(layout.password.x, dialog.y + y, 210, h);
+    let field = |index| row(44 + 32 * index, 21);
+    let check = |index| row(151 + 26 * index, 18);
+    let caption = |rect: RectPx| RectPx {
+        y: rect.y,
+        h: rect.h,
+        ..layout.password_label
+    };
+    let name = field(0);
+    let password = field(1);
+    let players = field(2);
+    let watching = check(3);
+    let field_right = name.x + name.w;
+    let margin = dialog.x + dialog.w - field_right;
+    let ok = RectPx::new(dialog.x + margin, dialog.y + 272, layout.ok.w, layout.ok.h);
     WolCreateGameLayout {
-        password_label,
-        password: new_edit_window(password),
+        password_label: caption(password),
+        password,
         clan: None,
         observe: None,
-        limit: check(79),
-        room: Some(room_limits_layout(
-            password_label,
-            password,
-            child(34, 96, 234, 14).y,
-            check(113),
-        )),
-        name: Some((caption(40), new_edit_window(row(40)))),
-        ranked: Some(check(130)),
-        // Its caption beside the box, as Max players' beside its trackbar.
-        watching: Some((
-            RectPx::new(password_label.x, watching.y, password_label.w, watching.h),
-            watching,
-        )),
-        ok: child(33, 169, 83, 15),
-        cancel: child(184, 169, 83, 15),
+        limit: check(0),
+        room: Some(crate::ui::room_limits::RoomLimitsLayout {
+            players_label: caption(players),
+            players,
+            spectators: check(1),
+        }),
+        name: Some((caption(name), name)),
+        ranked: Some(check(2)),
+        watching: Some((caption(watching), watching)),
+        ok,
+        cancel: RectPx {
+            x: field_right - ok.w,
+            ..ok
+        },
         status: RectPx::new(
             dialog.x + ONLINE_STATUS_INSET,
             status.y,
@@ -567,9 +572,8 @@ pub struct WolAccountFormLayout {
     pub status: RectPx,
 }
 
-/// `count` fields (at most four) 18 units apart, centred on the Create Game
-/// box's Room name and Password rows. The box is centred on `area`, in the
-/// shell's authored 800x600 units.
+/// Up to four fields, 18 units apart, centred above the buttons. The box
+/// is centred on `area` in the shell's authored 800x600 units.
 pub fn wol_account_form_layout(area: RectPx, count: usize) -> WolAccountFormLayout {
     let dialog = centered_modal_dialog_in(area, MESSAGE_BOX_W, MESSAGE_BOX_H);
     let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
@@ -703,27 +707,20 @@ pub fn lan_create_game_layout(screen_w: i32, screen_h: i32) -> LanCreateGameLayo
     let native = wol_create_game_layout(screen_w, screen_h, false);
     let field = modal_child(native.dialog, geom::child_window(133, 47, 140, 12));
     let clan = native.clan.expect("the native box has its clan row");
+    let players = RectPx::new(field.x, field.y, 129, 22);
     LanCreateGameLayout {
         dialog: native.dialog,
-        room: room_limits_layout(native.password_label, field, field.y, clan),
+        room: crate::ui::room_limits::RoomLimitsLayout {
+            players_label: RectPx {
+                y: players.y,
+                h: players.h,
+                ..native.password_label
+            },
+            players,
+            spectators: RectPx::new(field.x, clan.y, field.w, clan.h),
+        },
         ok: native.ok,
         cancel: native.cancel,
-    }
-}
-
-/// Max players beside its caption at `players_y`, the trackbar under `field`'s
-/// left edge, and Allow spectators in `checkbox_row` from the same edge.
-fn room_limits_layout(
-    caption: RectPx,
-    field: RectPx,
-    players_y: i32,
-    checkbox_row: RectPx,
-) -> crate::ui::room_limits::RoomLimitsLayout {
-    let players = RectPx::new(field.x, players_y, 129, 22);
-    crate::ui::room_limits::RoomLimitsLayout {
-        players_label: RectPx::new(caption.x, players.y, caption.w, players.h),
-        players,
-        spectators: RectPx::new(field.x, checkbox_row.y, field.w, checkbox_row.h),
     }
 }
 
@@ -1276,10 +1273,10 @@ mod tests {
         let frame = create.dialog;
         let (_, first) = create.fields[0];
         let (_, last) = create.fields[3];
-        // The Create Game box's Room name row, and the last above OK.
+        // Account fields start in the same column as the Create Game fields.
         assert_eq!(
-            first,
-            wol_create_game_layout(800, 600, true).name.unwrap().1
+            first.x,
+            wol_create_game_layout(800, 600, true).name.unwrap().1.x
         );
         assert!(last.y + last.h < create.ok.y);
         assert!(create.status.y >= create.ok.y + create.ok.h);
@@ -1301,16 +1298,23 @@ mod tests {
         };
         assert!(inside(online.status), "{:?}", online.status);
         assert!(inside(online.limit), "{:?}", online.limit);
-        // Limit sits between the password field and the buttons.
-        assert!(online.limit.y >= online.password.y + online.password.h);
-        assert!(online.limit.y + online.limit.h <= online.ok.y);
+        let (_, name) = online.name.unwrap();
+        let room = online.room.unwrap();
+        assert_eq!((room.players.x, room.players.w), (name.x, name.w));
+        assert_eq!(
+            online.password.y - name.y,
+            room.players.y - online.password.y
+        );
+        assert!(online.limit.y >= room.players.y + room.players.h);
         // Ranked game sits below Allow spectators and Watching below it,
         // above the buttons, which stay above the status line.
         let ranked = online.ranked.unwrap();
-        let spectators = online.room.unwrap().spectators;
+        let spectators = room.spectators;
         let (caption, watching) = online.watching.unwrap();
         assert!(inside(ranked), "{ranked:?}");
         assert!(inside(caption) && inside(watching), "{watching:?}");
+        assert_eq!(spectators.y - online.limit.y, ranked.y - spectators.y);
+        assert_eq!(watching.y - ranked.y, ranked.y - spectators.y);
         assert!(ranked.y >= spectators.y + spectators.h);
         assert!(watching.y >= ranked.y + ranked.h);
         assert!(caption.x + caption.w <= watching.x);

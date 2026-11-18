@@ -2217,14 +2217,7 @@ impl WolCapture {
                         "the modern 0xC3 has no Max players or Allow spectators"
                     );
                     self.event(frame, "0xC3 opened (modern)");
-                    // The help under Limit Screen Resolution, moved to the
-                    // clan row.
-                    let (width, height) = (
-                        state.renderer.gpu.config.width as i32,
-                        state.renderer.gpu.config.height as i32,
-                    );
-                    let create =
-                        crate::ui::shell::modal::wol_create_game_layout(width, height, true);
+                    let create = crate::app::shell_wol::lobby::create_layout(state);
                     set_window_pointer_to_rect_center(state, create.limit);
                     App::handle_wol_mouse_move(state);
                     ensure!(
