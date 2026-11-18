@@ -70,15 +70,18 @@ const LANDMARKS: [&str; 8] = [
     "CAWSH12", "CAPARS11", "CAEURO05", "CASTL04", "CAWASH19", "CAWASH14", "CAWASH15", "CAMEX01",
 ];
 /// `Derelicts=` where absent: the combat buildings the Advanced Derelicts
-/// slider stands neutral and unpowered. Allied then Soviet of each kind.
-const DERELICTS: [&str; 14] = [
-    "GARAD", "NARAD", // radar
-    "CALAB", "NALAB", // battle lab
-    "GAREF", "NAREF", // ore refinery
-    "GAWEAP", "NAWEAP", // war factory
-    "GABARR", "NABARR", // barracks
-    "GAPOWR", "NAPOWR", // power plant
-    "GACNST", "NACNST", // construction yard
+/// slider stands neutral and unpowered. Allied, then Soviet, then Yuri of
+/// each kind (`NAPSIS` is Yuri's psychic sensor, his radar).
+const DERELICTS: [&str; 23] = [
+    "GARAD", "NARAD", "NAPSIS", // radar
+    "CALAB", "NALAB", "YATECH", // battle lab
+    "GAREF", "NAREF", "YAREFN", // ore refinery
+    "GAWEAP", "NAWEAP", "YAWEAP", // war factory
+    "GABARR", "NABARR", "YABRCK", // barracks
+    "GAPOWR", "NAPOWR", "YAPOWR", // power plant
+    "GACNST", "NACNST", "YACNST", // construction yard
+    "YAYARD", // naval shipyard
+    "YAGRND", // grinder
 ];
 /// The ReadString buffer of a `[Extras]` value, as Ares gives `[Urban]`.
 const VALUE_CAPACITY: usize = 0x800;

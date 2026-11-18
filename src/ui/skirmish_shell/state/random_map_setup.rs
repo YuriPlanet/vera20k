@@ -277,23 +277,43 @@ impl RandomMapPreset {
         // presets predate those sliders and leave them at their default.
         Some(match self {
             Self::Duel => (
-                2, 3, 1, 1, None,
+                2,
+                3,
+                1,
+                1,
+                None,
                 [10, 25, 0, 40, 60, 50, 80, 0, 0, 0, 0, 0, 0],
             ),
             Self::Brawl => (
-                30, 3, 7, 2, None,
+                30,
+                3,
+                7,
+                2,
+                None,
                 [5, 20, 0, 30, 70, 50, 90, 0, 0, 0, 0, 0, 0],
             ),
             Self::CityWar => (
-                4, 3, 2, 1, Some(2),
+                4,
+                3,
+                2,
+                1,
+                Some(2),
                 [5, 10, 100, 20, 50, 60, 90, 0, 0, 0, 0, 0, 0],
             ),
             Self::Islands => (
-                4, 0, 2, 2, Some(0),
+                4,
+                0,
+                2,
+                2,
+                Some(0),
                 [60, 20, 0, 50, 60, 50, 50, 0, 0, 0, 0, 0, 0],
             ),
             Self::Teams => (
-                8, 2, 4, 2, None,
+                8,
+                2,
+                4,
+                2,
+                None,
                 [35, 25, 0, 40, 60, 50, 70, 0, 0, 0, 0, 0, 0],
             ),
             Self::Mine(_) => return None,
@@ -1225,10 +1245,16 @@ mod tests {
         assert_eq!(dialog.advanced_page, 0);
         assert!(dialog.set_advanced_scroll(99));
         assert_eq!(dialog.advanced_page, AdvancedField::PAGE_COUNT - 1);
-        assert!(!dialog.set_advanced_scroll(99), "no change at the last page");
+        assert!(
+            !dialog.set_advanced_scroll(99),
+            "no change at the last page"
+        );
         dialog.advanced_scroll_hold = true;
         dialog.toggle_advanced();
-        assert_eq!((dialog.advanced_page, dialog.advanced_scroll_hold), (0, false));
+        assert_eq!(
+            (dialog.advanced_page, dialog.advanced_scroll_hold),
+            (0, false)
+        );
     }
 
     /// A row past the view's last.

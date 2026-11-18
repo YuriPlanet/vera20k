@@ -623,7 +623,7 @@ mod tests {
             local_rect: [2, 5, int(&input["gen"][0]), int(&input["gen"][1])],
             stride: 33,
             cliff_back_impassability: 2,
-                tech_amount: 0,
+            tech_amount: 0,
         };
         (grid, scratch, types, regions, args)
     }

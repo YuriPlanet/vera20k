@@ -302,18 +302,12 @@ pub fn status_help_key_for_random_map_setup(control: RandomMapSetupControl) -> &
         C::Advanced(super::super::layout::AdvancedField::Derelicts) => {
             "VERA:RandomMapDerelictsHelp"
         }
-        C::Advanced(super::super::layout::AdvancedField::Damage) => {
-            "VERA:RandomMapDamageHelp"
-        }
+        C::Advanced(super::super::layout::AdvancedField::Damage) => "VERA:RandomMapDamageHelp",
         C::Advanced(super::super::layout::AdvancedField::Civilians) => {
             "VERA:RandomMapCiviliansHelp"
         }
-        C::Advanced(super::super::layout::AdvancedField::Animals) => {
-            "VERA:RandomMapAnimalsHelp"
-        }
-        C::Advanced(super::super::layout::AdvancedField::Wild) => {
-            "VERA:RandomMapWildHelp"
-        }
+        C::Advanced(super::super::layout::AdvancedField::Animals) => "VERA:RandomMapAnimalsHelp",
+        C::Advanced(super::super::layout::AdvancedField::Wild) => "VERA:RandomMapWildHelp",
         C::Advanced(_) => "VERA:RandomMapAdvancedSliderHelp",
         // Ares Game_DialogFunc_Subtext_Load (Ares.dll 10075EC0, hook 0x60411B).
         // The box is hit-tested only when Ares.dll is loaded.

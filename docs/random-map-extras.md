@@ -11,13 +11,13 @@ and every player's game builds the same map from them.
 
 ## Advanced — building sliders
 
-Three VERA sliders sit at the bottom of the Advanced scroll range. All are
+Three VERA sliders open the Advanced scroll range after the original seven. All are
 0..100 and default to 0, which leaves the original generator's behaviour untouched:
 
 | Slider | What it does |
 |---|---|
 | Tech Buildings | 0 keeps the original random count of neutral tech buildings; higher seats more, up to 40. |
-| Derelicts | Stands neutral, unpowered combat buildings — radar, battle lab, refinery, war factory, barracks, power plant and construction yard — on open ground away from the starts. |
+| Derelicts | Stands neutral, unpowered combat buildings — radar, battle lab, refinery, war factory, barracks, power plant and construction yard, for the Allied, Soviet and Yuri sides — on open ground away from the starts. |
 | Damage | Randomly damages every neutral building across the whole map. Higher values wreck more buildings and leave them at lower health, for a war-torn city. |
 
 Derelicts are always unpowered and damaged. Damage applies to tech buildings, towns, farms and
@@ -25,18 +25,34 @@ derelicts alike; where it overlaps the War Damage Extra, the worse health wins. 
 saved in the `.SED` (`VeraTechBuildings`, `VeraDerelicts`, `VeraDamage`) and ride in the share
 code; a code from before they existed reads back with all three at 0.
 
+Every neutral building is written `Powered=0`, tech buildings and towns included. **Neutral** is a
+house of its own, so a live power plant there lit a grid of its own, and the Paris tower's
+`Power=-100` `EiffelBolt` charged and fired on the players. Powered down, the neutral map is
+inert: the plants make no power, the armed buildings keep their weapons cold, and a player who
+captures one gets it back online under his own grid. Buildings without a `Power=` or `Powered=`
+line read the flag as no difference.
+
 ## Advanced — neutral foot sliders
 
 Three more VERA sliders follow the building sliders in the Advanced scroll range. All are 0..100
-and default to 0, which adds nothing. Each scatters foot-sized units over clear open ground away
-from the starts, on the **Neutral** house, from a random stream of its own — so moving one slider
-never changes what another one places, nor the land the seed made.
+and default to 0, which adds nothing. Each scatters foot-sized units over clear open ground — and,
+for the types the rules say stand only on water, over open sea — away from the starts, on the
+**Neutral** house, from a random stream of its own, so moving one slider never changes what
+another one places, nor the land the seed made.
 
 | Slider | What it does |
 |---|---|
 | Civilians | Adds civilian infantry and civilian vehicles (`Civilian=yes`, or a `TechLevel=-1` vehicle that cannot start in multiplayer — the buses, taxis and trucks a town already uses). 0 keeps only the original town foot traffic. |
-| Animals | Scatters the rules' `Name=Animal …` units: cows, bears, monkeys, camels and the dinosaurs. |
-| Neutral Defenders | Leaves player-buildable units neutral and hostile — infantry and tanks a human could build (E1, GI, tanks, …), picked from `TechLevel>=0`, `AllowedToStartInMultiplayer=yes` types that carry a weapon, so no MCV or miner stands around unarmed. Good for guarded ruins and roaming patrols. |
+| Animals | Scatters the rules' `Name=Animal …` units: cows, bears, monkeys, camels and the dinosaurs. Water-only kinds, such as the Bront (`MovementZone=Water`), go into the sea. |
+| Neutral Defenders | Leaves player-buildable units neutral and hostile — the infantry, tanks and navy a human could build (E1, GI, the tanks, destroyers, submarines, …). Good for guarded ruins, roaming patrols and a contested sea. |
+
+A type is picked for the Neutral Defenders from `TechLevel>=0`, an owner, a construction
+prerequisite and a weapon; the support and transport types a player can build are left out (the
+miners, the engineer, the spy, the MCV) and so are the choppers, which need an airfield pad.
+`AllowedToStartInMultiplayer` is deliberately not the test: retail rules mark 138 types `no`
+there — every navy hull, the Guardian GI and the tanks' heavier cousins among them — which used
+to narrow the slider to six basic infantry and tanks. Navy hulls and other water-only kinds go on
+the water, so a raised slider garrisons the sea as well as the land.
 
 The types are read from the rules, never hardcoded, so a mod gets its own civilians, animals and
 buildable units for free: only types the mod defines can appear. Infantry keep their infantry
@@ -83,7 +99,7 @@ The game's own copy has no `[Extras]`, so the defaults below apply:
 Farms=CAFARM01,CAFRMA,CABARN02,CATS01,CAFARM02,CAFRMB,CAWT01
 Landmarks=CAWSH12,CAPARS11,CAEURO05,CASTL04,CAWASH19,CAWASH14,CAWASH15,CAMEX01
 FairTech=CAOILD          ; one of [AI] NeutralTechBuildings=
-Derelicts=GARAD,NARAD,CALAB,NALAB,GAREF,NAREF,GAWEAP,NAWEAP,GABARR,NABARR,GAPOWR,NAPOWR,GACNST,NACNST
+Derelicts=GARAD,NARAD,NAPSIS,CALAB,NALAB,YATECH,GAREF,NAREF,YAREFN,GAWEAP,NAWEAP,YAWEAP,GABARR,NABARR,YABRCK,GAPOWR,NAPOWR,YAPOWR,GACNST,NACNST,YACNST,YAYARD,YAGRND
 FarmFence=CAFNCW         ; an overlay
 TownFence=CAFNCB         ; an overlay
 GoldenHour=90,125,98,55  ; ambient light, red, green, blue, in percent

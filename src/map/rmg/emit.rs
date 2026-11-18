@@ -168,6 +168,14 @@ pub fn populate(
 
 /// A generated neutral object at full health: `Put` at the cell centre,
 /// then Strength (`0x005A6510`, `0x005A6920`, the tech and hut placers).
+///
+/// Every neutral structure is emitted powered down (`Powered=0`). Neutral is
+/// a house of its own, so a live power plant there would light a grid of its
+/// own — and the Paris tower's `Power=-100` `EiffelBolt` would charge and
+/// fire on the players. Powered down, the neutral map is inert: the plants
+/// make no power, the armed ones keep their weapons cold, and a player who
+/// captures one gets it back online under his own grid. Buildings without a
+/// `Power=`/`Powered=` line read the flag as no difference.
 fn neutral_entity(name: &str, category: EntityCategory, cell: (i16, i16), facing: u8) -> MapEntity {
     MapEntity {
         owner: NEUTRAL_OWNER.to_string(),
@@ -188,7 +196,7 @@ fn neutral_entity(name: &str, category: EntityCategory, cell: (i16, i16), facing
         structure_columns: Default::default(),
         structure_ai_sellable: false,
         structure_ai_repairable: false,
-        structure_online: true,
+        structure_online: false,
         trigger_tag: None,
     }
 }

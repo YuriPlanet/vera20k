@@ -1812,12 +1812,8 @@ impl App {
                     x,
                     y,
                 ) {
-                    Some(DropdownScrollbarPart::UpArrow) => {
-                        modal.scroll_advanced(-1)
-                    }
-                    Some(DropdownScrollbarPart::DownArrow) => {
-                        modal.scroll_advanced(1)
-                    }
+                    Some(DropdownScrollbarPart::UpArrow) => modal.scroll_advanced(-1),
+                    Some(DropdownScrollbarPart::DownArrow) => modal.scroll_advanced(1),
                     Some(DropdownScrollbarPart::Thumb | DropdownScrollbarPart::Track) => {
                         modal.advanced_scroll_hold = true;
                         let page = AdvancedField::advanced_scrollbar_page_at_pointer(
@@ -1900,7 +1896,13 @@ impl App {
             });
         if !mouse_held {
             let help = crate::ui::skirmish_shell::random_map_setup_control_at_view(
-                &layout, x, y, advanced, extras, ares, advanced_page,
+                &layout,
+                x,
+                y,
+                advanced,
+                extras,
+                ares,
+                advanced_page,
             )
             .map(|control| {
                 // VERA: an Extras row's help is its entry's, not the row's.
@@ -3600,12 +3602,67 @@ mod tests {
             "the exported map must carry unpowered, damaged buildings"
         );
 
+        // Every neutral structure is powered down: a live plant would light a
+        // Neutral grid of its own and the Paris tower's `Power=-100`
+        // `EiffelBolt` would charge and fire on the players.
+        assert!(
+            read.entities
+                .iter()
+                .filter(|e| e.category == crate::map::entities::EntityCategory::Structure)
+                .all(|e| !e.structure_online),
+            "every neutral structure is powered down"
+        );
+
+        // The Derelicts list covers Yuri's side too, not just Allied and
+        // Soviet: at least one Yuri combat building reaches the map.
+        let yuri = [
+            "YACNST", "YAPOWR", "YABRCK", "YAREFN", "YAWEAP", "NAPSIS", "YATECH", "YAYARD",
+            "YAGRND",
+        ];
+        let yuri_placed: Vec<&str> = read
+            .entities
+            .iter()
+            .filter(|e| yuri.contains(&e.type_id.as_str()))
+            .map(|e| e.type_id.as_str())
+            .collect();
+        assert!(
+            !yuri_placed.is_empty(),
+            "the Derelicts slider stands Yuri's combat buildings too"
+        );
+
+        // The water-only types (the Bront, the navy) reach the sea, so a
+        // raised Animals or Defenders slider fills the water as well.
+        let water_types: Vec<&str> = prepared
+            .settings
+            .vera_urban
+            .animals
+            .water_vehicles
+            .iter()
+            .chain(&prepared.settings.vera_urban.animals.water_infantry)
+            .chain(&prepared.settings.vera_urban.wild.water_vehicles)
+            .chain(&prepared.settings.vera_urban.wild.water_infantry)
+            .map(String::as_str)
+            .collect();
+        let sea_foots = read
+            .entities
+            .iter()
+            .filter(|e| water_types.contains(&e.type_id.as_str()))
+            .count();
+        assert!(
+            sea_foots > 0,
+            "the water types reach the sea: {water_types:?}"
+        );
+        println!("water types on the map: {sea_foots} of {water_types:?}");
+
         // The three neutral foot sliders place the rules' civilians, animals
         // and buildable units on Neutral; each list is nonempty on retail
         // rules and at least one of each must reach the exported map.
         let spawn = |list: &[String]| {
-            list.iter()
-                .any(|name| read.entities.iter().any(|e| e.type_id == *name && e.owner == "Neutral"))
+            list.iter().any(|name| {
+                read.entities
+                    .iter()
+                    .any(|e| e.type_id == *name && e.owner == "Neutral")
+            })
         };
         assert!(
             spawn(&prepared.settings.vera_urban.civilians.infantry)
@@ -3631,10 +3688,21 @@ mod tests {
                         || e.category == crate::map::entities::EntityCategory::Unit)
             })
             .count();
+        let mut kinds: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+        for entity in &read.entities {
+            if entity.owner == "Neutral"
+                && (entity.category == crate::map::entities::EntityCategory::Infantry
+                    || entity.category == crate::map::entities::EntityCategory::Unit)
+            {
+                *kinds.entry(entity.type_id.as_str()).or_default() += 1;
+            }
+        }
         println!(
             "exported {} with {derelicts} neutral derelicts and {neutral_foots} neutral foots",
             path.display()
         );
+        println!("neutral foot kinds ({}): {kinds:?}", kinds.len());
+        println!("Yuri derelicts: {yuri_placed:?}");
     }
 }
 

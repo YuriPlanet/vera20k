@@ -110,10 +110,10 @@ impl EmbellishArgs<'_> {
         ]
         .iter()
         .any(|&value| value != 0)
-        || self.derelict_amount != 0
-        || self.civilian_amount != 0
-        || self.animal_amount != 0
-        || self.wild_amount != 0
+            || self.derelict_amount != 0
+            || self.civilian_amount != 0
+            || self.animal_amount != 0
+            || self.wild_amount != 0
     }
 }
 
@@ -760,13 +760,91 @@ fn derelicts(
 }
 
 /// VERA extension: the three spawn sliders. Scatters foot-sized units over
-/// clear open ground away from the starts, each from its own RNG stream. The
-/// types come from the rules (a mod's own units are picked up automatically)
-/// and are emitted on Neutral through [`UrbanObject`], the same path the
-/// urban pass' civilians and the tech buildings use. Infantry and vehicles
-/// keep their registry category; no other stage's draw moves.
+/// clear open ground and, for the types the Rules say stand only on water,
+/// over open water — away from the starts, each slider from its own RNG
+/// stream. The types come from the rules (a mod's own units are picked up
+/// automatically) and are emitted on Neutral through [`UrbanObject`], the
+/// same path the urban pass' civilians and the tech buildings use. Infantry
+/// and vehicles keep their registry category; no other stage's draw moves.
 const SPAWN_SPACING: i32 = 3;
-const SPAWN_MAX: i32 = 60;
+const SPAWN_MAX: i32 = 120;
+/// Of a slider's spawns, one in this many stands on water (at least one),
+/// when the map has water and the slurry lists a type for it.
+const SPAWN_WATER_DIVISOR: i32 = 3;
+
+/// A cell a water-only unit may stand on: open sea (`WaterSet` tiles only —
+/// a shore piece is walkable beach, not water) with nothing on it.
+fn open_water(ctx: &FairCtx<'_>, cell: (i32, i32)) -> bool {
+    ctx.in_play(cell.0, cell.1)
+        && ctx
+            .grid
+            .get(cell.0, cell.1)
+            .is_some_and(|cell| ctx.ids.is_water(cell.tile) && !cell.occupied && !cell.start_marker)
+}
+
+/// Shuffle `order` in place, so a pass over it takes every kind once.
+fn shuffle(rng: &mut RmgRng, order: &mut [usize]) {
+    for index in (1..order.len()).rev() {
+        let other = rng.uniform(0, index as i32) as usize;
+        order.swap(index, other);
+    }
+}
+
+/// Stand up to `wanted` units of `kinds` on `open`, at least
+/// [`SPAWN_SPACING`] apart. The kinds are taken in shuffled turns, so a small
+/// budget still shows many of them rather than one type's run of luck.
+fn scatter(
+    ctx: &mut FairCtx<'_>,
+    open: &[(i32, i32)],
+    kinds: &[(String, EntityCategory)],
+    wanted: i32,
+    rng: &mut RmgRng,
+    out: &mut EmbellishOutput<'_>,
+    placed: &mut Vec<(i32, i32)>,
+) {
+    if wanted <= 0 || open.is_empty() || kinds.is_empty() {
+        return;
+    }
+    let mut order: Vec<usize> = (0..kinds.len()).collect();
+    shuffle(rng, &mut order);
+    let mut cursor = order.len();
+    let mut count = 0;
+    for _ in 0..wanted * 60 {
+        if count >= wanted {
+            break;
+        }
+        let cell = open[rng.uniform(0, open.len() as i32 - 1) as usize];
+        if !clear_of_starts(placed, cell, SPAWN_SPACING) {
+            continue;
+        }
+        if cursor == order.len() {
+            shuffle(rng, &mut order);
+            cursor = 0;
+        }
+        let (name, category) = &kinds[order[cursor]];
+        cursor += 1;
+        // A foot does not claim its cell for placement (towns put several on
+        // one tile), but marking it keeps two spawns off the same spot here.
+        ctx.grid.cell_native_mut(cell.0, cell.1).occupied = true;
+        let event = out
+            .trace
+            .push_discarded(RmgConstructionPhase::UrbanAreas, name.clone());
+        out.trace.mark_emitted(
+            event,
+            out.entity_base + out.objects.len(),
+            (cell.0 as u16, cell.1 as u16),
+        );
+        out.objects.push(UrbanObject {
+            name: name.clone(),
+            category: *category,
+            cell: (cell.0 as i16, cell.1 as i16),
+            facing: ((rng.uniform(0, 7) << 5) & 0xFF) as u8,
+            derelict: false,
+        });
+        placed.push(cell);
+        count += 1;
+    }
+}
 
 fn spawn_foots(
     ctx: &mut FairCtx<'_>,
@@ -781,62 +859,76 @@ fn spawn_foots(
         return;
     }
     // 0..100 -> a capped share of the map's open cells; small maps get fewer.
-    let wanted = ((amount.clamp(0, 100) * SPAWN_MAX / 100).min(play.len() as i32 / 120)).max(1);
-    let open: Vec<(i32, i32)> = play
+    let wanted = ((amount.clamp(0, 100) * SPAWN_MAX / 100).min(play.len() as i32 / 90)).max(1);
+    let land_open: Vec<(i32, i32)> = play
         .iter()
         .copied()
         .filter(|&cell| {
             free_ground(ctx, cell.0, cell.1) && clear_of_starts(starts, cell, START_CLEARANCE)
         })
         .collect();
-    if open.is_empty() {
-        return;
-    }
+    let water_open: Vec<(i32, i32)> = play
+        .iter()
+        .copied()
+        .filter(|&cell| open_water(ctx, cell) && clear_of_starts(starts, cell, START_CLEARANCE))
+        .collect();
+
+    let land: Vec<(String, EntityCategory)> = kinds
+        .infantry
+        .iter()
+        .map(|name| (name.clone(), EntityCategory::Infantry))
+        .chain(
+            kinds
+                .vehicles
+                .iter()
+                .map(|name| (name.clone(), EntityCategory::Unit)),
+        )
+        .collect();
+    let water: Vec<(String, EntityCategory)> = kinds
+        .water_infantry
+        .iter()
+        .map(|name| (name.clone(), EntityCategory::Infantry))
+        .chain(
+            kinds
+                .water_vehicles
+                .iter()
+                .map(|name| (name.clone(), EntityCategory::Unit)),
+        )
+        .collect();
+
+    // Water types get their share only where the map has water to hold them;
+    // a slider of land types alone fills the land as before.
+    let water_share = if water.is_empty() || water_open.is_empty() {
+        0
+    } else {
+        (wanted / SPAWN_WATER_DIVISOR).max(1)
+    };
+    let land_share = if land.is_empty() {
+        0
+    } else {
+        (wanted - water_share).max(0)
+    };
+
     let mut rng = RmgRng::new(seed);
     let mut placed: Vec<(i32, i32)> = Vec::new();
-    for _ in 0..wanted * 60 {
-        if placed.len() as i32 >= wanted {
-            break;
-        }
-        let cell = open[rng.uniform(0, open.len() as i32 - 1) as usize];
-        if !clear_of_starts(&placed, cell, SPAWN_SPACING) {
-            continue;
-        }
-        // Draw the type from one combined index so the odds follow the two
-        // registries' sizes; the category is whichever registry won.
-        let infantry = kinds.infantry.len();
-        let total = infantry + kinds.vehicles.len();
-        if total == 0 {
-            return;
-        }
-        let pick = rng.uniform(0, total as i32 - 1) as usize;
-        let (name, category) = if pick < infantry {
-            (&kinds.infantry[pick], EntityCategory::Infantry)
-        } else {
-            (&kinds.vehicles[pick - infantry], EntityCategory::Unit)
-        };
-        // A foot does not claim its cell for placement (towns put several on
-        // one tile), but marking it keeps two spawns off the same spot here.
-        ctx.grid
-            .cell_native_mut(cell.0, cell.1)
-            .occupied = true;
-        let event = out
-            .trace
-            .push_discarded(RmgConstructionPhase::UrbanAreas, name.clone());
-        out.trace.mark_emitted(
-            event,
-            out.entity_base + out.objects.len(),
-            (cell.0 as u16, cell.1 as u16),
-        );
-        out.objects.push(UrbanObject {
-            name: name.clone(),
-            category,
-            cell: (cell.0 as i16, cell.1 as i16),
-            facing: ((rng.uniform(0, 7) << 5) & 0xFF) as u8,
-            derelict: false,
-        });
-        placed.push(cell);
-    }
+    scatter(
+        ctx,
+        &land_open,
+        &land,
+        land_share,
+        &mut rng,
+        out,
+        &mut placed,
+    );
+    scatter(
+        ctx,
+        &water_open,
+        &water,
+        water_share,
+        &mut rng,
+        out,
+        &mut placed,
+    );
 }
 
 /// Fences: short runs of fence on a town's pavement along the sides of its

@@ -84,19 +84,37 @@ pub struct UrbanCatalog {
 
 /// The two foot registries a spawn slider draws from, kept apart because the
 /// map entity needs the category the Rules registry already decided.
+///
+/// The `water_` lists hold the units that can stand only on water
+/// (`SpeedType=Float`/`FloatBeach` or `MovementZone=Water`): the Bront and
+/// the navy. They go on the map's water, never on its ground, so a slider
+/// fills the sea as well as the land.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SpawnFoots {
     pub infantry: Vec<String>,
     pub vehicles: Vec<String>,
+    pub water_infantry: Vec<String>,
+    pub water_vehicles: Vec<String>,
 }
 
 impl SpawnFoots {
     pub fn is_empty(&self) -> bool {
-        self.infantry.is_empty() && self.vehicles.is_empty()
+        self.infantry.is_empty()
+            && self.vehicles.is_empty()
+            && self.water_infantry.is_empty()
+            && self.water_vehicles.is_empty()
     }
 
     pub fn len(&self) -> usize {
-        self.infantry.len() + self.vehicles.len()
+        self.infantry.len()
+            + self.vehicles.len()
+            + self.water_infantry.len()
+            + self.water_vehicles.len()
+    }
+
+    /// How many of the lists stand on water.
+    pub fn water_len(&self) -> usize {
+        self.water_infantry.len() + self.water_vehicles.len()
     }
 }
 

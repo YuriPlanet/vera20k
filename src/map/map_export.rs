@@ -302,10 +302,7 @@ mod tests {
             .collect();
         assert_eq!(
             powers,
-            [
-                ("GARAD".into(), 48, false),
-                ("CAPOWR".into(), 256, true),
-            ]
+            [("GARAD".into(), 48, false), ("CAPOWR".into(), 256, true),]
         );
     }
 }

@@ -959,7 +959,8 @@ pub(super) fn push_random_map_setup_modal_text_draws(
                 SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
                 scale.factor(),
             );
-            let value_rect = value_text_rect(layout.advanced_control_rects[field.page_row()], scale);
+            let value_rect =
+                value_text_rect(layout.advanced_control_rects[field.page_row()], scale);
             push_text_draw(
                 out,
                 state,

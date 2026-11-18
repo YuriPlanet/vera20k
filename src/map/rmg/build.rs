@@ -463,7 +463,9 @@ fn apply_derelicts_and_damage(
                 continue;
             }
             if rng.uniform(0, 99) < share {
-                entity.health = entity.health.min(rng.uniform(RUINED_MIN, ceiling.max(RUINED_MIN)));
+                entity.health = entity
+                    .health
+                    .min(rng.uniform(RUINED_MIN, ceiling.max(RUINED_MIN)));
             }
         }
     }
@@ -1332,7 +1334,10 @@ mod tests {
             .iter()
             .filter(|e| e.type_id == "GARAD" || e.type_id == "GAREF" || e.type_id == "GAWEAP")
             .collect();
-        assert!(!derelicts.is_empty(), "the Derelicts slider stands buildings");
+        assert!(
+            !derelicts.is_empty(),
+            "the Derelicts slider stands buildings"
+        );
         assert!(
             derelicts.iter().all(|e| !e.structure_online),
             "every derelict is unpowered"
@@ -1346,7 +1351,9 @@ mod tests {
             map.map_file
                 .entities
                 .iter()
-                .filter(|e| e.category == crate::map::entities::EntityCategory::Structure && e.health < 256)
+                .filter(|e| {
+                    e.category == crate::map::entities::EntityCategory::Structure && e.health < 256
+                })
                 .count()
         };
         assert!(
@@ -1381,14 +1388,17 @@ mod tests {
                 civilians: SpawnFoots {
                     infantry: vec!["CIV1".into()],
                     vehicles: vec!["BUS".into()],
+                    ..Default::default()
                 },
                 animals: SpawnFoots {
                     infantry: vec!["COW".into()],
                     vehicles: vec!["DNOA".into()],
+                    ..Default::default()
                 },
                 wild: SpawnFoots {
                     infantry: vec!["E1".into(), "GI".into()],
                     vehicles: vec!["MTNK".into()],
+                    ..Default::default()
                 },
                 ..Default::default()
             },
@@ -1443,6 +1453,70 @@ mod tests {
                 .entities
                 .len()
         );
+    }
+
+    /// VERA extension: water-only types (`SpeedType=Float` or
+    /// `MovementZone=Water`, as the Bront and every navy hull are) stand on
+    /// the map's water; the land types keep to its land. That is what makes a
+    /// raised Animals or Defenders slider fill the sea too.
+    #[test]
+    fn water_types_spawn_on_water_and_land_types_on_land() {
+        use crate::map::rmg::phases::urban_areas::{SpawnFoots, UrbanCatalog};
+        let blocks = one_by_one();
+        let resolved = resolved();
+        let objects = GenerationObjects::tech(&[], false);
+        let settings = RmgSettings {
+            vera_urban: UrbanCatalog {
+                animals: SpawnFoots {
+                    water_vehicles: vec!["DNOB".into()],
+                    ..Default::default()
+                },
+                wild: SpawnFoots {
+                    infantry: vec!["E1".into()],
+                    water_vehicles: vec!["DEST".into()],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut steered = options(1, 0);
+        steered.animal_amount = 100;
+        steered.wild_amount = 100;
+        let map = generate_map(&steered, &settings, &resolved, &blocks, &objects);
+
+        let water_at = |x: u16, y: u16| {
+            map.map_file
+                .cells
+                .iter()
+                .find(|cell| cell.rx == x && cell.ry == y)
+                .is_some_and(|cell| resolved.ids.is_water(cell.tile_index))
+        };
+        let (mut sea, mut land) = (0, 0);
+        for entity in &map.map_file.entities {
+            let here = water_at(entity.cell_x, entity.cell_y);
+            match entity.type_id.as_str() {
+                "DNOB" | "DEST" => {
+                    assert!(
+                        here,
+                        "{} stands on land at {},{}",
+                        entity.type_id, entity.cell_x, entity.cell_y
+                    );
+                    sea += 1;
+                }
+                "E1" => {
+                    assert!(
+                        !here,
+                        "E1 stands on water at {},{}",
+                        entity.cell_x, entity.cell_y
+                    );
+                    land += 1;
+                }
+                _ => {}
+            }
+        }
+        assert!(sea > 0, "the water types reach the sea");
+        assert!(land > 0, "the land types stay on land");
     }
 
     /// VERA extension: an ore variant redraws the ore fields: the starts stay

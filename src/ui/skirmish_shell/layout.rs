@@ -1304,12 +1304,10 @@ pub fn random_map_setup_control_at_view(
         {
             return Some(RandomMapSetupControl::ExtrasRow(field.row()));
         }
-    } else if let Some(field) = AdvancedField::ALL
-        .into_iter()
-        .find(|field| {
-            field.page() == advanced_page && layout.advanced_control_rects[field.page_row()].contains(x, y)
-        })
-    {
+    } else if let Some(field) = AdvancedField::ALL.into_iter().find(|field| {
+        field.page() == advanced_page
+            && layout.advanced_control_rects[field.page_row()].contains(x, y)
+    }) {
         return Some(RandomMapSetupControl::Advanced(field));
     }
     // Everything but the option rows hit-tests as in the basic view; Ares'
