@@ -43,6 +43,7 @@ pub mod mix_hash;
 mod numbered_mod_resources;
 pub mod pal_file;
 pub mod pcx_file;
+pub mod picture_file;
 pub mod shp_decode;
 pub mod shp_file;
 pub mod tmp_decode;

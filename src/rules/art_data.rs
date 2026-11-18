@@ -66,12 +66,60 @@ impl FactoryDoorArt {
     }
 }
 
+/// VERA-only, experimental (`docs/picture-model-art.md`): an art section's
+/// `Picture=` and `PictureSize=`. A section with one draws and counts its
+/// frames from the picture and never opens its SHP.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PictureDecl {
+    /// `Picture=`: the PNG or APNG file name as written.
+    pub file: String,
+    /// `PictureSize=W,H`: the frame canvas in game pixels. None takes the
+    /// picture's own size (1x art).
+    pub size: Option<[i32; 2]>,
+}
+
+/// What the simulation takes from a declared picture where it takes an SHP
+/// header's words ([`ArtRegistry::picture_header`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PictureFacts {
+    /// The frame count, shadow frames included (header `+6`).
+    pub frames: i32,
+    /// The frame canvas in game pixels (header `+2`, `+4`).
+    pub size: [i32; 2],
+}
+
+/// The largest `PictureSize=` side.
+const PICTURE_SIZE_MAX: i32 = 4096;
+
+/// `section`'s [`PictureDecl`], if it declares `Picture=`.
+fn parse_picture_decl(section_name: &str, section: &IniSection) -> Option<PictureDecl> {
+    let file = section.read_name("Picture", 0x104)?.to_owned();
+    let size = section.read_name("PictureSize", 0x40).and_then(|_| {
+        let size = section
+            .read_int_fields_complete::<2>("PictureSize", 0x40)
+            .filter(|size| {
+                size.iter()
+                    .all(|side| (1..=PICTURE_SIZE_MAX).contains(side))
+            });
+        if size.is_none() {
+            log::warn!(
+                "[{section_name}] PictureSize= needs two sizes from 1 to {PICTURE_SIZE_MAX}; \
+                 the picture's own size is used"
+            );
+        }
+        size
+    });
+    Some(PictureDecl { file, size })
+}
+
 /// Per-object art configuration parsed from an art.ini section.
 #[derive(Debug, Clone)]
 pub struct ArtEntry {
     /// Image filename override (from art.ini `Image=` key).
     /// None means use the section name as the filename base.
     pub image: Option<String>,
+    /// VERA-only, experimental: `Picture=` and `PictureSize=`.
+    pub picture: Option<PictureDecl>,
     /// Sidebar cameo/image override from `Cameo=`.
     pub cameo: Option<String>,
     /// Alternate sidebar cameo/image override from `AltCameo=`.
@@ -1464,6 +1512,7 @@ impl ArtRegistry {
             // (`0x0045F945`, `char[64]`), TechnoType art `Cameo=`/`AltCameo=`
             // (`0x00716C9C`, `0x00716D3F`, `char[256]`).
             let image: Option<String> = section.read_name("Image", 0x40).map(str::to_owned);
+            let picture = parse_picture_decl(section_name, section);
             let cameo: Option<String> = section.read_name("Cameo", 0x100).map(str::to_owned);
             let alt_cameo: Option<String> = section.read_name("AltCameo", 0x100).map(str::to_owned);
             let cameo_pcx = section.read_ares_pcx_filename("CameoPCX");
@@ -1645,6 +1694,7 @@ impl ArtRegistry {
                 section_name.to_owned(),
                 ArtEntry {
                     image,
+                    picture,
                     cameo,
                     alt_cameo,
                     cameo_pcx,
@@ -2166,6 +2216,12 @@ impl ArtRegistry {
         theater_ext: &str,
         theater_name: &str,
     ) {
+        if config.art_body_read
+            && let Some(decl) = self.get(name).and_then(|entry| entry.picture.clone())
+        {
+            self.bind_one_anim_picture(name, config, &decl, asset_manager, theater_name);
+            return;
+        }
         let image_id = self.resolve_anim_image_id(name);
         let candidates = effect_shp_candidates(
             crate::rules::art_data::EffectImageKind::Animation,
@@ -2290,6 +2346,119 @@ impl ArtRegistry {
         } else {
             self.anim_folder_files.insert(name.to_owned(), folder_files);
         }
+    }
+
+    /// VERA-only, experimental (`docs/picture-model-art.md`):
+    /// [`Self::bind_one_anim_asset`] for an AnimType whose art declares
+    /// `Picture=`. The picture's frame count stands in for the SHP header's
+    /// (`427B50`, header `+6`) and its canvas height, `PictureSize=` else the
+    /// picture's own, for the header's `+4`; the SHP is never opened. A picture
+    /// that is missing or unreadable binds as a missing SHP does.
+    fn bind_one_anim_picture(
+        &mut self,
+        name: &str,
+        config: &AnimTypeRuntimeConfig,
+        decl: &PictureDecl,
+        asset_manager: &crate::assets::asset_manager::AssetManager,
+        theater_name: &str,
+    ) {
+        let header = self.picture_header(name, decl, asset_manager, theater_name);
+        let raw_count = header.map_or(0, |header| header.frames);
+        let (loaded_end, loaded_loop_end) = if header.is_some() {
+            resolve_loaded_bounds(
+                raw_count,
+                config.shadow,
+                config.explicit_end,
+                config.explicit_loop_end,
+            )
+        } else {
+            (
+                config.explicit_end.unwrap_or(0),
+                config.explicit_loop_end.unwrap_or(0),
+            )
+        };
+        let bound = self.anim_runtime_configs.get_mut(name).unwrap();
+        bound.raw_shp_frame_count = Some(raw_count);
+        bound.raw_shp_height = Some(header.map_or(0, |header| header.size[1]));
+        bound.middle_frame = Some(raw_count / 2);
+        bound.end = loaded_end;
+        bound.loop_end = loaded_loop_end;
+    }
+
+    /// The files `decl`, declared in art section `section`, may load in
+    /// `theater_name`, the first found winning: with the section's
+    /// `NewTheater=yes`, the name with the theater's and then the generic
+    /// letter, as an SHP name takes them ([`theater_shp_names`]); else the
+    /// name as written.
+    pub fn picture_candidates(
+        &self,
+        section: &str,
+        decl: &PictureDecl,
+        theater_name: &str,
+    ) -> Vec<String> {
+        if !self.get(section).is_some_and(|entry| entry.new_theater) {
+            return vec![decl.file.clone()];
+        }
+        let (stem, extension) = decl
+            .file
+            .rsplit_once('.')
+            .map_or((decl.file.as_str(), None), |(stem, ext)| (stem, Some(ext)));
+        theater_shp_names(&stem.to_ascii_uppercase(), theater_name)
+            .into_iter()
+            .map(|name| match extension {
+                Some(extension) => format!("{name}.{extension}"),
+                None => name,
+            })
+            .collect()
+    }
+
+    /// The simulation's facts of the picture `decl` declares in `section`:
+    /// its frame count and its canvas in game pixels (`PictureSize=`, else
+    /// the picture's own size), both clamped to an SHP header's signed words.
+    /// None, logged, when no candidate file is found or it is not a PNG.
+    pub fn picture_header(
+        &self,
+        section: &str,
+        decl: &PictureDecl,
+        asset_manager: &crate::assets::asset_manager::AssetManager,
+        theater_name: &str,
+    ) -> Option<PictureFacts> {
+        let candidates = self.picture_candidates(section, decl, theater_name);
+        let Some((file, bytes)) = candidates
+            .iter()
+            .find_map(|file| asset_manager.get_ref(file).map(|bytes| (file, bytes)))
+        else {
+            log::warn!(
+                "[{section}] Picture={} is not found; it has no frames",
+                decl.file
+            );
+            return None;
+        };
+        let header = match crate::assets::picture_file::PictureHeader::read(bytes) {
+            Ok(header) => header,
+            Err(error) => {
+                log::warn!("[{section}] {file} cannot be read ({error}); it has no frames");
+                return None;
+            }
+        };
+        let word = |value: u32| {
+            i32::try_from(value)
+                .unwrap_or(i32::MAX)
+                .min(i32::from(i16::MAX))
+        };
+        if header.frames > i16::MAX as u32 {
+            log::warn!(
+                "[{section}] {file} has {} frames; the first {} are used",
+                header.frames,
+                i16::MAX
+            );
+        }
+        Some(PictureFacts {
+            frames: word(header.frames),
+            size: decl
+                .size
+                .unwrap_or([word(header.width), word(header.height)]),
+        })
     }
 
     /// Bind native loader-derived End/LoopEnd values for the transitive
@@ -2725,17 +2894,22 @@ impl ArtRegistry {
 
         let mut populated: u32 = 0;
         let mut fallback: u32 = 0;
-        let mut folder_files = BTreeSet::new();
-        let folder = crate::rules::retail_sources::FolderFiles::new(asset_manager);
-        let middle_frame_is_large = |bytes: &[u8]| {
-            let shp = crate::assets::shp_file::ShpFile::from_bytes(bytes).ok()?;
-            let frame = shp.frames.get(shp.frames.len() / 2)?;
-            Some(smudge_frame_is_large(
-                i32::from(frame.frame_width),
-                i32::from(frame.frame_height),
-            ))
-        };
-        for (name, image_id, sized) in pending {
+        for (name, image_id) in pending {
+            // VERA-only, experimental: a picture's frames all have the
+            // canvas `PictureSize=` gives (docs/picture-model-art.md).
+            if let Some(decl) = self.get(&name).and_then(|entry| entry.picture.clone()) {
+                match self.picture_header(&name, &decl, asset_manager, theater_name) {
+                    Some(facts) => {
+                        let entry = self.get_mut(&name).unwrap();
+                        let side = |value: i32| u16::try_from(value).unwrap_or(u16::MAX);
+                        entry.frame_width = side(facts.size[0]);
+                        entry.frame_height = side(facts.size[1]);
+                        populated += 1;
+                    }
+                    None => fallback += 1,
+                }
+                continue;
+            }
             let candidates: Vec<String> = effect_shp_candidates(
                 crate::rules::art_data::EffectImageKind::Animation,
                 Some(self),
