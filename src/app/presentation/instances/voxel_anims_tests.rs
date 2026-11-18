@@ -162,6 +162,11 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
         for drawn in [shadow, body] {
             assert_eq!(drawn.target, ObjectTexture::UnitPosePage(0));
             assert_eq!(drawn.render_z, RenderZPolicy::ReadOnly);
+            // Both blits walk gradient 0 (0x00749D24, 0x00749E9C).
+            assert_eq!(
+                crate::render::native_z::ZGradient::from_index(drawn.instance.z_gradient),
+                crate::render::native_z::ZGradient::Flat
+            );
         }
         assert_eq!(shadow.instance.draw_state.fx_flags, FX_SHADOW);
         assert_eq!(shadow.instance.z_adjust, -4.0, "flat level-zero ground");

@@ -184,7 +184,7 @@ fn record_and_both_lifetime_limit_queries_match_original_retained_histories() {
                             sim.discard_constructed_limbo(held, &rules, FrameEffects::default());
                         }
                         sim.production
-                            .factories_mut()
+                            .edit_factories()
                             .remove_factory(FactoryHolder::House(owner, strip));
                         let queued = step["queued"].as_array().unwrap();
                         if let Some(index) = step["held_index"].as_i64() {

@@ -219,7 +219,7 @@ fn vehicle_grinding_refunds_both_cargo_levels_and_removes_each_passenger() {
         assert!(!victim.lifecycle.object_alive(), "{id} must be UnInit");
         assert!(
             victim
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .is_none_or(|cargo| cargo.is_empty())
         );
@@ -505,7 +505,6 @@ fn sov03_authored_trigger80_teams_walk_and_recycle_all_four_civilian_types() {
             sim.advance_app_frame(
                 &[],
                 &rules,
-                None,
                 67,
                 crate::sim::world::TickLane::Ordinary,
                 FrameEffects::default(),

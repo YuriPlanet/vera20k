@@ -455,16 +455,16 @@ fn selection_main_continuation_survives_in_scenario_snapshot_handoff() {
     let mut restored =
         GameSnapshot::load_validated(&bytes, 0, rules_hash, sim.session().map_name())
             .unwrap()
-            .sim;
+            .into_simulation_for_test();
     assert_ne!(
         restored.main_rng().logical_state(),
         live_rng.main,
         "snapshot bytes do not carry the process Main cursor"
     );
-    // This is PreparedLoad's existing in-scenario process-state handoff.
+    // This is the player world's in-scenario process-state handoff.
     // It retains the current cursor, including voices after the saved frame;
     // Scenario's post-read reset remains independent of that continuation.
-    restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
+    restored.retain_player_load_process_for_test(crate::sim::world::SnapshotProcessState::Live(&sim));
     assert_eq!(restored.main_rng().logical_state(), live_rng.main);
     assert_eq!(restored.mapgen_rng().logical_state(), live_rng.mapgen);
     assert_eq!(

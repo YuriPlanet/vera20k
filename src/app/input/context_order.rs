@@ -2242,6 +2242,7 @@ pub(crate) fn try_queue_context_order(
 
     if let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command) {
         let resources = &rt.resources;
+        let overlay_registry = resources.rules.overlay_registry();
         let sim = &mut rt.simulation;
         let execute_tick = sim.session().tick();
         if selected_ids.is_empty() {
@@ -2635,7 +2636,7 @@ pub(crate) fn try_queue_context_order(
                 attack_target,
                 object_forced,
                 order_mode,
-                &resources.overlay_registry,
+                overlay_registry,
             )
         } else if let TargetKind::Cell(rx, ry) = attack_target
             && !force_fire
@@ -2655,7 +2656,7 @@ pub(crate) fn try_queue_context_order(
                             id,
                             (rx, ry),
                             &resources.rules,
-                            Some(&resources.overlay_registry),
+                            Some(overlay_registry),
                         )
                         && matches!(
                             armed_action(
@@ -2664,7 +2665,7 @@ pub(crate) fn try_queue_context_order(
                                 id,
                                 &attack_target,
                                 true,
-                                Some(&resources.overlay_registry),
+                                Some(overlay_registry),
                             ),
                             Some(
                                 AttackAction::Attack
@@ -2681,7 +2682,7 @@ pub(crate) fn try_queue_context_order(
                 attack_target,
                 true,
                 order_mode,
-                &resources.overlay_registry,
+                overlay_registry,
             )
         } else {
             AttackDispatch {
@@ -2708,7 +2709,7 @@ pub(crate) fn try_queue_context_order(
                 &current_objects,
                 &receivers,
                 target_id,
-                &resources.overlay_registry,
+                overlay_registry,
                 object_forced,
             ) {
                 LeftRelease::Select => return false,
@@ -2743,7 +2744,7 @@ pub(crate) fn try_queue_context_order(
             let (orders, announce) = building_click_orders(
                 sim,
                 &resources.rules,
-                Some(&resources.overlay_registry),
+                Some(overlay_registry),
                 &selected_ids,
                 owner_id,
                 hover.as_ref(),
@@ -2764,7 +2765,7 @@ pub(crate) fn try_queue_context_order(
             match building_selection_click(
                 sim,
                 &resources.rules,
-                &resources.overlay_registry,
+                overlay_registry,
                 &current_objects,
                 &selected_ids,
                 owner_id,
@@ -2793,7 +2794,7 @@ pub(crate) fn try_queue_context_order(
                 if let Some(orders) = infiltrator_capture_orders(
                     sim,
                     &resources.rules,
-                    Some(&resources.overlay_registry),
+                    Some(overlay_registry),
                     &mut selected_units,
                     target,
                     key_modifier,
@@ -2825,7 +2826,7 @@ pub(crate) fn try_queue_context_order(
                     target,
                     key_modifier,
                     force_move_key,
-                    Some(&resources.overlay_registry),
+                    Some(overlay_registry),
                 )
             {
                 consumed_building_action = true;
@@ -2881,7 +2882,7 @@ pub(crate) fn try_queue_context_order(
                             target.stable_id,
                             key_modifier,
                             force_move_key,
-                            Some(&resources.overlay_registry),
+                            Some(overlay_registry),
                         );
                         infantry_c4_action(sim, &resources.rules, id, target, attacks)
                             == Some(InfantryC4Action::Sabotage)
@@ -2923,7 +2924,7 @@ pub(crate) fn try_queue_context_order(
                 && let Some(cmd) = self_click_command(
                     sim,
                     &resources.rules,
-                    Some(&resources.overlay_registry),
+                    Some(overlay_registry),
                     owner_id,
                     &current_objects,
                     hover.as_ref(),
@@ -2938,7 +2939,7 @@ pub(crate) fn try_queue_context_order(
                     self_answers_no_deploy(
                         sim,
                         &resources.rules,
-                        Some(&resources.overlay_registry),
+                        Some(overlay_registry),
                         owner_id,
                         &current_objects,
                         target,
@@ -2983,7 +2984,7 @@ pub(crate) fn try_queue_context_order(
                     &selected_units,
                     current_objects.len(),
                     target.stable_id,
-                    Some(&resources.overlay_registry),
+                    Some(overlay_registry),
                 );
                 if cursor_owner(sim, &resources.rules, &selected_ids, target.stable_id)
                     .is_some_and(|best| ivans.contains(&best))
@@ -3140,7 +3141,7 @@ pub(crate) fn try_queue_context_order(
                         &current_objects,
                         &selected_ids,
                         target_id,
-                        &resources.overlay_registry,
+                        overlay_registry,
                         forced,
                     ) {
                         LeftRelease::Select => return false,
@@ -3176,7 +3177,7 @@ pub(crate) fn try_queue_context_order(
                     let Some(payload) = object_attack_click_command(
                         sim,
                         &resources.rules,
-                        &resources.overlay_registry,
+                        overlay_registry,
                         owner_id,
                         order_mode,
                         modifier,
@@ -3196,7 +3197,7 @@ pub(crate) fn try_queue_context_order(
                     let Some(payload) = object_attack_click_command(
                         sim,
                         &resources.rules,
-                        &resources.overlay_registry,
+                        overlay_registry,
                         owner_id,
                         order_mode,
                         key_modifier,
@@ -3227,7 +3228,7 @@ pub(crate) fn try_queue_context_order(
                     && let Some(order) = cell_harvest_order(
                         sim,
                         &resources.rules,
-                        Some(&resources.overlay_registry),
+                        Some(overlay_registry),
                         owner_id,
                         stable_id,
                         (target_rx, target_ry),
@@ -3244,7 +3245,7 @@ pub(crate) fn try_queue_context_order(
                         &mut queued,
                         sim,
                         &resources.rules,
-                        Some(&resources.overlay_registry),
+                        Some(overlay_registry),
                         owner_id,
                         execute_tick,
                         &current_objects,
@@ -3255,7 +3256,7 @@ pub(crate) fn try_queue_context_order(
                     let Some(goal) = crate::app::input::commands::ordinary_cell_move_goal(
                         sim,
                         &resources.rules,
-                        Some(&resources.overlay_registry),
+                        Some(overlay_registry),
                         owner_id,
                         stable_id,
                         (target_rx, target_ry),
@@ -3276,7 +3277,7 @@ pub(crate) fn try_queue_context_order(
                                     &mut queued,
                                     sim,
                                     &resources.rules,
-                                    Some(&resources.overlay_registry),
+                                    Some(overlay_registry),
                                     owner_id,
                                     execute_tick,
                                     &current_objects,
@@ -3315,7 +3316,7 @@ pub(crate) fn try_queue_context_order(
                                 None => crate::app::input::commands::ordinary_cell_move_goal(
                                     sim,
                                     &resources.rules,
-                                    Some(&resources.overlay_registry),
+                                    Some(overlay_registry),
                                     owner_id,
                                     stable_id,
                                     locked_cells
@@ -3476,7 +3477,7 @@ pub(crate) fn queue_formation_line(
             &mut queued,
             sim,
             &resources.rules,
-            Some(&resources.overlay_registry),
+            Some(resources.rules.overlay_registry()),
             owner_id,
             execute_tick,
             &current_objects,
@@ -3487,7 +3488,7 @@ pub(crate) fn queue_formation_line(
         let Some(goal) = crate::app::input::commands::ordinary_cell_move_goal(
             sim,
             &resources.rules,
-            Some(&resources.overlay_registry),
+            Some(resources.rules.overlay_registry()),
             owner_id,
             stable_id,
             (rx, ry),
@@ -3689,7 +3690,7 @@ fn self_deploy_is_blocked(
             && entity.bunker.link().installed_in().is_none()
             && !object.no_manual_unload()
             && entity
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .is_none_or(|cargo| cargo.is_empty()))
 }
@@ -8069,7 +8070,7 @@ mod tests {
         sim.entities_mut_for_test()
             .get_mut(reactor)
             .unwrap()
-            .passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+            .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(cargo));
         let hover = HoverTargetKindWithId {
             kind: HoverTargetKind::FriendlyStructure,
             stable_id: reactor,
@@ -8121,7 +8122,7 @@ mod tests {
         sim.entities_mut_for_test()
             .get_mut(ifv)
             .unwrap()
-            .passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+            .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(cargo));
         let hover = HoverTargetKindWithId {
             kind: HoverTargetKind::FriendlyUnit,
             stable_id: ifv,

@@ -1284,7 +1284,6 @@ fn building_production_darkens_other_cameos_until_cancelled() {
                 .advance_app_frame(
                     &[],
                     &rules,
-                    None,
                     67,
                     crate::sim::world::TickLane::Ordinary,
                     crate::sim::world::FrameEffects::default(),

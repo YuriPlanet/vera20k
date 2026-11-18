@@ -508,8 +508,7 @@ impl MultiplayerShellRuntime {
     )> {
         use crate::app::match_runtime::session::NetworkVacancy;
         use crate::skirmish_launch::{
-            AiDifficulty, LaunchStartPosition, LaunchTeam, PreFillHouseRoster, SkirmishAiSlot,
-            SkirmishLaunchMode,
+            AiDifficulty, LaunchStartPosition, LaunchTeam, SkirmishAiSlot, SkirmishLaunchMode,
         };
         let snapshot = self.network_snapshot(profile).clone();
         let mut mode = mode_by_id(modes, snapshot.game_mode)
@@ -641,17 +640,14 @@ impl MultiplayerShellRuntime {
             // 5ED5A0 normalizes savedOpenObserver7 toOpen2; AI becomesOpen
             // for observer sessions. Live observer admission is a later event.
         }
-        let mut launch = SkirmishLaunchSession {
-            mode: SkirmishLaunchMode::from_game_mode(mode),
-            selected_map_file: Some(selected.file_name.clone()),
-            humans: vec![local],
-            local_player_index: 0,
-            ai_player_count: opponents.len() as i32,
+        let launch = SkirmishLaunchSession::from_rows(
+            SkirmishLaunchMode::from_game_mode(mode),
+            Some(selected.file_name.clone()),
+            vec![local],
+            0,
             opponents,
-            pre_fill_house_roster: PreFillHouseRoster::from_compact_skirmish(0),
             options,
-        };
-        launch.rebuild_house_roster();
+        );
         Ok((launch, vacancies))
     }
 
@@ -1181,21 +1177,19 @@ impl MultiplayerShellRuntime {
         // Validation may already have built a borrowed-input session, but it is
         // a pure local read. Material launch state deliberately starts without
         // AI arrays so their first write occurs after the local-country draw.
-        let staged_session = SkirmishLaunchSession {
-            mode: session.mode.clone(),
-            selected_map_file: session.selected_map_file.clone(),
-            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+        let staged_session = SkirmishLaunchSession::from_rows(
+            session.mode.clone(),
+            session.selected_map_file.clone(),
+            vec![crate::skirmish_launch::SkirmishHumanSlot {
                 raw_slot_index: Some(0),
                 name: session.local_player().name.clone(),
                 slot: session.local_slot().clone(),
                 role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
             }],
-            local_player_index: 0,
-            ai_player_count: 0,
-            opponents: Vec::new(),
-            pre_fill_house_roster: session.pre_fill_house_roster.clone(),
-            options: session.options.clone(),
-        };
+            0,
+            Vec::new(),
+            session.options.clone(),
+        );
         // Skirmish never lists Cooperative (vtable +0x40 `0x005D6360`), so
         // no campaign record takes part here.
         let registry = &self.cooperative_registry;
@@ -1407,17 +1401,6 @@ impl MultiplayerShellRuntime {
         self.scenario_start_staging = staging;
     }
 
-    /// A received `'W'`: true when it committed (all 37 tokens).
-    pub(crate) fn accept_start_staging_text(&mut self, text: &str) -> bool {
-        match crate::map::preview::ScenarioStartStaging::parse_w_text(text) {
-            Some(staging) => {
-                self.scenario_start_staging = staging;
-                true
-            }
-            None => false,
-        }
-    }
-
     pub(crate) fn observe_map_preview(&mut self, map: &MapMenuEntry) {
         self.scenario_start_header.apply(map.preview.start_header);
     }
@@ -1443,8 +1426,9 @@ impl MultiplayerShellRuntime {
             &session.opponents,
         )
     }
-    /// Cooperative mode+64 after current-round assignment retains all later
-    /// round country/color pairs, using the same process Scenario stream.
+    /// Cooperative mode+64 after current-round assignment draws all later
+    /// round country/color pairs from the same process Scenario stream.
+    /// Only the draws matter: C1, which carries the rounds, is not sent.
     pub(crate) fn complete_network_mode_assignments(
         &mut self,
         session: &SkirmishLaunchSession,
@@ -1459,19 +1443,15 @@ impl MultiplayerShellRuntime {
             .iter()
             .map(|human| i32::from(human.slot.color_index))
             .collect();
-        self.cooperative_progress.prepare_round_assignments(
-            &self.cooperative_registry,
-            campaign,
-            &self.cooperative_country_roster,
-            &colors,
-            &mut self.scenario_rng,
-        )
-    }
-    pub(crate) fn cooperative_round_assignments(&self) -> &[[[i32; 2]; 8]] {
-        self.cooperative_progress.round_assignments().rounds()
-    }
-    pub(crate) fn accept_cooperative_round_assignments(&mut self, rounds: Vec<[[i32; 2]; 8]>) {
-        self.cooperative_progress.accept_round_assignments(rounds);
+        self.cooperative_progress
+            .prepare_round_assignments(
+                &self.cooperative_registry,
+                campaign,
+                &self.cooperative_country_roster,
+                &colors,
+                &mut self.scenario_rng,
+            )
+            .map(drop)
     }
 
     pub(crate) fn cooperative_difficulty(&self) -> i32 {
@@ -2677,7 +2657,6 @@ mod tests {
                 },
             ];
             launch.ai_player_count = 2;
-            launch.rebuild_house_roster();
             vacancies[2] = NetworkVacancy::Closed;
             *vacancies.get_mut(29).expect("extended profile row29") = NetworkVacancy::Closed;
             owner.remember_network_setup(
@@ -2935,10 +2914,10 @@ mod tests {
     }
 
     fn random_session() -> SkirmishLaunchSession {
-        SkirmishLaunchSession {
-            mode: SkirmishLaunchMode::from_game_mode(&mode()),
-            selected_map_file: Some("test.mmx".to_string()),
-            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+        SkirmishLaunchSession::from_rows(
+            SkirmishLaunchMode::from_game_mode(&mode()),
+            Some("test.mmx".to_string()),
+            vec![crate::skirmish_launch::SkirmishHumanSlot {
                 raw_slot_index: Some(0),
                 name: "Player".to_string(),
                 slot: SkirmishLocalSlot {
@@ -2951,9 +2930,8 @@ mod tests {
                 },
                 role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
             }],
-            local_player_index: 0,
-            ai_player_count: 1,
-            opponents: vec![SkirmishAiSlot {
+            0,
+            vec![SkirmishAiSlot {
                 raw_slot_index: 1,
                 country: LaunchCountry::Russia,
                 country_random: true,
@@ -2963,10 +2941,8 @@ mod tests {
                 team: LaunchTeam::None,
                 difficulty: AiDifficulty::Easy,
             }],
-            pre_fill_house_roster:
-                crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(1),
-            options: SkirmishLaunchOptions::default(),
-        }
+            SkirmishLaunchOptions::default(),
+        )
     }
 
     #[test]

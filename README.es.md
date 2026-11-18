@@ -46,8 +46,6 @@ Para iniciar escaramuzas o campañas de YR para un jugador desde un cliente de C
 3. Incorporar funciones ya conocidas de otros RTS y algunas nunca vistas.
 4. Cliente multijugador integrado
 
-Consulta la [hoja de ruta](https://github.com/orgs/YuriPlanet/projects/1) para conocer las prioridades actuales y los planes futuros.
-
 ## Contribuir
 
 Los colaboradores pueden hacerse cargo de áreas del motor, con amplia libertad para introducir
@@ -63,8 +61,8 @@ Hablamos en [Discord](https://discord.gg/kmjRUn5m5F) y en el grupo de QQ (109719
 El motor tiene tres partes principales:
 
 - **Simulación:** Gestiona el estado y la lógica del juego.
-- **Renderizado:** Un pipeline de renderizado por GPU totalmente nuevo que usa los recursos
-  originales del juego, diseñado para conservar el aspecto original.
+- **Renderizado:** Dibuja el terreno, las unidades y los edificios en la GPU con los gráficos
+  del juego original.
 - **Aplicación:** Se encarga de la entrada, los menús, el audio y la integración con la plataforma,
   y conecta los sistemas entre sí.
 
@@ -101,19 +99,16 @@ motor original, después portan su comportamiento a Rust y lo comprueban con
 
 ## Personalización
 
-De forma predeterminada, VERA20K se comporta igual que el juego original. Toda función nueva,
-incluidas las extensiones de mods como Ares, debe permanecer desactivada hasta que se active con una
-de estas opciones:
+Por defecto, VERA20K usa las reglas originales de Yuri's Revenge. En **Options** puedes ajustar
+el sonido, los gráficos y los controles o activar funciones de VERA. El juego guarda tus preferencias
+en `VERA.INI`, con las opciones propias de VERA en la sección `[VERA]`.
 
-- **Una opción de VERA para el jugador**, en **Options**, guardada en la sección `[VERA]` de `VERA.INI`.
-- **Una opción de compilación**, como `--features phobos` para las [extensiones de Phobos](docs/phobos.md)
-  compatibles.
-- **Una clave INI**, definida por un mod o un mapa.
+Los ajustes de la sala, los mods y los mapas pueden cambiar las reglas de una partida. Los mods y
+los mapas pueden activar las funciones compatibles de [Ares](docs/ares.md) y [Phobos](docs/phobos.md)
+mediante sus archivos INI. Un mod también puede activar Ares si incluye `ares.mix`. Algunas funciones
+de Phobos aún requieren compilar el juego con `--features phobos`.
 
-Los ajustes de sonido, gráficos y controles se guardan en `VERA.INI`. Las reglas de juego
-provienen de los ajustes del lobby, los mods o los mapas.
-
-La [guía de modding](docs/modding.md) explica cómo crear mods propios.
+Para crear tu propio mod, empieza por la [guía de modding](docs/modding.md).
 
 ## Apoya el proyecto
 

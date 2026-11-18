@@ -3366,7 +3366,6 @@ mod tests {
             sim.advance_app_frame(
                 &commands,
                 rules,
-                None,
                 67,
                 TickLane::Ordinary,
                 FrameEffects::default(),
@@ -3651,15 +3650,7 @@ mod tests {
         }
         let mut runtime = SimRuntime {
             simulation: sim,
-            resources: SimResources {
-                rules,
-                overlay_registry: crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
-                    &retail.processed_rules,
-                    Some(&retail.fixed_art),
-                ),
-                ..SimResources::empty()
-            }
-            .into(),
+            resources: SimResources::new(rules).into(),
         };
         let frame = |runtime: &mut SimRuntime, commands: &[CommandEnvelope]| {
             let output = runtime

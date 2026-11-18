@@ -5,7 +5,7 @@
 //! run through [`pickup_crate`] itself; the other arms are Rust regressions
 //! against the native reading cited at each arm.
 
-use super::super::tests::{crate_cells, crate_registry, crate_ruleset, sim_with_grid};
+use super::super::tests::{crate_cells, crate_ruleset, sim_with_grid};
 use super::*;
 use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
@@ -97,10 +97,11 @@ fn place_registered_crate(
     slot: u8,
 ) {
     place_crate(sim, registry, cell, slot);
-    let index = (0..crate::sim::crates::state::CRATE_SLOT_CAPACITY)
-        .find(|&index| sim.crate_authority.slots()[index].is_empty())
+    let index = sim
+        .crate_authority()
+        .first_empty_index()
         .expect("a free crate slot");
-    *sim.crate_authority.slot_mut_for_test(index) = CrateSlot {
+    *sim.crate_authority_mut_for_test().slot_mut_for_test(index) = CrateSlot {
         start_frame: 50,
         aux: 777,
         duration: 100,
@@ -143,7 +144,15 @@ fn eva_events(sim: &Simulation) -> Vec<(InternedId, &'static str)> {
 
 /// A multiplayer pickup fixture on the crate test grid: one crate at `CELL`
 /// holding `slot`, one Speed-style actor standing on it.
-fn multiplayer_fixture(slot: u8) -> (Simulation, RuleSet, OverlayTypeRegistry, InternedId, u64) {
+fn multiplayer_fixture(
+    slot: u8,
+) -> (
+    Simulation,
+    RuleSet,
+    std::sync::Arc<OverlayTypeRegistry>,
+    InternedId,
+    u64,
+) {
     let mut sim = sim_with_grid(31);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
@@ -157,7 +166,8 @@ fn multiplayer_fixture(slot: u8) -> (Simulation, RuleSet, OverlayTypeRegistry, I
     sim.session.set_binary_frame_for_test(100);
     sim.playfield_bounds_mut_for_test().as_mut().unwrap().base = 10;
     sim.set_playfield_size_height_for_test(Some(10));
-    let registry = crate_registry();
+    // Effect-specific fixtures keep the table for the crate already on this grid.
+    let registry = rules.retain_overlay_registry();
     place_registered_crate(&mut sim, &registry, CELL, slot);
     let owner = house(&mut sim, "H0", false);
     let actor = place_actor(
@@ -228,7 +238,7 @@ fn original_pickup_rows_match_through_the_dispatcher() {
             rules.crate_rules.crate_img = Some("WOOD".into());
             rules.crate_rules.water_crate_img = Some("WOOD".into());
         }
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
         let wood = registry.id_for_name("WOOD").unwrap();
         if input["overlay"].as_i64() != Some(-1) {
             let image = if input["crate"].as_i64() == Some(0) {
@@ -249,7 +259,7 @@ fn original_pickup_rows_match_through_the_dispatcher() {
             } else {
                 input["duplicate_slot"] == true
             };
-            *sim.crate_authority.slot_mut_for_test(index) = if occupied {
+            *sim.crate_authority_mut_for_test().slot_mut_for_test(index) = if occupied {
                 CrateSlot {
                     start_frame: start,
                     aux,
@@ -291,7 +301,7 @@ fn original_pickup_rows_match_through_the_dispatcher() {
         let answer = pickup_crate(
             &mut sim,
             &rules,
-            &registry,
+            registry,
             cell,
             actor,
             crate::sim::world::FrameEffects::default(),
@@ -307,7 +317,7 @@ fn original_pickup_rows_match_through_the_dispatcher() {
             }),
             "{name}: overlay"
         );
-        let slot = sim.crate_authority.slots()[0];
+        let slot = sim.crate_authority().slots()[0];
         assert_eq!(
             serde_json::json!([
                 slot.start_frame,
@@ -475,7 +485,7 @@ fn money_crate_draws_once_pays_the_owner_and_sounds() {
 fn multiplayer_pickup_places_one_replacement_crate() {
     let (mut sim, rules, registry, _owner, actor) = multiplayer_fixture(0);
     sim.session.game_options_mut_for_test().crates = true;
-    *sim.crate_authority.slot_mut_for_test(0) = CrateSlot {
+    *sim.crate_authority_mut_for_test().slot_mut_for_test(0) = CrateSlot {
         start_frame: 0,
         aux: 0,
         duration: 100,
@@ -494,12 +504,12 @@ fn multiplayer_pickup_places_one_replacement_crate() {
 
     let cells = crate_cells(&sim, &registry);
     assert_eq!(cells.len(), 1, "one replacement crate: {cells:?}");
-    assert!(!sim.crate_authority.slots()[0].is_empty());
+    assert!(!sim.crate_authority().slots()[0].is_empty());
     let (x, y) = cells[0];
     assert_eq!(
         (
-            sim.crate_authority.slots()[0].cell_x,
-            sim.crate_authority.slots()[0].cell_y
+            sim.crate_authority().slots()[0].cell_x,
+            sim.crate_authority().slots()[0].cell_y
         ),
         (x as i16, y as i16)
     );
@@ -1846,7 +1856,7 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
         );
         let slot_values = |sim: &Simulation| {
             json!(
-                sim.crate_authority
+                sim.crate_authority()
                     .slots()
                     .iter()
                     .filter(|slot| !slot.is_empty())

@@ -436,7 +436,6 @@ impl MinimapRenderer {
         rules: Option<&RuleSet>,
         interner: Option<&crate::sim::intern::StringInterner>,
         overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         overlay_radar_colors: &HashMap<(u8, u8), [u8; 3]>,
         resolved_terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
         beacons: Option<(
@@ -477,7 +476,7 @@ impl MinimapRenderer {
                 native_terrain: &mut self.native_radar_terrain,
                 playfield: self.playfield_bounds,
             },
-            CurrentRadarCellAuthority::new(resolved_terrain, overlay_grid, overlay_registry, rules),
+            CurrentRadarCellAuthority::new(resolved_terrain, overlay_grid, rules),
             self.structural_bridge_radar_color,
             overlay_radar_colors,
             self.radar_terrain_backlog.cells(),

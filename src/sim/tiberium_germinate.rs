@@ -14,18 +14,70 @@ use crate::sim::overlay_grid::OverlayGrid;
 
 /// Logging/test receipt of one generated final `InitCellAttributes(1)` pass.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct GeneratedCellAttributesReceipt {
+pub(super) struct GeneratedCellAttributesReceipt {
     /// Real cells the native `CellIterator` visited.
-    pub real_cells: u32,
+    real_cells: u32,
     /// Iterator coordinates with no allocated cell (never expected on a
     /// generated map; logged so a shape mismatch cannot pass silently).
-    pub unallocated_cells: u32,
+    unallocated_cells: u32,
     /// Real cells whose overlay resolved to a TiberiumClass and whose density
     /// was rewritten.
-    pub germinated_cells: u32,
+    germinated_cells: u32,
     /// The native caller-local wrapping sum of every `SpreadCellGerminate`
     /// return; `RandomMapGenerator::Generate` discards it.
-    pub tiberium_value_total: i32,
+    tiberium_value_total: i32,
+}
+
+/// RandomMapGenerator::Generate (0x00598960), after the generated Technos:
+/// seed growth and spread from the painted cells, then germinate those same
+/// live cells (0x0059939B..0x0059944C). The generated total is diagnostic.
+pub(super) fn finish_generated_ore(
+    sim: &mut crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    overlay_registry: &OverlayTypeRegistry,
+    basic: &crate::map::basic::BasicSection,
+    special_flags: &crate::map::basic::SpecialFlagsSection,
+    native_rect: (u16, u16),
+) -> Result<GeneratedCellAttributesReceipt, crate::rules::overlay_types::TiberiumImageError> {
+    let queues = crate::sim::runtime::initialize_native_tiberium_queues(
+        sim,
+        basic,
+        special_flags,
+        rules,
+        overlay_registry,
+        native_rect,
+    )?
+    .expect("generated population installed its cell overlay grid");
+    log::info!(
+        "Initialized generated native tiberium queues before germination: {} growth, {} spread",
+        queues.growth_entries,
+        queues.spread_entries,
+    );
+    let receipt = run_generated_final_cell_attributes(
+        sim.resolved_terrain
+            .as_ref()
+            .expect("generated population installed its terrain"),
+        sim.overlay_grid
+            .as_mut()
+            .expect("generated population installed its cell overlay grid"),
+        &rules.tiberium_types,
+        overlay_registry,
+        native_rect.0,
+        native_rect.1,
+    )?;
+    log::info!(
+        "Generated final InitCellAttributes(1): {} of {} real cells germinated (value total {})",
+        receipt.germinated_cells,
+        receipt.real_cells,
+        receipt.tiberium_value_total,
+    );
+    if receipt.unallocated_cells != 0 {
+        log::error!(
+            "Generated final InitCellAttributes(1) reached {} unallocated iterator cells",
+            receipt.unallocated_cells
+        );
+    }
+    Ok(receipt)
 }
 
 /// Resolve one native fixed-stride lookup to an allocated real cell of the
@@ -67,7 +119,7 @@ fn resolve_real_cell(terrain: &ResolvedTerrainGrid, x: i16, y: i16) -> Option<(u
 /// (`0x00568DF4`, after the cell's germination at `0x00568DD8`) also reads
 /// the cell's six CliffBack neighbours through the Map lookup, so gamemd's
 /// pass can leave the dummy at one of those neighbours instead.
-pub fn run_generated_final_cell_attributes(
+fn run_generated_final_cell_attributes(
     terrain: &ResolvedTerrainGrid,
     overlay_grid: &mut OverlayGrid,
     tiberium_types: &TiberiumTypeRegistry,
@@ -316,7 +368,6 @@ mod tests {
         let (rules, registry) = two_class_rules();
         let mut sim = Simulation::with_seed(0x0C_0001);
         sim.install_resolved_terrain_for_new_map(flat_terrain());
-        let terrain = flat_terrain();
         let mut grid = painted_grid();
         // Painted 0 qualifies for growth (below MaxDensity - 1) and not for
         // spread; the interior germinates to 11, which would invert both.
@@ -326,49 +377,24 @@ mod tests {
         let basic = BasicSection::default();
         let special_flags = SpecialFlagsSection::default();
 
-        let stats = crate::sim::runtime::initialize_native_tiberium_queues(
+        sim.overlay_grid = Some(grid);
+        let receipt = finish_generated_ore(
             &mut sim,
-            &basic,
-            &special_flags,
             &rules,
             &registry,
-            Some(&grid),
+            &basic,
+            &special_flags,
             (MAP_WIDTH, MAP_HEIGHT),
         )
-        .unwrap()
-        .expect("a grid seeds the native queues");
-        let queue_bitmaps = |sim: &Simulation| {
-            sim.ore_growth_state
-                .native_tiberium_state()
-                .classes
-                .iter()
-                .map(|class| (class.growth_bitmap.clone(), class.spread_bitmap.clone()))
-                .collect::<Vec<_>>()
-        };
-        let bitmaps_before = queue_bitmaps(&sim);
-        let receipt = run_generated_final_cell_attributes(
-            &terrain,
-            &mut grid,
-            &rules.tiberium_types,
-            &registry,
-            MAP_WIDTH,
-            MAP_HEIGHT,
-        )
         .unwrap();
-
-        assert_eq!(grid.cell(7, 7).overlay_data, 11);
+        assert_eq!(sim.overlay_grid().unwrap().cell(7, 7).overlay_data, 11);
         assert_eq!(receipt.germinated_cells, 18);
-        let (ore_growth, ore_spread) = &bitmaps_before[0];
+        let class = &sim.ore_growth_state.native_tiberium_state().classes[0];
         assert!(
-            ore_growth.contains(&(7, 7)),
-            "seeded from the painted density: {stats:?}"
+            class.growth_bitmap.contains(&(7, 7)),
+            "queue kept painted density"
         );
-        assert!(!ore_spread.contains(&(7, 7)));
-        assert_eq!(
-            queue_bitmaps(&sim),
-            bitmaps_before,
-            "germination rebuilds no queue"
-        );
+        assert!(!class.spread_bitmap.contains(&(7, 7)));
         assert_eq!(sim.scenario_rng.state(), scenario_before);
         assert_eq!(sim.main_rng.state(), main_before);
     }

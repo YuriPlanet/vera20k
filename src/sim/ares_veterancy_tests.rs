@@ -27,7 +27,7 @@ fn board(sim: &mut Simulation, transport: u64, passengers: Vec<u64>) {
         .entities
         .get_mut(transport)
         .unwrap()
-        .passenger_role
+        .passenger_role_mut_for_test()
         .cargo_mut()
         .unwrap()
         .set_passengers_for_test(passengers);

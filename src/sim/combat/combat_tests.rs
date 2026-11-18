@@ -888,7 +888,7 @@ fn gsi_04_05_null_attacker_building_hit_keeps_the_attacker_index() {
 /// `TechnoClass::ReceiveDamage @ 0x00701900`: an ordinary sourced area hit,
 /// even under an Iron Curtain, resolves no receiver outcome (no Techno
 /// gates, impact light, anger or threat tail), and a WaveClass caller's
-/// shared damage stays unchanged (`wave_post_object_damage` is `None`).
+/// shared damage stays unchanged.
 #[test]
 fn retail_bridge_repair_hut_area_hit_returns_before_the_techno_receiver() {
     use crate::sim::superweapon::invulnerability::{InvulnKind, InvulnerabilityState};
@@ -930,34 +930,16 @@ fn retail_bridge_repair_hut_area_hit_returns_before_the_techno_receiver() {
             .is_none()
         };
         assert!(resolve(&sim), "IC {iron_curtain}: no receiver outcome");
-        #[cfg(feature = "phobos")]
-        let wave = wave_post_object_damage(
-            &event,
-            &sim.substrate.entities,
+        let (_, _, packet) = world_receiver::commit_receiver(
+            &mut sim,
+            &mut world_receiver::ReceiverRun::default(),
+            combat_aoe::AreaDamageReceiver::Entity(event),
             &rules,
-            &sim.interner,
-            &sim.houses,
-            &sim.house_alliances,
-            false,
-            0,
-            None,
-            Some(&sim),
-        );
-        #[cfg(not(feature = "phobos"))]
-        let wave = wave_post_object_damage(
-            &event,
-            &sim.substrate.entities,
-            &rules,
-            &sim.interner,
-            &sim.houses,
-            &sim.house_alliances,
-            false,
-            0,
             None,
         );
         assert_eq!(
-            wave, None,
-            "IC {iron_curtain}: the Wave packet is untouched"
+            packet, 100,
+            "IC {iron_curtain}: the hut kept the incoming packet"
         );
     }
     sim.commit_noncombat_aoe_hits(
@@ -2071,11 +2053,13 @@ fn lifecycle_authority_combat_leaves_transport_cargo_for_carrier_uninit() {
     let mut cargo = crate::sim::passenger::PassengerCargo::new(2, 1.0);
     cargo.board_forced_chain(&[(2, 1.0)]);
     let mut carrier = make_entity(1, "MTNK", 5, 5, 0);
-    carrier.passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+    carrier.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(cargo));
     store.insert(carrier);
 
     let mut passenger = make_infantry_entity(2, "E1", 5, 5, 125);
-    passenger.passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(1, false);
+    passenger.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
+        1, false,
+    ));
     passenger.selection.set_selected_for_test(true);
     passenger
         .attack_target
@@ -2092,13 +2076,13 @@ fn lifecycle_authority_combat_leaves_transport_cargo_for_carrier_uninit() {
     assert_eq!(result.immediate_uninit_ids, vec![1]);
     let carrier = store.get(1).unwrap();
     assert_eq!(
-        carrier.passenger_role.cargo().unwrap().passengers(),
+        carrier.passenger_role().cargo().unwrap().passengers(),
         vec![2]
     );
     let passenger = store.get(2).unwrap();
     assert_eq!(passenger.health.current(), 125);
     assert!(!passenger.death.is_dying());
-    assert_eq!(passenger.passenger_role.inside_transport_id(), Some(1));
+    assert_eq!(passenger.passenger_role().inside_transport_id(), Some(1));
     assert!(passenger.selection.is_selected());
     assert!(passenger.attack_target.target().is_some());
     assert!(passenger.navigation.nav_com().is_some());
@@ -2899,7 +2883,9 @@ fn retaliates(case: RetaliationCase) -> bool {
         ));
     source.lifecycle.set_cell_marked_for_test(true);
     if case.rider {
-        source.passenger_role = crate::sim::passenger::PassengerRole::boarded_for_test(3, true);
+        source.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::boarded_for_test(
+            3, true,
+        ));
         let mut transport = make_entity(3, "SOURCE", source_rx, 5, case.source_health);
         transport.set_owner_for_test(source_owner);
         transport.set_type_ref_for_test(interner.intern("SOURCE"));
@@ -3293,16 +3279,17 @@ fn gsi_04_07_a_garrison_retaliates_with_its_occupants_weapon() {
     occupant.set_owner_for_test(sim.substrate.entities.get(GATE_VICTIM).unwrap().owner());
     occupant.set_type_ref_for_test(sim.interner.intern("E1"));
     occupant.set_category_for_test(EntityCategory::Infantry);
-    occupant.passenger_role =
-        crate::sim::passenger::PassengerRole::inside_for_test(GATE_VICTIM, false);
+    occupant.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
+        GATE_VICTIM,
+        false,
+    ));
     sim.substrate.entities.insert(occupant);
     sim.substrate
         .entities
         .get_mut(GATE_VICTIM)
         .unwrap()
-        .passenger_role
-        .occupants_mut()
-        .add(occupant_id);
+        .garrison_mut_for_test()
+        .add_for_test(occupant_id);
     assert!(combat_targeting::should_retaliate(
         &sim,
         &rules,
@@ -6223,10 +6210,12 @@ fn garrison_fire_keeps_occupant_anim_and_sound_path() {
     let mut store = EntityStore::new();
     let mut building = make_entity(10, "CAGAS", 5, 5, 800);
     building.set_category_for_test(EntityCategory::Structure);
-    building.passenger_role.occupants_mut().add(1);
+    building.garrison_mut_for_test().add_for_test(1);
     store.insert(building);
     let mut occupant = make_infantry_entity(1, "E1", 5, 5, 125);
-    occupant.passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(10, false);
+    occupant.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
+        10, false,
+    ));
     store.insert(occupant);
     store.insert(make_infantry_entity(2, "E2", 8, 5, 125));
 
@@ -10671,10 +10660,12 @@ fn gsi_08_05_a_garrison_shot_takes_the_f32_occupy_multiplier() {
     let mut store = EntityStore::new();
     let mut building = make_entity(10, "CAGAS", 5, 5, 800);
     building.set_category_for_test(EntityCategory::Structure);
-    building.passenger_role.occupants_mut().add(1);
+    building.garrison_mut_for_test().add_for_test(1);
     store.insert(building);
     let mut occupant = make_infantry_entity(1, "E1", 5, 5, 125);
-    occupant.passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(10, false);
+    occupant.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
+        10, false,
+    ));
     store.insert(occupant);
     store.insert(make_infantry_entity(2, "E2", 8, 5, 125));
     let mut interner = test_interner();
@@ -10758,14 +10749,15 @@ fn gsi_08_12_a_garrison_kill_pays_the_occupant_next_in_line() {
     building.set_category_for_test(EntityCategory::Structure);
     // Preserve the former supplied Cargo prepend order as occupant input.
     building
-        .passenger_role
-        .occupants_mut()
+        .garrison_mut_for_test()
         .set_ids_for_test(vec![3, 1]);
     store.insert(building);
     for id in [1, 3] {
         let mut occupant = make_infantry_entity(id, "E1", 5, 5, 125);
         occupant.set_owner_for_test(test_intern("Soviet"));
-        occupant.passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(10, false);
+        occupant.set_passenger_role_for_test(
+            crate::sim::passenger::PassengerRole::inside_for_test(10, false),
+        );
         store.insert(occupant);
     }
     let mut victim = make_infantry_entity(2, "E2", 8, 5, 1);
@@ -10775,7 +10767,7 @@ fn gsi_08_12_a_garrison_kill_pays_the_occupant_next_in_line() {
     install_entity_attack_target_for_test(&mut store, 10, 2);
     // The occupant at fire index 0 shoots; the one after it is next in line.
     let (shooter, next) = {
-        let occupants = store.get(10).unwrap().passenger_role.occupants();
+        let occupants = store.get(10).unwrap().passenger_role().occupants();
         assert_eq!(occupants.fire_index(), 0);
         (occupants.ids()[0], occupants.ids()[1])
     };
@@ -10814,20 +10806,21 @@ fn gsi_08_05_a_mixed_garrison_rearms_with_the_next_occupants_weapon() {
     let mut building = make_entity_owned(10, "CAGAS", 5, 5, 800, "Soviet");
     building.set_category_for_test(EntityCategory::Structure);
     building
-        .passenger_role
-        .occupants_mut()
+        .garrison_mut_for_test()
         .set_ids_for_test(vec![3, 1]);
     store.insert(building);
     // Whichever occupant sits at index 0 shoots with the quick gun; the one
     // after it carries the slow gun.
     let (shooter, next) = {
-        let occupants = store.get(10).unwrap().passenger_role.occupants();
+        let occupants = store.get(10).unwrap().passenger_role().occupants();
         (occupants.ids()[0], occupants.ids()[1])
     };
     for (id, kind) in [(shooter, "E1"), (next, "E2")] {
         let mut occupant = make_infantry_entity(id, kind, 5, 5, 125);
         occupant.set_owner_for_test(test_intern("Soviet"));
-        occupant.passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(10, false);
+        occupant.set_passenger_role_for_test(
+            crate::sim::passenger::PassengerRole::inside_for_test(10, false),
+        );
         store.insert(occupant);
     }
     let mut victim = make_infantry_entity(2, "E3", 8, 5, 400);
@@ -10843,7 +10836,7 @@ fn gsi_08_05_a_mixed_garrison_rearms_with_the_next_occupants_weapon() {
     );
     let building = store.get(10).unwrap();
     assert_eq!(
-        building.passenger_role.occupants().fire_index(),
+        building.passenger_role().occupants().fire_index(),
         1,
         "the turn passed to the next occupant"
     );

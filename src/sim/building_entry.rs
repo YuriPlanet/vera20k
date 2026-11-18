@@ -387,7 +387,7 @@ impl Simulation {
             .substrate
             .entities
             .get(transport)
-            .and_then(|e| e.passenger_role.cargo())
+            .and_then(|e| e.passenger_role().cargo())
             .is_some_and(|cargo| !cargo.is_empty())
         {
             let removed = depart_cargo_head(

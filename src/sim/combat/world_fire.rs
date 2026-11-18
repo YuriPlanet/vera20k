@@ -642,8 +642,8 @@ fn unit_reaches_fire_update(world: &Simulation, id: u64) -> bool {
 fn unit_fire_visit_admitted(world: &Simulation, id: u64) -> bool {
     unit_reaches_fire_update(world, id)
         && world.substrate.entities.get(id).is_some_and(|actor| {
-            !(actor.passenger_role.is_inside_transport()
-                && !actor.passenger_role.in_open_transport())
+            !(actor.passenger_role().is_inside_transport()
+                && !actor.passenger_role().in_open_transport())
         })
 }
 
@@ -1091,7 +1091,7 @@ fn firepower_stages(
             .and_then(|firer| firer.bunker.link().installed_in())
             .map(|_| f32_bits(multipliers.bunker_damage_multiplier)),
         open_topped: firer
-            .filter(|firer| firer.passenger_role.in_open_transport())
+            .filter(|firer| firer.passenger_role().in_open_transport())
             .map(|_| f32_bits(multipliers.open_topped_damage_multiplier)),
         #[cfg(feature = "phobos")]
         ae_firepower: firer.map_or(1.0, |firer| firer.phobos_stat_multipliers().firepower),
@@ -2094,7 +2094,7 @@ pub(super) fn emit_admitted_fire(
         .substrate
         .entities
         .get(snap.stable_id)
-        .is_some_and(|firer| firer.passenger_role.in_open_transport());
+        .is_some_and(|firer| firer.passenger_role().in_open_transport());
     #[cfg(any(test, feature = "test-support"))]
     let facing = (snap.hull_facing.current(binary_frame) >> 8) as u8;
     out.fire_events.push(SimFireEvent {
@@ -2132,7 +2132,7 @@ pub(super) fn emit_admitted_fire(
     // Inviso bullet detonates later in its own AI (possibly this frame's
     // Logic tail, once its impact/fuse admits it).
     if is_garrison && let Some(building) = world.substrate.entities.get_mut(snap.stable_id) {
-        building.passenger_role.occupants_mut().advance_fire_index();
+        building.advance_garrison_fire_index();
     }
     // Techno6FF0B7..6FF15B: only a successfully launched shot arms recoil.
     // FireAt6FF0BB dispatches HasTurret; Building4527D0 includes upgrades,
@@ -2912,8 +2912,8 @@ pub(crate) fn visit_fire(
                     .object_type(actor.type_ref(), rules)
                     .filter(|obj| combat_weapon::is_occupied(actor, obj))
                     .map(|_| GarrisonSnapshot {
-                        fire_index: actor.passenger_role.occupants().fire_index(),
-                        occupant_count: actor.passenger_role.occupants().count(),
+                        fire_index: actor.passenger_role().occupants().fire_index(),
+                        occupant_count: actor.passenger_role().occupants().count(),
                     });
                 AttackerSnapshot {
                     building_shot: Some(shot),

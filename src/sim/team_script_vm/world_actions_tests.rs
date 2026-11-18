@@ -117,7 +117,9 @@ fn script18_keeps_a_team_whose_argument_names_no_team_type() {
 /// Production latch.
 #[test]
 fn script44_swaps_the_truck_type_only_and_script29_starts_production() {
-    let (mut sim, rules, owner) = scene(&format!("{SCRIPTS}[RUN]\n0=44,0\n1=29,0\n"));
+    let (mut sim, mut rules, owner) = scene(&format!("{SCRIPTS}[RUN]\n0=44,0\n1=29,0\n"));
+    let art = IniFile::from_str("[TRUCKB]\nVoxel=yes\n[TRUCKA]\nVoxel=no\n");
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
     let loaded = sim
         .spawn_object("TRUCKB", "Americans", 4, 4, 0, &rules)
         .unwrap();
@@ -131,10 +133,17 @@ fn script44_swaps_the_truck_type_only_and_script29_starts_production() {
         .health
         .set_for_test(77);
     let team = team(&mut sim, owner, &[loaded, tank]);
+    assert!(sim.entities().get(loaded).unwrap().is_voxel());
+    sim.take_looks();
 
     run(&mut sim, &rules, team);
 
+    assert_eq!(
+        sim.take_looks().entities,
+        crate::sim::Touched::Ids(vec![loaded])
+    );
     let truck = sim.entities().get(loaded).unwrap();
+    assert!(!truck.is_voxel());
     assert_eq!(sim.interner.resolve(truck.type_ref()), "TRUCKA");
     assert_eq!(truck.health.current(), 77);
     let tank = sim.entities().get(tank).unwrap();

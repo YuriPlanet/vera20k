@@ -85,8 +85,7 @@ pub(crate) enum HouseAllianceAdmission<'a> {
 /// against the graph when it is built and at each answer it gives. Never
 /// saved, hashed or compared.
 ///
-/// A clone shares the graph and the matrix until a write copies the one it
-/// changes, so the wave damage pass's snapshot copies neither.
+/// Clones share both the graph and its matrix until a write changes one.
 #[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub struct HouseAlliances {

@@ -2,7 +2,7 @@
 //!
 //! Terrain DrawIt 0071C304/0071C34E reaches 004990E0/00497390: signed Z
 //! comparison precedes the u16 store, and shadow pixels halve the packed
-//! destination. See TERRAIN_STATIC_BODY_SHADOW_NATIVE_2026_09_09.md.
+//! destination.
 //! Live tactical Depth32Float remains the only Z authority. wgpu 27 requires
 //! full-size depth copies, so scissored MRT passes snapshot conservative rects
 //! into integer color and float depth scratch while live Z is not attached.
@@ -1940,7 +1940,7 @@ mod webgl_shader_tests {
                 pad_camera_structs(&super::edit_source(true)),
             ),
             ("read-only resolve", super::resolve_source()),
-            ("packed composite", super::packed::packed_source(true)),
+            ("packed composite", super::packed::packed_source()),
             (
                 "packed SHP",
                 pad_camera_structs(&super::packed::raster_source(

@@ -3425,7 +3425,6 @@ mod item83_selection_order_tests {
         sim.advance_app_frame(
             &[],
             RuleSet::empty_for_test(),
-            None,
             67,
             crate::sim::world::TickLane::Ordinary,
             crate::sim::world::FrameEffects::empty(),
@@ -4468,7 +4467,7 @@ fn deploy_key_commands(
     let first = selection.first().and_then(|&id| sim.entities().get(id));
     if let Some(building) = first.filter(|entity| {
         entity.category() == EntityCategory::Structure
-            && entity.passenger_role.occupants().count() > 0
+            && entity.passenger_role().occupants().count() > 0
     }) {
         return deploy_key_command(sim, rules, building.stable_id(), local_owner)
             .into_iter()
@@ -4547,7 +4546,7 @@ fn deploy_key_command(
         // Selection730B28..730B5E sends Event9 for an occupied Building.
         // Its native receiver owns NULL setters and Unload; self-click keeps
         // the separate MEGAMISSION/absorber admission in transport_orders.
-        EntityCategory::Structure => (!entity.passenger_role.occupants().is_empty()
+        EntityCategory::Structure => (!entity.passenger_role().occupants().is_empty()
             && local_owner.is_none_or(|owner| entity.owner() == owner))
         .then_some(Command::DeployMcv { entity_id }),
         EntityCategory::Infantry => Some(Command::ToggleInfantryDeploy { entity_id }),
@@ -5020,7 +5019,7 @@ mod deploy_key_tests {
         sim.entities_mut_for_test()
             .get_mut(transport)
             .unwrap()
-            .passenger_role = PassengerRole::transport(cargo);
+            .set_passenger_role_for_test(PassengerRole::transport(cargo));
 
         assert_eq!(
             deploy_key_command(&sim, Some(&rules), heli, sim.session().current_house()),
@@ -5097,7 +5096,7 @@ mod deploy_key_tests {
             sim.entities_mut_for_test()
                 .get_mut(transport)
                 .unwrap()
-                .passenger_role = PassengerRole::transport(cargo);
+                .set_passenger_role_for_test(PassengerRole::transport(cargo));
             let owner = sim
                 .session()
                 .current_house()
@@ -5172,7 +5171,7 @@ mod deploy_key_tests {
         sim.entities_mut_for_test()
             .get_mut(transport)
             .unwrap()
-            .passenger_role = PassengerRole::transport(cargo);
+            .set_passenger_role_for_test(PassengerRole::transport(cargo));
         let owner = sim.session().current_house();
         assert!(deploy_key_commands(&sim, Some(&rules), &[tank], owner).is_empty());
         assert_eq!(
@@ -5237,7 +5236,7 @@ mod deploy_key_tests {
         sim.entities_mut_for_test()
             .get_mut(reactor)
             .unwrap()
-            .passenger_role = PassengerRole::transport(cargo);
+            .set_passenger_role_for_test(PassengerRole::transport(cargo));
 
         assert!(
             deploy_key_commands(

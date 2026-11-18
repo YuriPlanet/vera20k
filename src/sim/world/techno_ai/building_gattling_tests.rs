@@ -102,14 +102,7 @@ fn retail_gattling_updates_its_loop_position_before_guard_releases_it() {
     ));
     let started = (0..120).any(|_| {
         let output = sim
-            .advance_app_frame(
-                &[],
-                &rules,
-                None,
-                33,
-                TickLane::Ordinary,
-                FrameEffects::empty(),
-            )
+            .advance_app_frame(&[], &rules, 33, TickLane::Ordinary, FrameEffects::empty())
             .unwrap();
         output.sound_events.iter().any(|event| {
             matches!(event,
@@ -139,7 +132,6 @@ fn retail_gattling_updates_its_loop_position_before_guard_releases_it() {
         sim.advance_app_frame(
             &[],
             &rules,
-            None,
             33,
             TickLane::Ordinary,
             FrameEffects::for_sound(&heard),

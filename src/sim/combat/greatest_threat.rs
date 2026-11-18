@@ -1008,7 +1008,7 @@ impl ScanContext<'_> {
                         candidate,
                         self.attacker_obj,
                         candidate_obj,
-                        candidate.passenger_role.occupants(),
+                        candidate.passenger_role().occupants(),
                         self.rules,
                         world,
                     )
@@ -2477,7 +2477,7 @@ fn evaluate_candidate(
         return None;
     }
 
-    if candidate.passenger_role.is_inside_transport() {
+    if candidate.passenger_role().is_inside_transport() {
         return None;
     }
 
@@ -2957,7 +2957,7 @@ fn evaluate_candidate(
             needs_engineer: candidate_obj.needs_engineer,
             factory: candidate_obj.has_factory(),
             can_be_occupied: candidate_obj.can_be_occupied,
-            occupants: candidate.passenger_role.occupants().count(),
+            occupants: candidate.passenger_role().occupants().count(),
             armed: is_armed(
                 candidate,
                 candidate_obj,
@@ -3451,13 +3451,14 @@ mod tests {
                     category,
                 );
                 configure(&mut passenger, rider);
-                passenger.passenger_role = PassengerRole::inside_for_test(1, open_topped);
+                passenger
+                    .set_passenger_role_for_test(PassengerRole::inside_for_test(1, open_topped));
                 entities.insert(passenger);
                 cargo.board_forced_chain(&[(id, 1.0)]);
             }
             let mut scanner = GameEntity::test_default(1, "TRN", "Test", 0, 0);
             configure(&mut scanner, input);
-            scanner.passenger_role = PassengerRole::transport(cargo);
+            scanner.set_passenger_role_for_test(PassengerRole::transport(cargo));
             let interner = test_interner();
             let ranges = std::array::from_fn(|index| {
                 super::super::combat_weapon::weapon_range(

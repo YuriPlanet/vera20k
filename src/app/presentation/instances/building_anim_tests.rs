@@ -373,7 +373,6 @@ fn slot_translucency_preserves_unresolved_inherited_materials() {
             cloak: Some(CloakDrawInput {
                 character: 1,
                 progress: 0,
-                native_offset_words: -3,
                 voxel: false,
             }),
             ..DrawStateInput::default()
@@ -391,10 +390,6 @@ fn slot_translucency_preserves_unresolved_inherited_materials() {
     };
     for inherited in [
         cloak.state,
-        DrawState {
-            native_offset_words: 5,
-            ..base
-        },
         DrawState {
             fx_flags: FX_EMP,
             ..base

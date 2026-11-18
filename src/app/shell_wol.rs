@@ -20,8 +20,7 @@
 pub(crate) mod buddies;
 pub(crate) mod buddy;
 mod live_service;
-#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-pub(crate) use live_service::lobby_base_url;
+pub(crate) use live_service::lobby_get;
 pub(crate) mod lobby;
 mod lobby_phrases;
 mod login;
@@ -562,7 +561,7 @@ pub(crate) fn open_lobby(state: &mut AppState, postmatch: bool) {
         .is_some_and(|lobby| lobby.runner == lobby::Runner::Buddy);
     match (buddy_mode, postmatch, buddy_runner) {
         (true, false, true) => buddy::stopped(state),
-        (true, _, _) => buddy::open(state),
+        (true, _, _) => lobby::open_runner(state, lobby::Runner::Buddy),
         (false, _, _) => lobby::open(state, postmatch),
     }
 }

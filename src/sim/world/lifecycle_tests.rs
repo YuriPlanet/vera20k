@@ -556,7 +556,7 @@ fn receiver_garrison_survivor_keeps_height_aware_playfield_membership() {
     {
         let passenger = sim.substrate.entities.get_mut(passenger_id).unwrap();
         passenger.set_type_ref_for_test(passenger_type);
-        passenger.passenger_role = PassengerRole::inside_for_test(building_id, false);
+        passenger.set_passenger_role_for_test(PassengerRole::inside_for_test(building_id, false));
     }
     {
         let building = sim.substrate.entities.get_mut(building_id).unwrap();
@@ -564,7 +564,7 @@ fn receiver_garrison_survivor_keeps_height_aware_playfield_membership() {
         building
             .type_facts
             .set_foundation_for_test("2x2".to_string().into());
-        building.passenger_role.occupants_mut().add(passenger_id);
+        building.garrison_mut_for_test().add_for_test(passenger_id);
     }
     assert!(matches!(
         sim.try_reveal_entity_with_context(
@@ -2892,8 +2892,11 @@ fn open_topped_direct_registration_keeps_hidden_passenger_live() {
     let _ = sim.reveal(2);
 
     assert_eq!(sim.techno_limbo(1), super::ConcealOutcome::Concealed);
-    sim.substrate.entities.get_mut(1).unwrap().passenger_role =
-        PassengerRole::inside_for_test(99, true);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(99, true));
 
     assert!(sim.register_open_topped_passenger(1));
     let passenger = sim.substrate.entities.get(1).unwrap();
@@ -2919,8 +2922,11 @@ fn destructor_takes_a_dead_open_topped_rider_out_of_logic() {
     let _ = sim.reveal(1);
     let _ = sim.reveal(2);
     assert_eq!(sim.techno_limbo(1), super::ConcealOutcome::Concealed);
-    sim.substrate.entities.get_mut(1).unwrap().passenger_role =
-        PassengerRole::inside_for_test(2, true);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(2, true));
     assert!(sim.register_open_topped_passenger(1));
 
     sim.uninit(1);
@@ -2944,8 +2950,11 @@ fn logic_visit_of_a_dead_open_topped_rider_does_not_uninit_it_again() {
     let _ = sim.reveal(1);
     let _ = sim.reveal(2);
     assert_eq!(sim.techno_limbo(1), super::ConcealOutcome::Concealed);
-    sim.substrate.entities.get_mut(1).unwrap().passenger_role =
-        PassengerRole::inside_for_test(2, true);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(2, true));
     assert!(sim.register_open_topped_passenger(1));
     sim.uninit(1);
 
@@ -3507,11 +3516,21 @@ fn lifecycle_authority_transport_uninits_passengers_in_cargo_order_before_carrie
     let mut cargo = PassengerCargo::new(5, 1.0);
     cargo.board_forced_chain(&[(2, 1.0)]);
     cargo.board_forced_chain(&[(3, 1.0)]);
-    sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
-    sim.substrate.entities.get_mut(2).unwrap().passenger_role =
-        PassengerRole::inside_for_test(1, false);
-    sim.substrate.entities.get_mut(3).unwrap().passenger_role =
-        PassengerRole::inside_for_test(1, false);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::transport(cargo));
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(1, false));
+    sim.substrate
+        .entities
+        .get_mut(3)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(1, false));
     sim.lifecycle_test_events.clear();
 
     sim.uninit(1);
@@ -3532,7 +3551,7 @@ fn lifecycle_authority_transport_uninits_passengers_in_cargo_order_before_carrie
             .entities
             .get(2)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .is_none()
     );
     assert!(
@@ -3540,7 +3559,7 @@ fn lifecycle_authority_transport_uninits_passengers_in_cargo_order_before_carrie
             .entities
             .get(3)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .is_none()
     );
     let cargo = sim
@@ -3548,7 +3567,7 @@ fn lifecycle_authority_transport_uninits_passengers_in_cargo_order_before_carrie
         .entities
         .get(1)
         .unwrap()
-        .passenger_role
+        .passenger_role()
         .cargo()
         .unwrap();
     assert!(cargo.passengers().is_empty());
@@ -3560,7 +3579,7 @@ fn lifecycle_authority_transport_uninits_passengers_in_cargo_order_before_carrie
             .entities
             .get(1)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .occupants()
             .fire_index(),
         0
@@ -3576,17 +3595,23 @@ fn nested_transport_uninit_keeps_inner_cargo_until_its_recursive_transaction() {
     let _ = sim.reveal(1);
     let mut outer = PassengerCargo::new(12, 6.0);
     outer.board_forced_chain(&[(2, 3.0)]);
-    sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(outer);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::transport(outer));
     let mut inner = PassengerCargo::new(5, 2.0);
     inner.board_forced_chain(&[(3, 1.0)]);
     let entity = sim.substrate.entities.get_mut(2).unwrap();
-    entity.passenger_role = PassengerRole::transport(inner);
-    entity.passenger_role.set_inside_transport(1, false);
+    entity.set_passenger_role_for_test(PassengerRole::transport(inner));
+    entity
+        .passenger_role_mut_for_test()
+        .set_inside_transport(1, false);
     sim.substrate
         .entities
         .get_mut(3)
         .unwrap()
-        .passenger_role
+        .passenger_role_mut_for_test()
         .set_inside_transport(2, true);
 
     sim.uninit(1);
@@ -3596,7 +3621,7 @@ fn nested_transport_uninit_keeps_inner_cargo_until_its_recursive_transaction() {
     for id in [1, 2, 3] {
         let entity = sim.substrate.entities.get(id).unwrap();
         assert!(!entity.lifecycle.object_alive());
-        assert_eq!(entity.passenger_role.inside_transport_id(), None);
+        assert_eq!(entity.passenger_role().inside_transport_id(), None);
     }
     for id in [1, 2] {
         assert!(
@@ -3604,7 +3629,7 @@ fn nested_transport_uninit_keeps_inner_cargo_until_its_recursive_transaction() {
                 .entities
                 .get(id)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .unwrap()
                 .is_empty()
@@ -3642,15 +3667,17 @@ fn nested_transport_parent_expiry_preserves_its_independent_cargo() {
             let mut cargo = PassengerCargo::new(5, 2.0);
             cargo.board_forced_chain(&[(3, 1.0)]);
             let entity = sim.substrate.entities.get_mut(2).unwrap();
-            entity.passenger_role = PassengerRole::transport(cargo);
+            entity.set_passenger_role_for_test(PassengerRole::transport(cargo));
             if inside {
-                entity.passenger_role.set_inside_transport(1, false);
+                entity
+                    .passenger_role_mut_for_test()
+                    .set_inside_transport(1, false);
             }
             sim.substrate
                 .entities
                 .get_mut(3)
                 .unwrap()
-                .passenger_role
+                .passenger_role_mut_for_test()
                 .set_inside_transport(2, true);
 
             let announce_expiry = |sim: &mut Simulation| {
@@ -3667,7 +3694,7 @@ fn nested_transport_parent_expiry_preserves_its_independent_cargo() {
             } else {
                 announce_expiry(&mut sim);
             }
-            let role = &sim.substrate.entities.get(2).unwrap().passenger_role;
+            let role = sim.substrate.entities.get(2).unwrap().passenger_role();
             assert_eq!(
                 role.inside_transport(),
                 if inside && retain_inside {
@@ -3684,7 +3711,7 @@ fn nested_transport_parent_expiry_preserves_its_independent_cargo() {
                     .entities
                     .get(3)
                     .unwrap()
-                    .passenger_role
+                    .passenger_role()
                     .inside_transport(),
                 Some((2, true))
             );
@@ -4695,11 +4722,21 @@ fn expiring_mixed_size_passenger_updates_transport_total_exactly() {
     let mut cargo = PassengerCargo::new(5, 0.0);
     cargo.board_forced_chain(&[(2, 3.0)]);
     cargo.board_forced_chain(&[(3, 1.0)]);
-    sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
-    sim.substrate.entities.get_mut(2).unwrap().passenger_role =
-        PassengerRole::inside_for_test(1, false);
-    sim.substrate.entities.get_mut(3).unwrap().passenger_role =
-        PassengerRole::inside_for_test(1, false);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::transport(cargo));
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(1, false));
+    sim.substrate
+        .entities
+        .get_mut(3)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(1, false));
 
     sim.uninit(2);
 
@@ -4708,7 +4745,7 @@ fn expiring_mixed_size_passenger_updates_transport_total_exactly() {
         .entities
         .get(1)
         .unwrap()
-        .passenger_role
+        .passenger_role()
         .cargo()
         .unwrap();
     assert_eq!(cargo.passengers(), vec![3]);
@@ -5899,9 +5936,8 @@ fn homing_ground_impact_reaches_damage_and_cleanup_through_runtime_frame() {
             );
         }
         let mut runtime = SimRuntime::from_simulation(sim);
-        runtime.resources_mut().rules = RuleSet::from_ini(&ini).unwrap();
-        runtime.resources_mut().overlay_registry =
-            crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, Some(&art));
+        runtime.resources_mut().rules =
+            RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
 
         let _ = runtime
             .advance_frame(
@@ -6815,7 +6851,7 @@ fn gsi_05_04_combat_fatal_garrison_recursion_keeps_cell_target() {
     {
         let passenger = sim.substrate.entities.get_mut(passenger_id).unwrap();
         passenger.set_type_ref_for_test(passenger_type);
-        passenger.passenger_role = PassengerRole::inside_for_test(building_id, false);
+        passenger.set_passenger_role_for_test(PassengerRole::inside_for_test(building_id, false));
     }
     {
         let building = sim.substrate.entities.get_mut(building_id).unwrap();
@@ -6824,7 +6860,7 @@ fn gsi_05_04_combat_fatal_garrison_recursion_keeps_cell_target() {
             .type_facts
             .set_foundation_for_test("2x2".to_string().into());
         building.health.set_for_test(10);
-        building.passenger_role.occupants_mut().add(passenger_id);
+        building.garrison_mut_for_test().add_for_test(passenger_id);
     }
     assert!(matches!(
         sim.try_reveal_entity_with_context(
@@ -7999,12 +8035,12 @@ fn wave_walks_nonbuilding_terrain_building_order_and_terrain_owns_wood_gate() {
                  [BuildingTypes]\n0=BLDG\n\
                  [TerrainTypes]\n0=TREE01\n\
                  [UNIT]\nStrength=100\nArmor=none\n\
-                 [BLDG]\nStrength=100\nArmor=wood\n\
+                 [BLDG]\nStrength=100\nArmor=none\n\
                  [FIRER]\nStrength=100\nArmor=light\nPrimary=SONIC\n\
                  [TREE01]\nStrength=100\nArmor=wood\nImmune=no\n\
                  [SONIC]\nDamage=4\nAmbientDamage=10\nWarhead=WH\nIsSonic=yes\n\
                  [WH]\nWood={}\nCellSpread=0\nPercentAtMax=1\n\
-                 Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+                 Verses=100%,100%,100%,100%,100%,100%,50%,100%,100%,100%,100%\n",
                 if wood { "yes" } else { "no" },
             )),
         )
@@ -8109,8 +8145,8 @@ fn wave_walks_nonbuilding_terrain_building_order_and_terrain_owns_wood_gate() {
         "one-cell order is nonbuilding, Terrain, then Building",
     );
     assert_eq!(unit_health, 90);
-    assert_eq!(tree_health, 90);
-    assert_eq!(building_health, 90);
+    assert_eq!(tree_health, 95);
+    assert_eq!(building_health, 95, "the tree passes its five-point damage to the building");
 
     let (_, unit_health, tree_health, building_health) = run(false);
     assert_eq!(unit_health, 90);
@@ -10139,9 +10175,16 @@ fn aircraft_destructor_kills_its_passengers() {
     insert_entity(&mut sim, 2, EntityCategory::Infantry);
     let mut cargo = PassengerCargo::new(5, 1.0);
     cargo.board_forced_chain(&[(2, 1.0)]);
-    sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
-    sim.substrate.entities.get_mut(2).unwrap().passenger_role =
-        PassengerRole::inside_for_test(1, false);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::transport(cargo));
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(1, false));
 
     sim.finalize_and_remove_common(1, super::UninitContext::default(), 1);
 
@@ -10169,14 +10212,24 @@ fn detach_all_false_keeps_a_rider_in_its_transports_cargo() {
     let _ = sim.reveal(1);
     let mut cargo = PassengerCargo::new(5, 1.0);
     cargo.board_forced_chain(&[(2, 1.0)]);
-    sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
-    sim.substrate.entities.get_mut(2).unwrap().passenger_role =
-        PassengerRole::inside_for_test(1, true);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::transport(cargo));
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(1, true));
 
     sim.detach_all(2, false, super::UninitContext::default());
 
     let transport = sim.substrate.entities.get(1).unwrap();
-    assert_eq!(transport.passenger_role.cargo().unwrap().passengers(), &[2]);
+    assert_eq!(
+        transport.passenger_role().cargo().unwrap().passengers(),
+        &[2]
+    );
 }
 
 /// The Restore inside the expiry broadcast (`TechnoClass::PointerExpired`

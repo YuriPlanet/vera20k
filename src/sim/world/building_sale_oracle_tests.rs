@@ -164,7 +164,7 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
         .set_selected_for_test(input["selected"] == true);
     let mut passengers = Vec::new();
     if let Some(names) = input["passengers"].as_array() {
-        building.passenger_role = PassengerRole::transport(PassengerCargo::new(5, 0.0));
+        building.set_passenger_role_for_test(PassengerRole::transport(PassengerCargo::new(5, 0.0)));
         for name in names {
             let id = sim
                 .construct_object_limbo_at_height(
@@ -178,8 +178,11 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
                     crate::sim::world::FrameEffects::default(),
                 )
                 .expect("absorbed infantry");
-            sim.substrate.entities.get_mut(id).unwrap().passenger_role =
-                PassengerRole::inside_for_test(refinery, false);
+            sim.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .set_passenger_role_for_test(PassengerRole::inside_for_test(refinery, false));
             passengers.push(id);
         }
         // AddPassenger prepends: the list's head is the first passenger.
@@ -188,7 +191,7 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
                 .entities
                 .get_mut(refinery)
                 .unwrap()
-                .passenger_role
+                .passenger_role_mut_for_test()
                 .cargo_mut()
                 .unwrap()
                 .board_forced_chain(&[(id, 1.0)]);
@@ -363,7 +366,7 @@ fn replay_crew_row(row: &Value) {
     );
     assert_eq!(
         building
-            .passenger_role
+            .passenger_role()
             .cargo()
             .map_or(0, |cargo| i64::from(cargo.count())),
         row["building"]["passengers"].as_i64().unwrap(),

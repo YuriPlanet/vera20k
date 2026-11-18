@@ -129,10 +129,7 @@ fn paid_destroyer_runs_shipyard_production_animation_through_idle_recovery() {
     let cost = sim.cost_of(owner, rules.object("DEST").unwrap(), &rules);
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: std::sync::Arc::new(SimResources {
-            rules,
-            ..SimResources::empty()
-        }),
+        resources: std::sync::Arc::new(SimResources::new(rules)),
     };
     for _ in 0..8 {
         runtime
@@ -690,10 +687,7 @@ pub(super) fn retail_barracks_sale_runtime(
     Some((
         SimRuntime {
             simulation: sim,
-            resources: std::sync::Arc::new(SimResources {
-                rules,
-                ..SimResources::empty()
-            }),
+            resources: std::sync::Arc::new(SimResources::new(rules)),
         },
         owner,
         2,
@@ -775,7 +769,7 @@ fn offline_backup_preserves_paid_infantry_with_system_hold() {
     for offset in 1..=12 {
         let sim = &mut runtime.simulation;
         sim.production
-            .factories_mut()
+            .edit_factories()
             .step_all(&mut sim.houses, sim.session.binary_frame() + offset);
     }
     let sim = &runtime.simulation;
@@ -1063,10 +1057,7 @@ fn selling_last_retail_barracks_keeps_paid_head_before_map_exit() {
         );
         let mut restored = crate::sim::runtime::SimRuntime {
             simulation: restored,
-            resources: std::sync::Arc::new(crate::sim::runtime::SimResources {
-                rules: rules.clone(),
-                ..crate::sim::runtime::SimResources::empty()
-            }),
+            resources: std::sync::Arc::new(crate::sim::runtime::SimResources::new(rules.clone())),
         };
         let spent_at_sale = runtime.simulation.houses[&owner].economy().spent_credits();
         let mut sale_visits = 0;
@@ -1459,10 +1450,7 @@ fn paid_boris_delivery_requests_its_creation_cue_once_at_the_delivered_location(
     assert!(cost > 0);
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: std::sync::Arc::new(SimResources {
-            rules,
-            ..SimResources::empty()
-        }),
+        resources: std::sync::Arc::new(SimResources::new(rules)),
     };
     let mut product = None;
     let mut cues = Vec::new();
@@ -2717,7 +2705,7 @@ fn building_queue_switch_queues_and_starts_the_next_after_placement() {
             .factories_mut()
             .test_arm_ready(owner, ProductionCategory::Building)
     );
-    sim.production.factories_mut().complete_production(
+    sim.production.edit_factories().complete_production(
         owner,
         ProductionCategory::Building,
         sim.session.binary_frame(),
@@ -3035,9 +3023,11 @@ pub(crate) fn prerequisite_loss_cancellation_fixture(
     receiver.session.set_current_house_for_test(Some(other));
     let held = held_id(&sender, owner, ProductionCategory::Vehicle);
     let rng = sender.rng_state();
-    let events = sender.recheck_house_tech_tree(owner, &rules);
+    let events = sender.recheck_house_tech_tree(owner, &rules, Default::default());
     assert!(
-        receiver.recheck_house_tech_tree(owner, &rules).is_empty(),
+        receiver
+            .recheck_house_tech_tree(owner, &rules, Default::default())
+            .is_empty(),
         "a remote human clears its recheck without publishing another strip"
     );
     assert!(!sender.houses[&owner].tech_recheck_pending());

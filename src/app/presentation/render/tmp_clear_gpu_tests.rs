@@ -1,7 +1,6 @@
 //! Physical TMP through the production decoder, atlas, live cell
 //! selection, common lighting, A binding, upload and ordinary terrain draw.
 //! Expected RGB565 and stored Z are captured by original Cell480350/TMP547CF0.
-use super::draw_pooled_zdepth;
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
 use crate::map::lighting::{LightingProfileUnits, build_cell_light_grid_from_heights_and_units};
 use crate::map::map_file::{MapCell, MapFile};
@@ -835,7 +834,10 @@ fn assert_tmp_pass(
         let clip: [u32; 4] = std::array::from_fn(|i| input["clip"][i].as_u64().unwrap() as u32);
         pass.set_scissor_rect(clip[0], clip[1], clip[2], clip[3]);
         for _ in 0..input["repeat"].as_u64().unwrap() {
-            draw_pooled_zdepth(&mut pass, batch, pool, Some(atlas), "tmp-clear-native");
+            // A row whose cell admits no tile uploads nothing.
+            if let Some((buffer, count)) = pool.get("tmp-clear-native") {
+                batch.draw_with_buffer_zdepth(&mut pass, &atlas.zdepth_bind_group, buffer, count);
+            }
         }
     }
     let reads = [gpu.read(&mut encoder, color), gpu.read(&mut encoder, depth)];

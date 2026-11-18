@@ -1,3 +1,5 @@
+#[path = "src/app/shell_network_setup/network_build.rs"]
+mod network_build;
 #[path = "src/util/sha256.rs"]
 mod sha256;
 #[path = "src/test_group_cfgs.rs"]
@@ -24,10 +26,14 @@ fn main() {
     }
 }
 
-/// A package version alone cannot identify two different development builds.
-/// Hash portable source inputs, never paths on the build machine, retail data,
-/// credentials or timestamps. The same source and gameplay features therefore
-/// advertise the same compatibility identity on macOS and Linux.
+/// `VERA20K_NETWORK_BUILD`, which decides with the package version which
+/// builds play together (docs/Networking.md, "Build check"). A package version
+/// alone cannot identify two different development builds. Hash portable
+/// source inputs (`network_build::add_source`), never paths on the build
+/// machine, retail data, credentials or timestamps, and every enabled Cargo
+/// feature but the test groups and the browser's thread pool
+/// (`network_build::add_features`). The same source and features therefore
+/// give the same hash on every platform.
 fn multiplayer_build_identity() {
     use std::path::{Path, PathBuf};
     fn sources(directory: &Path, files: &mut Vec<PathBuf>) {
@@ -63,33 +69,18 @@ fn multiplayer_build_identity() {
     files.sort();
     let mut input = b"VERA20k multiplayer build v1\0".to_vec();
     for file in files {
-        input.extend_from_slice(
-            file.strip_prefix(&root)
+        network_build::add_source(
+            &mut input,
+            &file
+                .strip_prefix(&root)
                 .expect("source below root")
-                .to_string_lossy()
-                .replace('\\', "/")
-                .as_bytes(),
+                .to_string_lossy(),
+            &std::fs::read(&file).expect("read multiplayer build source"),
         );
-        input.push(0);
-        let bytes = std::fs::read(&file).expect("read multiplayer build source");
-        input.extend_from_slice(&(bytes.len() as u64).to_le_bytes());
-        input.extend_from_slice(&bytes);
     }
-    // The test group features choose which tests compile, not how the game
-    // plays (src/test_group_cfgs.rs): they stay out of the identity.
-    let mut features: Vec<_> = std::env::vars()
-        .filter_map(|(key, _)| {
-            (key.starts_with("CARGO_FEATURE_")
-                && !key.starts_with("CARGO_FEATURE_TEST_FOCUS")
-                && !key.starts_with("CARGO_FEATURE_TESTS_"))
-            .then_some(key)
-        })
-        .collect();
-    features.sort();
-    for feature in features {
+    let variables = std::env::vars().map(|(name, _)| name);
+    for feature in network_build::add_features(&mut input, variables) {
         println!("cargo::rerun-if-env-changed={feature}");
-        input.extend_from_slice(feature.as_bytes());
-        input.push(0);
     }
     println!(
         "cargo::rustc-env=VERA20K_NETWORK_BUILD={}",

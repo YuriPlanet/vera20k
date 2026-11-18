@@ -454,9 +454,9 @@ pub struct TerrainTileAnimation {
 /// names take the same path without a WA/TUNTOP name table in Rust.
 pub fn scheduler_anim_roots(
     rules: &RuleSet,
-    overlay_registry: &OverlayTypeRegistry,
     tile_animations: &[TerrainTileAnimation],
 ) -> Vec<String> {
+    let overlay_registry = rules.overlay_registry();
     let mut roots = BTreeSet::new();
     roots.extend(
         rules

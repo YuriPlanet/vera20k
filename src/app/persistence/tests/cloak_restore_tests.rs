@@ -38,17 +38,9 @@ fn transition_fixture(state: i32) -> Option<(Simulation, RuleSet, ResolvedTerrai
         .as_mut()
         .unwrap()
         .set_state_for_test(0);
-    let registry = OverlayTypeRegistry::empty();
     for _ in 0..32 {
-        sim.advance_app_frame(
-            &[],
-            &rules,
-            Some(&registry),
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
-        .unwrap();
+        sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+            .unwrap();
         if cloak(&sim, id).state() == 1 && cloak(&sim, id).depth() == 2 {
             break;
         }
@@ -73,7 +65,6 @@ fn prepare(saved: &Simulation, rules: &RuleSet, terrain: &ResolvedTerrainGrid) -
         Some(LOAD_FIXTURE_MAP_HASH),
         Some(rules),
         Some(terrain),
-        Some(&OverlayTypeRegistry::empty()),
     )
     .unwrap()
     .simulation
@@ -85,10 +76,10 @@ fn player_load_restarts_mid_cloak_without_reentering_cloak() {
         return;
     };
     let before = cloak(&saved, id);
-    let mut internal = GameSnapshot::load(&snapshot_bytes(&saved, &rules))
+    let internal = GameSnapshot::load(&snapshot_bytes(&saved, &rules))
         .unwrap()
-        .sim;
-    internal.restore_after_snapshot_load().unwrap();
+        .restore_references_for_test()
+        .unwrap();
     assert_eq!(
         cloak(&internal, id),
         before,
@@ -119,14 +110,7 @@ fn player_load_finishes_mid_uncloak_on_first_update() {
     assert_eq!(cloak(&restored, id).step_delta(), 1);
     let first_frame = restored.session().binary_frame();
     restored
-        .advance_app_frame(
-            &[],
-            &rules,
-            Some(&OverlayTypeRegistry::empty()),
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
+        .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
         .unwrap();
     // Native6FB9AC..6FBA07 finishes progress0 and starts the shared rule delay.
     let finished = cloak(&restored, id);

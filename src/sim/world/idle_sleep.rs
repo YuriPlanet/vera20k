@@ -377,7 +377,7 @@ impl Simulation {
             && entity.slave_manager.is_none()
             && entity.cloak.is_none()
             && entity.rocking.is_none()
-            && entity.passenger_role.occupants().is_empty()
+            && entity.passenger_role().occupants().is_empty()
             && !entity.berserk.is_active()
             && !entity.deactivated.is_offline()
             && entity.building.tesla_charge.chargers().is_empty()

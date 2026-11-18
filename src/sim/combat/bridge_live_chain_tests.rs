@@ -106,7 +106,7 @@ fn restore_saved_scenario(
     restored
         .restore_map_authority_after_snapshot_load(
             &resources.rules,
-            &resources.overlay_registry,
+            resources.rules.overlay_registry(),
             None,
         )
         .expect("saved map and bridge authority restore");

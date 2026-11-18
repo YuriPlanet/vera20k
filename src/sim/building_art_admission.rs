@@ -166,7 +166,7 @@ impl Simulation {
         // UpdateAnimation450B72..450B7F selects the slot from true Cargo
         // total Size, independently of the garrison vector.
         let occupied = entity
-            .passenger_role
+            .passenger_role()
             .cargo()
             .is_some_and(|cargo| cargo.total_size() > 0);
         let (remove, keep) = if occupied { (3, 4) } else { (4, 3) };
@@ -189,7 +189,7 @@ impl Simulation {
                 object.strength,
                 rules.general.condition_yellow,
             );
-            let garrisoned = entity.passenger_role.occupants().count() > 0;
+            let garrisoned = entity.passenger_role().occupants().count() > 0;
             self.set_building_anim_slot(id, keep, damaged, garrisoned, 0, rules);
         }
     }
@@ -378,12 +378,14 @@ mod tests {
             .entities
             .get_mut(passenger)
             .unwrap()
-            .passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(id, false);
+            .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
+                id, false,
+            ));
         sim.substrate
             .entities
             .get_mut(id)
             .unwrap()
-            .passenger_role
+            .passenger_role_mut_for_test()
             .cargo_mut()
             .unwrap()
             .board_forced_chain(&[(passenger, 1.0)]);
@@ -423,7 +425,7 @@ mod tests {
             .entities
             .get_mut(id)
             .unwrap()
-            .passenger_role
+            .passenger_role_mut_for_test()
             .cargo_mut()
             .unwrap();
         cargo.clear_contents();

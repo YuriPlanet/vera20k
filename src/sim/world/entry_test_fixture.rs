@@ -78,13 +78,12 @@ pub(crate) fn fixture_with_rules_and_fixed_art(
             sim.resolved_terrain.as_ref()
         ));
     }
-    (sim, rules, parts.registry.clone())
+    (sim, rules, parts.rules.overlay_registry().clone())
 }
 
-/// The rules, overlay registry and map of one entry fixture.
+/// The rules and map of one entry fixture.
 struct FixtureParts {
     rules: RuleSet,
-    registry: crate::rules::overlay_types::OverlayTypeRegistry,
     bounds: crate::map::playfield::PlayfieldBounds,
     terrain: ResolvedTerrainGrid,
     bridges: BridgeRuntimeState,
@@ -113,7 +112,6 @@ impl FixtureParts {
         ini.merge(&IniFile::from_str(extra));
         let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, art).unwrap();
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(art));
-        let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, Some(art));
         let mut terrain = ResolvedTerrainGrid::from_cells(
             33,
             33,
@@ -154,7 +152,6 @@ impl FixtureParts {
         assert!(zones.hierarchy_for(MovementZone::Normal).is_some());
         Self {
             rules,
-            registry,
             bounds,
             terrain,
             bridges,

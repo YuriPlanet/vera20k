@@ -644,9 +644,8 @@ fn reset_rows_hidden_by_capacity(state: &mut SkirmishShellState, capacity: i32) 
     }
 }
 
-/// Apply the accepted Choose Map selection as one row-lifecycle transaction.
-/// A shrink resets every now-hidden opponent row before the selected map becomes
-/// observable; growth only reveals rows, whose prior hide reset remains intact.
+/// Apply the accepted map's capacity to the opponent rows. SkirmishDialog
+/// (`0x006ADDF0`) refreshes the rows even when both maps are `RandMap.Sed`.
 pub fn accept_selected_map(
     state: &mut SkirmishShellState,
     maps: &[MapMenuEntry],
@@ -655,13 +654,9 @@ pub fn accept_selected_map(
     let Some(new_map) = maps.get(map_idx) else {
         return false;
     };
-    let old_capacity = maps
-        .get(state.selected_map_idx)
-        .map(|map| map.player_capacity)
-        .unwrap_or(SKIRMISH_PLAYER_SLOT_COUNT as i32);
-    if new_map.player_capacity < old_capacity {
-        reset_rows_hidden_by_capacity(state, new_map.player_capacity);
-    }
+    // Generating another random map replaces the selected entry in place, so
+    // reading its old index here would already give the new capacity.
+    reset_rows_hidden_by_capacity(state, new_map.player_capacity);
     state.selected_map_idx = map_idx;
     true
 }

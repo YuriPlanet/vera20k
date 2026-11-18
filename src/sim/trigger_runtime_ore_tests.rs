@@ -331,14 +331,7 @@ fn counted_tag_pauses_drivers_preserves_saved_gate_and_reenables_due_timers() {
     );
     let queues = serde_json::to_value(&sim.ore_growth_state).unwrap();
     let frame = sim
-        .advance_app_frame(
-            &[],
-            &rules,
-            Some(registry),
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
+        .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
         .unwrap();
     assert!(frame.tick.frame_committed);
     assert_eq!(serde_json::to_value(&sim.ore_growth_state).unwrap(), queues);
@@ -366,7 +359,6 @@ fn counted_tag_pauses_drivers_preserves_saved_gate_and_reenables_due_timers() {
         .advance_app_frame(
             &[],
             &rules,
-            Some(registry),
             134,
             TickLane::Ordinary,
             FrameEffects::default(),

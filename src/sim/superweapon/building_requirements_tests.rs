@@ -68,10 +68,10 @@ fn active(sim: &Simulation, owner: &str, name: &str) -> bool {
 
 fn recheck(sim: &mut Simulation, rules: &RuleSet, owner: &str) {
     let owner = sim.interner.get(owner).unwrap();
-    sim.recheck_house_tech_tree(owner, rules);
+    sim.recheck_house_tech_tree(owner, rules, Default::default());
     // Revocation itself requests a follow-up tail. Settle it so each next
     // lifecycle change must publish its own invalidation, not inherit one.
-    sim.recheck_house_tech_tree(owner, rules);
+    sim.recheck_house_tech_tree(owner, rules, Default::default());
     assert!(!sim.houses.get_mut(&owner).unwrap().take_tech_recheck());
 }
 

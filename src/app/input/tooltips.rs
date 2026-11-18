@@ -440,7 +440,7 @@ fn unit_turret_tip_text(
     }
     let tip = |key: &str| csf.map_or_else(|| key.to_owned(), |csf| csf.text(key).into_owned());
     let passenger = entity
-        .passenger_role
+        .passenger_role()
         .cargo()
         .and_then(|cargo| cargo.passengers().first())
         .and_then(|&id| view.entities().get(id))
@@ -1387,7 +1387,7 @@ mod tests {
                     if sim
                         .entities()
                         .get(id)
-                        .is_some_and(|entity| entity.passenger_role.is_inside_transport())
+                        .is_some_and(|entity| entity.passenger_role().is_inside_transport())
                     {
                         break;
                     }
@@ -1395,7 +1395,7 @@ mod tests {
                 assert!(
                     sim.entities()
                         .get(id)
-                        .is_some_and(|entity| entity.passenger_role.is_inside_transport()),
+                        .is_some_and(|entity| entity.passenger_role().is_inside_transport()),
                     "{passenger} boards the IFV"
                 );
             }

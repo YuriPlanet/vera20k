@@ -61,11 +61,11 @@ fn owns_construction_yard(sim: &Simulation, rules: &RuleSet, owner: InternedId) 
         return false;
     };
     let entries = if rules.ares_form() {
-        rules.build_const_types.len()
+        rules.build_const_types().len()
     } else {
         3
     };
-    rules.build_const_types.iter().take(entries).any(|name| {
+    rules.build_const_types().iter().take(entries).any(|name| {
         sim.interner.get(name).is_some_and(|type_id| {
             house
                 .tracking()

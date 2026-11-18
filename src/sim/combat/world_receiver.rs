@@ -1045,43 +1045,28 @@ pub(crate) fn commit_area_with_dispatch(
     for receiver in receivers {
         match *receiver {
             combat_aoe::AreaDamageReceiver::Entity(event) => {
-                if !area_record_dispatches(world, rules, &event) {
-                    continue;
-                }
-                if !area_isolation_dispatches(world, &event, isolation_armed, current_tick) {
-                    continue;
-                }
-                dispatched = true;
-                let (nested, mut pings) = commit_entities(
-                    world,
-                    run,
-                    std::slice::from_ref(&event),
-                    Some(false),
-                    rules,
-                    overlay_registry,
-                );
-                effects.append(nested);
-                under_attack_events.append(&mut pings);
-            }
-            combat_aoe::AreaDamageReceiver::Terrain(event) => {
-                if isolation_armed && event.near_center_ic_isolation_eligible {
-                    continue;
-                }
-                if !world
-                    .terrain_objects
-                    .objects()
-                    .get(&event.stable_id)
-                    .is_some_and(|terrain| terrain.is_live() && terrain.health() > 0)
+                if !area_record_dispatches(world, rules, &event)
+                    || !area_isolation_dispatches(world, &event, isolation_armed, current_tick)
                 {
                     continue;
                 }
-                dispatched = true;
-                let (nested, mut pings) =
-                    commit_terrain(world, run, event, false, rules, overlay_registry);
-                effects.append(nested);
-                under_attack_events.append(&mut pings);
+            }
+            combat_aoe::AreaDamageReceiver::Terrain(event) => {
+                if (isolation_armed && event.near_center_ic_isolation_eligible)
+                    || !world
+                        .terrain_objects
+                        .get(event.stable_id)
+                        .is_some_and(|terrain| terrain.is_live() && terrain.health() > 0)
+                {
+                    continue;
+                }
             }
         }
+        dispatched = true;
+        let (nested, mut pings, _) =
+            commit_receiver(world, run, *receiver, rules, overlay_registry);
+        effects.append(nested);
+        under_attack_events.append(&mut pings);
     }
 
     let result = if isolation_armed {
@@ -1131,16 +1116,45 @@ fn area_record_dispatches(world: &Simulation, rules: &RuleSet, event: &EntityDam
         .entities
         .get(event.target_id)
         .is_some_and(|target| {
-            target.lifecycle.object_alive()
+            target.is_live_on_map()
                 && !(target.category() == EntityCategory::Structure
                     && world
                         .interner
                         .object_type(target.type_ref(), rules)
                         .is_some_and(|object| object.invisible_in_game))
-                && target.health.current() > 0
-                && target.lifecycle.cell_marked()
-                && !target.lifecycle.in_limbo()
         })
+}
+
+/// Dispatch one concrete receiver. Wave75F42C reuses the returned damage in
+/// this cell; Apply_area_damage489ABC gives each admitted record its own word.
+pub(crate) fn commit_receiver(
+    world: &mut Simulation,
+    run: &mut ReceiverRun,
+    receiver: combat_aoe::AreaDamageReceiver,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+) -> (DeathEffects, Vec<UnderAttackEvent>, i32) {
+    match receiver {
+        combat_aoe::AreaDamageReceiver::Entity(event) => {
+            let frame = ReceiverFrame::capture(world);
+            let mut death = DeathEffects::default();
+            let mut under_attack_events = Vec::new();
+            let damage = commit_entity(
+                world,
+                run,
+                &event,
+                frame,
+                rules,
+                overlay_registry,
+                &mut death,
+                &mut under_attack_events,
+            );
+            (death, under_attack_events, damage)
+        }
+        combat_aoe::AreaDamageReceiver::Terrain(event) => {
+            commit_terrain(world, run, event, false, rules, overlay_registry)
+        }
+    }
 }
 
 /// Complete one TerrainClass receiver, including its nested C4 and removal.
@@ -1153,11 +1167,17 @@ pub(crate) fn commit_terrain(
     ignore_defenses: bool,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-) -> (DeathEffects, Vec<UnderAttackEvent>) {
+) -> (DeathEffects, Vec<UnderAttackEvent>, i32) {
     let mut effects = DeathEffects::default();
     let mut under_attack_events = Vec::new();
+    let mut caller_damage =
+        super::receiver_call::ReceiverDamage::new(event.damage, event.damage_writeback);
     let Some(warhead) = world.interner.warhead_type(event.warhead_ref, rules) else {
-        return (effects, under_attack_events);
+        return (
+            effects,
+            under_attack_events,
+            caller_damage.read(world, rules),
+        );
     };
     let mut packet = event.damage;
     let receive = world.terrain_objects.receive_damage(
@@ -1172,9 +1192,7 @@ pub(crate) fn commit_terrain(
         world.session.no_damage(),
         ignore_defenses,
     );
-    if let Some(writeback) = event.damage_writeback {
-        writeback.write(world, rules, packet);
-    }
+    caller_damage.write(world, rules, packet);
     // Ares 3.0 TerrainClass_ReceiveDamage_ForestFire (1004F4E0, hook
     // 0x71B99E): after ObjectClass::ReceiveDamage, a positive `Sparky=` hit
     // on a tree not yet burning calls Catch_Fire (vt+0x178), lethal or not.
@@ -1190,7 +1208,11 @@ pub(crate) fn commit_terrain(
         if ignites {
             world.terrain_catch_fire(event.stable_id, rules);
         }
-        return (effects, under_attack_events);
+        return (
+            effects,
+            under_attack_events,
+            caller_damage.read(world, rules),
+        );
     };
 
     // ObjectReceiveDamage5F57AF calls DetachAll before returning lethal4
@@ -1264,7 +1286,11 @@ pub(crate) fn commit_terrain(
     }
 
     world.terrain_lethal_uninit(lethal, &mut run.finalizing_terrain, uninit_context);
-    (effects, under_attack_events)
+    (
+        effects,
+        under_attack_events,
+        caller_damage.read(world, rules),
+    )
 }
 
 pub(crate) fn commit_entities(
@@ -1275,10 +1301,7 @@ pub(crate) fn commit_entities(
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
 ) -> (DeathEffects, Vec<UnderAttackEvent>) {
-    let sound_enabled = sound_enabled(world);
-
-    let current_tick = receiver_tick(world);
-    let scenario_no_damage = world.session.no_damage();
+    let frame = ReceiverFrame::capture(world);
 
     let mut death = DeathEffects::default();
     let mut under_attack_events = Vec::new();
@@ -1288,16 +1311,65 @@ pub(crate) fn commit_entities(
     // before the arming record. The per-record check below remains live so an
     // earlier receiver or nested death effect can change later protection.
     let near_center_ic_isolation = near_center_ic_isolation_override.unwrap_or_else(|| {
-        near_center_ic_isolation_armed(damage_events, &world.substrate.entities, current_tick)
+        near_center_ic_isolation_armed(damage_events, &world.substrate.entities, frame.tick)
     });
 
     for event in damage_events {
-        if !area_isolation_dispatches(world, event, near_center_ic_isolation, current_tick) {
+        if !area_isolation_dispatches(world, event, near_center_ic_isolation, frame.tick) {
             continue;
         }
+        commit_entity(
+            world,
+            run,
+            event,
+            frame,
+            rules,
+            overlay_registry,
+            &mut death,
+            &mut under_attack_events,
+        );
+    }
+    (death, under_attack_events)
+}
+
+#[derive(Clone, Copy)]
+struct ReceiverFrame {
+    tick: u64,
+    scenario_no_damage: bool,
+    sound_enabled: bool,
+}
+
+impl ReceiverFrame {
+    fn capture(world: &Simulation) -> Self {
+        Self {
+            tick: receiver_tick(world),
+            scenario_no_damage: world.session.no_damage(),
+            sound_enabled: sound_enabled(world),
+        }
+    }
+}
+
+fn commit_entity(
+    world: &mut Simulation,
+    run: &mut ReceiverRun,
+    event: &EntityDamageEvent,
+    frame: ReceiverFrame,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    death: &mut DeathEffects,
+    under_attack_events: &mut Vec<UnderAttackEvent>,
+) -> i32 {
+    let ReceiverFrame {
+        tick: current_tick,
+        scenario_no_damage,
+        sound_enabled,
+    } = frame;
+    let mut caller_damage =
+        super::receiver_call::ReceiverDamage::new(event.damage, event.damage_writeback);
+    'receiver: {
         #[cfg(feature = "debug-tools")]
         let Some(debug_event) = world.debug_damage_event(*event) else {
-            continue;
+            break 'receiver;
         };
         #[cfg(feature = "debug-tools")]
         let event = &debug_event;
@@ -1324,7 +1396,7 @@ pub(crate) fn commit_entities(
             &mut world.houses,
             current_tick,
         ) {
-            BuildingReceivePrelude::ReturnZero => continue,
+            BuildingReceivePrelude::ReturnZero => break 'receiver,
             BuildingReceivePrelude::Respond => {
                 if let Some(victim_owner) = world
                     .substrate
@@ -1392,7 +1464,7 @@ pub(crate) fn commit_entities(
                             .is_some_and(|object| object.naval)
                 })
         {
-            continue;
+            break 'receiver;
         }
         // Ares 3.0 BuildingClass_ReceiveDamage_FSW (10014A90, hook 0x4423E7),
         // past the type gates: an active firestorm wall section returns 0
@@ -1411,7 +1483,7 @@ pub(crate) fn commit_entities(
                 })
             && world.ares_firestorm_absorbs_damage(target_id, event.damage, rules)
         {
-            continue;
+            break 'receiver;
         }
         // Building4422F9..44234A copies its sparse contacts before calling
         // Techno442425. Destroy/Stun can remove the live links before the
@@ -1435,9 +1507,7 @@ pub(crate) fn commit_entities(
             world.resolved_terrain.as_ref(),
         );
         let event = &prepared_event;
-        if let Some(writeback) = event.damage_writeback {
-            writeback.write(world, rules, event.damage);
-        }
+        caller_damage.write(world, rules, event.damage);
         // FootClass::ReceiveDamage 0x004D7330..0x004D7413 runs its parasite
         // prefix on the raw damage before TechnoClass::ReceiveDamage.
         world.foot_receive_damage_parasite_prefix(
@@ -1451,9 +1521,7 @@ pub(crate) fn commit_entities(
         // Foot's synchronous parasite exit can re-enter damage and mutate the
         // same caller-owned field. Techno reads its current pointed value.
         let mut receiver_event = *event;
-        if let Some(writeback) = event.damage_writeback {
-            receiver_event.damage = writeback.read(world, rules);
-        }
+        receiver_event.damage = caller_damage.read(world, rules);
         let event = &receiver_event;
         // Phobos `TechnoClass_ReceiveDamage @ 0x701900+0x6` runs the shield
         // before gamemd's receiver body and replaces `args->Damage` with the
@@ -1480,6 +1548,10 @@ pub(crate) fn commit_entities(
                 _ => None,
             }
         };
+        #[cfg(feature = "phobos")]
+        if let Some(receipt) = &shield_receipt {
+            caller_damage.write(world, rules, receipt.remaining);
+        }
         #[cfg(feature = "phobos")]
         if shield_receipt
             .as_ref()
@@ -1511,6 +1583,10 @@ pub(crate) fn commit_entities(
         #[cfg(feature = "phobos")]
         let unkillable_clamp =
             world.apply_unkillable_clamp(target_id, event, post_shield_input, rules);
+        #[cfg(feature = "phobos")]
+        if unkillable_clamp {
+            caller_damage.write(world, rules, 0);
+        }
         // Phobos TechnoClass_ReceiveDamage_ArmorMultiplier (0x00701966): the
         // effects' armor chances belong to the positive, defended divide on
         // the post-shield damage. `None` keeps the cached unrestricted product.
@@ -1591,11 +1667,10 @@ pub(crate) fn commit_entities(
         }
         // Techno70196C..701D69 writes its defended/gated/kernel value before
         // team removal and Object's synchronous Tag/Kill/Destroy callbacks.
-        if let Some(writeback) = event.damage_writeback
-            && let Some(value) =
-                receiver_outcome.and_then(|resolved| resolved.outcome.post_object_damage)
+        if let Some(value) =
+            receiver_outcome.and_then(|resolved| resolved.outcome.post_object_damage)
         {
-            writeback.write(world, rules, value);
+            caller_damage.write(world, rules, value);
         }
         if let Some(effect) = receiver_outcome.and_then(|resolved| resolved.invulnerability_impact)
         {
@@ -1638,6 +1713,7 @@ pub(crate) fn commit_entities(
             object_packet,
         }) = receiver_health::commit_receiver_health(
             event,
+            &mut caller_damage,
             world,
             rules,
             overlay_registry,
@@ -1646,7 +1722,7 @@ pub(crate) fn commit_entities(
             true,
         )
         else {
-            continue;
+            break 'receiver;
         };
         // Object Tags, Kill and Destroy have already returned, followed by
         // the immediate live-owner House anger update at Techno701E68.
@@ -1713,7 +1789,7 @@ pub(crate) fn commit_entities(
             death
                 .receiver_stage_trace
                 .push(ReceiverStageTrace::PostMortem { target_id });
-            continue;
+            break 'receiver;
         }
         if starts_berserk {
             // The class setter: Infantry's (`0x0051B1F0`) also resets its
@@ -1833,13 +1909,7 @@ pub(crate) fn commit_entities(
         // records the sign before defenses; callbacks may alter a pointed
         // damage field before the aftermath reads it again.
         if rules.ares() {
-            let current_damage = event
-                .damage_writeback
-                .map(|writeback| writeback.read(world, rules))
-                .or_else(|| {
-                    receiver_outcome.and_then(|resolved| resolved.outcome.post_object_damage)
-                })
-                .unwrap_or(event.damage);
+            let current_damage = caller_damage.read(world, rules);
             world.ares_driver_kill_aftermath(
                 event,
                 receive_state,
@@ -1899,7 +1969,7 @@ pub(crate) fn commit_entities(
                 building_entry_frame,
                 rules,
             );
-            continue;
+            break 'receiver;
         }
 
         // TechnoClass::ReceiveDamage's retaliation tail. `ShouldRetaliate`
@@ -1917,8 +1987,8 @@ pub(crate) fn commit_entities(
                     .substrate
                     .entities
                     .get(attacker_id)
-                    .filter(|source| source.passenger_role.in_open_transport())
-                    .and_then(|source| source.passenger_role.transporter())
+                    .filter(|source| source.passenger_role().in_open_transport())
+                    .and_then(|source| source.passenger_role().transporter())
                     .unwrap_or(attacker_id)
             } else {
                 attacker_id
@@ -2316,7 +2386,7 @@ pub(crate) fn commit_entities(
         finish_building_art_receiver(world, target_id, receive_state, building_entry_frame, rules);
     }
 
-    (death, under_attack_events)
+    caller_damage.read(world, rules)
 }
 
 /// Building442A95 refreshes for nonzero returned result;442B37 independently
@@ -2925,7 +2995,7 @@ fn finish_concrete_death(
             .substrate
             .entities
             .get(dead_id)
-            .and_then(|entity| entity.passenger_role.transporter())
+            .and_then(|entity| entity.passenger_role().transporter())
         {
             world.remove_gunner(rules, transporter, Some(dead_id));
         }
@@ -3750,7 +3820,7 @@ fn ares_damage_occupants(
         return false;
     };
     let ext = object.building_type_ext();
-    let occupants = building.passenger_role.occupants().ids().to_vec();
+    let occupants = building.passenger_role().occupants().ids().to_vec();
     let pass_through = f64::from_bits(ext.uc_pass_through.bits());
     if occupants.is_empty() || pass_through <= 0.0 {
         return false;
@@ -3771,10 +3841,7 @@ fn ares_damage_occupants(
         crate::sim::world::UninitContext::new(rules, overlay_registry).with_effects(run.effects());
     if fatal_rate > 0.0 && world.scenario_rng.random_double() < fatal_rate {
         if let Some(building) = world.substrate.entities.get_mut(building_id) {
-            building
-                .passenger_role
-                .occupants_mut()
-                .remove_expired(victim);
+            building.remove_garrison_reference(victim);
         }
         if let Some(event) = world.substrate.entities.get(victim).and_then(|entity| {
             death_announcement_event(
@@ -3815,10 +3882,7 @@ fn ares_damage_occupants(
         effects.under_attack_events.append(&mut pings);
     }
     if let Some(building) = world.substrate.entities.get_mut(building_id) {
-        let occupants = building.passenger_role.occupants_mut();
-        if occupants.fire_index() >= occupants.count() {
-            occupants.reset_fire_index();
-        }
+        building.repair_garrison_fire_index();
     }
     world.ares_eval_raid_status(building_id, rules, overlay_registry, run.effects());
     true

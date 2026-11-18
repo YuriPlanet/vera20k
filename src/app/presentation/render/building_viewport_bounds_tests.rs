@@ -38,7 +38,7 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
         building.health.current(),
         rules.object("CANEWY06").unwrap().strength
     );
-    assert!(building.passenger_role.occupants().is_empty());
+    assert!(building.passenger_role().occupants().is_empty());
     let pose = crate::app::presentation::render_pose::RenderPose::read(
         building,
         sim.session().binary_frame(),

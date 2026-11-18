@@ -85,6 +85,12 @@ impl Placed for crate::sim::game_entity::GameEntity {
 /// levels through level 14, but gives 538px instead of 540px at level 36.
 /// Shift the ground baseline, keeping exact-Z offsets and simulation intact;
 /// otherwise the TMP depth surface hides flat parts of the building.
+///
+/// RESIDUAL (VERA-only, kept): gamemd lifts a building by AdjustForZ alone
+/// (BuildingClass draw `0x0043D83E`, `0x0043E900`; FoggedObject `0x004D1E5B`),
+/// so from terrain level 15 up its body sits 1-2 px lower and the tiles hide
+/// that sliver. Levels 0-14 agree exactly. Keeping this or making it an
+/// `npbug` opt-in is the maintainer's choice.
 pub(crate) fn building_terrain_correction(level: i32) -> i32 {
     if !(15..=i32::from(i8::MAX)).contains(&level) {
         return 0;

@@ -2010,7 +2010,12 @@ impl App {
             ShellExitThen::LanBack => Self::commit_lan_back(state),
             ShellExitThen::LanCreate { observe } => Self::commit_lan_create(state, observe),
             ShellExitThen::LanJoinAccepted(accepted) => {
-                Self::open_lan_joined_setup(state, accepted)
+                Self::open_joined_setup(
+                    state,
+                    accepted.local,
+                    accepted.observer_row,
+                    crate::ui::multiplayer_setup::SetupFlavor::Lan,
+                );
             }
             ShellExitThen::NetworkSetupBack(_) => {
                 crate::app::shell_network_setup::commit_back(state)

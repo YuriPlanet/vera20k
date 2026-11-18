@@ -8,7 +8,9 @@
 use std::collections::VecDeque;
 use std::net::{Ipv4Addr, SocketAddrV4};
 
-use super::reliable::{Delivery, RetryTiming, SendQueue, connection_prefix, sequence};
+use super::reliable::{
+    Delivery, LAN_PRODUCT_ID, RetryTiming, SendQueue, connection_prefix, sequence,
+};
 
 mod loading_observation;
 pub use loading_observation::{LoadingObservation, LoadingObservationLog};
@@ -16,12 +18,12 @@ pub use loading_observation::{LoadingObservation, LoadingObservationLog};
 pub const GLOBAL_HEADER_LEN: usize = 16;
 pub const GLOBAL_DISCRIMINATOR: u16 = 0x1236;
 
-/// `0x00540B40 -> 0x0053FA90`: the global queue has160 send and320 receive
-/// slots, with455-byte application messages and a separate product word.
+/// `0x00540B40 -> 0x0053FA90`: the global queue has 160 send and 320 receive
+/// slots and 455-byte application messages. Its frames put the discriminator
+/// first and the product word after the connection prefix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GlobalConfig {
     pub discriminator: u16,
-    pub product_id: u16,
     pub max_payload_bytes: usize,
     pub send_capacity: usize,
     pub receive_capacity: usize,
@@ -40,7 +42,6 @@ impl Default for GlobalConfig {
     fn default() -> Self {
         Self {
             discriminator: GLOBAL_DISCRIMINATOR,
-            product_id: 0xaa04,
             max_payload_bytes: 455,
             send_capacity: 160,
             receive_capacity: 320,
@@ -504,7 +505,7 @@ impl GlobalChannel {
     fn frame(&self, kind: u8, sequence: u32, payload: &[u8]) -> Vec<u8> {
         let mut frame =
             connection_prefix(self.config.discriminator, kind, sequence, 2 + payload.len());
-        frame[14..16].copy_from_slice(&self.config.product_id.to_le_bytes());
+        frame[14..16].copy_from_slice(&LAN_PRODUCT_ID.to_le_bytes());
         frame[GLOBAL_HEADER_LEN..].copy_from_slice(payload);
         frame
     }

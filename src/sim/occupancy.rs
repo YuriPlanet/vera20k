@@ -916,7 +916,7 @@ impl OccupancyGrid {
                 continue;
             }
             // Entities inside transports don't occupy cells.
-            if entity.passenger_role.is_inside_transport() {
+            if entity.passenger_role().is_inside_transport() {
                 continue;
             }
             let Some(layer) = cell_list_layer_for_entity(entity, None) else {

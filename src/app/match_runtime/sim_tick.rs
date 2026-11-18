@@ -818,23 +818,6 @@ fn audio_pump_follows_main_tick(mode: SessionMode, match_admitted: bool, own_loo
     mode.is_single_player() && match_admitted && !own_loop
 }
 
-/// Pure modal-pump decision: should the simulation advance one frame while a
-/// modal dialog is open? Mirrors the pump body: advance only on the network
-/// branch (LAN/WOL), only when neither service-only blocker is set, and only
-/// when no fixed tick is already in progress. Offline campaign/skirmish freeze
-/// the world; message, input, and repaint still run in the surrounding loop.
-/// Pure and total, so it is unit-tested without an `AppState`. The live
-/// app-layer consumer is `decide_runtime_pass`, which composes it with the
-/// pacer timing answer and the remaining freeze predicates to gate the
-/// one-frame admission inside `advance_in_game_runtime`.
-pub fn modal_pump_should_advance_sim(
-    mode: SessionMode,
-    service_only_blocked: bool,
-    reentrancy_in_progress: bool,
-) -> bool {
-    mode.is_network() && !service_only_blocked && !reentrancy_in_progress
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct WallClockServiceAdmission {
     simulation: bool,
@@ -847,16 +830,18 @@ struct WallClockServiceAdmission {
 /// it stops simulation only and leaves ordinary per-render camera/placement
 /// updates admitted.
 ///
-/// gamemd-derived: modal service pump, verified `FUN_00623120 @ 0x00623120`.
+/// `ProcessModalServicePump @ 0x00623120` runs Main_Tick behind a modal only
+/// outside `g_GameMode` 0 and 5; offline, it services messages and repaints
+/// with the world frozen. Its other blockers, the lobby byte `0x00A8D60E`,
+/// the counter `0x00A8DAB4` and Main_Tick's reentrancy byte `0x00ABCD58`
+/// (read by `0x0055CBF0`), stay clear here: VERA's in-game modal pass never
+/// runs inside Main_Tick, event execution or the lobby.
 fn wall_clock_service_admission(
     paused: bool,
     modal_open: bool,
     mode: SessionMode,
-    service_only_blocked: bool,
-    reentrancy_in_progress: bool,
 ) -> WallClockServiceAdmission {
-    let tactical_mutation = !modal_open
-        || modal_pump_should_advance_sim(mode, service_only_blocked, reentrancy_in_progress);
+    let tactical_mutation = !modal_open || mode.is_network();
     WallClockServiceAdmission {
         simulation: if modal_open {
             tactical_mutation
@@ -941,16 +926,8 @@ pub(crate) fn decide_runtime_pass(inputs: RuntimePassInputs) -> RuntimePassDecis
             sidebar_action: true,
         };
     }
-    // The session owner (`MatchSession`) carries no network service-only
-    // blocker yet; the in-game network service of a later networking stage
-    // supplies their combined state.
-    let service = wall_clock_service_admission(
-        inputs.paused,
-        inputs.menu_open,
-        inputs.session_mode,
-        false,
-        false,
-    );
+    let service =
+        wall_clock_service_admission(inputs.paused, inputs.menu_open, inputs.session_mode);
     let pacer_admitted = service.simulation && inputs.pacer_timing_admits;
     let scenario_blocks =
         super::scenario_pause::blocks_main_tick(inputs.session_mode, inputs.scenario_paused);
@@ -1754,6 +1731,25 @@ enum FrameResume {
     QueueHandoff,
 }
 
+impl FrameResume {
+    /// Run the frame this resume names with the caller's effects.
+    fn run(
+        self,
+        rt: &mut crate::sim::runtime::SimRuntime,
+        due_commands: &[crate::sim::command::CommandEnvelope],
+        tick_lane: TickLane,
+        effects: FrameEffects<'_>,
+    ) -> Result<SimFrameOutput, crate::sim::world::FrameAdvanceError> {
+        match self {
+            Self::ChecksumModal => rt.resume_after_network_failure(effects),
+            Self::NetworkWait | Self::QueueHandoff => rt.resume_network_wait(effects),
+            Self::NetworkLeave => rt.leave_network_wait(effects),
+            Self::OutcomeWait => rt.resume_outcome_wait(effects),
+            Self::None => rt.advance_frame(due_commands, SIM_TICK_MS, tick_lane, effects),
+        }
+    }
+}
+
 /// House+56F9, the House colour an Ares `Beam.IsHouseColor` birth keeps
 /// (TechnoClass_FireRadBeam1, Ares.dll 10056010), through the shared
 /// colour-map lookup the other House+56F9 readers use.
@@ -2201,18 +2197,7 @@ fn advance_one_simulation_frame(
             }
         } else {
             let network = rt.simulation.session().game_mode().is_network();
-            let advanced = match resume {
-                FrameResume::ChecksumModal => rt.resume_after_network_failure(effects),
-                FrameResume::NetworkWait | FrameResume::QueueHandoff => {
-                    rt.resume_network_wait(effects)
-                }
-                FrameResume::NetworkLeave => rt.leave_network_wait(effects),
-                FrameResume::OutcomeWait => rt.resume_outcome_wait(effects),
-                FrameResume::None => {
-                    rt.advance_frame(&due_commands, SIM_TICK_MS, tick_lane, effects)
-                }
-            };
-            match advanced {
+            match resume.run(rt, &due_commands, tick_lane, effects) {
                 Ok(advanced) => advanced,
                 Err(error) => {
                     stop_failed_frame(state, network, &error);
@@ -2368,13 +2353,7 @@ fn run_deferred_tick(
     } else {
         effects
     };
-    match resume {
-        FrameResume::ChecksumModal => rt.resume_after_network_failure(effects),
-        FrameResume::NetworkWait | FrameResume::QueueHandoff => rt.resume_network_wait(effects),
-        FrameResume::NetworkLeave => rt.leave_network_wait(effects),
-        FrameResume::OutcomeWait => rt.resume_outcome_wait(effects),
-        FrameResume::None => rt.advance_frame(due_commands, SIM_TICK_MS, tick_lane, effects),
-    }
+    resume.run(rt, due_commands, tick_lane, effects)
 }
 
 /// The frame tail on the main thread: the client takes the tick's output.
@@ -3835,9 +3814,8 @@ mod camera_cadence_tests;
 #[cfg(all(test, tests_app_match))]
 mod modal_pump_tests {
     use super::{
-        SessionMode, audio_pump_follows_main_tick, modal_pump_should_advance_sim,
-        resolve_score_rows, score_title_key, should_record_replay_tick,
-        wall_clock_service_admission,
+        SessionMode, audio_pump_follows_main_tick, resolve_score_rows, score_title_key,
+        should_record_replay_tick, wall_clock_service_admission,
     };
 
     /// 0x005C9BE7: only GameMode 5 retitles 0x108.
@@ -3879,34 +3857,29 @@ mod modal_pump_tests {
 
     #[test]
     fn gsi_01_03_debug_pause_does_not_impersonate_an_offline_modal() {
-        let debug_pause =
-            wall_clock_service_admission(true, false, SessionMode::Skirmish, false, false);
+        let debug_pause = wall_clock_service_admission(true, false, SessionMode::Skirmish);
         assert!(!debug_pause.simulation);
         assert!(debug_pause.tactical_mutation);
 
-        let actual_modal =
-            wall_clock_service_admission(true, true, SessionMode::Skirmish, false, false);
+        let actual_modal = wall_clock_service_admission(true, true, SessionMode::Skirmish);
         assert!(!actual_modal.simulation);
         assert!(!actual_modal.tactical_mutation);
     }
 
     #[test]
     fn gsi_01_03_tactical_view_mutators_follow_modal_service_admission() {
-        // No modal means the ordinary app loop owns camera/placement updates;
-        // modal-pump blockers have no authority on that path.
+        let admitted = super::WallClockServiceAdmission {
+            simulation: true,
+            tactical_mutation: true,
+        };
+        // No modal means the ordinary app loop owns camera/placement updates.
         for mode in [
             SessionMode::Campaign,
             SessionMode::Skirmish,
             SessionMode::Lan,
             SessionMode::Wol,
         ] {
-            assert_eq!(
-                wall_clock_service_admission(false, false, mode, true, true),
-                super::WallClockServiceAdmission {
-                    simulation: true,
-                    tactical_mutation: true,
-                }
-            );
+            assert_eq!(wall_clock_service_admission(false, false, mode), admitted);
         }
 
         // The active offline Menu, Abort and Options callers all enter the
@@ -3914,7 +3887,7 @@ mod modal_pump_tests {
         // placement preview underneath the dialog.
         for mode in [SessionMode::Campaign, SessionMode::Skirmish] {
             assert_eq!(
-                wall_clock_service_admission(true, true, mode, false, false),
+                wall_clock_service_admission(true, true, mode),
                 super::WallClockServiceAdmission {
                     simulation: false,
                     tactical_mutation: false,
@@ -3922,29 +3895,9 @@ mod modal_pump_tests {
             );
         }
 
-        // Preserve the existing network-modal branch, including both native
-        // reasons it falls back to service-only work.
+        // A network match keeps running behind the modal.
         for mode in [SessionMode::Lan, SessionMode::Wol] {
-            let admitted = super::WallClockServiceAdmission {
-                simulation: true,
-                tactical_mutation: true,
-            };
-            let denied = super::WallClockServiceAdmission {
-                simulation: false,
-                tactical_mutation: false,
-            };
-            assert_eq!(
-                wall_clock_service_admission(true, true, mode, false, false),
-                admitted
-            );
-            assert_eq!(
-                wall_clock_service_admission(true, true, mode, true, false),
-                denied
-            );
-            assert_eq!(
-                wall_clock_service_admission(true, true, mode, false, true),
-                denied
-            );
+            assert_eq!(wall_clock_service_admission(true, true, mode), admitted);
         }
     }
 
@@ -3973,120 +3926,6 @@ mod modal_pump_tests {
             true,
             true
         ));
-    }
-
-    #[test]
-    fn only_network_modes_advance_behind_a_modal() {
-        // {3 LAN, 4 WOL} advance; {0 campaign, 5 skirmish} + Other freeze.
-        assert!(modal_pump_should_advance_sim(
-            SessionMode::Lan,
-            false,
-            false
-        ));
-        assert!(modal_pump_should_advance_sim(
-            SessionMode::Wol,
-            false,
-            false
-        ));
-        assert!(!modal_pump_should_advance_sim(
-            SessionMode::Campaign,
-            false,
-            false
-        ));
-        assert!(!modal_pump_should_advance_sim(
-            SessionMode::Skirmish,
-            false,
-            false
-        ));
-        assert!(!modal_pump_should_advance_sim(
-            SessionMode::Other,
-            false,
-            false
-        ));
-    }
-
-    #[test]
-    fn reentrancy_guard_blocks_advance_even_on_network() {
-        // The native reentrancy guard: a fixed tick already in progress means the
-        // pump skips advancing, even on the network branch.
-        assert!(!modal_pump_should_advance_sim(
-            SessionMode::Lan,
-            false,
-            true
-        ));
-        assert!(!modal_pump_should_advance_sim(
-            SessionMode::Wol,
-            false,
-            true
-        ));
-    }
-
-    #[test]
-    fn service_only_blockers_prevent_network_modal_advance() {
-        assert!(!modal_pump_should_advance_sim(
-            SessionMode::Lan,
-            true,
-            false
-        ));
-        assert!(!modal_pump_should_advance_sim(
-            SessionMode::Wol,
-            true,
-            false
-        ));
-    }
-
-    #[test]
-    fn pumped_tick_delta_is_zero_offline_and_n_on_network() {
-        // C2 acceptance at the decision level: the pump decision drives whether the
-        // world's fixed tick advances per pumped frame. `tick` stands in for
-        // `sim.session.tick`; the full headless-World assertion (incl. "no
-        // battlefield recomposite offline") lands with the live `service_tick` swap.
-        const FRAMES: u64 = 7;
-        let pumped = |mode: SessionMode| -> u64 {
-            let mut tick = 0u64;
-            for _ in 0..FRAMES {
-                if modal_pump_should_advance_sim(mode, false, false) {
-                    tick += 1; // one fixed step advanced this pumped frame
-                }
-            }
-            tick
-        };
-        // Offline freezes: zero advance over N pumped frames.
-        assert_eq!(pumped(SessionMode::Skirmish), 0);
-        assert_eq!(pumped(SessionMode::Campaign), 0);
-        // Network advances once per pumped frame.
-        assert_eq!(pumped(SessionMode::Lan), FRAMES);
-        assert_eq!(pumped(SessionMode::Wol), FRAMES);
-    }
-
-    #[test]
-    fn pumped_world_tick_freezes_offline_and_advances_on_network() {
-        use crate::sim::world::Simulation;
-
-        // C2 acceptance with a real headless World: drive `advance_tick` exactly
-        // when the pump decision is true, and assert `session.tick` motion.
-        // `advance_tick` commits one tick per call (no entities/rules needed).
-        const FRAMES: u64 = 7;
-        let pumped_world_delta = |mode: SessionMode| -> u64 {
-            let mut sim = Simulation::new();
-            let start = sim.session().tick();
-            for _ in 0..FRAMES {
-                if modal_pump_should_advance_sim(mode, false, false) {
-                    // `tick_ms` does not affect the asserted tick delta; a literal
-                    // matches the sim-test style and avoids the const dependency.
-                    sim.advance_tick(&[], None, None, None, 33);
-                }
-            }
-            sim.session().tick() - start
-        };
-
-        // Offline modes freeze the world behind the modal: zero tick advance.
-        assert_eq!(pumped_world_delta(SessionMode::Skirmish), 0);
-        assert_eq!(pumped_world_delta(SessionMode::Campaign), 0);
-        // Network modes advance one fixed tick per pumped frame (dead code this
-        // build; proves the contract for when multiplayer lands).
-        assert_eq!(pumped_world_delta(SessionMode::Lan), FRAMES);
-        assert_eq!(pumped_world_delta(SessionMode::Wol), FRAMES);
     }
 
     #[test]

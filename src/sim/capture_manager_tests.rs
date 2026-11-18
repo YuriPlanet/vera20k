@@ -2217,7 +2217,7 @@ fn a_captive_boarding_an_absorber_is_freed_first() {
     let entity = sim.substrate.entities.get(gi).unwrap();
     assert!(!entity.mind_control.is_mind_controlled());
     assert_eq!(owner(&sim, gi), "Americans");
-    assert!(entity.passenger_role.is_inside_transport());
+    assert!(entity.passenger_role().is_inside_transport());
     assert!(victims(&sim, yuri).is_empty());
     assert_eq!(voc_sounds(&sim), ["MindCleared"]);
 }
