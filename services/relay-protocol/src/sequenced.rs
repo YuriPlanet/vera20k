@@ -480,6 +480,20 @@ pub(super) struct ClientOrdering {
 }
 
 impl ClientOrdering {
+    /// A player's or a watcher's state for a match it has not yet ordered in.
+    fn new(certificate: Vec<u8>, agreement: [u8; 32], tick_hz: u16) -> Self {
+        Self {
+            certificate,
+            agreement,
+            sealed: VecDeque::new(),
+            next_batch: 1,
+            accepted_through: 0,
+            restoring: false,
+            leave: None,
+            link: crate::link::ClientLink::new(tick_hz),
+        }
+    }
+
     fn accept_through(&mut self, id: u64) -> Result<(), RelayError> {
         if self.restoring {
             self.next_batch = self.next_batch.max(id.saturating_add(1));
@@ -561,16 +575,11 @@ impl ClientSession {
                 current.certificate = certificate.clone();
             }
         } else {
-            self.ordering = Some(ClientOrdering {
-                certificate: certificate.clone(),
+            self.ordering = Some(ClientOrdering::new(
+                certificate.clone(),
                 agreement,
-                sealed: VecDeque::new(),
-                next_batch: 1,
-                accepted_through: 0,
-                restoring: false,
-                leave: None,
-                link: crate::link::ClientLink::new(parsed.tick_hz),
-            });
+                parsed.tick_hz,
+            ));
             #[cfg(any(test, feature = "test-support"))]
             if self.measured_good {
                 self.preset_uplink_measured_good();
@@ -1036,6 +1045,24 @@ struct Source {
     heard_ms: u64,
 }
 
+impl Source {
+    /// The principal bound to this source, or any before one is.
+    fn admits(&self, principal: ([u8; 16], u64)) -> bool {
+        self.principal.is_none_or(|bound| bound == principal)
+    }
+
+    /// A signed ticket binds a certificate-admitted source on first contact,
+    /// by Ready or by Leave: its initial Ready may have been lost while
+    /// another source already created the room.
+    fn bind(&mut self, principal: ([u8; 16], u64)) -> Result<(), RelayError> {
+        if !self.admits(principal) {
+            return Err(RelayError::Authentication);
+        }
+        self.principal = Some(principal);
+        Ok(())
+    }
+}
+
 /// The sealing clock's slowdown for players whose PCs cannot keep up. This
 /// is a relay adaptation of native lockstep, where every match runs as slow
 /// as its slowest player (ProcessNetwork 0x00647BF4..0x00647E6D, TIMING):
@@ -1205,7 +1232,7 @@ impl OrderingRoom {
     /// another principal for the same source does not.
     pub(super) fn heard(&mut self, source: u8, principal: ([u8; 16], u64), now_ms: u64) {
         if let Some(state) = self.sources.get_mut(usize::from(source))
-            && state.principal.is_none_or(|bound| bound == principal)
+            && state.admits(principal)
         {
             state.heard_ms = now_ms;
         }
@@ -5952,19 +5979,12 @@ impl RelayServer {
                 if ordering.certificate.sources_mask & (1 << message.ticket.source) == 0 {
                     return Err(RelayError::Authentication);
                 }
-                let principal = (message.ticket.player, message.ticket.generation);
                 let source = &mut ordering.sources[usize::from(message.ticket.source)];
-                if source.principal.is_some_and(|bound| bound != principal) {
-                    return Err(RelayError::Authentication);
-                }
+                source.bind((message.ticket.player, message.ticket.generation))?;
                 if !source.leave_packets.permits(now, 1, 8) {
                     return Err(RelayError::RateLimited);
                 }
                 source.leave_packets.charge(now, 1);
-                // Like Ready, a signed ticket binds a certificate-admitted
-                // source on first contact. Its initial Ready may have been
-                // lost while another source already created this room.
-                source.principal = Some(principal);
                 // A failed archive keeps its files for inspection, but still
                 // records the departure in memory and acknowledges it: the
                 // client may join no other match until it does.
@@ -6387,12 +6407,8 @@ impl RelayServer {
             } else if ordering.active & (1 << message.ticket.source) == 0 {
                 error(OrderError::Inactive, 0)
             } else {
-                let state = &mut ordering.sources[usize::from(message.ticket.source)];
-                let principal = (message.ticket.player, message.ticket.generation);
-                if state.principal.is_some_and(|bound| bound != principal) {
-                    return Err(RelayError::Authentication);
-                }
-                state.principal = Some(principal);
+                ordering.sources[usize::from(message.ticket.source)]
+                    .bind((message.ticket.player, message.ticket.generation))?;
                 // A renewed certificate never extends the room: the first
                 // one's expiry bounds its startup, and its creation time
                 // its whole lifetime.

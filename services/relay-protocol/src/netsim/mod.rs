@@ -870,10 +870,10 @@ impl Simulation {
         self.step_until(end);
         let report = self.report();
         let history = self.relay_history();
-        let mac_counts = self.relay.take_mac_failure_counts();
+        let session_alerts = self.relay.take_session_alerts();
         if let Some(trace) = self.trace.as_mut() {
             trace.relay_history = history;
-            trace.mac_counts = Some(mac_counts);
+            trace.session_alerts = session_alerts;
             trace.client_mac_failures = self
                 .clients
                 .iter()
