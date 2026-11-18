@@ -20,7 +20,7 @@
 //! ## Dependency rules
 //! - Part of sim/; uses the shared construction, movement and mission owners.
 
-use crate::rules::locomotor_type::{MovementZone, SpeedType};
+use crate::rules::locomotor_type::{LocomotorKind, MovementZone, SpeedType};
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::phobos_create_unit::CreateUnitSettings;
 use crate::rules::ruleset::RuleSet;
@@ -266,6 +266,30 @@ impl Simulation {
             invoker,
         );
 
+        // `Ext/TechnoType/Body.cpp:696-706`: after `Unlimbo` placed a Techno
+        // with neither a Fly nor a Jumpjet locomotor, `inAir` is re-read from
+        // `IsInAir()` (the Z-based `inAir` above only selects the
+        // `SpawnParachutedInAir` arm) and the spawn lets it go into free fall,
+        // marking it `OnParachuted` so its landing takes no
+        // `FallingDownDamage` (`Ext/Techno/Hooks.cpp:1067`).
+        #[cfg(feature = "phobos")]
+        if !settings.always_spawn_on_ground && !parachuted {
+            let falls = self.substrate.entities.get(unit).is_some_and(|entity| {
+                !entity.lifecycle.in_limbo()
+                    && object.locomotor != LocomotorKind::Fly
+                    && object.locomotor != LocomotorKind::Jumpjet
+                    && crate::sim::movement::air_movement::is_high_flying(
+                        entity,
+                        self.resolved_terrain.as_ref(),
+                        Some((rules, &self.interner)),
+                    )
+            });
+            if falls && let Some(entity) = self.substrate.entities.get_mut(unit) {
+                entity.raise_falling_down();
+                entity.mark_on_parachuted();
+            }
+        }
+
         // `QueueMission(UnitMission, false)` (AIMission for a computer owner).
         let mission = if !self.owner_is_human(owner) {
             settings.ai_unit_mission.unwrap_or(settings.unit_mission)
@@ -287,9 +311,10 @@ impl Simulation {
         {
             house.request_tech_recheck();
         }
-        // RESIDUAL: the Fly/Jumpjet landing orders and the `IsFallingDown` /
-        // `OnParachuted` fallback after `Unlimbo` are not modeled; a spawned
-        // air unit keeps its placement pose.
+        // RESIDUAL: the Fly/Jumpjet post-spawn landing orders
+        // (`Ext/TechnoType/Body.cpp:668-700`) are not modeled, so a spawned
+        // Aircraft or Jumpjet keeps its placement pose. The `IsFallingDown` /
+        // `OnParachuted` fallback right below them is ported.
         true
     }
 

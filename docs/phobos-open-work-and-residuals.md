@@ -228,6 +228,13 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
    `docs/phobos-tunnel-locomotor.md:120-131`）。
 
 ### 全局已知残渣（早前链条，仍需实机抽查）
+- **CreateUnit 空中出生落体（2026-11-18）**：`Ext/TechnoType/Body.cpp:702-706` 已移植
+  ——`sim/anim_create_unit.rs` 在 Unlimbo 落位后用 `IsInAir()`（
+  `sim/movement/air_movement::is_high_flying`，即 `ObjectClass+0x54`）重判，非
+  `AlwaysSpawnOnGround`、未走 `SpawnParachutedInAir` 臂、且类型 locomotor 不是
+  Fly/Jumpjet 时置 `IsFallingDown` + `OnParachuted`（落地不扣落体伤害，测试
+  `an_air_spawned_unit_is_let_go_into_a_parachuted_fall`）。残余只剩同处
+  `:668-700` 的 Fly/Jumpjet 出生落位指令。
 - **`TechnoExt::OnParachuted`（2026-11-18）**：闩已落地
   （`sim/object_fall.rs` 的 `on_parachuted`）：空降出生
   （`Ext/Techno/Hooks.cpp:1907`，`sim/aircraft/drop_payload.rs`）与空中重现身
