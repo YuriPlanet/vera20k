@@ -1400,9 +1400,9 @@ pub(crate) fn visiting(state: &AppState) -> bool {
 }
 
 /// VERA online: where the lobby can deliver a page to `name`: the name as
-/// the current channel lists it (case-insensitive), else as the public lobby
-/// this player visits does (`true`). `None` when neither lists it, and in a
-/// match.
+/// the public lobby this player visits lists it (case-insensitive, `true`),
+/// else as the current channel does. A roommate in both visits too and sees
+/// the lobby page. `None` when neither lists it, and in a match.
 pub(super) fn page_target<'a>(visit: &'a super::WolVisit, name: &str) -> Option<(&'a str, bool)> {
     let lobby = visit.lobby().filter(|_| !visit.in_game)?;
     let find = |members: &'a [WolMember]| {
@@ -1411,10 +1411,10 @@ pub(super) fn page_target<'a>(visit: &'a super::WolVisit, name: &str) -> Option<
             .find(|member| member.name.eq_ignore_ascii_case(name))
             .map(|member| member.name.as_str())
     };
-    let channel = lobby.current.as_ref().and_then(|_| find(&lobby.members));
-    channel.map(|name| (name, false)).or_else(|| {
-        let visited = lobby.visit.as_ref()?;
-        find(&visited.members).map(|name| (name, true))
+    let visited = lobby.visit.as_ref().and_then(|other| find(&other.members));
+    visited.map(|name| (name, true)).or_else(|| {
+        lobby.current.as_ref()?;
+        find(&lobby.members).map(|name| (name, false))
     })
 }
 
@@ -5310,19 +5310,21 @@ mod tests {
         assert_eq!(names(&listed_runner(GAME_CHANNEL)), ["Host", "Mike", "Zed"]);
     }
 
-    /// VERA online: a page goes to the player the channel, else the visited
-    /// lobby, lists, under the listed name, and nowhere in a match.
+    /// VERA online: a page goes to the player the visited lobby, else the
+    /// channel, lists, under the listed name, and nowhere in a match.
     #[test]
     fn a_page_targets_only_a_listed_player_outside_a_match() {
         let mut visit = crate::app::shell_wol::WolVisit::open(false);
         let mut lobby = listed_runner(GAME_CHANNEL);
         lobby.visit = Some(LobbyVisit {
             channel: WolChannel::default(),
-            members: vec![user("Bob", 0)],
+            members: vec![user("Bob", 0), user("Zed", 0)],
         });
         visit.lobby = Some(lobby);
         assert_eq!(page_target(&visit, "mike"), Some(("Mike", false)));
         assert_eq!(page_target(&visit, "BOB"), Some(("Bob", true)));
+        // A roommate who visits too reads the lobby page.
+        assert_eq!(page_target(&visit, "zed"), Some(("Zed", true)));
         assert_eq!(page_target(&visit, "Ann"), None);
         visit.in_game = true;
         assert_eq!(page_target(&visit, "Mike"), None);
