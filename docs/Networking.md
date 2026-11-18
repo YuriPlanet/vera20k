@@ -979,7 +979,7 @@ the task's validation records, not the tree.
 
 The `online-live-host` and `online-live-guest` targets play a match in a VERA room on
 the deployed lobby and relay (`VERA20K_LOBBY_URL` names another HTTPS lobby, such as a
-staging one), with the offline test service off. They take the LAN pair's window,
+staging one). They take the LAN pair's window,
 cursor and output flags and isolated copies, but no `--lan-*` option. The host takes
 `--online-account <host>`, a name that leaves room for `'s_game` in a 24-character
 room name; the guest takes `--online-account <guest> --online-host <host>`. They play
@@ -1017,7 +1017,7 @@ Campaign; seed its settings folder with a `coopsave.ini` section for the pair
 human House to win, BC6 offers only Quit, both press it and the campaign-end dialog
 `0xBC7` opens. The host stays on it; the guest presses Continue back to the lobby.
 The `online-live-coop-host` and `online-live-coop-guest` targets play the same campaign
-in a VERA room on the deployed lobby and relay, with the offline test service off. Each
+in a VERA room on the deployed lobby and relay. Each
 takes `--online-account <name>`; the guest also takes `--online-host <host name>`. The
 host uses the Soviet row through Choose Map and the guest joins. At native frame 150
 both flag every human House to win, both press BC6's Continue, and the kept room comes

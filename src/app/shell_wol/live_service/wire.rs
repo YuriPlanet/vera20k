@@ -169,7 +169,7 @@ pub(super) struct Session {
     pub player_id: String,
     pub nickname: String,
     pub token: String,
-    // The operator's welcome, when one is set; the game's own otherwise.
+    // The operator's welcome, when one is set; the game has none of its own.
     #[serde(default)]
     pub motd: Option<String>,
     /// An account's password sign-in with `remember`: this computer's

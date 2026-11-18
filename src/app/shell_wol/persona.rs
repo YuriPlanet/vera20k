@@ -71,7 +71,7 @@ pub(super) fn save(state: &AppState, persona: &mut WolPersona, name: &str) {
 
 /// `WOL_Main` entry (`0x0077B322..0x0077B399`): an empty nickname
 /// `[0xB73E40]` becomes AutoLogin, then LastValid.
-pub(crate) fn enter_wol_main(state: &mut AppState) {
+pub(super) fn enter_wol_main(state: &mut AppState) {
     if !state.frontend.wol_account.nickname.is_empty() {
         return;
     }
