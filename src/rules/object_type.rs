@@ -1761,7 +1761,7 @@ pub struct ObjectType {
     /// pointer vector (`RulesClass__ReadAI @ 0x00672AE0`, binding
     /// `0x00672B14..0x00672C01`). `RuleSet` stamps this after all type
     /// registries exist.
-    pub build_const_eligible: bool,
+    pub(super) build_const_eligible: bool,
     /// Native BuildingType registry index used by ordered House BasePlan nodes.
     /// Non-building types retain `-1`.
     pub base_plan_type_index: i32,
@@ -4273,6 +4273,11 @@ impl ObjectType {
             ObjectCategory::Building if self.build_cat == Some(BuildCategory::Combat) => 4,
             ObjectCategory::Building => 3,
         }
+    }
+
+    /// Membership in the ruleset's ordered `[AI] BuildConst=` list.
+    pub fn build_const_eligible(&self) -> bool {
+        self.build_const_eligible
     }
 
     /// BuildingType gate used by the native base-reservation setter. With

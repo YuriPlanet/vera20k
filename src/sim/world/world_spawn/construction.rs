@@ -757,7 +757,7 @@ impl TypeFacts {
         if category == EntityCategory::Structure {
             self.building_hidden_occupancy = Some(Box::new(obj.hidden_occupancy));
             self.base_reservation_spacing = obj.base_reservation_spacing;
-            self.build_const_eligible = obj.build_const_eligible;
+            self.build_const_eligible = obj.build_const_eligible();
             self.base_plan_type_index = obj.base_plan_type_index;
             self.base_plan_is_defense = obj.is_base_defense;
             self.base_plan_has_undeploy_target = obj.undeploys_into.is_some();

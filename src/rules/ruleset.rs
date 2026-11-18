@@ -4943,7 +4943,7 @@ pub struct RuleSet {
     /// Retained `[General] RepairBay=` BuildingType identities (Rules+850).
     pub repair_bay_types: Vec<String>,
     /// Source-ordered resolved `[AI] BuildConst=` BuildingType identities.
-    pub build_const_types: Vec<String>,
+    build_const_types: Vec<String>,
     /// Source-ordered resolved `[AI] BuildPower=` BuildingType identities.
     pub build_power_types: Vec<String>,
     /// Source-ordered resolved `[AI] BuildRefinery=` BuildingType identities.
@@ -6340,18 +6340,20 @@ impl RuleSet {
             .collect()
     }
 
-    /// `[AI] BuildConst=` and the BuildingTypes it makes eligible.
-    pub(crate) fn set_build_const_types(&mut self, ids: &[String]) {
+    /// Resolved construction-yard types in the order read from `[AI] BuildConst=`.
+    pub fn build_const_types(&self) -> &[String] {
+        &self.build_const_types
+    }
+
+    /// Set the ordered list and its per-building membership together.
+    pub(super) fn set_build_const_types(&mut self, ids: &[String]) {
         self.build_const_types = self.ids_with_objects(ids, ObjectCategory::Building);
         for object in &mut self.object_list {
             object.build_const_eligible = false;
         }
-        for id in self.build_const_types.clone() {
+        for id in &self.build_const_types {
             // `ids_with_objects` kept only ids this index holds.
-            if let Some(handle) = self
-                .object_category_index
-                .get(ObjectCategory::Building, &id)
-            {
+            if let Some(handle) = self.object_category_index.get(ObjectCategory::Building, id) {
                 self.object_list[handle.0 as usize].build_const_eligible = true;
             }
         }
@@ -16686,7 +16688,7 @@ Projectile=Invisible
                 .unwrap()
         }
         let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[VehicleTypes]\n0=UNIT\n[UNIT]\nPrimary=GUN\n\
+            "[BuildingTypes]\n0=YARD\n[YARD]\nStrength=100\n[VehicleTypes]\n0=UNIT\n[UNIT]\nPrimary=GUN\n\
              [GUN]\nRange=5\nProjectile=SHOT\nWarhead=WH\n[SHOT]\n[WH]\n\
              [SuperWeaponTypes]\n0=NUKE\n[NUKE]\nType=MultiMissile\n\
              [Particles]\n0=GAS\n[GAS]\n[VoxelAnims]\n0=PIECE\n[PIECE]\n",
@@ -16941,7 +16943,7 @@ Projectile=Invisible
             ),
             (
                 "BuildConst",
-                Box::new(move |rules| rules.build_const_types = names()),
+                Box::new(|rules| rules.set_build_const_types(&["YARD".into()])),
             ),
             (
                 "ConcreteWalls",
