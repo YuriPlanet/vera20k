@@ -214,6 +214,15 @@ impl OrderingCertificate {
         self.sources_mask.count_ones() > 1 || self.ordered_alone
     }
 
+    /// A renewed certificate can name a later expiry. All other fields identify
+    /// the match whose clock and roster the relay admitted.
+    fn same_match(&self, other: &Self) -> bool {
+        Self {
+            expires: other.expires,
+            ..*self
+        } == *other
+    }
+
     /// The HTTPS lobby signs this public manifest separately from hop tickets.
     /// Layout: VO1C, room16, LE mask32, LE Hz16, LE expiry64, domain HMAC32;
     /// VO2C adds a flags byte (bit 0: pacing off, bit 1: ordered alone) before
@@ -456,8 +465,8 @@ pub(super) struct ClientOrdering {
     certificate: Vec<u8>,
     agreement: [u8; 32],
     // The four most recently sealed batches retain their exact bytes.
-    // Accepted entries stay cached until a new batch needs the slot, so a
-    // delayed app-side acceptance receipt can still retry immutable bytes.
+    // Accepted entries stay cached until a new batch needs the slot, so this
+    // source's batches in the stream are checked against what it sealed.
     pub(super) sealed: VecDeque<SealedBatch>,
     pub(super) next_batch: u64,
     pub(super) accepted_through: u64,
@@ -544,14 +553,8 @@ impl ClientSession {
         }
         let certificate = certificate.to_vec();
         if let Some(current) = &mut self.ordering {
-            // A renewal changes only the expiry.
             let old = OrderingCertificate::parse(&current.certificate)?;
-            if (OrderingCertificate {
-                expires: parsed.expires,
-                ..old
-            }) != parsed
-                || current.agreement != agreement
-            {
+            if !old.same_match(&parsed) || current.agreement != agreement {
                 return Err(RelayError::Authentication);
             }
             if parsed.expires > old.expires {
@@ -579,25 +582,16 @@ impl ClientSession {
         self.encode(CONTROL, &payload, out)
     }
 
-    /// Seals `batch_id` (the next ID) or checks a retained one has the same
-    /// plaintext, stable across retries and hop renewals.
-    pub(super) fn seal_batch(&mut self, batch_id: u64, plaintext: &[u8]) -> Result<(), RelayError> {
+    /// Seals `plaintext` as the next batch and returns its ID.
+    pub(super) fn seal_batch(&mut self, plaintext: &[u8]) -> Result<u64, RelayError> {
         if !self.ready {
             return Err(RelayError::Unregistered);
         }
-        if plaintext.is_empty() || plaintext.len() > ORDERING_BATCH_CAPACITY || batch_id == 0 {
+        if plaintext.is_empty() || plaintext.len() > ORDERING_BATCH_CAPACITY {
             return Err(RelayError::Malformed);
         }
         let ordering = self.ordering.as_mut().ok_or(RelayError::Unregistered)?;
-        if let Some(batch) = ordering.sealed.iter().find(|batch| batch.id == batch_id) {
-            if batch.opaque != plaintext {
-                return Err(RelayError::Authentication);
-            }
-            return Ok(());
-        }
-        if batch_id != ordering.next_batch {
-            return Err(RelayError::Replay);
-        }
+        let batch_id = ordering.next_batch;
         if batch_id - ordering.accepted_through - 1 >= Self::ORDERING_SUBMISSION_WINDOW as u64 {
             return Err(RelayError::Full);
         }
@@ -618,7 +612,7 @@ impl ClientSession {
             opaque,
         });
         ordering.next_batch = next_batch;
-        Ok(())
+        Ok(batch_id)
     }
 
     pub(super) fn pull_ordering(
@@ -677,6 +671,16 @@ impl ClientSession {
 
     pub fn ordering_is_configured(&self) -> bool {
         self.ordering.is_some()
+    }
+
+    /// The last of this source's batches the relay has accepted, from its
+    /// ACK, BatchGap and this source's own BATCH records (spec §6.1, §6.4);
+    /// while restoring, the replaced process's. `None` before ordering is
+    /// configured.
+    pub fn ordering_accepted_through(&self) -> Option<u64> {
+        self.ordering
+            .as_ref()
+            .map(|ordering| ordering.accepted_through)
     }
 
     pub(super) fn accepts_ordering_leave_ack(&self, sequence: u64) -> bool {
@@ -1038,8 +1042,8 @@ struct Source {
 /// here it slows at most two Game Speed rows and tries to speed up again.
 struct Pace {
     rate: u16,
-    // The head at the last rate change, and when. Pauses displace these
-    // times like the start.
+    // The last rate change's frame and due time, in milliseconds from the
+    // match start. A pause or a follower's clock correction moves both together.
     anchor: Option<(u32, u64)>,
     raised_at: Option<u64>,
     raise_wait: u64,
@@ -1049,9 +1053,6 @@ struct Pace {
     // report.
     slowdowns: u32,
     raises: u32,
-    // Federated: the frame from which the last rate change applies and its
-    // due time as an offset from the start, so the start's slew moves it too.
-    federated_anchor: Option<(u32, u64)>,
     // Federated: the coordinator's rate changes for frames after these,
     // `(frame, rate, source)`, in order, each until its due time passes. A
     // healed link can deliver several at once.
@@ -1059,10 +1060,12 @@ struct Pace {
 }
 
 impl Pace {
+    fn anchor_at(&self, start_ms: u64) -> Option<(u32, u64)> {
+        self.anchor
+            .map(|(frame, offset)| (frame, start_ms.saturating_add(offset)))
+    }
+
     fn displace(&mut self, paused_for: u64) {
-        if let Some((_, at)) = self.anchor.as_mut() {
-            *at = at.saturating_add(paused_for);
-        }
         if let Some(at) = self.raised_at.as_mut() {
             *at = at.saturating_add(paused_for);
         }
@@ -1119,6 +1122,7 @@ pub(super) struct OrderingRoom {
     // When `advance` first found the storage failure.
     failed_at: Option<u64>,
     finished_at: Option<u64>,
+    terminal: Option<federation::Terminal>,
     created_ms: u64,
     // Players' checksums by sampled frame, `(source, checksum)` in arrival
     // order, for the newest `CHECKSUM_FRAMES` sampled frames.
@@ -1163,7 +1167,6 @@ impl OrderingRoom {
                 lagging_at: 0,
                 slowdowns: 0,
                 raises: 0,
-                federated_anchor: None,
                 scheduled: VecDeque::new(),
             },
             head: 0,
@@ -1180,6 +1183,7 @@ impl OrderingRoom {
             storage_failed: false,
             failed_at: None,
             finished_at: None,
+            terminal: None,
             created_ms: now_ms,
             checksums: BTreeMap::new(),
             desync_found: false,
@@ -1384,7 +1388,7 @@ impl OrderingRoom {
     /// reported, so no client meets a marker it cannot read. Each change is a
     /// marker after the head's frame end; later frames are due at the new
     /// rate from its append time.
-    fn adjust_pace(&mut self, now_ms: u64, federated: bool) {
+    fn adjust_pace(&mut self, now_ms: u64, start_ms: u64, federated: bool) {
         if self.certificate.pacing == CertificatePacing::Off || !self.pace.scheduled.is_empty() {
             return;
         }
@@ -1436,7 +1440,7 @@ impl OrderingRoom {
         if lagging {
             self.pace.lagging_at = now_ms;
         }
-        let changed_at = self.pace.anchor.map_or(0, |(_, at)| at);
+        let changed_at = self.pace.anchor_at(start_ms).map_or(0, |(_, at)| at);
         if self.pace.anchor.is_some() && now_ms.saturating_sub(changed_at) < PACE_STEP_MS {
             return;
         }
@@ -1499,7 +1503,7 @@ impl OrderingRoom {
         }
         if !federated {
             pace.rate = rate;
-            pace.anchor = Some((self.head, now_ms));
+            pace.anchor = Some((self.head, now_ms - start_ms));
         }
     }
 
@@ -1508,15 +1512,14 @@ impl OrderingRoom {
     /// schedule counts from the start, so every relay derives the same one.
     fn apply_scheduled_rate(&mut self, now_ms: u64, start: u64) {
         while let Some(&(frame, rate, _)) = self.pace.scheduled.front() {
-            let (anchor, offset) = self.pace.federated_anchor.unwrap_or((0, 0));
+            let (anchor, offset) = self.pace.anchor.unwrap_or((0, 0));
             let due =
                 offset + u64::from(frame.saturating_sub(anchor)) * 1000 / u64::from(self.pace.rate);
             if now_ms < start + due {
                 return;
             }
             self.pace.rate = rate;
-            self.pace.federated_anchor = Some((frame, due));
-            self.pace.anchor = Some((frame, start + due));
+            self.pace.anchor = Some((frame, due));
             self.pace.scheduled.pop_front();
         }
     }
@@ -1524,19 +1527,26 @@ impl OrderingRoom {
     /// About when `frame` was due: exact from the last rate change on, at
     /// the certificate's rate from the start before it.
     fn frame_due_ms(&self, frame: u32) -> u64 {
-        match self.pace.anchor {
+        let start = self.starts_at.unwrap_or(0);
+        match self.pace.anchor_at(start) {
             Some((anchor, at)) if frame >= anchor => {
                 at.saturating_add(u64::from(frame - anchor) * 1000 / u64::from(self.pace.rate))
             }
-            _ => self
-                .starts_at
-                .unwrap_or(0)
-                .saturating_add(u64::from(frame) * 1000 / u64::from(self.certificate.tick_hz)),
+            _ => {
+                start.saturating_add(u64::from(frame) * 1000 / u64::from(self.certificate.tick_hz))
+            }
         }
     }
 
+    /// Whether other relays home some of the sources. A federated room exists
+    /// only under a roster that homes exactly the certificate's sources on at
+    /// least two relays (Ready), so it never homes them all here.
+    fn federated(&self) -> bool {
+        self.local != self.certificate.sources_mask
+    }
+
     fn supported_pause_sources(&self) -> u32 {
-        if self.local != self.certificate.sources_mask {
+        if self.federated() {
             return 0;
         }
         self.sources
@@ -1636,7 +1646,7 @@ impl OrderingRoom {
             return;
         }
         if self.starts_at.is_none() {
-            if self.local == self.certificate.sources_mask {
+            if !self.federated() {
                 // An explicit Leave before the start cancels it for every
                 // source, including sources which never reached Ready. Keep an
                 // inactive short-ticket tombstone.
@@ -1680,7 +1690,7 @@ impl OrderingRoom {
     /// Starts once every remaining source is ready. A federated start belongs
     /// to the coordinator relay.
     fn start_when_ready(&mut self, now_ms: u64) {
-        if self.local == self.certificate.sources_mask
+        if !self.federated()
             && self.starts_at.is_none()
             && self.active != 0
             && self.ready == self.active
@@ -1708,10 +1718,10 @@ impl OrderingRoom {
                 && (silent >= LOADING_SILENCE_MS
                     || now_ms.saturating_sub(self.created_ms) >= LOADING_LIMIT_MS)
             {
-                if self.local == self.certificate.sources_mask {
-                    self.retire(source, true, now_ms);
-                } else {
+                if self.federated() {
                     self.cancel_requested = true;
+                } else {
+                    self.retire(source, true, now_ms);
                 }
             }
         }
@@ -1969,6 +1979,9 @@ impl OrderingRoom {
             self.failed_at.get_or_insert(now_ms);
             return;
         }
+        if self.terminal.is_some() {
+            return;
+        }
         self.retire_absent(now_ms);
         if self.paused_at.is_some() {
             return;
@@ -1983,13 +1996,7 @@ impl OrderingRoom {
         if federated {
             self.apply_scheduled_rate(now_ms, start);
         }
-        let (anchor, anchor_ms) = if federated {
-            self.pace
-                .federated_anchor
-                .map_or((0, start), |(frame, offset)| (frame, start + offset))
-        } else {
-            self.pace.anchor.unwrap_or((0, start))
-        };
+        let (anchor, anchor_ms) = self.pace.anchor_at(start).unwrap_or((0, start));
         // Frames are sealed a turn at a time, in whole turns from the anchor,
         // so every federated relay seals the same turns. The final frame
         // closes the match whatever its turn.
@@ -2155,7 +2162,7 @@ impl OrderingRoom {
         // A federated match's coordinator decides its rate from every
         // relay's reports; the others follow its rate entries.
         if coordinator && self.active != 0 && start <= now_ms && self.head < final_frame {
-            self.adjust_pace(now_ms, federated);
+            self.adjust_pace(now_ms, start, federated);
         }
         // Every source has departed, by Leave, silence past its limit or the
         // agreed full-match lifetime; the archive ends after its replay grace.
@@ -2322,6 +2329,9 @@ impl OrderingRoom {
             return Ok(error(OrderError::StorageUnavailable, self.next_seq));
         }
         self.authenticate_reader(ticket)?;
+        if let Some(reply) = self.federation_failure_reply(now_ms) {
+            return Ok(reply);
+        }
         if self.agreement_mismatch {
             return Ok(error(OrderError::AgreementMismatch, 0));
         }
@@ -3091,12 +3101,12 @@ mod tests {
         // 90 frames at 45 Hz are due 2 s in; 90 more at 30 Hz, 3 s later.
         ordering.apply_scheduled_rate(start + 4_999, start);
         assert_eq!(
-            (ordering.pace.rate, ordering.pace.federated_anchor),
+            (ordering.pace.rate, ordering.pace.anchor),
             (30, Some((90, 2_000)))
         );
         ordering.apply_scheduled_rate(start + 5_000, start);
         assert_eq!(
-            (ordering.pace.rate, ordering.pace.federated_anchor),
+            (ordering.pace.rate, ordering.pace.anchor),
             (20, Some((180, 5_000)))
         );
         assert!(ordering.pace.scheduled.is_empty());
@@ -3859,12 +3869,7 @@ mod tests {
         back.ordering.as_mut().unwrap().accept_through(5).unwrap();
         back.set_ordering_restore(false);
 
-        let mut bytes = Vec::new();
-        assert!(matches!(
-            back.test_submit(5, b"late", &mut bytes),
-            Err(RelayError::Replay)
-        ));
-        back.test_submit(6, b"next", &mut bytes).unwrap();
+        assert_eq!(back.seal_batch(b"next"), Ok(6));
         // Once restored, a batch this process did not send is refused again.
         assert!(matches!(
             back.ordering.as_mut().unwrap().accept_through(7),
@@ -4768,7 +4773,7 @@ mod tests {
         }
         configure(&mut server, &mut first, &cert, 0);
         for (id, plaintext) in [(1, b"one"), (2, b"two"), (3, b"thr")] {
-            first.seal_batch(id, plaintext).unwrap();
+            assert_eq!(first.seal_batch(plaintext), Ok(id));
         }
         let batch = |client: &ClientSession, id: u64| {
             let ordering = client.ordering.as_ref().unwrap();
@@ -4855,7 +4860,7 @@ mod tests {
         );
         assert!(matches!(probe[..], [OrderEvent::Status(_)]));
         let mut bytes = Vec::new();
-        second.seal_batch(1, b"gone").unwrap();
+        assert_eq!(second.seal_batch(b"gone"), Ok(1));
         let gone = batch(&second, 1);
         second.leave_ordering(&mut bytes).unwrap();
         events(&mut server, &mut second, &bytes, 300);
@@ -4949,10 +4954,6 @@ mod tests {
             sender.test_submit(5, b"fifth", &mut bytes),
             Err(RelayError::Full)
         );
-        assert_eq!(
-            sender.test_submit(2, b"changed", &mut bytes),
-            Err(RelayError::Authentication)
-        );
         renew(&mut server, &mut sender, 1000);
         let mut final_ack = None;
         for id in 1..=4 {
@@ -4972,10 +4973,6 @@ mod tests {
             events(&mut server, &mut sender, &bytes, 1000)[0],
             OrderEvent::Ack { batch_id: 5, .. }
         ));
-        assert_eq!(
-            sender.test_submit(1, b"new old nonce", &mut bytes),
-            Err(RelayError::Replay)
-        );
         assert_eq!(sender.ordering.as_ref().unwrap().sealed.len(), 4);
     }
 
@@ -5343,6 +5340,44 @@ mod tests {
         assert_eq!(std::fs::read(room.join("stream.data")).unwrap(), before);
     }
 
+    /// Past the reservation estimate every room is counted: reservations
+    /// that hold nothing refuse no batch, and bytes no reservation covered
+    /// are found by the next pass, which evicts before the next batch is
+    /// refused.
+    #[test]
+    fn ordering_reservations_past_the_estimate_count_every_room() {
+        let key = SecretKey::new([73; 32]);
+        let (mut server, mut first, _second) = paced_room(&key);
+        let mut submit = |server: &mut RelayServer, id, now_ms| {
+            let mut bytes = Vec::new();
+            first.test_submit(id, b"input", &mut bytes).unwrap();
+            events(server, &mut first, &bytes, now_ms).remove(0)
+        };
+        server.ordering_estimate = GLOBAL_ORDERING_BYTES;
+        assert!(matches!(
+            submit(&mut server, 1, 0),
+            OrderEvent::Ack { batch_id: 1, .. }
+        ));
+        server
+            .rooms
+            .get_mut(&[5; 16])
+            .unwrap()
+            .ordering
+            .as_mut()
+            .unwrap()
+            .sources[1]
+            .last_batch = Some((0, 0, vec![0; GLOBAL_ORDERING_BYTES]));
+        server.advance_clock(1000, unix(1000));
+        assert!(ordering(&server).history.is_empty());
+        assert!(matches!(
+            submit(&mut server, 2, 1000),
+            OrderEvent::Error {
+                code: OrderError::Backpressure,
+                expected: 2
+            }
+        ));
+    }
+
     fn started_journal_room(
         directory: &TestDirectory,
     ) -> (RelayServer, ClientSession, ClientSession) {
@@ -5531,6 +5566,43 @@ mod tests {
             })
             .collect();
         assert_eq!(departed, [1, 2]);
+    }
+
+    #[test]
+    fn ready_accepts_a_renewed_expiry_and_refuses_a_different_pacing() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 2);
+        let (mut first, mut second) = (client(&key, 0), client(&key, 1));
+        connect(&mut server, &mut first, 0);
+        connect(&mut server, &mut second, 0);
+        let cert = OrderingCertificate {
+            pacing: CertificatePacing::On,
+            ..OrderingCertificate::parse(&certificate(&key, 3, 2000)).unwrap()
+        };
+        configure(&mut server, &mut first, &cert.sign(&key).unwrap(), 1000);
+        let renewed = OrderingCertificate {
+            expires: 2100,
+            ..cert
+        };
+        let retry = configure(&mut server, &mut first, &renewed.sign(&key).unwrap(), 1500);
+        assert!(matches!(retry.first(), Some(OrderEvent::Ready { .. })));
+        let different = OrderingCertificate {
+            pacing: CertificatePacing::Off,
+            ..renewed
+        };
+        let reply = configure(
+            &mut server,
+            &mut second,
+            &different.sign(&key).unwrap(),
+            2000,
+        );
+        assert!(matches!(
+            reply.as_slice(),
+            [OrderEvent::Error {
+                code: OrderError::AgreementMismatch,
+                ..
+            }]
+        ));
     }
 
     #[test]
@@ -5985,11 +6057,12 @@ impl RelayServer {
             }
             // Limit peak retained growth to one bounded room at a time.
             if total > GLOBAL_ORDERING_BYTES {
-                self.reserve_ordering(0);
-                total = self.ordering_memory();
+                total = self.evict_ordering(0);
             }
         }
         self.cleanup_ordering(now_ms, now);
+        // Cleanup only frees, so the pass's count still bounds what is held.
+        self.ordering_estimate = total;
     }
 
     fn cleanup_ordering(&mut self, now_ms: u64, now: u64) {
@@ -6042,6 +6115,17 @@ impl RelayServer {
             // verified to expire within MAX_MATCH_SECONDS of now or earlier.
             self.ended_orderings
                 .insert(id, now.saturating_add(MAX_MATCH_SECONDS));
+            if let Some(receipt) = ordering
+                .terminal
+                .take()
+                .and_then(federation::Terminal::into_unsaved)
+            {
+                if self.retired_outcomes.len() < self.max_rooms && now <= receipt.expires_at() {
+                    self.retired_outcomes.insert(id, receipt);
+                } else {
+                    self.ordering_counts.outcome_handoff_drops += 1;
+                }
+            }
             room.ordering = None;
             if room.peers.is_empty() {
                 self.rooms.remove(&id);
@@ -6056,7 +6140,9 @@ impl RelayServer {
             let before = ordering.memory();
             ordering.advance(now_ms, room.federation.as_mut());
             ordering.count_changes(&mut self.ordering_counts);
-            if ordering.memory() > before {
+            let grown = ordering.memory().saturating_sub(before);
+            if grown > 0 {
+                self.ordering_estimate = self.ordering_estimate.saturating_add(grown);
                 self.reserve_ordering(0);
             }
         }
@@ -6070,7 +6156,26 @@ impl RelayServer {
             .sum()
     }
 
+    /// Room for `additional` more ordering bytes under
+    /// `GLOBAL_ORDERING_BYTES`. Within `ordering_estimate` it takes no count;
+    /// past it, every room is counted and the oldest history evicted. False
+    /// when that still leaves no room.
     fn reserve_ordering(&mut self, additional: usize) -> bool {
+        let estimate = self.ordering_estimate.saturating_add(additional);
+        if estimate <= GLOBAL_ORDERING_BYTES {
+            self.ordering_estimate = estimate;
+            return true;
+        }
+        let total = self.evict_ordering(additional);
+        let reserved = total.saturating_add(additional) <= GLOBAL_ORDERING_BYTES;
+        self.ordering_estimate = if reserved { total + additional } else { total };
+        reserved
+    }
+
+    /// Counts every room's ordering bytes and evicts the oldest history,
+    /// across rooms, until `additional` more fit under
+    /// `GLOBAL_ORDERING_BYTES` or no history is left; returns what remains.
+    fn evict_ordering(&mut self, additional: usize) -> usize {
         let mut total = self.ordering_memory();
         while total.saturating_add(additional) > GLOBAL_ORDERING_BYTES {
             let oldest = self
@@ -6083,14 +6188,14 @@ impl RelayServer {
                 })
                 .min_by_key(|(id, time)| (*time, *id));
             let Some((id, _)) = oldest else {
-                return false;
+                break;
             };
             let ordering = self.rooms.get_mut(&id).unwrap().ordering.as_mut().unwrap();
             let before = ordering.memory();
             ordering.pop_oldest();
             total -= before - ordering.memory();
         }
-        true
+        total
     }
 
     pub(super) fn ordering_request(
@@ -6159,6 +6264,22 @@ impl RelayServer {
                     crate::link::SEND_OTHER,
                 );
             }
+            // The lobby's roster partitions the certificate's sources over
+            // the relays (`OrderingRoom::federated`).
+            if self
+                .rooms
+                .get(&message.ticket.room)
+                .and_then(|room| room.federation.as_ref())
+                .is_some_and(|federation| federation.sources() != certificate.sources_mask)
+            {
+                return self.ordering_reply(
+                    message.ticket,
+                    error(OrderError::AgreementMismatch, 0),
+                    now,
+                    now_ms,
+                    crate::link::SEND_OTHER,
+                );
+            }
             let agreement: [u8; 32] = payload[1 + certificate_len..].try_into().unwrap();
             let allocation = self
                 .rooms
@@ -6219,16 +6340,16 @@ impl RelayServer {
                 }
                 ordering
             });
-            if ordering.storage_failed {
+            if let Some(reply) = ordering.federation_failure_reply(now_ms) {
+                reply
+            } else if ordering.storage_failed {
                 error(OrderError::StorageUnavailable, ordering.next_seq)
             } else if ordering.agreement_mismatch
-                || ordering.certificate.room != certificate.room
-                || ordering.certificate.sources_mask != certificate.sources_mask
-                || ordering.certificate.tick_hz != certificate.tick_hz
+                || !ordering.certificate.same_match(&certificate)
                 || ordering.agreement != agreement
             {
-                // VERA: a loading player's Ready proves a world the first
-                // Ready players cannot start with. Cancel the start for
+                // VERA: a loading player's Ready disagrees on the signed match
+                // settings or the initial world. Cancel the start for
                 // everyone now, as its Leave could, instead of letting its
                 // keepalives hold the others until the loading limit drops it
                 // and they start without it. A ready source's agreement
@@ -6341,6 +6462,9 @@ impl RelayServer {
             return self.ordering_reply(ticket, replies, now, now_ms, crate::link::SEND_OTHER);
         }
         ordering.authenticate_reader(ticket)?;
+        if let Some(reply) = ordering.federation_failure_reply(now_ms) {
+            return self.ordering_reply(ticket, reply, now, now_ms, crate::link::SEND_OTHER);
+        }
         if ordering.agreement_mismatch {
             return self.ordering_reply(
                 ticket,

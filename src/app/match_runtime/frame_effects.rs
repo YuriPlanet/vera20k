@@ -50,11 +50,12 @@ pub(crate) struct FrameClientBoundary<'a> {
     admit_radar: RefCell<&'a mut RadarAdmission<'a>>,
     tactical_radar: Option<RefCell<&'a mut TacticalRadarSetter<'a>>>,
     planning: Option<RefCell<(&'a mut PlanningInputState, &'a mut SelectionState)>>,
-    network: Option<RefCell<&'a mut super::session::MatchSession>>,
+    /// [`super::session::MatchSession::latency_fudge`] as the frame began;
+    /// only the frame's lifecycle outputs change it, after the frame.
+    latency_fudge: i32,
     /// The host's process-lifetime checksum history (`SimHost::tick_parts`).
     frame_checksums: Option<RefCell<&'a mut crate::sim::command_queue::FrameChecksumState>>,
     live_network: Option<RefCell<&'a mut crate::net::live_commands::LiveCommandSession>>,
-    logic_frame_rate: u32,
     outcome_wait: Option<RefCell<&'a mut Option<super::scenario_exit::ScenarioOutcomeVoiceWait>>>,
     scenario_pause: Option<RefCell<ScenarioPauseOwners<'a>>>,
     /// Whether the result's own EVA line is withheld for a commander clip
@@ -92,10 +93,9 @@ impl<'a> FrameClientBoundary<'a> {
             admit_radar: RefCell::new(admit_radar),
             tactical_radar: None,
             planning: None,
-            network: None,
+            latency_fudge: 0,
             frame_checksums: None,
             live_network: None,
-            logic_frame_rate: 0,
             outcome_wait: None,
             scenario_pause: None,
             defer_verdict_to_clip: false,
@@ -150,11 +150,8 @@ impl<'a> FrameClientBoundary<'a> {
         self
     }
 
-    pub(crate) fn with_network_session(
-        mut self,
-        session: &'a mut super::session::MatchSession,
-    ) -> Self {
-        self.network = Some(RefCell::new(session));
+    pub(crate) fn with_latency_fudge(mut self, latency_fudge: i32) -> Self {
+        self.latency_fudge = latency_fudge;
         self
     }
 
@@ -171,11 +168,6 @@ impl<'a> FrameClientBoundary<'a> {
         live: Option<&'a mut crate::net::live_commands::LiveCommandSession>,
     ) -> Self {
         self.live_network = live.map(RefCell::new);
-        self
-    }
-
-    pub(crate) fn with_logic_frame_rate(mut self, frame_rate: u32) -> Self {
-        self.logic_frame_rate = frame_rate;
         self
     }
 
@@ -321,10 +313,6 @@ impl NetworkCommandBoundary for FrameClientBoundary<'_> {
         })?;
         let now_ms = super::frame_pacer::wall_clock_ms();
         let now = super::frame_pacer::frame_bucket(now_ms);
-        let latency_fudge = self
-            .network
-            .as_ref()
-            .map_or(0, |session| session.borrow().latency_fudge());
         let mut live = live.borrow_mut();
         live.finish_processing(now_ms as u32);
         live.poll(
@@ -333,8 +321,7 @@ impl NetworkCommandBoundary for FrameClientBoundary<'_> {
             max_ahead,
             now,
             now_ms as u32,
-            latency_fudge,
-            self.logic_frame_rate,
+            self.latency_fudge,
         )
         .map(Some)
         .map_err(|error| {
@@ -376,7 +363,7 @@ impl NetworkCommandBoundary for FrameClientBoundary<'_> {
                 "FRAMEINFO requires the host's checksum owner".to_owned(),
             )
         })?;
-        let info = crate::net::lockstep::FrameInfo::decode(record).ok_or_else(|| {
+        let info = crate::sim::command_queue::FrameInfo::decode(record).ok_or_else(|| {
             NetworkCommandError::Unavailable(
                 "network comparison received a non-FRAMEINFO record".to_owned(),
             )
@@ -647,7 +634,7 @@ pub(super) mod network_command_tests {
         let mut checksums = crate::sim::command_queue::FrameChecksumState::default();
         checksums.record_frame_checksum(0, 0);
         checksums.record_frame_checksum(255, expected ^ 2);
-        let info = crate::net::lockstep::FrameInfo {
+        let info = crate::sim::command_queue::FrameInfo {
             house_id: 0,
             event_frame: 256,
             checksum: expected ^ 1,

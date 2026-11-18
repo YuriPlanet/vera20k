@@ -25,6 +25,28 @@ pub(crate) struct VerifiedNetworkMap<'a> {
     pub source: LoadedMapSource,
 }
 
+// Legacy map headers widen each byte. In network display text, the Windows-1252
+// punctuation must be printable Unicode: the lobby rejects C0 and C1 controls.
+fn network_map_title(title: &str, file: &str) -> String {
+    const C1: [char; 32] = [
+        '€', '\0', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '\0', 'Ž', '\0', '\0',
+        '‘', '’', '“', '”', '•', '–', '—', '˜', '™', 'š', '›', 'œ', '\0', 'ž', 'Ÿ',
+    ];
+    let mut text: String = title
+        .chars()
+        .map(|ch| match ch {
+            '\u{80}'..='\u{9f}' => C1[ch as usize - 0x80],
+            _ => ch,
+        })
+        .filter(|ch| !ch.is_control())
+        .collect();
+    if text.is_empty() {
+        text.push_str(file);
+    }
+    text.truncate(text.floor_char_boundary(256));
+    text
+}
+
 fn network_map_digest(ini: &IniFile) -> String {
     // ReadString69536B/5E5339: original literals81BFE0/831898/83189C.
     ini.section_or_empty("Digest")
@@ -101,7 +123,7 @@ impl ScenarioCatalog {
             network_map_digest(&loaded.ini)
         };
         Ok(NetworkMapMetadata {
-            display_name: record.display_name.clone(),
+            display_name: network_map_title(&record.display_name, file),
             player_capacity: record.player_capacity,
             official: record.official,
             byte_length: physical_map_length(&loaded.source),
@@ -130,7 +152,7 @@ impl ScenarioCatalog {
         root: &Path,
         assets: &AssetManager,
     ) -> Option<VerifiedNetworkMap<'_>> {
-        if file.eq_ignore_ascii_case("RandMap.Sed") {
+        if file.eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED) {
             return None;
         }
         for record in self
@@ -446,7 +468,7 @@ mod tests {
     #[test]
     fn network_availability_matches_registered_name_size_and_native_digest_reader() {
         let root = TestDirectory::new("network-map-metadata");
-        let bytes = b"[Basic]\nName=Local title\n[Digest]\n1=CaseSensitive\n";
+        let bytes = b"[Basic]\nName=Commander\x92s map\n[Digest]\n1=CaseSensitive\n";
         root.write("CONTROLLED.MAP", bytes);
         let assets = AssetManager::from_loose_root_for_test(root.path());
         let ini = IniFile::from_bytes(bytes).unwrap();
@@ -460,7 +482,7 @@ mod tests {
         let metadata = catalog
             .network_map_metadata("controlled.map", root.path(), &assets, false)
             .unwrap();
-        assert_eq!(metadata.display_name, "Local title");
+        assert_eq!(metadata.display_name, "Commander’s map");
         assert_eq!(metadata.byte_length, bytes.len() as i32);
         let found = catalog
             .verify_network_map("controlled.map", &metadata, root.path(), &assets)

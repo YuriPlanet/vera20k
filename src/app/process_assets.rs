@@ -611,7 +611,7 @@ impl ProcessAssets {
         let prepared = crate::app::shell_random_map::prepare_random_map_generation(
             assets,
             options,
-            crate::app::shell_random_map::RandomMapRulesPreparation::ReadOnly(
+            crate::app::shell_random_map::RandomMapRulesPreparation::NetworkAgreement(
                 self.native_rules.as_ref(),
             ),
             mode_rules.as_ref(),

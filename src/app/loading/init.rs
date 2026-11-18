@@ -2589,6 +2589,13 @@ pub(crate) fn load_map_initial_with_assets(
     launch_seed: Option<u32>,
     progress: &mut dyn crate::app::loading::pump::LoadingProgressSink,
 ) -> Result<MapLoadInitial> {
+    if full_init_entry_mode.is_network() {
+        native_rules
+            .as_deref_mut()
+            .ok_or_else(|| anyhow::anyhow!("network loading requires the Rules owner"))?
+            .reset_for_network_match()
+            .map_err(|error| anyhow::anyhow!("reset network Rules: {error}"))?;
+    }
     // Check RA2_QUICKPLAY env var: if it names a .map/.mpr file, load that directly.
     // UI-selected map name/path (requested_map) takes precedence.
     // Default: try testmap1.map in the project directory first, then fall back to .mmx files.
@@ -2651,7 +2658,8 @@ pub(crate) fn load_map_initial_with_assets(
             .ok_or_else(|| anyhow::anyhow!("random map: theater {theater_name} unavailable"))?;
 
         // Generate598A74 -> InitMap599A56 completes Full_Init before terrain
-        // generation. Transfer outgoing writes and retain this exact Rules/AI
+        // generation. Offline loads transfer outgoing writes; network loads
+        // keep the cold registry installed above. Retain this exact Rules/AI
         // result and its E/P receipt; the later load must not read them again.
         let mode_rules =
             crate::rules::retail_sources::select_mode_ini(asset_manager, mode_rules_file)
@@ -2661,7 +2669,9 @@ pub(crate) fn load_map_initial_with_assets(
         })?;
         if let Some(resident) = resident {
             resident.retire_scenario_started();
-            crate::app::process_assets::transfer_outgoing_simulation_rules(owner, resident)?;
+            if !full_init_entry_mode.is_network() {
+                crate::app::process_assets::transfer_outgoing_simulation_rules(owner, resident)?;
+            }
         }
         if owner.multiplayer_countries().next().is_none() {
             // Direct .SED adapters can bypass PrepareSession52E11E/52E123.

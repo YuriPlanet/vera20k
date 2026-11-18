@@ -595,7 +595,21 @@ impl App {
     /// Shared pre-dialog Session read: Skirmish at52E11E and LAN (including
     /// failed IPX admission) at52E37D. Preferences stay in their process
     /// caches; the original reads INI8870C0, not disk.
-    pub(crate) fn prepare_multiplayer_settings(state: &mut AppState) {
+    /// VERA starts network selection from cold Rules so an earlier map cannot
+    /// add Countries or replace the choices a peer is about to accept.
+    pub(crate) fn prepare_multiplayer_settings(
+        state: &mut AppState,
+        mode: crate::app::match_runtime::session::SessionMode,
+    ) -> bool {
+        if mode.is_network()
+            && let Some(owner) = state.process_assets.native_rules_mut_with_tile_cache().0
+            && let Err(error) = owner.reset_for_network_match()
+        {
+            state.frontend.main_menu_shell_error = Some(format!(
+                "Could not prepare network rules. Restart the game and try again.\n{error}"
+            ));
+            return false;
+        }
         // VERA: setup screens start from the player's own Options switches,
         // which a previous room's replaced; a room's agreement plays its
         // host's.
@@ -613,12 +627,15 @@ impl App {
             .prepare_multiplayer_settings(&main);
         state.process_assets.refresh_multiplayer_country_bodies();
         // These are compatibility projections of the one process registry.
-        // A finished world can remain resident behind the shell, and rules()
-        // reads its resource projection, so refresh both consumers together.
+        // A finished world can remain resident behind the shell. Offline
+        // selection keeps its native retaining view; network selection uses
+        // the startup frontend projection and the freshly rebuilt Countries.
         if let Some(rules) = state.frontend.frontend_rules.as_mut() {
             state.process_assets.project_multiplayer_countries(rules);
         }
-        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Rules) {
+        if !mode.is_network()
+            && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Rules)
+        {
             state
                 .process_assets
                 .project_multiplayer_countries(&mut runtime.resources_mut().rules);
@@ -646,6 +663,7 @@ impl App {
             .multiplayer_shell_runtime
             .set_lobby_colors(lobby_colors);
         state.match_state.session.set_lobby_colors(lobby_colors);
+        true
     }
 
     /// The score page `0x108` owns the result screen once its model is set
@@ -1132,7 +1150,12 @@ impl App {
     /// `0x0052E119`, `0x0052E168` -> `0x006AE2C0`). Its Back returns to
     /// Single Player either way (GameMode 0, state 1, `0x0052E175`).
     pub(super) fn enter_native_skirmish_from_single_player(state: &mut AppState) {
-        Self::prepare_multiplayer_settings(state);
+        if !Self::prepare_multiplayer_settings(
+            state,
+            crate::app::match_runtime::session::SessionMode::Skirmish,
+        ) {
+            return;
+        }
         // Prepare dialog 0x102 from the process-lifetime MIX list before
         // destroying its 0x100 source. Active YR's FUN_00534E50 registers the
         // neutral pair on that shared list before the shell SHPs are loaded.

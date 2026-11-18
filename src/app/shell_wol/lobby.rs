@@ -159,6 +159,7 @@ enum Step {
     /// VERA: a watch row's `watch` behind the wait box, until the lobby
     /// grants it ([`watch_admitted`]) or refuses it.
     Watching {
+        match_id: String,
         request: Option<OnlineRequest>,
     },
     /// VERA: the room's Lobby, until the public lobby's `joined` marked
@@ -182,7 +183,7 @@ impl Step {
             Self::JoiningLobby { request, .. }
             | Self::JoiningGame { request }
             | Self::Creating { request, .. }
-            | Self::Watching { request }
+            | Self::Watching { request, .. }
             | Self::Visiting { request } => *request,
             _ => None,
         }
@@ -193,7 +194,7 @@ impl Step {
             Self::JoiningLobby { request, .. }
             | Self::JoiningGame { request }
             | Self::Creating { request, .. }
-            | Self::Watching { request }
+            | Self::Watching { request, .. }
             | Self::Visiting { request } => Some(request),
             _ => None,
         }
@@ -409,6 +410,16 @@ impl WolLobby {
             insert_member(&mut self.members, member, sort, rank);
         } else {
             insert_game_member(&mut self.members, member);
+        }
+    }
+
+    /// The grant answered the watch command. The map transfer and relay
+    /// admission now own their deadlines while the lobby keeps the wait box.
+    pub(super) fn watch_granted(&mut self, granted: &str) {
+        if let Step::Watching { match_id, request } = &mut self.step
+            && match_id == granted
+        {
+            *request = None;
         }
     }
 
@@ -2677,14 +2688,17 @@ fn begin_watch(state: &mut AppState, match_id: String) {
         return;
     };
     lobby.ui.disable_commands();
-    lobby.step = Step::Watching { request: None };
+    lobby.step = Step::Watching {
+        match_id: match_id.clone(),
+        request: None,
+    };
     show_wait(state, "VERA:ContactingOnline");
     request(state, WolServiceRequest::Watch { match_id });
 }
 
 /// VERA: whether the lobby page waits for a watch's grant.
-pub(crate) fn awaits_watch(state: &AppState) -> bool {
-    lobby(state).is_some_and(|lobby| matches!(lobby.step, Step::Watching { .. }))
+pub(crate) fn awaits_watch(state: &AppState, match_id: &str) -> bool {
+    lobby(state).is_some_and(|lobby| matches!(&lobby.step, Step::Watching { match_id: awaited, .. } if awaited == match_id))
 }
 
 /// VERA: the relay admitted the watch that [`Step::Watching`] waits for:
@@ -5016,7 +5030,7 @@ pub(super) fn locale_name(state: &AppState, name: &str) -> Option<String> {
 fn scenario_description(state: &AppState, scenario: &str) -> String {
     use crate::util::native_string::crt_strcmpi;
     use std::cmp::Ordering;
-    if crt_strcmpi(scenario, crate::app::shell_random_map::RANDMAP_SED_FILE) == Ordering::Equal {
+    if crt_strcmpi(scenario, crate::map::skirmish_scenarios::RANDMAP_SED) == Ordering::Equal {
         return csf(
             state,
             crate::app::shell_random_map::RANDOM_MAP_DESCRIPTION_KEY,
@@ -5305,13 +5319,31 @@ mod tests {
         step = Step::Ready;
         assert!(!step.bind_online_request(9, now));
         // A watch's refusal or silence reaches its step the same way.
-        step = Step::Watching { request: None };
+        step = Step::Watching {
+            match_id: "match".into(),
+            request: None,
+        };
         assert!(step.bind_online_request(10, now));
         assert!(step.accepts_online_result(10));
     }
 
     /// VERA's modern list: each match to watch by its room's name, or the
     /// map's when the room has none, with its watchers; a full one greyed.
+    #[test]
+    fn a_watch_grant_ends_only_its_request_deadline() {
+        let mut lobby = listed_runner(0);
+        lobby.step = Step::Watching {
+            match_id: "current".into(),
+            request: None,
+        };
+        assert!(lobby.step.bind_online_request(17, Instant::now()));
+        lobby.watch_granted("earlier");
+        assert!(lobby.step.accepts_online_result(17));
+        lobby.watch_granted("current");
+        assert!(!lobby.step.accepts_online_result(17));
+        assert!(matches!(&lobby.step, Step::Watching { match_id, .. } if match_id == "current"));
+    }
+
     #[test]
     fn watch_rows_name_each_match_with_its_watchers() {
         let watch = |match_id: &str, name: &str, watchers| service::WolMatch {

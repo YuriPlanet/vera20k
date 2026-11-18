@@ -27,16 +27,18 @@ pub mod netsim;
 mod sequenced;
 pub mod varint;
 pub use link::{ClientLinkStats, HopFeedback, LinkState, OrderingGap, ReaderLinkStats, RecvWindow};
-pub use sequenced::federation::{MAX_FEDERATED_RELAYS, sign_federation_roster};
+pub use sequenced::federation::{
+    FEDERATION_LOST, FederationOutcome, MAX_FEDERATED_RELAYS, sign_federation_roster,
+};
 pub use sequenced::pack::{decode_pack_v2, encode_pack_v2};
 pub use sequenced::watch::{
     MAX_ROOM_WATCHERS, MAX_WATCH_DELAY_SECONDS, WATCH_TICKET_VERSION, WatchTicket,
 };
 pub use sequenced::{
-    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY, ORDERING_CERTIFICATE_LEN,
-    ORDERING_CERTIFICATE_V2_LEN, ORDERING_PULL_LIMIT, OrderEntry, OrderError, OrderEvent,
-    OrderPace, OrderStatus, OrderingCertificate, is_ordering_certificate_len, paced_rates,
-    turn_frames, turn_ms,
+    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY,
+    ORDERING_CERTIFICATE_LEN, ORDERING_CERTIFICATE_V2_LEN, ORDERING_PULL_LIMIT, OrderEntry,
+    OrderError, OrderEvent, OrderPace, OrderStatus, OrderingCertificate,
+    is_ordering_certificate_len, paced_rates, turn_frames, turn_ms,
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -851,6 +853,9 @@ pub struct OrderingCounts {
     pub pull_replies: u64,
     /// Matches this relay ended with a DESYNC record.
     pub desyncs: u64,
+    /// Ended games whose receipt could not be saved or retained under the
+    /// bounded handoff budget. The lobby cannot rate one lacking evidence.
+    pub outcome_handoff_drops: u64,
     /// Startups this relay cancelled because a Ready, on it or on another
     /// relay of the match, proved a different initial world.
     pub start_mismatches: u64,
@@ -921,6 +926,17 @@ pub struct RelayServer {
     ended_orderings: HashMap<[u8; 16], u64>,
     // Since `take_ordering_counts` last read them.
     ordering_counts: OrderingCounts,
+    // The ordering bytes the last pass over every room counted, plus what
+    // was reserved or sealed since (`reserve_ordering`), so a reservation
+    // needs no count of every room. Freed bytes leave it at the next pass:
+    // it overcounts, and only an exact count refuses or evicts. Growth no
+    // reservation covers, such as a federated frame, joins it at that pass.
+    ordering_estimate: usize,
+    // An operational reporter owns durable delivery of marked VO1F outcomes.
+    federation_outcomes_enabled: bool,
+    // A retired room needs only its unacknowledged receipt until the writer
+    // can save it. At most one cohort of max_rooms, outside gameplay quotas.
+    retired_outcomes: HashMap<[u8; 16], FederationOutcome>,
     // Every live or leaving hop by its session (spec §6.2).
     sessions: HashMap<u32, SessionSlot>,
     // Released sessions until they may be assigned again (spec §6.2).
@@ -957,6 +973,9 @@ impl RelayServer {
             journal_directory: None,
             ended_orderings: HashMap::new(),
             ordering_counts: OrderingCounts::default(),
+            ordering_estimate: 0,
+            federation_outcomes_enabled: false,
+            retired_outcomes: HashMap::new(),
             sessions: HashMap::new(),
             retired_sessions: HashMap::new(),
             mac_counts: MacFailureCounts::default(),
@@ -1014,7 +1033,7 @@ impl RelayServer {
         // sender's own limits, so forged, junk or replayed datagrams cannot
         // spend capacity other players need. Rejecting one costs at most
         // three HMACs. No source-address map grows under spoofed UDP traffic.
-        if bytes.starts_with(sequenced::federation::LINK_MAGIC) {
+        if sequenced::federation::is_link_packet(bytes) {
             return self.federation_receive(bytes, now, now_millis);
         }
         let header = envelope::peek(envelope::Direction::Up, bytes)?;
@@ -1247,6 +1266,8 @@ impl RelayServer {
         self.admissions
             .retain(|_, admission| admission.retain_until > now);
         self.ended_orderings.retain(|_, expires| *expires > now);
+        self.retired_outcomes
+            .retain(|_, receipt| now <= receipt.expires_at());
         self.unadmitted_handshakes.clear();
         self.ingress.allocate(
             now,
@@ -1382,6 +1403,7 @@ impl RelayServer {
                 &self.key,
                 roster,
                 &message.ticket,
+                self.federation_outcomes_enabled,
             )?),
         };
         let cost = envelope::OVERHEAD as u64;
@@ -1488,13 +1510,17 @@ impl RelayServer {
         }
         // The replaced hop keeps its session for LEAVE: a client that quits
         // before the new READY arrives leaves from it (spec §6.2 "续期").
+        // The client moves to the new hop on that READY, so the session is
+        // released a ticket lifetime after the old ticket expires, 300 to 600
+        // seconds from now (`prune` already dropped an expired peer): time
+        // for the client's minute of Leave retries.
         if let Some(old) = replaced
             && let Some(slot) = self.sessions.get_mut(&old.session)
         {
             slot.hop = SessionHop::Leaving(Box::new(LeavingHop {
                 ticket: old.ticket,
                 key: old.key.clone(),
-                until: now.saturating_add(LEAVE_GRACE),
+                until: old.ticket.expires.saturating_add(MAX_TICKET_LIFETIME),
             }));
         }
         let mut admission = prior.unwrap_or(Admission {
@@ -1878,8 +1904,9 @@ impl ClientSession {
 impl RelayServer {
     /// Test support only: every hop in the session table (§6.2), ordered by
     /// session. A hop is in it from its accepted CONFIRM until
-    /// `LEAVE_GRACE` seconds after its LEAVE, its ticket's expiry or the
-    /// accepted CONFIRM of its renewal (§6.2).
+    /// `LEAVE_GRACE` seconds after its LEAVE or its ticket's expiry, or, once
+    /// a renewal's CONFIRM replaced it, until `MAX_TICKET_LIFETIME` seconds
+    /// after its ticket's expiry (§6.2).
     pub fn session_table(&self) -> Vec<SessionEntry> {
         let mut table: Vec<_> = self
             .sessions
@@ -2188,7 +2215,8 @@ mod tests {
             .unwrap();
         connect(&mut server, &mut renewed, endpoint);
         // The renewal takes the hop over; the old session takes only LEAVE
-        // until its grace ends, then retires (spec §6.2 "续期", "释放").
+        // until a ticket lifetime after its ticket expired (1200), then
+        // retires (spec §6.2 "续期", "释放").
         let table = server.session_table();
         assert_eq!(table.len(), 2);
         let old = table
@@ -2201,7 +2229,14 @@ mod tests {
             server.process(endpoint, &bytes, 1000).err(),
             Some(RelayError::Unregistered)
         );
-        let released = 1000 + LEAVE_GRACE;
+        let released = 1200 + MAX_TICKET_LIFETIME;
+        server.process(endpoint, &bytes, released - 1).ok();
+        assert!(
+            server
+                .session_table()
+                .iter()
+                .any(|entry| entry.session == 0x0102_0304 && entry.leaving)
+        );
         server.process(endpoint, &bytes, released).ok();
         assert_eq!(
             server.session_retired_until(0x0102_0304),

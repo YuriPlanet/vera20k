@@ -595,6 +595,12 @@ pub(crate) fn reenter_after_match(state: &mut AppState) {
         visit.back_to_room = false;
     }
     live_service::match_returned(state);
+    if !App::prepare_multiplayer_settings(
+        state,
+        crate::app::match_runtime::session::SessionMode::Wol,
+    ) {
+        return;
+    }
     persona::enter_wol_main(state);
     read_wol_settings(state);
     let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();

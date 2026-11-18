@@ -582,9 +582,13 @@ impl RelayServer {
             }]);
         }
         let feedback = watcher.link.feedback(now_ms);
-        let replies = match (request, ordering.as_mut()) {
-            (READY_REQUEST | PULL_REQUEST, None) => error(OrderError::Inactive, 0),
-            (READY_REQUEST, Some(ordering)) if payload.len() == WATCH_READY_LEN => {
+        let failure = ordering
+            .as_ref()
+            .and_then(|room| room.federation_failure_reply(now_ms));
+        let replies = match (request, ordering.as_mut(), failure) {
+            (_, _, Some(reply)) => reply,
+            (READY_REQUEST | PULL_REQUEST, None, _) => error(OrderError::Inactive, 0),
+            (READY_REQUEST, Some(ordering), _) if payload.len() == WATCH_READY_LEN => {
                 if payload[1..] != ordering.agreement {
                     error(OrderError::AgreementMismatch, 0)
                 } else {
@@ -593,7 +597,7 @@ impl RelayServer {
                     vec![ordering.watch_status(view, feedback, now_ms)]
                 }
             }
-            (PULL_REQUEST, Some(ordering)) => {
+            (PULL_REQUEST, Some(ordering), _) => {
                 // `[2][next varint]` (compaction spec §7.4).
                 let mut reader = Reader(&payload[1..]);
                 let cursor = reader.varint()?;

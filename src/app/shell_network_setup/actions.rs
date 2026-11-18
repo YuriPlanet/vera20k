@@ -6,29 +6,68 @@ use super::*;
 use crate::app::match_runtime::session::NetworkRowKind;
 use crate::skirmish_launch::{AiDifficulty, LaunchCountry, LaunchStartPosition, LaunchTeam};
 use crate::ui::multiplayer_setup::*;
+use anyhow::Context;
 pub(crate) use start::begin_external_lan_go;
+
+/// While C2's StartGame request is pending (`00B77E28`), its proc skips
+/// checkboxes and sliders (`0x78F823`), and Back, ChooseMap and every
+/// row combo test the same flag (`0x790C5B`, `0x791033`, `0x791075`,
+/// `0x791097`, `0x790D12`). VERA's online host holds the same edits, and its
+/// room's own, from its Start click while the guests accept the final
+/// settings. It may still leave then, or `kick` a guest from its Player list:
+/// either cancels that start, so a stalled guest need not hold the room to
+/// the start's deadline.
+fn held_while_starting(phase: StartPhase, action: &SetupAction, kick: bool) -> bool {
+    match action {
+        SetupAction::Back => phase.submitted(),
+        SetupAction::Select { .. } if kick => phase.submitted(),
+        SetupAction::ChooseMap
+        | SetupAction::Select { .. }
+        | SetupAction::Toggle { .. }
+        | SetupAction::Trackbar { .. }
+        | SetupAction::Join { .. }
+        | SetupAction::DropRow { .. }
+        | SetupAction::TeamStarts
+        | SetupAction::TeamColors
+        | SetupAction::Balance
+        | SetupAction::Lobby => phase.in_progress(),
+        _ => false,
+    }
+}
+
+/// The host's Player list puts Open, Closed, Open Observer or an AI on a
+/// guest's row, which kicks the guest (`select`).
+fn kicks_guest(state: &AppState, action: &SetupAction) -> bool {
+    let SetupAction::Select { control, value } = *action else {
+        return false;
+    };
+    // 0 keeps the guest; the other two move it.
+    !matches!(value, 0 | MOVE_TO_SPECTATORS | GIVE_SEAT)
+        && matches!(SetupColumn::decode(control), Some((SetupColumn::Player, _)))
+        && super::view(state)
+            .and_then(|view| view.combo(control).map(|combo| combo.row))
+            .is_some_and(|row| guest_on_row(state, row).is_some())
+}
+
+/// The guest, not the host itself, on a host's row, with its team.
+fn guest_on_row(state: &AppState, row: u8) -> Option<(usize, LaunchTeam)> {
+    let session = &state.match_state.session;
+    let launch = session.network_setup().filter(|_| session.host())?;
+    launch
+        .humans
+        .iter()
+        .enumerate()
+        .find(|(index, human)| {
+            *index != launch.local_player_index && human.raw_slot_index == Some(row)
+        })
+        .map(|(index, human)| (index, human.slot.team))
+}
 
 pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
     let dialog = super::dialog(state);
-    // While C2's StartGame request is pending (`00B77E28`), its proc skips
-    // checkboxes and sliders (`0x78F823`), and Back, ChooseMap and every
-    // row combo test the same flag (`0x790C5B`, `0x791033`, `0x791075`,
-    // `0x791097`, `0x790D12`).
-    if super::wol::start_pending(state)
-        && matches!(
-            action,
-            SetupAction::Back
-                | SetupAction::ChooseMap
-                | SetupAction::Select { .. }
-                | SetupAction::Toggle { .. }
-                | SetupAction::Trackbar { .. }
-                | SetupAction::Join { .. }
-                | SetupAction::TeamStarts
-                | SetupAction::TeamColors
-                | SetupAction::Balance
-                | SetupAction::Lobby
-        )
-    {
+    let phase = super::start_phase(state);
+    let kick = phase.in_progress() && kicks_guest(state, &action);
+    if held_while_starting(phase, &action, kick) {
         return;
     }
     let result = match action {
@@ -335,22 +374,7 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
     // VERA's host moves a guest as the guest's own choices would: into a
     // seat or to the spectators from its Player list; its side, colour,
     // start and team from the rest of its row, below.
-    let guest = state
-        .match_state
-        .session
-        .host()
-        .then(|| {
-            let launch = state.match_state.session.network_setup()?;
-            launch
-                .humans
-                .iter()
-                .enumerate()
-                .find(|(index, human)| {
-                    *index != launch.local_player_index && human.raw_slot_index == Some(combo.row)
-                })
-                .map(|(index, human)| (index, human.slot.team))
-        })
-        .flatten();
+    let guest = guest_on_row(state, combo.row);
     if let Some((index, team)) = guest {
         let observer = match value {
             MOVE_TO_SPECTATORS => Some(true),
@@ -677,30 +701,30 @@ pub(super) fn accept(state: &mut AppState) -> anyhow::Result<()> {
 }
 
 pub(crate) fn commit_start(state: &mut AppState, agreed_seed: u32) {
-    let quick_match = super::quick_match(state);
-    let external = super::external(state);
-    // Quick Match and external launches have no setup dialog whose
-    // teardown writes settings.
-    if !quick_match && !external {
-        super::persist_setup_preferences(state);
-    }
-    if let Some(launch) = state.match_state.session.network_setup()
-        && let Err(error) = state
-            .frontend
-            .multiplayer_shell_runtime
-            .validate_network_countries(launch)
-    {
-        // The dialog has already slid out; a refused start returns to a
-        // fresh BB like the failed network StartScenario retry (52E75F).
-        log::error!("Cannot admit network country identity: {error}");
-        if external {
-            App::fail_external_launch(state, &format!("network country identity: {error}"));
-        } else if quick_match {
+    if let Err(error) = try_commit_start(state, agreed_seed) {
+        log::error!("Could not start the network match: {error:#}");
+        if state.frontend.external_launch {
+            App::fail_external_launch(state, &format!("{error:#}"));
+        } else if super::quick_match(state) {
             crate::app::shell_wol::start_aborted(state);
         } else {
             super::commit_back(state);
         }
-        return;
+    }
+}
+
+/// The lobby's watch admission and playable starts freeze the same world.
+/// Each caller owns the return from a refusal.
+pub(super) fn try_commit_start(state: &mut AppState, agreed_seed: u32) -> anyhow::Result<()> {
+    if !super::quick_match(state) && !super::external(state) {
+        super::persist_setup_preferences(state);
+    }
+    if let Some(launch) = state.match_state.session.network_setup() {
+        state
+            .frontend
+            .multiplayer_shell_runtime
+            .validate_network_countries(launch)
+            .context("network country identity")?;
     }
     // The host's random map keeps the start staging its generator wrote
     // (Scenario +0x1140, 0x0059647B..0x00596565), as skirmish's does. A
@@ -756,34 +780,24 @@ pub(crate) fn commit_start(state: &mut AppState, agreed_seed: u32) {
         (false, false) => crate::app::lan_service::admitted_host_room(state)
             .map(|(host, game_id)| crate::app::shell_lan::LanRematch::Guest { host, game_id }),
     };
-    match state.match_state.session.freeze_network_start(agreed_seed) {
-        Ok(startup) => {
-            if state.match_state.session_mode()
-                == crate::app::match_runtime::session::SessionMode::Wol
-            {
-                crate::app::shell_wol::match_started(state);
-            }
-            state.frontend.multiplayer_setup = None;
-            state.frontend.network_setup_protocol = None;
-            state.frontend.skirmish_preview_texture = None;
-            crate::app::loading::pump::begin_loading(
-                state,
-                crate::app::loading::pump::LoadingRequest::network(startup)
-                    .with_accepted_random_map(accepted_random_map)
-                    .with_start_staging(guest_staging),
-            );
-        }
-        Err(error) => {
-            log::error!("Could not freeze accepted LAN start: {error:#}");
-            if external {
-                App::fail_external_launch(state, &format!("network start: {error:#}"));
-            } else if quick_match {
-                crate::app::shell_wol::start_aborted(state);
-            } else {
-                super::commit_back(state);
-            }
-        }
+    let startup = state
+        .match_state
+        .session
+        .freeze_network_start(agreed_seed)
+        .context("network start")?;
+    if state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol {
+        crate::app::shell_wol::match_started(state);
     }
+    state.frontend.multiplayer_setup = None;
+    state.frontend.network_setup_protocol = None;
+    state.frontend.skirmish_preview_texture = None;
+    crate::app::loading::pump::begin_loading(
+        state,
+        crate::app::loading::pump::LoadingRequest::network(startup)
+            .with_accepted_random_map(accepted_random_map)
+            .with_start_staging(guest_staging),
+    );
+    Ok(())
 }
 
 pub(crate) fn open_choose_map(state: &mut AppState) {
@@ -907,4 +921,32 @@ pub(crate) fn commit_map_selection(
         queue(state, NetworkSetupRequest::PublishRoster);
     }
     Ok(())
+}
+
+#[cfg(all(test, tests_app))]
+mod tests {
+    use super::*;
+
+    /// VERA's online host keeps its room still from its Start click, as C2
+    /// does once StartGame is out, but may leave or kick a stalled guest
+    /// while the guests accept.
+    #[test]
+    fn a_preparing_start_holds_the_hosts_edits_but_not_its_back_or_kick() {
+        let edit = SetupAction::Select {
+            control: 0,
+            value: 0,
+        };
+        let drag = SetupAction::DropRow {
+            row: 1,
+            group: SetupGroup::Spectators,
+        };
+        let back = SetupAction::Back;
+        assert!(held_while_starting(StartPhase::Preparing, &edit, false));
+        assert!(held_while_starting(StartPhase::Preparing, &drag, false));
+        assert!(!held_while_starting(StartPhase::Preparing, &back, false));
+        assert!(!held_while_starting(StartPhase::Preparing, &edit, true));
+        assert!(held_while_starting(StartPhase::Submitted, &back, false));
+        assert!(held_while_starting(StartPhase::Submitted, &edit, true));
+        assert!(!held_while_starting(StartPhase::Idle, &edit, false));
+    }
 }

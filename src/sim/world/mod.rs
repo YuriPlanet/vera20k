@@ -8482,7 +8482,7 @@ impl ObjectSubstrate {
     }
 }
 
-#[cfg(all(test, any(tests_sim_world_t_z, tests_net, tests_sim_t_z)))]
+#[cfg(all(test, any(tests_sim_world_t_z, tests_sim_world_p_s, tests_sim_t_z)))]
 #[path = "world_tests.rs"]
 pub(crate) mod tests;
 
@@ -8586,6 +8586,9 @@ mod world_orders_bridge_repair_tests;
 #[cfg(all(test, tests_sim_world_p_s))]
 #[path = "rng_routing_tests.rs"]
 mod rng_routing_tests;
+
+#[cfg(all(test, tests_sim_world_p_s))]
+mod raw_record_convergence_tests;
 
 #[cfg(all(test, tests_sim_world_p_s))]
 #[path = "slice6_retask_tests.rs"]
