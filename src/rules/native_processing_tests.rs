@@ -4466,3 +4466,38 @@ fn phobos_shadow_indices_frames_read_the_image_section_on_every_pass() {
         "frames without a section list stay empty"
     );
 }
+
+/// `[AudioVisual] Dig=` is `RulesClass+0x294`: `0x0066A593` pushes the key
+/// string `0x0083A5CC` and `0x00889F64` as the section, `0x00428B80` resolves
+/// the stored name and `0x0066A5BA` writes the pointer back. The tunnel
+/// locomotor's four `AnimClass` constructions (`0x00728F6F`, `0x00729360`,
+/// `0x00729459`, `0x00729A2F`) pass that pointer, so `RuleSet` has to carry it.
+#[test]
+fn audio_visual_dig_retains_its_anim_type_across_layers() {
+    let fresh = RuleSet::from_ini(&IniFile::empty()).unwrap();
+    assert!(
+        fresh.general.dig_anim.is_empty(),
+        "ctor665A10 leaves Rules+294 null"
+    );
+    let mut layers = RulesLayerStack::new(IniFile::from_str("[AudioVisual]\nDig=DIGANIM\n"));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[AudioVisual]\nFogRate=8\n"),
+    );
+    let processed = layers.process().unwrap();
+    let rules = RuleSet::from_processed_rules(&processed).unwrap();
+    assert_eq!(
+        rules.general.dig_anim, "DIGANIM",
+        "a later layer without the key keeps the previous AnimType"
+    );
+    layers.push(
+        RulesLayerKind::Tmcj4f,
+        IniFile::from_str("[AudioVisual]\nDig=DIGOUT\n"),
+    );
+    let processed = layers.process().unwrap();
+    let rules = RuleSet::from_processed_rules(&processed).unwrap();
+    assert_eq!(
+        rules.general.dig_anim, "DIGOUT",
+        "a present key replaces the pointer"
+    );
+}

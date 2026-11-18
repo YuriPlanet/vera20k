@@ -3146,6 +3146,15 @@ impl ProcessedRulesLayers {
         )
     }
 
+    /// `[AudioVisual] Dig=`: the `Rules+0x294` AnimType name the Tunnel
+    /// locomotor's dig/dig-out transitions construct.
+    pub(crate) fn dig_anim(&self) -> &str {
+        &self
+            .native_type_construction_trace
+            .registry_state()
+            .rules_dig_anim
+    }
+
     /// Consume only the typed-reader compatibility projection and deliberately
     /// discard the native constructor/registry receipt.
     ///
@@ -4495,6 +4504,11 @@ pub(crate) struct NativeRulesRegistryState {
     rules_ion_blast_anim: String,
     rules_ion_beam_anim: String,
     rules_ion_cannon_warhead: String,
+    /// `[AudioVisual] Dig=` (`Rules+0x294`): the AnimType the Tunnel locomotor
+    /// constructs at its four dig/dig-out transitions. Empty is the null pointer
+    /// the native constructor starts with (`0x00665A10`).
+    #[serde(default)]
+    rules_dig_anim: String,
     /// Phobos `RulesExt::TimerBlinkColorScheme`: the runtime ColorScheme the
     /// blinking timer prints in, `[Colors]` entry `R / 2`, or -1 for `none`.
     #[cfg(feature = "phobos")]
@@ -4609,6 +4623,7 @@ impl Default for NativeRulesRegistryState {
             rules_ion_blast_anim: String::new(),
             rules_ion_beam_anim: String::new(),
             rules_ion_cannon_warhead: String::new(),
+            rules_dig_anim: String::new(),
             // RulesExt::ExtData constructor `TimerBlinkColorScheme { 5 }`, the
             // scheme the game blinks in.
             #[cfg(feature = "phobos")]
@@ -6473,6 +6488,7 @@ struct RulesPassProcessor {
     rules_ion_blast_anim: String,
     rules_ion_beam_anim: String,
     rules_ion_cannon_warhead: String,
+    rules_dig_anim: String,
     #[cfg(feature = "phobos")]
     rules_timer_blink_color_scheme: i32,
     /// Phobos `[AudioVisual] MissingCameo=`, retained with the other Rules
@@ -6562,6 +6578,7 @@ impl RulesPassProcessor {
             rules_ion_blast_anim: registry_state.rules_ion_blast_anim,
             rules_ion_beam_anim: registry_state.rules_ion_beam_anim,
             rules_ion_cannon_warhead: registry_state.rules_ion_cannon_warhead,
+            rules_dig_anim: registry_state.rules_dig_anim,
             #[cfg(feature = "phobos")]
             rules_timer_blink_color_scheme: registry_state.rules_timer_blink_color_scheme,
             #[cfg(feature = "phobos")]
@@ -11059,6 +11076,18 @@ impl RulesPassProcessor {
         self.rules_color_add_selectors.read_pass(section);
         for key in ["DropPodPuff", "VeinAttack", "Dig", "AtmosphereEntry"] {
             let resolved = self.resolve_scalar_from(section, key, RulesTypeFamily::Animation, 0x80);
+            // `[AudioVisual] Dig=` is `RulesClass+0x294`: `0x0066A593` pushes
+            // the key string `0x0083A5CC` (`Dig`), `0x00428B80` resolves the
+            // stored name and `0x0066A5BA` writes it back, so a present key
+            // replaces the AnimType (a name that allocates nothing leaves that
+            // pointer null) while a missing key keeps the previous one. The
+            // Tunnel locomotor's four `AnimClass` constructions pass that type
+            // (`0x00728F6F`, `0x00729360`, `0x00729459`, `0x00729A2F`).
+            if key == "Dig"
+                && let Some(resolved) = resolved.as_ref()
+            {
+                self.rules_dig_anim = resolved.clone().unwrap_or_default();
+            }
             // DropPodPuff (Rules+0x4C) and AtmosphereEntry (+0x354), for the
             // Ares DropPod locomotor (`DropPodLocomotorRules`).
             #[cfg(feature = "ares")]
@@ -11304,6 +11333,7 @@ impl RulesPassProcessor {
                     rules_ion_blast_anim: self.rules_ion_blast_anim,
                     rules_ion_beam_anim: self.rules_ion_beam_anim,
                     rules_ion_cannon_warhead: self.rules_ion_cannon_warhead,
+                    rules_dig_anim: self.rules_dig_anim,
                     #[cfg(feature = "phobos")]
                     rules_timer_blink_color_scheme: self.rules_timer_blink_color_scheme,
                     #[cfg(feature = "phobos")]

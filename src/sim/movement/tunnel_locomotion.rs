@@ -190,7 +190,6 @@ impl TunnelRuntime {
     /// Advance one frame. `destination` is the cell-centre `Move_To` stored,
     /// `speed` the type's `Speed=`, `frame` the binary frame counter and
     /// `ground_of` the `0x578080` query `ProcessPreDigOut` raises toward.
-    /// Returns whether the object changed place this frame.
     pub(crate) fn process(
         &mut self,
         position: &mut crate::sim::movement::ground_pose::Position,
@@ -199,8 +198,9 @@ impl TunnelRuntime {
         speed: i32,
         frame: u32,
         ground_of: GroundQuery<'_>,
-    ) -> bool {
-        match self.state {
+    ) -> TunnelStep {
+        let before = self.state;
+        let moved = match self.state {
             TunnelState::Idle => false,
             TunnelState::PreDigIn => self.pre_dig_in(position, facing, destination, speed, frame),
             TunnelState::DiggingIn => self.digging_in(position, frame),
@@ -209,7 +209,20 @@ impl TunnelRuntime {
             TunnelState::PreDigOut => self.pre_dig_out(position, speed, frame, ground_of),
             TunnelState::DiggingOut => self.digging_out(frame),
             TunnelState::DugOut => self.dug_out(frame),
-        }
+        };
+        // The four transitions that construct one `AnimClass` with the
+        // `[AudioVisual] Dig=` type: `PreDigIn→DiggingIn` (`0x00729360`),
+        // `DiggingIn→DugIn` (`0x00728F6F`), `PreDigOut→DiggingOut`
+        // (`0x00729A2F`) and `DiggingOut→DugOut` (`0x00729459`). The
+        // `DugIn→Digging` step that finishes the sink constructs none.
+        let dig_anim = matches!(
+            (before, self.state),
+            (TunnelState::PreDigIn, TunnelState::DiggingIn)
+                | (TunnelState::DiggingIn, TunnelState::DugIn)
+                | (TunnelState::PreDigOut, TunnelState::DiggingOut)
+                | (TunnelState::DiggingOut, TunnelState::DugOut)
+        );
+        TunnelStep { moved, dig_anim }
     }
 
     /// `ProcessPreDigIn 0x7291F0`: wait out the hull turn, then arm the dig
@@ -426,6 +439,15 @@ fn facing_toward(from: DriveCoord, to: DriveCoord) -> u16 {
     (units.round() as i64).rem_euclid(65536) as u16
 }
 
+/// What one [`TunnelRuntime::process`] call did: whether the object changed
+/// place, and whether it crossed one of the four transitions that native marks
+/// with the `[AudioVisual] Dig=` `AnimClass`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct TunnelStep {
+    pub moved: bool,
+    pub dig_anim: bool,
+}
+
 /// Run the Tunnel controller for one entity this frame.
 ///
 /// `ground_of` is the caller's `MapClass::0x578080` query, the answer
@@ -435,16 +457,16 @@ pub(crate) fn process(
     speed: i32,
     frame: u32,
     ground_of: GroundQuery<'_>,
-) -> bool {
+) -> TunnelStep {
     let destination = destination_coord(entity);
     let Some(loco) = entity.locomotor.as_mut() else {
-        return false;
+        return TunnelStep::default();
     };
     if loco.active_kind() != crate::rules::locomotor_type::LocomotorKind::Tunnel {
-        return false;
+        return TunnelStep::default();
     }
     let Some(runtime) = loco.tunnel_runtime_mut() else {
-        return false;
+        return TunnelStep::default();
     };
     runtime.process(
         &mut entity.position,

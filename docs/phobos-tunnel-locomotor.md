@@ -60,28 +60,32 @@ The layer answer is what the package-93 `AU` chain consumes:
 
 ## Residuals
 
-- The dig and dig-out **animations** are not created; only the timers that gate
-  them are ported. Native constructs one `AnimClass` at each of the four
-  transitions: a `0x1C8`-byte allocation (`PUSH 0x1C8; CALL 0x007C8E17` at
-  `0x728F20`, with the same `TEST EAX,EAX` guard after each of the four
-  allocations) and then the ctor `AnimClass::AnimClass @ 0x00421EA0` at
-  `0x00728F6F`, `0x00729360`, `0x00729459` and `0x00729A2F`. Every site passes
-  the identical row `(type, &Owner->Location, 0, 1, 0x600, 0, 0)`: `PUSH 0x0`,
-  `PUSH 0x0`, `PUSH 0x600`, `PUSH 0x1`, `PUSH 0x0`, the by-value `CoordStruct`
-  copied from `Owner->Location` (`+0x9C` of `[this+8]` / `[this+0xc]`), then
-  `PUSH type`. The type is `RulesClass+0x294`, which `RulesClass::Process`
-  reads from **`[General] Dig=`**: `0x0066A593` pushes the key string
-  `0x0083A5CC` (`Dig`) and the section `0x00889F64`, the `AnimType` lookup
-  `0x00428B80` resolves the stored name at `0x0066A5A8`, and `0x0066A5BA`
-  writes it back. The `RulesClass` constructor's default for that field is
-  null (`0x00665A10`). Retail `rulesmd.ini` has no `Dig=` (only the commented
-  `DigSound=` at line 672), so the pointer stays null: the arm is a dormant TS
-  leftover and retail draws nothing either way. Porting it needs that
-  `[General]` key plus a general-purpose `AnimClass` spawn (drawFlags `0x600`,
-  loop 1) reachable from a locomotor step; `TunnelRuntime` is a pure state
-  machine and the spawn path (`Simulation::spawn_anim_at_world`) belongs to a
-  `Simulation` owner, so the chain also needs a spawn-request conduit out of
-  the locomotor.
+- The dig and dig-out **animations** are ported (2026-11-19). Native
+  constructs one `AnimClass` at each of the four transitions —
+  `PreDigIn→DiggingIn` (`0x00729360`), `DiggingIn→DugIn` (`0x00728F6F`),
+  `PreDigOut→DiggingOut` (`0x00729A2F`) and `DiggingOut→DugOut`
+  (`0x00729459`) — after a `0x1C8`-byte allocation (`PUSH 0x1C8; CALL
+  0x007C8E17`, `TEST EAX,EAX` guarded), all with the identical ctor row
+  `(type, &Owner->Location, 0, 1, 0x600, 0, 0)` at
+  `AnimClass::AnimClass @ 0x00421EA0`: `PUSH 0x0`, `PUSH 0x0`, `PUSH 0x600`,
+  `PUSH 0x1`, `PUSH 0x0`, the by-value `CoordStruct` copied from
+  `Owner->Location` (`+0x9C` of `[this+8]` / `[this+0xc]`), then `PUSH type`.
+  The type is `RulesClass+0x294`, the **`[AudioVisual] Dig=`** key:
+  `0x0066A593` pushes the key string `0x0083A5CC` (`Dig`) with the section
+  `0x00889F64`, the `AnimType` lookup `0x00428B80` resolves the stored name at
+  `0x0066A5A8`, and `0x0066A5BA` writes it back; the `RulesClass` constructor
+  default is null (`0x00665A10`). VERA carries the name as
+  `RuleSet::general.dig_anim` (retained by the `[AudioVisual]` Process pass,
+  `RulesLayerKind` ordered), has `TunnelRuntime::process` return
+  `TunnelStep { moved, dig_anim }` marking exactly those four state pairs, and
+  builds the anim from `Simulation::process_tunnel_locomotor` through the
+  shared `(delay 0, loop 1, drawFlags 0x600, zAdjust 0, reverse 0)` row
+  (`sim::superweapon::spawn_super_anim`) at the owner's Location. Retail
+  `rulesmd.ini` has no `Dig=` (only the commented `DigSound=` at line 672), so
+  the pointer stays null and nothing is constructed either way — the arm is a
+  dormant TS leftover, and a mod that sets the key gets the animation. Tests:
+  `tunnel_locomotion::tests::the_dig_anim_marks_exactly_the_four_transitions`
+  and `native_processing::tests::audio_visual_dig_retains_its_anim_type_across_layers`.
 - `ProcessPreDigOut 0x7298F0` raises Z to the cell's ground height
   (`MapClass::0x578080` at `0x72991D`, every frame) by
   `max(5, round(rate * frame_scale))` and arms the dig-out timer with

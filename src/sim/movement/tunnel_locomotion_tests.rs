@@ -22,6 +22,55 @@ fn test_position() -> Position {
     )
 }
 
+/// The four `[AudioVisual] Dig=` `AnimClass` constructions of the cycle:
+/// `PreDigIn→DiggingIn` (`0x00729360`), `DiggingIn→DugIn` (`0x00728F6F`),
+/// `PreDigOut→DiggingOut` (`0x00729A2F`) and `DiggingOut→DugOut`
+/// (`0x00729459`). The finished sink (`DugIn→Digging`) constructs none, and
+/// neither does any other step.
+#[test]
+fn the_dig_anim_marks_exactly_the_four_transitions() {
+    let mut runtime = TunnelRuntime::constructed();
+    let mut position = test_position();
+    let mut facing = crate::sim::movement::FacingClass::new(0, 0);
+    let speed = 5;
+    let from = position_world(&position);
+    let destination = Some(DriveCoord {
+        x: from.x,
+        y: from.y - 300,
+        z: UNDERGROUND_Z,
+    });
+    runtime.move_to(false);
+    let mut marked = Vec::new();
+    let mut frame = 0u32;
+    for _ in 0..2000 {
+        frame += 1;
+        let before = runtime.state();
+        let step = runtime.process(
+            &mut position,
+            &mut facing,
+            destination,
+            speed,
+            frame,
+            &flat_ground,
+        );
+        if step.dig_anim {
+            marked.push((before, runtime.state()));
+        }
+        if runtime.state() == TunnelState::Idle {
+            break;
+        }
+    }
+    assert_eq!(
+        marked,
+        vec![
+            (TunnelState::PreDigIn, TunnelState::DiggingIn),
+            (TunnelState::DiggingIn, TunnelState::DugIn),
+            (TunnelState::PreDigOut, TunnelState::DiggingOut),
+            (TunnelState::DiggingOut, TunnelState::DugOut),
+        ]
+    );
+}
+
 /// One whole dig cycle: the layer is `Underground` in `Digging` and nowhere
 /// else, no frame pushes Z past the `-256` floor, and the object returns to
 /// `Idle`.

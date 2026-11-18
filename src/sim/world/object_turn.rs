@@ -331,8 +331,28 @@ impl Simulation {
                 .as_ref()
                 .and_then(|cells| movement::ground_pose::query_ground_height(cells, coord).ok())
         };
+        let mut dig_anim_at = None;
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            crate::sim::movement::tunnel_locomotion::process(entity, speed, frame, &ground_of);
+            let step =
+                crate::sim::movement::tunnel_locomotion::process(entity, speed, frame, &ground_of);
+            if step.dig_anim {
+                dig_anim_at = Some(crate::sim::movement::ground_pose::position_world_coord(
+                    &entity.position,
+                ));
+            }
+        }
+        // `AnimClass` with `RulesClass+0x294` (`[AudioVisual] Dig=`) at
+        // `Owner->Location`: the four native constructions read that field
+        // (`0x00728F6F`, `0x00729360`, `0x00729459`, `0x00729A2F`) and push the
+        // same row the superweapon launches use. A null type (retail, where
+        // `Dig=` is unset) constructs nothing.
+        if let Some(coord) = dig_anim_at {
+            let _ = crate::sim::superweapon::spawn_super_anim(
+                self,
+                rules,
+                &rules.general.dig_anim,
+                [coord.x, coord.y, coord.z],
+            );
         }
         LocomotorProcess::admitted()
     }
