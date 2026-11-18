@@ -287,7 +287,7 @@ use crate::map::houses::HouseAllianceMap;
 use crate::map::overlay::OverlayEntry;
 use crate::map::playfield::PlayfieldBounds;
 use crate::map::resolved_terrain::{
-    RealCellBridgeFlags0x1180, ResolvedTerrainGrid, SharedCellDummy,
+    RealCellBridgeFlags0x1180, ResolvedTerrainGrid, SavedCellLandValues, SharedCellDummy,
 };
 use crate::rules::locomotor_type::SpeedType;
 use crate::rules::object_type::ObjectType;
@@ -1736,7 +1736,7 @@ pub struct Simulation {
     pub(crate) overlay_grid: Option<crate::sim::overlay_grid::OverlayGrid>,
     /// Persistent MapClass scenario-crate slots, including accepted ghosts and
     /// their native timer words. This is authoritative save/hash state.
-    pub(crate) crate_authority: crate::sim::crates::CrateAuthority,
+    crate_authority: crate::sim::crates::CrateAuthority,
     /// Per-cell smudge state (craters, scorches). Seeded from map [Smudge]
     /// entries at init, mutated by combat death-handling at runtime.
     pub(crate) smudge_grid: Option<crate::sim::smudge_grid::SmudgeGrid>,
@@ -3762,6 +3762,24 @@ impl Simulation {
 
     pub fn crate_authority(&self) -> &crate::sim::crates::CrateAuthority {
         &self.crate_authority
+    }
+
+    pub(crate) fn crate_slot_updates(&mut self) -> crate::sim::crates::CrateSlotUpdates<'_> {
+        crate::sim::crates::CrateSlotUpdates::new(&mut self.crate_authority, &mut self.scenario_rng)
+    }
+
+    pub(super) fn reset_crates_after_user_load(
+        &mut self,
+        saved_land: &SavedCellLandValues,
+    ) -> Result<(), crate::sim::snapshot::SnapshotRestoreError> {
+        let overlays = self.overlay_grid.as_mut().ok_or(
+            crate::sim::snapshot::SnapshotRestoreError::MissingMapAuthorityComponent {
+                component: "OverlayGrid",
+            },
+        )?;
+        self.crate_authority.reset_coordinates_after_user_load();
+        overlays.reset_crate_fields_after_user_load(saved_land.allocated_cells());
+        Ok(())
     }
 
     pub fn smudge_grid(&self) -> Option<&crate::sim::smudge_grid::SmudgeGrid> {
