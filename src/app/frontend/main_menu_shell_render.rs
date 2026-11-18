@@ -1,6 +1,6 @@
 //! Initial main-menu shell render glue for dialog 0xE2.
 
-use crate::util::time::Instant;
+use crate::util::time::{Duration, Instant};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -115,6 +115,27 @@ fn ra2ts_movie_session_is_reusable(
     movie_loaded && active_identity == Some(requested_identity)
 }
 
+/// Time between consecutive paints of a playing menu movie.
+#[derive(Default)]
+pub(crate) struct MenuMovieClock {
+    last_paint: Option<Instant>,
+}
+
+impl MenuMovieClock {
+    /// A focus or visibility change can pass without a single menu redraw.
+    pub(crate) fn pause(&mut self) {
+        self.last_paint = None;
+    }
+
+    fn elapsed(&mut self, now: Instant, playing: bool) -> Option<Duration> {
+        if !playing {
+            self.pause();
+            return None;
+        }
+        self.last_paint.replace(now).map(|last| now - last)
+    }
+}
+
 /// Drop the one active RA2TS decoder/texture and all of its cache identity.
 ///
 /// This models destruction of the owning dialog's child static `0x71A`. The
@@ -122,7 +143,7 @@ fn ra2ts_movie_session_is_reusable(
 pub(crate) fn clear_ra2ts_movie_session(state: &mut AppState) {
     state.frontend.main_menu_movie = None;
     state.frontend.main_menu_movie_identity = None;
-    state.frontend.main_menu_movie_last_step = Instant::now();
+    state.frontend.main_menu_movie_clock.pause();
 }
 
 /// The slide a painted `0xE2` frame belongs to.
@@ -421,8 +442,28 @@ pub(crate) fn ensure_movie_for_current_layout(
     );
     state.frontend.main_menu_movie = Some(movie);
     state.frontend.main_menu_movie_identity = Some(requested_identity);
-    state.frontend.main_menu_movie_last_step = Instant::now();
     Ok(())
+}
+
+/// Step the shared menu loop once for this paint.
+pub(super) fn step_ra2ts_movie(state: &mut AppState, shown: bool) -> bool {
+    let playing = shown && state.platform.window_active && !state.platform.window_hidden;
+    let elapsed = state
+        .frontend
+        .main_menu_movie_clock
+        .elapsed(Instant::now(), playing);
+    if let Some(elapsed) = elapsed
+        && let Some(movie) = state.frontend.main_menu_movie.as_mut()
+        && let Err(err) = movie.step(&state.renderer.gpu, elapsed.as_secs_f64())
+    {
+        log::warn!("Failed to step RA2TS menu movie: {err:#}");
+        state.frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
+            "VERA:MenuMovieFailed",
+            &[("error", &format!("{err:#}"))],
+        ));
+        return false;
+    }
+    true
 }
 
 /// The menu movie's bytes and the archive they came from.
@@ -578,22 +619,8 @@ fn render_main_menu_shell_to_target_inner(
     let sliding = !matches!(slide, MainMenuSlide::Steady);
     let leaving = matches!(slide, MainMenuSlide::Exit(_));
     let movie_shown = !sliding && !backdrop;
-    if !movie_shown {
-        state.frontend.main_menu_movie_last_step = Instant::now();
-    } else if let Some(movie) = state.frontend.main_menu_movie.as_mut() {
-        let now = Instant::now();
-        let elapsed = now
-            .duration_since(state.frontend.main_menu_movie_last_step)
-            .as_secs_f64();
-        state.frontend.main_menu_movie_last_step = now;
-        if let Err(err) = movie.step(&state.renderer.gpu, elapsed) {
-            log::warn!("Failed to step main-menu RA2TS movie: {err:#}");
-            state.frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
-                "VERA:MenuMovieFailed",
-                &[("error", &format!("{err:#}"))],
-            ));
-            return Ok(MainMenuShellRenderResult::Fallback);
-        }
+    if !step_ra2ts_movie(state, movie_shown) {
+        return Ok(MainMenuShellRenderResult::Fallback);
     }
 
     let layout = shell_layout::main_menu_layout(state);
@@ -1092,6 +1119,28 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
 #[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn menu_movie_resumes_at_normal_speed_after_backgrounding() {
+        let mut clock = MenuMovieClock::default();
+        let start = Instant::now();
+        let frame = Duration::from_millis(67);
+        assert_eq!(clock.elapsed(start, true), None);
+        assert_eq!(clock.elapsed(start + frame, true), Some(frame));
+
+        // Tab away and back without a single background redraw.
+        clock.pause();
+        let restored = start + Duration::from_secs(30);
+        assert_eq!(clock.elapsed(restored, true), None);
+        assert_eq!(clock.elapsed(restored + frame, true), Some(frame));
+
+        // A still-visible inactive window can also receive background paints.
+        assert_eq!(clock.elapsed(restored + 2 * frame, false), None);
+        assert_eq!(clock.elapsed(restored + 3 * frame, false), None);
+        let focused = restored + Duration::from_secs(10);
+        assert_eq!(clock.elapsed(focused, true), None);
+        assert_eq!(clock.elapsed(focused + frame, true), Some(frame));
+    }
 
     #[test]
     fn external_launch_wait_covers_the_menu_controls() {
