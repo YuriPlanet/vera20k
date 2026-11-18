@@ -458,18 +458,18 @@ fn unacknowledged_relay_leave_releases_the_route_after_bounded_attempts() {
     let (socket, _server, mut wire, ticket, packet_key) = ordered_relay();
     let mut bytes = [0; vera20k_relay_protocol::MAX_DATAGRAM + 1];
     wire.retire_relay();
-    let attempts = u32::from(RELAY_LEAVE_ATTEMPTS);
+    let attempts = u32::from(LEAVE_ATTEMPTS);
     for attempt in 0..attempts {
         assert!(wire.relay_retirement_pending());
-        wire.service(attempt * 16);
+        wire.service(attempt * RELAY_LEAVE_TICKS);
         socket.recv_from(&mut bytes).unwrap();
     }
-    wire.service(attempts * 16 - 1);
+    wire.service(attempts * RELAY_LEAVE_TICKS - 1);
     assert!(
         wire.relay_retirement_pending(),
         "the last attempt keeps its full retry interval"
     );
-    wire.service(attempts * 16);
+    wire.service(attempts * RELAY_LEAVE_TICKS);
     assert!(!wire.relay_retirement_pending());
     assert_eq!(wire.relay_source(), None);
     let address = ipv4_addr(&socket).unwrap();

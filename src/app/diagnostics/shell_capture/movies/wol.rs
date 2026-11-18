@@ -1926,6 +1926,7 @@ impl WolCapture {
                     WolServiceEvent::Message {
                         from: member("Hotel", MEMBER_OPERATOR, ""),
                         text: "mid-match".encode_utf16().collect(),
+                        localized: false,
                         private: false,
                         action: false,
                         ansi: false,
@@ -2217,14 +2218,7 @@ impl WolCapture {
                         "the modern 0xC3 has no Max players or Allow spectators"
                     );
                     self.event(frame, "0xC3 opened (modern)");
-                    // The help under Limit Screen Resolution, moved to the
-                    // clan row.
-                    let (width, height) = (
-                        state.renderer.gpu.config.width as i32,
-                        state.renderer.gpu.config.height as i32,
-                    );
-                    let create =
-                        crate::ui::shell::modal::wol_create_game_layout(width, height, true);
+                    let create = crate::app::shell_wol::lobby::create_layout(state);
                     set_window_pointer_to_rect_center(state, create.limit);
                     App::handle_wol_mouse_move(state);
                     ensure!(
@@ -2588,7 +2582,7 @@ impl WolCapture {
                     let team_list = row_combo(&view, SetupColumn::Team, 0)
                         .is_some_and(|(_, combo)| combo.enabled);
                     ensure!(
-                        !session.network_auto_balance() && view.enabled(BALANCE) && team_list,
+                        view.enabled(BALANCE) && team_list,
                         "setting Teams online closed the Team lists or Balance"
                     );
                     let captions: Vec<&str> = view
@@ -3418,6 +3412,7 @@ impl WolCapture {
                 WolServiceEvent::VisitMessage {
                     from,
                     text,
+                    localized: false,
                     private: false,
                     action: false,
                     sent_at: None,
@@ -3426,6 +3421,7 @@ impl WolCapture {
                 WolServiceEvent::Message {
                     from,
                     text,
+                    localized: false,
                     private: false,
                     action: false,
                     ansi: false,
@@ -3869,6 +3865,7 @@ impl WolCapture {
             WolServiceEvent::Message {
                 from: member(PEER, 0, ""),
                 text: "\u{4f60}\u{597d}".encode_utf16().collect(),
+                localized: false,
                 private: false,
                 action: false,
                 ansi: false,
@@ -4313,6 +4310,7 @@ impl WolCapture {
                         WolServiceEvent::Message {
                             from: member(name, flags, ""),
                             text: text.encode_utf16().collect(),
+                            localized: false,
                             private,
                             action,
                             ansi: false,
@@ -4349,6 +4347,7 @@ impl WolCapture {
                         WolServiceEvent::Message {
                             from: member(name, flags, tag),
                             text: text.encode_utf16().collect(),
+                            localized: false,
                             private: false,
                             action: false,
                             ansi: false,

@@ -363,6 +363,25 @@ const MAX_UPGRADE_MESSAGE_CHARS: usize = 160;
 // match is told the lobby connection was lost: about a minute.
 const LOBBY_LOST_POLLS: u8 = 6;
 
+/// What a game says about itself when it signs in, over either transport
+/// (docs/lobby-protocol.md "Sign-in headers"). It names its version here
+/// too, since a browser cannot set the User-Agent released games name it in.
+/// The browser's gateway forwards only the headers it lists
+/// (tools/wasm/gateway/server.mjs).
+fn sign_in_headers() -> [(&'static str, String); 6] {
+    [
+        ("Vera-Version", env!("CARGO_PKG_VERSION").to_owned()),
+        (
+            "Vera-Build",
+            crate::app::shell_network_setup::agreement::version(),
+        ),
+        ("Vera-Quick-Match", "1".to_owned()),
+        ("Vera-Host-Handover", "1".to_owned()),
+        ("Vera-Watch-AI", "1".to_owned()),
+        ("Vera-Language", crate::i18n::selected_language()),
+    ]
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum RequestFailure {
     Status(u16),
@@ -555,8 +574,12 @@ impl RequestFailure {
     /// and so do a sign-in's wrong passwords from one network and its
     /// accounts being unavailable. A sign-in's `name_unavailable` is a name
     /// already online or reserved: the plain 409 that [`sign_in_failure`]
-    /// shows as the name in use, not a room's code.
+    /// shows as the name in use, not a room's code. A 401 on any path is the
+    /// bearer the lobby no longer knows (`session_failed`).
     fn answer(path: &str, status: u16, bytes: &[u8]) -> Self {
+        if status == 401 {
+            return Self::Status(401);
+        }
         let value = serde_json::from_slice::<Value>(bytes).ok();
         let code = value
             .as_ref()
@@ -762,18 +785,12 @@ impl Client {
         let response = if let Some(body) = body {
             let mut request = self.agent.post(&url).header("User-Agent", USER_AGENT);
             if path == "/v1/sessions" {
-                // Its relay CONFIRM carries a federation roster, it plays
-                // Quick Match, it takes over a room its host left, and it
-                // watches a match where only AI play and plays one the lobby
-                // has the relay order alone; see docs/lobby-protocol.md. The
-                // operator's welcome, notice and maintenance message come in
-                // the player's language when the operator wrote it.
-                request = request
-                    .header("Vera-Relay-Federation", "1")
-                    .header("Vera-Quick-Match", "1")
-                    .header("Vera-Host-Handover", "1")
-                    .header("Vera-Watch-AI", "1")
-                    .header("Vera-Language", crate::i18n::selected_language());
+                // Its relay CONFIRM carries a federation roster. A browser
+                // game does not say so: its gateway reaches one fixed relay.
+                request = request.header("Vera-Relay-Federation", "1");
+                for (name, value) in sign_in_headers() {
+                    request = request.header(name, value);
+                }
             }
             if let Some(token) = &self.token {
                 request = request.header("Authorization", format!("Bearer {token}"));
@@ -788,9 +805,6 @@ impl Client {
         };
         let mut response = response.map_err(|_| RequestFailure::Status(0))?;
         let status = response.status().as_u16();
-        if status == 401 {
-            return Err(RequestFailure::Status(status));
-        }
         let mut bytes = Vec::new();
         response
             .body_mut()
@@ -1609,12 +1623,12 @@ mod tests {
         );
     }
 
-    /// A bearer the shell stopped logging out (Back in an outage, or a
-    /// sign-in that answered after its wait) is logged out before the next
-    /// sign-in instead of reporting the name in use; while the lobby is
-    /// away it stays held.
-    #[test]
-    fn a_held_bearer_is_logged_out_before_signing_in_again() {
+    /// A lobby on a local port that reads one request until `done` holds for
+    /// what it read, answers it with `reply`, and hands back what it read.
+    fn one_request_lobby(
+        done: fn(&[u8]) -> bool,
+        reply: &'static [u8],
+    ) -> (std::net::SocketAddr, std::thread::JoinHandle<String>) {
         use std::io::{Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
@@ -1623,16 +1637,28 @@ mod tests {
             stream
                 .set_read_timeout(Some(Duration::from_secs(2)))
                 .unwrap();
-            let (mut request, mut chunk) = (Vec::new(), [0; 1024]);
-            while !String::from_utf8_lossy(&request).contains("logout") {
+            let (mut request, mut chunk) = (Vec::new(), [0; 4096]);
+            while !done(&request) {
                 let read = stream.read(&mut chunk).unwrap();
-                assert_ne!(read, 0, "the request ended without a logout");
+                assert_ne!(read, 0, "the request ended early");
                 request.extend_from_slice(&chunk[..read]);
             }
-            stream
-                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
-                .unwrap();
+            stream.write_all(reply).unwrap();
+            String::from_utf8_lossy(&request).into_owned()
         });
+        (address, lobby)
+    }
+
+    /// A bearer the shell stopped logging out (Back in an outage, or a
+    /// sign-in that answered after its wait) is logged out before the next
+    /// sign-in instead of reporting the name in use; while the lobby is
+    /// away it stays held.
+    #[test]
+    fn a_held_bearer_is_logged_out_before_signing_in_again() {
+        let (address, lobby) = one_request_lobby(
+            |request| request.windows(6).any(|bytes| bytes == b"logout"),
+            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+        );
         let mut client = Client {
             stopping: Arc::new(AtomicBool::new(false)),
             agent: ureq::Agent::new_with_defaults(),
@@ -2079,6 +2105,81 @@ mod tests {
             RequestFailure::answer("/v1/maps", 429, network.as_bytes()),
             RequestFailure::Status(429)
         );
+        // A bearer the lobby no longer knows, on an account path too.
+        assert_eq!(
+            RequestFailure::answer("/v1/accounts/register", 401, b""),
+            RequestFailure::Status(401)
+        );
+    }
+
+    /// A sign-in names the game's version and build beside what it can do.
+    #[test]
+    fn a_sign_in_names_the_version_and_build() {
+        let (address, lobby) = one_request_lobby(
+            |request| request.ends_with(b"}"),
+            b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+        );
+        let client = Client {
+            stopping: Arc::new(AtomicBool::new(false)),
+            agent: ureq::Agent::config_builder()
+                .http_status_as_error(false)
+                .build()
+                .into(),
+            base: format!("http://{address}"),
+            token: None,
+            cursor: 0,
+            active_match: None,
+            spawned: false,
+            abandoned: false,
+        };
+        let body = session_body("Tanya", &Credential::Guest);
+        assert_eq!(
+            client.request("/v1/sessions", Some(&body)),
+            Err(RequestFailure::Status(503))
+        );
+        let request = lobby.join().unwrap();
+        let header = |name: &str| {
+            request.lines().find_map(|line| {
+                let (key, value) = line.split_once(':')?;
+                key.eq_ignore_ascii_case(name)
+                    .then(|| value.trim().to_owned())
+            })
+        };
+        assert_eq!(
+            header("Vera-Version").as_deref(),
+            Some(env!("CARGO_PKG_VERSION"))
+        );
+        assert_eq!(header("Vera-Relay-Federation").as_deref(), Some("1"));
+        // The build `ready` and `map_status` carry, in the characters and
+        // length the lobby takes (docs/lobby-protocol.md "Sign-in headers").
+        let build = header("Vera-Build").unwrap();
+        assert_eq!(build, crate::app::shell_network_setup::agreement::version());
+        assert!(
+            (1..=128).contains(&build.len())
+                && build
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b".:_+-".contains(&byte)),
+            "{build}"
+        );
+    }
+
+    /// The browser's gateway forwards every header a browser game's sign-in
+    /// sends; it refuses the whole sign-in over any other.
+    #[test]
+    fn the_browser_gateway_forwards_every_sign_in_header() {
+        let gateway = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tools/wasm/gateway/server.mjs"
+        ))
+        .unwrap();
+        let (_, list) = gateway
+            .split_once("const FORWARDED_HEADERS = Object.freeze([")
+            .unwrap();
+        let (forwarded, _) = list.split_once("])").unwrap();
+        for (name, _) in sign_in_headers() {
+            let name = name.to_ascii_lowercase();
+            assert!(forwarded.contains(&format!("'{name}'")), "{name}");
+        }
     }
 
     /// A sign-in sends the typed password or the remembered sign-in, never

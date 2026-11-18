@@ -583,6 +583,7 @@ fn lobby_greeting(state: &mut AppState) {
     let line = |from, text: &str| WolServiceEvent::Message {
         from,
         text: text.encode_utf16().collect(),
+        localized: false,
         private: false,
         action: false,
         ansi: false,
@@ -793,6 +794,7 @@ fn match_requested(state: &mut AppState) {
     let line = |text: String, private: bool, options| WolServiceEvent::Message {
         from: member(MATCHBOT, MEMBER_OPERATOR),
         text: text.encode_utf16().collect(),
+        localized: false,
         private,
         action: false,
         ansi: true,

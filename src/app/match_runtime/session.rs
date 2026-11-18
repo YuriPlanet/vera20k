@@ -63,10 +63,14 @@ enum ModeHolder {
     World,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Also each row of the online options' `vacancies` (docs/lobby-protocol.md),
+/// whose lobby refuses any other value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum NetworkVacancy {
     Open,
     Closed,
+    #[serde(rename = "observer")]
     OpenObserver,
     ///5E8EA0's AC11B0: a roster name whose type3 node has not arrived.
     Waiting,
@@ -153,7 +157,9 @@ pub(crate) struct PeerChoicesChange {
 
 /// Decoded full-options fields5E4F97..5E513F. Filename remains solely in
 /// the launch; player_capacity is rawA8BB0C, not effective831700 row capacity.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Online it is the options' `map_metadata` (docs/lobby-protocol.md), whose
+/// lobby refuses any other key.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct NetworkMapMetadata {
     pub display_name: String,
     pub player_capacity: i32,
@@ -2116,16 +2122,6 @@ impl MatchSession {
     pub(crate) fn network_default_team(&self) -> LaunchTeam {
         self.network_setup()
             .map_or(LaunchTeam::None, |launch| mode_default_team(&launch.mode))
-    }
-
-    /// Whether a VERA room with Teams set balances itself: Balance
-    /// automatically, which only an older host still turns on. While it
-    /// does, nobody picks a team.
-    pub(crate) fn network_auto_balance(&self) -> bool {
-        self.network_teams().is_some()
-            && self
-                .network_setup()
-                .is_some_and(|launch| launch.options.auto_balance)
     }
 
     /// Whether a VERA room seats more people than its map has starts: with

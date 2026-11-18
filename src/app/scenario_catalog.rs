@@ -25,6 +25,14 @@ pub(crate) struct VerifiedNetworkMap<'a> {
     pub source: LoadedMapSource,
 }
 
+impl VerifiedNetworkMap<'_> {
+    /// The record's title as network text, as a host publishes it
+    /// ([`ScenarioCatalog::network_map_metadata`]).
+    pub(crate) fn title(&self) -> String {
+        network_map_title(&self.record.display_name, &self.record.file_name)
+    }
+}
+
 // Legacy map headers widen each byte. In network display text, the Windows-1252
 // punctuation must be printable Unicode: the lobby rejects C0 and C1 controls.
 fn network_map_title(title: &str, file: &str) -> String {
@@ -533,6 +541,7 @@ mod tests {
             .verify_network_map("controlled.map", &metadata, root.path(), &assets)
             .unwrap();
         assert_eq!(found.record.file_name, "CONTROLLED.MAP");
+        assert_eq!(found.title(), metadata.display_name);
         assert!(matches!(found.source, LoadedMapSource::Loose { .. }));
         let mut wrong = metadata.clone();
         wrong.byte_length += 1;

@@ -750,7 +750,10 @@ pub fn choices() -> Vec<LanguageChoice> {
 /// The index in `available` of the best language for `preferred` (most
 /// preferred first): the first preference any language shares a language
 /// with, and among those the one that also shares its script, then region.
-fn best_match<'a>(available: &[&str], preferred: impl Iterator<Item = &'a str>) -> Option<usize> {
+pub(crate) fn best_match<'a>(
+    available: &[&str],
+    preferred: impl Iterator<Item = &'a str>,
+) -> Option<usize> {
     let available: Vec<Option<Subtags>> = available.iter().map(|tag| Subtags::of(tag)).collect();
     preferred.filter_map(Subtags::of).find_map(|wanted| {
         available

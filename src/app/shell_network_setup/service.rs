@@ -489,7 +489,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                                 verified.source,
                                 crate::map::source::LoadedMapSource::Loose { .. }
                             );
-                            (verified.record.display_name.clone(), loose)
+                            (verified.title(), loose)
                         })
                 })
             } else {

@@ -1,6 +1,6 @@
 //! A wire checker that reads every datagram's bytes by the specs and calls
-//! no production decoder, so it is also an independent check of the format
-//! (e2e-plan §1.3): the compacted wire of services/relay/bandwidth-
+//! no production decoder, so it is also an independent check of the format:
+//! the compacted wire of services/relay/bandwidth-
 //! compaction/spec.md ("compaction spec"), envelope v3 (§6.1), PACK v2
 //! (§5.2, §5.3), the varint ordering messages (§7) and plaintext batches
 //! (§3.1), carrying the adaptive transport's messages

@@ -28,10 +28,14 @@ mod sequenced;
 pub mod varint;
 #[cfg(any(test, feature = "test-support"))]
 pub use link::ReaderLinkStats;
-pub use link::{ClientLinkStats, HopFeedback, LinkState, OrderingGap, RecvWindow};
+pub use link::{
+    ClientLinkStats, HOP_HANDSHAKE_INTERVAL_MS, HOP_PING_INTERVAL_MS, HOP_READINESS_TIMEOUT_MS,
+    HopFeedback, LEAVE_ATTEMPTS, LEAVE_INTERVAL_MS, LinkState, OrderingGap, PACE_INTERVAL_MS,
+    READY_REQUEST_INTERVAL_MS, REORDER_WINDOW, RESTORE_PULL_INTERVAL_MS, RecvWindow,
+};
 pub use sequenced::federation::{FEDERATION_LOST, FederationOutcome, MAX_FEDERATED_RELAYS};
 pub use sequenced::watch::{
-    MAX_ROOM_WATCHERS, MAX_WATCH_DELAY_SECONDS, WATCH_TICKET_VERSION, WatchTicket,
+    MAX_ROOM_WATCHERS, MAX_WATCH_DELAY_SECONDS, WATCH_MARK_MS, WATCH_TICKET_VERSION, WatchTicket,
 };
 pub use sequenced::{
     ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY, OrderEntry,
