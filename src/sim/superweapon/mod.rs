@@ -1715,6 +1715,16 @@ pub struct SuperWeaponView {
     /// The shots charged and waiting ([`SuperWeaponInstance::ready_shots`]):
     /// more than one only with Superweapon Limit, when the cameo counts them.
     pub ready_shots: usize,
+    /// Whether the right-sidebar strip shows this super's cameo. Ares
+    /// replaces `HouseClass::UpdateSuperWeaponsUnavailable` (hook
+    /// `0x0050B1D0`, `10039580`): when it grants the player's House a super
+    /// it adds the cameo when `SW.ShowCameo` holds and skips it when
+    /// `SW.AutoFire` does, else adds it (`0x10039617..0x1003965F`). Always
+    /// true without Ares; Mental Omega's Iron Guard is such a hidden
+    /// auto-fire super. Residual: Ares's spy-infiltration grant adds the
+    /// cameo without this test (`0x100123C7`); VERA hides the type on every
+    /// grant path.
+    pub ares_show_cameo: bool,
 }
 
 impl SuperWeaponView {
@@ -1809,6 +1819,11 @@ pub fn superweapon_views_for_owner(
                 None
             },
             ready_shots: inst.ready_shots(),
+            ares_show_cameo: !ares
+                || sw_type.sw_show_cameo
+                || !rules
+                    .super_weapon_target_policy(type_id_str)
+                    .is_some_and(|policy| policy.auto_fire()),
         });
     }
     views

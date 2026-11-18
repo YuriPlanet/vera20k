@@ -371,11 +371,11 @@ not receive source indices or relay credentials. Such a match runs its commands
 locally: its grant still carries an ordering certificate, which released clients
 require, but the relay refuses a one-source certificate. The one exception is one
 person who watches AI play: when its room has watching on, its game signed in with
-`Vera-Watch-AI: 1` on `POST /v1/sessions` and its relay lets watchers in, the
-certificate carries VO2C flags bit 1. The relay then
-orders the match from that one source, and the game plays it through the relay so
-that others can watch it ([Watching](#watching)). Deploy the relays that admit bit 1
-before a lobby that sets it: an older relay refuses the certificate.
+`Vera-Watch-AI: 1` on `POST /v1/sessions` and the selected relay is configured
+with both `watch: true` and `ordered_alone: true`, the certificate carries VO2C flags
+bit 1. The relay orders that one source so others can watch ([Watching](#watching)).
+The optional `ordered_alone` flag defaults to false. Enable it after upgrading the
+relay. Host and watcher renewals keep the decision made at match start.
 Only then does game loading start. Each barrier has a 30-second timeout. Within it,
 clients resend `relay_ready` and `latency_ready` under the same request ID after a
 429, a 5xx or no answer, and a UDP I/O error alone does not end admission.
