@@ -175,8 +175,11 @@ placement preview, which the passes beside the tick keep: all are one tick
 late at most. An atlas refresh asked beside a tick (a growth published
 then) waits for the tick's tail.
 
-Still shared, read-only: `SimResources` (the rules, the terrain template, the
-overlay registry), which nothing writes once a match is loaded.
+The live world, its presentation copy and the captured frame share
+`SimResources` (rules, terrain template and overlay registry) while the match
+runs. After an offline Skirmish, the setup dialog writes the current countries
+into the retained world's rules. The host releases both presentation references
+before it returns that world for a write.
 
 What the snapshot costs the main thread:
 
@@ -185,7 +188,7 @@ What the snapshot costs the main thread:
   object reads: an action line only for a selected or psychically detected
   object, the airstrike tint only for a Structure, a Carryall's cargo only
   for an Aircraft, the mind-control count only for a capture manager.
-- A frame that is replaced is freed on the pool
+- A retired frame's object records and draw caches are freed on the pool
   (`sim::parallel::drop_on_pool`), as is the old world copy's unsynced part.
 - The world copy's syncs run on the pool beside the clone of its other parts
   and the local player's fog.

@@ -1143,7 +1143,7 @@ impl Flashing {
 }
 
 /// Every stored object's record, for one world state and local player.
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub(crate) struct PresentationFrame {
     /// In ascending stable-id order.
     objects: Vec<ObjectRecord>,
@@ -1188,7 +1188,7 @@ pub(crate) struct PresentationFrame {
 }
 
 /// The resources a frame was captured under; none for a default frame.
-#[derive(Clone, Default)]
+#[derive(Default)]
 struct CapturedRules(Option<std::sync::Arc<crate::sim::runtime::SimResources>>);
 
 impl std::fmt::Debug for CapturedRules {
@@ -1198,6 +1198,13 @@ impl std::fmt::Debug for CapturedRules {
 }
 
 impl PresentationFrame {
+    /// Release the live match's resources before the host accepts its next Rules write.
+    /// Freeing the frame's 20,000 object records can still run on the pool.
+    pub(crate) fn retire(mut self: Box<Self>) {
+        self.resources.0 = None;
+        crate::sim::parallel::drop_on_pool(self);
+    }
+
     /// The records of `runtime`'s objects, as its local player (the
     /// scenario's current house) sees them, with the sidebar's answers for
     /// `sidebar_types`.
