@@ -1479,10 +1479,10 @@ impl LiveLanCapture {
             return Ok(());
         }
         if self.battle.is_some() {
-            // Wait_For_Players is inside an unfinished native MainTick: Logic
-            // may already have repaired a building, but DoList and the frame
-            // commit are still pending. Observe only its committed result.
-            if simulation.pending_network_wait() {
+            // The battle inspects real entities at their committed frame.
+            // The presentation copy has none while the worker holds the
+            // world, and a network wait has not yet committed its DoList.
+            if state.match_state.sim_runtime.is_lent() || simulation.pending_network_wait() {
                 return Ok(());
             }
             let host = self.host();

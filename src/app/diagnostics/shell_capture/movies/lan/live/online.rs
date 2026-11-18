@@ -733,15 +733,16 @@ impl LiveRoundFlow {
         }
         // The host leaves its reopened room only after the guest came back
         // and left again. Note the visit even while the room still slides in.
-        if self.config.is_none()
-            && core.host()
+        let online = self.config.is_some();
+        let host = self.input_host(core);
+        if host
             && matches!(self.phase, RoundPhase::Returning | RoundPhase::LeaveRoom)
             && rendered == PresentedShell::NetworkSetup
             && state
                 .match_state
                 .session
                 .network_setup()
-                .is_some_and(|launch| launch.humans.len() == 2)
+                .is_some_and(|launch| launch.humans.len() == self.round_players())
         {
             self.guest_back = true;
         }
@@ -1409,15 +1410,18 @@ impl LiveRoundFlow {
                 self.phase = RoundPhase::Returning;
             }
             RoundPhase::Returning
-                if if self.config.is_some() {
+                if if online {
                     lobby_ready(state, rendered)
+                        || (core.failure.is_none()
+                            && rendered == PresentedShell::NetworkSetup
+                            && online_setup_settled(state, host))
                 } else if returns_to_room(core, state) {
                     room_returned(core, state, rendered)
                 } else {
                     rendered == PresentedShell::LanLobby && lobby_settled(state)
                 } =>
             {
-                let room = self.config.is_none() && returns_to_room(core, state);
+                let room = rendered == PresentedShell::NetworkSetup;
                 ensure!(
                     state.match_state.live_network.is_none(),
                     "finished round retained live command owner"
@@ -1426,17 +1430,6 @@ impl LiveRoundFlow {
                     room || state.match_state.session.network_setup().is_none(),
                     "finished round retained setup"
                 );
-                // The exit fault targets logout only after the final match's
-                // existing finish/leave owner has actually acknowledged cleanup.
-                if self.rounds.len() == 1
-                    && self
-                        .config
-                        .as_ref()
-                        .is_some_and(|config| config.exit_checkpoint.is_some())
-                    && !crate::app::shell_wol::online_exit_ready(state)
-                {
-                    return Ok(());
-                }
                 let startup_failure = core
                     .failure
                     .as_ref()
@@ -1490,44 +1483,26 @@ impl LiveRoundFlow {
                 } else if core.failure.is_some() {
                     self.phase = RoundPhase::Finished;
                 } else if self.rounds.len() == 2 {
-                    if self
-                        .config
-                        .as_ref()
-                        .is_some_and(|config| config.exit_checkpoint.is_some())
-                    {
-                        self.begin_exit_checkpoint(state, frame)?;
-                        self.phase = RoundPhase::ExitFault;
-                        return Ok(());
-                    }
-                    if room {
-                        self.phase = RoundPhase::LeaveRoom;
-                        return Ok(());
-                    }
-                    if self.config.is_some() {
-                        let rect = crate::app::shell_wol::lobby::layout(state)
-                            .page
-                            .button_rect(wol_lobby::BACK)
-                            .context("WOL lobby Back button")?;
-                        click(state, rect);
-                        self.phase = RoundPhase::ExitSignIn;
+                    self.phase = if room {
+                        RoundPhase::LeaveRoom
                     } else {
-                        lobby_button(state, crate::ui::lan_shell::BACK)?;
-                        MoviesCapture::restore_neutral_pointer(state);
-                        self.phase = RoundPhase::MainReturn;
-                    }
-                    self.record(
-                        frame,
-                        "Final settled lobby Back clicked through ordinary input",
-                    );
+                        RoundPhase::LeaveLobby
+                    };
                 } else {
                     reset_round(core);
                     self.guest_back = false;
-                    self.phase = if self.config.is_some() {
+                    self.phase = if online && room {
+                        if host {
+                            RoundPhase::HostSetup
+                        } else {
+                            RoundPhase::GuestSetup
+                        }
+                    } else if online {
                         RoundPhase::Lobby
                     } else if room {
                         // Already in the room: the host sets up the next
                         // match again and the guest waits for its Start.
-                        core.phase = if core.host() {
+                        core.phase = if host {
                             Phase::HostSetup
                         } else {
                             Phase::GuestSetup
@@ -1542,8 +1517,12 @@ impl LiveRoundFlow {
             }
             RoundPhase::LeaveRoom
                 if rendered == PresentedShell::NetworkSetup
-                    && setup_settled(state, core.host())
-                    && (!core.host()
+                    && (if online {
+                        online_setup_settled(state, host)
+                    } else {
+                        setup_settled(state, host)
+                    })
+                    && (!host
                         || self.guest_back
                             && state
                                 .match_state
@@ -1555,7 +1534,7 @@ impl LiveRoundFlow {
                 MoviesCapture::restore_neutral_pointer(state);
                 self.record(
                     frame,
-                    if core.host() {
+                    if host {
                         "Guest came back and left; host left the reopened room through Back"
                     } else {
                         "Guest left the reopened room through Back"
@@ -1564,19 +1543,39 @@ impl LiveRoundFlow {
                 self.phase = RoundPhase::LeaveLobby;
             }
             RoundPhase::LeaveLobby
-                if rendered == PresentedShell::LanLobby && lobby_settled(state) =>
+                if if online {
+                    lobby_ready(state, rendered)
+                } else {
+                    rendered == PresentedShell::LanLobby && lobby_settled(state)
+                } =>
             {
                 ensure!(
                     state.match_state.session.network_setup().is_none(),
                     "Back from the reopened room retained its setup"
                 );
-                lobby_button(state, crate::ui::lan_shell::BACK)?;
-                MoviesCapture::restore_neutral_pointer(state);
+                if online {
+                    if self.online_config().exit_checkpoint.is_some() {
+                        if crate::app::shell_wol::online_exit_ready(state) {
+                            self.begin_exit_checkpoint(state, frame)?;
+                            self.phase = RoundPhase::ExitFault;
+                        }
+                        return Ok(());
+                    }
+                    let rect = crate::app::shell_wol::lobby::layout(state)
+                        .page
+                        .button_rect(wol_lobby::BACK)
+                        .context("WOL lobby Back button")?;
+                    click(state, rect);
+                    self.phase = RoundPhase::ExitSignIn;
+                } else {
+                    lobby_button(state, crate::ui::lan_shell::BACK)?;
+                    MoviesCapture::restore_neutral_pointer(state);
+                    self.phase = RoundPhase::MainReturn;
+                }
                 self.record(
                     frame,
                     "Final settled lobby Back clicked through ordinary input",
                 );
-                self.phase = RoundPhase::MainReturn;
             }
             RoundPhase::Watch => self.watch_step(state, rendered, frame)?,
             RoundPhase::ExitFault => {
