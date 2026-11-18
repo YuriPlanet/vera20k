@@ -672,8 +672,8 @@ difference keeps games apart: a default build (`dev-overlays`) never meets a
 not meet a `--network` one. A browser package built with `--threads` matches the same package
 built without it, and the desktop build with the package's other features
 (`--no-default-features --features wasm-net`), which is how a launcher seats desktop and
-browser players in one room. A rollback to a build that counts `wasm-threads` refuses such a
-room at its start. Earlier builds add `:0` and their Phobos, NPatch and NPBUG flags (`:0000`
+browser players in one room. After a rollback to a build that counts `wasm-threads` and
+compares the build at a start, such a room is refused at its start. Earlier builds add `:0` and their Phobos, NPatch and NPBUG flags (`:0000`
 in a release), which the hash already covers; they are refused as any other build is.
 
 - LAN: the host denies a join from another build (reason 8), and the guest sees Request
