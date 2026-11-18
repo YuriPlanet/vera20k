@@ -44,21 +44,37 @@ through a null killer.
 A slave in limbo (inside its master) still dies with the master regardless of
 this key; the hook only decides the outside ones.
 
-## Residual
+## The freeing policy (ported)
 
-**The key is read; the slave-freeing hook is not wired.** VERA owns the
-mechanism in `sim::slave_manager::SlaveManager::free_slaves_retaining_storage`
-(`src/sim/slave_manager.rs`, the `0x006B0AE0` `FreeSlaves` port). Its
-per-slave loop currently has the stock three-way decision — limboed dies
-inside, an outside slave goes to `killer_house.or(house).or(civilian)`, and
-one with no house at all dies unfreed. Inserting the policy means reading
-`entity_object_type(slave, rules).phobos_slaved.owner_when_master_killed`
-(slave **type**, not master) at the top of that arm and mapping the four
-cases onto `slave_dies_inside` / `change_owner_with_rules` / the neutral
-house, including the `killer == 0` origin split that `0x6B0BA4` carries.
+The hook is wired into the `FreeSlaves` port,
+`SlaveManager::free_slaves_retaining_storage` (`src/sim/slave_manager.rs:1783`).
+After clearing `entity.slave.owner` and keeping the limbo arm (inside dies
+there), the per-slave loop resolves the **slave's** type
+(`interner.object_type(type_ref, rules).phobos_slaved.owner_when_master_killed`,
+`:1842-1845`) and reproduces `SlaveManagerClass_Killed_DecideOwner`
+(`Ext/Techno/Hooks.Misc.cpp`, hooks `0x6B0B9C` and `0x6B0BA4`):
 
-Until then `Slaved.OwnerWhenMasterKilled=` is inert and every slave follows
-the stock killer-else-house-else-civilian rule.
+| Value | Arm (`Hooks.Misc.cpp`) | VERA |
+| --- | --- | --- |
+| `Suicide` | `KillTheSlave` | `slave_dies_unfreed` |
+| `Master` | `pSlave->Owner` | the slave's current owner, kept even with a killer |
+| `Neutral` | `FindNeutral()`, else fall through | neutral house, else the killer/default house |
+| `Killer` (default) | fall through to vanilla | killer, else neutral house, else kill |
+
+The two vanilla arms differ only in the killer: with a killer present the
+fall-through hands the slave to that killer, without one (`0x6B0BA4`, master
+sold or self-destroyed) Phobos explicitly gives it the neutral house and
+otherwise kills it — so the stock `house` argument is deliberately not a
+fallback here (comment at `:1798-1805`). Tests: `src/rules/phobos_slave_tests.rs`
+(parse, `Neutral = 4`), and the dispatch itself in
+`src/sim/world/slave_manager_cycle_tests.rs` — `a_suicide_slave_dies_when_its_master_is_killed`,
+`a_master_slave_keeps_its_house` (a killer is present),
+`a_neutral_slave_joins_the_neutral_country_house`, the killerless `0x6B0BA4`
+arm `a_killerless_release_ignores_an_explicit_house` (without a Neutral House
+the slaves die), and the `SlavesFreeSound` override.
+
+No residual: the four values behave as the hook does; only the unset key keeps
+the stock killer-else-house-else-civilian arm, as Phobos' fall-through does.
 
 ## Tests
 

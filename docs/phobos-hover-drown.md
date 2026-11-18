@@ -61,26 +61,49 @@ Two halves, both on the same flag.
    ```
 
    VERA's owner is the landing arm of `Simulation::object_ai_fall`
-   (`src/sim/movement/parachute_descent.rs`). The forced C4 receiver is the
-   existing stock arm; the `phobos` build only chooses its amount:
+   (`src/sim/movement/parachute_descent.rs:145-156`). The forced C4 receiver is
+   the existing stock arm; the `phobos` build only chooses its amount:
 
    - `HoverDrownable` true — the whole current `Health`, the stock packet;
-   - `HoverDrownable` false — the not-drownable arm's whole `Strength`
-     (`:1074-1082`, `ratio == FallingDownDamage` with its default `1.0`).
+   - `HoverDrownable` false — the shutdown falls through into the canopy arm's
+     `FallingDownDamage` ratio block (`Ext/Techno/Hooks.cpp:1038-1084`), so the
+     packet is `Strength * ratio` (the default `1.0` packets the whole
+     `Strength`), `Health * |ratio|` for a negative ratio, and `.Water` on a
+     bridge-less water/beach cell. Regression test
+     `a_non_drowning_hover_shutdown_takes_the_falling_down_ratio`. Native
+     *also* packets the whole `Health` when the landing cell is not
+     `IsClearToMove` (`:1043-1055`); VERA has no such pre-check yet (see
+     Residuals).
 
    The flag is hashed while set (`src/sim/world/world_hash.rs`) because it
    gates that amount; a cleared flag leaves the idle hash untouched.
 
 ## Residuals
 
-- **`FallingDownDamage` / `.Water` / `.AllowEMP` are unported**
-  (`Ext/TechnoType/Body.cpp:1140-1142`, globals `Ext/Rules/Body.cpp:227-228`,
-  default `1.0` / `false`). The not-drownable arm is that model
-  (`Hooks.cpp:1060-1082`): a blocked landing cell takes the whole health, a
-  clear one takes `Strength * ratio` (or `Health * |ratio|` for a negative
-  ratio). VERA applies the default ratio only, so a rules set that lowers it
-  keeps drowning. `Ext/Techno/Body.h`'s `OnParachuted` half of the same block
-  shares that trigger.
+- **`FallingDownDamage` / `.Water` / `.AllowEMP` are ported** (settled
+  2026-11-18). The three `Nullable`s are read per type
+  (`Ext/TechnoType/Body.cpp:1140-1142`) at `src/rules/object_type.rs:6523-6533`
+  (fields `:1520-1529`); the `[CombatDamage]` globals are the fallbacks
+  (`src/rules/combat_damage.rs:255-257`). Their consumer is
+  `Simulation::phobos_falling_damage` (`src/sim/movement/parachute_descent.rs`),
+  reached both from the canopy landing arm (`:154`) and from a non-drowning
+  hover shutdown, and it implements the ratio tiers (`Hooks.cpp:1062-1084`):
+  `Health * |ratio|` for a negative ratio, `Strength * ratio` up to `1.0`,
+  the value itself above `1.0`, with `.Water` on a bridge-less water/beach cell
+  and `AllowEMP=no` keeping the vanilla full-health packet on an EMP-locked
+  unit. Regression tests `src/sim/movement/parachute_descent.rs:1078-1199`
+  cover the type value, the global fallback, `.Water`, the negative ratio, the
+  `AllowEMP=no` arm and the hover-shutdown fall-through. No residual on the
+  ratio itself: a rules set that lowers it lowers the packet.
+- **No `IsClearToMove` landing pre-check.** Native first packets the whole
+  `Health` when the landing cell is not clear to move for the type
+  (`Ext/Techno/Hooks.cpp:1043-1055`), before the ratio tiers run. VERA has no
+  movement-zone passability query for the landing cell, so a blocked landing
+  still takes the ratio packet. Trigger: a falling unit lands on a cell its
+  `SpeedType`/`MovementZone` cannot enter. Impact: it survives where native
+  kills it. Frequency: rare (the drop flattens onto whatever cell it reaches).
+  Risk: low; the owner would be the movement zone's `Can_Enter_Cell`, not
+  this arm.
 - **`HoverDrownable=no` still kills at the default rules**, because the
   default ratio is `1.0` and that packets the whole `Strength`. The key is a
   dependency of `FallingDownDamage`; it only prevents death once that ratio is
@@ -100,4 +123,11 @@ Two halves, both on the same flag.
   drops and marks; one ending over clear ground does neither.
 - `src/sim/movement/parachute_descent.rs` —
   `only_the_bomb_landing_arm_takes_the_hover_shutdown`: the bomb arm reads and
-  clears the flag, a canopy landing never reads it.
+  clears the flag, a canopy landing never reads it. In this workspace the test
+  panics on `intern.rs:201` (its `GameEntity::test_default` carries an id the
+  `test_interner` never produced); the same panic reproduces on the clean
+  baseline, so it is an environment red, not a behaviour check.
+- `src/sim/movement/parachute_descent.rs` —
+  `a_non_drowning_hover_shutdown_takes_the_falling_down_ratio`: with
+  `HoverDrownable=no` and `FallingDownDamage=0.25` the landing packet is
+  `Strength * 0.25` (the unit survives), while the default ratio still kills.

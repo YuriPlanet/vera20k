@@ -41,15 +41,19 @@ names dropped, as the `ValueableVector` reader does) and `fill_slot`
 regenerating slot uses the first queue entry whose type no live slot carries,
 and both fall back to `Spawns=` when the queue is exhausted.
 
-## Residual
+## `InitialSpawnsNumber=` (ported)
 
-**`InitialSpawnsNumber=` is still unported** (the other half of the same
-`0x6B6D44` hook, `Ext/Techno/Hooks.Misc.cpp:170-178`). VERA's constructor
-fills every slot, so a type that lowers `InitialSpawnsNumber=` still starts
-with a full pool. Trigger: a rules set that authors `InitialSpawnsNumber=`
-below `SpawnsNumber=`. Effect: extra children exist from construction instead
-of starting `Dead` with a running regen timer. Frequency: mod-authored
-values only; retail authors none. Risk: pool size and launch cadence differ.
+The other half of the same `0x6B6D44` hook
+(`Ext/Techno/Hooks.Misc.cpp:170-178`) is wired: `Simulation`'s spawn-manager
+constructor reads the type's `InitialSpawnsNumber=` (`rules/object_type.rs`
+field, read at `:7298` as a `Nullable<int>`), falls back to `SpawnsNumber=`
+when the key is unset, clamps it into `0..SpawnsNumber`, and starts every slot
+at or past that count `Dead` with `SpawnTimer.Start(SpawnRegenRate)`
+(`sim/spawn_manager.rs:536-561`). Regression test
+`initial_spawns_number_leaves_the_tail_dead_until_regen`
+(`sim/spawn_manager_tests.rs:3043`) lowers the key below `SpawnsNumber=` and
+asserts the tail only appears after the regen delay.
+No residual.
 
 ## Tests
 

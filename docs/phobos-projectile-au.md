@@ -84,18 +84,18 @@ The auto-target side reads the object's `GetHeight` (vt+0x1C8,
   (`phobos_shield_weapon_index` + `sim::shield::can_be_targeted`): its
   underground-secondary row is one of the four gates that admit the
   secondary.
-- The Tunnel locomotor is unported: `rules/locomotor_type.rs` keeps the
-  Tiberian Sun Tunnel/Mech/DropPod classes out of the installed table, so a
-  unit whose `Locomotor=` names that CLSID never caches
-  `MovementLayer::Underground` in VERA and the gate and arm are dormant there.
-  Stock `ini/rulesmd.ini` never names the CLSID (the dormancy golden at
-  `rules/locomotor_type.rs:471`), but a mod's rules may — the installed mod's
-  `rulesmd.ini` does, on units such as `ZDWZ`, `SAPC2`, `ZDDTRUCK` and
-  `TANKCHONGT`. Trigger in that ruleset: those units should burrow and only
-  `AU=yes` weapons should shoot them. Frequency: only where a type names the
-  dormant CLSID. Risk: without the locomotor the engine falls back to the
-  type's INI seed and those units never go underground, so `AU` has nothing to
-  admit — a locomotion-subsystem gap, not this key's.
+- The Tunnel locomotor is now installed, so the gate and arm are live. `rules/
+  locomotor_type.rs` registers the Tiberian Sun `Tunnel` class as
+  `LocomotorKind::Tunnel` (`:55-72`, installed row `:127`); the class runs as
+  `sim::movement::tunnel_locomotion` (`TunnelRuntime`, piggyback variant
+  `locomotion/piggyback.rs:183-200`) and a unit whose `Locomotor=` names that
+  CLSID caches `MovementLayer::Underground` through the stock row. `Mech` and
+  `DropPod` stay out of the table (`rules/locomotor_type.rs:26-34`, dormancy
+  golden const at `:471`), unused by YR data. Retail `rulesmd.ini` still never
+  names the CLSID,
+  but a mod's rules may — the installed mod's `rulesmd.ini` does, on units
+  such as `ZDWZ`, `SAPC2`, `ZDDTRUCK` and `TANKCHONGT`: those units burrow and
+  only `AU=yes` weapons shoot them, which is what this page's gate admits.
 - The fixture path: the tests set the cached layer by hand
   (`LocomotorState::set_layer_for_test`), which is the only way to reach the
   arm until that locomotor lands.

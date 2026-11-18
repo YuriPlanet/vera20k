@@ -144,13 +144,13 @@ impl crate::sim::world::Simulation {
             #[cfg(feature = "phobos")]
             let damage = {
                 let took_shutdown = self.take_hover_shutdown(id);
-                if took_shutdown && !self.hover_drowns(id, rules) {
-                    self.object_strength(id, rules).unwrap_or(health)
-                } else if took_shutdown && self.hover_drowns(id, rules) {
+                if took_shutdown && self.hover_drowns(id, rules) {
                     // The drowning arm keeps the whole current-Health packet
                     // (`Ext/Techno/Hooks.cpp:1033-1036`).
                     health
                 } else {
+                    // A shutdown over a non-drowning cell falls through into the
+                    // same ratio block the canopy arm uses (`:1062-1084`).
                     self.phobos_falling_damage(id, health, rules)
                 }
             };
@@ -222,7 +222,12 @@ impl crate::sim::world::Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return health;
         };
-        let type_rules = self.entity_object_type(entity, rules);
+        // A fixture entity may carry an id this interner never produced; it then
+        // has no type keys, which is the pre-existing whole-health packet.
+        if self.interner.try_resolve(entity.type_ref()).is_none() {
+            return health;
+        }
+        let type_rules = self.interner.object_type(entity.type_ref(), rules);
         let allow_emp = type_rules
             .as_ref()
             .and_then(|object| object.phobos_falling_down_damage_allow_emp)
@@ -277,7 +282,7 @@ impl crate::sim::world::Simulation {
             && cells.flags(cell) & 0x100 == 0
     }
 
-    /// The type's `Strength=`, the not-drownable arm's whole-health packet
+    /// The type's `Strength=`, the ratio model's base for a ratio up to 1.0
     /// (`Ext/Techno/Hooks.cpp:1082`).
     #[cfg(feature = "phobos")]
     fn object_strength(&self, id: u64, rules: &crate::rules::ruleset::RuleSet) -> Option<i32> {
@@ -1134,5 +1139,61 @@ FallingDownDamage=0.5
             .unwrap()
             .set_emp_remaining_for_test(30);
         assert_eq!(sim.phobos_falling_damage(id, 400, &rules), 400);
+    }
+
+    /// A hover unit that shut down over a **non-drowning** cell falls through
+    /// into the same ratio block as the canopy arm
+    /// (`Ext/Techno/Hooks.cpp:1038-1084`): the shutdown arm is only the
+    /// `HoverDrownable` answer, not a whole-`Strength` packet of its own.
+    #[test]
+    fn a_non_drowning_hover_shutdown_takes_the_falling_down_ratio() {
+        fn landing(keys: &str, global: &str) -> (Option<i32>, bool) {
+            let (mut sim, rules, id) = scene(keys, global, false);
+            let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+            entity.position.set_exact_z_leptons_for_test(Some(0));
+            entity.begin_bomb_fall();
+            entity.mark_hover_shutdown();
+            sim.object_ai_fall(id, &rules, None, FrameEffects::default())
+                .expect("landing arm");
+            let health = sim
+                .substrate
+                .entities
+                .get(id)
+                .map(|entity| entity.health.current());
+            let cleared = sim
+                .substrate
+                .entities
+                .get(id)
+                .is_none_or(|entity| !entity.hover_shutdown());
+            (health, cleared)
+        }
+
+        // Strength=1000, current Health=400, so 0.25 is a 250 packet while the
+        // default ratio (1.0) packets the whole Strength and kills the unit.
+        // The arena carries no `[C4]`, so name and declare one: an unresolved
+        // warhead zeroes the packet and would hide the arm.
+        let c4 = "C4Warhead=C4
+[Warheads]
+0=C4
+[C4]
+Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
+";
+        let (health, cleared) = landing(
+            "HoverDrownable=no
+FallingDownDamage=0.25
+",
+            c4,
+        );
+        assert!(cleared, "the landing arm reads and clears the flag");
+        assert_eq!(health, Some(150), "the ratio scales the packet");
+        let (health, _) = landing(
+            "HoverDrownable=no
+",
+            c4,
+        );
+        assert!(
+            health.is_none_or(|current| current <= 0),
+            "the default ratio is 1.0, which still kills: {health:?}"
+        );
     }
 }
