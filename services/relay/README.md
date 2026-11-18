@@ -308,8 +308,9 @@ packet that goes out twice, and is retained until acknowledged; it is sent
 again only after going unacknowledged for the measured round trip plus 100 ms.
 A relay that misses a packet ignores later ones until then. A
 frame is emitted once every relay sealed it, in the same canonical order, so
-every relay delivers the same stream and sequence numbers. Player DATA to a remote source crosses one link to its relay. The
-first roster relay picks the start time from measured link round trips; the
+every relay delivers the same stream and sequence numbers. Player DATA to a remote source
+crosses one link to its relay. Both paths forward to addressed peers other than the
+sender, through 30 seconds since each peer was last heard from. The first roster relay picks the start time from measured link round trips; the
 others follow its clock offset. It alone cancels a startup for an ordinary
 reason: another relay's Leave before the start asks it to, and becomes a
 frame-1 departure if the start was already on its way. A relay that proves an
