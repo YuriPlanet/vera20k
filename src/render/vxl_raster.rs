@@ -395,6 +395,13 @@ fn voxel_params_draw_rotation(params: &VxlRenderParams, step: u8) -> Mat4 {
     }
 }
 
+/// VERA-only, experimental (`docs/picture-model-art.md`): the camera-space
+/// draw matrix a body drawn through `params` takes, every locomotor arm
+/// included, for a declared model's parts.
+pub(crate) fn body_draw_matrix(params: &VxlRenderParams) -> Mat4 {
+    voxel_params_draw_rotation(params, voxel_facing_step(params.facing))
+}
+
 /// Ordinary stationary slope/facing combinations are finite. Build their
 /// native products once: turret pivots consume this every displayed frame,
 /// unlike the atlas which only prepares geometry on a cache miss. Blended

@@ -484,8 +484,8 @@ fn aircraft_body_anchor(
 ///
 /// The entity's height comes off the sort key. Bridge depth treatment belongs
 /// to the unit's composite blit, never to a separate object painter queue.
-fn body_sort_depth(
-    presentation: &MatchPresentationState,
+pub(super) fn body_sort_depth(
+    state: &AppState,
     entity: &crate::app::presentation::frame::ObjectRecord,
     drawn_row_y: f32,
     z: u8,
@@ -583,8 +583,12 @@ pub(crate) fn unit_visitor<'a>(
     let local_owner_id = local_owner.as_deref().and_then(|o| sim.interner().get(o));
     let ignore_visibility = match_state.sandbox_full_visibility;
     let art_reg: Option<&crate::rules::art_data::ArtRegistry> =
-        crate::app::state::active_rules(frontend, match_state).map(|rules| rules.art());
-    let terrain = match_state
+        state.rules().map(|rules| rules.art());
+    // VERA-only, experimental (docs/picture-model-art.md): the rules when a
+    // type declares a model, else None and no draw looks for one.
+    let model_art = state.rules().filter(|rules| rules.declares_models());
+    let terrain = state
+        .match_state
         .sim_runtime
         .presentation()
         .and_then(|rt| rt.view().resolved_terrain());
@@ -701,6 +705,11 @@ pub(crate) fn unit_visitor<'a>(
                         .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules))
                         .is_some_and(|object| object.no_shadow);
                 let type_str = type_name.as_ref();
+                // VERA-only, experimental: the drawn type's declared model,
+                // which replaces its VXL parts (`model_units`).
+                let declared_model = model_art
+                    .and_then(|rules| rules.loaded_voxel_model(type_str))
+                    .and_then(|model| model.declared_model());
                 // The drawn model's record, once for its turret index and
                 // gun parts below.
                 let model_object = drawn_model_object(
@@ -878,7 +887,7 @@ pub(crate) fn unit_visitor<'a>(
                 // Aircraft4148A0 draws the unmasked ground shadow before its body
                 // at4149D7. Unlike Unit's masked suffix, the body's later pixels
                 // cover its own stencil when parked or low above the ground.
-                if let Some(pose) = aircraft_shadow {
+                if let Some(pose) = aircraft_shadow.filter(|_| declared_model.is_none()) {
                     emit_aircraft_shadow_sprite(
                         match_state,
                         atlas,
@@ -904,7 +913,50 @@ pub(crate) fn unit_visitor<'a>(
                     ground_pose.body_facing =
                         crate::render::vxl_raster::voxel_facing_step_u16(render_pose.body) * 8;
                 }
-                if let BodyDraw::Pose(tilt) = body {
+                if let Some(declared) = declared_model {
+                    let (turret_facing, barrel_elevation) = match body {
+                        BodyDraw::Turret { .. } => (render_pose.turret, render_pose.barrel),
+                        _ => (render_pose.body, render_pose.barrel),
+                    };
+                    super::model_units::emit_model_unit(
+                        state,
+                        declared,
+                        super::model_units::ModelUnitPose {
+                            tilt: match body {
+                                BodyDraw::Pose(tilt) => Some(tilt),
+                                _ => None,
+                            },
+                            ground: ground_pose,
+                            slope_type: stable_slope_for_key(slope_state),
+                            slope_blend: slope_blend_for_render_state(slope_state),
+                            body_facing,
+                            turret_facing: (turret_facing >> 8) as u8,
+                            barrel_pitch: crate::render::vxl_raster::voxel_facing_step_u16(
+                                barrel_elevation,
+                            ) as i8
+                                - 8,
+                            turret_offset: model.turret_offset,
+                            gun: u32::try_from(turret_index).ok(),
+                        },
+                        super::model_units::ModelUnitDraw {
+                            entity,
+                            center: aircraft_body_anchor(
+                                sim,
+                                entity,
+                                state.rules(),
+                                cells.as_ref(),
+                                [center_x, center_y],
+                            ),
+                            dock_depth_y_offset,
+                            z: interp_z,
+                            tint: body_tint,
+                            light: body_light,
+                            draw_state,
+                            house: hc,
+                        },
+                        pieces,
+                    );
+                } else if let BodyDraw::Pose(tilt) = body {
                     let key = UnitSpriteKey {
                         type_id: type_str.into(),
                         turret_index,
@@ -1157,20 +1209,22 @@ pub(crate) fn unit_visitor<'a>(
                     }
                 }
 
-                emit_lifted_unit_shadow(
-                    &renderer.vxl_pose_frame_cache,
-                    frontend,
-                    match_state,
-                    atlas,
-                    drawer,
-                    entity,
-                    type_str,
-                    [center_x, center_y],
-                    no_shadow,
-                    draw_state,
-                    band,
-                    pieces,
-                );
+                // RESIDUAL (docs/picture-model-art.md): a declared model
+                // draws no shadow yet.
+                if declared_model.is_none() {
+                    emit_lifted_unit_shadow(
+                        state,
+                        atlas,
+                        drawer,
+                        entity,
+                        type_str,
+                        [center_x, center_y],
+                        no_shadow,
+                        draw_state,
+                        band,
+                        pieces,
+                    );
+                }
 
                 // OREGATH is an SHP sprite from sprite_atlas, but remains an owned piece
                 // of its harvester's Ground slot so atlas identity cannot re-sort it.
@@ -2668,9 +2722,9 @@ fn unit_draw_anchor(
 /// any of them. Only parts without native bounds fall back to the storage
 /// rectangle.
 #[derive(Clone, Copy)]
-struct CompositeDrawBounds {
-    padded: [f32; 2],
-    native: Option<[i32; 4]>,
+pub(super) struct CompositeDrawBounds {
+    pub(super) padded: [f32; 2],
+    pub(super) native: Option<[i32; 4]>,
 }
 
 impl CompositeDrawBounds {
@@ -2726,12 +2780,8 @@ fn composite_draw_bounds(
     }
 }
 
-fn unit_body_draw_state(
-    platform: &PlatformState,
-    renderer: &RendererState,
-    screen: &GameScreen,
-    match_state: &MatchState,
-    persistence: &PersistenceState,
+pub(super) fn unit_body_draw_state(
+    state: &AppState,
     entity: &crate::app::presentation::frame::ObjectRecord,
     draw_state: DrawState,
     bounds: CompositeDrawBounds,

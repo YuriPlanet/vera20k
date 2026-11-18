@@ -1827,6 +1827,40 @@ impl BatchRenderer {
         self.batch_texture(device, &texture, source_indices, width, height)
     }
 
+    /// VERA-only, experimental (`docs/picture-model-art.md`): an RGBA source
+    /// page with its palette-index plane, both of which a render pass can draw
+    /// into (`render::model_draw`), for the SHP blitters' RGBA source mode.
+    /// Returns the page and its colour and index textures.
+    pub(crate) fn create_render_target_page(
+        &self,
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+    ) -> (BatchTexture, wgpu::Texture, wgpu::Texture) {
+        let target = |label, format| {
+            device.create_texture(&wgpu::TextureDescriptor {
+                label: Some(label),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            })
+        };
+        let color = target("Model page colour", wgpu::TextureFormat::Rgba8UnormSrgb);
+        let indices = target("Model page indices", wgpu::TextureFormat::R8Uint);
+        let index_view = indices.create_view(&Default::default());
+        let page = self.batch_texture(device, &color, &index_view, width, height);
+        (page, color, indices)
+    }
+
     /// A page shaders read as encoded colour, the palette bytes as they are,
     /// so no pixel pays to decode them and encode them back. Only for pages
     /// their blitters know to be encoded: the tile atlas's terrain draw.

@@ -520,27 +520,10 @@ pub(crate) fn render_game(
             )
         })
     });
-    let mut world = build_instances::build_world_instances(
-        &state.platform,
-        &state.renderer,
-        &state.diag,
-        &state.frontend,
-        &mut state.match_state,
-        &state.process_assets,
-        &state.persistence,
-        vsw,
-        vsh,
-        bracket_palette,
-        &cursor_targets,
-    );
-    // The skip table the bodies just built name, before any of this picture's
-    // command buffers (`PassSubmission` submits inside the draw passes).
-    state
-        .match_state
-        .match_presentation
-        .zshape_skips
-        .borrow_mut()
-        .upload(&state.renderer.batch_renderer, &state.renderer.gpu.queue);
+    // VERA-only, experimental: the page declared models draw on this frame.
+    crate::app::presentation::instances::begin_model_frame(state);
+    let mut world =
+        build_instances::build_world_instances(state, vsw, vsh, bracket_palette, &cursor_targets);
     for layer in &mut world.object_layers {
         object_extras::defer_health_to_frame(layer, world_camera.camera_pos, z);
     }

@@ -28,6 +28,9 @@ mod parachute_scene_tests;
 mod units;
 pub(crate) use units::*;
 
+mod model_units;
+pub(crate) use model_units::begin_model_frame;
+
 mod shp;
 pub(crate) use shp::*;
 

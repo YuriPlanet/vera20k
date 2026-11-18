@@ -403,6 +403,14 @@ pub(super) fn dispatch_draw_passes(
         &renderer.batch_renderer,
         encoder,
     );
+    // VERA-only, experimental: the declared models this frame drew
+    // (`render::model_draw`); nothing when it drew none.
+    state.renderer.model_frame.borrow_mut().encode(
+        &state.renderer.gpu.device,
+        &state.renderer.gpu.queue,
+        state.process_assets.manager(),
+        encoder,
+    );
     // The sidebar's surface is complete before the frame begins; the
     // screen-fixed block copies it in.
     draw_sidebar_surface(

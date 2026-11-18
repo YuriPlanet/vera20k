@@ -747,9 +747,9 @@ pub struct SpriteAtlas {
     /// VERA-only, experimental: the RGBA picture pages among `pages`
     /// (`render::picture_atlas`), which bind no palette rows.
     picture_pages: HashSet<usize>,
-    /// VERA-only, experimental: the HD twins of the picture pages of art
-    /// above 1x, by page (`render::picture_zoom`). Empty without such art.
-    picture_hd_pages: HashMap<usize, crate::render::picture_zoom::PictureHdPage>,
+    /// VERA-only, experimental: the RGBA page among `pages` that declared
+    /// models are drawn on each frame (`render::model_draw`), once one is.
+    model_page: Option<usize>,
 }
 
 fn push_effect_name(effect_names: &mut Vec<String>, name: &str) {
@@ -826,7 +826,7 @@ impl SpriteAtlas {
             growth_indices: HashMap::new(),
             palettes,
             picture_pages: HashSet::new(),
-            picture_hd_pages: HashMap::new(),
+            model_page: None,
         }
     }
 
@@ -1028,6 +1028,32 @@ impl SpriteAtlas {
     /// Get a specific atlas page by index.
     pub fn page(&self, idx: usize) -> Option<&SpriteAtlasPage> {
         self.pages.get(idx)
+    }
+
+    /// VERA-only, experimental (`docs/picture-model-art.md`): the page
+    /// [`Self::install_model_page`] holds, if any.
+    pub(crate) fn model_page(&self) -> Option<usize> {
+        self.model_page
+    }
+
+    /// VERA-only, experimental (`docs/picture-model-art.md`): hold `texture`,
+    /// a frame's render target of declared models (`render::model_draw`), as
+    /// an RGBA page drawn by the SHP blitters' RGBA source mode; it replaces
+    /// the one held before at the same index. None when no page index is left.
+    pub(crate) fn install_model_page(&mut self, texture: BatchTexture) -> Option<usize> {
+        if let Some(index) = self.model_page {
+            self.pages[index].texture = texture;
+            return Some(index);
+        }
+        let index = self.pages.len();
+        if u8::try_from(index).is_err() {
+            log::warn!("Sprite atlas: no page left for declared models");
+            return None;
+        }
+        self.pages.push(SpriteAtlasPage { texture });
+        self.picture_pages.insert(index);
+        self.model_page = Some(index);
+        Some(index)
     }
 
     /// Iterate over all atlas entries (key + sprite data).

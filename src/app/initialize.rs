@@ -1479,6 +1479,7 @@ impl App {
                 window_ui,
                 outcome_banner_art,
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
+                model_frame: Default::default(),
                 retail_screenshot_frame_cache: Default::default(),
                 terrain_picture: Default::default(),
                 native_z_seed: Default::default(),

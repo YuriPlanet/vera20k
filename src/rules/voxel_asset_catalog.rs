@@ -141,6 +141,27 @@ pub struct DeclaredModel {
     digest: u64,
 }
 
+impl DeclaredModel {
+    /// A declared model of `ModelSize=size` for tests of its drawing.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_test(model: Arc<crate::assets::model_file::Model>, size: i32) -> Self {
+        let half_sizes = model
+            .body_bounds()
+            .and_then(|bounds| model_tilt_half_sizes(bounds, size))
+            .unwrap_or_default();
+        Self {
+            section: "TEST".into(),
+            decl: crate::rules::art_data::ModelDecl {
+                file: "test.glb".into(),
+                size,
+            },
+            model,
+            half_sizes,
+            digest: 0,
+        }
+    }
+}
+
 fn fnv1a64(bytes: &[u8]) -> u64 {
     bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, &byte| {
         (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
@@ -315,12 +336,9 @@ pub(crate) struct VoxelAssetCatalog {
     by_handle: Vec<bool>,
     models: BTreeMap<(ObjectCategory, String), LoadedVoxelModel>,
     voxel_anims: Vec<Option<VoxelPart>>,
-    /// VERA: the game-folder files that change which main models load or a
-    /// main VXL's half sizes: a library that is there or reads where the
-    /// retail copy does not (or the reverse), whatever part it is, as one
-    /// bad part unloads the whole model; and a main VXL of other half
-    /// sizes. Not hashed or compared.
-    folder_files: BTreeSet<String>,
+    /// Whether any type draws an admitted declared model, so the renderer
+    /// skips its model work outright when none does. Derived from `models`.
+    declared_models: bool,
 }
 impl PartialEq for VoxelAssetCatalog {
     fn eq(&self, other: &Self) -> bool {
@@ -520,26 +538,16 @@ impl VoxelAssetCatalog {
             .voxel_anim_types_iter()
             .map(|kind| part(kind.model_slots.main, &plan, &libraries))
             .collect();
-        // Only a type's main model reaches the simulation (`loaded`), and
-        // of its files only the VXL's half sizes.
-        let main_vxls: BTreeSet<&LibraryRequest> = rules
-            .all_objects()
-            .filter_map(|object| plan.library(object.voxel_model_slots.main.vxl))
-            .collect();
-        let folder_files = libraries
-            .iter()
-            .filter(|(request, read)| {
-                read.validity_differs || (read.half_sizes_differ && main_vxls.contains(request))
-            })
-            .filter_map(|(_, read)| read.folder_file.clone())
-            .collect();
+        let declared_models = models
+            .values()
+            .any(|model| model.declared_model().is_some());
         Self {
             bound: true,
             loaded,
             by_handle,
             models,
             voxel_anims,
-            folder_files,
+            declared_models,
         }
     }
     /// VERA: the game-folder files that change the types' main models.
@@ -549,11 +557,8 @@ impl VoxelAssetCatalog {
     pub(crate) fn is_bound(&self) -> bool {
         self.bound
     }
-    /// VERA: which types' main models loaded and their first limb's half
-    /// sizes, without which image supplied each part: what
-    /// `RuleSet::file_inputs_hash` folds of this catalog.
-    pub(crate) fn fold_loaded(&self, state: &mut impl std::hash::Hasher) {
-        std::hash::Hash::hash(&self.loaded, state);
+    pub(crate) fn declares_models(&self) -> bool {
+        self.declared_models
     }
     pub(crate) fn model(&self, category: ObjectCategory, name: &str) -> Option<&LoadedVoxelModel> {
         self.models.get(&(category, name.to_ascii_uppercase()))
