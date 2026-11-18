@@ -6510,7 +6510,7 @@ impl Simulation {
             #[cfg(feature = "debug-tools")]
             let power_changed = power_changed || debug_power_changed;
             if power_changed {
-                crate::sim::superweapon::update_owned_supers(self, rules, owner);
+                crate::sim::superweapon::update_owned_supers(self, rules, owner, effects);
             }
         }
         // House4F84F1..4F850C admits radar THEN SpySat using the same prior
