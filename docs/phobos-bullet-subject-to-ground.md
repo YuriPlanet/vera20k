@@ -52,9 +52,25 @@ the stock one.
   floor branch is guarded by `!isTargetingCheck`, so it cannot fire on this arm
   (it belongs to the bullet's flight). Test
   `subject_land_and_water_put_a_projectile_into_the_walk`.
-- The FLH-predicted source offset (`AddFLHToSourceCoords`, `:89-125`), used when
-  `SubjectToGround` is set, is not ported; the scan starts at the raw source
-  coordinate.
+- The FLH-predicted source offset (`AddFLHToSourceCoords`, `:89-125`) is not
+  ported, so the ground clause still samples from the raw source coordinate.
+  Native keeps `subjectToGround` only for a Foot firer that is not `IsInAir()`,
+  against a target that is not `IsInAir()`, with no `Transporter` (`:92-97`);
+  any miss clears the flag and returns the raw source. Otherwise it builds
+  `identity → RotateZ((float)-atan2(dy, dx)) → ApplyTurretOffset` (only under
+  `HasTurret()`) `→ Translate(FLH.X, Burst == 1 ? FLH.Y : 0, FLH.Z)`, then returns
+  the *cell* centre (`OnBridge` → `GetCoordsWithBridge()`) plus
+  `((int)x, -(int)y, (int)z)`. Two terms differ from `GetFLH`: the heading is
+  predicted from the target vector rather than read from the retained facing, and
+  a `Burst` above 1 centres the lateral term instead of alternating it.
+- `FindFirstObstacle` samples `maxDelta + isTargetingCheck` points (`:64`), so
+  `InRange` also tests the target's own cell; VERA's merged walk stops at its
+  existing sample count, which has not been compared against that bound.
+- After the scan, the same hook runs the spawner's position search (`:239-252`):
+  a null result with `SpawnManager`, the Foot bit and `!IsInAir()` moves the
+  firer's `Location` to the source coordinate, asks `0x703B10` (an elevated bridge
+  nearby) and turns a true answer into the source cell as the obstacle. Neither
+  `0x703B10` nor that substitution is ported.
 - The bullet's own flight arm (`0x468C86` `BulletClass_ShouldExplode_Obstacles`,
   `:130-160`) calls `GetObstacle` with `isTargetingCheck = false`, where
   `.Detonate` decides between exploding and flying on. VERA's in-flight probe
