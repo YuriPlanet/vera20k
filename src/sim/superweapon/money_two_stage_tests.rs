@@ -313,11 +313,12 @@ fn superweapon_money_two_stage_provider_loss_and_power_hold_retire_ticket() {
 #[test]
 fn superweapon_money_two_stage_general_prepost_and_new_source_replace_pending() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
+    // The additional Supers have no type handler to override their authored click flags.
     let rules = rules(
         "[SuperWeaponTypes]\n5=OtherSource\n6=OtherDestination\n\
         [Sphere]\nMoney.Amount=100\n\
-        [OtherSource]\nType=PsychicReveal\nAction=PsychicReveal\nPreClick=yes\nIsPowered=no\nMoney.Amount=300\n\
-        [OtherDestination]\nType=PsychicReveal\nPostClick=yes\nPreDependent=ParaDrop\nIsPowered=no\nMoney.Amount=900\n",
+        [OtherSource]\nAction=PsychicReveal\nPreClick=yes\nIsPowered=no\nMoney.Amount=300\n\
+        [OtherDestination]\nPostClick=yes\nPreDependent=ParaDrop\nIsPowered=no\nMoney.Amount=900\n",
     );
     // PreDependent is the native kind/index spelling: ParaDrop = list index5.
     let (mut sim, owner) = world(&rules, 1000, true);

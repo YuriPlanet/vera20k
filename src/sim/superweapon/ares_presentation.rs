@@ -65,6 +65,10 @@ pub(super) fn on_launch(
     // GeneticMutatorActivateSound=`.
     let sound = match &presentation.sound {
         Some(sound) => sound.clone(),
+        // SW_PsychicReveal::GetSound100752B0.
+        None if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::PsychicReveal => {
+            rules.general.psychic_reveal_activate_sound.clone()
+        }
         None if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::GeneticConverter => {
             rules.general.genetic_mutator_activate_sound.clone()
         }

@@ -639,6 +639,10 @@ fn launch(
             SuperWeaponKind::MultiMissile => {
                 super::nuke::ares_launch(sim, rules, owner, sw_type_id, sw, (rx, ry))
             }
+            SuperWeaponKind::PsychicReveal => {
+                super::psychic_reveal::ares_launch(sim, rules, owner, sw_type_id, sw, (rx, ry));
+                true
+            }
             SuperWeaponKind::PsychicDominator => {
                 super::psychic_dominator::ares_launch(sim, rules, owner, sw_type_id, sw, (rx, ry));
                 true
