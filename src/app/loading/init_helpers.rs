@@ -9,7 +9,6 @@ use std::path::Path;
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::pal_file::Palette;
 use crate::map::houses::HouseColorMap;
-use crate::map::map_file::MapFile;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::terrain::TerrainGrid;
 use crate::map::theater::{self, TileImage, TileKey};
