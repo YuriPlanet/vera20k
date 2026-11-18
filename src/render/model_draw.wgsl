@@ -27,6 +27,13 @@ struct Draw {
     flags: vec4<u32>,
     // The owner's ramp, palette indices 16..31, linear colour.
     ramp: array<vec4<f32>, 16>,
+    // xyz: the voxel draw's own +Z in the camera's space, the viewer of the
+    // voxel light's Schlick term (render::vxl_normals::blinn_phong_pages
+    // lights in the draw's model space, viewer +Z there).
+    view: vec4<f32>,
+    // The VPL's brightness per light page 0..31, four to a vector: how much
+    // each page scales a palette colour's bytes (page 8 is about 1).
+    pages: array<vec4<f32>, 8>,
 }
 
 @group(0) @binding(0) var<uniform> draw: Draw;
@@ -95,6 +102,21 @@ fn srgb_byte(linear: f32) -> f32 {
     return encoded * 255.0;
 }
 
+fn srgb_encode(linear: vec3<f32>) -> vec3<f32> {
+    let c = clamp(linear, vec3<f32>(0.0), vec3<f32>(1.0));
+    return select(1.055 * pow(c, vec3<f32>(1.0 / 2.4)) - 0.055, c * 12.92, c <= vec3<f32>(0.0031308));
+}
+
+fn srgb_decode(encoded: vec3<f32>) -> vec3<f32> {
+    let c = clamp(encoded, vec3<f32>(0.0), vec3<f32>(1.0));
+    return select(pow((c + 0.055) / 1.055, vec3<f32>(2.4)), c / 12.92, c <= vec3<f32>(0.04045));
+}
+
+// The VPL brightness of light page `page` (0..31).
+fn vpl_page(page: u32) -> f32 {
+    return draw.pages[page / 4u][page % 4u];
+}
+
 @fragment
 fn fs_main(in: VertexOut) -> FragmentOut {
     // Derivatives before any branch, in uniform control flow.
@@ -135,13 +157,16 @@ fn fs_main(in: VertexOut) -> FragmentOut {
     }
     var out: FragmentOut;
     if lit {
-        // The voxel light (render::vxl_normals::blinn_phong_pages): diffuse
-        // plus the Schlick term of the halfway vector to the +Z viewer at
-        // strength 3, where a page of 16 is the colour as it is. A
+        // The voxel light (render::vxl_normals::blinn_phong_pages): the page
+        // is 16 times diffuse plus the Schlick term of the halfway vector to
+        // the viewer at strength 3, the viewer being the draw's own +Z. A
         // projectile or debris piece takes the diffuse term alone
         // (render::vxl_normals::diffuse_pages, 0x00758670: page
-        // 16 * dot(n, l), 0 where the dot is negative). Neither quantises
-        // to whole pages: a model's normals are not the 244 table normals.
+        // 16 * dot(n, l), 0 where the dot is negative). The page then lights
+        // the colour as the VPL lights a palette colour: by that page's
+        // brightness, on the colour's encoded bytes, where page 0 still
+        // keeps about half of it and page 8 all of it. Neither quantises to
+        // whole pages: a model's normals are not the 244 table normals.
         let size = max(length(in.normal), 1e-6);
         var n = in.normal / size;
         if draw.flags.x != 0u {
@@ -149,10 +174,13 @@ fn fs_main(in: VertexOut) -> FragmentOut {
         }
         let l = draw.light.xyz;
         let diffuse = max(dot(n, l), 0.0);
-        let half_vector = normalize(l + vec3<f32>(0.0, 0.0, 1.0));
+        let half_vector = normalize(l + draw.view.xyz);
         let h = dot(half_vector, n);
         let specular = select(max(h / (3.0 - 2.0 * h), 0.0), 0.0, draw.flags.y != 0u);
-        color = min(color * min(diffuse + specular, 2.0), vec3<f32>(1.0));
+        let page = clamp((diffuse + specular) * 16.0, 0.0, 31.0);
+        let low = u32(floor(page));
+        let brightness = mix(vpl_page(low), vpl_page(min(low + 1u, 31u)), page - f32(low));
+        color = srgb_decode(srgb_encode(color) * brightness);
         out.index = 1u;
     } else {
         out.index = 240u;

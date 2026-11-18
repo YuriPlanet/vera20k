@@ -207,10 +207,16 @@ so it sorts, shades and shadows by the same rules:
   the rectangle a voxel draw of that pose takes
   (`native_draw_bounds_from_extents`), onto one RGBA page of the sprite
   atlas held for the purpose. Light is the voxel world light with the
-  Blinn-Phong form of `vxl_normals` (`blinn_phong_pages`), or for a
+  Blinn-Phong form of `vxl_normals` (`blinn_phong_pages`: the page is 16
+  times the diffuse term plus the Schlick term to the viewer, the draw
+  matrix's +Z), or for a
   projectile or a debris piece its diffuse form (`diffuse_pages`,
   `0x00753C80`: the diffuse term alone), a flag of the pose
-  (`ModelLight`); the mask's red takes the owner's ramp by
+  (`ModelLight`). The page then lights the colour as the VPL lights a
+  palette colour: by that page's brightness in `VOXELS.VPL` (the mean
+  lightness of the unit palette's colours through the page over their
+  own; page 8 keeps the colour, page 0 about half of it), on the colour's
+  encoded bytes. The mask's red takes the owner's ramp by
   brightness as a picture's does; the mask's green and emissive texels are
   unlit (index 240). The unit's piece draws that page through the SHP
   blitters' RGBA source mode with the unit's Z-read policy, its Z from the
@@ -360,7 +366,9 @@ production run on a real map with converted art.
   matching VERA's VXL path, not native. No retail rules layer sets the key.
 - A projectile's and a debris piece's model light is the continuous diffuse
   term; the VXL path truncates it to whole VPL pages (`ftol(16 * dot)`).
-  A unit's model light likewise skips the page truncation.
+  A unit's model light likewise skips the page truncation, and its pages
+  light true colours by one brightness each, where a VPL page maps each
+  palette index to its own neighbour on the ramp.
 - A sharing debris type draws its source's model part only while its main
   slot holds the pair it copied (`74B4D0`). A later rules layer that re-reads
   the source but not the debris type leaves the debris an earlier copy; it

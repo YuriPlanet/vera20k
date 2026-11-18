@@ -71,7 +71,7 @@ const DEPTH_SPAN: f32 = 4096.0;
 
 /// The shader's `Draw` block (`model_draw.wgsl`); `model_shadow.wgsl` reads
 /// its first matrix.
-const DRAW_SIZE: u64 = 496;
+const DRAW_SIZE: u64 = 640;
 
 /// The light translation `0x00753F90` adds to a shadow quad's x after the
 /// viewer (`0x00754C00` stores `0x403FFFF1` at `0x00887420`, just under 3),
@@ -491,8 +491,9 @@ struct Placed {
     corner: [u32; 2],
     rect: [i32; 4],
     /// Each mesh node drawn, with its model-to-camera matrix (anchor-relative
-    /// voxel camera space; a shadow's flattened, [`shadow_camera`]).
-    draws: Vec<(usize, Mat4)>,
+    /// voxel camera space; a shadow's flattened, [`shadow_camera`]) and the
+    /// voxel light's viewer there: its part's voxel draw +Z.
+    draws: Vec<(usize, Mat4, Vec3)>,
     /// The owner's ramp, for a body.
     ramp: Option<[[u8; 3]; 16]>,
     /// A shadow mask, drawn by the shadow pipeline.
@@ -523,6 +524,9 @@ pub struct ModelFrame {
     gpu: Option<Gpu>,
     models: HashMap<usize, GpuModel>,
     overflowed: bool,
+    /// The VPL's brightness per light page ([`vpl_page_brightness`]), read
+    /// on the first frame that draws a model.
+    vpl_curve: Option<[f32; 32]>,
 }
 
 impl ModelFrame {
@@ -616,6 +620,12 @@ impl ModelFrame {
         let mut draws = Vec::new();
         for (matrix, part, frame) in layout.drawn(nodes, pose.gun) {
             let to_camera = pose.matrices[matrix] * layout.to_voxels;
+            // The voxel light lights in the draw's model space with the
+            // viewer at its +Z (`vxl_normals::blinn_phong_pages`); in the
+            // camera's space that viewer is the draw matrix's +Z.
+            let viewer = pose.matrices[matrix]
+                .transform_vector3(Vec3::Z)
+                .normalize_or(Vec3::Z);
             let frame = frame.map(|frame| pose.frames[frame]);
             let posed = part.clip.is_some() && frame.is_some();
             // A part at rest keeps its tight rest bounds; a posed part takes
@@ -628,7 +638,7 @@ impl ModelFrame {
                 if posed && let Some(local) = node.local {
                     extents.add(to_camera * world, local);
                 }
-                draws.push((node.node, to_camera * world));
+                draws.push((node.node, to_camera * world, viewer));
             }
         }
         let rect = extents.rect()?;
@@ -688,7 +698,7 @@ impl ModelFrame {
             if let Some(local) = local {
                 extents.add(camera * to_voxels, local);
             }
-            draws.push((node, camera * to_voxels));
+            draws.push((node, camera * to_voxels, Vec3::Z));
         }
         let rect = extents.rect()?;
         self.place(
@@ -768,6 +778,9 @@ impl ModelFrame {
         let mut blocks: Vec<u8> = Vec::new();
         let mut draws: Vec<(usize, usize, usize, [u32; 4], bool)> = Vec::new();
         let light = crate::render::vxl_normals::world_light();
+        let vpl_curve = *self
+            .vpl_curve
+            .get_or_insert_with(|| vpl_page_brightness(assets));
         for placed in &self.placed {
             let key = Arc::as_ptr(&placed.model) as usize;
             let Some(model) = self.models.get(&key) else {
@@ -783,12 +796,27 @@ impl ModelFrame {
             let ramp = placed
                 .ramp
                 .map(|ramp| ramp.map(|color| color.map(srgb_to_linear)));
-            for (matrix, nodes, _) in layout.drawn(placed.nodes, placed.pose.gun) {
-                for &(node, world) in nodes {
-                    let to_camera = placed.pose.matrices[matrix] * layout.to_voxels * world;
-                    let normal = Mat3::from_mat4(to_camera);
-                    let normal = if normal.determinant().abs() > f32::EPSILON {
-                        normal.inverse().transpose()
+            for &(node, to_camera, viewer) in &placed.draws {
+                let Some(primitives) = placed
+                    .model
+                    .model
+                    .nodes
+                    .get(node)
+                    .and_then(|node| node.mesh)
+                    .and_then(|mesh| model.meshes.get(mesh))
+                else {
+                    continue;
+                };
+                let normal = Mat3::from_mat4(to_camera);
+                let normal = if normal.determinant().abs() > f32::EPSILON {
+                    normal.inverse().transpose()
+                } else {
+                    Mat3::IDENTITY
+                };
+                for &primitive in primitives {
+                    let offset = blocks.len();
+                    if placed.shadow {
+                        write_shadow_block(&mut blocks, clip * to_camera);
                     } else {
                         let material = &model.materials[model.primitives[primitive].material];
                         write_block(
@@ -797,8 +825,9 @@ impl ModelFrame {
                             to_camera,
                             normal,
                             material,
-                            (light, placed.light),
+                            (light, viewer, placed.light),
                             ramp.as_ref(),
+                            &vpl_curve,
                         );
                     }
                     blocks.resize(offset + gpu.stride as usize, 0);
@@ -896,15 +925,56 @@ fn srgb_to_linear(byte: u8) -> f32 {
     }
 }
 
+/// The brightness `VOXELS.VPL` gives each light page 0..31 of the voxel
+/// light: the mean lightness of the unit palette's ordinary colours (32 to
+/// 239) through that page, over their own. A VPL page relights palette bytes,
+/// so a model's colour takes the same factor on its encoded bytes
+/// (`model_draw.wgsl`). Retail's own curve when the files are not at hand.
+fn vpl_page_brightness(assets: Option<&AssetManager>) -> [f32; 32] {
+    let read = || -> Option<[f32; 32]> {
+        let assets = assets?;
+        let vpl =
+            crate::assets::vpl_file::VplFile::from_bytes(assets.get_ref("VOXELS.VPL")?).ok()?;
+        let palette =
+            crate::assets::pal_file::Palette::from_bytes(assets.get_ref("unittem.pal")?).ok()?;
+        let lightness = |index: u8| {
+            let c = palette.color(index);
+            0.299 * f32::from(c.r) + 0.587 * f32::from(c.g) + 0.114 * f32::from(c.b)
+        };
+        let own: f32 = (32..240u8).map(lightness).sum();
+        let pages = vpl.pages_slice().len();
+        if own <= 0.0 || pages == 0 {
+            return None;
+        }
+        Some(std::array::from_fn(|page| {
+            let page = page.min(pages - 1) as u8;
+            (32..240u8)
+                .map(|index| lightness(vpl.get_palette_index(page, index)))
+                .sum::<f32>()
+                / own
+        }))
+    };
+    read().unwrap_or(RETAIL_VPL_PAGE_BRIGHTNESS)
+}
+
+/// [`vpl_page_brightness`] of retail `VOXELS.VPL` and `UNITTEM.PAL`.
+const RETAIL_VPL_PAGE_BRIGHTNESS: [f32; 32] = [
+    0.529, 0.574, 0.618, 0.658, 0.701, 0.872, 0.912, 0.966, 1.000, 1.031, 1.073, 1.114, 1.150,
+    1.180, 1.215, 1.243, 1.269, 1.335, 1.388, 1.438, 1.486, 1.524, 1.561, 1.590, 1.624, 1.650,
+    1.672, 1.692, 1.707, 1.724, 1.742, 1.761,
+];
+
 /// One `Draw` block (`model_draw.wgsl`).
+#[allow(clippy::too_many_arguments)]
 fn write_block(
     out: &mut Vec<u8>,
     clip: Mat4,
     to_camera: Mat4,
     normal: Mat3,
     material: &GpuMaterial,
-    (light, mode): (Vec3, ModelLight),
+    (light, viewer, mode): (Vec3, Vec3, ModelLight),
     ramp: Option<&[[f32; 3]; 16]>,
+    vpl_curve: &[f32; 32],
 ) {
     let mut floats = |values: &[f32]| {
         for value in values {
@@ -942,6 +1012,12 @@ fn write_block(
         for value in [r, g, b, 1.0_f32] {
             out.extend_from_slice(&value.to_le_bytes());
         }
+    }
+    for value in [viewer.x, viewer.y, viewer.z, 0.0] {
+        out.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in vpl_curve {
+        out.extend_from_slice(&value.to_le_bytes());
     }
 }
 
@@ -1516,6 +1592,62 @@ fn vertex_data(primitive: &crate::assets::model_file::ModelPrimitive) -> Vec<u8>
 #[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
+
+    /// A model lights at the voxel light's page. For a level ground unit at
+    /// each facing, the page `model_draw.wgsl` computes from camera-space
+    /// vectors (16 times the diffuse term plus the Schlick term to the draw's
+    /// +Z, [`ModelFrame::request_nodes`]'s viewer) for each table normal
+    /// carried into the camera's space is the page `blinn_phong_pages`
+    /// truncates for it in model space.
+    #[test]
+    fn a_model_lights_at_the_voxel_light_page() {
+        use crate::render::vxl_raster::{GroundPose, ground_unit_pose_matrices};
+        let light = crate::render::vxl_normals::world_light();
+        for facing in (0..=255u8).step_by(8) {
+            let [body, ..] = ground_unit_pose_matrices(
+                0,
+                GroundPose {
+                    angles: [0.0; 2],
+                    tunnel_tilt: None,
+                    body_facing: facing,
+                    slope_blend: None,
+                    turret_offset: 0,
+                },
+                [10.0, 10.0],
+                facing,
+                0,
+            );
+            let rotation = Mat3::from_mat4(body);
+            let pages = crate::render::vxl_normals::blinn_phong_pages(4, rotation);
+            let viewer = body.transform_vector3(Vec3::Z).normalize();
+            let half = (light + viewer).normalize();
+            for index in 0..=240u8 {
+                let n = (rotation * crate::render::vxl_normals::get_normal(4, index)).normalize();
+                let h = half.dot(n);
+                let page = 16.0 * (n.dot(light).max(0.0) + (h / (3.0 - 2.0 * h)).max(0.0));
+                let native = f32::from(pages[usize::from(index)]);
+                assert!(
+                    page >= native - 0.01 && page < native + 1.01,
+                    "facing {facing}, normal {index}: shader page {page}, voxel page {native}"
+                );
+            }
+        }
+    }
+
+    /// The brightness curve is read from the VPL: a VPL whose pages leave
+    /// every colour as it is gives 1 everywhere, and without files retail's
+    /// curve keeps page 8 at about the colour itself.
+    #[test]
+    fn the_vpl_curve_keeps_page_eight_at_the_colour() {
+        assert!((RETAIL_VPL_PAGE_BRIGHTNESS[8] - 1.0).abs() < 0.01);
+        assert!(RETAIL_VPL_PAGE_BRIGHTNESS[0] > 0.5);
+        assert!(
+            RETAIL_VPL_PAGE_BRIGHTNESS
+                .windows(2)
+                .all(|pair| pair[0] <= pair[1])
+        );
+        assert_eq!(vpl_page_brightness(None), RETAIL_VPL_PAGE_BRIGHTNESS);
+    }
 
     /// The page clip puts an image's rectangle exactly over its slot: the
     /// rectangle's top-left anchor-relative corner lands on the slot's corner
