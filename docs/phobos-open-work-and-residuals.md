@@ -185,8 +185,19 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
      `none` 存 -1，命中 `[SuperWeaponTypes]` 才换名），数据来自
      `IniSection::projected_values` 的逐层历史（回归测试
      `phobos_globals_tests::a_later_pass_with_an_unknown_ai_chrono_name_keeps_the_resolved_index`）。
-     残余：`FindIndex` 在 native 里对着**读取该 pass** 的类型数组，这里用每层
-     `[SuperWeaponTypes]` 的并集；只有「前一层命名了后一层才引入的类型」才不同。
+     残余（2026-11-19 复核，按接受差异保留）：`FindIndex` 在 native 里对着
+     **该 pass 开始时**的 `SuperWeaponTypeClass` 数组——Phobos 的读取挂在
+     `RulesClass` Process 的入口块（`0x668BF0` 起，只读 `[General]` 标量），
+     此时本层与之后的 `[SuperWeaponTypes]` 都还没处理；VERA 这里用所有层的
+     `[SuperWeaponTypes]` 并集。触发：较早一层给这两个键写了**由较晚一层才引入**
+     的类型名，native 的 `FindIndex` 返回 -1 因而保留旧索引，VERA 却能解析到该
+     名字，两条键最终指向不同超武。频率：零售 `rulesmd.ini` 两条键都未设，零触发；
+     只有自造分层坏数据会碰到。未修原因：精确重放需要「每个 INI pass 上该段键的
+     存在时刻」，而 typed reader 的投影只保留**值**的逐 pass 历史
+     （`IniSection::projected_values`，按 pass 盖写 `dword+ptr`），不保留键首次
+     出现的 pass；`ProcessedRulesLayers`/`RuleSet::from_ini` 只把合并后的
+     `IniFile` 交给 rules 处理器，没有 pass 序列可穿过去。补它要给 `IniSection`
+     加全局 pass 戳并改 `from_ini` 的调用面与存档格式，收益仅限坏数据，故不改码。
    - 动作 56/57 未选中 super 时不发火（与 stock 一致）。
    - `Fire_SW` 用 `Type=` 当 Supers 索引：retail 列表恰好同序；自定义乱序时以
      “所选 Super 的 Type= 值”发射（oracle golden 即此行为）。

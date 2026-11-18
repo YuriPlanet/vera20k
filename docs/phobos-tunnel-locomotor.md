@@ -60,8 +60,28 @@ The layer answer is what the package-93 `AU` chain consumes:
 
 ## Residuals
 
-- The dig and dig-out **animations** (`0x1c8`-byte Anim, ctor `0x421EA0`,
-  `0x600` flags) are not created; only the timers that gate them are ported.
+- The dig and dig-out **animations** are not created; only the timers that gate
+  them are ported. Native constructs one `AnimClass` at each of the four
+  transitions: a `0x1C8`-byte allocation (`PUSH 0x1C8; CALL 0x007C8E17` at
+  `0x728F20`, with the same `TEST EAX,EAX` guard after each of the four
+  allocations) and then the ctor `AnimClass::AnimClass @ 0x00421EA0` at
+  `0x00728F6F`, `0x00729360`, `0x00729459` and `0x00729A2F`. Every site passes
+  the identical row `(type, &Owner->Location, 0, 1, 0x600, 0, 0)`: `PUSH 0x0`,
+  `PUSH 0x0`, `PUSH 0x600`, `PUSH 0x1`, `PUSH 0x0`, the by-value `CoordStruct`
+  copied from `Owner->Location` (`+0x9C` of `[this+8]` / `[this+0xc]`), then
+  `PUSH type`. The type is `RulesClass+0x294`, which `RulesClass::Process`
+  reads from **`[General] Dig=`**: `0x0066A593` pushes the key string
+  `0x0083A5CC` (`Dig`) and the section `0x00889F64`, the `AnimType` lookup
+  `0x00428B80` resolves the stored name at `0x0066A5A8`, and `0x0066A5BA`
+  writes it back. The `RulesClass` constructor's default for that field is
+  null (`0x00665A10`). Retail `rulesmd.ini` has no `Dig=` (only the commented
+  `DigSound=` at line 672), so the pointer stays null: the arm is a dormant TS
+  leftover and retail draws nothing either way. Porting it needs that
+  `[General]` key plus a general-purpose `AnimClass` spawn (drawFlags `0x600`,
+  loop 1) reachable from a locomotor step; `TunnelRuntime` is a pure state
+  machine and the spawn path (`Simulation::spawn_anim_at_world`) belongs to a
+  `Simulation` owner, so the chain also needs a spawn-request conduit out of
+  the locomotor.
 - `ProcessPreDigOut 0x7298F0` raises Z to the cell's ground height
   (`MapClass::0x578080` at `0x72991D`, every frame) by
   `max(5, round(rate * frame_scale))` and arms the dig-out timer with
