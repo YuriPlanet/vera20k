@@ -7,15 +7,12 @@
 //! 2. what a factory has finished is taken out of it, so a finished build
 //!    never blocks its own category;
 //! 3. attached objects are stepped — garbage-collected, then the rotation for
-//!    this frame — and each routine's answer becomes a goal;
-//! 4. every order and intent is admitted: domain switch, per-frame budget, the
-//!    acting object's ownership and the native order gate;
-//! 5. what survived is stamped with the house and the current tick and queued
-//!    through `Simulation::queue_commands`, the append-only ingress a player's
-//!    clicks use.
+//!    this frame — and each routine's answer becomes a goal.
 //!
-//! Step 4 is why this layer exists: the same admission applies to a retail
-//! brain, a script and a managed routine, and a refusal is *counted and
+//! Each command passes the domain, budget and actor gates before it is
+//! stamped with the house and current tick and submitted to the simulation's
+//! command queue. The same admission applies to a retail brain, a script and
+//! a managed routine, and a refusal is *counted and
 //! reported*, never silent. A unit that stops is either waiting on a native
 //! transition (`NotReady`) or has left the house's control (rejected), and the
 //! counters say which.
@@ -271,7 +268,7 @@ impl ControlBoard {
         self.budget.begin_frame();
         let owner_name = sim.interner().resolve(owner).to_owned();
 
-        let mut pending: Vec<Command> = Vec::new();
+        let mut issued = Vec::new();
 
         // 1. Decisions.
         let mut out = Outbox::default();
@@ -281,7 +278,7 @@ impl ControlBoard {
         }
         for intent in out.intents {
             let command = intent.command();
-            self.admit(sim, rules, &owner_name, &command, &mut pending);
+            self.admit(sim, rules, &owner_name, command, &mut issued);
         }
         // Objects the brain hands to a managed routine. Consumed before the
         // orders below, because a routine is its object's only issuer: the
@@ -308,8 +305,8 @@ impl ControlBoard {
                 );
             }
         }
-        for command in &out.commands {
-            self.admit(sim, rules, &owner_name, command, &mut pending);
+        for command in out.commands {
+            self.admit(sim, rules, &owner_name, command, &mut issued);
         }
         // The orders that never left. A brain keeps its own record of what it
         // has told each object, and an order dropped here — by the per-frame
@@ -330,7 +327,7 @@ impl ControlBoard {
                 &owner_name,
                 order.actor,
                 order.goal,
-                &mut pending,
+                &mut issued,
             );
             if !outcome.is_queued() {
                 refused.push((order.actor, order.goal));
@@ -352,18 +349,17 @@ impl ControlBoard {
                     sim,
                     rules,
                     &owner_name,
-                    &Command::PlaceProducedMobile { category },
-                    &mut pending,
+                    Command::PlaceProducedMobile { category },
+                    &mut issued,
                 );
             }
         }
 
         // 3. Managed objects, when the forces half is on.
         if self.domains.forces {
-            self.step_managed(sim, rules, &owner_name, &mut pending);
+            self.step_managed(sim, rules, &owner_name, &mut issued);
         }
 
-        // 4. One ingress, stamped for this frame.
         let execute_tick = sim.session().tick();
         // One line every ten seconds in the log the client already writes:
         // "the brain does nothing" and "the brain is refused" look the same
@@ -373,19 +369,13 @@ impl ControlBoard {
                 "auto play: tick={execute_tick} owner={owner_name} production={} forces={} queued={} rejected={} not_ready={} excluded={}",
                 self.domains.production,
                 self.domains.forces,
-                pending.len(),
+                issued.len(),
                 self.rejected,
                 self.not_ready,
                 self.excluded.len()
             );
         }
-        sim.queue_commands(
-            pending
-                .iter()
-                .cloned()
-                .map(|command| CommandEnvelope::new(owner, execute_tick, command)),
-        );
-        pending
+        issued
     }
 
     /// Step this frame's rotation of attached objects and issue what they ask.
@@ -394,7 +384,7 @@ impl ControlBoard {
         sim: &mut Simulation,
         rules: &RuleSet,
         owner_name: &str,
-        pending: &mut Vec<Command>,
+        issued: &mut Vec<Command>,
     ) {
         let owner = self.owner;
         for (entity, reason) in self.micro.retain_live(sim, owner) {
@@ -437,7 +427,7 @@ impl ControlBoard {
                     self.fall_back(entity, reason);
                 }
                 MicroStep::Goal(goal) => {
-                    let outcome = self.issue(sim, rules, owner_name, entity, goal, pending);
+                    let outcome = self.issue(sim, rules, owner_name, entity, goal, issued);
                     if let Some(reason) = self.micro.record_outcome(entity, outcome) {
                         self.fall_back(entity, reason);
                     }
@@ -458,12 +448,12 @@ impl ControlBoard {
     /// Turn one goal into a command and admit it.
     fn issue(
         &mut self,
-        sim: &Simulation,
+        sim: &mut Simulation,
         rules: &RuleSet,
         owner_name: &str,
         actor: u64,
         goal: Goal,
-        pending: &mut Vec<Command>,
+        issued: &mut Vec<Command>,
     ) -> ApplyOutcome {
         // Two orders are not sent: the one the object already stands on, and a
         // march that would delete the gun order it is working.
@@ -484,7 +474,7 @@ impl ControlBoard {
         let funnel = Funnel::new(sim, rules, self.owner);
         match funnel.prepare(actor, goal) {
             Ok(command) => {
-                if self.admit(sim, rules, owner_name, &command, pending) {
+                if self.admit(sim, rules, owner_name, command, issued) {
                     ApplyOutcome::Queued
                 } else {
                     ApplyOutcome::Rejected
@@ -505,20 +495,20 @@ impl ControlBoard {
     /// The gate: budget, domain switch, ownership and the native order gate.
     fn admit(
         &mut self,
-        sim: &Simulation,
+        sim: &mut Simulation,
         rules: &RuleSet,
         owner_name: &str,
-        command: &Command,
-        pending: &mut Vec<Command>,
+        command: Command,
+        issued: &mut Vec<Command>,
     ) -> bool {
-        if !self.domains.admits(command) || !admits(sim, owner_name, command) {
+        if !self.domains.admits(&command) || !admits(sim, owner_name, &command) {
             log::debug!("auto play: refused by the gate {command:?}");
             self.rejected += 1;
             return false;
         }
         // The player's own objects: a unit in a control group stays under the
         // player's hand, whatever half of the work is switched on.
-        if actor_of(command).is_some_and(|actor| self.excluded.contains(&actor)) {
+        if actor_of(&command).is_some_and(|actor| self.excluded.contains(&actor)) {
             log::debug!("auto play: refused, the player owns {command:?}");
             self.rejected += 1;
             return false;
@@ -528,7 +518,7 @@ impl ControlBoard {
         // rulesmd.ini) and `Selectable=no` ones. A click cannot reach them, so
         // neither may auto play — the paradrop transport is the type this is
         // named for.
-        if actor_of(command).is_some_and(|actor| !player_controllable(sim, rules, actor)) {
+        if actor_of(&command).is_some_and(|actor| !player_controllable(sim, rules, actor)) {
             log::debug!("auto play: refused, not the player's to command {command:?}");
             self.rejected += 1;
             return false;
@@ -538,7 +528,13 @@ impl ControlBoard {
             self.rejected += 1;
             return false;
         }
-        pending.push(command.clone());
+        let envelope = CommandEnvelope::new(self.owner, sim.session().tick(), command.clone());
+        if !sim.queue_command(envelope) {
+            log::debug!("auto play: refused by the command queue {command:?}");
+            self.rejected += 1;
+            return false;
+        }
+        issued.push(command);
         true
     }
 }

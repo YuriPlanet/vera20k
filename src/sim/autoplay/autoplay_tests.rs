@@ -1487,3 +1487,63 @@ fn a_step_reports_the_commands_it_queued() {
         "and the report is the queue the frame drains"
     );
 }
+
+#[test]
+fn a_full_queue_refuses_the_order_without_reporting_it_as_issued() {
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    struct BuildAndMove {
+        power: InternedId,
+        actor: u64,
+        goal: Goal,
+        refused: Rc<Cell<Option<(u64, Goal)>>>,
+    }
+
+    impl Brain for BuildAndMove {
+        fn name(&self) -> &'static str {
+            "build-and-move"
+        }
+
+        fn think(&mut self, _: &RuleSet, _: &Observation<'_>, out: &mut Outbox) {
+            out.command(Command::QueueProduction { type_id: self.power });
+            out.order(self.actor, self.goal);
+        }
+
+        fn orders_refused(&mut self, refused: &[(u64, Goal)]) {
+            self.refused.set(refused.first().copied());
+        }
+    }
+
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+        "[VehicleTypes]\n0=PLANNER\n[PLANNER]\nStrength=100\nSpeed=8\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+    ))
+    .expect("synthetic rules");
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0xA17);
+    let tank = sim
+        .spawn_object("PLANNER", "Americans", 16, 16, 0, &rules)
+        .expect("an American tank");
+    let owner = american(&mut sim);
+    let type_id = sim.interner.intern("GAPOWR");
+    let power = Command::QueueProduction { type_id };
+    let capacity = crate::sim::command_queue::SINGLE_PLAYER_DOLIST_CAPACITY;
+    let future = CommandEnvelope::new(owner, sim.session().tick() + 60, power.clone());
+    sim.queue_commands(std::iter::repeat_n(future, capacity - 1));
+
+    let goal = Goal::Move { cell: (20, 20) };
+    let refused = Rc::new(Cell::new(None));
+    let mut host = AutoPlayHost::new(
+        Box::new(BuildAndMove {
+            power: type_id,
+            actor: tank,
+            goal,
+            refused: Rc::clone(&refused),
+        }),
+        owner,
+        8,
+    );
+
+    assert_eq!(host.step(&mut sim, &rules), [power]);
+    assert_eq!(refused.get(), Some((tank, goal)));
+    assert_eq!(host.rejected(), 1);
+}
