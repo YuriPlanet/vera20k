@@ -686,6 +686,7 @@ pub(crate) fn shp_visitor<'a>(
                     && foundation.0 <= ZSHAPE_MAX_FOUNDATION_WIDTH
                     && gate_open_frame.is_none();
                 let origin = native_z::zshape_origin(
+                    native_z::ZSHAPE_ANCHOR,
                     (sx.round() as i32, sy.round() as i32),
                     foundation,
                     point_move,
