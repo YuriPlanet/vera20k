@@ -13,16 +13,13 @@ use serde::Serialize;
 use super::event_packet::{
     EVENT_PACKET_HEADER_LEN, LIVE_EVENT_PREFIX_LEN, decode_frame_info, live_command_frontier,
 };
-use super::reliable::{
-    CONNECTION_HEADER_LEN, Delivery, LanConnectionConfig, sequence, udp_checksum,
-};
-use super::udp::UDP_DATAGRAM_CAPACITY;
+use super::lan_messages::SessionScope;
+use super::reliable::{CONNECTION_HEADER_LEN, Delivery, LAN_PRODUCT_ID, sequence, udp_checksum};
+use super::udp::{CHECKSUM_LEN, LAN_SCOPE_HEADER_LEN, LAN_SCOPE_MAGIC, UDP_DATAGRAM_CAPACITY};
 use crate::sim::command::{COMMAND_RECORD_LEN, CommandRecord};
 use crate::sim::command_queue::FrameInfo;
 
-const SCOPE_HEADER: usize = 28;
-const TRANSPORT_CRC: usize = 4;
-const CONNECTION_START: usize = SCOPE_HEADER + TRANSPORT_CRC;
+const CONNECTION_START: usize = LAN_SCOPE_HEADER_LEN + CHECKSUM_LEN;
 const EVENT_START: usize = CONNECTION_START + CONNECTION_HEADER_LEN;
 const HEADER_START: usize = EVENT_START + LIVE_EVENT_PREFIX_LEN;
 const HEADER_ONLY_LEN: usize = HEADER_START + EVENT_PACKET_HEADER_LEN;
@@ -90,35 +87,44 @@ pub enum Control {
 }
 
 struct View {
-    scope: [u8; 24],
+    scope: SessionScope,
     info: FrameInfo,
     frontier: u64,
 }
 fn inspect(packet: &[u8]) -> Option<View> {
-    if packet.len() != HEADER_ONLY_LEN || !packet.starts_with(b"VLS\x01") {
+    if packet.len() != HEADER_ONLY_LEN || !packet.starts_with(LAN_SCOPE_MAGIC) {
         return None;
     }
     let frame = &packet[CONNECTION_START..];
-    if frame[..2] != LanConnectionConfig::default().product_id.to_le_bytes()
+    if frame[..2] != LAN_PRODUCT_ID.to_le_bytes()
         || frame[2] != Delivery::Unreliable.wire_kind()
         || udp_checksum(frame)
-            != u32::from_le_bytes(packet[SCOPE_HEADER..CONNECTION_START].try_into().ok()?)
+            != u32::from_le_bytes(
+                packet[LAN_SCOPE_HEADER_LEN..CONNECTION_START]
+                    .try_into()
+                    .ok()?,
+            )
     {
         return None;
     }
     let payload = &packet[EVENT_START..];
     let info = decode_frame_info(payload)?;
-    if info.house_id < 0 || packet[4..20] == [0; 16] || packet[20..SCOPE_HEADER] == [0; 8] {
+    let scope = SessionScope::decode(&packet[LAN_SCOPE_MAGIC.len()..LAN_SCOPE_HEADER_LEN])?;
+    if info.house_id < 0 || scope.epoch == [0; 16] || scope.revision == 0 {
         return None;
     }
     Some(View {
-        scope: packet[4..SCOPE_HEADER].try_into().ok()?,
+        scope,
         info,
         frontier: live_command_frontier(payload)?,
     })
 }
-fn scope_text(scope: &[u8; 24]) -> String {
-    scope.iter().map(|byte| format!("{byte:02x}")).collect()
+fn scope_text(scope: SessionScope) -> String {
+    scope
+        .encode()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 fn invalid(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
@@ -126,8 +132,8 @@ fn invalid(message: &'static str) -> io::Error {
 
 pub struct PacketFault {
     after_frame: i32,
-    observed: [Option<([u8; 24], i32)>; 2],
-    armed_scope: Option<[u8; 24]>,
+    observed: [Option<(SessionScope, i32)>; 2],
+    armed_scope: Option<SessionScope>,
     corrupted: [bool; 2],
 }
 impl PacketFault {
@@ -156,7 +162,7 @@ impl PacketFault {
         }
         self.armed_scope = Some(left);
         Ok(Notice::Armed {
-            scope: scope_text(&left),
+            scope: scope_text(left),
             after_frame: self.after_frame,
         })
     }
@@ -183,11 +189,11 @@ impl PacketFault {
         packet[HEADER_START..HEADER_ONLY_LEN]
             .copy_from_slice(&record.as_bytes()[..EVENT_PACKET_HEADER_LEN]);
         let checksum = udp_checksum(&packet[CONNECTION_START..]);
-        packet[SCOPE_HEADER..CONNECTION_START].copy_from_slice(&checksum.to_le_bytes());
+        packet[LAN_SCOPE_HEADER_LEN..CONNECTION_START].copy_from_slice(&checksum.to_le_bytes());
         self.corrupted[index] = true;
         Some(Corruption {
             direction,
-            scope: scope_text(&scope),
+            scope: scope_text(scope),
             house: changed.house_id,
             event_frame: changed.event_frame,
             reported_frame: reported,
@@ -350,8 +356,7 @@ fn run_sockets(
 mod tests {
     use super::*;
     use crate::net::event_packet::{EventPacketCodec, EventPacketHeader};
-    use crate::net::lan_messages::SessionScope;
-    use crate::net::reliable::{LanConnections, RetryTiming};
+    use crate::net::reliable::{LanConnectionConfig, LanConnections, RetryTiming};
     use crate::net::udp::{LanUdpTransport, UdpBindConfig};
     use crate::sim::command_queue::MultiplayerChecksumHistory;
     use std::net::Ipv4Addr;
@@ -431,7 +436,10 @@ mod tests {
         fault.arm().unwrap();
         let witness = fault.packet(Direction::HostToGuest, &mut packet).unwrap();
         assert_eq!(witness.new_checksum, witness.old_checksum ^ 1);
-        assert_eq!(&packet[..SCOPE_HEADER], &original[..SCOPE_HEADER]);
+        assert_eq!(
+            &packet[..LAN_SCOPE_HEADER_LEN],
+            &original[..LAN_SCOPE_HEADER_LEN]
+        );
         assert_eq!(
             &packet[CONNECTION_START..HEADER_START],
             &original[CONNECTION_START..HEADER_START]
@@ -487,12 +495,12 @@ mod tests {
         fault.packet(Direction::GuestToHost, &mut packet);
         fault.arm().unwrap();
         let mut wrong = packet.clone();
-        wrong[4] ^= 1;
+        wrong[LAN_SCOPE_MAGIC.len()] ^= 1;
         assert!(fault.packet(Direction::HostToGuest, &mut wrong).is_none());
         let mut probe = packet.clone();
         probe[HEADER_START] = 0x19;
         let checksum = udp_checksum(&probe[CONNECTION_START..]);
-        probe[SCOPE_HEADER..CONNECTION_START].copy_from_slice(&checksum.to_le_bytes());
+        probe[LAN_SCOPE_HEADER_LEN..CONNECTION_START].copy_from_slice(&checksum.to_le_bytes());
         assert!(fault.packet(Direction::HostToGuest, &mut probe).is_none());
         assert!(fault.packet(Direction::HostToGuest, &mut packet).is_some());
     }

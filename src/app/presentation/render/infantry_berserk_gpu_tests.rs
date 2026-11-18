@@ -345,7 +345,7 @@ fn render_original_body_pixels(
                 &theater,
                 &assets,
                 &crate::rules::terrain_rules::TerrainRules::from_ini(&raw_rules),
-                &resources.overlay_registry,
+                resources.rules.overlay_registry(),
                 false,
                 0,
                 Default::default(),

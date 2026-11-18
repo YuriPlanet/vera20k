@@ -626,7 +626,6 @@ fn app_and_headless_frames_hash_identically_for_particle_frame_timing() {
             .advance_app_frame(
                 &[],
                 &rules,
-                None,
                 67,
                 TickLane::Ordinary,
                 crate::sim::world::FrameEffects::default(),
@@ -1105,7 +1104,6 @@ fn app_frame_output_transfers_pre_tick_sound_exactly_once_without_hash_change() 
         .advance_app_frame(
             &[],
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            None,
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -1121,7 +1119,6 @@ fn app_frame_output_transfers_pre_tick_sound_exactly_once_without_hash_change() 
         .advance_app_frame(
             &[],
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            None,
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -1133,7 +1130,7 @@ fn app_frame_output_transfers_pre_tick_sound_exactly_once_without_hash_change() 
 
 #[test]
 fn app_frame_output_finalizes_overlay_navigation_and_delivers_updates_once() {
-    let (rules, overlays) = gsi_04_07_wall_sell_rules(false, false);
+    let (rules, _) = gsi_04_07_wall_sell_rules(false, false);
     let mut sim = Simulation::new();
     sim.hash_state_every(std::num::NonZeroU64::MIN);
     sim.resolved_terrain = Some(gsi_04_10_clear_terrain(4, 4));
@@ -1146,10 +1143,9 @@ fn app_frame_output_finalizes_overlay_navigation_and_delivers_updates_once() {
         .place_owned_wall(2, 2, 2, 0x23, owner);
 
     let deferred = sim
-        .advance_app_frame(
+        .advance_app_frame_without_overlay_types_for_test(
             &[],
             &rules,
-            None,
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -1167,7 +1163,6 @@ fn app_frame_output_finalizes_overlay_navigation_and_delivers_updates_once() {
         .advance_app_frame(
             &[],
             &rules,
-            Some(&overlays),
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -1188,7 +1183,6 @@ fn app_frame_output_finalizes_overlay_navigation_and_delivers_updates_once() {
         .advance_app_frame(
             &[],
             &rules,
-            Some(&overlays),
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -1206,7 +1200,6 @@ fn terminal_app_frame_finalizes_overlay_updates_before_hash() {
          [ORE]\nTiberium=yes\n[WALL]\nWall=yes\nStrength=100\n",
     );
     let rules = RuleSet::from_ini(&ini).expect("terminal overlay rules");
-    let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
     let mut terrain = gsi_04_10_clear_terrain(2, 1);
     terrain
         .cell_mut_for_test(0, 0)
@@ -1229,7 +1222,6 @@ fn terminal_app_frame_finalizes_overlay_updates_before_hash() {
         .advance_app_frame(
             &[exit],
             &rules,
-            Some(&overlays),
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -1265,7 +1257,6 @@ fn terminal_app_frame_finalizes_overlay_updates_before_hash() {
         .advance_app_frame(
             &[],
             &rules,
-            Some(&overlays),
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -2249,7 +2240,7 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
         carrier.set_owner_for_test(enemy);
         carrier.set_type_ref_for_test(sim.interner.intern("BOOMER"));
         carrier.health.set_for_test(carrier_hp);
-        carrier.passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+        carrier.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(cargo));
         sim.substrate.entities.insert(carrier);
         let _ = sim.reveal(10);
 
@@ -2261,7 +2252,9 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
             EntityCategory::Infantry,
         );
         passenger.set_is_voxel_for_test(false);
-        passenger.passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(10, false);
+        passenger.set_passenger_role_for_test(
+            crate::sim::passenger::PassengerRole::inside_for_test(10, false),
+        );
         sim.substrate.entities.insert(passenger);
 
         let mut listener = GameEntity::test_default_of_category(
@@ -2460,7 +2453,7 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
             .entities
             .get(10)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .passengers(),

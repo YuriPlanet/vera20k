@@ -930,7 +930,7 @@ fn retail_magnetron_lifts_a_docked_aircraft_through_its_attack_order() {
         restored
             .restore_map_authority_after_snapshot_load(
                 &runtime.resources.rules,
-                &runtime.resources.overlay_registry,
+                runtime.resources.rules.overlay_registry(),
                 None,
             )
             .expect("restore retail map authority");
@@ -1106,7 +1106,6 @@ fn retail_tank_let_go_over_a_unit_crashes_onto_it() {
             .advance_app_frame(
                 &commands,
                 &rules,
-                None,
                 33,
                 crate::sim::world::TickLane::Ordinary,
                 FrameEffects::default(),

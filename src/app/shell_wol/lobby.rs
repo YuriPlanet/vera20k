@@ -1399,6 +1399,25 @@ pub(crate) fn visiting(state: &AppState) -> bool {
     lobby(state).is_some_and(|lobby| lobby.visit.is_some())
 }
 
+/// VERA online: where the lobby can deliver a page to `name`: the name as
+/// the public lobby this player visits lists it (case-insensitive, `true`),
+/// else as the current channel does. A roommate in both visits too and sees
+/// the lobby page. `None` when neither lists it, and in a match.
+pub(super) fn page_target<'a>(visit: &'a super::WolVisit, name: &str) -> Option<(&'a str, bool)> {
+    let lobby = visit.lobby().filter(|_| !visit.in_game)?;
+    let find = |members: &'a [WolMember]| {
+        members
+            .iter()
+            .find(|member| member.name.eq_ignore_ascii_case(name))
+            .map(|member| member.name.as_str())
+    };
+    let visited = lobby.visit.as_ref().and_then(|other| find(&other.members));
+    visited.map(|name| (name, true)).or_else(|| {
+        lobby.current.as_ref()?;
+        find(&lobby.members).map(|name| (name, false))
+    })
+}
+
 /// The lobby let this player into the public lobby as a visitor: its page
 /// shows over the hidden room, with Back to Room. A repeat answer lists the
 /// lobby again; one this game no longer waits for ends the visit.
@@ -5123,7 +5142,6 @@ mod tests {
         guest.raw_slot_index = Some(1);
         launch.humans.push(guest);
         launch.local_player_index = 1;
-        launch.rebuild_house_roster();
         let mut vacancies =
             [NetworkVacancy::Closed; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT];
         vacancies[2] = NetworkVacancy::Open;
@@ -5289,6 +5307,26 @@ mod tests {
     fn game_channel_users_keep_the_listed_order() {
         assert_eq!(names(&listed_runner(0)), ["Host", "Zed", "Mike"]);
         assert_eq!(names(&listed_runner(GAME_CHANNEL)), ["Host", "Mike", "Zed"]);
+    }
+
+    /// VERA online: a page goes to the player the visited lobby, else the
+    /// channel, lists, under the listed name, and nowhere in a match.
+    #[test]
+    fn a_page_targets_only_a_listed_player_outside_a_match() {
+        let mut visit = crate::app::shell_wol::WolVisit::open(false);
+        let mut lobby = listed_runner(GAME_CHANNEL);
+        lobby.visit = Some(LobbyVisit {
+            channel: WolChannel::default(),
+            members: vec![user("Bob", 0), user("Zed", 0)],
+        });
+        visit.lobby = Some(lobby);
+        assert_eq!(page_target(&visit, "mike"), Some(("Mike", false)));
+        assert_eq!(page_target(&visit, "BOB"), Some(("Bob", true)));
+        // A roommate who visits too reads the lobby page.
+        assert_eq!(page_target(&visit, "zed"), Some(("Zed", true)));
+        assert_eq!(page_target(&visit, "Ann"), None);
+        visit.in_game = true;
+        assert_eq!(page_target(&visit, "Mike"), None);
     }
 
     /// A game channel's joiner goes before the first user who weighs less

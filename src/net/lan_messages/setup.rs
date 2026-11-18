@@ -1,5 +1,5 @@
-//! LAN setup payloads used by `Build_Options_String` (5DBB60), roster
-//! publisher5DEAC7, options publisher5E3720 and the5DC350 GO handshake.
+//! LAN setup payloads used by `Build_Options_String` (5DBB60), options
+//! publisher5E3720 and the5DC350 GO handshake.
 //!
 //! This module owns formatting only. The app applies the text with the shared
 //! CRT token readers and owns membership, map verification and launch state.
@@ -9,7 +9,6 @@ use crate::util::native_string::narrow_utf16_c_string;
 
 const BODY_OFFSET: usize = 0x2f;
 const OPTIONS_CAPACITY: usize = 400;
-const ROSTER_CAPACITY: usize = 204;
 
 pub const OPEN: &str = "@Open@";
 pub const CLOSED: &str = "@Closed@";
@@ -27,64 +26,6 @@ pub struct LanOptionsFields<'a> {
 }
 
 impl LanMessage {
-    /// 5DEAC7..5DEB49 and5E8DC0 append every row and a trailing wide comma.
-    pub fn roster(sender: &str, slots: &[&str]) -> Result<Self, LanMessageError> {
-        let mut units = Vec::new();
-        for name in slots {
-            units.extend(name.encode_utf16().take_while(|unit| *unit != 0));
-            units.push(u16::from(b','));
-        }
-        if units.len() >= ROSTER_CAPACITY {
-            return Err(LanMessageError::TextTooLong {
-                field: "roster UTF-16",
-                actual: units.len(),
-                maximum: ROSTER_CAPACITY - 1,
-            });
-        }
-        let mut message = Self::with_name(LanMessageKind::Roster, sender)?;
-        for (index, unit) in units.into_iter().enumerate() {
-            let offset = BODY_OFFSET + index * 2;
-            message.bytes[offset..offset + 2].copy_from_slice(&unit.to_le_bytes());
-        }
-        Ok(message)
-    }
-
-    /// Raw UTF-16 names preserve code units; 5E8EA0 uses wcstok and skips
-    /// empty comma-delimited tokens. The message itself retains all padding.
-    pub fn roster_units(&self) -> Option<Vec<Vec<u16>>> {
-        if self.kind() != LanMessageKind::Roster {
-            return None;
-        }
-        let mut names = Vec::new();
-        let mut name = Vec::new();
-        for pair in self.bytes[BODY_OFFSET..].chunks_exact(2) {
-            let unit = u16::from_le_bytes([pair[0], pair[1]]);
-            if unit == 0 {
-                break;
-            }
-            if unit == u16::from(b',') {
-                if !name.is_empty() {
-                    names.push(std::mem::take(&mut name));
-                }
-            } else {
-                name.push(unit);
-            }
-        }
-        if !name.is_empty() {
-            names.push(name);
-        }
-        Some(names)
-    }
-
-    pub fn roster_names(&self) -> Option<Vec<String>> {
-        self.roster_units().map(|names| {
-            names
-                .iter()
-                .map(|name| String::from_utf16_lossy(name))
-                .collect()
-        })
-    }
-
     /// 5E3720 copies an already-formatted narrow string. Packed description
     /// bytes are allowed; converting this payload through UTF-8 loses them.
     pub fn options(

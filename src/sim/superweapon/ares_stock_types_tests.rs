@@ -814,7 +814,7 @@ fn ares_american_paradrop_sends_its_vehicles_in_one_plane() {
         panic!("one plane: {}", planes.len());
     };
     let cargo: Vec<_> = plane
-        .passenger_role
+        .passenger_role()
         .cargo()
         .unwrap()
         .passengers()

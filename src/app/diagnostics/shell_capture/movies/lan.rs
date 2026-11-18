@@ -721,7 +721,6 @@ impl LanCapture {
             .context("native allies")?;
         launch.options.mcv_redeploy = values["mcv_redeploy"].as_bool().context("native MCV")?;
         launch.options.crates = values["crates"].as_bool().context("native crates")?;
-        launch.rebuild_house_roster();
         Ok(launch)
     }
     fn publish_setup(&self, state: &mut AppState, launch: SkirmishLaunchSession) -> Result<()> {
@@ -1581,12 +1580,12 @@ impl LanCapture {
                         let incoming = "[ControlledPeer] Hello back"
                             .encode_utf16()
                             .collect::<Vec<_>>();
-                        lobby::service_event(
+                        lobby::append_chat(
                             state,
-                            LanServiceEvent::Chat(LanChatLine {
+                            LanChatLine {
                                 text: incoming.clone(),
                                 color: 0x0000_F0F0,
-                            }),
+                            },
                         );
                         ensure!(
                             state

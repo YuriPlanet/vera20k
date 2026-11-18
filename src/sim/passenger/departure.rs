@@ -65,10 +65,7 @@ pub fn depart_cargo_head(
         .entities
         .get_mut(transport_id)
         .ok_or(DepartureFailure::NoCargo)?;
-    let cargo = transport
-        .passenger_role
-        .cargo_mut()
-        .ok_or(DepartureFailure::NoCargo)?;
+    let cargo = transport.cargo_mut().ok_or(DepartureFailure::NoCargo)?;
     let removed = cargo.unload_first();
     // FUN_004DE710's empty-hold weapon reset occurs before placement for these
     // callers. Paradrop does not call RemoveGunner.
@@ -85,7 +82,7 @@ pub fn depart_cargo_head(
     if route == DepartureRoute::Hospital
         && let Some(passenger) = sim.substrate.entities.get_mut(passenger_id)
     {
-        passenger.passenger_role.clear_carrier_relation();
+        passenger.clear_carrier_relation();
     }
     // A failed Unlimbo re-attaches the passenger with `+0x82` untouched
     // (CargoClass::AddPassenger 0x004733A0 does not write it); only a
@@ -95,7 +92,7 @@ pub fn depart_cargo_head(
         .substrate
         .entities
         .get(passenger_id)
-        .and_then(|passenger| passenger.passenger_role.carrier_link());
+        .and_then(|passenger| passenger.passenger_role().carrier_link());
     let link = CarrierLink {
         transport_id,
         open_topped: prior.is_some_and(|link| link.open_topped),
@@ -155,7 +152,7 @@ fn restore_departure(
                     if matches!(failure, DepartureFailure::ParachuteReveal(_)) {
                         passenger.finish_fall();
                     }
-                    passenger.passenger_role.set_carrier_link(link);
+                    passenger.set_carrier_link(link);
                 }
             }
             DepartureFailure::NoCargo | DepartureFailure::GroundReveal(_) => {
@@ -179,7 +176,7 @@ fn restore_departure(
                 "invalid ground departure phase"
             );
             if let Some(passenger) = sim.substrate.entities.get_mut(passenger_id) {
-                passenger.passenger_role.set_carrier_link(link);
+                passenger.set_carrier_link(link);
             }
         }
     }
@@ -262,10 +259,10 @@ pub fn reveal_unloaded_passenger(
 ) -> Result<(), DepartureFailure> {
     if let Some(passenger) = sim.substrate.entities.get_mut(passenger_id) {
         debug_assert_eq!(
-            passenger.passenger_role.inside_transport_id(),
+            passenger.passenger_role().inside_transport_id(),
             Some(transport_id)
         );
-        passenger.passenger_role.clear_carrier_relation();
+        passenger.clear_carrier_relation();
     }
     let outcome = sim.try_reveal_entity_with_context(
         passenger_id,

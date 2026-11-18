@@ -213,7 +213,11 @@ fn save_restore(runtime: &mut SimRuntime) {
     restored.restore_after_snapshot_load().unwrap();
     restored.rebuild_caches_after_load(terrain, terrain_speed_config, rules);
     restored
-        .restore_map_authority_after_snapshot_load(rules, &runtime.resources.overlay_registry, None)
+        .restore_map_authority_after_snapshot_load(
+            rules,
+            runtime.resources.rules.overlay_registry(),
+            None,
+        )
         .unwrap();
     restored.resolve_type_handles(rules);
     // Native in-scenario load resets only Scenario RNG to Seed0; the shared
@@ -505,7 +509,7 @@ fn high_explosive_revenge_runs_countdown_lab_entry_and_nukes_through_normal_poll
         })
         .expect("Lab A is an authored CALAB with its Entered A Tag");
     let rules = &scenario.runtime.resources.rules;
-    let overlays = &scenario.runtime.resources.overlay_registry;
+    let overlays = scenario.runtime.resources.rules.overlay_registry();
     let lab_tag_index = {
         let sim = &mut scenario.runtime.simulation;
         let lab_id = sim

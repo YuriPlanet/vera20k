@@ -1734,9 +1734,8 @@ mod tests {
             );
             admit_existing(&mut sim, shot);
             let mut runtime = SimRuntime::from_simulation(sim);
-            runtime.resources_mut().rules = RuleSet::from_ini(&ini).unwrap();
-            runtime.resources_mut().overlay_registry =
-                crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, Some(&art));
+            runtime.resources_mut().rules =
+                RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
             let _ = runtime
                 .advance_frame(
                     &[],
@@ -1786,7 +1785,7 @@ mod tests {
             "[General]\nVeteranRatio=3.0\n[AudioVisual]\nGravity=6\n[VehicleTypes]\n0=TEST\n[TEST]\nStrength=100\n[Warheads]\n0=WALLWH\n[WALLWH]\nWall=yes\nCellSpread=0\nPercentAtMax=1\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n[OverlayTypes]\n0=WALL\n[WALL]\nWall=yes\nStrength=1\n",
         );
         let art = IniFile::from_str("[WALL]\nDamageLevels=4\n");
-        let make_rules = || RuleSet::from_ini(&ini).unwrap();
+        let make_rules = || RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
         for dropping in [false, true] {
             let mut sim = Simulation::new();
             install_native_size_terrain(&mut sim, 16, 16);
@@ -1828,8 +1827,6 @@ mod tests {
             sim.admit_projectile(id, shot);
             let mut runtime = SimRuntime::from_simulation(sim);
             runtime.resources_mut().rules = make_rules();
-            runtime.resources_mut().overlay_registry =
-                crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, Some(&art));
             let _ = runtime
                 .advance_frame(
                     &[],
@@ -1907,14 +1904,12 @@ mod tests {
             restored
                 .restore_map_authority_after_snapshot_load(
                     &make_rules(),
-                    &runtime.resources.overlay_registry,
+                    runtime.resources.rules.overlay_registry(),
                     None,
                 )
                 .unwrap();
             let mut resumed = SimRuntime::from_simulation(restored);
             resumed.resources_mut().rules = make_rules();
-            resumed.resources_mut().overlay_registry =
-                crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, Some(&art));
             let _ = runtime
                 .advance_frame(
                     &[],
@@ -2271,7 +2266,7 @@ mod tests {
             restored
                 .restore_map_authority_after_snapshot_load(
                     &make_rules(),
-                    &runtime.resources.overlay_registry,
+                    runtime.resources.rules.overlay_registry(),
                     None,
                 )
                 .unwrap();

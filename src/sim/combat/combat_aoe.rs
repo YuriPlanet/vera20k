@@ -4367,8 +4367,9 @@ mod tests {
                     )));
                 }
                 if case["open_transport"] == true {
-                    victim.passenger_role =
-                        crate::sim::passenger::PassengerRole::inside_for_test(1, true);
+                    victim.set_passenger_role_for_test(
+                        crate::sim::passenger::PassengerRole::inside_for_test(1, true),
+                    );
                 }
             }
             entities.insert(victim);

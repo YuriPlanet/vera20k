@@ -389,7 +389,7 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
             .substrate
             .entities
             .get(self.id)
-            .is_some_and(|entity| entity.passenger_role.passenger_count() != 0)
+            .is_some_and(|entity| entity.passenger_role().passenger_count() != 0)
     }
 
     fn pending_entry(&mut self) -> bool {

@@ -4,10 +4,11 @@
 //! opens, and a count it could not renew is dropped. gamemd's login page
 //! shows no such counts.
 
+use std::io::Read;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
-use anyhow::Result;
+use anyhow::{Context, Result, ensure};
 
 use crate::app::AppState;
 use crate::util::time::{Duration, Instant};
@@ -60,8 +61,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     let info = &mut state.frontend.login_info;
     // No worker threads (the browser build): no counts.
     if std::mem::take(&mut info.wanted) && info.read.is_none() {
-        info.read =
-            crate::app::map_library::spawn("lobby-stats", Arc::default(), |_| fetch::stats());
+        info.read = crate::app::worker::spawn("lobby-stats", Arc::default(), |_| stats());
     }
     let answer = match info.read.as_ref()?.try_recv() {
         Ok(answer) => answer,
@@ -76,61 +76,23 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     None
 }
 
-#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-mod fetch {
-    //! The page's HTTPS read, on a worker thread only.
-
-    use std::io::Read;
-    use std::time::Duration;
-
-    use anyhow::{Context, Result, ensure};
-
-    use super::LobbyStats;
-
-    const USER_AGENT: &str = concat!("VERA20k/", env!("CARGO_PKG_VERSION"), " login");
+/// `GET /v1/stats`, on a worker thread.
+fn stats() -> Result<LobbyStats> {
     /// The answer is well under a kilobyte.
     const MAX_BYTES: u64 = 64 * 1024;
-
-    pub(super) fn stats() -> Result<LobbyStats> {
-        let base = crate::app::shell_wol::lobby_base_url()?;
-        let url = format!("{}/v1/stats", base.trim_end_matches('/'));
-        let agent: ureq::Agent = ureq::Agent::config_builder()
-            .https_only(true)
-            .max_redirects(0)
-            .http_status_as_error(false)
-            .timeout_connect(Some(Duration::from_secs(10)))
-            .timeout_recv_response(Some(Duration::from_secs(15)))
-            .timeout_per_read(Some(Duration::from_secs(15)))
-            .build()
-            .into();
-        let mut response = agent
-            .get(&url)
-            .header("User-Agent", USER_AGENT)
-            .call()
-            .with_context(|| format!("cannot reach {url}"))?;
-        let status = response.status().as_u16();
-        ensure!(status == 200, "{url} answered {status}");
-        let mut bytes = Vec::new();
-        response
-            .body_mut()
-            .as_reader()
-            .take(MAX_BYTES + 1)
-            .read_to_end(&mut bytes)
-            .with_context(|| format!("cannot read {url}"))?;
-        ensure!(bytes.len() as u64 <= MAX_BYTES, "{url} answered too much");
-        Ok(serde_json::from_slice(&bytes)?)
-    }
-}
-
-#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-mod fetch {
-    use anyhow::{Result, bail};
-
-    use super::LobbyStats;
-
-    pub(super) fn stats() -> Result<LobbyStats> {
-        bail!("the browser build reads no lobby counts")
-    }
+    let answer = super::lobby_get("/v1/stats", None)?;
+    ensure!(answer.status == 200, "/v1/stats answered {}", answer.status);
+    let mut bytes = Vec::new();
+    answer
+        .body
+        .take(MAX_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .context("cannot read /v1/stats")?;
+    ensure!(
+        bytes.len() as u64 <= MAX_BYTES,
+        "/v1/stats answered too much"
+    );
+    Ok(serde_json::from_slice(&bytes)?)
 }
 
 #[cfg(all(test, tests_app))]

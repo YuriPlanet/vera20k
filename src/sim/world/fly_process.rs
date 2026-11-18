@@ -848,7 +848,7 @@ impl Simulation {
             .substrate
             .entities
             .get_mut(id)
-            .and_then(|owner| owner.passenger_role.cargo_mut())
+            .and_then(|owner| owner.cargo_mut())
             .and_then(|cargo| cargo.unload_first())
         {
             if self.is_evacuation_civilian(passenger, rules) {
@@ -861,7 +861,7 @@ impl Simulation {
             // RemoveFirstPassenger leaves the passenger's own hold for its
             // teardown.
             if let Some(passenger) = self.substrate.entities.get_mut(passenger) {
-                passenger.passenger_role.clear_carrier_relation();
+                passenger.clear_carrier_relation();
             }
             self.uninit_with_context(passenger, context);
         }

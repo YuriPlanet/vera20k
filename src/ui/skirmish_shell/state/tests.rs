@@ -996,7 +996,7 @@ fn a_one_hundred_twenty_start_map_packs_every_offline_row() {
     let modes = stock_skirmish_modes();
     let session = launch_session(&shell, &maps, &modes, false).expect("session");
     assert_eq!(session.opponents.len(), 119);
-    assert_eq!(session.pre_fill_house_roster.created_house_count(), 122);
+    assert_eq!(session.pre_fill_house_roster().created_house_count(), 122);
 }
 
 /// SkirmishDialog's packing forces Fog of War off, Bridge Destruction on,
@@ -1241,7 +1241,7 @@ fn raw_pack_retains_sparse_ai_house_slots_before_compaction() {
     );
     assert_eq!(
         packed
-            .pre_fill_house_roster
+            .pre_fill_house_roster()
             .ai_slots()
             .iter()
             .map(|slot| (slot.slot_index, slot.valid))
@@ -1258,7 +1258,7 @@ fn raw_pack_retains_sparse_ai_house_slots_before_compaction() {
         ]
     );
     assert_eq!(packed.required_start_count(), 3);
-    assert_eq!(packed.pre_fill_house_roster.created_house_count(), 5);
+    assert_eq!(packed.pre_fill_house_roster().created_house_count(), 5);
 }
 
 #[test]

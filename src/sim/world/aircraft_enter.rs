@@ -274,7 +274,7 @@ impl EnterHost for WorldEnter<'_> {
             .substrate
             .entities
             .get_mut(self.id)
-            .and_then(|entity| entity.passenger_role.cargo_mut())
+            .and_then(|entity| entity.cargo_mut())
             .and_then(|hold| hold.unload_first())
         else {
             return false;

@@ -240,8 +240,11 @@ Status, then at most 32 entries packed.
 
 Synchronized pause is opt-in for every active match source. Ordering request5
 uses request ID0 to advertise support and query status; positive IDs carry an
-explicit desired state and expected epoch. Old clients and relays keep their
-existing behavior, and a mixed room cannot pause. Accepted transitions append
+explicit desired state and expected epoch. Each source advertises once its
+match has started, and the room can pause after every active source has. The
+relay counts the asking source before it answers, so a PauseStatus whose
+supported mask leaves the asker out means the room never pauses (a federated
+room, below), and the game stops asking. Accepted transitions append
 an authenticated canonical pause marker after the current head's frame end.
 That frame remains the barrier until an explicit resume appends its marker and
 displaces the paused wall time; buffered input retains its assigned frames.
@@ -419,9 +422,12 @@ bounds only a startup; a started room ends at its final frame, which pauses
 postpone, and is retired regardless 48 hours and 3 minutes after it was created.
 Once every source has departed, a
 300-second terminal replay grace precedes exact-file cleanup. For 24 hours after
-that cleanup, longer than any of its certificates lasts, a cleaned-up match
-answers Ready with `Inactive`, so a player returning later cannot start a new
-timeline under its ID; the marker lives in memory and a relay restart drops it. No reader
+that cleanup, or after a startup was cancelled before any Ready reached this
+relay, longer than any certificate signed by then lasts, the relay answers
+Ready for that match with `Inactive`, so a player returning
+later cannot start a new timeline under its ID. While the room remains, a
+federated relay also tells the others the startup is cancelled. The marker
+outlives the room and lives in memory; a relay restart drops it. No reader
 acknowledgement gates advancement or retention.
 The service checks deadlines every 6 ms even when no packets arrive. Its pass
 over every room starts a millisecond after the previous one ended, so no

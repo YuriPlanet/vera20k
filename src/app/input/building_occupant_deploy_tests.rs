@@ -3,7 +3,7 @@
 //! this does not execute a window message, physical key or native whole tick.
 
 use super::*;
-use crate::rules::{ini_parser::IniFile, overlay_types::OverlayTypeRegistry};
+use crate::rules::ini_parser::IniFile;
 use crate::sim::runtime::{SimResources, SimRuntime};
 use crate::sim::world::{FrameEffects, TickLane};
 
@@ -21,7 +21,6 @@ fn retail_occupant_runtime(seed: u64) -> Option<SimRuntime> {
     retail
         .rules
         .bind_effect_assets(&assets, theater.extension, "TEMPERATE");
-    let registry = OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
     let rules = retail.rules;
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, seed);
     *sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
@@ -49,7 +48,6 @@ fn retail_occupant_runtime(seed: u64) -> Option<SimRuntime> {
         simulation: sim,
         resources: SimResources {
             rules,
-            overlay_registry: registry,
             terrain_template,
         }
         .into(),
@@ -67,39 +65,15 @@ fn deploy_key_on_a_selected_loaded_bio_reactor_does_not_unload_absorber_cargo() 
     let owner = runtime.simulation.interner().get("Americans").unwrap();
     let reactor = runtime
         .simulation
-        .spawn_object_with_overlay_registry(
-            "YAPOWR",
-            "Americans",
-            16,
-            14,
-            0,
-            &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
-        )
+        .spawn_object_with_map_overlays("YAPOWR", "Americans", 16, 14, 0, &runtime.resources.rules)
         .unwrap();
     runtime
         .simulation
-        .spawn_object_with_overlay_registry(
-            "NAPOWR",
-            "Russians",
-            28,
-            28,
-            0,
-            &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
-        )
+        .spawn_object_with_map_overlays("NAPOWR", "Russians", 28, 28, 0, &runtime.resources.rules)
         .unwrap();
     let initiate = runtime
         .simulation
-        .spawn_object_with_overlay_registry(
-            "INIT",
-            "Americans",
-            12,
-            14,
-            0,
-            &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
-        )
+        .spawn_object_with_map_overlays("INIT", "Americans", 12, 14, 0, &runtime.resources.rules)
         .unwrap();
     assert!(runtime.apply_command_for_test(
         "Americans",
@@ -120,7 +94,7 @@ fn deploy_key_on_a_selected_loaded_bio_reactor_does_not_unload_absorber_cargo() 
             .entities()
             .get(initiate)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport_id()
             == Some(reactor)
         {
@@ -133,7 +107,7 @@ fn deploy_key_on_a_selected_loaded_bio_reactor_does_not_unload_absorber_cargo() 
             .entities()
             .get(initiate)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport_id(),
         Some(reactor)
     );
@@ -186,7 +160,7 @@ fn deploy_key_on_a_selected_loaded_bio_reactor_does_not_unload_absorber_cargo() 
             .entities()
             .get(reactor)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .passengers(),
@@ -198,7 +172,7 @@ fn deploy_key_on_a_selected_loaded_bio_reactor_does_not_unload_absorber_cargo() 
             .entities()
             .get(initiate)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport_id(),
         Some(reactor)
     );
@@ -220,7 +194,7 @@ fn deploy_key_on_a_selected_loaded_bio_reactor_does_not_unload_absorber_cargo() 
     let clicked = crate::app::input::context_order::self_click_command(
         &runtime.simulation,
         &runtime.resources.rules,
-        Some(&runtime.resources.overlay_registry),
+        Some(runtime.resources.rules.overlay_registry()),
         owner,
         &[reactor],
         Some(&hover),
@@ -245,7 +219,7 @@ fn deploy_key_on_a_selected_loaded_bio_reactor_does_not_unload_absorber_cargo() 
             .entities()
             .get(reactor)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .is_empty()
@@ -259,7 +233,7 @@ fn deploy_key_on_a_selected_loaded_bio_reactor_does_not_unload_absorber_cargo() 
             .entities()
             .get(reactor)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .is_empty()
@@ -270,7 +244,7 @@ fn deploy_key_on_a_selected_loaded_bio_reactor_does_not_unload_absorber_cargo() 
             .entities()
             .get(initiate)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport_id(),
         None
     );
@@ -350,38 +324,28 @@ fn retail_garrison_deploy_key_clears_target_before_releasing_real_occupants() {
             .register(neutral_house);
         let house = runtime
             .simulation
-            .spawn_object_with_overlay_registry(
+            .spawn_object_with_map_overlays(
                 "CAHSE01",
                 "Neutral",
                 16,
                 14,
                 0,
                 &runtime.resources.rules,
-                &runtime.resources.overlay_registry,
             )
             .expect("ordinary stock civilian house");
         let gi = runtime
             .simulation
-            .spawn_object_with_overlay_registry(
-                "E1",
-                "Americans",
-                12,
-                14,
-                0,
-                &runtime.resources.rules,
-                &runtime.resources.overlay_registry,
-            )
+            .spawn_object_with_map_overlays("E1", "Americans", 12, 14, 0, &runtime.resources.rules)
             .expect("real GI with its Walk locomotor");
         runtime
             .simulation
-            .spawn_object_with_overlay_registry(
+            .spawn_object_with_map_overlays(
                 "NAPOWR",
                 "Russians",
                 28,
                 28,
                 0,
                 &runtime.resources.rules,
-                &runtime.resources.overlay_registry,
             )
             .unwrap();
         assert!(
@@ -411,7 +375,7 @@ fn retail_garrison_deploy_key_clears_target_before_releasing_real_occupants() {
         for _ in 0..600 {
             step(&mut runtime);
             let actor = runtime.simulation.entities().get(gi).unwrap();
-            if actor.passenger_role.inside_transport_id() == Some(house)
+            if actor.passenger_role().inside_transport_id() == Some(house)
                 && runtime.simulation.entities().get(house).unwrap().owner() == owner
             {
                 break;
@@ -420,7 +384,7 @@ fn retail_garrison_deploy_key_clears_target_before_releasing_real_occupants() {
         let actor = runtime.simulation.entities().get(gi).unwrap();
         let building = runtime.simulation.entities().get(house).unwrap();
         assert_eq!(
-            actor.passenger_role.inside_transport_id(),
+            actor.passenger_role().inside_transport_id(),
             Some(house),
             "production garrison Capture reaches the actual passenger owner, fired={fired_before_d}"
         );
@@ -429,7 +393,7 @@ fn retail_garrison_deploy_key_clears_target_before_releasing_real_occupants() {
             owner,
             "real entry captures the civilian house"
         );
-        assert_eq!(building.passenger_role.occupants().ids(), [gi]);
+        assert_eq!(building.passenger_role().occupants().ids(), [gi]);
         assert!(
             runtime
                 .simulation
@@ -443,14 +407,13 @@ fn retail_garrison_deploy_key_clears_target_before_releasing_real_occupants() {
         if fired_before_d {
             let enemy = runtime
                 .simulation
-                .spawn_object_with_overlay_registry(
+                .spawn_object_with_map_overlays(
                     "AMCV",
                     "Russians",
                     20,
                     15,
                     0,
                     &runtime.resources.rules,
-                    &runtime.resources.overlay_registry,
                 )
                 .expect("stock unarmed enemy within the garrison's range");
             let health = runtime
@@ -498,7 +461,7 @@ fn retail_garrison_deploy_key_clears_target_before_releasing_real_occupants() {
                     .entities()
                     .get(house)
                     .unwrap()
-                    .passenger_role
+                    .passenger_role()
                     .occupants()
                     .ids(),
                 [gi]
@@ -562,7 +525,7 @@ fn retail_garrison_deploy_key_clears_target_before_releasing_real_occupants() {
                     Some(expected["queued_mission"].as_i64().unwrap() as i32)
                 );
                 assert_eq!(
-                    building.passenger_role.occupants().count(),
+                    building.passenger_role().occupants().count(),
                     expected["occupants"].as_i64().unwrap() as i32
                 );
                 assert_eq!(
@@ -588,7 +551,7 @@ fn retail_garrison_deploy_key_clears_target_before_releasing_real_occupants() {
                 .entities()
                 .get(gi)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .is_inside_transport()
             {
                 break;
@@ -597,7 +560,7 @@ fn retail_garrison_deploy_key_clears_target_before_releasing_real_occupants() {
         }
         let actor = runtime.simulation.entities().get(gi).unwrap();
         assert!(
-            !actor.passenger_role.is_inside_transport(),
+            !actor.passenger_role().is_inside_transport(),
             "actual Unload releases GI, fired={fired_before_d}"
         );
         assert!(!actor.lifecycle.in_limbo());
@@ -608,7 +571,7 @@ fn retail_garrison_deploy_key_clears_target_before_releasing_real_occupants() {
                 .entities()
                 .get(house)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .occupants()
                 .is_empty()
         );

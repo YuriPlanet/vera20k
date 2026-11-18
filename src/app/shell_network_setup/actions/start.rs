@@ -362,8 +362,9 @@ pub(crate) fn begin_external_lan_go(state: &mut AppState) -> anyhow::Result<()> 
 /// and players sharing a House count once. VERA's own room (`watch_ai`)
 /// also starts with everyone watching while two or more AI play.
 fn has_minimum_players(launch: &SkirmishLaunchSession, watch_ai: bool) -> bool {
-    let houses = (0..launch.humans.len())
-        .filter(|&index| !launch.humans[index].is_observer() && launch.house_leader(index) == index)
+    let houses = launch
+        .humans_with_house_leaders()
+        .filter(|(index, human, leader)| index == leader && !human.is_observer())
         .count();
     (houses >= 1 || watch_ai) && houses + launch.opponents.len() >= 2
 }

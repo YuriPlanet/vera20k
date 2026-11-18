@@ -2632,7 +2632,6 @@ fn authored_retail_upgrade_lends_its_weapon_and_fire_offset() {
             .advance_app_frame(
                 &[],
                 &rules,
-                None,
                 33,
                 crate::sim::world::TickLane::Ordinary,
                 FrameEffects::default(),
@@ -2749,7 +2748,6 @@ fn authored_upgrade_attack_uses_fixed_slots_and_live_target() {
                 .advance_app_frame(
                     &[],
                     &rules,
-                    None,
                     33,
                     crate::sim::world::TickLane::Ordinary,
                     FrameEffects::default(),
@@ -2885,7 +2883,6 @@ fn authored_upgrade_turret_waits_for_the_host_to_aim_before_firing() {
             .advance_app_frame(
                 &[],
                 &rules,
-                None,
                 33,
                 crate::sim::world::TickLane::Ordinary,
                 FrameEffects::default(),

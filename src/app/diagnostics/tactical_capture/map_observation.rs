@@ -2253,7 +2253,7 @@ fn cloak_runtime_observation(
 fn temporal_observation(entity: &crate::sim::game_entity::GameEntity) -> Value {
     // Independent immutable owner queries: diagnostics neither transfer a
     // link nor infer a carrier relation from a cargo entry (or vice versa).
-    let cargo = entity.passenger_role.cargo().map(|cargo| {
+    let cargo = entity.passenger_role().cargo().map(|cargo| {
         let passengers: Vec<_> = cargo
             .passengers()
             .iter()
@@ -2262,7 +2262,7 @@ fn temporal_observation(entity: &crate::sim::game_entity::GameEntity) -> Value {
             .collect();
         json!({"count": cargo.count(), "passengers": passengers})
     });
-    let inside = entity.passenger_role.inside_transport().map(
+    let inside = entity.passenger_role().inside_transport().map(
         |(transport, open_topped)| json!({"transport": transport, "open_topped": open_topped}),
     );
     json!({"has_link": entity.temporal.has_link(),
@@ -5090,8 +5090,8 @@ mod tests {
     #[test]
     fn ordinary_capture_admission_uses_canonical_color_and_source_roster() {
         let mut profile = example();
+        profile.launch.use_live_house_rows();
         profile.launch.local_slot_mut().color_index = 6;
-        profile.launch.rebuild_house_roster();
         profile.validate().unwrap();
         let baseline = profile;
         let mut profile = baseline.clone();
@@ -5099,17 +5099,14 @@ mod tests {
         assert!(profile.validate().is_err());
         let mut profile = baseline.clone();
         profile.launch.humans[0].role = crate::skirmish_launch::LaunchHumanRole::Observer;
-        profile.launch.rebuild_house_roster();
         assert!(profile.validate().is_err());
         let mut profile = baseline.clone();
         profile.launch.opponents[0].raw_slot_index = 3;
-        profile.launch.rebuild_house_roster();
         assert!(profile.validate().is_err());
         let mut profile = baseline;
         let mut remote = profile.launch.humans[0].clone();
         remote.raw_slot_index = Some(2);
         profile.launch.humans.push(remote);
-        profile.launch.rebuild_house_roster();
         assert!(profile.validate().is_err());
     }
 
@@ -5312,7 +5309,7 @@ mod tests {
             .entities_mut_for_test()
             .get_mut(fv)
             .unwrap()
-            .passenger_role
+            .passenger_role_mut_for_test()
             .cargo_mut()
             .unwrap();
         cargo.board_forced_chain(&[(cleg, 1.0)]);

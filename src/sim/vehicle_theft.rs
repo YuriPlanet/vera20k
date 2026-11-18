@@ -433,7 +433,7 @@ impl Simulation {
         let Some(ty) = self.entity_object_type(actor, rules) else {
             return false;
         };
-        let cargo = actor.passenger_role.cargo();
+        let cargo = actor.passenger_role().cargo();
         match ty.driver_rules().operator() {
             OperatorRequirement::None => true,
             OperatorRequirement::Any => cargo.is_some_and(|cargo| !cargo.passengers().is_empty()),

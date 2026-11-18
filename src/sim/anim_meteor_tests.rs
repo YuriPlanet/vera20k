@@ -240,7 +240,7 @@ fn meteor_landing_runs_children_without_expire_and_uses_last_water_splash() {
 
 #[test]
 fn retail_meteor_profiles_keep_missing_stock_images_explicit() {
-    let Some((rules_ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+    let Some((_, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
         return;
     };
     let Some(mut fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
@@ -298,8 +298,8 @@ fn retail_meteor_profiles_keep_missing_stock_images_explicit() {
     // The bounded stock Battle install lacks these SHPs. Native loading keeps
     // null images; no substitute image or invented positive frame count is used.
     // Numeric/flight tests supply their own formed image profiles and bounds.
-    let registry = OverlayTypeRegistry::from_ini(&rules_ini, Some(&art));
-    let roots = crate::map::resolved_terrain::scheduler_anim_roots(&fixture.rules, &registry, &[]);
+    let registry = fixture.rules.overlay_registry();
+    let roots = crate::map::resolved_terrain::scheduler_anim_roots(&fixture.rules, &[]);
     for name in ["CRYSTAL1", "CRYSTAL2", "CRYSTAL3", "CRYSTAL4"] {
         let cfg = fixture.rules.art().anim_runtime_config(name).unwrap();
         if let Some(spawn) = cfg.tiberium_spawn_type.as_deref() {
@@ -424,9 +424,9 @@ fn strict_and_tolerant_spawn_closures_bind_cycles_with_explicit_custom_images() 
     let ini = IniFile::from_str(
         "[Animations]\n0=CHILD\n[OverlayTypes]\n0=TIB01\n[TIB01]\nTiberium=yes\nCellAnim=CHILD\n",
     );
-    let registry = OverlayTypeRegistry::from_ini(&ini, Some(&art));
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     assert!(
-        crate::map::resolved_terrain::scheduler_anim_roots(&rules, &registry, &[])
+        crate::map::resolved_terrain::scheduler_anim_roots(&rules, &[])
             .contains(&"CHILD".to_string())
     );
 }

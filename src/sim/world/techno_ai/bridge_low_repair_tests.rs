@@ -224,7 +224,7 @@ fn cross_repaired_road(scene: &mut HeadlessScenario) {
             55,
             0,
             &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .expect("ordinary FV on the north road");
     let command = CommandEnvelope::new(
@@ -356,7 +356,7 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
             59,
             64,
             &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .expect("ordinary AEGIS placement in the untouched water lane");
     let ship_type = runtime.simulation.entities().get(ship).unwrap().type_ref();

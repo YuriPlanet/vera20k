@@ -71,7 +71,6 @@ fn step(sim: &mut Simulation, rules: &RuleSet) -> crate::sim::world::SimFrameOut
     sim.advance_app_frame(
         &commands,
         rules,
-        None,
         33,
         crate::sim::world::TickLane::Ordinary,
         Default::default(),
@@ -148,7 +147,7 @@ fn ordinary_and_planned_hospital_clicks_enter_heal_and_exit_after_save_load() {
                 .entities()
                 .get(actor)
                 .expect("treatment must not consume an engineer");
-            if !entered && patient.passenger_role.inside_transport_id() == Some(hover.stable_id) {
+            if !entered && patient.passenger_role().inside_transport_id() == Some(hover.stable_id) {
                 entered = true;
                 assert!(patient.in_limbo());
                 assert!(patient.has_live_contact_with(hover.stable_id));
@@ -166,7 +165,7 @@ fn ordinary_and_planned_hospital_clicks_enter_heal_and_exit_after_save_load() {
                 assert!(sim.rebuild_dynamic_navigation(&rules));
             } else if entered
                 && !patient.in_limbo()
-                && patient.passenger_role.inside_transport_id().is_none()
+                && patient.passenger_role().inside_transport_id().is_none()
             {
                 assert_eq!(patient.health.current(), 75);
                 left = true;
@@ -186,7 +185,7 @@ fn ordinary_and_planned_hospital_clicks_enter_heal_and_exit_after_save_load() {
             sim.entities()
                 .get(hover.stable_id)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .passenger_count(),
             0
         );
@@ -304,7 +303,7 @@ fn stopping_before_entry_does_not_grind_or_hide_the_engineer() {
                 !engineer.in_limbo(),
                 "hospital={hospital}, planning={planning}"
             );
-            assert!(engineer.passenger_role.inside_transport_id().is_none());
+            assert!(engineer.passenger_role().inside_transport_id().is_none());
         }
     }
 }

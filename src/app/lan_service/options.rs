@@ -11,8 +11,8 @@ use crate::app::match_runtime::session::{
     MatchSession, NetworkAiOptions, NetworkMapMetadata, NetworkRosterEntry, NetworkVacancy,
 };
 use crate::app::shell_network_setup::{HostOptions, NetworkSetupEvent};
+use crate::net::lan_messages::game_name_hash;
 use crate::net::lan_messages::setup::{self, LanGameOptions, LanOptionsAi, LanOptionsHuman};
-use crate::net::lan_messages::{LanMessage, game_name_hash};
 use crate::rules::ini_value::{crt_atoi, strtok};
 use crate::skirmish_launch::{
     AiDifficulty, LaunchCountry, LaunchStartPosition, LaunchTeam, NETWORK_PLAYER_SLOT_COUNT,
@@ -148,8 +148,7 @@ struct ExtendedOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     teams: Option<u8>,
     /// The room's join queue, beside `room`
-    /// ([`SkirmishLaunchOptions::queue`]). A guest whose game is older skips
-    /// it and shows no places.
+    /// ([`SkirmishLaunchOptions::queue`]).
     ///
     /// [`SkirmishLaunchOptions::queue`]: crate::skirmish_launch::SkirmishLaunchOptions::queue
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -258,16 +257,6 @@ fn queue_payload(
         service.setup_scope = Some(scope);
     }
     Ok(admitted)
-}
-
-pub(super) fn receive_options(
-    state: &mut AppState,
-    source: SocketAddrV4,
-    message: &LanMessage,
-) -> Result<()> {
-    validate_host(state, source, message)?;
-    super::reject_setup_compatibility(state, &crate::i18n::tr("VERA:LanHostNoAgreement"));
-    anyhow::bail!("unscoped legacy full setup is not a VERA admission")
 }
 
 fn receive_options_text(
@@ -511,25 +500,6 @@ pub(super) fn receive_extended(
     }
 }
 
-pub(super) fn receive_roster(
-    state: &mut AppState,
-    source: SocketAddrV4,
-    message: &LanMessage,
-) -> Result<()> {
-    validate_host(state, source, message)?;
-    anyhow::bail!("unscoped native roster is not a VERA admission")
-}
-
-fn validate_host(state: &AppState, source: SocketAddrV4, message: &LanMessage) -> Result<()> {
-    let host = state
-        .match_state
-        .lan_service
-        .as_ref()
-        .and_then(|service| service.admitted_host.as_ref())
-        .ok_or_else(|| anyhow!("no admitted LAN host"))?;
-    validate_host_endpoint(&state.match_state.session, host, source, &message.name())
-}
-
 fn validate_host_endpoint(
     session: &MatchSession,
     host: &(String, SocketAddrV4),
@@ -581,7 +551,7 @@ fn projected_options(
     let ai = std::array::from_fn(|row| {
         let raw = session
             .network_ai_options(row as u8)
-            .expect("eight setup rows");
+            .expect("admitted setup row");
         LanOptionsAi {
             difficulty: raw.difficulty,
             country: raw.country,
@@ -754,7 +724,9 @@ fn parse_options(
         if country == -1 {
             continue;
         }
-        let old = session.network_row_choices(row).expect("eight setup rows");
+        let old = session
+            .network_row_choices(row)
+            .expect("admitted setup row");
         let choices = decoded_choices(&old, country, color, start, team)?;
         opponents.push(SkirmishAiSlot {
             raw_slot_index: row,
@@ -770,7 +742,7 @@ fn parse_options(
     ensure!(fields.next().is_none(), "extra LAN AI fields");
     launch.ai_player_count = opponents.len() as i32;
     launch.opponents = opponents;
-    launch.rebuild_house_roster();
+    launch.use_live_house_rows();
     let vacancies = std::array::from_fn(|row| {
         session
             .network_vacancy(row as u8)
@@ -916,6 +888,7 @@ fn parsed_roster(
 mod tests {
     use super::*;
     use crate::app::match_runtime::session::{NetworkReturnContext, NetworkRowKind};
+    use crate::net::lan_messages::LanMessage;
     use crate::skirmish_launch::SkirmishLaunchSession;
     use std::net::Ipv4Addr;
 
@@ -946,7 +919,6 @@ mod tests {
         launch.local_player_index = usize::from(!host);
         launch.options.game_speed = 4;
         launch.options.starting_credits = 9000;
-        launch.rebuild_house_roster();
         let mut session = MatchSession::default();
         session.enter_network(NetworkReturnContext::LanLobby);
         session
@@ -1013,7 +985,6 @@ mod tests {
                 human
             })
             .collect();
-        launch.rebuild_house_roster();
         host.accept_network_setup(launch.clone(), true, None, false)
             .unwrap();
         host.select_network_map(launch.mode.clone(), "thirty.map".into(), 30)

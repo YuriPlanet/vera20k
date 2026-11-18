@@ -52,7 +52,7 @@ pub(crate) enum NetworkSetupEvent {
     },
     #[expect(
         dead_code,
-        reason = "the network transport, outside this change, delivers these packets"
+        reason = "neither transport carries C1 (0x005C2710); see PublishCooperativeAssignments"
     )]
     CooperativeAssignments(Vec<[[i32; 2]; 8]>),
     /// The host's `C0` campaign text (packet `0x17` at `+0x2F`).
@@ -66,9 +66,6 @@ pub(crate) enum NetworkSetupEvent {
     ControlledGoCompleted,
     /// Type13 from a participant in the host's current GO reply wait.
     GoAcknowledged {
-        source_index: usize,
-    },
-    GoMapRequested {
         source_index: usize,
     },
     MapTransferStarted,
@@ -99,11 +96,6 @@ pub(crate) enum NetworkSetupEvent {
     },
     HostLeft,
     Kicked,
-    #[expect(
-        dead_code,
-        reason = "the network transport, outside this change, delivers these packets"
-    )]
-    Chat(LanChatLine),
     /// WOL OnGameStart (`CChatEventSink+0x5C`, `0x7A7C80`) with the server's
     /// user list and the ping table `0xB7790C` the timing block reads.
     GameStarted {
@@ -177,7 +169,6 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                     | NetworkSetupEvent::GoCompleted
                     | NetworkSetupEvent::ControlledGoCompleted
                     | NetworkSetupEvent::GoAcknowledged { .. }
-                    | NetworkSetupEvent::GoMapRequested { .. }
                     | NetworkSetupEvent::MapTransferStarted
                     | NetworkSetupEvent::MapTransferProgress { .. }
                     | NetworkSetupEvent::MapTransferFinished { .. }
@@ -720,22 +711,6 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 phase.acknowledge(source_index);
             }
         }
-        NetworkSetupEvent::GoMapRequested { source_index } => {
-            let required = state
-                .frontend
-                .network_setup_protocol
-                .as_ref()
-                .and_then(|protocol| protocol.lan_go.as_ref())
-                .is_some_and(|phase| {
-                    matches!(phase, LanGoWait::HostReplies { pending, .. }
-                    if pending.contains(&source_index))
-                });
-            if required {
-                // Native5DD6F8 records a file requester. This bounded local-map
-                // path cannot serve that file; retain an explicit failure.
-                fail_go_handoff(state);
-            }
-        }
         NetworkSetupEvent::GoCompleted => {
             anyhow::ensure!(
                 state
@@ -936,7 +911,6 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 shell_transition::ShellExitThen::NetworkSetupBack(dialog),
             );
         }
-        NetworkSetupEvent::Chat(line) => crate::app::shell_lan::append_room_chat(state, line),
         NetworkSetupEvent::GameStarted { users, pings } => {
             super::wol::game_started(state, users, pings)?;
         }

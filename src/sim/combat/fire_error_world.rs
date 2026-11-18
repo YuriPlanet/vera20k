@@ -265,7 +265,7 @@ impl<'a> FireSubject<'a> {
         // (`0x006FC57D`, `0x006FC5C7`). A garrison occupant or cargo rider
         // stores no Transporter (vera20k#3838).
         let transport = firer
-            .passenger_role
+            .passenger_role()
             .transporter()
             .and_then(|id| self.world.substrate.entities.get(id));
         // U5 reads the `+0x418` tether latch (`radio::tether`) and
@@ -292,12 +292,12 @@ impl<'a> FireSubject<'a> {
             berserk: firer.berserk.is_active(),
             falling: firer.is_falling_down(),
             sinking: firer.sinking.is_active(),
-            in_open_transport: firer.passenger_role.in_open_transport(),
+            in_open_transport: firer.passenger_role().in_open_transport(),
             // The transport being the target (T9) is [`FirerPart::facts`]'s.
             transporter: match transport {
                 None => Transporter::None,
                 Some(transport) if transport.is_warped_out() => Transporter::WarpedOut,
-                Some(transport) if transport.passenger_role.transporter().is_some() => {
+                Some(transport) if transport.passenger_role().transporter().is_some() => {
                     Transporter::Nested
                 }
                 Some(_) => Transporter::Plain,
@@ -1048,7 +1048,7 @@ impl FireQuery for WorldQuery<'_, '_> {
     /// Building vt+0x408 (`0x004581F0`), the occupant count that
     /// `BuildingClass::GetFireError` (`0x00447F10`) reads.
     fn occupants(&mut self) -> i32 {
-        self.subject.firer.passenger_role.occupants().count()
+        self.subject.firer.passenger_role().occupants().count()
     }
 
     fn operational(&mut self) -> bool {

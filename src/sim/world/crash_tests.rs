@@ -1577,7 +1577,7 @@ fn jumpjet_fixture_with_art(balloon: bool, art: &str) -> (Simulation, RuleSet, u
                 z: 0,
             })
             .with_flight_for_test(flight);
-        entity.passenger_role = PassengerRole::transport(PassengerCargo::new(2, 0.0));
+        entity.set_passenger_role_for_test(PassengerRole::transport(PassengerCargo::new(2, 0.0)));
     }
     sim.add_entity_occupancy(1);
     // This held-aircraft midpoint follows native takeoff's tracker Add;
@@ -1601,12 +1601,12 @@ fn jumpjet_fixture_with_art(balloon: bool, art: &str) -> (Simulation, RuleSet, u
             .entities
             .get_mut(rider)
             .unwrap()
-            .passenger_role = PassengerRole::inside_for_test(1, false);
+            .set_passenger_role_for_test(PassengerRole::inside_for_test(1, false));
         sim.substrate
             .entities
             .get_mut(1)
             .unwrap()
-            .passenger_role
+            .passenger_role_mut_for_test()
             .cargo_mut()
             .unwrap()
             .board_forced_chain(&[(rider, 1.0)]);
@@ -1808,7 +1808,7 @@ fn a_shot_down_jumpjet_crashes_through_the_production_receiver() {
         .entities
         .get(1)
         .unwrap()
-        .passenger_role
+        .passenger_role()
         .cargo()
         .unwrap()
         .passengers()
@@ -1833,7 +1833,7 @@ fn a_shot_down_jumpjet_crashes_through_the_production_receiver() {
     );
     assert!(
         entity
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .passengers()
@@ -2478,12 +2478,12 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
                 .entities
                 .get_mut(rider)
                 .unwrap()
-                .passenger_role = PassengerRole::inside_for_test(nighthawk, false);
+                .set_passenger_role_for_test(PassengerRole::inside_for_test(nighthawk, false));
             sim.substrate
                 .entities
                 .get_mut(nighthawk)
                 .unwrap()
-                .passenger_role
+                .passenger_role_mut_for_test()
                 .cargo_mut()
                 .expect("the Nighthawk carries")
                 .board_forced_chain(&[(rider, 1.0)]);
@@ -2622,7 +2622,7 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
                     riders_killed_by_crash = Some(sim.houses[&russians].stats().units_killed());
                     assert!(
                         entity
-                            .passenger_role
+                            .passenger_role()
                             .cargo()
                             .is_some_and(|cargo| cargo.passengers().is_empty()),
                         "the riders died with the Nighthawk"

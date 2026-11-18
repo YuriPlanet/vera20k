@@ -48,7 +48,7 @@ pub(in crate::app) fn boarded_ifv(rules: &RuleSet, passenger_type: &str) -> (Sim
             .entities()
             .get(engineer)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .is_inside_transport()
         {
             break;
@@ -59,7 +59,7 @@ pub(in crate::app) fn boarded_ifv(rules: &RuleSet, passenger_type: &str) -> (Sim
         sim.entities()
             .get(engineer)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport_id()
             == Some(ifv)
     );

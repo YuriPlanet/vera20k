@@ -12,6 +12,8 @@ pub(crate) use cooperative::{
     CooperativeResume, chooser_rows as cooperative_chooser_rows, resume as resume_cooperative,
 };
 pub(crate) mod maps;
+#[cfg(all(test, tests_app))]
+mod network_build;
 mod service;
 pub(crate) use service::{
     HostOptions, NetworkSetupEvent, accept_network_map_source, accept_network_random_map_preview,
@@ -475,6 +477,18 @@ impl NetworkSetupProtocol {
         }
     }
 
+    /// A launcher's or a watch's setup (`external`): with no dialog it
+    /// publishes no options or advertisement and runs no ping timer, since a
+    /// launcher or the lobby agreed the room.
+    fn dialogless(dialog: SetupDialog) -> Self {
+        Self {
+            external: true,
+            ping_deadline: None,
+            requests: Vec::new(),
+            ..Self::new(dialog, false)
+        }
+    }
+
     /// No join is told for a moment: see `quiet_joins_until`.
     pub(crate) fn quiet_joins(&mut self) {
         self.quiet_joins_until = Some(Instant::now() + QUIET_JOINS);
@@ -683,8 +697,9 @@ pub(crate) fn accept_external_session(
     session.accept_network_setup(launch, host, None, false)
 }
 
-/// Install an external launch's setup without a dialog, its online start
-/// requests or pings: the launcher already agreed the room.
+/// Install an external launch's setup without a dialog
+/// (`NetworkSetupProtocol::dialogless`): the launcher already agreed the
+/// room.
 pub(crate) fn install_external_setup(
     state: &mut AppState,
     launch: SkirmishLaunchSession,
@@ -726,11 +741,7 @@ pub(crate) fn install_external_setup(
         .match_state
         .session
         .accept_external_network_map_source(loaded.source, effective)?;
-    let mut protocol = NetworkSetupProtocol::new(dialog(state), false);
-    protocol.external = true;
-    protocol.ping_deadline = None;
-    protocol.requests.clear();
-    state.frontend.network_setup_protocol = Some(protocol);
+    state.frontend.network_setup_protocol = Some(NetworkSetupProtocol::dialogless(dialog(state)));
     Ok(())
 }
 
@@ -767,15 +778,10 @@ pub(crate) fn install_watch_setup(
     let capacity = map_metadata.player_capacity;
     session.accept_network_host_setup(launch, vacancies, capacity, observer_row, false)?;
     session.accept_network_map_metadata(map_metadata, None, true)?;
-    let mut protocol = NetworkSetupProtocol::new(dialog(state), false);
-    protocol.external = true;
-    protocol.ping_deadline = None;
-    protocol.requests.clear();
-    state.frontend.network_setup_protocol = Some(protocol);
+    state.frontend.network_setup_protocol = Some(NetworkSetupProtocol::dialogless(dialog(state)));
     Ok(())
 }
 
-/// The setup dialog the admitted session shows: GameMode4 is WOL C2/C9.
 /// A white (0xFFFFFFFF) CSF line in the setup chat log: Start refusals and
 /// WOL chat notices.
 fn chat_notice(state: &mut AppState, key: &str, args: &[crate::assets::csf_file::CsfArg]) {
@@ -789,6 +795,7 @@ fn chat_notice(state: &mut AppState, key: &str, args: &[crate::assets::csf_file:
     );
 }
 
+/// The setup dialog the admitted session shows: GameMode4 is WOL C2/C9.
 pub(crate) fn dialog(state: &AppState) -> SetupDialog {
     let flavor = if state.match_state.session_mode() == SessionMode::Wol {
         SetupFlavor::Wol
@@ -944,22 +951,18 @@ impl App {
         let Some(mode) = mode else {
             return;
         };
-        let mut launch = SkirmishLaunchSession {
-            mode: crate::skirmish_launch::SkirmishLaunchMode::from_game_mode(&mode),
-            selected_map_file: None,
-            humans: vec![acceptance.local],
-            local_player_index: 0,
-            opponents: Vec::new(),
-            ai_player_count: 0,
-            pre_fill_house_roster:
-                crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(0),
-            options: state
+        let launch = SkirmishLaunchSession::from_rows(
+            crate::skirmish_launch::SkirmishLaunchMode::from_game_mode(&mode),
+            None,
+            vec![acceptance.local],
+            0,
+            Vec::new(),
+            state
                 .frontend
                 .skirmish_shell_state
                 .launch_options_base
                 .clone(),
-        };
-        launch.rebuild_house_roster();
+        );
         // The packet7 peer's identity belongs to the service envelope until
         // the original type3 roster admission; it is not a fabricated node.
         let dialog = setup_dialog(state, false, SetupFlavor::Lan);

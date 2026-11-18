@@ -49,22 +49,18 @@ impl App {
         let Some(mode) = state.frontend.skirmish_modes.first().cloned() else {
             return;
         };
-        let mut launch = SkirmishLaunchSession {
-            mode: crate::skirmish_launch::SkirmishLaunchMode::from_game_mode(&mode),
-            selected_map_file: None,
-            humans: vec![local],
-            local_player_index: 0,
-            opponents: Vec::new(),
-            ai_player_count: 0,
-            pre_fill_house_roster:
-                crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(0),
-            options: state
+        let launch = SkirmishLaunchSession::from_rows(
+            crate::skirmish_launch::SkirmishLaunchMode::from_game_mode(&mode),
+            None,
+            vec![local],
+            0,
+            Vec::new(),
+            state
                 .frontend
                 .skirmish_shell_state
                 .launch_options_base
                 .clone(),
-        };
-        launch.rebuild_house_roster();
+        );
         let dialog = super::setup_dialog(state, false, SetupFlavor::Wol);
         if let Err(error) = install_setup(
             state,

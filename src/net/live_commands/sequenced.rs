@@ -6,10 +6,10 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use vera20k_relay_protocol::{
-    CHECKSUM_INTERVAL, ClientLinkStats, ORDERING_BATCH_CAPACITY, OrderEntry, OrderError,
-    OrderEvent, OrderPace, OrderingCertificate, OrderingGap, PACE_INTERVAL_MS,
-    READY_REQUEST_INTERVAL_MS, REORDER_WINDOW, RESTORE_PULL_INTERVAL_MS, WATCH_MARK_MS,
-    paced_rates,
+    CHECKSUM_INTERVAL, ClientLinkStats, MAX_FEDERATED_RELAYS, MAX_FRAME_BATCHES, MAX_PEERS,
+    ORDERING_BATCH_CAPACITY, OrderEntry, OrderError, OrderEvent, OrderPace, OrderingCertificate,
+    OrderingGap, PACE_INTERVAL_MS, READY_REQUEST_INTERVAL_MS, REORDER_WINDOW,
+    RESTORE_PULL_INTERVAL_MS, WATCH_MARK_MS, paced_rates,
 };
 
 use super::{LiveCommandError, StartupAgreement, StartupError};
@@ -20,17 +20,20 @@ use crate::sim::command::{
     GAME_SPEED_OPCODE, LATENCY_FUDGE_OPCODE, MESSAGE_OPCODE, PROCESS_TIME_OPCODE,
     REMOVE_PLAYER_OPCODE, RESPONSE_TIME_OPCODE, TIMING_OPCODE,
 };
-use crate::sim::command_queue::{FRAMEINFO_EVENT_OPCODE, FrameInfo};
+use crate::sim::command_queue::{FRAMEINFO_EVENT_OPCODE, FrameInfo, OUT_LIST_CAPACITY};
 use crate::sim::world::{
     NetworkCommandQueues, NetworkInterruption, NetworkQueueContext, NetworkQueuePass,
 };
 use crate::util::time::Instant;
 
 const BUFFERED_FRAMES: usize = 64;
-const MAX_FRAME_RECORDS: usize = 4096;
+// The most records a relay's frame carries: each federated relay's batches,
+// each batch at most a whole OutList (`decode_batch`), and one leaving record
+// per source.
+const MAX_FRAME_RECORDS: usize =
+    MAX_FRAME_BATCHES * MAX_FEDERATED_RELAYS * OUT_LIST_CAPACITY + MAX_PEERS as usize;
 const SAMPLE_HISTORY: usize = 4096;
 const PAUSE_PROBE_INTERVAL_MS: i32 = 500;
-const PAUSE_COMPATIBILITY_PROBE_INTERVAL_MS: i32 = 5_000;
 const COMMAND_TRACE_HISTORY: usize = 256;
 // A relay record this build cannot read ends the match once it has held the
 // cursor, or before the start every Status, this long while the relay keeps
@@ -451,7 +454,7 @@ struct Watch {
 #[derive(Debug)]
 pub(super) struct SequencedSession {
     watch: Option<Watch>,
-    houses: [Option<i8>; 30],
+    houses: [Option<i8>; MAX_PEERS as usize],
     local_source: u8,
     agreement: [u8; 32],
     /// The certificate's rate, which the simulation keeps.
@@ -481,10 +484,11 @@ pub(super) struct SequencedSession {
     /// VERA: the current pause found this game catching up, and it has not
     /// reached the pause yet; see `take_caught_up_in_pause`.
     pause_found_behind: bool,
-    pause_relay_supported: bool,
     pause_supported_sources: u32,
     pause_active_sources: u32,
-    pause_probe_attempts: u8,
+    /// The relay will never pause this match: its players are on several
+    /// relays. This game stops asking.
+    pause_refused: bool,
     last_pause_control: Option<u32>,
     pause_request: Option<PauseRequest>,
     next_pause_request: u64,
@@ -495,7 +499,7 @@ pub(super) struct SequencedSession {
     latest_frame_receipt: Option<SequencedTiming>,
     assembling: CommittedFrame,
     frames: VecDeque<CommittedFrame>,
-    last_batch: [u64; 30],
+    last_batch: [u64; MAX_PEERS as usize],
     // Sources whose batch could not be read; each departed at that batch's
     // frame and the rest of its stream is ignored.
     refused: u32,
@@ -538,7 +542,7 @@ impl SequencedSession {
                     .ok_or(StartupError::InvalidAdmission)?,
             ),
         };
-        let mut houses = [None; 30];
+        let mut houses = [None; MAX_PEERS as usize];
         if let Some(source) = player_source {
             houses[usize::from(source)] = Some(local_house);
         }
@@ -577,7 +581,7 @@ impl SequencedSession {
     }
 
     fn with_roster(
-        houses: [Option<i8>; 30],
+        houses: [Option<i8>; MAX_PEERS as usize],
         local_source: u8,
         agreement: [u8; 32],
         fps: u16,
@@ -605,10 +609,9 @@ impl SequencedSession {
             delivery: DeliveryCounts::default(),
             pause: CanonicalPause::default(),
             pause_found_behind: false,
-            pause_relay_supported: false,
             pause_supported_sources: 0,
             pause_active_sources: mask,
-            pause_probe_attempts: 0,
+            pause_refused: false,
             last_pause_control: None,
             pause_request: None,
             next_pause_request: 1,
@@ -622,7 +625,7 @@ impl SequencedSession {
                 ..Default::default()
             },
             frames: VecDeque::new(),
-            last_batch: [0; 30],
+            last_batch: [0; MAX_PEERS as usize],
             refused: 0,
             restoring: false,
             last_restore_log: None,
@@ -816,7 +819,6 @@ impl SequencedSession {
         MultiplayerPauseStatus {
             available: self.started
                 && !self.failed()
-                && self.pause_relay_supported
                 && self.pause_active_sources != 0
                 && self.pause_supported_sources & self.pause_active_sources
                     == self.pause_active_sources,
@@ -960,12 +962,12 @@ impl SequencedSession {
             {
                 request.last_sent = Some(now);
             }
-        } else if !self.pause_status().available
-            && service_due(self.last_pause_control, now, self.pause_probe_interval())
+        } else if !self.pause_refused
+            && !self.pause_status().available
+            && service_due(self.last_pause_control, now, PAUSE_PROBE_INTERVAL_MS)
             && transport.control_ordering_pause(0, 0, false).is_ok()
         {
             self.last_pause_control = Some(now);
-            self.pause_probe_attempts = self.pause_probe_attempts.saturating_add(1);
         }
     }
 
@@ -980,16 +982,6 @@ impl SequencedSession {
         {
             // It rides the next UPLINK once; a lost one only goes stale.
             transport.queue_ordering_pace(pace, ran, tick_micros);
-        }
-    }
-
-    fn pause_probe_interval(&self) -> i32 {
-        if !self.pause_relay_supported && self.pause_probe_attempts >= 3 {
-            // Older relays ignore this extension. Keep overhead low without
-            // mistaking a lost capability reply for permanent incompatibility.
-            PAUSE_COMPATIBILITY_PROBE_INTERVAL_MS
-        } else {
-            PAUSE_PROBE_INTERVAL_MS
         }
     }
 
@@ -1175,7 +1167,11 @@ impl SequencedSession {
                 {
                     return Err(SequencedError::InvalidTimeline);
                 }
-                self.pause_relay_supported = true;
+                // The relay counts this source as supporting pause from its
+                // first probe on (relay `control_pause`), so a reply without
+                // it comes from a match the relay never pauses: one whose
+                // players are on several relays.
+                self.pause_refused |= supported_sources & (1 << self.local_source) == 0;
                 // Capabilities only accumulate and sources only depart. Old
                 // replies cannot undo a newer availability observation.
                 self.pause_supported_sources |= supported_sources;
@@ -1496,7 +1492,6 @@ impl SequencedSession {
                     // after every active source advertises support. That is
                     // sufficient proof even if all of our status replies were
                     // lost; departed sources can never rejoin this roster.
-                    self.pause_relay_supported = true;
                     self.pause_supported_sources |= self.pause_active_sources;
                     if !paused {
                         // Anchor resumed playout to this real socket receipt.
@@ -1911,7 +1906,7 @@ fn watch_turn(fps: u16, delay_seconds: u32) -> u32 {
     released + 2 * (u32::from(fps) * WATCH_PULL_INTERVAL_MS / 1000).max(1)
 }
 
-fn roster_mask(houses: &[Option<i8>; 30]) -> u32 {
+fn roster_mask(houses: &[Option<i8>; MAX_PEERS as usize]) -> u32 {
     houses
         .iter()
         .enumerate()
@@ -1956,10 +1951,7 @@ fn decode_batch(bytes: &[u8], house: i8, frame: u32) -> Result<Vec<CommandRecord
             true
         })
         .map_err(|_| SequencedError::InvalidTimeline)?;
-    if invalid
-        || decoded.consumed_bytes != packet.len()
-        || records.len() > crate::sim::command_queue::OUT_LIST_CAPACITY
-    {
+    if invalid || decoded.consumed_bytes != packet.len() || records.len() > OUT_LIST_CAPACITY {
         return Err(SequencedError::InvalidTimeline);
     }
     Ok(records)
@@ -2575,6 +2567,59 @@ mod departure_tests {
             .collect();
         assert!(session.frames.len() > 2);
         assert_eq!(records, [(EXIT_OPCODE, 1)]);
+    }
+}
+
+#[cfg(all(test, tests_net))]
+mod frame_limit_tests {
+    use super::*;
+    use crate::sim::command::DESTRUCT_OPCODE;
+
+    /// The largest frame a federated match seals: each relay's whole share
+    /// of batches, every batch a full OutList, and every player leaving
+    /// after its last batch.
+    #[test]
+    fn the_largest_federated_frame_is_assembled() {
+        let mut houses = [None; 30];
+        for (source, house) in houses.iter_mut().enumerate() {
+            *house = Some(source as i8);
+        }
+        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let batches = MAX_FRAME_BATCHES * MAX_FEDERATED_RELAYS;
+        let mut sequence = 1..;
+        let mut receive = |entry| {
+            session
+                .receive(OrderEvent::Entry(entry), Instant::now())
+                .unwrap()
+        };
+        for index in 0..batches {
+            let source = (index % 30) as u8;
+            receive(OrderEntry::Batch {
+                sequence: sequence.next().unwrap(),
+                frame: 1,
+                source,
+                batch_id: (index / 30 + 1) as u64,
+                bytes: vec![DESTRUCT_OPCODE; OUT_LIST_CAPACITY],
+            });
+            if index + 30 >= batches {
+                receive(OrderEntry::Departure {
+                    sequence: sequence.next().unwrap(),
+                    frame: 1,
+                    source,
+                    lost: false,
+                });
+            }
+        }
+        receive(OrderEntry::FrameEnd {
+            sequence: sequence.next().unwrap(),
+            frame: 1,
+        });
+        session.assemble().unwrap();
+        assert_eq!(session.frames.len(), 1);
+        assert_eq!(
+            session.frames[0].records.len(),
+            batches * OUT_LIST_CAPACITY + 30
+        );
     }
 }
 

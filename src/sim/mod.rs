@@ -119,7 +119,7 @@ pub(crate) mod tesla_charging;
 pub mod timer; // signed frame-anchored countdown primitive
 pub(crate) mod touch_log; // which stored objects were handed out mutably, per reader
 pub use touch_log::{Touched, live_read_check_enabled};
-pub mod type_handle_table; // InternedId -> TypeHandle, one-hop entity->type resolution
+pub mod type_handle_table; // Interned bridge warheads used by combat.
 
 // --- Pure read-only deterministic engine-data services (gamemd-exact lookup tables) ---
 

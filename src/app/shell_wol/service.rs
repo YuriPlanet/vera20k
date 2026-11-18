@@ -147,7 +147,8 @@ pub(crate) enum WolServiceRequest {
     VisitLobby,
     /// VERA: the visitor leaves the public lobby for their room.
     EndVisit,
-    /// VERA: the lobby page's chat while visiting, to the visited lobby.
+    /// VERA: the lobby page's chat while visiting, to the visited lobby; a
+    /// page goes wherever its player is listed.
     VisitChat { line: WolChatLine, to: Vec<String> },
     /// VERA: the lobby page's action line while visiting, to the visited
     /// lobby.

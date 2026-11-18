@@ -128,7 +128,7 @@ pub fn publish_production_changes(
     for &visit in effects.production_factories() {
         if !sim
             .production
-            .factories_mut()
+            .edit_factories()
             .take_changed_complete(owner, visit)
         {
             continue;
@@ -585,7 +585,7 @@ fn exit_land(
         if attached
             && !sim
                 .production
-                .factories_mut()
+                .edit_factories()
                 .transfer_building_factory_attachment(producer_id, alternate_id)
         {
             return BuildingExit::Failed;
@@ -603,7 +603,7 @@ fn exit_land(
         if attached {
             assert!(
                 sim.production
-                    .factories_mut()
+                    .edit_factories()
                     .transfer_building_factory_attachment(alternate_id, producer_id),
                 "ExitObject must restore its lent factory attachment"
             );

@@ -119,7 +119,7 @@ pub(super) fn restored_retail(
     restored
         .restore_map_authority_after_snapshot_load(
             &resources.rules,
-            &resources.overlay_registry,
+            resources.rules.overlay_registry(),
             None,
         )
         .unwrap();
@@ -423,7 +423,7 @@ fn damage_bridge(
         &mut runtime.simulation,
         &runtime.resources.rules,
         &[event],
-        Some(&runtime.resources.overlay_registry),
+        Some(runtime.resources.rules.overlay_registry()),
         crate::sim::world::FrameEffects::default(),
     )
 }
@@ -710,7 +710,7 @@ fn repair_ordinary_bridge(
             start.1,
             0,
             &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .expect("ordinary Engineer bank placement");
     let orders = producer(&runtime.simulation, &runtime.resources.rules, engineer, hut);

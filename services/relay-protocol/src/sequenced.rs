@@ -30,7 +30,11 @@ const MAX_HISTORY_ENTRIES: usize = 4096;
 const ROOM_HISTORY_BYTES: usize = 2 * 1024 * 1024;
 const GLOBAL_ORDERING_BYTES: usize = 64 * 1024 * 1024;
 const MAX_SOURCE_PENDING: usize = 8;
-const MAX_FRAME_BATCHES: usize = 32;
+/// Each relay of a match seals at most this many of its own sources' batches
+/// into one frame; a federated frame merges up to `MAX_FEDERATED_RELAYS`
+/// times as many. Games size their frame buffers from both, so raising either
+/// raises `OLDEST_ADMITTED` (tools/relay_compat.py).
+pub const MAX_FRAME_BATCHES: usize = 32;
 // A loading source that sends nothing this long departs in the first frame,
 // and the others start without it.
 const LOADING_SILENCE_MS: u64 = 60_000;
@@ -86,6 +90,8 @@ pub(super) const DESYNC_BATCH: u64 = u64::MAX - 1;
 const FRAME_RATES: [u16; 8] = [90, 60, 45, 30, 20, 15, 12, 10];
 // A player's report counts this long; a silent client slows nobody.
 const PACE_REPORT_MS: u64 = 3_000;
+// Clients report every `PACE_INTERVAL_MS`, so a report on time never lapses.
+const _: () = assert!(PACE_INTERVAL_MS < PACE_REPORT_MS);
 // The share of each second a reporter's simulation may take at a rate it
 // can hold; the rest draws and catches up.
 const SUSTAIN_PERCENT: u32 = 80;
@@ -282,6 +288,19 @@ pub enum OrderPace {
     Behind = 1,
     /// Frames wait on it, but it runs at least as many as are sealed.
     CatchingUp = 2,
+}
+
+impl OrderPace {
+    /// Reads the pace byte of an UPLINK pace segment and of a forwarded
+    /// federation report.
+    pub(crate) fn parse(value: u8) -> Result<Self, RelayError> {
+        Ok(match value {
+            0 => Self::KeepingUp,
+            1 => Self::Behind,
+            2 => Self::CatchingUp,
+            _ => return Err(RelayError::Malformed),
+        })
+    }
 }
 
 /// The rates a match certified at `tick_hz` may be sealed at, fastest first:
@@ -1094,6 +1113,32 @@ struct Stored {
     bytes: Vec<u8>,
 }
 
+/// Rooms that take no new startup: cancelled before any Ready, here or by
+/// another relay of the match, or whose ordering room was retired. A Ready
+/// for one gets `Inactive`, and while the room remains, a federated relay
+/// tells the others it is cancelled. While an `OrderingRoom` lives it holds
+/// that state itself. Unlike the room, which goes once its peers' tickets
+/// expire, the record lasts until every certificate signed before its last
+/// close has expired.
+#[derive(Default)]
+pub(super) struct ClosedStartups(HashMap<[u8; 16], u64>);
+
+impl ClosedStartups {
+    /// Closes `room` for MAX_MATCH_SECONDS, the 24 hours a certificate
+    /// lasts: every one signed before now expires first.
+    pub(super) fn close(&mut self, room: [u8; 16], now: u64) {
+        self.0.insert(room, now.saturating_add(MAX_MATCH_SECONDS));
+    }
+
+    pub(super) fn contains(&self, room: &[u8; 16]) -> bool {
+        self.0.contains_key(room)
+    }
+
+    pub(super) fn prune(&mut self, now: u64) {
+        self.0.retain(|_, until| *until > now);
+    }
+}
+
 pub(super) struct OrderingRoom {
     certificate: OrderingCertificate,
     agreement: [u8; 32],
@@ -1360,28 +1405,16 @@ impl OrderingRoom {
         Ok(())
     }
 
-    /// Stores a player's pace report, which `adjust_pace` acts on, and
-    /// returns its pace.
+    /// Stores a player's pace report, which `adjust_pace` acts on.
     /// A reader's pace segment (spec §3.2), the latest report wins; a zero
-    /// tick cost is none. The decoder checked the pace byte.
-    fn report_pace(
-        &mut self,
-        source: u8,
-        report: crate::link::PaceSegment,
-        now_ms: u64,
-    ) -> OrderPace {
-        let pace = match report.pace {
-            0 => OrderPace::KeepingUp,
-            1 => OrderPace::Behind,
-            _ => OrderPace::CatchingUp,
-        };
+    /// tick cost is none.
+    fn report_pace(&mut self, source: u8, report: crate::link::PaceSegment, now_ms: u64) {
         self.sources[usize::from(source)].pace = Some(PaceReport {
-            pace,
+            pace: report.pace,
             frames_per_second: report.frames_per_second,
             tick_micros: (report.tick_micros != 0).then_some(report.tick_micros),
             at_ms: now_ms,
         });
-        pace
     }
 
     /// Slows the clock while a player reports it cannot keep up: to the
@@ -1620,7 +1653,7 @@ impl OrderingRoom {
         }
         state.pause_request = Some(request);
         // Capability agreement belongs to the admitted match principals, not
-        // short hop tickets. Legacy peers never advertise, so receive no marker.
+        // short hop tickets. Each source advertises once its match started.
         if self.supported_pause_sources() & self.active != self.active
             || self.starts_at.is_none_or(|start| start > now_ms)
             || request.expected_epoch != self.pause_epoch
@@ -5677,6 +5710,44 @@ mod tests {
     }
 
     #[test]
+    fn a_leave_before_any_ready_keeps_the_start_closed_once_its_room_is_gone() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 2);
+        let cert = certificate(&key, 3, 2000);
+        // The first player quits while loading; its Ready never arrived.
+        let mut leaver = client(&key, 0);
+        connect(&mut server, &mut leaver, 0);
+        let mut bytes = Vec::new();
+        leaver
+            .configure_ordering(&cert, [7; 32], &mut bytes)
+            .unwrap();
+        leaver.leave_ordering(&mut bytes).unwrap();
+        events(&mut server, &mut leaver, &bytes, 0);
+        // Its ticket expires, and the room with it.
+        let expired = (leaver.ticket.expires - unix(0)) * 1000;
+        server.advance_clock(expired, unix(expired));
+        assert_eq!(server.room_count(), 0);
+        // The other player arrives later on a renewed ticket.
+        let mut ticket = client(&key, 1).ticket;
+        ticket.expires = unix(expired) + 200;
+        let signed = ticket.sign(&key).unwrap();
+        let mut late = ClientSession::new(
+            &signed,
+            *derive_packet_key(&key, &signed).expose_for_https(),
+            [89; 32],
+        )
+        .unwrap();
+        connect(&mut server, &mut late, expired);
+        assert!(matches!(
+            configure(&mut server, &mut late, &cert, expired).as_slice(),
+            [OrderEvent::Error {
+                code: OrderError::Inactive,
+                ..
+            }]
+        ));
+    }
+
+    #[test]
     fn a_late_returner_cannot_restart_a_cleaned_up_match_under_its_id() {
         let directory = TestDirectory::new();
         let key = SecretKey::new([73; 32]);
@@ -5719,9 +5790,9 @@ mod tests {
         // The marker outlasts any certificate verified before the cleanup.
         let expiry = unix(cleaned) + MAX_MATCH_SECONDS;
         server.advance_clock(1_000_000, expiry - 1);
-        assert!(!server.ended_orderings.is_empty());
+        assert!(server.closed_startups.contains(&[5; 16]));
         server.advance_clock(1_000_000, expiry);
-        assert!(server.ended_orderings.is_empty());
+        assert!(!server.closed_startups.contains(&[5; 16]));
     }
 
     /// A started journaled match whose archive fails at 112 seconds, when a
@@ -5982,7 +6053,7 @@ impl RelayServer {
                 }) {
                     return Err(RelayError::Authentication);
                 }
-                room.ordering_cancelled = true;
+                self.closed_startups.close(message.ticket.room, now);
             }
             if let Some(peer) = room
                 .peers
@@ -6141,10 +6212,7 @@ impl RelayServer {
             if !retire {
                 continue;
             }
-            // Every certificate for this match, renewed ones included, was
-            // verified to expire within MAX_MATCH_SECONDS of now or earlier.
-            self.ended_orderings
-                .insert(id, now.saturating_add(MAX_MATCH_SECONDS));
+            self.closed_startups.close(id, now);
             if let Some(receipt) = ordering
                 .terminal
                 .take()
@@ -6280,12 +6348,7 @@ impl RelayServer {
             {
                 return Err(RelayError::Authentication);
             }
-            if self
-                .rooms
-                .get(&message.ticket.room)
-                .is_some_and(|room| room.ordering_cancelled)
-                || self.ended_orderings.contains_key(&message.ticket.room)
-            {
+            if self.closed_startups.contains(&message.ticket.room) {
                 return self.ordering_reply(
                     message.ticket,
                     error(OrderError::Inactive, 0),
@@ -6572,10 +6635,11 @@ impl RelayServer {
             ordering.report_checksums(ticket, &uplink.checksums, room.federation.as_ref());
             ordering.count_changes(&mut self.ordering_counts);
         }
-        if let Some(pace) = uplink.pace
-            && ordering.report_pace(ticket.source, pace, now_ms) != OrderPace::KeepingUp
-        {
-            self.ordering_counts.catching_up_s += 1;
+        if let Some(report) = uplink.pace {
+            ordering.report_pace(ticket.source, report, now_ms);
+            if report.pace != OrderPace::KeepingUp {
+                self.ordering_counts.catching_up_s += 1;
+            }
         }
         // §8 replies: only the error; else an ACK for any batch, even all
         // duplicates; else a STATUS for a probe.

@@ -680,7 +680,7 @@ fn full_transport_arrival_replays_original_warp_in_refusal_tail() {
             .entities
             .get_mut(transport)
             .unwrap()
-            .passenger_role
+            .passenger_role_mut_for_test()
             .cargo_mut()
             .unwrap()
             .board_forced_chain(&[(occupant, rules.object("E1").unwrap().size)]);
@@ -739,7 +739,7 @@ fn full_transport_arrival_replays_original_warp_in_refusal_tail() {
                 .entities
                 .get(id)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .is_none(),
             "{name}: rejected passenger stays outside"
         );

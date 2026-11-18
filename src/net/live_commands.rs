@@ -1,12 +1,18 @@
-//! The live protocol-2 Queue_AI visit, from ProcessNetwork6475F0 through
-//! SendOutList649CA0 and Wait_For_Players648710. Simulation owns commands;
-//! this process-session owner retains only transport, packet exchange and the
-//! current post-Logic visit while the client continues servicing its UI.
+//! One match's live command session, in one of two modes chosen once at
+//! install ([`relay_clock`], handed to `LiveCommandSession::new`):
 //!
-//! Direct UDP LAN is an explicit transport adaptation; retail LAN selected
-//! IPX sockets while this shared protocol-2 command behavior is retained.
-//! Native wait-dialog/cancel, timeout recovery and diagnostic drawing remain
-//! client-session work; this owner never invents a wait timeout or peer exit.
+//! - LAN, and an online match with one human that the relay does not order,
+//!   run the protocol-2 Queue_AI visit from ProcessNetwork6475F0 through
+//!   SendOutList649CA0 and Wait_For_Players648710. Direct UDP replaces retail
+//!   LAN's IPX sockets. The wait dialog, cancel and timeout recovery belong to
+//!   `app::match_runtime::network_match`.
+//! - Every other online match runs `sequenced`: it assembles the relay's
+//!   sealed timeline, turns relay departures and unreadable batches into EXIT
+//!   or EVENT_REMOVEPLAYER records, and ends the match on relay absence,
+//!   watcher silence or a relay record this build cannot read.
+//!
+//! Simulation owns the commands; this session keeps the transport, packet
+//! exchange and the current post-Logic visit while the client services its UI.
 
 use std::io;
 use std::net::SocketAddrV4;
@@ -174,8 +180,8 @@ pub enum LiveWaitKind {
     Ordinary,
 }
 
-/// Diagnostic projection of the existing retained visit. This does not
-/// distinguish backpressure causes; queue and mirror facts remain authoritative.
+/// Diagnostic projection of the retained visit. It does not distinguish
+/// backpressure causes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiveCommandPhase {
     InitialBarrier,
@@ -204,9 +210,9 @@ struct CurrentFrame {
     phase: FramePhase,
 }
 
-/// One established match's live command channel. CRC history remains with
-/// the existing caller's checksum owner. A retained frame never re-runs
-/// Logic, recreates an encoded packet, or owns a second gameplay queue.
+/// One established match's live command channel; `FrameChecksumState`
+/// (`sim::command_queue`) keeps the checksum history. A retained frame never
+/// re-runs Logic or recreates an encoded packet.
 #[derive(Debug)]
 pub struct LiveCommandSession {
     transport: LanUdpTransport,
@@ -444,7 +450,8 @@ impl LiveCommandSession {
     }
 
     /// Shared pause is a relay timeline control, independent of local menus.
-    /// Unsupported or mixed-version matches leave it unavailable.
+    /// A direct LAN match has none, and one spread over several relays
+    /// leaves it unavailable.
     pub fn multiplayer_pause(&self) -> Option<MultiplayerPauseStatus> {
         self.sequenced
             .as_ref()
@@ -681,8 +688,7 @@ impl LiveCommandSession {
         true
     }
 
-    /// Read-only reference to the immutable install-time certificate. Transport
-    /// controls remain private to the existing startup/reliability owners.
+    /// Read-only reference to the immutable install-time certificate.
     pub fn startup_agreement(&self) -> &StartupAgreement {
         self.startup.agreement()
     }
@@ -765,7 +771,7 @@ impl LiveCommandSession {
     }
 
     ///64B410 selects the first minimum signed frame from the same progress
-    ///rows that gate dispatch. No separate stalled-peer frame table is kept.
+    ///rows that gate dispatch.
     pub fn lowest_frame_peer(&self) -> Option<&CommandPeerProgress> {
         self.exchange.peers().iter().reduce(|first, next| {
             if next.frame() < first.frame() {

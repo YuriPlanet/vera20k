@@ -648,7 +648,7 @@ impl ObjectRecord {
             sinking: Sinking {
                 active: entity.sinking.is_active(),
             },
-            passenger_role: PassengerRole::of(&entity.passenger_role),
+            passenger_role: PassengerRole::of(entity.passenger_role()),
             rocking: entity.rocking.as_ref().map(|_| ()),
             mission: Mission::of(&entity.mission),
             tether: Tether {

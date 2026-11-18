@@ -25,8 +25,8 @@ impl LoadingProgressSink for SilentProgress {
 }
 
 fn launch_session(seed_name: &str) -> SkirmishLaunchSession {
-    SkirmishLaunchSession {
-        mode: SkirmishLaunchMode {
+    SkirmishLaunchSession::from_rows(
+        SkirmishLaunchMode {
             class: crate::skirmish_modes::MpModeClass::Battle,
             id: 1,
             ui_name_key: "GUI:Battle".to_string(),
@@ -37,8 +37,8 @@ fn launch_session(seed_name: &str) -> SkirmishLaunchSession {
             allies_allowed: true,
             must_ally: false,
         },
-        selected_map_file: Some(seed_name.to_string()),
-        humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+        Some(seed_name.to_string()),
+        vec![crate::skirmish_launch::SkirmishHumanSlot {
             raw_slot_index: Some(0),
             name: "Player".to_string(),
             slot: SkirmishLocalSlot {
@@ -51,9 +51,8 @@ fn launch_session(seed_name: &str) -> SkirmishLaunchSession {
             },
             role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
         }],
-        local_player_index: 0,
-        ai_player_count: 1,
-        opponents: vec![SkirmishAiSlot {
+        0,
+        vec![SkirmishAiSlot {
             raw_slot_index: 1,
             country: LaunchCountry::Russia,
             country_random: false,
@@ -63,9 +62,8 @@ fn launch_session(seed_name: &str) -> SkirmishLaunchSession {
             team: LaunchTeam::None,
             difficulty: AiDifficulty::Easy,
         }],
-        pre_fill_house_roster: crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(1),
-        options: SkirmishLaunchOptions::default(),
-    }
+        SkirmishLaunchOptions::default(),
+    )
 }
 
 fn start_production_worker(

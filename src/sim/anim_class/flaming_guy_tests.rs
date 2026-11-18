@@ -501,7 +501,6 @@ fn stock_oil_derrick_death_weapon_produces_a_running_flameguy_in_master_frames()
             .advance_app_frame(
                 &commands,
                 &rules,
-                None,
                 33,
                 TickLane::Ordinary,
                 FrameEffects::default(),

@@ -2,9 +2,8 @@
 
 use crate::map::scenario_menu::MapMenuEntry;
 use crate::skirmish_launch::{
-    LaunchStartPosition, LaunchTeam, LaunchValidationError, PreFillHouseRoster,
-    SKIRMISH_MAX_SLOT_COUNT, SkirmishAiSlot, SkirmishLaunchMode, SkirmishLaunchSession,
-    SkirmishLocalSlot,
+    LaunchStartPosition, LaunchTeam, LaunchValidationError, SKIRMISH_MAX_SLOT_COUNT,
+    SkirmishAiSlot, SkirmishLaunchMode, SkirmishLaunchSession, SkirmishLocalSlot,
 };
 use crate::skirmish_modes::SkirmishGameMode;
 
@@ -181,21 +180,17 @@ pub fn pack_launch_session_without_start_validation(
     options.harvester_truce = false;
     options.multi_engineer = false;
 
-    let mut session = SkirmishLaunchSession {
-        mode: SkirmishLaunchMode::from_game_mode(selected_mode),
-        selected_map_file: Some(selected_map.file_name.clone()),
-        humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+    Ok(SkirmishLaunchSession::from_rows(
+        SkirmishLaunchMode::from_game_mode(selected_mode),
+        Some(selected_map.file_name.clone()),
+        vec![crate::skirmish_launch::SkirmishHumanSlot {
             raw_slot_index: Some(0),
             name: state.player_name_edit.text.clone(),
             slot: local,
             role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
         }],
-        local_player_index: 0,
-        ai_player_count: opponents.len() as i32,
+        0,
         opponents,
-        pre_fill_house_roster: PreFillHouseRoster::from_compact_skirmish(0),
         options,
-    };
-    session.rebuild_house_roster();
-    Ok(session)
+    ))
 }
