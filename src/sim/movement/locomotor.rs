@@ -746,7 +746,9 @@ impl LocomotorState {
         &self.runtime_payload
     }
 
-    pub(crate) fn tunnel_runtime(&self) -> Option<&super::tunnel_locomotion::TunnelRuntime> {
+    /// Class-local state of this locomotor object. The presentation reads the
+    /// Tunnel state and timer through it for `Z_Adjust 0x729E50`.
+    pub fn tunnel_runtime(&self) -> Option<&super::tunnel_locomotion::TunnelRuntime> {
         match (self.kind, &self.runtime_payload) {
             (LocomotorKind::Tunnel, LocomotorRuntimePayload::Tunnel(runtime)) => Some(runtime),
             _ => None,
@@ -760,6 +762,15 @@ impl LocomotorState {
             (LocomotorKind::Tunnel, LocomotorRuntimePayload::Tunnel(runtime)) => Some(runtime),
             _ => None,
         }
+    }
+
+    /// Fixture seam for the client's presentation tests, which arm a Tunnel
+    /// state and timer without driving a whole `process` cycle.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn tunnel_runtime_mut_for_test(
+        &mut self,
+    ) -> Option<&mut super::tunnel_locomotion::TunnelRuntime> {
+        self.tunnel_runtime_mut()
     }
 
     /// Class-local state of this locomotor object, for fixtures.

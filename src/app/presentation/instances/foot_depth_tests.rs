@@ -275,3 +275,50 @@ fn composite_factory_split_requires_navcom_and_slot_zero_weapons_factory() {
     .unwrap();
     assert!(!evaluate(&runtime, &tank));
 }
+
+/// `Z_Adjust 0x729E50` reaches the Foot total through the locomotion slot's
+/// third additive term: the DugIn arm adds the 45 word on top of the same
+/// height term `0x704350` already carries.
+#[test]
+fn a_dug_in_tunnel_hull_adds_the_loco_term_on_top_of_foot() {
+    use crate::rules::locomotor_type::LocomotorKind;
+    use crate::sim::movement::TunnelState;
+    use crate::sim::movement::locomotor::LocomotorState;
+    use crate::util::native_x87::adjust_for_z_standard;
+
+    let mut runtime = runtime();
+    let mut tank = entity(&mut runtime, "TANK", EntityCategory::Unit);
+    let height = -256;
+    let drive_only = unit_z_adjust_in_runtime(Some(&runtime), &tank, false, Some(height));
+
+    tank.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Tunnel));
+    // Idle answers the 0x55ABA0 base stub, so the Foot total cannot move.
+    assert_eq!(
+        unit_z_adjust_in_runtime(Some(&runtime), &tank, false, Some(height)),
+        drive_only
+    );
+
+    let height_term = adjust_for_z_standard(height).wrapping_neg();
+    let arm = |tank: &mut GameEntity, state: TunnelState| {
+        tank.locomotor
+            .as_mut()
+            .expect("the fixture installs a Tunnel locomotor")
+            .tunnel_runtime_mut_for_test()
+            .expect("for_test_kind built a Tunnel payload")
+            .set_state_and_timer_for_test(state, 0, 10);
+    };
+
+    arm(&mut tank, TunnelState::DugIn);
+    assert_eq!(
+        unit_z_adjust_in_runtime(Some(&runtime), &tank, false, Some(height)),
+        drive_only.wrapping_add(height_term).wrapping_add(45)
+    );
+
+    // The DiggingIn band snaps to the same 45 once the facing bucket is inside it.
+    arm(&mut tank, TunnelState::DiggingIn);
+    tank.body_facing = crate::sim::movement::FacingClass::new(0x8000, 0);
+    assert_eq!(
+        unit_z_adjust_in_runtime(Some(&runtime), &tank, false, Some(height)),
+        drive_only.wrapping_add(height_term).wrapping_add(45)
+    );
+}

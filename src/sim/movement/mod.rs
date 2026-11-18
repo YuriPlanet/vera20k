@@ -117,6 +117,10 @@ pub mod track_process;
 mod track_speed;
 pub(crate) mod track_turn;
 pub(crate) mod tunnel_locomotion;
+/// The Tunnel payload the locomotion slot exposes to presentation code
+/// (`LocomotorState::tunnel_runtime`), re-exported so its state and timer can
+/// be named outside core.
+pub use tunnel_locomotion::{TunnelRuntime, TunnelState};
 mod walk_admission;
 pub(crate) mod walk_head;
 mod walk_host;

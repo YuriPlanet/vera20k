@@ -103,23 +103,39 @@ The layer answer is what the package-93 `AU` chain consumes:
   flags at `+0x11c`/`+0x140`, i.e. a void cell, not terrain, walls or
   buildings. Nothing in VERA's tunnel chain calls it (the controller writes
   coordinates directly), so it stays unported by design.
-- `Z_Adjust 0x729E50` is draw-only and belongs to the presentation layer. Its
-  body is decoded but unported: it transforms `Owner->Location` (`Owner`
-  `[this+8]`, Location `+0x9c`) through `0x6D2140` (`ecx = [0x887324]`), asks
-  `0x578080` for that cell's ground and transforms the ground point the same
-  way, so `edi` is the sprite's pixel height above its ground. It then builds
+- `Z_Adjust 0x729E50` is draw-only and implemented (2026-11-19) in
+  `render::foot_depth::tunnel_z_adjust` + `app/presentation/instances/foot_depth.rs`.
+  Its consumer is `FootClass`'s z composite `0x004DAFC0`: it stores the loco
+  answer in `[esp+8]` (`0x4DAFF3`), sums
+  `0x00704350` (`0x4DB08C`) and the fudge maximum (`0x4DB091`), and adds the
+  stored loco term last (`0x4DB098`), so the locomotion answer is a third
+  additive term beside `additional_z`, not a replacement. It transforms
+  `Owner->Location` (`Owner` `[this+8]`, Location `+0x9c`) through `0x6D2140`
+  (`ecx = [0x887324]`), asks `0x578080` for that cell's ground and transforms
+  the ground point the same way, so `edi` is the sprite's pixel height above
+  its ground — the same quantity `0x00704350` derives, which is why a Tunnel
+  hull counts its height twice. It then builds
   `fraction = (total - remaining) / total` from the dig timer (`[+0x30]`
   total, `[+0x24]` start, `[+0x2c]` duration, `[0xa8ed84]` current frame;
-  `fraction = 1.0` when `total` is 0) and `ecx = ((([Owner+0x388]`-derived
-  value `>> 7) + 1) >> 1) & 0xFF`. The switch on `State - 2` (`0x72A000`) adds
-  the dword constant `45` (`0x844A9C`) or `45` (`0x844A98`, `0x729FDE`):
-  `DiggingIn` adds 45 when `70 < ecx < 140`, otherwise `round(45 * fraction)`,
-  and latches `[this+0x34] = 1` once `fraction > 0.4` (`0x7E3550`); `DugIn`,
-  `Digging` and `PreDigOut` add 45; `DiggingOut` adds
-  `round(45 * (1 - fraction))`; every other state falls through to the base
-  class `0x55ABA0`. Porting it needs the consumer trace (where `DrawIt` adds
-  the result to the drawn Y) plus the `[Owner+0x388]` field identity, so VERA's
-  renderer keeps its own `foot_depth` z chain for tunnel units.
+  `fraction = 1.0` when `total` is 0) and `ecx = (((owner+0x388` current
+  facing `>> 7) + 1) >> 1) & 0xFF`, `owner+0x388` being the hull
+  `FacingClass` whose interpolated value `0x4C93D0` returns. The switch on
+  `State - 2` (`0x72A000` = `0x729F74/0x729FCC/0x729F40/0x729FDE/0x729F52`)
+  adds the dword constant `45` (`0x844A9C`, `0x844A98`):
+  `DiggingIn` adds 45 when `70 < ecx < 140`, otherwise `ftol(45 * fraction)`,
+  and latches `[this+0x34] = 1` once `fraction > 0.4` (`0x7E3550`) — that byte
+  has no other reader, so the latch has no visible effect; `DugIn`, `Digging`
+  and `PreDigOut` add 45; `DiggingOut` adds `ftol(45 * (1 - fraction))`; every
+  other state falls through to the base class `0x55ABA0` and contributes
+  nothing. VERA's `unit_z_adjust_in_runtime` now supplies that term whenever
+  the entity carries a Tunnel runtime, using the frame's animated
+  `body_facing` and `DigTimer` as above.
+- Residual: the native `edi` comes from the `0x6D2140` projection while
+  `additional_z` comes from `0x6D20E0`; VERA evaluates both with
+  `adjust_for_z_standard`, so a tunnel hull's doubled height term matches
+  gamemd only as far as those two projections agree (they differ by at most
+  the standard-adjust correction on a non-flat cell). The `[+0x34]` latch is
+  not stored.
 - `Stop_Moving 0x728C00` dispatches on `State - 1` through table `0x728E08`,
   read by target:
   - states 1/5/6/7 → `0x728DE0` (unchanged) after writing the null coordinate
