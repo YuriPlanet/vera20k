@@ -1716,11 +1716,14 @@ pub struct SuperWeaponView {
     /// more than one only with Superweapon Limit, when the cameo counts them.
     pub ready_shots: usize,
     /// Whether the right-sidebar strip shows this super's cameo. Ares
-    /// replaces `HouseClass::UpdateSuperWeaponsOwned` (hook `0x0050AF10`):
-    /// for the player's House it adds the cameo when `SW.ShowCameo` holds and
-    /// skips it when `SW.AutoFire` does, else adds it
-    /// (`0x10039617..0x1003965F`). Always true without Ares; Mental Omega's
-    /// Iron Guard is such a hidden auto-fire super.
+    /// replaces `HouseClass::UpdateSuperWeaponsUnavailable` (hook
+    /// `0x0050B1D0`, `10039580`): when it grants the player's House a super
+    /// it adds the cameo when `SW.ShowCameo` holds and skips it when
+    /// `SW.AutoFire` does, else adds it (`0x10039617..0x1003965F`). Always
+    /// true without Ares; Mental Omega's Iron Guard is such a hidden
+    /// auto-fire super. Residual: Ares's spy-infiltration grant adds the
+    /// cameo without this test (`0x100123C7`); VERA hides the type on every
+    /// grant path.
     pub ares_show_cameo: bool,
 }
 

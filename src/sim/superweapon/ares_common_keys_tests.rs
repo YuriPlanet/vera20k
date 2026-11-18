@@ -184,7 +184,7 @@ fn always_granted_needs_no_provider_but_keeps_availability_gates() {
     );
 }
 
-/// Ares's UpdateSuperWeaponsOwned (hook `0x0050AF10`,
+/// Ares's UpdateSuperWeaponsUnavailable (hook `0x0050B1D0`,
 /// `0x10039617..0x1003965F`) keeps an `SW.AutoFire=yes`, `SW.ShowCameo=no`
 /// super off the strip; without `SW.AutoFire` the cameo still shows.
 #[test]
