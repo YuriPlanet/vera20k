@@ -261,7 +261,7 @@ impl FootPathRequest {
         ctx: PathfindingContext<'_>,
         foot_entry: &dyn crate::sim::pathfinding::SearchFootEntry,
         allow_zone_hierarchy: bool,
-    ) -> Result<Vec<(u16, u16)>, super::movement_path::MovePathFailure> {
+    ) -> Result<Vec<i32>, super::movement_path::MovePathFailure> {
         let snap = &self.visit.snap;
         let actor = entities.get(self.entity_id).expect("live suspended mover");
         let (start, goal) = core_search_cells(actor, goal, ctx.resolved_terrain);
@@ -290,30 +290,6 @@ impl FootPathRequest {
             allow_zone_hierarchy,
             foot_entry,
         )
-        // Foot+5E0 words carry no layer; the Process reads OnBridge.
-        .map(|(path, _)| path)
-    }
-
-    /// FootFindPath4D3920's found-route copy at4D3E82: publish the Foot+5E0
-    /// direction queue before follower callbacks. Its caller records the
-    /// live current Cell reference only afterwards, at4D4003. Foot
-    /// timer/latch/retry state has its own lifetime.
-    ///
-    /// Every Foot reads only that queue.
-    pub(super) fn install_route(
-        &self,
-        actor: &mut crate::sim::game_entity::GameEntity,
-        path: &[(u16, u16)],
-    ) {
-        // The route's first cell is the search's start (`core_search_cells`).
-        let start = path
-            .first()
-            .copied()
-            .unwrap_or((actor.position.rx(), actor.position.ry()));
-        actor
-            .navigation
-            .path_replay_mut()
-            .install_directions(start, path, 1);
     }
 }
 

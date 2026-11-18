@@ -912,16 +912,32 @@ fn reconstruct_path_dual(
 /// neighbor. Refusal and unavailable live inputs remain distinct errors.
 pub fn astar_search(
     grid: &PathGrid,
-    start: (u16, u16),
+    requested_start: (u16, u16),
     start_layer: MovementLayer,
-    goal: (u16, u16),
+    requested_goal: (u16, u16),
     options: &AStarOptions<'_>,
 ) -> Result<Vec<LayeredPathStep>, PathSearchFailure> {
-    // Start cell may be blocked (e.g. unit standing inside a building footprint
-    // after undock). The start node is expanded first without a passability
-    // check; only neighbor expansion calls Can_Enter_Cell. If all 8 neighbors
-    // are also blocked, the open list stays empty and reports refusal
-    // naturally — no need for an explicit start-cell rejection.
+    // AStar_main_loop (0x00429AA1..0x00429AEB) refuses a null endpoint
+    // before asking the Foot about a neighbour. A packed coordinate can
+    // alias a real cell; the closed list uses that cell's +0x24 coordinates
+    // (0x00429C1F), while AStar_create_node (0x0042A54A) uses the raw goal
+    // for its distance estimate.
+    let resolve_endpoint = |coord: (u16, u16)| {
+        let (x, y) = match options.resolved_terrain {
+            Some(terrain) => {
+                let index = terrain.native_fixed_cell_index(coord.0 as i16, coord.1 as i16)?;
+                let (x, y) = terrain
+                    .native_cell_coord(crate::map::cell_index::NativeCellIdentity::Real(index));
+                (x as u16, y as u16)
+            }
+            None => coord,
+        };
+        grid.cell(x, y).map(|cell| ((x, y), cell))
+    };
+    let (start, start_cell) =
+        resolve_endpoint(requested_start).ok_or(PathSearchFailure::CellSearchExhausted)?;
+    let (goal, goal_cell) =
+        resolve_endpoint(requested_goal).ok_or(PathSearchFailure::CellSearchExhausted)?;
 
     // Original429A90..429B5A widens signed levels before adding the bridge
     // offset. The goal's raw structural flag selects its height even when
@@ -929,22 +945,30 @@ pub fn astar_search(
     // Residual: the Aircraft (WhatAmI 2) arms at 0x00429AF9/0x00429B2A, which
     // keep the plain level at both ends, are not ported; no Aircraft reaches
     // FootClass::Find_Path, this search's one production caller.
-    let start_cell = grid.cell(start.0, start.1).unwrap_or(&DEFAULT_BLOCKED_CELL);
-    let goal_cell = grid.cell(goal.0, goal.1).unwrap_or(&DEFAULT_BLOCKED_CELL);
     let (start_height, goal_height) = initial_search_heights(start_cell, start_layer, goal_cell);
     if let Some(gate) = options.hierarchy_gate {
         gate.progress.set(RouteProgress {
             index: 0,
-            cell: start,
+            cell: requested_start,
         });
     }
 
     // 0x00429BF3..0x00429C0A: a start cell and height that are the goal's
     // skip the search, and AStar returns no route (0x0042A451).
-    if start == goal && start_height == goal_height {
+    if requested_start == requested_goal && start_height == goal_height {
         return Err(PathSearchFailure::CellSearchExhausted);
     }
 
+    // 0x00429C1A prepares the markers after endpoint admission. The Foot
+    // retains the transaction for corridor retries and path finishing.
+    let prepared = options
+        .foot_entry
+        .prepare_search_markers()
+        .map_err(PathSearchFailure::CellEntryUnavailable)?;
+    let (urgency, marker_overlay) = match &prepared {
+        Some((urgency, overlay)) => (*urgency, Some(&**overlay)),
+        None => (options.urgency, options.marker_overlay),
+    };
     // --- Arrays ---
     let w = grid.width() as usize;
     let h = grid.height() as usize;
@@ -979,7 +1003,7 @@ pub fn astar_search(
         // The start node is expanded first and never enters the open list
         // (created at `0x00429BE6`).
         let mut current = AStarNode {
-            f_cost: heuristic(start, goal),
+            f_cost: heuristic(start, requested_goal),
             g_cost: 0.0,
             x: start.0,
             y: start.1,
@@ -1202,15 +1226,15 @@ pub fn astar_search(
                     } else {
                         MovementLayer::Ground
                     };
-                    cost *= code2_multiplier(options.urgency, || {
+                    cost *= code2_multiplier(urgency, || {
                         options.foot_entry.code2_chain_jams((nx, ny), list)
                     })
                     .map_err(PathSearchFailure::CellEntryUnavailable)?;
                 }
 
-                cost = apply_search_marker_cost(cost, options.marker_overlay, (nx, ny));
+                cost = apply_search_marker_cost(cost, marker_overlay, (nx, ny));
                 let edge = compass_edge_cost(cost, dir_index);
-                let (g_cost, f_cost) = node_costs(current.g_cost, edge, (nx, ny), goal);
+                let (g_cost, f_cost) = node_costs(current.g_cost, edge, (nx, ny), requested_goal);
 
                 // Node creation. gamemd stamps the selected layer's closed
                 // array and records g at this point and never revisits the
@@ -1277,7 +1301,8 @@ pub fn astar_search(
                     // `0x00429FA3..0x00429FE6`: the Chebyshev cell distance to
                     // the exit, stored as binary32, with no tiebreak or `FMUL`.
                     let edge = f32::from(cx.abs_diff(nx).max(cy.abs_diff(ny)));
-                    let (g_cost, f_cost) = node_costs(current.g_cost, edge, (nx, ny), goal);
+                    let (g_cost, f_cost) =
+                        node_costs(current.g_cost, edge, (nx, ny), requested_goal);
 
                     // Same close-on-generation rule as the compass edges.
                     ground.set(
@@ -1315,7 +1340,9 @@ pub fn astar_search(
             current = next_node(held, open).ok_or(PathSearchFailure::CellSearchExhausted)?;
         };
 
-        if expanded == REFUSED_EXPANSION_COUNT {
+        // 0x0042A3F8 refuses a path with just the root descriptor. Distinct
+        // input coordinates may point to the same map slot.
+        if expanded == REFUSED_EXPANSION_COUNT || expanded == 0 {
             return Err(PathSearchFailure::CellSearchExhausted);
         }
         // Use the tail node's push-time layer flag (same value came_from was
@@ -2057,8 +2084,8 @@ struct AStarNode {
 /// is part of the engine's character. The table root never exceeds the exact
 /// one.
 fn heuristic(cell: (u16, u16), goal: (u16, u16)) -> f32 {
-    let dx = i32::from(cell.0) - i32::from(goal.0);
-    let dy = i32::from(cell.1) - i32::from(goal.1);
+    let dx = i32::from(cell.0 as i16) - i32::from(goal.0 as i16);
+    let dy = i32::from(cell.1 as i16) - i32::from(goal.1 as i16);
     let squares = dy.wrapping_mul(dy).wrapping_add(dx.wrapping_mul(dx));
     let root = sqrt_approx_f32(X87Chop53::load_i32(squares)).expect("an integer root is finite");
     f32::from_bits(root.bits())
