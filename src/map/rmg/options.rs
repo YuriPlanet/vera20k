@@ -681,9 +681,11 @@ mod tests {
             fair_starts: true,
             seed: 54321,
             description: "mine".into(),
-            tech_building_amount: 60,
-            derelict_amount: 35,
-            damage_amount: 80,
+            // These are also valid Extras, so decoding this round trip
+            // depends on the explicit flag for the population sliders.
+            tech_building_amount: 2,
+            derelict_amount: 1,
+            damage_amount: 1,
             civilian_amount: 40,
             animal_amount: 25,
             wild_amount: 55,
