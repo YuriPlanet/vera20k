@@ -464,7 +464,7 @@ fn extension_target(
             .iter()
             .find_map(|&id| {
                 let building = sim.substrate.entities.get(id)?;
-                if !super::building_has_super_weapon(sim, rules, building, &sw.id, true)
+                if !super::building_has_super_weapon(sim, rules, building, &sw.id)
                     || sim.building_operational_state(id, rules) != Some(true)
                 {
                     return None;

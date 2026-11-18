@@ -329,8 +329,7 @@ pub(super) fn launch_site(
         .then(|| rules.super_weapon_metadata(&sw.id))
         .flatten();
     let entity = sim.substrate.entities.get(id)?;
-    let provides =
-        || super::provided_supers(sim, rules, entity).any(|name| name.eq_ignore_ascii_case(&sw.id));
+    let provides = || super::building_has_super_weapon(sim, rules, entity, &sw.id);
     let site = match emp_pulse {
         Some(metadata) => {
             let cannons = &metadata.launch().emp_pulse().cannons;

@@ -323,10 +323,22 @@ const IRON_GUARD: &str = "\
 Strength=300
 [BuildingTypes]
 0=GUARD
+1=TOWER
+2=COIL
 [GUARD]
 Strength=700
 EMPulseCannon=yes
 Primary=GuardWeapon
+SuperWeapon=GuardSpecial
+[TOWER]
+Strength=700
+EMPulseCannon=yes
+Primary=GuardWeapon
+Upgrades=1
+[COIL]
+Strength=100
+PowersUpBuilding=TOWER
+PowersUpToLevel=1
 SuperWeapon=GuardSpecial
 [SuperWeaponTypes]
 0=GuardSpecial
@@ -334,6 +346,7 @@ SuperWeapon=GuardSpecial
 Type=EMPulse
 IsPowered=no
 RechargeTime=1
+SW.InitialReady=yes
 SW.AutoFire=yes
 SW.ManualFire=no
 SW.AITargeting=Self
@@ -355,28 +368,57 @@ IronCurtain.Duration=125
 /// Iron Guard and its warhead curtains the tank beside it.
 #[test]
 fn ares_self_targeting_auto_fire_curtains_the_tank_beside_its_building() {
+    assert_iron_guard_protects("GUARD", None);
+}
+
+/// HasSuperWeapon, the House grant pass and IsLaunchSite all admit the
+/// installed upgrade when the cannon's base type has no Super of its own.
+#[test]
+fn ares_self_targeting_auto_fire_uses_a_super_from_an_installed_upgrade() {
+    assert_iron_guard_protects("TOWER", Some("COIL"));
+}
+
+fn assert_iron_guard_protects(building: &str, upgrade: Option<&str>) {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let ini = crate::sim::arena_fixture::clear_ground_ini(IRON_GUARD);
-    let art = IniFile::from_str("[GUARD]\nFoundation=1x1\n");
+    let art = IniFile::from_str("[GUARD]\nFoundation=1x1\n[TOWER]\nFoundation=1x1\n");
     let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     let owner = sim.interner.intern("Americans");
-    sim.spawn_object_at_height("GUARD", "Americans", 12, 15, 0, 0, &rules)
+    super::construct_house_supers(&mut sim, &rules, owner, false);
+    let sw = sim.interner.intern("GuardSpecial");
+    let host = sim
+        .spawn_object_at_height(building, "Americans", 12, 15, 0, 0, &rules)
         .unwrap();
     let tank = sim
         .spawn_object_at_height("TANK", "Americans", 14, 15, 0, 0, &rules)
         .unwrap();
-    let sw = sim.interner.intern("GuardSpecial");
-    let mut instance = SuperWeaponInstance::new(sw, owner, 0);
-    instance.is_active = true;
-    instance.is_ready = true;
-    sim.super_weapons
-        .map_mut_for_test()
-        .entry(owner)
-        .or_default()
-        .insert(sw, instance);
+    if let Some(upgrade) = upgrade {
+        assert!(!sim.super_weapons[&owner][&sw].is_active());
+        let temporary = sim
+            .construct_object_limbo_at_height(
+                upgrade,
+                "Americans",
+                12,
+                15,
+                0,
+                0,
+                &rules,
+                FrameEffects::default(),
+            )
+            .unwrap();
+        assert!(sim.try_install_building_upgrade(
+            temporary,
+            host,
+            &rules,
+            crate::sim::world::UninitContext::with_rules(&rules),
+        ));
+    } else {
+        super::grant_provided_supers(&mut sim, &rules, owner);
+    }
+    assert!(sim.super_weapons[&owner][&sw].is_ready());
     crate::sim::house_strategy::update_strategy(
         &mut sim,
         &rules,
