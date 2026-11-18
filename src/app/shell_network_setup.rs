@@ -40,7 +40,6 @@ use crate::app::frontend::shell_transition;
 use crate::app::frontend::skirmish_session::SetupProfile;
 use crate::app::match_runtime::session::NetworkVacancy;
 use crate::app::match_runtime::session::SessionMode;
-use crate::app::shell_lan::LanJoinAcceptance;
 use crate::skirmish_launch::{SkirmishHumanSlot, SkirmishLaunchSession};
 use crate::ui::multiplayer_setup::{MultiplayerSetupState, SetupDialog, SetupFlavor};
 use crate::ui::wol_chat::WolChatLine;
@@ -943,18 +942,29 @@ impl App {
         true
     }
 
-    /// Packet7 closes BB before full host options arrive. Retained options
-    /// supply the initial controls, but map/mode are unconfigured in BD and
-    /// Accept remains disabled until a subsequent map-availability response.
-    pub(crate) fn open_lan_joined_setup(state: &mut AppState, acceptance: LanJoinAcceptance) {
-        let mode = state.frontend.skirmish_modes.first().cloned();
-        let Some(mode) = mode else {
-            return;
+    /// A guest's setup before the host's full options arrive: retained
+    /// options supply the initial controls, with the first mode, no map and
+    /// the local node alone in rows that are all Open. LAN BD opens when
+    /// Packet7 closes BB; the packet7 peer's identity belongs to the service
+    /// envelope until the type3 roster admission, and Accept stays disabled
+    /// until a map-availability response. WOL C9 adds its own steps
+    /// ([`App::open_wol_joined_setup`]).
+    ///
+    /// Returns whether the setup opened; a refused one reopens the service
+    /// lobby.
+    pub(crate) fn open_joined_setup(
+        state: &mut AppState,
+        local: SkirmishHumanSlot,
+        observer_row: Option<u8>,
+        flavor: SetupFlavor,
+    ) -> bool {
+        let Some(mode) = state.frontend.skirmish_modes.first().cloned() else {
+            return false;
         };
         let launch = SkirmishLaunchSession::from_rows(
             crate::skirmish_launch::SkirmishLaunchMode::from_game_mode(&mode),
             None,
-            vec![acceptance.local],
+            vec![local],
             0,
             Vec::new(),
             state
@@ -963,19 +973,19 @@ impl App {
                 .launch_options_base
                 .clone(),
         );
-        // The packet7 peer's identity belongs to the service envelope until
-        // the original type3 roster admission; it is not a fabricated node.
-        let dialog = setup_dialog(state, false, SetupFlavor::Lan);
+        let dialog = setup_dialog(state, false, flavor);
         if let Err(error) = install_setup(
             state,
             launch,
             dialog,
             [NetworkVacancy::Open; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT],
-            acceptance.observer_row,
+            observer_row,
         ) {
-            log::error!("Could not admit LAN join: {error:#}");
-            Self::open_lan_lobby(state);
+            log::error!("Could not admit the {flavor:?} join: {error:#}");
+            open_service_lobby(state, dialog);
+            return false;
         }
+        true
     }
 }
 
