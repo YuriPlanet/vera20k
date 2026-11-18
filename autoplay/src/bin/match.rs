@@ -24,8 +24,9 @@ use vera20k_core::sim::control::brain::{Brain, Outbox};
 use vera20k_core::sim::control::observation::Observation;
 use vera20k_core::sim::intern::InternedId;
 use vera20k_core::sim::production::ProductionCategory;
+use vera20k_core::sim::replay::{PLAY_HASH_INTERVAL, REPLAY_VERSION, ReplayHeader, ReplayLog, ReplayStartup};
 use vera20k_core::sim::strategy::retail::RetailBrain;
-use vera20k_core::sim::world::Simulation;
+use vera20k_core::sim::world::{FrameEffects, Simulation, TickLane};
 use vera20k_core::skirmish_launch::{AiDifficulty, LaunchCountry, SkirmishLaunchOptions};
 
 /// The map main's own match bench loads by default, so it is known to have the
@@ -54,6 +55,7 @@ struct Args {
     seed: u32,
     ticks: u64,
     progress: u64,
+    replay_out: Option<PathBuf>,
     per_frame: usize,
     opponent: LaunchCountry,
     /// The local house's country: the side the policy plays.
@@ -116,6 +118,7 @@ fn parse_args() -> Result<Args, String> {
     let mut seed = 0x5EED_u32;
     let mut ticks = DEFAULT_TICKS;
     let mut progress = DEFAULT_PROGRESS;
+    let mut replay_out = None;
     let mut per_frame = DEFAULT_PER_FRAME;
     let mut opponent = LaunchCountry::Russia;
     let mut country = LaunchCountry::America;
@@ -146,6 +149,7 @@ fn parse_args() -> Result<Args, String> {
         match flag.as_str() {
             "--ra2-dir" => ra2_dir = Some(PathBuf::from(value()?)),
             "--map" => map = value()?,
+            "--replay-out" => replay_out = Some(PathBuf::from(value()?)),
             "--seed" => seed = value()?.parse().map_err(|_| "seed is a u32".to_string())?,
             "--ticks" => ticks = value()?.parse().map_err(|_| "ticks is a u64".to_string())?,
             "--progress" => {
@@ -226,6 +230,7 @@ fn parse_args() -> Result<Args, String> {
         seed,
         ticks,
         progress,
+        replay_out,
         per_frame,
         opponent,
         country,
@@ -291,6 +296,7 @@ autoplay-match: a headless skirmish with auto play on the local house
   --seed <u32>       the pinned seed (default 0x5eed)
   --ticks <u64>      how many frames to play (default 36000, forty minutes)
   --progress <u64>   a progress line every this many frames (default 1800)
+  --replay-out <file>  record commands and hashes for autoplay-replay
   --per-frame <n>    commands the control layer admits per frame (default 8)
   --opponent <name>  the computer house's country (default russia)
   --country <name>   the local house's country: what the policy plays
@@ -714,7 +720,36 @@ fn main() -> Result<(), String> {
         ai_team,
     );
     let mut scenario =
-        headless_scenario::load_session(&args.ra2_dir, &args.map, args.seed, session)?;
+        headless_scenario::load_session(&args.ra2_dir, &args.map, args.seed, session.clone())?;
+    let mut replay = if args.replay_out.is_some() {
+        let sim = &mut scenario.runtime.simulation;
+        // Match the frame-zero setup that standalone ReplayPlayback reconstructs.
+        sim.batch_path_searches();
+        sim.batch_target_scans();
+        sim.sleep_idle_objects_in_match();
+        sim.hash_state_every(PLAY_HASH_INTERVAL);
+        let mut log = ReplayLog::new(ReplayHeader {
+            pixel_conversion_bounds: sim.session().pixel_conversion_bounds(),
+            version: REPLAY_VERSION,
+            tick_hz: vera20k_core::util::fixed_math::RA2_LOGIC_FRAMES_PER_SECOND,
+            seed: sim.session().seed(),
+            map_name: sim.session().map_name().to_owned(),
+            rules_hash: scenario.runtime.resources.rules.simulation_config_hash(),
+        });
+        let startup = ReplayStartup::capture(
+            &scenario.runtime,
+            &session,
+            &scenario.source,
+            scenario.map.ini.content_hash(),
+            SIM_TICK_MS,
+            false,
+        )
+        .map_err(|error| format!("capture replay startup: {error:#}"))?;
+        log.startup = Some(Box::new(startup));
+        Some(log)
+    } else {
+        None
+    };
     let sim = &scenario.runtime.simulation;
 
     let local = sim
@@ -879,9 +914,9 @@ fn main() -> Result<(), String> {
             let runtime = &mut scenario.runtime;
             host.step(&mut runtime.simulation, &runtime.resources.rules);
         }
-        scenario
+        let mut frame = scenario
             .runtime
-            .advance_frame_for_tooling(&[], SIM_TICK_MS)
+            .advance_frame(&[], SIM_TICK_MS, TickLane::Ordinary, FrameEffects::default())
             .map_err(|error| format!("tick {tick}: {error}"))?;
 
         let sim = &scenario.runtime.simulation;
@@ -891,6 +926,13 @@ fn main() -> Result<(), String> {
             outcome = "lost";
         } else if won {
             outcome = "won";
+        }
+        if let Some(log) = &mut replay {
+            let mut hash = frame.tick.state_hash;
+            if hash.is_none() && (tick == args.ticks || outcome != "timeout") {
+                hash = Some(sim.state_hash());
+            }
+            log.record_tick(frame.tick.tick, frame.take_admitted_commands(), hash);
         }
         if args.dump_teams > 0 && tick % TEAM_PROGRESS == 0 {
             let rules = &scenario.runtime.resources.rules;
@@ -1010,6 +1052,15 @@ fn main() -> Result<(), String> {
         }
     }
 
+    if let (Some(path), Some(log)) = (&args.replay_out, replay) {
+        log.standalone_startup()
+            .map_err(|error| format!("validate replay: {error:#}"))?;
+        let mut file = std::fs::File::create_new(path)
+            .map_err(|error| format!("create replay {}: {error}", path.display()))?;
+        log.write_json(&mut file)
+            .map_err(|error| format!("write replay {}: {error:#}", path.display()))?;
+        println!("autoplay-match: replay written to {}", path.display());
+    }
     println!("autoplay-match: {outcome} at tick {reached}");
     // A run that ended on a census frame has already printed this one.
     if args.dump_teams > 0 && reached % TEAM_PROGRESS != 0 {
