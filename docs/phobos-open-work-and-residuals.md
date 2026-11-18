@@ -321,6 +321,19 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   与本臂的 `GetLevel()` 行为一致；该路径由
   `type_conversion_in_air_tests::an_airborne_conversion_lands_on_a_bridge_deck_over_water`
   锁定。
+- **AE 的 `CloakCheck`（2026-11-19）**：Phobos
+  `AttachEffectClass::CloakCheck`（`New/Entity/AttachEffectClass.cpp:446-453`，
+  `Cloaking`/`Cloaked` 都算隐身，隐身着且动画类型的 `DetachOnCloak=` 为真时
+  `KillAnim()`）与 `CreateAnim` 的同款门（`:476-477`，隐身时拒绝创建）已接线。
+  `sim/attach_effect.rs` 的 `update_phobos_attach_effects_with` 逐帧读业主
+  `cloak.state()`（`1|2`），对 `anim_type_detach_on_cloak` 为真的目标动画把
+  `desired` 置空，由动画 owner 走正常的销毁分支，从而在隐身期间既不保留也不重建；
+  隐身结束后的下一趟 `UpdateAttachEffects` 重新 `CreateAnim`。测试
+  `a_cloaked_owner_hides_a_detach_on_cloak_effect_animation`
+  （Cloaked 销毁 + 持续隐身不重建 + 解除隐身后重建新实例）与
+  `a_detach_on_cloak_opt_out_keeps_the_effect_animation_while_cloaked`
+  （`DetachOnCloak=no` 保留同一动画）。残余：`CloakCheck` 是每实例状态，本实现
+  每帧按业主状态重算，等价。
 - **`Animation.ResetOnReapply`（2026-11-19）**：Phobos
   `AttachEffectClass::RefreshDuration`（`New/Entity/AttachEffectClass.cpp:549-555`）
   末尾的 `KillAnim()` + `CanShowAnim()` 时 `CreateAnim()`，以及两条
