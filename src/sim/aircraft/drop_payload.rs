@@ -297,6 +297,12 @@ pub(crate) fn spawn_parachuted(
         [landing.x, landing.y, landing.z],
     ));
     paradrop(sim, rules, registry, passenger, landing, spot, effects)?;
+    // `pExt->OnParachuted = true` (`Ext/Techno/Hooks.cpp:1907`), written right
+    // after `SpawnParachuted` returns true and before the mission is picked.
+    #[cfg(feature = "phobos")]
+    if let Some(rider) = sim.substrate.entities.get_mut(passenger) {
+        rider.mark_on_parachuted();
+    }
     let Some(rider) = sim.substrate.entities.get(passenger) else {
         return Ok(());
     };

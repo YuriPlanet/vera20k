@@ -80,7 +80,16 @@ impl crate::sim::world::Simulation {
             effects,
         );
         let mut changed = false;
+        // `Ext/Techno/Hooks.cpp:1030-1031`: the landing arm reads and clears
+        // `OnParachuted` for every falling-down Techno, before the `IsABomb`
+        // gate, so an unflagged later landing cannot keep it.
+        #[cfg(feature = "phobos")]
+        let mut on_parachuted = false;
         if landed {
+            #[cfg(feature = "phobos")]
+            {
+                on_parachuted = self.take_on_parachuted(id);
+            }
             changed =
                 self.per_cell_process(id, super::PerCellReason::Arrival, rules, registry, effects)?;
             Self::wind_down_parachute_anim(&mut self.substrate, id);
@@ -152,6 +161,11 @@ impl crate::sim::world::Simulation {
                     // `IsClearToMove` fails before the ratio block: the whole
                     // current Health goes (`:1043-1055`).
                     health
+                } else if on_parachuted {
+                    // `if (!onParachuted)` gates the EMP arm and the whole
+                    // ratio block (`:1067-1084`): the packet stays 0, so the
+                    // landing deals no `FallingDownDamage` at all.
+                    0
                 } else {
                     // A shutdown over a non-drowning cell falls through into the
                     // same ratio block the canopy arm uses (`:1062-1084`).
@@ -186,6 +200,16 @@ impl crate::sim::world::Simulation {
             .entities
             .get_mut(id)
             .is_some_and(|entity| entity.take_hover_shutdown())
+    }
+
+    /// `Ext/Techno/Hooks.cpp:1030-1031`: the landing arm reads and clears
+    /// `TechnoExt::OnParachuted` on every falling-down Techno.
+    #[cfg(feature = "phobos")]
+    fn take_on_parachuted(&mut self, id: u64) -> bool {
+        self.substrate
+            .entities
+            .get_mut(id)
+            .is_some_and(|entity| entity.take_on_parachuted())
     }
 
     /// `HoverDrownable.Get(RulesExt::Global()->HoverDrownable)`
@@ -1280,6 +1304,52 @@ FallingDownDamage=0.25
             health.is_none_or(|current| current <= 0),
             "the default ratio is 1.0, which still kills: {health:?}"
         );
+    }
+
+    /// `if (!onParachuted)` (`Ext/Techno/Hooks.cpp:1067-1084`): a Techno issued
+    /// as a parachute fall (`FootClass_Paradrop`, `:1907`) lands with a 0
+    /// packet, so neither the EMP arm nor the ratio runs. The flag is read and
+    /// cleared on that landing (`:1030-1031`), before the `IsABomb` gate.
+    #[test]
+    fn a_parachuted_landing_skips_the_falling_down_ratio() {
+        const C4: &str = "C4Warhead=C4
+[Warheads]
+0=C4
+[C4]
+Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
+";
+        fn landing(parachuted: bool) -> (Option<i32>, bool) {
+            let (mut sim, rules, id) = scene("FallingDownDamage=0.25\n", C4, false);
+            let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+            entity.position.set_exact_z_leptons_for_test(Some(0));
+            entity.begin_bomb_fall();
+            if parachuted {
+                entity.mark_on_parachuted();
+            }
+            sim.object_ai_fall(id, &rules, None, FrameEffects::default())
+                .expect("landing arm");
+            let health = sim
+                .substrate
+                .entities
+                .get(id)
+                .map(|entity| entity.health.current());
+            let cleared = sim
+                .substrate
+                .entities
+                .get_mut(id)
+                .is_none_or(|entity| !entity.take_on_parachuted());
+            (health, cleared)
+        }
+
+        let (health, cleared) = landing(true);
+        assert!(cleared, "the landing arm reads and clears the flag");
+        assert_eq!(
+            health,
+            Some(400),
+            "the 0.25 ratio (a 100 packet) is skipped, so the 400 stands"
+        );
+        let (health, _) = landing(false);
+        assert_eq!(health, Some(150), "without the flag the ratio still runs");
     }
 
     /// `CellClass::IsClearToMove(SpeedType, true, true, -1, MovementZone, -1,

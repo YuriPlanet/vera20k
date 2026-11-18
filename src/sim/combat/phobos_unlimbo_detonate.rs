@@ -305,8 +305,10 @@ pub(super) fn emit(
 
     if success {
         if target_in_air && let Some(entity) = world.substrate.entities.get_mut(owner_id) {
-            // `pTechno->IsFallingDown = true` (`:556-560`).
+            // `pTechno->IsFallingDown = true` (`:556-560`) and then
+            // `TechnoExt::Fetch(pTechno)->OnParachuted = true` (`:607-610`).
             entity.raise_falling_down();
+            entity.mark_on_parachuted();
         }
         // `SetTarget(pTarget)` for an Object target, otherwise NULL
         // (`:562-570`).

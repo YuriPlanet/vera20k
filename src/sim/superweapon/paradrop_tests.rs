@@ -1083,6 +1083,36 @@ fn spawn_parachuted_matches_native() {
     }
 }
 
+/// Phobos `FootClass_Paradrop` (`Ext/Techno/Hooks.cpp:1907`) marks the
+/// passenger `OnParachuted` right after `SpawnParachuted` returns true, so the
+/// passenger's landing skips the `FallingDownDamage` ratio
+/// (`:1067`, consumed in `sim/movement/parachute_descent.rs`).
+#[cfg(feature = "phobos")]
+#[test]
+fn a_paradropped_passenger_is_marked_on_parachuted() {
+    let (rules, mut sim, _) = paradrop_world(retail_list_rules(1024));
+    let plane = plane_at(&mut sim, &rules, TARGET, 1);
+    let [passenger] = cargo(&sim, plane)[..] else {
+        panic!("one passenger");
+    };
+    drop_payload(
+        &mut sim,
+        plane,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    let entity = sim
+        .substrate
+        .entities
+        .get(passenger)
+        .expect("the dropped passenger is on the map");
+    assert!(
+        entity.on_parachuted(),
+        "the paradrop spawn marks the passenger"
+    );
+}
+
 /// Phobos `AIParadropMission` (`Ext/TechnoType/Body.cpp:1172`, fallback
 /// `[General] AIParadropMission` `Ext/Rules/Body.cpp:521`, consumer
 /// `FootClass_Paradrop` `Ext/Techno/Hooks.cpp:1880-1889`): a passenger of a

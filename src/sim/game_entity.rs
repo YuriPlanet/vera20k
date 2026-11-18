@@ -3151,6 +3151,26 @@ impl GameEntity {
         self.fall.take_hover_shutdown()
     }
 
+    /// Phobos `TechnoExt::OnParachuted`: this object was just issued as a
+    /// parachute fall, so its landing takes no `FallingDownDamage`
+    /// (`Ext/Techno/Hooks.cpp:1067`).
+    #[cfg(feature = "phobos")]
+    pub(crate) fn on_parachuted(&self) -> bool {
+        self.fall.on_parachuted()
+    }
+
+    #[cfg(feature = "phobos")]
+    pub(crate) fn mark_on_parachuted(&mut self) {
+        self.fall.mark_on_parachuted();
+    }
+
+    /// `Ext/Techno/Hooks.cpp:1030-1031`: the landing arm reads and clears the
+    /// flag on every falling-down Techno.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn take_on_parachuted(&mut self) -> bool {
+        self.fall.take_on_parachuted()
+    }
+
     pub(crate) fn fall_rate(&self) -> i32 {
         self.fall.rate()
     }

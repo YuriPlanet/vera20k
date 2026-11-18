@@ -228,6 +228,15 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
    `docs/phobos-tunnel-locomotor.md:120-131`）。
 
 ### 全局已知残渣（早前链条，仍需实机抽查）
+- **`TechnoExt::OnParachuted`（2026-11-18）**：闩已落地
+  （`sim/object_fall.rs` 的 `on_parachuted`）：空降出生
+  （`Ext/Techno/Hooks.cpp:1907`，`sim/aircraft/drop_payload.rs`）与空中重现身
+  （`Ext/Bullet/Hooks.DetonateLogics.cpp:607-610`）各置位一次，落地臂按
+  `:1030-1031` 读取并清除、`:1067` 以 0 伤害包越过 EMP/ratio 段（测试
+  `...a_parachuted_landing_skips_the_falling_down_ratio`、
+  `...a_paradropped_passenger_is_marked_on_parachuted`）。残余：`Ext/Foot/Body.cpp:784`
+  与 `Ext/TechnoType/Body.cpp:705` 两个置位点位于 VERA 未移植的空中分支，经此两处
+  起落的单位不带闩（无起落即无伤害包，无可见差）。
 - **BuildLimitGroup 的 `RemoveProduction`**（`docs/phobos-build-limit-group.md`）：
   已完成（2026-11-18）。灰化/`CanBuild` 的 owner 仍是纯查询，但两个 gate 都返回裁剪
   意图（`BuildLimitGroupGate`），队列入场 owner `queue_production` 调
