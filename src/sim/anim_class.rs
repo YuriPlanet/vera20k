@@ -476,6 +476,12 @@ pub struct AnimObject {
     /// presentation anim is local, so it is never saved, compared or hashed.
     #[serde(skip)]
     presentation: Option<Option<crate::sim::world::display_layers::DisplayLayer>>,
+    /// VERA-only: a presentation anim's place in Display submission order,
+    /// taken when it was last placed in its layer
+    /// (`DisplayLayers::unshared_order`), where an ordinary anim's slot
+    /// would hold it.
+    #[serde(skip)]
+    presentation_order: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -494,6 +500,12 @@ impl AnimObject {
     /// ordinary anim, which Display places, or a concealed one.
     pub fn presentation_layer(&self) -> Option<crate::sim::world::display_layers::DisplayLayer> {
         self.presentation.flatten()
+    }
+
+    /// A presentation anim's place in Display submission order
+    /// (`Simulation::picture_draw_order`).
+    pub fn presentation_order(&self) -> u64 {
+        self.presentation_order
     }
 
     /// Read the same hidden byte for a particular client without making
@@ -804,6 +816,7 @@ impl AnimObject {
             attached_bullet: None,
             owner_terrain: None,
             presentation: None,
+            presentation_order: 0,
         }
     }
 
@@ -2267,6 +2280,7 @@ impl Simulation {
             attached_bullet: None,
             owner_terrain: None,
             presentation: presentation.then_some(None),
+            presentation_order: 0,
         };
         // The insert must run in every build profile: wrapped in
         // `debug_assert!` it was compiled out of release binaries and no
@@ -3379,8 +3393,10 @@ impl Simulation {
         // A presentation anim keeps the layer it draws in instead of a slot.
         if self.anim(id).is_some_and(AnimObject::is_presentation) {
             let layer = self.anim_display_layer(id, rules);
+            let order = self.substrate.display.unshared_order();
             if let Some(anim) = self.substrate.anims.get_mut(id) {
                 anim.presentation = Some(layer);
+                anim.presentation_order = order;
             }
             return;
         }
@@ -3490,8 +3506,8 @@ impl Simulation {
 
     /// The presentation anims ([`AnimConstructorInput::Presentation`]) that
     /// draw this frame, each with its layer, in the order they were made. The
-    /// presentation draws each at the end of its layer, after the Display
-    /// members: depth, not the vector's order, hides what stands in front.
+    /// picture draws each where Display would hold it as an ordinary anim
+    /// (`Simulation::picture_draw_order`).
     pub fn presentation_anims(
         &self,
     ) -> impl Iterator<Item = (AnimId, crate::sim::world::display_layers::DisplayLayer)> + '_ {
@@ -4910,8 +4926,8 @@ pub(crate) enum AnimConstructorInput {
     /// its own picture ([`crate::rules::art_data::ArtRegistry::anim_presentation_only`]),
     /// which every game makes alike. It takes no Display slot, no Logic slot,
     /// no unique id and no Scenario draw, and nothing in the simulation holds
-    /// it; the presentation draws it at the end of its layer
-    /// ([`Simulation::presentation_anims`]).
+    /// it; the picture draws it where Display would hold it
+    /// (`Simulation::picture_draw_order`).
     ///
     /// VERA-only sim-scale deviation, on in real matches
     /// ([`Simulation::present_effect_anims`]): gamemd keeps every muzzle flash and
@@ -6539,6 +6555,38 @@ mod tests {
         sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
             .unwrap();
         assert_eq!(starts(&sim), 1, "Start runs once per delay");
+    }
+
+    /// A presentation anim draws where gamemd's Display would hold it as an
+    /// ordinary anim: on Ground by its GetYSort key (Anim422BC0, inserted
+    /// by Ground551A90) among the members, not after all of them.
+    #[test]
+    fn a_ground_presentation_anim_sorts_among_the_ground_members() {
+        use crate::sim::world::display_layers::DisplayLayer;
+        let rules = runtime_rules("[PUFF]\nEnd=8\nLayer=Ground\n", &[("PUFF", 8)]);
+        let zero = crate::util::fixed_math::SIM_ZERO;
+        let mut sim = Simulation::new();
+        sim.present_effect_anims();
+        let type_id = sim.interner.intern("PUFF");
+        let near = sim
+            .spawn_combat_explosion_anim(&rules, type_id, 1, 1, zero, zero, 0, 0)
+            .unwrap();
+        let far = sim
+            .spawn_combat_explosion_anim(&rules, type_id, 10, 10, zero, zero, 0, 0)
+            .unwrap();
+        // X+Y 2000 lies between the kept anims' cells 1,1 and 10,10.
+        let point = crate::sim::projectile::ProjectileCoord::new(1000, 1000, 0);
+        let packet = crate::sim::combat::detonation_anim::placed_effect(type_id, point);
+        crate::sim::world::damage_consequences::admit_explosion_effect(&mut sim, &rules, packet);
+        let (puff, layer) = sim.presentation_anims().next().unwrap();
+        assert_eq!(layer, DisplayLayer::GROUND);
+        let ground: Vec<u64> = sim
+            .picture_draw_order(Some(&rules))
+            .into_iter()
+            .filter(|&(layer, _)| layer == DisplayLayer::GROUND)
+            .map(|(_, id)| id)
+            .collect();
+        assert_eq!(ground, [near, puff, far]);
     }
 
     /// The impact packet keeps nothing, so a picture-only impact is a

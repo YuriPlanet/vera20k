@@ -171,8 +171,8 @@ impl DisplayMembers {
             effects.push(EffectMember { id, kind });
         }
         // The presentation anims hold no Display slot; they follow every
-        // member here, and in the draw order each follows its own layer's
-        // members (`NativeDisplayOrder::from_world`).
+        // member here, and the draw order places each in its own layer
+        // (`NativeDisplayOrder::from_world`).
         for (id, _) in sim.presentation_anims() {
             if let Some(anim) = sim.anim(id) {
                 effects.push(EffectMember {

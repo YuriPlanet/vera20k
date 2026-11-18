@@ -157,7 +157,7 @@ pub struct DrawDecision {
 /// `remap_row` is the palette-ramp selection. `fx_params.x` is the final alpha
 /// multiplier selected by the native translucency bits; `fx_params.y` preserves
 /// those selector bits for diagnostics; `fx_params.z` is unused (1.0);
-/// For voxel unit bodies carrying the composite bridge-split flag,
+/// for voxel unit bodies (`Z_GRADIENT_VOXEL_VIEW_CLIP_FLAG`, split or not),
 /// `fx_params.w` carries the tactical scissor height in world pixels (zero
 /// means full viewport). This shader-specific transport does not alter effects.
 /// `sinking_row` is the retained world row a voxel draw with FX_SINKING_CLIP
