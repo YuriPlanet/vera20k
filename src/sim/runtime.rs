@@ -328,7 +328,7 @@ mod tests {
         let mut sim = Simulation::new();
         let terrain =
             crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(0, 0, Vec::new());
-        populate_staged_scenario_with_generated_inits(
+        populate_staged_fixture(
             &mut sim,
             &map,
             &terrain,
@@ -388,7 +388,7 @@ mod tests {
         sim.interner.intern("alpha");
         let terrain =
             crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(0, 0, Vec::new());
-        populate_staged_scenario_with_generated_inits(
+        populate_staged_fixture(
             &mut sim,
             &map,
             &terrain,
@@ -625,14 +625,15 @@ mod tests {
         let mut grid = OverlayGrid::new(80, 80);
         let ore = overlays.id_for_name("TIB01").expect("retail ore");
         grid.place_overlay(40, 40, ore, 7);
-        populate_staged_scenario_with_generated_inits(
+        // Inspect the constructor phase before the generator tail germinates the ore.
+        populate_staged_fixture(
             &mut sim,
             &map,
             &terrain,
             "TEMPERATE",
             &rules,
             Some(overlays),
-            Some(&grid),
+            Some(grid),
             crate::map::basic::BridgeDestroyabilityMode::CampaignOrEditor,
             &descriptor,
             Some(&inits),
@@ -895,14 +896,59 @@ pub enum ScenarioPopulationError {
     Terrain(#[from] crate::sim::terrain_spawn::TerrainConstructionError),
 }
 
-pub fn populate_staged_scenario_with_generated_inits<F>(
+/// Populate the accepted generator journal and its overlay cells on the staged
+/// world. The final Generate598960 ore pass follows all generator constructors.
+pub fn populate_staged_generated_scenario<F>(
+    sim: &mut Simulation,
+    map_data: &crate::map::map_file::MapFile,
+    resolved_terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
+    theater_name: &str,
+    rules: &crate::rules::ruleset::RuleSet,
+    overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+    overlay_grid: crate::sim::overlay_grid::OverlayGrid,
+    bridge_destroyability_mode: crate::map::basic::BridgeDestroyabilityMode,
+    descriptor: &crate::sim::scenario_session::ScenarioDescriptor,
+    generated_inits: &crate::sim::world::GeneratedTechnoInitTable,
+    initialize_houses_before_objects: F,
+) -> Result<(), ScenarioPopulationError>
+where
+    F: FnOnce(&mut Simulation),
+{
+    populate_staged_scenario_inner(
+        sim,
+        map_data,
+        resolved_terrain,
+        theater_name,
+        crate::sim::terrain_spawn::TerrainConstructionRules::Projected(rules),
+        Some(overlay_registry),
+        Some(overlay_grid),
+        None,
+        bridge_destroyability_mode,
+        descriptor,
+        Some(generated_inits),
+        |sim, _| initialize_houses_before_objects(sim),
+    )?;
+    crate::sim::tiberium_germinate::finish_generated_ore(
+        sim,
+        rules,
+        overlay_registry,
+        &map_data.basic,
+        &map_data.special_flags,
+        (map_data.header.width as u16, map_data.header.height as u16),
+    )?;
+    Ok(())
+}
+
+/// Compatibility fixtures exercise object construction separately from the generator tail.
+#[cfg(test)]
+pub(crate) fn populate_staged_fixture<F>(
     sim: &mut Simulation,
     map_data: &crate::map::map_file::MapFile,
     resolved_terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
     theater_name: &str,
     rules: &crate::rules::ruleset::RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
+    overlay_grid: Option<crate::sim::overlay_grid::OverlayGrid>,
     bridge_destroyability_mode: crate::map::basic::BridgeDestroyabilityMode,
     descriptor: &crate::sim::scenario_session::ScenarioDescriptor,
     generated_inits: Option<&crate::sim::world::GeneratedTechnoInitTable>,
@@ -934,7 +980,7 @@ fn populate_staged_scenario_inner<F>(
     theater_name: &str,
     mut construction_rules: crate::sim::terrain_spawn::TerrainConstructionRules<'_>,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
+    overlay_grid: Option<crate::sim::overlay_grid::OverlayGrid>,
     authored_overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     bridge_destroyability_mode: crate::map::basic::BridgeDestroyabilityMode,
     descriptor: &crate::sim::scenario_session::ScenarioDescriptor,
@@ -990,11 +1036,10 @@ where
     // Active `CellClass` overlay identity exists before the Techno map
     // sections are read. Install the already-resolved grid now so every
     // UnitClass virtual Unlimbo sees ore, walls, and structural bridges.
-    // This live grid then accumulates Cell+122 history, so finalization keeps
-    // it and uses its own overlay_grid argument only when none is installed.
-    // The staged owner has no grid before this point.
+    // Keep this same grid and its Cell+122 history through post-map
+    // finalization. Compatibility fixtures may have no overlays.
     if let Some(grid) = overlay_grid {
-        sim.install_overlay_grid_for_load(grid.clone());
+        sim.overlay_grid = Some(grid);
     }
     // Wire the cliff/slope coefficients from [General] into the live World config;
     // it otherwise holds compiled vanilla defaults and never sees a modded INI.
@@ -1046,20 +1091,15 @@ where
         log::info!("Constructed {constructed} map terrain objects before map entities");
     }
     if let Some(overlay_registry) = authored_overlay_registry {
-        // The live grid is read through a temporary view and handed back.
-        let live_grid = sim.take_overlay_grid_for_load();
+        // Authored queues see the live grid after Terrain and before Technos.
         let stats = initialize_native_tiberium_queues(
             sim,
             &map_data.basic,
             &map_data.special_flags,
             rules,
             overlay_registry,
-            live_grid.as_ref(),
             (map_data.header.width as u16, map_data.header.height as u16),
         );
-        if let Some(grid) = live_grid {
-            sim.install_overlay_grid_for_load(grid);
-        }
         if let Some(stats) = stats? {
             log::info!(
                 "Initialized authored native tiberium queues before Technos: {} growth, {} spread",
@@ -1130,13 +1170,12 @@ where
 /// `TiberiumClass::InitSpreadQueues_All @ 0x00722240`, each freeing and
 /// rebuilding every TiberiumClass's queue from the current cell state.
 /// Returns `None` when no overlay grid exists (queues reset empty).
-pub fn initialize_native_tiberium_queues(
+pub(crate) fn initialize_native_tiberium_queues(
     sim: &mut Simulation,
     basic: &crate::map::basic::BasicSection,
     special_flags: &crate::map::basic::SpecialFlagsSection,
     rules: &RuleSet,
     overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
-    overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
     native_rect: (u16, u16),
 ) -> Result<
     Option<crate::sim::ore_growth::NativeTiberiumRebuildStats>,
@@ -1144,6 +1183,7 @@ pub fn initialize_native_tiberium_queues(
 > {
     sim.ore_growth_config
         .reload_for_scenario(basic, special_flags, &sim.session);
+    let overlay_grid = sim.overlay_grid.as_ref();
     let (width, height) = overlay_grid
         .map(|grid| (grid.width(), grid.height()))
         .or_else(|| {
@@ -1193,12 +1233,6 @@ pub fn initialize_native_tiberium_queues(
     ))
 }
 
-#[derive(Debug)]
-pub struct AuthoredScenarioLoadOutput {
-    pub resolved_terrain: crate::map::resolved_terrain::ResolvedTerrainGrid,
-    pub overlay_grid: crate::sim::overlay_grid::OverlayGrid,
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum AuthoredScenarioLoadError {
     #[error(transparent)]
@@ -1244,7 +1278,7 @@ pub fn finalize_and_populate_staged_authored_scenario<F>(
     bridge_destroyability_mode: crate::map::basic::BridgeDestroyabilityMode,
     descriptor: &crate::sim::scenario_session::ScenarioDescriptor,
     initialize_houses_before_objects: F,
-) -> Result<AuthoredScenarioLoadOutput, AuthoredScenarioLoadError>
+) -> Result<crate::map::resolved_terrain::ResolvedTerrainGrid, AuthoredScenarioLoadError>
 where
     F: FnOnce(&mut Simulation, &RuleSet),
 {
@@ -1310,7 +1344,7 @@ where
             owner: rules_owner,
         },
         Some(overlay_registry),
-        Some(&overlay_grid),
+        Some(overlay_grid),
         Some(overlay_registry),
         bridge_destroyability_mode,
         descriptor,
@@ -1322,7 +1356,8 @@ where
         .take_resolved_terrain_for_load()
         .expect("authored object population keeps the live terrain installed");
     let mut overlay_grid = sim
-        .take_overlay_grid_for_load()
+        .overlay_grid
+        .take()
         .expect("authored object population keeps the live overlay installed");
 
     // SmudgeClass constructors consume identity before Unlimbo/placement can
@@ -1414,14 +1449,10 @@ where
         );
 
     let final_terrain = terrain.clone();
-    let final_overlay = overlay_grid.clone();
     sim.install_resolved_terrain_for_new_map(terrain);
-    sim.install_overlay_grid_for_load(overlay_grid);
+    sim.overlay_grid = Some(overlay_grid);
     sim.install_bridge_runtime(bridge_state);
-    Ok(AuthoredScenarioLoadOutput {
-        resolved_terrain: final_terrain,
-        overlay_grid: final_overlay,
-    })
+    Ok(final_terrain)
 }
 
 /// A building as the map-wall owner search measures it: its GetCoords
@@ -1452,26 +1483,19 @@ pub fn map_wall_owner_candidate_from_building(
 /// Post-funnel scenario finalization shared by the app loader and the
 /// headless loader (F09). The ordering is part of the construction contract:
 /// ore-spawner terrain seeding, map-wall owner reconstruction from the
-/// spawned structures, overlay-grid installation, smudge-grid seeding, then
+/// spawned structures, smudge-grid seeding, then
 /// the authoritative post-map tail (`ScenarioClass::Post_Map_Init` cone).
 pub fn finalize_constructed_scenario(
     sim: &mut Simulation,
     map_data: &crate::map::map_file::MapFile,
     rules: &RuleSet,
     overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
-    overlay_grid: crate::sim::overlay_grid::OverlayGrid,
     house_roster: &crate::map::houses::HouseRoster,
     skirmish_session: Option<&crate::sim::scenario_bootstrap::MatchLaunchDescriptor>,
 ) -> Result<
     crate::sim::scenario_post_map::ScenarioPostMapOutput,
     crate::sim::crates::RuntimeOverlayError,
 > {
-    // Population and starting-unit Unlimbo mutate the live Cell+122 bytes.
-    // The loader argument is a presentation/materialization view taken before
-    // those events; never replace their retained history with that older copy.
-    // Every production caller installs the live grid first, so the argument
-    // is only the fallback for callers that never populated one.
-    let mut overlay_grid = sim.take_overlay_grid_for_load().unwrap_or(overlay_grid);
     // Read_INI_Basic @ 0x00689E90 reads TiberiumDeathToVisceroid over the
     // fresh Set_Defaults true (0x00683610); only Ares' visceroid reads it,
     // so a game without Ares keeps the default.
@@ -1494,9 +1518,13 @@ pub fn finalize_constructed_scenario(
             seeded_terrain,
         );
     }
-    // Move the already-resolved CellClass overlay state into Simulation,
-    // then reconstruct map-wall ownership now that buildings exist.
+    // Reconstruct map walls on the populated grid. Starting-unit Unlimbo
+    // may already have changed its Cell+122 neighbor counts.
     if let Some(rt) = sim.resolved_terrain.as_ref() {
+        let overlay_grid = sim
+            .overlay_grid
+            .as_mut()
+            .ok_or(crate::sim::crates::RuntimeOverlayError::MissingPopulatedGrid)?;
         let (grid_width, grid_height) = (overlay_grid.width(), overlay_grid.height());
         let buildings: Vec<crate::sim::overlay_grid::MapWallOwnerCandidate> = sim
             .substrate
@@ -1517,7 +1545,6 @@ pub fn finalize_constructed_scenario(
             })
             .collect();
         overlay_grid.reconstruct_map_wall_owners(rt, overlay_registry, &buildings);
-        sim.install_overlay_grid_for_load(overlay_grid);
         log::info!(
             "Overlay grid initialized: {}x{}, {} entries",
             grid_width,
@@ -1577,7 +1604,7 @@ pub fn finalize_constructed_scenario(
     Ok(output)
 }
 #[test]
-fn finalization_keeps_live_neighbor_counts_instead_of_the_loader_copy() {
+fn finalization_keeps_populated_neighbor_counts() {
     use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
     use crate::sim::overlay_grid::OverlayGrid;
     let map = crate::map::map_file::MapFile::from_bytes(
@@ -1597,8 +1624,7 @@ fn finalization_keeps_live_neighbor_counts_instead_of_the_loader_copy() {
             .flat_map(|y| (0..8).map(move |x| test_flat_cell(x, y)))
             .collect(),
     ));
-    let stale = OverlayGrid::new(8, 8);
-    sim.overlay_grid = Some(stale.clone());
+    sim.overlay_grid = Some(OverlayGrid::new(8, 8));
     sim.overlay_grid
         .as_mut()
         .unwrap()
@@ -1609,7 +1635,7 @@ fn finalization_keeps_live_neighbor_counts_instead_of_the_loader_copy() {
         .unwrap()
         .retained_neighbor_counts()
         .to_vec();
-    finalize_constructed_scenario(&mut sim, &map, &rules, &registry, stale, &roster, None).unwrap();
+    finalize_constructed_scenario(&mut sim, &map, &rules, &registry, &roster, None).unwrap();
     assert_eq!(
         sim.overlay_grid
             .as_ref()

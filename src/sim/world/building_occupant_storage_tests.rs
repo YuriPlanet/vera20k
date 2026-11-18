@@ -34,7 +34,7 @@ impl Scene {
             OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
         let rules = retail.rules;
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x522970);
-        sim.install_overlay_grid_for_load(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+        *sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         for name in ["Americans", "Russians"] {

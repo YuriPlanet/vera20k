@@ -3037,19 +3037,16 @@ mod tests {
                 "the tree is not an ore spawner"
             );
 
-            let live_grid = sim.overlay_grid.take();
             let stats = crate::sim::runtime::initialize_native_tiberium_queues(
                 &mut sim,
                 &BasicSection::default(),
                 &SpecialFlagsSection::default(),
                 &rules,
                 &registry,
-                live_grid.as_ref(),
                 (8, 8),
             )
             .unwrap()
             .expect("overlay grid present");
-            sim.overlay_grid = live_grid;
 
             assert_eq!(stats.growth_entries, 2);
             assert_eq!(stats.spread_entries, 1);

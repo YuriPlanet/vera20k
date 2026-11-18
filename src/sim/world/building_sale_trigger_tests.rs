@@ -162,7 +162,7 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         .expect("authored Tubes");
     let format = map.basic.new_ini_format.unwrap_or(0);
     let cliff = rules.general.cliff_back_impassability;
-    let output = crate::sim::runtime::finalize_and_populate_staged_authored_scenario(
+    crate::sim::runtime::finalize_and_populate_staged_authored_scenario(
         &mut sim,
         &mut map,
         terrain_fill,
@@ -186,13 +186,7 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
     sim.resolve_type_handles(&rules);
     sim.install_team_ai_registry(&teams, &rules);
     let post = crate::sim::runtime::finalize_constructed_scenario(
-        &mut sim,
-        &map,
-        &rules,
-        &overlays,
-        output.overlay_grid,
-        &roster,
-        None,
+        &mut sim, &map, &rules, &overlays, &roster, None,
     )
     .unwrap();
     assert!(post.navigation_published && sim.path_grid().is_some());

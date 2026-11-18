@@ -56,7 +56,7 @@ fn cell_anim() -> (
     }));
     sim.set_playfield_size_height_for_test(Some(20));
     sim.install_resolved_terrain_for_new_map(terrain.clone());
-    sim.install_overlay_grid_for_load(crate::sim::overlay_grid::OverlayGrid::new(40, 40));
+    *sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(40, 40));
     assert_eq!(
         crate::sim::crates::place_scenario_start_crates(
             &mut sim,

@@ -723,7 +723,7 @@ fn loaded_ready_tabs_wait_for_the_saved_factory_changed_edge() {
             fixture.sim.session().map_width(),
             fixture.sim.session().map_height(),
         );
-        fixture.sim.install_overlay_grid_for_load(overlays);
+        *fixture.sim.overlay_grid_mut_for_test() = Some(overlays);
         if already_published {
             let published = advance_commands(&mut fixture, &[]);
             consume_frame_outputs(&mut fixture, &published, Some(owner));

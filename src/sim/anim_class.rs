@@ -5340,7 +5340,7 @@ mod tests {
             sim.session.set_map_height_for_test(16);
             let mut grid = OverlayGrid::new(16, 16);
             grid.place_overlay(8, 8, overlays.id_for_name("TIB01").unwrap(), density);
-            sim.install_overlay_grid_for_load(grid);
+            *sim.overlay_grid_mut_for_test() = Some(grid);
             let type_id = sim.interner.intern("TWNK1");
             let id = sim
                 .spawn_anim_at_world(

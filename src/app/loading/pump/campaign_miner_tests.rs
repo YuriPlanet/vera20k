@@ -182,7 +182,7 @@ fn miner(runtime: &crate::sim::runtime::SimRuntime) -> u64 {
 fn keep_ore(runtime: &mut crate::sim::runtime::SimRuntime, keep: impl Fn(u16, u16) -> bool) {
     let sim = &mut runtime.simulation;
     let registry = &runtime.resources.overlay_registry;
-    let mut grid = sim.take_overlay_grid_for_load().unwrap();
+    let mut grid = sim.overlay_grid_mut_for_test().take().unwrap();
     let remove: Vec<_> = grid
         .iter_occupied()
         .filter(|(x, y, cell)| {
@@ -201,7 +201,7 @@ fn keep_ore(runtime: &mut crate::sim::runtime::SimRuntime, keep: impl Fn(u16, u1
             (x, y),
         );
     }
-    sim.install_overlay_grid_for_load(grid);
+    *sim.overlay_grid_mut_for_test() = Some(grid);
 }
 
 #[test]

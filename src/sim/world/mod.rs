@@ -3986,16 +3986,6 @@ impl Simulation {
         true
     }
 
-    /// The generated-map loader runs the final ore pass on the populated grid
-    /// outside the simulation and installs the result before play.
-    pub fn take_overlay_grid_for_load(&mut self) -> Option<crate::sim::overlay_grid::OverlayGrid> {
-        self.overlay_grid.take()
-    }
-
-    pub fn install_overlay_grid_for_load(&mut self, grid: crate::sim::overlay_grid::OverlayGrid) {
-        self.overlay_grid = Some(grid);
-    }
-
     /// The authored loader runs the final InitCellAttributes sweep on the live
     /// map grid outside the simulation, then installs it again through
     /// [`Self::install_resolved_terrain_for_new_map`].
