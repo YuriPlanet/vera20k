@@ -111,7 +111,7 @@ impl Simulation {
             // before class Unlimbo and restore it on refusal. Native clears+11C
             // immediately after success100447E7, before any callbacks below.
             if let Some(entity) = self.substrate.entities.get_mut(id) {
-                entity.clear_carrier_relation();
+                entity.passenger_role_mut().clear_carrier_relation();
             }
             let (sub_x, sub_y) = (
                 SimFixed::from_num(point.x & 255),
@@ -142,13 +142,13 @@ impl Simulation {
             if let Some(link) = prior_carrier
                 && let Some(entity) = self.substrate.entities.get_mut(id)
             {
-                entity.set_carrier_link(link);
+                entity.passenger_role_mut().set_carrier_link(link);
             }
             return false;
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.clear_carrier_relation();
-            entity.clear_transporter();
+            entity.passenger_role_mut().clear_carrier_relation();
+            entity.passenger_role_mut().clear_transporter();
         }
         Self::foot_neighbors_store_retained_cell(&mut self.substrate, id, retained);
         if airborne {

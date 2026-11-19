@@ -358,7 +358,8 @@ impl Simulation {
         }
         // Cargo+114 is independent of Building occupants+684 (Ctor43B8DC).
         if obj.passengers > 0 {
-            ge.install_passenger_hold(obj.passengers as u32, obj.size_limit);
+            ge.passenger_role_mut()
+                .install_hold(obj.passengers as u32, obj.size_limit);
         }
 
         // TechnoClass::Init_Managers — manager-owned children are committed

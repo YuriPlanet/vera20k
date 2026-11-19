@@ -602,7 +602,7 @@ impl Simulation {
             .substrate
             .entities
             .get_mut(building_id)
-            .and_then(|building| building.cargo_mut())
+            .and_then(|building| building.passenger_role_mut().cargo_mut())
             .and_then(|cargo| cargo.unload_first())
         {
             let cell = cells.get(cursor).copied();
@@ -690,7 +690,7 @@ impl Simulation {
             // The dying building's expiry broadcast already cleared the
             // passenger's carrier relation; the cargo list still held it.
             if let Some(entity) = sim.substrate.entities.get_mut(passenger) {
-                entity.clear_carrier_relation();
+                entity.passenger_role_mut().clear_carrier_relation();
                 entity.on_bridge.store(on_bridge);
                 match spot_offset {
                     Some((sub_x, sub_y)) => entity.sub_cell.hold_offset(sub_x, sub_y),
@@ -954,7 +954,7 @@ impl Simulation {
             return;
         };
         if entity.passenger_role().inside_transport_id() == Some(unit_id) {
-            entity.clear_carrier_relation();
+            entity.passenger_role_mut().clear_carrier_relation();
         }
         let infantry = entity.category() == EntityCategory::Infantry;
         let passenger_owner = entity.owner();
@@ -1069,7 +1069,7 @@ impl Simulation {
             }
             // `0x007380FA`: Transporter (`+0x11C`) = NULL.
             if let Some(entity) = sim.substrate.entities.get_mut(passenger) {
-                entity.clear_transporter();
+                entity.passenger_role_mut().clear_transporter();
             }
 
             // `0x00738104..0x0073812A`: Assign_Target(NULL).

@@ -700,7 +700,7 @@ impl Simulation {
         // shared Cargo owner supplies its empty capability when first used.
         // Native +6C9 payload latch is the existing paradrop residual: the
         // unselectable retail PDPLANE's missions26/27 never use its fire gate.
-        let loaded = self.add_cargo_passenger_chain(
+        let loaded = self.add_cargo_members(
             plane,
             &cargo_members,
             UninitContext::new(rules, registry).with_effects(effects),
@@ -709,13 +709,6 @@ impl Simulation {
             loaded,
             "constructed paradrop carrier retains its CargoClass"
         );
-        for &member in members {
-            self.substrate
-                .entities
-                .get_mut(member)
-                .unwrap()
-                .set_inside_transport(plane, false);
-        }
         //65DCF9 invokes Aircraft Commence41B870 directly, with no Ready
         //query, after the entire payload attaches. Use the sole mission owner.
         let _ = self
@@ -910,7 +903,10 @@ impl Simulation {
                         (member, size)
                     })
                     .collect();
-                let loaded = self.add_cargo_passenger_chain(
+                // Native4733A0 writes only its +30 chain/+114 count/head,
+                // not a rider's +11C or OpenTopped; the hold's owner keeps
+                // VERA's inverse membership with it.
+                let loaded = self.add_cargo_members(
                     transport,
                     &cargo_members,
                     UninitContext::new(rules, registry).with_effects(effects),
@@ -919,16 +915,6 @@ impl Simulation {
                     loaded,
                     "Full reinforcement cargo must remain constructor-complete"
                 );
-                // This inverse relation is the existing Cargo-owned Rust
-                // membership view. Native4733A0 itself writes only its +30
-                // chain/+114 count/head, not a rider's +11C or OpenTopped.
-                for &member in &members {
-                    self.substrate
-                        .entities
-                        .get_mut(member)
-                        .expect("loaded Full member")
-                        .set_inside_transport(transport, false);
-                }
                 if air_transports && has_unload_script {
                     self.substrate
                         .entities

@@ -2016,10 +2016,9 @@ impl GameEntity {
         &mut self.passenger_role
     }
 
-    pub(crate) fn passenger_role_for_update(
-        &mut self,
-        _: crate::sim::passenger::PassengerWrite,
-    ) -> &mut PassengerRole {
+    /// The role's own operations (`sim::passenger`) keep its invariants; the
+    /// paired garrison and cargo admissions live on that owner.
+    pub(crate) fn passenger_role_mut(&mut self) -> &mut PassengerRole {
         &mut self.passenger_role
     }
 

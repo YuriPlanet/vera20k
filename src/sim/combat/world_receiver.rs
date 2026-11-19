@@ -3841,7 +3841,10 @@ fn ares_damage_occupants(
         crate::sim::world::UninitContext::new(rules, overlay_registry).with_effects(run.effects());
     if fatal_rate > 0.0 && world.scenario_rng.random_double() < fatal_rate {
         if let Some(building) = world.substrate.entities.get_mut(building_id) {
-            building.remove_garrison_reference(victim);
+            building
+                .passenger_role_mut()
+                .occupants_mut()
+                .remove_expired(victim);
         }
         if let Some(event) = world.substrate.entities.get(victim).and_then(|entity| {
             death_announcement_event(
@@ -3882,7 +3885,10 @@ fn ares_damage_occupants(
         effects.under_attack_events.append(&mut pings);
     }
     if let Some(building) = world.substrate.entities.get_mut(building_id) {
-        building.repair_garrison_fire_index();
+        building
+            .passenger_role_mut()
+            .occupants_mut()
+            .repair_fire_index();
     }
     world.ares_eval_raid_status(building_id, rules, overlay_registry, run.effects());
     true
