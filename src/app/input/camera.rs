@@ -2238,8 +2238,9 @@ pub(crate) fn toggle_follow_target(state: &mut AppState) {
 /// 0x005F5306 and `ObjectClass__Deselect` 0x005F4513 — so the camera is handed
 /// back when the followed object dies, leaves the selection, or runs
 /// Detach_All in this Logic visit while it lives on (a cloaking submarine)
-/// or a logic Select's Unselect_All deselects it before a later Select
-/// selects it again ([`LifecycleOutput::FollowReleased`] in `outputs`).
+/// or a Deselect (a logic Select's Unselect_All, or Limbo as in an Ares rubble
+/// kick-out) drops it before a later Select in the same visit selects it
+/// again ([`LifecycleOutput::FollowReleased`] in `outputs`).
 ///
 /// [`LifecycleOutput::FollowReleased`]: crate::sim::world::LifecycleOutput::FollowReleased
 pub(crate) fn update_follow_camera(

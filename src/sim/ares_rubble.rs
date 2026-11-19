@@ -169,8 +169,9 @@ impl Simulation {
     /// every Foot in each foundation cell's content (the deck list over a
     /// bridge head) of the destroyed building that Remove takes off the map
     /// is kicked out by the destroyed building (`KickOutUnit`, vt+0x100,
-    /// with its Location cell); a kicked-out one is selected again if it
-    /// was, any other is UnInit.
+    /// with its Location cell); a kicked-out one that was selected is
+    /// Selected again (vt+0x14C, [`Self::techno_select`],
+    /// `10012AC7..10012AD2`), any other is UnInit.
     pub(crate) fn ares_kick_out_of_rubble(
         &mut self,
         building_id: u64,
@@ -233,8 +234,8 @@ impl Simulation {
                 effects,
             );
             if exit == crate::sim::ai_base_building::BuildingExit::Placed {
-                if selected && let Some(entity) = self.substrate.entities.get_mut(foot) {
-                    entity.selection.select();
+                if selected {
+                    self.techno_select(foot, context);
                 }
             } else {
                 self.uninit_with_context(foot, context);
@@ -247,8 +248,10 @@ impl Simulation {
     /// `Rubble.Intact.Remove`: the rubble switches with the `Rubble.Intact*`
     /// keys and is UnInit. Without a new building the engineer is turned away
     /// (`0x00519FB9`, `false`); otherwise he is removed and the new building
-    /// kicks him out from his cell, selected again if he was, and
-    /// PerCellProcess returns (`0x0051A65D`, `true`). He is not consumed.
+    /// kicks him out from his cell, he is Selected again if he was (vt+0x14C,
+    /// [`Self::techno_select`], `1002585F..10025868`, whatever KickOutUnit
+    /// returned), and PerCellProcess returns (`0x0051A65D`, `true`). He is
+    /// not consumed.
     pub(crate) fn ares_engineer_rebuilds_rubble(
         &mut self,
         engineer_id: u64,
@@ -289,8 +292,8 @@ impl Simulation {
             registry,
             effects,
         );
-        if selected && let Some(entity) = self.substrate.entities.get_mut(engineer_id) {
-            entity.selection.select();
+        if selected {
+            self.techno_select(engineer_id, context);
         }
         true
     }
