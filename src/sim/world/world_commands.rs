@@ -114,6 +114,46 @@ impl MegaMissionExecution {
     }
 }
 
+/// `ObjectClass+0x83`, IsSelected: the object is in the player's current
+/// selection. It lives with its owners: `ObjectClass::Select @ 0x005F4520`
+/// sets it ([`Simulation::techno_select`], [`Simulation::try_select_object`]),
+/// `ObjectClass::Deselect @ 0x005F44A0` clears it
+/// ([`Simulation::object_deselect`]), and `Command::Select` commits a
+/// snapshot through `apply_selection_snapshot`. VERA keeps the
+/// current-objects vector as the app's selection ledger (input order and
+/// pending commands), which it reconciles with this byte after the frame.
+/// Combat reads it for selected-unit effects.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct Selection {
+    selected: bool,
+}
+
+impl Selection {
+    /// The object is selected.
+    pub const fn is_selected(self) -> bool {
+        self.selected
+    }
+
+    /// `ObjectClass::Select`'s write. The MCV deploy and undeploy
+    /// reselections (`world_spawn`) and the Ares rubble kick-outs
+    /// (`ares_rubble`) still write it directly.
+    pub(in crate::sim) fn select(&mut self) {
+        self.selected = true;
+    }
+
+    /// `ObjectClass::Deselect`'s write.
+    fn deselect(&mut self) {
+        self.selected = false;
+    }
+
+    /// Install a fixture's byte.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_selected_for_test(&mut self, selected: bool) {
+        self.selected = selected;
+    }
+}
+
 impl Simulation {
     /// HouseClass::Cheer50C8C0, original gamemd. Trigger113 and Event2D
     /// share this owner. Capture the initial Techno count; re-read each live
@@ -3018,7 +3058,9 @@ impl Simulation {
     /// ([`Self::select_unselects_all`]) before emitting the ordered Select
     /// command. Keep the graphical-client B73550 gate there: replaying this
     /// command must not depend on a renderer.
-    /// Raw lifecycle Select writers use Selection::select and do not raise33.
+    /// The MCV deploy and undeploy reselections and the Ares rubble
+    /// kick-outs still write the byte directly ([`Selection::select`]) and
+    /// raise no event 33.
     pub(crate) fn try_select_object(
         &mut self,
         stable_id: u64,

@@ -293,10 +293,8 @@ impl Simulation {
             terrain,
             self.session.game_mode().is_network(),
         );
-        if vision::point_is_shrouded(&self.fog, &cells, player, location)
-            && let Some(entity) = self.substrate.entities.get_mut(id)
-        {
-            entity.selection.deselect();
+        if vision::point_is_shrouded(&self.fog, &cells, player, location) {
+            self.object_deselect(id);
         }
     }
 

@@ -546,9 +546,10 @@ impl Simulation {
             target,
             ares,
         );
-        // 0x0071B16D: ObjectClass::Deselect.
-        if let Some(entity) = self.substrate.entities.get_mut(target) {
-            entity.selection.deselect();
+        // 0x0071B167..0x0071B175: with a current House (`0x00A83D4C`), the
+        // victim's Deselect (vt+0x150, `ObjectClass::Deselect`).
+        if self.session.current_house().is_some() {
+            self.object_deselect(target);
         }
     }
 

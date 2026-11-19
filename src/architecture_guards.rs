@@ -424,6 +424,10 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/superweapon/psychic_reveal.rs", 2),
                 ("sim/team_script_vm/actions.rs", 1),
                 ("sim/team_script_vm/reinforcements.rs", 2),
+                // A Temporal erase deselects its victim only with a current
+                // House (0x0071B167). Every game client has one; only
+                // headless runs skip it, and the selection is per client.
+                ("sim/temporal.rs", 1),
                 ("sim/trigger_runtime.rs", 1),
                 ("sim/world/aircraft_fire_location.rs", 1),
                 ("sim/world/camera_home.rs", 2),

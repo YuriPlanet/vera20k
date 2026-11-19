@@ -540,9 +540,8 @@ impl Simulation {
         ) {
             log::debug!("lifted {target} destination: {error:?}");
         }
-        if let Some(entity) = self.substrate.entities.get_mut(target) {
-            entity.selection.deselect();
-        }
+        // The target's Deselect (vt+0x150, `0x00710334`).
+        self.object_deselect(target);
         self.leave_team(target, false, rules, effects);
         let Some(entity) = self.substrate.entities.get_mut(target) else {
             return;

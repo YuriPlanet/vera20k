@@ -109,7 +109,7 @@ pub(crate) struct ObjectRecord {
     pub(crate) tether: Tether,
     pub(crate) disguise: Option<crate::sim::cloak_disguise::DisguiseRuntime>,
     pub(crate) display_type_override: DisplayTypeOverride,
-    pub(crate) selection: crate::sim::selection::Selection,
+    pub(crate) selection: crate::sim::world::Selection,
     /// `GameEntity::foot_speed`'s applied fraction.
     pub(crate) applied_fraction: crate::util::native_x87::NativeF64Bits,
     /// The cargo a Carryall draws inside its own draw

@@ -743,11 +743,11 @@ pub struct Seldom {
     /// Independent of the retained sight-admission latch and stored footprint.
     pub(crate) sight_refresh_timers: crate::sim::vision::SightRefreshTimers,
     // --- Bool markers (were zero-size ECS components) ---
-    /// IsSelected (`ObjectClass+0x83`), a [`Selection`] that `sim::selection`
-    /// owns.
+    /// IsSelected (`ObjectClass+0x83`), a [`Selection`] that the Select and
+    /// Deselect owners (`world::world_commands`) write.
     ///
-    /// [`Selection`]: crate::sim::selection::Selection
-    pub selection: crate::sim::selection::Selection,
+    /// [`Selection`]: crate::sim::world::Selection
+    pub selection: crate::sim::world::Selection,
     /// IsInLogic (`ObjectClass+0x98`), a [`LogicMembership`] that
     /// `world::logic_vector` owns. Not saved: a load rebuilds it from the saved
     /// vector order.
