@@ -956,7 +956,7 @@ fn overpower_scene_ini(
         .attack_target
         .set_for_test(Some(TargetKind::Entity(coil)));
     sim.substrate
-        .electric_assault_detonation(charger, Some(coil), crate::rules::ares_switch::ares_way());
+        .electric_assault_detonation(charger, Some(coil), rules.ares());
     (sim, rules, coil)
 }
 

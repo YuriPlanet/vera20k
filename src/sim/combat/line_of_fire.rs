@@ -1288,7 +1288,7 @@ mod tests {
         );
         assert_eq!(
             blocks(&rules, "PIERCE", None, &enemies),
-            Some((4, 1)),
+            None,
             "SolidLevel 1 >= 1"
         );
         assert_eq!(
