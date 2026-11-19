@@ -1331,7 +1331,6 @@ impl GameEntity {
     /// Construction and live type stores bind them as part of the type projection.
     pub(in crate::sim) fn stamp_scoring_flags(
         &mut self,
-        _: crate::sim::world::TypeProjectionWrite,
         object: Option<&crate::rules::object_type::ObjectType>,
         rules: &crate::rules::ruleset::RuleSet,
     ) {
@@ -1362,7 +1361,6 @@ impl GameEntity {
 
     pub(super) fn house_tracking_latches_mut(
         &mut self,
-        _: crate::sim::house_tracking::TrackingWrite,
     ) -> &mut crate::sim::house_tracking::InfantryTrackingLatches {
         &mut self.house_tracking_latches
     }
@@ -2274,11 +2272,7 @@ impl GameEntity {
             .get_or_insert_with(|| crate::sim::movement::FacingClass::with_rate_of(initial, body));
     }
 
-    pub(crate) fn set_owner_from_store(
-        &mut self,
-        owner: InternedId,
-        _: crate::sim::entity_store::OwnerChangeAuthority,
-    ) {
+    pub(crate) fn set_owner_from_store(&mut self, owner: InternedId) {
         self.owner = owner;
     }
 
@@ -2663,11 +2657,7 @@ impl GameEntity {
 
     /// Paradrop5F5AF1 publishes the new canopy at Object+88, through
     /// [`EntityStore::hold_parachute_animation`](crate::sim::entity_store::EntityStore::hold_parachute_animation).
-    pub(in crate::sim) fn hold_parachute_animation(
-        &mut self,
-        animation: u64,
-        _: crate::sim::entity_store::AnimHolderAuthority,
-    ) {
+    pub(in crate::sim) fn hold_parachute_animation(&mut self, animation: u64) {
         self.fall.set_parachute_animation(Some(animation));
     }
 
