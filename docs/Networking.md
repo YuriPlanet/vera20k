@@ -793,7 +793,7 @@ revision so the next private channels reject former match packets. During the
 handoff, the global transport can acknowledge an already received retransmission
 from the previous scope to cover a lost start ACK.
 
-[VMCE LAN player and author guide](vmce.md)
+[VMCE Manual](vmce-manual.md)
 
 ### Build check
 

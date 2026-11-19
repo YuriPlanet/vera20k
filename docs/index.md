@@ -57,7 +57,7 @@ simulation, session and network command owners.
 
 ## Feature docs
 
-- [VMCE LAN manual](vmce.md) covers authored campaign stages, role selection, controls and results.
+- [VMCE Manual](vmce-manual.md) covers authored campaign stages, role selection, controls and results.
 - [Auto Repair](auto-repair.md): tick it in Options and your damaged buildings start repairing by themselves.
 - [Colour-vision filter](color-vision-config.md): the `[VERA] ColorVisionMode=` whole-viewport daltonization option.
 - [End-game screens](ini-end-game-screens.md): the verdict card, its theme and the score page's own art.
