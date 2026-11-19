@@ -3,19 +3,19 @@
 //! Every writer goes through the money primitives here, each the one port of
 //! its native function.
 //!
-//! The house's silo aggregate (`+0x2FC`) is not represented here. Spend_Money
-//! omits its silo-drain arm; Available_Money omits its storage-value term
-//! and assumes a finite native HouseType `IncomeMult`. The corresponding
-//! tools/house_money_oracle.py controls supply an empty aggregate.
-//! `Added_To_Game @ 0x00502B83` merges a building's store (`+0x33C`), while
-//! the `Weeder=` deposit (`0x004F9700`, called at `0x0073E48E`) writes the
-//! separate store `+0x314`. Raw native Save/Load preserves these slots, so
-//! the empty-store boundary must not be extended to arbitrary native saves.
+//! Nothing in stock YR fills the House store (`+0x2FC`): GiveTiberium pays
+//! cash, and `Added_To_Game @ 0x00502B83` merges a building's store
+//! (`+0x33C`) that nothing filled either. The `Weeder=` deposit
+//! (`0x004F9700`, called at `0x0073E48E`) writes the separate store
+//! `+0x314`, which is not ported. Raw native Save/Load preserves these
+//! slots, so the empty-store boundary does not extend to arbitrary native
+//! saves. The tools/house_money_oracle.py controls supply an empty store and
+//! a finite native HouseType `IncomeMult`.
 //!
 //! Ares fills those stores (`Refinery.UseStorage`, Ares
-//! `HouseClass_GiveTiberium_Storage @ 10024290`), so the wallet also keeps
-//! them (`sim::ares_tiberium_storage::AresTiberiumStorage`), empty unless
-//! the game's money takes its Ares form (`RuleSet::ares_form`). The two arms
+//! `HouseClass_GiveTiberium_Storage @ 10024290`), so the wallet keeps them
+//! (`sim::ares_tiberium_storage::AresTiberiumStorage`), empty unless the
+//! game's money takes its Ares form (`RuleSet::ares_form`). The two arms
 //! that read them are ported for it: Spend_Money's silo drain and
 //! Available_Money's storage value. They run in every game and keep the
 //! empty boundary while the stores are empty.
@@ -117,13 +117,13 @@ impl Economy {
     /// `HouseClass::Available_Money @ 0x004F6990`: `ftol(storage value *
     /// IncomeMult + balance)`. For empty storage and finite native IncomeMult,
     /// this is exactly the retained signed balance for every i32 balance.
-    /// Nonempty/native-save and nonfinite-income inputs remain outside this
-    /// represented domain; the two consumed oracle controls use empty storage.
+    /// Native saves and a nonfinite income remain outside the represented
+    /// domain; the two consumed oracle controls use empty storage.
     ///
-    /// When Ares plays the stored tiberium's value is added
-    /// ([`AresTiberiumStorage::available_money`]). One body serves every
-    /// game: only Ares' deposits fill the store, and an empty store leaves
-    /// the balance, as above.
+    /// When the money takes its Ares form the stored tiberium's value is
+    /// added ([`AresTiberiumStorage::available_money`]). One body serves
+    /// every game: only Ares fills the store, and an empty store leaves the
+    /// balance, as above.
     pub fn available_money(&self) -> i32 {
         self.storage.available_money(self.credits)
     }
@@ -147,7 +147,7 @@ impl Economy {
     /// negative one, is taken and zeroed, and the rest would drain the silos
     /// (`0x004F97DD..`, empty here). What was taken joins `+0x2DC`.
     ///
-    /// When Ares plays that drain runs
+    /// When the money takes its Ares form that drain finds units
     /// (`AresTiberiumStorage::drain_for_spend`): the stored units it sells
     /// join what was taken, and the last unit's excess is the new balance.
     pub(crate) fn spend_money(&mut self, amount: i32) {
@@ -156,8 +156,8 @@ impl Economy {
             amount
         } else {
             let taken = std::mem::take(&mut self.credits);
-            // Runs in every game: an empty store, which only Ares' deposits
-            // fill, drains nothing and leaves the balance at 0.
+            // Runs in every game: an empty store, which only Ares fills,
+            // drains nothing and leaves the balance at 0.
             let (drained, change) = self.storage.drain_for_spend(amount.wrapping_sub(taken));
             self.credits = change;
             taken.wrapping_add(drained)
@@ -173,8 +173,10 @@ impl Economy {
     }
 
     /// `HouseClass::Add_Tiberium_Credits @ 0x004F9610` for `amount` units
-    /// of a tiberium. Each operation follows4F9610..4F9664 in native PC53/chop
-    /// order, with the caller's stored float amount and HouseType+148 income.
+    /// of a tiberium: the stock GiveTiberium body, which its callers reach
+    /// through `Simulation::tiberium_gift`. Each operation follows
+    /// 4F9610..4F9664 in native PC53/chop order, with the caller's stored
+    /// float amount and HouseType+148 income.
     /// The signed per-type Value is read at payment, not summed from cargo.
     /// Both sums include their prior integer before _ftol's low32 result.
     pub(crate) fn add_tiberium_credits(

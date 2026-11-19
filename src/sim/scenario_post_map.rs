@@ -315,12 +315,16 @@ impl Simulation {
     /// `[Basic] FillSilos=`, `Fill_In_Data 0x00684F02..0x00684F7C`: each
     /// House of the House array in order takes its Available_Money once as a
     /// budget; while that budget exceeds the first Tiberium's `Value=` and
-    /// Available_Storage (`0x004F69D0`, read again each pass) is positive, it
-    /// gets one unit of tiberium type 0 through GiveTiberium (`0x00684F58`,
-    /// [`Self::give_tiberium`]) and the budget loses that Value. The stock
-    /// GiveTiberium pays cash and stores nothing, so the budget ends the
-    /// loop; when the money takes its Ares form, a campaign or human House
-    /// stores each unit in its silos until Available_Storage reaches 0.
+    /// Available_Storage (`0x004F69D0`, read each pass) is positive, it gets
+    /// one unit of tiberium type 0 through GiveTiberium (`0x00684F58`) and
+    /// the budget loses that Value. The stock GiveTiberium pays cash and
+    /// stores nothing, so the budget ends the loop; when the money takes its
+    /// Ares form, a campaign or human House stores each unit in its silos
+    /// until Available_Storage reaches 0.
+    ///
+    /// VERA reads GiveTiberium's inputs once per House
+    /// ([`Self::tiberium_gift`]) and Available_Storage again only after a
+    /// gift that can store: nothing else in the loop moves them.
     ///
     /// gamemd fails on two inputs, where VERA carries on: with no Tiberium
     /// type it reads `Tiberium[0]` without a count check (`0x00684F36`), and
@@ -340,24 +344,26 @@ impl Simulation {
             );
             return;
         };
-        let available_storage = |sim: &Self, owner| {
-            sim.houses
-                .get(&owner)
-                .map_or(0, crate::sim::house_state::HouseState::available_storage)
-        };
         for owner in self.houses.order().to_vec() {
-            let Some(house) = self.houses.get(&owner) else {
+            let Some(gift) = self.tiberium_gift(owner, 0, rules) else {
+                continue;
+            };
+            let Some(house) = self.houses.get_mut(&owner) else {
                 continue;
             };
             let mut budget = house.economy().available_money();
-            while budget > value {
-                let free = available_storage(self, owner);
-                if free <= 0 {
-                    break;
+            let mut free = house.available_storage();
+            while budget > value && free > 0 {
+                let before = free;
+                gift.give(
+                    house.economy_mut(),
+                    crate::util::native_x87::NativeF32Bits::ONE,
+                );
+                if gift.stores() {
+                    free = house.available_storage();
                 }
-                self.give_tiberium(owner, crate::util::native_x87::NativeF32Bits::ONE, 0, rules);
                 budget = budget.wrapping_sub(value);
-                if value == 0 && available_storage(self, owner) == free {
+                if value == 0 && free == before {
                     break;
                 }
             }

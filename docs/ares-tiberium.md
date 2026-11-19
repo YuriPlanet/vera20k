@@ -152,7 +152,8 @@ Message.SilosNeeded=MSG:Silos  ; read; its print is a client residual
   type's `Value=` a unit, exceeds that Value and Available_Storage
   (`0x004F69D0`) stays positive: a campaign or human House's silos fill, any
   other House is paid cash. Every GiveTiberium caller takes
-  `Simulation::give_tiberium`, which picks Ares' body or the stock one. A destroyed
+  `Simulation::tiberium_gift`, which picks Ares' body or the stock one
+  (FillSilos reads it once per House). A destroyed
   building loses `ceil` of each slot from its store and the House's
   (`10023DA0`, hook `441B30`, `combat/destruction_effects.rs`); with
   `TiberiumSpill` each unit draws `RandomRanged(256, 768)` and one
@@ -171,7 +172,7 @@ Message.SilosNeeded=MSG:Silos  ; read; its print is a client residual
 | `489270` | `10050DD0` | CellChainReact | Ported (`ares_cell_chain_react`) |
 | `48964F` | `10051000` | DamageArea_ChainReaction | Ported (`ares_area_damage_chain_reaction`) |
 | `739F21` | `1004C530` | UnitClass_UpdatePosition_Visceroid | Residual: needs stock visceroid AI |
-| `4F9610` | `10024290` | HouseClass_GiveTiberium_Storage | Ported (`give_tiberium`, `ares_give_tiberium`) |
+| `4F9610` | `10024290` | HouseClass_GiveTiberium_Storage | Ported (`give_tiberium`, `tiberium_gift`) |
 | `73E4A2` | `10024BC0` | UnitClass_Mi_Unload_Storage | Ported (`ares_deposit_tiberium`) |
 | `522D75` | `10024B60` | InfantryClass_Slave_UnloadAt_Storage | Ported (`ares_deposit_tiberium`) |
 | `441B30` | `10023DA0` | BuildingClass_Destroy_Refinery | Ported (`ares_destroy_refinery_storage`) |

@@ -90,13 +90,10 @@ pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: Int
     }
     let available = house.economy().available_money();
     let factories = house.tracking().funds_nag_factories();
-    // `0x004F8BFF..0x004F8C21`: capacity `+0x310` and `ftol(+0x2FC total)`.
+    // `0x004F8BFF..0x004F8C21` inlines Available_Storage: capacity `+0x310`
+    // minus `ftol(+0x2FC total)` (`HouseState::available_storage`).
     let capacity = house.tracking().storage_capacity();
-    let stored = if ares {
-        house.economy().ares_storage().house_store().total_amount()
-    } else {
-        0
-    };
+    let free = house.available_storage();
     let mut timer = *house.eva_funds_timer();
     let mut guard = house.eva_low_power_guard();
 
@@ -128,7 +125,7 @@ pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: Int
     // HouseClass_Update_SilosNeededEVA (10024AE0, hook 0x4F8C23) speaks
     // `EVA_SilosNeeded` before the re-arm. RESIDUAL (client): it also prints
     // `[General] Message.SilosNeeded` for MessageDelay in the House's colour.
-    if timer.expired(now) && capacity.wrapping_sub(stored) < 30 && capacity > 50 {
+    if timer.expired(now) && free < 30 && capacity > 50 {
         if ares {
             sim.sound_events.emit(SimSoundEvent::HouseEva {
                 owner,
